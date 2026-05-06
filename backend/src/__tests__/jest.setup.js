@@ -1,3 +1,4 @@
+// Winston mock
 jest.mock('winston', () => {
   const MockConsole = jest.fn().mockImplementation(() => ({
     level: jest.fn(),
