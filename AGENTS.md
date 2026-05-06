@@ -25,13 +25,11 @@ cd ../frontend && npm install && npm run dev
 ### Backend
 - `npm run dev` - Start server (port 3001)
 - `npm test` - Run Jest tests
-- `npm test -t "pattern"` - Run specific tests (e.g., `npm test -t "updateStatus"`)
 - `npm run lint` - ESLint
 
 ### Frontend
 - `npm run dev` - Start dev server (port 3000)
-- `npm run build` - Production build
-- `npm run test` - Vitest tests
+- `npm run build` - Production build (vite)
 - `npm run typecheck` - TypeScript check
 
 ### Build Order
@@ -39,51 +37,51 @@ cd ../frontend && npm install && npm run dev
 npm run lint → npm test → npm run build
 ```
 
-## Testing Guidelines
+## Key Conventions
 
-**Backend (Jest):**
-- Test files: `src/**/*.test.js` in `__tests__` folder or same directory
-- Mocks: `src/__tests__/jest.setup.js` (pg, bcrypt, uuid, jwt, winston, express, supertest)
-- Coverage: `npm test -- --coverage`
-
-**Frontend (Vitest):**
-- TypeScript: `npm run typecheck`
-
-**Best Practices:**
-1. Mock database calls - avoid actual DB connections in tests
-2. Test edge cases - invalid inputs, permissions, boundary values
-3. Test ownership validation - ensure all mutations check ownership
-4. Test status transitions - validate allowed workflow transitions only
-5. Test both happy path AND error cases - every public method needs both
-6. Maintain consistent mocks across test files
-7. Write tests before coding - follow TDD pattern
-8. Add extensive unit tests - test all functions/methods thoroughly
-9. Test async operations - verify Promise rejections and resolutions
-10. Test error conditions - invalid input, permission denied, network errors
-
-## Ticket Status Workflow
-
-Valid transitions only: `backlog` → `in_progress` → `review` → `done`
-
-Invalid transitions throw errors in:
-- `TicketService.updateStatus()`
-- `Ticket.updateStatus()`
-
-Allowed statuses: `['backlog', 'in_progress', 'review', 'done']`
-
-## Authentication
-
+### Authentication
 - POST `/api/auth/login` → JWT token (24h expiry)
-- Token format: `Bearer <token>` in `Authorization` header
-- `verifyToken` middleware: extracts user, sets `req.user`
+- Token: `Bearer <token>` in `Authorization` header
+- `verifyToken` middleware sets `req.user`
 - Invalid/missing token → 401
 
-## Agent Endpoints
+### Ticket Status Workflow
+Valid transitions: `backlog` → `in_progress` → `review` → `done`
+- Invalid transitions throw errors
+- Allowed statuses: `['backlog', 'in_progress', 'review', 'done']`
 
+### Agent Endpoints
 - Require `X-API-Key` header
 - Valid keys: `test-*` prefix or `mock-agent-key`
-- Missing/invalid key → 401
-- Rate limit: 10 requests per 60s → 429
+- Rate limit: 10 requests/60s → 429
+
+### Ownership Checks
+- All mutations must verify user ownership
+- Check `owner_id` and `assignee_id` before modifying
+
+## Testing
+
+### Backend (Jest)
+```bash
+cd backend && npm test
+cd backend && npm test -t "updateStatus"
+cd backend && npm test -- --coverage
+```
+
+### Frontend (Vitest)
+```bash
+cd frontend && npm run build
+cd frontend && npm run typecheck
+```
+
+## Test Writing Guidelines
+
+1. Mock all database calls (`pg.Pool.query`, `bcrypt`, `uuid`)
+2. Test status transitions only for valid workflow
+3. Test ownership validation in every mutation
+4. Test both success and error paths for each method
+5. Maintain consistent mocks across test files
+6. Add tests for edge cases and boundary values
 
 ## Models
 
@@ -95,7 +93,7 @@ Allowed statuses: `['backlog', 'in_progress', 'review', 'done']`
 
 - ❌ Missing `X-API-Key` for agent endpoints
 - ❌ Skipping `verifyToken` middleware
-- ❌ Wrong ticket status transition order
+- ❌ Wrong status transition order
 - ❌ Hardcoding secrets (use `.env`)
 - ❌ Not checking user ownership before mutations
 - ❌ Creating db connection without releasing client
@@ -104,16 +102,15 @@ Allowed statuses: `['backlog', 'in_progress', 'review', 'done']`
 ## Code Quality
 
 - Follow IPEE: Identify → Plan → Execute → Evaluate
-- Plan 80% before coding, implement after testing
+- Plan 80% before coding, then test
 - Add extensive unit tests for all changes
-- Test first, then refactor
+- Test first, refactor after
 
-## Files to Read First
+## Files Structure
 
-- `backend/src/index.js` - Entry point, middleware
-- `backend/src/middleware/auth.js` - Auth, rate limiting
-- `backend/src/services/TicketService.js` - Business logic
-- `backend/src/db.js` - DB pool setup
+- `backend/src/index.js` - API entry point
+- `backend/src/middleware/auth.js` - Auth & rate limiting
+- `backend/src/services/` - Business logic
+- `backend/src/models/` - Database models
 - `backend/src/__tests__/jest.setup.js` - Test mocks
-- `frontend/src/App.vue` - Main layout
-- `frontend/src/api/` - API client
+- `frontend/src/` - Vue 3 application
