@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  api:
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend/.env:/app/.env
+
+  frontend:
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/node_modules:/app/node_modules
+    command: npm run dev -- --host 0.0.0.0
+
+  postgres:
+    ports:
+      - "5432:5432"

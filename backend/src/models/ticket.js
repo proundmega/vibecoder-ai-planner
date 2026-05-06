@@ -1,0 +1,123 @@
+const { v4: uuidv4 } = require('uuid');
+const pool = require('../db');
+
+class Ticket {
+  constructor(data) {
+    this.id = data.id || uuidv4();
+    this.projectId = data.projectId;
+    this.title = data.title;
+    this.description = data.description;
+    this.status = data.status || 'backlog';
+    this.priority = data.priority || 'medium';
+    this.assigneeId = data.assigneeId;
+    this.ownerId = data.ownerId;
+    this.createdAt = data.createdAt;
+    this.updatedAt = data.updatedAt;
+  }
+
+  static async create(projectId, title, description, ownerId) {
+    const result = await pool.query(
+      `INSERT INTO tickets 
+       (project_id, title, description, status, priority, owner_id) 
+       VALUES ($1, $2, $3, 'backlog', 'medium', $4)
+       RETURNING *`,
+      [projectId, title, description, ownerId]
+    );
+    return new Ticket(result.rows[0]);
+  }
+
+  static async findByProject(projectId, uid) {
+    const result = await pool.query(
+      'SELECT t.*, u.name as assignee_name, p.name as project_name ' +
+      'FROM tickets t ' +
+      'LEFT JOIN users u ON t.assignee_id = u.id ' +
+      'JOIN projects p ON t.project_id = p.id ' +
+      'WHERE t.project_id = $1 ORDER BY t.created_at DESC',
+      [projectId]
+    );
+    return result.rows.map(r => this.fromRow(r));
+  }
+
+  static async findByStatus(projectId, status) {
+    const result = await pool.query(
+      'SELECT * FROM tickets WHERE project_id = $1 AND status = $2 ORDER BY created_at',
+      [projectId, status]
+    );
+    return result.rows.map(r => this.fromRow(r));
+  }
+
+  static async findById(id) {
+    const result = await pool.query(
+      'SELECT * FROM tickets WHERE id = $1', [id]);
+    return result.rows.length > 0 ? this.fromRow(result.rows[0]) : null;
+  }
+
+  static async fromRow(row) {
+    return new Ticket({
+      id: row.id,
+      projectId: row.project_id,
+      title: row.title,
+      description: row.description,
+      status: row.status,
+      priority: row.priority,
+      assigneeId: row.assignee_id,
+      assigneeName: row.assignee_name,
+      ownerId: row.owner_id,
+      projectName: row.project_name,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    });
+  }
+
+  static async update(id, title, description, status, priority, assigneeId, userId) {
+    // Validate status transition
+    const validTransitions = {
+      backlog: ['in_progress', 'done'],
+      in_progress: ['backlog', 'review'],
+      review: ['backlog', 'done'],
+    };
+
+    if (status) {
+      const allowed = validTransitions[status] || [];
+      if (allowed.length === 0 || !allowed.includes(status)) {
+        throw new Error(`Invalid status transition. Allowed for ${status}: ${allowed.join(', ')}`);
+      }
+    }
+
+    const query = `UPDATE tickets SET 
+      title = COALESCE($1, title),
+      description = COALESCE($2, description),
+      status = COALESCE($3, status),
+      priority = COALESCE($4, priority),
+      assignee_id = COALESCE($5, assignee_id),
+      updated_at = NOW()
+    WHERE id = $6`;
+
+    await pool.query(query, [
+      title, description, status, priority, assigneeId, id
+    ]);
+  }
+
+  static async delete(id) {
+    await pool.query('DELETE FROM tickets WHERE id = $1', [id]);
+  }
+
+  static async updateStatus(id, status, userId) {
+    const validTransitions = {
+      'backlog': ['in_progress'],
+      'in_progress': ['review', 'backlog'],
+      'review': ['done', 'backlog'],
+    };
+
+    if (!validTransitions[status] || !validTransitions[status].includes(id)) {
+      throw new Error('Invalid status transition');
+    }
+
+    await pool.query(
+      'UPDATE tickets SET status = $1, updated_at = NOW() WHERE id = $2',
+      [status, id]
+    );
+  }
+}
+
+module.exports = Ticket;

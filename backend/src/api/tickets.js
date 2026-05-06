@@ -1,0 +1,51 @@
+const express = require('express');
+const router = express.Router();
+const TicketService = require('../services/TicketService');
+
+// Get single ticket
+router.get('/:ticketId', async (req, res) => {
+  try {
+    const ticket = await TicketService.getOne(req.params.ticketId, req.user.userId);
+    res.json(ticket);
+  } catch (error) {
+    res.status(404).json({ error: error.message });
+  }
+});
+
+// Create new ticket
+router.post('/', async (req, res) => {
+  try {
+    const { projectId, title, description, priority } = req.body;
+    const ticket = await TicketService.create(projectId, title, description, req.user.userId);
+    res.status(201).json(ticket);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Update ticket
+router.put('/:ticketId', async (req, res) => {
+  try {
+    const { title, description, status, priority, assigneeId } = req.body;
+    await TicketService.update(
+      req.params.ticketId,
+      { title, description, status, priority, assigneeId },
+      req.user.userId
+    );
+    res.json({ message: 'Ticket updated' });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Delete ticket
+router.delete('/:ticketId', async (req, res) => {
+  try {
+    await TicketService.delete(req.params.ticketId, req.user.userId);
+    res.json({ message: 'Ticket deleted' });
+  } catch (error) {
+    res.status(404).json({ error: error.message });
+  }
+});
+
+module.exports = router;
