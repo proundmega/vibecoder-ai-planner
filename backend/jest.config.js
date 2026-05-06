@@ -1,15 +1,26 @@
 module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
-  testMatch: ['**/__tests__/**/*.test.js'],
+  testMatch: ['**/__tests__/**/*.test.js', '<rootDir>/src/**/*.test.js'],
   coverageDirectory: '../../coverage/backend',
   setupFilesAfterEnv: ['<rootDir>/src/__tests__/jest.setup.js'],
   moduleDirectories: ['node_modules', '<rootDir>'],
-  moduleNameMapper: {},
+  moduleNameMapper: {
+    '^models/(.*)$': '<rootDir>/src/models/$1',
+    '^services/(.*)$': '<rootDir>/src/services/$1',
+  },
   verbose: true,
   forceExit: true,
   restoreMocks: false,
   watchPathIgnorePatterns: ['/node_modules/', '/coverage/'],
   testTimeout: 10000,
-  testPathIgnorePatterns: ['/node_modules/']
+  collectCoverageFrom: [
+    'src/**/*.js',
+    '!src/**/*.test.js',
+    '!src/index.js',
+    '!src/__tests__/*.{js,ts}',
+    '!src/*.config.js',
+    '!src/__mocks__/*',
+    '!src/migrations/*',
+  ],
 };
