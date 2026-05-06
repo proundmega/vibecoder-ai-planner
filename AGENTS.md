@@ -1,5 +1,41 @@
 # Vibecode AI Planner - Agent Guide
 
+## Project Status
+
+**Current Date**: May 6, 2026
+
+### Ticket Status Summary
+
+| ID | Title | Priority | Status |
+|----|-------|----------|--------|
+| TKT-001 | Initialize Project Structure | High | ✅ Done |
+| TKT-002 | PostgreSQL Database Schema | High | ✅ Done |
+| TKT-003 | User Authentication System | High | ✅ Done |
+| TKT-004 | Create Projects API Endpoints | High | ✅ Done |
+| TKT-005 | Create Tickets API Endpoints | High | ✅ Done |
+| TKT-006 | Create Roles and Permissions API | Medium | 🔄 In Progress |
+| TKT-007 | Create Pricing and Subscription API | Medium | ❌ Pending |
+| TKT-008 | Set Up Vue.js Frontend | High | ✅ Done |
+| TKT-009 | Implement Authentication UI | High | ✅ Done |
+| TKT-010 | Implement Projects View | Medium | ⏸️ Blocked |
+| TKT-011 | Implement Kanban Board Component | High | ❌ Pending |
+| TKT-012 | Implement Ticket Detail View | Medium | ⏸️ Blocked |
+| TKT-013 | Design AI Agent API | High | ❌ Pending |
+| TKT-014 | Create AI Agent User Experience | Medium | ❌ Pending |
+| TKT-015 | Dockerize Backend/Frontend | Medium | ✅ Done |
+| TKT-016 | Set Up CI/CD Pipeline | Medium | ❌ Pending |
+| TKT-017 | API Documentation | Low | ❌ Pending |
+| TKT-018 | Write Integration Tests | Low | ⏸️ Blocked |
+
+### Blocked Tickets
+- TKT-010 (Projects View): Waiting for TKT-006 (Permissions)
+- TKT-012 (Ticket Detail View): Waiting for TKT-006 (Permissions)
+- TKT-018 (Integration Tests): Waiting for API completion
+
+### Pending High Priority
+- TKT-006: Roles and Permissions API
+- TKT-011: Kanban Board Component
+
 ## Architecture
 
 **Monorepo**: `/backend` (Node.js + Express) + `/frontend` (Vue 3 + Vite)
@@ -8,62 +44,21 @@
 
 **Ports**: Frontend 3000, Backend 3001, PGAdmin 5050
 
-## Setup
-
-```bash
-# Quick Start
-docker-compose up -d
-
-# Manual Setup
-docker run --name vibecode-postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres:15
-cd backend && npm install && npm run dev
-cd ../frontend && npm install && npm run dev
-```
-
 ## Commands
 
 ### Backend
 - `npm run dev` - Start server (port 3001) with watch
 - `npm test` - Run Jest tests
-- `npm test -t "pattern"` - Run specific tests (e.g., `npm test -t "updateStatus"`)
-- `npm test -- --coverage` - Generate coverage report
+- `npm test -t "pattern"` - Run specific tests
 - `npm run lint` - ESLint
 
 ### Frontend
 - `npm run dev` - Start dev server (port 3000)
 - `npm run build` - Production build (Vite)
-- `npm run typecheck` - TypeScript check (vue-tsc)
+- `npm run typecheck` - TypeScript check
 - `npm run lint` - ESLint
 
-### Build Order
-```bash
-npm run lint → npm test → npm run build
-```
-
-## Key Conventions
-
-### Authentication
-- POST `/api/auth/login` → JWT token (24h expiry)
-- Token: `Bearer <token>` in `Authorization` header
-- `verifyToken` middleware extracts user, sets `req.user`
-- Invalid/missing token → 401
-
-### Ticket Status Workflow
-Valid transitions only: `backlog` → `in_progress` → `review` → `done`
-- Invalid transitions throw errors in `TicketService.updateStatus()`
-- Allowed statuses array: `['backlog', 'in_progress', 'review', 'done']`
-
-### Agent Endpoints
-- Require `X-API-Key` header
-- Valid keys: `test-*` prefix or `mock-agent-key`
-- Rate limit: 10 requests per 60s → 429
-
-### Ownership Checks
-- All mutations verify user ownership before modifying
-- Check `owner_id` and `assignee_id` before modifications
-- Not checking ownership is a security vulnerability
-
-## Testing
+## Testing Guidelines
 
 ### Backend (Jest)
 ```bash
@@ -78,25 +73,57 @@ cd frontend && npm run build
 cd frontend && npm run typecheck
 ```
 
-### Test File Location
-- Backend: `backend/src/**/__tests__/*.test.js` or `backend/src/services/*.test.js`
-- Frontend: `frontend/**/*.{test,spec}.?(c|m)[jt]s?(x)`
-
-### Mock Database
-Tests mock `pg.Pool`, `bcrypt`, `uuid`, `jsonwebtoken` - no actual DB connections needed
-
-### Test Writing Guidelines
+### Test Writing Best Practices
 
 1. **Mock database calls** - Use Jest mocks for `pg.Pool.query` to avoid DB connections
-2. **Test edge cases** - Invalid inputs, permissions, boundary values
+2. **Test status transitions** - Validate only allowed workflow: `backlog` → `in_progress` → `review` → `done`
 3. **Test ownership validation** - Ensure all mutations check user ownership
-4. **Test status transitions** - Validate only allowed workflow transitions
-5. **Test both happy path AND error cases** - Every public method needs both
-6. **Maintain consistent mocks** - Keep mock responses consistent across test files
-7. **Write tests before coding** - Follow TDD pattern
-8. **Add extensive unit tests** - Test all functions/methods
-9. **Test async operations** - Handle Promise rejections and resolutions
-10. **Test error conditions** - Invalid input, permission denied, network errors
+4. **Test both success and error paths** - Every public method needs both test cases
+5. **Maintain consistent mocks** - Keep mock responses consistent across test files
+6. **Test edge cases** - Invalid inputs, permissions, boundary values
+
+## Ticket Status Workflow
+
+Valid transitions only: `backlog` → `in_progress` → `review` → `done`
+
+Invalid transitions throw errors in:
+- `TicketService.updateStatus()`
+- `Ticket.updateStatus()`
+
+## Testing Guidelines
+
+1. **Mock database calls** - Use Jest mocks for `pg.Pool.query` to avoid DB connections
+2. **Test status transitions** - Validate only allowed workflow: `backlog` → `in_progress` → `review` → `done`
+3. **Test ownership validation** - Ensure all mutations check user ownership
+4. **Test both success and error paths** - Every public method needs both test cases
+5. **Maintain consistent mocks** - Keep mock responses consistent across test files
+6. **Test edge cases** - Invalid inputs, permissions, boundary values
+
+## Key Conventions
+
+- Auth: POST /api/auth/login → JWT (24h expiry)
+- Token: `Bearer <token>` in `Authorization` header
+- verifyToken middleware sets `req.user`
+- Invalid/missing token → 401
+
+## Testing Guidelines
+
+1. **Mock database calls** - Use Jest mocks for `pg.Pool.query` to avoid DB connections
+2. **Test status transitions** - Validate only allowed workflow: `backlog` → `in_progress` → `review` → `done`
+3. **Test ownership validation** - Ensure all mutations check user ownership
+4. **Test both success and error paths** - Every public method needs both test cases
+5. **Maintain consistent mocks** - Keep mock responses consistent across test files
+6. **Test edge cases** - Invalid inputs, permissions, boundary values
+
+## Common Pitfalls
+
+- ❌ Missing `X-API-Key` for agent endpoints
+- ❌ Skipping `verifyToken` middleware
+- ❌ Wrong status transition order
+- ❌ Hardcoding secrets (use `.env`)
+- ❌ Not checking user ownership before mutations
+- ❌ Creating db connection without releasing client
+- ❌ Running tests without proper mocks
 
 ## Models
 
@@ -104,29 +131,25 @@ Tests mock `pg.Pool`, `bcrypt`, `uuid`, `jsonwebtoken` - no actual DB connection
 - **Project**: `id, name, description, owner_id`
 - **Ticket**: `id, project_id, title, description, status, priority, assignee_id, owner_id`
 
-## Common Pitfalls
+## Files Structure
 
-- ❌ Missing `X-API-Key` for agent endpoints
-- ❌ Skipping `verifyToken` middleware on protected routes
-- ❌ Wrong ticket status transition order
-- ❌ Hardcoding secrets (use `.env`)
-- ❌ Not checking user ownership before mutations
-- ❌ Creating db connection without releasing client
-- ❌ Running tests without proper mocks
+- `backend/src/index.js` - API entry point
+- `backend/src/middleware/auth.js` - Auth & rate limiting
+- `backend/src/services/` - Business logic with unit tests
+- `backend/src/__tests__/jest.setup.js` - Test mocks
+- `frontend/src/` - Vue 3 application
 
 ## Code Quality
 
-- Follow IPEE methodology: Identify → Plan → Execute → Evaluate
-- Plan 80% before coding, implement after testing
+- Follow IPEE: Identify → Plan → Execute → Evaluate
+- Plan 80% before coding, then test
 - Add extensive unit tests for all changes
-- Test first, then refactor
+- Test first, refactor after
 
-## Files to Read First
+## Next Steps (High Priority)
 
-- `backend/src/index.js` - Entry point, middleware chain
-- `backend/src/middleware/auth.js` - Auth and rate limiting
-- `backend/src/services/TicketService.js` - Business logic, status workflow
-- `backend/src/db.js` - DB pool setup
-- `backend/src/__tests__/jest.setup.js` - Test setup and mocks
-- `frontend/src/App.vue` - Main layout
-- `frontend/src/api/` - API client
+1. **TKT-006**: Add permission checks middleware
+2. **TKT-011**: Build Kanban board component
+3. **TKT-013**: Implement AI Agent API with API key auth
+4. **Add more unit tests** for TicketService, ProjectService, UserService
+5. **Update tests** to pass with proper mocks
