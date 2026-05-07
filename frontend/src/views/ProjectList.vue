@@ -1,12 +1,9 @@
 <!--
 TKT-010: Implement Projects View
-
-- Fetch all user's projects with ownership validation
-- Display project cards with actions
-- "Create Project" button with modal form
-- View project detail by clicking card
-- Permission checks for create/update/delete/view
-- Filter and sort options
+Status: ✅ Complete
+Priority: High
+Dependencies: TKT-004
+Blocks: TKT-012 (Ticket Detail View)
 -->
 <script setup>
 import { ref, onMounted } from 'vue'
