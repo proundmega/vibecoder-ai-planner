@@ -58,4 +58,3 @@ describe('UserService', () => {
     });
   });
 });
-EOF

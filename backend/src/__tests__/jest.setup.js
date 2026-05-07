@@ -39,3 +39,31 @@ jest.mock('winston', () => {
     }
   };
 });
+
+// pg.Pool mock
+jest.mock('pg', () => {
+  const pool = {
+    query: jest.fn().mockResolvedValue({ rows: [] }),
+    on: jest.fn()
+  };
+  return { Pool: jest.fn().mockImplementation(() => pool) };
+});
+
+// bcryptjs mock
+jest.mock('bcryptjs', () => ({
+  hash: jest.fn().mockResolvedValue('mock-hash'),
+  compare: jest.fn().mockResolvedValue(true)
+}));
+
+// uuid mock
+jest.mock('uuid', () => ({
+  v4: jest.fn().mockReturnValue('mock-uuid')
+}));
+
+// jwt mock
+jest.mock('jsonwebtoken', () => {
+  return {
+    verify: jest.fn().mockReturnValue({ id: 'user-1', email: 'user@test.com' }),
+    sign: jest.fn().mockReturnValue('mock-token')
+  };
+});
