@@ -13,16 +13,16 @@
 | TKT-003 | User Authentication System | High | ✅ Done |
 | TKT-004 | Create Projects API Endpoints | High | ✅ Done |
 | TKT-005 | Create Tickets API Endpoints | High | ✅ Done |
-| TKT-006 | Create Roles and Permissions API | Medium | ✅ Done |
-| TKT-010 | Implement Projects View | High | ✅ Done |
+| TKT-006 | Roles and Permissions API | Medium | ✅ Done |
+| TKT-010 | Projects View | High | ✅ Done |
 | TKT-011 | Kanban Board Component | High | ✅ Done |
 | TKT-012 | Ticket Detail View | Medium | ✅ Done |
-| TKT-018 | Write Integration Tests | Low | ⏸️ Blocked |
+| TKT-018 | Integration Tests | Low | ⏸️ Blocked |
 
 ### ✅ Completed
 - Roles and Permissions middleware (TKT-006)
-- Projects View (TKT-010)
-- Kanban Board Component (TKT-011)
+- Projects View (TKT-010)  
+- Kanban Board (TKT-011)
 - Ticket Detail View (TKT-012)
 
 ## Architecture
@@ -42,25 +42,18 @@
 
 ### Frontend  
 - `npm run dev` - Start dev server (port 3000)
-- `npm run build` - Production build (Vite)
+- `npm run build` - Production build
 
-## Testing Guidelines
+## Testing
 
-### Backend (Jest)
-- Mock database calls (pg.Pool.query, bcrypt, uuid, jwt)
-- Test status transitions: backlog → in_progress → review → done
-- Test ownership validation
+**Permissions tests**: 21/21 passing  
+**Other tests**: Need pg mock fixes
 
-## Key Files
+## Git Commits
 
-- `backend/src/middleware/permissions.js` - Role-based access control
-- `backend/src/middleware/permissions.test.js` - Permission tests (21 passing)
-- `backend/src/__tests__/jest.setup.js` - Test mocks
-- `frontend/src/views/TicketBoard.vue` - Kanban board (TKT-011)
-- `frontend/src/views/ProjectList.vue` - Projects view (TKT-010)
-- `frontend/src/views/TicketDetail.vue` - Ticket detail (TKT-012)
-- `frontend/src/api/tickets.js` - Ticket API functions
-- `frontend/src/api/projects.js` - Project API functions
+1. Complete TKT-006: Roles and Permissions API
+2. Complete TKT-010, TKT-011, TKT-012 - Full Build Verified
+3. Fix permission tests, build frontend
 
 ## Remaining Work
 
