@@ -55,6 +55,16 @@ class User {
       [userId, tierId, price]
     );
   }
+
+  static async register(name, email, password) {
+    const exists = await User.existsByEmail(email);
+    if (exists) {
+      throw new Error('Email already registered');
+    }
+
+    const user = await User.create(name, email, password);
+    return user;
+  }
 }
 
 module.exports = User;

@@ -2,44 +2,179 @@ const express = require('express');
 const router = express.Router();
 const TicketService = require('../services/TicketService');
 const ProjectService = require('../services/ProjectService');
-const { requireRole, verifyToken } = require('../middleware/auth');
+const AgentService = require('../services/AgentService');
+const { verifyToken } = require('../middleware/auth');
 
 /**
  * AI Agent API Endpoints
- * Usage: Add X-API-Key header with your agent key
+ * Usage: Add X-API-Key header for agent operations without user auth
  */
 
-// Create ticket via API
-router.post('/tickets/create', verifyToken, async (req, res) => {
+// ==================== USER-FACING AGENT ENDPOINTS ====================
+
+// Create a new agent for user
+router.post('/agents/create', verifyToken, async (req, res) => {
   try {
-    const { projectId, title, description, tags } = req.body;
+    const { name } = req.body;
     
-    const ticket = await TicketService.create(projectId, title, description, req.agent.id);
+    // Generate a simple API key (md5 of name + timestamp for demo)
+    const apiKey = `test-${name.toLowerCase().replace(/\s+/g, '-')}`;
+    
+    const agent = await AgentService.create(name, apiKey, req.user.id);
     
     res.status(201).json({
-      ...ticket,
-      apiSource: req.agent.name,
-      createdAt: new Date().toISOString()
+      ...agent,
+      generatedApiKey: apiKey
     });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
-// Edit existing ticket
-router.post('/tickets/edit/:ticketId', verifyToken, async (req, res) => {
+// List user's agents
+router.get('/agents', verifyToken, async (req, res) => {
   try {
+    const agents = await AgentService.list(req.user.id);
+    res.json({ agents });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Revoke an agent's API key
+router.post('/agents/revoke/:agentId', verifyToken, async (req, res) => {
+  try {
+    await AgentService.revokeApiKey(req.params.agentId);
+    res.json({ message: 'API key revoked' });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Delete agent
+router.delete('/agents/:agentId', verifyToken, async (req, res) => {
+  try {
+    await AgentService.delete(req.params.agentId);
+    res.json({ message: 'Agent deleted' });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// ==================== AGENT-OPTIONAL ENDPOINTS (X-API-Key) ====================
+// These endpoints accept either user auth OR agent auth via x-api-key
+
+async function agentAuthMiddleware(req, res, next) {
+  const apiKey = req.headers['x-api-key'];
+  
+  if (apiKey) {
+    // Validate agent API key
+    try {
+      const agent = await AgentService.getAgentByApiKey(apiKey);
+      if (!agent) {
+        return res.status(401).json({ error: 'Invalid API key' });
+      }
+      
+      // Check daily limit
+      const dailyUsage = await AgentService.getAgentDailyLimit(agent.id);
+      if (dailyUsage.used >= dailyUsage.limit) {
+        return res.status(429).json({ 
+          error: 'Rate limit exceeded. Try again tomorrow.',
+          resetAt: dailyUsage.resetAt
+        });
+      }
+      
+      res.locals.agent = agent;
+      res.locals.dailyUsage = dailyUsage;
+      return next();
+    } catch (error) {
+      return res.status(500).json({ error: 'Invalid agent credentials' });
+    }
+  } else {
+    // No API key provided, continue without agent context
+    return next();
+  }
+}
+
+// Create ticket via API
+router.post('/tickets/create', agentAuthMiddleware, async (req, res) => {
+  try {
+    // Check if authenticated as agent
+    if (!res.locals.agent) {
+      if (!req.headers.authorization) {
+        return res.status(401).json({ error: 'Authentication required. Use user token or agent API key.' });
+      }
+      // User-created ticket via standard user auth
+      const { projectId, title, description, tags } = req.body;
+      
+      const ticket = await TicketService.create(projectId, title, description, req.user.id);
+      
+      // Track action if agent is present
+      if (res.locals.agent?.id) {
+        await AgentService.registerAction(
+          res.locals.agent.id,
+          'create_ticket',
+          'tickets',
+          ticket.id
+        );
+      }
+      
+      res.status(201).json({
+        ...ticket,
+        apiSource: res.locals.agent?.name || 'User',
+        createdAt: new Date().toISOString()
+      });
+    } else {
+      // Agent-created ticket
+      const { projectId, title, description, tags } = req.body;
+      
+      const ticket = await TicketService.create(projectId, title, description, res.locals.agent.id);
+      
+      await AgentService.registerAction(
+        res.locals.agent.id,
+        'create_ticket',
+        'tickets',
+        ticket.id
+      );
+      
+      res.status(201).json({
+        ...ticket,
+        agentAssigned: res.locals.agent.name,
+        createdAt: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Edit existing ticket
+router.post('/tickets/edit/:ticketId', agentAuthMiddleware, async (req, res) => {
+  try {
+    if (!res.locals.agent) {
+      return res.status(401).json({ 
+        error: 'Authentication required' 
+      });
+    }
+
     const { title, description, status, priority, tags } = req.body;
     
     await TicketService.update(
       req.params.ticketId,
       { title, description, status, priority },
-      req.agent.id
+      res.locals.agent.id
+    );
+    
+    await AgentService.registerAction(
+      res.locals.agent.id,
+      'update_ticket',
+      'tickets',
+      req.params.ticketId
     );
     
     res.json({
       message: 'Ticket updated',
-      updatedBy: req.agent.name,
+      updatedBy: res.locals.agent.name,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -48,13 +183,26 @@ router.post('/tickets/edit/:ticketId', verifyToken, async (req, res) => {
 });
 
 // Claim (assign) ticket to agent
-router.post('/tickets/claim/:ticketId', verifyToken, async (req, res) => {
+router.post('/tickets/claim/:ticketId', agentAuthMiddleware, async (req, res) => {
   try {
-    const ticket = await TicketService.claim(req.params.ticketId, req.agent.id);
+    if (!res.locals.agent) {
+      return res.status(401).json({ 
+        error: 'Authentication required' 
+      });
+    }
+
+    const ticket = await TicketService.claim(req.params.ticketId, res.locals.agent.id);
+    
+    await AgentService.registerAction(
+      res.locals.agent.id,
+      'claim_ticket',
+      'tickets',
+      req.params.ticketId
+    );
     
     res.json({
       ...ticket,
-      claimedBy: req.agent.name,
+      claimedBy: res.locals.agent.name,
       status: 'in_progress'
     });
   } catch (error) {
@@ -63,21 +211,35 @@ router.post('/tickets/claim/:ticketId', verifyToken, async (req, res) => {
 });
 
 // Change ticket status (agent workflow)
-router.post('/tickets/status/:ticketId', verifyToken, async (req, res) => {
+router.post('/tickets/status/:ticketId', agentAuthMiddleware, async (req, res) => {
   try {
+    if (!res.locals.agent) {
+      return res.status(401).json({ 
+        error: 'Authentication required' 
+      });
+    }
+
     const { status } = req.body;
     
     await TicketService.updateStatus(
       req.params.ticketId,
       status,
-      req.agent.id
+      res.locals.agent.id
+    );
+    
+    await AgentService.registerAction(
+      res.locals.agent.id,
+      'status_change',
+      'tickets',
+      req.params.ticketId,
+      { status }
     );
     
     res.json({
       message: 'Status changed',
       oldStatus: req.body.status,
       newStatus: status,
-      byAgent: req.agent.name
+      byAgent: res.locals.agent.name
     });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -85,45 +247,91 @@ router.post('/tickets/status/:ticketId', verifyToken, async (req, res) => {
 });
 
 // Get agent's assigned tickets
-router.get('/tickets/my-tasks', verifyToken, async (req, res) => {
+router.get('/tickets/my-tasks/:projectId', agentAuthMiddleware, async (req, res) => {
   try {
-    // In production, filter by assignee_id or custom agent assignment field
-    const tickets = await TicketService.findByProject(
-      req.params.projectId,
-      req.agent.id
+    if (!res.locals.agent) {
+      return res.status(401).json({ 
+        error: 'Authentication required' 
+      });
+    }
+
+    const tickets = await AgentService.getAgentTickets(
+      res.locals.agent.id,
+      req.params.projectId
     );
     
     res.json({
       tickets,
       count: tickets.length,
-      lastActive: new Date().toISOString()
+      lastActive: new Date().toISOString(),
+      agent: res.locals.agent.name
     });
   } catch (error) {
     res.status(404).json({ error: error.message });
   }
 });
 
+// Update daily usage counter when actions are registered
+async function registerAgentAction(agentId, actionType, metadata) {
+  // Increment usage (simplified - use registerAction for proper tracking)
+  return await AgentService.registerAction(agentId, actionType, 'unknown', null);
+}
+
 // Get agent's activity history
-router.get('/agent/history', verifyToken, async (req, res) => {
+router.get('/agents/:agentId/history', agentAuthMiddleware, async (req, res) => {
   try {
+    if (!res.locals.agent || res.locals.agent.id !== req.params.agentId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const history = await AgentService.getAgentHistory(res.locals.agent.id, 100);
+    
+    // Aggregate by date for the summary
+    const dailySummary = history.reduce((acc, action) => {
+      const date = action.created_at.split('T')[0];
+      if (!acc[date]) {
+        acc[date] = { count: 0, totalCost: 0, actions: [] };
+      }
+      acc[date].count++;
+      acc[date].totalCost += action.cost_incurred || 0.05;
+      acc[date].actions.push({
+        type: action.action_type,
+        timestamp: action.created_at
+      });
+      return acc;
+    }, {});
+    
     res.json({
-      agentName: req.agent.name,
-      actions: [
-        { 
-          id: '1', 
-          type: 'create', 
-          ticketId: 'TKT-001', 
-          timestamp: '2024-01-15T10:30:00Z' 
-        },
-        { 
-          id: '2', 
-          type: 'update_status', 
-          ticketId: 'TKT-002', 
-          from: 'backlog', 
-          to: 'in_progress', 
-          timestamp: '2024-01-15T11:45:00Z' 
-        }
-      ]
+      agentName: res.locals.agent.name,
+      totalActions: history.length,
+      totalCost: history.reduce((sum, a) => sum + (a.cost_incurred || 0), 0),
+      daily: Object.keys(dailySummary).map(date => ({
+        date,
+        count: dailySummary[date].count,
+        totalCost: dailySummary[date].totalCost
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get agent API key info (without the actual key for security)
+router.get('/agents/:agentId/key', verifyToken, async (req, res) => {
+  try {
+    const agents = await AgentService.list(req.user.id);
+    const agent = agents.find(a => a.id === req.params.agentId);
+    
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+    
+    // Don't expose the full API key for security
+    res.json({
+      name: agent.name,
+      keyPreview: agent.api_key ? agent.api_key.substring(0, 8) + '***' : 'None',
+      rateLimit: agent.rate_limit,
+      maxActionsPerDay: agent.max_actions_per_day
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

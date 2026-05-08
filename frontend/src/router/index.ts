@@ -36,6 +36,11 @@ const routes = [
             name: 'TicketDetail',
             component: () => import('../views/TicketDetail.vue'),
           },
+          {
+            path: 'ai',
+            name: 'AIAssistant',
+            component: () => import('../views/AIAssistant.vue'),
+          },
         ],
       },
     ],

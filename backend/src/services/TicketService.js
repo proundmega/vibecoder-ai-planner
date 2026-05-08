@@ -77,6 +77,26 @@ class TicketService {
 
     return await Ticket.updateStatus(ticketId, status, userId);
   }
+
+  static async getAgentTickets(agentId, projectId) {
+    // For non-user agents, get tickets in their owner's projects
+    const result = await pool.query(
+      `SELECT t.*, u.name as assignee_name, p.name as project_name 
+       FROM tickets t 
+       LEFT JOIN users u ON t.assignee_id = u.id 
+       JOIN projects p ON t.project_id = p.id 
+       WHERE p.owner_id = ANY(
+         SELECT user_id FROM project_agents WHERE project_id = (
+           SELECT id FROM projects WHERE owner_id = (
+             SELECT id FROM agents WHERE id = $1
+           )
+         )
+       ) AND t.project_id = $2
+       ORDER BY t.created_at DESC`,
+      [agentId, projectId]
+    );
+    return result.rows;
+  }
 }
 
 module.exports = new TicketService();
