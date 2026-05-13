@@ -7,6 +7,6 @@ RUN npm install --production
 
 FROM node:18-alpine
 COPY --from=builder /app/node_modules ./node_modules
+WORKDIR /app
 COPY --from=builder /app/src ./src
-WORKDIR /app/src
-CMD ["node", "index.js"]
+CMD ["node", "src/index.js"]
