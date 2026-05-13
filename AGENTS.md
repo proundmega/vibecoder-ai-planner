@@ -36,7 +36,33 @@
 
 ## Running the Application
 
-### Development (npm, no Docker)
+### Docker Compose
+
+**Note:** API runs on port 3001. If already in use, use port 3010: `3010:3001`
+
+```bash
+# Set JWT_SECRET (required)
+export JWT_SECRET="your-secret-key-here"
+
+# Start all services
+docker compose up --build
+
+# Access services
+# - Frontend: http://localhost:3000
+# - Backend API: http://localhost:3001  
+# - PgAdmin: http://localhost:5050 (admin@vibecode.dev / admin)
+
+# Stop
+docker compose down
+```
+
+**Database setup:**
+```bash
+cd backend
+npm run db:migrate   # Apply schema migrations if needed
+```
+
+### Manual Setup
 
 **Backend:**
 ```bash
@@ -52,34 +78,6 @@ npm install
 npm run dev          # Vite dev server on port 3000
 ```
 
-### Docker (Production Build)
-
-**Note:** Docker builds for production (nginx + static files). Cannot do hot-reload.
-
-```bash
-# Set JWT_SECRET (required)
-export JWT_SECRET="your-secret-key-here"
-
-# Start all services
-docker compose up --build
-
-# Access services
-# - Frontend: http://localhost:3000
-# - Backend API: http://localhost:3001
-# - PgAdmin: http://localhost:5050 (admin@vibecode.local / admin)
-
-# Stop
-docker compose down
-```
-
-**Docker overrides:** Development overrides (`docker-compose.override.yml`) are intentionally minimal for production containers that run nginx.
-
-### Database Setup
-```bash
-cd backend
-npm run db:migrate   # Apply schema migrations
-```
-
 ## Development Workflow
 
 ### Commands
@@ -88,7 +86,6 @@ npm run db:migrate   # Apply schema migrations
 npm run dev          # Start server (watch mode)
 npm test             # Run Jest tests
 npm run lint         # ESLint check
-npm run build        # Production build
 
 # Frontend
 npm run dev          # Start dev server
@@ -116,9 +113,9 @@ npm run typecheck # Type checking
 ```
 
 ## CI Pipeline
-```
-.
-```
+Runs on push to main/develop:
+- Backend: lint + build
+- Frontend: lint + build
 
 ## API Endpoints
 
@@ -151,6 +148,39 @@ npm run typecheck # Type checking
 
 **Agent Usage**: Set `x-api-key` header with generated agent key
 
+## Known Issues & Solutions
+
+### Port 3001 Already in Use
+Solution: Set `PORT=3010` in docker-compose.yml or use existing port
+
+### Missing JWT_SECRET
+Error: `JWT_SECRET is not set`
+Solution: Set `export JWT_SECRET="your-secret-key-here"` before running docker compose
+
+### PostgreSQL Connection Failed
+Error: Container exits immediately with connection errors
+Solution: Ensure other services started before API. Check logs with `docker logs <container_id>`. The API may wait for database to be healthy before starting.
+
+### Frontend 404 on API calls
+Solution: Ensure backend is running on port 3001 (check with curl http://192.168.3.33:3001/api/health)
+
+### Invalid Status Transition
+Error: `Invalid status transition`
+Solution: Use allowed transitions: backlog→in_progress, in_progress→review, review→done
+
+### Container Exits Immediately
+If `docker ps` shows container exited (status 0), check:
+1. Database is healthy: `docker ps` should show postgres running
+2. Logs show connection error: `docker logs <container_id>`
+3. Run migrations: `cd backend && npm run db:migrate`
+
+### Frontend Build Errors
+Solution: Ensure `frontend/package-lock.json` exists and `frontend/node_modules/` is not in .gitignore
+
+### Jest Test Failures
+- Old tests may reference missing methods (UserService.register, etc.)
+- Use mocks in `backend/src/__tests__/db.mocks.js`
+
 ## Frontend Architecture
 
 ### State Management
@@ -170,18 +200,4 @@ Vue Router at `frontend/src/router/index.ts`:
 ### Path Aliases
 Uses `@` alias pointing to `frontend/src` for imports.
 
-## Known Issues & Solutions
-
-### Missing JWT_SECRET
-Error: `JWT_SECRET is not set`
-Solution: Set `export JWT_SECRET="your-secret-key"` before running docker compose
-
-### Frontend 404 on API calls
-Solution: Ensure backend is running on port 3001 (check with curl http://localhost:3001/api/health)
-
-### Invalid Status Transition
-Error: `Invalid status transition`
-Solution: Use allowed transitions: backlog→in_progress, in_progress→review, review→done
-
-### Frontend Build Errors
-Solution: Ensure `frontend/package-lock.json` exists (run `npm install` in frontend)
+```
