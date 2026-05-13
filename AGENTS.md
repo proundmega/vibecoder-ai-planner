@@ -39,13 +39,19 @@
 
 ### Docker (Recommended)
 ```bash
+# Set JWT_SECRET (required by compose)
+export JWT_SECRET="your-secret-key-here"
+
 # Start all services
 docker-compose up -d
 
 # Access services
 # - Frontend: http://localhost:3000
-# - Backend API: port 3001
+# - Backend API: http://localhost:3001  
 # - PgAdmin: http://localhost:5050 (admin@vibecode.local / admin)
+
+# Stop
+docker-compose down
 ```
 
 ### Manual Setup
