@@ -201,3 +201,7 @@ Vue Router at `frontend/src/router/index.ts`:
 Uses `@` alias pointing to `frontend/src` for imports.
 
 ```
+
+## Backend Startup Notes
+
+The backend uses a simplified logger (console) to avoid winston middleware issues in Docker builds. If winston is needed, ensure the correct API is used.
