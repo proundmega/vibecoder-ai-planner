@@ -10,7 +10,7 @@
 │   │   ├── api/     # API routes & controllers
 │   │   ├── models/  # Database models
 │   │   ├── services/# Business logic layer
-│   │   ├── middleware/ # Auth, permissions, rate limiting
+│   │   ├── middleware/ # Auth, permissions
 │   │   ├── migrations/ # DB schema migrations
 │   │   └── index.js # App entry point
 ├── frontend/         # Vue 3 SPA with Vite (port 3000)
@@ -20,13 +20,12 @@
 │       ├── api/     # API client functions
 │       ├── stores/  # Pinia state management
 │       └── router/  # Vue Router config
-├── docker-compose.yml # Service definitions
-└── tickets.txt       # Development task list
+└── docker-compose.yml # Service definitions
 ```
 
 ### Technology Stack
 - **Backend**: Node.js, Express, PostgreSQL 15, Jest
-- **Frontend**: Vue 3, Vite, Pinia, Vue Router
+- **Frontend**: Vue 3, Vite, Pinia, Vue Router, TypeScript
 - **Auth**: JWT (jsonwebtoken + bcryptjs)
 
 ### Ports
@@ -37,45 +36,48 @@
 
 ## Running the Application
 
-### Docker (Recommended)
+### Development (npm, no Docker)
+
+**Backend:**
 ```bash
-# Set JWT_SECRET (required by compose)
+cd backend
+npm install
+npm run dev          # Express server on port 3001
+```
+
+**Frontend:** (separate terminal)
+```bash
+cd frontend
+npm install
+npm run dev          # Vite dev server on port 3000
+```
+
+### Docker (Production Build)
+
+**Note:** Docker builds for production (nginx + static files). Cannot do hot-reload.
+
+```bash
+# Set JWT_SECRET (required)
 export JWT_SECRET="your-secret-key-here"
 
 # Start all services
-docker-compose up -d
+docker compose up --build
 
 # Access services
 # - Frontend: http://localhost:3000
-# - Backend API: http://localhost:3001  
+# - Backend API: http://localhost:3001
 # - PgAdmin: http://localhost:5050 (admin@vibecode.local / admin)
 
 # Stop
-docker-compose down
+docker compose down
 ```
 
-### Manual Setup
-```bash
-# PostgreSQL
-docker run --name vibecode-postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres:15
-
-# Backend
-cd backend
-npm install
-npm run dev          # Express server watch mode (port 3001)
-
-# Frontend (separate terminal)
-cd frontend
-npm install
-npm run dev          # Vite dev server (port 3000)
-npm run build        # Production build
-```
+**Docker overrides:** Development overrides (`docker-compose.override.yml`) are intentionally minimal for production containers that run nginx.
 
 ### Database Setup
 ```bash
 cd backend
 npm run db:migrate   # Apply schema migrations
-npm run db:reset     # Re-run migrations
 ```
 
 ## Development Workflow
@@ -89,17 +91,12 @@ npm run lint         # ESLint check
 npm run build        # Production build
 
 # Frontend
-npm run dev          # Vite dev server
+npm run dev          # Start dev server
 npm run build        # Production build
 npm run lint         # ESLint check
 npm run typecheck    # Vue-TSC type checking
 npm test             # Vitest tests
 ```
-
-### Git Workflow
-1. Create feature branch from main/develop
-2. Update AGENTS.md with any repo-specific conventions
-3. Verify all tests pass before PR
 
 ## Testing
 
@@ -107,33 +104,20 @@ npm test             # Vitest tests
 ```bash
 cd backend
 npm test          # Run all tests
-npm test -- --listTests  # List test files
 ```
 
-**Note**: Jest uses mocks in `backend/src/__tests__/jest.setup.js`. Mock files define database interactions.
+**Note:** Jest uses mocks in `backend/src/__tests__/jest.setup.js`.
 
 ### Frontend Tests
 ```bash
 cd frontend
 npm test          # Run Vitest tests
+npm run typecheck # Type checking
 ```
 
-### Test Patterns
-- Unit tests: Test services/models in isolation with mocks
-- Integration tests: Test full API endpoints with supertest
-- Frontend: Test components with Vitest + Vue testing utils
-
-## Permissions & Roles
-
-### User Roles
-- `user` - Basic user, can create projects
-- `admin` - Full system access
-
-### Permission Checks
-Use `backend/src/middleware/permissions.js`:
-```javascript
-const { hasPermission } = require('./permissions');
-const isAdmin = require('./permissions').isAdmin;
+## CI Pipeline
+```
+.
 ```
 
 ## API Endpoints
@@ -158,137 +142,14 @@ const isAdmin = require('./permissions').isAdmin;
 - `PUT /api/tickets/:id` - Update ticket
 - `DELETE /api/tickets/:id` - Delete ticket
 
-### AI Agents
+### Agents
 - `POST /api/agents/create` - Create agent with API key
 - `GET /api/agents` - List user's agents
 - `DELETE /api/agents/:id` - Delete agent
-- `GET /api/agents/:id/key` - Get agent key info (truncated)
+- `GET /api/agents/:id/key` - Get agent key info
 - `GET /api/agents/:id/history` - Get agent activity stats
 
 **Agent Usage**: Set `x-api-key` header with generated agent key
-
-### Pricing
-- `GET /api/pricing/tiers` - Get subscription tiers
-
-## AI Agent API
-
-Agents can create and manage tickets programmatically via X-API-Key header.
-
-### Create Agent
-```bash
-curl -X POST http://localhost:3001/api/agents/create \
-  -H "Authorization: Bearer YOUR_USER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "My Agent"}'
-```
-
-### Create Ticket (via API Key)
-```bash
-curl -X POST http://localhost:3001/api/agents/tickets/create \
-  -H "Authorization: Bearer YOUR_USER_TOKEN" \
-  -H "x-api-key: test-my-agent" \
-  -H "Content-Type: application/json" \
-  -d '{"projectId": "xxx", "title": "Bug fix", "description": "..."}'
-```
-
-### Update Ticket (via API Key)
-```bash
-curl -X POST http://localhost:3001/api/agents/tickets/edit/{ticketId} \
-  -H "Authorization: Bearer YOUR_USER_TOKEN" \
-  -H "x-api-key: test-my-agent" \
-  -H "Content-Type: application/json" \
-  -d '{"status": "in_progress", "title": "Updated"}'
-```
-
-### Claim Ticket for Agent
-```bash
-curl -X POST http://localhost:3001/api/agents/tickets/claim/{ticketId} \
-  -H "Authorization: Bearer YOUR_USER_TOKEN" \
-  -H "x-api-key: test-my-agent"
-```
-
-### Change Ticket Status (via API Key)
-```bash
-curl -X POST http://localhost:3001/api/agents/tickets/status/{ticketId} \
-  -H "Authorization: Bearer YOUR_USER_TOKEN" \
-  -H "x-api-key: test-my-agent" \
-  -H "Content-Type: application/json" \
-  -d '{"status": "review"}'
-```
-
-### Get Assigned Tickets (via API Key)
-```bash
-curl http://localhost:3001/api/agents/tickets/my-tasks/{projectId} \
-  -H "Authorization: Bearer YOUR_USER_TOKEN" \
-  -H "x-api-key: test-my-agent"
-```
-
-### Get Agent History
-```bash
-curl http://localhost:3001/api/agents/{agentId}/history \
-  -H "Authorization: Bearer YOUR_USER_TOKEN" \
-  -H "x-api-key: test-my-agent"
-```
-
-### Revoke Agent Key
-```bash
-curl -X POST http://localhost:3001/api/agents/revoke/{agentId} \
-  -H "Authorization: Bearer YOUR_USER_TOKEN"
-```
-
-## Database Schema
-
-### Core Tables
-- `users` - User accounts with roles/plans  
-- `projects` - User projects
-- `tickets` - Kanban board items
-- `pricing_tiers` - Subscription plans
-- `project_agents` - Agent-project membership
-- `agent_actions` - Action history for billing
-
-### Status Workflow
-Tickets flow through: `backlog` → `in_progress` → `review` → `done`
-Status transitions are validated in `backend/src/models/ticket.js`
-
-## Key Files to Know
-
-### Backend
-- `backend/src/index.js` - Express app entry
-- `backend/src/api/routes.js` - Main API router
-- `backend/src/middleware/auth.js` - JWT validation, agent auth
-- `backend/src/middleware/permissions.js` - Permission checks
-- `backend/src/services/*.js` - Business logic
-- `backend/src/models/*.js` - Database models
-- `backend/src/migrations/00*_*.sql` - Schema definitions
-
-### Frontend
-- `frontend/src/main.ts` - Vue app entry
-- `frontend/src/router/index.ts` - Route definitions
-- `frontend/src/stores/auth.js` - Authentication store
-- `frontend/src/api/*.js` - API client functions
-- `frontend/src/views/*.vue` - Page components
-
-## Common Issues
-
-### Missing Authentication Token
-Error: `Unauthorized` on API calls
-Solution: Ensure Bearer token in `Authorization` header
-
-### Invalid Status Transition
-Error: `Invalid status transition`
-Solution: Use allowed transitions: backlog→in_progress, in_progress→review, review→done
-
-### Database Connection Fails
-Error: `Connection refused`
-Solution: Start PostgreSQL with `docker run ... postgres:15`
-
-### Frontend 404 on API calls
-Solution: Ensure backend is running on port 3001
-
-### Jest Test Failures
-- Old tests may reference missing methods (UserService.register, etc.)
-- Run `npm test` to see which tests are failing
-- Use mocks in `backend/src/__tests__/db.mocks.js`
 
 ## Frontend Architecture
 
@@ -306,18 +167,21 @@ Vue Router at `frontend/src/router/index.ts`:
 /projects/:id/ai → AI Assistant
 ```
 
-### API Client
-REST client in `frontend/src/api/`:
-- Direct fetch() calls with Bearer token auth
-- Pattern: `fetch('http://localhost:3001/api/...')`
+### Path Aliases
+Uses `@` alias pointing to `frontend/src` for imports.
 
-## Contributing
+## Known Issues & Solutions
 
-1. Read this AGENTS.md
-2. Check `tickets.txt` for tasks
-3. Follow existing code patterns
-4. Ensure all tests pass
-5. Update this file with new patterns found
+### Missing JWT_SECRET
+Error: `JWT_SECRET is not set`
+Solution: Set `export JWT_SECRET="your-secret-key"` before running docker compose
 
-## License
-MIT
+### Frontend 404 on API calls
+Solution: Ensure backend is running on port 3001 (check with curl http://localhost:3001/api/health)
+
+### Invalid Status Transition
+Error: `Invalid status transition`
+Solution: Use allowed transitions: backlog→in_progress, in_progress→review, review→done
+
+### Frontend Build Errors
+Solution: Ensure `frontend/package-lock.json` exists (run `npm install` in frontend)
