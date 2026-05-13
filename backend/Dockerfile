@@ -5,8 +5,12 @@ RUN npm ci
 COPY . .
 RUN npm install --production
 
-FROM node:18-alpine
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/src ./src
+FROM node:18-alpine AS runner
 WORKDIR /app
-CMD ["node", "src/index.js"]
+COPY --from=builder /app/package*.json ./
+RUN npm ci --only=production
+RUN npm install --only=production
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/.env.example /app/.env.example
+
+CMD ["sh", "-c", "node src/index.js"]
