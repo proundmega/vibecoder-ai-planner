@@ -4,11 +4,12 @@ services:
       - "3001:3001"
     volumes:
       - ./backend/.env:/app/.env
+    environment:
+      - NODE_ENV=development
 
   frontend:
     ports:
       - "3000:3000"
-    command: ["sh", "-c", "if [ -d /app/node_modules ]; then npm run dev; else npm install && npm run dev; fi"]
 
   postgres:
     ports:
