@@ -8,9 +8,7 @@ services:
   frontend:
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend/node_modules:/app/node_modules
-    command: npm run dev -- --host 0.0.0.0
+    command: ["sh", "-c", "if [ -d /app/node_modules ]; then npm run dev; else npm install && npm run dev; fi"]
 
   postgres:
     ports:
