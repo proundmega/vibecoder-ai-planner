@@ -205,3 +205,10 @@ Uses `@` alias pointing to `frontend/src` for imports.
 ## Backend Startup Notes
 
 The backend uses a simplified logger (console) to avoid winston middleware issues in Docker builds. If winston is needed, ensure the correct API is used.
+
+## Troubleshooting Frontend
+
+If frontend returns 404 or doesn't load:
+- Check `frontend/dist/` exists with `index.html` and `assets/`
+- Rebuild: `cd frontend && npm run build`
+- Container should be running: `docker ps | grep vibecode-frontend`
