@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile
     container_name: vibecode-migrate
     restart: "no"
+    environment:
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@postgres:5432/vibecode
     depends_on:
       postgres:
         condition: service_healthy
