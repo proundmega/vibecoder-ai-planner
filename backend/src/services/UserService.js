@@ -5,7 +5,7 @@ const { pool } = require('../db');
 const jwt = require('jsonwebtoken');
 
 class UserService {
-  static async register(name, email, password) {
+  async register(name, email, password) {
     const exists = await User.existsByEmail(email);
     if (exists) {
       throw new Error('Email already registered');
@@ -19,7 +19,7 @@ class UserService {
     return new User(result.rows[0]);
   }
 
-  static async authenticate(email, password) {
+  async authenticate(email, password) {
     const user = await User.findByEmail(email);
     if (!user) {
       throw new Error('Invalid credentials');
@@ -48,14 +48,14 @@ class UserService {
     };
   }
 
-  static async getCurrentUser(token) {
+  async getCurrentUser(token) {
     const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
     const decoded = jwt.verify(token, JWT_SECRET);
     const user = await User.find(decoded.userId);
     return user;
   }
 
-  static async updateProfile(userId, updates) {
+  async updateProfile(userId, updates) {
     const { name, ...rest } = updates;
     
     const result = await pool.query(
