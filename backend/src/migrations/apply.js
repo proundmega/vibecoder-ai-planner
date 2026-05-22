@@ -75,6 +75,7 @@ function splitSQLStatements(sql) {
 async function runMigration(file) {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
+    family: 4,
   });
 
   try {
