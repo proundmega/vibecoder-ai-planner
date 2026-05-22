@@ -2,8 +2,6 @@ services:
   api:
     ports:
       - "3001:3001"
-    volumes:
-      - ./backend/.env:/app/.env
     environment:
       - NODE_ENV=development
 
