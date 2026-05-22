@@ -25,7 +25,7 @@ services:
     container_name: vibecode-frontend
     restart: unless-stopped
     ports:
-      - "3000:80"
+      - "3002:80"
     environment:
       - API_URL=http://api:3001
 
