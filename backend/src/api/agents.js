@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const TicketService = require('../services/TicketService');
 const ProjectService = require('../services/ProjectService');
@@ -17,8 +18,8 @@ router.post('/agents/create', verifyToken, async (req, res) => {
   try {
     const { name } = req.body;
     
-    // Generate a simple API key (md5 of name + timestamp for demo)
-    const apiKey = `test-${name.toLowerCase().replace(/\s+/g, '-')}`;
+    // Generate a random API key
+    const apiKey = `ak_${crypto.randomBytes(24).toString('hex')}`;
     
     const agent = await AgentService.create(name, apiKey, req.user.id);
     

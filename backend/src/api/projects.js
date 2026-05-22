@@ -1,9 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { requireRole, trackAgentAction, verifyToken } = require('../middleware/auth');
+const { verifyToken } = require('../middleware/auth');
 const ProjectService = require('../services/ProjectService');
 const TicketService = require('../services/TicketService');
-const uuid = require('uuid').v4;
 
 // List all projects for user
 router.get('/', async (req, res) => {
@@ -21,7 +20,6 @@ router.get('/:id', async (req, res) => {
   try {
     const project = await ProjectService.getOne(req.params.id, req.user.userId);
     const tickets = await TicketService.findByProject(project.id, req.user.userId);
-    const members = await ProjectService.getMemberships(project.id);
     
     res.json({
       ...project,
@@ -76,12 +74,10 @@ router.get('/:id/tickets/status/:status', async (req, res) => {
 router.post('/:id/tickets/:ticketId/status', async (req, res) => {
   try {
     const { status } = req.body;
-    const { oldStatus } = await TicketService.updateStatus(req.params.ticketId, status, req.user.userId);
+    await TicketService.updateStatus(req.params.ticketId, status, req.user.userId);
     res.json({ 
       message: 'Ticket status updated', 
-      status,
-      oldStatus,
-      byUser: req.user.email
+      status
     });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -92,7 +88,7 @@ router.post('/:id/tickets/:ticketId/status', async (req, res) => {
 router.post('/:id/tickets', async (req, res) => {
   try {
     const { title, description, priority } = req.body;
-    const ticket = await TicketService.create(req.params.id, title, description, priority, req.user.userId);
+    const ticket = await TicketService.create(req.params.id, title, description, req.user.userId);
     res.status(201).json(ticket);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -116,7 +112,7 @@ router.delete('/tickets/:ticketId', async (req, res) => {
     await TicketService.delete(req.params.ticketId, req.user.userId);
     res.json({ message: 'Ticket deleted' });
   } catch (error) {
-    res.status(404).json({ error: error.message });
+    res.status(404).json({ error: 'Ticket not found' });
   }
 });
 

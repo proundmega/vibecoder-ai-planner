@@ -18,8 +18,7 @@ CREATE TABLE IF NOT EXISTS projects (
   description TEXT,
   owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT valid_priorities CHECK (status IN ('backlog', 'low', 'medium', 'high', 'urgent'))
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Tickets table
@@ -35,7 +34,7 @@ CREATE TABLE IF NOT EXISTS tickets (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT valid_statuses CHECK (status IN ('backlog', 'in_progress', 'review', 'done')),
-  CONSTRAINT valid_priorities CHECK (priority IN ('backlog', 'low', 'medium', 'high', 'urgent'))
+  CONSTRAINT valid_priorities CHECK (priority IN ('low', 'medium', 'high', 'urgent'))
 );
 
 -- Pricing tiers table

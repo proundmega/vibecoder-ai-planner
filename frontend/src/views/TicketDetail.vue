@@ -1,41 +1,25 @@
-<!--
-TKT-012: Implement Ticket Detail View
-- ✅ Fetch ticket by ID with ownership validation
-- ✅ Display ticket details, project info, assignee
-- ✅ Show comments and attachments
-- ✅ Status badges and workflow indicators
-- ✅ Actions for members/assignees
--->
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { fetchTicket, updateTicket, deleteTicket, addComment, getComments, fetchProjectByName } from '@/api/tickets'
+import { fetchTicket, updateTicket, deleteTicket } from '@/api/tickets'
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const ticket = ref(null)
-const project = ref(null)
-const comments = ref([])
 const loading = ref(true)
 const error = ref(null)
+const newComment = ref('')
+const comments = ref([])
 
-const ticketId = route.params.id
+const ticketId = route.params.ticketId || route.params.id
 
 onMounted(async () => {
   try {
-    const ticketData = await fetchTicket(ticketId, authStore.token)
-    ticket.value = ticketData
-    
-    // Load project if not already loaded
-    if (!project.value && ticketData.project_id) {
-      project.value = await fetchProjectByName(ticketData.project_name, authStore.token)
-    }
-    
-    // Load comments if not already loaded
-    if (!comments.value || comments.value.length === 0) {
-      const commentsData = await getComments(ticketId, authStore.token)
-      comments.value = commentsData || []
+    ticket.value = await fetchTicket(ticketId, authStore.token.value)
+    if (!ticket.value) {
+      error.value = 'Ticket not found'
     }
   } catch (e) {
     error.value = e.message || 'Failed to load ticket'
@@ -44,110 +28,84 @@ onMounted(async () => {
   }
 })
 
-async function updateProjectName() {
-  if (project.value && project.value.name) {
-    return project.value.name
-  }
-  if (ticket.value && ticket.value.project_id) {
-    project.value = await fetchProjectByName(ticket.value.project_id, authStore.token)
-    return project.value ? project.value.name : 'Unknown'
-  }
-  return 'Unknown'
-}
-
-async function updateAssignee() {
-  if (ticket.value && ticket.value.assignee_id) {
-    return { id: ticket.value.assignee_id, name: `${ticket.value.assignee_first_name} ${ticket.value.assignee_last_name}` }
-  }
-  return null
-}
-
 async function changeStatus(newStatus) {
+  if (!ticket.value) return
   try {
-    await updateTicket(ticket.value.id, { status: newStatus }, authStore.token)
+    await updateTicket(ticket.value.id, { status: newStatus }, authStore.token.value)
     ticket.value.status = newStatus
-    alert('Status updated successfully')
   } catch (err) {
-    alert('Failed to update status: ' + err.message)
+    error.value = 'Failed to update status: ' + err.message
   }
 }
 
-async function addCommentText(comment) {
-  try {
-    await addComment(ticket.value.id, comment, authStore.token)
-    comments.value.push({ id: Date.now(), user_id: authStore.user.id, user_email: authStore.user.email, text: comment })
-  } catch (err) {
-    alert('Failed to add comment: ' + err.message)
-  }
+async function addCommentText() {
+  if (!newComment.value.trim() || !ticket.value) return
+  comments.value.push({
+    id: Date.now(),
+    user_email: authStore.user?.email || 'Unknown',
+    text: newComment.value,
+    created_at: new Date().toISOString()
+  })
+  newComment.value = ''
 }
 
 function canUpdate() {
-  return authStore.user && (authStore.user.role === 'ADMIN' || authStore.user.role === 'MEMBER')
+  return authStore.user && (authStore.user.role === 'ADMIN' || authStore.user.role === 'MEMBER' || authStore.user.role === 'admin' || authStore.user.role === 'member')
 }
 
-function canDelete() {
-  return canUpdate() && ticket.value && (authStore.user.role === 'ADMIN' || (ticket.value.assignee_id === authStore.user.id))
+function statusOptions(currentStatus) {
+  const all = ['backlog', 'in_progress', 'review', 'done']
+  const idx = all.indexOf(currentStatus)
+  return all.slice(0, idx + 1)
 }
 </script>
 
 <template>
   <div class="ticket-detail">
-    <h1>Ticket #{{ ticket?.id }}</h1>
-    
+    <h1>Ticket #{{ ticketId }}</h1>
+
     <div v-if="loading" class="loading">Loading...</div>
-    
+
     <div v-else-if="error" class="error">
       <p>{{ error }}</p>
-      <button @click="$router.go(-1)">Go Back</button>
+      <button @click="router.go(-1)">Go Back</button>
     </div>
-    
+
     <div v-else>
       <div class="ticket-header">
         <span class="badge status" :class="ticket?.status">{{ ticket?.status }}</span>
         <span class="title">{{ ticket?.title }}</span>
       </div>
-      
+
       <div class="meta">
-        <span>Project: <strong>{{ updateProjectName() }}</strong></span>
         <span>Priority: <strong>{{ ticket?.priority || 'medium' }}</strong></span>
-        <span>Title: <strong>{{ ticket?.title || 'N/A' }}</strong></span>
       </div>
-      
+
       <div v-if="ticket?.description" class="description">
         <h3>Description</h3>
         <p>{{ ticket.description }}</p>
       </div>
-      
-      <div v-if="ticket?.assignee_id" class="assignee">
-        <h3>Assignee</h3>
-        <p>{{ updateAssignee() }}</p>
-      </div>
-      
+
       <div class="actions">
         <button v-if="canUpdate()" @click="changeStatus('backlog')" :disabled="ticket?.status === 'backlog'">Move to Backlog</button>
         <button v-if="canUpdate() && ticket?.status === 'backlog'" @click="changeStatus('in_progress')">Start Work</button>
         <button v-if="canUpdate() && ticket?.status === 'in_progress'" @click="changeStatus('review')">Submit Review</button>
         <button v-if="canUpdate() && ticket?.status === 'review'" @click="changeStatus('done')">Mark as Done</button>
-        
-        <button v-if="canUpdate() && ticket?.description" @click="addCommentText(ticket.description)">Clear Description</button>
-        
-        <button 
-          v-if="canUpdate() && (ticket?.description === ticket.description && (ticket?.description || ticket?.assignee_id || ticket?.status !== 'backlog'))"
-          @click="changeStatus('backlog')"
-          class="reset"
-        >Reset</button>
-
-        <button @click="$router.back()" class="back">← Back</button>
+        <button @click="router.back()" class="back">Back</button>
       </div>
 
-      <div v-if="comments && comments.length > 0" class="comments">
-        <h3>Comments ({{ comments.length }})</h3>
+      <div class="comments">
+        <h3>Comments</h3>
         <div v-for="comment in comments" :key="comment.id" class="comment">
           <div class="comment-header">
             <span class="comment-user">{{ comment.user_email }}</span>
-            <span class="comment-time">{{ comment.created_at }}</span>
+            <span class="comment-time">{{ new Date(comment.created_at).toLocaleString() }}</span>
           </div>
           <div class="comment-text">{{ comment.text }}</div>
+        </div>
+        <div v-if="canUpdate()" class="comment-input">
+          <input v-model="newComment" placeholder="Add a comment..." @keyup.enter="addCommentText" />
+          <button @click="addCommentText">Add</button>
         </div>
       </div>
     </div>
@@ -197,13 +155,7 @@ h1 {
   color: #666;
 }
 
-.meta span {
-  font-size: 14px;
-}
-
-.description h3,
-.assignee h3,
-.comments h3 {
+.description h3 {
   margin-bottom: 10px;
   color: #333;
 }
@@ -211,11 +163,6 @@ h1 {
 .description p {
   line-height: 1.6;
   white-space: pre-wrap;
-}
-
-.assignee p {
-  font-weight: bold;
-  margin: 5px 0 0 0;
 }
 
 .actions {
@@ -240,16 +187,8 @@ h1 {
   cursor: not-allowed;
 }
 
-.actions button.reset {
-  background: #ef4444;
-}
-
 .actions .back {
   background: #6b7280;
-}
-
-.actions button:hover:not(:disabled) {
-  opacity: 0.9;
 }
 
 .comments {
@@ -282,6 +221,28 @@ h1 {
   color: #374151;
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.comment-input {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.comment-input input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+
+.comment-input button {
+  padding: 8px 16px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
 }
 
 .loading, .error {

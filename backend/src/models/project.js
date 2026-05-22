@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const pool = require('../db');
+const { pool } = require('../db');
 
 class Project {
   constructor(data) {

@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import { definePage } from '../composables/usePage';
 
 const routes = [
   {

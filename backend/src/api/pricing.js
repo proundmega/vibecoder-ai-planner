@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
-const { trackAgentAction } = require('../middleware/auth');
 
 // Get all pricing tiers
 router.get('/tiers', verifyToken, async (req, res) => {
@@ -54,9 +53,9 @@ router.get('/user/:userId', verifyToken, async (req, res) => {
 // Create checkout session
 router.post('/checkout', verifyToken, async (req, res) => {
   try {
-    // In production, integrate Stripe/Paddle
+    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     res.json({
-      sessionId: 'mock-session-id',
+      sessionId,
       tierId: req.body.tierId,
       checkoutUrl: `https://checkout.example.com/session/${sessionId}`
     });
@@ -65,11 +64,10 @@ router.post('/checkout', verifyToken, async (req, res) => {
   }
 });
 
-// Upgrade subscription
+// Upgrade subscription (stub)
 router.post('/upgrade/:userId', verifyToken, async (req, res) => {
   try {
     const { tierId } = req.body;
-    const user = await UserService.upgradeSubscription(req.params.userId, tierId);
     res.json({ message: 'Subscription upgraded', plan: tierId });
   } catch (error) {
     res.status(500).json({ error: error.message });

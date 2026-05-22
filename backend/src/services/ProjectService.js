@@ -1,11 +1,7 @@
 const Project = require('../models/project');
-const UserService = require('./UserService');
 
 class ProjectService {
   async list(userId) {
-    const user = await UserService.findById(userId);
-    if (!user) throw new Error('User not found');
-
     return await Project.findAll(userId);
   }
 
@@ -16,9 +12,6 @@ class ProjectService {
   }
 
   async create(name, description, userId) {
-    const user = await UserService.findById(userId);
-    if (!user) throw new Error('User not found');
-
     return await Project.create(name, description, userId);
   }
 
@@ -41,6 +34,18 @@ class ProjectService {
   async updateMembership(id, userId, role, action) {
     await Project.share(id, userId);
     return { success: true };
+  }
+
+  async getMemberships(projectId) {
+    const { pool } = require('../db');
+    const result = await pool.query(
+      `SELECT pm.*, u.name as user_name, u.email as user_email 
+       FROM project_memberships pm 
+       JOIN users u ON pm.user_id = u.id 
+       WHERE pm.project_id = $1`,
+      [projectId]
+    );
+    return result.rows;
   }
 }
 

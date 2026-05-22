@@ -1,5 +1,5 @@
 const { v4: uuidv4 } = require('uuid');
-const pool = require('../db');
+const { pool } = require('../db');
 
 class Ticket {
   constructor(data) {
@@ -70,17 +70,18 @@ class Ticket {
   }
 
   static async update(id, title, description, status, priority, assigneeId, userId) {
-    // Validate status transition
-    const validTransitions = {
-      backlog: ['in_progress', 'done'],
-      in_progress: ['backlog', 'review'],
-      review: ['backlog', 'done'],
-    };
-
-    if (status) {
-      const allowed = validTransitions[status] || [];
-      if (allowed.length === 0 || !allowed.includes(status)) {
-        throw new Error(`Invalid status transition. Allowed for ${status}: ${allowed.join(', ')}`);
+    // Fetch current ticket to validate transitions
+    const current = await Ticket.findById(id);
+    if (current && status) {
+      const validTransitions = {
+        backlog: ['in_progress'],
+        in_progress: ['review', 'backlog'],
+        review: ['done', 'backlog'],
+        done: [],
+      };
+      const allowed = validTransitions[current.status] || [];
+      if (!allowed.includes(status)) {
+        throw new Error(`Invalid status transition from ${current.status} to ${status}`);
       }
     }
 
@@ -103,14 +104,19 @@ class Ticket {
   }
 
   static async updateStatus(id, status, userId) {
+    const current = await Ticket.findById(id);
+    if (!current) throw new Error('Ticket not found');
+
     const validTransitions = {
       'backlog': ['in_progress'],
       'in_progress': ['review', 'backlog'],
       'review': ['done', 'backlog'],
+      'done': [],
     };
 
-    if (!validTransitions[status] || !validTransitions[status].includes(id)) {
-      throw new Error('Invalid status transition');
+    const allowed = validTransitions[current.status] || [];
+    if (!allowed.includes(status)) {
+      throw new Error(`Invalid status transition from ${current.status} to ${status}`);
     }
 
     await pool.query(

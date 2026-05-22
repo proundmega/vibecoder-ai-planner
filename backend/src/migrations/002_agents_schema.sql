@@ -2,7 +2,7 @@
 
 -- Agents table (stores API key configurations)
 CREATE TABLE IF NOT EXISTS agents (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     api_key TEXT UNIQUE,
     owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS agents (
 
 -- Agent actions tracking table (for billing/rate limiting)
 CREATE TABLE IF NOT EXISTS agent_actions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     agent_id UUID REFERENCES agents(id) ON DELETE CASCADE,
     action_type TEXT NOT NULL,
     table_name TEXT,

@@ -54,7 +54,7 @@ class TicketService {
     const existingTicket = await Ticket.findById(ticketId);
     if (!existingTicket) throw new Error('Ticket not found');
 
-    await Ticket.update(ticketId, { assigneeId: userId }, userId);
+    await Ticket.update(ticketId, null, null, null, null, userId, userId);
     return existingTicket;
   }
 
@@ -62,23 +62,16 @@ class TicketService {
     const ticket = await Ticket.findById(ticketId);
     if (!ticket) throw new Error('Ticket not found');
 
-    await Ticket.update(ticketId, { assigneeId }, userId);
+    await Ticket.update(ticketId, null, null, null, null, assigneeId, userId);
     return ticket;
   }
 
   async updateStatus(ticketId, status, userId) {
-    const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new Error('Ticket not found');
-
-    const allowed = ['backlog', 'in_progress', 'review', 'done'];
-    if (!allowed.includes(status)) {
-      throw new Error('Invalid status');
-    }
-
-    return await Ticket.updateStatus(ticketId, status, userId);
+    await Ticket.updateStatus(ticketId, status, userId);
   }
 
   static async getAgentTickets(agentId, projectId) {
+    const { pool } = require('../db');
     // For non-user agents, get tickets in their owner's projects
     const result = await pool.query(
       `SELECT t.*, u.name as assignee_name, p.name as project_name 

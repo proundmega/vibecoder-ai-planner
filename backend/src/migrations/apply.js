@@ -4,17 +4,13 @@ const fs = require('fs');
 const path = require('path');
 
 const SQL_FILES = [
-  path.join(__dirname, './001_base_schema.sql'),
-  path.join(__dirname, './002_agents_schema.sql')
+  path.join(__dirname, './001_create_tables.sql'),
+  path.join(__dirname, './002_agents_schema.sql'),
 ];
 
 async function runMigration(file) {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    host: 'localhost',
-    user: 'postgres',
-    password: 'postgres',
-    database: 'vibecode',
   });
 
   try {

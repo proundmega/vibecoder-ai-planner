@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const UserService = require('./services/UserService');
 const TOKEN_EXPIRY_HOURS = parseInt(process.env.TOKEN_EXPIRY_HOURS) || 24;
-const TOKEN_SECRET = process.env.JWT_SECRET || 'super-secret-key-change-in-production';
+const TOKEN_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
 
 class AuthService {
   async register(name, email, password) {

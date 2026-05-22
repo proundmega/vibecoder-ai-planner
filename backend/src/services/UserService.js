@@ -1,7 +1,8 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const User = require('../models/user');
-const authService = require('../auth');
-const pool = require('../db').pool;
+const { pool } = require('../db');
+const jwt = require('jsonwebtoken');
 
 class UserService {
   static async register(name, email, password) {
@@ -29,7 +30,13 @@ class UserService {
       throw new Error('Invalid credentials');
     }
 
-    const token = await authService.generateToken(user.id, email);
+    const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+    const TOKEN_EXPIRY_HOURS = parseInt(process.env.TOKEN_EXPIRY_HOURS) || 24;
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: TOKEN_EXPIRY_HOURS }
+    );
     
     return {
       id: user.id,
@@ -42,7 +49,8 @@ class UserService {
   }
 
   static async getCurrentUser(token) {
-    const decoded = require('../auth').verifyToken(token);
+    const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+    const decoded = jwt.verify(token, JWT_SECRET);
     const user = await User.find(decoded.userId);
     return user;
   }

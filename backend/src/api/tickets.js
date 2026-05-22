@@ -48,4 +48,14 @@ router.delete('/:ticketId', async (req, res) => {
   }
 });
 
+// Get tickets for a project
+router.get('/project/:projectId', async (req, res) => {
+  try {
+    const tickets = await TicketService.findByProject(req.params.projectId, req.user.userId);
+    res.json(tickets);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 module.exports = router;
