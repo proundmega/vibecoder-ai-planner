@@ -4,9 +4,9 @@
     <form @submit.prevent="handleRegister">
       <input v-model="name" type="text" placeholder="Name" required />
       <input v-model="email" type="email" placeholder="Email" required />
-      <input v-model="password" type="password" placeholder="Password" required />
-      <button type="submit" :disabled="authStore.loading">Register</button>
-      <p v-if="authStore.error" class="error">{{ authStore.error }}</p>
+      <input v-model="password" type="password" placeholder="Password (min 6 chars)" required minlength="6" />
+      <button type="submit" :disabled="loading">{{ loading ? 'Creating...' : 'Register' }}</button>
+      <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
     </form>
     <p class="link"><router-link to="/login">Already have an account? Login</router-link></p>
   </div>
@@ -21,12 +21,14 @@ import { registerUser } from '@/api/auth'
 const name = ref('')
 const email = ref('')
 const password = ref('')
+const loading = ref(false)
+const errorMessage = ref('')
 const authStore = useAuthStore()
 const router = useRouter()
 
 const handleRegister = async () => {
-  authStore.error = null
-  authStore.setLoading(true)
+  loading.value = true
+  errorMessage.value = ''
 
   try {
     const data = await registerUser(name.value, email.value, password.value)
@@ -34,7 +36,9 @@ const handleRegister = async () => {
     authStore.setUser(data.user)
     router.push('/projects')
   } catch (err) {
-    authStore.setLoadingError(err.message || 'Registration failed')
+    errorMessage.value = err.message || 'Registration failed. Please try again.'
+  } finally {
+    loading.value = false
   }
 }
 </script>
@@ -64,12 +68,17 @@ const handleRegister = async () => {
   border-radius: 6px;
   cursor: pointer;
 }
+.register button:hover:not(:disabled) {
+  background: #2563eb;
+}
 .register button:disabled {
   background: #9ca3af;
+  cursor: not-allowed;
 }
 .error {
   color: #ef4444;
   margin-top: 10px;
+  font-size: 14px;
 }
 .link {
   margin-top: 15px;

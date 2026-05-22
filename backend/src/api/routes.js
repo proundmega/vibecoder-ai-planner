@@ -39,7 +39,7 @@ router.get('/docs', (req, res) => {
 router.post('/auth/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
-    const result = await registerUser(name, password, email);
+    const result = await registerUser(name, email, password);
     res.status(201).json({ ...result, message: 'Registration successful' });
   } catch (error) {
     res.status(400).json({ error: error.message });

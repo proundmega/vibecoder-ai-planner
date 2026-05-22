@@ -4,8 +4,8 @@
     <form @submit.prevent="handleLogin">
       <input v-model="email" type="email" placeholder="Email" required />
       <input v-model="password" type="password" placeholder="Password" required />
-      <button type="submit" :disabled="authStore.loading">Login</button>
-      <p v-if="authStore.error" class="error">{{ authStore.error }}</p>
+      <button type="submit" :disabled="loading">{{ loading ? 'Signing in...' : 'Login' }}</button>
+      <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
     </form>
     <p class="link"><router-link to="/register">Don't have an account? Register</router-link></p>
   </div>
@@ -13,26 +13,32 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { loginUser } from '@/api/auth'
 
 const email = ref('')
 const password = ref('')
+const loading = ref(false)
+const errorMessage = ref('')
 const authStore = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 
 const handleLogin = async () => {
-  authStore.error = null
-  authStore.setLoading(true)
+  loading.value = true
+  errorMessage.value = ''
 
   try {
     const data = await loginUser(email.value, password.value)
     authStore.setToken(data.token)
     authStore.setUser(data.user)
-    router.push('/projects')
+    const redirect = route.query.redirect || '/projects'
+    router.push(redirect)
   } catch (err) {
-    authStore.setLoadingError(err.message || 'Login failed')
+    errorMessage.value = err.message || 'Login failed. Please check your credentials.'
+  } finally {
+    loading.value = false
   }
 }
 </script>
@@ -62,12 +68,17 @@ const handleLogin = async () => {
   border-radius: 6px;
   cursor: pointer;
 }
+.login button:hover:not(:disabled) {
+  background: #2563eb;
+}
 .login button:disabled {
   background: #9ca3af;
+  cursor: not-allowed;
 }
 .error {
   color: #ef4444;
   margin-top: 10px;
+  font-size: 14px;
 }
 .link {
   margin-top: 15px;
