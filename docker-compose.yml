@@ -10,8 +10,11 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - PORT=3001
-      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@192.168.3.33:5432/vibecode
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@postgres:5432/vibecode
       - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   frontend:
     build:
@@ -23,3 +26,40 @@ services:
       - "3002:80"
     environment:
       - API_URL=http://api:3001
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: vibecode-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=vibecode
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: vibecode-pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@vibecode.dev
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-changeme}
+    depends_on:
+      - postgres
+
+networks:
+  default:
+    driver: bridge
+
+volumes:
+  postgres_data:
