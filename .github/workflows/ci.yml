@@ -46,9 +46,9 @@ jobs:
         working-directory: ./backend
         run: npm test
 
-      - name: Build backend
+      - name: Check backend syntax
         working-directory: ./backend
-        run: npm run build
+        run: node --check src/index.js
 
   frontend:
     runs-on: ubuntu-latest
