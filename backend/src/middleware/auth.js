@@ -16,6 +16,7 @@ exports.verifyToken = (req, res, next) => {
     req.user = decoded;
     next();
   } catch (error) {
+    console.error('verifyToken:', error);
     return res.status(401).json({ error: 'Invalid authentication token' });
   }
 };
@@ -42,6 +43,7 @@ exports.agentAuth = (req, res, next) => {
     
     next();
   } catch (error) {
+    console.error('agentAuth:', error);
     return res.status(401).json({ error: 'Invalid agent credentials' });
   }
 };

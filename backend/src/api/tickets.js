@@ -8,6 +8,7 @@ router.get('/:ticketId', async (req, res) => {
     const ticket = await TicketService.getOne(req.params.ticketId, req.user.userId);
     res.json(ticket);
   } catch (error) {
+    console.error('GET /api/tickets/:ticketId', error);
     res.status(404).json({ error: error.message });
   }
 });
@@ -19,6 +20,7 @@ router.post('/', async (req, res) => {
     const ticket = await TicketService.create(projectId, title, description, req.user.userId);
     res.status(201).json(ticket);
   } catch (error) {
+    console.error('POST /api/tickets', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -34,6 +36,7 @@ router.put('/:ticketId', async (req, res) => {
     );
     res.json({ message: 'Ticket updated' });
   } catch (error) {
+    console.error('PUT /api/tickets/:ticketId', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -44,6 +47,7 @@ router.delete('/:ticketId', async (req, res) => {
     await TicketService.delete(req.params.ticketId, req.user.userId);
     res.json({ message: 'Ticket deleted' });
   } catch (error) {
+    console.error('DELETE /api/tickets/:ticketId', error);
     res.status(404).json({ error: error.message });
   }
 });
@@ -54,6 +58,7 @@ router.get('/project/:projectId', async (req, res) => {
     const tickets = await TicketService.findByProject(req.params.projectId, req.user.userId);
     res.json(tickets);
   } catch (error) {
+    console.error('GET /api/tickets/project/:projectId', error);
     res.status(400).json({ error: error.message });
   }
 });

@@ -28,6 +28,7 @@ router.post('/agents/create', verifyToken, async (req, res) => {
       generatedApiKey: apiKey
     });
   } catch (error) {
+    console.error('POST /api/agents/create', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -38,6 +39,7 @@ router.get('/agents', verifyToken, async (req, res) => {
     const agents = await AgentService.list(req.user.id);
     res.json({ agents });
   } catch (error) {
+    console.error('GET /api/agents', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -48,6 +50,7 @@ router.post('/agents/revoke/:agentId', verifyToken, async (req, res) => {
     await AgentService.revokeApiKey(req.params.agentId);
     res.json({ message: 'API key revoked' });
   } catch (error) {
+    console.error('POST /api/agents/revoke/:agentId', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -58,6 +61,7 @@ router.delete('/agents/:agentId', verifyToken, async (req, res) => {
     await AgentService.delete(req.params.agentId);
     res.json({ message: 'Agent deleted' });
   } catch (error) {
+    console.error('DELETE /api/agents/:agentId', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -89,6 +93,7 @@ async function agentAuthMiddleware(req, res, next) {
       res.locals.dailyUsage = dailyUsage;
       return next();
     } catch (error) {
+      console.error('agentAuthMiddleware:', error);
       return res.status(500).json({ error: 'Invalid agent credentials' });
     }
   } else {
@@ -145,6 +150,7 @@ router.post('/tickets/create', agentAuthMiddleware, async (req, res) => {
       });
     }
   } catch (error) {
+    console.error('POST /api/tickets/create', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -179,6 +185,7 @@ router.post('/tickets/edit/:ticketId', agentAuthMiddleware, async (req, res) => 
       timestamp: new Date().toISOString()
     });
   } catch (error) {
+    console.error('POST /api/tickets/edit/:ticketId', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -207,6 +214,7 @@ router.post('/tickets/claim/:ticketId', agentAuthMiddleware, async (req, res) =>
       status: 'in_progress'
     });
   } catch (error) {
+    console.error('POST /api/tickets/claim/:ticketId', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -243,6 +251,7 @@ router.post('/tickets/status/:ticketId', agentAuthMiddleware, async (req, res) =
       byAgent: res.locals.agent.name
     });
   } catch (error) {
+    console.error('POST /api/tickets/status/:ticketId', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -268,6 +277,7 @@ router.get('/tickets/my-tasks/:projectId', agentAuthMiddleware, async (req, res)
       agent: res.locals.agent.name
     });
   } catch (error) {
+    console.error('GET /api/tickets/my-tasks/:projectId', error);
     res.status(404).json({ error: error.message });
   }
 });
@@ -313,6 +323,7 @@ router.get('/agents/:agentId/history', agentAuthMiddleware, async (req, res) => 
       }))
     });
   } catch (error) {
+    console.error('GET /api/agents/:agentId/history', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -335,6 +346,7 @@ router.get('/agents/:agentId/key', verifyToken, async (req, res) => {
       maxActionsPerDay: agent.max_actions_per_day
     });
   } catch (error) {
+    console.error('GET /api/agents/:agentId/key', error);
     res.status(500).json({ error: error.message });
   }
 });

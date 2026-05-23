@@ -32,7 +32,8 @@ class AuthService {
   async verifyToken(token) {
     try {
       return jwt.verify(token, TOKEN_SECRET);
-    } catch {
+    } catch (error) {
+      console.error('verifyToken:', error);
       return null;
     }
   }

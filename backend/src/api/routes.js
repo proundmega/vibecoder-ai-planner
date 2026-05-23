@@ -45,6 +45,7 @@ router.post('/auth/register', async (req, res) => {
     const result = await registerUserBound(name, email, password);
     res.status(201).json({ ...result, message: 'Registration successful' });
   } catch (error) {
+    console.error('POST /api/auth/register', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -55,6 +56,7 @@ router.post('/auth/login', async (req, res) => {
     const result = await loginUserBound(email, password);
     res.json({ message: 'Login successful', ...result });
   } catch (error) {
+    console.error('POST /api/auth/login', error);
     res.status(401).json({ error: error.message });
   }
 });
@@ -62,7 +64,8 @@ router.post('/auth/login', async (req, res) => {
 router.get('/auth/me', verifyToken, async (req, res) => {
   try {
     res.json({ user: req.user, authenticated: true });
-  } catch {
+  } catch (error) {
+    console.error('GET /api/auth/me', error);
     res.status(401).json({ error: 'Unauthorized' });
   }
 });

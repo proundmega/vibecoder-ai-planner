@@ -11,6 +11,7 @@ router.get('/', async (req, res) => {
     const projects = await ProjectService.list(req.user.userId);
     res.json(projects);
   } catch (error) {
+    console.error('GET /api/projects', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -27,6 +28,7 @@ router.get('/:id', async (req, res) => {
       ticketIds: tickets.map(t => t.id)
     });
   } catch (error) {
+    console.error('GET /api/projects/:id', error);
     res.status(404).json({ error: 'Project not found' });
   }
 });
@@ -42,6 +44,7 @@ router.post('/', async (req, res) => {
     const project = await ProjectService.create(name, description, req.user.userId);
     res.status(201).json(project);
   } catch (error) {
+    console.error('POST /api/projects', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -52,6 +55,7 @@ router.get('/:id/tickets', async (req, res) => {
     const tickets = await TicketService.findByProject(req.params.id, req.user.userId);
     res.json(tickets);
   } catch (error) {
+    console.error('GET /api/projects/:id/tickets', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -66,6 +70,7 @@ router.get('/:id/tickets/status/:status', async (req, res) => {
     );
     res.json(tickets);
   } catch (error) {
+    console.error('GET /api/projects/:id/tickets/status/:status', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -80,6 +85,7 @@ router.post('/:id/tickets/:ticketId/status', async (req, res) => {
       status
     });
   } catch (error) {
+    console.error('POST /api/projects/:id/tickets/:ticketId/status', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -91,6 +97,7 @@ router.post('/:id/tickets', async (req, res) => {
     const ticket = await TicketService.create(req.params.id, title, description, req.user.userId);
     res.status(201).json(ticket);
   } catch (error) {
+    console.error('POST /api/projects/:id/tickets', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -102,6 +109,7 @@ router.put('/tickets/:ticketId', async (req, res) => {
     await TicketService.update(req.params.ticketId, { title, description, status, priority, assigneeId }, req.user.userId);
     res.json({ message: 'Ticket updated', status: req.body.status });
   } catch (error) {
+    console.error('PUT /api/projects/tickets/:ticketId', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -112,6 +120,7 @@ router.delete('/tickets/:ticketId', async (req, res) => {
     await TicketService.delete(req.params.ticketId, req.user.userId);
     res.json({ message: 'Ticket deleted' });
   } catch (error) {
+    console.error('DELETE /api/projects/tickets/:ticketId', error);
     res.status(404).json({ error: 'Ticket not found' });
   }
 });
@@ -122,6 +131,7 @@ router.get('/:id/members', async (req, res) => {
     const memberships = await ProjectService.getMemberships(req.params.id);
     res.json(memberships);
   } catch (error) {
+    console.error('GET /api/projects/:id/members', error);
     res.status(404).json({ error: 'Project not found' });
   }
 });
