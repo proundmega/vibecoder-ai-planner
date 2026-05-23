@@ -41,7 +41,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER if not exists trigger_update_agents_updated_at
+CREATE TRIGGER IF NOT EXISTS trigger_update_agents_updated_at
     BEFORE UPDATE ON agents
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
