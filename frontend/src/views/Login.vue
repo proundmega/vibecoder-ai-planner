@@ -15,7 +15,7 @@
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { loginUser } from '@/api/auth'
+import { loginUser } from '@/api/auth.js'
 
 const email = ref('')
 const password = ref('')
@@ -36,6 +36,7 @@ const handleLogin = async () => {
     const redirect = route.query.redirect || '/projects'
     router.push(redirect)
   } catch (err) {
+    console.error('Login failed:', err)
     errorMessage.value = err.message || 'Login failed. Please check your credentials.'
   } finally {
     loading.value = false

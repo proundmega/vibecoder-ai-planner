@@ -19,6 +19,7 @@ onMounted(async () => {
   try {
     projects.value = await fetchProjects(authStore.token.value)
   } catch (err) {
+    console.error('Failed to load projects:', err)
     error.value = 'Failed to load projects'
   } finally {
     loading.value = false
@@ -38,6 +39,7 @@ async function handleCreate() {
       router.push(`/projects/${project.id}`)
     }
   } catch (err) {
+    console.error('Failed to create project:', err)
     error.value = 'Failed to create project'
   } finally {
     creating.value = false

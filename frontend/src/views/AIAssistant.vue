@@ -124,6 +124,7 @@ async function handleSubmit() {
 
     input.value = ''
   } catch (error) {
+    console.error('Submit failed:', error)
     addMessage('error', `Error: ${error.message}`)
   } finally {
     processing.value = false

@@ -36,6 +36,7 @@ onMounted(async () => {
   try {
     projects.value = await fetchProjects(authStore.token.value)
   } catch (err) {
+    console.error('Failed to load projects:', err)
     projects.value = []
   }
 
@@ -52,6 +53,7 @@ async function loadTickets(projectId) {
   try {
     tickets.value = await fetchTickets(projectId, authStore.token.value)
   } catch (err) {
+    console.error('Failed to load tickets:', err)
     error.value = 'Failed to load tickets'
     tickets.value = []
   } finally {

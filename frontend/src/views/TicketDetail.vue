@@ -22,6 +22,7 @@ onMounted(async () => {
       error.value = 'Ticket not found'
     }
   } catch (e) {
+    console.error('Failed to load ticket:', e)
     error.value = e.message || 'Failed to load ticket'
   } finally {
     loading.value = false
@@ -34,6 +35,7 @@ async function changeStatus(newStatus) {
     await updateTicket(ticket.value.id, { status: newStatus }, authStore.token.value)
     ticket.value.status = newStatus
   } catch (err) {
+    console.error('Failed to update status:', err)
     error.value = 'Failed to update status: ' + err.message
   }
 }

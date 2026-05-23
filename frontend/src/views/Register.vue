@@ -16,7 +16,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { registerUser } from '@/api/auth'
+import { registerUser } from '@/api/auth.js'
 
 const name = ref('')
 const email = ref('')
@@ -36,6 +36,7 @@ const handleRegister = async () => {
     authStore.setUser(data.user)
     router.push('/projects')
   } catch (err) {
+    console.error('Registration failed:', err)
     errorMessage.value = err.message || 'Registration failed. Please try again.'
   } finally {
     loading.value = false
