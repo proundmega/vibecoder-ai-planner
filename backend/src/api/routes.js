@@ -11,6 +11,9 @@ const {
   verifyToken: verifyTokenHandler
 } = auth;
 
+const registerUserBound = registerUser.bind(auth);
+const loginUserBound = loginUser.bind(auth);
+
 const userRouter = require('./user');
 const projectsRouter = require('./projects');
 const ticketsRouter = require('./tickets');
@@ -39,7 +42,7 @@ router.get('/docs', (req, res) => {
 router.post('/auth/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
-    const result = await registerUser(name, email, password);
+    const result = await registerUserBound(name, email, password);
     res.status(201).json({ ...result, message: 'Registration successful' });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -49,7 +52,7 @@ router.post('/auth/register', async (req, res) => {
 router.post('/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const result = await loginUser(email, password);
+    const result = await loginUserBound(email, password);
     res.json({ message: 'Login successful', ...result });
   } catch (error) {
     res.status(401).json({ error: error.message });

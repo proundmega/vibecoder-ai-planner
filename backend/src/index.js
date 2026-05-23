@@ -22,6 +22,23 @@ app.use(express.urlencoded({ extended: true }));
 const routes = require('./api/routes');
 app.use('/api', routes);
 
+// Request logging
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    logger(`${req.method} ${req.path} ${res.statusCode} - ${Date.now() - start}ms`);
+  });
+  next();
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  logger('ERROR', req.method, req.path, err);
+  res.status(err.status || 500).json({
+    message: err.message || 'Internal Server Error',
+  });
+});
+
 // Start server
 const PORT = process.env.PORT || 3001;
 const server = app.listen(PORT, () => {
@@ -44,5 +61,15 @@ const shutdown = (signal) => {
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+// Global unhandled exceptions and rejections
+process.on('unhandledRejection', (reason, promise) => {
+  logger('UNHANDLED REJECTION at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  logger('UNCAUGHT EXCEPTION:', err);
+  process.exit(1);
+});
 
 module.exports = app;
