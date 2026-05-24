@@ -94,7 +94,7 @@ router.post('/:id/tickets/:ticketId/status', async (req, res) => {
 router.post('/:id/tickets', async (req, res) => {
   try {
     const { title, description, priority } = req.body;
-    const ticket = await TicketService.create(req.params.id, title, description, req.user.userId);
+    const ticket = await TicketService.create(req.params.id, title, description, priority, req.user.userId);
     res.status(201).json(ticket);
   } catch (error) {
     console.error('POST /api/projects/:id/tickets', error);
@@ -122,6 +122,17 @@ router.delete('/tickets/:ticketId', async (req, res) => {
   } catch (error) {
     console.error('DELETE /api/projects/tickets/:ticketId', error);
     res.status(404).json({ error: 'Ticket not found' });
+  }
+});
+
+// Delete project
+router.delete('/:id', async (req, res) => {
+  try {
+    await ProjectService.delete(req.params.id, req.user.userId);
+    res.json({ message: 'Project deleted' });
+  } catch (error) {
+    console.error('DELETE /api/projects/:id', error);
+    res.status(404).json({ error: 'Project not found' });
   }
 });
 

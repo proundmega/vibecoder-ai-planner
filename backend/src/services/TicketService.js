@@ -2,11 +2,11 @@ const Ticket = require('../models/ticket');
 const Project = require('../models/project');
 
 class TicketService {
-  async create(projectId, title, description, userId) {
+  async create(projectId, title, description, priority, userId) {
     const project = await Project.findById(projectId);
     if (!project) throw new Error('Project not found');
 
-    return await Ticket.create(projectId, title, description, userId);
+    return await Ticket.create(projectId, title, description, priority, userId);
   }
 
   async findByProject(projectId, userId) {

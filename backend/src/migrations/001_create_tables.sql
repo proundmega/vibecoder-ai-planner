@@ -1,6 +1,6 @@
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id BIGSERIAL PRIMARY KEY,
   email VARCHAR(255) UNIQUE NOT NULL,
   name VARCHAR(255),
   password_hash VARCHAR(255) NOT NULL,
@@ -13,24 +13,24 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Projects table
 CREATE TABLE IF NOT EXISTS projects (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id BIGSERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   description TEXT,
-  owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  owner_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Tickets table
 CREATE TABLE IF NOT EXISTS tickets (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+  id BIGSERIAL PRIMARY KEY,
+  project_id BIGINT REFERENCES projects(id) ON DELETE CASCADE,
   title VARCHAR(255) NOT NULL,
   description TEXT,
   status VARCHAR(50) DEFAULT 'backlog',
   priority VARCHAR(50) DEFAULT 'medium',
-  assignee_id UUID REFERENCES users(id) ON DELETE SET NULL,
-  owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  assignee_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  owner_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT valid_statuses CHECK (status IN ('backlog', 'in_progress', 'review', 'done')),
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS tickets (
 
 -- Pricing tiers table
 CREATE TABLE IF NOT EXISTS pricing_tiers (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id BIGSERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   price DECIMAL(10,2) NOT NULL,
   included_cost_limit INTEGER,
@@ -50,9 +50,9 @@ CREATE TABLE IF NOT EXISTS pricing_tiers (
 
 -- User pricing tiers (subscriptions)
 CREATE TABLE IF NOT EXISTS user_pricing_tiers (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-  pricing_tier_id UUID REFERENCES pricing_tiers(id) ON DELETE CASCADE,
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+  pricing_tier_id BIGINT REFERENCES pricing_tiers(id) ON DELETE CASCADE,
   started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   ended_at TIMESTAMP,
   UNIQUE(user_id)
@@ -60,10 +60,10 @@ CREATE TABLE IF NOT EXISTS user_pricing_tiers (
 
 -- AI actions audit log
 CREATE TABLE IF NOT EXISTS ai_actions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id BIGSERIAL PRIMARY KEY,
   action_type VARCHAR(50) NOT NULL,
   table_name VARCHAR(50) NOT NULL,
-  record_id UUID NOT NULL,
+  record_id BIGINT NOT NULL,
   old_values JSONB,
   new_values JSONB,
   ai_id VARCHAR(255),

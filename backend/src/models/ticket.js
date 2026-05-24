@@ -1,9 +1,8 @@
-const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../db');
 
 class Ticket {
   constructor(data) {
-    this.id = data.id || uuidv4();
+    this.id = data.id;
     this.projectId = data.projectId;
     this.title = data.title;
     this.description = data.description;
@@ -15,13 +14,13 @@ class Ticket {
     this.updatedAt = data.updatedAt;
   }
 
-  static async create(projectId, title, description, ownerId) {
+  static async create(projectId, title, description, priority, ownerId) {
     const result = await pool.query(
       `INSERT INTO tickets 
        (project_id, title, description, status, priority, owner_id) 
-       VALUES ($1, $2, $3, 'backlog', 'medium', $4)
+       VALUES ($1, $2, $3, 'backlog', $4, $5)
        RETURNING *`,
-      [projectId, title, description, ownerId]
+      [projectId, title, description, priority || 'medium', ownerId]
     );
     return new Ticket(result.rows[0]);
   }

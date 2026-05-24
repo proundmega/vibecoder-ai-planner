@@ -17,7 +17,7 @@ router.get('/:ticketId', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { projectId, title, description, priority } = req.body;
-    const ticket = await TicketService.create(projectId, title, description, req.user.userId);
+    const ticket = await TicketService.create(projectId, title, description, priority, req.user.userId);
     res.status(201).json(ticket);
   } catch (error) {
     console.error('POST /api/tickets', error);

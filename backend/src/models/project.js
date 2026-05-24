@@ -1,9 +1,8 @@
-const { v4: uuidv4 } = require('uuid');
 const { pool } = require('../db');
 
 class Project {
   constructor(data) {
-    this.id = data.id || uuidv4();
+    this.id = data.id;
     this.name = data.name;
     this.description = data.description;
     this.ownerId = data.ownerId;

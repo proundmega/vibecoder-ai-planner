@@ -1,7 +1,12 @@
 module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
-  testMatch: ['**/__tests__/**/*.test.js', '<rootDir>/src/**/*.test.js'],
+  testMatch: [
+    '**/__tests__/unit.test.js',
+    '**/__tests__/*.test.js',
+    '<rootDir>/src/middleware/*.test.js',
+  ],
+  testPathIgnorePatterns: ['/node_modules/', 'integration', 'docker'],
   coverageDirectory: '../../coverage/backend',
   setupFilesAfterEnv: ['<rootDir>/src/__tests__/jest.setup.js'],
   moduleDirectories: ['node_modules', '<rootDir>'],
@@ -19,7 +24,6 @@ module.exports = {
     '!src/**/*.test.js',
     '!src/index.js',
     '!src/__tests__/*.{js,ts}',
-    '!src/*.config.js',
     '!src/__mocks__/*',
     '!src/migrations/*',
   ],

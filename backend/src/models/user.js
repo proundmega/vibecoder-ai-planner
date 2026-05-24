@@ -1,16 +1,15 @@
-const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 const { pool } = require('../db');
 
 class User {
   constructor(data) {
-    this.id = data.id || uuidv4();
+    this.id = data.id;
     this.email = data.email;
     this.name = data.name;
-    this.passwordHash = data.passwordHash;
+    this.passwordHash = data.password_hash;
     this.role = data.role || 'user';
-    this.currentPlan = data.currentPlan || 'free';
-    this.createdAt = data.createdAt;
+    this.currentPlan = data.current_plan || 'free';
+    this.createdAt = data.created_at;
   }
 
   static async create(name, email, password) {
