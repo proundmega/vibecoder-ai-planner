@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { fetchProjects } from '@/api/projects'
-import { fetchTickets, updateTicket } from '@/api/tickets'
+import { fetchTickets, updateTicket, createTicket } from '@/api/tickets'
 
 const authStore = useAuthStore()
 const projects = ref([])
@@ -10,11 +10,10 @@ const tickets = ref([])
 const loading = ref(true)
 const error = ref(null)
 const selectedProjectId = ref(null)
-
-const backlogTickets = computed(() => tickets.value.filter(t => t.status === 'backlog'))
-const inProgressTickets = computed(() => tickets.value.filter(t => t.status === 'in_progress'))
-const reviewTickets = computed(() => tickets.value.filter(t => t.status === 'review'))
-const doneTickets = computed(() => tickets.value.filter(t => t.status === 'done'))
+const showCreateTicket = ref(false)
+const newTicketTitle = ref('')
+const newTicketDesc = ref('')
+const creating = ref(false)
 
 const statusColumns = [
   { id: 'backlog', label: 'Backlog', class: 'status-col backlog' },
@@ -28,7 +27,7 @@ function columnTickets(status) {
 }
 
 const canCreate = computed(() => {
-  const user = authStore.user
+  const user = authStore.user.value
   return user && (user.role === 'admin' || user.role === 'member' || user.role === 'ADMIN' || user.role === 'MEMBER')
 })
 
@@ -61,8 +60,9 @@ async function loadTickets(projectId) {
   }
 }
 
-async function handleDrop(ticket, newStatus) {
-  if (!canUpdateTicket(ticket)) return
+async function handleDrop(ticketId, newStatus) {
+  const ticket = tickets.value.find(t => t.id === ticketId)
+  if (!ticket || !canUpdateTicket(ticket)) return
 
   try {
     await updateTicket(ticket.id, { status: newStatus }, authStore.token.value)
@@ -73,11 +73,28 @@ async function handleDrop(ticket, newStatus) {
 }
 
 function canUpdateTicket(ticket) {
-  const user = authStore.user
+  const user = authStore.user.value
   if (!user) return false
   if (user.role === 'admin' || user.role === 'ADMIN') return true
   if (ticket.assignee_id && ticket.assignee_id === user.id) return true
   return false
+}
+
+async function handleCreateTicket() {
+  if (!newTicketTitle.value.trim() || !selectedProjectId.value) return
+  creating.value = true
+  try {
+    await createTicket(selectedProjectId.value, newTicketTitle.value.trim(), newTicketDesc.value.trim(), authStore.token.value)
+    showCreateTicket.value = false
+    newTicketTitle.value = ''
+    newTicketDesc.value = ''
+    await loadTickets(selectedProjectId.value)
+  } catch (err) {
+    console.error('Failed to create ticket:', err)
+    error.value = 'Failed to create ticket'
+  } finally {
+    creating.value = false
+  }
 }
 </script>
 
@@ -87,16 +104,32 @@ function canUpdateTicket(ticket) {
       <h1>My Board</h1>
 
       <div class="board-controls">
-        <select v-model="selectedProjectId" class="project-select" :disabled="projects.length === 0">
+        <select v-model="selectedProjectId" class="project-select" :disabled="projects.length === 0" @change="loadTickets(selectedProjectId)">
           <option v-if="projects.length === 0" value="">No projects</option>
           <option v-for="project in projects" :key="project.id" :value="project.id">
             {{ project.name }}
           </option>
         </select>
 
-        <button v-if="canCreate" @click="error = 'Create ticket feature not yet implemented'" class="btn-primary" :disabled="!selectedProjectId">
+        <button v-if="canCreate" @click="showCreateTicket = true" class="btn-primary" :disabled="!selectedProjectId">
           + New Ticket
         </button>
+
+        <div v-if="showCreateTicket" class="modal-overlay" @click.self="showCreateTicket = false">
+          <div class="modal">
+            <h2>Create New Ticket</h2>
+            <form @submit.prevent="handleCreateTicket">
+              <label>Title</label>
+              <input v-model="newTicketTitle" type="text" placeholder="Enter ticket title" required />
+              <label>Description</label>
+              <textarea v-model="newTicketDesc" placeholder="Optional description" rows="3"></textarea>
+              <div class="modal-actions">
+                <button type="button" @click="showCreateTicket = false" class="btn-cancel">Cancel</button>
+                <button type="submit" :disabled="creating" class="btn-submit">{{ creating ? 'Creating...' : 'Create' }}</button>
+              </div>
+            </form>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -300,4 +333,84 @@ function canUpdateTicket(ticket) {
 .priority-badge.medium { background: #fef3c7; color: #92400e; }
 .priority-badge.high { background: #fee2e2; color: #dc2626; }
 .priority-badge.critical { background: #fca5a5; color: #991b1b; }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: white;
+  border-radius: 12px;
+  padding: 28px;
+  width: 480px;
+  max-width: 90vw;
+}
+
+.modal h2 {
+  margin-bottom: 20px;
+  font-size: 20px;
+  color: #1f2937;
+}
+
+.modal label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.modal input,
+.modal textarea {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.btn-cancel {
+  padding: 8px 16px;
+  background: white;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn-cancel:hover {
+  background: #f9fafb;
+}
+
+.btn-submit {
+  padding: 8px 20px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.btn-submit:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
 </style>

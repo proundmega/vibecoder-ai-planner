@@ -1,10 +1,25 @@
+<script setup>
+import { onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+
+const route = useRoute()
+const router = useRouter()
+
+onMounted(() => {
+  router.push(`/projects/${route.params.id}/tickets`)
+})
+</script>
+
 <template>
   <div class="project-detail">
-    <h1>Project Detail</h1>
-    <p>View and manage tickets</p>
+    <p>Redirecting...</p>
   </div>
 </template>
 
-<script setup>
-// Coming soon...
-</script>
+<style scoped>
+.project-detail {
+  padding: 20px;
+  text-align: center;
+  color: #6b7280;
+}
+</style>

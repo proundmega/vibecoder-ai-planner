@@ -9,6 +9,7 @@ const router = useRouter()
 const projects = ref([])
 const loading = ref(true)
 const error = ref(null)
+const createError = ref(null)
 
 const showCreateModal = ref(false)
 const projectName = ref('')
@@ -40,7 +41,7 @@ async function handleCreate() {
     }
   } catch (err) {
     console.error('Failed to create project:', err)
-    error.value = 'Failed to create project'
+    createError.value = 'Failed to create project'
   } finally {
     creating.value = false
   }
@@ -67,6 +68,10 @@ async function handleCreate() {
     </div>
 
     <div v-else>
+      <div v-if="createError" class="error-inline">
+        <p>{{ createError }}</p>
+        <button @click="createError = null">Dismiss</button>
+      </div>
       <div class="projects-grid">
         <div v-for="project in projects" :key="project.id" class="project-card" @click="router.push(`/projects/${project.id}`)">
           <div class="project-info">
@@ -134,6 +139,32 @@ async function handleCreate() {
 
 .btn-create:hover {
   background: #2563eb;
+}
+
+.error-inline {
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #991b1b;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.error-inline p {
+  margin: 0;
+}
+
+.error-inline button {
+  padding: 6px 12px;
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
 }
 
 .loading, .error, .empty {

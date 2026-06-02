@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { createTicket, getAgentTickets, getAgentHistory, listAgents } from '@/api/agents'
@@ -44,19 +44,10 @@ watch(selectedAgentId, async (newId) => {
   }
 })
 
-async function loadAgents() {
-  try {
-    const { agents: allAgents } = await listAgents(authStore.token.value)
-    agents.value = allAgents || []
-  } catch (error) {
-    console.error('Failed to list agents:', error)
-  }
-}
-
 async function loadAgentInfo() {
   if (!selectedAgentId.value) return
   try {
-    const projectId = route.params.projectId
+    const projectId = route.params.id
     agentTickets.value = await getAgentTickets(projectId, authStore.token.value, apiKey.value)
     dailyUsage.value = await getRecentDailyUsage()
   } catch (error) {
@@ -94,7 +85,7 @@ function handleKeyDown(event) {
 }
 
 async function handleQuickAction() {
-  const action = quickActions[0]
+  const action = quickActions[Math.floor(Math.random() * quickActions.length)]
   if (action) {
     input.value = action.prompt
     await handleSubmit()
@@ -115,7 +106,7 @@ async function handleSubmit() {
   try {
     addMessage('user', userPrompt)
 
-    const projectId = route.params.projectId
+    const projectId = route.params.id
     const result = await processUserPrompt(userPrompt, projectId)
 
     setTimeout(() => {

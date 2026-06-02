@@ -68,3 +68,32 @@ export async function deleteTicket(id, token) {
     return false
   }
 }
+
+export async function fetchComments(ticketId, token) {
+  try {
+    const response = await fetch(`/api/tickets/${ticketId}/comments`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    return response.ok ? await response.json() : []
+  } catch (err) {
+    console.error('Failed to fetch comments:', err)
+    return []
+  }
+}
+
+export async function addComment(ticketId, content, token) {
+  try {
+    const response = await fetch(`/api/tickets/${ticketId}/comments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ content })
+    })
+    return response.ok ? await response.json() : null
+  } catch (err) {
+    console.error('Failed to add comment:', err)
+    return null
+  }
+}

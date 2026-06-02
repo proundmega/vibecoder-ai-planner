@@ -63,4 +63,27 @@ router.get('/project/:projectId', async (req, res) => {
   }
 });
 
+// Get comments for a ticket
+router.get('/:ticketId/comments', async (req, res) => {
+  try {
+    const comments = await TicketService.getComments(req.params.ticketId, req.user.userId);
+    res.json(comments);
+  } catch (error) {
+    console.error('GET /api/tickets/:ticketId/comments', error);
+    res.status(404).json({ error: error.message });
+  }
+});
+
+// Add a comment to a ticket
+router.post('/:ticketId/comments', async (req, res) => {
+  try {
+    const { content } = req.body;
+    const comment = await TicketService.addComment(req.params.ticketId, content, req.user.userId);
+    res.status(201).json(comment);
+  } catch (error) {
+    console.error('POST /api/tickets/:ticketId/comments', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
 module.exports = router;

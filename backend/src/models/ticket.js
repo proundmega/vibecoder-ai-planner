@@ -123,6 +123,28 @@ class Ticket {
       [status, id]
     );
   }
+
+  static async getComments(ticketId) {
+    const result = await pool.query(
+      `SELECT tc.*, u.name as user_email
+       FROM ticket_comments tc
+       LEFT JOIN users u ON tc.user_id = u.id
+       WHERE tc.ticket_id = $1
+       ORDER BY tc.created_at ASC`,
+      [ticketId]
+    );
+    return result.rows;
+  }
+
+  static async addComment(ticketId, content, userId) {
+    const result = await pool.query(
+      `INSERT INTO ticket_comments (ticket_id, user_id, content)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [ticketId, userId, content]
+    );
+    return result.rows[0];
+  }
 }
 
 module.exports = Ticket;

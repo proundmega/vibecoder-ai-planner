@@ -70,6 +70,19 @@ class TicketService {
     await Ticket.updateStatus(ticketId, status, userId);
   }
 
+  async getComments(ticketId, userId) {
+    const ticket = await Ticket.findById(ticketId);
+    if (!ticket) throw new Error('Ticket not found');
+    return await Ticket.getComments(ticketId);
+  }
+
+  async addComment(ticketId, content, userId) {
+    const ticket = await Ticket.findById(ticketId);
+    if (!ticket) throw new Error('Ticket not found');
+    if (!content || !content.trim()) throw new Error('Comment content is required');
+    return await Ticket.addComment(ticketId, content.trim(), userId);
+  }
+
   static async getAgentTickets(agentId, projectId) {
     const { pool } = require('../db');
     // For non-user agents, get tickets in their owner's projects

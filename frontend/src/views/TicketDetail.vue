@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { fetchTicket, updateTicket, deleteTicket } from '@/api/tickets'
+import { fetchTicket, updateTicket, addComment, fetchComments } from '@/api/tickets'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,13 +13,15 @@ const error = ref(null)
 const newComment = ref('')
 const comments = ref([])
 
-const ticketId = route.params.ticketId || route.params.id
+const ticketId = route.params.ticketId
 
 onMounted(async () => {
   try {
     ticket.value = await fetchTicket(ticketId, authStore.token.value)
     if (!ticket.value) {
       error.value = 'Ticket not found'
+    } else {
+      comments.value = await fetchComments(ticketId, authStore.token.value)
     }
   } catch (e) {
     console.error('Failed to load ticket:', e)
@@ -42,23 +44,21 @@ async function changeStatus(newStatus) {
 
 async function addCommentText() {
   if (!newComment.value.trim() || !ticket.value) return
-  comments.value.push({
-    id: Date.now(),
-    user_email: authStore.user?.email || 'Unknown',
-    text: newComment.value,
-    created_at: new Date().toISOString()
-  })
+  try {
+    const comment = await addComment(ticket.value.id, newComment.value.trim(), authStore.token.value)
+    if (comment) {
+      comments.value.push(comment)
+    }
+  } catch (err) {
+    console.error('Failed to add comment:', err)
+    error.value = 'Failed to add comment'
+  }
   newComment.value = ''
 }
 
 function canUpdate() {
-  return authStore.user && (authStore.user.role === 'ADMIN' || authStore.user.role === 'MEMBER' || authStore.user.role === 'admin' || authStore.user.role === 'member')
-}
-
-function statusOptions(currentStatus) {
-  const all = ['backlog', 'in_progress', 'review', 'done']
-  const idx = all.indexOf(currentStatus)
-  return all.slice(0, idx + 1)
+  const user = authStore.user.value
+  return user && (user.role === 'ADMIN' || user.role === 'MEMBER' || user.role === 'admin' || user.role === 'member')
 }
 </script>
 
@@ -100,10 +100,10 @@ function statusOptions(currentStatus) {
         <h3>Comments</h3>
         <div v-for="comment in comments" :key="comment.id" class="comment">
           <div class="comment-header">
-            <span class="comment-user">{{ comment.user_email }}</span>
+            <span class="comment-user">{{ comment.user_email || 'Unknown' }}</span>
             <span class="comment-time">{{ new Date(comment.created_at).toLocaleString() }}</span>
           </div>
-          <div class="comment-text">{{ comment.text }}</div>
+          <div class="comment-text">{{ comment.content }}</div>
         </div>
         <div v-if="canUpdate()" class="comment-input">
           <input v-model="newComment" placeholder="Add a comment..." @keyup.enter="addCommentText" />
