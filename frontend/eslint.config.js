@@ -1,7 +1,16 @@
 const parserTs = require('@typescript-eslint/parser');
 const vueParser = require('vue-eslint-parser');
+const vuePlugin = require('eslint-plugin-vue');
+const tsPlugin = require('@typescript-eslint/eslint-plugin');
 
 module.exports = [
+  {
+    // TypeScript ESLint plugin registration (global)
+    plugins: {
+      '@typescript-eslint': tsPlugin,
+      vue: vuePlugin,
+    },
+  },
   {
     files: ['**/*.js', '**/*.ts', '**/*.tsx'],
     languageOptions: {
@@ -14,11 +23,13 @@ module.exports = [
         },
       },
     },
-    plugins: {
-      vue: require('@typescript-eslint/eslint-plugin'),
-    },
     rules: {
-      'vue/multi-word-component-names': 'off',
+      ...tsPlugin.configs.recommended.rules,
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      }],
     },
   },
   {
@@ -31,11 +42,22 @@ module.exports = [
         sourceType: 'module',
       },
     },
-    plugins: {
-      vue: require('@typescript-eslint/eslint-plugin'),
-    },
     rules: {
+      ...vuePlugin.configs['flat/recommended'].rules,
+      'vue/no-unused-vars': 'error',
+      'vue/no-unused-components': 'error',
+      'vue/no-unused-refs': 'error',
+      'vue/require-default-prop': 'error',
+      'vue/require-v-for-key': 'error',
+      'vue/require-explicit-emits': 'error',
+      'vue/component-name-in-template-casing': ['error', 'PascalCase'],
+      'vue/prop-name-casing': ['error', 'camelCase'],
       'vue/multi-word-component-names': 'off',
+      '@typescript-eslint/no-unused-vars': ['error', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      }],
     },
   },
 ];
