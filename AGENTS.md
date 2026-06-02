@@ -3,7 +3,7 @@
 ## Quick Start
 
 ```bash
-# Required env vars
+# Required env vars (see .env)
 export JWT_SECRET="some-secret"
 export POSTGRES_PASSWORD="some-password"
 
@@ -41,27 +41,43 @@ frontend/src/
 |---------|---------|-------------|
 | Backend dev | `npm run dev` | `node --watch src/index.js` on :3001 |
 | Backend test | `npm test` | Jest (see test quirks below) |
+| Backend test:integration | `npm run test:integration` | Real PostgreSQL via `DATABASE_URL` |
 | Backend lint | `npm run lint` | `eslint src/` (flat config) |
 | Backend migrate | `npm run db:migrate` | Run SQL migrations via apply.js |
 | Frontend dev | `npm run dev` | Vite on :3000 |
-| Frontend test | `npm test` | Vitest (no `--run` flag) |
+| Frontend test | `npm test` | Vitest (watch mode; add `--run` for CI) |
 | Frontend lint | `npm run lint` | `eslint src/` (flat config) |
 | Frontend typecheck | `npm run typecheck` | `vue-tsc --noEmit` |
 | Frontend build | `npm run build` | `vite build` → dist/ |
 
+## Full Integration Tests
+
+`backend/integration-test/run.sh` — end-to-end test suite against real Docker containers + real PostgreSQL.
+
+```bash
+# Build, start, run all tests (health, auth, CRUD, status transitions, agents, frontend)
+cd backend/integration-test && ./run.sh
+
+# Run tests only (skip docker compose up, assumes services already running)
+./run.sh --only
+```
+
+Covers: health check, user registration/login, project CRUD, ticket CRUD, all status transitions (valid + invalid), agent creation, frontend SPA serving, auth enforcement.
+
 ## CI (`.github/workflows/ci.yml`)
 
-- **Backend**: lint → test → `node --check src/index.js` (syntax check, runs on ubuntu-latest with postgres:15 service)
+- **Backend**: lint → test → `node --check src/index.js` (runs on ubuntu-latest with postgres:15 service)
 - **Frontend**: lint → typecheck → build
+- Both run on `main` and `develop` branches + PRs
 
 ## Test Quirks
 
-- **Backend Jest** (`backend/jest.config.js`): all DB-dependent modules are fully mocked in `src/__tests__/jest.setup.js` — `pg`, `winston`, `bcryptjs`, `uuid`, `jsonwebtoken` are replaced with mocks that return empty rows and fixed values. Tests do NOT need a real database.
-- **Integration tests** (`npm run test:integration`): uses `jest.integration.config.js` which skips mocks and connects to real postgres via `DATABASE_URL`. Migrations run automatically via `src/__tests__/integration/setup.js`. Tests live in `src/__tests__/integration/docker.test.js`.
-- **`src/__tests__/db.mocks.js`** provides alternate mocks (used by individual test files that import models directly).
-- Jest config uses `forceExit: true` and `restoreMocks: false`.
-- Tests match `**/__tests__/**/*.test.js` and `**/*.test.js` (both files under `__tests__/` and files ending in `.test.js` anywhere in `src/`).
-- Frontend `npm test` runs Vitest in watch mode by default; add `--run` for non-interactive.
+- **Jest test match** (`backend/jest.config.js`): `**/__tests__/unit.test.js`, `**/__tests__/*.test.js`, `<rootDir>/src/middleware/*.test.js`. Not `**/*.test.js` — top-level `.test.js` files are NOT picked up.
+- **Jest mocks** (`src/__tests__/jest.setup.js`): `pg`, `winston`, `bcryptjs`, `uuid`, `jsonwebtoken` are fully mocked. Tests do NOT need a real database.
+- **Jest config**: `forceExit: true`, `restoreMocks: false`, `testTimeout: 10000`.
+- **`src/__tests__/db.mocks.js`**: alternate mocks for files that import models directly.
+- **Integration tests** (`npm run test:integration`): uses `jest.integration.config.js`, skips mocks, connects to real PostgreSQL via `DATABASE_URL` (hardcoded to `postgresql://testuser:testpass@localhost:5432/vibecode`). Migrations run automatically via `src/__tests__/integration/setup.js`. Tests in `src/__tests__/integration/docker.test.js`.
+- **Frontend**: no e2e test script exists (README mentions one but it's not in package.json).
 
 ## Framework Quirks
 
@@ -70,55 +86,43 @@ frontend/src/
 backlog → in_progress → review → done
           ↑            ↑
           └────┬───────┘
-         (also review/in_progress/done → backlog)
+         (also review/in_progress → backlog)
 ```
-Valid transitions: `backlog→in_progress`, `in_progress→review|backlog`, `review→done|backlog`, `done→backlog`.
+Valid transitions: `backlog→in_progress`, `in_progress→review|backlog`, `review→done|backlog`. **`done` has no outgoing transitions** — cannot go back from done.
 
 ### Agent authentication
-Agents authenticate via `X-API-Key` header (format: `ak_<hex>`). Endpoints in `api/agents.js` accept either user JWT auth OR agent API key. The `agentAuthMiddleware` validates the key and enforces daily rate limits.
+Agents authenticate via `X-API-Key` header. The middleware in `middleware/auth.js` checks `apiKey.startsWith('test-')` or `apiKey === 'mock-agent-key'`. Agent endpoints in `api/agents.js` accept user JWT OR agent API key.
 
 ### Frontend auth persistence
 Token and user stored in `localStorage` as `vibecode_token` and `vibecode_user`. Route guards in `router/index.ts` check `localStorage.getItem('vibecode_token')` — no Pinia dependency.
 
 ### Port mapping
-- **With override** (`docker-compose.override.yml` active): frontend `3000:3000` (Vite dev server)
+- **With override** (`docker-compose.override.yml` active): frontend `3000:80` (nginx serving built SPA)
 - **Without override**: frontend `3002:80` (nginx serving built SPA)
 - Backend always `3001:3001`
+- PGAdmin always `5050:80`
 
 ### ESLint flat config
-Both `backend/eslint.config.js` and `frontend/eslint.config.js` use the flat config format (no `.eslintrc`). Frontend uses `@typescript-eslint/parser` + `vue-eslint-parser` for `.vue` files.
+Both `backend/eslint.config.js` and `frontend/eslint.config.js` use flat config. Frontend uses `@typescript-eslint/parser` + `vue-eslint-parser` for `.vue` files.
 
 ### Database
-PostgreSQL 15 on :5432, database `vibecode`. Migrations are ad-hoc SQL files executed sequentially — no migration tracking system. `apply.js` runs `001_create_tables.sql` then `002_agents_schema.sql`.
+PostgreSQL 15 in Docker, database `vibecode`. Migrations are ad-hoc SQL files executed sequentially — no migration tracking. `apply.js` runs `001_create_tables.sql` then `002_agents_schema.sql`.
 
 ### Docker build
-Backend uses multi-stage (node:18-alpine), frontend uses multi-stage (node→nginx). Frontend container serves via nginx with SPA fallback (`try_files $uri $uri/ /index.html`).
+Backend: multi-stage (node:18-alpine). Frontend: multi-stage (node→nginx). Frontend container serves via nginx with SPA fallback (`try_files $uri $uri/ /index.html`).
+
+### Docker compose startup order
+The `migrate` service runs first (applies SQL migrations), then `api` starts (depends on migration completion), then `frontend`.
+
+### Known Bugs / Gotchas
+- **`static async fromRow()`** in `models/project.js` and `models/ticket.js` — must NOT be `async` (no `await` inside). An async `fromRow` returns a Promise, causing `findAll` to return `[{ }]` arrays.
+- **`docker-compose.override.yml`** frontend ports must be `3000:80` (host:container nginx port), not `3000:3000`.
+- **Frontend nginx** may fail to start if the `api` upstream hostname isn't resolvable at startup. Restart the frontend container if it fails on first boot.
+- **`UserService.authenticate()`** duplicates JWT signing logic that already exists in `auth.js` — both use `JWT_SECRET` but `UserService` also re-declares it locally.
+- **`/api/auth/me`** returns `userId` (from JWT payload) instead of `id` in the user object.
 
 ### Coding conventions (from `ai/CODING.md`)
 - Use IPEE (Identify, Plan, Execute, Evaluate) for every change
 - Plan 80% of effort before coding
 - Add unit tests to all changes
 - For breaking changes: create a branch, commit state, then change
-
-## Completed Work
-
-### Integration Tests with Real PostgreSQL ✅ DONE (21/21 passing)
-**Solution**: Use real PostgreSQL (not Docker). PostgreSQL 18 was installed directly, Docker was uninstalled.
-
-**What was done**:
-1. Docker uninstalled, PostgreSQL 18 installed and running
-2. Database `vibecode` created with user `testuser:testpass`
-3. Migrations run successfully against real PostgreSQL
-4. `jest.integration.config.js` updated to set `DATABASE_URL` directly (no Docker)
-5. `docker.test.js` completely rewritten — pg-mem mock removed, replaced with real `pg.Pool`
-6. **21/21 tests passing** with real PostgreSQL
-
-**Bugs found and fixed during integration test runs**:
-- `src/api/tickets.js` route: `priority` extracted but NOT passed to `TicketService.create()`
-- `src/services/TicketService.create()`: missing `priority` parameter
-- `src/models/ticket.js`: `priority` hardcoded to `'medium'` in INSERT, not using parameter
-- `src/api/projects.js` route: same `priority` not-passed issue
-- `src/models/user.js` constructor: wrong property names (`passwordHash` vs `password_hash`, `currentPlan` vs `current_plan`, `createdAt` vs `created_at`) — caused `bcrypt.compare()` to get `undefined`
-- Test endpoint: `PATCH /api/tickets/:id/status` → corrected to `POST /api/projects/:id/tickets/:ticketId/status`
-- Test transition: `in_progress → backlog` IS allowed by code, changed test to `in_progress → done`
-- **Missing DELETE route** for projects: Added `router.delete('/:id', ...)` to `src/api/projects.js`

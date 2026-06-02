@@ -36,7 +36,7 @@ class Project {
     return result.rows.length > 0 ? this.fromRow(result.rows[0]) : null;
   }
 
-  static async fromRow(row) {
+  static fromRow(row) {
     return new Project({
       id: row.id,
       name: row.name,

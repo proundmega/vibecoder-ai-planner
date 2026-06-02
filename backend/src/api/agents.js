@@ -21,7 +21,7 @@ router.post('/agents/create', verifyToken, async (req, res) => {
     // Generate a random API key
     const apiKey = `ak_${crypto.randomBytes(24).toString('hex')}`;
     
-    const agent = await AgentService.create(name, apiKey, req.user.id);
+    const agent = await AgentService.create(name, apiKey, req.user.userId);
     
     res.status(201).json({
       ...agent,

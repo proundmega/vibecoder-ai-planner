@@ -51,7 +51,7 @@ class Ticket {
     return result.rows.length > 0 ? this.fromRow(result.rows[0]) : null;
   }
 
-  static async fromRow(row) {
+  static fromRow(row) {
     return new Ticket({
       id: row.id,
       projectId: row.project_id,
