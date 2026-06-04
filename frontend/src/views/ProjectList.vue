@@ -1,10 +1,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
 import { fetchProjects, createProject, updateProject, deleteProject } from '@/api/projects'
 
-const authStore = useAuthStore()
 const router = useRouter()
 const projects = ref([])
 const loading = ref(true)
@@ -29,7 +27,7 @@ const deleting = ref(false)
 
 onMounted(async () => {
   try {
-    projects.value = await fetchProjects(authStore.token.value)
+    projects.value = await fetchProjects()
   } catch (err) {
     console.error('Failed to load projects:', err)
     error.value = 'Failed to load projects'
@@ -42,7 +40,7 @@ async function handleCreate() {
   if (!projectName.value.trim()) return
   creating.value = true
   try {
-    const project = await createProject(projectName.value.trim(), projectDesc.value.trim(), authStore.token.value)
+    const project = await createProject(projectName.value.trim(), projectDesc.value.trim())
     if (project) {
       projects.value.unshift(project)
       showCreateModal.value = false
@@ -69,7 +67,7 @@ async function handleEdit() {
   if (!editName.value.trim() || !editingProject.value) return
   updating.value = true
   try {
-    const updated = await updateProject(editingProject.value.id, editName.value.trim(), editDesc.value.trim(), authStore.token.value)
+    const updated = await updateProject(editingProject.value.id, editName.value.trim(), editDesc.value.trim())
     if (updated) {
       const idx = projects.value.findIndex(p => p.id === editingProject.value.id)
       if (idx !== -1) {
@@ -95,7 +93,7 @@ async function handleDelete() {
   if (!deletingProject.value) return
   deleting.value = true
   try {
-    const result = await deleteProject(deletingProject.value.id, authStore.token.value)
+    const result = await deleteProject(deletingProject.value.id)
     if (!result.error) {
       projects.value = projects.value.filter(p => p.id !== deletingProject.value.id)
       showDeleteModal.value = false

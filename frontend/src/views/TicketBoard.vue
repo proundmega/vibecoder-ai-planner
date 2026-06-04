@@ -33,7 +33,7 @@ const canCreate = computed(() => {
 
 onMounted(async () => {
   try {
-    projects.value = await fetchProjects(authStore.token.value)
+    projects.value = await fetchProjects()
   } catch (err) {
     console.error('Failed to load projects:', err)
     projects.value = []
@@ -50,7 +50,7 @@ onMounted(async () => {
 
 async function loadTickets(projectId) {
   try {
-    tickets.value = await fetchTickets(projectId, authStore.token.value)
+    tickets.value = await fetchTickets(projectId)
   } catch (err) {
     console.error('Failed to load tickets:', err)
     error.value = 'Failed to load tickets'
@@ -65,7 +65,7 @@ async function handleDrop(ticketId, newStatus) {
   if (!ticket || !canUpdateTicket(ticket)) return
 
   try {
-    await updateTicket(ticket.id, { status: newStatus }, authStore.token.value)
+    await updateTicket(ticket.id, { status: newStatus })
     ticket.status = newStatus
   } catch (err) {
     console.error('Failed to update ticket status:', err)
@@ -84,7 +84,7 @@ async function handleCreateTicket() {
   if (!newTicketTitle.value.trim() || !selectedProjectId.value) return
   creating.value = true
   try {
-    await createTicket(selectedProjectId.value, newTicketTitle.value.trim(), newTicketDesc.value.trim(), authStore.token.value)
+    await createTicket(selectedProjectId.value, newTicketTitle.value.trim(), newTicketDesc.value.trim())
     showCreateTicket.value = false
     newTicketTitle.value = ''
     newTicketDesc.value = ''

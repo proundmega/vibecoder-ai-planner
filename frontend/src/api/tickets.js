@@ -1,99 +1,29 @@
-export async function fetchTickets(projectId, token) {
-  try {
-    const response = await fetch(`/api/projects/${projectId}/tickets`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    return response.ok ? await response.json() : []
-  } catch (err) {
-    console.error('Failed to fetch tickets:', err)
-    return []
-  }
+import { get, post, put, del } from './client'
+
+export function fetchTickets(projectId) {
+  return get(`/api/projects/${projectId}/tickets`).catch(() => [])
 }
 
-export async function fetchTicket(id, token) {
-  try {
-    const response = await fetch(`/api/tickets/${id}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    return response.ok ? await response.json() : null
-  } catch (err) {
-    console.error('Failed to fetch ticket:', err)
-    return null
-  }
+export function fetchTicket(id) {
+  return get(`/api/tickets/${id}`).catch(() => null)
 }
 
-export async function updateTicket(id, updates, token) {
-  try {
-    const response = await fetch(`/api/tickets/${id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(updates)
-    })
-    return response.ok ? await response.json() : null
-  } catch (err) {
-    console.error('Failed to update ticket:', err)
-    return null
-  }
+export function updateTicket(id, updates) {
+  return put(`/api/tickets/${id}`, updates).catch(() => null)
 }
 
-export async function createTicket(projectId, title, description, token) {
-  try {
-    const response = await fetch('/api/tickets', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ projectId, title, description })
-    })
-    return response.ok ? await response.json() : null
-  } catch (err) {
-    console.error('Failed to create ticket:', err)
-    return null
-  }
+export function createTicket(projectId, title, description) {
+  return post('/api/tickets', { projectId, title, description }).catch(() => null)
 }
 
-export async function deleteTicket(id, token) {
-  try {
-    const response = await fetch(`/api/tickets/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    return response.ok
-  } catch (err) {
-    console.error('Failed to delete ticket:', err)
-    return false
-  }
+export function deleteTicket(id) {
+  return del(`/api/tickets/${id}`).catch(() => false)
 }
 
-export async function fetchComments(ticketId, token) {
-  try {
-    const response = await fetch(`/api/tickets/${ticketId}/comments`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    return response.ok ? await response.json() : []
-  } catch (err) {
-    console.error('Failed to fetch comments:', err)
-    return []
-  }
+export function fetchComments(ticketId) {
+  return get(`/api/tickets/${ticketId}/comments`).catch(() => [])
 }
 
-export async function addComment(ticketId, content, token) {
-  try {
-    const response = await fetch(`/api/tickets/${ticketId}/comments`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ content })
-    })
-    return response.ok ? await response.json() : null
-  } catch (err) {
-    console.error('Failed to add comment:', err)
-    return null
-  }
+export function addComment(ticketId, content) {
+  return post(`/api/tickets/${ticketId}/comments`, { content }).catch(() => null)
 }

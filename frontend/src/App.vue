@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <nav v-if="authStore.isAuthenticated()" class="navbar">
+    <nav v-if="showNav" class="navbar">
       <div class="navbar-inner">
         <router-link to="/projects" class="nav-brand">AI Planner</router-link>
         <div class="nav-links">
@@ -13,16 +13,29 @@
         </div>
       </div>
     </nav>
+    <nav v-else class="navbar auth-nav">
+      <div class="navbar-inner">
+        <router-link to="/projects" class="nav-brand">AI Planner</router-link>
+        <div class="nav-links">
+          <router-link to="/login" class="nav-link">Sign In</router-link>
+          <router-link to="/register" class="nav-link">Register</router-link>
+        </div>
+      </div>
+    </nav>
     <router-view />
   </div>
 </template>
 
 <script setup>
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
 const router = useRouter()
+const route = useRoute()
+
+const showNav = computed(() => !['/login', '/register'].includes(route.path))
 
 const handleLogout = () => {
   authStore.logout()

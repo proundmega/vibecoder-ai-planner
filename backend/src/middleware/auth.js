@@ -1,8 +1,7 @@
 const jwt = require('jsonwebtoken');
 const authService = require('../auth');
 
-const crypto = require('crypto');
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+const JWT_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
 
 exports.verifyToken = (req, res, next) => {
   try {

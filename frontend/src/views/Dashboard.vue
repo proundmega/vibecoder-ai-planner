@@ -12,7 +12,7 @@ const error = ref(null)
 
 onMounted(async () => {
   try {
-    projects.value = await fetchProjects(authStore.token.value)
+    projects.value = await fetchProjects()
   } catch (err) {
     console.error('Failed to load dashboard data:', err)
     error.value = 'Failed to load dashboard data'

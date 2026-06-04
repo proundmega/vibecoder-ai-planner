@@ -1,11 +1,9 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
 import { createTicket, getAgentTickets, getAgentHistory, listAgents } from '@/api/agents'
 
 const route = useRoute()
-const authStore = useAuthStore()
 
 const agents = ref([])
 const selectedAgentId = ref('')
@@ -25,7 +23,7 @@ const quickActions = [
 
 onMounted(async () => {
   try {
-    const { agents: allAgents } = await listAgents(authStore.token.value)
+    const { agents: allAgents } = await listAgents()
     agents.value = allAgents || []
   } catch (error) {
     console.error('Failed to load agents:', error)
@@ -48,7 +46,7 @@ async function loadAgentInfo() {
   if (!selectedAgentId.value) return
   try {
     const projectId = route.params.id
-    agentTickets.value = await getAgentTickets(projectId, authStore.token.value, apiKey.value)
+    agentTickets.value = await getAgentTickets(projectId, apiKey.value)
     dailyUsage.value = await getRecentDailyUsage()
   } catch (error) {
     console.error('Failed to load agent info:', error)
@@ -146,7 +144,7 @@ async function handleCreateTicket(prompt, projectId) {
     const title = extractTicketTitle(prompt)
     const description = prompt.replace(/^(add|create|make|new)\s+/i, '').trim() || 'New ticket'
 
-    await createTicket(projectId, title, description, authStore.token.value, apiKey.value)
+    await createTicket(projectId, title, description, apiKey.value)
 
     return `Created ticket: "${title}"`
   } catch (error) {
@@ -168,7 +166,7 @@ function extractTicketTitle(text) {
 async function getRecentDailyUsage() {
   try {
     if (!selectedAgentId.value) return { used: 0, limit: 100 }
-    const { daily } = await getAgentHistory(selectedAgentId.value, authStore.token.value, apiKey.value)
+    const { daily } = await getAgentHistory(selectedAgentId.value, apiKey.value)
     if (daily && daily.length > 0) {
       const today = new Date().toISOString().split('T')[0]
       const todayEntry = daily.find(d => d.date === today)

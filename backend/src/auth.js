@@ -1,8 +1,7 @@
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
 const UserService = require('./services/UserService');
 const TOKEN_EXPIRY_HOURS = parseInt(process.env.TOKEN_EXPIRY_HOURS) || 24;
-const TOKEN_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+const TOKEN_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
 
 class AuthService {
   async register(name, email, password) {

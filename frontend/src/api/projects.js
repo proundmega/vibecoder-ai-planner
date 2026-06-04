@@ -1,70 +1,21 @@
-export async function fetchProjects(token) {
-  try {
-    const response = await fetch('/api/projects', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    return response.ok ? await response.json() : []
-  } catch (err) {
-    console.error('Failed to fetch projects:', err)
-    return []
-  }
+import { get, post, put, del } from './client'
+
+export function fetchProjects() {
+  return get('/api/projects').catch(() => [])
 }
 
-export async function createProject(name, description, token) {
-  try {
-    const response = await fetch('/api/projects', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ name, description })
-    })
-    return response.ok ? await response.json() : null
-  } catch (err) {
-    console.error('Failed to create project:', err)
-    return null
-  }
+export function createProject(name, description) {
+  return post('/api/projects', { name, description })
 }
 
-export async function fetchProjectById(id, token) {
-  try {
-    const response = await fetch(`/api/projects/${id}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    return response.ok ? await response.json() : null
-  } catch (err) {
-    console.error('Failed to fetch project:', err)
-    return null
-  }
+export function fetchProjectById(id) {
+  return get(`/api/projects/${id}`).catch(() => null)
 }
 
-export async function updateProject(id, name, description, token) {
-  try {
-    const response = await fetch(`/api/projects/${id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ name, description })
-    })
-    return response.ok ? await response.json() : null
-  } catch (err) {
-    console.error('Failed to update project:', err)
-    return null
-  }
+export function updateProject(id, name, description) {
+  return put(`/api/projects/${id}`, { name, description }).catch(() => null)
 }
 
-export async function deleteProject(id, token) {
-  try {
-    const response = await fetch(`/api/projects/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    return response.ok ? await response.json() : { error: response.statusText }
-  } catch (err) {
-    console.error('Failed to delete project:', err)
-    return { error: err.message }
-  }
+export function deleteProject(id) {
+  return del(`/api/projects/${id}`).catch(() => ({ error: 'Failed to delete' }))
 }
