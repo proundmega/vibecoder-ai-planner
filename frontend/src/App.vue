@@ -1,6 +1,6 @@
 <template>
   <div class="app">
-    <nav v-if="authStore.isAuthenticated" class="navbar">
+    <nav v-if="authStore.isAuthenticated()" class="navbar">
       <div class="navbar-inner">
         <router-link to="/projects" class="nav-brand">AI Planner</router-link>
         <div class="nav-links">

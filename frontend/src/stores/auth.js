@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 
 let instance = null
 
@@ -42,7 +42,7 @@ export function useAuthStore() {
     localStorage.removeItem('vibecode_token')
   }
 
-  const isAuthenticated = computed(() => !!token.value)
+  const isAuthenticated = () => !!token.value
 
   instance = {
     user,
