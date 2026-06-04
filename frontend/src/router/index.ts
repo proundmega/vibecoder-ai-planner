@@ -35,32 +35,30 @@ const routes = [
     name: 'Projects',
     component: () => import('../views/ProjectList.vue'),
     meta: { requiresAuth: true },
+  },
+  {
+    path: '/projects/:id',
+    name: 'ProjectDetail',
+    component: () => import('../views/ProjectDetail.vue'),
+    meta: { requiresAuth: true },
     children: [
       {
-        path: ':id',
-        name: 'ProjectDetail',
-        component: () => import('../views/ProjectDetail.vue'),
+        path: 'tickets',
+        name: 'ProjectTickets',
+        component: () => import('../views/TicketBoard.vue'),
         meta: { requiresAuth: true },
-        children: [
-          {
-            path: 'tickets',
-            name: 'ProjectTickets',
-            component: () => import('../views/TicketBoard.vue'),
-            meta: { requiresAuth: true },
-          },
-          {
-            path: 'tickets/:ticketId',
-            name: 'TicketDetail',
-            component: () => import('../views/TicketDetail.vue'),
-            meta: { requiresAuth: true },
-          },
-          {
-            path: 'ai',
-            name: 'AIAssistant',
-            component: () => import('../views/AIAssistant.vue'),
-            meta: { requiresAuth: true },
-          },
-        ],
+      },
+      {
+        path: 'tickets/:ticketId',
+        name: 'TicketDetail',
+        component: () => import('../views/TicketDetail.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'ai',
+        name: 'AIAssistant',
+        component: () => import('../views/AIAssistant.vue'),
+        meta: { requiresAuth: true },
       },
     ],
   },
