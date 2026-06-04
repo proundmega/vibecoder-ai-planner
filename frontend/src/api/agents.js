@@ -105,7 +105,7 @@ export async function getAgentTickets(projectId, token, apiKey = null) {
 }
 
 export async function getAgentKeyInfo(agentId, token) {
-  const response = await fetch(`/api/agents/${agentId}/key`, {
+  const response = await fetch(`/api/agents/agents/${agentId}/key`, {
     headers: { 'Authorization': `Bearer ${token}` }
   })
 
@@ -118,7 +118,7 @@ export async function getAgentKeyInfo(agentId, token) {
 }
 
 export async function createAgent(name, token) {
-  const response = await fetch('/api/agents/create', {
+  const response = await fetch('/api/agents/agents/create', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -136,7 +136,7 @@ export async function createAgent(name, token) {
 }
 
 export async function listAgents(token) {
-  const response = await fetch('/api/agents', {
+  const response = await fetch('/api/agents/agents', {
     headers: { 'Authorization': `Bearer ${token}` }
   })
 
@@ -154,7 +154,7 @@ export async function getAgentHistory(agentId, token, apiKey = null) {
     ...(apiKey ? { 'x-api-key': apiKey } : {})
   }
 
-  const response = await fetch(`/api/agents/${agentId}/history`, {
+  const response = await fetch(`/api/agents/agents/${agentId}/history`, {
     headers
   })
 

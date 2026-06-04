@@ -36,7 +36,7 @@ router.post('/agents/create', verifyToken, async (req, res) => {
 // List user's agents
 router.get('/agents', verifyToken, async (req, res) => {
   try {
-    const agents = await AgentService.list(req.user.id);
+    const agents = await AgentService.list(req.user.userId);
     res.json({ agents });
   } catch (error) {
     console.error('GET /api/agents', error);
@@ -113,7 +113,7 @@ router.post('/tickets/create', agentAuthMiddleware, async (req, res) => {
       // User-created ticket via standard user auth
       const { projectId, title, description, tags } = req.body;
       
-      const ticket = await TicketService.create(projectId, title, description, req.user.id);
+      const ticket = await TicketService.create(projectId, title, description, req.user.userId);
       
       // Track action if agent is present
       if (res.locals.agent?.id) {
@@ -331,7 +331,7 @@ router.get('/agents/:agentId/history', agentAuthMiddleware, async (req, res) => 
 // Get agent API key info (without the actual key for security)
 router.get('/agents/:agentId/key', verifyToken, async (req, res) => {
   try {
-    const agents = await AgentService.list(req.user.id);
+    const agents = await AgentService.list(req.user.userId);
     const agent = agents.find(a => a.id === req.params.agentId);
     
     if (!agent) {
