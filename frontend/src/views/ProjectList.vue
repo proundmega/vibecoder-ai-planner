@@ -148,6 +148,8 @@ async function handleDelete() {
             <span>{{ project.created_at ? new Date(project.created_at).toLocaleDateString() : '' }}</span>
           </div>
           <div class="card-actions">
+            <router-link :to="`/projects/${project.id}/tickets`" class="btn-tickets">Tickets</router-link>
+            <router-link :to="`/projects/${project.id}/ai`" class="btn-ai">AI</router-link>
             <button @click.stop="openEditModal(project)" class="btn-edit">Edit</button>
             <button @click.stop="openDeleteModal(project)" class="btn-delete">Delete</button>
           </div>
@@ -344,6 +346,35 @@ async function handleDelete() {
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid #f3f4f6;
+}
+
+.btn-tickets,
+.btn-ai {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  text-decoration: none;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-tickets {
+  background: #3b82f6;
+  color: white;
+}
+
+.btn-tickets:hover {
+  background: #2563eb;
+}
+
+.btn-ai {
+  background: #8b5cf6;
+  color: white;
+}
+
+.btn-ai:hover {
+  background: #7c3aed;
 }
 
 .btn-edit {
