@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { fetchProjects } from '@/api/projects'
 import { fetchTickets, updateTicket, createTicket } from '@/api/tickets'
@@ -14,6 +14,15 @@ const showCreateTicket = ref(false)
 const newTicketTitle = ref('')
 const newTicketDesc = ref('')
 const creating = ref(false)
+const creationError = ref(null)
+
+watch(showCreateTicket, (value) => {
+  if (!value) {
+    newTicketTitle.value = ''
+    newTicketDesc.value = ''
+    creationError.value = null
+  }
+})
 
 const statusColumns = [
   { id: 'backlog', label: 'Backlog', class: 'status-col backlog' },
@@ -28,7 +37,7 @@ function columnTickets(status) {
 
 const canCreate = computed(() => {
   const user = authStore.user.value
-  return user && (user.role === 'admin' || user.role === 'member' || user.role === 'ADMIN' || user.role === 'MEMBER')
+  return user && (user.role === 'admin' || user.role === 'member' || user.role === 'user' || user.role === 'ADMIN' || user.role === 'MEMBER' || user.role === 'USER')
 })
 
 onMounted(async () => {
@@ -83,6 +92,7 @@ function canUpdateTicket(ticket) {
 async function handleCreateTicket() {
   if (!newTicketTitle.value.trim() || !selectedProjectId.value) return
   creating.value = true
+  creationError.value = null
   try {
     await createTicket(selectedProjectId.value, newTicketTitle.value.trim(), newTicketDesc.value.trim())
     showCreateTicket.value = false
@@ -91,7 +101,7 @@ async function handleCreateTicket() {
     await loadTickets(selectedProjectId.value)
   } catch (err) {
     console.error('Failed to create ticket:', err)
-    error.value = 'Failed to create ticket'
+    creationError.value = 'Failed to create ticket. Please try again.'
   } finally {
     creating.value = false
   }
@@ -123,6 +133,7 @@ async function handleCreateTicket() {
               <input v-model="newTicketTitle" type="text" placeholder="Enter ticket title" required />
               <label>Description</label>
               <textarea v-model="newTicketDesc" placeholder="Optional description" rows="3"></textarea>
+              <p v-if="creationError" class="creation-error">{{ creationError }}</p>
               <div class="modal-actions">
                 <button type="button" @click="showCreateTicket = false" class="btn-cancel">Cancel</button>
                 <button type="submit" :disabled="creating" class="btn-submit">{{ creating ? 'Creating...' : 'Create' }}</button>
@@ -412,5 +423,14 @@ async function handleCreateTicket() {
 .btn-submit:disabled {
   background: #9ca3af;
   cursor: not-allowed;
+}
+
+.creation-error {
+  color: #dc2626;
+  font-size: 13px;
+  margin: 0 0 12px 0;
+  padding: 8px 12px;
+  background: #fee2e2;
+  border-radius: 6px;
 }
 </style>
