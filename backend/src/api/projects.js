@@ -16,23 +16,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get single project
-router.get('/:id', async (req, res) => {
-  try {
-    const project = await ProjectService.getOne(req.params.id, req.user.userId);
-    const tickets = await TicketService.findByProject(project.id, req.user.userId);
-    
-    res.json({
-      ...project,
-      ticketCount: tickets.length,
-      ticketIds: tickets.map(t => t.id)
-    });
-  } catch (error) {
-    console.error('GET /api/projects/:id', error);
-    res.status(404).json({ error: 'Project not found' });
-  }
-});
-
 // Create new project
 router.post('/', async (req, res) => {
   try {
@@ -45,25 +28,6 @@ router.post('/', async (req, res) => {
     res.status(201).json(project);
   } catch (error) {
     console.error('POST /api/projects', error);
-    res.status(400).json({ error: error.message });
-  }
-});
-
-// Update project
-router.put('/:id', async (req, res) => {
-  try {
-    const { name, description } = req.body;
-    if (!name) {
-      return res.status(400).json({ error: 'Name is required' });
-    }
-    
-    const project = await ProjectService.update(req.params.id, { name, description }, req.user.userId);
-    res.json(project);
-  } catch (error) {
-    console.error('PUT /api/projects/:id', error);
-    if (error.message === 'Project not found') {
-      return res.status(404).json({ error: 'Project not found' });
-    }
     res.status(400).json({ error: error.message });
   }
 });
@@ -90,6 +54,53 @@ router.get('/:id/tickets/status/:status', async (req, res) => {
     res.json(tickets);
   } catch (error) {
     console.error('GET /api/projects/:id/tickets/status/:status', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Get project memberships
+router.get('/:id/members', async (req, res) => {
+  try {
+    const memberships = await ProjectService.getMemberships(req.params.id);
+    res.json(memberships);
+  } catch (error) {
+    console.error('GET /api/projects/:id/members', error);
+    res.status(404).json({ error: 'Project not found' });
+  }
+});
+
+// Get single project
+router.get('/:id', async (req, res) => {
+  try {
+    const project = await ProjectService.getOne(req.params.id, req.user.userId);
+    const tickets = await TicketService.findByProject(project.id, req.user.userId);
+    
+    res.json({
+      ...project,
+      ticketCount: tickets.length,
+      ticketIds: tickets.map(t => t.id)
+    });
+  } catch (error) {
+    console.error('GET /api/projects/:id', error);
+    res.status(404).json({ error: 'Project not found' });
+  }
+});
+
+// Update project
+router.put('/:id', async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+    
+    const project = await ProjectService.update(req.params.id, { name, description }, req.user.userId);
+    res.json(project);
+  } catch (error) {
+    console.error('PUT /api/projects/:id', error);
+    if (error.message === 'Project not found') {
+      return res.status(404).json({ error: 'Project not found' });
+    }
     res.status(400).json({ error: error.message });
   }
 });
@@ -155,17 +166,6 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Project not found' });
     }
     res.status(400).json({ error: error.message });
-  }
-});
-
-// Get project memberships
-router.get('/:id/members', async (req, res) => {
-  try {
-    const memberships = await ProjectService.getMemberships(req.params.id);
-    res.json(memberships);
-  } catch (error) {
-    console.error('GET /api/projects/:id/members', error);
-    res.status(404).json({ error: 'Project not found' });
   }
 });
 

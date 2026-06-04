@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const UserService = require('./services/UserService');
-const TOKEN_EXPIRY_HOURS = parseInt(process.env.TOKEN_EXPIRY_HOURS) || 24;
+const TOKEN_EXPIRY_MINUTES = parseInt(process.env.TOKEN_EXPIRY_MINUTES) || 30;
 const TOKEN_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
 
 class AuthService {
@@ -10,7 +10,7 @@ class AuthService {
     const token = jwt.sign(
       { userId: user.id, email: user.email },
       TOKEN_SECRET,
-      { expiresIn: TOKEN_EXPIRY_HOURS }
+      { expiresIn: `${TOKEN_EXPIRY_MINUTES}m` }
     );
     
     return this.createSession(user, token);
@@ -22,7 +22,7 @@ class AuthService {
     const token = jwt.sign(
       { userId: user.id, email: user.email },
       TOKEN_SECRET,
-      { expiresIn: TOKEN_EXPIRY_HOURS }
+      { expiresIn: `${TOKEN_EXPIRY_MINUTES}m` }
     );
     
     return this.createSession(user, token);
