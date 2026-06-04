@@ -6,6 +6,10 @@
         <div class="nav-links">
           <router-link to="/dashboard" class="nav-link">Dashboard</router-link>
           <router-link to="/projects" class="nav-link">Projects</router-link>
+          <template v-if="currentProjectId">
+            <router-link :to="`/projects/${currentProjectId}/tickets`" class="nav-link">Tickets</router-link>
+            <router-link :to="`/projects/${currentProjectId}/ai`" class="nav-link">AI</router-link>
+          </template>
         </div>
         <div class="nav-right">
           <span class="nav-user">{{ authStore.user?.value?.name || 'User' }}</span>
@@ -18,11 +22,21 @@
 </template>
 
 <script setup>
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
 const router = useRouter()
+const route = useRoute()
+
+const currentProjectId = computed(() => {
+  if (route.path.startsWith('/projects/') && !route.path.startsWith('/projects/new')) {
+    const parts = route.path.split('/')
+    return parts[2]
+  }
+  return null
+})
 
 const handleLogout = () => {
   authStore.logout()

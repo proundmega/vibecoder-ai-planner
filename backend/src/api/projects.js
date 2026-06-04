@@ -49,6 +49,25 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Update project
+router.put('/:id', async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+    
+    const project = await ProjectService.update(req.params.id, { name, description }, req.user.userId);
+    res.json(project);
+  } catch (error) {
+    console.error('PUT /api/projects/:id', error);
+    if (error.message === 'Project not found') {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    res.status(400).json({ error: error.message });
+  }
+});
+
 // Get project tickets
 router.get('/:id/tickets', async (req, res) => {
   try {
@@ -132,7 +151,10 @@ router.delete('/:id', async (req, res) => {
     res.json({ message: 'Project deleted' });
   } catch (error) {
     console.error('DELETE /api/projects/:id', error);
-    res.status(404).json({ error: 'Project not found' });
+    if (error.message === 'Project not found') {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    res.status(400).json({ error: error.message });
   }
 });
 

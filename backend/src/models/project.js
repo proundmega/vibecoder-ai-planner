@@ -48,10 +48,11 @@ class Project {
   }
 
   static async update(id, name, description) {
-    await pool.query(
-      'UPDATE projects SET name = $1, description = $2, updated_at = NOW() WHERE id = $3',
+    const result = await pool.query(
+      'UPDATE projects SET name = $1, description = $2, updated_at = NOW() WHERE id = $3 RETURNING *',
       [name, description, id]
     );
+    return this.fromRow(result.rows[0]);
   }
 
   static async delete(id) {

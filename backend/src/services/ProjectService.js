@@ -1,4 +1,5 @@
 const Project = require('../models/project');
+const TicketService = require('../services/TicketService');
 
 class ProjectService {
   async list(userId) {
@@ -27,6 +28,11 @@ class ProjectService {
     const project = await Project.findById(id);
     if (!project) throw new Error('Project not found');
     if (project.ownerId !== userId) throw new Error('Unauthorized');
+
+    const tickets = await TicketService.findByProject(id, userId);
+    if (tickets.length > 0) {
+      throw new Error('Cannot delete project with existing tickets');
+    }
 
     await Project.delete(id);
   }

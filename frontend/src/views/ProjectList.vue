@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { fetchProjects, createProject } from '@/api/projects'
+import { fetchProjects, createProject, updateProject, deleteProject } from '@/api/projects'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -10,11 +10,22 @@ const projects = ref([])
 const loading = ref(true)
 const error = ref(null)
 const createError = ref(null)
+const deleteError = ref(null)
 
 const showCreateModal = ref(false)
 const projectName = ref('')
 const projectDesc = ref('')
 const creating = ref(false)
+
+const editingProject = ref(null)
+const editName = ref('')
+const editDesc = ref('')
+const showEditModal = ref(false)
+const updating = ref(false)
+
+const deletingProject = ref(null)
+const showDeleteModal = ref(false)
+const deleting = ref(false)
 
 onMounted(async () => {
   try {
@@ -46,6 +57,59 @@ async function handleCreate() {
     creating.value = false
   }
 }
+
+function openEditModal(project) {
+  editingProject.value = project
+  editName.value = project.name
+  editDesc.value = project.description || ''
+  showEditModal.value = true
+}
+
+async function handleEdit() {
+  if (!editName.value.trim() || !editingProject.value) return
+  updating.value = true
+  try {
+    const updated = await updateProject(editingProject.value.id, editName.value.trim(), editDesc.value.trim(), authStore.token.value)
+    if (updated) {
+      const idx = projects.value.findIndex(p => p.id === editingProject.value.id)
+      if (idx !== -1) {
+        projects.value[idx] = updated
+      }
+      showEditModal.value = false
+      editingProject.value = null
+    }
+  } catch (err) {
+    console.error('Failed to update project:', err)
+    deleteError.value = 'Failed to update project'
+  } finally {
+    updating.value = false
+  }
+}
+
+function openDeleteModal(project) {
+  deletingProject.value = project
+  showDeleteModal.value = true
+}
+
+async function handleDelete() {
+  if (!deletingProject.value) return
+  deleting.value = true
+  try {
+    const result = await deleteProject(deletingProject.value.id, authStore.token.value)
+    if (!result.error) {
+      projects.value = projects.value.filter(p => p.id !== deletingProject.value.id)
+      showDeleteModal.value = false
+      deletingProject.value = null
+    } else {
+      deleteError.value = result.error || 'Failed to delete project'
+    }
+  } catch (err) {
+    console.error('Failed to delete project:', err)
+    deleteError.value = 'Failed to delete project'
+  } finally {
+    deleting.value = false
+  }
+}
 </script>
 
 <template>
@@ -68,9 +132,9 @@ async function handleCreate() {
     </div>
 
     <div v-else>
-      <div v-if="createError" class="error-inline">
-        <p>{{ createError }}</p>
-        <button @click="createError = null">Dismiss</button>
+      <div v-if="createError || deleteError" class="error-inline">
+        <p>{{ createError || deleteError }}</p>
+        <button @click="createError = null; deleteError = null">Dismiss</button>
       </div>
       <div class="projects-grid">
         <div v-for="project in projects" :key="project.id" class="project-card" @click="router.push(`/projects/${project.id}`)">
@@ -82,6 +146,10 @@ async function handleCreate() {
           <div class="project-meta">
             <span>Owner: {{ project.owner_name || 'You' }}</span>
             <span>{{ project.created_at ? new Date(project.created_at).toLocaleDateString() : '' }}</span>
+          </div>
+          <div class="card-actions">
+            <button @click.stop="openEditModal(project)" class="btn-edit">Edit</button>
+            <button @click.stop="openDeleteModal(project)" class="btn-delete">Delete</button>
           </div>
         </div>
       </div>
@@ -100,6 +168,36 @@ async function handleCreate() {
             <button type="submit" :disabled="creating" class="btn-submit">{{ creating ? 'Creating...' : 'Create' }}</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
+      <div class="modal">
+        <h2>Edit Project</h2>
+        <form @submit.prevent="handleEdit">
+          <label>Project Name</label>
+          <input v-model="editName" type="text" placeholder="Enter project name" required />
+          <label>Description</label>
+          <textarea v-model="editDesc" placeholder="Optional description" rows="3"></textarea>
+          <div class="modal-actions">
+            <button type="button" @click="showEditModal = false" class="btn-cancel">Cancel</button>
+            <button type="submit" :disabled="updating" class="btn-submit">{{ updating ? 'Saving...' : 'Save' }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
+      <div class="modal">
+        <h2>Delete Project</h2>
+        <p>Are you sure you want to delete "{{ deletingProject?.name }}"? This action cannot be undone.</p>
+        <p v-if="deletingProject?.ticketCount > 0" class="warning">Cannot delete: project has {{ deletingProject.ticketCount }} ticket(s).</p>
+        <div class="modal-actions">
+          <button type="button" @click="showDeleteModal = false" class="btn-cancel">Cancel</button>
+          <button type="button" @click="handleDelete" :disabled="deleting || (deletingProject?.ticketCount > 0)" class="btn-delete-modal">
+            {{ deleting ? 'Deleting...' : 'Delete' }}
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -240,6 +338,42 @@ async function handleCreate() {
   color: #9ca3af;
 }
 
+.card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.btn-edit {
+  padding: 6px 12px;
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn-edit:hover {
+  background: #e5e7eb;
+}
+
+.btn-delete {
+  padding: 6px 12px;
+  background: white;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn-delete:hover {
+  background: #fee2e2;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -262,6 +396,17 @@ async function handleCreate() {
   margin-bottom: 20px;
   font-size: 20px;
   color: #1f2937;
+}
+
+.modal p {
+  margin: 0 0 16px 0;
+  color: #374151;
+  line-height: 1.5;
+}
+
+.modal .warning {
+  color: #dc2626;
+  font-weight: 500;
 }
 
 .modal label {
@@ -325,5 +470,25 @@ async function handleCreate() {
 .btn-submit:disabled {
   background: #9ca3af;
   cursor: not-allowed;
+}
+
+.btn-delete-modal {
+  padding: 8px 20px;
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.btn-delete-modal:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.btn-delete-modal:hover:not(:disabled) {
+  background: #b91c1c;
 }
 </style>
