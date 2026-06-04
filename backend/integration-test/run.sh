@@ -421,6 +421,240 @@ test_frontend() {
   fi
 }
 
+test_frontend_api_proxy() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Frontend API Proxy"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  local token
+  token=$(login "alice@integration.test" "password123")
+
+  # Create a project for proxy tests
+  local proj_id
+  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Proxy Test Project","description":""}' \
+    | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Create a ticket via /api/tickets (frontend endpoint)
+  local ticket_body
+  ticket_body=$(curl -sf -X POST "http://localhost:3000/api/tickets" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d "{\"projectId\":\"$proj_id\",\"title\":\"Proxy Test Ticket\",\"description\":\"Test via frontend proxy\"}")
+  assert_has_field "Create ticket via frontend proxy returns id" "id" "$ticket_body"
+
+  local ticket_id
+  ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # List tickets via frontend proxy
+  local list_body
+  list_body=$(curl -sf "http://localhost:3000/api/projects/$proj_id/tickets" \
+    -H "Authorization: Bearer $token")
+  assert_has_field "List tickets via frontend proxy returns array" "id" "$list_body"
+
+  # Verify the ticket we just created is in the list
+  if echo "$list_body" | grep -q "\"id\":\"$ticket_id\""; then
+    pass "Ticket created via proxy appears in list"
+  else
+    fail "Ticket via proxy" "created ticket not found in list"
+  fi
+
+  # Unauthenticated request via proxy should return 401
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000/api/projects")
+  assert_status "Unauthenticated request via proxy returns 401" "401" "$code"
+}
+
+test_user_role_ticket_access() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  User Role Ticket Access"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  # Register a regular user (role='user' by default)
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/register" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"Bob","email":"bob@integration.test","password":"password123"}')
+  assert_status "Register regular user" "201" "$code"
+
+  local token
+  token=$(login "bob@integration.test" "password123")
+
+  # Verify login response includes user role
+  local login_body
+  login_body=$(curl -sf -X POST "$BASE/api/auth/login" \
+    -H "Content-Type: application/json" \
+    -d '{"email":"bob@integration.test","password":"password123"}')
+  local user_role
+  user_role=$(echo "$login_body" | grep -o '"role":"[^"]*"' | cut -d'"' -f4)
+  assert_field "Default user role is user" "role" "user" "$user_role"
+
+  # Create a project
+  local proj_id
+  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Role Test Project","description":""}' \
+    | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Regular user should be able to create tickets
+  local ticket_body
+  ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"title":"User Role Ticket","description":"Created by regular user"}')
+  assert_has_field "Regular user can create tickets" "id" "$ticket_body"
+
+  # Regular user should be able to list tickets
+  local list_body
+  list_body=$(curl -sf "$BASE/api/projects/$proj_id/tickets" \
+    -H "Authorization: Bearer $token")
+  assert_has_field "Regular user can list tickets" "id" "$list_body"
+
+  # Regular user should be able to get a single ticket
+  local ticket_id
+  ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+  local single_body
+  single_body=$(curl -sf "$BASE/api/tickets/$ticket_id" \
+    -H "Authorization: Bearer $token")
+  assert_field "Regular user can get ticket by id" "title" "User Role Ticket" "$(echo "$single_body" | grep -o '"title":"[^"]*"' | cut -d'"' -f4)"
+}
+
+test_route_ordering() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Route Ordering"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  local token
+  token=$(login "alice@integration.test" "password123")
+
+  # Create a project
+  local proj_id
+  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Route Order Test Project","description":""}' \
+    | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Create a ticket in the project
+  curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"title":"Route order ticket","description":""}' >/dev/null 2>&1
+
+  # GET /api/projects/:id/tickets should return tickets (not project details)
+  local tickets_body
+  tickets_body=$(curl -sf "$BASE/api/projects/$proj_id/tickets" \
+    -H "Authorization: Bearer $token")
+  if echo "$tickets_body" | grep -q '"title"'; then
+    pass "GET /projects/:id/tickets returns tickets array"
+  else
+    fail "Route ordering" "GET /projects/:id/tickets did not return tickets"
+  fi
+
+  # GET /api/projects/:id should return project details
+  local proj_body
+  proj_body=$(curl -sf "$BASE/api/projects/$proj_id" \
+    -H "Authorization: Bearer $token")
+  if echo "$proj_body" | grep -q '"name"'; then
+    pass "GET /projects/:id returns project details"
+  else
+    fail "Route ordering" "GET /projects/:id did not return project details"
+  fi
+}
+
+test_jwt_token_expiry() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  JWT Token Expiry"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  local token
+  token=$(login "alice@integration.test" "password123")
+
+  # Decode the JWT payload to check expiry using node
+  local payload
+  payload=$(node -e "const parts=process.argv[1].split('.'); const buf=Buffer.from(parts[1].replace(/-/g,'+').replace(/_/g,'/'),'base64'); console.log(buf.toString('utf8'));" "$token" 2>/dev/null)
+
+  # Check that expiry is set (exp field exists)
+  if echo "$payload" | grep -q '"exp"'; then
+    pass "JWT token contains exp field"
+  else
+    fail "JWT token" "exp field not found in token payload"
+  fi
+
+  # Verify the token works for API calls
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/projects" \
+    -H "Authorization: Bearer $token")
+  assert_status "Valid JWT token works for API calls" "200" "$code"
+
+  # Verify expired/invalid token is rejected
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/projects" \
+    -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIxIiwiZW1haWwiOiJ0ZXN0QHRlc3QuY29tIiwiaWF0IjoxNTE2MjM5MDIyLCJleHAiOjE1MTYyMzkwMjJ9.invalid")
+  assert_status "Invalid JWT token is rejected" "401" "$code"
+}
+
+test_ticket_crud_via_frontend_endpoint() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Ticket CRUD via Frontend Endpoint"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  local token
+  token=$(login "alice@integration.test" "password123")
+
+  # Create a project
+  local proj_id
+  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Frontend CRUD Test Project","description":""}' \
+    | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Create ticket via /api/tickets (used by frontend TicketBoard)
+  local ticket_body
+  ticket_body=$(curl -sf -X POST "$BASE/api/tickets" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d "{\"projectId\":\"$proj_id\",\"title\":\"Frontend CRUD Ticket\",\"description\":\"Test CRUD via /api/tickets\",\"priority\":\"high\"}")
+  assert_has_field "Create ticket via /api/tickets returns id" "id" "$ticket_body"
+  assert_field "Create ticket via /api/tickets has status" "status" "backlog" "$(echo "$ticket_body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)"
+
+  local ticket_id
+  ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Update ticket via /api/tickets/:id
+  local update_code
+  update_code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/tickets/$ticket_id" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"title":"Updated Frontend CRUD Ticket","priority":"urgent"}')
+  assert_status "Update ticket via /api/tickets/:id" "200" "$update_code"
+
+  # Verify update took effect
+  local single_body
+  single_body=$(curl -sf "$BASE/api/tickets/$ticket_id" \
+    -H "Authorization: Bearer $token")
+  assert_field "Updated ticket title" "title" "Updated Frontend CRUD Ticket" "$(echo "$single_body" | grep -o '"title":"[^"]*"' | cut -d'"' -f4)"
+
+  # Delete ticket
+  local delete_code
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/tickets/$ticket_id" \
+    -H "Authorization: Bearer $token")
+  assert_status "Delete ticket via /api/tickets/:id" "200" "$delete_code"
+
+  # Verify deleted
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/tickets/$ticket_id" \
+    -H "Authorization: Bearer $token")
+  assert_status "Deleted ticket returns 404" "404" "$code"
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
@@ -459,6 +693,11 @@ main() {
   test_tickets
   test_status_transitions
   test_agents
+  test_user_role_ticket_access
+  test_route_ordering
+  test_ticket_crud_via_frontend_endpoint
+  test_frontend_api_proxy
+  test_jwt_token_expiry
   test_frontend
 
   echo ""
