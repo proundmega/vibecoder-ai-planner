@@ -1,0 +1,587 @@
+# ARCHITECT_P2.txt — Backend Architecture Guidelines (Draft)
+
+**Status**: Working draft — not final. Use as a reference when designing backend components.
+**Author**: Backend Architect
+**Date**: 2025-01-15
+**Scope**: Refines the 7-step request lifecycle into actionable technical plans.
+**Note**: This is a guideline, not a specification. Each section below can be expanded into its own ticket/PR. Adapt to project context.
+
+---
+
+## Ticket 1: Controller Setup
+
+### a) Purpose
+Controllers are the entry point for all HTTP requests. They route incoming requests to the correct handler, parse the request, delegate to business logic, and return responses. A well-structured controller layer keeps routes decoupled from business rules and makes testing straightforward.
+
+### b) Actions
+1. Create a `controllers/` directory under `backend/src/`
+2. Define one controller file per domain (e.g., `ticketController.js`, `projectController.js`, `userController.js`)
+3. Each controller exports functions that accept `(req, res, next)`
+4. Map controller methods to route handlers in `api/routes.js`
+5. Use Express Router instances for domain-specific route grouping
+6. Implement consistent response shaping: `{ success, data, error, meta }`
+7. Add route-level comments documenting expected behavior
+
+**Example structure:**
+```
+backend/src/
+  controllers/
+    ticketController.js
+    projectController.js
+    userController.js
+  api/
+    routes.js          → mounts all routers
+    tickets.js         → router → ticketController
+    projects.js        → router → projectController
+    user.js            → router → userController
+```
+
+**Example controller:**
+```javascript
+// controllers/ticketController.js
+const TicketService = require('../services/TicketService');
+
+async function getTicket(req, res, next) {
+  try {
+    const ticket = await TicketService.getOne(req.params.ticketId, req.user.userId);
+    res.json({ success: true, data: ticket });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function createTicket(req, res, next) {
+  try {
+    const { projectId, title, description, priority } = req.body;
+    const ticket = await TicketService.create(projectId, title, description, priority, req.user.userId);
+    res.status(201).json({ success: true, data: ticket });
+  } catch (error) {
+    next(error);
+  }
+}
+
+module.exports = { getTicket, createTicket, updateTicket, deleteTicket, listTickets };
+```
+
+### c) Dependencies
+- Express.js (already in use)
+- `express.Router()` (built-in)
+- Service layer classes (`backend/src/services/`)
+
+### d) Risks/Edge Cases
+- **Tight coupling**: Controllers should not contain business logic — delegate to services
+- **Inconsistent responses**: Some endpoints return `{ data }`, others return raw objects — standardize
+- **Error leakage**: Unhandled errors in controllers crash the process — always pass to `next(error)`
+- **Route ordering**: Express matches routes top-to-bottom; `/:id` before `/:id/comments` causes 404s
+- **N+1 queries**: Controllers calling services that fire multiple queries per ticket — batch where possible
+
+---
+
+## Ticket 2: Authentication Middleware
+
+### a) Purpose
+Authentication middleware verifies the identity of every request. It extracts the JWT from the `Authorization` header, validates its signature and expiry, attaches the decoded user payload to `req.user`, and rejects unauthenticated requests before they reach route handlers.
+
+### b) Actions
+1. Create `middleware/auth.js` (already exists — audit for consistency)
+2. Implement `verifyToken` middleware:
+   - Extract token from `Authorization: Bearer <token>` header
+   - Validate JWT signature using `JWT_SECRET`
+   - Check token expiry (`exp` claim)
+   - Attach decoded payload to `req.user`
+   - Call `next()` on success, `res.status(401)` on failure
+3. Implement `agentAuth` middleware for API key-based agent access:
+   - Check `X-API-Key` header
+   - Validate against `agents` table
+   - Attach `req.agent` with agent details
+4. Apply middleware selectively:
+   - Public routes: `/api/auth/register`, `/api/auth/login`, `/api/health`
+   - Authenticated routes: `/api/projects/*`, `/api/tickets/*`, `/api/users/*`
+   - Agent routes: `/api/agents/*`
+5. Centralize `JWT_SECRET` in one place (`.env` or config module)
+
+**Current issues to fix:**
+- `JWT_SECRET` is duplicated in `middleware/auth.js` and `auth.js` — consolidate
+- `UserService.authenticate()` re-declares `JWT_SECRET` locally — remove duplication
+- Token expiry format should use `${TOKEN_EXPIRY_MINUTES}m` consistently
+
+**Example middleware:**
+```javascript
+// middleware/auth.js
+const jwt = require('jsonwebtoken');
+const { JWT_SECRET, TOKEN_EXPIRY_MINUTES } = process.env;
+
+function verifyToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authorization header required' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired' });
+    }
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
+module.exports = { verifyToken };
+```
+
+### c) Dependencies
+- `jsonwebtoken` (already in `package.json`)
+- `process.env.JWT_SECRET` (must be set)
+- `process.env.TOKEN_EXPIRY_MINUTES` (optional, default `30`)
+- Database pool for agent lookup (optional, for API key auth)
+
+### d) Risks/Edge Cases
+- **Secret rotation**: Changing `JWT_SECRET` invalidates all existing tokens — plan migration
+- **Clock skew**: Token expiry depends on server clock — NTP drift could cause premature expiry
+- **Token leakage**: Tokens in URL query params or logs — never log full tokens
+- **Algorithm confusion**: JWT library should specify `algorithms: ['HS256']` to prevent algorithm switching attacks
+- **Missing header**: Empty `Authorization` header should return 401, not 500
+- **Agent vs user auth**: Mixing `X-API-Key` and `Bearer` tokens — ensure middleware doesn't conflict
+
+---
+
+## Ticket 3: Request Validation
+
+### a) Purpose
+Request validation ensures that incoming data meets expected formats, types, and constraints before it reaches business logic. This prevents invalid data from corrupting the database, reduces error handling in services, and provides clear error messages to API consumers.
+
+### b) Actions
+1. Choose a validation library:
+   - Option A: `joi` — expressive, chainable, well-maintained
+   - Option B: `zod` — TypeScript-first, but works with JS too
+   - Recommendation: **joi** (consistent with existing Node.js patterns)
+2. Create `validators/` directory with schema files:
+   - `validators/ticketSchema.js`
+   - `validators/projectSchema.js`
+   - `validators/userSchema.js`
+3. Define schemas for each input type:
+   - `createTicketSchema` — required fields, type constraints
+   - `updateTicketSchema` — all fields optional, type constraints
+   - `loginSchema`, `registerSchema` — auth-specific rules
+4. Create a validation middleware:
+   ```javascript
+   function validate(schema) {
+     return (req, res, next) => {
+       const { error, value } = schema.validate(req.body, { abortEarly: false });
+       if (error) {
+         return res.status(400).json({
+           error: 'Validation failed',
+           details: error.details.map(d => d.message)
+         });
+       }
+       req.body = value;
+       next();
+     };
+   }
+   ```
+5. Apply validation middleware to route handlers:
+   ```javascript
+   router.post('/', validate(createTicketSchema), ticketController.create);
+   ```
+
+**Example schema:**
+```javascript
+// validators/ticketSchema.js
+const Joi = require('joi');
+
+const createTicketSchema = Joi.object({
+  projectId: Joi.string().uuid().required(),
+  title: Joi.string().min(1).max(200).required(),
+  description: Joi.string().max(5000).allow('', null),
+  priority: Joi.string().valid('low', 'medium', 'high', 'critical').default('medium'),
+});
+
+const updateTicketSchema = Joi.object({
+  title: Joi.string().min(1).max(200).optional(),
+  description: Joi.string().max(5000).allow('', null).optional(),
+  status: Joi.string().valid('backlog', 'in_progress', 'review', 'done').optional(),
+  priority: Joi.string().valid('low', 'medium', 'high', 'critical').optional(),
+  assigneeId: Joi.string().uuid().allow(null).optional(),
+});
+
+module.exports = { createTicketSchema, updateTicketSchema };
+```
+
+### c) Dependencies
+- `joi` (not yet installed — add to `package.json`)
+- Schema files in `validators/`
+- Controller layer to receive validated `req.body`
+
+### d) Risks/Edge Cases
+- **Schema drift**: Schemas diverge from actual API usage — test schemas alongside endpoints
+- **Performance**: Validation adds overhead — benchmark with realistic payloads
+- **Over-validation**: Rejecting valid edge cases (e.g., Unicode in titles) — be liberal in what you accept
+- **Missing schemas**: New endpoints without validation — add lint rule to catch unvalidated routes
+- **Error messages**: Joi's default messages are cryptic — customize for API consumers
+- **Type coercion**: Joi coerces types by default — disable unless intentional (`{ stripUnknown: true }`)
+
+---
+
+## Ticket 4: Business Logic
+
+### a) Purpose
+The business logic layer (services) contains all domain rules: status transitions, permission checks, data transformations, and cross-entity operations. It is framework-agnostic, testable in isolation, and shielded from HTTP concerns (headers, status codes, JSON serialization).
+
+### b) Actions
+1. Audit existing service classes in `backend/src/services/`:
+   - `TicketService.js`
+   - `ProjectService.js`
+   - `UserService.js`
+2. Move all HTTP-adjacent logic out of services:
+   - Remove JSON formatting
+   - Remove response status codes
+   - Remove `req`/`res` references
+3. Implement permission checks in services:
+   - `TicketService.canUpdate(ticketId, userId)` — checks ownership/role
+   - `ProjectService.canAccess(projectId, userId)` — checks ownership/membership
+4. Standardize service method signatures:
+   ```javascript
+   // Consistent: (id, userId, data) → returns model or throws
+   async update(id, userId, data) {
+     const ticket = await this.findById(id);
+     if (!this.canUpdate(ticket, userId)) throw new ForbiddenError();
+     // ... business rules
+   }
+   ```
+5. Implement status transition validation in service (not model):
+   ```javascript
+   const VALID_TRANSITIONS = {
+     backlog: ['in_progress'],
+     in_progress: ['review', 'backlog'],
+     review: ['done', 'backlog'],
+     done: [],
+   };
+   ```
+6. Add unit tests for each service method
+
+**Current issues to fix:**
+- `TicketService.update()` calls `Ticket.findById()` internally — model should be pure data access
+- `TicketService.getOne()` does not check project ownership — anyone can view any ticket
+- `UserService.authenticate()` duplicates JWT signing logic from `auth.js`
+- `Ticket.fromRow()` is marked `async` but has no `await` — remove `async` keyword
+
+### c) Dependencies
+- Model layer (`backend/src/models/`)
+- Custom error classes (`backend/src/errors/`) — optional but recommended
+- `console` for logging during development
+- Database pool (`backend/src/db.js`)
+
+### d) Risks/Edge Cases
+- **Transaction scope**: Multi-step operations (create ticket + audit log) need DB transactions
+- **Race conditions**: Two users updating same ticket — use `WHERE id = $1 AND updated_at = $2`
+- **N+1 queries**: Service fetching ticket then comments then user — batch with JOINs or `pg-promise`
+- **Orphaned data**: Deleting a project without cascading tickets — handle in service or DB
+- **Silent failures**: Service methods returning `null` instead of throwing — prefer explicit errors
+- **Leaky abstractions**: Services knowing about HTTP status codes — keep them framework-free
+
+---
+
+## Ticket 5: Persistence Layer
+
+### a) Purpose
+The persistence layer (models) handles all database interactions: queries, transactions, and data mapping. It should be the only place that knows SQL dialect, table names, and column types. Models transform raw row objects into domain entities.
+
+### b) Actions
+1. Audit existing models in `backend/src/models/`:
+   - `Ticket.js`
+   - `Project.js`
+   - `User.js`
+2. Fix known issues:
+   - Remove `async` from `fromRow()` methods (they have no `await`)
+   - Ensure all methods use parameterized queries (prevent SQL injection)
+3. Add transaction support:
+   ```javascript
+   static async transaction(fn) {
+     const client = await pool.connect();
+     try {
+       await client.query('BEGIN');
+       const result = await fn(client);
+       await client.query('COMMIT');
+       return result;
+     } catch (error) {
+       await client.query('ROLLBACK');
+       throw error;
+     } finally {
+       client.release();
+     }
+   }
+   ```
+4. Add soft delete support (optional but recommended):
+   ```sql
+   ALTER TABLE tickets ADD COLUMN deleted_at TIMESTAMP;
+   ```
+5. Add created/updated timestamp triggers:
+   ```sql
+   CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
+   BEGIN
+     NEW.updated_at = NOW();
+     RETURN NEW;
+   END;
+   $$ LANGUAGE plpgsql;
+   ```
+6. Create indexes for frequently queried columns:
+   ```sql
+   CREATE INDEX idx_tickets_project_id ON tickets(project_id);
+   CREATE INDEX idx_tickets_status ON tickets(status);
+   CREATE INDEX idx_tickets_owner_id ON tickets(owner_id);
+   ```
+
+**Current issues to fix:**
+- `Ticket.fromRow()` is `async` — remove keyword, return synchronously
+- `Ticket.update()` uses `COALESCE($1, title)` pattern — works but hard to distinguish "not provided" from "explicitly null"
+- `Ticket.delete()` is hard delete — no soft delete, no cascade protection
+- No transaction wrapping for multi-step operations (e.g., create ticket + insert audit log)
+- `Project.share()` inserts into `project_memberships` without checking if membership already exists
+
+### c) Dependencies
+- `pg` (node-postgres, already in `package.json`)
+- `backend/src/db.js` — Pool configuration
+- SQL migration files in `backend/src/migrations/`
+- Environment: `DATABASE_URL`
+
+### d) Risks/Edge Cases
+- **SQL injection**: All queries must use parameterized `$1, $2` syntax — never interpolate strings
+- **Connection leaks**: Pool exhaustion under load — set `max` connections, use `pg-limit` or connection pooling (PgBouncer)
+- **Schema drift**: Migrations not tracked — consider adding `migrations` table or switching to a migration tool
+- **Deadlocks**: Concurrent updates to same rows — use `SELECT FOR UPDATE` or retry logic
+- **Data loss**: Hard deletes with no audit trail — implement soft deletes for compliance
+- **Null handling**: `COALESCE` can mask bugs — log when fields are skipped during updates
+
+---
+
+## Ticket 6: Response Handling
+
+### a) Purpose
+Response handling standardizes how the API communicates results and errors to clients. It ensures consistent status codes, response shapes, and error messages across all endpoints. Good response handling improves developer experience and makes client-side error handling predictable.
+
+### b) Actions
+1. Define a standard response format:
+   ```javascript
+   // Success
+   {
+     "success": true,
+     "data": { ... },
+     "meta": {
+       "page": 1,
+       "perPage": 20,
+       "total": 100
+     }
+   }
+
+   // Error
+   {
+     "success": false,
+     "error": {
+       "code": "VALIDATION_ERROR",
+       "message": "Title is required",
+       "details": [ ... ]
+     }
+   }
+   ```
+2. Create an error handling middleware (Express "error handler"):
+   ```javascript
+   // middleware/errorHandler.js
+   function errorHandler(err, req, res, next) {
+     const statusCode = err.statusCode || 500;
+     const isProduction = process.env.NODE_ENV === 'production';
+
+     res.status(statusCode).json({
+       success: false,
+       error: {
+         code: err.code || 'INTERNAL_ERROR',
+         message: isProduction ? 'Internal server error' : err.message,
+         ...(isProduction ? {} : { stack: err.stack }),
+       }
+     });
+   }
+   ```
+3. Create custom error classes:
+   ```javascript
+   // errors/AppError.js
+   class AppError extends Error {
+     constructor(message, statusCode, code) {
+       super(message);
+       this.statusCode = statusCode;
+       this.code = code;
+     }
+   }
+
+   class NotFoundError extends AppError {
+     constructor(message = 'Not found') {
+       super(message, 404, 'NOT_FOUND');
+     }
+   }
+
+   class ValidationError extends AppError {
+     constructor(message, details) {
+       super(message, 400, 'VALIDATION_ERROR');
+       this.details = details;
+     }
+   }
+
+   class ForbiddenError extends AppError {
+     constructor(message = 'Forbidden') {
+       super(message, 403, 'FORBIDDEN');
+     }
+   }
+   ```
+4. Apply error handler at the end of middleware chain:
+   ```javascript
+   app.use(errorHandler);
+   ```
+5. Add pagination support for list endpoints:
+   ```javascript
+   // Query params: ?page=1&perPage=20
+   // Response includes meta with total, hasNext, hasPrev
+   ```
+6. Add rate limiting middleware (reuse existing `rateLimiter`):
+   ```javascript
+   router.use(rateLimiter);
+   ```
+
+**Current issues to fix:**
+- Inconsistent response shapes: Some return `{ message }`, others return raw objects
+- Error middleware may not be catching all errors — verify `app.use(errorHandler)` placement
+- No pagination on list endpoints (`/api/projects`, `/api/tickets/project/:id`)
+- Auth errors return `{ error: 'Unauthorized' }` instead of structured format
+
+### c) Dependencies
+- Express.js error handling (`(err, req, res, next) => {}`)
+- Custom error classes
+- Rate limiter (`backend/src/middleware/auth.js` — `rateLimiter`)
+
+### d) Risks/Edge Cases
+- **Stack leaks**: Logging stack traces in production — only include in development
+- **Error swallowing**: `.catch(() => null)` in API client hides errors — use proper error propagation
+- **Status code mismatch**: Service throws `NotFoundError` but controller returns 200 — ensure consistency
+- **Large payloads**: No response size limits — add `express-limit` or configure body size limits
+- **CORS**: Missing CORS headers for cross-origin requests — add `cors` middleware if needed
+- **Idempotency**: PUT/DELETE should be idempotent — verify with tests
+
+---
+
+## Ticket 7: Monitoring & Logging
+
+### a) Purpose
+Monitoring and logging provide visibility into application health, performance, and errors. They enable rapid incident response, capacity planning, and debugging. Good logging captures the "who, what, when" of every significant operation without flooding storage.
+
+### b) Actions
+1. Audit existing logging setup:
+   - `winston` is imported but may not be configured
+   - Console logs scattered across controllers/services — standardize
+2. Configure structured logging with winston:
+   ```javascript
+   // config/logger.js
+   const winston = require('winston');
+
+   const logger = winston.createLogger({
+     level: process.env.LOG_LEVEL || 'info',
+     format: winston.format.combine(
+       winston.format.timestamp(),
+       winston.format.json()
+     ),
+     transports: [
+       new winston.transports.Console(),
+       ...(process.env.NODE_ENV === 'production'
+         ? [new winston.transports.File({ filename: 'logs/error.log', level: 'error' })]
+         : []),
+     ],
+   });
+
+   module.exports = logger;
+   ```
+3. Add request ID tracking:
+   ```javascript
+   // middleware/requestId.js
+   function requestId(req, res, next) {
+     req.requestId = req.headers['x-request-id'] || crypto.randomUUID();
+     res.setHeader('X-Request-ID', req.requestId);
+     next();
+   }
+   ```
+4. Add request/response logging middleware:
+   ```javascript
+   // middleware/requestLogger.js
+   function requestLogger(req, res, next) {
+     const start = Date.now();
+     res.on('finish', () => {
+       logger.info({
+         method: req.method,
+         path: req.originalUrl,
+         status: res.statusCode,
+         duration: Date.now() - start,
+         requestId: req.requestId,
+         userId: req.user?.userId,
+       });
+     });
+     next();
+   }
+   ```
+5. Add health check endpoint:
+   ```javascript
+   // /api/health — already exists, enhance with dependency checks
+   router.get('/health', async (req, res) => {
+     try {
+       await pool.query('SELECT 1');
+       res.json({ status: 'ok', database: 'connected', timestamp: new Date().toISOString() });
+     } catch (error) {
+       res.status(503).json({ status: 'degraded', database: 'disconnected', error: error.message });
+     }
+   });
+   ```
+6. Add performance metrics:
+   - Track API response times (p50, p95, p99)
+   - Track error rates by endpoint
+   - Track database query times
+
+**Current issues to fix:**
+- Winston is mocked in tests but may not be configured in production
+- `console.error()` used throughout — replace with structured logger
+- No request ID correlation — hard to trace logs across services
+- No health check for database connectivity
+- No metrics endpoint for monitoring tools (Prometheus, Datadog)
+
+### c) Dependencies
+- `winston` (already in `package.json`)
+- `crypto` (built-in Node.js module for UUIDs)
+- `pg` (for health check)
+- External: Log aggregation (ELK, Datadog, CloudWatch) — optional
+- External: Metrics collection (Prometheus, Grafana) — optional
+
+### d) Risks/Edge Cases
+- **Log injection**: User input in logs can inject log lines — sanitize or use structured logging
+- **Sensitive data**: Logging request bodies may capture passwords, tokens — filter `req.body` before logging
+- **Log volume**: High-traffic endpoints generating millions of logs — sample or aggregate
+- **Disk space**: Log files growing unbounded — configure log rotation (`winston-daily-rotate-file`)
+- **Performance**: Synchronous file writes blocking event loop — use async transports
+- **Masking**: Error messages revealing internal details to clients — separate internal vs external messages
+- **Distributed tracing**: Without request IDs, correlating logs across services is impossible
+
+---
+
+## Summary: Implementation Order
+
+| Priority | Ticket | Effort | Blocks |
+|----------|--------|--------|--------|
+| P0 | Ticket 2 (Auth Middleware) | Small | All authenticated endpoints |
+| P0 | Ticket 5 (Persistence Layer) | Medium | Data integrity, bug fixes |
+| P1 | Ticket 3 (Request Validation) | Medium | Data quality, security |
+| P1 | Ticket 4 (Business Logic) | Large | Domain correctness |
+| P1 | Ticket 7 (Monitoring & Logging) | Small | Observability |
+| P2 | Ticket 6 (Response Handling) | Medium | API consistency |
+| P2 | Ticket 1 (Controller Setup) | Medium | Architecture clarity |
+
+**Recommended approach**: Fix P0 tickets first (auth + persistence bugs), then iterate through P1/P2 in parallel. Each ticket should be its own PR with tests.
+
+---
+
+*This document is a living guideline. Review and update as the codebase evolves.*
