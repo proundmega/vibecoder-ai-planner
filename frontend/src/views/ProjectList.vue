@@ -135,24 +135,26 @@ async function handleDelete() {
         <button @click="createError = null; deleteError = null">Dismiss</button>
       </div>
       <div class="projects-grid">
-        <div v-for="project in projects" :key="project.id" class="project-card" @click="router.push(`/projects/${project.id}`)">
-          <div class="project-info">
-            <h3>{{ project.name }}</h3>
-            <p v-if="project.description">{{ project.description }}</p>
-            <p v-else class="no-desc">No description</p>
-          </div>
-          <div class="project-meta">
-            <span>Owner: {{ project.owner_name || 'You' }}</span>
-            <span>{{ project.created_at ? new Date(project.created_at).toLocaleDateString() : '' }}</span>
-          </div>
-          <div class="card-actions">
-            <router-link :to="`/projects/${project.id}/tickets`" class="btn-tickets">Tickets</router-link>
-            <router-link :to="`/projects/${project.id}/ai`" class="btn-ai">AI</router-link>
-            <button @click.stop="openEditModal(project)" class="btn-edit">Edit</button>
-            <button @click.stop="openDeleteModal(project)" class="btn-delete">Delete</button>
-          </div>
-        </div>
-      </div>
+         <div v-for="project in projects" :key="project.id" class="project-card">
+           <router-link :to="`/projects/${project.id}`" class="card-main">
+             <div class="project-info">
+               <h3>{{ project.name }}</h3>
+               <p v-if="project.description">{{ project.description }}</p>
+               <p v-else class="no-desc">No description</p>
+             </div>
+             <div class="project-meta">
+               <span>Owner: {{ project.owner_name || 'You' }}</span>
+               <span>{{ project.created_at ? new Date(project.created_at).toLocaleDateString() : '' }}</span>
+             </div>
+           </router-link>
+           <div class="card-actions">
+             <router-link :to="`/projects/${project.id}/tickets`" class="btn-tickets">Tickets</router-link>
+             <router-link :to="`/projects/${project.id}/ai`" class="btn-ai">AI</router-link>
+             <button @click.stop="openEditModal(project)" class="btn-edit">Edit</button>
+             <button @click.stop="openDeleteModal(project)" class="btn-delete">Delete</button>
+           </div>
+         </div>
+       </div>
     </div>
 
     <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
@@ -304,12 +306,18 @@ async function handleDelete() {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 20px;
-  cursor: pointer;
   transition: box-shadow 0.2s;
 }
 
 .project-card:hover {
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.card-main {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
 }
 
 .project-info h3 {
