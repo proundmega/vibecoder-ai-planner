@@ -33,7 +33,7 @@ const handleLogin = async () => {
     const data = await loginUser(email.value, password.value)
     authStore.setToken(data.token)
     authStore.setUser(data.user)
-    const redirect = route.query.redirect || '/projects'
+    const redirect = route.query.redirect || '/dashboard'
     router.push(redirect)
   } catch (err) {
     console.error('Login failed:', err)

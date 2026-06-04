@@ -34,7 +34,7 @@ const handleRegister = async () => {
     const data = await registerUser(name.value, email.value, password.value)
     authStore.setToken(data.token)
     authStore.setUser(data.user)
-    router.push('/projects')
+    router.push('/dashboard')
   } catch (err) {
     console.error('Registration failed:', err)
     errorMessage.value = err.message || 'Registration failed. Please try again.'

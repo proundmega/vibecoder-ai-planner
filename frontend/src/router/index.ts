@@ -22,7 +22,13 @@ const routes = [
   },
   {
     path: '/',
-    redirect: '/projects',
+    redirect: '/dashboard',
+  },
+  {
+    path: '/dashboard',
+    name: 'Dashboard',
+    component: () => import('../views/Dashboard.vue'),
+    meta: { requiresAuth: true },
   },
   {
     path: '/projects',
@@ -78,7 +84,7 @@ router.beforeEach((to, _from, next) => {
   }
   if (to.path === '/login' || to.path === '/register') {
     if (isAuthenticated()) {
-      next({ path: '/projects' })
+      next({ path: '/dashboard' })
       return
     }
   }

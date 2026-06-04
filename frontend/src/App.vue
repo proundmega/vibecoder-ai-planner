@@ -4,10 +4,11 @@
       <div class="navbar-inner">
         <router-link to="/projects" class="nav-brand">AI Planner</router-link>
         <div class="nav-links">
+          <router-link to="/dashboard" class="nav-link">Dashboard</router-link>
           <router-link to="/projects" class="nav-link">Projects</router-link>
         </div>
         <div class="nav-right">
-          <span class="nav-user">{{ authStore.user?.name || 'User' }}</span>
+          <span class="nav-user">{{ authStore.user?.value?.name || 'User' }}</span>
           <button @click="handleLogout" class="nav-logout">Logout</button>
         </div>
       </div>

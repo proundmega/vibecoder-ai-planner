@@ -1,6 +1,12 @@
 import { ref, computed } from 'vue'
 
+let instance = null
+
 export function useAuthStore() {
+  if (instance) {
+    return instance
+  }
+
   const user = ref(JSON.parse(localStorage.getItem('vibecode_user') || 'null'))
   const token = ref(localStorage.getItem('vibecode_token') || '')
   const loading = ref(false)
@@ -38,7 +44,7 @@ export function useAuthStore() {
 
   const isAuthenticated = computed(() => !!token.value)
 
-  return {
+  instance = {
     user,
     token,
     loading,
@@ -50,4 +56,6 @@ export function useAuthStore() {
     setLoadingError,
     logout,
   }
+
+  return instance
 }
