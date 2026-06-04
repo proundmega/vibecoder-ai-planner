@@ -17,11 +17,11 @@ const ticketId = route.params.ticketId
 
 onMounted(async () => {
   try {
-    ticket.value = await fetchTicket(ticketId, authStore.token.value)
+    ticket.value = await fetchTicket(ticketId)
     if (!ticket.value) {
       error.value = 'Ticket not found'
     } else {
-      comments.value = await fetchComments(ticketId, authStore.token.value)
+      comments.value = await fetchComments(ticketId)
     }
   } catch (e) {
     console.error('Failed to load ticket:', e)
@@ -34,7 +34,7 @@ onMounted(async () => {
 async function changeStatus(newStatus) {
   if (!ticket.value) return
   try {
-    await updateTicket(ticket.value.id, { status: newStatus }, authStore.token.value)
+    await updateTicket(ticket.value.id, { status: newStatus })
     ticket.value.status = newStatus
   } catch (err) {
     console.error('Failed to update status:', err)
@@ -45,7 +45,7 @@ async function changeStatus(newStatus) {
 async function addCommentText() {
   if (!newComment.value.trim() || !ticket.value) return
   try {
-    const comment = await addComment(ticket.value.id, newComment.value.trim(), authStore.token.value)
+    const comment = await addComment(ticket.value.id, newComment.value.trim())
     if (comment) {
       comments.value.push(comment)
     }

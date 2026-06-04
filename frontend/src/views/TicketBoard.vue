@@ -159,7 +159,7 @@ async function handleCreateTicket() {
       <div v-for="columnDef in statusColumns" :key="columnDef.id"
            class="status-column"
            :class="columnDef.class"
-           @drop="($event) => $event.dataTransfer && handleDrop({ id: $event.dataTransfer.getData('ticketId') }, columnDef.id)"
+           @drop="($event) => $event.dataTransfer && handleDrop($event.dataTransfer.getData('ticketId'), columnDef.id)"
            @dragover.prevent
       >
         <div class="column-header">

@@ -46,7 +46,7 @@ async function handleCreate() {
       showCreateModal.value = false
       projectName.value = ''
       projectDesc.value = ''
-      router.push(`/projects/${project.id}`)
+      router.push(`/projects/${project.id}/tickets`)
     }
   } catch (err) {
     console.error('Failed to create project:', err)
@@ -136,7 +136,7 @@ async function handleDelete() {
       </div>
       <div class="projects-grid">
          <div v-for="project in projects" :key="project.id" class="project-card">
-           <router-link :to="`/projects/${project.id}`" class="card-main">
+           <router-link :to="`/projects/${project.id}/tickets`" class="card-main">
              <div class="project-info">
                <h3>{{ project.name }}</h3>
                <p v-if="project.description">{{ project.description }}</p>
