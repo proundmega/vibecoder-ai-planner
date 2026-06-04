@@ -6,10 +6,8 @@
         <div class="nav-links">
           <router-link to="/dashboard" class="nav-link">Dashboard</router-link>
           <router-link to="/projects" class="nav-link">Projects</router-link>
-          <template v-if="currentProjectId">
-            <router-link :to="`/projects/${currentProjectId}/tickets`" class="nav-link">Tickets</router-link>
-            <router-link :to="`/projects/${currentProjectId}/ai`" class="nav-link">AI</router-link>
-          </template>
+          <router-link :to="currentProjectId ? `/projects/${currentProjectId}/tickets` : '/projects'" class="nav-link">Tickets</router-link>
+          <router-link :to="currentProjectId ? `/projects/${currentProjectId}/ai` : '/projects'" class="nav-link">AI</router-link>
         </div>
         <div class="nav-right">
           <span class="nav-user">{{ authStore.user?.value?.name || 'User' }}</span>
