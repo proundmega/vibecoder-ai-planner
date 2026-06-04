@@ -1,18 +1,9 @@
 <script setup>
-import { onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-
-const route = useRoute()
-const router = useRouter()
-
-onMounted(() => {
-  router.push(`/projects/${route.params.id}/tickets`)
-})
 </script>
 
 <template>
   <div class="project-detail">
-    <p>Redirecting...</p>
+    <router-view />
   </div>
 </template>
 
