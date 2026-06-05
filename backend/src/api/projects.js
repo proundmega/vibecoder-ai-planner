@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
+const { pool } = require('../db');
 const ProjectService = require('../services/ProjectService');
 const TicketService = require('../services/TicketService');
 
@@ -65,6 +66,26 @@ router.get('/:id/members', async (req, res) => {
     res.json(memberships);
   } catch (error) {
     console.error('GET /api/projects/:id/members', error);
+    res.status(404).json({ error: 'Project not found' });
+  }
+});
+
+// Get users who can be assigned to tickets in this project
+router.get('/:id/users', async (req, res) => {
+  try {
+    await ProjectService.getOne(req.params.id, req.user.userId);
+    
+    const result = await pool.query(
+      `SELECT u.id, u.name, u.email, u.role 
+       FROM users u 
+       WHERE u.id != $1 
+       ORDER BY u.name NULLS FIRST, u.email`,
+      [req.user.userId]
+    );
+    
+    res.json({ users: result.rows });
+  } catch (error) {
+    console.error('GET /api/projects/:id/users', error);
     res.status(404).json({ error: 'Project not found' });
   }
 });

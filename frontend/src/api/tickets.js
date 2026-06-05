@@ -27,3 +27,7 @@ export function fetchComments(ticketId) {
 export function addComment(ticketId, content) {
   return post(`/api/tickets/${ticketId}/comments`, { content }).catch(() => null)
 }
+
+export function fetchProjectUsers(projectId) {
+  return get(`/api/projects/${projectId}/users`).catch(() => ({ users: [] }))
+}

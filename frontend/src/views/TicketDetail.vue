@@ -2,7 +2,8 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { fetchTicket, updateTicket, addComment, fetchComments } from '@/api/tickets'
+import { fetchTicket, updateTicket, addComment, fetchComments, deleteTicket } from '@/api/tickets'
+import TicketEditModal from '@/components/TicketEditModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,8 +13,34 @@ const loading = ref(true)
 const error = ref(null)
 const newComment = ref('')
 const comments = ref([])
+const showEditModal = ref(false)
+const showDeleteConfirm = ref(false)
+const deleting = ref(false)
 
 const ticketId = route.params.ticketId
+
+const validTransitions = {
+  backlog: ['in_progress'],
+  in_progress: ['review', 'backlog'],
+  review: ['done', 'backlog'],
+  done: []
+}
+
+const canUpdate = () => {
+  const user = authStore.user.value
+  if (!user) return false
+  if (['project_admin', 'member', 'super_admin', 'ADMIN', 'MEMBER'].includes(user.role)) return true
+  if (user.role === 'user' && ticket.value?.owner_id === user.userId) return true
+  return false
+}
+
+const canDelete = () => {
+  const user = authStore.user.value
+  if (!user) return false
+  if (['project_admin', 'member', 'super_admin', 'ADMIN', 'MEMBER'].includes(user.role)) return true
+  if (user.role === 'user' && ticket.value?.owner_id === user.userId) return true
+  return false
+}
 
 onMounted(async () => {
   try {
@@ -33,12 +60,43 @@ onMounted(async () => {
 
 async function changeStatus(newStatus) {
   if (!ticket.value) return
+  
+  const currentStatus = ticket.value.status
+  const allowed = validTransitions[currentStatus]
+  
+  if (!allowed?.includes(newStatus)) {
+    error.value = `Cannot transition from ${currentStatus} to ${newStatus}`
+    return
+  }
+  
   try {
     await updateTicket(ticket.value.id, { status: newStatus })
     ticket.value.status = newStatus
+    error.value = null
   } catch (err) {
     console.error('Failed to update status:', err)
     error.value = 'Failed to update status: ' + err.message
+  }
+}
+
+async function handleEditSaved(updates) {
+  if (ticket.value) {
+    Object.assign(ticket.value, updates)
+  }
+}
+
+async function handleDelete() {
+  deleting.value = true
+  showDeleteConfirm.value = false
+  
+  try {
+    await deleteTicket(ticket.value.id)
+    router.push(`/projects/${route.params.id}/tickets`)
+  } catch (err) {
+    console.error('Failed to delete ticket:', err)
+    error.value = 'Failed to delete ticket: ' + err.message
+    deleting.value = false
+    showDeleteConfirm.value = true
   }
 }
 
@@ -49,28 +107,31 @@ async function addCommentText() {
     if (comment) {
       comments.value.push(comment)
     }
+    newComment.value = ''
   } catch (err) {
     console.error('Failed to add comment:', err)
     error.value = 'Failed to add comment'
   }
-  newComment.value = ''
-}
-
-function canUpdate() {
-  const user = authStore.user.value
-  return user && (user.role === 'ADMIN' || user.role === 'MEMBER' || user.role === 'admin' || user.role === 'member')
 }
 </script>
 
 <template>
   <div class="ticket-detail">
+    <div class="header-actions">
+      <button @click="router.back()" class="back-btn">← Back</button>
+      <div class="action-buttons">
+        <button v-if="canUpdate()" @click="showEditModal = true" class="btn-edit">Edit Ticket</button>
+        <button v-if="canDelete()" @click="showDeleteConfirm = true" class="btn-delete">Delete Ticket</button>
+      </div>
+    </div>
+
     <h1>Ticket #{{ ticketId }}</h1>
 
     <div v-if="loading" class="loading">Loading...</div>
 
-    <div v-else-if="error" class="error">
+    <div v-else-if="error && !ticket" class="error">
       <p>{{ error }}</p>
-      <button @click="router.go(-1)">Go Back</button>
+      <button @click="router.back()">Go Back</button>
     </div>
 
     <div v-else>
@@ -81,6 +142,8 @@ function canUpdate() {
 
       <div class="meta">
         <span>Priority: <strong>{{ ticket?.priority || 'medium' }}</strong></span>
+        <span v-if="ticket?.assignee_name">Assignee: <strong>{{ ticket.assignee_name }}</strong></span>
+        <span v-if="ticket?.owner_email">Created by: <strong>{{ ticket.owner_email }}</strong></span>
       </div>
 
       <div v-if="ticket?.description" class="description">
@@ -89,11 +152,11 @@ function canUpdate() {
       </div>
 
       <div class="actions">
+        <h3>Status Transitions</h3>
         <button v-if="canUpdate()" @click="changeStatus('backlog')" :disabled="ticket?.status === 'backlog'">Move to Backlog</button>
         <button v-if="canUpdate() && ticket?.status === 'backlog'" @click="changeStatus('in_progress')">Start Work</button>
         <button v-if="canUpdate() && ticket?.status === 'in_progress'" @click="changeStatus('review')">Submit Review</button>
         <button v-if="canUpdate() && ticket?.status === 'review'" @click="changeStatus('done')">Mark as Done</button>
-        <button @click="router.back()" class="back">Back</button>
       </div>
 
       <div class="comments">
@@ -111,6 +174,28 @@ function canUpdate() {
         </div>
       </div>
     </div>
+
+    <TicketEditModal
+      v-if="showEditModal && ticket"
+      :ticket="ticket"
+      :project-id="route.params.id"
+      @close="showEditModal = false"
+      @saved="handleEditSaved"
+    />
+
+    <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
+      <div class="modal delete-confirm">
+        <h2>Confirm Delete</h2>
+        <p>Are you sure you want to delete <strong>{{ ticket?.title }}</strong>?</p>
+        <p class="warning">This action cannot be undone.</p>
+        <div class="modal-actions">
+          <button @click="showDeleteConfirm = false" class="btn-cancel">Cancel</button>
+          <button @click="handleDelete" class="btn-submit btn-danger" :disabled="deleting">
+            {{ deleting ? 'Deleting...' : 'Delete' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -119,6 +204,45 @@ function canUpdate() {
   max-width: 1200px;
   margin: 20px auto;
   padding: 0 20px;
+}
+
+.header-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.back-btn {
+  padding: 8px 16px;
+  background: #6b7280;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-edit {
+  padding: 8px 16px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-delete {
+  padding: 8px 16px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
 }
 
 h1 {
@@ -174,6 +298,12 @@ h1 {
   margin: 20px 0;
 }
 
+.actions h3 {
+  width: 100%;
+  margin-bottom: 10px;
+  color: #374151;
+}
+
 .actions button {
   padding: 10px 20px;
   border: none;
@@ -187,10 +317,6 @@ h1 {
 .actions button:disabled {
   background: #9ca3af;
   cursor: not-allowed;
-}
-
-.actions .back {
-  background: #6b7280;
 }
 
 .comments {
@@ -254,5 +380,85 @@ h1 {
 
 .error {
   color: #ef4444;
+}
+
+.error button {
+  margin-top: 12px;
+  padding: 8px 16px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: white;
+  border-radius: 12px;
+  padding: 28px;
+  width: 480px;
+  max-width: 90vw;
+}
+
+.delete-confirm {
+  text-align: center;
+}
+
+.delete-confirm h2 {
+  margin-bottom: 16px;
+  color: #ef4444;
+}
+
+.warning {
+  color: #ef4444;
+  font-size: 13px;
+  margin: 12px 0;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.btn-cancel {
+  padding: 10px 20px;
+  background: white;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+}
+
+.btn-cancel:hover {
+  background: #f9fafb;
+}
+
+.btn-submit {
+  padding: 10px 20px;
+  background: #3b82f6;
+  color: white;
+}
+
+.btn-submit:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  background: #ef4444;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #dc2626;
 }
 </style>
