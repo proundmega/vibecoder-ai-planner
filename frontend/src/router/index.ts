@@ -40,7 +40,7 @@ const routes = [
     path: '/users',
     name: 'UserManagement',
     component: () => import('../views/UserManagement.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, allowedRoles: ['project_admin', 'member', 'super_admin'] },
   },
   {
     path: '/projects/:id',
@@ -84,6 +84,21 @@ router.beforeEach((to, _from, next) => {
     if (!isAuthenticated()) {
       next({ name: 'Login', query: { redirect: to.fullPath } })
       return
+    }
+    
+    const userStr = localStorage.getItem('vibecode_user')
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr)
+        if (to.meta.allowedRoles && to.meta.allowedRoles.length > 0) {
+          if (!to.meta.allowedRoles.includes(user.role)) {
+            next({ name: 'Dashboard' })
+            return
+          }
+        }
+      } catch (e) {
+        console.error('Failed to parse user from localStorage:', e)
+      }
     }
   }
   if (to.path === '/login' || to.path === '/register') {

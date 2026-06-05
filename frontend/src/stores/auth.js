@@ -44,12 +44,29 @@ export function useAuthStore() {
 
   const isAuthenticated = () => !!token.value
 
+  const hasRole = (role) => {
+    return user.value?.role === role
+  }
+
+  const hasAnyRole = (roles) => {
+    if (!user.value?.role) return false
+    return roles.includes(user.value.role)
+  }
+
+  const canAccess = (allowedRoles) => {
+    if (!allowedRoles || allowedRoles.length === 0) return true
+    return hasAnyRole(allowedRoles)
+  }
+
   instance = {
     user,
     token,
     loading,
     error,
     isAuthenticated,
+    hasRole,
+    hasAnyRole,
+    canAccess,
     setUser,
     setToken,
     setLoading,

@@ -6,6 +6,7 @@
         <div class="nav-links">
           <router-link to="/dashboard" class="nav-link">Dashboard</router-link>
           <router-link to="/projects" class="nav-link">Projects</router-link>
+          <router-link v-if="showUsersLink" to="/users" class="nav-link">Users</router-link>
         </div>
         <div class="nav-right">
           <span class="nav-user">{{ authStore.user?.value?.name || 'User' }}</span>
@@ -36,6 +37,12 @@ const router = useRouter()
 const route = useRoute()
 
 const showNav = computed(() => !['/login', '/register'].includes(route.path))
+
+const showUsersLink = computed(() => {
+  const user = authStore.user?.value
+  if (!user) return false
+  return ['project_admin', 'member', 'super_admin'].includes(user.role)
+})
 
 const handleLogout = () => {
   authStore.logout()
