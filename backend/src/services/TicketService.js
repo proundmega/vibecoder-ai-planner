@@ -1,5 +1,6 @@
 const Ticket = require('../models/ticket');
 const Project = require('../models/project');
+const User = require('../models/user');
 
 class TicketService {
   async create(projectId, title, description, priority, userId) {
@@ -46,6 +47,11 @@ class TicketService {
   async delete(id, userId) {
     const ticket = await Ticket.findById(id);
     if (!ticket) throw new Error('Ticket not found');
+
+    const user = await User.find(userId);
+    if (ticket.owner_id !== userId && !['project_admin', 'member', 'super_admin'].includes(user.role)) {
+      throw new Error('Forbidden: only ticket owner or admins can delete');
+    }
 
     await Ticket.delete(id);
   }

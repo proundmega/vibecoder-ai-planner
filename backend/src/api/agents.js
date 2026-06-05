@@ -4,7 +4,7 @@ const router = express.Router();
 const TicketService = require('../services/TicketService');
 const ProjectService = require('../services/ProjectService');
 const AgentService = require('../services/AgentService');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, requireRole } = require('../middleware/auth');
 
 /**
  * AI Agent API Endpoints
@@ -14,7 +14,7 @@ const { verifyToken } = require('../middleware/auth');
 // ==================== USER-FACING AGENT ENDPOINTS ====================
 
 // Create a new agent for user
-router.post('/agents/create', verifyToken, async (req, res) => {
+router.post('/agents/create', verifyToken, requireRole('project_admin', 'member'), async (req, res) => {
   try {
     const { name } = req.body;
     
@@ -45,7 +45,7 @@ router.get('/agents', verifyToken, async (req, res) => {
 });
 
 // Revoke an agent's API key
-router.post('/agents/revoke/:agentId', verifyToken, async (req, res) => {
+router.post('/agents/revoke/:agentId', verifyToken, requireRole('project_admin'), async (req, res) => {
   try {
     await AgentService.revokeApiKey(req.params.agentId);
     res.json({ message: 'API key revoked' });
@@ -56,7 +56,7 @@ router.post('/agents/revoke/:agentId', verifyToken, async (req, res) => {
 });
 
 // Delete agent
-router.delete('/agents/:agentId', verifyToken, async (req, res) => {
+router.delete('/agents/:agentId', verifyToken, requireRole('project_admin'), async (req, res) => {
   try {
     await AgentService.delete(req.params.agentId);
     res.json({ message: 'Agent deleted' });

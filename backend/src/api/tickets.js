@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const { requireRole } = require('../middleware/auth');
 const TicketService = require('../services/TicketService');
+const User = require('../models/user');
 
 // Get single ticket
 router.get('/:ticketId', async (req, res) => {
@@ -28,6 +30,14 @@ router.post('/', async (req, res) => {
 // Update ticket
 router.put('/:ticketId', async (req, res) => {
   try {
+    const ticket = await TicketService.getOne(req.params.ticketId, req.user.userId);
+    const user = await User.find(req.user.userId);
+    
+    // 'user' role (AI agents) can only update their own tickets
+    if (user.role === 'user' && ticket.owner_id !== req.user.userId) {
+      return res.status(403).json({ error: 'AI agents can only update their own tickets' });
+    }
+    
     const { title, description, status, priority, assigneeId } = req.body;
     await TicketService.update(
       req.params.ticketId,
@@ -42,7 +52,7 @@ router.put('/:ticketId', async (req, res) => {
 });
 
 // Delete ticket
-router.delete('/:ticketId', async (req, res) => {
+router.delete('/:ticketId', verifyToken, requireRole('project_admin', 'member'), async (req, res) => {
   try {
     await TicketService.delete(req.params.ticketId, req.user.userId);
     res.json({ message: 'Ticket deleted' });
