@@ -55,12 +55,26 @@ Extend the `users` table to support the new role system, account lifecycle, and 
    UPDATE users SET role = 'project_admin' WHERE role = 'member';
    UPDATE users SET role = 'project_admin' WHERE role = 'MEMBER';
    ```
-6. Update `User` model in `backend/src/models/user.js`:
+6. Create `approval_requests` table:
+   ```sql
+   CREATE TABLE IF NOT EXISTS approval_requests (
+     id BIGSERIAL PRIMARY KEY,
+     ticket_id BIGINT REFERENCES tickets(id) ON DELETE CASCADE,
+     requested_by BIGINT REFERENCES users(id),
+     approved_by BIGINT REFERENCES users(id),
+     status VARCHAR(20) DEFAULT 'pending',
+     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+     approved_at TIMESTAMP,
+     CONSTRAINT valid_approval_status CHECK (status IN ('pending', 'approved', 'rejected'))
+   );
+   CREATE INDEX IF NOT EXISTS idx_approval_requests_ticket_id ON approval_requests(ticket_id);
+   CREATE INDEX IF NOT EXISTS idx_approval_requests_status ON approval_requests(status);
+   ```
+7. Update `User` model in `backend/src/models/user.js`:
    - Add `isActive` and `userCreatedBy` to constructor
    - Update `create()` to accept `role` and `userCreatedBy` parameters
-   - Add `updateIsActive()` method
    - Add `findByRole()` method
-   - Update `updateRole()` to validate allowed role transitions
+   - Note: `updateRole()` is REMOVED — roles are immutable once assigned
 
 ### c) Dependencies
 - None (first ticket in the chain)
@@ -256,9 +270,10 @@ Create CRUD endpoints for user management with role-gated access. Admins manage 
    });
    
    // Update user (project_admin: all, member: user only)
+   // Note: role is IMMUABLE — cannot be changed after assignment
    router.put('/:id', verifyToken, requireActiveUser, async (req, res) => {
-     const { name, role, is_active } = req.body;
-     const user = await UserService.updateUser(req.params.id, req.user.userId, { name, role, is_active });
+     const { name, is_active } = req.body;
+     const user = await UserService.updateUser(req.params.id, req.user.userId, { name, is_active });
      res.json(user);
    });
    
@@ -286,25 +301,25 @@ Create CRUD endpoints for user management with role-gated access. Admins manage 
 2. Update `backend/src/services/UserService.js` — add methods:
    - `listUsers(userId, userRole, filters)` — scoped by creator
    - `createUser(name, email, password, role, createdBy)` — with validation
-   - `updateUser(userId, adminId, updates)` — with role transition validation
+   - `updateUser(userId, adminId, updates)` — name and is_active only (role is immutable)
    - `toggleUserActive(userId, adminId)` — activate/deactivate
-   - `deleteUser(userId, adminId)` — soft delete or hard delete
+   - `deleteUser(userId, adminId)` — HARD DELETE (permanent)
    - `listAllUsers(filters)` — super_admin only, no scoping
 3. Update `backend/src/models/user.js` — add methods:
    - `findAll(filters)` — with role, search, pagination
-   - `update(userId, updates)` — with audit trail
+   - `update(userId, updates)` — name and is_active only (role is immutable)
    - `toggleActive(userId)` — update is_active
-   - `delete(userId)` — soft delete (set is_active = false) or hard delete
+   - `delete(userId)` — HARD DELETE (permanent removal)
 
 ### c) Dependencies
 - Ticket 3 (Auth middleware)
 
 ### d) Risks/Edge Cases
 - **Self-deletion**: Users can't delete their own account — validate in service
-- **Role downgrade**: Admin can't downgrade themselves (prevents lockout)
 - **Password reset**: Admins can reset passwords for their users — add `resetPassword()` method
 - **Search**: Full-text search on name/email — use `ILIKE` or PostgreSQL full-text search
 - **Pagination**: Implement cursor-based or offset-based pagination for large datasets
+- **Hard delete**: Permanent removal — ensure no foreign key references will break
 
 ---
 
@@ -329,7 +344,8 @@ Create user management screens for project_admin and member roles. Admin sees al
    - No create/delete (super_admins don't create users, they're created manually)
 3. Create `frontend/src/components/UserModal.vue`:
    - Modal for create/edit user
-   - Fields: Name, Email, Password (create only), Role (dropdown)
+   - Create fields: Name, Email, Password, Role (dropdown)
+   - Edit fields: Name only (role is immutable, cannot be changed)
    - Role options depend on creator's role:
      - project_admin: member, user
      - member: user only
@@ -373,6 +389,7 @@ Create user management screens for project_admin and member roles. Admin sees al
 
 ### d) Risks/Edge Cases
 - **Role display**: Show human-readable roles ("Project Admin", "Member", "AI Agent")
+- **Immutable role**: Role cannot be changed after account creation — clearly communicate this to admins
 - **Created By**: Show "Self-registered" for NULL user_created_by
 - **Password**: Don't show password in list, only in create/edit modal
 - **Confirmation**: Delete and toggle-active need confirmation dialogs
@@ -510,14 +527,14 @@ Enforce restrictions on AI agent (`user` role) accounts: no delete, read-only AI
        const user = await User.find(req.user.userId);
        
        // If user is AI agent and trying to move to done, require approval
-       if (user.role === 'user' && req.body.status === 'done') {
-         if (ticket.status !== 'review') {
-           return res.status(400).json({ error: 'AI agents can only submit for review, not mark as done' });
-         }
-         // Create approval request (new table or use existing ai_actions)
-         await ApprovalRequest.create(ticket.id, req.user.userId);
-         return res.json({ message: 'Approval request submitted. Awaiting review.' });
-       }
+        if (user.role === 'user' && req.body.status === 'done') {
+          if (ticket.status !== 'review') {
+            return res.status(400).json({ error: 'AI agents can only submit for review, not mark as done' });
+          }
+          // Create approval request in approval_requests table
+          await ApprovalRequest.create(ticket.id, req.user.userId);
+          return res.json({ message: 'Approval request submitted. Awaiting review.' });
+        }
        
        await TicketService.updateStatus(req.params.ticketId, req.body.status, req.user.userId);
        res.json({ message: 'Status updated' });
