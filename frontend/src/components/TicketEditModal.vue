@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { fetchProjectUsers, fetchTicket, updateTicket } from '@/api/tickets'
+import { fetchProjectUsers, updateTicket } from '@/api/tickets'
 
 const props = defineProps({
   ticket: { type: Object, required: true },
@@ -16,7 +16,6 @@ const description = ref('')
 const priority = ref('medium')
 const assigneeId = ref(null)
 const assignees = ref([])
-const loading = ref(false)
 const saving = ref(false)
 const error = ref(null)
 

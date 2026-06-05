@@ -89,9 +89,11 @@ router.beforeEach((to, _from, next) => {
     const userStr = localStorage.getItem('vibecode_user')
     if (userStr) {
       try {
-        const user = JSON.parse(userStr)
-        if (to.meta.allowedRoles && to.meta.allowedRoles.length > 0) {
-          if (!to.meta.allowedRoles.includes(user.role)) {
+        const user: Record<string, unknown> = JSON.parse(userStr)
+        const allowedRoles = to.meta.allowedRoles as string[] | undefined
+        if (allowedRoles && allowedRoles.length > 0) {
+          const userRole = user.role as string | undefined
+          if (userRole && !allowedRoles.includes(userRole)) {
             next({ name: 'Dashboard' })
             return
           }
