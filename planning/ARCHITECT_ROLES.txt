@@ -1,0 +1,702 @@
+# ARCHITECT_ROLES.txt — Role System Overhaul & Ticket CRUD (Draft)
+
+**Status**: Working draft — not final. Use as a reference when designing the role system overhaul.
+**Author**: Lead Architect
+**Date**: 2026-06-05
+**Scope**: Complete role system redesign, user management, ticket edit/delete, AI agent restrictions
+**Note**: This is a specification, not just guidelines. Each section below is an actionable ticket. Implement in order.
+
+---
+
+## Role Definitions (Final)
+
+| Role | Who | Permissions |
+|------|-----|-------------|
+| `super_admin` | Platform operators (manual DB only) | Full system access, view ALL users, activate/deactivate |
+| `project_admin` | Humans registering via portal | Full project control: manage tickets, AI keys, create members/users |
+| `member` | Team leads / reviewers | Manage tickets & planning, order AI agents, review work, create users |
+| `user` | AI agents | Create tickets, update own tickets, update status, read AI tokens, NO delete, needs approval to move to done |
+
+**Key rules:**
+- `project_admin` can create `member` and `user` accounts
+- `member` can create `user` accounts only
+- `user` cannot create any other user
+- `super_admin` created manually in DB only (no API endpoint)
+- Default registration role: `project_admin`
+- `user_created_by` tracks who created each user (null for self-registered)
+
+---
+
+## Ticket 1: Database Migration — Users Table
+
+### a) Purpose
+Extend the `users` table to support the new role system, account lifecycle, and creation tracking. This is the foundation for all subsequent tickets.
+
+### b) Actions
+1. Create migration file: `backend/src/migrations/003_role_system.sql`
+2. Add columns to `users` table:
+   ```sql
+   ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+   ALTER TABLE users ADD COLUMN IF NOT EXISTS user_created_by BIGINT REFERENCES users(id);
+   ```
+3. Update role constraint:
+   ```sql
+   ALTER TABLE users DROP CONSTRAINT IF EXISTS valid_roles;
+   ALTER TABLE users ADD CONSTRAINT valid_roles 
+     CHECK (role IN ('super_admin', 'project_admin', 'member', 'user'));
+   ```
+4. Migrate existing `admin` users to `project_admin`:
+   ```sql
+   UPDATE users SET role = 'project_admin' WHERE role = 'admin';
+   UPDATE users SET role = 'project_admin' WHERE role = 'ADMIN';
+   ```
+5. Migrate existing `member` users to `project_admin` (if any):
+   ```sql
+   UPDATE users SET role = 'project_admin' WHERE role = 'member';
+   UPDATE users SET role = 'project_admin' WHERE role = 'MEMBER';
+   ```
+6. Update `User` model in `backend/src/models/user.js`:
+   - Add `isActive` and `userCreatedBy` to constructor
+   - Update `create()` to accept `role` and `userCreatedBy` parameters
+   - Add `updateIsActive()` method
+   - Add `findByRole()` method
+   - Update `updateRole()` to validate allowed role transitions
+
+### c) Dependencies
+- None (first ticket in the chain)
+
+### d) Risks/Edge Cases
+- **Data loss**: Existing `admin` users must be migrated correctly — test with backup
+- **Null user_created_by**: Self-registered users have NULL — handle in UI (show "Self-registered")
+- **Circular reference**: User can't reference themselves as creator — validate in service layer
+- **Cascading deletes**: When a user is deleted, their `user_created_by` links should become NULL (ON DELETE SET NULL)
+
+---
+
+## Ticket 2: AuthService Overhaul — Registration with Role
+
+### a) Purpose
+Update registration to accept a `role` parameter and track `user_created_by`. Self-registration always gets `project_admin`. Admin/member-created accounts respect the requested role (gated by creator's role).
+
+### b) Actions
+1. Update `backend/src/auth.js` — `register()` method:
+   ```javascript
+   async register(name, email, password, role = 'project_admin', userCreatedBy = null) {
+     // Validate role based on creator's role
+     if (userCreatedBy) {
+       const creator = await User.find(userCreatedBy);
+       if (!creator) throw new Error('Creator not found');
+       
+       if (creator.role === 'project_admin') {
+         if (!['member', 'user'].includes(role)) {
+           throw new Error('Project admins can only create member or user accounts');
+         }
+       } else if (creator.role === 'member') {
+         if (role !== 'user') {
+           throw new Error('Members can only create user accounts');
+         }
+       } else if (creator.role === 'user') {
+         throw new Error('AI agents cannot create user accounts');
+       }
+     }
+     
+     // super_admin can only be created manually (no API path)
+     if (role === 'super_admin') {
+       throw new Error('Super admin accounts must be created manually');
+     }
+     
+     const user = await UserService.register(name, email, password, role, userCreatedBy);
+     // ... token generation (reuse existing logic)
+   }
+   ```
+2. Update `backend/src/services/UserService.js` — `register()` method:
+   ```javascript
+   async register(name, email, password, role = 'project_admin', userCreatedBy = null) {
+     const exists = await User.existsByEmail(email);
+     if (exists) throw new Error('Email already registered');
+     
+     const hashedPassword = await bcrypt.hash(password, 10);
+     const result = await pool.query(
+       `INSERT INTO users (name, email, password_hash, role, user_created_by, current_plan) 
+        VALUES ($1, $2, $3, $4, $5, 'free') 
+        RETURNING *`,
+       [name, email, hashedPassword, role, userCreatedBy]
+     );
+     return new User(result.rows[0]);
+   }
+   ```
+3. Update `backend/src/models/user.js` — `create()` method:
+   ```javascript
+   static async create(name, email, password, role = 'project_admin', userCreatedBy = null) {
+     const hashedPassword = await bcrypt.hash(password, 10);
+     const result = await pool.query(
+       'INSERT INTO users (name, email, password_hash, role, user_created_by, current_plan) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+       [name, email, hashedPassword, role, userCreatedBy, 'free']
+     );
+     return new User(result.rows[0]);
+   }
+   ```
+4. Update `backend/src/api/routes.js` — register route:
+   ```javascript
+   router.post('/auth/register', async (req, res) => {
+     const { name, email, password, role, user_created_by } = req.body;
+     const result = await AuthService.register(name, email, password, role, user_created_by || null);
+     res.status(201).json(result);
+   });
+   ```
+
+### c) Dependencies
+- Ticket 1 (database migration)
+
+### d) Risks/Edge Cases
+- **Role validation**: Admin can't create super_admin, member can't create member/admin, user can't create anything
+- **Self-registration**: No `user_created_by` passed → defaults to `project_admin`
+- **Token expiry**: Reuse existing `TOKEN_EXPIRY_MINUTES` logic from `auth.js`
+- **Password hashing**: Use `bcrypt.hash(password, 10)` consistently
+
+---
+
+## Ticket 3: Auth Middleware — Role-Based Access Control
+
+### a) Purpose
+Implement role-based access control middleware to gate endpoints by role. This prevents unauthorized access to sensitive operations (AI key management, user creation, etc.).
+
+### b) Actions
+1. Create `backend/src/middleware/roleAuth.js`:
+   ```javascript
+   function requireRole(...allowedRoles) {
+     return (req, res, next) => {
+       if (!req.user || !req.user.role) {
+         return res.status(401).json({ error: 'Authentication required' });
+       }
+       
+       if (!allowedRoles.includes(req.user.role)) {
+         return res.status(403).json({ 
+           error: 'Forbidden',
+           required: allowedRoles,
+           actual: req.user.role
+         });
+       }
+       
+       next();
+     };
+   }
+   
+   function requireActiveUser(req, res, next) {
+     if (!req.user || !req.user.isActive) {
+       return res.status(403).json({ error: 'Account deactivated' });
+     }
+     next();
+   }
+   
+   module.exports = { requireRole, requireActiveUser };
+   ```
+2. Update `backend/src/middleware/auth.js` — add `requireRole` and `requireActiveUser` exports
+3. Apply role guards to routes:
+   - `POST /api/users` (create user): `requireRole('project_admin', 'member')`
+   - `PUT /api/users/:id/role`: `requireRole('project_admin')`
+   - `DELETE /api/users/:id`: `requireRole('project_admin', 'super_admin')`
+   - `GET /api/users/super-admin`: `requireRole('super_admin')`
+   - `POST /api/agents/create`: `requireRole('project_admin', 'member')`
+   - `DELETE /api/agents/:id`: `requireRole('project_admin')`
+   - `DELETE /api/tickets/:id`: `requireRole('project_admin', 'member')` (user role blocked)
+4. Update `UserService.authenticate()` — check `is_active` before returning session:
+   ```javascript
+   async authenticate(email, password) {
+     const user = await User.findByEmail(email);
+     if (!user) throw new Error('Invalid credentials');
+     
+     const isValid = await bcrypt.compare(password, user.passwordHash);
+     if (!isValid) throw new Error('Invalid credentials');
+     
+     if (!user.isActive) {
+       throw new Error('Account deactivated. Contact support.');
+     }
+     
+     // ... token generation
+   }
+   ```
+
+### c) Dependencies
+- Ticket 2 (AuthService overhaul)
+
+### d) Risks/Edge Cases
+- **Role hierarchy**: `super_admin` > `project_admin` > `member` > `user`
+- **Token payload**: JWT must include `role` and `isActive` claims
+- **Backward compatibility**: Existing tokens without `role` should be handled gracefully
+- **Agent auth**: AI agents (`user` role) bypass role checks on their own tickets
+
+---
+
+## Ticket 4: User Management API
+
+### a) Purpose
+Create CRUD endpoints for user management with role-gated access. Admins manage their team, members manage AI agents, super_admins manage all users.
+
+### b) Actions
+1. Create `backend/src/api/users.js`:
+   ```javascript
+   const express = require('express');
+   const router = express.Router();
+   const { verifyToken, requireRole, requireActiveUser } = require('../middleware/auth');
+   const UserService = require('../services/UserService');
+   
+   // List users (project_admin: own users, member: own users, super_admin: all users)
+   router.get('/', verifyToken, requireActiveUser, async (req, res) => {
+     const { role, search, page = 1, perPage = 20 } = req.query;
+     const users = await UserService.listUsers(req.user.userId, req.user.role, { role, search, page, perPage });
+     res.json({ users, pagination: { page, perPage, total: users.length } });
+   });
+   
+   // Create user (project_admin: member/user, member: user only)
+   router.post('/', verifyToken, requireRole('project_admin', 'member'), async (req, res) => {
+     const { name, email, password, role } = req.body;
+     const user = await UserService.createUser(name, email, password, role, req.user.userId);
+     res.status(201).json(user);
+   });
+   
+   // Update user (project_admin: all, member: user only)
+   router.put('/:id', verifyToken, requireActiveUser, async (req, res) => {
+     const { name, role, is_active } = req.body;
+     const user = await UserService.updateUser(req.params.id, req.user.userId, { name, role, is_active });
+     res.json(user);
+   });
+   
+   // Deactivate/activate user
+   router.patch('/:id/toggle-active', verifyToken, requireRole('project_admin', 'super_admin'), async (req, res) => {
+     const user = await UserService.toggleUserActive(req.params.id, req.user.userId);
+     res.json(user);
+   });
+   
+   // Delete user
+   router.delete('/:id', verifyToken, requireRole('project_admin', 'super_admin'), async (req, res) => {
+     await UserService.deleteUser(req.params.id, req.user.userId);
+     res.json({ message: 'User deleted' });
+   });
+   
+   // Super admin: list ALL users (no project scoping)
+   router.get('/super-admin', verifyToken, requireRole('super_admin'), async (req, res) => {
+     const { search, role, is_active, page = 1, perPage = 50 } = req.query;
+     const users = await UserService.listAllUsers({ search, role, is_active, page, perPage });
+     res.json(users);
+   });
+   
+   module.exports = router;
+   ```
+2. Update `backend/src/services/UserService.js` — add methods:
+   - `listUsers(userId, userRole, filters)` — scoped by creator
+   - `createUser(name, email, password, role, createdBy)` — with validation
+   - `updateUser(userId, adminId, updates)` — with role transition validation
+   - `toggleUserActive(userId, adminId)` — activate/deactivate
+   - `deleteUser(userId, adminId)` — soft delete or hard delete
+   - `listAllUsers(filters)` — super_admin only, no scoping
+3. Update `backend/src/models/user.js` — add methods:
+   - `findAll(filters)` — with role, search, pagination
+   - `update(userId, updates)` — with audit trail
+   - `toggleActive(userId)` — update is_active
+   - `delete(userId)` — soft delete (set is_active = false) or hard delete
+
+### c) Dependencies
+- Ticket 3 (Auth middleware)
+
+### d) Risks/Edge Cases
+- **Self-deletion**: Users can't delete their own account — validate in service
+- **Role downgrade**: Admin can't downgrade themselves (prevents lockout)
+- **Password reset**: Admins can reset passwords for their users — add `resetPassword()` method
+- **Search**: Full-text search on name/email — use `ILIKE` or PostgreSQL full-text search
+- **Pagination**: Implement cursor-based or offset-based pagination for large datasets
+
+---
+
+## Ticket 5: User Management UI — Project Admin & Member Views
+
+### a) Purpose
+Create user management screens for project_admin and member roles. Admin sees all team users, member sees only users they created. Both use modal-based CRUD.
+
+### b) Actions
+1. Create `frontend/src/views/UserManagement.vue`:
+   - Header with "Manage Users" title
+   - Role filter dropdown (all roles, project_admin, member, user)
+   - Search input (name/email)
+   - "Create User" button (only visible for project_admin/member)
+   - User table with columns: Name, Email, Role, Created By, Status (Active/Deactivated), Actions
+   - Actions per row: Edit, Delete (project_admin only), Toggle Active (project_admin only)
+2. Create `frontend/src/views/SuperAdminUsers.vue`:
+   - Separate view accessible only to super_admin role
+   - Full user list (no project scoping)
+   - Search/filter by role, status
+   - Activate/Deactivate buttons
+   - No create/delete (super_admins don't create users, they're created manually)
+3. Create `frontend/src/components/UserModal.vue`:
+   - Modal for create/edit user
+   - Fields: Name, Email, Password (create only), Role (dropdown)
+   - Role options depend on creator's role:
+     - project_admin: member, user
+     - member: user only
+   - "Created By" field: mandatory for member/user roles, shows current user for self-registration
+4. Update `frontend/src/router/index.ts`:
+   ```typescript
+   {
+     path: '/users',
+     name: 'UserManagement',
+     component: () => import('../views/UserManagement.vue'),
+     meta: { requiresAuth: true, allowedRoles: ['project_admin', 'member'] },
+   },
+   {
+     path: '/super-admin/users',
+     name: 'SuperAdminUsers',
+     component: () => import('../views/SuperAdminUsers.vue'),
+     meta: { requiresAuth: true, allowedRoles: ['super_admin'] },
+   },
+   ```
+5. Update `frontend/src/api/users.js` — add methods:
+   - `listUsers(filters)`
+   - `createUser(data)`
+   - `updateUser(id, data)`
+   - `toggleUserActive(id)`
+   - `deleteUser(id)`
+   - `listAllUsers(filters)` (super_admin only)
+6. Update router guard in `frontend/src/router/index.ts`:
+   ```typescript
+   // Check role-based access
+   if (to.meta.allowedRoles && to.meta.allowedRoles.length > 0) {
+     const user = JSON.parse(localStorage.getItem('vibecode_user') || '{}');
+     if (!to.meta.allowedRoles.includes(user.role)) {
+       next({ name: 'Dashboard' }); // or 403 page
+       return;
+     }
+   }
+   ```
+
+### c) Dependencies
+- Ticket 4 (User Management API)
+
+### d) Risks/Edge Cases
+- **Role display**: Show human-readable roles ("Project Admin", "Member", "AI Agent")
+- **Created By**: Show "Self-registered" for NULL user_created_by
+- **Password**: Don't show password in list, only in create/edit modal
+- **Confirmation**: Delete and toggle-active need confirmation dialogs
+- **Loading states**: Show skeletons/spinners during API calls
+- **Error handling**: Show toast notifications for success/error
+
+---
+
+## Ticket 6: Ticket Edit Modal
+
+### a) Purpose
+Add edit functionality to ticket detail view. Users can edit title, description, priority, and assignee via a modal. Status transitions remain as quick-action buttons.
+
+### b) Actions
+1. Update `frontend/src/views/TicketDetail.vue`:
+   - Add "Edit" button (visible for project_admin, member, or ticket assignee)
+   - Create edit modal with fields:
+     - Title (text input)
+     - Description (textarea)
+     - Priority (dropdown: low, medium, high, urgent)
+     - Assignee (dropdown: users in same project)
+   - Save button triggers `updateTicket(ticket.id, updates)`
+   - Cancel button closes modal without saving
+   - Loading state during save
+2. Update `frontend/src/api/tickets.js` — `updateTicket()` already exists, verify it works:
+   ```javascript
+   export async function updateTicket(id, updates) {
+     const response = await client.put(`/tickets/${id}`, updates);
+     return response.data;
+   }
+   ```
+3. Update backend `TicketService.update()` — ensure it handles partial updates:
+   ```javascript
+   async update(id, data, userId) {
+     const ticket = await Ticket.findById(id);
+     if (!ticket) throw new Error('Ticket not found');
+     
+     // Validate status transitions if status is being updated
+     if (data.status && ticket.status !== data.status) {
+       const validTransitions = {
+         backlog: ['in_progress'],
+         in_progress: ['review', 'backlog'],
+         review: ['done', 'backlog'],
+         done: [],
+       };
+       if (!validTransitions[ticket.status]?.includes(data.status)) {
+         throw new Error('Invalid status transition');
+       }
+     }
+     
+     return await Ticket.update(id, data);
+   }
+   ```
+4. Update `frontend/src/views/TicketBoard.vue` — add edit button to ticket cards:
+   - Click ticket card → navigate to detail view
+   - Add pencil icon on hover for quick edit
+
+### c) Dependencies
+- Ticket 3 (Auth middleware — role checks)
+
+### d) Risks/Edge Cases
+- **Concurrency**: Two users editing same ticket → last write wins (or add optimistic locking)
+- **Assignee validation**: Only users in same project can be assigned
+- **Priority changes**: No validation needed (always allowed)
+- **Empty title**: Prevent saving with empty title
+- **Form reset**: Reset form on modal close/cancel
+
+---
+
+## Ticket 7: Ticket Delete
+
+### a) Purpose
+Add delete functionality to tickets. Users can delete tickets they own or have permission to manage. Confirmation dialog required.
+
+### b) Actions
+1. Update `frontend/src/views/TicketDetail.vue`:
+   - Add "Delete" button (visible for project_admin, member, or ticket owner)
+   - Confirmation dialog: "Are you sure you want to delete this ticket? This action cannot be undone."
+   - On confirm: call `deleteTicket(ticket.id)`, then redirect to `/projects/:id/tickets`
+2. Update `frontend/src/api/tickets.js` — `deleteTicket()` already exists, verify it works:
+   ```javascript
+   export async function deleteTicket(id) {
+     const response = await client.delete(`/tickets/${id}`);
+     return response.data;
+   }
+   ```
+3. Update backend `TicketService.delete()` — add authorization check:
+   ```javascript
+   async delete(id, userId) {
+     const ticket = await Ticket.findById(id);
+     if (!ticket) throw new Error('Ticket not found');
+     
+     // Check permission: owner or admin/member
+     const user = await User.find(userId);
+     if (ticket.owner_id !== userId && !['project_admin', 'member', 'super_admin'].includes(user.role)) {
+       throw new Error('Forbidden: only ticket owner or admins can delete');
+     }
+     
+     await Ticket.delete(id);
+   }
+   ```
+4. Update `frontend/src/views/TicketBoard.vue` — add delete button to ticket cards:
+   - Right-click or long-press for delete option
+   - Or add "..." menu with delete option
+
+### c) Dependencies
+- Ticket 6 (Ticket Edit Modal — for consistent UI patterns)
+
+### d) Risks/Edge Cases
+- **Cascade delete**: Deleting a ticket should not cascade to comments (or should soft-delete comments)
+- **AI agent tickets**: AI agents (`user` role) cannot delete tickets they created
+- **Audit trail**: Log deletions in `ai_actions` table for compliance
+- **Redirect**: After delete, redirect to ticket board (`/projects/:id/tickets`)
+
+---
+
+## Ticket 8: AI Agent Restrictions
+
+### a) Purpose
+Enforce restrictions on AI agent (`user` role) accounts: no delete, read-only AI tokens, approval required for status transitions to done.
+
+### b) Actions
+1. Update backend `backend/src/api/agents.js`:
+   - `GET /api/agents` (list agents): `user` role can view but not modify
+   - `POST /api/agents/create`: `requireRole('project_admin', 'member')`
+   - `DELETE /api/agents/:id`: `requireRole('project_admin')`
+   - `POST /api/agents/revoke/:agentId`: `requireRole('project_admin')`
+2. Update backend `backend/src/api/tickets.js`:
+   - `DELETE /api/tickets/:id`: `requireRole('project_admin', 'member')` — blocks `user` role
+   - `PUT /api/tickets/:id`: Allow `user` role only for their own tickets
+   - `POST /api/tickets/status/:ticketId`: Add approval check for `user` role:
+     ```javascript
+     async function statusChange(req, res) {
+       const ticket = await TicketService.getOne(req.params.ticketId);
+       const user = await User.find(req.user.userId);
+       
+       // If user is AI agent and trying to move to done, require approval
+       if (user.role === 'user' && req.body.status === 'done') {
+         if (ticket.status !== 'review') {
+           return res.status(400).json({ error: 'AI agents can only submit for review, not mark as done' });
+         }
+         // Create approval request (new table or use existing ai_actions)
+         await ApprovalRequest.create(ticket.id, req.user.userId);
+         return res.json({ message: 'Approval request submitted. Awaiting review.' });
+       }
+       
+       await TicketService.updateStatus(req.params.ticketId, req.body.status, req.user.userId);
+       res.json({ message: 'Status updated' });
+     }
+     ```
+3. Create `backend/src/models/approval.js` — approval request tracking:
+   ```javascript
+   class ApprovalRequest {
+     static async create(ticketId, requestedBy) {
+       return pool.query(
+         `INSERT INTO approval_requests (ticket_id, requested_by, status) 
+          VALUES ($1, $2, 'pending') RETURNING *`,
+         [ticketId, requestedBy]
+       );
+     }
+     
+     static async approve(approvalId, approvedBy) {
+       return pool.query(
+         `UPDATE approval_requests 
+          SET status = 'approved', approved_by = $2, approved_at = NOW() 
+          WHERE id = $1 AND status = 'pending' RETURNING *`,
+         [approvalId, approvedBy]
+       );
+     }
+     
+     static async reject(approvalId, approvedBy) {
+       return pool.query(
+         `UPDATE approval_requests 
+          SET status = 'rejected', approved_by = $2, approved_at = NOW() 
+          WHERE id = $1 AND status = 'pending' RETURNING *`,
+         [approvalId, approvedBy]
+       );
+     }
+   }
+   ```
+4. Update frontend `frontend/src/views/TicketDetail.vue`:
+   - Hide status transition buttons for `user` role when status is `review` (show "Submit for Review" instead)
+   - Show approval status badge when ticket is awaiting approval
+
+### c) Dependencies
+- Ticket 3 (Auth middleware — role checks)
+- Ticket 7 (Ticket Delete — for consistent permission patterns)
+
+### d) Risks/Edge Cases
+- **Approval workflow**: Who can approve? project_admin or member roles
+- **Approval timeout**: Auto-reject after 7 days if no action
+- **Audit trail**: Log all approval actions
+- **UI clarity**: Show clear messaging to AI agents about approval requirements
+
+---
+
+## Ticket 9: Frontend Router & Navigation Updates
+
+### a) Purpose
+Update frontend routing to support new user management views and role-based access control.
+
+### b) Actions
+1. Update `frontend/src/router/index.ts`:
+   ```typescript
+   // Add new routes
+   {
+     path: '/users',
+     name: 'UserManagement',
+     component: () => import('../views/UserManagement.vue'),
+     meta: { requiresAuth: true, allowedRoles: ['project_admin', 'member'] },
+   },
+   {
+     path: '/super-admin/users',
+     name: 'SuperAdminUsers',
+     component: () => import('../views/SuperAdminUsers.vue'),
+     meta: { requiresAuth: true, allowedRoles: ['super_admin'] },
+   },
+   ```
+2. Update router guard to check `allowedRoles`:
+   ```typescript
+   router.beforeEach((to, _from, next) => {
+     if (to.matched.some(record => record.meta.requiresAuth)) {
+       if (!isAuthenticated()) {
+         next({ name: 'Login', query: { redirect: to.fullPath } });
+         return;
+       }
+       
+       const user = JSON.parse(localStorage.getItem('vibecode_user') || '{}');
+       if (to.meta.allowedRoles && to.meta.allowedRoles.length > 0) {
+         if (!to.meta.allowedRoles.includes(user.role)) {
+           next({ name: 'Dashboard' }); // or 403 page
+           return;
+         }
+       }
+     }
+     next();
+   });
+   ```
+3. Update `frontend/src/stores/auth.js`:
+   - Add `role` to user object (already exists, verify)
+   - Add `isActive` to user object
+   - Add `hasRole(role)` helper method
+   - Add `canAccess(allowedRoles)` helper method
+4. Update navigation menu/sidebar:
+   - Show "Users" link for project_admin and member
+   - Show "Super Admin" link for super_admin only
+   - Hide links based on role
+
+### c) Dependencies
+- Ticket 5 (User Management UI)
+
+### d) Risks/Edge Cases
+- **Route guards**: Must check role before rendering component (prevent flash of unauthorized content)
+- **LocalStorage sync**: Ensure `vibecode_user` includes role and isActive
+- **403 page**: Create a simple "Access Denied" page for unauthorized route access
+- **Navigation items**: Dynamically show/hide based on role
+
+---
+
+## Ticket 10: Migration & Testing
+
+### a) Purpose
+Ensure all changes work together end-to-end. Run integration tests, verify role transitions, and test edge cases.
+
+### b) Actions
+1. Run database migration:
+   ```bash
+   cd backend && npm run db:migrate
+   ```
+2. Verify existing data migration:
+   - Check that `admin` users are now `project_admin`
+   - Check that `user_created_by` is NULL for self-registered users
+   - Check that `is_active` is TRUE for all existing users
+3. Update integration tests in `backend/integration-test/run.sh`:
+   - Test registration with role parameter
+   - Test role-gated access (admin can create member, member can create user, user can't create)
+   - Test user CRUD operations
+   - Test ticket edit/delete with role checks
+   - Test AI agent restrictions (no delete, approval required)
+   - Test super_admin endpoints
+4. Run frontend tests:
+   ```bash
+   cd frontend && npm test
+   ```
+5. Run frontend lint and typecheck:
+   ```bash
+   cd frontend && npm run lint && npm run typecheck
+   ```
+6. Manual testing:
+   - Register new user → should get `project_admin` role
+   - Login as project_admin → create member account
+   - Login as member → create user account
+   - Login as user (AI agent) → verify restrictions
+   - Test ticket edit/delete with different roles
+   - Test approval workflow for AI agent status changes
+
+### c) Dependencies
+- All previous tickets (1-9)
+
+### d) Risks/Edge Cases
+- **Migration rollback**: Have backup/rollback plan if migration fails
+- **Test coverage**: Ensure 100% coverage for new role logic
+- **Backward compatibility**: Existing tokens should still work (add role to JWT payload)
+- **Performance**: User list queries with pagination should be fast (< 100ms)
+
+---
+
+## Summary: Implementation Order
+
+| Priority | Ticket | Effort | Blocks |
+|----------|--------|--------|--------|
+| P0 | Ticket 1 (DB Migration) | Small | All subsequent tickets |
+| P0 | Ticket 2 (AuthService) | Medium | Ticket 3, 4 |
+| P1 | Ticket 3 (Auth Middleware) | Medium | Ticket 4, 6, 7, 8 |
+| P1 | Ticket 4 (User API) | Large | Ticket 5 |
+| P2 | Ticket 5 (User UI) | Large | Ticket 9 |
+| P2 | Ticket 6 (Ticket Edit) | Medium | Ticket 7 |
+| P2 | Ticket 7 (Ticket Delete) | Medium | Ticket 8 |
+| P3 | Ticket 8 (AI Restrictions) | Medium | Ticket 10 |
+| P3 | Ticket 9 (Router Updates) | Small | Ticket 10 |
+| P4 | Ticket 10 (Migration & Testing) | Large | — |
+
+**Recommended approach**: Implement tickets 1-3 first (foundation), then 4-5 (user management), then 6-7 (ticket CRUD), then 8-9 (AI restrictions & routing), then 10 (testing).
+
+---
+
+*This document is a living specification. Review and update as the codebase evolves.*
