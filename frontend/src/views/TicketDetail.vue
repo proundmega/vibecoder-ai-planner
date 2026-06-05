@@ -1,8 +1,9 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { fetchTicket, updateTicket, addComment, fetchComments, deleteTicket } from '@/api/tickets'
+import { getTicketApprovals, createApproval } from '@/api/approvals'
 import TicketEditModal from '@/components/TicketEditModal.vue'
 
 const route = useRoute()
@@ -18,6 +19,8 @@ const showDeleteConfirm = ref(false)
 const deleting = ref(false)
 
 const ticketId = route.params.ticketId
+const approvals = ref([])
+const approving = ref(false)
 
 const validTransitions = {
   backlog: ['in_progress'],
@@ -25,6 +28,10 @@ const validTransitions = {
   review: ['done', 'backlog'],
   done: []
 }
+
+const hasPendingApproval = computed(() => {
+  return approvals.value.some(a => a.status === 'pending')
+})
 
 const canUpdate = () => {
   const user = authStore.user.value
@@ -49,6 +56,7 @@ onMounted(async () => {
       error.value = 'Ticket not found'
     } else {
       comments.value = await fetchComments(ticketId)
+      approvals.value = await getTicketApprovals(ticketId)
     }
   } catch (e) {
     console.error('Failed to load ticket:', e)
@@ -76,6 +84,23 @@ async function changeStatus(newStatus) {
   } catch (err) {
     console.error('Failed to update status:', err)
     error.value = 'Failed to update status: ' + err.message
+  }
+}
+
+async function requestApproval() {
+  if (!ticket.value) return
+  approving.value = true
+  error.value = null
+  
+  try {
+    const approval = await createApproval(ticket.value.id)
+    approvals.value.push(approval)
+    error.value = 'Approval request submitted. Awaiting review.'
+  } catch (err) {
+    console.error('Failed to request approval:', err)
+    error.value = err.message || 'Failed to request approval'
+  } finally {
+    approving.value = false
   }
 }
 
@@ -156,7 +181,17 @@ async function addCommentText() {
         <button v-if="canUpdate()" @click="changeStatus('backlog')" :disabled="ticket?.status === 'backlog'">Move to Backlog</button>
         <button v-if="canUpdate() && ticket?.status === 'backlog'" @click="changeStatus('in_progress')">Start Work</button>
         <button v-if="canUpdate() && ticket?.status === 'in_progress'" @click="changeStatus('review')">Submit Review</button>
-        <button v-if="canUpdate() && ticket?.status === 'review'" @click="changeStatus('done')">Mark as Done</button>
+        <button v-if="canUpdate() && ticket?.status === 'review' && !hasPendingApproval" @click="requestApproval">Request Approval to Done</button>
+        <button v-if="canUpdate() && ticket?.status === 'review'" @click="changeStatus('done')" :disabled="hasPendingApproval">Mark as Done</button>
+      </div>
+
+      <div v-if="hasPendingApproval" class="approval-status">
+        <div class="approval-badge pending">
+          ⏳ Awaiting Approval
+        </div>
+        <p v-if="authStore.user.value?.role === 'user'">
+          Your work has been submitted for review. You'll be notified once approved.
+        </p>
       </div>
 
       <div class="comments">
@@ -380,6 +415,34 @@ h1 {
 
 .error {
   color: #ef4444;
+}
+
+.approval-status {
+  margin: 20px 0;
+  padding: 16px;
+  background: #fef3c7;
+  border-radius: 8px;
+  border: 1px solid #f59e0b;
+}
+
+.approval-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.approval-badge.pending {
+  background: #f59e0b;
+  color: white;
+}
+
+.approval-status p {
+  margin: 0;
+  color: #92400e;
+  font-size: 14px;
 }
 
 .error button {

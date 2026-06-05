@@ -20,6 +20,7 @@ const projectsRouter = require('./projects');
 const ticketsRouter = require('./tickets');
 const pricingRouter = require('./pricing');
 const agentsRouter = require('./agents');
+const approvalsRouter = require('./approvals');
 
 // Health check
 router.get('/health', (req, res) => {
@@ -77,5 +78,6 @@ router.use('/projects', verifyToken, projectsRouter);
 router.use('/tickets', verifyToken, ticketsRouter);
 router.use('/pricing', verifyToken, pricingRouter);
 router.use('/agents', verifyToken, agentsRouter);
+router.use('/approvals', verifyToken, approvalsRouter);
 
 module.exports = router;

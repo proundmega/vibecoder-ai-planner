@@ -1,5 +1,7 @@
 const { pool } = require('../db');
 
+ApprovalRequest.pool = pool;
+
 class ApprovalRequest {
   static async create(ticketId, requestedBy) {
     const result = await pool.query(
@@ -49,6 +51,45 @@ class ApprovalRequest {
        WHERE ar.approved_by = $1 AND ar.status = 'pending'
        ORDER BY ar.created_at DESC`,
       [userId]
+    );
+    return result.rows;
+  }
+
+  static async findById(id) {
+    const result = await pool.query('SELECT * FROM approval_requests WHERE id = $1', [id]);
+    return result.rows[0] || null;
+  }
+
+  static async getByTicketAndRequester(ticketId, requestedBy) {
+    const result = await pool.query(
+      `SELECT * FROM approval_requests 
+       WHERE ticket_id = $1 AND requested_by = $2 AND status = 'pending'
+       ORDER BY created_at DESC LIMIT 1`,
+      [ticketId, requestedBy]
+    );
+    return result.rows[0] || null;
+  }
+
+  static async getPendingByRequester(requestedBy) {
+    const result = await pool.query(
+      `SELECT ar.*, t.title as ticket_title, t.status as ticket_status
+       FROM approval_requests ar
+       JOIN tickets t ON ar.ticket_id = t.id
+       WHERE ar.requested_by = $1 AND ar.status = 'pending'
+       ORDER BY ar.created_at DESC`,
+      [requestedBy]
+    );
+    return result.rows;
+  }
+
+  static async getByTicketId(ticketId) {
+    const result = await pool.query(
+      `SELECT ar.*, u.name as requester_name, u.email as requester_email
+       FROM approval_requests ar
+       JOIN users u ON ar.requested_by = u.id
+       WHERE ar.ticket_id = $1
+       ORDER BY ar.created_at DESC`,
+      [ticketId]
     );
     return result.rows;
   }

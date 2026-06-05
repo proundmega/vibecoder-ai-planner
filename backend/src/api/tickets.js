@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { requireRole } = require('../middleware/auth');
+const { requireRole, verifyToken } = require('../middleware/auth');
 const TicketService = require('../services/TicketService');
 const User = require('../models/user');
+const ApprovalService = require('../services/ApprovalService');
 
 // Get single ticket
 router.get('/:ticketId', async (req, res) => {
@@ -92,6 +93,35 @@ router.post('/:ticketId/comments', async (req, res) => {
     res.status(201).json(comment);
   } catch (error) {
     console.error('POST /api/tickets/:ticketId/comments', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Change ticket status
+router.post('/:ticketId/status', verifyToken, async (req, res) => {
+  try {
+    const { status } = req.body;
+    const ticket = await TicketService.getOne(req.params.ticketId, req.user.userId);
+    const user = await User.find(req.user.userId);
+    
+    if (user.role === 'user' && status === 'done') {
+      if (ticket.status !== 'review') {
+        return res.status(400).json({ 
+          error: 'AI agents can only submit for review, not mark as done' 
+        });
+      }
+      
+      const approval = await ApprovalService.create(req.params.ticketId, req.user.userId);
+      return res.json({ 
+        message: 'Approval request submitted. Awaiting review.',
+        approval 
+      });
+    }
+    
+    await TicketService.updateStatus(req.params.ticketId, status, req.user.userId);
+    res.json({ message: 'Status updated', status });
+  } catch (error) {
+    console.error('POST /api/tickets/:ticketId/status', error);
     res.status(400).json({ error: error.message });
   }
 });
