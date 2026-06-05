@@ -4,11 +4,11 @@ const TOKEN_EXPIRY_MINUTES = parseInt(process.env.TOKEN_EXPIRY_MINUTES) || 30;
 const TOKEN_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
 
 class AuthService {
-  async register(name, email, password) {
-    const user = await UserService.register(name, email, password);
+  async register(name, email, password, role = 'project_admin', userCreatedBy = null) {
+    const user = await UserService.register(name, email, password, role, userCreatedBy);
     
     const token = jwt.sign(
-      { userId: user.id, email: user.email },
+      { userId: user.id, email: user.email, role: user.role },
       TOKEN_SECRET,
       { expiresIn: `${TOKEN_EXPIRY_MINUTES}m` }
     );
@@ -20,7 +20,7 @@ class AuthService {
     const user = await UserService.authenticate(email, password);
     
     const token = jwt.sign(
-      { userId: user.id, email: user.email },
+      { userId: user.id, email: user.email, role: user.role },
       TOKEN_SECRET,
       { expiresIn: `${TOKEN_EXPIRY_MINUTES}m` }
     );
@@ -46,6 +46,7 @@ class AuthService {
         name: user.name,
         role: user.role,
         plan: user.currentPlan,
+        isActive: user.isActive,
       }
     };
   }

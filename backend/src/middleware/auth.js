@@ -20,6 +20,31 @@ exports.verifyToken = (req, res, next) => {
   }
 };
 
+exports.requireRole = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user || !req.user.role) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ 
+        error: 'Forbidden',
+        required: allowedRoles,
+        actual: req.user.role
+      });
+    }
+    
+    next();
+  };
+};
+
+exports.requireActiveUser = (req, res, next) => {
+  if (!req.user || !req.user.isActive) {
+    return res.status(403).json({ error: 'Account deactivated' });
+  }
+  next();
+};
+
 exports.agentAuth = (req, res, next) => {
   try {
     const apiKey = req.headers['x-api-key'];

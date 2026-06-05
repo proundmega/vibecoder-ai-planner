@@ -15,6 +15,7 @@ const registerUserBound = registerUser.bind(auth);
 const loginUserBound = loginUser.bind(auth);
 
 const userRouter = require('./user');
+const usersManagementRouter = require('./users');
 const projectsRouter = require('./projects');
 const ticketsRouter = require('./tickets');
 const pricingRouter = require('./pricing');
@@ -34,15 +35,15 @@ router.get('/version', (req, res) => {
 router.get('/docs', (req, res) => {
   res.json({
     title: 'API Documentation',
-    endpoints: ['/api/auth/*', '/api/projects/*', '/api/tickets/*', '/api/pricing/*', '/api/agents/*']
+    endpoints: ['/api/auth/*', '/api/users/*', '/api/projects/*', '/api/tickets/*', '/api/pricing/*', '/api/agents/*']
   });
 });
 
 // Authentication routes (public)
 router.post('/auth/register', async (req, res) => {
   try {
-    const { name, email, password } = req.body;
-    const result = await registerUserBound(name, email, password);
+    const { name, email, password, role, user_created_by } = req.body;
+    const result = await registerUserBound(name, email, password, role || 'project_admin', user_created_by || null);
     res.status(201).json({ ...result, message: 'Registration successful' });
   } catch (error) {
     console.error('POST /api/auth/register', error);
@@ -71,7 +72,7 @@ router.get('/auth/me', verifyToken, async (req, res) => {
 });
 
 // Authenticated routes
-router.use('/users', verifyToken, userRouter);
+router.use('/users', verifyToken, usersManagementRouter);
 router.use('/projects', verifyToken, projectsRouter);
 router.use('/tickets', verifyToken, ticketsRouter);
 router.use('/pricing', verifyToken, pricingRouter);

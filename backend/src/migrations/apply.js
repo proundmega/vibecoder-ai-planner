@@ -6,6 +6,7 @@ const path = require('path');
 const SQL_FILES = [
   path.join(__dirname, './001_create_tables.sql'),
   path.join(__dirname, './002_agents_schema.sql'),
+  path.join(__dirname, './003_role_system.sql'),
 ];
 
 function splitSQLStatements(sql) {

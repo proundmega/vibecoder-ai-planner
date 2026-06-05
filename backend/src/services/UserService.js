@@ -5,7 +5,7 @@ const { pool } = require('../db');
 const jwt = require('jsonwebtoken');
 
 class UserService {
-  async register(name, email, password) {
+  async register(name, email, password, role = 'project_admin', userCreatedBy = null) {
     const exists = await User.existsByEmail(email);
     if (exists) {
       throw new Error('Email already registered');
@@ -13,8 +13,8 @@ class UserService {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      'INSERT INTO users (name, email, password_hash, current_plan) VALUES ($1, $2, $3, $4) RETURNING *',
-      [name, email, hashedPassword, 'free']
+      'INSERT INTO users (name, email, password_hash, role, user_created_by, current_plan) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [name, email, hashedPassword, role, userCreatedBy, 'free']
     );
     return new User(result.rows[0]);
   }
@@ -23,6 +23,10 @@ class UserService {
     const user = await User.findByEmail(email);
     if (!user) {
       throw new Error('Invalid credentials');
+    }
+
+    if (!user.isActive) {
+      throw new Error('Account deactivated. Contact support.');
     }
 
     const isValid = await bcrypt.compare(password, user.passwordHash);
@@ -44,6 +48,7 @@ class UserService {
       name: user.name,
       role: user.role,
       plan: user.currentPlan,
+      isActive: user.isActive,
       token
     };
   }
@@ -67,6 +72,158 @@ class UserService {
     );
 
     return result.rows[0];
+  }
+
+  async listUsers(userId, userRole, filters = {}) {
+    const { role, search, page = 1, perPage = 20 } = filters;
+    const offset = (page - 1) * perPage;
+    
+    let whereClause = '1=1';
+    const params = [];
+    
+    if (userRole === 'project_admin') {
+      whereClause += ' AND (user_created_by = $1 OR id = $2)';
+      params.push(userId, userId);
+    } else if (userRole === 'member') {
+      whereClause += ' AND user_created_by = $1';
+      params.push(userId);
+    }
+    
+    if (role) {
+      params.push(role);
+      whereClause += ` AND role = $${params.length}`;
+    }
+    
+    if (search) {
+      params.push(`%${search}%`);
+      whereClause += ` AND (name ILIKE $${params.length} OR email ILIKE $${params.length})`;
+    }
+    
+    const result = await pool.query(
+      `SELECT * FROM users WHERE ${whereClause} ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, perPage, offset]
+    );
+    
+    return result.rows.map(row => new User(row));
+  }
+
+  async listAllUsers(filters = {}) {
+    const { role, search, is_active, page = 1, perPage = 50 } = filters;
+    const offset = (page - 1) * perPage;
+    
+    let whereClause = '1=1';
+    const params = [];
+    
+    if (role) {
+      params.push(role);
+      whereClause += ` AND role = $${params.length}`;
+    }
+    
+    if (search) {
+      params.push(`%${search}%`);
+      whereClause += ` AND (name ILIKE $${params.length} OR email ILIKE $${params.length})`;
+    }
+    
+    if (is_active !== undefined) {
+      params.push(is_active === 'true');
+      whereClause += ` AND is_active = $${params.length}`;
+    }
+    
+    const result = await pool.query(
+      `SELECT * FROM users WHERE ${whereClause} ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, perPage, offset]
+    );
+    
+    return result.rows.map(row => new User(row));
+  }
+
+  async createUser(name, email, password, role, createdBy) {
+    const exists = await User.existsByEmail(email);
+    if (exists) {
+      throw new Error('Email already registered');
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      'INSERT INTO users (name, email, password_hash, role, user_created_by, current_plan) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [name, email, hashedPassword, role, createdBy, 'free']
+    );
+    return new User(result.rows[0]);
+  }
+
+  async updateUser(userId, adminId, updates) {
+    const admin = await User.find(adminId);
+    const targetUser = await User.find(userId);
+    
+    if (!targetUser) {
+      throw new Error('User not found');
+    }
+    
+    if (userId === adminId) {
+      throw new Error('Cannot update your own account');
+    }
+    
+    const { name, is_active } = updates;
+    const sets = [];
+    const params = [];
+    let paramIndex = 1;
+    
+    if (name !== undefined) {
+      sets.push(`name = $${paramIndex++}`);
+      params.push(name);
+    }
+    
+    if (is_active !== undefined) {
+      sets.push(`is_active = $${paramIndex++}`);
+      params.push(is_active);
+    }
+    
+    if (sets.length === 0) return null;
+    
+    sets.push(`updated_at = NOW()`);
+    params.push(userId);
+    
+    const result = await pool.query(
+      `UPDATE users SET ${sets.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+      params
+    );
+    
+    return result.rows.length > 0 ? new User(result.rows[0]) : null;
+  }
+
+  async toggleUserActive(userId, adminId) {
+    const admin = await User.find(adminId);
+    const targetUser = await User.find(userId);
+    
+    if (!targetUser) {
+      throw new Error('User not found');
+    }
+    
+    if (userId === adminId) {
+      throw new Error('Cannot toggle your own account');
+    }
+    
+    const result = await pool.query(
+      'UPDATE users SET is_active = NOT is_active WHERE id = $1 RETURNING *',
+      [userId]
+    );
+    
+    return result.rows.length > 0 ? new User(result.rows[0]) : null;
+  }
+
+  async deleteUser(userId, adminId) {
+    const admin = await User.find(adminId);
+    const targetUser = await User.find(userId);
+    
+    if (!targetUser) {
+      throw new Error('User not found');
+    }
+    
+    if (userId === adminId) {
+      throw new Error('Cannot delete your own account');
+    }
+    
+    await User.delete(userId);
   }
 }
 
