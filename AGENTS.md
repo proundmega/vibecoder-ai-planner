@@ -27,6 +27,8 @@ backend/src/
   models/{user,project,ticket}.js  → DB models (raw pg queries)
   middleware/auth.js     → verifyToken, agentAuth, rateLimiter
   middleware/validate.js → Joi validation middleware
+  middleware/errorHandler.js → Error handling middleware
+  middleware/requestLogger.js → Request logging middleware
   validators/            → Joi schemas (auth, projects, tickets, users)
   auth.js                → AuthService (register/login/token)
   db.js                  → pg Pool

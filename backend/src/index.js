@@ -3,9 +3,9 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 
-const logger = console.info.bind(console);
+const logger = require('./utils/logger');
 
-logger('Starting Vibecode API...');
+logger.info('Starting Vibecode API...');
 
 const app = express();
 
@@ -23,13 +23,8 @@ const { requestId } = require('./middleware/requestId');
 app.use(requestId);
 
 // Request logging
-app.use((req, res, next) => {
-  const start = Date.now();
-  res.on('finish', () => {
-    logger(`${req.method} ${req.path} ${res.statusCode} - ${Date.now() - start}ms`);
-  });
-  next();
-});
+const { requestLogger } = require('./middleware/requestLogger');
+app.use(requestLogger);
 
 // Routes
 const routes = require('./api/routes');
@@ -44,21 +39,21 @@ const PORT = process.env.PORT || 3001;
 let server;
 if (process.env.NODE_ENV !== 'test') {
   server = app.listen(PORT, () => {
-    logger('Vibecode API Server running on port ' + PORT);
-    logger('Environment: ' + (process.env.NODE_ENV || 'development'));
+    logger.info(`Vibecode API Server running on port ${PORT}`);
+    logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
   });
 }
 
 if (server) {
   server.on('error', (err) => {
-    logger('Server error:', err);
+    logger.error('Server error:', err);
     process.exit(1);
   });
 
   const shutdown = (signal) => {
-    logger(signal + ' received. Shutting down.');
+    logger.info(`${signal} received. Shutting down.`);
     server.close(() => {
-      logger('Server closed');
+      logger.info('Server closed');
       process.exit(0);
     });
   };
@@ -69,11 +64,11 @@ if (server) {
 
 // Global unhandled exceptions and rejections
 process.on('unhandledRejection', (reason, promise) => {
-  logger('UNHANDLED REJECTION at:', promise, 'reason:', reason);
+  logger.error('UNHANDLED REJECTION at:', promise, 'reason:', reason);
 });
 
 process.on('uncaughtException', (err) => {
-  logger('UNCAUGHT EXCEPTION:', err);
+  logger.error('UNCAUGHT EXCEPTION:', err);
   process.exit(1);
 });
 

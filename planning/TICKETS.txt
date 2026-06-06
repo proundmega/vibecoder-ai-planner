@@ -1,6 +1,6 @@
 # TICKETS.txt — Master Ticket Tracker
 
-**Last updated**: 2026-06-06 (BA-3, BA-6 completed)
+**Last updated**: 2026-06-06 (BA-3, BA-6, BA-7 completed)
 
 ## Backend Architecture (from 01_ARCHITECT_REQUIREMENT.md)
 
@@ -12,7 +12,7 @@
 | BA-4 | Business Logic | completed | TicketService, ProjectService, UserService with status transitions, permissions |
 | BA-5 | Persistence Layer | planned | Models, transactions, soft deletes, indexes |
 | BA-6 | Response Handling | completed | Custom errors, error handler middleware, request ID, pagination |
-| BA-7 | Monitoring & Logging | planned | Winston, request IDs, health checks, metrics |
+| BA-7 | Monitoring & Logging | completed | Winston logger, request logger middleware, metrics endpoint |
 
 ## Role System Overhaul (from 02_ARCHITECT_DESIGN.md)
 

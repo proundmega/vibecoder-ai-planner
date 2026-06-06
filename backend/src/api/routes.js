@@ -72,6 +72,19 @@ router.get('/docs', (req, res) => {
   });
 });
 
+// Metrics
+router.get('/metrics', (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      uptime: process.uptime(),
+      memoryUsage: process.memoryUsage(),
+      timestamp: new Date().toISOString(),
+    },
+    requestId: req.requestId,
+  });
+});
+
 // Authentication routes (public)
 router.post('/auth/register', validate(registerSchema), async (req, res) => {
   try {
