@@ -21,6 +21,7 @@ cd ../frontend && npm run dev      # Vite on :3000, proxies /api → :3001
 ```
 backend/src/
   index.js              → Express entry, exports app (for tests)
+  controllers/          → Controllers (ticket, project, user)
   api/routes.js         → All route mounting (/health, /auth, /projects, /tickets, /pricing, /agents)
   api/{projects,tickets,agents,pricing,user}.js  → route modules
   services/{Project,Ticket,Agent,User}Service.js  → business logic

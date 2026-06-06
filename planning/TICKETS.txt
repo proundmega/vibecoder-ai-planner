@@ -1,12 +1,12 @@
 # TICKETS.txt — Master Ticket Tracker
 
-**Last updated**: 2026-06-06 (BA-3, BA-6, BA-7 completed)
+**Last updated**: 2026-06-06 (BA-1, BA-3, BA-6, BA-7 completed)
 
 ## Backend Architecture (from 01_ARCHITECT_REQUIREMENT.md)
 
 | ID | Title | Status | Notes |
 |----|-------|--------|-------|
-| BA-1 | Controller Setup | planned | Entry point layer, routes → controllers → services |
+| BA-1 | Controller Setup | completed | Controllers for tickets, projects, users with standardized responses |
 | BA-2 | Authentication Middleware | completed | verifyToken, requireRole, requireActiveUser, agentAuth, rateLimiter |
 | BA-3 | Request Validation | completed | Joi validation middleware, 5 schema files, 50+ tests |
 | BA-4 | Business Logic | completed | TicketService, ProjectService, UserService with status transitions, permissions |
