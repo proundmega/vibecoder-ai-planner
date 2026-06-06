@@ -22,8 +22,8 @@
 | RS-2 | AuthService Overhaul — Registration with Role | completed | Role chain validation, user_created_by tracking |
 | RS-3 | Auth Middleware — Role-Based Access Control | completed | requireRole, requireActiveUser, JWT claims |
 | RS-4 | User Management API | completed | CRUD endpoints, role-gated access |
-| RS-5 | User Management UI | planned | UserManagement.vue, SuperAdminUsers.vue, UserModal.vue |
-| RS-6 | Ticket Edit Modal | planned | Edit modal in TicketDetail.vue, partial updates |
+| RS-5 | User Management UI | completed | SuperAdminUsers.vue, auth store helpers, nav links |
+| RS-6 | Ticket Edit Modal | completed | TicketService.update() enhanced, PUT endpoint, bug fixes |
 | RS-7 | Ticket Delete | completed | Role-based delete, authorization in TicketService |
 | RS-8 | AI Agent Restrictions | planned | No delete for users, approval for done status |
 | RS-9 | Frontend Router & Navigation Updates | planned | Role-gated routes, navigation visibility |
