@@ -30,7 +30,7 @@ onMounted(async () => {
     </div>
     <div v-else>
       <h1>Dashboard</h1>
-      <p class="welcome">Welcome back, {{ authStore.user?.value?.name || 'User' }}</p>
+      <p class="welcome">Welcome back, {{ authStore.user?.name || 'User' }}</p>
 
       <div class="stats-grid">
         <div class="stat-card">

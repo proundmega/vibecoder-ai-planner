@@ -46,6 +46,9 @@ frontend/src/
 | Backend migrate | `npm run db:migrate` | Run SQL migrations via apply.js |
 | Frontend dev | `npm run dev` | Vite on :3000 |
 | Frontend test | `npm test` | Vitest (watch mode; add `--run` for CI) |
+| Frontend cypress:component | `npm run cypress:component` | Cypress component tests (headless) |
+| Frontend cypress:e2e | `npm run cypress:e2e` | Cypress E2E tests (headless, needs backend) |
+| Frontend cypress:all | `npm run cypress:all` | All Cypress tests |
 | Frontend lint | `npm run lint` | `eslint src/` (flat config) |
 | Frontend typecheck | `npm run typecheck` | `vue-tsc --noEmit` |
 | Frontend build | `npm run build` | `vite build` → dist/ |
@@ -108,13 +111,13 @@ Both `backend/eslint.config.js` and `frontend/eslint.config.js` use flat config.
 ### Frontend Known Issues (not caught by lint)
 The following issues exist in the frontend code and are NOT caught by the current lint rules. Fix them when working on the affected files:
 
-- **`authStore.user` is a `ref`** — in script code, must access via `authStore.user.value`. Direct access (`authStore.user.role`) always returns `undefined`. Affects: `TicketBoard.vue` (canCreate, canUpdateTicket), `TicketDetail.vue` (addCommentText, canUpdate), `AIAssistant.vue` (addCommentText).
-- **`route.params.projectId` is always undefined** — router param is `id` (from `projects/:id/ai`), not `projectId`. Affects: `AIAssistant.vue` (loadAgentInfo, handleSubmit).
-- **Project selection in TicketBoard has no `@change` handler** — `v-model="selectedProjectId"` does not reload tickets.
-- **Drag-drop in TicketBoard modifies throwaway object** — `handleDrop` receives `{id}` and modifies it instead of the real ticket in `tickets.value`.
-- **`+ New Ticket` button in TicketBoard is dead code** — sets `error = '...'` instead of creating a ticket.
-- **Comments in TicketDetail are never persisted** — `addCommentText()` only pushes to local `comments` ref.
-- **`ProjectDetail.vue` is an empty placeholder** — just `<h1>Project Detail</h1>`.
+- **`authStore.user` is a `ref`** — in script code, must access via `authStore.user.value`. Direct access (`authStore.user.role`) always returns `undefined`. Affects: `TicketBoard.vue` (canCreate, canUpdateTicket), `TicketDetail.vue` (addCommentText, canUpdate). [FIXED: Dashboard.vue, other files already correct]
+- **`route.params.projectId` is always undefined** — router param is `id` (from `projects/:id/ai`), not `projectId`. Affects: `AIAssistant.vue` (loadAgentInfo, handleSubmit). [FIXED: already uses route.params.id]
+- **Project selection in TicketBoard has no `@change` handler** — `v-model="selectedProjectId"` does not reload tickets. [FIXED: has @change="loadTickets(selectedProjectId)"]
+- **Drag-drop in TicketBoard modifies throwaway object** — `handleDrop` receives `{id}` and modifies it instead of the real ticket in `tickets.value`. [FIXED: finds ticket from tickets.value array]
+- **`+ New Ticket` button in TicketBoard is dead code** — sets `error = '...'` instead of creating a ticket. [FIXED: opens modal with working create form]
+- **Comments in TicketDetail are never persisted** — `addCommentText()` only pushes to local `comments` ref. [FIXED: calls addComment API]
+- **`ProjectDetail.vue` is an empty placeholder** — just `<h1>Project Detail</h1>`. [FIXED: serves as layout wrapper with router-view]
 
 ### Database
 PostgreSQL 15 in Docker, database `vibecode`. Migrations are ad-hoc SQL files executed sequentially — no migration tracking. `apply.js` runs `001_create_tables.sql` then `002_agents_schema.sql`.

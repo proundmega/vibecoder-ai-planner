@@ -1,0 +1,34 @@
+[
+  {
+    id: "user-1",
+    name: "Alice Admin",
+    email: "alice@example.com",
+    role: "project_admin",
+    is_active: true,
+    created_at: "2024-01-01T00:00:00Z"
+  },
+  {
+    id: "user-2",
+    name: "Bob Member",
+    email: "bob@example.com",
+    role: "member",
+    is_active: true,
+    created_at: "2024-01-02T00:00:00Z"
+  },
+  {
+    id: "user-3",
+    name: "Charlie User",
+    email: "charlie@example.com",
+    role: "user",
+    is_active: true,
+    created_at: "2024-01-03T00:00:00Z"
+  },
+  {
+    id: "user-4",
+    name: "Deactivated User",
+    email: "deactivated@example.com",
+    role: "user",
+    is_active: false,
+    created_at: "2024-01-04T00:00:00Z"
+  }
+]

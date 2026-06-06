@@ -1,0 +1,38 @@
+[
+  {
+    "id": "ticket-1",
+    "title": "Fix login bug",
+    "description": "Users cannot login with special characters",
+    "status": "backlog",
+    "priority": "high",
+    "assignee_id": "user-3",
+    "project_id": "proj-1"
+  },
+  {
+    "id": "ticket-2",
+    "title": "Add dark mode",
+    "description": "Implement dark mode toggle",
+    "status": "in_progress",
+    "priority": "medium",
+    "assignee_id": "user-2",
+    "project_id": "proj-1"
+  },
+  {
+    "id": "ticket-3",
+    "title": "Update documentation",
+    "description": "Update API documentation",
+    "status": "review",
+    "priority": "low",
+    "assignee_id": "user-1",
+    "project_id": "proj-1"
+  },
+  {
+    "id": "ticket-4",
+    "title": "Deploy to staging",
+    "description": "Deploy latest changes to staging",
+    "status": "done",
+    "priority": "critical",
+    "assignee_id": "user-1",
+    "project_id": "proj-1"
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "id": "proj-1",
+    "name": "Test Project Alpha",
+    "description": "A test project for Cypress E2E testing",
+    "created_at": "2024-01-01T00:00:00Z"
+  },
+  {
+    "id": "proj-2",
+    "name": "Test Project Beta",
+    "description": "Another test project",
+    "created_at": "2024-01-02T00:00:00Z"
+  }
+]
