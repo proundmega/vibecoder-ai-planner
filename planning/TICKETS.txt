@@ -1,0 +1,43 @@
+# TICKETS.txt — Master Ticket Tracker
+
+**Last updated**: 2026-06-06
+
+## Backend Architecture (from 01_ARCHITECT_REQUIREMENT.md)
+
+| ID | Title | Status | Notes |
+|----|-------|--------|-------|
+| BA-1 | Controller Setup | planned | Entry point layer, routes → controllers → services |
+| BA-2 | Authentication Middleware | planned | JWT verification, agent auth, token management |
+| BA-3 | Request Validation | planned | Joi/Zod schemas, validation middleware |
+| BA-4 | Business Logic | planned | Service layer, status transitions, permission checks |
+| BA-5 | Persistence Layer | planned | Models, transactions, soft deletes, indexes |
+| BA-6 | Response Handling | planned | Standardized format, error middleware, pagination |
+| BA-7 | Monitoring & Logging | planned | Winston, request IDs, health checks, metrics |
+
+## Role System Overhaul (from 02_ARCHITECT_DESIGN.md)
+
+| ID | Title | Status | Notes |
+|----|-------|--------|-------|
+| RS-1 | Database Migration — Users Table | completed | 003_role_system.sql, approval_requests table |
+| RS-2 | AuthService Overhaul — Registration with Role | completed | Role chain validation, user_created_by tracking |
+| RS-3 | Auth Middleware — Role-Based Access Control | completed | requireRole, requireActiveUser, JWT claims |
+| RS-4 | User Management API | completed | CRUD endpoints, role-gated access |
+| RS-5 | User Management UI | planned | UserManagement.vue, SuperAdminUsers.vue, UserModal.vue |
+| RS-6 | Ticket Edit Modal | planned | Edit modal in TicketDetail.vue, partial updates |
+| RS-7 | Ticket Delete | completed | Role-based delete, authorization in TicketService |
+| RS-8 | AI Agent Restrictions | planned | No delete for users, approval for done status |
+| RS-9 | Frontend Router & Navigation Updates | planned | Role-gated routes, navigation visibility |
+| RS-10 | Unit Tests & Integration Tests | completed | 128 unit tests, 60 integration tests, 80 bash tests |
+| RS-11 | Frontend Cypress Testing Setup | planned | Component + E2E tests, fix AGENTS.md bugs first |
+
+## Implementation Order (Role System)
+
+P0: RS-1 → RS-2 → RS-3 → RS-4 → RS-5 → RS-6 → RS-7 → RS-8 → RS-9 → RS-10 → RS-11
+
+## Template Files
+
+| File | Purpose |
+|------|---------|
+| `01_ARCHITECT_REQUIREMENT.md` | General backend architecture guidelines (controllers, middleware, validation, services, persistence, response, monitoring) |
+| `02_ARCHITECT_DESIGN.md` | Role system design specification (role definitions, implementation order, testing guidelines, Cypress setup) |
+| `03_ARCHITECT_IMPLEMENTATION.md` | Generic template for ticket implementation details (purpose, actions, dependencies, risks, testing) |
