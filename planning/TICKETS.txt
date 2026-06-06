@@ -25,8 +25,8 @@
 | RS-5 | User Management UI | completed | SuperAdminUsers.vue, auth store helpers, nav links |
 | RS-6 | Ticket Edit Modal | completed | TicketService.update() enhanced, PUT endpoint, bug fixes |
 | RS-7 | Ticket Delete | completed | Role-based delete, authorization in TicketService |
-| RS-8 | AI Agent Restrictions | planned | No delete for users, approval for done status |
-| RS-9 | Frontend Router & Navigation Updates | planned | Role-gated routes, navigation visibility |
+| RS-8 | AI Agent Restrictions | completed | Approval workflow, agent restrictions in tickets.js |
+| RS-9 | Frontend Router & Navigation Updates | completed | Role-gated routes, navigation visibility, auth store helpers |
 | RS-10 | Unit Tests & Integration Tests | completed | 128 unit tests, 60 integration tests, 80 bash tests |
 | RS-11 | Frontend Cypress Testing Setup | planned | Component + E2E tests, fix AGENTS.md bugs first |
 
