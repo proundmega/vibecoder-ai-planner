@@ -7,6 +7,8 @@ const { verifyToken, agentAuth, rateLimiter, trackAgentAction } = require('../mi
 const { validate } = require('../middleware/validate');
 const { registerSchema, loginSchema } = require('../validators/auth');
 
+const { pool } = require('../db');
+
 const {
   register: registerUser,
   login: loginUser,
@@ -25,20 +27,48 @@ const agentsRouter = require('./agents');
 const approvalsRouter = require('./approvals');
 
 // Health check
-router.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+router.get('/health', async (req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ 
+      success: true,
+      data: { 
+        status: 'ok', 
+        database: 'connected', 
+        timestamp: new Date().toISOString(),
+      },
+      requestId: req.requestId,
+    });
+  } catch (error) {
+    res.status(503).json({ 
+      success: false,
+      error: {
+        code: 'DATABASE_DISCONNECTED',
+        message: 'Database connection failed',
+      },
+      requestId: req.requestId,
+    });
+  }
 });
 
 // API versioning
 router.get('/version', (req, res) => {
-  res.json({ version: '1.0.0', name: 'Vibecode AI Planner API' });
+  res.json({
+    success: true,
+    data: { version: '1.0.0', name: 'Vibecode AI Planner API' },
+    requestId: req.requestId,
+  });
 });
 
 // Documentation
 router.get('/docs', (req, res) => {
   res.json({
-    title: 'API Documentation',
-    endpoints: ['/api/auth/*', '/api/users/*', '/api/projects/*', '/api/tickets/*', '/api/pricing/*', '/api/agents/*']
+    success: true,
+    data: {
+      title: 'API Documentation',
+      endpoints: ['/api/auth/*', '/api/users/*', '/api/projects/*', '/api/tickets/*', '/api/pricing/*', '/api/agents/*']
+    },
+    requestId: req.requestId,
   });
 });
 

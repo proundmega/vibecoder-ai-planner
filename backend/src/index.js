@@ -18,9 +18,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Routes
-const routes = require('./api/routes');
-app.use('/api', routes);
+// Request ID tracking
+const { requestId } = require('./middleware/requestId');
+app.use(requestId);
 
 // Request logging
 app.use((req, res, next) => {
@@ -31,13 +31,13 @@ app.use((req, res, next) => {
   next();
 });
 
+// Routes
+const routes = require('./api/routes');
+app.use('/api', routes);
+
 // Error handler
-app.use((err, req, res, next) => {
-  logger('ERROR', req.method, req.path, err);
-  res.status(err.status || 500).json({
-    message: err.message || 'Internal Server Error',
-  });
-});
+const { errorHandler } = require('./middleware/errorHandler');
+app.use(errorHandler);
 
 // Start server (skip in test mode — supertest uses the app directly)
 const PORT = process.env.PORT || 3001;
