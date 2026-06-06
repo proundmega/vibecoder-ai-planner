@@ -681,6 +681,8 @@ All of the following must pass before merging:
 - `npm run lint` — no unused vars, no errors
 - `bash backend/integration-test/run.sh` — bash integration tests **must pass**
 - Frontend: `npm run typecheck` + `npm run build` **must pass**
+- Frontend: `npx cypress run --component` — Cypress component tests **must pass**
+- Frontend: `npx cypress run --e2e` — Cypress E2E tests **must pass**
 
 ### Anti-Patterns to Avoid
 - ❌ Testing implementation details (e.g., exact SQL string) — test behavior instead
@@ -699,6 +701,137 @@ Every code change (feature, bug fix, refactoring) must:
 3. Run `npm test` and `npm run test:integration` — both must pass
 4. Update `backend/integration-test/run.sh` if the change affects API behavior
 5. Pass `npm run lint` with zero errors
+6. For frontend changes: write Cypress component tests or E2E tests as appropriate
+7. For frontend changes: ensure `npx cypress run --component` and `npx cypress run --e2e` pass
+
+### Frontend Testing with Cypress (MANDATORY)
+The frontend uses Cypress for both component testing and end-to-end browser testing. This is mandatory for all frontend code changes.
+
+**Setup:**
+```bash
+cd frontend && npm install --save-dev cypress @cypress/vue@4 cypress-localstorage-commands
+npx cypress open  # creates config and folder structure
+```
+
+**Config file — `frontend/cypress.config.ts`:**
+```typescript
+import { defineConfig } from 'cypress';
+export default defineConfig({
+  e2e: {
+    baseUrl: 'http://localhost:3000',
+    supportFile: 'cypress/support/e2e.ts',
+    specPattern: 'cypress/e2e/**/*.cy.ts',
+    viewportWidth: 1280,
+    viewportHeight: 720,
+  },
+  component: {
+    devServer: { framework: 'vue', bundler: 'vite' },
+    supportFile: 'cypress/support/component.ts',
+    specPattern: 'cypress/component/**/*.cy.ts',
+  },
+});
+```
+
+**Test file locations:**
+- **E2E tests**: `frontend/cypress/e2e/` — full browser flows (auth, navigation, CRUD, role guards)
+- **Component tests**: `frontend/cypress/component/` — isolated Vue component mounting
+- **Fixtures**: `frontend/cypress/fixtures/` — JSON test data (users, projects, tickets)
+- **Custom commands**: `frontend/cypress/support/commands.ts` — reusable test helpers
+
+**Component test example:**
+```typescript
+// cypress/component/Login.cy.ts
+describe('Login.vue', () => {
+  it('renders email and password fields', () => {
+    cy.mount(Login);
+    cy.get('input[type="email"]').should('exist');
+    cy.get('input[type="password"]').should('exist');
+  });
+
+  it('shows validation error on empty submit', () => {
+    cy.mount(Login);
+    cy.get('button').click();
+    cy.contains('Email is required').should('be.visible');
+  });
+});
+```
+
+**E2E test example:**
+```typescript
+// cypress/e2e/auth.cy.ts
+describe('Authentication', () => {
+  beforeEach(() => cy.viewport(1280, 720));
+
+  it('should login with valid credentials', () => {
+    cy.visit('/login');
+    cy.get('input[placeholder*="Email"]').type('alice@example.com');
+    cy.get('input[placeholder*="Password"]').type('password123');
+    cy.get('button').contains('Sign In').click();
+    cy.url().should('include', '/dashboard');
+    cy.getLocalStorage('vibecode_token').should('exist');
+  });
+
+  it('should reject invalid credentials', () => {
+    cy.visit('/login');
+    cy.get('input[placeholder*="Email"]').type('wrong@example.com');
+    cy.get('input[placeholder*="Password"]').type('wrongpass');
+    cy.get('button').contains('Sign In').click();
+    cy.url().should('include', '/login');
+  });
+});
+```
+
+**Custom commands (`cypress/support/commands.ts`):**
+```typescript
+Cypress.Commands.add('login', (email, password) => {
+  cy.request('POST', '/api/auth/login', { email, password }).then((resp) => {
+    cy.setLocalStorage('vibecode_token', resp.body.token);
+    cy.setLocalStorage('vibecode_user', JSON.stringify(resp.body.user));
+  });
+  cy.visit('/dashboard');
+});
+
+Cypress.Commands.add('loginAsAdmin', () => cy.login('alice@example.com', 'password123'));
+
+Cypress.Commands.add('createProject', (name) => {
+  cy.loginAsAdmin();
+  return cy.request('POST', '/api/projects', { name, description: 'Test' })
+    .then((resp) => resp.body.id);
+});
+```
+
+**Frontend test checklist per ticket:**
+- [ ] **Component rendering**: Key components mount without errors
+- [ ] **User interactions**: Buttons, forms, modals respond correctly
+- [ ] **Auth flows**: Login, register, logout work end-to-end
+- [ ] **Role guards**: Unauthorized routes redirect correctly
+- [ ] **CRUD operations**: Create, read, update, delete work in browser
+- [ ] **Known bugs fixed**: AGENTS.md bugs (route params, drag-drop, ref access) do not cause test failures
+
+**Known frontend bugs that will surface in Cypress (must be fixed):**
+1. `authStore.user` is a `ref` — must use `authStore.user.value` in script code
+2. `route.params.projectId` is undefined — should be `route.params.id`
+3. Project selection in TicketBoard has no `@change` handler
+4. Drag-drop modifies throwaway object instead of real ticket data
+5. `+ New Ticket` button is dead code
+6. Comments in TicketDetail are never persisted
+7. `ProjectDetail.vue` is an empty placeholder
+
+**CI Integration:**
+```yaml
+- name: Install Cypress
+  run: cd frontend && npm install --save-dev cypress @cypress/vue cypress-localstorage-commands
+- name: Run Cypress component tests
+  run: cd frontend && npx cypress run --component --browser chrome
+- name: Run Cypress E2E tests
+  run: cd frontend && npx cypress run --e2e --browser chrome --headless
+```
+
+**Migration from Vitest:**
+- Keep Vitest for pure utility functions only
+- Migrate component tests from Vitest to Cypress (`@cypress/vue`)
+- E2E tests have no Vitest equivalent — Cypress fills this gap
+- Remove `vitest` from `package.json` once migration is complete
 
 ### Test File Locations
 - **Unit tests**: `backend/src/__tests__/unit.test.js` (Jest, mocked DB)

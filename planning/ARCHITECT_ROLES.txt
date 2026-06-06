@@ -804,8 +804,136 @@ Write comprehensive unit tests for all new backend code and update integration t
 | P3 | Ticket 8 (AI Restrictions) | Medium | Ticket 10 |
 | P3 | Ticket 9 (Router Updates) | Small | Ticket 10 |
 | P4 | Ticket 10 (Migration & Testing) | Large | — |
+| P4 | Ticket 11 (Cypress Testing) | Medium | — |
 
-**Recommended approach**: Implement tickets 1-3 first (foundation), then 4-5 (user management), then 6-7 (ticket CRUD), then 8-9 (AI restrictions & routing), then 10 (testing).
+**Recommended approach**: Implement tickets 1-3 first (foundation), then 4-5 (user management), then 6-7 (ticket CRUD), then 8-9 (AI restrictions & routing), then 10 (testing), then 11 (Cypress E2E).
+
+---
+
+## Ticket 11: Frontend Cypress Testing Setup
+
+### a) Purpose
+Add Cypress component testing and E2E testing to the frontend. The frontend currently has zero tests despite Vitest being installed. Cypress provides both component-level testing (isolated Vue components) and E2E testing (full browser flows with real backend). This covers the known bugs documented in AGENTS.md that ESLint doesn't catch.
+
+**See `ARCHITECT_P2.txt` → "Frontend Testing with Cypress (MANDATORY)" for complete setup details, config files, custom commands, and CI integration.**
+
+### b) Role-Specific Cypress Test Scenarios
+The following role-based test scenarios are specific to this role system overhaul. Implement these in `cypress/e2e/04-roles.cy.ts` and `cypress/component/`:
+
+**Role-gated navigation (E2E):**
+- `project_admin` can access `/users` → 200, "Manage Users" visible
+- `member` can access `/users` → 200, "Manage Users" visible
+- `user` role cannot access `/users` → redirects to `/dashboard`
+- `super_admin` can access `/super-admin/users` → 200
+- Non-super-admin cannot access `/super-admin/users` → redirects
+
+**Ticket permissions (E2E):**
+- `project_admin` can delete any ticket → 200, ticket removed
+- `member` can delete any ticket → 200, ticket removed
+- `user` role cannot delete others' tickets → Delete button not visible
+- `user` role can delete own tickets → Delete button visible, succeeds
+- `user` role cannot access approval requests → 403
+
+**User management (E2E):**
+- `project_admin` can create `member` and `user` accounts
+- `member` can create `user` accounts only
+- `member` cannot create `member` accounts → 400 error
+- `user` role cannot create any user accounts → Create button not visible
+- `project_admin` can deactivate/reactivate users
+- `project_admin` can update user names
+- `user` role cannot update other users → 403
+
+**Approval workflow (E2E):**
+- `user` role changes ticket to `done` → creates approval request
+- `project_admin` can approve/reject pending approvals
+- `user` role cannot approve/reject → 403
+- Approved ticket transitions to `done`
+- Rejected ticket stays in previous status
+
+**Component tests:**
+- `UserModal.vue`: role selection options depend on creator role
+  - `project_admin` → sees "member" and "user" options
+  - `member` → sees only "user" option
+  - `user` → no role selection (cannot create users)
+- `TicketDetail.vue`: status buttons hidden/visible based on role
+  - `user` role in `review` status → shows "Submit for Review" instead of "Mark Done"
+  - `project_admin` role → shows full status transition buttons
+- `TicketBoard.vue`: delete button visibility based on role
+  - `user` role → no delete button on others' tickets
+  - `member`/`project_admin` → delete button always visible
+
+### c) Dependencies
+- `cypress` (E2E testing framework)
+- `@cypress/vue` (Vue 3 component testing)
+- `cypress-localstorage-commands` (for localStorage access in tests)
+- Existing: Vue 3, Vite, Pinia, Vue Router
+
+### d) Risks/Edge Cases
+- **Known bugs will surface**: Cypress will immediately fail on AGENTS.md bugs (route param naming, drag-drop throwaway object, `authStore.user` ref access). These must be fixed before E2E tests pass.
+- **localStorage in component tests**: Component tests run in isolation — localStorage mocking must be explicit via `cy.mockAuth()` command.
+- **Vite proxy**: E2E tests hit the real backend via Vite dev proxy (`/api` → `localhost:3001`). Backend must be running during E2E tests.
+- **Test data cleanup**: E2E tests create real data (users, projects, tickets). Use unique email prefixes per test run or clean up after each test.
+- **Flaky drag-drop**: Cypress drag-drop can be flaky; use `cy.drag()` plugin or manual coordinate-based testing for kanban columns.
+- **Auth store ref access**: `authStore.user` is a `ref` — component tests must use `authStore.user.value` when accessing properties.
+
+### e) Testing Checklist
+- [ ] Login page renders correctly
+- [ ] Registration flow works end-to-end
+- [ ] Login redirects to dashboard
+- [ ] Logout clears localStorage and redirects to login
+- [ ] Project CRUD (create, read, update, delete)
+- [ ] Ticket CRUD via board and detail view
+- [ ] Drag-drop between kanban columns
+- [ ] Status transitions via UI buttons
+- [ ] Role-based access control (403 redirects)
+- [ ] User management (admin/member views)
+- [ ] Edit modal for tickets
+- [ ] User modal for create/edit
+- [ ] Component tests for all key views
+
+### f) CI Integration
+
+Add to `.github/workflows/ci.yml` frontend job:
+```yaml
+- name: Install Cypress
+  run: cd frontend && npm install --save-dev cypress @cypress/vue cypress-localstorage-commands
+- name: Cypress component tests
+  run: |
+    cd frontend
+    npx cypress install
+    npx cypress run --component --browser chrome
+- name: Cypress E2E tests
+  run: |
+    cd frontend
+    npx cypress run --e2e --browser chrome --headless
+```
+
+### g) Migration from Vitest
+
+- Keep Vitest for pure utility functions (if any exist)
+- Component tests should migrate from Vitest to Cypress (`@cypress/vue` is the Vue-native equivalent)
+- E2E tests have no Vitest equivalent — Cypress fills this gap entirely
+- Remove `vitest` from `package.json` devDependencies once migration is complete
+
+---
+
+## Summary: Implementation Order (Updated)
+
+| Priority | Ticket | Effort | Blocks |
+|----------|--------|--------|--------|
+| P0 | Ticket 1 (DB Migration) | Small | All subsequent tickets |
+| P0 | Ticket 2 (AuthService) | Medium | Ticket 3, 4 |
+| P1 | Ticket 3 (Auth Middleware) | Medium | Ticket 4, 6, 7, 8 |
+| P1 | Ticket 4 (User API) | Large | Ticket 5 |
+| P2 | Ticket 5 (User UI) | Large | Ticket 9 |
+| P2 | Ticket 6 (Ticket Edit) | Medium | Ticket 7 |
+| P2 | Ticket 7 (Ticket Delete) | Medium | Ticket 8 |
+| P3 | Ticket 8 (AI Restrictions) | Medium | Ticket 10 |
+| P3 | Ticket 9 (Router Updates) | Small | Ticket 10 |
+| P4 | Ticket 10 (Migration & Testing) | Large | — |
+| P4 | Ticket 11 (Cypress Testing) | Medium | — |
+
+**Recommended approach**: Implement tickets 1-3 first (foundation), then 4-5 (user management), then 6-7 (ticket CRUD), then 8-9 (AI restrictions & routing), then 10 (testing), then 11 (Cypress E2E).
 
 ---
 
