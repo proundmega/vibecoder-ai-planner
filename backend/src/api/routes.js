@@ -4,6 +4,8 @@ const auth = require('../auth');
 
 // Middleware
 const { verifyToken, agentAuth, rateLimiter, trackAgentAction } = require('../middleware/auth');
+const { validate } = require('../middleware/validate');
+const { registerSchema, loginSchema } = require('../validators/auth');
 
 const {
   register: registerUser,
@@ -41,7 +43,7 @@ router.get('/docs', (req, res) => {
 });
 
 // Authentication routes (public)
-router.post('/auth/register', async (req, res) => {
+router.post('/auth/register', validate(registerSchema), async (req, res) => {
   try {
     const { name, email, password, role, user_created_by } = req.body;
     const result = await registerUserBound(name, email, password, role || 'user', user_created_by || null);
@@ -52,7 +54,7 @@ router.post('/auth/register', async (req, res) => {
   }
 });
 
-router.post('/auth/login', async (req, res) => {
+router.post('/auth/login', validate(loginSchema), async (req, res) => {
   try {
     const { email, password } = req.body;
     const result = await loginUserBound(email, password);

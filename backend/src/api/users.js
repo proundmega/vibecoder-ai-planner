@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken, requireRole, requireActiveUser } = require('../middleware/auth');
+const { validate } = require('../middleware/validate');
+const { createUserSchema, updateUserSchema } = require('../validators/users');
 const UserService = require('../services/UserService');
 
 // List users (project_admin: own users, member: own users, super_admin: all users)
@@ -16,14 +18,9 @@ router.get('/', verifyToken, requireActiveUser, async (req, res) => {
 });
 
 // Create user (project_admin: member/user, member: user only)
-router.post('/', verifyToken, requireRole('project_admin', 'member'), async (req, res) => {
+router.post('/', verifyToken, requireRole('project_admin', 'member'), validate(createUserSchema), async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
-    
-    if (!name || !email || !password || !role) {
-      return res.status(400).json({ error: 'Missing required fields: name, email, password, role' });
-    }
-    
     const user = await UserService.createUser(name, email, password, role, req.user.userId);
     res.status(201).json(user);
   } catch (error) {
@@ -34,7 +31,7 @@ router.post('/', verifyToken, requireRole('project_admin', 'member'), async (req
 
 // Update user (project_admin: all, member: user only)
 // Note: role is IMMUABLE — cannot be changed after assignment
-router.put('/:id', verifyToken, requireActiveUser, async (req, res) => {
+router.put('/:id', verifyToken, requireActiveUser, validate(updateUserSchema), async (req, res) => {
   try {
     const { name, is_active } = req.body;
     

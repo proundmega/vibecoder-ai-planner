@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { requireRole, verifyToken } = require('../middleware/auth');
+const { validate } = require('../middleware/validate');
+const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema } = require('../validators/tickets');
 const TicketService = require('../services/TicketService');
 const User = require('../models/user');
 const ApprovalService = require('../services/ApprovalService');
@@ -17,7 +19,7 @@ router.get('/:ticketId', async (req, res) => {
 });
 
 // Create new ticket
-router.post('/', async (req, res) => {
+router.post('/', validate(createTicketSchema), async (req, res) => {
   try {
     const { projectId, title, description, priority } = req.body;
     const ticket = await TicketService.create(projectId, title, description, priority, req.user.userId);
@@ -29,7 +31,7 @@ router.post('/', async (req, res) => {
 });
 
 // Update ticket (partial updates supported)
-router.put('/:ticketId', verifyToken, async (req, res) => {
+router.put('/:ticketId', verifyToken, validate(updateTicketSchema), async (req, res) => {
   try {
     const ticket = await TicketService.getOne(req.params.ticketId, req.user.userId);
     const user = await User.find(req.user.userId);
@@ -94,7 +96,7 @@ router.get('/:ticketId/comments', async (req, res) => {
 });
 
 // Add a comment to a ticket
-router.post('/:ticketId/comments', async (req, res) => {
+router.post('/:ticketId/comments', validate(commentSchema), async (req, res) => {
   try {
     const { content } = req.body;
     const comment = await TicketService.addComment(req.params.ticketId, content, req.user.userId);
@@ -106,7 +108,7 @@ router.post('/:ticketId/comments', async (req, res) => {
 });
 
 // Change ticket status
-router.post('/:ticketId/status', verifyToken, async (req, res) => {
+router.post('/:ticketId/status', verifyToken, validate(statusTransitionSchema), async (req, res) => {
   try {
     const { status } = req.body;
     const ticket = await TicketService.getOne(req.params.ticketId, req.user.userId);

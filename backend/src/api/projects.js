@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken, requireRole } = require('../middleware/auth');
+const { validate } = require('../middleware/validate');
+const { createProjectSchema, updateProjectSchema } = require('../validators/projects');
 const { pool } = require('../db');
 const ProjectService = require('../services/ProjectService');
 const TicketService = require('../services/TicketService');
@@ -18,13 +20,9 @@ router.get('/', async (req, res) => {
 });
 
 // Create new project
-router.post('/', async (req, res) => {
+router.post('/', validate(createProjectSchema), async (req, res) => {
   try {
     const { name, description } = req.body;
-    if (!name) {
-      return res.status(400).json({ error: 'Name is required' });
-    }
-    
     const project = await ProjectService.create(name, description, req.user.userId);
     res.status(201).json(project);
   } catch (error) {
@@ -108,13 +106,9 @@ router.get('/:id', async (req, res) => {
 });
 
 // Update project
-router.put('/:id', async (req, res) => {
+router.put('/:id', validate(updateProjectSchema), async (req, res) => {
   try {
     const { name, description } = req.body;
-    if (!name) {
-      return res.status(400).json({ error: 'Name is required' });
-    }
-    
     const project = await ProjectService.update(req.params.id, { name, description }, req.user.userId);
     res.json(project);
   } catch (error) {

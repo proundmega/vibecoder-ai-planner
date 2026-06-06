@@ -26,6 +26,8 @@ backend/src/
   services/{Project,Ticket,Agent,User}Service.js  → business logic
   models/{user,project,ticket}.js  → DB models (raw pg queries)
   middleware/auth.js     → verifyToken, agentAuth, rateLimiter
+  middleware/validate.js → Joi validation middleware
+  validators/            → Joi schemas (auth, projects, tickets, users)
   auth.js                → AuthService (register/login/token)
   db.js                  → pg Pool
   migrations/apply.js    → runs 001_create_tables.sql + 002_agents_schema.sql
@@ -76,6 +78,7 @@ Covers: health check, user registration/login, project CRUD, ticket CRUD, all st
 ## Test Quirks
 
 - **Jest test match** (`backend/jest.config.js`): `**/__tests__/unit.test.js`, `**/__tests__/*.test.js`, `<rootDir>/src/middleware/*.test.js`. Not `**/*.test.js` — top-level `.test.js` files are NOT picked up.
+- **Validation tests** (`src/__tests__/validation.test.js`): 50+ tests for Joi schemas and validation middleware, covers auth, projects, tickets, users schemas.
 - **Jest mocks** (`src/__tests__/jest.setup.js`): `pg`, `winston`, `bcryptjs`, `uuid`, `jsonwebtoken` are fully mocked. Tests do NOT need a real database.
 - **Jest config**: `forceExit: true`, `restoreMocks: false`, `testTimeout: 10000`.
 - **`src/__tests__/db.mocks.js`**: alternate mocks for files that import models directly.
