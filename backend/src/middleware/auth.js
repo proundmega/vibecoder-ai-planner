@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const authService = require('../auth');
+const { pool } = require('../db');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
 
@@ -39,10 +40,18 @@ exports.requireRole = (...allowedRoles) => {
 };
 
 exports.requireActiveUser = (req, res, next) => {
-  if (!req.user || !req.user.isActive) {
+  if (!req.user || !req.user.userId) {
     return res.status(403).json({ error: 'Account deactivated' });
   }
-  next();
+  
+  pool.query('SELECT is_active FROM users WHERE id = $1', [req.user.userId])
+    .then(result => {
+      if (result.rows.length === 0 || !result.rows[0].is_active) {
+        return res.status(403).json({ error: 'Account deactivated' });
+      }
+      next();
+    })
+    .catch(() => res.status(403).json({ error: 'Account deactivated' }));
 };
 
 exports.agentAuth = (req, res, next) => {

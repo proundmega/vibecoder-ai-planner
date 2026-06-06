@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, requireRole } = require('../middleware/auth');
 const { pool } = require('../db');
 const ProjectService = require('../services/ProjectService');
 const TicketService = require('../services/TicketService');
@@ -165,14 +165,20 @@ router.put('/tickets/:ticketId', async (req, res) => {
   }
 });
 
-// Delete ticket
-router.delete('/tickets/:ticketId', async (req, res) => {
+// Delete ticket (admin/member: any ticket, user: own ticket only)
+router.delete('/tickets/:ticketId', verifyToken, requireRole('project_admin', 'member', 'user'), async (req, res) => {
   try {
     await TicketService.delete(req.params.ticketId, req.user.userId);
     res.json({ message: 'Ticket deleted' });
   } catch (error) {
     console.error('DELETE /api/projects/tickets/:ticketId', error);
-    res.status(404).json({ error: 'Ticket not found' });
+    if (error.message === 'Ticket not found') {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    if (error.message === 'Forbidden') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    res.status(400).json({ error: error.message });
   }
 });
 

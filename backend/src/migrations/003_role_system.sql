@@ -5,7 +5,8 @@
 -- ==================== NEW COLUMNS ====================
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS user_created_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS user_created_by BIGINT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 
 -- ==================== UPDATE ROLE CONSTRAINT ====================
 

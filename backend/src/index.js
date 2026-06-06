@@ -39,28 +39,33 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
+// Start server (skip in test mode — supertest uses the app directly)
 const PORT = process.env.PORT || 3001;
-const server = app.listen(PORT, () => {
-  logger('Vibecode API Server running on port ' + PORT);
-  logger('Environment: ' + (process.env.NODE_ENV || 'development'));
-});
-
-server.on('error', (err) => {
-  logger('Server error:', err);
-  process.exit(1);
-});
-
-const shutdown = (signal) => {
-  logger(signal + ' received. Shutting down.');
-  server.close(() => {
-    logger('Server closed');
-    process.exit(0);
+let server;
+if (process.env.NODE_ENV !== 'test') {
+  server = app.listen(PORT, () => {
+    logger('Vibecode API Server running on port ' + PORT);
+    logger('Environment: ' + (process.env.NODE_ENV || 'development'));
   });
-};
+}
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+if (server) {
+  server.on('error', (err) => {
+    logger('Server error:', err);
+    process.exit(1);
+  });
+
+  const shutdown = (signal) => {
+    logger(signal + ' received. Shutting down.');
+    server.close(() => {
+      logger('Server closed');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+}
 
 // Global unhandled exceptions and rejections
 process.on('unhandledRejection', (reason, promise) => {

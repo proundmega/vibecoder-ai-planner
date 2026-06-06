@@ -261,7 +261,7 @@ The business logic layer (services) contains all domain rules: status transition
      done: [],
    };
    ```
-6. Add unit tests for each service method
+6. Add unit tests for each service method (see Testing Guidelines below)
 
 **Current issues to fix:**
 - `TicketService.update()` calls `Ticket.findById()` internally — model should be pure data access
@@ -581,6 +581,220 @@ Monitoring and logging provide visibility into application health, performance, 
 | P2 | Ticket 1 (Controller Setup) | Medium | Architecture clarity |
 
 **Recommended approach**: Fix P0 tickets first (auth + persistence bugs), then iterate through P1/P2 in parallel. Each ticket should be its own PR with tests.
+
+---
+
+## Testing Guidelines (MANDATORY)
+
+**Unit and integration tests are required for every code change. No exceptions.**
+
+Every PR, feature ticket, bug fix, and refactoring must include both unit tests and integration tests as part of "done". A change without tests is not mergeable.
+
+### Test File Locations
+- **Unit tests**: `backend/src/__tests__/unit.test.js` (Jest, mocked DB)
+- **Middleware tests**: `backend/src/middleware/*.test.js` (Jest, mocked req/res)
+- **API endpoint tests**: `backend/src/__tests__/api-*.test.js` (Jest, supertest or manual req/res)
+- **Role-specific unit tests**: `backend/src/__tests__/role-system.test.js` (Jest, mocked DB)
+- **Integration tests**: `backend/src/__tests__/integration/*.test.js` (Jest, real PostgreSQL via Docker)
+- **Bash integration tests**: `backend/integration-test/run.sh` (real Docker + PostgreSQL)
+
+### Test Structure (Jest)
+```javascript
+// backend/src/__tests__/role-system.test.js
+const UserService = require('../services/UserService');
+const User = require('../models/user');
+
+describe('UserService.createUser()', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('project_admin can create member', async () => {
+    User.find.mockResolvedValue({ role: 'project_admin' });
+    User.existsByEmail.mockResolvedValue(false);
+    pool.query.mockResolvedValue({ rows: [{ id: 1, role: 'member' }] });
+
+    const user = await UserService.createUser('Test', 'test@example.com', 'pass', 'member', 1);
+
+    expect(user.role).toBe('member');
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO users'),
+      expect.arrayContaining(['Test', 'test@example.com', expect.any(String), 'member', 1])
+    );
+  });
+
+  test('project_admin cannot create super_admin', async () => {
+    User.find.mockResolvedValue({ role: 'project_admin' });
+
+    await expect(
+      UserService.createUser('Test', 'test@example.com', 'pass', 'super_admin', 1)
+    ).rejects.toThrow('cannot create super_admin accounts');
+  });
+});
+```
+
+### Testing Checklist per Ticket (MANDATORY)
+Every ticket must have tests covering:
+- [ ] **Happy path**: Expected behavior with valid input
+- [ ] **Role validation**: Correct roles allowed, incorrect roles rejected
+- [ ] **Error cases**: Invalid input, missing data, forbidden access
+- [ ] **Edge cases**: Null values, empty arrays, boundary conditions
+- [ ] **Authorization**: Role-based access control works correctly
+- [ ] **DB interactions**: Correct queries fired with correct parameters
+
+### Mocking Strategy
+- **DB calls**: Mock `pool.query()` and model static methods (`User.find()`, `Ticket.findById()`, etc.)
+- **JWT**: Mock `jsonwebtoken` — no real token signing in unit tests
+- **bcrypt**: Mock `bcrypt.hash()` and `bcrypt.compare()`
+- **req/res**: Create mock objects with `jest.fn()` for `res.json()`, `res.status()`, etc.
+
+### What to Mock
+| Dependency | Mock Approach |
+|------------|---------------|
+| `pg` pool | `pool.query = jest.fn().mockResolvedValue({ rows: [...] })` |
+| `User` model | `User.find = jest.fn()`, `User.existsByEmail = jest.fn()` |
+| `jsonwebtoken` | `jwt.sign = jest.fn().mockReturnValue('mock-token')` |
+| `bcryptjs` | `bcrypt.hash = jest.fn().mockResolvedValue('hashed')` |
+| Express req/res | `const res = { json: jest.fn(), status: jest.fn().mockReturnThis() }` |
+
+### Integration Test Checklist (MANDATORY)
+Integration tests (real DB via Docker) must cover:
+- [ ] Full request lifecycle: HTTP request → middleware → service → DB → response
+- [ ] Role-based access: correct 403 responses for unauthorized roles
+- [ ] Data persistence: inserted/updated data survives across requests
+- [ ] Migration: new tables/columns exist and work correctly
+- [ ] Error handling: invalid requests return proper error responses
+
+### Test Naming Convention
+```javascript
+describe('Service.method()', () => {
+  test('should do X when Y', () => {});
+  test('should throw error when invalid input', () => {});
+  test('should return 403 when unauthorized role', () => {});
+});
+```
+
+### CI Requirements (MANDATORY)
+All of the following must pass before merging:
+- `npm test` — unit tests with mocked DB **must pass**
+- `npm run test:integration` — real PostgreSQL via Docker **must pass**
+- `npm run lint` — no unused vars, no errors
+- `bash backend/integration-test/run.sh` — bash integration tests **must pass**
+- Frontend: `npm run typecheck` + `npm run build` **must pass**
+
+### Anti-Patterns to Avoid
+- ❌ Testing implementation details (e.g., exact SQL string) — test behavior instead
+- ❌ Tests that depend on execution order — each test must be independent
+- ❌ Skipping tests with `test.skip` — leave a TODO comment instead
+- ❌ Testing multiple things in one test — one assertion per concept
+- ❌ Real DB calls in unit tests — always mock
+- ❌ Testing private methods — test through public API only
+- ❌ **Merging code without tests — this is prohibited**
+- ❌ **Running tests without verifying both unit AND integration suites pass**
+
+### Code Change Requirements
+Every code change (feature, bug fix, refactoring) must:
+1. Write unit tests **before or alongside** the implementation
+2. Write integration tests covering the full request lifecycle
+3. Run `npm test` and `npm run test:integration` — both must pass
+4. Update `backend/integration-test/run.sh` if the change affects API behavior
+5. Pass `npm run lint` with zero errors
+
+### Test File Locations
+- **Unit tests**: `backend/src/__tests__/unit.test.js` (Jest, mocked DB)
+- **Middleware tests**: `backend/src/middleware/*.test.js` (Jest, mocked req/res)
+- **API endpoint tests**: `backend/src/__tests__/api-*.test.js` (Jest, supertest or manual req/res)
+- **Integration tests**: `backend/integration-test/run.sh` (real Docker + PostgreSQL)
+
+### Test Structure (Jest)
+```javascript
+// backend/src/__tests__/role-system.test.js
+const UserService = require('../services/UserService');
+const User = require('../models/user');
+
+describe('UserService.createUser()', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('project_admin can create member', async () => {
+    User.find.mockResolvedValue({ role: 'project_admin' });
+    User.existsByEmail.mockResolvedValue(false);
+    pool.query.mockResolvedValue({ rows: [{ id: 1, role: 'member' }] });
+
+    const user = await UserService.createUser('Test', 'test@example.com', 'pass', 'member', 1);
+
+    expect(user.role).toBe('member');
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO users'),
+      expect.arrayContaining(['Test', 'test@example.com', expect.any(String), 'member', 1])
+    );
+  });
+
+  test('project_admin cannot create super_admin', async () => {
+    User.find.mockResolvedValue({ role: 'project_admin' });
+
+    await expect(
+      UserService.createUser('Test', 'test@example.com', 'pass', 'super_admin', 1)
+    ).rejects.toThrow('cannot create super_admin accounts');
+  });
+});
+```
+
+### Testing Checklist per Ticket
+Every ticket must have tests covering:
+- [ ] **Happy path**: Expected behavior with valid input
+- [ ] **Role validation**: Correct roles allowed, incorrect roles rejected
+- [ ] **Error cases**: Invalid input, missing data, forbidden access
+- [ ] **Edge cases**: Null values, empty arrays, boundary conditions
+- [ ] **Authorization**: Role-based access control works correctly
+- [ ] **DB interactions**: Correct queries fired with correct parameters
+
+### Mocking Strategy
+- **DB calls**: Mock `pool.query()` and model static methods (`User.find()`, `Ticket.findById()`, etc.)
+- **JWT**: Mock `jsonwebtoken` — no real token signing in unit tests
+- **bcrypt**: Mock `bcrypt.hash()` and `bcrypt.compare()`
+- **req/res**: Create mock objects with `jest.fn()` for `res.json()`, `res.status()`, etc.
+
+### What to Mock
+| Dependency | Mock Approach |
+|------------|---------------|
+| `pg` pool | `pool.query = jest.fn().mockResolvedValue({ rows: [...] })` |
+| `User` model | `User.find = jest.fn()`, `User.existsByEmail = jest.fn()` |
+| `jsonwebtoken` | `jwt.sign = jest.fn().mockReturnValue('mock-token')` |
+| `bcryptjs` | `bcrypt.hash = jest.fn().mockResolvedValue('hashed')` |
+| Express req/res | `const res = { json: jest.fn(), status: jest.fn().mockReturnThis() }` |
+
+### Integration Test Checklist
+Integration tests (real DB via Docker) must cover:
+- [ ] Full request lifecycle: HTTP request → middleware → service → DB → response
+- [ ] Role-based access: correct 403 responses for unauthorized roles
+- [ ] Data persistence: inserted/updated data survives across requests
+- [ ] Migration: new tables/columns exist and work correctly
+- [ ] Error handling: invalid requests return proper error responses
+
+### Test Naming Convention
+```javascript
+describe('Service.method()', () => {
+  test('should do X when Y', () => {});
+  test('should throw error when invalid input', () => {});
+  test('should return 403 when unauthorized role', () => {});
+});
+```
+
+### CI Requirements
+- `npm test` must pass (unit tests with mocked DB)
+- `npm run test:integration` must pass (real PostgreSQL via Docker)
+- `npm run lint` must pass (no unused vars, no errors)
+- Frontend: `npm run typecheck` + `npm run build` must pass
+
+### Anti-Patterns to Avoid
+- ❌ Testing implementation details (e.g., exact SQL string) — test behavior instead
+- ❌ Tests that depend on execution order — each test must be independent
+- ❌ Skipping tests with `test.skip` — leave a TODO comment instead
+- ❌ Testing multiple things in one test — one assertion per concept
+- ❌ Real DB calls in unit tests — always mock
+- ❌ Testing private methods — test through public API only
 
 ---
 

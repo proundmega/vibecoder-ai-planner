@@ -85,6 +85,10 @@ Extend the `users` table to support the new role system, account lifecycle, and 
 - **Circular reference**: User can't reference themselves as creator — validate in service layer
 - **Cascading deletes**: When a user is deleted, their `user_created_by` links should become NULL (ON DELETE SET NULL)
 
+### e) Testing
+- **Unit tests**: `backend/src/__tests__/unit.test.js` — test `User` model methods: `create()`, `findByRole()`, `isActive`/`userCreatedBy` fields in `fromRow()`
+- **Migration test**: Run `003_role_system.sql` against a test database and verify: columns exist, constraint updated, `admin` → `project_admin` migration works, `approval_requests` table created
+
 ---
 
 ## Ticket 2: AuthService Overhaul — Registration with Role
@@ -168,6 +172,18 @@ Update registration to accept a `role` parameter and track `user_created_by`. Se
 - **Token expiry**: Reuse existing `TOKEN_EXPIRY_MINUTES` logic from `auth.js`
 - **Password hashing**: Use `bcrypt.hash(password, 10)` consistently
 
+### e) Testing
+- **Unit tests**: `backend/src/__tests__/unit.test.js` — test `AuthService.register()` role chain validation:
+  - `project_admin` creates `member` → success
+  - `project_admin` creates `user` → success
+  - `project_admin` creates `super_admin` → throws error
+  - `member` creates `user` → success
+  - `member` creates `member` → throws error
+  - `user` creates any account → throws error
+  - `super_admin` role requested → throws error
+  - Self-registration (no `user_created_by`) → defaults to `project_admin`
+  - Creator not found → throws error
+
 ---
 
 ## Ticket 3: Auth Middleware — Role-Based Access Control
@@ -239,6 +255,16 @@ Implement role-based access control middleware to gate endpoints by role. This p
 - **Token payload**: JWT must include `role` and `isActive` claims
 - **Backward compatibility**: Existing tokens without `role` should be handled gracefully
 - **Agent auth**: AI agents (`user` role) bypass role checks on their own tickets
+
+### e) Testing
+- **Unit tests**: `backend/src/middleware/roleAuth.test.js` — test `requireRole()` and `requireActiveUser()`:
+  - `requireRole('project_admin')` with `project_admin` user → calls `next()`
+  - `requireRole('project_admin')` with `member` user → returns 403
+  - `requireRole('project_admin', 'member')` with `member` user → calls `next()`
+  - `requireRole()` with no user → returns 401
+  - `requireActiveUser()` with active user → calls `next()`
+  - `requireActiveUser()` with inactive user → returns 403
+  - `UserService.authenticate()` with inactive user → throws error
 
 ---
 
@@ -320,6 +346,21 @@ Create CRUD endpoints for user management with role-gated access. Admins manage 
 - **Search**: Full-text search on name/email — use `ILIKE` or PostgreSQL full-text search
 - **Pagination**: Implement cursor-based or offset-based pagination for large datasets
 - **Hard delete**: Permanent removal — ensure no foreign key references will break
+
+### e) Testing
+- **Unit tests**: `backend/src/__tests__/unit.test.js` — test `UserService` methods:
+  - `createUser()` with valid role hierarchy → returns user
+  - `createUser()` with invalid role (e.g., `project_admin` creating `super_admin`) → throws
+  - `createUser()` with self-reference → throws
+  - `listUsers()` scoped by creator → only returns users created by that creator
+  - `listAllUsers()` for super_admin → returns all users
+  - `updateUser()` name change → returns updated user
+  - `toggleUserActive()` → toggles is_active
+  - `deleteUser()` owner deleting own account → throws
+  - `deleteUser()` admin deleting user → succeeds
+  - `User.findAll()` with filters → returns paginated results
+  - `User.update()` role field rejected → throws
+  - `User.delete()` hard delete → removes from DB
 
 ---
 
@@ -457,6 +498,15 @@ Add edit functionality to ticket detail view. Users can edit title, description,
 - **Empty title**: Prevent saving with empty title
 - **Form reset**: Reset form on modal close/cancel
 
+### e) Testing
+- **Unit tests**: `backend/src/__tests__/unit.test.js` — test `TicketService.update()`:
+  - Valid status transition (backlog → in_progress) → succeeds
+  - Invalid status transition (backlog → done) → throws
+  - Partial update (title only) → updates only title
+  - Assignee not in project → throws error
+  - Empty title → throws error
+  - `TicketService.getOne()` checks project ownership → returns ticket
+
 ---
 
 ## Ticket 7: Ticket Delete
@@ -503,6 +553,15 @@ Add delete functionality to tickets. Users can delete tickets they own or have p
 - **AI agent tickets**: AI agents (`user` role) cannot delete tickets they created
 - **Audit trail**: Log deletions in `ai_actions` table for compliance
 - **Redirect**: After delete, redirect to ticket board (`/projects/:id/tickets`)
+
+### e) Testing
+- **Unit tests**: `backend/src/__tests__/unit.test.js` — test `TicketService.delete()`:
+  - Ticket owner deletes own ticket → succeeds
+  - `project_admin` deletes any ticket → succeeds
+  - `member` deletes any ticket → succeeds
+  - `user` (AI agent) deletes any ticket → throws forbidden
+  - Non-owner, non-admin deletes ticket → throws forbidden
+  - Ticket not found → throws error
 
 ---
 
@@ -584,6 +643,19 @@ Enforce restrictions on AI agent (`user` role) accounts: no delete, read-only AI
 - **Audit trail**: Log all approval actions
 - **UI clarity**: Show clear messaging to AI agents about approval requirements
 
+### e) Testing
+- **Unit tests**: `backend/src/__tests__/unit.test.js` — test `ApprovalService` and approval model:
+  - `ApprovalService.create()` → creates pending request
+  - `ApprovalService.approve()` by project_admin → marks approved, updates ticket status
+  - `ApprovalService.approve()` by user role → throws forbidden
+  - `ApprovalService.reject()` → marks rejected
+  - `ApprovalRequest.create()` → inserts into DB
+  - `ApprovalRequest.approve()` → updates status
+  - `ApprovalRequest.findByTicketAndRequester()` → finds existing pending request
+  - `ApprovalRequest.getPendingByRequester()` → lists pending requests for user
+  - Status change to `done` by `user` role creates approval request
+  - Status change to `done` by admin bypasses approval
+
 ---
 
 ## Ticket 9: Frontend Router & Navigation Updates
@@ -649,51 +721,72 @@ Update frontend routing to support new user management views and role-based acce
 
 ---
 
-## Ticket 10: Migration & Testing
+## Ticket 10: Unit Tests & Integration Tests (MANDATORY)
 
 ### a) Purpose
-Ensure all changes work together end-to-end. Run integration tests, verify role transitions, and test edge cases.
+Write comprehensive unit tests for all new backend code and update integration tests. This is the final ticket — no new features, only tests.
+
+**NOTE: Testing is mandatory for EVERY code change, not just this ticket. See `ARCHITECT_P2.txt` → "Testing Guidelines (MANDATORY)" for full requirements. Every PR, bug fix, and refactoring must include both unit and integration tests. No exceptions.**
 
 ### b) Actions
-1. Run database migration:
-   ```bash
-   cd backend && npm run db:migrate
-   ```
-2. Verify existing data migration:
-   - Check that `admin` users are now `project_admin`
-   - Check that `user_created_by` is NULL for self-registered users
-   - Check that `is_active` is TRUE for all existing users
-3. Update integration tests in `backend/integration-test/run.sh`:
-   - Test registration with role parameter
-   - Test role-gated access (admin can create member, member can create user, user can't create)
-   - Test user CRUD operations
-   - Test ticket edit/delete with role checks
-   - Test AI agent restrictions (no delete, approval required)
-   - Test super_admin endpoints
-4. Run frontend tests:
-   ```bash
-   cd frontend && npm test
-   ```
-5. Run frontend lint and typecheck:
-   ```bash
-   cd frontend && npm run lint && npm run typecheck
-   ```
-6. Manual testing:
-   - Register new user → should get `project_admin` role
-   - Login as project_admin → create member account
-   - Login as member → create user account
-   - Login as user (AI agent) → verify restrictions
-   - Test ticket edit/delete with different roles
-   - Test approval workflow for AI agent status changes
+1. **Unit tests** — create `backend/src/__tests__/role-system.test.js`:
+    - `UserService` tests (15+ tests): createUser, updateUser, toggleUserActive, deleteUser, listUsers, listAllUsers, register with role validation
+    - `ApprovalService` tests (8+ tests): create, approve, reject, getPendingByRequester, getByTicketId, role-based approver validation
+    - `AuthService` tests (8+ tests): register role chain validation, authenticate with is_active check
+    - `TicketService.delete()` tests (5+ tests): role-based authorization, owner checks, forbidden cases
+    - `ApprovalRequest` model tests (6+ tests): create, approve, reject, findByTicketAndRequester, getPendingByRequester, getByTicketId
+2. **Middleware tests** — create `backend/src/middleware/roleAuth.test.js`:
+    - `requireRole()` with valid role → next()
+    - `requireRole()` with invalid role → 403
+    - `requireRole()` with multiple allowed roles → any match works
+    - `requireRole()` with no user → 401
+    - `requireActiveUser()` with active → next()
+    - `requireActiveUser()` with inactive → 403
+3. **API endpoint tests** — create `backend/src/__tests__/api-users.test.js`:
+    - POST /api/users with role-gated access (project_admin, member, super_admin blocked)
+    - GET /api/users with scoping by role
+    - PUT /api/users/:id with authorization
+    - PATCH /api/users/:id/toggle-active
+    - DELETE /api/users/:id with authorization
+    - GET /api/users/super-admin (super_admin only)
+4. **API endpoint tests** — create `backend/src/__tests__/api-approvals.test.js`:
+    - POST /api/approvals with role checks
+    - GET /api/approvals/pending
+    - POST /api/approvals/:id/approve
+    - POST /api/approvals/:id/reject
+    - GET /api/approvals (super_admin only)
+5. **Integration tests** — update `backend/integration-test/run.sh`:
+    - Test registration with role parameter
+    - Test role-gated access (admin can create member, member can create user, user can't create)
+    - Test user CRUD operations with role checks
+    - Test ticket edit/delete with role checks
+    - Test AI agent restrictions (no delete, approval required for done status)
+    - Test super_admin endpoints
+6. Run frontend tests:
+    ```bash
+    cd frontend && npm test
+    ```
+7. Run frontend lint and typecheck:
+    ```bash
+    cd frontend && npm run lint && npm run typecheck
+    ```
+8. Manual testing:
+    - Register new user → should get `project_admin` role
+    - Login as project_admin → create member account
+    - Login as member → create user account
+    - Login as user (AI agent) → verify restrictions
+    - Test ticket edit/delete with different roles
+    - Test approval workflow for AI agent status changes
 
 ### c) Dependencies
 - All previous tickets (1-9)
 
 ### d) Risks/Edge Cases
 - **Migration rollback**: Have backup/rollback plan if migration fails
-- **Test coverage**: Ensure 100% coverage for new role logic
+- **Test coverage**: Aim for 80%+ coverage on new role logic
 - **Backward compatibility**: Existing tokens should still work (add role to JWT payload)
 - **Performance**: User list queries with pagination should be fast (< 100ms)
+- **Test isolation**: Each test should be independent — mock DB calls, don't share state
 
 ---
 

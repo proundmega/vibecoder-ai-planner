@@ -49,8 +49,8 @@ class TicketService {
     if (!ticket) throw new Error('Ticket not found');
 
     const user = await User.find(userId);
-    if (ticket.owner_id !== userId && !['project_admin', 'member', 'super_admin'].includes(user.role)) {
-      throw new Error('Forbidden: only ticket owner or admins can delete');
+    if (ticket.ownerId !== userId && !['project_admin', 'member', 'super_admin'].includes(user.role)) {
+      throw new Error('Forbidden');
     }
 
     await Ticket.delete(id);

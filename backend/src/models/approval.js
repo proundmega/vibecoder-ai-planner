@@ -1,7 +1,5 @@
 const { pool } = require('../db');
 
-ApprovalRequest.pool = pool;
-
 class ApprovalRequest {
   static async create(ticketId, requestedBy) {
     const result = await pool.query(
@@ -94,5 +92,7 @@ class ApprovalRequest {
     return result.rows;
   }
 }
+
+ApprovalRequest.pool = pool;
 
 module.exports = ApprovalRequest;

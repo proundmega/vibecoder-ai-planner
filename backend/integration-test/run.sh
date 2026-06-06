@@ -42,13 +42,14 @@ clean_db() {
 # Register a new user and return the token
 register() {
   local name="$1" email="$2" password="$3"
+  local role="${4:-project_admin}"
   local code body
   body=$(curl -sf -X POST "$BASE/api/auth/register" \
     -H "Content-Type: application/json" \
-    -d "{\"name\":\"$name\",\"email\":\"$email\",\"password\":\"$password\"}")
+    -d "{\"name\":\"$name\",\"email\":\"$email\",\"password\":\"$password\",\"role\":\"$role\"}")
   code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/register" \
     -H "Content-Type: application/json" \
-    -d "{\"name\":\"$name\",\"email\":\"$email\",\"password\":\"$password\"}")
+    -d "{\"name\":\"$name\",\"email\":\"$email\",\"password\":\"$password\",\"role\":\"$role\"}")
   if [ "$code" = "201" ]; then
     echo "$body" | grep -o '"token":"[^"]*"' | cut -d'"' -f4
   else
@@ -139,13 +140,13 @@ test_auth() {
   local code
   code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/register" \
     -H "Content-Type: application/json" \
-    -d '{"name":"Alice","email":"alice@integration.test","password":"password123"}')
+    -d '{"name":"Alice","email":"alice@integration.test","password":"password123","role":"project_admin"}')
   assert_status "Register new user" "201" "$code"
 
   # Duplicate register
   code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/register" \
     -H "Content-Type: application/json" \
-    -d '{"name":"Alice","email":"alice@integration.test","password":"password123"}')
+    -d '{"name":"Alice","email":"alice@integration.test","password":"password123","role":"project_admin"}')
   assert_status "Reject duplicate registration" "400" "$code"
 
   # Login
@@ -568,6 +569,320 @@ test_route_ordering() {
   fi
 }
 
+test_user_role_ticket_access() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  User Role Ticket Access"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  # Register a regular user (role='user' by default)
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/register" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"Bob","email":"bob@integration.test","password":"password123"}')
+  assert_status "Register regular user" "201" "$code"
+
+  local token
+  token=$(login "bob@integration.test" "password123")
+
+  # Verify login response includes user role
+  local login_body
+  login_body=$(curl -sf -X POST "$BASE/api/auth/login" \
+    -H "Content-Type: application/json" \
+    -d '{"email":"bob@integration.test","password":"password123"}')
+  local user_role
+  user_role=$(echo "$login_body" | grep -o '"role":"[^"]*"' | cut -d'"' -f4)
+  assert_field "Default user role is user" "role" "user" "$user_role"
+
+  # Create a project
+  local proj_id
+  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Role Test Project","description":""}' \
+    | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Regular user should be able to create tickets
+  local ticket_body
+  ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"title":"User Role Ticket","description":"Created by regular user"}')
+  assert_has_field "Regular user can create tickets" "id" "$ticket_body"
+
+  # Regular user should be able to list tickets
+  local list_body
+  list_body=$(curl -sf "$BASE/api/projects/$proj_id/tickets" \
+    -H "Authorization: Bearer $token")
+  assert_has_field "Regular user can list tickets" "id" "$list_body"
+
+  # Regular user should be able to get a single ticket
+  local ticket_id
+  ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+  local single_body
+  single_body=$(curl -sf "$BASE/api/tickets/$ticket_id" \
+    -H "Authorization: Bearer $token")
+  assert_field "Regular user can get ticket by id" "title" "User Role Ticket" "$(echo "$single_body" | grep -o '"title":"[^"]*"' | cut -d'"' -f4)"
+}
+
+test_role_based_user_management() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Role-Based User Management"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  # Login as admin
+  local admin_token
+  admin_token=$(login "alice@integration.test" "password123")
+
+  # Admin creates a member user
+  local member_body
+  member_body=$(curl -sf -X POST "$BASE/api/users" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $admin_token" \
+    -d '{"name":"Member User","email":"member@integration.test","password":"password123","role":"member"}')
+  assert_has_field "Admin can create member user" "id" "$member_body"
+  assert_field "Created user has member role" "role" "member" "$(echo "$member_body" | grep -o '"role":"[^"]*"' | cut -d'"' -f4)"
+
+  local member_id
+  member_id=$(echo "$member_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Admin creates a user role user
+  local user_body
+  user_body=$(curl -sf -X POST "$BASE/api/users" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $admin_token" \
+    -d '{"name":"AI User","email":"aiuser@integration.test","password":"password123","role":"user"}')
+  assert_has_field "Admin can create user role" "id" "$user_body"
+  assert_field "Created user has user role" "role" "user" "$(echo "$user_body" | grep -o '"role":"[^"]*"' | cut -d'"' -f4)"
+
+  # Admin updates user name
+  local update_body
+  update_body=$(curl -sf -X PUT "$BASE/api/users/$member_id" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $admin_token" \
+    -d '{"name":"Updated Member"}')
+  assert_field "Admin can update user name" "name" "Updated Member" "$(echo "$update_body" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)"
+
+  # Admin deactivates user
+  local deact_body
+  deact_body=$(curl -sf -X PATCH "$BASE/api/users/$member_id/toggle-active" \
+    -H "Authorization: Bearer $admin_token")
+  assert_field "Admin can deactivate user" "isActive" "false" "$(echo "$deact_body" | grep -o '"isActive":[a-z]*' | cut -d':' -f2)"
+
+  # Deactivated user cannot login
+  local deact_login_code
+  deact_login_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/login" \
+    -H "Content-Type: application/json" \
+    -d '{"email":"member@integration.test","password":"password123"}')
+  assert_status "Deactivated user cannot login" "401" "$deact_login_code"
+
+  # Admin reactivates user
+  local react_body
+  react_body=$(curl -sf -X PATCH "$BASE/api/users/$member_id/toggle-active" \
+    -H "Authorization: Bearer $admin_token")
+  assert_field "Admin can reactivate user" "isActive" "true" "$(echo "$react_body" | grep -o '"isActive":[a-z]*' | cut -d':' -f2)"
+
+  # Admin lists users
+  local list_body
+  list_body=$(curl -sf "$BASE/api/users" \
+    -H "Authorization: Bearer $admin_token")
+  assert_has_field "Admin can list users" "users" "$list_body"
+
+  # Regular user cannot create users
+  local user_token
+  user_token=$(login "aiuser@integration.test" "password123")
+  local create_code
+  create_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/users" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $user_token" \
+    -d '{"name":"Another","email":"another@integration.test","password":"password123","role":"user"}')
+  assert_status "Regular user cannot create users" "403" "$create_code"
+
+  # Member can create user role
+  local member_token
+  member_token=$(login "member@integration.test" "password123")
+  local member_create_body
+  member_create_body=$(curl -sf -X POST "$BASE/api/users" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $member_token" \
+    -d '{"name":"Agent","email":"agent@integration.test","password":"password123","role":"user"}')
+  assert_has_field "Member can create user role" "id" "$member_create_body"
+
+  # Member cannot create member role
+  local member_create_code
+  member_create_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/users" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $member_token" \
+    -d '{"name":"Another Member","email":"anothermember@integration.test","password":"password123","role":"member"}')
+  assert_status "Member cannot create member role" "400" "$member_create_code"
+
+  # Admin deletes user
+  local delete_code
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/users/$member_id" \
+    -H "Authorization: Bearer $admin_token")
+  assert_status "Admin can delete user" "200" "$delete_code"
+
+  # Super-admin endpoint requires super_admin role
+  local super_code
+  super_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/users/super-admin" \
+    -H "Authorization: Bearer $admin_token")
+  assert_status "Non-super-admin cannot access super-admin endpoint" "403" "$super_code"
+}
+
+test_role_based_ticket_permissions() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Role-Based Ticket Permissions"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  # Login as admin
+  local admin_token
+  admin_token=$(login "alice@integration.test" "password123")
+
+  # Create a project
+  local proj_id
+  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $admin_token" \
+    -d '{"name":"Ticket Permissions Project","description":""}' \
+    | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Create a member user
+  curl -sf -X POST "$BASE/api/users" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $admin_token" \
+    -d '{"name":"Member","email":"perm_member@integration.test","password":"password123","role":"member"}' >/dev/null 2>&1
+
+  # Create a user role user
+  curl -sf -X POST "$BASE/api/users" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $admin_token" \
+    -d '{"name":"User","email":"perm_user@integration.test","password":"password123","role":"user"}' >/dev/null 2>&1
+
+  # Member can delete tickets
+  local ticket_body
+  ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $admin_token" \
+    -d '{"title":"Member Delete Ticket","description":"Test"}')
+  local ticket_id
+  ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  local member_token
+  member_token=$(login "perm_member@integration.test" "password123")
+  local delete_code
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/projects/tickets/$ticket_id" \
+    -H "Authorization: Bearer $member_token")
+  assert_status "Member can delete tickets" "200" "$delete_code"
+
+  # Create another ticket for user role tests
+  ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $admin_token" \
+    -d '{"title":"Owned Ticket","description":"Test"}')
+  ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # User role cannot delete others' tickets
+  local user_token
+  user_token=$(login "perm_user@integration.test" "password123")
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/projects/tickets/$ticket_id" \
+    -H "Authorization: Bearer $user_token")
+  assert_status "User role cannot delete others' tickets" "403" "$delete_code"
+
+  # User role can delete own tickets
+  local own_ticket_body
+  own_ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $user_token" \
+    -d '{"title":"My Ticket","description":"Test"}')
+  local own_ticket_id
+  own_ticket_id=$(echo "$own_ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/projects/tickets/$own_ticket_id" \
+    -H "Authorization: Bearer $user_token")
+  assert_status "User role can delete own tickets" "200" "$delete_code"
+}
+
+test_approvals_api() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Approvals API"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  # Login as admin
+  local admin_token
+  admin_token=$(login "alice@integration.test" "password123")
+
+  # Create a project
+  local proj_id
+  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $admin_token" \
+    -d '{"name":"Approval Project","description":""}' \
+    | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Create a ticket
+  local ticket_body
+  ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $admin_token" \
+    -d '{"title":"Approval Ticket","description":"Test"}')
+  local ticket_id
+  ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Move ticket to in_progress
+  curl -sf -X POST "$BASE/api/projects/$proj_id/tickets/$ticket_id/status" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $admin_token" \
+    -d '{"status":"in_progress"}' >/dev/null 2>&1
+
+  # Move ticket to review
+  curl -sf -X POST "$BASE/api/projects/$proj_id/tickets/$ticket_id/status" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $admin_token" \
+    -d '{"status":"review"}' >/dev/null 2>&1
+
+  # Create approval request
+  local approval_body
+  approval_body=$(curl -sf -X POST "$BASE/api/approvals" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $admin_token" \
+    -d "{\"ticketId\":\"$ticket_id\"}")
+  assert_has_field "Create approval request" "id" "$approval_body"
+  assert_field "Approval status is pending" "status" "pending" "$(echo "$approval_body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)"
+
+  local approval_id
+  approval_id=$(echo "$approval_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Get pending approvals
+  local pending_body
+  pending_body=$(curl -sf "$BASE/api/approvals/pending" \
+    -H "Authorization: Bearer $admin_token")
+  assert_has_field "Get pending approvals" "approvals" "$pending_body"
+
+  # Approve request
+  local approve_body
+  approve_body=$(curl -sf -X POST "$BASE/api/approvals/$approval_id/approve" \
+    -H "Authorization: Bearer $admin_token")
+  local approve_status
+  approve_status=$(echo "$approve_body" | grep -o '"status":"approved"' | head -1 | cut -d'"' -f4)
+  assert_field "Approve transitions to approved" "status" "approved" "$approve_status"
+
+  # Cannot approve already approved
+  local approve_code
+  approve_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/approvals/$approval_id/approve" \
+    -H "Authorization: Bearer $admin_token")
+  assert_status "Cannot approve already approved" "400" "$approve_code"
+
+  # User role cannot approve/reject
+  local user_token
+  user_token=$(login "perm_user@integration.test" "password123")
+  local user_approve_code
+  user_approve_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/approvals/1/approve" \
+    -H "Authorization: Bearer $user_token")
+  assert_status "User role cannot approve" "403" "$user_approve_code"
+}
+
 test_jwt_token_expiry() {
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -683,7 +998,20 @@ main() {
 
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "  Integration Test Suite"
+  echo "  Jest Integration Tests (PostgreSQL)"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  cd "$ROOT"
+  DATABASE_URL="postgresql://postgres:changeme@localhost:5432/vibecode" npx jest --config jest.integration.config.js --verbose 2>&1 | tail -20
+  JEST_EXIT=${PIPESTATUS[0]}
+  if [ "$JEST_EXIT" -ne 0 ]; then
+    echo ""
+    echo "FAILED: Jest integration tests exited with code $JEST_EXIT"
+    exit 1
+  fi
+
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Integration Test Suite (curl + Docker)"
   echo "  $(date '+%Y-%m-%d %H:%M:%S')"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
@@ -697,6 +1025,9 @@ main() {
   test_route_ordering
   test_ticket_crud_via_frontend_endpoint
   test_frontend_api_proxy
+  test_role_based_user_management
+  test_role_based_ticket_permissions
+  test_approvals_api
   test_jwt_token_expiry
   test_frontend
 

@@ -5,7 +5,7 @@ const { pool } = require('../db');
 const jwt = require('jsonwebtoken');
 
 class UserService {
-  async register(name, email, password, role = 'project_admin', userCreatedBy = null) {
+  async register(name, email, password, role = 'user', userCreatedBy = null) {
     const exists = await User.existsByEmail(email);
     if (exists) {
       throw new Error('Email already registered');
@@ -34,10 +34,10 @@ class UserService {
       throw new Error('Invalid credentials');
     }
 
-    const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+    const JWT_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
     const TOKEN_EXPIRY_HOURS = parseInt(process.env.TOKEN_EXPIRY_HOURS) || 24;
     const token = jwt.sign(
-      { userId: user.id, email: user.email },
+      { userId: user.id, email: user.email, role: user.role },
       JWT_SECRET,
       { expiresIn: TOKEN_EXPIRY_HOURS }
     );
@@ -54,7 +54,7 @@ class UserService {
   }
 
   async getCurrentUser(token) {
-    const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+    const JWT_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
     const decoded = jwt.verify(token, JWT_SECRET);
     const user = await User.find(decoded.userId);
     return user;
@@ -141,6 +141,27 @@ class UserService {
     const exists = await User.existsByEmail(email);
     if (exists) {
       throw new Error('Email already registered');
+    }
+
+    if (role === 'super_admin') {
+      throw new Error('Super admin accounts must be created manually');
+    }
+
+    if (createdBy) {
+      const creator = await User.find(createdBy);
+      if (creator) {
+        if (creator.role === 'project_admin') {
+          if (!['member', 'user'].includes(role)) {
+            throw new Error('Project admins can only create member or user accounts');
+          }
+        } else if (creator.role === 'member') {
+          if (role !== 'user') {
+            throw new Error('Members can only create user accounts');
+          }
+        } else if (creator.role === 'user') {
+          throw new Error('AI agents cannot create user accounts');
+        }
+      }
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);

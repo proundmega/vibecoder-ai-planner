@@ -6,6 +6,7 @@ const path = require('path');
 const SQL_FILES = [
   path.join(__dirname, '../../migrations/001_create_tables.sql'),
   path.join(__dirname, '../../migrations/002_agents_schema.sql'),
+  path.join(__dirname, '../../migrations/003_role_system.sql'),
 ];
 
 const pool = new Pool({

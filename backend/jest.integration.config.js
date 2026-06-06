@@ -1,4 +1,5 @@
-process.env.DATABASE_URL = 'postgresql://testuser:testpass@localhost:5432/vibecode';
+process.env.DATABASE_URL = 'postgresql://postgres:changeme@localhost:5432/vibecode';
+process.env.NODE_ENV = 'test';
 
 module.exports = {
   testEnvironment: 'node',
@@ -15,5 +16,6 @@ module.exports = {
   restoreMocks: false,
   watchPathIgnorePatterns: ['/node_modules/', '/coverage/'],
   testTimeout: 30000,
-  setupFilesAfterEnv: [],
+  setupFilesAfterEnv: ['<rootDir>/src/__tests__/integration/setup.js'],
+  maxWorkers: 1,
 };
