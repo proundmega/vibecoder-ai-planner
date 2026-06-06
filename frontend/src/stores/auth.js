@@ -58,6 +58,16 @@ export function useAuthStore() {
     return hasAnyRole(allowedRoles)
   }
 
+  const isProjectAdmin = () => hasRole('project_admin')
+  const isMember = () => hasRole('member')
+  const isUser = () => hasRole('user')
+  const isSuperAdmin = () => hasRole('super_admin')
+
+  const canCreateUser = () => hasAnyRole(['project_admin', 'member'])
+  const canDeleteUser = () => hasAnyRole(['project_admin', 'super_admin'])
+  const canToggleUser = () => hasAnyRole(['project_admin', 'super_admin'])
+  const canAccessUsers = () => hasAnyRole(['project_admin', 'member', 'super_admin'])
+
   instance = {
     user,
     token,
@@ -67,6 +77,14 @@ export function useAuthStore() {
     hasRole,
     hasAnyRole,
     canAccess,
+    isProjectAdmin,
+    isMember,
+    isUser,
+    isSuperAdmin,
+    canCreateUser,
+    canDeleteUser,
+    canToggleUser,
+    canAccessUsers,
     setUser,
     setToken,
     setLoading,

@@ -28,8 +28,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update ticket
-router.put('/:ticketId', async (req, res) => {
+// Update ticket (partial updates supported)
+router.put('/:ticketId', verifyToken, async (req, res) => {
   try {
     const ticket = await TicketService.getOne(req.params.ticketId, req.user.userId);
     const user = await User.find(req.user.userId);
@@ -39,10 +39,18 @@ router.put('/:ticketId', async (req, res) => {
       return res.status(403).json({ error: 'AI agents can only update their own tickets' });
     }
     
-    const { title, description, status, priority, assigneeId } = req.body;
+    // Only allow specific fields to be updated
+    const allowedFields = ['title', 'description', 'status', 'priority', 'assigneeId'];
+    const filteredUpdates = {};
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        filteredUpdates[field] = req.body[field];
+      }
+    }
+    
     await TicketService.update(
       req.params.ticketId,
-      { title, description, status, priority, assigneeId },
+      filteredUpdates,
       req.user.userId
     );
     res.json({ message: 'Ticket updated' });

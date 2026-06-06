@@ -107,6 +107,7 @@ async function requestApproval() {
 async function handleEditSaved(updates) {
   if (ticket.value) {
     Object.assign(ticket.value, updates)
+    error.value = null
   }
 }
 

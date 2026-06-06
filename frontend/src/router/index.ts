@@ -37,6 +37,12 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/super-admin/users',
+    name: 'SuperAdminUsers',
+    component: () => import('../views/SuperAdminUsers.vue'),
+    meta: { requiresAuth: true, allowedRoles: ['super_admin'] },
+  },
+  {
     path: '/users',
     name: 'UserManagement',
     component: () => import('../views/UserManagement.vue'),

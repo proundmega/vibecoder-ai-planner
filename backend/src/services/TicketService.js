@@ -31,15 +31,48 @@ class TicketService {
     const ticket = await Ticket.findById(id);
     if (!ticket) throw new Error('Ticket not found');
 
-    const { title, description, status, priority, assigneeId } = data;
+    const user = await User.find(userId);
     
+    // Permission check: admins can edit any ticket, users can only edit their own
+    if (
+      user.role !== 'super_admin' &&
+      user.role !== 'project_admin' &&
+      user.role !== 'member' &&
+      ticket.ownerId !== userId
+    ) {
+      throw new Error('Unauthorized to edit this ticket');
+    }
+
+    // Validate title not empty (if being updated)
+    if (data.title !== undefined && data.title !== null && !data.title.trim()) {
+      throw new Error('Title cannot be empty');
+    }
+
+    // Validate assignee is in same project (if changing assignee)
+    if (data.assigneeId !== undefined && data.assigneeId !== null && data.assigneeId !== ticket.assigneeId) {
+      const assignee = await User.find(data.assigneeId);
+      if (!assignee) throw new Error('Assignee not found');
+      
+      const project = await Project.findById(ticket.projectId);
+      if (!project) throw new Error('Project not found');
+      
+      const { pool } = require('../db');
+      const projectMember = await pool.query(
+        'SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2',
+        [ticket.projectId, data.assigneeId]
+      );
+      if (projectMember.rows.length === 0) {
+        throw new Error('Assignee is not a member of this project');
+      }
+    }
+
     return await Ticket.update(
       id,
-      title,
-      description,
-      status,
-      priority,
-      assigneeId,
+      data.title,
+      data.description,
+      data.status,
+      data.priority,
+      data.assigneeId,
       userId
     );
   }
