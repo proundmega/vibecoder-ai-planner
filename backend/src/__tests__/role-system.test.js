@@ -1277,12 +1277,12 @@ describe('User model', () => {
   });
 
   describe('delete()', () => {
-    it('should delete user', async () => {
+    it('should soft delete user', async () => {
       const UserClass = require('../models/user');
       await UserClass.delete(1);
 
       expect(pool.query).toHaveBeenCalledWith(
-        'DELETE FROM users WHERE id = $1',
+        'UPDATE users SET deleted_at = NOW() WHERE id = $1',
         [1]
       );
     });

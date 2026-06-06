@@ -1,4 +1,4 @@
-const { pool } = require('../db');
+const { pool, transaction } = require('../db');
 
 class Ticket {
   constructor(data) {
@@ -31,7 +31,7 @@ class Ticket {
       'FROM tickets t ' +
       'LEFT JOIN users u ON t.assignee_id = u.id ' +
       'JOIN projects p ON t.project_id = p.id ' +
-      'WHERE t.project_id = $1 ORDER BY t.created_at DESC',
+      'WHERE t.project_id = $1 AND t.deleted_at IS NULL ORDER BY t.created_at DESC',
       [projectId]
     );
     return result.rows.map(r => this.fromRow(r));
@@ -39,7 +39,7 @@ class Ticket {
 
   static async findByStatus(projectId, status) {
     const result = await pool.query(
-      'SELECT * FROM tickets WHERE project_id = $1 AND status = $2 ORDER BY created_at',
+      'SELECT * FROM tickets WHERE project_id = $1 AND status = $2 AND deleted_at IS NULL ORDER BY created_at',
       [projectId, status]
     );
     return result.rows.map(r => this.fromRow(r));
@@ -47,7 +47,7 @@ class Ticket {
 
   static async findById(id) {
     const result = await pool.query(
-      'SELECT * FROM tickets WHERE id = $1', [id]);
+      'SELECT * FROM tickets WHERE id = $1 AND deleted_at IS NULL', [id]);
     return result.rows.length > 0 ? this.fromRow(result.rows[0]) : null;
   }
 
@@ -99,7 +99,29 @@ class Ticket {
   }
 
   static async delete(id) {
-    await pool.query('DELETE FROM tickets WHERE id = $1', [id]);
+    await pool.query(
+      'UPDATE tickets SET deleted_at = NOW(), status = \'done\' WHERE id = $1',
+      [id]
+    );
+  }
+
+  static async deleteWithAudit(id, userId, action) {
+    return transaction(async (client) => {
+      const current = await this.findById(id);
+      if (!current) {
+        throw new Error('Ticket not found');
+      }
+
+      await client.query(
+        'UPDATE tickets SET deleted_at = NOW(), status = \'done\' WHERE id = $1',
+        [id]
+      );
+
+      await client.query(
+        'INSERT INTO audit_log (user_id, action, entity_type, entity_id, created_at) VALUES ($1, $2, $3, $4, NOW())',
+        [userId, action, 'ticket', id]
+      );
+    });
   }
 
   static async updateStatus(id, status, userId) {

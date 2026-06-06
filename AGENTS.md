@@ -25,7 +25,7 @@ backend/src/
   api/routes.js         → All route mounting (/health, /auth, /projects, /tickets, /pricing, /agents)
   api/{projects,tickets,agents,pricing,user}.js  → route modules
   services/{Project,Ticket,Agent,User}Service.js  → business logic
-  models/{user,project,ticket}.js  → DB models (raw pg queries)
+  models/{user,project,ticket}.js  → DB models (soft delete, transaction support)
   middleware/auth.js     → verifyToken, agentAuth, rateLimiter
   middleware/validate.js → Joi validation middleware
   middleware/errorHandler.js → Error handling middleware
