@@ -32,6 +32,49 @@ export function useAuthStore() {
     localStorage.setItem('vibecode_permissions', JSON.stringify(permissions.value))
   }
 
+  const syncPermissions = async (fetchFn) => {
+    if (!user.value?.role) return
+    const expectedPerms = new Set([
+      'TICKET_CREATE', 'TICKET_READ', 'TICKET_UPDATE', 'TICKET_STATUS_CHANGE', 'TICKET_COMMENT',
+      'PROJECT_READ', 'AGENT_READ', 'PRICING_READ', 'DASHBOARD_READ',
+    ])
+    if (['project_admin', 'member'].includes(user.value.role)) {
+      expectedPerms.add('TICKET_DELETE')
+    }
+    if (['project_admin', 'member'].includes(user.value.role)) {
+      expectedPerms.add('USER_CREATE')
+      expectedPerms.add('USER_READ')
+    }
+    if (user.value.role === 'project_admin') {
+      expectedPerms.add('PROJECT_CREATE')
+      expectedPerms.add('PROJECT_UPDATE')
+      expectedPerms.add('PROJECT_DELETE')
+      expectedPerms.add('PROJECT_MANAGE_MEMBERS')
+      expectedPerms.add('USER_DELETE')
+      expectedPerms.add('USER_TOGGLE_ACTIVE')
+      expectedPerms.add('AGENT_CREATE')
+      expectedPerms.add('AGENT_DELETE')
+      expectedPerms.add('APPROVAL_APPROVE')
+      expectedPerms.add('APPROVAL_REJECT')
+    }
+    if (user.value.role === 'super_admin') {
+      return
+    }
+    const stored = new Set(permissions.value)
+    for (const perm of expectedPerms) {
+      if (!stored.has(perm)) {
+        try {
+          const freshPerms = await fetchFn(user.value.role)
+          setPermissions(freshPerms)
+          return
+        } catch (e) {
+          console.error('Failed to sync permissions:', e)
+        }
+        break
+      }
+    }
+  }
+
   const setLoading = (value) => {
     loading.value = value
   }
@@ -131,6 +174,7 @@ export function useAuthStore() {
     setUser,
     setToken,
     setPermissions,
+    syncPermissions,
     setLoading,
     setLoadingError,
     logout,

@@ -39,6 +39,7 @@ const handleRegister = async () => {
       try {
         const perms = await get(`/api/permissions/${data.user.role}`)
         authStore.setPermissions(perms)
+        await authStore.syncPermissions((role) => get(`/api/permissions/${role}`))
       } catch (e) {
         console.error('Failed to fetch permissions:', e)
       }

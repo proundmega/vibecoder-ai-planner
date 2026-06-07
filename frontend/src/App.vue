@@ -29,13 +29,24 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { get } from '@/api/client.js'
 
 const authStore = useAuthStore()
 const router = useRouter()
 const route = useRoute()
+
+onMounted(async () => {
+  if (authStore.user.value?.role) {
+    try {
+      await authStore.syncPermissions((role) => get(`/api/permissions/${role}`))
+    } catch (e) {
+      console.error('Failed to sync permissions on mount:', e)
+    }
+  }
+})
 
 const showNav = computed(() => !['/login', '/register'].includes(route.path))
 
