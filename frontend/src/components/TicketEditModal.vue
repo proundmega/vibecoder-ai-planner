@@ -35,7 +35,7 @@ onMounted(async () => {
   
   try {
     const response = await fetchProjectUsers(props.projectId)
-    assignees.value = response.users || []
+    assignees.value = response || []
   } catch (err) {
     console.error('Failed to load assignees:', err)
   }

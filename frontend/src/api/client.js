@@ -27,26 +27,30 @@ function apiFetch(url, options = {}) {
     })
 }
 
+function extractData(response) {
+  return response.json().then(data => data.data !== undefined ? data.data : data)
+}
+
 export function get(url) {
-  return apiFetch(url).then(res => res.json())
+  return apiFetch(url).then(extractData)
 }
 
 export function post(url, body) {
   return apiFetch(url, {
     method: 'POST',
     body: JSON.stringify(body),
-  }).then(res => res.json())
+  }).then(extractData)
 }
 
 export function put(url, body) {
   return apiFetch(url, {
     method: 'PUT',
     body: JSON.stringify(body),
-  }).then(res => res.json())
+  }).then(extractData)
 }
 
 export function del(url) {
-  return apiFetch(url, { method: 'DELETE' }).then(res => res.json())
+  return apiFetch(url, { method: 'DELETE' }).then(extractData)
 }
 
 export function postWithHeaders(url, body, extraHeaders = {}) {
@@ -54,5 +58,5 @@ export function postWithHeaders(url, body, extraHeaders = {}) {
     method: 'POST',
     body: JSON.stringify(body),
     headers: extraHeaders,
-  }).then(res => res.json())
+  }).then(extractData)
 }
