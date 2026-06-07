@@ -19,17 +19,17 @@ const error = ref(null)
 
 const currentRole = computed(() => {
   const user = authStore.user.value
-  return user?.role || user?.ROLE || 'project_admin'
+  return user?.role || 'project_admin'
 })
 
 const availableRoles = computed(() => {
   const role = currentRole.value
-  if (role === 'project_admin' || role === 'ADMIN') {
+  if (role === 'project_admin') {
     return [
       { value: 'member', label: 'Member' },
       { value: 'user', label: 'AI Agent' }
     ]
-  } else if (role === 'member' || role === 'MEMBER') {
+  } else if (role === 'member') {
     return [{ value: 'user', label: 'AI Agent' }]
   }
   return []

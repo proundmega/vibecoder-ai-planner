@@ -17,6 +17,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { registerUser } from '@/api/auth.js'
+import { get } from '@/api/client.js'
 
 const name = ref('')
 const email = ref('')
@@ -34,6 +35,14 @@ const handleRegister = async () => {
     const data = await registerUser(name.value, email.value, password.value)
     authStore.setToken(data.token)
     authStore.setUser(data.user)
+    if (data.user?.role) {
+      try {
+        const perms = await get(`/api/permissions/${data.user.role}`)
+        authStore.setPermissions(perms)
+      } catch (e) {
+        console.error('Failed to fetch permissions:', e)
+      }
+    }
     router.push('/dashboard')
   } catch (err) {
     console.error('Registration failed:', err)

@@ -1,15 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const { verifyToken, requireRole } = require('../middleware/auth');
+const { requireAnyPermission } = require('../middleware/permissions');
+const { verifyToken } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { createProjectSchema, updateProjectSchema } = require('../validators/projects');
 const projectController = require('../controllers/projectController');
 
 // List all projects for user
-router.get('/', projectController.listProjects);
+router.get('/', requireAnyPermission('PROJECT_READ'), projectController.listProjects);
 
 // Create new project
-router.post('/', verifyToken, validate(createProjectSchema), projectController.createProject);
+router.post('/', verifyToken, requireAnyPermission('PROJECT_CREATE'), validate(createProjectSchema), projectController.createProject);
 
 // Get project tickets
 router.get('/:id/tickets', projectController.getProjectTickets);
@@ -27,21 +28,21 @@ router.get('/:id/users', projectController.getProjectUsers);
 router.get('/:id', projectController.getProject);
 
 // Update project
-router.put('/:id', verifyToken, validate(updateProjectSchema), projectController.updateProject);
+router.put('/:id', verifyToken, requireAnyPermission('PROJECT_UPDATE'), validate(updateProjectSchema), projectController.updateProject);
 
 // Update ticket status
-router.post('/:id/tickets/:ticketId/status', projectController.updateProjectTicketStatus);
+router.post('/:id/tickets/:ticketId/status', requireAnyPermission('TICKET_STATUS_CHANGE'), projectController.updateProjectTicketStatus);
 
 // Create ticket
-router.post('/:id/tickets', verifyToken, projectController.createProjectTicket);
+router.post('/:id/tickets', verifyToken, requireAnyPermission('TICKET_CREATE'), projectController.createProjectTicket);
 
 // Update ticket
-router.put('/tickets/:ticketId', verifyToken, projectController.updateProjectTicket);
+router.put('/tickets/:ticketId', verifyToken, requireAnyPermission('TICKET_UPDATE'), projectController.updateProjectTicket);
 
-// Delete ticket (admin/member: any ticket, user: own ticket only)
-router.delete('/tickets/:ticketId', verifyToken, requireRole('project_admin', 'member', 'user'), projectController.deleteProjectTicket);
+// Delete ticket (permission + ownership checked in service)
+router.delete('/tickets/:ticketId', verifyToken, projectController.deleteProjectTicket);
 
 // Delete project
-router.delete('/:id', verifyToken, projectController.deleteProject);
+router.delete('/:id', verifyToken, requireAnyPermission('PROJECT_DELETE'), projectController.deleteProject);
 
 module.exports = router;

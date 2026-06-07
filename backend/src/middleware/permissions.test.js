@@ -1,162 +1,132 @@
 /**
- * TKT-006: Roles and Permissions Middleware
- * Status: ✅ Complete
- * Tests: All passing
+ * Permission Middleware Tests
+ * Tests for requireAnyPermission and requireAllPermissions middleware
  */
 
-const permissions = require('./permissions');
+jest.mock('../services/PermissionService', () => ({
+  hasAnyPermission: jest.fn(),
+  hasAllPermissions: jest.fn(),
+}));
 
-describe('Permissions Middleware', () => {
-  describe('PERMISSIONS constants', () => {
-    it('should define all permission strings', () => {
-      expect(permissions.PERMISSIONS.ADMIN).toBe('admin');
-      expect(permissions.PERMISSIONS.MEMBER).toBe('member');
-      expect(permissions.PERMISSIONS.VIEWER).toBe('viewer');
-      expect(permissions.PERMISSIONS.USER).toBe('user');
-      expect(permissions.PERMISSIONS.CREATE_PROJECT).toBe('create_project');
-      expect(permissions.PERMISSIONS.UPDATE_PROJECT).toBe('update_project');
-      expect(permissions.PERMISSIONS.DELETE_PROJECT).toBe('delete_project');
-      expect(permissions.PERMISSIONS.CREATE_TICKET).toBe('create_ticket');
-      expect(permissions.PERMISSIONS.UPDATE_TICKET).toBe('update_ticket');
-      expect(permissions.PERMISSIONS.DELETE_TICKET).toBe('delete_ticket');
+const { requireAnyPermission, requireAllPermissions } = require('./permissions');
+const PermissionService = require('../services/PermissionService');
+
+describe('Permission Middleware', () => {
+  let req, res, next;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    req = { user: { role: 'project_admin' } };
+    res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+    next = jest.fn();
+  });
+
+  describe('requireAnyPermission', () => {
+    it('should call next() when user has at least one matching permission', async () => {
+      PermissionService.hasAnyPermission.mockResolvedValue(true);
+      
+      const middleware = requireAnyPermission('TICKET_CREATE', 'USER_CREATE');
+      await middleware(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it('should return 403 when user has no matching permissions', async () => {
+      PermissionService.hasAnyPermission.mockResolvedValue(false);
+      
+      const middleware = requireAnyPermission('TICKET_CREATE', 'USER_CREATE');
+      await middleware(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'Forbidden',
+        required: ['TICKET_CREATE', 'USER_CREATE'],
+        actualRole: 'project_admin',
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('should return 401 when user has no role', async () => {
+      req.user = {};
+      
+      const middleware = requireAnyPermission('TICKET_CREATE');
+      await middleware(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Authentication required' });
+    });
+
+    it('should handle PermissionService errors', async () => {
+      PermissionService.hasAnyPermission.mockRejectedValue(new Error('DB error'));
+      
+      const middleware = requireAnyPermission('TICKET_CREATE');
+      const nextError = jest.fn();
+      await middleware(req, res, nextError);
+
+      expect(nextError).toHaveBeenCalledWith(expect.any(Error));
     });
   });
 
-  describe('hasPermission', () => {
-    it('should return true for ADMIN', () => {
-      const user = { role: 'admin' };
-      expect(permissions.hasPermission(user, 'anything')).toBe(true);
+  describe('requireAllPermissions', () => {
+    it('should call next() when user has all required permissions', async () => {
+      PermissionService.hasAllPermissions.mockResolvedValue(true);
+      
+      const middleware = requireAllPermissions('TICKET_CREATE', 'TICKET_UPDATE');
+      await middleware(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
     });
 
-    it('should return true if admin has specific permission', () => {
-      const user = { 
-        role: 'admin',
-        permissions: ['create_project', 'update_project', 'delete_project', 'create_ticket']
-      };
-      expect(permissions.hasPermission(user, 'create_project')).toBe(true);
-      expect(permissions.hasPermission(user, 'delete_project')).toBe(true);
-      expect(permissions.hasPermission(user, 'update_ticket')).toBe(true);
+    it('should return 403 when user is missing any permission', async () => {
+      PermissionService.hasAllPermissions.mockResolvedValue(false);
+      
+      const middleware = requireAllPermissions('TICKET_CREATE', 'TICKET_UPDATE');
+      await middleware(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'Forbidden',
+        required: ['TICKET_CREATE', 'TICKET_UPDATE'],
+        actualRole: 'project_admin',
+      });
+      expect(next).not.toHaveBeenCalled();
     });
 
-    it('should return false for non-admin without permission', () => {
-      const user = {
-        role: 'member',
-        permissions: ['create_project', 'update_project', 'create_ticket']
-      };
-      expect(permissions.hasPermission(user, 'admin')).toBe(false);
-      expect(permissions.hasPermission(user, 'delete_project')).toBe(false);
-      expect(permissions.hasPermission(user, 'delete_ticket')).toBe(false);
-    });
+    it('should return 401 when user has no role', async () => {
+      req.user = {};
+      
+      const middleware = requireAllPermissions('TICKET_CREATE');
+      await middleware(req, res, next);
 
-    it('should return false for user without permission', () => {
-      const user = {
-        role: 'viewer',
-        permissions: ['view_project']
-      };
-      expect(permissions.hasPermission(user, 'create_ticket')).toBe(false);
-    });
-
-    it('should return false when user is null', () => {
-      expect(permissions.hasPermission(null, 'anything')).toBe(false);
-    });
-
-    it('should return false when user is undefined', () => {
-      expect(permissions.hasPermission(undefined, 'anything')).toBe(false);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Authentication required' });
     });
   });
 
-  describe('isAdmin', () => {
-    it('should return true for admin users', () => {
-      const user = { role: 'admin' };
-      expect(permissions.isAdmin(user)).toBe(true);
+  describe('PermissionService calls', () => {
+    it('should pass correct role and permission codes to hasAnyPermission', async () => {
+      PermissionService.hasAnyPermission.mockResolvedValue(true);
+      
+      const middleware = requireAnyPermission('PROJECT_DELETE', 'USER_DELETE');
+      req.user.role = 'member';
+      await middleware(req, res, next);
+
+      expect(PermissionService.hasAnyPermission).toHaveBeenCalledWith('member', ['PROJECT_DELETE', 'USER_DELETE']);
     });
 
-    it('should return false for non-admin users', () => {
-      expect(permissions.isAdmin({ role: 'member' })).toBe(false);
-      expect(permissions.isAdmin({ role: 'viewer' })).toBe(false);
-      expect(permissions.isAdmin(null)).toBe(false);
-      expect(permissions.isAdmin(undefined)).toBe(false);
-    });
-  });
+    it('should pass correct role and permission codes to hasAllPermissions', async () => {
+      PermissionService.hasAllPermissions.mockResolvedValue(true);
+      
+      const middleware = requireAllPermissions('TICKET_CREATE', 'TICKET_DELETE');
+      req.user.role = 'super_admin';
+      await middleware(req, res, next);
 
-  describe('isMember', () => {
-    it('should return true when user is in project members', () => {
-      const user = {
-        id: 1,
-        member_project_ids: [1, 2, 3]
-      };
-      expect(permissions.isMember(user, 1)).toBe(true);
-      expect(permissions.isMember(user, 2)).toBe(true);
-      expect(permissions.isMember(user, 100)).toBe(false);
-    });
-
-    it('should return false when user is not in project', () => {
-      const user = {
-        id: 1,
-        member_project_ids: []
-      };
-      expect(permissions.isMember(user, 1)).toBe(false);
-    });
-
-    it('should return false when user is null', () => {
-      expect(permissions.isMember(null, 1)).toBe(false);
-    });
-  });
-
-  describe('isProjectOwner', () => {
-    it('should return true when user is project owner', () => {
-      const user = { id: 1 };
-      const project = { owner_id: 1 };
-      expect(permissions.isProjectOwner(user, project)).toBe(true);
-    });
-
-    it('should return false when user is not owner', () => {
-      const user = { id: 2 };
-      const project = { owner_id: 1 };
-      expect(permissions.isProjectOwner(user, project)).toBe(false);
-    });
-
-    it('should return false when project is null', () => {
-      const user = { id: 1 };
-      expect(permissions.isProjectOwner(user, null)).toBe(false);
-    });
-
-    it('should return false when user is null', () => {
-      const project = { owner_id: 1 };
-      expect(permissions.isProjectOwner(null, project)).toBe(false);
-    });
-  });
-
-  describe('isResourceOwner', () => {
-    it('should return true when user is resource owner', () => {
-      const user = { id: 1 };
-      const resource = { owner_id: 1 };
-      expect(permissions.isResourceOwner(user, resource)).toBe(true);
-    });
-
-    it('should return false when user is not owner', () => {
-      const user = { id: 2 };
-      const resource = { owner_id: 1 };
-      expect(permissions.isResourceOwner(user, resource)).toBe(false);
-    });
-
-    it('should return false when resource is null', () => {
-      const user = { id: 1 };
-      expect(permissions.isResourceOwner(user, null)).toBe(false);
-    });
-  });
-
-  describe('exports', () => {
-    it('should export all required functions', () => {
-      expect(typeof permissions.hasPermission).toBe('function');
-      expect(typeof permissions.isAdmin).toBe('function');
-      expect(typeof permissions.isMember).toBe('function');
-      expect(typeof permissions.isProjectOwner).toBe('function');
-      expect(typeof permissions.isResourceOwner).toBe('function');
-    });
-
-    it('should export PERMISSIONS constants', () => {
-      expect(Object.keys(permissions.PERMISSIONS)).toHaveLength(15);
+      expect(PermissionService.hasAllPermissions).toHaveBeenCalledWith('super_admin', ['TICKET_CREATE', 'TICKET_DELETE']);
     });
   });
 });

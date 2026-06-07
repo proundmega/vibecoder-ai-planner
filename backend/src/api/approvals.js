@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { verifyToken, requireRole } = require('../middleware/auth');
+const { verifyToken } = require('../middleware/auth');
+const { requireAnyPermission } = require('../middleware/permissions');
 const ApprovalService = require('../services/ApprovalService');
 
 // Create approval request (for AI agents moving to done)
@@ -43,7 +44,7 @@ router.get('/ticket/:ticketId', verifyToken, async (req, res) => {
 });
 
 // Approve request (project_admin or member only)
-router.post('/:approvalId/approve', verifyToken, requireRole('project_admin', 'member', 'super_admin'), async (req, res) => {
+router.post('/:approvalId/approve', verifyToken, requireAnyPermission('APPROVAL_APPROVE'), async (req, res) => {
   try {
     const approval = await ApprovalService.approve(
       req.params.approvalId,
@@ -61,7 +62,7 @@ router.post('/:approvalId/approve', verifyToken, requireRole('project_admin', 'm
 });
 
 // Reject request (project_admin or member only)
-router.post('/:approvalId/reject', verifyToken, requireRole('project_admin', 'member', 'super_admin'), async (req, res) => {
+router.post('/:approvalId/reject', verifyToken, requireAnyPermission('APPROVAL_REJECT'), async (req, res) => {
   try {
     const approval = await ApprovalService.reject(
       req.params.approvalId,
@@ -79,7 +80,7 @@ router.post('/:approvalId/reject', verifyToken, requireRole('project_admin', 'me
 });
 
 // Get all approvals (super_admin only)
-router.get('/', verifyToken, requireRole('super_admin'), async (req, res) => {
+router.get('/', verifyToken, requireAnyPermission('APPROVAL_VIEW'), async (req, res) => {
   try {
     const { status, page = 1, perPage = 20 } = req.query;
     const result = await ApprovalService.getAll({ status, page, perPage });

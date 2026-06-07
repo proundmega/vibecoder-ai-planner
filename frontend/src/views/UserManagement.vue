@@ -16,20 +16,11 @@ const roleFilter = ref('')
 const showDeleteConfirm = ref(null)
 const actionLoading = ref(false)
 
-const canCreate = computed(() => {
-  const user = authStore.user.value
-  return user && (user.role === 'project_admin' || user.role === 'member' || user.role === 'ADMIN' || user.role === 'MEMBER')
-})
+const canCreate = computed(() => authStore.canCreateUser())
 
-const canDelete = computed(() => {
-  const user = authStore.user.value
-  return user && (user.role === 'project_admin' || user.role === 'super_admin' || user.role === 'ADMIN' || user.role === 'SUPER_ADMIN')
-})
+const canDelete = computed(() => authStore.canDeleteUser())
 
-const canToggleActive = computed(() => {
-  const user = authStore.user.value
-  return user && (user.role === 'project_admin' || user.role === 'super_admin' || user.role === 'ADMIN' || user.role === 'SUPER_ADMIN')
-})
+const canToggleActive = computed(() => authStore.canToggleUser())
 
 function roleLabel(role) {
   const labels = {

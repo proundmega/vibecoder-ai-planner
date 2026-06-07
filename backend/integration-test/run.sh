@@ -469,62 +469,6 @@ test_frontend_api_proxy() {
   assert_status "Unauthenticated request via proxy returns 401" "401" "$code"
 }
 
-test_user_role_ticket_access() {
-  echo ""
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "  User Role Ticket Access"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-  # Register a regular user (role='user' by default)
-  local code
-  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/register" \
-    -H "Content-Type: application/json" \
-    -d '{"name":"Bob","email":"bob@integration.test","password":"password123"}')
-  assert_status "Register regular user" "201" "$code"
-
-  local token
-  token=$(login "bob@integration.test" "password123")
-
-  # Verify login response includes user role
-  local login_body
-  login_body=$(curl -sf -X POST "$BASE/api/auth/login" \
-    -H "Content-Type: application/json" \
-    -d '{"email":"bob@integration.test","password":"password123"}')
-  local user_role
-  user_role=$(echo "$login_body" | grep -o '"role":"[^"]*"' | cut -d'"' -f4)
-  assert_field "Default user role is user" "role" "user" "$user_role"
-
-  # Create a project
-  local proj_id
-  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $token" \
-    -d '{"name":"Role Test Project","description":""}' \
-    | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
-
-  # Regular user should be able to create tickets
-  local ticket_body
-  ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $token" \
-    -d '{"title":"User Role Ticket","description":"Created by regular user"}')
-  assert_has_field "Regular user can create tickets" "id" "$ticket_body"
-
-  # Regular user should be able to list tickets
-  local list_body
-  list_body=$(curl -sf "$BASE/api/projects/$proj_id/tickets" \
-    -H "Authorization: Bearer $token")
-  assert_has_field "Regular user can list tickets" "id" "$list_body"
-
-  # Regular user should be able to get a single ticket
-  local ticket_id
-  ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
-  local single_body
-  single_body=$(curl -sf "$BASE/api/tickets/$ticket_id" \
-    -H "Authorization: Bearer $token")
-  assert_field "Regular user can get ticket by id" "title" "User Role Ticket" "$(echo "$single_body" | grep -o '"title":"[^"]*"' | cut -d'"' -f4)"
-}
-
 test_route_ordering() {
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -594,11 +538,13 @@ test_user_role_ticket_access() {
   user_role=$(echo "$login_body" | grep -o '"role":"[^"]*"' | cut -d'"' -f4)
   assert_field "Default user role is user" "role" "user" "$user_role"
 
-  # Create a project
+  # Create a project using project_admin (regular users can't create projects)
+  local admin_token
+  admin_token=$(login "alice@integration.test" "password123")
   local proj_id
   proj_id=$(curl -sf -X POST "$BASE/api/projects" \
     -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $token" \
+    -H "Authorization: Bearer $admin_token" \
     -d '{"name":"Role Test Project","description":""}' \
     | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 

@@ -16,6 +16,7 @@ import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { loginUser } from '@/api/auth.js'
+import { get } from '@/api/client.js'
 
 const email = ref('')
 const password = ref('')
@@ -33,6 +34,14 @@ const handleLogin = async () => {
     const data = await loginUser(email.value, password.value)
     authStore.setToken(data.token)
     authStore.setUser(data.user)
+    if (data.user?.role) {
+      try {
+        const perms = await get(`/api/permissions/${data.user.role}`)
+        authStore.setPermissions(perms)
+      } catch (e) {
+        console.error('Failed to fetch permissions:', e)
+      }
+    }
     const redirect = route.query.redirect || '/dashboard'
     router.push(redirect)
   } catch (err) {

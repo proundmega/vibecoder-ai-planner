@@ -36,8 +36,7 @@ function columnTickets(status) {
 }
 
 const canCreate = computed(() => {
-  const user = authStore.user.value
-  return user && (user.role === 'admin' || user.role === 'member' || user.role === 'user' || user.role === 'ADMIN' || user.role === 'MEMBER' || user.role === 'USER')
+  return authStore.canCreateTicket()
 })
 
 onMounted(async () => {
@@ -82,10 +81,9 @@ async function handleDrop(ticketId, newStatus) {
 }
 
 function canUpdateTicket(ticket) {
-  const user = authStore.user.value
-  if (!user) return false
-  if (user.role === 'admin' || user.role === 'ADMIN') return true
-  if (ticket.assignee_id && ticket.assignee_id === user.id) return true
+  if (!authStore.user.value) return false
+  if (authStore.canUpdateTicket()) return true
+  if (ticket.assignee_id && ticket.assignee_id === authStore.user.value.id) return true
   return false
 }
 

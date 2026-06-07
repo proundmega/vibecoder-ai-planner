@@ -1,53 +1,59 @@
-const PERMISSIONS = {
-  ADMIN: 'admin',
-  MEMBER: 'member',
-  VIEWER: 'viewer',
-  USER: 'user',
-  CREATE_PROJECT: 'create_project',
-  UPDATE_PROJECT: 'update_project',
-  DELETE_PROJECT: 'delete_project',
-  CREATE_TICKET: 'create_ticket',
-  UPDATE_TICKET: 'update_ticket',
-  DELETE_TICKET: 'delete_ticket',
-  COMMENT_TICKET: 'comment_ticket',
-  CHANGE_STATUS: 'change_status',
-  ASSIGN_TICKET: 'assign_ticket',
-  VIEW_PROJECT: 'view_project',
-  VIEW_TICKET: 'view_ticket'
-};
+const PermissionService = require('../services/PermissionService');
 
-function hasPermission(user, permission) {
-  if (!user) return false;
-  if (user.role === PERMISSIONS.ADMIN) return true;
-  const userPerms = user.permissions || [];
-  return userPerms.includes(permission);
+/**
+ * Require the user to have at least ONE of the specified permissions.
+ * Usage: requireAnyPermission('TICKET_CREATE', 'USER_CREATE')
+ */
+function requireAnyPermission(...permissionCodes) {
+  return async (req, res, next) => {
+    try {
+      const userRole = req.user?.role;
+      if (!userRole) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const hasPerm = await PermissionService.hasAnyPermission(userRole, permissionCodes);
+      if (!hasPerm) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          required: permissionCodes,
+          actualRole: userRole,
+        });
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
-function isAdmin(user) {
-  return user !== null && user !== undefined && user.role === PERMISSIONS.ADMIN;
+/**
+ * Require the user to have ALL specified permissions.
+ * Usage: requireAllPermissions('TICKET_UPDATE', 'TICKET_STATUS_CHANGE')
+ */
+function requireAllPermissions(...permissionCodes) {
+  return async (req, res, next) => {
+    try {
+      const userRole = req.user?.role;
+      if (!userRole) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const hasPerms = await PermissionService.hasAllPermissions(userRole, permissionCodes);
+      if (!hasPerms) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          required: permissionCodes,
+          actualRole: userRole,
+        });
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
-function isMember(user, projectId) {
-  if (!user) return false;
-  const memberProjectIds = user.member_project_ids || [];
-  return memberProjectIds.includes(projectId);
-}
-
-function isProjectOwner(user, project) {
-  if (!user || !project) return false;
-  return project.owner_id === user.id;
-}
-
-function isResourceOwner(user, resource) {
-  if (!user || !resource) return false;
-  return resource.owner_id === user.id;
-}
-
-module.exports = {
-  PERMISSIONS,
-  hasPermission,
-  isAdmin,
-  isMember,
-  isProjectOwner,
-  isResourceOwner
-};
+module.exports = { requireAnyPermission, requireAllPermissions };

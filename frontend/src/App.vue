@@ -40,16 +40,11 @@ const route = useRoute()
 const showNav = computed(() => !['/login', '/register'].includes(route.path))
 
 const showUsersLink = computed(() => {
-  const user = authStore.user?.value
-  if (!user) return false
-  return ['project_admin', 'member', 'super_admin'].includes(user.role)
+  if (!authStore.user.value) return false
+  return authStore.canAccessUsers()
 })
 
-const showSuperAdminLink = computed(() => {
-  const user = authStore.user?.value
-  if (!user) return false
-  return user.role === 'super_admin'
-})
+const showSuperAdminLink = computed(() => authStore.isSuperAdmin())
 
 const handleLogout = () => {
   authStore.logout()

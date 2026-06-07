@@ -1,5 +1,6 @@
 const TicketService = require('../services/TicketService');
 const User = require('../models/user');
+const PermissionService = require('../services/PermissionService');
 const ApprovalService = require('../services/ApprovalService');
 
 async function getTicket(req, res, next) {
@@ -26,7 +27,8 @@ async function updateTicket(req, res, next) {
     const ticket = await TicketService.getOne(req.params.ticketId, req.user.userId);
     const user = await User.find(req.user.userId);
     
-    if (user.role === 'user' && ticket.owner_id !== req.user.userId) {
+    const canUpdate = await PermissionService.hasPermission(user.role, 'TICKET_UPDATE');
+    if (!canUpdate && ticket.owner_id !== req.user.userId) {
       return res.status(403).json({ 
         success: false,
         error: {
@@ -94,7 +96,8 @@ async function changeStatus(req, res, next) {
     const ticket = await TicketService.getOne(req.params.ticketId, req.user.userId);
     const user = await User.find(req.user.userId);
     
-    if (user.role === 'user' && status === 'done') {
+    const canChangeStatus = await PermissionService.hasPermission(user.role, 'TICKET_STATUS_CHANGE');
+    if (user.role === 'user' && status === 'done' && canChangeStatus) {
       if (ticket.status !== 'review') {
         return res.status(400).json({
           success: false,

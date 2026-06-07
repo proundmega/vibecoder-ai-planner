@@ -8,6 +8,7 @@ const SQL_FILES = [
   path.join(__dirname, './002_agents_schema.sql'),
   path.join(__dirname, './003_role_system.sql'),
   path.join(__dirname, './004_persistence_layer.sql'),
+  path.join(__dirname, './005_permission_system.sql'),
 ];
 
 function splitSQLStatements(sql) {

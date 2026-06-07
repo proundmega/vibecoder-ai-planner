@@ -34,18 +34,16 @@ const hasPendingApproval = computed(() => {
 })
 
 const canUpdate = () => {
-  const user = authStore.user.value
-  if (!user) return false
-  if (['project_admin', 'member', 'super_admin', 'ADMIN', 'MEMBER'].includes(user.role)) return true
-  if (user.role === 'user' && ticket.value?.owner_id === user.userId) return true
+  if (!authStore.user.value) return false
+  if (authStore.canUpdateTicket()) return true
+  if (authStore.hasRole('user') && ticket.value?.owner_id === authStore.user.value.id) return true
   return false
 }
 
 const canDelete = () => {
-  const user = authStore.user.value
-  if (!user) return false
-  if (['project_admin', 'member', 'super_admin', 'ADMIN', 'MEMBER'].includes(user.role)) return true
-  if (user.role === 'user' && ticket.value?.owner_id === user.userId) return true
+  if (!authStore.user.value) return false
+  if (authStore.canDeleteTicket()) return true
+  if (authStore.hasRole('user') && ticket.value?.owner_id === authStore.user.value.id) return true
   return false
 }
 

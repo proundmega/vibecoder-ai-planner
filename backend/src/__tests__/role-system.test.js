@@ -51,6 +51,15 @@ const mockApprovalApprove = jest.fn();
 const mockApprovalReject = jest.fn();
 const mockApprovalGetByTicketAndRequester = jest.fn();
 
+// Mock PermissionService
+const mockPermissionHasPermission = jest.fn();
+jest.mock('../services/PermissionService', () => ({
+  hasPermission: mockPermissionHasPermission,
+  hasAnyPermission: jest.fn(),
+  hasAllPermissions: jest.fn(),
+  clearCache: jest.fn(),
+}));
+
 process.env.JWT_SECRET = 'test-secret';
 process.env.TOKEN_EXPIRY_HOURS = '24';
 
@@ -701,6 +710,7 @@ describe('ApprovalService', () => {
 
   describe('approve()', () => {
     it('should approve request and update ticket status', async () => {
+      mockPermissionHasPermission.mockResolvedValue(true);
       pool.query.mockImplementation((query) => {
         if (query.includes('SELECT * FROM approval_requests WHERE id')) {
           return Promise.resolve({ rows: [{ id: 1, status: 'pending', ticket_id: 1 }] });
@@ -745,6 +755,7 @@ describe('ApprovalService', () => {
     });
 
     it('should throw if approver has user role', async () => {
+      mockPermissionHasPermission.mockResolvedValue(false);
       pool.query
         .mockResolvedValueOnce({ rows: [{ id: 1, status: 'pending', ticket_id: 1 }] })
         .mockResolvedValueOnce({ rows: [{ id: 1, role: 'user' }] });
@@ -755,6 +766,7 @@ describe('ApprovalService', () => {
     });
 
     it('should allow member to approve', async () => {
+      mockPermissionHasPermission.mockResolvedValue(true);
       pool.query.mockImplementation((query) => {
         if (query.includes('SELECT * FROM approval_requests WHERE id')) {
           return Promise.resolve({ rows: [{ id: 1, status: 'pending', ticket_id: 1 }] });
@@ -777,6 +789,7 @@ describe('ApprovalService', () => {
     });
 
     it('should allow super_admin to approve', async () => {
+      mockPermissionHasPermission.mockResolvedValue(true);
       pool.query.mockImplementation((query) => {
         if (query.includes('SELECT * FROM approval_requests WHERE id')) {
           return Promise.resolve({ rows: [{ id: 1, status: 'pending', ticket_id: 1 }] });
@@ -801,6 +814,7 @@ describe('ApprovalService', () => {
 
   describe('reject()', () => {
     it('should reject approval request', async () => {
+      mockPermissionHasPermission.mockResolvedValue(true);
       pool.query.mockImplementation((query) => {
         if (query.includes('SELECT * FROM approval_requests WHERE id')) {
           return Promise.resolve({ rows: [{ id: 1, status: 'pending', ticket_id: 1 }] });
@@ -833,6 +847,7 @@ describe('ApprovalService', () => {
     });
 
     it('should throw if approver has user role', async () => {
+      mockPermissionHasPermission.mockResolvedValue(false);
       pool.query
         .mockResolvedValueOnce({ rows: [{ id: 1, status: 'pending', ticket_id: 1 }] })
         .mockResolvedValueOnce({ rows: [{ id: 1, role: 'user' }] });
@@ -888,6 +903,7 @@ describe('TicketService.delete()', () => {
 
   it('should delete ticket when user is project_admin', async () => {
     mockTicketFindById.mockResolvedValue({ id: 1, ownerId: 2 });
+    mockPermissionHasPermission.mockResolvedValue(true);
     pool.query.mockResolvedValueOnce({ rows: [{ id: 1, role: 'project_admin' }] });
     mockTicketDelete.mockResolvedValue(undefined);
 
@@ -898,6 +914,7 @@ describe('TicketService.delete()', () => {
 
   it('should delete ticket when user is member', async () => {
     mockTicketFindById.mockResolvedValue({ id: 1, ownerId: 2 });
+    mockPermissionHasPermission.mockResolvedValue(true);
     pool.query.mockResolvedValueOnce({ rows: [{ id: 1, role: 'member' }] });
     mockTicketDelete.mockResolvedValue(undefined);
 
@@ -908,6 +925,7 @@ describe('TicketService.delete()', () => {
 
   it('should delete ticket when user is super_admin', async () => {
     mockTicketFindById.mockResolvedValue({ id: 1, ownerId: 2 });
+    mockPermissionHasPermission.mockResolvedValue(true);
     pool.query.mockResolvedValueOnce({ rows: [{ id: 1, role: 'super_admin' }] });
     mockTicketDelete.mockResolvedValue(undefined);
 
@@ -924,6 +942,7 @@ describe('TicketService.delete()', () => {
 
   it('should throw forbidden for user role deleting others ticket', async () => {
     mockTicketFindById.mockResolvedValue({ id: 1, ownerId: 2 });
+    mockPermissionHasPermission.mockResolvedValue(false);
     pool.query.mockResolvedValueOnce({ rows: [{ id: 1, role: 'user' }] });
 
     await expect(TicketService.delete(1, 1)).rejects.toThrow('Forbidden');
@@ -931,6 +950,7 @@ describe('TicketService.delete()', () => {
 
   it('should throw forbidden for non-owner non-admin', async () => {
     mockTicketFindById.mockResolvedValue({ id: 1, ownerId: 2 });
+    mockPermissionHasPermission.mockResolvedValue(false);
     pool.query.mockResolvedValueOnce({ rows: [{ id: 3, role: 'user' }] });
 
     await expect(TicketService.delete(1, 3)).rejects.toThrow('Forbidden');

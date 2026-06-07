@@ -1,6 +1,7 @@
 const Ticket = require('../models/ticket');
 const Project = require('../models/project');
 const User = require('../models/user');
+const PermissionService = require('../services/PermissionService');
 const { ValidationError, NotFoundError, ForbiddenError } = require('../errors/HttpError');
 
 class TicketService {
@@ -34,13 +35,9 @@ class TicketService {
 
     const user = await User.find(userId);
     
-    // Permission check: admins can edit any ticket, users can only edit their own
-    if (
-      user.role !== 'super_admin' &&
-      user.role !== 'project_admin' &&
-      user.role !== 'member' &&
-      ticket.ownerId !== userId
-    ) {
+    // Permission check: roles with TICKET_UPDATE can edit, users can only edit their own
+    const canUpdate = await PermissionService.hasPermission(user.role, 'TICKET_UPDATE');
+    if (!canUpdate && ticket.ownerId !== userId) {
       throw new ForbiddenError('Unauthorized to edit this ticket');
     }
 
@@ -83,7 +80,8 @@ class TicketService {
     if (!ticket) throw new NotFoundError('Ticket not found');
 
     const user = await User.find(userId);
-    if (ticket.ownerId !== userId && !['project_admin', 'member', 'super_admin'].includes(user.role)) {
+    const canDelete = await PermissionService.hasPermission(user.role, 'TICKET_DELETE');
+    if (!canDelete && ticket.ownerId !== userId) {
       throw new ForbiddenError('Forbidden');
     }
 

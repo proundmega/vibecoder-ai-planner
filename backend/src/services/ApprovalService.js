@@ -1,6 +1,7 @@
 const Approval = require('../models/approval');
 const Ticket = require('../models/ticket');
 const User = require('../models/user');
+const PermissionService = require('../services/PermissionService');
 const { ValidationError, NotFoundError, ForbiddenError } = require('../errors/HttpError');
 
 class ApprovalService {
@@ -42,7 +43,8 @@ class ApprovalService {
       throw new NotFoundError('Approver not found');
     }
     
-    if (!['project_admin', 'member', 'super_admin'].includes(approvedUser.role)) {
+    const canApprove = await PermissionService.hasPermission(approvedUser.role, 'APPROVAL_APPROVE');
+    if (!canApprove) {
       throw new ForbiddenError('Only project admins, members, or super admins can approve requests');
     }
     
@@ -70,7 +72,8 @@ class ApprovalService {
       throw new NotFoundError('Approver not found');
     }
     
-    if (!['project_admin', 'member', 'super_admin'].includes(approvedUser.role)) {
+    const canReject = await PermissionService.hasPermission(approvedUser.role, 'APPROVAL_REJECT');
+    if (!canReject) {
       throw new ForbiddenError('Only project admins, members, or super admins can reject requests');
     }
     

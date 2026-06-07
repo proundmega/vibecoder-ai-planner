@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const User = require('../models/user');
+const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
 const { ValidationError, NotFoundError } = require('../errors/HttpError');
 
@@ -65,12 +66,15 @@ class UserService {
     let whereClause = '1=1';
     const params = [];
     
-    if (userRole === 'project_admin') {
-      whereClause += ' AND (user_created_by = $1 OR id = $2)';
-      params.push(userId, userId);
-    } else if (userRole === 'member') {
-      whereClause += ' AND user_created_by = $1';
-      params.push(userId);
+    const canViewAll = await PermissionService.hasPermission(userRole, 'USER_VIEW_ALL');
+    if (!canViewAll) {
+      if (userRole === 'project_admin') {
+        whereClause += ' AND (user_created_by = $1 OR id = $2)';
+        params.push(userId, userId);
+      } else if (userRole === 'member') {
+        whereClause += ' AND user_created_by = $1';
+        params.push(userId);
+      }
     }
     
     if (role) {
@@ -134,6 +138,11 @@ class UserService {
     if (createdBy) {
       const creator = await User.find(createdBy);
       if (creator) {
+        const canCreate = await PermissionService.hasPermission(creator.role, 'USER_CREATE');
+        if (!canCreate) {
+          throw new ValidationError('Insufficient permissions to create users');
+        }
+        // Role hierarchy still enforced: project_admin can create member+user, member can create user only
         if (creator.role === 'project_admin') {
           if (!['member', 'user'].includes(role)) {
             throw new ValidationError('Project admins can only create member or user accounts');

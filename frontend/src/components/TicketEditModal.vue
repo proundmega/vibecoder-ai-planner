@@ -20,10 +20,9 @@ const saving = ref(false)
 const error = ref(null)
 
 const canEdit = computed(() => {
-  const user = authStore.user.value
-  if (!user) return false
-  if (user.role === 'project_admin' || user.role === 'member' || user.role === 'ADMIN' || user.role === 'MEMBER') return true
-  if (user.role === 'user' && props.ticket?.owner_id === user.userId) return true
+  if (!authStore.user.value) return false
+  if (authStore.canUpdateTicket()) return true
+  if (authStore.hasRole('user') && props.ticket?.owner_id === authStore.user.value.id) return true
   return false
 })
 

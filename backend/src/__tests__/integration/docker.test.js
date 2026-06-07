@@ -124,9 +124,24 @@ describe('Vibecode Integration (PostgreSQL)', () => {
     beforeEach(async () => {
       const email = `proj_${Date.now()}@test.com`;
       const res = await request(app).post('/api/auth/register').send({
-        name: 'Proj Owner', email, password: 'password123',
+        name: 'Proj Owner', email, password: 'password123', role: 'project_admin',
       });
       token = res.body.token;
+    });
+
+    test('POST /api/projects returns 403 for user role without PROJECT_CREATE', async () => {
+      const userEmail = `user_${Date.now()}@test.com`;
+      const regRes = await request(app).post('/api/auth/register').send({
+        name: 'User', email: userEmail, password: 'password123',
+      });
+      const userToken = regRes.body.token;
+
+      const res = await request(app)
+        .post('/api/projects')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ name: 'No Permission Project' });
+
+      expect(res.status).toBe(403);
     });
 
     test('POST /api/projects creates project', async () => {
@@ -138,6 +153,21 @@ describe('Vibecode Integration (PostgreSQL)', () => {
       expect(res.status).toBe(201);
       expect(res.body.data.id).toBeDefined();
       expect(res.body.data.name).toBe('My Project');
+    });
+
+    test('POST /api/projects returns 403 for user role without PROJECT_CREATE', async () => {
+      const userEmail = `user_${Date.now()}@test.com`;
+      const regRes = await request(app).post('/api/auth/register').send({
+        name: 'User', email: userEmail, password: 'password123',
+      });
+      const userToken = regRes.body.token;
+
+      const res = await request(app)
+        .post('/api/projects')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send({ name: 'No Permission Project' });
+
+      expect(res.status).toBe(403);
     });
 
     test('GET /api/projects lists user projects', async () => {
@@ -203,7 +233,7 @@ describe('Vibecode Integration (PostgreSQL)', () => {
     beforeEach(async () => {
       const email = `ticket_${Date.now()}@test.com`;
       const regRes = await request(app).post('/api/auth/register').send({
-        name: 'Ticket Owner', email, password: 'password123',
+        name: 'Ticket Owner', email, password: 'password123', role: 'project_admin',
       });
       token = regRes.body.token;
 

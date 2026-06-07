@@ -2,10 +2,12 @@ const ticketController = require('../controllers/ticketController');
 const TicketService = require('../services/TicketService');
 const User = require('../models/user');
 const ApprovalService = require('../services/ApprovalService');
+const PermissionService = require('../services/PermissionService');
 
 jest.mock('../services/TicketService');
 jest.mock('../models/user');
 jest.mock('../services/ApprovalService');
+jest.mock('../services/PermissionService');
 
 describe('Ticket Controller', () => {
   let mockReq, mockRes, nextFn;
@@ -217,6 +219,7 @@ describe('Ticket Controller', () => {
       const user = { role: 'project_admin' };
       TicketService.getOne.mockResolvedValue(ticket);
       User.find.mockResolvedValue(user);
+      PermissionService.hasPermission.mockResolvedValue(true);
       TicketService.updateStatus.mockResolvedValue();
       
       mockReq.params.ticketId = '1';
@@ -235,6 +238,7 @@ describe('Ticket Controller', () => {
       const approval = { id: '1' };
       TicketService.getOne.mockResolvedValue(ticket);
       User.find.mockResolvedValue(user);
+      PermissionService.hasPermission.mockResolvedValue(true);
       ApprovalService.create.mockResolvedValue(approval);
       
       mockReq.params.ticketId = '1';
@@ -254,6 +258,7 @@ describe('Ticket Controller', () => {
       const user = { role: 'user' };
       TicketService.getOne.mockResolvedValue(ticket);
       User.find.mockResolvedValue(user);
+      PermissionService.hasPermission.mockResolvedValue(true);
       
       mockReq.params.ticketId = '1';
       mockReq.user.role = 'user';

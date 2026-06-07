@@ -9,6 +9,19 @@ function isAuthenticated() {
   }
 }
 
+function hasPermission(role: string | undefined, requiredPerm: string): boolean {
+  if (!role) return false
+  if (role === 'super_admin') return true
+  const permsStr = localStorage.getItem('vibecode_permissions')
+  if (!permsStr) return false
+  try {
+    const perms: string[] = JSON.parse(permsStr)
+    return perms.includes(requiredPerm)
+  } catch {
+    return false
+  }
+}
+
 const routes = [
   {
     path: '/login',
@@ -28,25 +41,25 @@ const routes = [
     path: '/dashboard',
     name: 'Dashboard',
     component: () => import('../views/Dashboard.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiredPermission: 'DASHBOARD_READ' },
   },
   {
     path: '/projects',
     name: 'Projects',
     component: () => import('../views/ProjectList.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiredPermission: 'PROJECT_READ' },
   },
   {
     path: '/super-admin/users',
     name: 'SuperAdminUsers',
     component: () => import('../views/SuperAdminUsers.vue'),
-    meta: { requiresAuth: true, allowedRoles: ['super_admin'] },
+    meta: { requiresAuth: true, requiredPermission: 'USER_VIEW_ALL' },
   },
   {
     path: '/users',
     name: 'UserManagement',
     component: () => import('../views/UserManagement.vue'),
-    meta: { requiresAuth: true, allowedRoles: ['project_admin', 'member', 'super_admin'] },
+    meta: { requiresAuth: true, requiredPermission: 'USER_READ' },
   },
   {
     path: '/projects/:id',
@@ -96,10 +109,10 @@ router.beforeEach((to, _from, next) => {
     if (userStr) {
       try {
         const user: Record<string, unknown> = JSON.parse(userStr)
-        const allowedRoles = to.meta.allowedRoles as string[] | undefined
-        if (allowedRoles && allowedRoles.length > 0) {
+        const requiredPermission = to.meta.requiredPermission as string | undefined
+        if (requiredPermission) {
           const userRole = user.role as string | undefined
-          if (userRole && !allowedRoles.includes(userRole)) {
+          if (!hasPermission(userRole, requiredPermission)) {
             next({ name: 'Dashboard' })
             return
           }
