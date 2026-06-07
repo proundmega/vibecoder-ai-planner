@@ -7,14 +7,14 @@ class User {
     this.email = data.email;
     this.name = data.name;
     this.passwordHash = data.password_hash;
-    this.role = data.role || 'user';
+    this.role = data.role || 'project_admin';
     this.currentPlan = data.current_plan || 'free';
     this.isActive = data.is_active !== false;
     this.userCreatedBy = data.user_created_by || null;
     this.createdAt = data.created_at;
   }
 
-  static async create(name, email, password, role = 'user', userCreatedBy = null) {
+  static async create(name, email, password, role = 'project_admin', userCreatedBy = null) {
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = await pool.query(
       'INSERT INTO users (name, email, password_hash, role, user_created_by, current_plan) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',

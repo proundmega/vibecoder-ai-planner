@@ -5,7 +5,7 @@ const { pool } = require('../db');
 const { ValidationError, NotFoundError } = require('../errors/HttpError');
 
 class UserService {
-  async register(name, email, password, role = 'user', userCreatedBy = null) {
+  async register(name, email, password, role = 'project_admin', userCreatedBy = null) {
     const exists = await User.existsByEmail(email);
     if (exists) {
       throw new ValidationError('Email already registered');

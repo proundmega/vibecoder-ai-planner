@@ -184,7 +184,7 @@ The `migrate` service runs first (applies SQL migrations), then `api` starts (de
 - **`UserService.authenticate()`** duplicates JWT signing logic that already exists in `auth.js` — both use `JWT_SECRET` but `UserService` also re-declares it locally. [FIXED: removed JWT signing from authenticate, auth.js handles token creation]
 - **`/api/auth/me`** returns `userId` (from JWT payload) instead of `id` in the user object. [FIXED: queries database and returns user with `id` field]
 - **Ticket delete ownership** — `TICKET_DELETE` permission check is in `TicketService.delete()`, not in route middleware. This allows users with `user` role to delete their own tickets while blocking deletion of others' tickets.
-- **`user` role has limited permissions** — cannot create projects (`PROJECT_CREATE`), manage users (`USER_CREATE`, `USER_DELETE`, `USER_TOGGLE_ACTIVE`), manage agents (`AGENT_CREATE`, `AGENT_DELETE`), or approve/reject (`APPROVAL_APPROVE`, `APPROVAL_REJECT`). Self-registration only creates `user` role accounts.
+- **`user` role has limited permissions** — cannot create projects (`PROJECT_CREATE`), manage users (`USER_CREATE`, `USER_DELETE`, `USER_TOGGLE_ACTIVE`), manage agents (`AGENT_CREATE`, `AGENT_DELETE`), or approve/reject (`APPROVAL_APPROVE`, `APPROVAL_REJECT`). Self-registration creates `project_admin` role accounts.
 - **`APPROVAL_VIEW` restricted to `super_admin`** — only super_admin can access `GET /api/approvals` (all approvals endpoint).
 
 ### Coding conventions (from `ai/CODING.md`)

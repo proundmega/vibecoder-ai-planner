@@ -5,7 +5,7 @@ const TOKEN_EXPIRY_MINUTES = parseInt(process.env.TOKEN_EXPIRY_MINUTES) || 30;
 const TOKEN_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
 
 class AuthService {
-  async register(name, email, password, role = 'user', userCreatedBy = null) {
+  async register(name, email, password, role = 'project_admin', userCreatedBy = null) {
     if (role === 'super_admin') {
       throw new Error('Super admin accounts must be created manually');
     }

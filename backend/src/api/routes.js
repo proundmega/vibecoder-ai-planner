@@ -91,7 +91,7 @@ router.get('/metrics', (req, res) => {
 router.post('/auth/register', validate(registerSchema), async (req, res) => {
   try {
     const { name, email, password, role, user_created_by } = req.body;
-    const result = await registerUserBound(name, email, password, role || 'user', user_created_by || null);
+    const result = await registerUserBound(name, email, password, role || 'project_admin', user_created_by || null);
     res.status(201).json({ ...result, message: 'Registration successful' });
   } catch (error) {
     console.error('POST /api/auth/register', error);

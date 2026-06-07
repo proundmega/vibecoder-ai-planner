@@ -1179,14 +1179,14 @@ describe('User model', () => {
       expect(user.userCreatedBy).toBeNull();
     });
 
-    it('should default role to user', () => {
+    it('should default role to project_admin', () => {
       const UserClass = require('../models/user');
       const user = new UserClass({
         id: 1, name: 'Test', email: 'test@example.com',
         password_hash: 'hash',
       });
 
-      expect(user.role).toBe('user');
+      expect(user.role).toBe('project_admin');
     });
   });
 

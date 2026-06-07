@@ -102,14 +102,14 @@ describe('Auth Schemas', () => {
       expect(error).toBeDefined();
     });
 
-    it('should default role to user', () => {
+    it('should default role to project_admin', () => {
       const { error, value } = registerSchema.validate({
         name: 'Test User',
         email: 'test@example.com',
         password: 'password123',
       });
       expect(error).toBeUndefined();
-      expect(value.role).toBe('user');
+      expect(value.role).toBe('project_admin');
     });
 
     it('should accept valid role values', () => {
