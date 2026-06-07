@@ -165,8 +165,8 @@ test_auth() {
   me_body=$(curl -sf "$BASE/api/auth/me" -H "Authorization: Bearer $token")
   assert_has_field "GET /auth/me returns user" "user" "$me_body"
 
-  # Auth me returns userId (not id) — known quirk
-  assert_no_field "GET /auth/me returns userId not id" "id" "$me_body"
+  # Auth me returns user with id field (fixed)
+  assert_has_field "GET /auth/me returns user with id" "id" "$me_body"
 
   # Auth me without token
   code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/auth/me")

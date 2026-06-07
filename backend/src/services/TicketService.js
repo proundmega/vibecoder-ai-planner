@@ -1,18 +1,19 @@
 const Ticket = require('../models/ticket');
 const Project = require('../models/project');
 const User = require('../models/user');
+const { ValidationError, NotFoundError, ForbiddenError } = require('../errors/HttpError');
 
 class TicketService {
   async create(projectId, title, description, priority, userId) {
     const project = await Project.findById(projectId);
-    if (!project) throw new Error('Project not found');
+    if (!project) throw new NotFoundError('Project not found');
 
     return await Ticket.create(projectId, title, description, priority, userId);
   }
 
   async findByProject(projectId, userId) {
     const project = await Project.findById(projectId);
-    if (!project) throw new Error('Project not found');
+    if (!project) throw new NotFoundError('Project not found');
 
     return await Ticket.findByProject(projectId, userId);
   }
@@ -23,13 +24,13 @@ class TicketService {
 
   async getOne(id, userId) {
     const ticket = await Ticket.findById(id);
-    if (!ticket) throw new Error('Ticket not found');
+    if (!ticket) throw new NotFoundError('Ticket not found');
     return ticket;
   }
 
   async update(id, data, userId) {
     const ticket = await Ticket.findById(id);
-    if (!ticket) throw new Error('Ticket not found');
+    if (!ticket) throw new NotFoundError('Ticket not found');
 
     const user = await User.find(userId);
     
@@ -40,21 +41,21 @@ class TicketService {
       user.role !== 'member' &&
       ticket.ownerId !== userId
     ) {
-      throw new Error('Unauthorized to edit this ticket');
+      throw new ForbiddenError('Unauthorized to edit this ticket');
     }
 
     // Validate title not empty (if being updated)
     if (data.title !== undefined && data.title !== null && !data.title.trim()) {
-      throw new Error('Title cannot be empty');
+      throw new ValidationError('Title cannot be empty');
     }
 
     // Validate assignee is in same project (if changing assignee)
     if (data.assigneeId !== undefined && data.assigneeId !== null && data.assigneeId !== ticket.assigneeId) {
       const assignee = await User.find(data.assigneeId);
-      if (!assignee) throw new Error('Assignee not found');
+      if (!assignee) throw new NotFoundError('Assignee not found');
       
       const project = await Project.findById(ticket.projectId);
-      if (!project) throw new Error('Project not found');
+      if (!project) throw new NotFoundError('Project not found');
       
       const { pool } = require('../db');
       const projectMember = await pool.query(
@@ -62,7 +63,7 @@ class TicketService {
         [ticket.projectId, data.assigneeId]
       );
       if (projectMember.rows.length === 0) {
-        throw new Error('Assignee is not a member of this project');
+        throw new ValidationError('Assignee is not a member of this project');
       }
     }
 
@@ -79,11 +80,11 @@ class TicketService {
 
   async delete(id, userId) {
     const ticket = await Ticket.findById(id);
-    if (!ticket) throw new Error('Ticket not found');
+    if (!ticket) throw new NotFoundError('Ticket not found');
 
     const user = await User.find(userId);
     if (ticket.ownerId !== userId && !['project_admin', 'member', 'super_admin'].includes(user.role)) {
-      throw new Error('Forbidden');
+      throw new ForbiddenError('Forbidden');
     }
 
     await Ticket.delete(id);
@@ -91,7 +92,7 @@ class TicketService {
 
   async claim(ticketId, userId) {
     const existingTicket = await Ticket.findById(ticketId);
-    if (!existingTicket) throw new Error('Ticket not found');
+    if (!existingTicket) throw new NotFoundError('Ticket not found');
 
     await Ticket.update(ticketId, null, null, null, null, userId, userId);
     return existingTicket;
@@ -99,7 +100,7 @@ class TicketService {
 
   async assign(ticketId, assigneeId, userId) {
     const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new Error('Ticket not found');
+    if (!ticket) throw new NotFoundError('Ticket not found');
 
     await Ticket.update(ticketId, null, null, null, null, assigneeId, userId);
     return ticket;
@@ -111,14 +112,14 @@ class TicketService {
 
   async getComments(ticketId, userId) {
     const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new Error('Ticket not found');
+    if (!ticket) throw new NotFoundError('Ticket not found');
     return await Ticket.getComments(ticketId);
   }
 
   async addComment(ticketId, content, userId) {
     const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new Error('Ticket not found');
-    if (!content || !content.trim()) throw new Error('Comment content is required');
+    if (!ticket) throw new NotFoundError('Ticket not found');
+    if (!content || !content.trim()) throw new ValidationError('Comment content is required');
     return await Ticket.addComment(ticketId, content.trim(), userId);
   }
 

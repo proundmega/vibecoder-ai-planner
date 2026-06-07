@@ -164,14 +164,12 @@ describe('UserService', () => {
         return Promise.resolve({ rows: [] });
       });
       bcrypt.compare.mockResolvedValue(true);
-      jwt.sign.mockReturnValue('mock-token');
 
       const result = await UserService.authenticate('test@example.com', 'password');
 
       expect(result.email).toBe('test@example.com');
       expect(result.role).toBe('project_admin');
       expect(result.isActive).toBe(true);
-      expect(result.token).toBe('mock-token');
     });
 
     it('should throw if user not found', async () => {

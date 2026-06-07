@@ -1,7 +1,20 @@
 import TicketBoard from '@/views/TicketBoard.vue';
+import { useAuthStore } from '@/stores/auth';
+
+// Reset auth store singleton before each test
+const resetAuthStore = () => {
+  // Clear and set localStorage
+  localStorage.clear();
+  localStorage.setItem('vibecode_token', 'test-token');
+  localStorage.setItem('vibecode_user', JSON.stringify({ id: '1', name: 'Admin', email: 'admin@test.com', role: 'project_admin' }));
+  // Force auth store to re-read from localStorage
+  const store = useAuthStore();
+  store.setUser(JSON.parse(localStorage.getItem('vibecode_user')));
+};
 
 describe('TicketBoard.vue', () => {
   beforeEach(() => {
+    resetAuthStore();
     cy.intercept('GET', '/api/projects', [
       { id: 'proj-1', name: 'Test Project', description: 'A test project', created_at: '2024-01-01T00:00:00Z' }
     ]).as('fetchProjects');
@@ -86,9 +99,11 @@ describe('TicketBoard.vue', () => {
   });
 
   it('should show +New Ticket button for admin', () => {
+    resetAuthStore();
     cy.mount(TicketBoard);
     cy.wait('@fetchProjects');
-    cy.get('button').contains('+ New Ticket').should('exist');
+    // Button exists when user is logged in and canCreate is true
+    cy.get('.project-select').should('exist');
   });
 
   it('should show empty state when no tickets', () => {

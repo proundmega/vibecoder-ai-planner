@@ -126,7 +126,7 @@ The following issues exist in the frontend code and are NOT caught by the curren
 - **`ProjectDetail.vue` is an empty placeholder** — just `<h1>Project Detail</h1>`. [FIXED: serves as layout wrapper with router-view]
 
 ### Database
-PostgreSQL 15 in Docker, database `vibecode`. Migrations are ad-hoc SQL files executed sequentially — no migration tracking. `apply.js` runs `001_create_tables.sql` then `002_agents_schema.sql`.
+PostgreSQL 15 in Docker, database `vibecode`. Migrations are ad-hoc SQL files executed sequentially — no migration tracking. `apply.js` runs `001_create_tables.sql`, `002_agents_schema.sql`, `003_role_system.sql`, and `004_persistence_layer.sql`.
 
 ### Docker build
 Backend: multi-stage (node:18-alpine). Frontend: multi-stage (node→nginx). Frontend container serves via nginx with SPA fallback (`try_files $uri $uri/ /index.html`).
@@ -135,11 +135,11 @@ Backend: multi-stage (node:18-alpine). Frontend: multi-stage (node→nginx). Fro
 The `migrate` service runs first (applies SQL migrations), then `api` starts (depends on migration completion), then `frontend`.
 
 ### Known Bugs / Gotchas
-- **`static async fromRow()`** in `models/project.js` and `models/ticket.js` — must NOT be `async` (no `await` inside). An async `fromRow` returns a Promise, causing `findAll` to return `[{ }]` arrays.
+- **`static async fromRow()`** in `models/project.js` and `models/ticket.js` — must NOT be `async` (no `await` inside). An async `fromRow` returns a Promise, causing `findAll` to return `[{ }]` arrays. [FIXED: removed async keyword]
 - **`docker-compose.override.yml`** frontend ports must be `3000:80` (host:container nginx port), not `3000:3000`.
 - **Frontend nginx** may fail to start if the `api` upstream hostname isn't resolvable at startup. Restart the frontend container if it fails on first boot.
-- **`UserService.authenticate()`** duplicates JWT signing logic that already exists in `auth.js` — both use `JWT_SECRET` but `UserService` also re-declares it locally.
-- **`/api/auth/me`** returns `userId` (from JWT payload) instead of `id` in the user object.
+- **`UserService.authenticate()`** duplicates JWT signing logic that already exists in `auth.js` — both use `JWT_SECRET` but `UserService` also re-declares it locally. [FIXED: removed JWT signing from authenticate, auth.js handles token creation]
+- **`/api/auth/me`** returns `userId` (from JWT payload) instead of `id` in the user object. [FIXED: queries database and returns user with `id` field]
 
 ### Coding conventions (from `ai/CODING.md`)
 - Use IPEE (Identify, Plan, Execute, Evaluate) for every change

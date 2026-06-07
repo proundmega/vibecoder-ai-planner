@@ -1,8 +1,10 @@
 const Joi = require('joi');
 
 const createTicketSchema = Joi.object({
-  projectId: Joi.string().uuid().required().messages({
-    'string.guid': 'Project ID must be a valid UUID',
+  projectId: Joi.alternatives().try(
+    Joi.string().uuid().messages({ 'string.guid': 'Project ID must be a valid UUID' }),
+    Joi.number().integer().positive().messages({ 'number.base': 'Project ID must be a valid number' })
+  ).required().messages({
     'any.required': 'Project ID is required',
   }),
   title: Joi.string().min(1).max(500).required().messages({
@@ -12,14 +14,14 @@ const createTicketSchema = Joi.object({
     'any.required': 'Ticket title is required',
   }),
   description: Joi.string().max(10000).allow('').optional().default(''),
-  priority: Joi.string().valid('low', 'medium', 'high', 'critical').optional().default('medium'),
+  priority: Joi.string().valid('low', 'medium', 'high', 'critical', 'urgent').optional().default('medium'),
 });
 
 const updateTicketSchema = Joi.object({
   title: Joi.string().min(1).max(500).optional(),
   description: Joi.string().max(10000).allow('').optional(),
   status: Joi.string().valid('backlog', 'in_progress', 'review', 'done').optional(),
-  priority: Joi.string().valid('low', 'medium', 'high', 'critical').optional(),
+  priority: Joi.string().valid('low', 'medium', 'high', 'critical', 'urgent').optional(),
   assigneeId: Joi.string().uuid().allow(null).optional(),
 });
 

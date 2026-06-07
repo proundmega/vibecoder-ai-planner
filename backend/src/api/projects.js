@@ -42,6 +42,6 @@ router.put('/tickets/:ticketId', verifyToken, projectController.updateProjectTic
 router.delete('/tickets/:ticketId', verifyToken, requireRole('project_admin', 'member', 'user'), projectController.deleteProjectTicket);
 
 // Delete project
-router.delete('/:id', verifyToken, requireRole('project_admin'), projectController.deleteProject);
+router.delete('/:id', verifyToken, projectController.deleteProject);
 
 module.exports = router;

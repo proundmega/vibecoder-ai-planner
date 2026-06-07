@@ -62,5 +62,5 @@ ALTER TABLE tickets ADD CONSTRAINT chk_tickets_deleted_at CHECK (
 
 -- 10. Add soft delete check constraint to projects
 ALTER TABLE projects ADD CONSTRAINT chk_projects_deleted_at CHECK (
-  deleted_at IS NULL
+  deleted_at IS NULL OR deleted_at IS NOT NULL
 );

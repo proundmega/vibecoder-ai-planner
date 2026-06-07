@@ -1,5 +1,16 @@
 const Joi = require('joi');
 
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const email = Joi.string().pattern(emailRegex).required().messages({
+  'string.pattern.base': 'Email must be a valid email address',
+  'any.required': 'Email is required',
+});
+
+const optionalEmail = Joi.string().pattern(emailRegex).optional().messages({
+  'string.pattern.base': 'Email must be a valid email address',
+});
+
 const createUserSchema = Joi.object({
   name: Joi.string().min(1).max(100).required().messages({
     'string.empty': 'Name is required',
@@ -7,10 +18,7 @@ const createUserSchema = Joi.object({
     'string.max': 'Name must not exceed 100 characters',
     'any.required': 'Name is required',
   }),
-  email: Joi.string().email().required().messages({
-    'string.email': 'Email must be a valid email address',
-    'any.required': 'Email is required',
-  }),
+  email,
   password: Joi.string().min(6).max(128).required().messages({
     'string.empty': 'Password is required',
     'string.min': 'Password must be at least 6 characters',
@@ -24,7 +32,7 @@ const createUserSchema = Joi.object({
 
 const updateUserSchema = Joi.object({
   name: Joi.string().min(1).max(100).optional(),
-  email: Joi.string().email().optional(),
+  email: optionalEmail,
   role: Joi.string().valid('user', 'member', 'project_admin').optional(),
 });
 

@@ -1,14 +1,13 @@
 const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
 const User = require('../models/user');
 const { pool } = require('../db');
-const jwt = require('jsonwebtoken');
+const { ValidationError, NotFoundError } = require('../errors/HttpError');
 
 class UserService {
   async register(name, email, password, role = 'user', userCreatedBy = null) {
     const exists = await User.existsByEmail(email);
     if (exists) {
-      throw new Error('Email already registered');
+      throw new ValidationError('Email already registered');
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -22,39 +21,24 @@ class UserService {
   async authenticate(email, password) {
     const user = await User.findByEmail(email);
     if (!user) {
-      throw new Error('Invalid credentials');
+      throw new ValidationError('Invalid credentials');
     }
 
     if (!user.isActive) {
-      throw new Error('Account deactivated. Contact support.');
+      throw new ValidationError('Account deactivated. Contact support.');
     }
 
     const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) {
-      throw new Error('Invalid credentials');
+      throw new ValidationError('Invalid credentials');
     }
 
-    const JWT_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
-    const TOKEN_EXPIRY_HOURS = parseInt(process.env.TOKEN_EXPIRY_HOURS) || 24;
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
-      JWT_SECRET,
-      { expiresIn: TOKEN_EXPIRY_HOURS }
-    );
-    
-    return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      plan: user.currentPlan,
-      isActive: user.isActive,
-      token
-    };
+    return user;
   }
 
   async getCurrentUser(token) {
     const JWT_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
+    const jwt = require('jsonwebtoken');
     const decoded = jwt.verify(token, JWT_SECRET);
     const user = await User.find(decoded.userId);
     return user;
@@ -140,11 +124,11 @@ class UserService {
   async createUser(name, email, password, role, createdBy) {
     const exists = await User.existsByEmail(email);
     if (exists) {
-      throw new Error('Email already registered');
+      throw new ValidationError('Email already registered');
     }
 
     if (role === 'super_admin') {
-      throw new Error('Super admin accounts must be created manually');
+      throw new ValidationError('Super admin accounts must be created manually');
     }
 
     if (createdBy) {
@@ -152,14 +136,14 @@ class UserService {
       if (creator) {
         if (creator.role === 'project_admin') {
           if (!['member', 'user'].includes(role)) {
-            throw new Error('Project admins can only create member or user accounts');
+            throw new ValidationError('Project admins can only create member or user accounts');
           }
         } else if (creator.role === 'member') {
           if (role !== 'user') {
-            throw new Error('Members can only create user accounts');
+            throw new ValidationError('Members can only create user accounts');
           }
         } else if (creator.role === 'user') {
-          throw new Error('AI agents cannot create user accounts');
+          throw new ValidationError('AI agents cannot create user accounts');
         }
       }
     }
@@ -177,11 +161,11 @@ class UserService {
     const targetUser = await User.find(userId);
     
     if (!targetUser) {
-      throw new Error('User not found');
+      throw new NotFoundError('User not found');
     }
     
     if (userId === adminId) {
-      throw new Error('Cannot update your own account');
+      throw new ValidationError('Cannot update your own account');
     }
     
     const { name, is_active } = updates;
@@ -217,11 +201,11 @@ class UserService {
     const targetUser = await User.find(userId);
     
     if (!targetUser) {
-      throw new Error('User not found');
+      throw new NotFoundError('User not found');
     }
     
     if (userId === adminId) {
-      throw new Error('Cannot toggle your own account');
+      throw new ValidationError('Cannot toggle your own account');
     }
     
     const result = await pool.query(
@@ -237,11 +221,11 @@ class UserService {
     const targetUser = await User.find(userId);
     
     if (!targetUser) {
-      throw new Error('User not found');
+      throw new NotFoundError('User not found');
     }
     
     if (userId === adminId) {
-      throw new Error('Cannot delete your own account');
+      throw new ValidationError('Cannot delete your own account');
     }
     
     await User.delete(userId);

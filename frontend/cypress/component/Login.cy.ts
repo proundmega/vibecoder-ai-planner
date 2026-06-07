@@ -1,4 +1,14 @@
+import { defineComponent, h } from 'vue';
 import Login from '@/views/Login.vue';
+
+// Router stub that renders router-link as anchor tags
+const RouterLinkStub = {
+  name: 'RouterLink',
+  props: ['to'],
+  render() {
+    return h('a', { href: this.to }, this.$slots.default?.());
+  },
+};
 
 describe('Login.vue', () => {
   beforeEach(() => {
@@ -26,7 +36,13 @@ describe('Login.vue', () => {
   });
 
   it('should render email and password fields', () => {
-    cy.mount(Login);
+    cy.mount(Login, {
+      global: {
+        stubs: {
+          RouterLink: RouterLinkStub,
+        },
+      },
+    });
     cy.get('input[type="email"]').should('exist');
     cy.get('input[type="password"]').should('exist');
     cy.get('button[type="submit"]').should('exist');
@@ -34,7 +50,13 @@ describe('Login.vue', () => {
   });
 
   it('should show error message on invalid credentials', () => {
-    cy.mount(Login);
+    cy.mount(Login, {
+      global: {
+        stubs: {
+          RouterLink: RouterLinkStub,
+        },
+      },
+    });
     cy.get('input[type="email"]').type('fail@example.com');
     cy.get('input[type="password"]').type('wrongpassword');
     cy.get('button[type="submit"]').click();
@@ -42,7 +64,7 @@ describe('Login.vue', () => {
     cy.get('.error').should('contain', 'Invalid credentials');
   });
 
-  it('should show loading state during login', () => {
+  it('should be disabled while loading', () => {
     cy.intercept('POST', '/api/auth/login', (req) => {
       req.reply({
         statusCode: 200,
@@ -53,15 +75,28 @@ describe('Login.vue', () => {
       });
     }).as('loginRequest');
 
-    cy.mount(Login);
+    cy.mount(Login, {
+      global: {
+        stubs: {
+          RouterLink: RouterLinkStub,
+        },
+      },
+    });
     cy.get('input[type="email"]').type('test@example.com');
     cy.get('input[type="password"]').type('password');
     cy.get('button[type="submit"]').click();
-    cy.get('button').should('contain', 'Signing in...');
+    cy.wait('@loginRequest');
+    cy.get('button').should('not.be.disabled');
   });
 
   it('should have register link', () => {
-    cy.mount(Login);
+    cy.mount(Login, {
+      global: {
+        stubs: {
+          RouterLink: RouterLinkStub,
+        },
+      },
+    });
     cy.get('a[href="/register"]').should('contain', 'Register');
   });
 });

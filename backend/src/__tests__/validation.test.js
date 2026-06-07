@@ -207,13 +207,13 @@ describe('Ticket Schemas', () => {
       const { error } = createTicketSchema.validate({
         projectId: '550e8400-e29b-41d4-a716-446655440000',
         title: 'Fix login bug',
-        priority: 'urgent',
+        priority: 'extreme',
       });
       expect(error).toBeDefined();
     });
 
     it('should accept all valid priority values', () => {
-      const priorities = ['low', 'medium', 'high', 'critical'];
+      const priorities = ['low', 'medium', 'high', 'critical', 'urgent'];
       priorities.forEach(priority => {
         const { error } = createTicketSchema.validate({
           projectId: '550e8400-e29b-41d4-a716-446655440000',

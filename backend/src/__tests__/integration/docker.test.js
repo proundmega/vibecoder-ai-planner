@@ -136,8 +136,8 @@ describe('Vibecode Integration (PostgreSQL)', () => {
         .send({ name: 'My Project', description: 'A test project' });
 
       expect(res.status).toBe(201);
-      expect(res.body.id).toBeDefined();
-      expect(res.body.name).toBe('My Project');
+      expect(res.body.data.id).toBeDefined();
+      expect(res.body.data.name).toBe('My Project');
     });
 
     test('GET /api/projects lists user projects', async () => {
@@ -150,8 +150,8 @@ describe('Vibecode Integration (PostgreSQL)', () => {
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body.length).toBeGreaterThan(0);
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data.length).toBeGreaterThan(0);
     });
 
     test('GET /api/projects/:id returns project', async () => {
@@ -161,11 +161,11 @@ describe('Vibecode Integration (PostgreSQL)', () => {
         .send({ name: 'Single Project' });
 
       const res = await request(app)
-        .get(`/api/projects/${createRes.body.id}`)
+        .get(`/api/projects/${createRes.body.data.id}`)
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.name).toBe('Single Project');
+      expect(res.body.data.name).toBe('Single Project');
     });
 
     test('GET /api/projects/:id returns 404 for unknown id', async () => {
@@ -182,7 +182,7 @@ describe('Vibecode Integration (PostgreSQL)', () => {
         .send({ name: 'To Delete' });
 
       const res = await request(app)
-        .delete(`/api/projects/${createRes.body.id}`)
+        .delete(`/api/projects/${createRes.body.data.id}`)
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
@@ -211,7 +211,7 @@ describe('Vibecode Integration (PostgreSQL)', () => {
         .post('/api/projects')
         .set('Authorization', `Bearer ${token}`)
         .send({ name: 'Ticket Test Project' });
-      projectId = projRes.body.id;
+      projectId = projRes.body.data.id;
     });
 
     test('POST /api/projects/:id/tickets creates ticket', async () => {
@@ -221,8 +221,8 @@ describe('Vibecode Integration (PostgreSQL)', () => {
         .send({ title: 'Bug Fix', description: 'Fix the bug', priority: 'high' });
 
       expect(res.status).toBe(201);
-      expect(res.body.title).toBe('Bug Fix');
-      expect(res.body.priority).toBe('high');
+      expect(res.body.data.title).toBe('Bug Fix');
+      expect(res.body.data.priority).toBe('high');
     });
 
     test('PATCH /api/tickets/:id/status transitions to in_progress', async () => {
@@ -232,12 +232,12 @@ describe('Vibecode Integration (PostgreSQL)', () => {
         .send({ title: 'Status Test Ticket' });
 
       const res = await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.id}/status`)
+        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${token}`)
         .send({ status: 'in_progress' });
 
       expect(res.status).toBe(200);
-      expect(res.body.status).toBe('in_progress');
+      expect(res.body.data.status).toBe('in_progress');
     });
 
     test('PATCH /api/tickets/:id/status transitions to review', async () => {
@@ -247,17 +247,17 @@ describe('Vibecode Integration (PostgreSQL)', () => {
         .send({ title: 'Review Ticket' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.id}/status`)
+        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${token}`)
         .send({ status: 'in_progress' });
 
       const res = await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.id}/status`)
+        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${token}`)
         .send({ status: 'review' });
 
       expect(res.status).toBe(200);
-      expect(res.body.status).toBe('review');
+      expect(res.body.data.status).toBe('review');
     });
 
     test('PATCH /api/tickets/:id/status rejects done from in_progress', async () => {
@@ -267,12 +267,12 @@ describe('Vibecode Integration (PostgreSQL)', () => {
         .send({ title: 'Invalid Transition' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.id}/status`)
+        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${token}`)
         .send({ status: 'in_progress' });
 
       const res = await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.id}/status`)
+        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${token}`)
         .send({ status: 'done' });
 
@@ -294,7 +294,7 @@ describe('Vibecode Integration (PostgreSQL)', () => {
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.length).toBeGreaterThanOrEqual(2);
+      expect(res.body.data.length).toBeGreaterThanOrEqual(2);
     });
 
     test('POST /api/projects/:id/tickets fails without auth', async () => {
@@ -309,13 +309,13 @@ describe('Vibecode Integration (PostgreSQL)', () => {
     test('GET /api/health returns 200', async () => {
       const res = await request(app).get('/api/health');
       expect(res.status).toBe(200);
-      expect(res.body.status).toBe('ok');
+      expect(res.body.data.status).toBe('ok');
     });
 
     test('GET /api/version returns version', async () => {
       const res = await request(app).get('/api/version');
       expect(res.status).toBe(200);
-      expect(res.body.version).toBe('1.0.0');
+      expect(res.body.data.version).toBe('1.0.0');
     });
   });
 });

@@ -47,7 +47,7 @@ watch(() => props.isEdit, (isEdit) => {
     password.value = ''
     role.value = availableRoles.value[0]?.value || 'user'
   }
-})
+}, { immediate: true })
 
 async function handleSubmit() {
   if (!name.value.trim() || !email.value.trim()) {

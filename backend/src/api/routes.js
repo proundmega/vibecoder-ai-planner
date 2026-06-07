@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../auth');
+const User = require('../models/user');
 
 // Middleware
 const { verifyToken, agentAuth, rateLimiter, trackAgentAction } = require('../middleware/auth');
@@ -110,7 +111,11 @@ router.post('/auth/login', validate(loginSchema), async (req, res) => {
 
 router.get('/auth/me', verifyToken, async (req, res) => {
   try {
-    res.json({ user: req.user, authenticated: true });
+    const user = await User.find(req.user.userId);
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+    res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role, plan: user.currentPlan, isActive: user.isActive }, authenticated: true });
   } catch (error) {
     console.error('GET /api/auth/me', error);
     res.status(401).json({ error: 'Unauthorized' });

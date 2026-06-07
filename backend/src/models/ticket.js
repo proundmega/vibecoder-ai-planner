@@ -1,4 +1,5 @@
 const { pool, transaction } = require('../db');
+const { ValidationError } = require('../errors/HttpError');
 
 class Ticket {
   constructor(data) {
@@ -80,7 +81,7 @@ class Ticket {
       };
       const allowed = validTransitions[current.status] || [];
       if (!allowed.includes(status)) {
-        throw new Error(`Invalid status transition from ${current.status} to ${status}`);
+     throw new ValidationError(`Invalid status transition from ${current.status} to ${status}`);
       }
     }
 
@@ -137,7 +138,7 @@ class Ticket {
 
     const allowed = validTransitions[current.status] || [];
     if (!allowed.includes(status)) {
-      throw new Error(`Invalid status transition from ${current.status} to ${status}`);
+      throw new ValidationError(`Invalid status transition from ${current.status} to ${status}`);
     }
 
     await pool.query(

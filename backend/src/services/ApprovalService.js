@@ -1,26 +1,27 @@
 const Approval = require('../models/approval');
 const Ticket = require('../models/ticket');
 const User = require('../models/user');
+const { ValidationError, NotFoundError, ForbiddenError } = require('../errors/HttpError');
 
 class ApprovalService {
   static async create(ticketId, requestedBy) {
     const ticket = await Ticket.findById(ticketId);
     if (!ticket) {
-      throw new Error('Ticket not found');
+      throw new NotFoundError('Ticket not found');
     }
     
     const user = await User.find(requestedBy);
     if (!user) {
-      throw new Error('User not found');
+      throw new NotFoundError('User not found');
     }
     
     if (ticket.status !== 'review') {
-      throw new Error('Can only request approval for tickets in review status');
+      throw new ValidationError('Can only request approval for tickets in review status');
     }
     
     const existing = await Approval.getByTicketAndRequester(ticketId, requestedBy);
     if (existing && existing.status === 'pending') {
-      throw new Error('Approval request already pending for this ticket');
+      throw new ValidationError('Approval request already pending for this ticket');
     }
     
     return await Approval.create(ticketId, requestedBy);
@@ -29,20 +30,20 @@ class ApprovalService {
   static async approve(approvalId, approvedBy) {
     const approval = await Approval.findById(approvalId);
     if (!approval) {
-      throw new Error('Approval request not found');
+      throw new NotFoundError('Approval request not found');
     }
     
     if (approval.status !== 'pending') {
-      throw new Error('Approval request is not pending');
+      throw new ValidationError('Approval request is not pending');
     }
     
     const approvedUser = await User.find(approvedBy);
     if (!approvedUser) {
-      throw new Error('Approver not found');
+      throw new NotFoundError('Approver not found');
     }
     
     if (!['project_admin', 'member', 'super_admin'].includes(approvedUser.role)) {
-      throw new Error('Only project admins, members, or super admins can approve requests');
+      throw new ForbiddenError('Only project admins, members, or super admins can approve requests');
     }
     
     const updated = await Approval.approve(approvalId, approvedBy);
@@ -57,20 +58,20 @@ class ApprovalService {
   static async reject(approvalId, approvedBy) {
     const approval = await Approval.findById(approvalId);
     if (!approval) {
-      throw new Error('Approval request not found');
+      throw new NotFoundError('Approval request not found');
     }
     
     if (approval.status !== 'pending') {
-      throw new Error('Approval request is not pending');
+      throw new ValidationError('Approval request is not pending');
     }
     
     const approvedUser = await User.find(approvedBy);
     if (!approvedUser) {
-      throw new Error('Approver not found');
+      throw new NotFoundError('Approver not found');
     }
     
     if (!['project_admin', 'member', 'super_admin'].includes(approvedUser.role)) {
-      throw new Error('Only project admins, members, or super admins can reject requests');
+      throw new ForbiddenError('Only project admins, members, or super admins can reject requests');
     }
     
     return await Approval.reject(approvalId, approvedBy);

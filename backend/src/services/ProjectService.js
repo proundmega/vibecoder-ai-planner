@@ -1,5 +1,6 @@
 const Project = require('../models/project');
 const TicketService = require('../services/TicketService');
+const { NotFoundError, ForbiddenError, ValidationError } = require('../errors/HttpError');
 
 class ProjectService {
   async list(userId) {
@@ -8,7 +9,7 @@ class ProjectService {
 
   async getOne(id, userId) {
     const project = await Project.findById(id);
-    if (!project) throw new Error('Project not found');
+    if (!project) throw new NotFoundError('Project not found');
     return project;
   }
 
@@ -26,12 +27,12 @@ class ProjectService {
 
   async delete(id, userId) {
     const project = await Project.findById(id);
-    if (!project) throw new Error('Project not found');
-    if (project.ownerId !== userId) throw new Error('Unauthorized');
+    if (!project) throw new NotFoundError('Project not found');
+    if (project.ownerId !== userId) throw new ForbiddenError('Unauthorized');
 
     const tickets = await TicketService.findByProject(id, userId);
     if (tickets.length > 0) {
-      throw new Error('Cannot delete project with existing tickets');
+      throw new ValidationError('Cannot delete project with existing tickets');
     }
 
     await Project.delete(id);
