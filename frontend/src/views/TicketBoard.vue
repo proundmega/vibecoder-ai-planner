@@ -1,8 +1,12 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { fetchProjects } from '@/api/projects'
 import { fetchTickets, updateTicket, createTicket } from '@/api/tickets'
+
+const route = useRoute()
+const router = useRouter()
 
 const authStore = useAuthStore()
 const projects = ref([])
@@ -172,6 +176,8 @@ async function handleCreateTicket() {
             class="ticket-card"
             draggable="true"
             @dragstart="($event) => $event.dataTransfer?.setData('ticketId', ticket.id)"
+            @click="router.push(`/projects/${route.params.id}/tickets/${ticket.id}`)"
+            style="cursor: pointer;"
           >
             <div class="ticket-content">
               <div class="ticket-title">{{ ticket.title || 'Untitled' }}</div>
