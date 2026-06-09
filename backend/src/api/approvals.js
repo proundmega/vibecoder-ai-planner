@@ -14,7 +14,7 @@ router.post('/', verifyToken, async (req, res) => {
     }
     
     const approval = await ApprovalService.create(ticketId, req.user.userId);
-    res.status(201).json(approval);
+    res.status(201).json({ success: true, data: approval });
   } catch (error) {
     console.error('POST /api/approvals', error);
     res.status(400).json({ error: error.message });
@@ -25,7 +25,7 @@ router.post('/', verifyToken, async (req, res) => {
 router.get('/pending', verifyToken, async (req, res) => {
   try {
     const approvals = await ApprovalService.getPendingByRequester(req.user.userId);
-    res.json({ approvals });
+    res.json({ success: true, data: approvals });
   } catch (error) {
     console.error('GET /api/approvals/pending', error);
     res.status(500).json({ error: error.message });
@@ -36,7 +36,7 @@ router.get('/pending', verifyToken, async (req, res) => {
 router.get('/ticket/:ticketId', verifyToken, async (req, res) => {
   try {
     const approvals = await ApprovalService.getByTicketId(req.params.ticketId);
-    res.json({ approvals });
+    res.json({ success: true, data: approvals });
   } catch (error) {
     console.error('GET /api/approvals/ticket/:ticketId', error);
     res.status(500).json({ error: error.message });
@@ -52,8 +52,9 @@ router.post('/:approvalId/approve', verifyToken, requireAnyPermission('APPROVAL_
     );
     
     res.json({
+      success: true,
+      data: approval,
       message: 'Approval request approved',
-      approval
     });
   } catch (error) {
     console.error('POST /api/approvals/:approvalId/approve', error);
@@ -70,8 +71,9 @@ router.post('/:approvalId/reject', verifyToken, requireAnyPermission('APPROVAL_R
     );
     
     res.json({
+      success: true,
+      data: approval,
       message: 'Approval request rejected',
-      approval
     });
   } catch (error) {
     console.error('POST /api/approvals/:approvalId/reject', error);

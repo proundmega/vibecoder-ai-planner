@@ -6,6 +6,9 @@ const { validate } = require('../middleware/validate');
 const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema } = require('../validators/tickets');
 const ticketController = require('../controllers/ticketController');
 
+// Get comments for a ticket (must be before /:ticketId to avoid route collision)
+router.get('/:ticketId/comments', ticketController.getTicketComments);
+
 // Get single ticket
 router.get('/:ticketId', ticketController.getTicket);
 
@@ -20,9 +23,6 @@ router.delete('/:ticketId', verifyToken, ticketController.deleteTicket);
 
 // Get tickets for a project
 router.get('/project/:projectId', ticketController.getProjectTickets);
-
-// Get comments for a ticket
-router.get('/:ticketId/comments', ticketController.getTicketComments);
 
 // Add a comment to a ticket
 router.post('/:ticketId/comments', verifyToken, requireAnyPermission('TICKET_COMMENT'), validate(commentSchema), ticketController.addComment);
