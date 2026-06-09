@@ -10,6 +10,16 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
 -- 3. Add soft delete column to users
 ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
 
+-- 3.5. Create project_memberships table (used by ProjectService for team collaboration)
+CREATE TABLE IF NOT EXISTS project_memberships (
+  id BIGSERIAL PRIMARY KEY,
+  project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role VARCHAR(50) NOT NULL DEFAULT 'member',
+  joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(project_id, user_id)
+);
+
 -- 4. Create indexes for frequently queried columns
 CREATE INDEX IF NOT EXISTS idx_tickets_project_id ON tickets(project_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
