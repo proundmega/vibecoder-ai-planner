@@ -189,23 +189,66 @@ async function getUserUsage(req, res, next) {
 }
 ```
 
-### Plan-Based Approach (Future)
+### Billing for Project Admins
 
-When ready to add plan limits:
+Simple billing — project admins see their total monthly spend. No hard limits, no plans. Just visibility.
+
 ```sql
-CREATE TABLE IF NOT EXISTS project_plans (
+CREATE TABLE IF NOT EXISTS project_billing (
   id BIGSERIAL PRIMARY KEY,
   project_id BIGINT REFERENCES projects(id) ON DELETE CASCADE,
-  plan_name VARCHAR(50) NOT NULL,           -- 'free', 'pro', 'enterprise'
-  monthly_token_limit BIGINT,               -- null = unlimited
-  monthly_cost_limit DECIMAL(12,2),         -- null = unlimited
-  current_month_tokens BIGINT DEFAULT 0,
-  current_month_cost DECIMAL(12,2) DEFAULT 0,
-  billing_period_start DATE DEFAULT CURRENT_DATE,
-  billing_period_end DATE DEFAULT CURRENT_DATE + INTERVAL '1 month',
-  is_active BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  billing_month DATE NOT NULL,               -- e.g., '2026-06-01'
+  total_cost_usd DECIMAL(12,2) NOT NULL DEFAULT 0,
+  total_tokens_in BIGINT NOT NULL DEFAULT 0,
+  total_tokens_out BIGINT NOT NULL DEFAULT 0,
+  total_calls INTEGER NOT NULL DEFAULT 0,
+  is_finalized BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT unique_project_month UNIQUE (project_id, billing_month)
 );
+
+CREATE INDEX idx_project_billing_month ON project_billing(billing_month);
+```
+
+**Billing aggregation runs daily** (cron job):
+```javascript
+// Aggregates usage_logs → project_billing for the previous day
+async function aggregateDailyBilling() {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const dayStart = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+  const dayEnd = new Date(dayStart.getTime() + 86400000);
+  
+  const result = await pool.query(
+    `SELECT project_id,
+            SUM(cost_usd) as total_cost,
+            SUM(tokens_in) as total_in,
+            SUM(tokens_out) as total_out,
+            COUNT(*) as total_calls
+     FROM usage_logs
+     WHERE created_at >= $1 AND created_at < $2
+     GROUP BY project_id`,
+    [dayStart, dayEnd]
+  );
+  
+  for (const row of result.rows) {
+    await pool.query(
+      `INSERT INTO project_billing (project_id, billing_month, total_cost_usd, total_tokens_in, total_tokens_out, total_calls)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (project_id, billing_month)
+       DO UPDATE SET total_cost_usd = $3, total_tokens_in = $4, total_tokens_out = $5, total_calls = $6, updated_at = CURRENT_TIMESTAMP`,
+      [row.project_id, dayStart.toISOString().split('T')[0], row.total_cost, row.total_in, row.total_out, row.total_calls]
+    );
+  }
+}
+```
+
+**Billing API for project admins:**
+```
+GET /api/projects/:id/billing?month=2026-06    → monthly summary
+GET /api/projects/:id/billing?start=2026-01-01&end=2026-06-30  → range summary
+GET /api/users/me/billing                       → current user's projects billing
 ```
 
 ---

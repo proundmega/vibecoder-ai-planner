@@ -27,33 +27,59 @@ Track AI usage per project and per user: token counts, costs, model usage, call 
    - `MODEL_PRICING` object with per-model input/output prices
    - `calculateCost(model, tokensIn, tokensOut)` → returns USD cost
 
-2. **Create migration** — `backend/src/migrations/013_usage_logs.sql`
-   - `usage_logs` table with provider, model, tokens, cost, duration
-   - Indexes on project_id, user_id, agent_id, created_at
+2. **Create migrations**
+   ```
+   backend/src/migrations/013_usage_logs.sql
+     - usage_logs table with provider, model, tokens, cost, duration
+   
+   backend/src/migrations/014_project_billing.sql
+     - project_billing table (monthly aggregation)
+   ```
 
 3. **Create UsageLogger** — `backend/src/services/UsageLogger.js`
    - `log(projectId, userId, agentId, providerType, model, usage, duration, ticketId)`
    - `getProjectUsage(projectId, since, until)` → aggregated by provider/model
    - `getUserUsage(userId, since, until)` → aggregated by project/provider/model
 
-4. **Update ProviderInterface** — `backend/src/providers/base/ProviderInterface.js`
+4. **Create BillingService** — `backend/src/services/BillingService.js`
+   - `aggregateDailyBilling()` → cron job, aggregates usage_logs → project_billing
+   - `getProjectBilling(projectId, month)` → monthly summary
+   - `getProjectBillingRange(projectId, start, end)` → range summary
+   - `getUserBilling(userId)` → current user's projects billing
+
+5. **Update ProviderInterface** — `backend/src/providers/base/ProviderInterface.js`
    - Wrap `chat()` to call `UsageLogger.log()` after each call
    - Non-blocking: failures logged but don't block agent
 
-5. **Create usageController** — `backend/src/controllers/usageController.js`
+6. **Create usageController** — `backend/src/controllers/usageController.js`
    - `getProjectUsage(req, res, next)` → GET `/api/projects/:id/usage`
    - `getUserUsage(req, res, next)` → GET `/api/users/me/usage`
    - `getModelPricing(req, res, next)` → GET `/api/pricing/models`
 
-6. **Create routes** — `backend/src/api/usage.js`
-   - `GET /api/projects/:id/usage` — project usage summary
-   - `GET /api/users/me/usage` — current user usage
-   - `GET /api/pricing/models` — model pricing reference
+7. **Create billingController** — `backend/src/controllers/billingController.js`
+   - `getProjectBilling(req, res, next)` → GET `/api/projects/:id/billing`
+   - `getUserBilling(req, res, next)` → GET `/api/users/me/billing`
 
-7. **Create tests**
-   - `backend/src/__tests__/pricing.test.js` — pricing calculations
-   - `backend/src/__tests__/usageLogger.test.js` — usage logging tests
-   - `backend/src/__tests__/usageController.test.js` — controller tests
+8. **Create routes**
+   ```
+   backend/src/api/usage.js
+     GET /api/projects/:id/usage
+     GET /api/users/me/usage
+     GET /api/pricing/models
+   
+   backend/src/api/billing.js
+     GET /api/projects/:id/billing
+     GET /api/users/me/billing
+   ```
+
+9. **Create cron job** — `backend/src/jobs/dailyBilling.js`
+   - Runs daily, aggregates usage_logs → project_billing
+
+10. **Create tests**
+    - `backend/src/__tests__/pricing.test.js` — pricing calculations
+    - `backend/src/__tests__/usageLogger.test.js` — usage logging tests
+    - `backend/src/__tests__/billingService.test.js` — billing aggregation tests
+    - `backend/src/__tests__/billingController.test.js` — controller tests
 
 ---
 
