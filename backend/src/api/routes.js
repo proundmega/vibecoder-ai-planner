@@ -30,6 +30,8 @@ const permissionsRouter = require('./permissions');
 const githubRouter = require('./github');
 const providersRouter = require('./providers');
 const credentialsRouter = require('./credentials');
+const usageRouter = require('./usage');
+const billingRouter = require('./billing');
 
 // Health check
 router.get('/health', async (req, res) => {
@@ -137,5 +139,7 @@ router.use('/permissions', permissionsRouter);
 router.use('/github', verifyToken, githubRouter);
 router.use('/providers', verifyToken, providersRouter);
 router.use('/credentials', verifyToken, credentialsRouter);
+router.use('/usage', verifyToken, usageRouter);
+router.use('/billing', verifyToken, billingRouter);
 
 module.exports = router;
