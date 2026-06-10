@@ -28,6 +28,7 @@ const agentsRouter = require('./agents');
 const approvalsRouter = require('./approvals');
 const permissionsRouter = require('./permissions');
 const githubRouter = require('./github');
+const providersRouter = require('./providers');
 
 // Health check
 router.get('/health', async (req, res) => {
@@ -133,5 +134,6 @@ router.use('/agents', verifyToken, agentsRouter);
 router.use('/approvals', verifyToken, approvalsRouter);
 router.use('/permissions', permissionsRouter);
 router.use('/github', verifyToken, githubRouter);
+router.use('/providers', verifyToken, providersRouter);
 
 module.exports = router;
