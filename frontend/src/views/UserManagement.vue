@@ -177,7 +177,7 @@ onMounted(loadUsers)
             <td class="actions">
               <button @click="openEditModal(user)" class="btn-edit" title="Edit">Edit</button>
               <button
-                v-if="canToggleActive"
+                v-if="canToggleActive && user.id !== authStore.user.value?.id"
                 @click="handleToggleActive(user)"
                 :class="['btn-toggle', user.is_active ? 'btn-deactivate' : 'btn-activate']"
                 :title="user.is_active ? 'Deactivate' : 'Activate'"

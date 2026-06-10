@@ -5,8 +5,10 @@ const resetAuthStore = () => {
   localStorage.clear();
   localStorage.setItem('vibecode_token', 'test-token');
   localStorage.setItem('vibecode_user', JSON.stringify({ id: 'admin-1', name: 'Admin', email: 'admin@test.com', role: 'project_admin' }));
+  localStorage.setItem('vibecode_permissions', JSON.stringify(['USER_CREATE', 'USER_READ', 'USER_DELETE', 'USER_TOGGLE_ACTIVE', 'PROJECT_CREATE', 'PROJECT_UPDATE', 'PROJECT_DELETE', 'PROJECT_MANAGE_MEMBERS', 'USER_VIEW_ALL']));
   const store = useAuthStore();
   store.setUser(JSON.parse(localStorage.getItem('vibecode_user')));
+  store.setPermissions(JSON.parse(localStorage.getItem('vibecode_permissions')));
 };
 
 describe('UserManagement.vue', () => {
@@ -82,5 +84,22 @@ describe('UserManagement.vue', () => {
     cy.mount(UserManagement);
     cy.wait('@fetchUsers');
     cy.get('input[placeholder*="Search"]').should('exist');
+  });
+
+  it('should hide toggle button for current user', () => {
+    resetAuthStore();
+    cy.intercept('GET', '/api/users*', {
+      users: [
+        { id: 'admin-1', name: 'Admin', email: 'admin@test.com', role: 'project_admin', is_active: true },
+        { id: '2', name: 'Bob User', email: 'bob@example.com', role: 'user', is_active: true },
+      ]
+    }).as('fetchUsers');
+
+    cy.mount(UserManagement);
+    cy.wait('@fetchUsers');
+    cy.get('.user-table').contains('Bob User').should('exist');
+    cy.get('.user-table').contains('Admin').should('exist');
+    cy.get('button.btn-toggle').should('have.length', 1);
+    cy.get('button.btn-toggle').should('contain', 'Deactivate');
   });
 });

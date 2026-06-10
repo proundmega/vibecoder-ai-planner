@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { listAllUsers, toggleUserActive, updateUser } from '@/api/users'
+import { useAuthStore } from '@/stores/auth'
 
 const users = ref([])
 const loading = ref(true)
@@ -11,6 +12,12 @@ const statusFilter = ref('')
 const editingUser = ref(null)
 const showEditModal = ref(false)
 const actionLoading = ref(false)
+
+const authStore = useAuthStore()
+
+const isOwnProfile = (user) => {
+  return user.id === authStore.user.value?.id
+}
 
 async function loadUsers() {
   loading.value = true
@@ -138,7 +145,7 @@ onMounted(loadUsers)
             <td class="actions">
               <button @click="openEditModal(user)" class="btn-edit" title="Edit">Edit</button>
               <button
-                v-if="user.role !== 'super_admin'"
+                v-if="user.role !== 'super_admin' && !isOwnProfile(user)"
                 @click="handleToggleActive(user)"
                 :class="['btn-toggle', user.is_active ? 'btn-deactivate' : 'btn-activate']"
                 :title="user.is_active ? 'Deactivate' : 'Activate'"
