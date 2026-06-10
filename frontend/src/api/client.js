@@ -53,6 +53,13 @@ export function del(url) {
   return apiFetch(url, { method: 'DELETE' }).then(extractData)
 }
 
+export function patch(url, body) {
+  return apiFetch(url, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  }).then(extractData)
+}
+
 export function postWithHeaders(url, body, extraHeaders = {}) {
   return apiFetch(url, {
     method: 'POST',

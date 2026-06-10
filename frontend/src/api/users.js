@@ -1,4 +1,4 @@
-import { get, post, put, del } from './client'
+import { get, post, put, del, patch } from './client'
 
 export function listUsers(filters = {}) {
   const params = new URLSearchParams()
@@ -32,7 +32,7 @@ export function updateUser(id, data) {
 }
 
 export function toggleUserActive(id) {
-  return post(`/api/users/${id}/toggle-active`)
+  return patch(`/api/users/${id}/toggle-active`)
 }
 
 export function deleteUser(id) {
