@@ -141,6 +141,108 @@ class TicketService {
     );
     return result.rows;
   }
+
+  static async pickUpTicket(ticketId, agentId) {
+    const { pool } = require('../db');
+
+    const ticketResult = await pool.query(
+      'SELECT * FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+
+    if (ticketResult.rows.length === 0) {
+      throw new NotFoundError('Ticket not found');
+    }
+
+    const ticket = ticketResult.rows[0];
+
+    if (ticket.status !== 'backlog') {
+      throw new ValidationError('Only backlog tickets can be picked up');
+    }
+
+    if (ticket.assigned_agent_id) {
+      throw new ValidationError('Ticket already assigned to another agent');
+    }
+
+    const result = await pool.query(
+      `UPDATE tickets 
+       SET assigned_agent_id = $1, locked_at = CURRENT_TIMESTAMP, status = 'in_progress'
+       WHERE id = $2 AND status = 'backlog' AND assigned_agent_id IS NULL
+       RETURNING *`,
+      [agentId, ticketId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new ValidationError('Ticket was already picked up by another agent');
+    }
+
+    return result.rows[0];
+  }
+
+  static async releaseTicket(ticketId, adminId) {
+    const { pool } = require('../db');
+
+    const ticketResult = await pool.query(
+      'SELECT * FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+
+    if (ticketResult.rows.length === 0) {
+      throw new NotFoundError('Ticket not found');
+    }
+
+    const ticket = ticketResult.rows[0];
+
+    if (!ticket.assigned_agent_id) {
+      throw new ValidationError('Ticket is not assigned to any agent');
+    }
+
+    const result = await pool.query(
+      `UPDATE tickets 
+       SET assigned_agent_id = NULL, locked_at = NULL, status = 'backlog'
+       WHERE id = $1 RETURNING *`,
+      [ticketId]
+    );
+
+    return result.rows[0];
+  }
+
+  static async enforceOwnership(ticketId, userId) {
+    const { pool } = require('../db');
+
+    const result = await pool.query(
+      'SELECT assigned_agent_id FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new NotFoundError('Ticket not found');
+    }
+
+    const ticket = result.rows[0];
+
+    if (ticket.assigned_agent_id && ticket.assigned_agent_id !== userId) {
+      throw new ForbiddenError(`Ticket is being worked on by agent ${ticket.assigned_agent_id}`);
+    }
+
+    return ticket;
+  }
+
+  static async recoverOrphanedTickets(staleMinutes = 60) {
+    const { pool } = require('../db');
+
+    const result = await pool.query(
+      `UPDATE tickets 
+       SET assigned_agent_id = NULL, locked_at = NULL, status = 'backlog'
+       WHERE status = 'in_progress' 
+       AND locked_at < NOW() - INTERVAL '${staleMinutes} minutes'
+       AND assigned_agent_id IS NOT NULL
+       RETURNING id, title, assigned_agent_id, locked_at`,
+      []
+    );
+
+    return result.rows;
+  }
 }
 
 module.exports = new TicketService();

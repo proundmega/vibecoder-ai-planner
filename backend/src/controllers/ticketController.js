@@ -2,6 +2,7 @@ const TicketService = require('../services/TicketService');
 const User = require('../models/user');
 const PermissionService = require('../services/PermissionService');
 const ApprovalService = require('../services/ApprovalService');
+ const MessageService = require('../services/MessageService');
 
 async function getTicket(req, res, next) {
   try {
@@ -122,6 +123,89 @@ async function changeStatus(req, res, next) {
   }
 }
 
+async function pickUpTicket(req, res, next) {
+  try {
+    const { ticketId } = req.params;
+    const agentId = req.user.userId;
+
+    const result = await TicketService.pickUpTicket(ticketId, agentId);
+    res.json({
+      success: true,
+      data: {
+        id: result.id,
+        title: result.title,
+        status: result.status,
+        assignedAgentId: result.assigned_agent_id,
+        lockedAt: result.locked_at,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function releaseTicket(req, res, next) {
+  try {
+    const { ticketId } = req.params;
+    const adminId = req.user.userId;
+
+    const result = await TicketService.releaseTicket(ticketId, adminId);
+    res.json({
+      success: true,
+      data: {
+        id: result.id,
+        title: result.title,
+        status: result.status,
+        assignedAgentId: result.assigned_agent_id,
+        lockedAt: result.locked_at,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getMessages(req, res, next) {
+  try {
+    const { ticketId } = req.params;
+    const limit = parseInt(req.query.limit) || 50;
+
+    const messages = await MessageService.getTicketMessages(ticketId, limit);
+    res.json({ success: true, data: messages });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function postMessage(req, res, next) {
+  try {
+    const { ticketId } = req.params;
+    const { messageType, content } = req.body;
+
+    if (!messageType || !content) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'messageType and content are required',
+        },
+      });
+    }
+
+    const message = await MessageService.postMessage(
+      ticketId,
+      req.user.userId,
+      messageType,
+      content,
+      req.body.metadata || {}
+    );
+
+    res.status(201).json({ success: true, data: message });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   getTicket,
   createTicket,
@@ -131,4 +215,8 @@ module.exports = {
   getTicketComments,
   addComment,
   changeStatus,
+  pickUpTicket,
+  releaseTicket,
+  getMessages,
+  postMessage,
 };
