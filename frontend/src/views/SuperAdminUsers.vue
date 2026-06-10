@@ -22,7 +22,7 @@ async function loadUsers() {
     if (statusFilter.value === 'active') filters.is_active = true
     if (statusFilter.value === 'inactive') filters.is_active = false
     const response = await listAllUsers(filters)
-    users.value = response || []
+    users.value = Array.isArray(response) ? response : (response?.users || [])
   } catch (err) {
     console.error('Failed to load users:', err)
     error.value = err.message || 'Failed to load users'

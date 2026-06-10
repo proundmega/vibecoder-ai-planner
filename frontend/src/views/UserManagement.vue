@@ -46,7 +46,7 @@ async function loadUsers() {
     if (roleFilter.value) filters.role = roleFilter.value
     if (searchQuery.value) filters.search = searchQuery.value
     const response = await listUsers(filters)
-    users.value = response || []
+    users.value = Array.isArray(response) ? response : (response?.users || [])
   } catch (err) {
     console.error('Failed to load users:', err)
     error.value = err.message || 'Failed to load users'
