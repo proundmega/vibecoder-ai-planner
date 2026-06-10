@@ -13,6 +13,7 @@ const SQL_FILES = [
   path.join(__dirname, './007_project_repos.sql'),
   path.join(__dirname, './008_ticket_repo_fields.sql'),
   path.join(__dirname, './009_project_providers.sql'),
+  path.join(__dirname, './010_project_credentials.sql'),
 ];
 
 function splitSQLStatements(sql) {
