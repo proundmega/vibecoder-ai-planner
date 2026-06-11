@@ -30,4 +30,16 @@ router.post('/:ticketId/comments', verifyToken, requireAnyPermission('TICKET_COM
 // Change ticket status
 router.post('/:ticketId/status', verifyToken, requireAnyPermission('TICKET_STATUS_CHANGE'), validate(statusTransitionSchema), ticketController.changeStatus);
 
+// Agent: pick up a ticket
+router.post('/:ticketId/pickup', verifyToken, ticketController.pickUpTicket);
+
+// Agent: release a ticket (admin only)
+router.post('/:ticketId/release', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), ticketController.releaseTicket);
+
+// Get messages for a ticket
+router.get('/:ticketId/messages', ticketController.getMessages);
+
+// Post a message on a ticket
+router.post('/:ticketId/messages', verifyToken, ticketController.postMessage);
+
 module.exports = router;
