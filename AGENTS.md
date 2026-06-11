@@ -21,12 +21,15 @@ cd ../frontend && npm run dev      # Vite on :3000, proxies /api → :3001
 ```
 backend/src/
   index.js              → Express entry, exports app (for tests)
-  controllers/          → Controllers (ticket, project, user)
-  api/routes.js         → All route mounting (/health, /auth, /projects, /tickets, /pricing, /agents)
-  api/{projects,tickets,agents,pricing,user}.js  → route modules
-  services/{Project,Ticket,Agent,User}Service.js  → business logic
+  controllers/          → Controllers (ticket, project, user, agent, credential, usage, billing, memory)
+  api/routes.js         → All route mounting (/health, /auth, /projects, /tickets, /agents, /credentials, /usage, /billing, /memory)
+  api/{projects,tickets,agents,pricing,user,credentials,usage,billing,memory}.js  → route modules
+  services/{Project,Ticket,Agent,User,Permission,Credential,UsageLogger,BillingService,MessageService,MemoryService}.js  → business logic
+  services/TicketService.js  → agent orchestration (pickUpTicket, releaseTicket, enforceOwnership, recoverOrphanedTickets)
   models/{user,project,ticket}.js  → DB models (soft delete, transaction support)
+  utils/pricing.js      → per-model pricing (Anthropic + OpenAI)
  middleware/auth.js     → verifyToken, agentAuth, rateLimiter, requireActiveUser
+   middleware/ticketOwnership.js → requireTicketOwnership, getTicket
    middleware/validate.js → Joi validation middleware
    middleware/errorHandler.js → Error handling middleware
    middleware/requestLogger.js → Request logging middleware
@@ -36,13 +39,16 @@ backend/src/
    db.js                  → pg Pool
    services/PermissionService.js → Permission resolution with in-memory cache
    api/permissions.js     → GET /api/permissions/:roleName
-   migrations/apply.js    → runs 001_create_tables.sql through 005_permission_system.sql
-frontend/src/
-  router/index.ts        → nested routes, localStorage-based auth guard
-  stores/auth.js         → Pinia store, tokens in localStorage (keys: vibecode_token, vibecode_user)
-  views/{Login,Register,ProjectList,ProjectDetail,TicketBoard,TicketDetail,AIAssistant}.vue
-   stores/auth.js         → Pinia store, tokens/permissions in localStorage
-   components/{TicketEditModal,UserModal}.vue
+   migrations/apply.js    → runs 001_create_tables.sql through 015_shared_agent_memory.sql
+ agent/                  → Java-based AI Agent (rs-18 Compute Profiles)
+   src/main/java/com/vibecode/agent/ → AgentApp, config, model, service packages
+   Dockerfile, docker-compose.yml, build.sh, .env.example
+ frontend/src/
+   router/index.ts        → nested routes, localStorage-based auth guard
+   stores/auth.js         → Pinia store, tokens in localStorage (keys: vibecode_token, vibecode_user)
+   views/{Login,Register,ProjectList,ProjectDetail,TicketBoard,TicketDetail,AIAssistant}.vue
+    stores/auth.js         → Pinia store, tokens/permissions in localStorage
+    components/{TicketEditModal,UserModal}.vue
 ```
 
 ## Commands
@@ -79,10 +85,16 @@ Covers: health check, user registration/login, project CRUD, ticket CRUD, all st
 
 ## Test Summary
 
-- **Backend unit tests**: 251 passing (9 suites)
+- **Backend unit tests**: 400 passing (26 suites)
 - **Backend integration tests**: 80 passing (Jest + curl Docker)
 - **Frontend**: lint passes, typecheck passes, build succeeds
-- **Total**: 393 tests passing, 0 failures
+- **Total**: 480 tests passing, 0 failures
+
+### Recent Feature Tests
+- **rs-19 Shared Agent Memory**: 30 tests (memoryService.test.js, memoryController.test.js)
+- **rs-17 Cost Tracking**: 20 tests (pricing.test.js, usageLogger.test.js, billingService.test.js, usageController.test.js, billingController.test.js)
+- **rs-16 Agent Orchestration**: 32 tests (messageService.test.js, ticket_ownership.test.js, ticket_ownership_controller.test.js)
+- **rs-15 Secure API Keys**: 16 tests (credentialService.test.js, credentialController.test.js)
 
 ## CI (`.github/workflows/ci.yml`)
 
@@ -115,7 +127,7 @@ backlog → in_progress → review → done
 Valid transitions: `backlog→in_progress`, `in_progress→review|backlog`, `review→done|backlog`. **`done` has no outgoing transitions** — cannot go back from done.
 
 ### Agent authentication
-Agents authenticate via `X-API-Key` header. The middleware in `middleware/auth.js` checks `apiKey.startsWith('test-')` or `apiKey === 'mock-agent-key'`. Agent endpoints in `api/agents.js` accept user JWT OR agent API key.
+Agents authenticate via `X-API-Key` header. The middleware in `middleware/auth.js` checks `apiKey.startsWith('test-')` or `apiKey === 'mock-agent-key'`. Agent endpoints in `api/agents.js` accept user JWT OR agent API key. Agents are users with `is_agent` boolean flag and `agent_roles` array (planner, worker, reviewer, approver) stored in the `users` table.
 
 ### Frontend auth persistence
 Token, user, and permissions stored in `localStorage` as `vibecode_token`, `vibecode_user`, and `vibecode_permissions`. Route guards in `router/index.ts` check `localStorage.getItem('vibecode_token')` — no Pinia dependency. Auth store exposes permission helpers: `canCreateTicket()`, `canDeleteTicket()`, `canUpdateTicket()`, `canCreateUser()`, `canDeleteUser()`, `canToggleUser()`, `canAccessUsers()`, etc.
@@ -149,7 +161,7 @@ Replaced scattered role checks with granular, database-driven permissions. Roles
 **Frontend** fetches permissions on login/register, renders permission-based UI visibility.
 
 ### Database
-PostgreSQL 15 in Docker, database `vibecode`. Migrations are ad-hoc SQL files executed sequentially — no migration tracking. `apply.js` runs `001_create_tables.sql`, `002_agents_schema.sql`, `003_role_system.sql`, `004_persistence_layer.sql`, and `005_permission_system.sql`.
+PostgreSQL 15 in Docker, database `vibecode`. Migrations are ad-hoc SQL files executed sequentially — no migration tracking. `apply.js` runs `001_create_tables.sql`, `002_agents_schema.sql`, `003_role_system.sql`, `004_persistence_layer.sql`, `005_permission_system.sql`, `006_project_persistence.sql`, `007_user_roles.sql`, `008_agent_persistence.sql`, `009_agent_profiles.sql`, `010_project_credentials.sql`, `011_ticket_ownership.sql`, `012_agent_users.sql`, `013_usage_logs.sql`, `014_project_billing.sql`, and `015_shared_agent_memory.sql`.
 
 ### Port mapping
 - **With override** (`docker-compose.override.yml` active): frontend `3000:80` (nginx serving built SPA)
@@ -192,3 +204,64 @@ The `migrate` service runs first (applies SQL migrations), then `api` starts (de
 - Plan 80% of effort before coding
 - Add unit tests to all changes
 - For breaking changes: create a branch, commit state, then change
+
+### Ticket ownership & Agent orchestration (rs-16)
+Single-agent ticket lock with status-based workflow. Tickets have `assigned_agent_id` and `locked_at` columns. Agents can pick up available tickets, release them, and coordinate via `ticket_messages` table. Stale tickets (locked beyond timeout) can be recovered by other agents.
+
+**Key files**:
+- `backend/src/migrations/011_ticket_ownership.sql` — ticket ownership columns + ticket_messages table
+- `backend/src/migrations/012_agent_users.sql` — is_agent flag + agent_roles on users table
+- `backend/src/services/MessageService.js` — postMessage, getTicketMessages, getUnreadMessages
+- `backend/src/services/TicketService.js` — pickUpTicket, releaseTicket, enforceOwnership, recoverOrphanedTickets
+- `backend/src/middleware/ticketOwnership.js` — requireTicketOwnership middleware
+- `backend/src/controllers/ticketController.js` — agent orchestration endpoints
+- `backend/src/api/tickets.js` — POST /:ticketId/pickup, POST /:ticketId/release, GET/POST /:ticketId/messages
+
+### Secure API Keys (rs-15)
+Project credentials (API keys, GitHub PATs) stored encrypted with AES-256-GCM in `project_credentials` table. Keys are masked in API responses (last 4 chars visible). Project admins can add, list, update, delete, rotate, and decrypt keys.
+
+**Key files**:
+- `backend/src/migrations/010_project_credentials.sql` — project_credentials table with encrypted storage
+- `backend/src/services/CredentialService.js` — CRUD + rotate + decrypt operations
+- `backend/src/controllers/credentialController.js` — 6 credential endpoints
+- `backend/src/api/credentials.js` — routes under /credentials
+
+### Cost Tracking (rs-17)
+Per-model pricing for Anthropic (4 models) and OpenAI (5 models) with configurable fallback. Usage logs track provider, model, tokens, cost, duration per request. Daily billing aggregation for project admins.
+
+**Key files**:
+- `backend/src/utils/pricing.js` — per-model pricing
+- `backend/src/migrations/013_usage_logs.sql` — usage_logs table
+- `backend/src/migrations/014_project_billing.sql` — project_billing table (monthly aggregation)
+- `backend/src/services/UsageLogger.js` — log(), getProjectUsage(), getUserUsage(), getTotalUsage()
+- `backend/src/services/BillingService.js` — aggregateDailyBilling(), getProjectBilling(), getUserBilling()
+- `backend/src/controllers/usageController.js` — project/user usage, model pricing
+- `backend/src/controllers/billingController.js` — project/user billing
+- `backend/src/api/usage.js` — routes under /usage
+- `backend/src/api/billing.js` — routes under /billing
+
+### Shared Agent Memory (rs-19)
+Agents share context via `agent_memory` table with pgvector extension. HNSW index enables fast semantic search. OpenAI-compatible embeddings (text-embedding-3-small) for vector generation. Memory is scoped to projects and individual agents.
+
+**Key files**:
+- `backend/src/migrations/015_shared_agent_memory.sql` — agent_memory table with pgvector + HNSW index
+- `backend/src/services/MemoryService.js` — addMemory, getMemory, searchSimilar, updateMemory, deleteMemory
+- `backend/src/controllers/memoryController.js` — 7 memory endpoints
+- `backend/src/api/memory.js` — routes under /memory (project/agent scoped, semantic search)
+
+### Java Agent Application (rs-18)
+Self-contained Java 17 Maven project for compute nodes. Agents poll for tickets, use AI providers (Claude/OpenAI) to generate code, create Git branches/PRs, and update ticket status. Docker containers with self-registration and heartbeat.
+
+**Key files**:
+- `agent/pom.xml` — Maven config (Java 17, OkHttp, Jackson, JUnit 5)
+- `agent/src/main/java/com/vibecode/agent/AgentApp.java` — Main entry with polling loop
+- `agent/src/main/java/com/vibecode/agent/service/TicketProcessor.java` — Core orchestration
+- `agent/src/main/java/com/vibecode/agent/service/AiProvider.java` — Provider interface
+- `agent/src/main/java/com/vibecode/agent/service/ClaudeProvider.java` — Claude/Anthropic implementation
+- `agent/src/main/java/com/vibecode/agent/service/OpenAiProvider.java` — OpenAI implementation
+- `agent/src/main/java/com/vibecode/agent/service/GitHubService.java` — GitHub REST API client
+- `agent/src/main/java/com/vibecode/agent/config/AgentConfig.java` — Env var config loader
+- `agent/Dockerfile` — Multi-stage build
+- `agent/docker-compose.yml` — Agent service definition
+- `agent/build.sh` — Build script (auto-install Java/Maven, compile, test)
+- `agent/.env.example` — Environment variable template
