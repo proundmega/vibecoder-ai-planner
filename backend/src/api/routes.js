@@ -32,6 +32,7 @@ const providersRouter = require('./providers');
 const credentialsRouter = require('./credentials');
 const usageRouter = require('./usage');
 const billingRouter = require('./billing');
+const memoryRouter = require('./memory');
 
 // Health check
 router.get('/health', async (req, res) => {
@@ -141,5 +142,6 @@ router.use('/providers', verifyToken, providersRouter);
 router.use('/credentials', verifyToken, credentialsRouter);
 router.use('/usage', verifyToken, usageRouter);
 router.use('/billing', verifyToken, billingRouter);
+router.use('/memory', verifyToken, memoryRouter);
 
 module.exports = router;
