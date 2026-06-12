@@ -265,3 +265,18 @@ Self-contained Java 17 Maven project for compute nodes. Agents poll for tickets,
 - `agent/docker-compose.yml` — Agent service definition
 - `agent/build.sh` — Build script (auto-install Java/Maven, compile, test)
 - `agent/.env.example` — Environment variable template
+
+### Frontend Unit Tests — ✅ COMPLETED (98 tests, 5 files)
+
+Frontend now has **98 Vitest unit tests** across 5 files, covering all pure logic functions.
+
+**Test files** (all in `frontend/src/__tests__/`):
+1. `client.test.js` — 14 tests for HTTP client wrapper (fetch, headers, 401 handling)
+2. `auth.test.js` — 12 tests for register/login response extraction
+3. `agents.test.js` — 12 tests for agent API endpoints and HTTP methods
+4. `tickets.test.js` — 16 tests for ticket CRUD and error propagation
+5. `auth-store.test.js` — 44 tests for Pinia store (state, permissions, sync)
+
+**Pattern**: `frontend/src/__tests__/<module>.test.js` mirroring backend convention.
+
+**See**: `ARCHITECT/frontend-unit-tests.md` for the detailed plan.

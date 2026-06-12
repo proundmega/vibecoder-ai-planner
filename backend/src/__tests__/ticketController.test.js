@@ -21,6 +21,7 @@ describe('Ticket Controller', () => {
     mockReq = {
       params: {},
       body: {},
+      query: {},
       user: { userId: 'test-user-id', role: 'project_admin' },
     };
   });

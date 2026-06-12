@@ -2,7 +2,7 @@ import { get, post, postWithHeaders } from './client'
 
 export function createTicket(projectId, title, description, apiKey = null) {
   const headers = apiKey ? { 'x-api-key': apiKey } : {}
-  return postWithHeaders('/api/agents/agents/create', { projectId, title, description }, headers)
+  return postWithHeaders('/api/agents/tickets/create', { projectId, title, description }, headers)
 }
 
 export function updateTicket(ticketId, updates, apiKey = null) {
@@ -21,8 +21,8 @@ export function changeTicketStatus(ticketId, status, apiKey = null) {
 }
 
 export function getAgentTickets(projectId, apiKey = null) {
-  const headers = apiKey ? { 'x-api-key': apiKey } : {}
-  return postWithHeaders(`/api/agents/agents/tickets/my-tasks/${projectId}`, {}, headers)
+  const options = apiKey ? { headers: { 'x-api-key': apiKey } } : {}
+  return get(`/api/agents/agents/tickets/my-tasks/${projectId}`, options)
 }
 
 export function getAgentKeyInfo(agentId) {
@@ -38,6 +38,6 @@ export function listAgents() {
 }
 
 export function getAgentHistory(agentId, apiKey = null) {
-  const headers = apiKey ? { 'x-api-key': apiKey } : {}
-  return postWithHeaders(`/api/agents/agents/${agentId}/history`, {}, headers)
+  const options = apiKey ? { headers: { 'x-api-key': apiKey } } : {}
+  return get(`/api/agents/agents/${agentId}/history`, options)
 }

@@ -17,7 +17,7 @@ export function createTicket(projectId, title, description) {
 }
 
 export function deleteTicket(id) {
-  return del(`/api/tickets/${id}`).catch(() => false)
+  return del(`/api/tickets/${id}`)
 }
 
 export function fetchComments(ticketId) {

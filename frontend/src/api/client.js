@@ -31,8 +31,8 @@ function extractData(response) {
   return response.json().then(data => data.data !== undefined ? data.data : data)
 }
 
-export function get(url) {
-  return apiFetch(url).then(extractData)
+export function get(url, options = {}) {
+  return apiFetch(url, options).then(extractData)
 }
 
 export function post(url, body) {

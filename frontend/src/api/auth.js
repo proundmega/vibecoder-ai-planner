@@ -6,9 +6,10 @@ export async function registerUser(name, email, password) {
   })
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Registration failed' }))
-    throw new Error(error.error || 'Registration failed')
+    throw new Error(error.error || error.message || 'Registration failed')
   }
-  return response.json()
+  const data = await response.json()
+  return data.success ? data.data : data
 }
 
 export async function loginUser(email, password) {
@@ -19,9 +20,10 @@ export async function loginUser(email, password) {
   })
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Login failed' }))
-    throw new Error(error.error || 'Login failed')
+    throw new Error(error.error || error.message || 'Login failed')
   }
-  return response.json()
+  const data = await response.json()
+  return data.success ? data.data : data
 }
 
 export async function getCurrentUser(token) {
