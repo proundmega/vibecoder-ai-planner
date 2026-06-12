@@ -266,9 +266,9 @@ Self-contained Java 17 Maven project for compute nodes. Agents poll for tickets,
 - `agent/build.sh` — Build script (auto-install Java/Maven, compile, test)
 - `agent/.env.example` — Environment variable template
 
-### Frontend Unit Tests — ✅ COMPLETED (98 tests, 5 files)
+### Frontend Unit Tests — ✅ COMPLETED (132 tests, 8 files)
 
-Frontend now has **98 Vitest unit tests** across 5 files, covering all pure logic functions.
+Frontend now has **132 Vitest unit tests** across 8 files, covering all pure logic functions.
 
 **Test files** (all in `frontend/src/__tests__/`):
 1. `client.test.js` — 14 tests for HTTP client wrapper (fetch, headers, 401 handling)
@@ -276,6 +276,9 @@ Frontend now has **98 Vitest unit tests** across 5 files, covering all pure logi
 3. `agents.test.js` — 12 tests for agent API endpoints and HTTP methods
 4. `tickets.test.js` — 16 tests for ticket CRUD and error propagation
 5. `auth-store.test.js` — 44 tests for Pinia store (state, permissions, sync)
+6. `projects.test.js` — 11 tests for project CRUD operations
+7. `users.test.js` — 18 tests for user management API (list, create, update, toggle, delete)
+8. `approvals.test.js` — 5 tests for approval workflow endpoints
 
 **Pattern**: `frontend/src/__tests__/<module>.test.js` mirroring backend convention.
 
