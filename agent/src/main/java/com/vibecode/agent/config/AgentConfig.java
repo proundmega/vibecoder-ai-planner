@@ -68,7 +68,7 @@ public class AgentConfig {
         return backendUrl.endsWith("/") ? backendUrl + "api" : backendUrl + "/api";
     }
 
-    public String getGitHubBranchName(int ticketId, String ticketTitle) {
+    public String getGitHubBranchName(Long ticketId, String ticketTitle) {
         String slug = ticketTitle.toLowerCase()
             .replaceAll("[^a-z0-9]+", "-")
             .replaceAll("^-|-$", "")

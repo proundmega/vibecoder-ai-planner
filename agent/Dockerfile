@@ -11,8 +11,8 @@ FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
 
-# Copy the shaded JAR from the build stage
-COPY --from=build /app/target/*.jar agent.jar
+# Copy the shaded JAR from the build stage (maven-shade-plugin creates artifactId-version.jar)
+COPY --from=build /app/target/agent-1.0.0.jar agent.jar
 
 # Create a non-root user
 RUN addgroup -S agent && adduser -S agent -G agent

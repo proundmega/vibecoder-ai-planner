@@ -1,5 +1,6 @@
 package com.vibecode.agent.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.LocalDateTime;
@@ -7,6 +8,7 @@ import java.time.LocalDateTime;
 /**
  * A message posted on a ticket for agent coordination.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class TicketMessage {
     private Long id;
     private Long ticketId;
@@ -15,7 +17,6 @@ public class TicketMessage {
     private String userName;
     @JsonProperty("user_email")
     private String userEmail;
-    @JsonProperty("message_type")
     private String messageType;
     private String content;
     private LocalDateTime createdAt;

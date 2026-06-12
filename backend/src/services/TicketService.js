@@ -121,7 +121,7 @@ class TicketService {
     return await Ticket.addComment(ticketId, content.trim(), userId);
   }
 
-  static async getAgentTickets(agentId, projectId) {
+  async getAgentTickets(agentId, projectId) {
     const { pool } = require('../db');
     // For non-user agents, get tickets in their owner's projects
     const result = await pool.query(
@@ -142,7 +142,7 @@ class TicketService {
     return result.rows;
   }
 
-  static async pickUpTicket(ticketId, agentId) {
+  async pickUpTicket(ticketId, agentId) {
     const { pool } = require('../db');
 
     const ticketResult = await pool.query(
@@ -179,7 +179,7 @@ class TicketService {
     return result.rows[0];
   }
 
-  static async releaseTicket(ticketId, adminId) {
+  async releaseTicket(ticketId, adminId) {
     const { pool } = require('../db');
 
     const ticketResult = await pool.query(
@@ -207,7 +207,7 @@ class TicketService {
     return result.rows[0];
   }
 
-  static async enforceOwnership(ticketId, userId) {
+  async enforceOwnership(ticketId, userId) {
     const { pool } = require('../db');
 
     const result = await pool.query(
@@ -228,7 +228,7 @@ class TicketService {
     return ticket;
   }
 
-  static async recoverOrphanedTickets(staleMinutes = 60) {
+  async recoverOrphanedTickets(staleMinutes = 60) {
     const { pool } = require('../db');
 
     const result = await pool.query(

@@ -4,7 +4,7 @@ const auth = require('../auth');
 const User = require('../models/user');
 
 // Middleware
-const { verifyToken, agentAuth, rateLimiter, trackAgentAction } = require('../middleware/auth');
+const { verifyToken, verifyTokenOrAgent, agentAuth, rateLimiter, trackAgentAction } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { registerSchema, loginSchema } = require('../validators/auth');
 
@@ -132,7 +132,7 @@ router.get('/auth/me', verifyToken, async (req, res) => {
 // Authenticated routes
 router.use('/users', verifyToken, usersManagementRouter);
 router.use('/projects', verifyToken, projectsRouter);
-router.use('/tickets', verifyToken, ticketsRouter);
+router.use('/tickets', verifyTokenOrAgent, ticketsRouter);
 router.use('/pricing', verifyToken, pricingRouter);
 router.use('/agents', verifyToken, agentsRouter);
 router.use('/approvals', verifyToken, approvalsRouter);

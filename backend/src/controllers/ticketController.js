@@ -65,7 +65,12 @@ async function deleteTicket(req, res, next) {
 
 async function getProjectTickets(req, res, next) {
   try {
-    const tickets = await TicketService.findByProject(req.params.projectId, req.user.userId);
+    let tickets;
+    if (req.query.status) {
+      tickets = await TicketService.findByStatus(req.params.projectId, req.query.status, req.user.userId);
+    } else {
+      tickets = await TicketService.findByProject(req.params.projectId, req.user.userId);
+    }
     res.json({ success: true, data: tickets });
   } catch (error) {
     next(error);

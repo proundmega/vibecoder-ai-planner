@@ -49,9 +49,14 @@ public class TicketProcessor {
         log.info("Ticket {} picked up, status: {}", ticket.getId(), pickedUp.getStatus());
 
         try {
-            // Step 2: Generate code/plan using AI
-            String generatedContent = generateContent(pickedUp);
-            log.info("AI generated content for ticket {}", ticket.getId());
+            // Step 2: Generate code/plan using AI (skip in dry run)
+            String generatedContent = null;
+            if (!config.isDryRun()) {
+                generatedContent = generateContent(pickedUp);
+                log.info("AI generated content for ticket {}", ticket.getId());
+            } else {
+                log.info("[DRY RUN] Would generate content for ticket {}", ticket.getId());
+            }
 
             // Step 3: Create GitHub branch
             String branchName = config.getGitHubBranchName(pickedUp.getId(), pickedUp.getTitle());

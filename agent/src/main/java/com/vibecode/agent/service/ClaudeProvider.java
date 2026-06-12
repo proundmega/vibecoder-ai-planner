@@ -46,7 +46,7 @@ public class ClaudeProvider implements AiProvider {
 
         // Build the messages array
         java.util.List<java.util.Map<String, Object>> messages = new java.util.ArrayList<>();
-        java.util.Map<String, String> msg = new java.util.HashMap<>();
+        java.util.Map<String, Object> msg = new java.util.HashMap<>();
         msg.put("role", "user");
         msg.put("content", userMessage);
         messages.add(msg);

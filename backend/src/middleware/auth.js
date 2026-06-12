@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const authService = require('../auth');
 const { pool } = require('../db');
+const AgentService = require('../services/AgentService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
 
@@ -62,23 +63,77 @@ exports.agentAuth = (req, res, next) => {
       return res.status(401).json({ error: 'Missing API key' });
     }
 
-    // Mock validation
-    if (!apiKey.startsWith('test-') && !apiKey === 'mock-agent-key') {
-      return res.status(401).json({ error: 'Invalid API key' });
+    // Mock validation for test keys
+    if (apiKey.startsWith('test-') || apiKey === 'mock-agent-key') {
+      req.agent = {
+        id: 'mock-agent-1',
+        name: 'GitHub PR Bot',
+        rateLimitCount: req.rateLimitCount || 0
+      };
+      req.rateLimitCount = (req.agent.rateLimitCount || 0) + 1;
+      return next();
     }
 
-    req.agent = {
-      id: 'mock-agent-1',
-      name: 'GitHub PR Bot',
-      rateLimitCount: req.rateLimitCount || 0
-    };
-    req.rateLimitCount = (req.agent.rateLimitCount || 0) + 1;
-    
-    next();
+    // Real agent lookup from database
+    AgentService.getAgentByApiKey(apiKey)
+      .then(agent => {
+        if (!agent) {
+          return res.status(401).json({ error: 'Invalid API key' });
+        }
+        req.agent = agent;
+        next();
+      })
+      .catch(() => res.status(401).json({ error: 'Invalid agent credentials' }));
   } catch (error) {
     console.error('agentAuth:', error);
     return res.status(401).json({ error: 'Invalid agent credentials' });
   }
+};
+
+// Combined auth: accepts either JWT token or agent API key
+exports.verifyTokenOrAgent = (req, res, next) => {
+  // Try JWT first
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+    return exports.verifyToken(req, res, next);
+  }
+  
+  // Fall back to agent API key
+  const apiKey = req.headers['x-api-key'];
+  if (!apiKey) {
+    return res.status(401).json({ error: 'Missing authentication token' });
+  }
+
+  // Mock validation for test keys
+  if (apiKey.startsWith('test-') || apiKey === 'mock-agent-key') {
+    req.agent = {
+      id: 'mock-agent-1',
+      name: 'GitHub PR Bot',
+    };
+    req.user = {
+      userId: req.agent.id,
+      id: req.agent.id,
+      email: 'agent@vibecode.local',
+      role: 'member',
+    };
+    return next();
+  }
+
+  // Real agent lookup from database
+  AgentService.getAgentByApiKey(apiKey)
+    .then(agent => {
+      if (!agent) {
+        return res.status(401).json({ error: 'Invalid API key' });
+      }
+      req.agent = agent;
+      req.user = {
+        userId: agent.id,
+        id: agent.id,
+        email: agent.email || 'agent@vibecode.local',
+        role: agent.role || 'member',
+      };
+      next();
+    })
+    .catch(() => res.status(401).json({ error: 'Invalid agent credentials' }));
 };
 
 // Rate limiting middleware

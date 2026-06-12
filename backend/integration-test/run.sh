@@ -36,7 +36,7 @@ wait_for_api() {
 clean_db() {
   echo "Cleaning database..."
   sudo docker exec vibecode-postgres psql -U postgres -d vibecode \
-    -c "DELETE FROM tickets CASCADE; DELETE FROM agent_actions CASCADE; DELETE FROM ai_actions CASCADE; DELETE FROM projects CASCADE; DELETE FROM users CASCADE;" 2>/dev/null || true
+    -c "DELETE FROM agent_memory CASCADE; DELETE FROM usage_logs CASCADE; DELETE FROM project_billing CASCADE; DELETE FROM project_credentials CASCADE; DELETE FROM ticket_messages CASCADE; DELETE FROM tickets CASCADE; DELETE FROM agent_actions CASCADE; DELETE FROM ai_actions CASCADE; DELETE FROM projects CASCADE; DELETE FROM users CASCADE;" 2>/dev/null || true
 }
 
 # Register a new user and return the token
@@ -916,6 +916,342 @@ test_ticket_crud_via_frontend_endpoint() {
   assert_status "Deleted ticket returns 404" "404" "$code"
 }
 
+test_credentials() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Secure API Keys (rs-15)"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  local token
+  token=$(login "alice@integration.test" "password123")
+
+  # Create a project
+  local proj_id
+  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Credentials Test Project","description":""}' \
+    | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Unauthenticated access
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/projects/$proj_id/credentials")
+  assert_status "Credentials without auth returns 401" "401" "$code"
+
+  # Add a credential
+  local cred_body
+  cred_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/credentials" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Test API Key","type":"api_key","value":"sk-test-secret-key-12345"}')
+  assert_has_field "Add credential returns id" "id" "$cred_body"
+  assert_field "Credential name preserved" "name" "Test API Key" "$(echo "$cred_body" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)"
+  assert_field "Credential type preserved" "type" "api_key" "$(echo "$cred_body" | grep -o '"type":"[^"]*"' | cut -d'"' -f4)"
+
+  local cred_id
+  cred_id=$(echo "$cred_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Verify key is masked in response
+  if echo "$cred_body" | grep -q '"keyMasked"'; then
+    pass "Credential response includes keyMasked field"
+  else
+    fail "Credentials" "missing keyMasked field"
+  fi
+
+  # List credentials
+  local list_body
+  list_body=$(curl -sf "$BASE/api/projects/$proj_id/credentials" \
+    -H "Authorization: Bearer $token")
+  assert_has_field "List credentials returns array" "credentials" "$list_body"
+
+  # Add another credential
+  curl -sf -X POST "$BASE/api/projects/$proj_id/credentials" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"GitHub PAT","type":"github_pat","value":"ghp_test_pat_abc123xyz"}' >/dev/null 2>&1
+
+  # Update credential
+  local update_body
+  update_body=$(curl -sf -X PATCH "$BASE/api/projects/$proj_id/credentials/$cred_id" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Updated API Key"}')
+  assert_field "Update credential name" "name" "Updated API Key" "$(echo "$update_body" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)"
+
+  # Rotate credential
+  local rotate_body
+  rotate_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/credentials/$cred_id/rotate" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"newValue":"sk-rotated-key-67890"}')
+  assert_has_field "Rotate credential returns new key" "decryptedKey" "$rotate_body"
+
+  # Decrypt key
+  local decrypt_body
+  decrypt_body=$(curl -sf "$BASE/api/projects/$proj_id/credentials/decrypt" \
+    -H "Authorization: Bearer $token")
+  if echo "$decrypt_body" | grep -q '"decryptedKey"'; then
+    pass "Decrypt returns decrypted key"
+  else
+    fail "Credentials decrypt" "missing decryptedKey"
+  fi
+
+  # Delete credential
+  local delete_code
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/projects/$proj_id/credentials/$cred_id" \
+    -H "Authorization: Bearer $token")
+  assert_status "Delete credential" "200" "$delete_code"
+}
+
+test_ticket_ownership() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Ticket Ownership & Agent Orchestration (rs-16)"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  local token
+  token=$(login "alice@integration.test" "password123")
+
+  # Create a project
+  local proj_id
+  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Ownership Test Project","description":""}' \
+    | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Create a ticket
+  local ticket_body
+  ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"title":"Ownership ticket","description":"Test ticket ownership"}')
+  local ticket_id
+  ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Verify ticket has no assigned_agent_id initially
+  local agent_id
+  agent_id=$(echo "$ticket_body" | grep -o '"assignedAgentId":"[^"]*"' | cut -d'"' -f4 || echo "")
+  if [ -z "$agent_id" ]; then
+    pass "New ticket has no assigned_agent_id"
+  else
+    fail "Ticket ownership" "expected no assigned_agent_id, got $agent_id"
+  fi
+
+  # Create an agent user
+  local agent_body
+  agent_body=$(curl -sf -X POST "$BASE/api/users" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Test Agent","email":"agent@integration.test","password":"password123","role":"member","is_agent":true,"agent_roles":["worker"]}')
+  local agent_user_id
+  agent_user_id=$(echo "$agent_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Agent picks up ticket
+  local pickup_body
+  pickup_body=$(curl -sf -X POST "$BASE/api/tickets/$ticket_id/pickup" \
+    -H "Authorization: Bearer $token")
+  assert_field "Pickup assigns agent" "assignedAgentId" "$agent_user_id" "$(echo "$pickup_body" | grep -o '"assignedAgentId":"[^"]*"' | cut -d'"' -f4)"
+  assert_field "Pickup sets status to in_progress" "status" "in_progress" "$(echo "$pickup_body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)"
+
+  # Post a message on the ticket
+  local msg_body
+  msg_body=$(curl -sf -X POST "$BASE/api/tickets/$ticket_id/messages" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"content":"Agent started working on this ticket","senderId":"'"$agent_user_id"'"}')
+  assert_has_field "Post message returns id" "id" "$msg_body"
+  assert_field "Message content preserved" "content" "Agent started working on this ticket" "$(echo "$msg_body" | grep -o '"content":"[^"]*"' | cut -d'"' -f4)"
+
+  # Get messages
+  local msgs_body
+  msgs_body=$(curl -sf "$BASE/api/tickets/$ticket_id/messages" \
+    -H "Authorization: Bearer $token")
+  assert_has_field "Get messages returns array" "messages" "$msgs_body"
+
+  # Release ticket (admin only)
+  local release_body
+  release_body=$(curl -sf -X POST "$BASE/api/tickets/$ticket_id/release" \
+    -H "Authorization: Bearer $token")
+  assert_field "Release clears agent assignment" "assignedAgentId" "" "$(echo "$release_body" | grep -o '"assignedAgentId":"[^"]*"' | cut -d'"' -f4 || echo '')"
+
+  # Verify ticket is back to backlog
+  local single_body
+  single_body=$(curl -sf "$BASE/api/tickets/$ticket_id" \
+    -H "Authorization: Bearer $token")
+  assert_field "Released ticket status is backlog" "status" "backlog" "$(echo "$single_body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)"
+}
+
+test_usage_tracking() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Usage Tracking & Cost Logging (rs-17)"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  local token
+  token=$(login "alice@integration.test" "password123")
+
+  # Create a project
+  local proj_id
+  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Usage Test Project","description":""}' \
+    | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Get model pricing
+  local pricing_body
+  pricing_body=$(curl -sf "$BASE/api/usage/pricing/models" \
+    -H "Authorization: Bearer $token")
+  assert_has_field "Model pricing returns models" "models" "$pricing_body"
+
+  # Check that Claude models are in pricing
+  if echo "$pricing_body" | grep -q '"claude"'; then
+    pass "Pricing includes Claude models"
+  else
+    fail "Usage pricing" "Claude models not found"
+  fi
+
+  # Check that OpenAI models are in pricing
+  if echo "$pricing_body" | grep -q '"gpt-4"'; then
+    pass "Pricing includes OpenAI models"
+  else
+    fail "Usage pricing" "OpenAI models not found"
+  fi
+
+  # Get project usage (will be empty initially)
+  local usage_body
+  usage_body=$(curl -sf "$BASE/api/usage/projects/$proj_id/usage" \
+    -H "Authorization: Bearer $token")
+  assert_has_field "Project usage returns data" "usage" "$usage_body"
+
+  # Get user usage
+  local user_usage_body
+  user_usage_body=$(curl -sf "$BASE/api/usage/users/me/usage" \
+    -H "Authorization: Bearer $token")
+  assert_has_field "User usage returns data" "usage" "$user_usage_body"
+}
+
+test_billing() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Billing Aggregation (rs-17)"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  local token
+  token=$(login "alice@integration.test" "password123")
+
+  # Create a project
+  local proj_id
+  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Billing Test Project","description":""}' \
+    | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Get project billing (will be empty initially)
+  local billing_body
+  billing_body=$(curl -sf "$BASE/api/billing/projects/$proj_id/billing" \
+    -H "Authorization: Bearer $token")
+  assert_has_field "Project billing returns data" "billing" "$billing_body"
+
+  # Get user billing
+  local user_billing_body
+  user_billing_body=$(curl -sf "$BASE/api/billing/users/me/billing" \
+    -H "Authorization: Bearer $token")
+  assert_has_field "User billing returns data" "billing" "$user_billing_body"
+}
+
+test_shared_agent_memory() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Shared Agent Memory (rs-19)"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  local token
+  token=$(login "alice@integration.test" "password123")
+
+  # Create a project
+  local proj_id
+  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Memory Test Project","description":""}' \
+    | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Create an agent user
+  local agent_body
+  agent_body=$(curl -sf -X POST "$BASE/api/users" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Memory Agent","email":"memory_agent@integration.test","password":"password123","role":"member","is_agent":true,"agent_roles":["worker"]}')
+  local agent_id
+  agent_id=$(echo "$agent_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # Unauthenticated access
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/memory/project/$proj_id")
+  assert_status "Memory without auth returns 401" "401" "$code"
+
+  # Add memory to project
+  local mem_body
+  mem_body=$(curl -sf -X POST "$BASE/api/memory/project/$proj_id" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"content":"The system uses PostgreSQL for data storage","metadata":{"source":"architecture","tags":["database","postgresql"]}}')
+  assert_has_field "Add memory returns id" "id" "$mem_body"
+  assert_field "Memory content preserved" "content" "The system uses PostgreSQL for data storage" "$(echo "$mem_body" | grep -o '"content":"[^"]*"' | cut -d'"' -f4)"
+
+  local mem_id
+  mem_id=$(echo "$mem_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  # List project memories
+  local list_body
+  list_body=$(curl -sf "$BASE/api/memory/project/$proj_id" \
+    -H "Authorization: Bearer $token")
+  assert_has_field "List project memories returns array" "memories" "$list_body"
+
+  # Get specific memory
+  local single_body
+  single_body=$(curl -sf "$BASE/api/memory/$mem_id" \
+    -H "Authorization: Bearer $token")
+  assert_field "Get memory by id" "content" "The system uses PostgreSQL for data storage" "$(echo "$single_body" | grep -o '"content":"[^"]*"' | cut -d'"' -f4)"
+
+  # Add another memory
+  curl -sf -X POST "$BASE/api/memory/project/$proj_id" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"content":"The project uses pgvector for semantic search","metadata":{"source":"architecture","tags":["vector","search"]}}' >/dev/null 2>&1
+
+  # Search memories
+  local search_body
+  search_body=$(curl -sf "$BASE/api/memory/project/$proj_id/search" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"query":"database storage"}')
+  assert_has_field "Search returns results" "results" "$search_body"
+
+  # Update memory
+  local update_body
+  update_body=$(curl -sf -X PUT "$BASE/api/memory/$mem_id" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"content":"The system uses PostgreSQL with pgvector extension"}')
+  assert_field "Update memory content" "content" "The system uses PostgreSQL with pgvector extension" "$(echo "$update_body" | grep -o '"content":"[^"]*"' | cut -d'"' -f4)"
+
+  # List agent memories
+  local agent_mem_body
+  agent_mem_body=$(curl -sf "$BASE/api/memory/agent/$agent_id" \
+    -H "Authorization: Bearer $token")
+  assert_has_field "List agent memories returns array" "memories" "$agent_mem_body"
+
+  # Delete memory
+  local delete_code
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/memory/$mem_id" \
+    -H "Authorization: Bearer $token")
+  assert_status "Delete memory" "200" "$delete_code"
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
@@ -975,6 +1311,11 @@ main() {
   test_role_based_ticket_permissions
   test_approvals_api
   test_jwt_token_expiry
+  test_credentials
+  test_ticket_ownership
+  test_usage_tracking
+  test_billing
+  test_shared_agent_memory
   test_frontend
 
   echo ""

@@ -2,6 +2,7 @@ package com.vibecode.agent.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.vibecode.agent.config.AgentConfig;
 import com.vibecode.agent.model.ApiResponse;
 import com.vibecode.agent.model.Ticket;
@@ -28,6 +29,7 @@ public class ApiService {
         this.config = config;
         this.baseUrl = config.getApiUrl();
         this.objectMapper = new ObjectMapper();
+        this.objectMapper.registerModule(new JavaTimeModule());
         this.httpClient = new OkHttpClient.Builder()
             .connectTimeout(java.time.Duration.ofSeconds(10))
             .readTimeout(java.time.Duration.ofSeconds(30))
@@ -39,7 +41,7 @@ public class ApiService {
      * List available backlog tickets for the project.
      */
     public List<Ticket> listBacklogTickets() throws IOException {
-        String url = baseUrl + "/projects/" + config.getProjectId() + "/tickets?status=backlog";
+        String url = baseUrl + "/tickets/project/" + config.getProjectId() + "?status=backlog";
         ApiResponse<List<Ticket>> response = executeGet(url, new TypeReference<ApiResponse<List<Ticket>>>() {});
         
         if (response.hasError()) {
@@ -83,7 +85,7 @@ public class ApiService {
     public Ticket updateTicketStatus(Long ticketId, String newStatus) throws IOException {
         String url = baseUrl + "/tickets/" + ticketId;
         Map<String, String> body = Map.of("status", newStatus);
-        ApiResponse<Ticket> response = executePatch(url, body, new TypeReference<ApiResponse<Ticket>>() {});
+        ApiResponse<Ticket> response = executePut(url, body, new TypeReference<ApiResponse<Ticket>>() {});
         
         if (response.hasError()) {
             throw new IOException("Failed to update ticket status: " + response.getError());
@@ -141,7 +143,7 @@ public class ApiService {
     private <T> ApiResponse<T> executeGet(String url, TypeReference<ApiResponse<T>> typeRef) throws IOException {
         Request request = new Request.Builder()
             .url(url)
-            .header("Authorization", "Bearer " + config.getAgentApiKey())
+            .header("X-API-Key", config.getAgentApiKey())
             .get()
             .build();
 
@@ -157,7 +159,7 @@ public class ApiService {
 
         Request request = new Request.Builder()
             .url(url)
-            .header("Authorization", "Bearer " + config.getAgentApiKey())
+            .header("X-API-Key", config.getAgentApiKey())
             .header("Content-Type", "application/json")
             .post(requestBody)
             .build();
@@ -174,9 +176,26 @@ public class ApiService {
 
         Request request = new Request.Builder()
             .url(url)
-            .header("Authorization", "Bearer " + config.getAgentApiKey())
+            .header("X-API-Key", config.getAgentApiKey())
             .header("Content-Type", "application/json")
             .patch(requestBody)
+            .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "";
+            return objectMapper.readValue(responseBody, typeRef);
+        }
+    }
+
+    private <T> ApiResponse<T> executePut(String url, Object body, TypeReference<ApiResponse<T>> typeRef) throws IOException {
+        String json = body != null ? objectMapper.writeValueAsString(body) : "{}";
+        RequestBody requestBody = RequestBody.create(json, MediaType.get("application/json"));
+
+        Request request = new Request.Builder()
+            .url(url)
+            .header("X-API-Key", config.getAgentApiKey())
+            .header("Content-Type", "application/json")
+            .put(requestBody)
             .build();
 
         try (Response response = httpClient.newCall(request).execute()) {
