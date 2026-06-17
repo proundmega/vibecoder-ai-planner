@@ -4,7 +4,7 @@ const auth = require('../auth');
 const User = require('../models/user');
 
 // Middleware
-const { verifyToken, verifyTokenOrAgent, agentAuth, rateLimiter, trackAgentAction } = require('../middleware/auth');
+const { verifyToken, verifyTokenOrAgent, agentAuth, rateLimiter, trackAgentAction, recordFailedAttempt, clearFailedAttempts, checkAccountLockout, getLockoutRemainingMs } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { registerSchema, loginSchema } = require('../validators/auth');
 
@@ -186,7 +186,7 @@ router.get('/metrics', (req, res) => {
  *       400:
  *         description: Validation error or user already exists
  */
-router.post('/auth/register', validate(registerSchema), async (req, res) => {
+router.post('/auth/register', rateLimiter(3, 60000), validate(registerSchema), async (req, res) => {
   try {
     const { name, email, password, role, user_created_by } = req.body;
     const result = await registerUserBound(name, email, password, role || 'project_admin', user_created_by || null);
@@ -229,12 +229,27 @@ router.post('/auth/register', validate(registerSchema), async (req, res) => {
  *       401:
  *         description: Invalid credentials
  */
-router.post('/auth/login', validate(loginSchema), async (req, res) => {
+router.post('/auth/login', rateLimiter(5, 60000), validate(loginSchema), async (req, res) => {
   try {
+    const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+    
+    if (checkAccountLockout(clientIp)) {
+      const remainingMs = getLockoutRemainingMs(clientIp);
+      const retryAfter = Math.ceil(remainingMs / 1000);
+      res.set('Retry-After', String(retryAfter));
+      return res.status(429).json({ 
+        error: 'Account locked due to too many failed attempts. Try again later.', 
+        retryAfter 
+      });
+    }
+    
     const { email, password } = req.body;
     const result = await loginUserBound(email, password);
+    clearFailedAttempts(clientIp);
     res.json({ message: 'Login successful', ...result });
   } catch (error) {
+    const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+    recordFailedAttempt(clientIp);
     console.error('POST /api/auth/login', error);
     res.status(401).json({ error: error.message });
   }

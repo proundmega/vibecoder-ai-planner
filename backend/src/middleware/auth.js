@@ -5,6 +5,52 @@ const AgentService = require('../services/AgentService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
 
+const AUTH_LOCKOUT_ATTEMPTS = parseInt(process.env.AUTH_LOCKOUT_ATTEMPTS) || 10;
+const AUTH_LOCKOUT_WINDOW_MS = parseInt(process.env.AUTH_LOCKOUT_WINDOW_MS) || 15 * 60 * 1000;
+
+const failedAttempts = new Map();
+
+function checkAccountLockout(ip) {
+  const attempt = failedAttempts.get(ip);
+  if (!attempt) return false;
+  if (attempt.count >= AUTH_LOCKOUT_ATTEMPTS) {
+    if (Date.now() < attempt.lockedUntil) {
+      return true;
+    }
+    failedAttempts.delete(ip);
+    return false;
+  }
+  return false;
+}
+
+function getLockoutRemainingMs(ip) {
+  const attempt = failedAttempts.get(ip);
+  if (!attempt || !attempt.lockedUntil) return 0;
+  const remaining = attempt.lockedUntil - Date.now();
+  return remaining > 0 ? remaining : 0;
+}
+
+function recordFailedAttempt(ip) {
+  let attempt = failedAttempts.get(ip);
+  if (!attempt) {
+    attempt = { count: 0, lockedUntil: 0 };
+    failedAttempts.set(ip, attempt);
+  }
+  attempt.count++;
+  if (attempt.count >= AUTH_LOCKOUT_ATTEMPTS) {
+    attempt.lockedUntil = Date.now() + AUTH_LOCKOUT_WINDOW_MS;
+  }
+}
+
+function clearFailedAttempts(ip) {
+  failedAttempts.delete(ip);
+}
+
+exports.checkAccountLockout = checkAccountLockout;
+exports.getLockoutRemainingMs = getLockoutRemainingMs;
+exports.recordFailedAttempt = recordFailedAttempt;
+exports.clearFailedAttempts = clearFailedAttempts;
+
 exports.verifyToken = (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -154,8 +200,21 @@ exports.rateLimiter = (maxRequests = 10, timeWindow = 60 * 1000) => {
       requests.count++;
     }
 
+    const resetTimestamp = Math.ceil(requests.resetAt / 1000);
+    const retryAfter = Math.ceil((requests.resetAt - Date.now()) / 1000);
+
+    res.set({
+      'X-RateLimit-Limit': String(maxRequests),
+      'X-RateLimit-Remaining': String(Math.max(0, maxRequests - requests.count)),
+      'X-RateLimit-Reset': String(resetTimestamp),
+    });
+
     if (requests.count > maxRequests) {
-      return res.status(429).json({ error: 'Too many requests, please try again later' });
+      res.set('Retry-After', String(retryAfter > 0 ? retryAfter : 1));
+      return res.status(429).json({ 
+        error: `Too many requests, please try again later.`, 
+        retryAfter: retryAfter > 0 ? retryAfter : 1 
+      });
     }
 
     req.rateLimits = { [clientIp]: requests };
