@@ -16,7 +16,9 @@ const usageRouter = require('../usage');
 const billingRouter = require('../billing');
 const memoryRouter = require('../memory');
 const ticketPlanningRouter = require('../ticketPlanning');
-const ticketAttachmentRouter = require('../ticketAttachment');
+const ticketAttachmentController = require('../../controllers/ticketAttachmentController');
+const ticketAttachmentUpload = require('../../middleware/multer');
+const { verifyToken } = require('../../middleware/auth');
 
 // Mount all route modules under /v1
 router.use('/users', userRouter);
@@ -39,10 +41,12 @@ router.post('/tickets/:ticketId/planning/apply-template', ticketPlanningRouter.h
 router.patch('/tickets/:ticketId/planning/status', ticketPlanningRouter.handleUpdateStatus);
 router.use('/tickets/:ticketId/planning', ticketPlanningRouter);
 
-// Attachment routes (nested under tickets)
-router.use('/tickets/:ticketId/attachments', ticketAttachmentRouter);
+// Attachment routes (nested under tickets, inlined to preserve ticketId param)
+router.post('/tickets/:ticketId/attachments', verifyToken, ticketAttachmentUpload.single('file'), (req, res, next) => ticketAttachmentController.upload(req, res, next).catch(next));
+router.get('/tickets/:ticketId/attachments', verifyToken, (req, res, next) => ticketAttachmentController.list(req, res, next).catch(next));
+router.delete('/tickets/:ticketId/attachments/:attachmentId', verifyToken, (req, res, next) => ticketAttachmentController.delete(req, res, next).catch(next));
 
 // Serve attachment files
-router.get('/attachments/:attachmentId', ticketAttachmentRouter.handleGetFile);
+router.get('/attachments/:attachmentId', (req, res, next) => ticketAttachmentController.get(req, res, next).catch(next));
 
 module.exports = router;
