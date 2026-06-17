@@ -34,7 +34,35 @@ const usageRouter = require('./usage');
 const billingRouter = require('./billing');
 const memoryRouter = require('./memory');
 
-// Health check
+/**
+ * @openapi
+ * /health:
+ *   get:
+ *     tags: [System]
+ *     summary: Health check
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Server is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     status: { type: string }
+ *                     database: { type: string }
+ *                     timestamp: { type: string, format: date-time }
+ *       503:
+ *         description: Database disconnected
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ApiResponse'
+ */
 router.get('/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
@@ -59,7 +87,28 @@ router.get('/health', async (req, res) => {
   }
 });
 
-// API versioning
+/**
+ * @openapi
+ * /version:
+ *   get:
+ *     tags: [System]
+ *     summary: API version info
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: API version information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     version: { type: string }
+ *                     name: { type: string }
+ */
 router.get('/version', (req, res) => {
   res.json({
     success: true,
@@ -68,7 +117,17 @@ router.get('/version', (req, res) => {
   });
 });
 
-// Documentation
+/**
+ * @openapi
+ * /docs:
+ *   get:
+ *     tags: [System]
+ *     summary: API documentation index
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: API documentation endpoints
+ */
 router.get('/docs', (req, res) => {
   res.json({
     success: true,
@@ -80,7 +139,16 @@ router.get('/docs', (req, res) => {
   });
 });
 
-// Metrics
+/**
+ * @openapi
+ * /metrics:
+ *   get:
+ *     tags: [System]
+ *     summary: Server metrics
+ *     responses:
+ *       200:
+ *         description: Server metrics including uptime and memory usage
+ */
 router.get('/metrics', (req, res) => {
   res.json({
     success: true,
@@ -93,7 +161,31 @@ router.get('/metrics', (req, res) => {
   });
 });
 
-// Authentication routes (public)
+/**
+ * @openapi
+ * /auth/register:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Register a new user
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, email, password]
+ *             properties:
+ *               name: { type: string }
+ *               email: { type: string, format: email }
+ *               password: { type: string, minLength: 8 }
+ *               role: { type: string, enum: [user, member, project_admin, super_admin] }
+ *     responses:
+ *       201:
+ *         description: User registered successfully
+ *       400:
+ *         description: Validation error or user already exists
+ */
 router.post('/auth/register', validate(registerSchema), async (req, res) => {
   try {
     const { name, email, password, role, user_created_by } = req.body;
@@ -105,6 +197,38 @@ router.post('/auth/register', validate(registerSchema), async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /auth/login:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Login and get JWT token
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email: { type: string, format: email }
+ *               password: { type: string }
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message: { type: string }
+ *                 token: { type: string }
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Invalid credentials
+ */
 router.post('/auth/login', validate(loginSchema), async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -116,6 +240,26 @@ router.post('/auth/login', validate(loginSchema), async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /auth/me:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Get current user info
+ *     responses:
+ *       200:
+ *         description: Current user information
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *                 authenticated: { type: boolean }
+ *       401:
+ *         description: Unauthorized
+ */
 router.get('/auth/me', verifyToken, async (req, res) => {
   try {
     const user = await User.find(req.user.userId);

@@ -23,6 +23,16 @@ function apiFetch(url, options = {}) {
         err.status = 401
         throw err
       }
+      if (!response.ok) {
+        let message = `HTTP ${response.status}`
+        try {
+          const body = await response.json()
+          message = body?.error?.message || body?.message || message
+        } catch {}
+        const err = new Error(message)
+        err.status = response.status
+        throw err
+      }
       return response
     })
 }
@@ -54,10 +64,11 @@ export function del(url) {
 }
 
 export function patch(url, body) {
-  return apiFetch(url, {
-    method: 'PATCH',
-    body: JSON.stringify(body),
-  }).then(extractData)
+  const opts = { method: 'PATCH' }
+  if (body !== undefined) {
+    opts.body = JSON.stringify(body)
+  }
+  return apiFetch(url, opts).then(extractData)
 }
 
 export function postWithHeaders(url, body, extraHeaders = {}) {

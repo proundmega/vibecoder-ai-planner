@@ -85,7 +85,7 @@ async function handleEdit(user, data) {
 }
 
 async function handleToggleActive(user) {
-  if (!confirm(`Are you sure you want to ${user.is_active ? 'deactivate' : 'activate'} ${user.name}?`)) return
+  if (!confirm(`Are you sure you want to ${user.isActive ? 'deactivate' : 'activate'} ${user.name}?`)) return
   try {
     await toggleUserActive(user.id)
     await loadUsers()
@@ -170,8 +170,8 @@ onMounted(loadUsers)
             <td>{{ roleLabel(user.role) }}</td>
             <td>{{ createdByLabel(user) }}</td>
             <td>
-              <span :class="['status-badge', user.is_active ? 'active' : 'inactive']">
-                {{ user.is_active ? 'Active' : 'Deactivated' }}
+              <span :class="['status-badge', user.isActive ? 'active' : 'inactive']">
+                {{ user.isActive ? 'Active' : 'Deactivated' }}
               </span>
             </td>
             <td class="actions">
@@ -179,10 +179,10 @@ onMounted(loadUsers)
                <button
                   v-if="canToggleActive && user.id !== authStore.user?.id"
                   @click="handleToggleActive(user)"
-                  :class="['btn-toggle', user.is_active ? 'btn-deactivate' : 'btn-activate']"
-                  :title="user.is_active ? 'Deactivate' : 'Activate'"
+                  :class="['btn-toggle', user.isActive ? 'btn-deactivate' : 'btn-activate']"
+                  :title="user.isActive ? 'Deactivate' : 'Activate'"
                 >
-                {{ user.is_active ? 'Deactivate' : 'Activate' }}
+                {{ user.isActive ? 'Deactivate' : 'Activate' }}
               </button>
               <button
                 v-if="canDelete"

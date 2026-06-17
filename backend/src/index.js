@@ -26,6 +26,17 @@ app.use(requestId);
 const { requestLogger } = require('./middleware/requestLogger');
 app.use(requestLogger);
 
+// OpenAPI spec and Swagger UI
+const swaggerUi = require('swagger-ui-express');
+const specs = require('./api/openapi-spec');
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(specs, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'Vibecode API Docs',
+}));
+app.get('/api/openapi.json', (req, res) => {
+  res.json(specs);
+});
+
 // Routes
 const routes = require('./api/routes');
 app.use('/api', routes);

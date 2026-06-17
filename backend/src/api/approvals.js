@@ -4,15 +4,31 @@ const { verifyToken } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
 const ApprovalService = require('../services/ApprovalService');
 
-// Create approval request (for AI agents moving to done)
+/**
+ * @openapi
+ * /approvals:
+ *   post:
+ *     tags: [Approvals]
+ *     summary: Create approval request
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ticketId: { type: string, format: uuid }
+ *     responses:
+ *       201:
+ *         description: Approval request created
+ *       400:
+ *         description: Validation error
+ */
 router.post('/', verifyToken, async (req, res) => {
   try {
     const { ticketId } = req.body;
-    
     if (!ticketId) {
       return res.status(400).json({ error: 'ticketId is required' });
     }
-    
     const approval = await ApprovalService.create(ticketId, req.user.userId);
     res.status(201).json({ success: true, data: approval });
   } catch (error) {
@@ -21,7 +37,49 @@ router.post('/', verifyToken, async (req, res) => {
   }
 });
 
-// Get pending approvals for current user
+/**
+ * @openapi
+ * /approvals:
+ *   get:
+ *     tags: [Approvals]
+ *     summary: Get all approvals (super admin only)
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema: { type: string }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: perPage
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of all approvals
+ *       403:
+ *         description: Forbidden - super admin only
+ */
+router.get('/', verifyToken, requireAnyPermission('APPROVAL_VIEW'), async (req, res) => {
+  try {
+    const { status, page = 1, perPage = 20 } = req.query;
+    const result = await ApprovalService.getAll({ status, page, perPage });
+    res.json(result);
+  } catch (error) {
+    console.error('GET /api/approvals', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @openapi
+ * /approvals/pending:
+ *   get:
+ *     tags: [Approvals]
+ *     summary: Get pending approvals for current user
+ *     responses:
+ *       200:
+ *         description: List of pending approvals
+ */
 router.get('/pending', verifyToken, async (req, res) => {
   try {
     const approvals = await ApprovalService.getPendingByRequester(req.user.userId);
@@ -32,7 +90,21 @@ router.get('/pending', verifyToken, async (req, res) => {
   }
 });
 
-// Get approvals for a specific ticket
+/**
+ * @openapi
+ * /approvals/ticket/{ticketId}:
+ *   get:
+ *     tags: [Approvals]
+ *     summary: Get approvals for a ticket
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: List of approvals for ticket
+ */
 router.get('/ticket/:ticketId', verifyToken, async (req, res) => {
   try {
     const approvals = await ApprovalService.getByTicketId(req.params.ticketId);
@@ -43,53 +115,57 @@ router.get('/ticket/:ticketId', verifyToken, async (req, res) => {
   }
 });
 
-// Approve request (project_admin or member only)
+/**
+ * @openapi
+ * /approvals/{approvalId}/approve:
+ *   post:
+ *     tags: [Approvals]
+ *     summary: Approve request
+ *     parameters:
+ *       - in: path
+ *         name: approvalId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Approval approved
+ *       400:
+ *         description: Approval failed
+ */
 router.post('/:approvalId/approve', verifyToken, requireAnyPermission('APPROVAL_APPROVE'), async (req, res) => {
   try {
-    const approval = await ApprovalService.approve(
-      req.params.approvalId,
-      req.user.userId
-    );
-    
-    res.json({
-      success: true,
-      data: approval,
-      message: 'Approval request approved',
-    });
+    const approval = await ApprovalService.approve(req.params.approvalId, req.user.userId);
+    res.json({ success: true, data: approval, message: 'Approval request approved' });
   } catch (error) {
     console.error('POST /api/approvals/:approvalId/approve', error);
     res.status(400).json({ error: error.message });
   }
 });
 
-// Reject request (project_admin or member only)
+/**
+ * @openapi
+ * /approvals/{approvalId}/reject:
+ *   post:
+ *     tags: [Approvals]
+ *     summary: Reject request
+ *     parameters:
+ *       - in: path
+ *         name: approvalId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Approval rejected
+ *       400:
+ *         description: Rejection failed
+ */
 router.post('/:approvalId/reject', verifyToken, requireAnyPermission('APPROVAL_REJECT'), async (req, res) => {
   try {
-    const approval = await ApprovalService.reject(
-      req.params.approvalId,
-      req.user.userId
-    );
-    
-    res.json({
-      success: true,
-      data: approval,
-      message: 'Approval request rejected',
-    });
+    const approval = await ApprovalService.reject(req.params.approvalId, req.user.userId);
+    res.json({ success: true, data: approval, message: 'Approval request rejected' });
   } catch (error) {
     console.error('POST /api/approvals/:approvalId/reject', error);
     res.status(400).json({ error: error.message });
-  }
-});
-
-// Get all approvals (super_admin only)
-router.get('/', verifyToken, requireAnyPermission('APPROVAL_VIEW'), async (req, res) => {
-  try {
-    const { status, page = 1, perPage = 20 } = req.query;
-    const result = await ApprovalService.getAll({ status, page, perPage });
-    res.json(result);
-  } catch (error) {
-    console.error('GET /api/approvals', error);
-    res.status(500).json({ error: error.message });
   }
 });
 
