@@ -1,4 +1,5 @@
 require('dotenv').config();
+require('./utils/envValidation');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('./middleware/cors');
