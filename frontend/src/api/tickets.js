@@ -1,33 +1,33 @@
 import { get, post, put, del } from './client'
 
 export function fetchTickets(projectId) {
-  return get(`/api/projects/${projectId}/tickets`).catch(() => [])
+  return get(`/api/v1/projects/${projectId}/tickets`).catch(() => [])
 }
 
 export function fetchTicket(id) {
-  return get(`/api/tickets/${id}`).catch(() => null)
+  return get(`/api/v1/tickets/${id}`).catch(() => null)
 }
 
 export function updateTicket(id, updates) {
-  return put(`/api/tickets/${id}`, updates).catch(() => null)
+  return put(`/api/v1/tickets/${id}`, updates).catch(() => null)
 }
 
 export function createTicket(projectId, title, description) {
-  return post('/api/tickets', { projectId, title, description }).catch(() => null)
+  return post('/api/v1/tickets', { projectId, title, description }).catch(() => null)
 }
 
 export function deleteTicket(id) {
-  return del(`/api/tickets/${id}`)
+  return del(`/api/v1/tickets/${id}`)
 }
 
 export function fetchComments(ticketId) {
-  return get(`/api/tickets/${ticketId}/comments`).catch(() => [])
+  return get(`/api/v1/tickets/${ticketId}/comments`).catch(() => [])
 }
 
 export function addComment(ticketId, content) {
-  return post(`/api/tickets/${ticketId}/comments`, { content }).catch(() => null)
+  return post(`/api/v1/tickets/${ticketId}/comments`, { content }).catch(() => null)
 }
 
 export function fetchProjectUsers(projectId) {
-  return get(`/api/projects/${projectId}/users`).catch(() => [])
+  return get(`/api/v1/projects/${projectId}/users`).catch(() => [])
 }

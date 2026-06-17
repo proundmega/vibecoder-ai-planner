@@ -7,6 +7,7 @@ const User = require('../models/user');
 const { verifyToken, verifyTokenOrAgent, agentAuth, rateLimiter, trackAgentAction, recordFailedAttempt, clearFailedAttempts, checkAccountLockout, getLockoutRemainingMs } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { registerSchema, loginSchema } = require('../validators/auth');
+const { apiVersion } = require('../middleware/apiVersion');
 
 const { pool } = require('../db');
 
@@ -19,22 +20,7 @@ const {
 const registerUserBound = registerUser.bind(auth);
 const loginUserBound = loginUser.bind(auth);
 
-const userRouter = require('./user');
-const usersManagementRouter = require('./users');
-const projectsRouter = require('./projects');
-const ticketsRouter = require('./tickets');
-const pricingRouter = require('./pricing');
-const agentsRouter = require('./agents');
-const approvalsRouter = require('./approvals');
-const permissionsRouter = require('./permissions');
-const githubRouter = require('./github');
-const providersRouter = require('./providers');
-const credentialsRouter = require('./credentials');
-const usageRouter = require('./usage');
-const billingRouter = require('./billing');
-const memoryRouter = require('./memory');
-const ticketPlanningRouter = require('./ticketPlanning');
-const ticketAttachmentRouter = require('./ticketAttachment');
+const v1Routes = require('./v1');
 
 /**
  * @openapi
@@ -294,30 +280,15 @@ router.get('/auth/me', verifyToken, async (req, res) => {
   }
 });
 
-// Authenticated routes
-router.use('/users', verifyToken, usersManagementRouter);
-router.use('/projects', verifyToken, projectsRouter);
-router.use('/tickets', verifyTokenOrAgent, ticketsRouter);
-router.use('/pricing', verifyToken, pricingRouter);
-router.use('/agents', verifyToken, agentsRouter);
-router.use('/approvals', verifyToken, approvalsRouter);
-router.use('/permissions', permissionsRouter);
-router.use('/github', verifyToken, githubRouter);
-router.use('/providers', verifyToken, providersRouter);
-router.use('/credentials', verifyToken, credentialsRouter);
-router.use('/usage', verifyToken, usageRouter);
-router.use('/billing', verifyToken, billingRouter);
-router.use('/memory', verifyToken, memoryRouter);
+// API v1 routes (versioned)
+router.use('/v1', apiVersion('v1'), v1Routes);
 
-// Planning routes (nested under tickets)
-router.post('/tickets/:ticketId/planning/apply-template', verifyToken, ticketPlanningRouter.handleApplyTemplate);
-router.patch('/tickets/:ticketId/planning/status', verifyToken, ticketPlanningRouter.handleUpdateStatus);
-router.use('/tickets/:ticketId/planning', ticketPlanningRouter);
-
-// Attachment routes (nested under tickets)
-router.use('/tickets/:ticketId/attachments', ticketAttachmentRouter);
-
-// Serve attachment files
-router.get('/attachments/:attachmentId', verifyToken, ticketAttachmentRouter.handleGetFile);
+// Catch-all for unversioned requests
+router.use((req, res) => {
+  res.status(404).json({
+    error: 'API version required. Use /api/v1/* endpoints.',
+    availableVersions: ['v1'],
+  });
+});
 
 module.exports = router;

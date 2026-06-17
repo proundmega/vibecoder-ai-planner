@@ -8,7 +8,7 @@ export function listUsers(filters = {}) {
   if (filters.perPage) params.append('perPage', filters.perPage)
   
   const queryString = params.toString()
-  return get(`/api/users${queryString ? '?' + queryString : ''}`)
+  return get(`/api/v1/users${queryString ? '?' + queryString : ''}`)
 }
 
 export function listAllUsers(filters = {}) {
@@ -20,21 +20,21 @@ export function listAllUsers(filters = {}) {
   if (filters.perPage) params.append('perPage', filters.perPage)
   
   const queryString = params.toString()
-  return get(`/api/users/super-admin${queryString ? '?' + queryString : ''}`)
+  return get(`/api/v1/users/super-admin${queryString ? '?' + queryString : ''}`)
 }
 
 export function createUser(data) {
-  return post('/api/users', data)
+  return post('/api/v1/users', data)
 }
 
 export function updateUser(id, data) {
-  return put(`/api/users/${id}`, data)
+  return put(`/api/v1/users/${id}`, data)
 }
 
 export function toggleUserActive(id) {
-  return patch(`/api/users/${id}/toggle-active`)
+  return patch(`/api/v1/users/${id}/toggle-active`)
 }
 
 export function deleteUser(id) {
-  return del(`/api/users/${id}`)
+  return del(`/api/v1/users/${id}`)
 }
