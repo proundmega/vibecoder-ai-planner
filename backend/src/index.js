@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
 const helmet = require('helmet');
+const cors = require('./middleware/cors');
 
 const logger = require('./utils/logger');
 
@@ -9,12 +9,13 @@ logger.info('Starting Vibecode API...');
 
 const app = express();
 
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
+  .split(',')
+  .map(o => o.trim());
+
 // Middleware
 app.use(helmet());
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || ['http://localhost:3000'],
-  credentials: true,
-}));
+app.use(cors(allowedOrigins));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
