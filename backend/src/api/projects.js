@@ -26,7 +26,7 @@ const projectController = require('../controllers/projectController');
  *                   items:
  *                     $ref: '#/components/schemas/Project'
  */
-router.get('/', requireAnyPermission('PROJECT_READ'), projectController.listProjects);
+router.get('/', verifyToken, requireAnyPermission('PROJECT_READ'), projectController.listProjects);
 
 /**
  * @openapi
@@ -288,6 +288,6 @@ router.delete('/tickets/:ticketId', verifyToken, projectController.deleteProject
  *       200:
  *         description: Status updated
  */
-router.post('/:id/tickets/:ticketId/status', requireAnyPermission('TICKET_STATUS_CHANGE'), projectController.updateProjectTicketStatus);
+router.post('/:id/tickets/:ticketId/status', verifyToken, requireAnyPermission('TICKET_STATUS_CHANGE'), projectController.updateProjectTicketStatus);
 
 module.exports = router;
