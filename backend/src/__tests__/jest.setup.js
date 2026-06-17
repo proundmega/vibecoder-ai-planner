@@ -40,6 +40,32 @@ jest.mock('winston', () => {
   };
 });
 
+// logger mock
+jest.mock('../utils/logger', () => {
+  const mockLogger = {
+    error: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    maskSensitive: jest.fn((obj) => {
+      if (obj === null || obj === undefined) return obj;
+      if (typeof obj !== 'object') return obj;
+      if (Array.isArray(obj)) return obj.map(item => mockLogger.maskSensitive(item));
+      const SENSITIVE_FIELDS = ['password', 'token', 'apikey', 'authorization', 'secret', 'credit_card', 'ssn'];
+      const masked = {};
+      for (const [key, value] of Object.entries(obj)) {
+        if (SENSITIVE_FIELDS.some(field => key.toLowerCase().includes(field))) {
+          masked[key] = typeof value === 'string' && value.length > 3 ? value.substring(0, 3) + '***' : '***';
+        } else {
+          masked[key] = mockLogger.maskSensitive(value);
+        }
+      }
+      return masked;
+    }),
+  };
+  return mockLogger;
+});
+
 // pg.Pool mock
 jest.mock('pg', () => {
   const pool = {

@@ -42,7 +42,7 @@ const { requestId } = require('./middleware/requestId');
 app.use(requestId);
 
 // Request logging
-const { requestLogger } = require('./middleware/requestLogger');
+const requestLogger = require('./middleware/requestLogger');
 app.use(requestLogger);
 
 // OpenAPI spec and Swagger UI

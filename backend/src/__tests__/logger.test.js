@@ -1,5 +1,5 @@
 const logger = require('../utils/logger');
-const { requestLogger } = require('../middleware/requestLogger');
+const requestLogger = require('../middleware/requestLogger');
 
 describe('Winston Logger', () => {
   it('should be defined', () => {
