@@ -189,12 +189,12 @@ test_projects() {
 
   # Unauthenticated
   local code
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/projects")
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/projects")
   assert_status "List projects without auth" "401" "$code"
 
   # Create project
   local proj_body
-  proj_body=$(curl -sf -X POST "$BASE/api/projects" \
+  proj_body=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Integration Test Project","description":"Created by integration tests"}')
@@ -206,24 +206,24 @@ test_projects() {
 
   # List projects
   local list_body
-  list_body=$(curl -sf "$BASE/api/projects" -H "Authorization: Bearer $token")
+  list_body=$(curl -sf "${BASE}/api/v1/projects" -H "Authorization: Bearer $token")
   assert_has_field "List projects returns array" "id" "$list_body"
 
   # Get single project
   local single_body
-  single_body=$(curl -sf "$BASE/api/projects/$proj_id" -H "Authorization: Bearer $token")
+  single_body=$(curl -sf "${BASE}/api/v1/projects/$proj_id" -H "Authorization: Bearer $token")
   assert_field "Get project by id" "name" "Integration Test Project" "$(echo "$single_body" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)"
 
   # Get unknown project
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/projects/999999999" -H "Authorization: Bearer $token")
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/projects/999999999" -H "Authorization: Bearer $token")
   assert_status "Get unknown project returns 404" "404" "$code"
 
   # Delete project
-  code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/projects/$proj_id" -H "Authorization: Bearer $token")
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/projects/$proj_id" -H "Authorization: Bearer $token")
   assert_status "Delete project" "200" "$code"
 
   # Verify deleted
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/projects/$proj_id" -H "Authorization: Bearer $token")
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/projects/$proj_id" -H "Authorization: Bearer $token")
   assert_status "Deleted project returns 404" "404" "$code"
 }
 
@@ -238,7 +238,7 @@ test_tickets() {
 
   # Create a project for ticket tests
   local proj_id
-  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Ticket Test Project","description":""}' \
@@ -246,14 +246,14 @@ test_tickets() {
 
   # Unauthenticated
   local code
-  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/projects/$proj_id/tickets" \
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -d '{"title":"No Auth Ticket","description":""}')
   assert_status "Create ticket without auth" "401" "$code"
 
   # Create ticket
   local ticket_body
-  ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+  ticket_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"title":"Fix critical bug","description":"Users cannot login","priority":"high"}')
@@ -266,27 +266,27 @@ test_tickets() {
 
   # List tickets
   local list_body
-  list_body=$(curl -sf "$BASE/api/projects/$proj_id/tickets" -H "Authorization: Bearer $token")
+  list_body=$(curl -sf "${BASE}/api/v1/projects/$proj_id/tickets" -H "Authorization: Bearer $token")
   assert_has_field "List tickets returns array" "id" "$list_body"
 
   # Get single ticket
   local single_body
-  single_body=$(curl -sf "$BASE/api/tickets/$ticket_id" -H "Authorization: Bearer $token")
+  single_body=$(curl -sf "${BASE}/api/v1/tickets/$ticket_id" -H "Authorization: Bearer $token")
   assert_field "Get ticket by id" "title" "Fix critical bug" "$(echo "$single_body" | grep -o '"title":"[^"]*"' | cut -d'"' -f4)"
 
   # Update ticket
-  code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/tickets/$ticket_id" \
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "${BASE}/api/v1/tickets/$ticket_id" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"title":"Fix critical login bug","priority":"urgent"}')
   assert_status "Update ticket" "200" "$code"
 
   # Delete ticket
-  code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/tickets/$ticket_id" -H "Authorization: Bearer $token")
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/tickets/$ticket_id" -H "Authorization: Bearer $token")
   assert_status "Delete ticket" "200" "$code"
 
   # Verify deleted
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/tickets/$ticket_id" -H "Authorization: Bearer $token")
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/tickets/$ticket_id" -H "Authorization: Bearer $token")
   assert_status "Deleted ticket returns 404" "404" "$code"
 }
 
@@ -301,7 +301,7 @@ test_status_transitions() {
 
   # Create a project
   local proj_id
-  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Transition Test Project","description":""}' \
@@ -309,7 +309,7 @@ test_status_transitions() {
 
   # Create a ticket
   local ticket_id
-  ticket_id=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+  ticket_id=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"title":"Transition ticket","description":""}' \
@@ -317,21 +317,21 @@ test_status_transitions() {
 
   # backlog → in_progress (valid)
   local body
-  body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets/$ticket_id/status" \
+  body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket_id/status" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"status":"in_progress"}')
   assert_field "backlog → in_progress" "status" "in_progress" "$(echo "$body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)"
 
   # in_progress → review (valid)
-  body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets/$ticket_id/status" \
+  body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket_id/status" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"status":"review"}')
   assert_field "in_progress → review" "status" "review" "$(echo "$body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)"
 
   # review → done (valid)
-  body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets/$ticket_id/status" \
+  body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket_id/status" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"status":"done"}')
@@ -339,7 +339,7 @@ test_status_transitions() {
 
   # done → backlog (INVALID)
   local err_body
-  err_body=$(curl -s -X POST "$BASE/api/projects/$proj_id/tickets/$ticket_id/status" \
+  err_body=$(curl -s -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket_id/status" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"status":"backlog"}' 2>&1 || true)
@@ -352,19 +352,19 @@ test_status_transitions() {
   # in_progress → done (INVALID — must go through review first)
   # Create another ticket for this test
   local ticket2_id
-  ticket2_id=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+  ticket2_id=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"title":"Skip review ticket","description":""}' \
     | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   # in_progress first
-  curl -s -X POST "$BASE/api/projects/$proj_id/tickets/$ticket2_id/status" \
+  curl -s -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket2_id/status" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"status":"in_progress"}' >/dev/null 2>&1
 
-  err_body=$(curl -s -X POST "$BASE/api/projects/$proj_id/tickets/$ticket2_id/status" \
+  err_body=$(curl -s -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket2_id/status" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"status":"done"}' 2>&1 || true)
@@ -386,19 +386,19 @@ test_agents() {
 
   # Create agent (routes have /agents/ prefix due to mounting under /agents)
   local code
-  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/agents/agents/create" \
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE}/api/v1/agents/agents/create" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Test Agent"}')
   assert_status "Create agent" "201" "$code"
 
   # List agents
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/agents/agents" \
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/agents/agents" \
     -H "Authorization: Bearer $token")
   assert_status "List agents" "200" "$code"
 
   # Agent endpoints without auth
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/agents/agents")
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/agents/agents")
   assert_status "List agents without auth" "401" "$code"
 }
 
@@ -433,7 +433,7 @@ test_frontend_api_proxy() {
 
   # Create a project for proxy tests
   local proj_id
-  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Proxy Test Project","description":""}' \
@@ -441,7 +441,7 @@ test_frontend_api_proxy() {
 
   # Create a ticket via /api/tickets (frontend endpoint)
   local ticket_body
-  ticket_body=$(curl -sf -X POST "http://localhost:3000/api/tickets" \
+  ticket_body=$(curl -sf -X POST "http://localhost:3000/api/v1/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d "{\"projectId\":\"$proj_id\",\"title\":\"Proxy Test Ticket\",\"description\":\"Test via frontend proxy\"}")
@@ -452,7 +452,7 @@ test_frontend_api_proxy() {
 
   # List tickets via frontend proxy
   local list_body
-  list_body=$(curl -sf "http://localhost:3000/api/projects/$proj_id/tickets" \
+  list_body=$(curl -sf "http://localhost:3000/api/v1/projects/$proj_id/tickets" \
     -H "Authorization: Bearer $token")
   assert_has_field "List tickets via frontend proxy returns array" "id" "$list_body"
 
@@ -465,7 +465,7 @@ test_frontend_api_proxy() {
 
   # Unauthenticated request via proxy should return 401
   local code
-  code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000/api/projects")
+  code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000/api/v1/projects")
   assert_status "Unauthenticated request via proxy returns 401" "401" "$code"
 }
 
@@ -480,21 +480,21 @@ test_route_ordering() {
 
   # Create a project
   local proj_id
-  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Route Order Test Project","description":""}' \
     | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   # Create a ticket in the project
-  curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+  curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"title":"Route order ticket","description":""}' >/dev/null 2>&1
 
   # GET /api/projects/:id/tickets should return tickets (not project details)
   local tickets_body
-  tickets_body=$(curl -sf "$BASE/api/projects/$proj_id/tickets" \
+  tickets_body=$(curl -sf "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Authorization: Bearer $token")
   if echo "$tickets_body" | grep -q '"title"'; then
     pass "GET /projects/:id/tickets returns tickets array"
@@ -504,7 +504,7 @@ test_route_ordering() {
 
   # GET /api/projects/:id should return project details
   local proj_body
-  proj_body=$(curl -sf "$BASE/api/projects/$proj_id" \
+  proj_body=$(curl -sf "${BASE}/api/v1/projects/$proj_id" \
     -H "Authorization: Bearer $token")
   if echo "$proj_body" | grep -q '"name"'; then
     pass "GET /projects/:id returns project details"
@@ -542,7 +542,7 @@ test_user_role_ticket_access() {
   local admin_token
   admin_token=$(login "alice@integration.test" "password123")
   local proj_id
-  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"name":"Role Test Project","description":""}' \
@@ -550,7 +550,7 @@ test_user_role_ticket_access() {
 
   # Regular user should be able to create tickets
   local ticket_body
-  ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+  ticket_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"title":"User Role Ticket","description":"Created by regular user"}')
@@ -558,7 +558,7 @@ test_user_role_ticket_access() {
 
   # Regular user should be able to list tickets
   local list_body
-  list_body=$(curl -sf "$BASE/api/projects/$proj_id/tickets" \
+  list_body=$(curl -sf "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Authorization: Bearer $token")
   assert_has_field "Regular user can list tickets" "id" "$list_body"
 
@@ -566,7 +566,7 @@ test_user_role_ticket_access() {
   local ticket_id
   ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
   local single_body
-  single_body=$(curl -sf "$BASE/api/tickets/$ticket_id" \
+  single_body=$(curl -sf "${BASE}/api/v1/tickets/$ticket_id" \
     -H "Authorization: Bearer $token")
   assert_field "Regular user can get ticket by id" "title" "User Role Ticket" "$(echo "$single_body" | grep -o '"title":"[^"]*"' | cut -d'"' -f4)"
 }
@@ -583,7 +583,7 @@ test_role_based_user_management() {
 
   # Admin creates a member user
   local member_body
-  member_body=$(curl -sf -X POST "$BASE/api/users" \
+  member_body=$(curl -sf -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"name":"Member User","email":"member@integration.test","password":"password123","role":"member"}')
@@ -595,7 +595,7 @@ test_role_based_user_management() {
 
   # Admin creates a user role user
   local user_body
-  user_body=$(curl -sf -X POST "$BASE/api/users" \
+  user_body=$(curl -sf -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"name":"AI User","email":"aiuser@integration.test","password":"password123","role":"user"}')
@@ -604,7 +604,7 @@ test_role_based_user_management() {
 
   # Admin updates user name
   local update_body
-  update_body=$(curl -sf -X PUT "$BASE/api/users/$member_id" \
+  update_body=$(curl -sf -X PUT "${BASE}/api/v1/users/$member_id" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"name":"Updated Member"}')
@@ -612,7 +612,7 @@ test_role_based_user_management() {
 
   # Admin deactivates user
   local deact_body
-  deact_body=$(curl -sf -X PATCH "$BASE/api/users/$member_id/toggle-active" \
+  deact_body=$(curl -sf -X PATCH "${BASE}/api/v1/users/$member_id/toggle-active" \
     -H "Authorization: Bearer $admin_token")
   assert_field "Admin can deactivate user" "isActive" "false" "$(echo "$deact_body" | grep -o '"isActive":[a-z]*' | cut -d':' -f2)"
 
@@ -625,13 +625,13 @@ test_role_based_user_management() {
 
   # Admin reactivates user
   local react_body
-  react_body=$(curl -sf -X PATCH "$BASE/api/users/$member_id/toggle-active" \
+  react_body=$(curl -sf -X PATCH "${BASE}/api/v1/users/$member_id/toggle-active" \
     -H "Authorization: Bearer $admin_token")
   assert_field "Admin can reactivate user" "isActive" "true" "$(echo "$react_body" | grep -o '"isActive":[a-z]*' | cut -d':' -f2)"
 
   # Admin lists users
   local list_body
-  list_body=$(curl -sf "$BASE/api/users" \
+  list_body=$(curl -sf "${BASE}/api/v1/users" \
     -H "Authorization: Bearer $admin_token")
   assert_has_field "Admin can list users" "users" "$list_body"
 
@@ -639,7 +639,7 @@ test_role_based_user_management() {
   local user_token
   user_token=$(login "aiuser@integration.test" "password123")
   local create_code
-  create_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/users" \
+  create_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $user_token" \
     -d '{"name":"Another","email":"another@integration.test","password":"password123","role":"user"}')
@@ -649,7 +649,7 @@ test_role_based_user_management() {
   local member_token
   member_token=$(login "member@integration.test" "password123")
   local member_create_body
-  member_create_body=$(curl -sf -X POST "$BASE/api/users" \
+  member_create_body=$(curl -sf -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $member_token" \
     -d '{"name":"Agent","email":"agent@integration.test","password":"password123","role":"user"}')
@@ -657,7 +657,7 @@ test_role_based_user_management() {
 
   # Member cannot create member role
   local member_create_code
-  member_create_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/users" \
+  member_create_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $member_token" \
     -d '{"name":"Another Member","email":"anothermember@integration.test","password":"password123","role":"member"}')
@@ -665,13 +665,13 @@ test_role_based_user_management() {
 
   # Admin deletes user
   local delete_code
-  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/users/$member_id" \
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/users/$member_id" \
     -H "Authorization: Bearer $admin_token")
   assert_status "Admin can delete user" "200" "$delete_code"
 
   # Super-admin endpoint requires super_admin role
   local super_code
-  super_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/users/super-admin" \
+  super_code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/users/super-admin" \
     -H "Authorization: Bearer $admin_token")
   assert_status "Non-super-admin cannot access super-admin endpoint" "403" "$super_code"
 }
@@ -688,27 +688,27 @@ test_role_based_ticket_permissions() {
 
   # Create a project
   local proj_id
-  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"name":"Ticket Permissions Project","description":""}' \
     | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   # Create a member user
-  curl -sf -X POST "$BASE/api/users" \
+  curl -sf -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"name":"Member","email":"perm_member@integration.test","password":"password123","role":"member"}' >/dev/null 2>&1
 
   # Create a user role user
-  curl -sf -X POST "$BASE/api/users" \
+  curl -sf -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"name":"User","email":"perm_user@integration.test","password":"password123","role":"user"}' >/dev/null 2>&1
 
   # Member can delete tickets
   local ticket_body
-  ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+  ticket_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"title":"Member Delete Ticket","description":"Test"}')
@@ -718,12 +718,12 @@ test_role_based_ticket_permissions() {
   local member_token
   member_token=$(login "perm_member@integration.test" "password123")
   local delete_code
-  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/projects/tickets/$ticket_id" \
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/projects/tickets/$ticket_id" \
     -H "Authorization: Bearer $member_token")
   assert_status "Member can delete tickets" "200" "$delete_code"
 
   # Create another ticket for user role tests
-  ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+  ticket_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"title":"Owned Ticket","description":"Test"}')
@@ -732,19 +732,19 @@ test_role_based_ticket_permissions() {
   # User role cannot delete others' tickets
   local user_token
   user_token=$(login "perm_user@integration.test" "password123")
-  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/projects/tickets/$ticket_id" \
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/projects/tickets/$ticket_id" \
     -H "Authorization: Bearer $user_token")
   assert_status "User role cannot delete others' tickets" "403" "$delete_code"
 
   # User role can delete own tickets
   local own_ticket_body
-  own_ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+  own_ticket_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $user_token" \
     -d '{"title":"My Ticket","description":"Test"}')
   local own_ticket_id
   own_ticket_id=$(echo "$own_ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
-  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/projects/tickets/$own_ticket_id" \
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/projects/tickets/$own_ticket_id" \
     -H "Authorization: Bearer $user_token")
   assert_status "User role can delete own tickets" "200" "$delete_code"
 }
@@ -761,7 +761,7 @@ test_approvals_api() {
 
   # Create a project
   local proj_id
-  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"name":"Approval Project","description":""}' \
@@ -769,7 +769,7 @@ test_approvals_api() {
 
   # Create a ticket
   local ticket_body
-  ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+  ticket_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"title":"Approval Ticket","description":"Test"}')
@@ -777,20 +777,20 @@ test_approvals_api() {
   ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   # Move ticket to in_progress
-  curl -sf -X POST "$BASE/api/projects/$proj_id/tickets/$ticket_id/status" \
+  curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket_id/status" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"status":"in_progress"}' >/dev/null 2>&1
 
   # Move ticket to review
-  curl -sf -X POST "$BASE/api/projects/$proj_id/tickets/$ticket_id/status" \
+  curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket_id/status" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"status":"review"}' >/dev/null 2>&1
 
   # Create approval request
   local approval_body
-  approval_body=$(curl -sf -X POST "$BASE/api/approvals" \
+  approval_body=$(curl -sf -X POST "${BASE}/api/v1/approvals" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d "{\"ticketId\":\"$ticket_id\"}")
@@ -802,13 +802,13 @@ test_approvals_api() {
 
   # Get pending approvals
   local pending_body
-  pending_body=$(curl -sf "$BASE/api/approvals/pending" \
+  pending_body=$(curl -sf "${BASE}/api/v1/approvals/pending" \
     -H "Authorization: Bearer $admin_token")
   assert_has_field "Get pending approvals" "approvals" "$pending_body"
 
   # Approve request
   local approve_body
-  approve_body=$(curl -sf -X POST "$BASE/api/approvals/$approval_id/approve" \
+  approve_body=$(curl -sf -X POST "${BASE}/api/v1/approvals/$approval_id/approve" \
     -H "Authorization: Bearer $admin_token")
   local approve_status
   approve_status=$(echo "$approve_body" | grep -o '"status":"approved"' | head -1 | cut -d'"' -f4)
@@ -816,7 +816,7 @@ test_approvals_api() {
 
   # Cannot approve already approved
   local approve_code
-  approve_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/approvals/$approval_id/approve" \
+  approve_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE}/api/v1/approvals/$approval_id/approve" \
     -H "Authorization: Bearer $admin_token")
   assert_status "Cannot approve already approved" "400" "$approve_code"
 
@@ -824,7 +824,7 @@ test_approvals_api() {
   local user_token
   user_token=$(login "perm_user@integration.test" "password123")
   local user_approve_code
-  user_approve_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/approvals/1/approve" \
+  user_approve_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE}/api/v1/approvals/1/approve" \
     -H "Authorization: Bearer $user_token")
   assert_status "User role cannot approve" "403" "$user_approve_code"
 }
@@ -851,12 +851,12 @@ test_jwt_token_expiry() {
 
   # Verify the token works for API calls
   local code
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/projects" \
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/projects" \
     -H "Authorization: Bearer $token")
   assert_status "Valid JWT token works for API calls" "200" "$code"
 
   # Verify expired/invalid token is rejected
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/projects" \
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/projects" \
     -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIxIiwiZW1haWwiOiJ0ZXN0QHRlc3QuY29tIiwiaWF0IjoxNTE2MjM5MDIyLCJleHAiOjE1MTYyMzkwMjJ9.invalid")
   assert_status "Invalid JWT token is rejected" "401" "$code"
 }
@@ -872,7 +872,7 @@ test_ticket_crud_via_frontend_endpoint() {
 
   # Create a project
   local proj_id
-  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Frontend CRUD Test Project","description":""}' \
@@ -880,7 +880,7 @@ test_ticket_crud_via_frontend_endpoint() {
 
   # Create ticket via /api/tickets (used by frontend TicketBoard)
   local ticket_body
-  ticket_body=$(curl -sf -X POST "$BASE/api/tickets" \
+  ticket_body=$(curl -sf -X POST "${BASE}/api/v1/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d "{\"projectId\":\"$proj_id\",\"title\":\"Frontend CRUD Ticket\",\"description\":\"Test CRUD via /api/tickets\",\"priority\":\"high\"}")
@@ -892,7 +892,7 @@ test_ticket_crud_via_frontend_endpoint() {
 
   # Update ticket via /api/tickets/:id
   local update_code
-  update_code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$BASE/api/tickets/$ticket_id" \
+  update_code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "${BASE}/api/v1/tickets/$ticket_id" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"title":"Updated Frontend CRUD Ticket","priority":"urgent"}')
@@ -900,18 +900,18 @@ test_ticket_crud_via_frontend_endpoint() {
 
   # Verify update took effect
   local single_body
-  single_body=$(curl -sf "$BASE/api/tickets/$ticket_id" \
+  single_body=$(curl -sf "${BASE}/api/v1/tickets/$ticket_id" \
     -H "Authorization: Bearer $token")
   assert_field "Updated ticket title" "title" "Updated Frontend CRUD Ticket" "$(echo "$single_body" | grep -o '"title":"[^"]*"' | cut -d'"' -f4)"
 
   # Delete ticket
   local delete_code
-  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/tickets/$ticket_id" \
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/tickets/$ticket_id" \
     -H "Authorization: Bearer $token")
   assert_status "Delete ticket via /api/tickets/:id" "200" "$delete_code"
 
   # Verify deleted
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/tickets/$ticket_id" \
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/tickets/$ticket_id" \
     -H "Authorization: Bearer $token")
   assert_status "Deleted ticket returns 404" "404" "$code"
 }
@@ -927,7 +927,7 @@ test_credentials() {
 
   # Create a project
   local proj_id
-  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Credentials Test Project","description":""}' \
@@ -935,12 +935,12 @@ test_credentials() {
 
   # Unauthenticated access
   local code
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/projects/$proj_id/credentials")
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/projects/$proj_id/credentials")
   assert_status "Credentials without auth returns 401" "401" "$code"
 
   # Add a credential
   local cred_body
-  cred_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/credentials" \
+  cred_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/credentials" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Test API Key","type":"api_key","value":"sk-test-secret-key-12345"}')
@@ -960,19 +960,19 @@ test_credentials() {
 
   # List credentials
   local list_body
-  list_body=$(curl -sf "$BASE/api/projects/$proj_id/credentials" \
+  list_body=$(curl -sf "${BASE}/api/v1/projects/$proj_id/credentials" \
     -H "Authorization: Bearer $token")
   assert_has_field "List credentials returns array" "credentials" "$list_body"
 
   # Add another credential
-  curl -sf -X POST "$BASE/api/projects/$proj_id/credentials" \
+  curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/credentials" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"GitHub PAT","type":"github_pat","value":"ghp_test_pat_abc123xyz"}' >/dev/null 2>&1
 
   # Update credential
   local update_body
-  update_body=$(curl -sf -X PATCH "$BASE/api/projects/$proj_id/credentials/$cred_id" \
+  update_body=$(curl -sf -X PATCH "${BASE}/api/v1/projects/$proj_id/credentials/$cred_id" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Updated API Key"}')
@@ -980,7 +980,7 @@ test_credentials() {
 
   # Rotate credential
   local rotate_body
-  rotate_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/credentials/$cred_id/rotate" \
+  rotate_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/credentials/$cred_id/rotate" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"newValue":"sk-rotated-key-67890"}')
@@ -988,7 +988,7 @@ test_credentials() {
 
   # Decrypt key
   local decrypt_body
-  decrypt_body=$(curl -sf "$BASE/api/projects/$proj_id/credentials/decrypt" \
+  decrypt_body=$(curl -sf "${BASE}/api/v1/projects/$proj_id/credentials/decrypt" \
     -H "Authorization: Bearer $token")
   if echo "$decrypt_body" | grep -q '"decryptedKey"'; then
     pass "Decrypt returns decrypted key"
@@ -998,7 +998,7 @@ test_credentials() {
 
   # Delete credential
   local delete_code
-  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/projects/$proj_id/credentials/$cred_id" \
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/projects/$proj_id/credentials/$cred_id" \
     -H "Authorization: Bearer $token")
   assert_status "Delete credential" "200" "$delete_code"
 }
@@ -1014,7 +1014,7 @@ test_ticket_ownership() {
 
   # Create a project
   local proj_id
-  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Ownership Test Project","description":""}' \
@@ -1022,7 +1022,7 @@ test_ticket_ownership() {
 
   # Create a ticket
   local ticket_body
-  ticket_body=$(curl -sf -X POST "$BASE/api/projects/$proj_id/tickets" \
+  ticket_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"title":"Ownership ticket","description":"Test ticket ownership"}')
@@ -1040,7 +1040,7 @@ test_ticket_ownership() {
 
   # Create an agent user
   local agent_body
-  agent_body=$(curl -sf -X POST "$BASE/api/users" \
+  agent_body=$(curl -sf -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Test Agent","email":"agent@integration.test","password":"password123","role":"member","is_agent":true,"agent_roles":["worker"]}')
@@ -1049,14 +1049,14 @@ test_ticket_ownership() {
 
   # Agent picks up ticket
   local pickup_body
-  pickup_body=$(curl -sf -X POST "$BASE/api/tickets/$ticket_id/pickup" \
+  pickup_body=$(curl -sf -X POST "${BASE}/api/v1/tickets/$ticket_id/pickup" \
     -H "Authorization: Bearer $token")
   assert_field "Pickup assigns agent" "assignedAgentId" "$agent_user_id" "$(echo "$pickup_body" | grep -o '"assignedAgentId":"[^"]*"' | cut -d'"' -f4)"
   assert_field "Pickup sets status to in_progress" "status" "in_progress" "$(echo "$pickup_body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)"
 
   # Post a message on the ticket
   local msg_body
-  msg_body=$(curl -sf -X POST "$BASE/api/tickets/$ticket_id/messages" \
+  msg_body=$(curl -sf -X POST "${BASE}/api/v1/tickets/$ticket_id/messages" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"content":"Agent started working on this ticket","senderId":"'"$agent_user_id"'"}')
@@ -1065,19 +1065,19 @@ test_ticket_ownership() {
 
   # Get messages
   local msgs_body
-  msgs_body=$(curl -sf "$BASE/api/tickets/$ticket_id/messages" \
+  msgs_body=$(curl -sf "${BASE}/api/v1/tickets/$ticket_id/messages" \
     -H "Authorization: Bearer $token")
   assert_has_field "Get messages returns array" "messages" "$msgs_body"
 
   # Release ticket (admin only)
   local release_body
-  release_body=$(curl -sf -X POST "$BASE/api/tickets/$ticket_id/release" \
+  release_body=$(curl -sf -X POST "${BASE}/api/v1/tickets/$ticket_id/release" \
     -H "Authorization: Bearer $token")
   assert_field "Release clears agent assignment" "assignedAgentId" "" "$(echo "$release_body" | grep -o '"assignedAgentId":"[^"]*"' | cut -d'"' -f4 || echo '')"
 
   # Verify ticket is back to backlog
   local single_body
-  single_body=$(curl -sf "$BASE/api/tickets/$ticket_id" \
+  single_body=$(curl -sf "${BASE}/api/v1/tickets/$ticket_id" \
     -H "Authorization: Bearer $token")
   assert_field "Released ticket status is backlog" "status" "backlog" "$(echo "$single_body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)"
 }
@@ -1093,7 +1093,7 @@ test_usage_tracking() {
 
   # Create a project
   local proj_id
-  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Usage Test Project","description":""}' \
@@ -1101,7 +1101,7 @@ test_usage_tracking() {
 
   # Get model pricing
   local pricing_body
-  pricing_body=$(curl -sf "$BASE/api/usage/pricing/models" \
+  pricing_body=$(curl -sf "${BASE}/api/v1/usage/pricing/models" \
     -H "Authorization: Bearer $token")
   assert_has_field "Model pricing returns models" "models" "$pricing_body"
 
@@ -1121,13 +1121,13 @@ test_usage_tracking() {
 
   # Get project usage (will be empty initially)
   local usage_body
-  usage_body=$(curl -sf "$BASE/api/usage/projects/$proj_id/usage" \
+  usage_body=$(curl -sf "${BASE}/api/v1/usage/projects/$proj_id/usage" \
     -H "Authorization: Bearer $token")
   assert_has_field "Project usage returns data" "usage" "$usage_body"
 
   # Get user usage
   local user_usage_body
-  user_usage_body=$(curl -sf "$BASE/api/usage/users/me/usage" \
+  user_usage_body=$(curl -sf "${BASE}/api/v1/usage/users/me/usage" \
     -H "Authorization: Bearer $token")
   assert_has_field "User usage returns data" "usage" "$user_usage_body"
 }
@@ -1143,7 +1143,7 @@ test_billing() {
 
   # Create a project
   local proj_id
-  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Billing Test Project","description":""}' \
@@ -1151,13 +1151,13 @@ test_billing() {
 
   # Get project billing (will be empty initially)
   local billing_body
-  billing_body=$(curl -sf "$BASE/api/billing/projects/$proj_id/billing" \
+  billing_body=$(curl -sf "${BASE}/api/v1/billing/projects/$proj_id/billing" \
     -H "Authorization: Bearer $token")
   assert_has_field "Project billing returns data" "billing" "$billing_body"
 
   # Get user billing
   local user_billing_body
-  user_billing_body=$(curl -sf "$BASE/api/billing/users/me/billing" \
+  user_billing_body=$(curl -sf "${BASE}/api/v1/billing/users/me/billing" \
     -H "Authorization: Bearer $token")
   assert_has_field "User billing returns data" "billing" "$user_billing_body"
 }
@@ -1173,7 +1173,7 @@ test_shared_agent_memory() {
 
   # Create a project
   local proj_id
-  proj_id=$(curl -sf -X POST "$BASE/api/projects" \
+  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Memory Test Project","description":""}' \
@@ -1181,7 +1181,7 @@ test_shared_agent_memory() {
 
   # Create an agent user
   local agent_body
-  agent_body=$(curl -sf -X POST "$BASE/api/users" \
+  agent_body=$(curl -sf -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Memory Agent","email":"memory_agent@integration.test","password":"password123","role":"member","is_agent":true,"agent_roles":["worker"]}')
@@ -1190,12 +1190,12 @@ test_shared_agent_memory() {
 
   # Unauthenticated access
   local code
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/memory/project/$proj_id")
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/memory/project/$proj_id")
   assert_status "Memory without auth returns 401" "401" "$code"
 
   # Add memory to project
   local mem_body
-  mem_body=$(curl -sf -X POST "$BASE/api/memory/project/$proj_id" \
+  mem_body=$(curl -sf -X POST "${BASE}/api/v1/memory/project/$proj_id" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"content":"The system uses PostgreSQL for data storage","metadata":{"source":"architecture","tags":["database","postgresql"]}}')
@@ -1207,25 +1207,25 @@ test_shared_agent_memory() {
 
   # List project memories
   local list_body
-  list_body=$(curl -sf "$BASE/api/memory/project/$proj_id" \
+  list_body=$(curl -sf "${BASE}/api/v1/memory/project/$proj_id" \
     -H "Authorization: Bearer $token")
   assert_has_field "List project memories returns array" "memories" "$list_body"
 
   # Get specific memory
   local single_body
-  single_body=$(curl -sf "$BASE/api/memory/$mem_id" \
+  single_body=$(curl -sf "${BASE}/api/v1/memory/$mem_id" \
     -H "Authorization: Bearer $token")
   assert_field "Get memory by id" "content" "The system uses PostgreSQL for data storage" "$(echo "$single_body" | grep -o '"content":"[^"]*"' | cut -d'"' -f4)"
 
   # Add another memory
-  curl -sf -X POST "$BASE/api/memory/project/$proj_id" \
+  curl -sf -X POST "${BASE}/api/v1/memory/project/$proj_id" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"content":"The project uses pgvector for semantic search","metadata":{"source":"architecture","tags":["vector","search"]}}' >/dev/null 2>&1
 
   # Search memories
   local search_body
-  search_body=$(curl -sf "$BASE/api/memory/project/$proj_id/search" \
+  search_body=$(curl -sf "${BASE}/api/v1/memory/project/$proj_id/search" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"query":"database storage"}')
@@ -1233,7 +1233,7 @@ test_shared_agent_memory() {
 
   # Update memory
   local update_body
-  update_body=$(curl -sf -X PUT "$BASE/api/memory/$mem_id" \
+  update_body=$(curl -sf -X PUT "${BASE}/api/v1/memory/$mem_id" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"content":"The system uses PostgreSQL with pgvector extension"}')
@@ -1241,13 +1241,13 @@ test_shared_agent_memory() {
 
   # List agent memories
   local agent_mem_body
-  agent_mem_body=$(curl -sf "$BASE/api/memory/agent/$agent_id" \
+  agent_mem_body=$(curl -sf "${BASE}/api/v1/memory/agent/$agent_id" \
     -H "Authorization: Bearer $token")
   assert_has_field "List agent memories returns array" "memories" "$agent_mem_body"
 
   # Delete memory
   local delete_code
-  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/memory/$mem_id" \
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/memory/$mem_id" \
     -H "Authorization: Bearer $token")
   assert_status "Delete memory" "200" "$delete_code"
 }
