@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
+const { validate } = require('../middleware/validate');
 const memoryController = require('../controllers/memoryController');
+const { addMemorySchema, updateMemorySchema } = require('../validators/memory');
 
 /**
  * @openapi
@@ -81,7 +83,7 @@ router.get('/agent/:agentId', verifyToken, memoryController.getAgentMemory);
  *       201:
  *         description: Memory added
  */
-router.post('/project/:projectId', verifyToken, memoryController.addMemory);
+router.post('/project/:projectId', verifyToken, validate(addMemorySchema), memoryController.addMemory);
 
 /**
  * @openapi
@@ -125,7 +127,7 @@ router.get('/:id', verifyToken, memoryController.getMemory);
  *       200:
  *         description: Memory updated
  */
-router.put('/:id', verifyToken, memoryController.updateMemory);
+router.put('/:id', verifyToken, validate(updateMemorySchema), memoryController.updateMemory);
 
 /**
  * @openapi

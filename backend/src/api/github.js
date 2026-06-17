@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
+const { validate } = require('../middleware/validate');
 const githubController = require('../controllers/githubController');
+const { connectRepoSchema, createBranchSchema, createPRSchema } = require('../validators/github');
 
 /**
  * @openapi
@@ -44,7 +46,7 @@ router.get('/:projectId/repo', verifyToken, githubController.getRepoStatus);
  *       200:
  *         description: Repository connected
  */
-router.post('/:projectId/repo/connect', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), githubController.connectRepo);
+router.post('/:projectId/repo/connect', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), validate(connectRepoSchema), githubController.connectRepo);
 
 /**
  * @openapi
@@ -95,7 +97,7 @@ router.get('/:projectId/branches', verifyToken, githubController.listBranches);
  *       200:
  *         description: Branch created
  */
-router.post('/:ticketId/branch', verifyToken, githubController.createBranch);
+router.post('/:ticketId/branch', verifyToken, validate(createBranchSchema), githubController.createBranch);
 
 /**
  * @openapi
@@ -146,6 +148,6 @@ router.get('/:projectId/prs', verifyToken, githubController.listPRs);
  *       200:
  *         description: PR created
  */
-router.post('/:ticketId/pr', verifyToken, githubController.createPR);
+router.post('/:ticketId/pr', verifyToken, validate(createPRSchema), githubController.createPR);
 
 module.exports = router;

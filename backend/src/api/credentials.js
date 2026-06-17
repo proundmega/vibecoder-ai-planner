@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
+const { validate } = require('../middleware/validate');
 const credentialController = require('../controllers/credentialController');
+const { addCredentialSchema, updateCredentialSchema } = require('../validators/credentials');
 
 /**
  * @openapi
@@ -44,7 +46,7 @@ router.get('/:projectId/credentials', verifyToken, credentialController.listCred
  *       201:
  *         description: Credential added
  */
-router.post('/:projectId/credentials', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), credentialController.addCredential);
+router.post('/:projectId/credentials', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), validate(addCredentialSchema), credentialController.addCredential);
 
 /**
  * @openapi
@@ -73,7 +75,7 @@ router.post('/:projectId/credentials', verifyToken, requireAnyPermission('PROJEC
  *       200:
  *         description: Credential updated
  */
-router.patch('/:projectId/credentials/:credentialId', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), credentialController.updateCredential);
+router.patch('/:projectId/credentials/:credentialId', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), validate(updateCredentialSchema), credentialController.updateCredential);
 
 /**
  * @openapi

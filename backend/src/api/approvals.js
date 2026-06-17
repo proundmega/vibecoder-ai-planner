@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
+const { validate } = require('../middleware/validate');
 const ApprovalService = require('../services/ApprovalService');
+const { createApprovalSchema, approveSchema, rejectSchema } = require('../validators/approvals');
 
 /**
  * @openapi
@@ -23,12 +25,9 @@ const ApprovalService = require('../services/ApprovalService');
  *       400:
  *         description: Validation error
  */
-router.post('/', verifyToken, async (req, res) => {
+router.post('/', verifyToken, validate(createApprovalSchema), async (req, res) => {
   try {
     const { ticketId } = req.body;
-    if (!ticketId) {
-      return res.status(400).json({ error: 'ticketId is required' });
-    }
     const approval = await ApprovalService.create(ticketId, req.user.userId);
     res.status(201).json({ success: true, data: approval });
   } catch (error) {

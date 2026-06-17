@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
+const { validate } = require('../middleware/validate');
 const providerController = require('../controllers/providerController');
+const { addProviderSchema, updateProviderSchema } = require('../validators/providers');
 
 /**
  * @openapi
@@ -45,7 +47,7 @@ router.get('/:projectId/providers', verifyToken, providerController.listProvider
  *       201:
  *         description: Provider added
  */
-router.post('/:projectId/providers', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), providerController.addProvider);
+router.post('/:projectId/providers', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), validate(addProviderSchema), providerController.addProvider);
 
 /**
  * @openapi
@@ -74,7 +76,7 @@ router.post('/:projectId/providers', verifyToken, requireAnyPermission('PROJECT_
  *       200:
  *         description: Provider updated
  */
-router.patch('/:projectId/providers/:providerId', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), providerController.updateProvider);
+router.patch('/:projectId/providers/:providerId', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), validate(updateProviderSchema), providerController.updateProvider);
 
 /**
  * @openapi
