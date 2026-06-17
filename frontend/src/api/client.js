@@ -78,3 +78,36 @@ export function postWithHeaders(url, body, extraHeaders = {}) {
     headers: extraHeaders,
   }).then(extractData)
 }
+
+export function postMultipart(url, formData) {
+  const authStore = useAuthStore()
+  const token = authStore.token.value
+  const headers = {}
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  return fetch(url, {
+    method: 'POST',
+    headers,
+    body: formData,
+  }).then(async (response) => {
+    if (response.status === 401) {
+      authStore.logout()
+      router.push({ name: 'Login', query: { redirect: router.currentRoute.value.fullPath } })
+      const err = new Error('Unauthorized')
+      err.status = 401
+      throw err
+    }
+    if (!response.ok) {
+      let message = `HTTP ${response.status}`
+      try {
+        const body = await response.json()
+        message = body?.error?.message || body?.message || message
+      } catch {}
+      const err = new Error(message)
+      err.status = response.status
+      throw err
+    }
+    return response.json().then(data => data.data !== undefined ? data.data : data)
+  })
+}

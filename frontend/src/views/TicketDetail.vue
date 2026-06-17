@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { fetchTicket, updateTicket, addComment, fetchComments, deleteTicket } from '@/api/tickets'
 import { getTicketApprovals, createApproval } from '@/api/approvals'
+import { fetchAttachments, uploadAttachment, deleteAttachment } from '@/api/ticketAttachments'
 import TicketEditModal from '@/components/TicketEditModal.vue'
 
 const route = useRoute()
@@ -17,6 +18,9 @@ const comments = ref([])
 const showEditModal = ref(false)
 const showDeleteConfirm = ref(false)
 const deleting = ref(false)
+const attachments = ref([])
+const uploading = ref(false)
+const uploadError = ref('')
 
 const ticketId = route.params.ticketId
 const approvals = ref([])
@@ -55,6 +59,7 @@ onMounted(async () => {
     } else {
       comments.value = await fetchComments(ticketId)
       approvals.value = await getTicketApprovals(ticketId)
+      attachments.value = await fetchAttachments(ticketId)
     }
   } catch (e) {
     console.error('Failed to load ticket:', e)
@@ -137,6 +142,41 @@ async function addCommentText() {
     error.value = 'Failed to add comment'
   }
 }
+
+async function handleFileUpload(event) {
+  const file = event.target.files[0]
+  if (!file || !ticket.value) return
+  uploading.value = true
+  uploadError.value = ''
+  try {
+    await uploadAttachment(ticket.value.id, file)
+    attachments.value = await fetchAttachments(ticket.value.id)
+    event.target.value = ''
+  } catch (err) {
+    console.error('Failed to upload file:', err)
+    uploadError.value = err.message || 'Failed to upload file'
+  } finally {
+    uploading.value = false
+  }
+}
+
+async function handleDeleteAttachment(attachmentId) {
+  if (!ticket.value) return
+  try {
+    await deleteAttachment(ticket.value.id, attachmentId)
+    attachments.value = attachments.value.filter(a => a.id !== attachmentId)
+  } catch (err) {
+    console.error('Failed to delete attachment:', err)
+    uploadError.value = err.message || 'Failed to delete attachment'
+  }
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return '0 B'
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + sizes[i]
+}
 </script>
 
 <template>
@@ -191,6 +231,25 @@ async function addCommentText() {
         <p v-if="authStore.user.value?.role === 'user'">
           Your work has been submitted for review. You'll be notified once approved.
         </p>
+      </div>
+
+      <div class="attachments">
+        <h3>Attachments</h3>
+        <div v-if="uploadError" class="error">{{ uploadError }}</div>
+        <div v-if="canUpdate()" class="upload-area">
+          <input type="file" id="file-upload" @change="handleFileUpload" :disabled="uploading" />
+          <label for="file-upload" class="btn-upload" :class="{ uploading }">
+            {{ uploading ? 'Uploading...' : 'Upload File' }}
+          </label>
+        </div>
+        <div v-if="attachments.length === 0 && !uploadError" class="empty">No attachments yet</div>
+        <div v-for="attachment in attachments" :key="attachment.id" class="attachment-item">
+          <div class="attachment-info">
+            <span class="attachment-name">{{ attachment.filename }}</span>
+            <span class="attachment-meta">{{ formatFileSize(attachment.size_bytes) }} · {{ new Date(attachment.created_at).toLocaleDateString() }}</span>
+          </div>
+          <button v-if="canUpdate()" @click="handleDeleteAttachment(attachment.id)" class="btn-delete-attachment">Delete</button>
+        </div>
       </div>
 
       <div class="comments">
@@ -351,6 +410,88 @@ h1 {
 .actions button:disabled {
   background: #9ca3af;
   cursor: not-allowed;
+}
+
+.attachments {
+  margin-top: 30px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 20px;
+}
+
+.upload-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.upload-area input[type="file"] {
+  display: none;
+}
+
+.btn-upload {
+  padding: 8px 16px;
+  background: #10b981;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btn-upload:hover:not(.uploading) {
+  background: #059669;
+}
+
+.btn-upload.uploading {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.empty {
+  color: #9ca3af;
+  font-size: 14px;
+  margin: 10px 0;
+}
+
+.attachment-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  background: #f9fafb;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.attachment-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.attachment-name {
+  font-weight: 500;
+  color: #374151;
+}
+
+.attachment-meta {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.btn-delete-attachment {
+  padding: 6px 12px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.btn-delete-attachment:hover {
+  background: #dc2626;
 }
 
 .comments {
