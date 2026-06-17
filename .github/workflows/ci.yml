@@ -46,6 +46,14 @@ jobs:
         working-directory: ./backend
         run: npm test
 
+      - name: Run frontend tests
+        working-directory: ./frontend
+        run: npm test -- --run
+
+      - name: Run frontend contract tests
+        working-directory: ./frontend
+        run: npm test -- --run src/__tests__/api-contract.test.ts
+
       - name: Check backend syntax
         working-directory: ./backend
         run: node --check src/index.js
