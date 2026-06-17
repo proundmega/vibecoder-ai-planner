@@ -23,6 +23,7 @@ const registerUserBound = registerUser.bind(auth);
 const loginUserBound = loginUser.bind(auth);
 
 const v1Routes = require('./v1');
+const cspReportRouter = require('./csp-report');
 
 /**
  * @openapi
@@ -293,6 +294,9 @@ router.use('/v1',
   slowRequestLogger(SLOW_REQUEST_THRESHOLD_MS),
   v1Routes
 );
+
+// CSP report endpoint (no auth required)
+router.use(cspReportRouter);
 
 // Catch-all for unversioned requests
 router.use((req, res) => {
