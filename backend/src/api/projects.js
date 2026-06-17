@@ -69,7 +69,7 @@ router.post('/', verifyToken, requireAnyPermission('PROJECT_CREATE'), validate(c
  *       404:
  *         description: Project not found
  */
-router.get('/:id', projectController.getProject);
+router.get('/:id', verifyToken, projectController.getProject);
 
 /**
  * @openapi
@@ -132,7 +132,7 @@ router.delete('/:id', verifyToken, requireAnyPermission('PROJECT_DELETE'), proje
  *       200:
  *         description: List of tickets
  */
-router.get('/:id/tickets', projectController.getProjectTickets);
+router.get('/:id/tickets', verifyToken, projectController.getProjectTickets);
 
 /**
  * @openapi
@@ -153,7 +153,7 @@ router.get('/:id/tickets', projectController.getProjectTickets);
  *       200:
  *         description: Filtered tickets
  */
-router.get('/:id/tickets/status/:status', projectController.getProjectTicketsByStatus);
+router.get('/:id/tickets/status/:status', verifyToken, projectController.getProjectTicketsByStatus);
 
 /**
  * @openapi
@@ -170,7 +170,7 @@ router.get('/:id/tickets/status/:status', projectController.getProjectTicketsByS
  *       200:
  *         description: List of project members
  */
-router.get('/:id/members', projectController.getProjectMemberships);
+router.get('/:id/members', verifyToken, projectController.getProjectMemberships);
 
 /**
  * @openapi
@@ -187,7 +187,7 @@ router.get('/:id/members', projectController.getProjectMemberships);
  *       200:
  *         description: List of assignable users
  */
-router.get('/:id/users', projectController.getProjectUsers);
+router.get('/:id/users', verifyToken, projectController.getProjectUsers);
 
 /**
  * @openapi
