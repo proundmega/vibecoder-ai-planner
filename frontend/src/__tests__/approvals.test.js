@@ -18,7 +18,7 @@ describe('approvals API', () => {
 
       const result = await approvals.createApproval('t1')
 
-      expect(post).toHaveBeenCalledWith('/api/approvals', { ticketId: 't1' })
+      expect(post).toHaveBeenCalledWith('/api/v1/approvals', { ticketId: 't1' })
       expect(result).toEqual({ id: 'a1', ticketId: 't1', status: 'pending' })
     })
   })
@@ -30,7 +30,7 @@ describe('approvals API', () => {
 
       const result = await approvals.getPendingApprovals()
 
-      expect(get).toHaveBeenCalledWith('/api/approvals/pending')
+      expect(get).toHaveBeenCalledWith('/api/v1/approvals/pending')
       expect(result).toEqual([{ id: 'a1', ticketId: 't1', status: 'pending' }])
     })
   })
@@ -42,7 +42,7 @@ describe('approvals API', () => {
 
       const result = await approvals.getTicketApprovals('t1')
 
-      expect(get).toHaveBeenCalledWith('/api/approvals/ticket/t1')
+      expect(get).toHaveBeenCalledWith('/api/v1/approvals/ticket/t1')
       expect(result).toEqual([{ id: 'a1', ticketId: 't1' }])
     })
   })
@@ -54,7 +54,7 @@ describe('approvals API', () => {
 
       const result = await approvals.approveRequest('a1')
 
-      expect(post).toHaveBeenCalledWith('/api/approvals/a1/approve')
+      expect(post).toHaveBeenCalledWith('/api/v1/approvals/a1/approve')
       expect(result).toEqual({ id: 'a1', status: 'approved' })
     })
   })
@@ -66,7 +66,7 @@ describe('approvals API', () => {
 
       const result = await approvals.rejectRequest('a1')
 
-      expect(post).toHaveBeenCalledWith('/api/approvals/a1/reject')
+      expect(post).toHaveBeenCalledWith('/api/v1/approvals/a1/reject')
       expect(result).toEqual({ id: 'a1', status: 'rejected' })
     })
   })

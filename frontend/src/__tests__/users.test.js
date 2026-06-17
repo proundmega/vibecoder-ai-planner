@@ -21,7 +21,7 @@ describe('users API', () => {
 
       const result = await users.listUsers()
 
-      expect(get).toHaveBeenCalledWith('/api/users')
+      expect(get).toHaveBeenCalledWith('/api/v1/users')
       expect(result).toEqual([{ id: 'u1', name: 'User 1' }])
     })
 
@@ -31,7 +31,7 @@ describe('users API', () => {
 
       await users.listUsers({ role: 'admin' })
 
-      expect(get).toHaveBeenCalledWith('/api/users?role=admin')
+      expect(get).toHaveBeenCalledWith('/api/v1/users?role=admin')
     })
 
     it('appends search filter to query string', async () => {
@@ -40,7 +40,7 @@ describe('users API', () => {
 
       await users.listUsers({ search: 'John' })
 
-      expect(get).toHaveBeenCalledWith('/api/users?search=John')
+      expect(get).toHaveBeenCalledWith('/api/v1/users?search=John')
     })
 
     it('appends pagination params', async () => {
@@ -49,7 +49,7 @@ describe('users API', () => {
 
       await users.listUsers({ page: 2, perPage: 10 })
 
-      expect(get).toHaveBeenCalledWith('/api/users?page=2&perPage=10')
+      expect(get).toHaveBeenCalledWith('/api/v1/users?page=2&perPage=10')
     })
 
     it('combines multiple filters', async () => {
@@ -58,7 +58,7 @@ describe('users API', () => {
 
       await users.listUsers({ role: 'admin', search: 'John', page: 1, perPage: 20 })
 
-      expect(get).toHaveBeenCalledWith('/api/users?role=admin&search=John&page=1&perPage=20')
+      expect(get).toHaveBeenCalledWith('/api/v1/users?role=admin&search=John&page=1&perPage=20')
     })
   })
 
@@ -69,7 +69,7 @@ describe('users API', () => {
 
       const result = await users.listAllUsers()
 
-      expect(get).toHaveBeenCalledWith('/api/users/super-admin')
+      expect(get).toHaveBeenCalledWith('/api/v1/users/super-admin')
       expect(result).toEqual([{ id: 'u1', name: 'All User' }])
     })
 
@@ -79,7 +79,7 @@ describe('users API', () => {
 
       await users.listUsers({ role: 'admin' })
 
-      expect(get).toHaveBeenCalledWith('/api/users?role=admin')
+      expect(get).toHaveBeenCalledWith('/api/v1/users?role=admin')
     })
 
     it('appends is_active filter', async () => {
@@ -88,7 +88,7 @@ describe('users API', () => {
 
       await users.listAllUsers({ is_active: false })
 
-      expect(get).toHaveBeenCalledWith('/api/users/super-admin?is_active=false')
+      expect(get).toHaveBeenCalledWith('/api/v1/users/super-admin?is_active=false')
     })
 
     it('appends pagination params', async () => {
@@ -97,7 +97,7 @@ describe('users API', () => {
 
       await users.listAllUsers({ page: 1, perPage: 50 })
 
-      expect(get).toHaveBeenCalledWith('/api/users/super-admin?page=1&perPage=50')
+      expect(get).toHaveBeenCalledWith('/api/v1/users/super-admin?page=1&perPage=50')
     })
 
     it('combines all filters', async () => {
@@ -106,7 +106,7 @@ describe('users API', () => {
 
       await users.listAllUsers({ role: 'user', search: 'test', is_active: true, page: 1, perPage: 20 })
 
-      expect(get).toHaveBeenCalledWith('/api/users/super-admin?role=user&search=test&is_active=true&page=1&perPage=20')
+      expect(get).toHaveBeenCalledWith('/api/v1/users/super-admin?role=user&search=test&is_active=true&page=1&perPage=20')
     })
   })
 
@@ -117,7 +117,7 @@ describe('users API', () => {
 
       const result = await users.createUser({ name: 'New User', email: 'new@example.com', role: 'user' })
 
-      expect(post).toHaveBeenCalledWith('/api/users', {
+      expect(post).toHaveBeenCalledWith('/api/v1/users', {
         name: 'New User',
         email: 'new@example.com',
         role: 'user',
@@ -131,7 +131,7 @@ describe('users API', () => {
 
       await users.createUser({ name: 'Test', email: 't@t.com', role: 'member', description: 'Desc' })
 
-      expect(post).toHaveBeenCalledWith('/api/users', {
+      expect(post).toHaveBeenCalledWith('/api/v1/users', {
         name: 'Test',
         email: 't@t.com',
         role: 'member',
@@ -147,7 +147,7 @@ describe('users API', () => {
 
       const result = await users.updateUser('u1', { name: 'Updated', email: 'updated@example.com' })
 
-      expect(put).toHaveBeenCalledWith('/api/users/u1', {
+      expect(put).toHaveBeenCalledWith('/api/v1/users/u1', {
         name: 'Updated',
         email: 'updated@example.com',
       })
@@ -160,7 +160,7 @@ describe('users API', () => {
 
       const result = await users.updateUser('u1', { role: 'admin' })
 
-      expect(put).toHaveBeenCalledWith('/api/users/u1', { role: 'admin' })
+      expect(put).toHaveBeenCalledWith('/api/v1/users/u1', { role: 'admin' })
       expect(result).toEqual({ id: 'u1', role: 'admin' })
     })
   })
@@ -172,7 +172,7 @@ describe('users API', () => {
 
       const result = await users.toggleUserActive('u1')
 
-      expect(patch).toHaveBeenCalledWith('/api/users/u1/toggle-active')
+      expect(patch).toHaveBeenCalledWith('/api/v1/users/u1/toggle-active')
       expect(result).toEqual({ id: 'u1', is_active: false })
     })
 
@@ -193,7 +193,7 @@ describe('users API', () => {
 
       const result = await users.deleteUser('u1')
 
-      expect(del).toHaveBeenCalledWith('/api/users/u1')
+      expect(del).toHaveBeenCalledWith('/api/v1/users/u1')
       expect(result).toEqual({ deleted: true })
     })
 

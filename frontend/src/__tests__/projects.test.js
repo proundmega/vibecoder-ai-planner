@@ -20,7 +20,7 @@ describe('projects API', () => {
 
       const result = await projects.fetchProjects()
 
-      expect(get).toHaveBeenCalledWith('/api/projects')
+      expect(get).toHaveBeenCalledWith('/api/v1/projects')
       expect(result).toEqual([{ id: 'p1', name: 'Project 1' }])
     })
 
@@ -41,7 +41,7 @@ describe('projects API', () => {
 
       const result = await projects.createProject('New Project', 'A test project')
 
-      expect(post).toHaveBeenCalledWith('/api/projects', {
+      expect(post).toHaveBeenCalledWith('/api/v1/projects', {
         name: 'New Project',
         description: 'A test project',
       })
@@ -54,7 +54,7 @@ describe('projects API', () => {
 
       const result = await projects.createProject('New Project', '')
 
-      expect(post).toHaveBeenCalledWith('/api/projects', {
+      expect(post).toHaveBeenCalledWith('/api/v1/projects', {
         name: 'New Project',
         description: '',
       })
@@ -78,7 +78,7 @@ describe('projects API', () => {
 
       const result = await projects.fetchProjectById('p1')
 
-      expect(get).toHaveBeenCalledWith('/api/projects/p1')
+      expect(get).toHaveBeenCalledWith('/api/v1/projects/p1')
       expect(result).toEqual({ id: 'p1', name: 'Project 1', description: 'Desc' })
     })
 
@@ -99,7 +99,7 @@ describe('projects API', () => {
 
       const result = await projects.updateProject('p1', 'Updated', 'New desc')
 
-      expect(put).toHaveBeenCalledWith('/api/projects/p1', {
+      expect(put).toHaveBeenCalledWith('/api/v1/projects/p1', {
         name: 'Updated',
         description: 'New desc',
       })
@@ -123,7 +123,7 @@ describe('projects API', () => {
 
       const result = await projects.deleteProject('p1')
 
-      expect(del).toHaveBeenCalledWith('/api/projects/p1')
+      expect(del).toHaveBeenCalledWith('/api/v1/projects/p1')
       expect(result).toEqual({ deleted: true })
     })
 

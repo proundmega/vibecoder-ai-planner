@@ -20,7 +20,7 @@ describe('agents API', () => {
     await agents.createTicket('proj-1', 'Test ticket', 'Description', 'agent-key-123')
 
     expect(postWithHeaders).toHaveBeenCalledWith(
-      '/api/agents/tickets/create',
+      '/api/v1/agents/tickets/create',
       { projectId: 'proj-1', title: 'Test ticket', description: 'Description' },
       { 'x-api-key': 'agent-key-123' },
     )
@@ -33,7 +33,7 @@ describe('agents API', () => {
     await agents.createTicket('proj-1', 'Test ticket', 'Description')
 
     expect(postWithHeaders).toHaveBeenCalledWith(
-      '/api/agents/tickets/create',
+      '/api/v1/agents/tickets/create',
       { projectId: 'proj-1', title: 'Test ticket', description: 'Description' },
       {},
     )
@@ -46,7 +46,7 @@ describe('agents API', () => {
     await agents.updateTicket('t1', { title: 'Updated' }, 'agent-key')
 
     expect(postWithHeaders).toHaveBeenCalledWith(
-      '/api/agents/agents/tickets/edit/t1',
+      '/api/v1/agents/agents/tickets/edit/t1',
       { title: 'Updated' },
       { 'x-api-key': 'agent-key' },
     )
@@ -59,7 +59,7 @@ describe('agents API', () => {
     await agents.claimTicket('t1', 'agent-key')
 
     expect(postWithHeaders).toHaveBeenCalledWith(
-      '/api/agents/agents/tickets/claim/t1',
+      '/api/v1/agents/agents/tickets/claim/t1',
       {},
       { 'x-api-key': 'agent-key' },
     )
@@ -72,7 +72,7 @@ describe('agents API', () => {
     await agents.changeTicketStatus('t1', 'review', 'agent-key')
 
     expect(postWithHeaders).toHaveBeenCalledWith(
-      '/api/agents/agents/tickets/status/t1',
+      '/api/v1/agents/agents/tickets/status/t1',
       { status: 'review' },
       { 'x-api-key': 'agent-key' },
     )
@@ -84,7 +84,7 @@ describe('agents API', () => {
 
     await agents.getAgentTickets('proj-1', 'agent-key')
 
-    expect(get).toHaveBeenCalledWith('/api/agents/agents/tickets/my-tasks/proj-1', {
+    expect(get).toHaveBeenCalledWith('/api/v1/agents/agents/tickets/my-tasks/proj-1', {
       headers: { 'x-api-key': 'agent-key' },
     })
   })
@@ -95,7 +95,7 @@ describe('agents API', () => {
 
     await agents.getAgentTickets('proj-1')
 
-    expect(get).toHaveBeenCalledWith('/api/agents/agents/tickets/my-tasks/proj-1', {})
+    expect(get).toHaveBeenCalledWith('/api/v1/agents/agents/tickets/my-tasks/proj-1', {})
   })
 
   it('getAgentKeyInfo calls get with correct URL', async () => {
@@ -104,7 +104,7 @@ describe('agents API', () => {
 
     await agents.getAgentKeyInfo('agent-1')
 
-    expect(get).toHaveBeenCalledWith('/api/agents/agents/agent-1/key')
+    expect(get).toHaveBeenCalledWith('/api/v1/agents/agents/agent-1/key')
   })
 
   it('createAgent calls post with correct URL', async () => {
@@ -113,7 +113,7 @@ describe('agents API', () => {
 
     await agents.createAgent('Test Agent')
 
-    expect(post).toHaveBeenCalledWith('/api/agents/agents/create', { name: 'Test Agent' })
+    expect(post).toHaveBeenCalledWith('/api/v1/agents/agents/create', { name: 'Test Agent' })
   })
 
   it('listAgents calls get with correct URL', async () => {
@@ -122,7 +122,7 @@ describe('agents API', () => {
 
     await agents.listAgents()
 
-    expect(get).toHaveBeenCalledWith('/api/agents/agents')
+    expect(get).toHaveBeenCalledWith('/api/v1/agents/agents')
   })
 
   it('getAgentHistory calls get with correct URL and options', async () => {
@@ -131,7 +131,7 @@ describe('agents API', () => {
 
     await agents.getAgentHistory('agent-1', 'agent-key')
 
-    expect(get).toHaveBeenCalledWith('/api/agents/agents/agent-1/history', {
+    expect(get).toHaveBeenCalledWith('/api/v1/agents/agents/agent-1/history', {
       headers: { 'x-api-key': 'agent-key' },
     })
   })
@@ -142,6 +142,6 @@ describe('agents API', () => {
 
     await agents.getAgentHistory('agent-1')
 
-    expect(get).toHaveBeenCalledWith('/api/agents/agents/agent-1/history', {})
+    expect(get).toHaveBeenCalledWith('/api/v1/agents/agents/agent-1/history', {})
   })
 })

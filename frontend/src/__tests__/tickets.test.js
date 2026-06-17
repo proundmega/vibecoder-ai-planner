@@ -19,7 +19,7 @@ describe('tickets API', () => {
 
     const result = await tickets.fetchTickets('proj-1')
 
-    expect(get).toHaveBeenCalledWith('/api/projects/proj-1/tickets')
+    expect(get).toHaveBeenCalledWith('/api/v1/projects/proj-1/tickets')
     expect(result).toEqual([{ id: 't1' }, { id: 't2' }])
   })
 
@@ -38,7 +38,7 @@ describe('tickets API', () => {
 
     const result = await tickets.fetchTicket('t1')
 
-    expect(get).toHaveBeenCalledWith('/api/tickets/t1')
+    expect(get).toHaveBeenCalledWith('/api/v1/tickets/t1')
     expect(result).toEqual({ id: 't1', title: 'Test ticket' })
   })
 
@@ -57,7 +57,7 @@ describe('tickets API', () => {
 
     const result = await tickets.updateTicket('t1', { status: 'in_progress' })
 
-    expect(put).toHaveBeenCalledWith('/api/tickets/t1', { status: 'in_progress' })
+    expect(put).toHaveBeenCalledWith('/api/v1/tickets/t1', { status: 'in_progress' })
     expect(result).toEqual({ id: 't1', status: 'in_progress' })
   })
 
@@ -76,7 +76,7 @@ describe('tickets API', () => {
 
     const result = await tickets.createTicket('proj-1', 'New ticket', 'Description')
 
-    expect(post).toHaveBeenCalledWith('/api/tickets', {
+    expect(post).toHaveBeenCalledWith('/api/v1/tickets', {
       projectId: 'proj-1',
       title: 'New ticket',
       description: 'Description',
@@ -99,7 +99,7 @@ describe('tickets API', () => {
 
     const result = await tickets.deleteTicket('t1')
 
-    expect(del).toHaveBeenCalledWith('/api/tickets/t1')
+    expect(del).toHaveBeenCalledWith('/api/v1/tickets/t1')
     expect(result).toEqual({ deleted: true })
   })
 
@@ -116,7 +116,7 @@ describe('tickets API', () => {
 
     const result = await tickets.fetchComments('t1')
 
-    expect(get).toHaveBeenCalledWith('/api/tickets/t1/comments')
+    expect(get).toHaveBeenCalledWith('/api/v1/tickets/t1/comments')
     expect(result).toEqual([{ id: 'c1', content: 'Comment 1' }])
   })
 
@@ -135,7 +135,7 @@ describe('tickets API', () => {
 
     const result = await tickets.addComment('t1', 'New comment')
 
-    expect(post).toHaveBeenCalledWith('/api/tickets/t1/comments', { content: 'New comment' })
+    expect(post).toHaveBeenCalledWith('/api/v1/tickets/t1/comments', { content: 'New comment' })
     expect(result).toEqual({ id: 'c1', content: 'New comment' })
   })
 
@@ -154,7 +154,7 @@ describe('tickets API', () => {
 
     const result = await tickets.fetchProjectUsers('proj-1')
 
-    expect(get).toHaveBeenCalledWith('/api/projects/proj-1/users')
+    expect(get).toHaveBeenCalledWith('/api/v1/projects/proj-1/users')
     expect(result).toEqual([{ id: 'u1', name: 'User 1' }])
   })
 
