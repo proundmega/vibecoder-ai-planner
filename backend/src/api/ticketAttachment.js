@@ -20,7 +20,7 @@ const upload = require('../middleware/multer');
  *       200:
  *         description: Attachments list
  */
-router.get('/', verifyToken, controller.list.bind(controller));
+router.get('/', verifyToken, (req, res, next) => controller.list(req, res, next).catch(next));
 
 /**
  * @openapi
@@ -48,7 +48,7 @@ router.get('/', verifyToken, controller.list.bind(controller));
  *       201:
  *         description: Attachment uploaded
  */
-router.post('/', verifyToken, upload.single('file'), controller.upload.bind(controller));
+router.post('/', verifyToken, upload.single('file'), (req, res, next) => controller.upload(req, res, next).catch(next));
 
 /**
  * @openapi
@@ -71,8 +71,8 @@ router.post('/', verifyToken, upload.single('file'), controller.upload.bind(cont
  *       200:
  *         description: Attachment deleted
  */
-router.delete('/:attachmentId', verifyToken, controller.delete.bind(controller));
+router.delete('/:attachmentId', verifyToken, (req, res, next) => controller.delete(req, res, next).catch(next));
 
-router.handleGetFile = controller.get.bind(controller);
+router.handleGetFile = (req, res, next) => controller.get(req, res, next).catch(next);
 
 module.exports = router;

@@ -19,7 +19,7 @@ const controller = require('../controllers/ticketPlanningController');
  *       200:
  *         description: Planning files list
  */
-router.get('/', verifyTokenOrAgent, controller.list.bind(controller));
+router.get('/', verifyTokenOrAgent, (req, res, next) => controller.list(req, res, next).catch(next));
 
 /**
  * @openapi
@@ -42,7 +42,7 @@ router.get('/', verifyTokenOrAgent, controller.list.bind(controller));
  *       200:
  *         description: Planning file content
  */
-router.get('/:fileKey', verifyTokenOrAgent, controller.get.bind(controller));
+router.get('/:fileKey', verifyTokenOrAgent, (req, res, next) => controller.get(req, res, next).catch(next));
 
 /**
  * @openapi
@@ -75,7 +75,7 @@ router.get('/:fileKey', verifyTokenOrAgent, controller.get.bind(controller));
  *       200:
  *         description: Planning file updated
  */
-router.put('/:fileKey', verifyToken, controller.upsert.bind(controller));
+router.put('/:fileKey', verifyToken, (req, res, next) => controller.upsert(req, res, next).catch(next));
 
 /**
  * @openapi
@@ -104,7 +104,7 @@ router.put('/:fileKey', verifyToken, controller.upsert.bind(controller));
  *       200:
  *         description: Template applied
  */
-router.post('/apply-template', verifyToken, controller.applyTemplate.bind(controller));
+router.post('/apply-template', verifyToken, (req, res, next) => controller.applyTemplate(req, res, next).catch(next));
 
 /**
  * @openapi
@@ -133,9 +133,9 @@ router.post('/apply-template', verifyToken, controller.applyTemplate.bind(contro
  *       200:
  *         description: Status updated
  */
-router.patch('/status', verifyToken, controller.updateStatus.bind(controller));
+router.patch('/status', verifyToken, (req, res, next) => controller.updateStatus(req, res, next).catch(next));
 
-router.handleApplyTemplate = controller.applyTemplate.bind(controller);
-router.handleUpdateStatus = controller.updateStatus.bind(controller);
+router.handleApplyTemplate = (req, res, next) => controller.applyTemplate(req, res, next).catch(next);
+router.handleUpdateStatus = (req, res, next) => controller.updateStatus(req, res, next).catch(next);
 
 module.exports = router;
