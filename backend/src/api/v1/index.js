@@ -15,7 +15,7 @@ const credentialsRouter = require('../credentials');
 const usageRouter = require('../usage');
 const billingRouter = require('../billing');
 const memoryRouter = require('../memory');
-const ticketPlanningRouter = require('../ticketPlanning');
+const ticketPlanningController = require('../../controllers/ticketPlanningController');
 const ticketAttachmentController = require('../../controllers/ticketAttachmentController');
 const ticketAttachmentUpload = require('../../middleware/multer');
 const { verifyToken } = require('../../middleware/auth');
@@ -36,10 +36,12 @@ router.use('/usage', usageRouter);
 router.use('/billing', billingRouter);
 router.use('/memory', memoryRouter);
 
-// Planning routes (nested under tickets)
-router.post('/tickets/:ticketId/planning/apply-template', ticketPlanningRouter.handleApplyTemplate);
-router.patch('/tickets/:ticketId/planning/status', ticketPlanningRouter.handleUpdateStatus);
-router.use('/tickets/:ticketId/planning', ticketPlanningRouter);
+// Planning routes (inlined to preserve ticketId param)
+router.get('/tickets/:ticketId/planning', verifyToken, (req, res, next) => ticketPlanningController.list(req, res, next).catch(next));
+router.get('/tickets/:ticketId/planning/:fileKey', verifyToken, (req, res, next) => ticketPlanningController.get(req, res, next).catch(next));
+router.put('/tickets/:ticketId/planning/:fileKey', verifyToken, (req, res, next) => ticketPlanningController.upsert(req, res, next).catch(next));
+router.post('/tickets/:ticketId/planning/apply-template', verifyToken, (req, res, next) => ticketPlanningController.applyTemplate(req, res, next).catch(next));
+router.patch('/tickets/:ticketId/planning/status', verifyToken, (req, res, next) => ticketPlanningController.updateStatus(req, res, next).catch(next));
 
 // Attachment routes (nested under tickets, inlined to preserve ticketId param)
 router.post('/tickets/:ticketId/attachments', verifyToken, ticketAttachmentUpload.single('file'), (req, res, next) => ticketAttachmentController.upload(req, res, next).catch(next));

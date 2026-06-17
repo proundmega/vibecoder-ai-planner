@@ -3,7 +3,7 @@ const { NotFoundError, ForbiddenError } = require('../errors/HttpError');
 
 class TicketPlanningController {
   async list(req, res) {
-    const { id: ticketId } = req.params;
+    const { ticketId } = req.params;
     const userId = req.user.userId;
     
     const files = await TicketPlanningService.list(ticketId, userId);
@@ -11,7 +11,7 @@ class TicketPlanningController {
   }
 
   async get(req, res) {
-    const { id: ticketId, fileKey } = req.params;
+    const { ticketId, fileKey } = req.params;
     const userId = req.user.userId;
     
     const file = await TicketPlanningService.get(ticketId, fileKey, userId);
@@ -22,7 +22,7 @@ class TicketPlanningController {
   }
 
   async upsert(req, res) {
-    const { id: ticketId, fileKey } = req.params;
+    const { ticketId, fileKey } = req.params;
     const userId = req.user.userId;
     const { content } = req.body;
     
@@ -35,7 +35,7 @@ class TicketPlanningController {
   }
 
   async applyTemplate(req, res) {
-    const { id: ticketId } = req.params;
+    const { ticketId } = req.params;
     const userId = req.user.userId;
     const { templateName } = req.body;
     
@@ -48,7 +48,7 @@ class TicketPlanningController {
   }
 
   async updateStatus(req, res) {
-    const { id: ticketId } = req.params;
+    const { ticketId } = req.params;
     const userId = req.user.userId;
     const { status } = req.body;
     
