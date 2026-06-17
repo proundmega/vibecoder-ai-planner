@@ -36,9 +36,9 @@ const handleLogin = async () => {
     authStore.setUser(data.user)
     if (data.user?.role) {
       try {
-        const perms = await get(`/api/permissions/${data.user.role}`)
+        const perms = await get(`/api/v1/permissions/${data.user.role}`)
         authStore.setPermissions(perms)
-        await authStore.syncPermissions((role) => get(`/api/permissions/${role}`))
+        await authStore.syncPermissions((role) => get(`/api/v1/permissions/${role}`))
       } catch (e) {
         console.error('Failed to fetch permissions:', e)
       }

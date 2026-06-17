@@ -41,7 +41,7 @@ const route = useRoute()
 onMounted(async () => {
   if (authStore.user.value?.role) {
     try {
-      await authStore.syncPermissions((role) => get(`/api/permissions/${role}`))
+      await authStore.syncPermissions((role) => get(`/api/v1/permissions/${role}`))
     } catch (e) {
       console.error('Failed to sync permissions on mount:', e)
     }
