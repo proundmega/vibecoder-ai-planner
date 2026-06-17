@@ -199,3 +199,71 @@ cd frontend && npm test -- --run src/__tests__/api-contract.test.ts
 - Malformed response structure (missing `success`/`data` fields)
 
 **Generated models:** `User` (id, name, email, role, isActive, currentPlan, created_at, updated_at), `Project` (id, name, description, owner_id, created_at, updated_at), `Ticket` (id, title, description, status, priority, owner_id, project_id, created_at, updated_at), `Agent` (id, name, user_id, api_key, is_active, created_at)
+
+## Best Practices & Planning Templates
+
+14 identified best practices are missing from the current codebase. Each has a complete ARCHITECT planning suite in `planning/` — four template files per practice that guide implementation from requirement through testing.
+
+### Available Planning Suites
+
+| # | Practice | Directory | Priority |
+|---|----------|-----------|----------|
+| 1 | Rate limiting on auth endpoints | `planning/bp-01-rate-limit-auth/` | P1 |
+| 2 | Database connection pool config | `planning/bp-02-db-pool-config/` | P2 |
+| 3 | API versioning | `planning/bp-03-api-versioning/` | P2 |
+| 4 | Request timeout | `planning/bp-04-request-timeout/` | P2 |
+| 5 | Content-Security-Policy header | `planning/bp-05-csp-header/` | P2 |
+| 6 | Input validation on all endpoints | `planning/bp-06-input-validation/` | P2 |
+| 7 | Structured JSON logging | `planning/bp-07-structured-logging/` | P2 |
+| 8 | Docker health checks | `planning/bp-08-docker-healthchecks/` | P2 |
+| 9 | Migration rollback support | `planning/bp-09-migration-rollback/` | P3 |
+| 10 | Environment variable validation | `planning/bp-10-env-validation/` | P2 |
+| 11 | API response caching | `planning/bp-11-api-caching/` | P3 |
+| 12 | Graceful shutdown | `planning/bp-12-graceful-shutdown/` | P2 |
+| 13 | CORS validation | `planning/bp-13-cors-validation/` | P1 |
+| 14 | Ticket planning files with custom templates | `planning/bp-14-ticket-planning/` | P1 |
+
+### How to Use Planning Templates
+
+When planning an improvement, the agent MUST follow this exact order:
+
+1. **Complete `00_ARCHITECT_CHECKLIST.md`** — fill out the pre-implementation checklist before reading anything else
+2. **Read `01_ARCHITECT_REQUIREMENT.md`** — requirement, scope, assumptions, important design decisions, acceptance criteria, out of scope, testing checklist, CI requirements, anti-patterns
+3. **Read `02_ARCHITECT_DESIGN.md`** — problem statement, current state, design with code examples, alternative designs considered, data flow diagram, dependencies, config/env changes, risks/edge cases
+4. **Read `03_ARCHITECT_IMPLEMENTATION.md`** — purpose, action items, dependencies, risks, testing checklist, rollback plan, files changed, code review checklist, post-deploy verification
+
+**CRITICAL**: If you encounter any of the following, STOP and ask the user before proceeding:
+- Ambiguous acceptance criteria (unclear or multiple valid interpretations)
+- Significant scope change (more work than estimated, or affects areas not mentioned)
+- Conflicting requirements (this practice conflicts with an existing feature or constraint)
+- Unknown unknowns (something discovered during implementation changes the approach)
+- Production impact (changes could affect running users — data migration, API breaking change)
+
+Do NOT guess. Do NOT assume. Ask the user.
+
+After implementation, update `03_ARCHITECT_IMPLEMENTATION.md` with:
+- `Date completed` — when implementation finishes
+- `PR` — PR URL after merge
+- `Branch` — git branch used
+
+Then complete the post-implementation checklist in `00_ARCHITECT_CHECKLIST.md`.
+
+### When to Create New Planning Suites
+
+Create a new `planning/bp-XX-name/` directory with the four ARCHITECT template files when:
+- Identifying a new best practice or improvement during code review
+- The change affects multiple files or requires architectural decisions
+- The change has risks/edge cases that need documentation
+
+Template files:
+- `00_ARCHITECT_CHECKLIST.md` — Pre/post-implementation checklist, when to ask the user
+- `01_ARCHITECT_REQUIREMENT.md` — Requirement, scope, assumptions, important design decisions (ask user), acceptance criteria, out of scope, testing checklist, CI requirements, anti-patterns
+- `02_ARCHITECT_DESIGN.md` — Problem statement, current state, design with code, alternative designs considered, data flow diagram, dependencies, config/env changes, risks/edge cases
+- `03_ARCHITECT_IMPLEMENTATION.md` — Purpose, actions, dependencies, risks, testing, rollback plan, files changed, code review checklist, post-deploy verification, migration notes, notes
+
+### Progress Tracking
+
+Update `AGENTS.md` "Best Practices & Planning Templates" table with implementation status:
+- Add `✅` prefix for completed practices
+- Add `🔄` prefix for in-progress practices
+- Remove from table when all 14 are complete
