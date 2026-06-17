@@ -1,379 +1,153 @@
-# 01_ARCHITECT_REQUIREMENT.md — Backend Architecture Guidelines
+# 01_ARCHITECT_REQUIREMENT.md — Feature Planning Template
 
-**Status**: Living reference — use when designing backend components.
-**Scope**: General patterns for controllers, middleware, services, models, response handling, monitoring, and testing.
-**Note**: This is a reference document, not a ticket plan. See `TICKETS.txt` for current tickets.
-
----
-
-## Architecture Layers
-
-```
-HTTP Request → Routes → Middleware → Controllers → Services → Models → Database
-                                    ↑              ↑
-                              Auth/Role      Business Logic
-                              Validation     Status Transitions
-```
-
-### Layer Responsibilities
-
-| Layer | Responsibility | Framework Awareness |
-|-------|---------------|---------------------|
-| **Routes** | URL mapping, router grouping | Express only |
-| **Middleware** | Auth, validation, error handling | Express only |
-| **Controllers** | Request parsing, response shaping | Express only |
-| **Services** | Business rules, permissions, transitions | Framework-agnostic |
-| **Models** | DB queries, data mapping, transactions | pg (node-postgres) |
+**Status**: {{planned | in_progress | completed}}
+**Date created**: {{YYYY-MM-DD}}
+**Date completed**: {{YYYY-MM-DD}}
+**Author**: AI Assistant
+**Scope**: {{Frontend | Backend | Both}}
+**Priority**: {{P0 | P1 | P2 | P3 | P4}}
+**Effort**: {{Small | Medium | Large}}
 
 ---
 
-## Controller Patterns
+## Requirement
 
-Controllers are the entry point for HTTP requests. They route incoming requests to handlers, parse requests, delegate to services, and return responses.
-
-**Key rules:**
-- One controller per domain (e.g., `ticketController.js`)
-- Export functions accepting `(req, res, next)`
-- Map to route handlers in `api/routes.js`
-- Use Express Router for domain-specific grouping
-- Standardize response: `{ success, data, error, meta }`
-- **Never** contain business logic — delegate to services
-
-**Example structure:**
-```
-backend/src/
-  controllers/
-    ticketController.js
-    projectController.js
-    userController.js
-  api/
-    routes.js          → mounts all routers
-    tickets.js         → router → ticketController
-```
-
-**Example controller:**
-```javascript
-async function getTicket(req, res, next) {
-  try {
-    const ticket = await TicketService.getOne(req.params.ticketId, req.user.userId);
-    res.json({ success: true, data: ticket });
-  } catch (error) {
-    next(error);
-  }
-}
-```
-
-**Risks:**
-- Tight coupling: Controllers should not contain business logic
-- Inconsistent responses: Standardize `{ success, data, error, meta }`
-- Error leakage: Always pass to `next(error)`
-- Route ordering: `/:id` before `/:id/comments` causes 404s
+[What is being built? What problem does it solve? What value does it deliver?]
 
 ---
 
-## Authentication Middleware
+## Existing Infrastructure Audit
 
-Auth middleware verifies identity of every request. Extracts JWT, validates signature/expiry, attaches payload to `req.user`.
+**CRITICAL**: Before planning, audit what already exists. Do NOT create new code if existing code can be extended.
 
-**Key patterns:**
-- `verifyToken`: Extract from `Authorization: Bearer <token>`, validate with `JWT_SECRET`, attach to `req.user`
-- `agentAuth`: Check `X-API-Key` header, validate against `agents` table, attach `req.agent`
-- Public routes: `/api/auth/register`, `/api/auth/login`, `/api/health`
-- Authenticated routes: `/api/projects/*`, `/api/tickets/*`, `/api/users/*`
-- Agent routes: `/api/agents/*`
+### Backend API Check
+- [ ] API route exists: `{{backend/src/api/}}` — {{YES/NO}}
+- [ ] Controller exists: `{{backend/src/controllers/}}` — {{YES/NO}}
+- [ ] Service exists: `{{backend/src/services/}}` — {{YES/NO}}
+- [ ] Model exists: `{{backend/src/models/}}` — {{YES/NO}}
+- [ ] Validator exists: `{{backend/src/validators/}}` — {{YES/NO}}
+- [ ] Route is mounted: `{{backend/src/api/routes.js or backend/src/api/v1/index.js}}` — {{YES/NO}}
+- [ ] OpenAPI JSDoc annotations exist — {{YES/NO}}
 
-**Centralize `JWT_SECRET`** — do not duplicate across files.
+### Frontend API Client Check
+- [ ] API client exists: `{{frontend/src/api/}}` — {{YES/NO}}
+- [ ] API client functions cover all needed endpoints — {{YES/NO}}
+- [ ] API client follows existing patterns (`get`, `post`, `put`, `del`, `patch`) — {{verify}}
 
-**Risks:**
-- Secret rotation invalidates all tokens
-- Algorithm confusion: specify `algorithms: ['HS256']`
-- Token leakage in URLs or logs
-- Missing header should return 401, not 500
+### Frontend UI Check
+- [ ] View component exists: `{{frontend/src/views/}}` — {{YES/NO}}
+- [ ] Component exists: `{{frontend/src/components/}}` — {{YES/NO}}
+- [ ] Route exists: `{{frontend/src/router/index.ts}}` — {{YES/NO}}
+- [ ] Existing tab/section where this can be added — {{e.g., ProjectDetail.vue tabs}}
+- [ ] Existing modal/pattern to extend — {{e.g., TicketEditModal, UserModal}}
 
----
+### Integration Check
+- [ ] Frontend API client can call existing backend endpoints — {{YES/NO}}
+- [ ] Response shapes match (snake_case vs camelCase) — {{verify}}
+- [ ] Auth tokens are used correctly — {{verify}}
+- [ ] Error handling matches existing patterns — {{verify}}
 
-## Request Validation
+### Key Insight
 
-Validation ensures incoming data meets expected formats before reaching business logic.
+[If the backend API already exists but the frontend UI doesn't, the task is FRONTEND-ONLY.
+ If the frontend UI exists but the backend doesn't, the task is BACKEND-FIRST then FRONTEND.
+ If both exist, the task might be extending existing code.
+ If neither exists, plan both.]
 
-**Recommended library: `joi`** (expressive, chainable, well-maintained)
-
-**Patterns:**
-- Create `validators/` directory with schema files per domain
-- Define schemas: `createTicketSchema`, `updateTicketSchema`, `loginSchema`, etc.
-- Validation middleware:
-  ```javascript
-  function validate(schema) {
-    return (req, res, next) => {
-      const { error, value } = schema.validate(req.body, { abortEarly: false });
-      if (error) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          details: error.details.map(d => d.message)
-        });
-      }
-      req.body = value;
-      next();
-    };
-  }
-  ```
-- Apply to routes: `router.post('/', validate(createTicketSchema), controller.create)`
-
-**Risks:**
-- Schema drift from actual API usage
-- Over-validation rejecting valid edge cases
-- Missing schemas on new endpoints
-- Type coercion by default — disable unless intentional
+**Example**: "The GitHub integration API (`/api/v1/github/*`) already exists in the backend.
+ No frontend API client or UI exists. This is a FRONTEND-ONLY task: create API clients in `frontend/src/api/github.js`
+ and add a GitHub tab to `frontend/src/views/ProjectDetail.vue` next to the existing tabs."
 
 ---
 
-## Service Layer (Business Logic)
+## Scope
 
-Services contain all domain rules: status transitions, permission checks, data transformations. Framework-agnostic and testable in isolation.
+### In Scope
+- [What will be built/changed]
+- [Which files will be created/modified]
+- [Which existing patterns will be reused]
 
-**Key rules:**
-- No HTTP concerns (no `req`/`res`, no JSON formatting, no status codes)
-- Consistent method signatures: `(id, userId, data) → returns model or throws`
-- Status transition validation in service, not model
-- Permission checks in service: `canUpdate(ticket, userId)`, `canAccess(project, userId)`
-
-**Status transitions:**
-```javascript
-const VALID_TRANSITIONS = {
-  backlog: ['in_progress'],
-  in_progress: ['review', 'backlog'],
-  review: ['done', 'backlog'],
-  done: [],
-};
-```
-
-**Risks:**
-- Transaction scope for multi-step operations
-- Race conditions: use `WHERE id = $1 AND updated_at = $2`
-- N+1 queries: batch with JOINs
-- Orphaned data: handle cascades in service or DB
-- Silent failures: prefer explicit errors over `null` returns
+### Out of Scope
+- [What is explicitly NOT included]
+- [What is deferred to a future ticket]
 
 ---
 
-## Model Layer (Persistence)
+## Important Design Decisions
 
-Models handle all database interactions: queries, transactions, data mapping. Only place that knows SQL dialect, table names, column types.
+**DECISION POINTS** — Items that need user confirmation. List only items that genuinely need user input.
 
-**Key rules:**
-- `fromRow()` must be synchronous (no `await` inside — remove `async` keyword)
-- All queries parameterized (`$1, $2`) — never interpolate strings
-- Transaction support:
-  ```javascript
-  static async transaction(fn) {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const result = await fn(client);
-      await client.query('COMMIT');
-      return result;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-  ```
+1. [Decision description] — {{options if multiple valid choices}}
+2. [Decision description] — {{options if multiple valid choices}}
 
-**Recommended additions:**
-- Soft delete: `ALTER TABLE ... ADD COLUMN deleted_at TIMESTAMP`
-- Timestamp triggers: `set_updated_at()` function
-- Indexes: `idx_tickets_project_id`, `idx_tickets_status`, `idx_tickets_owner_id`
-
-**Risks:**
-- SQL injection: always parameterized queries
-- Connection leaks: set `max` connections, consider PgBouncer
-- Schema drift: migrations not tracked — consider `migrations` table
-- Deadlocks: use `SELECT FOR UPDATE` or retry logic
-- Data loss: hard deletes with no audit trail
+**If no decisions need user input, write: "No design decisions require user input. All choices follow existing patterns."**
 
 ---
 
-## Response Handling
+## Acceptance Criteria
 
-Standardizes how the API communicates results and errors to clients.
-
-**Standard response format:**
-```json
-// Success
-{ "success": true, "data": { ... }, "meta": { "page": 1, "perPage": 20, "total": 100 } }
-
-// Error
-{ "success": false, "error": { "code": "VALIDATION_ERROR", "message": "Title is required" } }
-```
-
-**Error handling middleware:**
-```javascript
-function errorHandler(err, req, res, next) {
-  const statusCode = err.statusCode || 500;
-  const isProduction = process.env.NODE_ENV === 'production';
-  res.status(statusCode).json({
-    success: false,
-    error: {
-      code: err.code || 'INTERNAL_ERROR',
-      message: isProduction ? 'Internal server error' : err.message,
-      ...(isProduction ? {} : { stack: err.stack }),
-    }
-  });
-}
-```
-
-**Custom error classes:**
-```javascript
-class AppError extends Error {
-  constructor(message, statusCode, code) {
-    super(message);
-    this.statusCode = statusCode;
-    this.code = code;
-  }
-}
-// NotFoundError (404), ValidationError (400), ForbiddenError (403)
-```
-
-**Risks:**
-- Stack traces in production — only include in development
-- Status code mismatch between service and controller
-- Large payloads — add size limits
-- Idempotency: verify PUT/DELETE are idempotent
+1. [ ] [Backend API] The API endpoint `METHOD /path` returns correct response shape
+2. [ ] [Backend API] The API endpoint validates input and returns proper error codes
+3. [ ] [Backend API] The API endpoint is authenticated and authorized correctly
+4. [ ] [Backend API] Unit tests pass for the new controller/service
+5. [ ] [Backend API] Integration tests pass for the new endpoint
+6. [ ] [Frontend API] The API client function calls the correct backend endpoint
+7. [ ] [Frontend API] The API client handles errors consistently with existing clients
+8. [ ] [Frontend UI] The UI component renders correctly with mock data
+9. [ ] [Frontend UI] The UI component handles loading, error, and empty states
+10. [ ] [Frontend UI] The UI component is accessible and follows existing styles
+11. [ ] [Frontend UI] The UI component integrates with existing navigation/routing
+12. [ ] [Frontend UI] The UI component uses existing patterns (modals, tabs, cards)
+13. [ ] [Both] OpenAPI spec is updated with JSDoc annotations
+14. [ ] [Both] Generated TypeScript types are regenerated and match
+15. [ ] [Both] All tests pass (unit, integration, frontend, lint, typecheck)
 
 ---
 
-## Monitoring & Logging
+## Out of Scope
 
-**Structured logging with winston:**
-```javascript
-const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
-  format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
-  transports: [
-    new winston.transports.Console(),
-    ...(process.env.NODE_ENV === 'production'
-      ? [new winston.transports.File({ filename: 'logs/error.log', level: 'error' })]
-      : []),
-  ],
-});
-```
-
-**Request ID tracking:**
-```javascript
-function requestId(req, res, next) {
-  req.requestId = req.headers['x-request-id'] || crypto.randomUUID();
-  res.setHeader('X-Request-ID', req.requestId);
-  next();
-}
-```
-
-**Health check:**
-```javascript
-router.get('/health', async (req, res) => {
-  try {
-    await pool.query('SELECT 1');
-    res.json({ status: 'ok', database: 'connected', timestamp: new Date().toISOString() });
-  } catch (error) {
-    res.status(503).json({ status: 'degraded', database: 'disconnected' });
-  }
-});
-```
-
-**Risks:**
-- Log injection from user input — use structured logging
-- Sensitive data in logs — filter passwords, tokens
-- Log volume — sample or aggregate high-traffic endpoints
-- Disk space — configure log rotation
+- [What is explicitly NOT included in this ticket]
+- [What is deferred to a future ticket]
+- [What existing code will NOT be changed]
 
 ---
 
-## Testing Guidelines (MANDATORY)
+## Testing Checklist
 
-**Unit and integration tests are required for every code change. No exceptions.**
+### Backend Tests
+- [ ] Unit tests: `backend/src/__tests__/unit.test.js` — {{describe what to test}}
+- [ ] Middleware tests: `backend/src/middleware/*.test.js` — {{if auth/permissions affected}}
+- [ ] API endpoint tests: `backend/src/__tests__/api-*.test.js` — {{describe endpoints}}
+- [ ] Integration tests: `backend/src/__tests__/integration/*.test.js` — {{describe scenarios}}
 
-Every PR, feature ticket, bug fix, and refactoring must include both unit tests and integration tests. A change without tests is not mergeable.
+### Frontend Tests
+- [ ] Unit tests: `frontend/src/__tests__/` — {{describe what to test}}
+- [ ] Component tests: `frontend/cypress/component/` — {{if new UI component}}
+- [ ] E2E tests: `frontend/cypress/e2e/` — {{if user flow affected}}
+- [ ] API contract tests: `frontend/src/__tests__/api-contract.test.ts` — {{if response shapes changed}}
 
-### Test File Locations
-- **Unit tests**: `backend/src/__tests__/unit.test.js` (Jest, mocked DB)
-- **Middleware tests**: `backend/src/middleware/*.test.js` (Jest, mocked req/res)
-- **API endpoint tests**: `backend/src/__tests__/api-*.test.js` (Jest, supertest)
-- **Integration tests**: `backend/src/__tests__/integration/*.test.js` (Jest, real PostgreSQL via Docker)
-- **Bash integration tests**: `backend/integration-test/run.sh` (real Docker + PostgreSQL)
-
-### Test Structure (Jest)
-```javascript
-describe('Service.method()', () => {
-  beforeEach(() => jest.clearAllMocks());
-
-  test('should do X when Y', async () => {
-    // Arrange: set up mocks
-    User.find.mockResolvedValue({ role: 'project_admin' });
-    pool.query.mockResolvedValue({ rows: [{ id: 1, role: 'member' }] });
-
-    // Act
-    const result = await Service.method(params);
-
-    // Assert
-    expect(result.role).toBe('member');
-    expect(pool.query).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO users'),
-      expect.any(Array)
-    );
-  });
-});
-```
-
-### Testing Checklist per Ticket (MANDATORY)
-- [ ] **Happy path**: Expected behavior with valid input
-- [ ] **Role validation**: Correct roles allowed, incorrect roles rejected
-- [ ] **Error cases**: Invalid input, missing data, forbidden access
-- [ ] **Edge cases**: Null values, empty arrays, boundary conditions
-- [ ] **Authorization**: Role-based access control works correctly
-- [ ] **DB interactions**: Correct queries fired with correct parameters
-
-### Mocking Strategy
-| Dependency | Mock Approach |
-|------------|---------------|
-| `pg` pool | `pool.query = jest.fn().mockResolvedValue({ rows: [...] })` |
-| Model methods | `User.find = jest.fn()`, `Ticket.findById = jest.fn()` |
-| `jsonwebtoken` | `jwt.sign = jest.fn().mockReturnValue('mock-token')` |
-| `bcryptjs` | `bcrypt.hash = jest.fn().mockResolvedValue('hashed')` |
-| Express req/res | `res = { json: jest.fn(), status: jest.fn().mockReturnThis() }` |
-
-### Integration Test Checklist
-- [ ] Full request lifecycle: HTTP → middleware → service → DB → response
-- [ ] Role-based access: correct 403 responses
-- [ ] Data persistence: inserted/updated data survives across requests
-- [ ] Migration: new tables/columns exist and work correctly
-- [ ] Error handling: invalid requests return proper error responses
-
-### CI Requirements (MANDATORY)
-- `npm test` — unit tests with mocked DB **must pass**
-- `npm run test:integration` — real PostgreSQL via Docker **must pass**
-- `npm run lint` — no unused vars, no errors
-- `bash backend/integration-test/run.sh` — bash integration tests **must pass**
-- Frontend: `npm run typecheck` + `npm run build` **must pass**
-
-### Anti-Patterns to Avoid
-- ❌ Testing implementation details (exact SQL string) — test behavior instead
-- ❌ Tests that depend on execution order — each test must be independent
-- ❌ Skipping tests with `test.skip` — leave a TODO comment instead
-- ❌ Testing multiple things in one test — one assertion per concept
-- ❌ Real DB calls in unit tests — always mock
-- ❌ Testing private methods — test through public API only
-- ❌ **Merging code without tests — this is prohibited**
-- ❌ **Running tests without verifying both unit AND integration suites pass**
-
-### Code Change Requirements
-Every code change (feature, bug fix, refactoring) must:
-1. Write unit tests **before or alongside** the implementation
-2. Write integration tests covering the full request lifecycle
-3. Run `npm test` and `npm run test:integration` — both must pass
-4. Update `backend/integration-test/run.sh` if the change affects API behavior
-5. Pass `npm run lint` with zero errors
+### CI Requirements
+- [ ] `npm test` — backend unit tests pass
+- [ ] `npm run test:integration` — backend integration tests pass (if applicable)
+- [ ] `npm run lint` — no lint errors
+- [ ] `npm run typecheck` — frontend typecheck passes
+- [ ] `npm run build` — frontend build passes
 
 ---
 
-*This document is a living guideline. Review and update as the codebase evolves.*
+## Anti-Patterns to Avoid
+
+- ❌ **Creating new files when existing ones can be extended** — check `frontend/src/api/`, `frontend/src/views/`, `frontend/src/components/` before creating
+- ❌ **Duplicating existing patterns** — follow the style of `frontend/src/api/tickets.js`, `frontend/src/api/projects.js`, etc.
+- ❌ **Ignoring the existing tab structure** — if `ProjectDetail.vue` has tabs, add new features as tabs, not new pages
+- ❌ **Creating new API clients from scratch** — use the same `get`, `post`, `put`, `del`, `patch` imports from `./client`
+- ❌ **Ignoring OpenAPI spec** — if backend routes change, update JSDoc and regenerate frontend types
+- ❌ **Snake_case/camelCase mismatches** — backend uses snake_case, frontend API clients must convert to camelCase
+- ❌ **Hardcoding API paths** — use the same pattern as existing API clients (e.g., `/api/v1/github/${projectId}/repo`)
+- ❌ **Skipping error handling** — all API calls must use `.catch()` or try/catch
+- ❌ **Testing only happy paths** — test error cases, empty states, loading states
+- ❌ **Merging without tests** — every change must have tests
+
+---
+
+*Fill in all sections before starting implementation. The existing infrastructure audit is the most important section — it prevents agents from creating redundant code.*

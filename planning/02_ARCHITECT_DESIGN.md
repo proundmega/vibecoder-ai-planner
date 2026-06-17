@@ -1,197 +1,228 @@
-# 02_ARCHITECT_DESIGN.md — Role System Design Specification
+# 02_ARCHITECT_DESIGN.md — Feature Design Specification
 
-**Status**: Working draft — not final. Use as reference when designing the role system.
-**Author**: Lead Architect
-**Scope**: Complete role system redesign, user management, ticket edit/delete, AI agent restrictions
-**Note**: This is a design specification. See `TICKETS.txt` for current status. See `03_ARCHITECT_IMPLEMENTATION.md` for ticket implementation template.
-
----
-
-## Role Definitions (Final)
-
-| Role | Who | Permissions |
-|------|-----|-------------|
-| `super_admin` | Platform operators (manual DB only) | Full system access, view ALL users, activate/deactivate |
-| `project_admin` | Humans registering via portal | Full project control: manage tickets, AI keys, create members/users |
-| `member` | Team leads / reviewers | Manage tickets & planning, order AI agents, review work, create users |
-| `user` | AI agents | Create tickets, update own tickets, update status, read AI tokens, NO delete, needs approval to move to done |
-
-**Key rules:**
-- `project_admin` can create `member` and `user` accounts
-- `member` can create `user` accounts only
-- `user` cannot create any other user
-- `super_admin` created manually in DB only (no API endpoint)
-- Default registration role: `project_admin`
-- `user_created_by` tracks who created each user (null for self-registered)
-- Roles are **immutable** once assigned — no `updateRole()` method
-
-**Role hierarchy:**
-```
-super_admin > project_admin > member > user
-```
+**Status**: Working draft
+**Author**: AI Assistant
+**Scope**: {{Frontend | Backend | Both}}
+**Related**: `01_ARCHITECT_REQUIREMENT.md`, `03_ARCHITECT_IMPLEMENTATION.md`
 
 ---
 
-## Database Schema
+## Problem Statement
 
-### Users Table Additions
-```sql
-ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS user_created_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+[What problem does this feature solve? Why is it needed now?]
+
+---
+
+## Current State
+
+### Existing Backend
+- [What backend code already exists, if anything]
+- [API endpoints: `METHOD /path` — what they return]
+- [Routes mounted in: `backend/src/api/routes.js` or `backend/src/api/v1/index.js`]
+- [Controllers: `backend/src/controllers/`]
+- [Services: `backend/src/services/`]
+- [Models: `backend/src/models/`]
+
+### Existing Frontend
+- [What frontend code already exists, if anything]
+- [API clients: `frontend/src/api/`]
+- [Views: `frontend/src/views/`]
+- [Components: `frontend/src/components/`]
+- [Routes: `frontend/src/router/index.ts`]
+- [Existing tabs/sections where this feature could fit]
+
+### Gap Analysis
+- [What exists vs. what is needed]
+- [Backend API exists but no frontend UI]
+- [Frontend UI exists but no backend API]
+- [Neither exists]
+- [Partial overlap — some endpoints covered, others not]
+
+---
+
+## Design
+
+### Option A: Extend Existing Structure (Recommended)
+
+[Describe how to add to what already exists. This is the preferred approach.]
+
+**Example for frontend-only feature (backend API exists):**
+```
+Add a new tab to ProjectDetail.vue:
+  frontend/src/views/ProjectDetail.vue
+    → Add "GitHub" tab to existing tabs array
+    → Add GitHub panel with connect form, branch list, PR list
+    → Follow existing tab styling and panel structure
+
+Add API client:
+  frontend/src/api/github.js
+    → Import { get, post, put, del } from './client'
+    → Create functions matching backend route patterns
+    → Follow naming: getRepoStatus, connectRepo, listBranches, etc.
 ```
 
-### Role Constraint
-```sql
-ALTER TABLE users DROP CONSTRAINT IF EXISTS valid_roles;
-ALTER TABLE users ADD CONSTRAINT valid_roles
-  CHECK (role IN ('super_admin', 'project_admin', 'member', 'user'));
+**Example for backend-first feature (no API exists):**
+```
+Create backend API:
+  backend/src/api/github.js          → Express router with routes
+  backend/src/controllers/githubController.js → Request/response handlers
+  backend/src/services/GitHubService.js  → Business logic
+  backend/src/validators/github.js   → Joi validation schemas
+
+Mount route in:
+  backend/src/api/v1/index.js        → router.use('/github', githubRouter)
+
+Create frontend API client:
+  frontend/src/api/github.js         → API wrapper functions
+
+Create frontend UI:
+  frontend/src/views/ProjectDetail.vue → New "GitHub" tab
 ```
 
-### Migration History
-| File | Description | Status |
-|------|-------------|--------|
-| `001_create_tables.sql` | Base schema: users, projects, tickets, ai_keys, ai_actions | applied |
-| `002_agents_schema.sql` | Agents table | applied |
-| `003_role_system.sql` | Role system: is_active, user_created_by, approval_requests | applied |
+**Example for extending existing UI:**
+```
+If ProjectDetail.vue already has tabs (Tickets, AI Assistant):
+  Add new tab "GitHub" to the tabs array
+  Add a new panel div inside <div class="tab-content">
+  Follow the existing pattern: v-if="activeTab === 'github'"
+  Use existing CSS classes: .tab-panel, .panel, .btn-primary
 
-### Approval Requests Table
-```sql
-CREATE TABLE IF NOT EXISTS approval_requests (
-  id BIGSERIAL PRIMARY KEY,
-  ticket_id BIGINT REFERENCES tickets(id) ON DELETE CASCADE,
-  requested_by BIGINT REFERENCES users(id),
-  approved_by BIGINT REFERENCES users(id),
-  status VARCHAR(20) DEFAULT 'pending',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  approved_at TIMESTAMP,
-  CONSTRAINT valid_approval_status CHECK (status IN ('pending', 'approved', 'rejected'))
-);
-CREATE INDEX IF NOT EXISTS idx_approval_requests_ticket_id ON approval_requests(ticket_id);
-CREATE INDEX IF NOT EXISTS idx_approval_requests_status ON approval_requests(status);
+If a modal already exists (TicketEditModal):
+  Add new fields to the existing modal
+  Don't create a new modal component
+```
+
+### Option B: Create New Page
+
+[When to create a new page vs. extending existing. Only use if extending would be worse.]
+
+**Use a new page when:**
+- The feature is complex enough to warrant its own route
+- The feature has many sub-features that don't fit in a tab
+- The feature needs its own navigation entry
+
+**Example:**
+```
+Create new route:
+  frontend/src/router/index.ts → { path: '/projects/:id/integrations', name: 'ProjectIntegrations' }
+
+Create new view:
+  frontend/src/views/ProjectIntegrations.vue
+
+Add navigation link:
+  frontend/src/views/ProjectList.vue → "Integrations" button on project card
+```
+
+### Option C: Add to Existing View (Inline)
+
+[When to add inline to an existing view rather than a tab or new page.]
+
+**Use inline when:**
+- The feature is small (1-2 components)
+- The feature is closely related to an existing view's purpose
+- Adding a tab would be overkill
+
+**Example:**
+```
+Add GitHub branch info to TicketDetail.vue:
+  frontend/src/views/TicketDetail.vue
+    → Add "GitHub" section below comments
+    → Show branch name, PR link if connected
+    → Follow existing section pattern: <div class="github-section">
 ```
 
 ---
 
-## Implementation Order
+## Data Flow Diagram
 
-| Priority | Ticket | Effort | Blocks |
-|----------|--------|--------|--------|
-| P0 | RS-1 (DB Migration) | Small | All subsequent tickets |
-| P0 | RS-2 (AuthService) | Medium | RS-3, RS-4 |
-| P1 | RS-3 (Auth Middleware) | Medium | RS-4, RS-6, RS-7, RS-8 |
-| P1 | RS-4 (User API) | Large | RS-5 |
-| P2 | RS-5 (User UI) | Large | RS-9 |
-| P2 | RS-6 (Ticket Edit) | Medium | RS-7 |
-| P2 | RS-7 (Ticket Delete) | Medium | RS-8 |
-| P3 | RS-8 (AI Restrictions) | Medium | RS-10 |
-| P3 | RS-9 (Router Updates) | Small | RS-10 |
-| P4 | RS-10 (Testing) | Large | — |
-| P4 | RS-11 (Cypress) | Medium | — |
+```
+[User] → [Frontend UI] → [API Client] → [Backend Route] → [Controller] → [Service] → [Database]
+   ↑          ↓              ↓               ↓              ↓            ↓            ↓
+[Response] ← [Error handling] ← [Auth] ← [Validation] ← [Business logic] ← [SQL queries]
+```
 
-**Recommended approach**: Implement RS-1 through RS-4 first (foundation), then RS-5 through RS-7 (user/ticket management), then RS-8 through RS-9 (AI restrictions & routing), then RS-10 (testing), then RS-11 (Cypress E2E).
+### Frontend Data Flow
+1. User interacts with UI component
+2. Component calls API client function
+3. API client sends HTTP request with auth token
+4. Response is parsed and state is updated
+5. UI re-renders with new state
+
+### Backend Data Flow
+1. HTTP request arrives at route
+2. Middleware validates auth (verifyToken)
+3. Middleware validates permissions (requireAnyPermission)
+4. Middleware validates input (validate schema)
+5. Controller parses request, calls service
+6. Service executes business logic
+7. Service queries database via models
+8. Response sent back to frontend
 
 ---
 
-## Frontend Testing with Cypress (MANDATORY)
+## Dependencies
 
-The frontend uses Cypress for both component testing and end-to-end browser testing. This is mandatory for all frontend code changes.
+### Backend Dependencies
+- [Existing backend services/modules this depends on]
+- [Database tables/columns this needs]
+- [External APIs this calls]
+- [Environment variables this needs]
 
-**See `TICKETS.txt` → RS-11 for implementation status.**
+### Frontend Dependencies
+- [Existing frontend API clients this uses]
+- [Existing UI patterns this extends]
+- [Existing routes/navigation this integrates with]
+- [Auth store dependencies]
 
-### Setup
-```bash
-cd frontend && npm install --save-dev cypress @cypress/vue@4 cypress-localstorage-commands
-npx cypress open  # creates config and folder structure
-```
-
-### Config — `frontend/cypress.config.ts`
-```typescript
-import { defineConfig } from 'cypress';
-export default defineConfig({
-  e2e: {
-    baseUrl: 'http://localhost:3000',
-    supportFile: 'cypress/support/e2e.ts',
-    specPattern: 'cypress/e2e/**/*.cy.ts',
-    viewportWidth: 1280,
-    viewportHeight: 720,
-  },
-  component: {
-    devServer: { framework: 'vue', bundler: 'vite' },
-    supportFile: 'cypress/support/component.ts',
-    specPattern: 'cypress/component/**/*.cy.ts',
-  },
-});
-```
-
-### Test File Locations
-- **E2E tests**: `frontend/cypress/e2e/` — full browser flows (auth, navigation, CRUD, role guards)
-- **Component tests**: `frontend/cypress/component/` — isolated Vue component mounting
-- **Fixtures**: `frontend/cypress/fixtures/` — JSON test data
-- **Custom commands**: `frontend/cypress/support/commands.ts` — reusable test helpers
-
-### Custom Commands Example
-```typescript
-Cypress.Commands.add('login', (email, password) => {
-  cy.request('POST', '/api/auth/login', { email, password }).then((resp) => {
-    cy.setLocalStorage('vibecode_token', resp.body.token);
-    cy.setLocalStorage('vibecode_user', JSON.stringify(resp.body.user));
-  });
-  cy.visit('/dashboard');
-});
-
-Cypress.Commands.add('loginAsAdmin', () => cy.login('alice@example.com', 'password123'));
-Cypress.Commands.add('createProject', (name) => {
-  cy.loginAsAdmin();
-  return cy.request('POST', '/api/projects', { name, description: 'Test' })
-    .then((resp) => resp.body.id);
-});
-```
-
-### Known Frontend Bugs (must be fixed before Cypress tests pass)
-1. `authStore.user` is a `ref` — must use `authStore.user.value` in script code
-2. `route.params.projectId` is undefined — should be `route.params.id`
-3. Project selection in TicketBoard has no `@change` handler
-4. Drag-drop modifies throwaway object instead of real ticket data
-5. `+ New Ticket` button is dead code
-6. Comments in TicketDetail are never persisted
-7. `ProjectDetail.vue` is an empty placeholder
-
-### Frontend Test Checklist per Ticket
-- [ ] **Component rendering**: Key components mount without errors
-- [ ] **User interactions**: Buttons, forms, modals respond correctly
-- [ ] **Auth flows**: Login, register, logout work end-to-end
-- [ ] **Role guards**: Unauthorized routes redirect correctly
-- [ ] **CRUD operations**: Create, read, update, delete work in browser
-- [ ] **Known bugs fixed**: AGENTS.md bugs do not cause test failures
-
-### CI Integration
-```yaml
-- name: Install Cypress
-  run: cd frontend && npm install --save-dev cypress @cypress/vue cypress-localstorage-commands
-- name: Run Cypress component tests
-  run: cd frontend && npx cypress run --component --browser chrome
-- name: Run Cypress E2E tests
-  run: cd frontend && npx cypress run --e2e --browser chrome --headless
-```
-
-### Migration from Vitest
-- Keep Vitest for pure utility functions only
-- Migrate component tests from Vitest to Cypress (`@cypress/vue`)
-- E2E tests have no Vitest equivalent — Cypress fills this gap
-- Remove `vitest` from `package.json` once migration is complete
+### Cross-Cutting Dependencies
+- [OpenAPI spec updates needed]
+- [Generated TypeScript types regeneration]
+- [Shared configuration]
 
 ---
 
-## Testing Guidelines Reference
+## Config / Environment Changes
 
-See `01_ARCHITECT_REQUIREMENT.md` → "Testing Guidelines (MANDATORY)" for:
-- Unit and integration test structure
-- Mocking strategy
-- Testing checklist per ticket
-- CI requirements
-- Anti-patterns to avoid
+- [ ] New environment variables: {{list if any}}
+- [ ] New database migrations: {{list if any}}
+- [ ] New npm dependencies: {{list if any}}
+- [ ] Existing config changes: {{list if any}}
 
 ---
 
-*This document is a living specification. Review and update as the codebase evolves.*
+## Risks and Edge Cases
+
+### Backend Risks
+- **[Risk]**: [Description and mitigation]
+- **[Risk]**: [Description and mitigation]
+
+### Frontend Risks
+- **[Risk]**: [Description and mitigation]
+- **[Risk]**: [Description and mitigation]
+
+### Integration Risks
+- **[Risk]**: [Description and mitigation]
+- **[Risk]**: [Description and mitigation]
+
+### Edge Cases
+- [Edge case 1]: [How it's handled]
+- [Edge case 2]: [How it's handled]
+- [Edge case 3]: [How it's handled]
+
+---
+
+## Alternative Designs Considered
+
+### Alternative 1: [Description]
+- **Pros**: [Why it's attractive]
+- **Cons**: [Why it's not chosen]
+- **Decision**: [Why Option A/B/C is better]
+
+### Alternative 2: [Description]
+- **Pros**: [Why it's attractive]
+- **Cons**: [Why it's not chosen]
+- **Decision**: [Why Option A/B/C is better]
+
+---
+
+*This design document guides implementation. The "Extend Existing Structure" section is the most important — it tells the agent exactly how to add to what already exists rather than creating new code from scratch.*

@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { fetchTicket, updateTicket, addComment, fetchComments, deleteTicket } from '@/api/tickets'
 import { getTicketApprovals, createApproval } from '@/api/approvals'
 import { fetchAttachments, uploadAttachment, deleteAttachment } from '@/api/ticketAttachments'
+import { listPlanningFiles, getPlanningFile, upsertPlanningFile, applyTemplate, updatePlanningStatus } from '@/api/ticketPlanning'
 import TicketEditModal from '@/components/TicketEditModal.vue'
 
 const route = useRoute()
@@ -25,6 +26,19 @@ const uploadError = ref('')
 const ticketId = route.params.ticketId
 const approvals = ref([])
 const approving = ref(false)
+
+// Planning state
+const planningFiles = ref([])
+const planningLoading = ref(false)
+const planningError = ref(null)
+const planningSuccess = ref(null)
+const editingFile = ref(null)
+const editingContent = ref('')
+const savingFile = ref(false)
+const applyingTemplate = ref(false)
+const showTemplateSelect = ref(false)
+const selectedTemplate = ref('')
+const planningStatus = ref('')
 
 const validTransitions = {
   backlog: ['in_progress'],
@@ -60,6 +74,7 @@ onMounted(async () => {
       comments.value = await fetchComments(ticketId)
       approvals.value = await getTicketApprovals(ticketId)
       attachments.value = await fetchAttachments(ticketId)
+      await loadPlanning()
     }
   } catch (e) {
     console.error('Failed to load ticket:', e)
@@ -177,6 +192,104 @@ function formatFileSize(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(1024))
   return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + sizes[i]
 }
+
+function downloadAttachment(attachment) {
+  const token = localStorage.getItem('vibecode_token')
+  const url = `/api/v1/tickets/${ticketId}/attachments/${attachment.id}`
+  fetch(url, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  })
+    .then(res => {
+      if (!res.ok) throw new Error('Download failed')
+      return res.blob()
+    })
+    .then(blob => {
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = attachment.filename
+      link.click()
+      URL.revokeObjectURL(link.href)
+    })
+    .catch(err => {
+      console.error('Failed to download attachment:', err)
+      uploadError.value = 'Failed to download attachment'
+    })
+}
+
+async function loadPlanning() {
+  planningLoading.value = true
+  planningError.value = null
+  try {
+    planningFiles.value = await listPlanningFiles(ticketId)
+    if (planningFiles.value.length > 0) {
+      const mainFile = planningFiles.value.find(f => f.key === 'planning.md') || planningFiles.value[0]
+      const content = await getPlanningFile(ticketId, mainFile.key)
+      editingFile.value = mainFile
+      editingContent.value = content?.content || ''
+      planningStatus.value = mainFile.status || ''
+    }
+  } catch (err) {
+    console.error('Failed to load planning:', err)
+  } finally {
+    planningLoading.value = false
+  }
+}
+
+async function handleApplyTemplate() {
+  if (!selectedTemplate.value) return
+  applyingTemplate.value = true
+  planningError.value = null
+  planningSuccess.value = null
+  try {
+    await applyTemplate(ticketId, selectedTemplate.value)
+    planningSuccess.value = `Template "${selectedTemplate.value}" applied successfully`
+    await loadPlanning()
+    showTemplateSelect.value = false
+    selectedTemplate.value = ''
+  } catch (err) {
+    planningError.value = err.message || 'Failed to apply template'
+  } finally {
+    applyingTemplate.value = false
+  }
+}
+
+async function handleSaveFile() {
+  if (!editingFile.value || !editingContent.value.trim()) return
+  savingFile.value = true
+  planningError.value = null
+  planningSuccess.value = null
+  try {
+    await upsertPlanningFile(ticketId, editingFile.value.key, editingContent.value)
+    planningSuccess.value = 'Planning file saved'
+    await loadPlanning()
+    editingFile.value = null
+    editingContent.value = ''
+  } catch (err) {
+    planningError.value = err.message || 'Failed to save planning file'
+  } finally {
+    savingFile.value = false
+  }
+}
+
+async function handleUpdateStatus(status) {
+  if (!editingFile.value) return
+  try {
+    await updatePlanningStatus(ticketId, status)
+    planningStatus.value = status
+    planningSuccess.value = `Status updated to ${status}`
+  } catch (err) {
+    planningError.value = err.message || 'Failed to update status'
+  }
+}
+
+async function loadPlanningFile(key) {
+  try {
+    const content = await getPlanningFile(ticketId, key)
+    editingContent.value = content?.content || ''
+  } catch (err) {
+    console.error('Failed to load planning file:', err)
+  }
+}
 </script>
 
 <template>
@@ -248,6 +361,7 @@ function formatFileSize(bytes) {
             <span class="attachment-name">{{ attachment.filename }}</span>
             <span class="attachment-meta">{{ formatFileSize(attachment.size_bytes) }} · {{ new Date(attachment.created_at).toLocaleDateString() }}</span>
           </div>
+          <button @click="downloadAttachment(attachment)" class="btn-download">Download</button>
           <button v-if="canUpdate()" @click="handleDeleteAttachment(attachment.id)" class="btn-delete-attachment">Delete</button>
         </div>
       </div>
@@ -264,6 +378,79 @@ function formatFileSize(bytes) {
         <div v-if="canUpdate()" class="comment-input">
           <input v-model="newComment" placeholder="Add a comment..." @keyup.enter="addCommentText" />
           <button @click="addCommentText">Add</button>
+        </div>
+      </div>
+
+      <div class="planning">
+        <div class="planning-header">
+          <h3>Ticket Planning</h3>
+          <button v-if="!editingFile && canUpdate()" @click="showTemplateSelect = true" class="btn-primary">Apply Template</button>
+        </div>
+
+        <div v-if="planningLoading" class="loading">Loading...</div>
+        <div v-else>
+          <div v-if="planningError" class="error">{{ planningError }}</div>
+          <div v-if="planningSuccess" class="success">{{ planningSuccess }}</div>
+
+          <div v-if="!editingFile && planningFiles.length === 0 && canUpdate()" class="empty">
+            <p>No planning files yet. Apply a template to get started.</p>
+          </div>
+
+          <div v-if="!editingFile && planningFiles.length > 0" class="planning-list">
+            <div v-for="file in planningFiles" :key="file.key" class="planning-file" :class="{ active: planningStatus === file.status }">
+              <div class="file-info">
+                <span class="file-name">{{ file.key }}</span>
+                <span v-if="file.status" class="file-status" :class="file.status">{{ file.status }}</span>
+              </div>
+              <button @click="editingFile = file; editingContent = ''; loadPlanningFile(file.key)" class="btn-small">Edit</button>
+            </div>
+          </div>
+
+          <div v-if="editingFile" class="planning-editor">
+            <div class="editor-header">
+              <h4>{{ editingFile.key }}</h4>
+              <div class="editor-actions">
+                <select v-if="canUpdate()" v-model="planningStatus" @change="handleUpdateStatus" class="status-select">
+                  <option value="">Select Status</option>
+                  <option value="draft">Draft</option>
+                  <option value="review">Review</option>
+                  <option value="approved">Approved</option>
+                </select>
+                <button @click="handleSaveFile" :disabled="savingFile" class="btn-submit">
+                  {{ savingFile ? 'Saving...' : 'Save' }}
+                </button>
+                <button @click="editingFile = null; editingContent = ''" class="btn-cancel">Cancel</button>
+              </div>
+            </div>
+            <textarea v-model="editingContent" rows="20" class="editor-textarea" placeholder="Enter planning content..."></textarea>
+          </div>
+        </div>
+
+        <div v-if="showTemplateSelect" class="template-modal">
+          <div class="modal-overlay" @click.self="showTemplateSelect = false">
+            <div class="modal">
+              <h2>Apply Template</h2>
+              <div class="template-options">
+                <button
+                  v-for="template in ['architecture', 'technical', 'simple']"
+                  :key="template"
+                  @click="selectedTemplate = template"
+                  :class="['template-option', { selected: selectedTemplate === template }]"
+                >
+                  <h4>{{ template.charAt(0).toUpperCase() + template.slice(1) }}</h4>
+                  <p v-if="template === 'architecture'">Detailed architecture planning with system design sections</p>
+                  <p v-else-if="template === 'technical'">Technical implementation plan with steps and tasks</p>
+                  <p v-else>Simple task breakdown with checkboxes</p>
+                </button>
+              </div>
+              <div class="modal-actions">
+                <button @click="showTemplateSelect = false" class="btn-cancel">Cancel</button>
+                <button @click="handleApplyTemplate" :disabled="!selectedTemplate || applyingTemplate" class="btn-submit">
+                  {{ applyingTemplate ? 'Applying...' : 'Apply' }}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -480,6 +667,20 @@ h1 {
   color: #9ca3af;
 }
 
+.btn-download {
+  padding: 6px 12px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.btn-download:hover {
+  background: #2563eb;
+}
+
 .btn-delete-attachment {
   padding: 6px 12px;
   background: #ef4444;
@@ -663,5 +864,185 @@ h1 {
 
 .btn-danger:hover:not(:disabled) {
   background: #dc2626;
+}
+
+.planning {
+  margin-top: 40px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 20px;
+}
+
+.planning-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.planning-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.planning-file {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.planning-file.active {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.file-name {
+  font-weight: 500;
+  color: #374151;
+  font-family: monospace;
+}
+
+.file-status {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.file-status.draft {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.file-status.review {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.file-status.approved {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.planning-editor {
+  background: #f9fafb;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.editor-header h4 {
+  margin: 0;
+  color: #374151;
+  font-family: monospace;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.status-select {
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 13px;
+  background: white;
+}
+
+.editor-textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 300px;
+}
+
+.template-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.template-modal .modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+}
+
+.template-modal .modal {
+  position: relative;
+  background: white;
+  border-radius: 12px;
+  padding: 28px;
+  width: 600px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.template-options {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.template-option {
+  padding: 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+}
+
+.template-option:hover {
+  border-color: #3b82f6;
+  background: #f9fafb;
+}
+
+.template-option.selected {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.template-option h4 {
+  margin: 0 0 8px;
+  color: #1f2937;
+}
+
+.template-option p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 13px;
 }
 </style>

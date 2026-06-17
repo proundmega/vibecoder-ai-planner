@@ -227,10 +227,17 @@ cd frontend && npm test -- --run src/__tests__/api-contract.test.ts
 
 When planning an improvement, the agent MUST follow this exact order:
 
-1. **Complete `00_ARCHITECT_CHECKLIST.md`** — fill out the pre-implementation checklist before reading anything else
-2. **Read `01_ARCHITECT_REQUIREMENT.md`** — requirement, scope, assumptions, important design decisions, acceptance criteria, out of scope, testing checklist, CI requirements, anti-patterns
-3. **Read `02_ARCHITECT_DESIGN.md`** — problem statement, current state, design with code examples, alternative designs considered, data flow diagram, dependencies, config/env changes, risks/edge cases
-4. **Read `03_ARCHITECT_IMPLEMENTATION.md`** — purpose, action items, dependencies, risks, testing checklist, rollback plan, files changed, code review checklist, post-deploy verification
+1. **Complete `00_ARCHITECT_CHECKLIST.md`** — fill out the pre-implementation checklist, including the **Existing Infrastructure Audit** section. This is the most important step: check what already exists before creating new code.
+2. **Read `01_ARCHITECT_REQUIREMENT.md`** — requirement, scope, assumptions, **existing infrastructure audit** (backend API, frontend API client, frontend UI, router), important design decisions, acceptance criteria, out of scope, testing checklist, CI requirements, anti-patterns
+3. **Read `02_ARCHITECT_DESIGN.md`** — problem statement, current state (both backend and frontend), design with code examples (extend existing vs. create new), alternative designs considered, data flow diagram, dependencies, config/env changes, risks/edge cases
+4. **Read `03_ARCHITECT_IMPLEMENTATION.md`** — purpose, action items (Phase 1: Backend, Phase 2: Frontend API Client, Phase 3: Frontend UI, Phase 4: Integration), dependencies, risks, testing checklist, rollback plan, files changed, code review checklist, post-deploy verification
+
+**CRITICAL — Always check existing infrastructure first:**
+- **Backend API exists but no frontend UI?** → Frontend-only task. Add a tab to `ProjectDetail.vue` or a section to `TicketDetail.vue`. Create API client in `frontend/src/api/`.
+- **Frontend UI exists but no backend API?** → Backend-first task. Create route, controller, service, validator. Then connect frontend.
+- **Both exist?** → Extending existing code. Check if feature fits in existing tabs, modals, or sections.
+- **Neither exists?** → Plan both backend and frontend.
+- **Partial overlap?** → Fill the gaps. Don't duplicate what already works.
 
 **CRITICAL**: If you encounter any of the following, STOP and ask the user before proceeding:
 - Ambiguous acceptance criteria (unclear or multiple valid interpretations)
@@ -238,6 +245,7 @@ When planning an improvement, the agent MUST follow this exact order:
 - Conflicting requirements (this practice conflicts with an existing feature or constraint)
 - Unknown unknowns (something discovered during implementation changes the approach)
 - Production impact (changes could affect running users — data migration, API breaking change)
+- UI placement decision (need user input on where to place new UI section)
 
 Do NOT guess. Do NOT assume. Ask the user.
 
@@ -254,12 +262,13 @@ Create a new `planning/bp-XX-name/` directory with the four ARCHITECT template f
 - Identifying a new best practice or improvement during code review
 - The change affects multiple files or requires architectural decisions
 - The change has risks/edge cases that need documentation
+- The feature needs both backend API and frontend UI (or either one)
 
 Template files:
-- `00_ARCHITECT_CHECKLIST.md` — Pre/post-implementation checklist, when to ask the user
-- `01_ARCHITECT_REQUIREMENT.md` — Requirement, scope, assumptions, important design decisions (ask user), acceptance criteria, out of scope, testing checklist, CI requirements, anti-patterns
-- `02_ARCHITECT_DESIGN.md` — Problem statement, current state, design with code, alternative designs considered, data flow diagram, dependencies, config/env changes, risks/edge cases
-- `03_ARCHITECT_IMPLEMENTATION.md` — Purpose, actions, dependencies, risks, testing, rollback plan, files changed, code review checklist, post-deploy verification, migration notes, notes
+- `00_ARCHITECT_CHECKLIST.md` — Pre/post-implementation checklist with **existing infrastructure audit**, when to ask the user
+- `01_ARCHITECT_REQUIREMENT.md` — Requirement, scope, **existing infrastructure audit** (backend API, frontend API client, frontend UI, router), important design decisions (ask user), acceptance criteria, out of scope, testing checklist, CI requirements, anti-patterns
+- `02_ARCHITECT_DESIGN.md` — Problem statement, current state (**both backend and frontend**), design with code examples (**extend existing vs. create new**), alternative designs considered, data flow diagram, dependencies, config/env changes, risks/edge cases
+- `03_ARCHITECT_IMPLEMENTATION.md` — Purpose, actions (**Phase 1: Backend, Phase 2: Frontend API, Phase 3: Frontend UI, Phase 4: Integration**), dependencies, risks, testing, rollback plan, files changed, code review checklist, post-deploy verification, migration notes
 
 ### Progress Tracking
 
