@@ -202,26 +202,26 @@ cd frontend && npm test -- --run src/__tests__/api-contract.test.ts
 
 ## Best Practices & Planning Templates
 
-14 identified best practices are missing from the current codebase. Each has a complete ARCHITECT planning suite in `planning/` — four template files per practice that guide implementation from requirement through testing.
+14 identified best practices have been implemented. All planning suites are complete.
 
-### Available Planning Suites
+### Implemented Best Practices
 
-| # | Practice | Directory | Priority |
-|---|----------|-----------|----------|
-| 1 | Rate limiting on auth endpoints | `planning/bp-01-rate-limit-auth/` | P1 |
-| 2 | Database connection pool config | `planning/bp-02-db-pool-config/` | P2 |
-| 3 | API versioning | `planning/bp-03-api-versioning/` | P2 |
-| 4 | Request timeout | `planning/bp-04-request-timeout/` | P2 |
-| 5 | Content-Security-Policy header | `planning/bp-05-csp-header/` | P2 |
-| 6 | Input validation on all endpoints | `planning/bp-06-input-validation/` | P2 |
-| 7 | Structured JSON logging | `planning/bp-07-structured-logging/` | P2 |
-| 8 | Docker health checks | `planning/bp-08-docker-healthchecks/` | P2 |
-| 9 | Migration rollback support | `planning/bp-09-migration-rollback/` | P3 |
-| 10 | Environment variable validation | `planning/bp-10-env-validation/` | P2 |
-| 11 | API response caching | `planning/bp-11-api-caching/` | P3 |
-| 12 | Graceful shutdown | `planning/bp-12-graceful-shutdown/` | P2 |
-| 13 | CORS validation | `planning/bp-13-cors-validation/` | P1 |
-| 14 | Ticket planning files with custom templates | `planning/bp-14-ticket-planning/` | P1 |
+| # | Practice | Directory | Priority | Status |
+|---|----------|-----------|----------|--------|
+| 1 | Rate limiting on auth endpoints | `planning/bp-01-rate-limit-auth/` | P1 | ✅ |
+| 2 | Database connection pool config | `planning/bp-02-db-pool-config/` | P2 | ✅ |
+| 3 | API versioning | `planning/bp-03-api-versioning/` | P2 | ✅ |
+| 4 | Request timeout | `planning/bp-04-request-timeout/` | P2 | ✅ |
+| 5 | Content-Security-Policy header | `planning/bp-05-csp-header/` | P2 | ✅ |
+| 6 | Input validation on all endpoints | `planning/bp-06-input-validation/` | P2 | ✅ |
+| 7 | Structured JSON logging | `planning/bp-07-structured-logging/` | P2 | ✅ |
+| 8 | Docker health checks | `planning/bp-08-docker-healthchecks/` | P2 | ✅ |
+| 9 | Migration rollback support | `planning/bp-09-migration-rollback/` | P3 | ✅ |
+| 10 | Environment variable validation | `planning/bp-10-env-validation/` | P2 | ✅ |
+| 11 | API response caching | `planning/bp-11-api-caching/` | P3 | ✅ |
+| 12 | Graceful shutdown | `planning/bp-12-graceful-shutdown/` | P2 | ✅ |
+| 13 | CORS validation | `planning/bp-13-cors-validation/` | P1 | ✅ |
+| 14 | Ticket planning files with custom templates | `planning/bp-14-ticket-planning/` | P1 | ✅ |
 
 ### How to Use Planning Templates
 
