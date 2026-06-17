@@ -11,7 +11,7 @@ const optionalEnvVars = {
   AUTH_LOCKOUT_WINDOW_MS: { type: 'int', default: 900000 },
   REQUEST_TIMEOUT_MS: { type: 'int', default: 30000 },
   SLOW_REQUEST_THRESHOLD_MS: { type: 'int', default: 5000 },
-  ALLOWED_ORIGINS: { type: 'string', default: '*' },
+  ALLOWED_ORIGINS: { type: 'string', default: 'http://localhost:3000,http://localhost:3002' },
   DATABASE_POOL_MAX: { type: 'int', default: 20 },
   DATABASE_IDLE_TIMEOUT_MS: { type: 'int', default: 30000 },
   DATABASE_CONNECTION_TIMEOUT_MS: { type: 'int', default: 5000 },

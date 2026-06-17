@@ -11,7 +11,7 @@ logger.info('Starting Vibecode API...');
 
 const app = express();
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3002')
   .split(',')
   .map(o => o.trim());
 
