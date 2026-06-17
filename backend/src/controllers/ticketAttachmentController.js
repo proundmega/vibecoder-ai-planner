@@ -5,7 +5,7 @@ const fs = require('fs');
 
 class TicketAttachmentController {
   async upload(req, res) {
-    const { id: ticketId } = req.params;
+    const { ticketId } = req.params;
     const userId = req.user.userId;
 
     if (!req.file) {
@@ -21,7 +21,7 @@ class TicketAttachmentController {
   }
 
   async list(req, res) {
-    const { id: ticketId } = req.params;
+    const { ticketId } = req.params;
     const userId = req.user.userId;
 
     const attachments = await TicketAttachmentService.list(ticketId, userId);
@@ -48,7 +48,7 @@ class TicketAttachmentController {
   }
 
   async delete(req, res) {
-    const { id: ticketId, attachmentId } = req.params;
+    const { ticketId, attachmentId } = req.params;
     const userId = req.user.userId;
 
     await TicketAttachmentService.delete(attachmentId, ticketId, userId);
