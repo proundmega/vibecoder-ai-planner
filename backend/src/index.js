@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const cors = require('./middleware/cors');
 
 const logger = require('./utils/logger');
+const { gracefulShutdown } = require('./utils/shutdown');
 
 logger.info('Starting Vibecode API...');
 
@@ -73,24 +74,14 @@ if (process.env.NODE_ENV !== 'test') {
     logger.info(`Vibecode API Server running on port ${PORT}`);
     logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
   });
-}
 
-if (server) {
   server.on('error', (err) => {
     logger.error('Server error:', err);
     process.exit(1);
   });
 
-  const shutdown = (signal) => {
-    logger.info(`${signal} received. Shutting down.`);
-    server.close(() => {
-      logger.info('Server closed');
-      process.exit(0);
-    });
-  };
-
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  const { pool } = require('./db');
+  gracefulShutdown(server, pool);
 }
 
 // Global unhandled exceptions and rejections
