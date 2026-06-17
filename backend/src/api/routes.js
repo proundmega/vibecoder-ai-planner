@@ -33,6 +33,8 @@ const credentialsRouter = require('./credentials');
 const usageRouter = require('./usage');
 const billingRouter = require('./billing');
 const memoryRouter = require('./memory');
+const ticketPlanningRouter = require('./ticketPlanning');
+const ticketAttachmentRouter = require('./ticketAttachment');
 
 /**
  * @openapi
@@ -156,6 +158,10 @@ router.get('/metrics', (req, res) => {
       uptime: process.uptime(),
       memoryUsage: process.memoryUsage(),
       timestamp: new Date().toISOString(),
+      database: {
+        ...pool.stats(),
+        status: pool.idleCount > 0 ? 'healthy' : 'degraded',
+      },
     },
     requestId: req.requestId,
   });
@@ -302,5 +308,16 @@ router.use('/credentials', verifyToken, credentialsRouter);
 router.use('/usage', verifyToken, usageRouter);
 router.use('/billing', verifyToken, billingRouter);
 router.use('/memory', verifyToken, memoryRouter);
+
+// Planning routes (nested under tickets)
+router.post('/tickets/:ticketId/planning/apply-template', verifyToken, ticketPlanningRouter.handleApplyTemplate);
+router.patch('/tickets/:ticketId/planning/status', verifyToken, ticketPlanningRouter.handleUpdateStatus);
+router.use('/tickets/:ticketId/planning', ticketPlanningRouter);
+
+// Attachment routes (nested under tickets)
+router.use('/tickets/:ticketId/attachments', ticketAttachmentRouter);
+
+// Serve attachment files
+router.get('/attachments/:attachmentId', verifyToken, ticketAttachmentRouter.handleGetFile);
 
 module.exports = router;

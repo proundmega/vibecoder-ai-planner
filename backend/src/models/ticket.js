@@ -11,6 +11,8 @@ class Ticket {
     this.priority = data.priority || 'medium';
     this.assigneeId = data.assigneeId;
     this.ownerId = data.ownerId;
+    this.planningStatus = data.planning_status || 'not_started';
+    this.templateSchema = data.template_schema || null;
     this.createdAt = data.createdAt;
     this.updatedAt = data.updatedAt;
   }
@@ -64,6 +66,8 @@ class Ticket {
       assigneeName: row.assignee_name,
       ownerId: row.owner_id,
       projectName: row.project_name,
+      planning_status: row.planning_status,
+      template_schema: row.template_schema,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });

@@ -2,6 +2,8 @@ const Ticket = require('../models/ticket');
 const Project = require('../models/project');
 const User = require('../models/user');
 const PermissionService = require('../services/PermissionService');
+const TicketPlanningService = require('../services/TicketPlanningService');
+const TicketAttachmentService = require('../services/TicketAttachmentService');
 const { ValidationError, NotFoundError, ForbiddenError } = require('../errors/HttpError');
 
 class TicketService {
@@ -26,7 +28,23 @@ class TicketService {
   async getOne(id, userId) {
     const ticket = await Ticket.findById(id);
     if (!ticket) throw new NotFoundError('Ticket not found');
-    return ticket;
+
+    const planning = await TicketPlanningService.getPlanningForTicket(ticket, userId);
+    const attachments = await TicketAttachmentService.list(ticket.id, userId);
+
+    return {
+      ...ticket,
+      planning,
+      attachments: attachments.map(a => ({
+        id: a.id,
+        filename: a.filename,
+        contentType: a.content_type,
+        sizeBytes: a.size_bytes,
+        storedPath: a.stored_path,
+        uploadedBy: a.uploaded_by_name || null,
+        uploadedAt: a.created_at,
+      })),
+    };
   }
 
   async update(id, data, userId) {
