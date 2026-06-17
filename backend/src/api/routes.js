@@ -8,6 +8,8 @@ const { verifyToken, verifyTokenOrAgent, agentAuth, rateLimiter, trackAgentActio
 const { validate } = require('../middleware/validate');
 const { registerSchema, loginSchema } = require('../validators/auth');
 const { apiVersion } = require('../middleware/apiVersion');
+const { requestTimeout } = require('../middleware/requestTimeout');
+const { slowRequestLogger } = require('../middleware/slowRequest');
 
 const { pool } = require('../db');
 
@@ -281,7 +283,16 @@ router.get('/auth/me', verifyToken, async (req, res) => {
 });
 
 // API v1 routes (versioned)
-router.use('/v1', apiVersion('v1'), v1Routes);
+const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 30000;
+const SLOW_REQUEST_THRESHOLD_MS = parseInt(process.env.SLOW_REQUEST_THRESHOLD_MS) || 5000;
+const LONG_TIMEOUT_MS = 60000; // 60 seconds for long-running endpoints
+
+router.use('/v1', 
+  apiVersion('v1'),
+  requestTimeout(REQUEST_TIMEOUT_MS),
+  slowRequestLogger(SLOW_REQUEST_THRESHOLD_MS),
+  v1Routes
+);
 
 // Catch-all for unversioned requests
 router.use((req, res) => {
