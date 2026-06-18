@@ -1,8 +1,36 @@
 const { pool } = require('../db');
-const { NotFoundError } = require('../errors/HttpError');
+const { NotFoundError, ServiceUnavailableError } = require('../errors/HttpError');
 
 class MemoryService {
+  static _memoryTableAvailable = null;
+
+  static async _checkTableAvailable() {
+    if (MemoryService._memoryTableAvailable !== null) {
+      return MemoryService._memoryTableAvailable;
+    }
+
+    try {
+      const result = await pool.query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.tables
+          WHERE table_schema = 'public'
+          AND table_name = 'agent_memory'
+        )`
+      );
+      MemoryService._memoryTableAvailable = result.rows[0].exists;
+    } catch (error) {
+      MemoryService._memoryTableAvailable = false;
+    }
+
+    return MemoryService._memoryTableAvailable;
+  }
+
   static async addMemory(projectId, agentId, content, metadata = {}) {
+    const available = await this._checkTableAvailable();
+    if (!available) {
+      throw new ServiceUnavailableError('Agent memory feature is not available. pgvector extension required.');
+    }
+
     const { OPENAI_API_KEY, OPENAI_EMBEDDING_MODEL } = process.env;
     const embeddingModel = OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
 
@@ -42,44 +70,70 @@ class MemoryService {
   }
 
   static async getMemory(id) {
-    const result = await pool.query(
-      'SELECT * FROM agent_memory WHERE id = $1',
-      [id]
-    );
-
-    if (result.rows.length === 0) {
+    const available = await this._checkTableAvailable();
+    if (!available) {
       return null;
     }
 
-    return this._formatResult(result.rows[0]);
+    try {
+      const result = await pool.query(
+        'SELECT * FROM agent_memory WHERE id = $1',
+        [id]
+      );
+
+      if (result.rows.length === 0) {
+        return null;
+      }
+
+      return this._formatResult(result.rows[0]);
+    } catch (error) {
+      if (error.message.includes('does not exist')) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   static async getProjectMemory(projectId, limit = 50, offset = 0) {
-    const result = await pool.query(
-      `SELECT am.*, u.name as agent_name, u.email as agent_email
-       FROM agent_memory am
-       LEFT JOIN users u ON am.agent_id = u.id
-       WHERE am.project_id = $1
-       ORDER BY am.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [projectId, limit, offset]
-    );
+    try {
+      const result = await pool.query(
+        `SELECT am.*, u.name as agent_name, u.email as agent_email
+         FROM agent_memory am
+         LEFT JOIN users u ON am.agent_id = u.id
+         WHERE am.project_id = $1
+         ORDER BY am.created_at DESC
+         LIMIT $2 OFFSET $3`,
+        [projectId, limit, offset]
+      );
 
-    return result.rows.map(row => this._formatResultWithUserInfo(row));
+      return result.rows.map(row => this._formatResultWithUserInfo(row));
+    } catch (error) {
+      if (error.message.includes('does not exist')) {
+        return [];
+      }
+      throw error;
+    }
   }
 
   static async getAgentMemory(agentId, limit = 50, offset = 0) {
-    const result = await pool.query(
-      `SELECT am.*, u.name as agent_name, u.email as agent_email
-       FROM agent_memory am
-       LEFT JOIN users u ON am.agent_id = u.id
-       WHERE am.agent_id = $1
-       ORDER BY am.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [agentId, limit, offset]
-    );
+    try {
+      const result = await pool.query(
+        `SELECT am.*, u.name as agent_name, u.email as agent_email
+         FROM agent_memory am
+         LEFT JOIN users u ON am.agent_id = u.id
+         WHERE am.agent_id = $1
+         ORDER BY am.created_at DESC
+         LIMIT $2 OFFSET $3`,
+        [agentId, limit, offset]
+      );
 
-    return result.rows.map(row => this._formatResultWithUserInfo(row));
+      return result.rows.map(row => this._formatResultWithUserInfo(row));
+    } catch (error) {
+      if (error.message.includes('does not exist')) {
+        return [];
+      }
+      throw error;
+    }
   }
 
   static async searchSimilar(projectId, queryContent, limit = 10, threshold = 0.3) {
@@ -116,24 +170,35 @@ class MemoryService {
       return [];
     }
 
-    const result = await pool.query(
-      `SELECT am.*, u.name as agent_name, u.email as agent_email,
-              1 - (am.embedding <=> $4) as similarity
-       FROM agent_memory am
-       LEFT JOIN users u ON am.agent_id = u.id
-       WHERE am.project_id = $1
-       AND am.embedding IS NOT NULL
-       ORDER BY am.embedding <=> $4
-       LIMIT $2`,
-      [projectId, limit, queryEmbedding]
-    );
+    try {
+      const result = await pool.query(
+        `SELECT am.*, u.name as agent_name, u.email as agent_email,
+                1 - (am.embedding <=> $4) as similarity
+         FROM agent_memory am
+         LEFT JOIN users u ON am.agent_id = u.id
+         WHERE am.project_id = $1
+         AND am.embedding IS NOT NULL
+         ORDER BY am.embedding <=> $4
+         LIMIT $2`,
+        [projectId, limit, queryEmbedding]
+      );
 
-    const memories = result.rows.map(row => this._formatResultWithUserInfo(row));
-
-    return memories.filter(m => m.similarity >= threshold);
+      const memories = result.rows.map(row => this._formatResultWithUserInfo(row));
+      return memories.filter(m => m.similarity >= threshold);
+    } catch (error) {
+      if (error.message.includes('does not exist')) {
+        return [];
+      }
+      throw error;
+    }
   }
 
   static async updateMemory(id, content, metadata) {
+    const available = await this._checkTableAvailable();
+    if (!available) {
+      throw new ServiceUnavailableError('Agent memory feature is not available. pgvector extension required.');
+    }
+
     const existing = await this.getMemory(id);
     if (!existing) {
       throw new NotFoundError('Memory not found');
@@ -182,6 +247,11 @@ class MemoryService {
   }
 
   static async deleteMemory(id) {
+    const available = await this._checkTableAvailable();
+    if (!available) {
+      throw new ServiceUnavailableError('Agent memory feature is not available. pgvector extension required.');
+    }
+
     const result = await pool.query(
       'DELETE FROM agent_memory WHERE id = $1 RETURNING *',
       [id]
@@ -195,10 +265,16 @@ class MemoryService {
   }
 
   static async deleteProjectMemory(projectId) {
-    await pool.query(
-      'DELETE FROM agent_memory WHERE project_id = $1',
-      [projectId]
-    );
+    try {
+      await pool.query(
+        'DELETE FROM agent_memory WHERE project_id = $1',
+        [projectId]
+      );
+    } catch (error) {
+      if (!error.message.includes('does not exist')) {
+        throw error;
+      }
+    }
   }
 
   static _formatResult(row) {

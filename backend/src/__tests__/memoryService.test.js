@@ -13,6 +13,7 @@ describe('MemoryService', () => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_EMBEDDING_MODEL;
     delete global.fetch;
+    MemoryService._memoryTableAvailable = true;
   });
 
   describe('addMemory', () => {

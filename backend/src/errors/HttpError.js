@@ -46,6 +46,12 @@ class RateLimitError extends AppError {
   }
 }
 
+class ServiceUnavailableError extends AppError {
+  constructor(message = 'Service unavailable') {
+    super(message, 503, 'SERVICE_UNAVAILABLE');
+  }
+}
+
 module.exports = {
   AppError,
   NotFoundError,
@@ -54,4 +60,5 @@ module.exports = {
   UnauthorizedError,
   ConflictError,
   RateLimitError,
+  ServiceUnavailableError,
 };
