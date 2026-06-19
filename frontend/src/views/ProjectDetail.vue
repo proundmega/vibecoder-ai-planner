@@ -272,7 +272,8 @@ async function loadBilling() {
   billingLoading.value = true
   billingError.value = null
   try {
-    billing.value = await getProjectBilling(projectId)
+    const result = await getProjectBilling(projectId)
+    billing.value = result?.data || []
   } catch (err) {
     billingError.value = 'Failed to load billing data'
   } finally {
@@ -566,39 +567,39 @@ async function handleDeleteMemory(memoryId) {
             <h3>Billing</h3>
             <div v-if="billingLoading" class="loading">Loading...</div>
             <div v-else-if="billingError" class="error">{{ billingError }}</div>
-            <div v-else-if="!billing" class="empty">No billing data available</div>
+            <div v-else-if="!billing || billing.length === 0" class="empty">No billing data available</div>
             <div v-else class="billing-info">
               <div class="billing-card">
-                <div class="billing-value">${{ (billing.total_cost || 0).toFixed(4) }}</div>
-                <div class="billing-label">Total Billing</div>
+                <div class="billing-value">${{ (billing.reduce((sum, r) => sum + (r.total_cost || 0), 0) || 0).toFixed(4) }}</div>
+                <div class="billing-label">Total Cost</div>
               </div>
               <div class="billing-card">
-                <div class="billing-value">{{ billing.current_period_start ? new Date(billing.current_period_start).toLocaleDateString() : 'N/A' }}</div>
-                <div class="billing-label">Period Start</div>
-              </div>
-              <div class="billing-card">
-                <div class="billing-value">{{ billing.current_period_end ? new Date(billing.current_period_end).toLocaleDateString() : 'N/A' }}</div>
-                <div class="billing-label">Period End</div>
-              </div>
-              <div class="billing-card">
-                <div class="billing-value">{{ billing.plan || 'free' }}</div>
-                <div class="billing-label">Plan</div>
+                <div class="billing-value">{{ billing.reduce((sum, r) => sum + (r.total_calls || 0), 0) || 0 }}</div>
+                <div class="billing-label">Total Calls</div>
               </div>
             </div>
 
-            <div v-if="billing?.daily_costs && billing.daily_costs.length > 0" class="daily-costs">
-              <h4>Daily Costs</h4>
+            <div v-if="billing.length > 0" class="daily-costs">
+              <h4>Usage by Provider & Model</h4>
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>Date</th>
+                    <th>Provider</th>
+                    <th>Model</th>
+                    <th>Calls</th>
+                    <th>Tokens In</th>
+                    <th>Tokens Out</th>
                     <th>Cost</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="day in billing.daily_costs.slice(-7)" :key="day.date">
-                    <td>{{ day.date }}</td>
-                    <td>${{ (day.cost || 0).toFixed(4) }}</td>
+                  <tr v-for="row in billing" :key="row.provider_type + '-' + row.model">
+                    <td>{{ row.provider_type }}</td>
+                    <td>{{ row.model }}</td>
+                    <td>{{ row.total_calls || 0 }}</td>
+                    <td>{{ (row.total_in || 0).toLocaleString() }}</td>
+                    <td>{{ (row.total_out || 0).toLocaleString() }}</td>
+                    <td>${{ (row.total_cost || 0).toFixed(4) }}</td>
                   </tr>
                 </tbody>
               </table>
