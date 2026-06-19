@@ -478,7 +478,7 @@ async function handleDeleteMemory(memoryId) {
             <div v-for="provider in providers" :key="provider.id" class="provider-card">
               <div class="provider-info">
                 <h4>{{ provider.name }}</h4>
-                <span class="provider-type">{{ provider.provider }}</span>
+                <span class="provider-type">{{ provider.providerType }}</span>
                 <span class="provider-key-masked">{{ '•'.repeat(12) }}{{ provider.api_key?.slice(-4) || '' }}</span>
               </div>
               <div class="provider-actions">

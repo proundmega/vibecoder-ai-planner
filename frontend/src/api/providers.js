@@ -4,8 +4,8 @@ export function listProviders(projectId) {
   return get(`/api/v1/providers/${projectId}/providers`).catch(() => [])
 }
 
-export function addProvider(projectId, name, provider, apiKey) {
-  return post(`/api/v1/providers/${projectId}/providers`, { name, provider, apiKey })
+export function addProvider(projectId, name, providerType, apiKey) {
+  return post(`/api/v1/providers/${projectId}/providers`, { name, providerType, apiKey })
 }
 
 export function updateProvider(projectId, providerId, updates) {
