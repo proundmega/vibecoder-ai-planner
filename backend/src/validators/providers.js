@@ -7,6 +7,10 @@ const addProviderSchema = Joi.object({
     'string.max': 'name must not exceed 100 characters',
     'any.required': 'name is required',
   }),
+  providerType: Joi.string().min(1).required().messages({
+    'string.empty': 'providerType is required',
+    'any.required': 'providerType is required',
+  }),
   apiKey: Joi.string().min(1).required().messages({
     'string.empty': 'apiKey is required',
     'any.required': 'apiKey is required',
@@ -16,6 +20,7 @@ const addProviderSchema = Joi.object({
 
 const updateProviderSchema = Joi.object({
   name: Joi.string().min(1).max(100).optional(),
+  providerType: Joi.string().min(1).optional(),
   apiKey: Joi.string().min(1).optional(),
   baseUrl: Joi.string().uri().allow('').optional(),
 });
