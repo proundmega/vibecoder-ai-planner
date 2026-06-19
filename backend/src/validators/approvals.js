@@ -1,8 +1,10 @@
 const Joi = require('joi');
 
 const createApprovalSchema = Joi.object({
-  ticketId: Joi.string().uuid().required().messages({
-    'string.guid': 'ticketId must be a valid UUID',
+  ticketId: Joi.alternatives().try(
+    Joi.string().uuid().messages({ 'string.guid': 'ticketId must be a valid UUID' }),
+    Joi.number().integer().positive().messages({ 'number.base': 'ticketId must be a valid number' })
+  ).required().messages({
     'any.required': 'ticketId is required',
   }),
 });

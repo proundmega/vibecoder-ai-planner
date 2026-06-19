@@ -32,7 +32,7 @@ router.post('/', verifyToken, validate(createApprovalSchema), async (req, res) =
     res.status(201).json({ success: true, data: approval });
   } catch (error) {
     console.error('POST /api/approvals', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: { message: error.message } });
   }
 });
 
@@ -65,7 +65,7 @@ router.get('/', verifyToken, requireAnyPermission('APPROVAL_VIEW'), async (req, 
     res.json(result);
   } catch (error) {
     console.error('GET /api/approvals', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: { message: error.message } });
   }
 });
 
@@ -85,7 +85,7 @@ router.get('/pending', verifyToken, async (req, res) => {
     res.json({ success: true, data: approvals });
   } catch (error) {
     console.error('GET /api/approvals/pending', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: { message: error.message } });
   }
 });
 
@@ -110,7 +110,7 @@ router.get('/ticket/:ticketId', verifyToken, async (req, res) => {
     res.json({ success: true, data: approvals });
   } catch (error) {
     console.error('GET /api/approvals/ticket/:ticketId', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: { message: error.message } });
   }
 });
 
@@ -137,7 +137,7 @@ router.post('/:approvalId/approve', verifyToken, requireAnyPermission('APPROVAL_
     res.json({ success: true, data: approval, message: 'Approval request approved' });
   } catch (error) {
     console.error('POST /api/approvals/:approvalId/approve', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: { message: error.message } });
   }
 });
 
@@ -164,7 +164,7 @@ router.post('/:approvalId/reject', verifyToken, requireAnyPermission('APPROVAL_R
     res.json({ success: true, data: approval, message: 'Approval request rejected' });
   } catch (error) {
     console.error('POST /api/approvals/:approvalId/reject', error);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: { message: error.message } });
   }
 });
 

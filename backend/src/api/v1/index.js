@@ -21,8 +21,8 @@ const ticketAttachmentUpload = require('../../middleware/multer');
 const { verifyToken } = require('../../middleware/auth');
 
 // Mount all route modules under /v1
-router.use('/users', userRouter);
-router.use('/users-management', usersManagementRouter);
+router.use('/users-management', userRouter);
+router.use('/users', usersManagementRouter);
 router.use('/projects', projectsRouter);
 router.use('/tickets', ticketsRouter);
 router.use('/pricing', pricingRouter);

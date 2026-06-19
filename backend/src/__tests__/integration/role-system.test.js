@@ -41,7 +41,7 @@ describe('Role System Integration', () => {
 
     test('POST /api/users creates member user', async () => {
       const res = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Member User', email: 'member@test.com', password: 'password123', role: 'member' });
 
@@ -52,7 +52,7 @@ describe('Role System Integration', () => {
 
     test('POST /api/users creates user role', async () => {
       const res = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'AI User', email: 'aiuser@test.com', password: 'password123', role: 'user' });
 
@@ -62,7 +62,7 @@ describe('Role System Integration', () => {
 
     test('POST /api/users rejects missing fields', async () => {
       const res = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Incomplete' });
 
@@ -71,7 +71,7 @@ describe('Role System Integration', () => {
 
     test('POST /api/users rejects super_admin role', async () => {
       const res = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Super', email: 'super@test.com', password: 'password123', role: 'super_admin' });
 
@@ -81,12 +81,12 @@ describe('Role System Integration', () => {
 
     test('PUT /api/users/:id updates user name', async () => {
       const createRes = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Original', email: 'update@test.com', password: 'password123', role: 'member' });
 
       const res = await request(app)
-        .put(`/api/users/${createRes.body.data.id}`)
+        .put(`/api/v1/users/${createRes.body.data.id}`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Updated Name' });
 
@@ -96,7 +96,7 @@ describe('Role System Integration', () => {
 
     test('PUT /api/users/:id cannot update own account', async () => {
       const res = await request(app)
-        .put(`/api/users/${adminId}`)
+        .put(`/api/v1/users/${adminId}`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Self Update' });
 
@@ -106,7 +106,7 @@ describe('Role System Integration', () => {
 
     test('PUT /api/users/:id returns 404 for unknown user', async () => {
       const res = await request(app)
-        .put('/api/users/999999999')
+        .put('/api/v1/users/999999999')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Ghost' });
 
@@ -115,12 +115,12 @@ describe('Role System Integration', () => {
 
     test('PATCH /api/users/:id/toggle-active deactivates user', async () => {
       const createRes = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Toggle Me', email: 'toggle@test.com', password: 'password123', role: 'member' });
 
       const res = await request(app)
-        .patch(`/api/users/${createRes.body.data.id}/toggle-active`)
+        .patch(`/api/v1/users/${createRes.body.data.id}/toggle-active`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
@@ -129,16 +129,16 @@ describe('Role System Integration', () => {
 
     test('PATCH /api/users/:id/toggle-active reactivates user', async () => {
       const createRes = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Reactive Me', email: 'reactive@test.com', password: 'password123', role: 'member' });
 
       await request(app)
-        .patch(`/api/users/${createRes.body.data.id}/toggle-active`)
+        .patch(`/api/v1/users/${createRes.body.data.id}/toggle-active`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       const res = await request(app)
-        .patch(`/api/users/${createRes.body.data.id}/toggle-active`)
+        .patch(`/api/v1/users/${createRes.body.data.id}/toggle-active`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
@@ -147,7 +147,7 @@ describe('Role System Integration', () => {
 
     test('PATCH /api/users/:id/toggle-active cannot toggle own account', async () => {
       const res = await request(app)
-        .patch(`/api/users/${adminId}/toggle-active`)
+        .patch(`/api/v1/users/${adminId}/toggle-active`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(400);
@@ -156,12 +156,12 @@ describe('Role System Integration', () => {
 
     test('DELETE /api/users/:id deletes user', async () => {
       const createRes = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Delete Me', email: 'delete@test.com', password: 'password123', role: 'member' });
 
       const res = await request(app)
-        .delete(`/api/users/${createRes.body.data.id}`)
+        .delete(`/api/v1/users/${createRes.body.data.id}`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
@@ -170,7 +170,7 @@ describe('Role System Integration', () => {
 
     test('DELETE /api/users/:id cannot delete own account', async () => {
       const res = await request(app)
-        .delete(`/api/users/${adminId}`)
+        .delete(`/api/v1/users/${adminId}`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(400);
@@ -179,12 +179,12 @@ describe('Role System Integration', () => {
 
     test('GET /api/users lists users scoped by project_admin', async () => {
       await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'User A', email: 'usera@test.com', password: 'password123', role: 'member' });
 
       const res = await request(app)
-        .get('/api/users')
+        .get('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
@@ -193,7 +193,7 @@ describe('Role System Integration', () => {
 
     test('GET /api/users/super-admin requires super_admin role', async () => {
       const res = await request(app)
-        .get('/api/users/super-admin')
+        .get('/api/v1/users/super-admin')
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(403);
@@ -206,7 +206,7 @@ describe('Role System Integration', () => {
       const adminToken = adminRes.body.token;
 
       const userRes = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Regular User', email: `regular_${Date.now()}@test.com`, password: 'password123', role: 'user' });
       const userToken = (await request(app)
@@ -214,7 +214,7 @@ describe('Role System Integration', () => {
         .send({ email: userRes.body.data.email, password: 'password123' })).body.token;
 
       const res = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${userToken}`)
         .send({ name: 'Another', email: 'another_req@test.com', password: 'password123', role: 'member' });
 
@@ -233,7 +233,7 @@ describe('Role System Integration', () => {
       const adminToken = adminRes.body.token;
 
       const memberRes = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Member', email: `member2_${Date.now()}@test.com`, password: 'password123', role: 'member' });
       
@@ -249,7 +249,7 @@ describe('Role System Integration', () => {
 
     test('member can create user role', async () => {
       const res = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${memberToken}`)
         .send({ name: 'AI Agent', email: `agent_${Date.now()}@test.com`, password: 'password123', role: 'user' });
 
@@ -259,7 +259,7 @@ describe('Role System Integration', () => {
 
     test('member cannot create member role', async () => {
       const res = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${memberToken}`)
         .send({ name: 'Another Member', email: `another_${Date.now()}@test.com`, password: 'password123', role: 'member' });
 
@@ -269,7 +269,7 @@ describe('Role System Integration', () => {
 
     test('member cannot create project_admin role', async () => {
       const res = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${memberToken}`)
         .send({ name: 'Admin User', email: `admin3_${Date.now()}@test.com`, password: 'password123', role: 'project_admin' });
 
@@ -292,12 +292,12 @@ describe('Role System Integration', () => {
       const adminToken = adminRes.body.token;
 
       const userRes = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Deactivated User', email: targetEmail, password: 'password123', role: 'member' });
 
       await request(app)
-        .patch(`/api/users/${userRes.body.data.id}/toggle-active`)
+        .patch(`/api/v1/users/${userRes.body.data.id}/toggle-active`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       const loginRes = await request(app)
@@ -321,13 +321,13 @@ describe('Role System Integration', () => {
       const adminToken = adminRes.body.token;
 
       const userRes = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Deactivated 2', email: targetEmail, password: 'password123', role: 'member' });
       const userId = userRes.body.data.id;
 
       await request(app)
-        .patch(`/api/users/${userId}/toggle-active`)
+        .patch(`/api/v1/users/${userId}/toggle-active`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       const loginRes = await request(app)
@@ -351,7 +351,7 @@ describe('Role System Integration', () => {
       adminToken = res.body.token;
 
       const projRes = await request(app)
-        .post('/api/projects')
+        .post('/api/v1/projects')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Approval Project' });
       projectId = projRes.body.data.id;
@@ -359,7 +359,7 @@ describe('Role System Integration', () => {
 
     test('GET /api/approvals requires super_admin role', async () => {
       const res = await request(app)
-        .get('/api/approvals')
+        .get('/api/v1/approvals')
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(403);
@@ -367,198 +367,198 @@ describe('Role System Integration', () => {
 
     test('POST /api/approvals requires ticketId', async () => {
       const res = await request(app)
-        .post('/api/approvals')
+        .post('/api/v1/approvals')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({});
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('ticketId is required');
+      expect(res.body.error.details[0].message).toContain('ticketId is required');
     });
 
     test('POST /api/approvals rejects ticket not in review', async () => {
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ title: 'Test Ticket', description: 'Test' });
 
       const res = await request(app)
-        .post('/api/approvals')
+        .post('/api/v1/approvals')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ ticketId: ticketRes.body.data.id });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('review status');
+      expect(res.body.error.message).toContain('review status');
     });
 
     test('POST /api/approvals creates request for ticket in review', async () => {
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ title: 'Review Ticket', description: 'Test' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'in_progress' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'review' });
 
       const res = await request(app)
-        .post('/api/approvals')
+        .post('/api/v1/approvals')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ ticketId: ticketRes.body.data.id });
 
       expect(res.status).toBe(201);
-      expect(res.body.ticket_id).toBe(ticketRes.body.data.id);
-      expect(res.body.status).toBe('pending');
+      expect(res.body.data.ticket_id).toBe(ticketRes.body.data.id);
+      expect(res.body.data.status).toBe('pending');
     });
 
     test('GET /api/approvals/pending returns pending approvals', async () => {
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ title: 'Pending Ticket', description: 'Test' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'in_progress' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'review' });
 
       await request(app)
-        .post('/api/approvals')
+        .post('/api/v1/approvals')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ ticketId: ticketRes.body.data.id });
 
       const res = await request(app)
-        .get('/api/approvals/pending')
+        .get('/api/v1/approvals/pending')
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body.approvals)).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
     });
 
     test('GET /api/approvals/ticket/:ticketId returns approvals', async () => {
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ title: 'Ticket Approvals', description: 'Test' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'in_progress' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'review' });
 
       await request(app)
-        .post('/api/approvals')
+        .post('/api/v1/approvals')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ ticketId: ticketRes.body.data.id });
 
       const res = await request(app)
-        .get(`/api/approvals/ticket/${ticketRes.body.data.id}`)
+        .get(`/api/v1/approvals/ticket/${ticketRes.body.data.id}`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body.approvals)).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
     });
 
     test('POST /api/approvals/:id/approve transitions ticket to done', async () => {
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ title: 'Approve Ticket', description: 'Test' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'in_progress' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'review' });
 
       const approvalRes = await request(app)
-        .post('/api/approvals')
+        .post('/api/v1/approvals')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ ticketId: ticketRes.body.data.id });
 
       const approveRes = await request(app)
-        .post(`/api/approvals/${approvalRes.body.id}/approve`)
+        .post(`/api/v1/approvals/${approvalRes.body.data.id}/approve`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(approveRes.status).toBe(200);
-      expect(approveRes.body.approval.status).toBe('approved');
+      expect(approveRes.body.data.status).toBe('approved');
     });
 
     test('POST /api/approvals/:id/reject rejects request', async () => {
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ title: 'Reject Ticket', description: 'Test' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'in_progress' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'review' });
 
       const approvalRes = await request(app)
-        .post('/api/approvals')
+        .post('/api/v1/approvals')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ ticketId: ticketRes.body.data.id });
 
       const rejectRes = await request(app)
-        .post(`/api/approvals/${approvalRes.body.id}/reject`)
+        .post(`/api/v1/approvals/${approvalRes.body.data.id}/reject`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(rejectRes.status).toBe(200);
-      expect(rejectRes.body.approval.status).toBe('rejected');
+      expect(rejectRes.body.data.status).toBe('rejected');
     });
 
     test('POST /api/approvals/:id/approve rejects already approved', async () => {
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ title: 'Double Approve', description: 'Test' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'in_progress' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'review' });
 
       const approvalRes = await request(app)
-        .post('/api/approvals')
+        .post('/api/v1/approvals')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ ticketId: ticketRes.body.data.id });
 
       await request(app)
-        .post(`/api/approvals/${approvalRes.body.id}/approve`)
+        .post(`/api/v1/approvals/${approvalRes.body.data.id}/approve`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       const res = await request(app)
-        .post(`/api/approvals/${approvalRes.body.id}/approve`)
+        .post(`/api/v1/approvals/${approvalRes.body.data.id}/approve`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(400);
@@ -566,31 +566,31 @@ describe('Role System Integration', () => {
 
     test('POST /api/approvals/:id/approve rejects non-pending', async () => {
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ title: 'Non Pending', description: 'Test' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'in_progress' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'review' });
 
       const approvalRes = await request(app)
-        .post('/api/approvals')
+        .post('/api/v1/approvals')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ ticketId: ticketRes.body.data.id });
 
       await request(app)
-        .post(`/api/approvals/${approvalRes.body.id}/reject`)
+        .post(`/api/v1/approvals/${approvalRes.body.data.id}/reject`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       const res = await request(app)
-        .post(`/api/approvals/${approvalRes.body.id}/approve`)
+        .post(`/api/v1/approvals/${approvalRes.body.data.id}/approve`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(400);
@@ -603,7 +603,7 @@ describe('Role System Integration', () => {
       const adminToken = adminRes.body.token;
 
       const userRes = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'User', email: `user_${Date.now()}@test.com`, password: 'password123', role: 'user' });
       const userToken = (await request(app)
@@ -611,7 +611,7 @@ describe('Role System Integration', () => {
         .send({ email: userRes.body.data.email, password: 'password123' })).body.token;
 
       const res = await request(app)
-        .post('/api/approvals/1/approve')
+        .post('/api/v1/approvals/1/approve')
         .set('Authorization', `Bearer ${userToken}`);
 
       expect(res.status).toBe(403);
@@ -633,26 +633,26 @@ describe('Role System Integration', () => {
       adminUserId = res.body.user.userId;
 
       const projRes = await request(app)
-        .post('/api/projects')
+        .post('/api/v1/projects')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Ticket Delete Project' });
       projectId = projRes.body.data.id;
 
       memberEmail = `member_${Date.now()}@test.com`;
       await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Member', email: memberEmail, password: 'password123', role: 'member' });
     });
 
     test('admin can delete any ticket', async () => {
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ title: 'Admin Delete Ticket', description: 'Test' });
 
       const res = await request(app)
-        .delete(`/api/projects/tickets/${ticketRes.body.data.id}`)
+        .delete(`/api/v1/projects/tickets/${ticketRes.body.data.id}`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
@@ -665,12 +665,12 @@ describe('Role System Integration', () => {
       const memberToken = memberRes.body.token;
 
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ title: 'Member Delete Ticket', description: 'Test' });
 
       const res = await request(app)
-        .delete(`/api/projects/tickets/${ticketRes.body.data.id}`)
+        .delete(`/api/v1/projects/tickets/${ticketRes.body.data.id}`)
         .set('Authorization', `Bearer ${memberToken}`);
 
       expect(res.status).toBe(200);
@@ -683,7 +683,7 @@ describe('Role System Integration', () => {
       const adminToken2 = adminRes.body.token;
 
       const userRes = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken2}`)
         .send({ name: 'User', email: `user_${Date.now()}@test.com`, password: 'password123', role: 'user' });
       const userToken = (await request(app)
@@ -691,12 +691,12 @@ describe('Role System Integration', () => {
         .send({ email: userRes.body.data.email, password: 'password123' })).body.token;
 
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${adminToken2}`)
         .send({ title: 'Owned Ticket', description: 'Test' });
 
       const res = await request(app)
-        .delete(`/api/projects/tickets/${ticketRes.body.data.id}`)
+        .delete(`/api/v1/projects/tickets/${ticketRes.body.data.id}`)
         .set('Authorization', `Bearer ${userToken}`);
 
       expect(res.status).toBe(403);
@@ -709,7 +709,7 @@ describe('Role System Integration', () => {
       const adminToken2 = adminRes.body.token;
 
       const userRes = await request(app)
-        .post('/api/users')
+        .post('/api/v1/users')
         .set('Authorization', `Bearer ${adminToken2}`)
         .send({ name: 'User', email: `user_${Date.now()}@test.com`, password: 'password123', role: 'user' });
       const userToken = (await request(app)
@@ -717,12 +717,12 @@ describe('Role System Integration', () => {
         .send({ email: userRes.body.data.email, password: 'password123' })).body.token;
 
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${userToken}`)
         .send({ title: 'My Ticket', description: 'Test' });
 
       const res = await request(app)
-        .delete(`/api/projects/tickets/${ticketRes.body.data.id}`)
+        .delete(`/api/v1/projects/tickets/${ticketRes.body.data.id}`)
         .set('Authorization', `Bearer ${userToken}`);
 
       expect(res.status).toBe(200);
@@ -730,7 +730,7 @@ describe('Role System Integration', () => {
 
     test('delete non-existent ticket returns 404', async () => {
       const res = await request(app)
-        .delete('/api/projects/tickets/999999999')
+        .delete('/api/v1/projects/tickets/999999999')
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(404);
@@ -747,7 +747,7 @@ describe('Role System Integration', () => {
       const token = res.body.token;
 
       const accessRes = await request(app)
-        .get('/api/users/super-admin')
+        .get('/api/v1/users/super-admin')
         .set('Authorization', `Bearer ${token}`);
 
       expect(accessRes.status).toBe(403);
@@ -767,11 +767,11 @@ describe('Role System Integration', () => {
       const adminToken = adminRes.body.token;
 
       await request(app)
-        .patch(`/api/users/${userId}/toggle-active`)
+        .patch(`/api/v1/users/${userId}/toggle-active`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       const accessRes = await request(app)
-        .get('/api/users')
+        .get('/api/v1/users')
         .set('Authorization', `Bearer ${regToken}`);
 
       expect(accessRes.status).toBe(403);
@@ -790,7 +790,7 @@ describe('Role System Integration', () => {
       adminToken = res.body.token;
 
       const projRes = await request(app)
-        .post('/api/projects')
+        .post('/api/v1/projects')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ name: 'Duplicate Project' });
       projectId = projRes.body.data.id;
@@ -798,32 +798,32 @@ describe('Role System Integration', () => {
 
     test('cannot create duplicate pending approval for same ticket+requester', async () => {
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ title: 'Dup Ticket', description: 'Test' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'in_progress' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ status: 'review' });
 
       await request(app)
-        .post('/api/approvals')
+        .post('/api/v1/approvals')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ ticketId: ticketRes.body.data.id });
 
       const res = await request(app)
-        .post('/api/approvals')
+        .post('/api/v1/approvals')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ ticketId: ticketRes.body.data.id });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('already pending');
+      expect(res.body.error.message).toContain('already pending');
     });
   });
 });

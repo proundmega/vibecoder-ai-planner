@@ -129,24 +129,24 @@ describe('Vibecode Integration (PostgreSQL)', () => {
       token = res.body.token;
     });
 
-    test('POST /api/projects returns 403 for user role without PROJECT_CREATE', async () => {
+    test('POST /api/v1/projects returns 403 for user role without PROJECT_CREATE', async () => {
       const userEmail = `user_${Date.now()}@test.com`;
       const regRes = await request(app).post('/api/auth/register').send({
-        name: 'User', email: userEmail, password: 'password123',
+        name: 'User', email: userEmail, password: 'password123', role: 'user',
       });
       const userToken = regRes.body.token;
 
       const res = await request(app)
-        .post('/api/projects')
+        .post('/api/v1/projects')
         .set('Authorization', `Bearer ${userToken}`)
         .send({ name: 'No Permission Project' });
 
       expect(res.status).toBe(403);
     });
 
-    test('POST /api/projects creates project', async () => {
+    test('POST /api/v1/projects creates project', async () => {
       const res = await request(app)
-        .post('/api/projects')
+        .post('/api/v1/projects')
         .set('Authorization', `Bearer ${token}`)
         .send({ name: 'My Project', description: 'A test project' });
 
@@ -155,28 +155,13 @@ describe('Vibecode Integration (PostgreSQL)', () => {
       expect(res.body.data.name).toBe('My Project');
     });
 
-    test('POST /api/projects returns 403 for user role without PROJECT_CREATE', async () => {
-      const userEmail = `user_${Date.now()}@test.com`;
-      const regRes = await request(app).post('/api/auth/register').send({
-        name: 'User', email: userEmail, password: 'password123',
-      });
-      const userToken = regRes.body.token;
-
-      const res = await request(app)
-        .post('/api/projects')
-        .set('Authorization', `Bearer ${userToken}`)
-        .send({ name: 'No Permission Project' });
-
-      expect(res.status).toBe(403);
-    });
-
-    test('GET /api/projects lists user projects', async () => {
-      await request(app).post('/api/projects')
+    test('GET /api/v1/projects lists user projects', async () => {
+      await request(app).post('/api/v1/projects')
         .set('Authorization', `Bearer ${token}`)
         .send({ name: 'Project One' });
 
       const res = await request(app)
-        .get('/api/projects')
+        .get('/api/v1/projects')
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
@@ -184,43 +169,43 @@ describe('Vibecode Integration (PostgreSQL)', () => {
       expect(res.body.data.length).toBeGreaterThan(0);
     });
 
-    test('GET /api/projects/:id returns project', async () => {
+    test('GET /api/v1/projects/:id returns project', async () => {
       const createRes = await request(app)
-        .post('/api/projects')
+        .post('/api/v1/projects')
         .set('Authorization', `Bearer ${token}`)
         .send({ name: 'Single Project' });
 
       const res = await request(app)
-        .get(`/api/projects/${createRes.body.data.id}`)
+        .get(`/api/v1/projects/${createRes.body.data.id}`)
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.name).toBe('Single Project');
     });
 
-    test('GET /api/projects/:id returns 404 for unknown id', async () => {
+    test('GET /api/v1/projects/:id returns 404 for unknown id', async () => {
       const res = await request(app)
-        .get('/api/projects/999999999')
+        .get('/api/v1/projects/999999999')
         .set('Authorization', `Bearer ${token}`);
       expect(res.status).toBe(404);
     });
 
-    test('DELETE /api/projects/:id removes project', async () => {
+    test('DELETE /api/v1/projects/:id removes project', async () => {
       const createRes = await request(app)
-        .post('/api/projects')
+        .post('/api/v1/projects')
         .set('Authorization', `Bearer ${token}`)
         .send({ name: 'To Delete' });
 
       const res = await request(app)
-        .delete(`/api/projects/${createRes.body.data.id}`)
+        .delete(`/api/v1/projects/${createRes.body.data.id}`)
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
     });
 
-    test('POST /api/projects fails without auth', async () => {
+    test('POST /api/v1/projects fails without auth', async () => {
       const res = await request(app)
-        .post('/api/projects')
+        .post('/api/v1/projects')
         .send({ name: 'No Auth Project' });
       expect(res.status).toBe(401);
     });
@@ -238,15 +223,15 @@ describe('Vibecode Integration (PostgreSQL)', () => {
       token = regRes.body.token;
 
       const projRes = await request(app)
-        .post('/api/projects')
+        .post('/api/v1/projects')
         .set('Authorization', `Bearer ${token}`)
         .send({ name: 'Ticket Test Project' });
       projectId = projRes.body.data.id;
     });
 
-    test('POST /api/projects/:id/tickets creates ticket', async () => {
+    test('POST /api/v1/projects/:id/tickets creates ticket', async () => {
       const res = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${token}`)
         .send({ title: 'Bug Fix', description: 'Fix the bug', priority: 'high' });
 
@@ -255,14 +240,14 @@ describe('Vibecode Integration (PostgreSQL)', () => {
       expect(res.body.data.priority).toBe('high');
     });
 
-    test('PATCH /api/tickets/:id/status transitions to in_progress', async () => {
+    test('POST /api/v1/projects/:id/tickets/:ticketId/status transitions to in_progress', async () => {
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${token}`)
         .send({ title: 'Status Test Ticket' });
 
       const res = await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${token}`)
         .send({ status: 'in_progress' });
 
@@ -270,19 +255,19 @@ describe('Vibecode Integration (PostgreSQL)', () => {
       expect(res.body.data.status).toBe('in_progress');
     });
 
-    test('PATCH /api/tickets/:id/status transitions to review', async () => {
+    test('POST /api/v1/projects/:id/tickets/:ticketId/status transitions to review', async () => {
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${token}`)
         .send({ title: 'Review Ticket' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${token}`)
         .send({ status: 'in_progress' });
 
       const res = await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${token}`)
         .send({ status: 'review' });
 
@@ -290,46 +275,46 @@ describe('Vibecode Integration (PostgreSQL)', () => {
       expect(res.body.data.status).toBe('review');
     });
 
-    test('PATCH /api/tickets/:id/status rejects done from in_progress', async () => {
+    test('POST /api/v1/projects/:id/tickets/:ticketId/status rejects done from in_progress', async () => {
       const ticketRes = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${token}`)
         .send({ title: 'Invalid Transition' });
 
       await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${token}`)
         .send({ status: 'in_progress' });
 
       const res = await request(app)
-        .post(`/api/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
+        .post(`/api/v1/projects/${projectId}/tickets/${ticketRes.body.data.id}/status`)
         .set('Authorization', `Bearer ${token}`)
         .send({ status: 'done' });
 
       expect(res.status).toBe(400);
     });
 
-    test('GET /api/projects/:id/tickets lists tickets', async () => {
+    test('GET /api/v1/projects/:id/tickets lists tickets', async () => {
       await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${token}`)
         .send({ title: 'Ticket A' });
       await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${token}`)
         .send({ title: 'Ticket B' });
 
       const res = await request(app)
-        .get(`/api/projects/${projectId}/tickets`)
+        .get(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBeGreaterThanOrEqual(2);
     });
 
-    test('POST /api/projects/:id/tickets fails without auth', async () => {
+    test('POST /api/v1/projects/:id/tickets fails without auth', async () => {
       const res = await request(app)
-        .post(`/api/projects/${projectId}/tickets`)
+        .post(`/api/v1/projects/${projectId}/tickets`)
         .send({ title: 'No Auth Ticket' });
       expect(res.status).toBe(401);
     });
