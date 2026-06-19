@@ -35,6 +35,7 @@ const branchTicketId = ref('')
 const prBranchName = ref('')
 const prTitle = ref('')
 const prBody = ref('')
+const githubLoaded = ref(false)
 
 // Providers state
 const providers = ref([])
@@ -49,6 +50,7 @@ const editProviderName = ref('')
 const editProviderKey = ref('')
 const providerTestResult = ref(null)
 const providerTestLoading = ref(false)
+const providersLoaded = ref(false)
 
 const providerTypes = [
   { value: 'openai', label: 'OpenAI' },
@@ -81,14 +83,32 @@ const editingMemory = ref(null)
 
 const memorySaving = ref(false)
 const memoryDeleting = ref(null)
+const memoryLoaded = ref(false)
 
-onMounted(async () => {
-  await loadGitHub()
-  await loadProviders()
-  await loadUsage()
-  await loadBilling()
-  await loadMemory()
+onMounted(() => {
+  if (activeTab.value === 'github') loadGitHub()
+  if (activeTab.value === 'providers') loadProviders()
+  if (activeTab.value === 'usage') loadUsage()
+  if (activeTab.value === 'memory') loadMemory()
 })
+
+async function switchTab(tabId) {
+  if (activeTab.value === tabId) return
+  if (tabId === 'github' && !githubLoaded.value) {
+    await loadGitHub()
+    githubLoaded.value = true
+  } else if (tabId === 'providers' && !providersLoaded.value) {
+    await loadProviders()
+    providersLoaded.value = true
+  } else if (tabId === 'usage' && !usage.value) {
+    await loadUsage()
+    await loadBilling()
+  } else if (tabId === 'memory' && !memoryLoaded.value) {
+    await loadMemory()
+    memoryLoaded.value = true
+  }
+  activeTab.value = tabId
+}
 
 async function loadGitHub() {
   githubLoading.value = true
@@ -195,6 +215,7 @@ async function loadProviders() {
   providersError.value = null
   try {
     providers.value = await listProviders(projectId)
+    providersLoaded.value = true
   } catch (err) {
     providersError.value = 'Failed to load providers'
   } finally {
@@ -289,6 +310,7 @@ async function loadMemory() {
   memoryError.value = null
   try {
     memories.value = await getProjectMemory(projectId)
+    memoryLoaded.value = true
   } catch (err) {
     memoryError.value = 'Failed to load memories'
   } finally {
@@ -375,7 +397,7 @@ async function handleDeleteMemory(memoryId) {
         v-for="tab in tabs"
         :key="tab.id"
         :class="{ active: activeTab === tab.id }"
-        @click="activeTab = tab.id"
+        @click="switchTab(tab.id)"
       >
         {{ tab.label }}
       </button>
