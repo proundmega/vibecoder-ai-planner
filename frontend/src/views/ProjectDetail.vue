@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { getRepoStatus, connectRepo, disconnectRepo, listBranches, listPRs, createBranch, createPR } from '@/api/github'
 import { listProviders, addProvider, updateProvider, deleteProvider, testProvider } from '@/api/providers'
@@ -9,6 +9,8 @@ import { getProjectMemory, searchMemory, addMemory, updateMemory, deleteMemory }
 
 const route = useRoute()
 const projectId = route.params.id
+
+const isChildRoute = computed(() => route.name !== 'ProjectDetail')
 
 const activeTab = ref('tickets')
 const tabs = [
@@ -392,7 +394,7 @@ async function handleDeleteMemory(memoryId) {
       <h1>Project Settings</h1>
     </div>
 
-    <div class="tabs">
+    <div v-if="!isChildRoute" class="tabs">
       <button
         v-for="tab in tabs"
         :key="tab.id"
@@ -403,7 +405,9 @@ async function handleDeleteMemory(memoryId) {
       </button>
     </div>
 
-    <div class="tab-content">
+    <router-view v-if="isChildRoute" />
+
+    <div v-if="!isChildRoute" class="tab-content">
       <!-- Tickets Tab - just a link to the board -->
       <div v-if="activeTab === 'tickets'" class="tab-panel">
         <router-link :to="`/projects/${projectId}/tickets`" class="btn-primary">
