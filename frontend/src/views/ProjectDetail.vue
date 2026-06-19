@@ -5,7 +5,7 @@ import { getRepoStatus, connectRepo, disconnectRepo, listBranches, listPRs, crea
 import { listProviders, addProvider, updateProvider, deleteProvider, testProvider } from '@/api/providers'
 import { getProjectUsage } from '@/api/usage'
 import { getProjectBilling } from '@/api/billing'
-import { getProjectMemory, addMemory, updateMemory, deleteMemory } from '@/api/memory'
+import { getProjectMemory, searchMemory, addMemory, updateMemory, deleteMemory } from '@/api/memory'
 
 const route = useRoute()
 const projectId = route.params.id
@@ -73,9 +73,12 @@ const memories = ref([])
 const memoryLoading = ref(false)
 const memoryError = ref(null)
 const showAddMemory = ref(false)
-const newMemoryContent = ref('')
+const searchQuery = ref('')
+const searchResults = ref([])
+const isSearching = ref(false)
+
 const editingMemory = ref(null)
-const editMemoryContent = ref('')
+
 const memorySaving = ref(false)
 const memoryDeleting = ref(null)
 
@@ -291,6 +294,29 @@ async function loadMemory() {
   } finally {
     memoryLoading.value = false
   }
+}
+
+async function handleSearch() {
+  if (!searchQuery.value.trim()) {
+    clearSearch()
+    return
+  }
+  isSearching.value = true
+  searchResults.value = []
+  try {
+    const result = await searchMemory(projectId, searchQuery.value)
+    searchResults.value = result.data || []
+  } catch (error) {
+    memoryError.value = error.message || 'Search failed'
+  } finally {
+    isSearching.value = false
+  }
+}
+
+function clearSearch() {
+  searchQuery.value = ''
+  searchResults.value = []
+  memoryError.value = null
 }
 
 async function handleAddMemory() {
@@ -618,6 +644,59 @@ async function handleDeleteMemory(memoryId) {
             <button v-if="!showAddMemory" @click="showAddMemory = true" class="btn-primary">Add Memory</button>
           </div>
 
+          <div class="memory-search">
+            <input
+              v-model="searchQuery"
+              @keyup.enter="handleSearch"
+              @input="handleSearch"
+              placeholder="Search memories by content..."
+              class="search-input"
+            />
+            <button v-if="searchQuery || searchResults.length > 0" @click="clearSearch" class="clear-btn">
+              {{ searchResults.length > 0 ? 'Clear Search' : 'Clear' }}
+            </button>
+          </div>
+
+          <div v-if="isSearching" class="loading">Searching...</div>
+          <template v-else>
+            <div v-if="searchResults.length > 0" class="search-results">
+              <p class="search-info">Found {{ searchResults.length }} memory{{ searchResults.length !== 1 ? 'ies' : 'y' }} matching "{{ searchQuery }}"</p>
+              <div class="memory-list">
+                <div v-for="memory in searchResults" :key="memory.id" class="memory-card">
+                  <div class="memory-content">{{ memory.content }}</div>
+                  <div class="memory-meta">
+                    <span>{{ new Date(memory.created_at).toLocaleDateString() }}</span>
+                    <span>{{ memory.created_by_name || 'Unknown' }}</span>
+                  </div>
+                  <div class="memory-actions">
+                    <button v-if="!editingMemory || editingMemory.id !== memory.id" @click="editingMemory = memory; editMemoryContent = memory.content" class="btn-small">Edit</button>
+                    <button @click="handleDeleteMemory(memory.id)" :disabled="memoryDeleting === memory.id" class="btn-small btn-danger">
+                      {{ memoryDeleting === memory.id ? 'Deleting...' : 'Delete' }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else-if="memories.length === 0 && !showAddMemory" class="empty">
+              <p>No memories stored yet.</p>
+            </div>
+            <div v-else class="memory-list">
+              <div v-for="memory in memories" :key="memory.id" class="memory-card">
+                <div class="memory-content">{{ memory.content }}</div>
+                <div class="memory-meta">
+                  <span>{{ new Date(memory.created_at).toLocaleDateString() }}</span>
+                  <span>{{ memory.created_by_name || 'Unknown' }}</span>
+                </div>
+                <div class="memory-actions">
+                  <button v-if="!editingMemory || editingMemory.id !== memory.id" @click="editingMemory = memory; editMemoryContent = memory.content" class="btn-small">Edit</button>
+                  <button @click="handleDeleteMemory(memory.id)" :disabled="memoryDeleting === memory.id" class="btn-small btn-danger">
+                    {{ memoryDeleting === memory.id ? 'Deleting...' : 'Delete' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </template>
+
           <div v-if="showAddMemory" class="add-form">
             <div class="form-group">
               <label>Content</label>
@@ -628,26 +707,6 @@ async function handleDeleteMemory(memoryId) {
                 {{ memorySaving ? 'Adding...' : 'Add' }}
               </button>
               <button @click="showAddMemory = false" class="btn-cancel">Cancel</button>
-            </div>
-          </div>
-
-          <div v-if="memories.length === 0 && !showAddMemory" class="empty">
-            <p>No memories stored yet.</p>
-          </div>
-
-          <div v-else class="memory-list">
-            <div v-for="memory in memories" :key="memory.id" class="memory-card">
-              <div class="memory-content">{{ memory.content }}</div>
-              <div class="memory-meta">
-                <span>{{ new Date(memory.created_at).toLocaleDateString() }}</span>
-                <span>{{ memory.created_by_name || 'Unknown' }}</span>
-              </div>
-              <div class="memory-actions">
-                <button v-if="!editingMemory || editingMemory.id !== memory.id" @click="editingMemory = memory; editMemoryContent = memory.content" class="btn-small">Edit</button>
-                <button @click="handleDeleteMemory(memory.id)" :disabled="memoryDeleting === memory.id" class="btn-small btn-danger">
-                  {{ memoryDeleting === memory.id ? 'Deleting...' : 'Delete' }}
-                </button>
-              </div>
             </div>
           </div>
 
@@ -1118,6 +1177,53 @@ async function handleDeleteMemory(memoryId) {
   background: #f9fafb;
   font-weight: 600;
   color: #374151;
+}
+
+.memory-search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.search-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+}
+
+.clear-btn {
+  padding: 8px 16px;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.clear-btn:hover {
+  background: #e5e7eb;
+}
+
+.search-results {
+  margin-bottom: 16px;
+}
+
+.search-info {
+  font-size: 14px;
+  color: #6b7280;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border-radius: 6px;
 }
 
 .memory-list {
