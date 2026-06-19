@@ -259,7 +259,8 @@ async function loadUsage() {
   usageLoading.value = true
   usageError.value = null
   try {
-    usage.value = await getProjectUsage(projectId)
+    const result = await getProjectUsage(projectId)
+    usage.value = result?.data || null
   } catch (err) {
     usageError.value = 'Failed to load usage data'
   } finally {
@@ -523,39 +524,37 @@ async function handleDeleteMemory(memoryId) {
             <div v-else-if="!usage" class="empty">No usage data available</div>
             <div v-else class="usage-grid">
               <div class="usage-card">
-                <div class="usage-value">{{ usage.total_requests || 0 }}</div>
-                <div class="usage-label">Total Requests</div>
+                <div class="usage-value">{{ usage.totals?.totalCalls || 0 }}</div>
+                <div class="usage-label">Total Calls</div>
               </div>
               <div class="usage-card">
-                <div class="usage-value">${{ (usage.total_cost || 0).toFixed(4) }}</div>
+                <div class="usage-value">${{ (usage.totals?.totalCost || 0).toFixed(4) }}</div>
                 <div class="usage-label">Total Cost</div>
               </div>
               <div class="usage-card">
-                <div class="usage-value">{{ usage.total_tokens || 0 }}</div>
+                <div class="usage-value">{{ (usage.totals?.totalTokensIn || 0) + (usage.totals?.totalTokensOut || 0) }}</div>
                 <div class="usage-label">Total Tokens</div>
-              </div>
-              <div class="usage-card">
-                <div class="usage-value">{{ usage.avg_response_time_ms || 0 }}ms</div>
-                <div class="usage-label">Avg Response Time</div>
               </div>
             </div>
 
-            <div v-if="usage?.by_model && usage.by_model.length > 0" class="model-breakdown">
+            <div v-if="usage?.breakdown && usage.breakdown.length > 0" class="model-breakdown">
               <h4>Usage by Model</h4>
               <table class="data-table">
                 <thead>
                   <tr>
                     <th>Model</th>
                     <th>Requests</th>
-                    <th>Tokens</th>
+                    <th>Tokens In</th>
+                    <th>Tokens Out</th>
                     <th>Cost</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="model in usage.by_model" :key="model.model">
+                  <tr v-for="model in usage.breakdown" :key="model.model">
                     <td>{{ model.model }}</td>
-                    <td>{{ model.requests }}</td>
-                    <td>{{ model.tokens?.toLocaleString() }}</td>
+                    <td>{{ model.calls || 0 }}</td>
+                    <td>{{ (model.tokens_in || 0).toLocaleString() }}</td>
+                    <td>{{ (model.tokens_out || 0).toLocaleString() }}</td>
                     <td>${{ (model.cost || 0).toFixed(4) }}</td>
                   </tr>
                 </tbody>
