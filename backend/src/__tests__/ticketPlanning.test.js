@@ -62,11 +62,11 @@ describe('TicketPlanningService', () => {
         ],
       });
 
-      const ticket = { id: 'ticket-1', planningStatus: 'in_progress', templateSchema: 'architect' };
+      const ticket = { id: 'ticket-1', planningStatus: 'in_progress', templateSchema: 'architecture' };
       const result = await TicketPlanningService.getPlanningForTicket(ticket, 'user-1');
 
       expect(result.status).toBe('in_progress');
-      expect(result.templateSchema).toBe('architect');
+      expect(result.templateSchema).toBe('architecture');
       expect(result.files).toHaveLength(2);
       expect(result.files[0].version).toBe(2);
     });
@@ -113,6 +113,24 @@ describe('TemplateService', () => {
     it('should return empty string for unknown file key', () => {
       const content = TemplateService.getArchitectTemplateContent('unknown.md');
       expect(content).toBe('');
+    });
+  });
+
+  describe('getTechnicalTemplate', () => {
+    it('should return 3 technical template files', () => {
+      const files = TemplateService.getTechnicalTemplate();
+      expect(files).toHaveLength(3);
+      expect(files[0].key).toBe('01_TECHNICAL_REQUIREMENT.md');
+      expect(files[1].key).toBe('02_TECHNICAL_DESIGN.md');
+      expect(files[2].key).toBe('03_TECHNICAL_IMPLEMENTATION.md');
+    });
+  });
+
+  describe('getSimpleTemplate', () => {
+    it('should return 1 simple template file', () => {
+      const files = TemplateService.getSimpleTemplate();
+      expect(files).toHaveLength(1);
+      expect(files[0].key).toBe('01_SIMPLE_TASKS.md');
     });
   });
 });

@@ -7,6 +7,16 @@ const ARCHITECT_TEMPLATE_FILES = [
   { key: '03_ARCHITECT_IMPLEMENTATION.md', title: 'Implementation', required: true },
 ];
 
+const TECHNICAL_TEMPLATE_FILES = [
+  { key: '01_TECHNICAL_REQUIREMENT.md', title: 'Technical Requirements', required: true },
+  { key: '02_TECHNICAL_DESIGN.md', title: 'Technical Design', required: true },
+  { key: '03_TECHNICAL_IMPLEMENTATION.md', title: 'Implementation Plan', required: true },
+];
+
+const SIMPLE_TEMPLATE_FILES = [
+  { key: '01_SIMPLE_TASKS.md', title: 'Task List', required: true },
+];
+
 class TemplateService {
   static getArchitectTemplate() {
     return ARCHITECT_TEMPLATE_FILES;
@@ -268,6 +278,169 @@ Describe the purpose and value delivered.
 ---
 
 *Implementation phase.*
+`,
+    };
+    return templates[fileKey] || '';
+  }
+
+  static getTechnicalTemplate() {
+    return TECHNICAL_TEMPLATE_FILES;
+  }
+
+  static getTechnicalTemplateContent(fileKey) {
+    const templates = {
+      '01_TECHNICAL_REQUIREMENT.md': `# 01_TECHNICAL_REQUIREMENT.md
+
+**Status**: planned
+**Date created**: ${new Date().toISOString().split('T')[0]}
+**Author**: TBD
+
+---
+
+## Technical Requirements
+
+Describe the technical requirements here.
+
+### Functional Requirements
+- Requirement 1
+- Requirement 2
+
+### Non-Functional Requirements
+- Performance: target
+- Scalability: target
+
+---
+
+## Technical Constraints
+
+- Constraint 1
+- Constraint 2
+
+---
+
+*Ready for technical design.*
+`,
+      '02_TECHNICAL_DESIGN.md': `# 02_TECHNICAL_DESIGN.md
+
+**Status**: planned
+**Date created**: ${new Date().toISOString().split('T')[0]}
+**Author**: TBD
+
+---
+
+## Technical Design
+
+### Architecture
+
+Describe the architecture here.
+
+### Data Model
+
+\`\`\`
+Table: name
+- field: type
+- field: type
+\`\`\`
+
+### API Design
+
+\`\`\`
+GET /api/endpoint
+POST /api/endpoint
+\`\`\`
+
+### Implementation Plan
+
+1. Phase 1: Setup
+2. Phase 2: Core logic
+3. Phase 3: Testing
+
+---
+
+*Ready for implementation.*
+`,
+      '03_TECHNICAL_IMPLEMENTATION.md': `# 03_TECHNICAL_IMPLEMENTATION.md
+
+**Status**: planned
+**Priority**: P1 (High)
+**Effort**: Small
+**Author**: TBD
+**Date created**: ${new Date().toISOString().split('T')[0]}
+**Date completed**: TBD
+**PR**: TBD
+**Branch**: TBD
+
+**Dependencies**: None
+
+---
+
+### a) Purpose
+
+Describe the purpose and value delivered.
+
+---
+
+### b) Technical Implementation
+
+1. **Step 1** — file path
+   - Detail 1
+   - Detail 2
+
+2. **Step 2** — file path
+   - Detail 1
+
+---
+
+### c) Testing
+
+- [ ] Test 1
+- [ ] Test 2
+
+---
+
+### d) Rollback Plan
+
+- **How**: \`git revert <commit>\`
+- **Data impact**: None
+- **Downtime**: None
+
+---
+
+*Implementation plan.*
+`,
+    };
+    return templates[fileKey] || '';
+  }
+
+  static getSimpleTemplate() {
+    return SIMPLE_TEMPLATE_FILES;
+  }
+
+  static getSimpleTemplateContent(fileKey) {
+    const templates = {
+      '01_SIMPLE_TASKS.md': `# 01_SIMPLE_TASKS.md
+
+**Status**: planned
+**Date created**: ${new Date().toISOString().split('T')[0]}
+**Author**: TBD
+
+---
+
+## Task List
+
+- [ ] Task 1
+- [ ] Task 2
+- [ ] Task 3
+
+---
+
+## Notes
+
+Additional notes go here.
+
+---
+
+*Simple task list.*
 `,
     };
     return templates[fileKey] || '';

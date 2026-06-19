@@ -73,14 +73,28 @@ class TicketPlanningService {
     try {
       await client.query('BEGIN');
 
-      const templateFiles = templateName === 'architect'
-        ? TemplateService.getArchitectTemplate()
-        : await this._getCustomTemplate(ticketId, templateName);
+      let templateFiles;
+      let getContent;
+
+      if (templateName === 'architect') {
+        templateFiles = TemplateService.getArchitectTemplate();
+        getContent = TemplateService.getArchitectTemplateContent;
+      } else if (templateName === 'technical') {
+        templateFiles = TemplateService.getTechnicalTemplate();
+        getContent = TemplateService.getTechnicalTemplateContent;
+      } else if (templateName === 'simple') {
+        templateFiles = TemplateService.getSimpleTemplate();
+        getContent = TemplateService.getSimpleTemplateContent;
+      } else {
+        templateFiles = await this._getCustomTemplate(ticketId, templateName);
+        getContent = (key) => {
+          const fileDef = templateFiles.find(f => f.key === key);
+          return fileDef?.content || '';
+        };
+      }
 
       for (const fileDef of templateFiles) {
-        const content = templateName === 'architect'
-          ? TemplateService.getArchitectTemplateContent(fileDef.key)
-          : fileDef.content || '';
+        const content = getContent(fileDef.key);
 
         await client.query(
           `INSERT INTO ticket_planning (ticket_id, file_key, content, version, created_by)
@@ -89,10 +103,9 @@ class TicketPlanningService {
         );
       }
 
-      const schemaName = templateName === 'architect' ? 'architect' : templateName;
       await client.query(
         'UPDATE tickets SET planning_status = \'template_selected\', template_schema = $1 WHERE id = $2',
-        [schemaName, ticketId]
+        [templateName, ticketId]
       );
 
       await client.query('COMMIT');
