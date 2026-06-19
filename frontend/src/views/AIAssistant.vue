@@ -1,7 +1,7 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { createTicket, getAgentTickets, getAgentHistory, listAgents } from '@/api/agents'
+import { getAgentHistory, listAgents } from '@/api/agents'
 
 const route = useRoute()
 
@@ -9,17 +9,12 @@ const agents = ref([])
 const selectedAgentId = ref('')
 const input = ref('')
 const messages = ref([])
-const agentTickets = ref(null)
+
 const processing = ref(false)
 const apiKey = ref('')
 const dailyUsage = ref({ used: 0, limit: 100 })
 
-const quickActions = [
-  { label: 'Find Bugs', prompt: 'Find bugs in authentication' },
-  { label: 'Review Code', prompt: 'Review backend API implementation' },
-  { label: 'Generate Docs', prompt: 'Generate documentation for endpoints' },
-  { label: 'Test Scenarios', prompt: 'Generate test cases for login flow' },
-]
+const quickActionsList = ['Find Bugs', 'Review Code', 'Generate Docs', 'Test Scenarios']
 
 onMounted(async () => {
   try {
@@ -45,8 +40,6 @@ watch(selectedAgentId, async (newId) => {
 async function loadAgentInfo() {
   if (!selectedAgentId.value) return
   try {
-    const projectId = route.params.id
-    agentTickets.value = await getAgentTickets(projectId, apiKey.value)
     dailyUsage.value = await getRecentDailyUsage()
   } catch (error) {
     console.error('Failed to load agent info:', error)
@@ -57,7 +50,6 @@ async function handleAgentSelect() {
   if (selectedAgentId.value) {
     await loadAgentInfo()
   } else {
-    agentTickets.value = null
     apiKey.value = ''
   }
 }
@@ -83,9 +75,9 @@ function handleKeyDown(event) {
 }
 
 async function handleQuickAction() {
-  const action = quickActions[Math.floor(Math.random() * quickActions.length)]
-  if (action) {
-    input.value = action.prompt
+  const actionName = quickActionsList[Math.floor(Math.random() * quickActionsList.length)]
+  if (actionName) {
+    input.value = actionName
     await handleSubmit()
   }
 }
@@ -120,47 +112,26 @@ async function handleSubmit() {
   }
 }
 
-async function processUserPrompt(prompt, projectId) {
+async function processUserPrompt(prompt, _projectId) {
   const intent = detectIntent(prompt.toLowerCase())
 
   switch (intent) {
-    case 'create':
-      return await handleCreateTicket(prompt, projectId)
     case 'scan':
       return await handleScan()
     default:
-      return 'I can help you:\n• Create a new ticket\n• Scan for issues'
+      return 'I can help you:\n• Scan for issues'
   }
 }
 
 function detectIntent(text) {
-  if (text.includes('create') || text.includes('add') || text.includes('make') || text.includes('new')) return 'create'
   if (text.includes('scan') || text.includes('find bugs') || text.includes('check') || text.includes('search')) return 'scan'
   return null
-}
-
-async function handleCreateTicket(prompt, projectId) {
-  try {
-    const title = extractTicketTitle(prompt)
-    const description = prompt.replace(/^(add|create|make|new)\s+/i, '').trim() || 'New ticket'
-
-    await createTicket(projectId, title, description, apiKey.value)
-
-    return `Created ticket: "${title}"`
-  } catch (error) {
-    throw error
-  }
 }
 
 async function handleScan() {
   addMessage('system', 'Scanning project repository...')
   await new Promise(resolve => setTimeout(resolve, 1500))
   return 'Scan complete\nFound 0 critical issues\n4 medium priority items\nSee tickets view'
-}
-
-function extractTicketTitle(text) {
-  const match = text.match(/^(add|create|make|new)\s+([a-zA-Z0-9\s\-()]+?)(?:\s+as|$)/i)
-  return match ? match[2].trim() : 'New ticket'
 }
 
 async function getRecentDailyUsage() {
@@ -213,11 +184,6 @@ async function getRecentDailyUsage() {
 
     <div class="ai-stats" v-if="selectedAgentId">
       <div class="stat">
-        <span class="stat-label">Active Tickets:</span>
-        <span class="stat-value" v-if="agentTickets">{{ agentTickets.count }}</span>
-        <span class="stat-value" v-else>—</span>
-      </div>
-      <div class="stat">
         <span class="stat-label">Actions Today:</span>
         <span class="stat-value">{{ dailyUsage.used }}</span>
         <span>/</span>
@@ -248,7 +214,7 @@ async function getRecentDailyUsage() {
       <form @submit.prevent="handleSubmit" class="input-form">
         <textarea
           v-model="input"
-          placeholder="Create a ticket: 'Find bugs in authentication'"
+          placeholder="Ask agent to find bugs, review code, or generate docs"
           @keydown="handleKeyDown"
           rows="3"
           :disabled="!selectedAgentId || processing"
@@ -261,7 +227,7 @@ async function getRecentDailyUsage() {
             class="quick-action-btn"
             :disabled="!selectedAgentId || processing"
           >
-            Create Ticket
+            Random Task
           </button>
 
           <button
