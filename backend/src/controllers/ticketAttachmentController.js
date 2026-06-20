@@ -29,7 +29,7 @@ class TicketAttachmentController {
   }
 
   async get(req, res) {
-    const { id: attachmentId } = req.params;
+    const { attachmentId } = req.params;
     const { ticketId } = req.query;
     const userId = req.user.userId;
 
