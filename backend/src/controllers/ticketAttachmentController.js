@@ -38,8 +38,14 @@ class TicketAttachmentController {
       return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Attachment not found' } });
     }
 
-    const filePath = path.join(__dirname, '../../uploads/tickets', ticketId.toString(), path.basename(attachment.stored_path));
-    
+    const uploadDir = path.join(__dirname, '../../uploads/tickets');
+    const filename = path.basename(attachment.stored_path);
+    const filePath = path.resolve(uploadDir, ticketId.toString(), filename);
+
+    if (!filePath.startsWith(path.resolve(uploadDir))) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Access denied' } });
+    }
+
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'File not found on disk' } });
     }

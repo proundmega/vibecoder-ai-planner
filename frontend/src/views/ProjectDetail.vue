@@ -1,13 +1,15 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { getRepoStatus, connectRepo, disconnectRepo, listBranches, listPRs, createBranch, createPR } from '@/api/github'
 import { listProviders, addProvider, updateProvider, deleteProvider, testProvider } from '@/api/providers'
 import { getProjectUsage } from '@/api/usage'
 import { getProjectBilling } from '@/api/billing'
 import { getProjectMemory, searchMemory, addMemory, updateMemory, deleteMemory } from '@/api/memory'
+import AIAssistant from './AIAssistant.vue'
 
 const route = useRoute()
+const router = useRouter()
 const projectId = route.params.id
 
 const isChildRoute = computed(() => route.name !== 'ProjectDetail')
@@ -111,6 +113,11 @@ async function switchTab(tabId) {
     memoryLoaded.value = true
   }
   activeTab.value = tabId
+  if (tabId === 'tickets') {
+    router.push(`/projects/${projectId}/tickets`)
+  } else if (tabId === 'ai') {
+    router.push(`/projects/${projectId}/ai`)
+  }
 }
 
 async function loadGitHub() {
@@ -406,14 +413,19 @@ async function handleDeleteMemory(memoryId) {
       </button>
     </div>
 
-    <router-view v-if="isChildRoute && (activeTab === 'tickets' || activeTab === 'ai')" />
-
-    <div v-else class="tab-content">
+    <div class="tab-content">
       <!-- Tickets Tab - just a link to the board -->
       <div v-if="activeTab === 'tickets'" class="tab-panel">
-        <router-link :to="`/projects/${projectId}/tickets`" class="btn-primary">
+        <router-view v-if="isChildRoute" />
+        <router-link v-else :to="`/projects/${projectId}/tickets`" class="btn-primary">
           View Kanban Board
         </router-link>
+      </div>
+
+      <!-- AI Chat Tab -->
+      <div v-if="activeTab === 'ai'" class="tab-panel">
+        <router-view v-if="isChildRoute" />
+        <AIAssistant v-else />
       </div>
 
       <!-- GitHub Tab -->

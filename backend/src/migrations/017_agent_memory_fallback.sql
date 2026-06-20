@@ -32,12 +32,12 @@ BEGIN
 
     -- Function to update updated_at timestamp
     CREATE OR REPLACE FUNCTION update_agent_memory_updated_at()
-    RETURNS TRIGGER AS $$
+    RETURNS TRIGGER AS $BODY$
     BEGIN
       NEW.updated_at = CURRENT_TIMESTAMP;
       RETURN NEW;
     END;
-    $$ LANGUAGE plpgsql;
+    $BODY$ LANGUAGE plpgsql;
 
     -- Trigger to auto-update updated_at
     CREATE TRIGGER update_agent_memory_updated_at_trigger

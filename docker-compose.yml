@@ -58,7 +58,7 @@ services:
       start_period: 5s
 
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     container_name: vibecode-postgres
     restart: unless-stopped
     environment:

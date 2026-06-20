@@ -1,43 +1,52 @@
 # AI Kanban Planner - Development Tickets
 
+## Status: ALL COMPLETE (18/18 done)
+
+All tickets implemented. See `architecture/system-design.md` for full design docs.
+
+---
+
 ## Project Setup
 
 ID: TKT-001
 Title: Initialize Project Structure
 Description: Create initial project directory structure for monorepo with backend (Node.js) and frontend (Vue.js)
 Acceptance Criteria:
-- [ ] Repository created with proper structure
-- [ ] package.json at root and for each module
-- [ ] Environment configuration templates (.env.example)
-- [ ] Basic build/start scripts working
+- [x] Repository created with proper structure
+- [x] package.json at root and for each module
+- [x] Environment configuration templates (.env.example)
+- [x] Basic build/start scripts working
 Priority: High
 Dependencies: 
+Status: DONE
 
 ID: TKT-002
 Title: Set Up PostgreSQL Database Schema
 Description: Create database schema for projects, tickets, users, and pricing tiers
 Acceptance Criteria:
-- [ ] Users table with id, email, name, password_hash, role, created_at
-- [ ] Projects table with id, name, description, owner_id, created_at
-- [ ] Tickets table with id, project_id, title, description, status, priority, assigned_to_id, owner_id, created_at
-- [ ] Pricing_tiers table with id, name, price, features, included_cost_limit
-- [ ] User_pricing_tiers table linking users to their plan
-- [ ] All foreign key constraints and indexes defined
+- [x] Users table with id, email, name, password_hash, role, created_at
+- [x] Projects table with id, name, description, owner_id, created_at
+- [x] Tickets table with id, project_id, title, description, status, priority, assigned_to_id, owner_id, created_at
+- [x] Pricing_tiers table with id, name, price, features, included_cost_limit
+- [x] User_pricing_tiers table linking users to their plan
+- [x] All foreign key constraints and indexes defined
 Priority: High
 Dependencies: TKT-001
+Status: DONE
 
 ID: TKT-003
 Title: Implement User Authentication System
 Description: Build complete authentication flow with JWT tokens and sessions
 Acceptance Criteria:
-- [ ] User registration endpoint with email validation
-- [ ] Login endpoint returning JWT token
-- [ ] Token verification middleware
-- [ ] Password reset flow (email + token)
-- [ ] Session management for users
-- [ ] Secure password hashing (bcrypt)
+- [x] User registration endpoint with email validation
+- [x] Login endpoint returning JWT token
+- [x] Token verification middleware
+- [x] Password reset flow (email + token)
+- [x] Session management for users
+- [x] Secure password hashing (bcrypt)
 Priority: High
 Dependencies: TKT-002
+Status: DONE
 
 ## Backend API
 
@@ -45,50 +54,54 @@ ID: TKT-004
 Title: Create Projects API Endpoints
 Description: RESTful API for project management
 Acceptance Criteria:
-- [ ] GET /api/projects - list all projects for user
-- [ ] GET /api/projects/:id - get single project with tickets
-- [ ] POST /api/projects - create new project
-- [ ] All endpoints protected by auth middleware
-- [ ] Proper error handling and validation
+- [x] GET /api/projects - list all projects for user
+- [x] GET /api/projects/:id - get single project with tickets
+- [x] POST /api/projects - create new project
+- [x] All endpoints protected by auth middleware
+- [x] Proper error handling and validation
 Priority: High
 Dependencies: TKT-001, TKT-002
+Status: DONE
 
 ID: TKT-005
 Title: Create Tickets API Endpoints
 Description: RESTful API for ticket CRUD operations
 Acceptance Criteria:
-- [ ] GET /api/projects/:projectId/tickets - list tickets in project
-- [ ] GET /api/tickets/:id - get single ticket
-- [ ] POST /api/projects/:projectId/tickets - create ticket
-- [ ] PUT /api/tickets/:id - update ticket
-- [ ] DELETE /api/tickets/:id - delete ticket
-- [ ] Status transitions (backlog->in_progress->review->done)
-- [ ] Priority enum validation
+- [x] GET /api/projects/:projectId/tickets - list tickets in project
+- [x] GET /api/tickets/:id - get single ticket
+- [x] POST /api/projects/:projectId/tickets - create ticket
+- [x] PUT /api/tickets/:id - update ticket
+- [x] DELETE /api/tickets/:id - delete ticket
+- [x] Status transitions (backlog->in_progress->review->done)
+- [x] Priority enum validation
 Priority: High
 Dependencies: TKT-001, TKT-002
+Status: DONE
 
 ID: TKT-006
 Title: Create Roles and Permissions API
 Description: API for role-based access control
 Acceptance Criteria:
-- [ ] Role definition constants (admin, member, viewer)
-- [ ] Permission checks middleware
-- [ ] User role update endpoint
-- [ ] Project membership management
+- [x] Role definition constants (admin, member, viewer)
+- [x] Permission checks middleware
+- [x] User role update endpoint
+- [x] Project membership management
 Priority: Medium
 Dependencies: TKT-002
+Status: DONE
 
 ID: TKT-007
 Title: Create Pricing and Subscription API
 Description: API for tracking costs and subscription tiers
 Acceptance Criteria:
-- [ ] GET /api/pricing/tiers - list available tiers
-- [ ] POST /api/pricing/checkout - create checkout session
-- [ ] GET /api/pricing/user/:userId - get user's current plan
-- [ ] POST /api/pricing/user/:userId/upgrade - upgrade subscription
-- [ ] Cost calculation logic based on tickets/users
+- [x] GET /api/pricing/tiers - list available tiers
+- [x] POST /api/pricing/checkout - create checkout session
+- [x] GET /api/pricing/user/:userId - get user's current plan
+- [x] POST /api/pricing/user/:userId/upgrade - upgrade subscription
+- [x] Cost calculation logic based on tickets/users
 Priority: Medium
 Dependencies: TKT-001, TKT-002
+Status: DONE
 
 ## Frontend
 
@@ -96,66 +109,71 @@ ID: TKT-008
 Title: Set Up Vue.js Frontend with Vue Router
 Description: Initialize Vue project with proper routing structure
 Acceptance Criteria:
-- [ ] Vite-based Vue 3 project configured
-- [ ] Vue Router setup with routes
-- [ ] Pinia store architecture
-- [ ] Basic component library (buttons, inputs, modals)
-- [ ] Axios HTTP client configured
+- [x] Vite-based Vue 3 project configured
+- [x] Vue Router setup with routes
+- [x] Pinia store architecture
+- [x] Basic component library (buttons, inputs, modals)
+- [x] Axios HTTP client configured
 Priority: High
 Dependencies: TKT-001
+Status: DONE
 
 ID: TKT-009
 Title: Implement Authentication UI
 Description: Login, registration, and auth state management
 Acceptance Criteria:
-- [ ] Login form with email/password
-- [ ] Registration form with validation
-- [ ] Auth store in Pinia (user, token, isAuthenticated)
-- [ ] Protected route guards
-- [ ] Logout functionality
-- [ ] Auth state persistence
+- [x] Login form with email/password
+- [x] Registration form with validation
+- [x] Auth store in Pinia (user, token, isAuthenticated)
+- [x] Protected route guards
+- [x] Logout functionality
+- [x] Auth state persistence
 Priority: High
 Dependencies: TKT-001, TKT-008
+Status: DONE
 
 ID: TKT-010
 Title: Implement Projects View
 Description: Project list and project detail views
 Acceptance Criteria:
-- [ ] Project list view with filter/search
-- [ ] Create project modal/form
-- [ ] Project detail view showing ticket list
-- [ ] Project breadcrumbs/navigation
-- [ ] Edit project functionality
+- [x] Project list view with filter/search
+- [x] Create project modal/form
+- [x] Project detail view showing ticket list
+- [x] Project breadcrumbs/navigation
+- [x] Edit project functionality
 Priority: Medium
 Dependencies: TKT-004
+Status: DONE
 
 ID: TKT-011
 Title: Implement Kanban Board Component
 Description: Drag-and-drop Kanban board for tickets
 Acceptance Criteria:
-- [ ] Kanban column layout (Backlog, In Progress, Review, Done)
-- [ ] Draggable ticket cards
-- [ ] Drop validation by status rules
-- [ ] Ticket card preview (title, priority, assignee)
-- [ ] Add ticket in column
-- [ ] Delete ticket from board
-- [ ] Persist drag operations to backend
+- [x] Kanban column layout (Backlog, In Progress, Review, Done)
+- [x] Draggable ticket cards
+- [x] Drop validation by status rules
+- [x] Ticket card preview (title, priority, assignee)
+- [x] Add ticket in column
+- [x] Delete ticket from board
+- [x] Persist drag operations to backend
 Priority: High
 Dependencies: TKT-005
+Status: DONE
 
 ID: TKT-012
 Title: Implement Ticket Detail View
 Description: Create/edit ticket modal and full view
 Acceptance Criteria:
-- [ ] Edit ticket modal with all fields
-- [ ] Status selector
-- [ ] Priority selector
-- [ ] Assignee selector
-- [ ] Comments section
-- [ ] Date/time fields (due date, created date)
-- [ ] Tags system
+- [x] Edit ticket modal with all fields
+- [x] Status selector
+- [x] Priority selector
+- [x] Assignee selector
+- [x] Comments section
+- [x] Date/time fields (due date, created date)
+- [x] Tags system
 Priority: Medium
 Dependencies: TKT-005
+Status: DONE
 
 ## AI Agent Integration
 
@@ -163,27 +181,29 @@ ID: TKT-013
 Title: Design AI Agent API
 Description: API specifically for AI agents to manipulate tickets
 Acceptance Criteria:
-- [ ] POST /api/agents/tickets/create - agent creates ticket
-- [ ] POST /api/agents/tickets/edit - agent updates ticket
-- [ ] POST /api/agents/tickets/assign - agent claims ticket
-- [ ] POST /api/agents/tickets/status-change - agent changes status
-- [ ] API key authentication for agents
-- [ ] Audit trail for AI actions
-- [ ] Rate limiting for agent requests
+- [x] POST /api/agents/tickets/create - agent creates ticket
+- [x] POST /api/agents/tickets/edit - agent updates ticket
+- [x] POST /api/agents/tickets/assign - agent claims ticket
+- [x] POST /api/agents/tickets/status-change - agent changes status
+- [x] API key authentication for agents
+- [x] Audit trail for AI actions
+- [x] Rate limiting for agent requests
 Priority: High
 Dependencies: TKT-005, TKT-003
+Status: DONE
 
 ID: TKT-014
 Title: Create AI Agent User Experience
 Description: UI for AI agents to see their assigned work
 Acceptance Criteria:
-- [ ] Dashboard showing agent's current tasks
-- [ ] Ticket list from API
-- [ ] Update buttons (assign, claim, etc.)
-- [ ] Status history viewer
-- [ ] Cost tracking display
+- [x] Dashboard showing agent's current tasks
+- [x] Ticket list from API
+- [x] Update buttons (assign, claim, etc.)
+- [x] Status history viewer
+- [x] Cost tracking display
 Priority: Medium
 Dependencies: TKT-013
+Status: DONE
 
 ## DevOps & Infrastructure
 
@@ -191,25 +211,27 @@ ID: TKT-015
 Title: Dockerize Backend and Frontend
 Description: Create Dockerfiles for both services
 Acceptance Criteria:
-- [ ] backend/Dockerfile with multi-stage build
-- [ ] frontend/Dockerfile for Vue build
-- [ ] Docker Compose for local development
-- [ ] docker-compose.yml with nginx reverse proxy
-- [ ] .dockerignore files
+- [x] backend/Dockerfile with multi-stage build
+- [x] frontend/Dockerfile for Vue build
+- [x] Docker Compose for local development
+- [x] docker-compose.yml with nginx reverse proxy
+- [x] .dockerignore files
 Priority: Medium
 Dependencies: TKT-001
+Status: DONE
 
 ID: TKT-016
 Title: Set Up CI/CD Pipeline
 Description: GitHub Actions for testing, building, and deploying
 Acceptance Criteria:
-- [ ] Run backend tests on push to main
-- [ ] Run frontend tests on push to main
-- [ ] Linting checks for both
-- [ ] Build artifacts on tag release
-- [ ] Deploy workflow for production
+- [x] Run backend tests on push to main
+- [x] Run frontend tests on push to main
+- [x] Linting checks for both
+- [x] Build artifacts on tag release
+- [x] Deploy workflow for production
 Priority: Medium
 Dependencies: TKT-001
+Status: DONE
 
 ## Documentation & Testing
 
@@ -217,32 +239,34 @@ ID: TKT-017
 Title: API Documentation
 Description: OpenAPI/Swagger documentation for all endpoints
 Acceptance Criteria:
-- [ ] OpenAPI spec generated
-- [ ] Interactive API explorer
-- [ ] All endpoints documented with examples
-- [ ] Authentication documented
-- [ ] Deployed alongside app
+- [x] OpenAPI spec generated
+- [x] Interactive API explorer
+- [x] All endpoints documented with examples
+- [x] Authentication documented
+- [x] Deployed alongside app
 Priority: Low
 Dependencies: TKT-004, TKT-005
+Status: DONE
 
 ID: TKT-018
 Title: Write Integration Tests
 Description: End-to-end tests for critical flows
 Acceptance Criteria:
-- [ ] Test user registration and login
-- [ ] Test project creation and ticket CRUD
-- [ ] Test Kanban drag-and-drop
-- [ ] Test API agent operations
-- [ ] Test subscription upgrade flow
+- [x] Test user registration and login
+- [x] Test project creation and ticket CRUD
+- [x] Test Kanban drag-and-drop
+- [x] Test API agent operations
+- [x] Test subscription upgrade flow
 Priority: Low
 Dependencies: TKT-003, TKT-005
+Status: DONE
 
 ## Total: 18 Tickets
 
 Status Summary:
-- Open: All tickets
+- Open: 0
 - In Progress: 0
-- Done: 0
+- Done: 18
 
-Blocked Tickets: None (no dependencies unresolved)
-Unblocked Tickets: TKT-001 (prerequisite for all)
+Blocked Tickets: None
+Unblocked Tickets: All (all dependencies resolved)
