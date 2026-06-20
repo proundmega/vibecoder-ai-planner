@@ -195,7 +195,7 @@ function formatFileSize(bytes) {
 
 function downloadAttachment(attachment) {
   const token = localStorage.getItem('vibecode_token')
-  const url = `/api/v1/tickets/${ticketId}/attachments/${attachment.id}`
+  const url = `/api/v1/attachments/${attachment.id}?ticketId=${ticketId}`
   fetch(url, {
     headers: { 'Authorization': `Bearer ${token}` }
   })
