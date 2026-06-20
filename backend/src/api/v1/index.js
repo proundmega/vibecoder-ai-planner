@@ -49,6 +49,6 @@ router.get('/tickets/:ticketId/attachments', verifyToken, (req, res, next) => ti
 router.delete('/tickets/:ticketId/attachments/:attachmentId', verifyToken, (req, res, next) => ticketAttachmentController.delete(req, res, next).catch(next));
 
 // Serve attachment files
-router.get('/attachments/:attachmentId', (req, res, next) => ticketAttachmentController.get(req, res, next).catch(next));
+router.get('/attachments/:attachmentId', verifyToken, (req, res, next) => ticketAttachmentController.get(req, res, next).catch(next));
 
 module.exports = router;
