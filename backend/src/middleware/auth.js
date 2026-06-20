@@ -187,9 +187,6 @@ exports.rateLimiter = (maxRequests = 10, timeWindow = 60 * 1000) => {
   const rateLimits = new Map();
   
   return (req, res, next) => {
-    if (process.env.NODE_ENV === 'test' || process.env.CI) {
-      return next();
-    }
     const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
     let requests = rateLimits.get(clientIp);
     

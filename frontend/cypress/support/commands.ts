@@ -50,6 +50,37 @@ Cypress.Commands.add('createTicket', (projectId: string, title: string, descript
   });
 });
 
+// Registration command
+Cypress.Commands.add('register', (name: string, email: string, password: string) => {
+  return cy.request({
+    method: 'POST',
+    url: '/api/auth/register',
+    body: { name, email, password },
+    failOnStatusCode: false,
+  }).then((resp) => {
+    if (resp.status === 201) {
+      cy.setLocalStorage('vibecode_token', resp.body.token);
+      cy.setLocalStorage('vibecode_user', JSON.stringify(resp.body.user));
+      return resp.body.user;
+    }
+    throw new Error(`Registration failed for ${email}: ${resp.body.error || 'Unknown error'}`);
+  });
+});
+
+// User management command
+Cypress.Commands.add('createUser', (name: string, email: string, password: string, role: string = 'member') => {
+  cy.login('alice@example.com', 'password123');
+  return cy.request({
+    method: 'POST',
+    url: '/api/users',
+    body: { name, email, password, role },
+    failOnStatusCode: false,
+  }).then((resp) => {
+    if (resp.status === 201) return resp.body.user;
+    throw new Error(`Failed to create user: ${resp.body.error || 'Unknown error'}`);
+  });
+});
+
 // Custom assertions
 Cypress.Commands.add('assertStatusBadge', (status: string) => {
   cy.get('[data-testid="status-badge"]').should('contain', status);
