@@ -16,6 +16,7 @@ const activeTab = ref('tickets')
 const tabs = [
   { id: 'tickets', label: 'Tickets' },
   { id: 'github', label: 'GitHub' },
+  { id: 'ai', label: 'AI Chat' },
   { id: 'providers', label: 'AI Providers' },
   { id: 'usage', label: 'Usage & Billing' },
   { id: 'memory', label: 'Memory' },
@@ -394,7 +395,7 @@ async function handleDeleteMemory(memoryId) {
       <h1>Project Settings</h1>
     </div>
 
-    <div v-if="!isChildRoute" class="tabs">
+    <div class="tabs">
       <button
         v-for="tab in tabs"
         :key="tab.id"
@@ -405,9 +406,9 @@ async function handleDeleteMemory(memoryId) {
       </button>
     </div>
 
-    <router-view v-if="isChildRoute" />
+    <router-view v-if="isChildRoute && (activeTab === 'tickets' || activeTab === 'ai')" />
 
-    <div v-if="!isChildRoute" class="tab-content">
+    <div v-else class="tab-content">
       <!-- Tickets Tab - just a link to the board -->
       <div v-if="activeTab === 'tickets'" class="tab-panel">
         <router-link :to="`/projects/${projectId}/tickets`" class="btn-primary">
