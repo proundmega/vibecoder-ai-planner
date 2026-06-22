@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getRepoStatus, connectRepo, disconnectRepo, listBranches, listPRs, createBranch, createPR } from '@/api/github'
+import { getRepoStatus, connectRepo, disconnectRepo, listBranches, listPRs, createBranch } from '@/api/github'
 import { listProviders, addProvider, updateProvider, deleteProvider, testProvider } from '@/api/providers'
 import { getProjectUsage } from '@/api/usage'
 import { getProjectBilling } from '@/api/billing'
@@ -35,11 +35,7 @@ const repoBranch = ref('main')
 const branches = ref([])
 const prs = ref([])
 const creatingBranch = ref(false)
-const creatingPR = ref(false)
 const branchTicketId = ref('')
-const prBranchName = ref('')
-const prTitle = ref('')
-const prBody = ref('')
 const githubLoaded = ref(false)
 
 // Providers state
@@ -129,7 +125,7 @@ async function loadGitHub() {
       await loadBranches()
       await loadPRs()
     }
-  } catch (err) {
+  } catch (_err) {
     githubError.value = 'Failed to load GitHub status'
   } finally {
     githubLoading.value = false
@@ -202,31 +198,13 @@ async function handleCreateBranch() {
   }
 }
 
-async function handleCreatePR() {
-  if (!prBranchName.value.trim() || !prTitle.value.trim()) return
-  creatingPR.value = true
-  githubError.value = null
-  try {
-    await createPR(route.params.ticketId || '0', prTitle.value.trim(), prBody.value.trim(), prBranchName.value.trim())
-    githubSuccess.value = 'Pull request created successfully'
-    await loadPRs()
-    prBranchName.value = ''
-    prTitle.value = ''
-    prBody.value = ''
-  } catch (err) {
-    githubError.value = err.message || 'Failed to create PR'
-  } finally {
-    creatingPR.value = false
-  }
-}
-
 async function loadProviders() {
   providersLoading.value = true
   providersError.value = null
   try {
     providers.value = await listProviders(projectId)
     providersLoaded.value = true
-  } catch (err) {
+  } catch (_err) {
     providersError.value = 'Failed to load providers'
   } finally {
     providersLoading.value = false
@@ -295,7 +273,7 @@ async function loadUsage() {
   try {
     const result = await getProjectUsage(projectId)
     usage.value = result?.data || null
-  } catch (err) {
+  } catch (_err) {
     usageError.value = 'Failed to load usage data'
   } finally {
     usageLoading.value = false
@@ -308,7 +286,7 @@ async function loadBilling() {
   try {
     const result = await getProjectBilling(projectId)
     billing.value = result?.data || []
-  } catch (err) {
+  } catch (_err) {
     billingError.value = 'Failed to load billing data'
   } finally {
     billingLoading.value = false
@@ -321,7 +299,7 @@ async function loadMemory() {
   try {
     memories.value = await getProjectMemory(projectId)
     memoryLoaded.value = true
-  } catch (err) {
+  } catch (_err) {
     memoryError.value = 'Failed to load memories'
   } finally {
     memoryLoading.value = false

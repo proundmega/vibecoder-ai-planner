@@ -1,5 +1,3 @@
-import type { User, Project, Ticket, Agent, ApiResponse } from '../api/generated';
-
 interface SchemaDefinition {
   type: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'null';
   format?: string;
