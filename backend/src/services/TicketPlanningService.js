@@ -1,5 +1,6 @@
 const { pool } = require('../db');
 const TemplateService = require('./TemplateService');
+const { NotFoundError } = require('../errors/HttpError');
 
 class TicketPlanningService {
   async list(ticketId, userId) {
