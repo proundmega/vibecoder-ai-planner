@@ -158,6 +158,12 @@ async function addCommentText() {
   }
 }
 
+const MAX_UPLOAD_SIZE = 10 * 1024 * 1024 // 10 MB
+
+function formatMaxSize(bytes) {
+  return formatFileSize(bytes)
+}
+
 async function handleFileUpload(event) {
   const file = event.target.files[0]
   if (!file || !ticket.value) return
@@ -169,7 +175,11 @@ async function handleFileUpload(event) {
     event.target.value = ''
   } catch (err) {
     console.error('Failed to upload file:', err)
-    uploadError.value = err.message || 'Failed to upload file'
+    if (err.status === 413) {
+      uploadError.value = `File too large. Maximum allowed size is ${formatMaxSize(MAX_UPLOAD_SIZE)}.`
+    } else {
+      uploadError.value = err.message || 'Failed to upload file'
+    }
   } finally {
     uploading.value = false
   }
@@ -361,8 +371,10 @@ async function loadPlanningFile(key) {
             <span class="attachment-name">{{ attachment.filename }}</span>
             <span class="attachment-meta">{{ formatFileSize(attachment.size_bytes) }} · {{ new Date(attachment.created_at).toLocaleDateString() }}</span>
           </div>
-          <button @click="downloadAttachment(attachment)" class="btn-download">Download</button>
-          <button v-if="canUpdate()" @click="handleDeleteAttachment(attachment.id)" class="btn-delete-attachment">Delete</button>
+          <div class="attachment-actions">
+            <button @click="downloadAttachment(attachment)" class="btn-download">Download</button>
+            <button v-if="canUpdate()" @click="handleDeleteAttachment(attachment.id)" class="btn-delete-attachment">Delete</button>
+          </div>
         </div>
       </div>
 
@@ -655,16 +667,29 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 
 .attachment-name {
   font-weight: 500;
   color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .attachment-meta {
   font-size: 12px;
   color: #9ca3af;
+}
+
+.attachment-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: 16px;
 }
 
 .btn-download {
@@ -675,6 +700,7 @@ h1 {
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .btn-download:hover {
@@ -689,6 +715,7 @@ h1 {
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .btn-delete-attachment:hover {
