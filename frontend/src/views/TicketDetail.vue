@@ -22,6 +22,7 @@ const deleting = ref(false)
 const attachments = ref([])
 const uploading = ref(false)
 const uploadError = ref('')
+const modalError = ref('')
 
 const ticketId = route.params.ticketId
 const approvals = ref([])
@@ -248,6 +249,7 @@ async function loadPlanning() {
 async function handleApplyTemplate() {
   if (!selectedTemplate.value) return
   applyingTemplate.value = true
+  modalError.value = ''
   planningError.value = null
   planningSuccess.value = null
   try {
@@ -257,7 +259,7 @@ async function handleApplyTemplate() {
     showTemplateSelect.value = false
     selectedTemplate.value = ''
   } catch (err) {
-    planningError.value = err.message || 'Failed to apply template'
+    modalError.value = err.message || 'Failed to apply template'
   } finally {
     applyingTemplate.value = false
   }
@@ -442,6 +444,7 @@ async function loadPlanningFile(key) {
           <div class="modal-overlay" @click.self="showTemplateSelect = false">
             <div class="modal">
               <h2>Apply Template</h2>
+              <div v-if="modalError" class="modal-error">{{ modalError }}</div>
               <div class="template-options">
                 <button
                   v-for="template in ['architecture', 'technical', 'simple']"
@@ -457,7 +460,7 @@ async function loadPlanningFile(key) {
               </div>
               <div class="modal-actions">
                 <button @click="showTemplateSelect = false" class="btn-cancel">Cancel</button>
-                <button @click="handleApplyTemplate" :disabled="!selectedTemplate || applyingTemplate" class="btn-submit">
+                <button @click="handleApplyTemplate" :disabled="!selectedTemplate || applyingTemplate" class="btn-primary">
                   {{ applyingTemplate ? 'Applying...' : 'Apply' }}
                 </button>
               </div>
@@ -720,6 +723,35 @@ h1 {
 
 .btn-delete-attachment:hover {
   background: #dc2626;
+}
+
+.btn-primary {
+  padding: 10px 20px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.btn-primary:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.modal-error {
+  padding: 12px 16px;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  font-size: 14px;
 }
 
 .comments {

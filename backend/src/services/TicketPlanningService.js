@@ -164,7 +164,7 @@ class TicketPlanningService {
     );
 
     if (result.rows.length === 0) {
-      throw new Error(`Custom template not found: ${templateName}`);
+      throw new NotFoundError(`Custom template not found: ${templateName}`);
     }
 
     return JSON.parse(result.rows[0].file_definitions);
