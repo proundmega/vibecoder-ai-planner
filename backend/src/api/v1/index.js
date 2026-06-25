@@ -17,8 +17,10 @@ const billingRouter = require('../billing');
 const memoryRouter = require('../memory');
 const ticketPlanningController = require('../../controllers/ticketPlanningController');
 const ticketAttachmentController = require('../../controllers/ticketAttachmentController');
+const templateController = require('../../controllers/templateController');
 const ticketAttachmentUpload = require('../../middleware/multer');
 const { verifyToken } = require('../../middleware/auth');
+const { requireAnyPermission } = require('../../middleware/permissions');
 
 // Mount all route modules under /v1
 router.use('/users-management', userRouter);
@@ -42,6 +44,11 @@ router.get('/tickets/:ticketId/planning/:fileKey', verifyToken, (req, res, next)
 router.put('/tickets/:ticketId/planning/:fileKey', verifyToken, (req, res, next) => ticketPlanningController.upsert(req, res, next).catch(next));
 router.post('/tickets/:ticketId/planning/apply-template', verifyToken, (req, res, next) => ticketPlanningController.applyTemplate(req, res, next).catch(next));
 router.patch('/tickets/:ticketId/planning/status', verifyToken, (req, res, next) => ticketPlanningController.updateStatus(req, res, next).catch(next));
+
+// Template routes (under /projects/:projectId/templates)
+router.get('/projects/:projectId/templates', verifyToken, requireAnyPermission('TICKET_UPDATE'), (req, res, next) => templateController.listTemplates(req, res, next).catch(next));
+router.post('/projects/:projectId/templates', verifyToken, requireAnyPermission('TICKET_UPDATE'), (req, res, next) => templateController.createTemplate(req, res, next).catch(next));
+router.delete('/projects/:projectId/templates/:id', verifyToken, requireAnyPermission('TICKET_UPDATE'), (req, res, next) => templateController.deleteTemplate(req, res, next).catch(next));
 
 // Attachment routes (nested under tickets, inlined to preserve ticketId param)
 router.post('/tickets/:ticketId/attachments', verifyToken, ticketAttachmentUpload.single('file'), (req, res, next) => ticketAttachmentController.upload(req, res, next).catch(next));

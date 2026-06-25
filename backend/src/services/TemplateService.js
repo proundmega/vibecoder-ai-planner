@@ -477,7 +477,8 @@ Additional notes go here.
       [templateId]
     );
     if (templateResult.rows.length === 0) {
-      throw new Error('Template not found');
+      const { NotFoundError } = require('../errors/HttpError');
+      throw new NotFoundError('Template not found');
     }
     const template = templateResult.rows[0];
     const fileDefinitions = JSON.parse(template.file_definitions);
@@ -507,6 +508,15 @@ Additional notes go here.
     } finally {
       client.release();
     }
+  }
+
+  static async delete(templateId, userId) {
+    const { pool } = require('../db');
+    const result = await pool.query(
+      'DELETE FROM project_templates WHERE id = $1 AND created_by = $2 RETURNING *',
+      [templateId, userId]
+    );
+    return result.rows[0];
   }
 }
 
