@@ -44,6 +44,12 @@ const routes = [
     meta: { requiresAuth: true, requiredPermission: 'DASHBOARD_READ' },
   },
   {
+    path: '/billing',
+    name: 'BillingDashboard',
+    component: () => import('../views/BillingDashboard.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/projects',
     name: 'Projects',
     component: () => import('../views/ProjectList.vue'),

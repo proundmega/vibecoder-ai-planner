@@ -6,6 +6,7 @@
         <div class="nav-links">
           <router-link to="/dashboard" class="nav-link">Dashboard</router-link>
           <router-link to="/projects" class="nav-link">Projects</router-link>
+          <router-link v-if="showBillingLink" to="/billing" class="nav-link">Billing</router-link>
           <router-link v-if="showUsersLink" to="/users" class="nav-link">Users</router-link>
           <router-link v-if="showSuperAdminLink" to="/super-admin/users" class="nav-link">Super Admin</router-link>
         </div>
@@ -56,6 +57,7 @@ const showUsersLink = computed(() => {
 })
 
 const showSuperAdminLink = computed(() => authStore.isSuperAdmin())
+const showBillingLink = computed(() => authStore.isProjectAdmin())
 
 const handleLogout = () => {
   authStore.logout()
