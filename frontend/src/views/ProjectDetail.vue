@@ -17,6 +17,7 @@ const isChildRoute = computed(() => route.name !== 'ProjectDetail')
 const activeTab = ref('tickets')
 const tabs = [
   { id: 'tickets', label: 'Tickets' },
+  { id: 'approvals', label: 'Approvals' },
   { id: 'github', label: 'GitHub' },
   { id: 'ai', label: 'AI Chat' },
   { id: 'providers', label: 'AI Providers' },
@@ -397,6 +398,13 @@ async function handleDeleteMemory(memoryId) {
         <router-view v-if="isChildRoute" />
         <router-link v-else :to="`/projects/${projectId}/tickets`" class="btn-primary">
           View Kanban Board
+        </router-link>
+      </div>
+
+      <!-- Approvals Tab - just a link to the approvals page -->
+      <div v-if="activeTab === 'approvals'" class="tab-panel">
+        <router-link :to="`/projects/${projectId}/approvals`" class="btn-primary">
+          View Project Approvals
         </router-link>
       </div>
 

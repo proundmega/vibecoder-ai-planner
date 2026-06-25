@@ -44,6 +44,12 @@ const routes = [
     meta: { requiresAuth: true, requiredPermission: 'DASHBOARD_READ' },
   },
   {
+    path: '/approvals',
+    name: 'ApprovalsQueue',
+    component: () => import('../views/ApprovalsQueue.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/billing',
     name: 'BillingDashboard',
     component: () => import('../views/BillingDashboard.vue'),
@@ -89,6 +95,12 @@ const routes = [
         path: 'ai',
         name: 'AIAssistant',
         component: () => import('../views/AIAssistant.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'approvals',
+        name: 'ProjectApprovals',
+        component: () => import('../views/ProjectApprovals.vue'),
         meta: { requiresAuth: true },
       },
     ],
