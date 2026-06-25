@@ -1,6 +1,6 @@
 # 01_ARCHITECT_REQUIREMENT.md — Custom Templates Feature
 
-**Status**: planned
+**Status**: completed
 **Date created**: 2026-06-24
 
 ## Requirement

@@ -1,6 +1,6 @@
 # 02_ARCHITECT_DESIGN.md — Approvals Queue
 
-**Status**: planned
+**Status**: completed
 **Date created**: 2026-06-24
 
 ## Problem
