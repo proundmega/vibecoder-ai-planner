@@ -416,6 +416,10 @@ async function handleDeleteMemory(memoryId) {
 
       <!-- GitHub Tab -->
       <div v-if="activeTab === 'github'" class="tab-panel">
+        <div class="tab-header">
+          <h2>GitHub</h2>
+          <router-link :to="`/projects/${projectId}/github`" class="btn-secondary">Manage GitHub</router-link>
+        </div>
         <div v-if="githubLoading" class="loading">Loading...</div>
         <div v-else>
           <div v-if="githubError" class="error">{{ githubError }}</div>
