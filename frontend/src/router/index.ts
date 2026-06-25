@@ -109,6 +109,12 @@ const routes = [
         component: () => import('../views/GitHubConnections.vue'),
         meta: { requiresAuth: true },
       },
+      {
+        path: 'templates',
+        name: 'ProjectTemplates',
+        component: () => import('../views/ProjectTemplates.vue'),
+        meta: { requiresAuth: true },
+      },
     ],
   },
   {

@@ -6,6 +6,7 @@ import { fetchTicket, updateTicket, addComment, fetchComments, deleteTicket } fr
 import { getTicketApprovals, createApproval } from '@/api/approvals'
 import { fetchAttachments, uploadAttachment, deleteAttachment } from '@/api/ticketAttachments'
 import { listPlanningFiles, getPlanningFile, upsertPlanningFile, applyTemplate, updatePlanningStatus } from '@/api/ticketPlanning'
+import { listTemplates } from '@/api/templates'
 import TicketEditModal from '@/components/TicketEditModal.vue'
 
 const route = useRoute()
@@ -40,6 +41,7 @@ const applyingTemplate = ref(false)
 const showTemplateSelect = ref(false)
 const selectedTemplate = ref('')
 const planningStatus = ref('')
+const customTemplates = ref([])
 
 const validTransitions = {
   backlog: ['in_progress'],
@@ -302,6 +304,17 @@ async function loadPlanningFile(key) {
     console.error('Failed to load planning file:', err)
   }
 }
+
+async function handleShowTemplateSelect() {
+  try {
+    const response = await listTemplates(ticket.value.project_id)
+    customTemplates.value = response?.data || []
+  } catch (err) {
+    console.error('Failed to load custom templates:', err)
+    customTemplates.value = []
+  }
+  showTemplateSelect.value = true
+}
 </script>
 
 <template>
@@ -398,7 +411,7 @@ async function loadPlanningFile(key) {
       <div class="planning">
         <div class="planning-header">
           <h3>Ticket Planning</h3>
-          <button v-if="!editingFile && canUpdate()" @click="showTemplateSelect = true" class="btn-primary">Apply Template</button>
+          <button v-if="!editingFile && canUpdate()" @click="handleShowTemplateSelect" class="btn-primary">Apply Template</button>
         </div>
 
         <div v-if="planningLoading" class="loading">Loading...</div>
@@ -456,6 +469,19 @@ async function loadPlanningFile(key) {
                   <p v-if="template === 'architecture'">Detailed architecture planning with system design sections</p>
                   <p v-else-if="template === 'technical'">Technical implementation plan with steps and tasks</p>
                   <p v-else>Simple task breakdown with checkboxes</p>
+                </button>
+                <div v-if="customTemplates.length > 0" class="template-separator">
+                  <span>Custom Templates</span>
+                </div>
+                <button
+                  v-for="template in customTemplates"
+                  :key="template.id"
+                  @click="selectedTemplate = template.name"
+                  :class="['template-option', 'custom-template', { selected: selectedTemplate === template.name }]"
+                >
+                  <h4>{{ template.name }}</h4>
+                  <p v-if="template.description">{{ template.description }}</p>
+                  <p v-else>Custom template ({{ template.file_definitions_count || 0 }} files)</p>
                 </button>
               </div>
               <div class="modal-actions">
@@ -1103,5 +1129,42 @@ h1 {
   margin: 0;
   color: #6b7280;
   font-size: 13px;
+}
+
+.template-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.template-separator::before,
+.template-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e5e7eb;
+}
+
+.template-separator span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.custom-template {
+  border-color: #a78bfa;
+}
+
+.custom-template:hover {
+  border-color: #8b5cf6;
+  background: #f5f3ff;
+}
+
+.custom-template.selected {
+  border-color: #8b5cf6;
+  background: #ede9fe;
 }
 </style>

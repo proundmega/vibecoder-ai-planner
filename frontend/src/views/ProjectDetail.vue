@@ -381,6 +381,16 @@ async function handleDeleteMemory(memoryId) {
       <h1>Project Settings</h1>
     </div>
 
+    <div class="quick-links">
+      <router-link :to="`/projects/${projectId}/templates`" class="quick-link-card">
+        <span class="quick-link-icon">📄</span>
+        <div class="quick-link-info">
+          <span class="quick-link-title">Custom Templates</span>
+          <span class="quick-link-desc">Manage document templates</span>
+        </div>
+      </router-link>
+    </div>
+
     <div class="tabs">
       <button
         v-for="tab in tabs"
@@ -772,6 +782,47 @@ async function handleDeleteMemory(memoryId) {
   margin: 0;
   font-size: 24px;
   color: #1f2937;
+}
+
+.quick-links {
+  margin-bottom: 20px;
+}
+
+.quick-link-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.quick-link-card:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.quick-link-icon {
+  font-size: 24px;
+}
+
+.quick-link-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.quick-link-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.quick-link-desc {
+  font-size: 12px;
+  color: #6b7280;
 }
 
 .tabs {
