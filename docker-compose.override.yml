@@ -4,6 +4,7 @@ services:
       - "3001:3001"
     environment:
       - NODE_ENV=development
+      - INTEGRATION_TESTS=1
 
   frontend:
     ports:

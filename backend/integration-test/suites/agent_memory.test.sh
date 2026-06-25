@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Shared agent memory tests
+source "$ROOT/integration-test/helpers.sh"
+
+test_shared_agent_memory() {
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Shared Agent Memory (rs-19)"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  local token
+  token=$(login "alice@integration.test" "password123")
+
+  local proj_id
+  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Memory Test Project","description":""}' \
+    | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  local agent_body
+  agent_body=$(curl -sf -X POST "${BASE}/api/v1/users" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Memory Agent","email":"memory_agent@integration.test","password":"password123","role":"member","is_agent":true,"agent_roles":["worker"]}')
+  local agent_id
+  agent_id=$(echo "$agent_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/memory/project/$proj_id")
+  assert_status "Memory without auth returns 401" "401" "$code"
+
+  local mem_body
+  mem_body=$(curl -sf -X POST "${BASE}/api/v1/memory/project/$proj_id" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"content":"The system uses PostgreSQL for data storage","metadata":{"source":"architecture","tags":["database","postgresql"]}}')
+  assert_has_field "Add memory returns id" "id" "$mem_body"
+  assert_field "Memory content preserved" "content" "The system uses PostgreSQL for data storage" "$(echo "$mem_body" | grep -o '"content":"[^"]*"' | cut -d'"' -f4)"
+
+  local mem_id
+  mem_id=$(echo "$mem_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+
+  local list_body
+  list_body=$(curl -sf "${BASE}/api/v1/memory/project/$proj_id" \
+    -H "Authorization: Bearer $token")
+  assert_has_field "List project memories returns array" "memories" "$list_body"
+
+  local single_body
+  single_body=$(curl -sf "${BASE}/api/v1/memory/$mem_id" \
+    -H "Authorization: Bearer $token")
+  assert_field "Get memory by id" "content" "The system uses PostgreSQL for data storage" "$(echo "$single_body" | grep -o '"content":"[^"]*"' | cut -d'"' -f4)"
+
+  curl -sf -X POST "${BASE}/api/v1/memory/project/$proj_id" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"content":"The project uses pgvector for semantic search","metadata":{"source":"architecture","tags":["vector","search"]}}' >/dev/null 2>&1
+
+  local search_body
+  search_body=$(curl -sf "${BASE}/api/v1/memory/project/$proj_id/search" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"query":"database storage"}')
+  assert_has_field "Search returns results" "results" "$search_body"
+
+  local update_body
+  update_body=$(curl -sf -X PUT "${BASE}/api/v1/memory/$mem_id" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"content":"The system uses PostgreSQL with pgvector extension"}')
+  assert_field "Update memory content" "content" "The system uses PostgreSQL with pgvector extension" "$(echo "$update_body" | grep -o '"content":"[^"]*"' | cut -d'"' -f4)"
+
+  local agent_mem_body
+  agent_mem_body=$(curl -sf "${BASE}/api/v1/memory/agent/$agent_id" \
+    -H "Authorization: Bearer $token")
+  assert_has_field "List agent memories returns array" "memories" "$agent_mem_body"
+
+  local delete_code
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/memory/$mem_id" \
+    -H "Authorization: Bearer $token")
+  assert_status "Delete memory" "200" "$delete_code"
+}
