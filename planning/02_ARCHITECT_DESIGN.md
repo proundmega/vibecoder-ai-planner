@@ -3,7 +3,7 @@
 **Status**: Working draft
 **Author**: AI Assistant
 **Scope**: {{Frontend | Backend | Both}}
-**Related**: `01_ARCHITECT_REQUIREMENT.md`, `03_ARCHITECT_IMPLEMENTATION.md`
+**Related**: `01_ARCHITECT_REQUIREMENT.md`, `03_ARCHITECT_IMPLEMENTATION.md`, `04_SPECIFICATION.md`
 
 ---
 
@@ -133,6 +133,17 @@ Add GitHub branch info to TicketDetail.vue:
 
 ---
 
+## File-Level Impact Matrix
+
+| File | Action | Specific Changes |
+|------|--------|-----------------|
+| `backend/src/...` | CREATE / MODIFY / NONE | What specifically changes (new method, new endpoint, new import) |
+| `frontend/src/...` | CREATE / MODIFY / NONE | What specifically changes (new component, new API call, new tab) |
+| `frontend/src/router/...` | MODIFY / NONE | New route if new page |
+| Migration `NNN_*.sql` | CREATE / NONE | What the migration does |
+
+---
+
 ## Data Flow Diagram
 
 ```
@@ -157,6 +168,19 @@ Add GitHub branch info to TicketDetail.vue:
 6. Service executes business logic
 7. Service queries database via models
 8. Response sent back to frontend
+
+### Error Handling Strategy
+
+**Per-layer error handling:**
+
+| Layer | Error Type | Response |
+|-------|-----------|----------|
+| Auth middleware | Missing/invalid token | 401, `{ error: "Missing authentication token" }` |
+| Permissions middleware | Insufficient role | 403, `{ error: "Forbidden", required: [...], actualRole: "..." }` |
+| Validation middleware | Invalid input | 400, `{ error: "Validation failed", details: [...] }` |
+| Controller | Business logic error | 400/404/409, `{ error: "descriptive message" }` |
+| Service | Unexpected error | Pass to `next(error)`, caught by error handler |
+| Error handler (global) | Unhandled error | 500, `{ error: "Internal server error" }` |
 
 ---
 
@@ -187,6 +211,40 @@ Add GitHub branch info to TicketDetail.vue:
 - [ ] New database migrations: {{list if any}}
 - [ ] New npm dependencies: {{list if any}}
 - [ ] Existing config changes: {{list if any}}
+
+---
+
+## Database Changes
+
+### New Tables
+```sql
+-- Table schemas if any
+```
+
+### New Columns
+```sql
+-- ALTER TABLE statements if any
+```
+
+### Indexes
+```sql
+-- CREATE INDEX statements if any
+```
+
+### Migrations
+- [ ] Migration `NNN_description.sql` — what it does
+- [ ] Rollback `NNN_description_rollback.sql` — what it reverts
+
+---
+
+## Security Considerations
+
+- [ ] New endpoints require authentication: {{which ones}}
+- [ ] New endpoints require specific permissions: {{which ones}}
+- [ ] Input validated against: {{Joi schema name}}
+- [ ] Rate limiting: {{which endpoints, what limits}}
+- [ ] Sensitive data in responses: {{what data, how masked}}
+- [ ] SQL injection protection: {{parameterized queries used}}
 
 ---
 
@@ -222,6 +280,17 @@ Add GitHub branch info to TicketDetail.vue:
 - **Pros**: [Why it's attractive]
 - **Cons**: [Why it's not chosen]
 - **Decision**: [Why Option A/B/C is better]
+
+---
+
+## Specification Generation
+
+If a small model (7B–34B) will execute this ticket, the information above should be distilled into `04_SPECIFICATION.md` — a file that specifies exact file paths, imports, function signatures, test expectations, and edge cases. The small model should not need to make any architecture decisions; those are encoded in the Specification.
+
+- [ ] `04_SPECIFICATION.md` has been created with exact file operations for each file
+- [ ] Test expectations are specific (not "test it works" but "returns 400 when email is missing")
+- [ ] Edge cases are enumerated explicitly
+- [ ] Imports and dependencies are listed per file
 
 ---
 

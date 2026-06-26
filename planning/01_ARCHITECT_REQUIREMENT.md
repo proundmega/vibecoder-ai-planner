@@ -73,6 +73,26 @@
 
 ---
 
+## Impact Analysis
+
+| Component | Change Type | Details |
+|-----------|-------------|---------|
+| `backend/src/...` | CREATE / MODIFY / NONE | What specifically changes |
+| `frontend/src/...` | CREATE / MODIFY / NONE | What specifically changes |
+| `database` | NEW MIGRATION / NONE | What columns/tables |
+| `config` | NEW ENV VAR / NONE | Which vars |
+
+---
+
+## Known Unknowns
+
+Things that could change the approach if the answer is different from assumed:
+
+1. **[Unknown]**: What we don't know — how to resolve it before/during implementation
+2. **[Unknown]**: What we don't know — how to resolve it before/during implementation
+
+---
+
 ## Important Design Decisions
 
 **DECISION POINTS** — Items that need user confirmation. List only items that genuinely need user input.
@@ -101,6 +121,7 @@
 13. [ ] [Both] OpenAPI spec is updated with JSDoc annotations
 14. [ ] [Both] Generated TypeScript types are regenerated and match
 15. [ ] [Both] All tests pass (unit, integration, frontend, lint, typecheck)
+16. [ ] [Both] Specification in `04_SPECIFICATION.md` accurately reflects the implementation
 
 ---
 
@@ -109,6 +130,25 @@
 - [What is explicitly NOT included in this ticket]
 - [What is deferred to a future ticket]
 - [What existing code will NOT be changed]
+
+---
+
+## Performance Considerations
+
+- Expected load: [requests per second, concurrent users, data volume]
+- N+1 queries to avoid: [list any that are risk areas]
+- Caching strategy: [if any]
+- Pagination needed: [YES/NO and strategy]
+
+---
+
+## Security Considerations
+
+- [ ] Authentication required: {{YES/NO}} — what auth method
+- [ ] Authorization check: {{YES/NO}} — which roles/permissions
+- [ ] Input validation: {{YES/NO}} — what fields, what constraints
+- [ ] Rate limiting: {{YES/NO}} — what limit
+- [ ] Sensitive data handling: {{YES/NO}} — what data, how encrypted
 
 ---
 
@@ -147,6 +187,7 @@
 - ❌ **Skipping error handling** — all API calls must use `.catch()` or try/catch
 - ❌ **Testing only happy paths** — test error cases, empty states, loading states
 - ❌ **Merging without tests** — every change must have tests
+- ❌ **Skipping the Specification file** — if a small model will execute this ticket, fill out `04_SPECIFICATION.md` with exact file operations
 
 ---
 

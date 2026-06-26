@@ -30,6 +30,23 @@
 
 **CRITICAL**: Before implementing, check if the feature can be added to existing code rather than creating new files.
 
+#### Implementation Order
+
+Steps must be executed in this exact order (dependencies between steps are noted):
+
+1. **[Step 1 name]** — {{file path}}
+   - Sub-step
+   - Sub-step
+   - *Depends on*: nothing
+
+2. **[Step 2 name]** — {{file path}}
+   - Sub-step
+   - *Depends on*: Step 1
+
+3. **[Step 3 name]** — {{file path}}
+   - Sub-step
+   - *Depends on*: Step 1, Step 2
+
 #### Phase 1: Backend (if API doesn't exist)
 
 If the backend API already exists, skip this phase and note "Backend API already exists — no changes needed."
@@ -122,23 +139,49 @@ If the UI already exists, skip this phase and note "UI already exists — no cha
 
 ---
 
-### c) Dependencies
+### c) Per-File Action Plan
+
+For each file being created or modified, specify exactly what changes:
+
+#### `backend/src/services/FooService.js` (MODIFY)
+- **Add method**: `async createFoo(data: CreateFooInput): Promise<Foo>`
+- **Logic**: validate input → INSERT into DB → return created record
+- **Error cases**: duplicate key → throw 409, missing field → throw 400
+- **Imports needed**: `const db = require('../db')`
+- **Position in file**: Add after `listFoo()` method
+
+#### `frontend/src/api/foo.js` (CREATE)
+- **Exports**: `export async function createFoo(data) { ... }`
+- **HTTP call**: `POST /api/v1/foo` with JSON body
+- **Error handling**: `.catch(() => null)`
+- **Follow pattern**: `frontend/src/api/tickets.js`
+
+#### `frontend/src/views/FooList.vue` (MODIFY)
+- **Add**: "Create Foo" button in header
+- **Add**: Form modal for creating a new Foo
+- **Follow pattern**: Existing modals in `TicketEditModal.vue`
+- **State**: `showCreateModal: ref(false)`, `newFoo: ref({ name: '', description: '' })`
+
+---
+
+### d) Dependencies
 
 - [Backend service]: [what it provides]
 - [Frontend API client]: [what it provides]
 - [Existing UI pattern]: [what to follow]
 - [OpenAPI spec]: [what to update]
+- [Specification file]: `04_SPECIFICATION.md` — if this file exists, follow it exactly for file operations, signatures, and test expectations
 
 ---
 
-### d) Risks/Edge Cases
+### e) Risks/Edge Cases
 
 - **[Risk name]**: [description and mitigation]
 - **[Edge case]**: [description and handling]
 
 ---
 
-### e) Testing
+### f) Testing
 
 #### Backend Unit Tests
 - [ ] Test controller: `backend/src/__tests__/api-[feature].test.js`
@@ -165,46 +208,47 @@ If the UI already exists, skip this phase and note "UI already exists — no cha
 
 ---
 
-### f) Migration Notes (if applicable)
+### g) Migration Notes (if applicable)
 
 ```sql
 -- Migration SQL here
 ```
 
 - [ ] Migration file: `backend/src/migrations/NNN_[name].sql`
-- [ ] Migration applied in `AGENTS.md` migration order
-- [ ] Rollback plan: [describe how to rollback]
+- [ ] Migration applied in correct position in `backend/src/migrations/apply.js`
+- [ ] Rollback file: `backend/src/migrations/NNN_[name]_rollback.sql`
+- [ ] Rollback tested: can reverse without data loss
 
 ---
 
-### g) Files Changed
+### h) Files Changed
 
 **Backend:**
 ```
-backend/src/api/[feature].js          → new route module
-backend/src/controllers/[feature]Controller.js  → new controller
-backend/src/services/[Feature]Service.js      → new service
-backend/src/validators/[feature].js           → new validator
-backend/src/models/[feature].js               → new model (if applicable)
-backend/src/migrations/NNN_[feature].sql      → new migration (if applicable)
-backend/src/api/v1/index.js                   → mount route (if new API)
-backend/src/api/openapi-spec.js               → JSDoc annotations (if new API)
+backend/src/api/[feature].js          → CREATE (route module)
+backend/src/controllers/[feature]Controller.js  → CREATE (controller)
+backend/src/services/[Feature]Service.js      → CREATE (service)
+backend/src/validators/[feature].js           → CREATE (validator)
+backend/src/models/[feature].js               → CREATE (model, if applicable)
+backend/src/migrations/NNN_[feature].sql      → CREATE (migration, if applicable)
+backend/src/migrations/apply.js               → MODIFY (add to SQL_FILES array)
+backend/src/api/v1/index.js                   → MODIFY (mount route, if new API)
 ```
 
 **Frontend:**
 ```
-frontend/src/api/[feature].js         → new API client
-frontend/src/views/[Feature].vue      → new view (if new page)
-frontend/src/views/ProjectDetail.vue  → extend with tab (if extending)
-frontend/src/views/TicketDetail.vue   → extend with section (if extending)
-frontend/src/components/[Feature].vue → new component (if new modal/form)
-frontend/src/router/index.ts          → add route (if new page)
-frontend/src/api/generated/           → regenerated types
+frontend/src/api/[feature].js         → CREATE (API client)
+frontend/src/views/[Feature].vue      → CREATE (view, if new page)
+frontend/src/views/ProjectDetail.vue  → MODIFY (extend with tab, if applicable)
+frontend/src/views/TicketDetail.vue   → MODIFY (extend with section, if applicable)
+frontend/src/components/[Feature].vue → CREATE (component, if new modal/form)
+frontend/src/router/index.ts          → MODIFY (add route, if new page)
+frontend/src/api/generated/           → REGENERATE (types)
 ```
 
 ---
 
-### h) Code Review Checklist
+### i) Code Review Checklist
 
 - [ ] Backend follows existing patterns (controller/service/model separation)
 - [ ] Backend uses parameterized queries (no SQL injection)
@@ -220,10 +264,11 @@ frontend/src/api/generated/           → regenerated types
 - [ ] All tests written and passing
 - [ ] OpenAPI spec regenerated if backend routes changed
 - [ ] Generated TypeScript types regenerated if response shapes changed
+- [ ] Specification in `04_SPECIFICATION.md` matches what was actually implemented
 
 ---
 
-### i) Post-Deploy Verification
+### j) Post-Deploy Verification
 
 1. [ ] Backend: `npm test` passes
 2. [ ] Backend: `npm run test:integration` passes (if applicable)
@@ -236,6 +281,7 @@ frontend/src/api/generated/           → regenerated types
 9. [ ] Frontend UI loads correctly in browser
 10. [ ] Auth/permissions work correctly
 11. [ ] Error cases handled gracefully
+12. [ ] If specification file exists: implementation matches the spec
 
 ---
 

@@ -17,6 +17,7 @@ Before starting any implementation, complete ALL items below. Do NOT skip any st
 - [ ] I have read `01_ARCHITECT_REQUIREMENT.md` — I understand the requirement, scope, and acceptance criteria
 - [ ] I have read `02_ARCHITECT_DESIGN.md` — I understand the design, alternatives considered, and risks
 - [ ] I have read `03_ARCHITECT_IMPLEMENTATION.md` — I know the actions, dependencies, and testing steps
+- [ ] I have read `04_SPECIFICATION.md` (if it exists) — I know the exact file operations, signatures, and test expectations
 - [ ] I have identified all assumptions and confirmed they are reasonable
 - [ ] I know what is IN scope and OUT of scope
 - [ ] I have verified there are no important design decisions that require user input (see "Important Design Decisions" in 01_ARCHITECT_REQUIREMENT.md)
@@ -43,6 +44,33 @@ Before starting any implementation, complete ALL items below. Do NOT skip any st
 - [ ] I have checked if **generated TypeScript types** (`frontend/src/api/generated/`) need regeneration
 - [ ] I have checked if **frontend API response validation** (`frontend/src/api/validator.ts`) needs updating
 
+### Dependency Analysis
+
+- [ ] All new npm/system dependencies are listed with versions and purpose
+- [ ] All existing services/modules that will be affected are identified
+- [ ] Breaking changes are noted (API contract changes, DB migration, config format)
+- [ ] No circular dependencies introduced
+
+### Configuration Audit
+
+- [ ] All new environment variables are documented with defaults
+- [ ] All new config files or schema changes are documented
+- [ ] Backward compatibility maintained (old config still works)
+
+### Database & Migration
+
+- [ ] If DB changes needed: migration file exists with both `up` and `rollback` SQL
+- [ ] Migration order is correct (added to `backend/src/migrations/apply.js` in the right position)
+- [ ] Rollback is tested (can reverse without data loss)
+- [ ] No breaking schema changes without a migration path for existing data
+
+### Testing Strategy
+
+- [ ] Unit test files identified per changed module
+- [ ] Integration test scenarios defined
+- [ ] Edge cases explicitly tested (not just happy path)
+- [ ] If frontend: component tests for new UI, E2E for user flows
+
 ### Implementation Readiness
 
 - [ ] I have a plan to implement this within the estimated effort
@@ -66,10 +94,7 @@ After implementation, complete ALL items below before marking the ticket as done
   - `Date completed` — when implementation finishes
   - `PR` — PR URL after merge
   - `Branch` — git branch used
-- [ ] `AGENTS.md` "Best Practices & Planning Templates" table updated with status prefix:
-  - `✅` for completed practices
-  - `🔄` for in-progress practices
-- [ ] Known Constraints in `AGENTS.md` updated if the change affects any constraints
+- [ ] `04_SPECIFICATION.md` (if created) reflects the final implementation — not just the plan
 - [ ] New env vars added to `backend/.env.example` if applicable
 - [ ] Generated files (OpenAPI types, etc.) regenerated if applicable:
   - `cd frontend && npm run generate:spec && npm run generate:api`
@@ -89,6 +114,7 @@ After implementation, complete ALL items below before marking the ticket as done
 5. **Production impact** — the change could affect running users (data migration, API breaking change, etc.)
 6. **UI placement decision** — you need user input on where to place a new UI section (e.g., which tab, which page, which modal)
 7. **Backend API conflict** — the backend API doesn't exist and creating it would conflict with existing patterns
+8. **Model can't resolve** — the local model fails repeatedly on a task; ask if a larger model or human intervention is needed
 
 Do NOT guess. Do NOT assume. Ask the user.
 
