@@ -86,6 +86,9 @@ class TicketPlanningService {
       } else if (templateName === 'simple') {
         templateFiles = TemplateService.getSimpleTemplate();
         getContent = TemplateService.getSimpleTemplateContent;
+      } else if (templateName === 'specification') {
+        templateFiles = TemplateService.getSpecificationTemplate();
+        getContent = TemplateService.getSpecificationTemplateContent;
       } else {
         templateFiles = await this._getCustomTemplate(ticketId, templateName);
         getContent = (key) => {

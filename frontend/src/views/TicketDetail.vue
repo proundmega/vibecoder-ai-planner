@@ -460,7 +460,7 @@ async function handleShowTemplateSelect() {
               <div v-if="modalError" class="modal-error">{{ modalError }}</div>
               <div class="template-options">
                 <button
-                  v-for="template in ['architecture', 'technical', 'simple']"
+                  v-for="template in ['architecture', 'technical', 'simple', 'specification']"
                   :key="template"
                   @click="selectedTemplate = template"
                   :class="['template-option', { selected: selectedTemplate === template }]"
@@ -468,7 +468,8 @@ async function handleShowTemplateSelect() {
                   <h4>{{ template.charAt(0).toUpperCase() + template.slice(1) }}</h4>
                   <p v-if="template === 'architecture'">Detailed architecture planning with system design sections</p>
                   <p v-else-if="template === 'technical'">Technical implementation plan with steps and tasks</p>
-                  <p v-else>Simple task breakdown with checkboxes</p>
+                  <p v-else-if="template === 'simple'">Simple task breakdown with checkboxes</p>
+                  <p v-else>Model execution specification with exact file operations</p>
                 </button>
                 <div v-if="customTemplates.length > 0" class="template-separator">
                   <span>Custom Templates</span>

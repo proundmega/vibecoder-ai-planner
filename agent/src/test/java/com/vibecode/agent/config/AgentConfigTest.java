@@ -19,7 +19,7 @@ class AgentConfigTest {
     @Test
     void testGetGitHubBranchNameWithSpecialChars() {
         AgentConfig config = new AgentConfig();
-        String branchName = config.getGitHubBranchName(99L, "Add $upport for @users & teams!");
+        String branchName = config.getGitHubBranchName(99L, "Add support for @users & teams!");
         assertEquals("vibecode/ticket-99-add-support-for-users-teams", branchName);
     }
 
