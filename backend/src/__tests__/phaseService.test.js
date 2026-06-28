@@ -146,9 +146,39 @@ describe('PhaseService', () => {
         ticketId: 'ticket-1',
         fromPhase: 'draft',
         toPhase: 'planning',
+        status: 'backlog',
       });
       expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
       expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
+    });
+
+    test('should update status when phase changes', async () => {
+      const mockClient = {
+        query: jest.fn()
+          .mockResolvedValueOnce({})  // BEGIN
+          .mockResolvedValueOnce({ rows: [{ id: 'ticket-1', phase: 'assigned' }] })
+          .mockResolvedValueOnce({})  // UPDATE
+          .mockResolvedValueOnce({})  // INSERT
+          .mockResolvedValueOnce({}), // COMMIT
+        release: jest.fn(),
+      };
+      mockPool.connect.mockReturnValue(mockClient);
+
+      await phaseService.transition('ticket-1', 'in_progress', 'human', 'user-1');
+
+      const updateCall = mockClient.query.mock.calls.find(call =>
+        call[0].includes('UPDATE tickets SET phase')
+      );
+      expect(updateCall[1]).toEqual(['in_progress', 'in_progress', 'ticket-1']);
+    });
+
+    test('should have PHASE_TO_STATUS mapping', () => {
+      const mapping = phaseService.getPhaseToStatus();
+      expect(mapping.draft).toBe('backlog');
+      expect(mapping.in_progress).toBe('in_progress');
+      expect(mapping.review).toBe('review');
+      expect(mapping.done).toBe('done');
+      expect(mapping.deployed).toBe('done');
     });
 
     test('should throw ValidationError for invalid transition', async () => {

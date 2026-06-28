@@ -17,6 +17,49 @@ class PhaseService {
 
   BACKLOG_COMPATIBLE_PHASES = ['draft', 'planning', 'plan_approved', 'assigned'];
 
+  PHASE_TO_STATUS = {
+    draft: 'backlog',
+    planning: 'backlog',
+    plan_approved: 'backlog',
+    assigned: 'in_progress',
+    in_progress: 'in_progress',
+    blocked: 'in_progress',
+    review: 'review',
+    human_approval: 'review',
+    done: 'done',
+    deployed: 'done',
+  };
+
+  constructor() {
+    this.ALLOWED_TRANSITIONS = {
+      draft: ['planning'],
+      planning: ['plan_approved', 'draft'],
+      plan_approved: ['assigned', 'planning'],
+      assigned: ['in_progress', 'planning'],
+      in_progress: ['review', 'blocked', 'backlog'],
+      blocked: ['in_progress'],
+      review: ['human_approval', 'in_progress', 'backlog'],
+      human_approval: ['done', 'review'],
+      done: ['deployed', 'in_progress'],
+      deployed: ['done'],
+    };
+
+    this.BACKLOG_COMPATIBLE_PHASES = ['draft', 'planning', 'plan_approved', 'assigned'];
+
+    this.PHASE_TO_STATUS = {
+      draft: 'backlog',
+      planning: 'backlog',
+      plan_approved: 'backlog',
+      assigned: 'in_progress',
+      in_progress: 'in_progress',
+      blocked: 'in_progress',
+      review: 'review',
+      human_approval: 'review',
+      done: 'done',
+      deployed: 'done',
+    };
+  }
+
   async transition(ticketId, toPhase, actorType = 'system', actorId = null, metadata = null) {
     const client = await pool.connect();
     try {
@@ -41,9 +84,11 @@ class PhaseService {
         );
       }
 
+      const newStatus = this.PHASE_TO_STATUS[toPhase] || ticket.status;
+
       await client.query(
-        'UPDATE tickets SET phase = $1, updated_at = NOW() WHERE id = $2',
-        [toPhase, ticketId]
+        'UPDATE tickets SET phase = $1, status = $2, updated_at = NOW() WHERE id = $3',
+        [toPhase, newStatus, ticketId]
       );
 
       await client.query(
@@ -54,7 +99,7 @@ class PhaseService {
 
       await client.query('COMMIT');
 
-      return { ticketId, fromPhase: currentPhase, toPhase };
+      return { ticketId, fromPhase: currentPhase, toPhase, status: newStatus };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -131,6 +176,10 @@ class PhaseService {
 
   isBacklogCompatible(phase) {
     return this.BACKLOG_COMPATIBLE_PHASES.includes(phase);
+  }
+
+  getPhaseToStatus() {
+    return this.PHASE_TO_STATUS;
   }
 }
 

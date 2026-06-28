@@ -3,7 +3,7 @@ const router = express.Router();
 const { requireAnyPermission, requireAllPermissions } = require('../middleware/permissions');
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
-const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema } = require('../validators/tickets');
+const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema } = require('../validators/tickets');
 const ticketController = require('../controllers/ticketController');
 const phaseService = require('../services/PhaseService');
 
@@ -357,7 +357,7 @@ router.get('/:ticketId/phases/allowed', verifyTokenOrAgent, async (req, res, nex
  *       200:
  *         description: Phase transitioned
  */
-router.post('/:ticketId/phases/transition', verifyTokenOrAgent, async (req, res, next) => {
+router.post('/:ticketId/phases/transition', verifyTokenOrAgent, validate(phaseTransitionSchema), async (req, res, next) => {
   try {
     const { toPhase, actorType, metadata } = req.body;
     const actorId = req.user ? req.user.id : (req.agent ? req.agent.id : null);
