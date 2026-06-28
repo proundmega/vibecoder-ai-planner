@@ -1,8 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getComments, postComment } from '../api/review'
-import { useReviewDataSource } from '../composables/useReviewDataSource'
+import { getGithubDiff, getComments, postComment } from '../api/review'
 import { post } from '../api/client'
 import DiffViewer from '../components/DiffViewer.vue'
 
@@ -11,13 +10,26 @@ const router = useRouter()
 const ticketId = route.params.ticketId
 const projectId = route.params.projectId
 
-const { source, files, loading, error, load } = useReviewDataSource(ticketId)
-
+const files = ref([])
 const comments = ref([])
+const loading = ref(true)
+const error = ref('')
 const approveLoading = ref(false)
 const changesLoading = ref(false)
 const selectedLine = ref(null)
 const newComment = ref('')
+
+async function loadDiff() {
+  loading.value = true
+  try {
+    const diffData = await getGithubDiff(ticketId)
+    files.value = diffData.files || []
+  } catch (e) {
+    error.value = e.message || 'Failed to load diff'
+  } finally {
+    loading.value = false
+  }
+}
 
 async function loadComments() {
   try {
@@ -53,7 +65,7 @@ async function approve() {
   try {
     await post(`/api/v1/tickets/${ticketId}/phases/transition`, {
       toPhase: 'human_approval',
-      metadata: { action: 'approved', source: source.value },
+      metadata: { action: 'approved', source: 'github-review' },
     })
     router.push(`/projects/${projectId}/tickets/${ticketId}`)
   } catch (e) {
@@ -81,7 +93,7 @@ async function requestChanges() {
 }
 
 onMounted(() => {
-  load()
+  loadDiff()
   loadComments()
 })
 </script>
@@ -90,7 +102,7 @@ onMounted(() => {
   <div class="code-review">
     <div v-if="loading" class="loading">Loading diff...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
-    <div v-else-if="!source || files.length === 0" class="empty">No files to review</div>
+    <div v-else-if="files.length === 0" class="empty">No files to review</div>
     <template v-else>
       <div class="review-header">
         <h2>Code Review · {{ files.length }} file{{ files.length > 1 ? 's' : '' }}</h2>
@@ -102,10 +114,6 @@ onMounted(() => {
             {{ approveLoading ? 'Processing...' : '✓ Approve' }}
           </button>
         </div>
-      </div>
-
-      <div class="source-indicator">
-        Source: <span class="source-label">{{ source === 'github' ? 'GitHub PR' : 'Local changes' }}</span>
       </div>
 
       <DiffViewer :files="files" :comments="comments" @line-click="onLineClick" />
@@ -154,7 +162,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.75rem;
+  margin-bottom: 1.5rem;
 }
 
 .review-header h2 {
@@ -200,17 +208,6 @@ onMounted(() => {
 .btn-changes:disabled, .btn-approve:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.source-indicator {
-  font-size: 13px;
-  color: #6b7280;
-  margin-bottom: 1rem;
-}
-
-.source-label {
-  font-weight: 600;
-  color: #374151;
 }
 
 .comment-form {

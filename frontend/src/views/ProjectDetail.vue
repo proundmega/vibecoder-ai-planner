@@ -763,6 +763,7 @@ async function handleDeleteMemory(memoryId) {
           </div>
         </div>
       </div>
+
     </div>
   </div>
 </template>

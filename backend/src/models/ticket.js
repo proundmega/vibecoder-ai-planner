@@ -13,6 +13,7 @@ class Ticket {
     this.ownerId = data.ownerId;
     this.planningStatus = data.planning_status || 'not_started';
     this.templateSchema = data.template_schema || null;
+    this.phase = data.phase || 'draft';
     this.createdAt = data.createdAt;
     this.updatedAt = data.updatedAt;
   }
@@ -20,8 +21,8 @@ class Ticket {
   static async create(projectId, title, description, priority, ownerId) {
     const result = await pool.query(
       `INSERT INTO tickets 
-       (project_id, title, description, status, priority, owner_id) 
-       VALUES ($1, $2, $3, 'backlog', $4, $5)
+       (project_id, title, description, status, priority, owner_id, phase) 
+       VALUES ($1, $2, $3, 'backlog', $4, $5, 'draft')
        RETURNING *`,
       [projectId, title, description, priority || 'medium', ownerId]
     );
@@ -68,6 +69,7 @@ class Ticket {
       projectName: row.project_name,
       planning_status: row.planning_status,
       template_schema: row.template_schema,
+      phase: row.phase,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });

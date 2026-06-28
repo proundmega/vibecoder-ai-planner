@@ -11,11 +11,3 @@ export function getComments(ticketId, type = 'review') {
 export function postComment(ticketId, data) {
   return post(`/api/v1/tickets/${ticketId}/comments`, data)
 }
-
-export function getLocalDiff(ticketId) {
-  return get(`/api/v1/tickets/${ticketId}/review/local-diff`)
-}
-
-export function postLocalDiff(ticketId, files) {
-  return post(`/api/v1/tickets/${ticketId}/review/local-diff`, { files })
-}
