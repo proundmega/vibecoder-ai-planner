@@ -18,6 +18,8 @@ import java.time.Duration;
  *   AI_PROVIDER         - AI provider to use: claude or openai (default: claude)
  *   AI_MODEL            - AI model name (default: claude-sonnet-4-20250514)
  *   AI_API_KEY          - AI provider API key (falls back to env if not in DB)
+ *   AI_ENDPOINT_URL     - OpenAI-compatible endpoint URL (e.g., http://localhost:11434/v1)
+ *   AI_MAX_TOKENS       - Max tokens for AI responses (default: 4096)
  *   DRY_RUN             - If "true", don't create branches/PRs (default: false)
  *   MAX_TICKETS         - Max tickets to process per cycle (default: 1)
  *   REPO_CLONE_DIR      - Directory to clone repos into (default: /repos)
@@ -34,6 +36,8 @@ public class AgentConfig {
     private final String aiProvider;
     private final String aiModel;
     private final String aiApiKey;
+    private final String aiEndpointUrl;
+    private final int aiMaxTokens;
     private final boolean dryRun;
     private final int maxTicketsPerCycle;
     private final String repoCloneDir;
@@ -49,6 +53,8 @@ public class AgentConfig {
         this.aiProvider = getEnv("AI_PROVIDER", "claude");
         this.aiModel = getEnv("AI_MODEL", "claude-sonnet-4-20250514");
         this.aiApiKey = getEnv("AI_API_KEY", null);
+        this.aiEndpointUrl = getEnv("AI_ENDPOINT_URL", "");
+        this.aiMaxTokens = getIntEnv("AI_MAX_TOKENS", 4096);
         this.dryRun = "true".equalsIgnoreCase(getEnv("DRY_RUN", "false"));
         this.maxTicketsPerCycle = getIntEnv("MAX_TICKETS", 1);
         this.repoCloneDir = getEnv("REPO_CLONE_DIR", "/repos");
@@ -64,6 +70,8 @@ public class AgentConfig {
     public String getAiProvider() { return aiProvider; }
     public String getAiModel() { return aiModel; }
     public String getAiApiKey() { return aiApiKey; }
+    public String getAiEndpointUrl() { return aiEndpointUrl; }
+    public int getAiMaxTokens() { return aiMaxTokens; }
     public boolean isDryRun() { return dryRun; }
     public int getMaxTicketsPerCycle() { return maxTicketsPerCycle; }
     public String getRepoCloneDir() { return repoCloneDir; }
@@ -123,6 +131,7 @@ public class AgentConfig {
             ", repo='" + repoOwner + "/" + repoName + '\'' +
             ", aiProvider='" + aiProvider + '\'' +
             ", aiModel='" + aiModel + '\'' +
+            ", aiMaxTokens=" + aiMaxTokens +
             ", dryRun=" + dryRun +
             ", maxTicketsPerCycle=" + maxTicketsPerCycle +
             ", repoCloneDir='" + repoCloneDir + '\'' +
