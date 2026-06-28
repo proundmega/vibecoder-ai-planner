@@ -56,6 +56,18 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/agents',
+    name: 'AgentList',
+    component: () => import('../views/AgentList.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/agents/:id',
+    name: 'AgentDetail',
+    component: () => import('../views/AgentDetail.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/projects',
     name: 'Projects',
     component: () => import('../views/ProjectList.vue'),
@@ -113,6 +125,12 @@ const routes = [
         path: 'templates',
         name: 'ProjectTemplates',
         component: () => import('../views/ProjectTemplates.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'tickets/:ticketId/flow',
+        name: 'PhaseFlow',
+        component: () => import('../views/PhaseFlow.vue'),
         meta: { requiresAuth: true },
       },
     ],

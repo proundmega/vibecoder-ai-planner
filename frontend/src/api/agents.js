@@ -16,3 +16,11 @@ export function getAgentHistory(agentId, apiKey = null) {
   const options = apiKey ? { headers: { 'x-api-key': apiKey } } : {}
   return get(`/api/v1/agents/${agentId}/history`, options)
 }
+
+export function fetchAgentStatusList() {
+  return get('/api/v1/agents-status')
+}
+
+export function fetchAgentDetail(agentId) {
+  return get(`/api/v1/agents-status/${agentId}`)
+}

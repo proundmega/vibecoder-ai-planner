@@ -27,6 +27,7 @@ import java.time.Duration;
 public class AgentConfig {
 
     private final String agentApiKey;
+    private final String agentId;
     private final String backendUrl;
     private final String projectId;
     private final String repoOwner;
@@ -44,6 +45,7 @@ public class AgentConfig {
 
     public AgentConfig() {
         this.agentApiKey = requireEnv("AGENT_API_KEY");
+        this.agentId = getEnv("AGENT_ID", null);
         this.backendUrl = requireEnv("BACKEND_URL");
         this.projectId = requireEnv("PROJECT_ID");
         this.repoOwner = requireEnv("REPO_OWNER");
@@ -61,6 +63,7 @@ public class AgentConfig {
     }
 
     public String getAgentApiKey() { return agentApiKey; }
+    public String getAgentId() { return agentId; }
     public String getBackendUrl() { return backendUrl; }
     public String getProjectId() { return projectId; }
     public String getRepoOwner() { return repoOwner; }
