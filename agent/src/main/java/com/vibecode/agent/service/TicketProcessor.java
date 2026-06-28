@@ -20,12 +20,22 @@ public class TicketProcessor {
     private final ApiService apiService;
     private final AiProvider aiProvider;
     private final GitHubService gitHubService;
+    private String currentTicketId;
+    private String currentStep;
 
     public TicketProcessor(AgentConfig config, ApiService apiService, AiProvider aiProvider, GitHubService gitHubService) {
         this.config = config;
         this.apiService = apiService;
         this.aiProvider = aiProvider;
         this.gitHubService = gitHubService;
+    }
+
+    public String getCurrentTicketId() {
+        return currentTicketId;
+    }
+
+    public String getCurrentStep() {
+        return currentStep;
     }
 
     /**
@@ -39,19 +49,24 @@ public class TicketProcessor {
      */
     public void processTicket(Ticket ticket) {
         log.info("Processing ticket: {} - {}", ticket.getId(), ticket.getTitle());
+        currentTicketId = String.valueOf(ticket.getId());
 
         // Step 1: Pick up the ticket
         Ticket pickedUp = pickUpTicket(ticket.getId());
         if (pickedUp == null) {
             log.warn("Could not pick up ticket {}, skipping", ticket.getId());
+            currentTicketId = null;
+            currentStep = null;
             return;
         }
         log.info("Ticket {} picked up, status: {}", ticket.getId(), pickedUp.getStatus());
+        currentStep = "picked_up";
 
         try {
             // Step 2: Generate code/plan using AI (skip in dry run)
             String generatedContent = null;
             if (!config.isDryRun()) {
+                currentStep = "generating_content";
                 generatedContent = generateContent(pickedUp);
                 log.info("AI generated content for ticket {}", ticket.getId());
             } else {
@@ -60,6 +75,7 @@ public class TicketProcessor {
 
             // Step 3: Create GitHub branch
             String branchName = config.getGitHubBranchName(pickedUp.getId(), pickedUp.getTitle());
+            currentStep = "creating_branch";
             if (!config.isDryRun()) {
                 gitHubService.createBranch(branchName, "main");
                 log.info("Created branch: {}", branchName);
@@ -68,12 +84,14 @@ public class TicketProcessor {
             }
 
             // Step 4: Post progress message
+            currentStep = "posting_message";
             apiService.postMessage(pickedUp.getId(), "update",
                 "Started working on: " + pickedUp.getTitle());
 
             // Step 5: Create PR (if not dry run)
             String prUrl = null;
             if (!config.isDryRun()) {
+                currentStep = "creating_pr";
                 String prTitle = "feat: " + pickedUp.getTitle();
                 String prBody = buildPrBody(pickedUp, branchName);
                 prUrl = gitHubService.createPullRequest(prTitle, prBody, branchName, "main");
@@ -83,6 +101,7 @@ public class TicketProcessor {
             }
 
             // Step 6: Post final message and update status
+            currentStep = "updating_status";
             String finalMessage = "Completed: " + pickedUp.getTitle();
             if (prUrl != null) {
                 finalMessage += ". PR: " + prUrl;
@@ -91,9 +110,11 @@ public class TicketProcessor {
 
             apiService.updateTicketStatus(pickedUp.getId(), "review");
             log.info("Ticket {} status updated to review", pickedUp.getId());
+            currentStep = "done";
 
         } catch (Exception e) {
             log.error("Error processing ticket {}: {}", ticket.getId(), e.getMessage(), e);
+            currentStep = "error";
             // Post error message
             try {
                 apiService.postMessage(ticket.getId(), "update",
@@ -107,6 +128,9 @@ public class TicketProcessor {
                 log.info("Released ticket {} after error", ticket.getId());
             } catch (IOException releaseException) {
                 log.error("Failed to release ticket {}", ticket.getId(), releaseException);
+            } finally {
+                currentTicketId = null;
+                currentStep = null;
             }
         }
     }

@@ -7,7 +7,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Main entry point for the Vibecode AI Agent.
@@ -35,6 +40,7 @@ public class AgentApp {
     private final AiProvider aiProvider;
     private final GitHubService gitHubService;
     private final TicketProcessor ticketProcessor;
+    private ScheduledExecutorService heartbeatScheduler;
 
     public AgentApp(AgentConfig config) {
         this.config = config;
@@ -73,6 +79,29 @@ public class AgentApp {
         log.info("Dry run: {}", config.isDryRun() ? "YES (no branches/PRs will be created)" : "NO");
 
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown, "shutdown-hook"));
+
+        heartbeatScheduler = Executors.newScheduledThreadPool(1);
+        heartbeatScheduler.scheduleAtFixedRate(() -> {
+            try {
+                Map<String, Object> mem = new HashMap<>();
+                mem.put("free", Runtime.getRuntime().freeMemory());
+                mem.put("total", Runtime.getRuntime().totalMemory());
+                mem.put("max", Runtime.getRuntime().maxMemory());
+
+                Map<String, Object> cpu = new HashMap<>();
+                cpu.put("availableProcessors", Runtime.getRuntime().availableProcessors());
+
+                apiService.sendHeartbeat(
+                    config.getAgentId(),
+                    ticketProcessor.getCurrentTicketId(),
+                    ticketProcessor.getCurrentStep(),
+                    mem,
+                    cpu
+                );
+            } catch (Exception e) {
+                log.warn("Heartbeat send failed", e);
+            }
+        }, 0, 30, TimeUnit.SECONDS);
 
         log.info("Polling for tickets every {} ms", config.getPollInterval().toMillis());
 
@@ -122,6 +151,14 @@ public class AgentApp {
 
     private void shutdown() {
         log.info("Shutting down agent...");
+        if (heartbeatScheduler != null) {
+            heartbeatScheduler.shutdown();
+            try {
+                heartbeatScheduler.awaitTermination(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     public static void main(String[] args) {

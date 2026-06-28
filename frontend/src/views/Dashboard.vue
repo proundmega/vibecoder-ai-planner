@@ -1,9 +1,10 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { fetchProjects } from '@/api/projects'
 import { getUserUsage, getModelPricing, getProjectUsage } from '@/api/usage'
+import { fetchAgentStatusList } from '@/api/agents'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -22,6 +23,25 @@ const userUsage = ref(null)
 const pricingData = ref([])
 const projectUsages = ref([])
 
+const agentSummary = ref({ online: 0, idle: 0, offline: 0, total: 0 })
+let agentPollInterval = null
+
+async function loadAgentSummary() {
+  try {
+    const agents = await fetchAgentStatusList()
+    if (Array.isArray(agents)) {
+      agentSummary.value = {
+        online: agents.filter((a) => a.status === 'online').length,
+        idle: agents.filter((a) => a.status === 'idle').length,
+        offline: agents.filter((a) => a.status === 'offline').length,
+        total: agents.length,
+      }
+    }
+  } catch {
+    // silently ignore
+  }
+}
+
 onMounted(async () => {
   try {
     projects.value = await fetchProjects()
@@ -31,6 +51,12 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+  loadAgentSummary()
+  agentPollInterval = setInterval(loadAgentSummary, 10000)
+})
+
+onUnmounted(() => {
+  if (agentPollInterval) clearInterval(agentPollInterval)
 })
 
 async function loadUsageData() {
@@ -82,6 +108,16 @@ watch(activeTab, (newTab) => {
         <div class="stat-card">
           <div class="stat-value">{{ projects.length }}</div>
           <div class="stat-label">Projects</div>
+        </div>
+        <div class="stat-card" v-if="agentSummary.total > 0">
+          <div class="stat-value agent-summary">
+            <span class="agent-online">{{ agentSummary.online }}</span>
+            <span class="agent-idle">{{ agentSummary.idle }}</span>
+            <span class="agent-offline">{{ agentSummary.offline }}</span>
+          </div>
+          <div class="stat-label">
+            <router-link to="/agents" class="agent-link">Agents</router-link>
+          </div>
         </div>
       </div>
 
@@ -247,6 +283,35 @@ watch(activeTab, (newTab) => {
   font-size: 32px;
   font-weight: 700;
   color: #1f2937;
+}
+
+.stat-value.agent-summary {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 24px;
+}
+
+.agent-online {
+  color: #155724;
+}
+
+.agent-idle {
+  color: #856404;
+}
+
+.agent-offline {
+  color: #721c24;
+}
+
+.agent-link {
+  color: #3b82f6;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.agent-link:hover {
+  text-decoration: underline;
 }
 
 .stat-label {
