@@ -20,6 +20,8 @@ import java.time.Duration;
  *   AI_API_KEY          - AI provider API key (falls back to env if not in DB)
  *   DRY_RUN             - If "true", don't create branches/PRs (default: false)
  *   MAX_TICKETS         - Max tickets to process per cycle (default: 1)
+ *   REPO_CLONE_DIR      - Directory to clone repos into (default: /repos)
+ *   MAX_FILE_WRITE_RETRIES - Max retries for file write operations (default: 3)
  */
 public class AgentConfig {
 
@@ -35,6 +37,8 @@ public class AgentConfig {
     private final String aiApiKey;
     private final boolean dryRun;
     private final int maxTicketsPerCycle;
+    private final String repoCloneDir;
+    private final int maxFileWriteRetries;
 
     public AgentConfig() {
         this.agentApiKey = requireEnv("AGENT_API_KEY");
@@ -49,6 +53,8 @@ public class AgentConfig {
         this.aiApiKey = getEnv("AI_API_KEY", null);
         this.dryRun = "true".equalsIgnoreCase(getEnv("DRY_RUN", "false"));
         this.maxTicketsPerCycle = getIntEnv("MAX_TICKETS", 1);
+        this.repoCloneDir = getEnv("REPO_CLONE_DIR", "/repos");
+        this.maxFileWriteRetries = getIntEnv("MAX_FILE_WRITE_RETRIES", 3);
     }
 
     public String getAgentApiKey() { return agentApiKey; }
@@ -63,6 +69,8 @@ public class AgentConfig {
     public String getAiApiKey() { return aiApiKey; }
     public boolean isDryRun() { return dryRun; }
     public int getMaxTicketsPerCycle() { return maxTicketsPerCycle; }
+    public String getRepoCloneDir() { return repoCloneDir; }
+    public int getMaxFileWriteRetries() { return maxFileWriteRetries; }
 
     public String getApiUrl() {
         return backendUrl.endsWith("/") ? backendUrl + "api" : backendUrl + "/api";
@@ -71,8 +79,10 @@ public class AgentConfig {
     public String getGitHubBranchName(Long ticketId, String ticketTitle) {
         String slug = ticketTitle.toLowerCase()
             .replaceAll("[^a-z0-9]+", "-")
-            .replaceAll("^-|-$", "")
-            .substring(0, Math.min(ticketTitle.length(), 50));
+            .replaceAll("^-|-$", "");
+        if (slug.length() > 50) {
+            slug = slug.substring(0, 50);
+        }
         return "vibecode/ticket-" + ticketId + "-" + slug;
     }
 
@@ -119,6 +129,8 @@ public class AgentConfig {
             ", aiModel='" + aiModel + '\'' +
             ", dryRun=" + dryRun +
             ", maxTicketsPerCycle=" + maxTicketsPerCycle +
+            ", repoCloneDir='" + repoCloneDir + '\'' +
+            ", maxFileWriteRetries=" + maxFileWriteRetries +
             '}';
     }
 }
