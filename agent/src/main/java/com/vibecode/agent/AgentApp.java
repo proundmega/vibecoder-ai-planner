@@ -51,7 +51,7 @@ public class AgentApp {
     }
 
     private AiProvider createAiProvider() {
-        String provider = config.getAiProvider().toLowerCase();
+        String endpointUrl = config.getAiEndpointUrl();
         String model = config.getAiModel();
         String apiKey = config.getAiApiKey();
 
@@ -59,6 +59,13 @@ public class AgentApp {
             log.warn("No AI_API_KEY set, will try to fetch from backend credentials");
         }
 
+        // If AI_ENDPOINT_URL is set, use OpenAI-compatible provider
+        if (endpointUrl != null && !endpointUrl.isBlank()) {
+            log.info("Using OpenAI-compatible provider with endpoint: {}, model: {}", endpointUrl, model);
+            return new OpenAiCompatibleProvider(endpointUrl, model, apiKey, config.getAiMaxTokens());
+        }
+
+        String provider = config.getAiProvider().toLowerCase();
         switch (provider) {
             case "openai":
                 log.info("Using OpenAI provider, model: {}", model);

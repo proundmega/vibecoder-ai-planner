@@ -18,6 +18,8 @@
   },
   "dependencies": {
     "@heroicons/vue": "^2.1.1",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "axios": "^1.6.2",
     "diff2html": "^3.4.56",
     "pinia": "^2.1.7",
