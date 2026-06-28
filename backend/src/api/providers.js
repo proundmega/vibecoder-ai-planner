@@ -5,6 +5,7 @@ const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
 const providerController = require('../controllers/providerController');
 const { addProviderSchema, updateProviderSchema } = require('../validators/providers');
+const ProviderService = require('../services/ProviderService');
 
 /**
  * @openapi
@@ -119,5 +120,45 @@ router.delete('/:projectId/providers/:providerId', verifyToken, requireAnyPermis
  *         description: Connection test result
  */
 router.post('/:projectId/providers/:providerId/test', verifyToken, providerController.testProvider);
+
+/**
+ * @openapi
+ * /providers/{projectId}/provider/resolve:
+ *   post:
+ *     tags: [Providers]
+ *     summary: Resolve AI provider for a ticket based on routing rules
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ticket_id: { type: string }
+ *               labels: { type: array, items: { type: string } }
+ *               priority: { type: string }
+ *               phase: { type: string }
+ *     responses:
+ *       200:
+ *         description: Resolved provider config
+ */
+router.post('/:projectId/provider/resolve', verifyToken, async (req, res, next) => {
+  try {
+    const ticketInfo = {
+      labels: req.body.labels || [],
+      priority: req.body.priority || 'medium',
+      phase: req.body.phase || 'backlog',
+    };
+    const config = await ProviderService.resolveProvider(req.params.projectId, ticketInfo);
+    res.json({ success: true, data: config });
+  } catch (err) {
+    next(err);
+  }
+});
 
 module.exports = router;
