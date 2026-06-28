@@ -115,6 +115,12 @@ const routes = [
         component: () => import('../views/ProjectTemplates.vue'),
         meta: { requiresAuth: true },
       },
+      {
+        path: 'compute-nodes',
+        name: 'ProjectComputeNodes',
+        component: () => import('../views/ComputeNodes.vue'),
+        meta: { requiresAuth: true },
+      },
     ],
   },
   {
