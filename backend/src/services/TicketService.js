@@ -82,33 +82,6 @@ class TicketService {
       }
     }
 
-    // Validate milestone exists and belongs to same project (if changing)
-    if (data.milestone_id !== undefined) {
-      const { pool } = require('../db');
-      if (data.milestone_id !== null) {
-        const milestoneCheck = await pool.query(
-          'SELECT id FROM milestones WHERE id = $1 AND project_id = $2',
-          [data.milestone_id, ticket.projectId]
-        );
-        if (milestoneCheck.rows.length === 0) {
-          throw new NotFoundError('Milestone not found or does not belong to this project');
-        }
-      }
-    }
-
-    if (data.estimate !== undefined) {
-      if (data.estimate !== null && (typeof data.estimate !== 'number' || data.estimate <= 0)) {
-        throw new ValidationError('Estimate must be a positive integer');
-      }
-    }
-
-    if (data.depends_on !== undefined) {
-      if (data.depends_on !== null && Array.isArray(data.depends_on)) {
-        const projectTickets = await Ticket.findByProject(ticket.projectId, userId);
-        await this.hasCircularDependency(id, data.depends_on, projectTickets);
-      }
-    }
-
     return await Ticket.update(
       id,
       data.title,
@@ -118,67 +91,6 @@ class TicketService {
       data.assigneeId,
       userId
     );
-  }
-
-  async updateMilestoneFields(id, { milestone_id, estimate, depends_on }, userId) {
-    const ticket = await Ticket.findById(id);
-    if (!ticket) throw new NotFoundError('Ticket not found');
-
-    if (milestone_id !== undefined) {
-      const { pool } = require('../db');
-      if (milestone_id !== null) {
-        const milestoneCheck = await pool.query(
-          'SELECT id FROM milestones WHERE id = $1 AND project_id = $2',
-          [milestone_id, ticket.projectId]
-        );
-        if (milestoneCheck.rows.length === 0) {
-          throw new NotFoundError('Milestone not found or does not belong to this project');
-        }
-      }
-    }
-
-    if (estimate !== undefined) {
-      if (estimate !== null && (typeof estimate !== 'number' || estimate <= 0)) {
-        throw new ValidationError('Estimate must be a positive integer');
-      }
-    }
-
-    if (depends_on !== undefined) {
-      if (depends_on !== null && Array.isArray(depends_on)) {
-        const projectTickets = await Ticket.findByProject(ticket.projectId, userId);
-        await this.hasCircularDependency(id, depends_on, projectTickets);
-      }
-    }
-
-    const { pool } = require('../db');
-    const sets = [];
-    const vals = [];
-    let idx = 1;
-
-    if (milestone_id !== undefined) {
-      sets.push(`milestone_id=$${idx++}`);
-      vals.push(milestone_id);
-    }
-    if (estimate !== undefined) {
-      sets.push(`estimate=$${idx++}`);
-      vals.push(estimate);
-    }
-    if (depends_on !== undefined) {
-      sets.push(`depends_on=$${idx++}`);
-      vals.push(depends_on);
-    }
-
-    if (sets.length === 0) {
-      throw new ValidationError('No fields to update');
-    }
-
-    vals.push(id);
-    const result = await pool.query(
-      `UPDATE tickets SET ${sets.join(', ')} WHERE id=$${idx} RETURNING *`,
-      vals
-    );
-
-    return result.rows[0];
   }
 
   async delete(id, userId) {
@@ -332,56 +244,6 @@ class TicketService {
     }
 
     return ticket;
-  }
-
-  async validateDependencies(ticketId) {
-    const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new NotFoundError('Ticket not found');
-    if (!ticket.depends_on || ticket.depends_on.length === 0) return;
-
-    const { pool } = require('../db');
-    const placeholders = ticket.depends_on.map((_, i) => `$${i + 2}`).join(', ');
-    const deps = await pool.query(
-      `SELECT id, title, status, phase FROM tickets WHERE id IN (${placeholders})`,
-      [ticketId, ...ticket.depends_on]
-    );
-
-    const incomplete = deps.rows.filter(d =>
-      d.status !== 'done' && d.phase !== 'done' && d.phase !== 'deployed'
-    );
-    if (incomplete.length > 0) {
-      throw new ValidationError(
-        `Cannot start: the following dependencies are not done: ${incomplete.map(d => d.title).join(', ')}`
-      );
-    }
-  }
-
-  async hasCircularDependency(ticketId, newDepIds, allProjectTickets) {
-    const adjMap = new Map();
-    for (const t of allProjectTickets) {
-      adjMap.set(t.id.toString(), (t.depends_on || []).map(String));
-    }
-    adjMap.set(String(ticketId), (newDepIds || []).map(String));
-
-    const visited = new Set();
-    const recStack = new Set();
-
-    function dfs(id) {
-      if (recStack.has(id)) return true;
-      if (visited.has(id)) return false;
-      visited.add(id);
-      recStack.add(id);
-      const deps = adjMap.get(id) || [];
-      for (const depId of deps) {
-        if (dfs(depId)) return true;
-      }
-      recStack.delete(id);
-      return false;
-    }
-
-    if (dfs(String(ticketId))) {
-      throw new ValidationError('Circular dependency detected');
-    }
   }
 
   async recoverOrphanedTickets(staleMinutes = 60) {

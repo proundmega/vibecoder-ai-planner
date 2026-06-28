@@ -1,3 +1,0 @@
-ALTER TABLE tickets DROP COLUMN IF EXISTS milestone_id;
-ALTER TABLE tickets DROP COLUMN IF EXISTS estimate;
-ALTER TABLE tickets DROP COLUMN IF EXISTS depends_on;
