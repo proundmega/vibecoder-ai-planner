@@ -40,6 +40,12 @@ class GitHubProvider {
   async listPRs(projectRepo) {
     return listTicketPRs(this.api, projectRepo);
   }
+
+  async getPRDiff(projectRepo, prNumber) {
+    const parsed = this.constructor.parseRepoUrl(projectRepo.repoUrl);
+    const files = await this.api.listPRFiles(parsed.owner, parsed.repo, prNumber);
+    return { files, prNumber };
+  }
 }
 
 module.exports = { GitHubProvider };

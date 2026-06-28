@@ -5,7 +5,7 @@ const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
 const providerController = require('../controllers/providerController');
 const { addProviderSchema, updateProviderSchema } = require('../validators/providers');
-const ProviderService = require('../services/ProviderService');
+const providerService = require('../services/ProviderService');
 
 /**
  * @openapi
@@ -123,42 +123,111 @@ router.post('/:projectId/providers/:providerId/test', verifyToken, providerContr
 
 /**
  * @openapi
- * /providers/{projectId}/provider/resolve:
- *   post:
+ * /providers/projects/{projectId}/provider:
+ *   get:
  *     tags: [Providers]
- *     summary: Resolve AI provider for a ticket based on routing rules
+ *     summary: Get project provider config
  *     parameters:
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string }
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Provider config
+ */
+router.get('/projects/:projectId/provider', verifyToken, async (req, res, next) => {
+  try {
+    const config = await providerService.getConfig(req.params.projectId);
+    res.json({ success: true, data: config || null });
+  } catch (err) { next(err); }
+});
+
+/**
+ * @openapi
+ * /providers/projects/{projectId}/provider:
+ *   put:
+ *     tags: [Providers]
+ *     summary: Set project provider config
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
  *     requestBody:
- *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [provider, model]
+ *             properties:
+ *               provider: { type: string }
+ *               endpoint_url: { type: string }
+ *               model: { type: string }
+ *               api_key_credential_id: { type: string, format: uuid }
+ *               fallback_provider: { type: string }
+ *     responses:
+ *       200:
+ *         description: Provider config saved
+ */
+router.put('/projects/:projectId/provider', verifyToken, async (req, res, next) => {
+  try {
+    const config = await providerService.setConfig(req.params.projectId, req.body);
+    res.json({ success: true, data: config });
+  } catch (err) { next(err); }
+});
+
+/**
+ * @openapi
+ * /providers/projects/{projectId}/provider:
+ *   delete:
+ *     tags: [Providers]
+ *     summary: Delete project provider config
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Provider config deleted
+ */
+router.delete('/projects/:projectId/provider', verifyToken, async (req, res, next) => {
+  try {
+    await providerService.deleteConfig(req.params.projectId);
+    res.json({ success: true, data: { deleted: true } });
+  } catch (err) { next(err); }
+});
+
+/**
+ * @openapi
+ * /providers/projects/{projectId}/provider/test:
+ *   post:
+ *     tags: [Providers]
+ *     summary: Test provider connection
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
  *       content:
  *         application/json:
  *           schema:
  *             type: object
  *             properties:
- *               ticket_id: { type: string }
- *               labels: { type: array, items: { type: string } }
- *               priority: { type: string }
- *               phase: { type: string }
+ *               endpoint_url: { type: string }
+ *               model: { type: string }
+ *               api_key: { type: string }
  *     responses:
  *       200:
- *         description: Resolved provider config
+ *         description: Connection test result
  */
-router.post('/:projectId/provider/resolve', verifyToken, async (req, res, next) => {
+router.post('/projects/:projectId/provider/test', verifyToken, async (req, res, next) => {
   try {
-    const ticketInfo = {
-      labels: req.body.labels || [],
-      priority: req.body.priority || 'medium',
-      phase: req.body.phase || 'backlog',
-    };
-    const config = await ProviderService.resolveProvider(req.params.projectId, ticketInfo);
-    res.json({ success: true, data: config });
-  } catch (err) {
-    next(err);
-  }
+    const result = await providerService.testConnection(req.body);
+    res.json({ success: true, data: result });
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

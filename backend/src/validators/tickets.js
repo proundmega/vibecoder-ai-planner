@@ -39,6 +39,21 @@ const commentSchema = Joi.object({
     'string.max': 'Comment content must not exceed 5000 characters',
     'any.required': 'Comment content is required',
   }),
+  file_path: Joi.string().max(512).optional(),
+  line_number: Joi.number().integer().min(1).optional(),
 });
 
-module.exports = { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema };
+const phaseTransitionSchema = Joi.object({
+  toPhase: Joi.string().valid(
+    'draft', 'planning', 'plan_approved', 'assigned',
+    'in_progress', 'blocked', 'review', 'human_approval',
+    'done', 'deployed'
+  ).required().messages({
+    'any.only': 'toPhase must be one of: draft, planning, plan_approved, assigned, in_progress, blocked, review, human_approval, done, deployed',
+    'any.required': 'toPhase is required',
+  }),
+  actorType: Joi.string().valid('human', 'agent', 'system').optional().default('human'),
+  metadata: Joi.object().optional(),
+});
+
+module.exports = { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema };

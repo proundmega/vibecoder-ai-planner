@@ -132,6 +132,18 @@ class CredentialService {
     return decrypt(result.rows[0].key_encrypted);
   }
 
+  static async decryptKey(credentialId) {
+    const { NotFoundError } = require('../errors/HttpError');
+    const result = await pool.query(
+      'SELECT key_encrypted FROM project_credentials WHERE id = $1',
+      [credentialId]
+    );
+    if (result.rows.length === 0) {
+      throw new NotFoundError('Credential not found');
+    }
+    return decrypt(result.rows[0].key_encrypted);
+  }
+
   static async getActiveCredentials(projectId) {
     const result = await pool.query(
       `SELECT id, name, credential_type, key_masked, metadata, expires_at, is_active, created_at, updated_at

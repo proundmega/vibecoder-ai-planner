@@ -24,6 +24,7 @@ const loginUserBound = loginUser.bind(auth);
 
 const v1Routes = require('./v1');
 const cspReportRouter = require('./csp-report');
+const poolRouter = require('./pool');
 
 /**
  * @openapi
@@ -297,6 +298,9 @@ router.use('/v1',
 
 // CSP report endpoint (no auth required)
 router.use(cspReportRouter);
+
+// Pool management (unversioned)
+router.use(poolRouter);
 
 // Catch-all for unversioned requests
 router.use((req, res) => {
