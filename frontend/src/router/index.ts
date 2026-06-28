@@ -56,6 +56,18 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/agents',
+    name: 'AgentList',
+    component: () => import('../views/AgentList.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/agents/:id',
+    name: 'AgentDetail',
+    component: () => import('../views/AgentDetail.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/projects',
     name: 'Projects',
     component: () => import('../views/ProjectList.vue'),
@@ -116,12 +128,34 @@ const routes = [
         meta: { requiresAuth: true },
       },
       {
-        path: 'milestones',
-        name: 'ProjectMilestones',
-        component: () => import('../views/ProjectMilestones.vue'),
+        path: 'tickets/:ticketId/flow',
+        name: 'PhaseFlow',
+        component: () => import('../views/PhaseFlow.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'tickets/:ticketId/review',
+        name: 'CodeReview',
+        component: () => import('../views/CodeReview.vue'),
         meta: { requiresAuth: true },
       },
     ],
+  },
+  {
+    path: '/agents/:id/terminal',
+    name: 'AgentTerminal',
+    component: () => import('../views/TerminalView.vue'),
+    meta: { requiresAuth: true },
+    beforeEnter: (_to: any, _from: any, next: any) => {
+      const userStr = localStorage.getItem('vibecode_user')
+      if (userStr) {
+        try {
+          const user = JSON.parse(userStr)
+          if (user.role === 'super_admin') return next()
+        } catch { /* ignore */ }
+      }
+      next({ name: 'Dashboard' })
+    },
   },
   {
     path: '/:pathMatch(.*)*',

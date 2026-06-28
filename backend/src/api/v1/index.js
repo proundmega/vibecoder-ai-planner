@@ -15,7 +15,7 @@ const credentialsRouter = require('../credentials');
 const usageRouter = require('../usage');
 const billingRouter = require('../billing');
 const memoryRouter = require('../memory');
-const milestoneRouter = require('../milestones');
+const reviewRouter = require('../review');
 const ticketPlanningController = require('../../controllers/ticketPlanningController');
 const ticketAttachmentController = require('../../controllers/ticketAttachmentController');
 const templateController = require('../../controllers/templateController');
@@ -38,7 +38,7 @@ router.use('/credentials', credentialsRouter);
 router.use('/usage', usageRouter);
 router.use('/billing', billingRouter);
 router.use('/memory', memoryRouter);
-router.use(milestoneRouter);
+router.use('/tickets', reviewRouter);
 
 // Planning routes (inlined to preserve ticketId param)
 router.get('/tickets/:ticketId/planning', verifyToken, (req, res, next) => ticketPlanningController.list(req, res, next).catch(next));

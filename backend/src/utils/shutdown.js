@@ -4,7 +4,7 @@ const SHUTDOWN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_TIMEOUT_MS) || 30000;
 
 let isShuttingDown = false;
 
-async function gracefulShutdown(server, pool) {
+async function gracefulShutdown(server, pool, cleanupHooks = []) {
   async function shutdown(signal) {
     if (isShuttingDown) {
       logger.info('Shutdown already in progress, ignoring duplicate signal');
@@ -15,6 +15,14 @@ async function gracefulShutdown(server, pool) {
     logger.info(`${signal} received. Starting graceful shutdown...`);
 
     try {
+      for (const hook of cleanupHooks) {
+        try {
+          await hook();
+        } catch (err) {
+          logger.error('Error during cleanup hook:', err.message);
+        }
+      }
+
       if (server) {
         logger.info('Stopping HTTP server...');
         server.close();

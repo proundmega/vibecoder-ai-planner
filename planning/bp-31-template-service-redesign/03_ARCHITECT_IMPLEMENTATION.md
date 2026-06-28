@@ -1,160 +1,144 @@
-# bp-31: TemplateService Redesign — Implementation
+# 03_ARCHITECT_IMPLEMENTATION.md — bp-31 TemplateService Redesign
 
 **Status**: planned
-**Priority**: P0
+**Date created**: 2026-06-28
 **Effort**: Medium
-**Scope**: Backend
 
 ## Purpose
-Rewrite TemplateService.js to produce structured Architect templates matching DREAM.md spec and add the Specification template type.
+
+Redesign TemplateService.js with structured template content per DREAM.md specifications, add 04_SPECIFICATION.md to Architect template, and create a standalone Specification template.
 
 ## Implementation Order
 
-1. **Add `04_SPECIFICATION.md` to `ARCHITECT_TEMPLATE_FILES`** — `backend/src/services/TemplateService.js`
-   - Append `{ key: '04_SPECIFICATION.md', title: 'Execution Specification', required: true }` to the array
+1. **Step 1**: Add 04_SPECIFICATION.md to ARCHITECT_TEMPLATE_FILES
+   - Append `{ key: '04_SPECIFICATION.md', title: 'Specification', required: true }` to the array
    - *Depends on*: nothing
 
-2. **Add `SPECIFICATION_TEMPLATE_FILES` constant** — `backend/src/services/TemplateService.js`
-   - Define `const SPECIFICATION_TEMPLATE_FILES = [{ key: '04_SPECIFICATION.md', title: 'Execution Specification', required: true }]`
-   - *Depends on*: nothing
+2. **Step 2**: Rewrite 4 architect template content methods
+   - Replace content for '00_ARCHITECT_CHECKLIST.md' with redesigned structure from DREAM.md
+   - Replace content for '01_ARCHITECT_REQUIREMENT.md' with redesigned structure from DREAM.md
+   - Replace content for '02_ARCHITECT_DESIGN.md' with redesigned structure from DREAM.md
+   - Replace content for '03_ARCHITECT_IMPLEMENTATION.md' with redesigned structure from DREAM.md
+   - *Depends on*: Step 1
 
-3. **Add `getSpecificationTemplate()` and `getSpecificationTemplateContent()` methods** — `backend/src/services/TemplateService.js`
-   - Add `static getSpecificationTemplate()` returning `SPECIFICATION_TEMPLATE_FILES`
-   - Add `static getSpecificationTemplateContent(fileKey)` returning the same content as the Architect 04
+3. **Step 3**: Add getSpecificationContent() method
+   - Add '04_SPECIFICATION.md' case to the templates object in getArchitectTemplateContent()
    - *Depends on*: Step 2
 
-4. **Rewrite `00_ARCHITECT_CHECKLIST.md` content** — `backend/src/services/TemplateService.js`
-   - Replace the existing template string with new structured content containing:
-     - Pre-Implementation Checklist with subsections: Planning, Existing Infrastructure Audit, Dependency Analysis, Config Audit, Testing Strategy, Rollback Readiness
-     - When to Ask the User section
-   - *Depends on*: nothing (can be done in parallel with steps 5-7)
+4. **Step 4**: Add SPECIFICATION_FILES constant and getter methods
+   - Create `const SPECIFICATION_FILES = [{ key: '04_SPECIFICATION.md', title: 'Specification', required: true }]`
+   - Add `static getSpecificationTemplate()` method
+   - Add `static getSpecificationTemplateContent(fileKey)` method with same 04_SPECIFICATION.md content
+   - *Depends on*: Step 3
 
-5. **Rewrite `01_ARCHITECT_REQUIREMENT.md` content** — `backend/src/services/TemplateService.js`
-   - Replace with sections: Problem Statement, Scope (In/Out), Acceptance Criteria, Known Unknowns, Decisions Required (with option tables), Impact Analysis (table format), Dependencies
-   - *Depends on*: nothing (parallel)
-
-6. **Rewrite `02_ARCHITECT_DESIGN.md` content** — `backend/src/services/TemplateService.js`
-   - Replace with sections: Current State, Proposed Solution (Approach, Data Flow, File-Level Impact, Error Handling), Security Considerations, DB Changes, API Contract
-   - *Depends on*: nothing (parallel)
-
-7. **Rewrite `03_ARCHITECT_IMPLEMENTATION.md` content** — `backend/src/services/TemplateService.js`
-   - Replace with sections: Purpose, Implementation Order (numbered steps with dependency annotations), Per-File Action Plan (table), Migration Plan, Test Plan, Rollback Steps
-   - *Depends on*: nothing (parallel)
-
-8. **Add `04_SPECIFICATION.md` content to Architect templates map** — `backend/src/services/TemplateService.js`
-   - Add `'04_SPECIFICATION.md'` key to the templates object with content containing: File Operations (CREATE/MODIFY/DELETE with imports, exact signatures, function templates), Test Expectations (checklist), Edge Cases to Handle, Existing Code Patterns, Files NOT to Change
-   - *Depends on*: nothing (parallel)
-
-9. **Update tests** — `backend/src/__tests__/TemplateService.test.js`
-   - Update assertions for template count (4 → 5)
-   - Add tests for new `getSpecificationTemplate()` and `getSpecificationTemplateContent()`
-   - Add content structure assertions for each rewritten template
-   - *Depends on*: Steps 1-8 complete
+5. **Step 5**: Update tests
+   - Change `expect(files).toHaveLength(4)` to `expect(files).toHaveLength(5)` for architect template
+   - Add test for 04_SPECIFICATION.md content
+   - Add tests for specification template getter and content
+   - *Depends on*: Step 4
 
 ## Per-File Action Plan
 
 ### `backend/src/services/TemplateService.js` (MODIFY)
 
-**ARCHITECT_TEMPLATE_FILES** — append 5th entry:
+**ARCHITECT_TEMPLATE_FILES array**:
+- Add 5th entry: `{ key: '04_SPECIFICATION.md', title: 'Specification', required: true }`
+
+**getArchitectTemplateContent() method**:
+- Rewrite '00_ARCHITECT_CHECKLIST.md' content with: Planning, Existing Infrastructure Audit, Dependency Analysis, Configuration Audit, Testing Strategy, Rollback Readiness, When to Ask the User sections
+- Rewrite '01_ARCHITECT_REQUIREMENT.md' content with: Problem Statement, Scope, Acceptance Criteria, Known Unknowns, Decisions Required, Impact Analysis, Dependencies, Performance Considerations sections
+- Rewrite '02_ARCHITECT_DESIGN.md' content with: Current State, Proposed Solution, Data Flow, File-Level Impact, Error Handling Strategy, Alternatives Considered, Security Considerations, Database Changes, API Contract sections
+- Rewrite '03_ARCHITECT_IMPLEMENTATION.md' content with: Purpose, Implementation Order, Per-File Action Plan, Migration Plan, Test Plan, Rollback Steps sections
+- Add '04_SPECIFICATION.md' content with: File Operations (CREATE/MODIFY entries), Test Expectations, Edge Cases to Handle, Existing Code Patterns to Follow sections
+
+**New SPECIFICATION_FILES constant**:
 ```javascript
-const ARCHITECT_TEMPLATE_FILES = [
-  { key: '00_ARCHITECT_CHECKLIST.md', title: 'Pre-Implementation Checklist', required: true },
-  { key: '01_ARCHITECT_REQUIREMENT.md', title: 'Requirement', required: true },
-  { key: '02_ARCHITECT_DESIGN.md', title: 'Design', required: true },
-  { key: '03_ARCHITECT_IMPLEMENTATION.md', title: 'Implementation', required: true },
-  { key: '04_SPECIFICATION.md', title: 'Execution Specification', required: true },
+const SPECIFICATION_FILES = [
+  { key: '04_SPECIFICATION.md', title: 'Specification', required: true },
 ];
 ```
 
-**SPECIFICATION_TEMPLATE_FILES** — add new constant (after `SIMPLE_TEMPLATE_FILES`):
-```javascript
-const SPECIFICATION_TEMPLATE_FILES = [
-  { key: '04_SPECIFICATION.md', title: 'Execution Specification', required: true },
-];
-```
-
-**getArchitectTemplateContent()** — in the templates map, replace each key with new content strings. Each string is a Markdown template with the date stamp.
-
-**New methods** (add after `getSimpleTemplateContent()`):
+**New getSpecificationTemplate() method**:
 ```javascript
 static getSpecificationTemplate() {
-  return SPECIFICATION_TEMPLATE_FILES;
+  return SPECIFICATION_FILES;
 }
+```
 
+**New getSpecificationTemplateContent(fileKey) method**:
+```javascript
 static getSpecificationTemplateContent(fileKey) {
   const templates = {
-    '04_SPECIFICATION.md': `...`,
-  };
+    '04_SPECIFICATION.md': `# 04_SPECIFICATION.md — Model Execution Spec\n\n**Generated from**: Architect + Technical templates\n**Target model**: 7B–34B local model (e.g., CodeLlama, Qwen, DeepSeek-Coder)\n**Date**: YYYY-MM-DD\n\n## File Operations\n\nEach entry specifies exactly what the model should produce. The model MUST NOT create,\nmodify, or delete any file not listed here.\n\n### CREATE: `<file-path>`
+
+**Imports** (exact):
+```
+<import-statements>
+```
+
+**State variables** (exact names and types):
+```
+<variable-name>: <type> → <description>
+```
+
+**Functions** (exact signatures):
+```
+<function-signature>
+  1. <step>
+```
+
+**Template structure** (exact hierarchy):
+```
+<template-structure>
+```
+
+**Styling**: <styling-guidelines>\n\n### MODIFY: \`frontend/src/stores/auth.js\`\n\n**Add method**: \`async login(email: string, password: string): Promise<void>\`\n\`\`\`\nLogic:\n  const response = await fetch('/api/auth/login', {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ email, password })\n  })\n  if (!response.ok) throw new Error((await response.json()).error)\n  const data = await response.json()\n  this.setToken(data.token)\n  this.setUser(data.user)\n  this.setPermissions(data.permissions || [])\n\`\`\`\n\n**Position in file**: Add after \`logout()\` method, before \`isAuthenticated()\`.\n\n### MODIFY: \`frontend/src/api/client.js\`\n\n**No changes needed** for this ticket.\n\n## Test Expectations\n\n### Login.vue\n\`\`\`\n✓ Renders email input, password input, submit button\n✓ Shows error message when login fails (mock API returns 401)\n✓ Calls authStore.login with correct email and password on submit\n✓ Redirects to /dashboard on successful login\n✓ Disables submit button while loading\n✓ Does not submit if email or password is empty\n\`\`\`\n\n### auth store login()\n\`\`\`\n✓ Stores token in localStorage under 'vibecode_token'\n✓ Stores user in localStorage under 'vibecode_user'\n✓ Throws readable error on non-ok response\n✓ Stores permissions if returned\n\`\`\`\n\n## Edge Cases to Handle\n1. **Network error**: fetch throws → catch block shows "Unable to connect. Please try again."\n2. **Already logged in**: component checks \`authStore.isAuthenticated()\` on mount → redirect to /dashboard\n3. **Token expiry after login**: Not handled in this ticket (separate concern)\n4. **Double submit**: loading flag prevents multiple simultaneous submissions\n5. **Browser autofill**: No special handling needed — browser handles it natively\n\n## Existing Code Patterns to Follow\n- Use \`<script setup>\` syntax (Composition API), not Options API\n- Import from \`@/stores/auth\` not relative paths\n- Error messages in English, stored as strings not translated (i18n not set up yet)\n- No TypeScript in .vue files (project uses .ts for stores/API, .vue files are plain JS)\n\`\`\`\n  };
   return templates[fileKey] || '';
 }
 ```
 
-### `backend/src/__tests__/TemplateService.test.js` (MODIFY)
+### `backend/src/__tests__/ticketPlanning.test.js` (MODIFY)
 
-Add tests:
-```javascript
-describe('TemplateService', () => {
-  test('getArchitectTemplate returns 5 files', () => {
-    const files = TemplateService.getArchitectTemplate();
-    expect(files).toHaveLength(5);
-    expect(files[4].key).toBe('04_SPECIFICATION.md');
-  });
-
-  test('getArchitectTemplateContent has all 5 keys', () => {
-    const keys = ['00_ARCHITECT_CHECKLIST.md', '01_ARCHITECT_REQUIREMENT.md',
-      '02_ARCHITECT_DESIGN.md', '03_ARCHITECT_IMPLEMENTATION.md', '04_SPECIFICATION.md'];
-    keys.forEach(key => {
-      expect(TemplateService.getArchitectTemplateContent(key)).toBeTruthy();
-    });
-  });
-
-  test('getSpecificationTemplate returns single entry', () => {
-    expect(TemplateService.getSpecificationTemplate()).toHaveLength(1);
-  });
-
-  test('getSpecificationTemplateContent returns content', () => {
-    expect(TemplateService.getSpecificationTemplateContent('04_SPECIFICATION.md')).toBeTruthy();
-  });
-
-  // Content structure tests
-  test('00_CHECKLIST has Pre-Implementation Checklist section', () => {
-    const content = TemplateService.getArchitectTemplateContent('00_ARCHITECT_CHECKLIST.md');
-    expect(content).toContain('Pre-Implementation Checklist');
-    expect(content).toContain('When to Ask the User');
-  });
-
-  test('01_REQUIREMENT has all required sections', () => {
-    const content = TemplateService.getArchitectTemplateContent('01_ARCHITECT_REQUIREMENT.md');
-    expect(content).toContain('Problem Statement');
-    expect(content).toContain('Acceptance Criteria');
-    expect(content).toContain('Decisions Required');
-    expect(content).toContain('Impact Analysis');
-  });
-});
-```
+**Changes**:
+- Update `getArchitectTemplate` test: `expect(files).toHaveLength(4)` → `expect(files).toHaveLength(5)`
+- Add `expect(files[4].key).toBe('04_SPECIFICATION.md')`
+- Add test for `getArchitectTemplateContent('04_SPECIFICATION.md')`
+- Add `describe('getSpecificationTemplate')` with test
+- Add `describe('getSpecificationTemplateContent')` with test
 
 ## Migration Plan
-No database migration needed. The old template content in `ticket_planning` rows remains unchanged — each row is a snapshot captured at template-apply time.
+
+1. No database migration required
+2. Deploy code change
+3. Verify template content via API response
+4. Rollback: revert code change (no migration to rollback)
 
 ## Test Plan
 
-1. **Unit tests** (Jest): Update `backend/src/__tests__/TemplateService.test.js`
-   - Verify `getArchitectTemplate()` returns 5 entries
-   - Verify `getArchitectTemplateContent()` returns non-empty for all 5 keys
-   - Verify `getSpecificationTemplate()` returns singleton
-   - Verify `getSpecificationTemplateContent('04_SPECIFICATION.md')` returns non-empty
-   - Verify content structure for each of the 5 templates (key sections present)
-   - Verify backward compatibility: old callers using 00-03 still get valid content
-   - Verify empty string returned for unknown keys
+### Unit Tests
 
-2. **Manual verification**:
-   ```
-   ✓ Run `npm test` — all existing tests pass
-   ✓ Console.log output of each template — visually inspect structure
-   ```
+| File | Test | What It Covers |
+|------|------|----------------|
+| `ticketPlanning.test.js` | architect template returns 5 files | File count and keys |
+| `ticketPlanning.test.js` | 00_ARCHITECT_CHECKLIST.md content | Checklist structure |
+| `ticketPlanning.test.js` | 01_ARCHITECT_REQUIREMENT.md content | Requirement structure |
+| `ticketPlanning.test.js` | 02_ARCHITECT_DESIGN.md content | Design structure |
+| `ticketPlanning.test.js` | 03_ARCHITECT_IMPLEMENTATION.md content | Implementation structure |
+| `ticketPlanning.test.js` | 04_SPECIFICATION.md content | Specification structure |
+| `ticketPlanning.test.js` | specification template returns 1 file | Specification template getter |
+| `ticketPlanning.test.js` | specification content matches architect 04 | Content consistency |
+| `ticketPlanning.test.js` | technical template unchanged | Backward compatibility |
+| `ticketPlanning.test.js` | simple template unchanged | Backward compatibility |
+
+### Integration Tests
+
+- Apply Architect template to a ticket via API
+- Verify all 5 files are created with correct structure
+- Apply Specification template to a ticket
+- Verify 1 file is created with correct structure
 
 ## Rollback Steps
 
-1. `git revert <commit>` to undo TemplateService.js changes
-2. Run `npm test` to verify revert is clean
-3. No data impact — templates are generated on-the-fly, no persisted changes
+1. `git revert <commit>`
+2. No database rollback needed
+3. Verify frontend shows no errors

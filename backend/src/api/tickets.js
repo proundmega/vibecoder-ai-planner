@@ -3,8 +3,10 @@ const router = express.Router();
 const { requireAnyPermission, requireAllPermissions } = require('../middleware/permissions');
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
-const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema } = require('../validators/tickets');
+const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema } = require('../validators/tickets');
 const ticketController = require('../controllers/ticketController');
+const phaseService = require('../services/PhaseService');
+const GitHubService = require('../services/GitHubService');
 
 /**
  * @openapi
@@ -258,5 +260,147 @@ router.get('/:ticketId/messages', verifyTokenOrAgent, ticketController.getMessag
  *         description: Message posted
  */
 router.post('/:ticketId/messages', verifyTokenOrAgent, ticketController.postMessage);
+
+/**
+ * @openapi
+ * /tickets/{ticketId}/phases:
+ *   get:
+ *     tags: [Tickets]
+ *     summary: Get phase transition history
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Phase history
+ */
+router.get('/:ticketId/phases', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const history = await phaseService.getPhaseHistory(req.params.ticketId);
+    res.json({ success: true, data: history });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /tickets/{ticketId}/phases/current:
+ *   get:
+ *     tags: [Tickets]
+ *     summary: Get current phase
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Current phase
+ */
+router.get('/:ticketId/phases/current', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const currentPhase = await phaseService.getCurrentPhase(req.params.ticketId);
+    res.json({ success: true, data: { phase: currentPhase } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /tickets/{ticketId}/phases/allowed:
+ *   get:
+ *     tags: [Tickets]
+ *     summary: Get allowed next phases
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Allowed next phases
+ */
+router.get('/:ticketId/phases/allowed', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const allowed = await phaseService.getAllowedNextPhases(req.params.ticketId);
+    res.json({ success: true, data: { allowed: allowed } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /tickets/{ticketId}/phases/transition:
+ *   post:
+ *     tags: [Tickets]
+ *     summary: Transition ticket to a new phase
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [toPhase]
+ *             properties:
+ *               toPhase: { type: string }
+ *               actorType: { type: string, enum: [human, agent, system] }
+ *               metadata: { type: object }
+ *     responses:
+ *       200:
+ *         description: Phase transitioned
+ */
+router.post('/:ticketId/phases/transition', verifyTokenOrAgent, validate(phaseTransitionSchema), async (req, res, next) => {
+  try {
+    const { toPhase, actorType, metadata } = req.body;
+    const actorId = req.user ? req.user.id : (req.agent ? req.agent.id : null);
+    const result = await phaseService.transition(
+      req.params.ticketId,
+      toPhase,
+      actorType || 'system',
+      actorId,
+      metadata || null
+    );
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /tickets/{ticketId}/review/diff:
+ *   get:
+ *     tags: [Tickets]
+ *     summary: Get PR diff for a ticket
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: PR diff files
+ *       400:
+ *         description: No PR linked or invalid URL
+ *       404:
+ *         description: Ticket not found
+ */
+router.get('/:ticketId/review/diff', verifyToken, async (req, res, next) => {
+  try {
+    const diff = await GitHubService.getPRDiff(req.params.ticketId);
+    res.json({ success: true, data: diff });
+  } catch (error) {
+    next(error);
+  }
+});
 
 module.exports = router;

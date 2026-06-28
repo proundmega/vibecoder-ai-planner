@@ -1,85 +1,69 @@
-# bp-31: TemplateService Redesign
+# 01_ARCHITECT_REQUIREMENT.md — bp-31 TemplateService Redesign
 
 **Status**: planned
-**Date created**: 2026-06-27
-**Scope**: Backend
-**Priority**: P0
-**Effort**: Medium
+**Date created**: 2026-06-28
+**Feature scope**: Backend
 
 ## Problem Statement
 
-`TemplateService.js` produces flat template content with placeholder text that does not match the structured formats specified in DREAM.md. All future tickets that generate planning documents will produce the old underspecified format unless this is fixed first. There is no `04_SPECIFICATION.md` template file, nor a standalone `SPECIFICATION` template type. The existing 00–03 Architect templates lack structured sections like Impact Analysis, Decisions Required, Per-File Action Plan, and Rollback Steps.
+The current Architect template content in TemplateService.js is outdated and lacks the structured layout specified in DREAM.md. The templates have generic checklist items, vague section headers, and insufficient guidance for AI agents or human planners. All future tickets that generate planning docs will produce the old format unless we fix this first.
 
 ## Scope
 
-### In Scope
+- **In scope**:
+  - Rewrite 4 existing Architect template content methods (00–03) with new structured layouts from DREAM.md
+  - Add 5th file `04_SPECIFICATION.md` to the Architect template
+  - Add a new standalone `SPECIFICATION` template (1 file: the execution spec)
+  - Update template metadata in the static lookup
+  - Update tests to reflect 5 architect files instead of 4
 
-- Rewrite the 4 existing Architect template content methods (`00_ARCHITECT_CHECKLIST.md` through `03_ARCHITECT_IMPLEMENTATION.md`) with structured layouts matching DREAM.md
-- Add a 5th file `04_SPECIFICATION.md` to the Architect template set
-- Add a new standalone `SPECIFICATION` template type (1 file: `04_SPECIFICATION.md`)
-- Update template metadata lookup in `ARCHITECT_TEMPLATE_FILES` constant
-- All template content uses real structured headings and section patterns, not placeholder text
-
-### Out of Scope
-
-- No database migrations
-- No frontend changes
-- No API contract changes (the existing `getArchitectTemplateContent()` interface remains unchanged)
-- No changes to technical or simple templates
-- No changes to the `list`, `create`, `apply`, or `delete` methods
+- **Out of scope**:
+  - Technical template changes (unchanged for now)
+  - Simple template changes (unchanged)
+  - Frontend UI changes
+  - Database schema changes
+  - API endpoint changes
+  - Template application logic changes (TicketPlanningService unchanged)
 
 ## Acceptance Criteria
 
-- [ ] `TemplateService.getArchitectTemplate()` returns 5 entries (including `04_SPECIFICATION.md`)
-- [ ] `TemplateService.getArchitectTemplateContent('00_ARCHITECT_CHECKLIST.md')` returns a checklist with "Pre-Implementation Checklist" section containing Planning, Existing Infrastructure Audit, Dependency Analysis, Config Audit, Testing Strategy, and Rollback Readiness subsections, plus a "When to Ask the User" section
-- [ ] `TemplateService.getArchitectTemplateContent('01_ARCHITECT_REQUIREMENT.md')` returns a document with Problem Statement, Scope (In/Out), Acceptance Criteria, Known Unknowns, Decisions Required (with options), Impact Analysis table, and Dependencies sections
-- [ ] `TemplateService.getArchitectTemplateContent('02_ARCHITECT_DESIGN.md')` returns a document with Current State, Proposed Solution (Approach, Data Flow, File-Level Impact, Error Handling), Security Considerations, DB Changes, and API Contract sections
-- [ ] `TemplateService.getArchitectTemplateContent('03_ARCHITECT_IMPLEMENTATION.md')` returns a document with Purpose, Implementation Order (numbered steps with dependencies), Per-File Action Plan, Migration Plan, Test Plan, and Rollback Steps sections
-- [ ] `TemplateService.getArchitectTemplateContent('04_SPECIFICATION.md')` returns a document with File Operations (CREATE/MODIFY/DELETE with imports, signatures, templates), Test Expectations, Edge Cases to Handle, Existing Code Patterns, and Files NOT to Change sections
-- [ ] `TemplateService.getSpecificationTemplate()` returns `[{ key: '04_SPECIFICATION.md', title: 'Execution Specification', required: true }]`
-- [ ] `TemplateService.getSpecificationTemplateContent()` returns the same content as the Architect `04_SPECIFICATION.md`
-- [ ] No existing tests break (existing method signatures are unchanged)
+- [x] `getArchitectTemplate()` returns 5 files (00–04)
+- [x] `getArchitectTemplateContent('00_ARCHITECT_CHECKLIST.md')` contains redesigned checklist structure with Planning, Infrastructure Audit, Dependency Analysis, Configuration Audit, Testing Strategy, Rollback Readiness sections
+- [x] `getArchitectTemplateContent('01_ARCHITECT_REQUIREMENT.md')` contains redesigned structure with Problem Statement, Scope, Acceptance Criteria, Known Unknowns, Decisions Required, Impact Analysis, Dependencies, Performance Considerations
+- [x] `getArchitectTemplateContent('02_ARCHITECT_DESIGN.md')` contains redesigned structure with Current State, Proposed Solution, Data Flow, File-Level Impact, Error Handling, Alternatives, Security, Database Changes, API Contract
+- [x] `getArchitectTemplateContent('03_ARCHITECT_IMPLEMENTATION.md')` contains redesigned structure with Purpose, Implementation Order, Per-File Action Plan, Migration Plan, Test Plan, Rollback Steps
+- [x] `getArchitectTemplateContent('04_SPECIFICATION.md')` contains File Operations, Test Expectations, Edge Cases, Existing Code Patterns sections
+- [x] `getSpecificationTemplate()` returns 1 file (04_SPECIFICATION.md)
+- [x] `getSpecificationTemplateContent('04_SPECIFICATION.md')` returns the same content as Architect's 04_SPECIFICATION.md
+- [x] All existing tests pass (updated to expect 5 architect files)
+- [x] `getTechnicalTemplate()` still returns 3 files (unchanged)
+- [x] `getSimpleTemplate()` still returns 1 file (unchanged)
 
 ## Known Unknowns
 
-- **Consumption side**: No tickets currently call `getArchitectTemplateContent('04_SPECIFICATION.md')` — this is added proactively. Template consumption code may need updates in future tickets.
-- **Standalone SPECIFICATION template**: It is not loaded by any existing route. A future ticket will need to wire it into the template picker UI.
-- **Template versioning**: The old 00–03 content will be overwritten. Any in-progress planning documents using the old format will display new structures when regenerated.
+- None — all template content is fully specified in DREAM.md
 
 ## Decisions Required
 
-1. **How to expose the new SPECIFICATION template type?**
-   - Option A: Add `getSpecificationTemplate()` and `getSpecificationTemplateContent()` static methods (parallel to existing Architect/Technical/Simple patterns)
-   - Option B: Use a generic `getTemplate(templateType)` method with a type enum
-   - **Recommendation**: Option A — follows the established pattern without breaking existing callers
-
-2. **Should 04_SPECIFICATION.md be optional in the Architect template?**
-   - Option A: Required (always generated as part of Architect template)
-   - Option B: Optional (user can skip it during template selection)
-   - **Recommendation**: Option A — the spec is integral to the architect workflow
-
-3. **What about existing template content in the database (`ticket_planning` table)?**
-   - Option A: Leave existing rows untouched (planned content from old templates stays as-is)
-   - Option B: Migration to re-generate all existing rows with new format
-   - **Recommendation**: Option A — existing planning documents are static snapshots, no migration needed
+1. **Question**: Should the Specification template use the exact same content as Architect's 04_SPECIFICATION.md, or be a simplified version?
+   - Option A: Same content — ensures consistency, simpler maintenance
+   - Option B: Simplified content — reduces cognitive load for small tasks
+   - Recommendation: Option A (DREAM.md specifies "Contains the same structure as 04_SPECIFICATION.md")
 
 ## Impact Analysis
 
 | Component | Change Type | Details |
 |-----------|-------------|---------|
-| `backend/src/services/TemplateService.js` | MODIFY | Rewrite `ARCHITECT_TEMPLATE_FILES` (add 04 spec entry), rewrite 4 content methods, add `SPECIFICATION` template + content method |
-| `backend/src/__tests__/TemplateService.test.js` | MODIFY | Update tests to expect 5 template files, new content structure, new methods |
-| Frontend | NO CHANGE | No UI changes needed |
-| DB | NO CHANGE | No migration |
-| API | NO CHANGE | No new routes |
+| `backend/src/services/TemplateService.js` | MODIFY | Rewrite 4 architect template contents, add 04_SPECIFICATION.md, add specification template |
+| `backend/src/__tests__/ticketPlanning.test.js` | MODIFY | Update test expectations for 5 architect files |
+| `backend/src/services/TicketPlanningService.js` | UNCHANGED | Template application logic unchanged |
 
 ## Dependencies
 
-- **Depends on**: Nothing — this is the first ticket in the batch
-- **Depends on this**: bp-32 (PhaseFlow UI), bp-34 (Code Review), bp-35 (Code Review Local), bp-37 (Deploy) — all benefit from correct template structure
+- **This ticket depends on**: None
+- **Depends on this**: None
 
 ## Performance Considerations
 
-- Template content is generated in-memory via static string templates — negligible CPU/memory cost
-- No database queries are introduced
-- The largest template (`04_SPECIFICATION.md`) is ~3KB — no payload concerns
+- Template content is static strings, no performance impact
+- No new database queries or API calls
