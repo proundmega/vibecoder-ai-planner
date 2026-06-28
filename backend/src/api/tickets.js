@@ -6,6 +6,7 @@ const { validate } = require('../middleware/validate');
 const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema } = require('../validators/tickets');
 const ticketController = require('../controllers/ticketController');
 const phaseService = require('../services/PhaseService');
+const GitHubService = require('../services/GitHubService');
 
 /**
  * @openapi
@@ -369,6 +370,34 @@ router.post('/:ticketId/phases/transition', verifyTokenOrAgent, validate(phaseTr
       metadata || null
     );
     res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /tickets/{ticketId}/review/diff:
+ *   get:
+ *     tags: [Tickets]
+ *     summary: Get PR diff for a ticket
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: PR diff files
+ *       400:
+ *         description: No PR linked or invalid URL
+ *       404:
+ *         description: Ticket not found
+ */
+router.get('/:ticketId/review/diff', verifyToken, async (req, res, next) => {
+  try {
+    const diff = await GitHubService.getPRDiff(req.params.ticketId);
+    res.json({ success: true, data: diff });
   } catch (error) {
     next(error);
   }

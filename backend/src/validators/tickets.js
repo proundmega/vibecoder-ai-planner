@@ -39,6 +39,8 @@ const commentSchema = Joi.object({
     'string.max': 'Comment content must not exceed 5000 characters',
     'any.required': 'Comment content is required',
   }),
+  file_path: Joi.string().max(512).optional(),
+  line_number: Joi.number().integer().min(1).optional(),
 });
 
 const phaseTransitionSchema = Joi.object({
