@@ -41,4 +41,17 @@ const commentSchema = Joi.object({
   }),
 });
 
-module.exports = { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema };
+const phaseTransitionSchema = Joi.object({
+  toPhase: Joi.string().valid(
+    'draft', 'planning', 'plan_approved', 'assigned',
+    'in_progress', 'blocked', 'review', 'human_approval',
+    'done', 'deployed'
+  ).required().messages({
+    'any.only': 'toPhase must be one of: draft, planning, plan_approved, assigned, in_progress, blocked, review, human_approval, done, deployed',
+    'any.required': 'toPhase is required',
+  }),
+  actorType: Joi.string().valid('human', 'agent', 'system').optional().default('human'),
+  metadata: Joi.object().optional(),
+});
+
+module.exports = { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema };
