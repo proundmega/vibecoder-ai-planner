@@ -133,6 +133,12 @@ const routes = [
         component: () => import('../views/PhaseFlow.vue'),
         meta: { requiresAuth: true },
       },
+      {
+        path: 'tickets/:ticketId/review',
+        name: 'CodeReview',
+        component: () => import('../views/CodeReview.vue'),
+        meta: { requiresAuth: true },
+      },
     ],
   },
   {

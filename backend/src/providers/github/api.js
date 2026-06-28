@@ -193,6 +193,25 @@ class GitHubAPI {
       return true;
     });
   }
+
+  async listPRFiles(owner, repo, prNumber) {
+    return this.retryWithBackoff(async () => {
+      const { data } = await this.octokit.pulls.listFiles({
+        owner,
+        repo,
+        pull_number: prNumber,
+      });
+      return data.map(f => ({
+        filename: f.filename,
+        status: f.status,
+        additions: f.additions,
+        deletions: f.deletions,
+        changes: f.changes,
+        patch: f.patch || '',
+        contentsUrl: f.contents_url,
+      }));
+    });
+  }
 }
 
 module.exports = { GitHubAPI };
