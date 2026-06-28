@@ -2,34 +2,6 @@ const { pool } = require('../db');
 const { NotFoundError, ValidationError } = require('../errors/HttpError');
 
 class PhaseService {
-  ALLOWED_TRANSITIONS = {
-    draft: ['planning'],
-    planning: ['plan_approved', 'draft'],
-    plan_approved: ['assigned', 'planning'],
-    assigned: ['in_progress', 'planning'],
-    in_progress: ['review', 'blocked', 'backlog'],
-    blocked: ['in_progress'],
-    review: ['human_approval', 'in_progress', 'backlog'],
-    human_approval: ['done', 'review'],
-    done: ['deployed', 'in_progress'],
-    deployed: ['done'],
-  };
-
-  BACKLOG_COMPATIBLE_PHASES = ['draft', 'planning', 'plan_approved', 'assigned'];
-
-  PHASE_TO_STATUS = {
-    draft: 'backlog',
-    planning: 'backlog',
-    plan_approved: 'backlog',
-    assigned: 'in_progress',
-    in_progress: 'in_progress',
-    blocked: 'in_progress',
-    review: 'review',
-    human_approval: 'review',
-    done: 'done',
-    deployed: 'done',
-  };
-
   constructor() {
     this.ALLOWED_TRANSITIONS = {
       draft: ['planning'],
