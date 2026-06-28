@@ -115,6 +115,12 @@ const routes = [
         component: () => import('../views/ProjectTemplates.vue'),
         meta: { requiresAuth: true },
       },
+      {
+        path: 'milestones',
+        name: 'ProjectMilestones',
+        component: () => import('../views/ProjectMilestones.vue'),
+        meta: { requiresAuth: true },
+      },
     ],
   },
   {

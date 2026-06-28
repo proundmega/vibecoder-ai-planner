@@ -23,6 +23,7 @@ const tabs = [
   { id: 'providers', label: 'AI Providers' },
   { id: 'usage', label: 'Usage & Billing' },
   { id: 'memory', label: 'Memory' },
+  { id: 'milestones', label: 'Milestones' },
 ]
 
 // GitHub state
@@ -762,6 +763,13 @@ async function handleDeleteMemory(memoryId) {
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- Milestones Tab -->
+      <div v-if="activeTab === 'milestones'" class="tab-panel">
+        <router-link :to="`/projects/${projectId}/milestones`" class="btn-primary">
+          View Milestones
+        </router-link>
       </div>
     </div>
   </div>
