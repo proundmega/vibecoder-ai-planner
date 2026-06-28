@@ -5,6 +5,7 @@ const ARCHITECT_TEMPLATE_FILES = [
   { key: '01_ARCHITECT_REQUIREMENT.md', title: 'Requirement', required: true },
   { key: '02_ARCHITECT_DESIGN.md', title: 'Design', required: true },
   { key: '03_ARCHITECT_IMPLEMENTATION.md', title: 'Implementation', required: true },
+  { key: '04_SPECIFICATION.md', title: 'Specification', required: true },
 ];
 
 const TECHNICAL_TEMPLATE_FILES = [
@@ -15,6 +16,10 @@ const TECHNICAL_TEMPLATE_FILES = [
 
 const SIMPLE_TEMPLATE_FILES = [
   { key: '01_SIMPLE_TASKS.md', title: 'Task List', required: true },
+];
+
+const SPECIFICATION_FILES = [
+  { key: '04_SPECIFICATION.md', title: 'Specification', required: true },
 ];
 
 class TemplateService {
@@ -28,256 +33,329 @@ class TemplateService {
 
 **Status**: planned
 **Date created**: ${new Date().toISOString().split('T')[0]}
-**Author**: TBD
-
----
+**Feature scope**: Frontend | Backend | Both
 
 ## Pre-Implementation Checklist
 
-- [ ] Requirements are clear and unambiguous
-- [ ] Design has been reviewed and approved
-- [ ] Implementation plan is detailed
-- [ ] Tests are written before implementation
-- [ ] Rollback plan is documented
-- [ ] CI requirements are defined
-- [ ] Anti-patterns are identified
+### Planning
+- [ ] Acceptance criteria are specific and testable (not "it works")
+- [ ] Out-of-scope items explicitly documented
+- [ ] All design decisions have documented options (not just the chosen one)
+- [ ] "Unknown unknowns" identified — things that could change the approach
 
----
+### Existing Infrastructure Audit
+- [ ] Backend API checked — does the route/controller/service already exist?
+- [ ] Frontend API client checked — does the API call already exist in \`frontend/src/api/\`?
+- [ ] Frontend UI checked — does the view/component already exist?
+- [ ] Router checked — does the route already exist in \`router/index.ts\`?
+- [ ] Database schema checked — do the tables/columns already exist?
+- [ ] Migration checked — does a migration need to be added?
+- [ ] Existing patterns identified — what style does surrounding code use?
 
-## Important Design Decisions
+### Dependency Analysis
+- [ ] All new dependencies listed (npm packages, system deps, external APIs)
+- [ ] All existing dependencies that will be affected listed
+- [ ] Breaking changes identified (API contract changes, DB migration)
 
-**These decisions MUST be confirmed by the user before implementation.**
+### Configuration Audit
+- [ ] All new env vars documented with defaults and descriptions
+- [ ] All new config files documented
+- [ ] Feature flags considered (can this be toggled off?)
 
-1. **Decision 1**: Description here?
-   - Option A: Description
-   - Option B: Description
+### Testing Strategy
+- [ ] Unit test files identified per changed module
+- [ ] Integration test scope defined
+- [ ] Manual test scenarios enumerated
 
----
+### Rollback Readiness
+- [ ] Database migration is reversible (has _rollback.sql)
+- [ ] API change is backward-compatible or versioned
+- [ ] Deploy order is documented (migration first, then code)
 
-*Complete this checklist before starting implementation.*
+## When to Ask the User
+- Ambiguous acceptance criteria
+- Scope change discovered during audit
+- Conflicting requirements
+- UI placement decisions
+- Unclear error handling strategy
 `,
       '01_ARCHITECT_REQUIREMENT.md': `# 01_ARCHITECT_REQUIREMENT.md
 
 **Status**: planned
 **Date created**: ${new Date().toISOString().split('T')[0]}
-**Author**: TBD
+**Feature scope**: Frontend | Backend | Both
 
----
-
-## Requirement
-
-Describe the requirement here.
-
----
+## Problem Statement
+Describe the problem in one paragraph. What user need does this address?
 
 ## Scope
-
-- What is included
-- What is included
-
----
-
-## Assumptions
-
-- Assumption 1
-- Assumption 2
-
----
-
-## Important Design Decisions
-
-**These decisions MUST be confirmed by the user before implementation.**
-
-1. **Question**: Description?
-   - Option A
-   - Option B
-
----
+- **In scope**: List exactly what this ticket covers
+- **Out of scope**: List what this ticket explicitly does NOT cover
 
 ## Acceptance Criteria
+Each criterion must be testable (pass/fail, not subjective).
 
-- [ ] Criterion 1
-- [ ] Criterion 2
+- [ ] Criterion 1 — specific behavior, not implementation detail
+- [ ] Criterion 2 — edge case covered
 
----
+## Known Unknowns
+Things that could change the approach if they turn out differently:
+- **Unknown 1**: What we don't know, and how to resolve it
+- **Unknown 2**: What we don't know, and how to resolve it
 
-## Out of Scope
+## Decisions Required
+Each decision has options so the implementer doesn't have to guess.
 
-- Not included
-- Not included
+1. **Question**: How should we handle X?
+   - Option A: Description, tradeoffs
+   - Option B: Description, tradeoffs
+   - Recommendation: Option A (reason)
 
----
+## Impact Analysis
+| Component | Change Type | Details |
+|-----------|-------------|---------|
+| \`backend/src/services/Foo.js\` | MODIFY | Add bar() method |
+| \`database\` | NEW MIGRATION | Add \`baz\` column to \`tickets\` |
+| \`frontend/src/views/Bar.vue\` | CREATE | New page for baz management |
 
-## Testing Checklist
+## Dependencies
+- **This ticket depends on**: TICKET-123 (must be done first)
+- **Depends on this**: None
 
-- [ ] Test 1
-- [ ] Test 2
-
----
-
-## CI Requirements (MANDATORY)
-
-- \`npm test\` must pass
-- \`npm run lint\` must pass
-
----
-
-## Anti-Patterns to Avoid
-
-- \`\`\`
-- ❌ Anti-pattern 1
-- ❌ Anti-pattern 2
-
----
-
-*Ready for design phase.*
+## Performance Considerations
+- Expected QPS on new endpoint
+- Data size expectations
+- Caching strategy if any
 `,
       '02_ARCHITECT_DESIGN.md': `# 02_ARCHITECT_DESIGN.md
 
 **Status**: planned
 **Date created**: ${new Date().toISOString().split('T')[0]}
-**Author**: TBD
-
----
-
-## Problem Statement
-
-Describe the problem here.
-
----
 
 ## Current State
+What exists today. File paths, relevant code snippets, current behavior.
 
-Current implementation details.
+## Proposed Solution
+### Approach
+Describe the approach in 2-3 paragraphs. Include code patterns, not just prose.
 
----
-
-## Design
-
-### Proposed Solution
-
-Describe the proposed solution with code examples.
-
-### Data Flow Diagram
-
+### Data Flow
+Describe the flow from trigger to completion:
 \`\`\`
-Client → [middleware] → [handler] → Response
+User clicks button → FE calls POST /api/v1/foo → service
+validates → DB insert → FE updates store → UI re-renders
 \`\`\`
 
-### Alternative Designs Considered
+### File-Level Impact
+| File | Action | What Changes |
+|------|--------|-------------|
+| \`backend/src/routes/foo.js\` | MODIFY | Add POST /foo endpoint |
+| \`backend/src/services/FooService.js\` | MODIFY | Add createFoo() method |
+| \`frontend/src/api/foo.js\` | MODIFY | Add createFoo() API call |
+| \`frontend/src/views/FooList.vue\` | MODIFY | Add create button + form |
 
-- **Alternative 1** — Chose current design because: reason. Alternative was considered but rejected because: reason.
-- **Alternative 2** — Chose current design because: reason. Alternative was considered but rejected because: reason.
+### Error Handling Strategy
+- What can go wrong at each layer
+- What the user sees for each error type
+- Retry vs. fail-fast decisions
 
-### Config / Env Changes
+### Alternatives Considered
+- **Alternative A**: Chosen because ___. Rejected because ___.
+- **Alternative B**: Considered but rejected because ___.
 
-- NEW: file — description
-- CHANGED: file — description
+## Security Considerations
+- Authentication required for new endpoints
+- Authorization checks (which roles can do what)
+- Input validation (what fields, what constraints)
+- Rate limiting needs
 
----
+## Database Changes
+- New tables with column types and constraints
+- New columns with defaults and nullability
+- Indexes needed
+- Migration strategy (data backfill if needed)
 
-## Dependencies
-
-- Existing: dependency1
-- New: dependency2
-
----
-
-## Risks/Edge Cases
-
-- Risk 1: Mitigation
-- Risk 2: Mitigation
-
----
-
-*Ready for implementation phase.*
+## API Contract
+- New/Changed endpoints with request/response shapes
+- Status codes per outcome
+- Error response format
 `,
       '03_ARCHITECT_IMPLEMENTATION.md': `# 03_ARCHITECT_IMPLEMENTATION.md
 
 **Status**: planned
-**Priority**: P1 (High)
-**Effort**: Small
-**Author**: TBD
 **Date created**: ${new Date().toISOString().split('T')[0]}
-**Date completed**: TBD
-**PR**: TBD
-**Branch**: TBD
+**Effort**: Small | Medium | Large
 
-**Dependencies**: None
+## Purpose
+One-sentence summary of what this implementation achieves.
 
----
+## Implementation Order
+Steps must be executed in this order (dependencies listed):
 
-### a) Purpose
+1. **Step 1**: Short description — file path
+   - Sub-step
+   - Sub-step
+   - *Depends on*: nothing
 
-Describe the purpose and value delivered.
+2. **Step 2**: Short description — file path
+   - Sub-step
+   - Sub-step
+   - *Depends on*: Step 1
 
----
+## Per-File Action Plan
 
-### b) Actions
+### \`backend/src/services/FooService.js\` (MODIFY)
+- Add \`createFoo(data)\` method
+- Signature: \`async createFoo(data: CreateFooInput): Promise<Foo>\`
+- Logic: validate → insert into DB → return created record
+- Error cases: duplicate key → 409, validation fail → 400
 
-1. **Action 1** — file path
-   - Detail 1
-   - Detail 2
+### \`frontend/src/api/foo.js\` (MODIFY)
+- Add \`createFoo(data)\` function
+- Signature: \`export async function createFoo(data: CreateFooInput): Promise<Foo>\`
+- HTTP: POST /api/v1/foo with JSON body
 
-2. **Action 2** — file path
-   - Detail 1
+## Migration Plan
+1. Run migration 018_add_foo_table.sql
+2. Verify columns and constraints
+3. Rollback: 018_add_foo_table_rollback.sql
 
----
+## Test Plan
 
-### c) Dependencies
+### Unit Tests
+| File | Test | What It Covers |
+|------|------|----------------|
+| \`FooService.test.js\` | creates a foo successfully | Happy path |
+| \`FooService.test.js\` | rejects duplicate name | Unique constraint |
+| \`FooService.test.js\` | rejects missing required field | Validation |
 
-- None — self-contained change
+### Integration Tests
+- What to test against real DB
+- What curl commands to run
 
----
+## Rollback Steps
+1. \`git revert <commit>\`
+2. \`npm run db:rollback\` (migration 018)
+3. Verify frontend shows no errors
+`,
+      '04_SPECIFICATION.md': `# 04_SPECIFICATION.md — Model Execution Spec
 
-### d) Risks/Edge Cases
+**Generated from**: Architect + Technical templates
+**Target model**: 7B–34B local model (e.g., CodeLlama, Qwen, DeepSeek-Coder)
+**Date**: YYYY-MM-DD
 
-- Risk 1: Mitigation
+## File Operations
 
----
+Each entry specifies exactly what the model should produce. The model MUST NOT create,
+modify, or delete any file not listed here.
 
-### e) Testing
+### CREATE: \`frontend/src/components/Login.vue\`
 
-#### Unit Tests
-- [ ] Test 1
-- [ ] Test 2
+**Imports** (exact):
+\`\`\`
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+\`\`\`
 
-#### Integration Tests
-- [ ] Test 3
-- [ ] Test 4
+**State variables** (exact names and types):
+\`\`\`
+email: ref('')                  → bound to email input via v-model
+password: ref('')               → bound to password input via v-model
+error: ref<string | null>(null) → displayed when login fails
+loading: ref(false)             → disables submit button while true
+\`\`\`
 
----
+**Functions** (exact signatures):
+\`\`\`
+async function handleSubmit(): Promise<void>
+  1. if (!email.value || !password.value) return (form validation)
+  2. loading.value = true
+  3. error.value = null
+  4. try:
+        await authStore.login(email.value, password.value)
+        router.push('/dashboard')
+      catch (err):
+        error.value = err.message || 'Login failed'
+      finally:
+        loading.value = false
+\`\`\`
 
-### f) Rollback Plan
+**Template structure** (exact hierarchy):
+\`\`\`
+<form @submit.prevent="handleSubmit">
+  <div>
+    <label for="email">Email</label>
+    <input id="email" v-model="email" type="email" required />
+  </div>
+  <div>
+    <label for="password">Password</label>
+    <input id="password" v-model="password" type="password" required />
+  </div>
+  <button type="submit" :disabled="loading">
+    {{ loading ? 'Signing in...' : 'Sign In' }}
+  </button>
+  <p v-if="error" class="error">{{ error }}</p>
+</form>
+\`\`\`
 
-- **How**: \`git revert <commit>\`
-- **Data impact**: None
-- **Downtime**: None
+**Styling**: Use scoped CSS, no external classes. Form centered, inputs full-width, error text red.
 
----
+### MODIFY: \`frontend/src/stores/auth.js\`
 
-### g) Files Changed
+**Add method**: \`async login(email: string, password: string): Promise<void>\`
+\`\`\`
+Logic:
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  })
+  if (!response.ok) throw new Error((await response.json()).error)
+  const data = await response.json()
+  this.setToken(data.token)
+  this.setUser(data.user)
+  this.setPermissions(data.permissions || [])
+\`\`\`
 
-- \`file1.js\` — NEW
-- \`file2.js\` — CHANGED
+**Position in file**: Add after \`logout()\` method, before \`isAuthenticated()\`.
 
----
+### MODIFY: \`frontend/src/api/client.js\`
 
-### h) Code Review Checklist
+**No changes needed** for this ticket.
 
-- [ ] Checklist item 1
-- [ ] Checklist item 2
+## Test Expectations
 
----
+### Login.vue
+\`\`\`
+✓ Renders email input, password input, submit button
+✓ Shows error message when login fails (mock API returns 401)
+✓ Calls authStore.login with correct email and password on submit
+✓ Redirects to /dashboard on successful login
+✓ Disables submit button while loading
+✓ Does not submit if email or password is empty
+\`\`\`
 
-### i) Post-Deploy Verification
+### auth store login()
+\`\`\`
+✓ Stores token in localStorage under 'vibecode_token'
+✓ Stores user in localStorage under 'vibecode_user'
+✓ Throws readable error on non-ok response
+✓ Stores permissions if returned
+\`\`\`
 
-- [ ] Verify item 1
-- [ ] Verify item 2
+## Edge Cases to Handle
+1. **Network error**: fetch throws → catch block shows "Unable to connect. Please try again."
+2. **Already logged in**: component checks \`authStore.isAuthenticated()\` on mount → redirect to /dashboard
+3. **Token expiry after login**: Not handled in this ticket (separate concern)
+4. **Double submit**: loading flag prevents multiple simultaneous submissions
+5. **Browser autofill**: No special handling needed — browser handles it natively
 
----
-
-*Implementation phase.*
+## Existing Code Patterns to Follow
+- Use \`<script setup>\` syntax (Composition API), not Options API
+- Import from \`@/stores/auth\` not relative paths
+- Error messages in English, stored as strings not translated (i18n not set up yet)
+- No TypeScript in .vue files (project uses .ts for stores/API, .vue files are plain JS)
 `,
     };
     return templates[fileKey] || '';
@@ -441,6 +519,135 @@ Additional notes go here.
 ---
 
 *Simple task list.*
+`,
+    };
+    return templates[fileKey] || '';
+  }
+
+  static getSpecificationTemplate() {
+    return SPECIFICATION_FILES;
+  }
+
+  static getSpecificationTemplateContent(fileKey) {
+    const templates = {
+      '04_SPECIFICATION.md': `# 04_SPECIFICATION.md — Model Execution Spec
+
+**Generated from**: Architect + Technical templates
+**Target model**: 7B–34B local model (e.g., CodeLlama, Qwen, DeepSeek-Coder)
+**Date**: YYYY-MM-DD
+
+## File Operations
+
+Each entry specifies exactly what the model should produce. The model MUST NOT create,
+modify, or delete any file not listed here.
+
+### CREATE: \`frontend/src/components/Login.vue\`
+
+**Imports** (exact):
+\`\`\`
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+\`\`\`
+
+**State variables** (exact names and types):
+\`\`\`
+email: ref('')                  → bound to email input via v-model
+password: ref('')               → bound to password input via v-model
+error: ref<string | null>(null) → displayed when login fails
+loading: ref(false)             → disables submit button while true
+\`\`\`
+
+**Functions** (exact signatures):
+\`\`\`
+async function handleSubmit(): Promise<void>
+  1. if (!email.value || !password.value) return (form validation)
+  2. loading.value = true
+  3. error.value = null
+  4. try:
+        await authStore.login(email.value, password.value)
+        router.push('/dashboard')
+      catch (err):
+        error.value = err.message || 'Login failed'
+      finally:
+        loading.value = false
+\`\`\`
+
+**Template structure** (exact hierarchy):
+\`\`\`
+<form @submit.prevent="handleSubmit">
+  <div>
+    <label for="email">Email</label>
+    <input id="email" v-model="email" type="email" required />
+  </div>
+  <div>
+    <label for="password">Password</label>
+    <input id="password" v-model="password" type="password" required />
+  </div>
+  <button type="submit" :disabled="loading">
+    {{ loading ? 'Signing in...' : 'Sign In' }}
+  </button>
+  <p v-if="error" class="error">{{ error }}</p>
+</form>
+\`\`\`
+
+**Styling**: Use scoped CSS, no external classes. Form centered, inputs full-width, error text red.
+
+### MODIFY: \`frontend/src/stores/auth.js\`
+
+**Add method**: \`async login(email: string, password: string): Promise<void>\`
+\`\`\`
+Logic:
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  })
+  if (!response.ok) throw new Error((await response.json()).error)
+  const data = await response.json()
+  this.setToken(data.token)
+  this.setUser(data.user)
+  this.setPermissions(data.permissions || [])
+\`\`\`
+
+**Position in file**: Add after \`logout()\` method, before \`isAuthenticated()\`.
+
+### MODIFY: \`frontend/src/api/client.js\`
+
+**No changes needed** for this ticket.
+
+## Test Expectations
+
+### Login.vue
+\`\`\`
+✓ Renders email input, password input, submit button
+✓ Shows error message when login fails (mock API returns 401)
+✓ Calls authStore.login with correct email and password on submit
+✓ Redirects to /dashboard on successful login
+✓ Disables submit button while loading
+✓ Does not submit if email or password is empty
+\`\`\`
+
+### auth store login()
+\`\`\`
+✓ Stores token in localStorage under 'vibecode_token'
+✓ Stores user in localStorage under 'vibecode_user'
+✓ Throws readable error on non-ok response
+✓ Stores permissions if returned
+\`\`\`
+
+## Edge Cases to Handle
+1. **Network error**: fetch throws → catch block shows "Unable to connect. Please try again."
+2. **Already logged in**: component checks \`authStore.isAuthenticated()\` on mount → redirect to /dashboard
+3. **Token expiry after login**: Not handled in this ticket (separate concern)
+4. **Double submit**: loading flag prevents multiple simultaneous submissions
+5. **Browser autofill**: No special handling needed — browser handles it natively
+
+## Existing Code Patterns to Follow
+- Use \`<script setup>\` syntax (Composition API), not Options API
+- Import from \`@/stores/auth\` not relative paths
+- Error messages in English, stored as strings not translated (i18n not set up yet)
+- No TypeScript in .vue files (project uses .ts for stores/API, .vue files are plain JS)
 `,
     };
     return templates[fileKey] || '';
