@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getRepoStatus, connectRepo, disconnectRepo, listBranches, listPRs, createBranch } from '@/api/github'
-import { listProviders, addProvider, updateProvider, deleteProvider, testProvider } from '@/api/providers'
+import { listProviders, addProvider, updateProvider, deleteProvider, testProvider, fetchProviderConfig, setProviderConfig, testProviderConnection } from '@/api/providers'
 import { getProjectUsage } from '@/api/usage'
 import { getProjectBilling } from '@/api/billing'
 import { getProjectMemory, searchMemory, addMemory, updateMemory, deleteMemory } from '@/api/memory'
@@ -19,6 +19,7 @@ const tabs = [
   { id: 'tickets', label: 'Tickets' },
   { id: 'approvals', label: 'Approvals' },
   { id: 'github', label: 'GitHub' },
+  { id: 'provider-config', label: 'Provider Config' },
   { id: 'ai', label: 'AI Chat' },
   { id: 'providers', label: 'AI Providers' },
   { id: 'usage', label: 'Usage & Billing' },
@@ -87,6 +88,22 @@ const memorySaving = ref(false)
 const memoryDeleting = ref(null)
 const memoryLoaded = ref(false)
 
+// Provider Config state
+const providerConfig = ref({ provider: 'openai', model: '', endpoint_url: '', api_key_credential_id: null, fallback_provider: null })
+const providerConfigLoading = ref(false)
+const providerConfigSaving = ref(false)
+const providerConfigTestResult = ref(null)
+const providerConfigLoaded = ref(false)
+
+const providerConfigTypes = [
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'claude', label: 'Claude' },
+  { value: 'ollama', label: 'Ollama (local)' },
+  { value: 'vllm', label: 'vLLM (local)' },
+  { value: 'llamacpp', label: 'llama.cpp (local)' },
+  { value: 'custom', label: 'Custom (OpenAI-compatible)' },
+]
+
 onMounted(() => {
   if (activeTab.value === 'github') loadGitHub()
   if (activeTab.value === 'providers') loadProviders()
@@ -108,6 +125,9 @@ async function switchTab(tabId) {
   } else if (tabId === 'memory' && !memoryLoaded.value) {
     await loadMemory()
     memoryLoaded.value = true
+  } else if (tabId === 'provider-config' && !providerConfigLoaded.value) {
+    await loadProviderConfig()
+    providerConfigLoaded.value = true
   }
   activeTab.value = tabId
   if (tabId === 'tickets') {
@@ -373,6 +393,49 @@ async function handleDeleteMemory(memoryId) {
     memoryDeleting.value = null
   }
 }
+
+async function loadProviderConfig() {
+  providerConfigLoading.value = true
+  try {
+    const cfg = await fetchProviderConfig(projectId)
+    if (cfg) {
+      providerConfig.value = {
+        provider: cfg.provider || 'openai',
+        model: cfg.model || '',
+        endpoint_url: cfg.endpoint_url || '',
+        api_key_credential_id: cfg.api_key_credential_id || null,
+        fallback_provider: cfg.fallback_provider || null,
+      }
+    }
+    providerConfigLoaded.value = true
+  } catch (_err) {
+    providerConfigLoaded.value = true
+  } finally {
+    providerConfigLoading.value = false
+  }
+}
+
+async function saveProviderConfig() {
+  providerConfigSaving.value = true
+  try {
+    await setProviderConfig(projectId, providerConfig.value)
+    providerConfigLoaded.value = true
+  } catch (err) {
+    alert(err.message || 'Failed to save provider config')
+  } finally {
+    providerConfigSaving.value = false
+  }
+}
+
+async function testProviderConfigConnection() {
+  providerConfigTestResult.value = null
+  try {
+    const result = await testProviderConnection(projectId, providerConfig.value)
+    providerConfigTestResult.value = result
+  } catch (err) {
+    providerConfigTestResult.value = { success: false, error: err.message }
+  }
+}
 </script>
 
 <template>
@@ -416,6 +479,55 @@ async function handleDeleteMemory(memoryId) {
         <router-link :to="`/projects/${projectId}/approvals`" class="btn-primary">
           View Project Approvals
         </router-link>
+      </div>
+
+      <!-- Provider Config Tab -->
+      <div v-if="activeTab === 'provider-config'" class="tab-panel">
+        <div v-if="providerConfigLoading" class="loading">Loading...</div>
+        <div v-else class="provider-config-panel">
+          <h3>AI Provider Configuration</h3>
+          <p class="description">Configure which AI provider and model this project uses for ticket processing.</p>
+
+          <div class="form-group">
+            <label>Provider</label>
+            <select v-model="providerConfig.provider">
+              <option v-for="pt in providerConfigTypes" :key="pt.value" :value="pt.value">
+                {{ pt.label }}
+              </option>
+            </select>
+          </div>
+
+          <div v-if="['ollama','vllm','llamacpp','custom'].includes(providerConfig.provider)" class="form-group">
+            <label>Endpoint URL</label>
+            <input v-model="providerConfig.endpoint_url" type="text" placeholder="http://192.168.1.50:11434/v1" />
+          </div>
+
+          <div class="form-group">
+            <label>Model</label>
+            <input v-model="providerConfig.model" type="text" placeholder="gpt-4o, codellama:34b, ..." />
+          </div>
+
+          <div class="form-group">
+            <label>Fallback Provider</label>
+            <select v-model="providerConfig.fallback_provider">
+              <option :value="null">(none)</option>
+              <option v-for="pt in providerConfigTypes.filter(p => p.value !== providerConfig.provider)" :key="pt.value" :value="pt.value">
+                {{ pt.label }}
+              </option>
+            </select>
+          </div>
+
+          <div class="form-actions">
+            <button @click="saveProviderConfig" :disabled="providerConfigSaving" class="btn-submit">
+              {{ providerConfigSaving ? 'Saving...' : 'Save Config' }}
+            </button>
+            <button @click="testProviderConfigConnection" class="btn-cancel">Test Connection</button>
+          </div>
+
+          <div v-if="providerConfigTestResult" :class="['test-result', providerConfigTestResult.success ? 'success' : 'error']">
+            <p>{{ providerConfigTestResult.success ? `Connected (${providerConfigTestResult.latency_ms}ms)` : 'Failed: ' + providerConfigTestResult.error }}</p>
+          </div>
+        </div>
       </div>
 
       <!-- AI Chat Tab -->
@@ -1051,9 +1163,14 @@ async function handleDeleteMemory(memoryId) {
   border-radius: 8px;
 }
 
-.panel h4 {
+.panel h4, .provider-config-panel h3 {
   margin: 0 0 12px;
   color: #374151;
+}
+
+.provider-config-panel .description {
+  color: #6b7280;
+  margin: 8px 0 16px;
 }
 
 .branch-list, .pr-list {
