@@ -203,4 +203,41 @@ public class ApiService {
             return objectMapper.readValue(responseBody, typeRef);
         }
     }
+
+    /**
+     * Send a heartbeat to the backend to indicate the agent is alive.
+     */
+    public void sendHeartbeat(String agentId, String currentTicketId, String currentStep,
+                              Map<String, Object> memoryUsage, Map<String, Object> cpuUsage) throws IOException {
+        String url = baseUrl + "/agents-status/" + agentId + "/heartbeat";
+        Map<String, Object> body = new java.util.HashMap<>();
+        if (currentTicketId != null) body.put("current_ticket_id", currentTicketId);
+        if (currentStep != null) body.put("current_step", currentStep);
+        if (memoryUsage != null) body.put("memory_usage", memoryUsage);
+        if (cpuUsage != null) body.put("cpu_usage", cpuUsage);
+        executePost(url, body, new TypeReference<ApiResponse<Object>>() {});
+    }
+
+    /**
+     * Generic POST without response body parsing (for endpoints like local-diff upload).
+     */
+    public void post(String path, Map<String, Object> body) throws IOException {
+        String url = baseUrl + path;
+        String json = objectMapper.writeValueAsString(body);
+        RequestBody requestBody = RequestBody.create(json, MediaType.get("application/json"));
+
+        Request request = new Request.Builder()
+            .url(url)
+            .header("X-API-Key", config.getAgentApiKey())
+            .header("Content-Type", "application/json")
+            .post(requestBody)
+            .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "";
+            if (!response.isSuccessful()) {
+                throw new IOException("POST " + path + " failed: " + response.code() + " - " + responseBody);
+            }
+        }
+    }
 }

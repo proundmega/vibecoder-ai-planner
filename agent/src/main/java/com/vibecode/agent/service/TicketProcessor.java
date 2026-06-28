@@ -7,6 +7,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Core ticket processing logic.
@@ -56,6 +60,24 @@ public class TicketProcessor {
                 log.info("AI generated content for ticket {}", ticket.getId());
             } else {
                 log.info("[DRY RUN] Would generate content for ticket {}", ticket.getId());
+            }
+
+            // Step 2b: Upload local diffs for review (if content was generated)
+            if (generatedContent != null && !config.isDryRun()) {
+                try {
+                    List<Map<String, Object>> diffPayload = new ArrayList<>();
+                    Map<String, Object> entry = new HashMap<>();
+                    entry.put("path", "generated/" + pickedUp.getId() + ".txt");
+                    entry.put("action", "create");
+                    entry.put("new_content", generatedContent);
+                    diffPayload.add(entry);
+                    Map<String, Object> body = new HashMap<>();
+                    body.put("files", diffPayload);
+                    apiService.post("/tickets/" + pickedUp.getId() + "/review/local-diff", body);
+                    log.info("Uploaded {} file diffs for review", diffPayload.size());
+                } catch (Exception e) {
+                    log.warn("Failed to upload diffs for review (non-fatal): {}", e.getMessage());
+                }
             }
 
             // Step 3: Create GitHub branch
