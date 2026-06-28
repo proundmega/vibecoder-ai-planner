@@ -25,8 +25,14 @@ services:
       - PORT=3001
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@postgres:5432/vibecode
       - JWT_SECRET=${JWT_SECRET}
+      - DOCKER_SOCKET=/var/run/docker.sock
+      - AGENT_IMAGE=vibecode-agent
+      - CONTAINER_NETWORK=vibecode_default
+      - REPO_VOLUME=vibecode_repos
     volumes:
       - uploads_data:/app/uploads
+      - /var/run/docker.sock:/var/run/docker.sock
+      - vibecode_repos:/repos
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -94,3 +100,4 @@ networks:
 volumes:
   postgres_data:
   uploads_data:
+  vibecode_repos:
