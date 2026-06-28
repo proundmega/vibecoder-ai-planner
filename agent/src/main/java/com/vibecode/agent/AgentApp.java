@@ -56,7 +56,7 @@ public class AgentApp {
         // If AI_ENDPOINT_URL is set, use OpenAI-compatible provider
         if (endpointUrl != null && !endpointUrl.isBlank()) {
             log.info("Using OpenAI-compatible provider with endpoint: {}, model: {}", endpointUrl, model);
-            return new OpenAiCompatibleProvider(endpointUrl, model, apiKey);
+            return new OpenAiCompatibleProvider(endpointUrl, model, apiKey, config.getAiMaxTokens());
         }
 
         String provider = config.getAiProvider().toLowerCase();

@@ -21,13 +21,15 @@ public class OpenAiCompatibleProvider implements AiProvider {
     private final String endpointUrl;
     private final String model;
     private final String apiKey;
+    private final int maxTokens;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    public OpenAiCompatibleProvider(String endpointUrl, String model, String apiKey) {
+    public OpenAiCompatibleProvider(String endpointUrl, String model, String apiKey, int maxTokens) {
         this.endpointUrl = endpointUrl;
         this.model = model != null ? model : "default";
         this.apiKey = apiKey;
+        this.maxTokens = maxTokens;
         this.httpClient = new OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
@@ -52,7 +54,7 @@ public class OpenAiCompatibleProvider implements AiProvider {
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", model);
         requestBody.put("messages", messages);
-        requestBody.put("max_tokens", 4096);
+        requestBody.put("max_tokens", maxTokens);
         requestBody.put("temperature", 0.2);
 
         String bodyJson = objectMapper.writeValueAsString(requestBody);
