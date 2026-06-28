@@ -25,10 +25,10 @@ public class WorkspaceManager {
     private final String gitBinary;
     private final boolean dryRun;
 
-    public WorkspaceManager(String repoCloneDir, String repoName, String dryRun) {
+    public WorkspaceManager(String repoCloneDir, String repoName, boolean dryRun) {
         this.repoDir = Paths.get(repoCloneDir, sanitizePath(repoName));
         this.gitBinary = "git";
-        this.dryRun = "true".equalsIgnoreCase(dryRun);
+        this.dryRun = dryRun;
     }
 
     /**
@@ -49,8 +49,8 @@ public class WorkspaceManager {
         // Create parent directory if needed
         Files.createDirectories(repoDir.getParent());
 
-        // git clone
-        ProcessBuilder pb = new ProcessBuilder(gitBinary, "clone", "--branch", branchName, repoUrl, repoDir.toString());
+        // git clone default branch
+        ProcessBuilder pb = new ProcessBuilder(gitBinary, "clone", repoUrl, repoDir.toString());
         pb.redirectErrorStream(true);
         Process process = pb.start();
         
@@ -66,8 +66,27 @@ public class WorkspaceManager {
         if (exitCode != 0) {
             throw new IOException("Git clone failed: " + output);
         }
+
+        // Create and checkout the target branch
+        ProcessBuilder checkoutPb = new ProcessBuilder(gitBinary, "checkout", "-b", branchName);
+        checkoutPb.directory(repoDir.toFile());
+        checkoutPb.redirectErrorStream(true);
+        Process checkoutProcess = checkoutPb.start();
         
-        log.info("Successfully cloned repo to {}", repoDir);
+        String checkoutOutput = readProcessOutput(checkoutProcess);
+        int checkoutExitCode;
+        try {
+            checkoutExitCode = checkoutProcess.waitFor();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Checkout interrupted: " + e.getMessage());
+        }
+        
+        if (checkoutExitCode != 0) {
+            throw new IOException("Git checkout failed: " + checkoutOutput);
+        }
+        
+        log.info("Successfully cloned repo to {} and created branch {}", repoDir, branchName);
     }
 
     /**
@@ -172,8 +191,10 @@ public class WorkspaceManager {
     }
 
     private String runGitCommand(String... args) throws IOException {
-        ProcessBuilder pb = new ProcessBuilder(gitBinary);
-        pb.command(args);
+        String[] fullArgs = new String[args.length + 1];
+        fullArgs[0] = gitBinary;
+        System.arraycopy(args, 0, fullArgs, 1, args.length);
+        ProcessBuilder pb = new ProcessBuilder(fullArgs);
         pb.directory(repoDir.toFile());
         pb.redirectErrorStream(true);
         

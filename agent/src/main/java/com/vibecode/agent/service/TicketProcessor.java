@@ -38,7 +38,7 @@ public class TicketProcessor {
         this.workspaceManager = new WorkspaceManager(
             config.getRepoCloneDir(),
             config.getRepoName(),
-            String.valueOf(config.isDryRun())
+            config.isDryRun()
         );
         this.objectMapper = new ObjectMapper();
     }
@@ -81,7 +81,16 @@ public class TicketProcessor {
             }
 
             // Step 4: Parse AI output into file operations
-            List<FileOperation> fileOperations = parseFileOperations(generatedContent);
+            ParsedResult parsedResult = parseFileOperationsWithStatus(generatedContent);
+            List<FileOperation> fileOperations = parsedResult.operations;
+            boolean parseFailed = parsedResult.failed;
+
+            if (parseFailed) {
+                apiService.postMessage(pickedUp.getId(), "update",
+                    "Error: AI response could not be parsed as valid JSON with file operations. AI output may be malformed.");
+                throw new IOException("AI response parse failed - could not extract file operations");
+            }
+
             log.info("Parsed {} file operations from AI output", fileOperations.size());
 
             // Step 5: Clone repo if needed
@@ -202,12 +211,18 @@ public class TicketProcessor {
     }
 
     private String generateContent(Ticket ticket, List<String> planningDocs) throws IOException {
-        String systemPrompt = buildSystemPrompt(ticket, planningDocs);
+        List<String> fileContext = null;
+        try {
+            fileContext = workspaceManager.getRepoFileList();
+        } catch (IOException e) {
+            log.warn("Could not read repo file list: {}", e.getMessage());
+        }
+        String systemPrompt = buildSystemPrompt(ticket, planningDocs, fileContext);
         String userMessage = "Ticket: " + ticket.getTitle() + "\n\n" + ticket.getDescription();
         return aiProvider.generateResponse(systemPrompt, userMessage);
     }
 
-    private String buildSystemPrompt(Ticket ticket, List<String> planningDocs) {
+    private String buildSystemPrompt(Ticket ticket, List<String> planningDocs, List<String> fileContext) {
         StringBuilder prompt = new StringBuilder();
         prompt.append("You are a coding agent working on the Vibecode platform. ");
         prompt.append("Your job is to implement the requirements described in the ticket. ");
@@ -215,6 +230,15 @@ public class TicketProcessor {
         prompt.append("Repository: ").append(config.getRepoOwner()).append("/").append(config.getRepoName()).append(". ");
         prompt.append("Use the AI provider: ").append(config.getAiProvider()).append(" with model: ").append(config.getAiModel()).append(". ");
         prompt.append("Follow best practices and write clean, maintainable code.\n\n");
+        
+        if (fileContext != null && !fileContext.isEmpty()) {
+            prompt.append("## Repository Structure\n\n");
+            prompt.append("Current files in the repository:\n");
+            for (String file : fileContext) {
+                prompt.append("- `").append(file).append("`\n");
+            }
+            prompt.append("\n");
+        }
         
         if (!planningDocs.isEmpty()) {
             prompt.append("## Planning Documents\n\n");
@@ -257,11 +281,17 @@ public class TicketProcessor {
     }
 
     private List<FileOperation> parseFileOperations(String aiResponse) {
+        ParsedResult result = parseFileOperationsWithStatus(aiResponse);
+        return result.operations;
+    }
+
+    private ParsedResult parseFileOperationsWithStatus(String aiResponse) {
         List<FileOperation> operations = new ArrayList<>();
+        boolean failed = false;
         
         if (aiResponse == null || aiResponse.isBlank()) {
             log.warn("AI response is empty, no file operations");
-            return operations;
+            return new ParsedResult(operations, true);
         }
 
         try {
@@ -284,7 +314,7 @@ public class TicketProcessor {
             
             if (!files.isArray()) {
                 log.warn("AI response does not contain 'files' array");
-                return operations;
+                return new ParsedResult(operations, true);
             }
             
             for (JsonNode fileNode : files) {
@@ -310,10 +340,20 @@ public class TicketProcessor {
             
         } catch (Exception e) {
             log.error("Failed to parse AI response as JSON: {}", e.getMessage());
-            // Return empty list - the ticket will fail and be released
+            failed = true;
         }
         
-        return operations;
+        return new ParsedResult(operations, failed);
+    }
+
+    private static class ParsedResult {
+        final List<FileOperation> operations;
+        final boolean failed;
+
+        ParsedResult(List<FileOperation> operations, boolean failed) {
+            this.operations = operations;
+            this.failed = failed;
+        }
     }
 
     private String buildPrBody(Ticket ticket, String branchName, String commitSha, List<FileOperation> fileOperations) {
