@@ -11,14 +11,15 @@ FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache git
-
+# Copy the shaded JAR from the build stage (maven-shade-plugin creates artifactId-version.jar)
 COPY --from=build /app/target/agent-1.0.0.jar agent.jar
 
-ENV BACKEND_URL=http://backend:3001
-ENV REPO_CLONE_DIR=/repos
-ENV API_KEY=changeme
+# Create a non-root user
+RUN addgroup -S agent && adduser -S agent -G agent
+USER agent
 
-EXPOSE 8080
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget -qO- http://localhost:8080/health || exit 1
 
 ENTRYPOINT ["java", "-jar", "agent.jar"]
