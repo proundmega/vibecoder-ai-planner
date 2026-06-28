@@ -131,10 +131,11 @@ describe('PhaseService', () => {
     test('should successfully transition from draft to planning', async () => {
       const mockClient = {
         query: jest.fn()
+          .mockResolvedValueOnce({})  // BEGIN
           .mockResolvedValueOnce({ rows: [{ id: 'ticket-1', phase: 'draft' }] })
-          .mockResolvedValueOnce({ rows: [] })
-          .mockResolvedValueOnce({ rows: [] })
-          .mockResolvedValueOnce({ rows: [] }),
+          .mockResolvedValueOnce({})  // UPDATE
+          .mockResolvedValueOnce({})  // INSERT
+          .mockResolvedValueOnce({}), // COMMIT
         release: jest.fn(),
       };
       mockPool.connect.mockReturnValue(mockClient);
@@ -153,6 +154,7 @@ describe('PhaseService', () => {
     test('should throw ValidationError for invalid transition', async () => {
       const mockClient = {
         query: jest.fn()
+          .mockResolvedValueOnce({})  // BEGIN
           .mockResolvedValueOnce({ rows: [{ id: 'ticket-1', phase: 'draft' }] }),
         release: jest.fn(),
       };
@@ -167,6 +169,7 @@ describe('PhaseService', () => {
     test('should throw NotFoundError when ticket does not exist', async () => {
       const mockClient = {
         query: jest.fn()
+          .mockResolvedValueOnce({})  // BEGIN
           .mockResolvedValueOnce({ rows: [] }),
         release: jest.fn(),
       };
@@ -181,10 +184,11 @@ describe('PhaseService', () => {
     test('should log transition with metadata', async () => {
       const mockClient = {
         query: jest.fn()
+          .mockResolvedValueOnce({})  // BEGIN
           .mockResolvedValueOnce({ rows: [{ id: 'ticket-1', phase: 'in_progress' }] })
-          .mockResolvedValueOnce({ rows: [] })
-          .mockResolvedValueOnce({ rows: [] })
-          .mockResolvedValueOnce({ rows: [] }),
+          .mockResolvedValueOnce({})  // UPDATE
+          .mockResolvedValueOnce({})  // INSERT
+          .mockResolvedValueOnce({}), // COMMIT
         release: jest.fn(),
       };
       mockPool.connect.mockReturnValue(mockClient);
@@ -196,16 +200,17 @@ describe('PhaseService', () => {
         call[0].includes('INSERT INTO ticket_phases')
       );
       expect(insertCall).toBeDefined();
-      expect(insertCall[3]).toBe('agent-1');
+      expect(insertCall[1][4]).toBe('agent-1');
     });
 
     test('should handle blocked phase transition', async () => {
       const mockClient = {
         query: jest.fn()
+          .mockResolvedValueOnce({})  // BEGIN
           .mockResolvedValueOnce({ rows: [{ id: 'ticket-1', phase: 'in_progress' }] })
-          .mockResolvedValueOnce({ rows: [] })
-          .mockResolvedValueOnce({ rows: [] })
-          .mockResolvedValueOnce({ rows: [] }),
+          .mockResolvedValueOnce({})  // UPDATE
+          .mockResolvedValueOnce({})  // INSERT
+          .mockResolvedValueOnce({}), // COMMIT
         release: jest.fn(),
       };
       mockPool.connect.mockReturnValue(mockClient);
@@ -217,10 +222,11 @@ describe('PhaseService', () => {
     test('should handle rollback from deployed to done', async () => {
       const mockClient = {
         query: jest.fn()
+          .mockResolvedValueOnce({})  // BEGIN
           .mockResolvedValueOnce({ rows: [{ id: 'ticket-1', phase: 'deployed' }] })
-          .mockResolvedValueOnce({ rows: [] })
-          .mockResolvedValueOnce({ rows: [] })
-          .mockResolvedValueOnce({ rows: [] }),
+          .mockResolvedValueOnce({})  // UPDATE
+          .mockResolvedValueOnce({})  // INSERT
+          .mockResolvedValueOnce({}), // COMMIT
         release: jest.fn(),
       };
       mockPool.connect.mockReturnValue(mockClient);
@@ -232,10 +238,11 @@ describe('PhaseService', () => {
     test('should handle reopen from done to in_progress', async () => {
       const mockClient = {
         query: jest.fn()
+          .mockResolvedValueOnce({})  // BEGIN
           .mockResolvedValueOnce({ rows: [{ id: 'ticket-1', phase: 'done' }] })
-          .mockResolvedValueOnce({ rows: [] })
-          .mockResolvedValueOnce({ rows: [] })
-          .mockResolvedValueOnce({ rows: [] }),
+          .mockResolvedValueOnce({})  // UPDATE
+          .mockResolvedValueOnce({})  // INSERT
+          .mockResolvedValueOnce({}), // COMMIT
         release: jest.fn(),
       };
       mockPool.connect.mockReturnValue(mockClient);

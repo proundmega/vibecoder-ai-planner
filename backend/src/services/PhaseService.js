@@ -2,7 +2,7 @@ const { pool } = require('../db');
 const { NotFoundError, ValidationError } = require('../errors/HttpError');
 
 class PhaseService {
-  static ALLOWED_TRANSITIONS = {
+  ALLOWED_TRANSITIONS = {
     draft: ['planning'],
     planning: ['plan_approved', 'draft'],
     plan_approved: ['assigned', 'planning'],
@@ -15,9 +15,9 @@ class PhaseService {
     deployed: ['done'],
   };
 
-  static BACKLOG_COMPATIBLE_PHASES = ['draft', 'planning', 'plan_approved', 'assigned'];
+  BACKLOG_COMPATIBLE_PHASES = ['draft', 'planning', 'plan_approved', 'assigned'];
 
-  static async transition(ticketId, toPhase, actorType = 'system', actorId = null, metadata = null) {
+  async transition(ticketId, toPhase, actorType = 'system', actorId = null, metadata = null) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -34,7 +34,7 @@ class PhaseService {
       const ticket = ticketResult.rows[0];
       const currentPhase = ticket.phase || 'draft';
 
-      const allowed = PhaseService.ALLOWED_TRANSITIONS[currentPhase] || [];
+      const allowed = this.ALLOWED_TRANSITIONS[currentPhase] || [];
       if (!allowed.includes(toPhase)) {
         throw new ValidationError(
           `Cannot transition from '${currentPhase}' to '${toPhase}'. Allowed: ${allowed.join(', ')}`
@@ -63,7 +63,7 @@ class PhaseService {
     }
   }
 
-  static async getAllowedNextPhases(ticketId) {
+  async getAllowedNextPhases(ticketId) {
     const ticketResult = await pool.query(
       'SELECT phase FROM tickets WHERE id = $1 AND deleted_at IS NULL',
       [ticketId]
@@ -74,10 +74,10 @@ class PhaseService {
     }
 
     const currentPhase = ticketResult.rows[0].phase || 'draft';
-    return PhaseService.ALLOWED_TRANSITIONS[currentPhase] || [];
+    return this.ALLOWED_TRANSITIONS[currentPhase] || [];
   }
 
-  static async getCurrentPhase(ticketId) {
+  async getCurrentPhase(ticketId) {
     const ticketResult = await pool.query(
       'SELECT phase FROM tickets WHERE id = $1 AND deleted_at IS NULL',
       [ticketId]
@@ -90,7 +90,7 @@ class PhaseService {
     return ticketResult.rows[0].phase || 'draft';
   }
 
-  static async getPhaseHistory(ticketId) {
+  async getPhaseHistory(ticketId) {
     const result = await pool.query(
       `SELECT from_phase, to_phase, actor_type, actor_id, metadata, created_at
        FROM ticket_phases
@@ -102,7 +102,7 @@ class PhaseService {
     return result.rows;
   }
 
-  static async getGateStatus(ticketId, phase) {
+  async getGateStatus(ticketId, phase) {
     const ticketResult = await pool.query(
       `SELECT t.planning_status, t.template_schema
        FROM tickets t
@@ -129,8 +129,8 @@ class PhaseService {
     };
   }
 
-  static isBacklogCompatible(phase) {
-    return PhaseService.BACKLOG_COMPATIBLE_PHASES.includes(phase);
+  isBacklogCompatible(phase) {
+    return this.BACKLOG_COMPATIBLE_PHASES.includes(phase);
   }
 }
 
