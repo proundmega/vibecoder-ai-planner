@@ -1,63 +1,95 @@
-const db = require('../db');
-const axios = require('axios');
+const { pool } = require('../db');
+const { decrypt } = require('../utils/crypto');
 
-async function getConfig(projectId) {
-  const { rows } = await db.pool.query(
-    'SELECT * FROM provider_configs WHERE project_id = $1 AND is_active = true LIMIT 1',
-    [projectId]
-  );
-  return rows[0] || null;
-}
-
-async function setConfig(projectId, { provider, endpoint_url, model, api_key_credential_id, fallback_provider }) {
-  const result = await db.pool.query(
-    `INSERT INTO provider_configs (project_id, provider, endpoint_url, model, api_key_credential_id, fallback_provider)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (project_id, provider) DO UPDATE
-     SET endpoint_url = EXCLUDED.endpoint_url, model = EXCLUDED.model,
-         api_key_credential_id = EXCLUDED.api_key_credential_id,
-         fallback_provider = EXCLUDED.fallback_provider, updated_at = NOW()
-     RETURNING *`,
-    [projectId, provider, endpoint_url || null, model, api_key_credential_id || null, fallback_provider || null]
-  );
-  return result.rows[0];
-}
-
-async function deleteConfig(projectId) {
-  await db.pool.query(
-    'UPDATE provider_configs SET is_active = false, updated_at = NOW() WHERE project_id = $1',
-    [projectId]
-  );
-}
-
-async function testConnection({ endpoint_url, model, api_key }) {
-  const start = Date.now();
-  try {
-    if (!endpoint_url) {
-      return { success: false, latency_ms: Date.now() - start, error: 'No endpoint URL configured' };
-    }
-    const response = await axios.post(
-      `${endpoint_url}/chat/completions`,
-      {
-        model: model || 'gpt-3.5-turbo',
-        messages: [{ role: 'user', content: 'Hello' }],
-        max_tokens: 10,
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(api_key ? { Authorization: `Bearer ${api_key}` } : {}),
-        },
-        timeout: 15000,
-      }
+class ProviderService {
+  async getProjectProvider(projectId) {
+    const result = await pool.query(
+      `SELECT * FROM project_providers
+       WHERE project_id = $1 AND is_active = true
+       ORDER BY created_at DESC LIMIT 1`,
+      [projectId]
     );
-    if (response.status === 200) {
-      return { success: true, latency_ms: Date.now() - start };
+    return result.rows[0] || null;
+  }
+
+  async resolveProvider(projectId, ticketInfo) {
+    const config = await this.getProjectProvider(projectId);
+    if (!config) {
+      throw new Error('No active provider configuration found for this project');
     }
-    return { success: false, latency_ms: Date.now() - start, error: `HTTP ${response.status}` };
-  } catch (err) {
-    return { success: false, latency_ms: Date.now() - start, error: err.message };
+
+    const rules = config.routing_rules;
+    if (!rules || !Array.isArray(rules.rules) || rules.rules.length === 0) {
+      return this._defaultProvider(config);
+    }
+
+    const ticketLabels = new Set(ticketInfo.labels || []);
+    const ticketPriority = ticketInfo.priority || 'medium';
+
+    for (const rule of rules.rules) {
+      if (this._matches(rule.match, ticketLabels, ticketPriority)) {
+        return this._buildProviderConfig(config, rule, false);
+      }
+    }
+
+    if (rules.fallback) {
+      return this._buildProviderConfig(config, rules.fallback, true);
+    }
+
+    return this._defaultProvider(config);
+  }
+
+  _matches(match, ticketLabels, ticketPriority) {
+    if (!match) return true;
+
+    if (match.labels && Array.isArray(match.labels) && match.labels.length > 0) {
+      const requiredLabels = new Set(match.labels);
+      let matched = false;
+      for (const label of ticketLabels) {
+        if (requiredLabels.has(label)) {
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) return false;
+    }
+
+    if (match.priority && match.priority !== ticketPriority) {
+      return false;
+    }
+
+    return true;
+  }
+
+  _buildProviderConfig(baseConfig, ruleConfig, isFallback) {
+    const apiKey = ruleConfig.api_key
+      ? ruleConfig.api_key
+      : decrypt(baseConfig.api_key_encrypted);
+
+    return {
+      provider: ruleConfig.provider || baseConfig.provider_type,
+      endpoint_url: ruleConfig.endpoint_url || baseConfig.base_url || null,
+      model: ruleConfig.model || baseConfig.model,
+      api_key: apiKey,
+      max_tokens: ruleConfig.max_tokens || baseConfig.max_tokens || 4096,
+      temperature: ruleConfig.temperature !== undefined
+        ? ruleConfig.temperature
+        : (baseConfig.temperature || 0.1),
+      is_fallback: isFallback,
+    };
+  }
+
+  _defaultProvider(config) {
+    return {
+      provider: config.provider_type,
+      endpoint_url: config.base_url || null,
+      model: config.model,
+      api_key: decrypt(config.api_key_encrypted),
+      max_tokens: config.max_tokens || 4096,
+      temperature: config.temperature || 0.1,
+      is_fallback: false,
+    };
   }
 }
 
-module.exports = { getConfig, setConfig, deleteConfig, testConnection };
+module.exports = new ProviderService();
