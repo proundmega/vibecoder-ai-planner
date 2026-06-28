@@ -62,6 +62,40 @@ app.get('/api/openapi.json', (req, res) => {
 const routes = require('./api/routes');
 app.use('/api', routes);
 
+// WebSocket upgrade handler for terminal proxy (only in non-test mode)
+let wss;
+if (process.env.NODE_ENV !== 'test') {
+  const { createTerminalWSS, verifyTerminalToken } = require('./api/terminal');
+  wss = createTerminalWSS();
+
+  server.on('upgrade', (request, socket, head) => {
+    const url = new URL(request.url, 'http://localhost');
+
+    if (!url.pathname.startsWith('/api/terminal/')) {
+      socket.destroy();
+      return;
+    }
+
+    const token = url.searchParams.get('token');
+
+    try {
+      const user = verifyTerminalToken(token);
+      if (user.role !== 'super_admin') {
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        ws.user = user;
+        wss.emit('connection', ws, request);
+      });
+    } catch (err) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+    }
+  });
+}
+
 // Error handler
 const { errorHandler } = require('./middleware/errorHandler');
 app.use(errorHandler);
