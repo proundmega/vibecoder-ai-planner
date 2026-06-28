@@ -3,11 +3,12 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-const SQL_FILES = [
-  path.join(__dirname, '../../migrations/001_create_tables.sql'),
-  path.join(__dirname, '../../migrations/002_agents_schema.sql'),
-  path.join(__dirname, '../../migrations/003_role_system.sql'),
-];
+const MIGRATION_DIR = path.join(__dirname, '../../migrations');
+const SQL_FILES = require('fs')
+  .readdirSync(MIGRATION_DIR)
+  .filter(f => f.match(/^\d{3}_.+\.sql$/) && !f.endsWith('_rollback.sql'))
+  .sort()
+  .map(f => path.join(MIGRATION_DIR, f));
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,

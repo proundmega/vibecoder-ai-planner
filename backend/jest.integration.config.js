@@ -1,5 +1,6 @@
 process.env.DATABASE_URL = 'postgresql://postgres:changeme@localhost:5432/vibecode';
 process.env.NODE_ENV = 'test';
+process.env.INTEGRATION_TESTS = '1';
 
 module.exports = {
   testEnvironment: 'node',
