@@ -165,6 +165,25 @@ class GitHubService {
     return provider.listPRs(repo);
   }
 
+  async getPRDiff(projectId, ticketId) {
+    const repo = await this.getProjectRepo(projectId);
+    if (!repo) throw new ValidationError('No repository connected to this project');
+
+    const ticket = await Ticket.findById(ticketId);
+    if (!ticket) throw new NotFoundError('Ticket not found');
+    if (!ticket.prUrl) throw new ValidationError('No PR linked to this ticket');
+
+    const prNumber = this._extractPRNumber(ticket.prUrl);
+    const provider = new GitHubProvider(decrypt(repo.accessTokenEncrypted));
+    return provider.getPRDiff(repo, prNumber);
+  }
+
+  _extractPRNumber(prUrl) {
+    const match = prUrl.match(/\/pull\/(\d+)$/);
+    if (!match) throw new ValidationError(`Invalid PR URL: ${prUrl}`);
+    return parseInt(match[1], 10);
+  }
+
   _formatRepoResult(row) {
     return {
       id: row.id,
