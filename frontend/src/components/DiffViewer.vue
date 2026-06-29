@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, nextTick, watch } from 'vue'
-import { createPatchString } from 'diff2html'
+import { html, parse } from 'diff2html'
 
 const props = defineProps({
   files: { type: Array, default: () => [] },
@@ -63,8 +63,8 @@ function onLineClick(filename, lineNumber) {
 
 function renderDiff(filename, patch, el) {
   if (!el || !patch) return
-  const patchString = createPatchString(filename, patch)
-  const output = createPatchString(filename, patch, {
+  const parsedDiff = parse(patch)
+  const output = html(parsedDiff, {
     drawFileList: false,
     matching: 'lines',
     outputFormat: internalViewMode.value,
