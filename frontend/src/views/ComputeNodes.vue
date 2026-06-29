@@ -7,6 +7,8 @@
 
     <div v-if="loading" class="loading">Loading...</div>
 
+    <div v-if="error" class="error-message">{{ error }}</div>
+
     <div v-else>
       <div v-if="nodes.length === 0" class="empty-state">
         <p>No compute nodes configured. Add a remote Docker host to enable distributed agent provisioning.</p>
@@ -88,13 +90,15 @@ const showNewModal = ref(false)
 const editingNode = ref<ComputeNode | null>(null)
 const testing = ref<string | null>(null)
 const testResults = ref<Record<string, { success: boolean; error?: string }>>({})
+const error = ref<string | null>(null)
 
 async function fetchNodes() {
   loading.value = true
+  error.value = null
   try {
     nodes.value = await listComputeNodes()
   } catch (err) {
-    console.error('Failed to fetch compute nodes:', err)
+    error.value = 'Failed to load compute nodes'
   } finally {
     loading.value = false
   }
@@ -102,6 +106,7 @@ async function fetchNodes() {
 
 async function testNode(id: string) {
   testing.value = id
+  error.value = null
   try {
     const result = await testComputeNodeConnection(id)
     testResults.value[id] = result
@@ -109,7 +114,7 @@ async function testNode(id: string) {
       await fetchNodes()
     }
   } catch (err) {
-    console.error('Test connection failed:', err)
+    error.value = 'Test connection failed'
     testResults.value[id] = { success: false, error: 'Connection failed' }
   } finally {
     testing.value = null
@@ -122,11 +127,12 @@ function editNode(node: ComputeNode) {
 
 async function deleteNode(id: string) {
   if (!confirm('Are you sure you want to delete this compute node?')) return
+  error.value = null
   try {
     await deleteComputeNode(id)
     await fetchNodes()
   } catch (err) {
-    console.error('Failed to delete node:', err)
+    error.value = 'Failed to delete node'
   }
 }
 
@@ -209,6 +215,15 @@ onMounted(fetchNodes)
   text-align: center;
   padding: 40px;
   color: #6b7280;
+}
+
+.error-message {
+  text-align: center;
+  padding: 16px;
+  color: #dc2626;
+  background: #fee2e2;
+  border-radius: 6px;
+  margin-bottom: 16px;
 }
 
 .empty-state {

@@ -22,6 +22,7 @@ const templateController = require('../../controllers/templateController');
 const ticketAttachmentUpload = require('../../middleware/multer');
 const { verifyToken } = require('../../middleware/auth');
 const { requireAnyPermission } = require('../../middleware/permissions');
+const agentHeartbeatRouter = require('./agentHeartbeat');
 
 // Mount all route modules under /v1
 router.use('/users-management', userRouter);
@@ -39,6 +40,7 @@ router.use('/usage', usageRouter);
 router.use('/billing', billingRouter);
 router.use('/memory', memoryRouter);
 router.use('/tickets', reviewRouter);
+router.use('/agents-status', agentHeartbeatRouter);
 
 // Planning routes (inlined to preserve ticketId param)
 router.get('/tickets/:ticketId/planning', verifyToken, (req, res, next) => ticketPlanningController.list(req, res, next).catch(next));

@@ -6,6 +6,7 @@ const { validate } = require('../middleware/validate');
 const providerController = require('../controllers/providerController');
 const { addProviderSchema, updateProviderSchema } = require('../validators/providers');
 const ProviderService = require('../services/ProviderService');
+const { setProviderConfigSchema, testProviderConnectionSchema } = require('../validators/providerConfig');
 
 /**
  * @openapi
@@ -119,7 +120,7 @@ router.delete('/:projectId/providers/:providerId', verifyToken, requireAnyPermis
  *       200:
  *         description: Connection test result
  */
-router.post('/:projectId/providers/:providerId/test', verifyToken, providerController.testProvider);
+router.post('/:projectId/providers/:providerId/test', verifyToken, validate(testProviderConnectionSchema), providerController.testProvider);
 
 /**
  * @openapi
@@ -147,7 +148,7 @@ router.post('/:projectId/providers/:providerId/test', verifyToken, providerContr
  *       200:
  *         description: Resolved provider config
  */
-router.post('/:projectId/provider/resolve', verifyToken, async (req, res, next) => {
+router.post('/:projectId/provider/resolve', verifyToken, validate(setProviderConfigSchema), async (req, res, next) => {
   try {
     const ticketInfo = {
       labels: req.body.labels || [],

@@ -30,6 +30,18 @@ public class TicketProcessor {
     private final WorkspaceManager workspaceManager;
     private final ObjectMapper objectMapper;
 
+    // Tracking variables for heartbeat reporting
+    private String currentTicketId = null;
+    private String currentStep = null;
+
+    public String getCurrentTicketId() {
+        return currentTicketId;
+    }
+
+    public String getCurrentStep() {
+        return currentStep;
+    }
+
     public TicketProcessor(AgentConfig config, ApiService apiService, AiProvider aiProvider, GitHubService gitHubService) {
         this.config = config;
         this.apiService = apiService;
@@ -65,6 +77,10 @@ public class TicketProcessor {
             return;
         }
         log.info("Ticket {} picked up, status: {}", ticket.getId(), pickedUp.getStatus());
+
+        // Set tracking variables for heartbeat reporting
+        currentTicketId = String.valueOf(pickedUp.getId());
+        currentStep = "processing";
 
         try {
             // Step 2: Fetch planning docs
@@ -141,6 +157,10 @@ public class TicketProcessor {
 
             apiService.updateTicketStatus(pickedUp.getId(), "review");
             log.info("Ticket {} status updated to review", pickedUp.getId());
+
+            // Reset state after successful completion
+            currentTicketId = null;
+            currentStep = null;
 
         } catch (Exception e) {
             log.error("Error processing ticket {}: {}", ticket.getId(), e.getMessage(), e);

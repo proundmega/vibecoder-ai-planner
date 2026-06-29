@@ -3,9 +3,43 @@ const router = express.Router();
 const HeartbeatService = require('../../services/HeartbeatService');
 const AgentService = require('../../services/AgentService');
 const { verifyToken } = require('../../middleware/auth');
+const logger = require('../../utils/logger');
 
-// POST /api/v1/agents/:id/heartbeat — agent-side auth via X-API-Key
-router.post('/:id/heartbeat', async (req, res) => {
+/**
+ * @openapi
+ * /agents-status/{id}/heartbeat:
+ *   post:
+ *     tags: [Agents]
+ *     summary: Record agent heartbeat
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     headers:
+ *       X-API-Key:
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               current_ticket_id: { type: integer }
+ *               current_step: { type: string }
+ *               memory_usage: { type: number }
+ *               cpu_usage: { type: number }
+ *     responses:
+ *       200:
+ *         description: Heartbeat recorded
+ *       401:
+ *         description: Missing API key
+ *       403:
+ *         description: Invalid API key
+ */
+router.post('/:id/heartbeat', async (req, res, next) => {
   try {
     const apiKey = req.headers['x-api-key'];
     if (!apiKey) {
@@ -24,24 +58,53 @@ router.post('/:id/heartbeat', async (req, res) => {
     });
     res.json({ success: true });
   } catch (error) {
-    console.error('POST /agents/:id/heartbeat', error);
-    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: error.message } });
+    logger.error('POST /agents/:id/heartbeat failed:', error);
+    next(error);
   }
 });
 
-// GET /api/v1/agents — list all agents with status
-router.get('/', verifyToken, async (req, res) => {
+/**
+ * @openapi
+ * /agents-status:
+ *   get:
+ *     tags: [Agents]
+ *     summary: List all agents with status
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of agents
+ */
+router.get('/', verifyToken, async (req, res, next) => {
   try {
     const agents = await HeartbeatService.getAllAgents();
     res.json({ success: true, data: agents });
   } catch (error) {
-    console.error('GET /agents', error);
-    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: error.message } });
+    logger.error('GET /agents failed:', error);
+    next(error);
   }
 });
 
-// GET /api/v1/agents/:id — agent detail
-router.get('/:id', verifyToken, async (req, res) => {
+/**
+ * @openapi
+ * /agents-status/{id}:
+ *   get:
+ *     tags: [Agents]
+ *     summary: Get agent detail
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Agent detail
+ *       404:
+ *         description: Agent not found
+ */
+router.get('/:id', verifyToken, async (req, res, next) => {
   try {
     const agent = await HeartbeatService.getAgentStatus(req.params.id);
     if (!agent) {
@@ -60,8 +123,8 @@ router.get('/:id', verifyToken, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('GET /agents/:id', error);
-    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: error.message } });
+    logger.error('GET /agents/:id failed:', error);
+    next(error);
   }
 });
 

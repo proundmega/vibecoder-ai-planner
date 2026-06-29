@@ -6,6 +6,7 @@ const cors = require('./middleware/cors');
 
 const logger = require('./utils/logger');
 const { gracefulShutdown } = require('./utils/shutdown');
+const HeartbeatService = require('./services/HeartbeatService');
 
 logger.info('Starting Vibecode API...');
 
@@ -115,7 +116,15 @@ if (process.env.NODE_ENV !== 'test') {
   });
 
   const { pool } = require('./db');
-  gracefulShutdown(server, pool);
+
+  // Periodically clean up stale agents
+  const cleanupInterval = setInterval(() => {
+    HeartbeatService.cleanupStaleAgents().catch(err => {
+      logger.error('Stale agent cleanup failed:', err.message);
+    });
+  }, 60000);
+
+  gracefulShutdown(server, pool, [() => clearInterval(cleanupInterval)]);
 }
 
 // Global unhandled exceptions and rejections
