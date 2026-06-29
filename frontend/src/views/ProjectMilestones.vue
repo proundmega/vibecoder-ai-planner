@@ -7,6 +7,8 @@
 
     <div v-if="loading" class="loading">Loading...</div>
 
+    <div v-if="error" class="error-message">{{ error }}</div>
+
     <div v-else>
       <div v-if="milestones.length === 0" class="empty-state">
         <p>No milestones yet. Create your first milestone to track project progress.</p>
@@ -85,13 +87,15 @@ const selectedMilestone = ref<Milestone | null>(null)
 const progress = ref<MilestoneProgressType | null>(null)
 const tickets = ref<any[]>([])
 const showNewModal = ref(false)
+const error = ref<string | null>(null)
 
 async function fetchMilestones() {
   loading.value = true
+  error.value = null
   try {
     milestones.value = await listMilestones(projectId.value)
   } catch (err) {
-    console.error('Failed to fetch milestones:', err)
+    error.value = 'Failed to load milestones'
   } finally {
     loading.value = false
   }
@@ -99,11 +103,12 @@ async function fetchMilestones() {
 
 async function selectMilestone(milestone: Milestone) {
   selectedMilestone.value = milestone
+  error.value = null
   try {
     progress.value = await getMilestoneProgress(milestone.id)
     tickets.value = await getMilestoneTickets(milestone.id)
   } catch (err) {
-    console.error('Failed to fetch milestone details:', err)
+    error.value = 'Failed to load milestone details'
   }
 }
 
@@ -153,6 +158,15 @@ onMounted(fetchMilestones)
   text-align: center;
   padding: 40px;
   color: #6b7280;
+}
+
+.error-message {
+  text-align: center;
+  padding: 16px;
+  color: #dc2626;
+  background: #fee2e2;
+  border-radius: 6px;
+  margin-bottom: 16px;
 }
 
 .empty-state {
