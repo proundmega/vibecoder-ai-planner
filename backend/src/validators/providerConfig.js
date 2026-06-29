@@ -24,4 +24,11 @@ const testProviderConnectionSchema = Joi.object({
   api_key: Joi.string().optional(),
 });
 
-module.exports = { setProviderConfigSchema, testProviderConnectionSchema };
+const resolveProviderSchema = Joi.object({
+  ticket_id: Joi.string().uuid().optional(),
+  labels: Joi.array().items(Joi.string()).optional(),
+  priority: Joi.string().valid('low', 'medium', 'high', 'critical').optional(),
+  phase: Joi.string().optional(),
+});
+
+module.exports = { setProviderConfigSchema, testProviderConnectionSchema, resolveProviderSchema };
