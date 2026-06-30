@@ -109,19 +109,21 @@ Things that could change the approach if the answer is different from assumed:
 1. [ ] [Backend API] The API endpoint `METHOD /path` returns correct response shape
 2. [ ] [Backend API] The API endpoint validates input and returns proper error codes
 3. [ ] [Backend API] The API endpoint is authenticated and authorized correctly
-4. [ ] [Backend API] Unit tests pass for the new controller/service
-5. [ ] [Backend API] Integration tests pass for the new endpoint
-6. [ ] [Frontend API] The API client function calls the correct backend endpoint
-7. [ ] [Frontend API] The API client handles errors consistently with existing clients
-8. [ ] [Frontend UI] The UI component renders correctly with mock data
-9. [ ] [Frontend UI] The UI component handles loading, error, and empty states
-10. [ ] [Frontend UI] The UI component is accessible and follows existing styles
-11. [ ] [Frontend UI] The UI component integrates with existing navigation/routing
-12. [ ] [Frontend UI] The UI component uses existing patterns (modals, tabs, cards)
-13. [ ] [Both] OpenAPI spec is updated with JSDoc annotations
-14. [ ] [Both] Generated TypeScript types are regenerated and match
-15. [ ] [Both] All tests pass (unit, integration, frontend, lint, typecheck)
-16. [ ] [Both] Specification in `04_SPECIFICATION.md` accurately reflects the implementation
+4. [ ] [Backend API] New/modified controller has test cases in a test file (CREATED or EXTENDED)
+5. [ ] [Backend API] New/modified service has test cases in a test file (CREATED or EXTENDED)
+6. [ ] [Backend API] Integration tests pass for the new endpoint
+7. [ ] [Frontend API] The API client function calls the correct backend endpoint
+8. [ ] [Frontend API] New/modified API client function has test cases in a test file (CREATED or EXTENDED)
+9. [ ] [Frontend API] The API client handles errors consistently with existing clients
+10. [ ] [Frontend UI] The UI component renders correctly with mock data
+11. [ ] [Frontend UI] The UI component handles loading, error, and empty states
+12. [ ] [Frontend UI] The UI component is accessible and follows existing styles
+13. [ ] [Frontend UI] The UI component integrates with existing navigation/routing
+14. [ ] [Frontend UI] The UI component uses existing patterns (modals, tabs, cards)
+15. [ ] [Both] OpenAPI spec is updated with JSDoc annotations
+16. [ ] [Both] Generated TypeScript types are regenerated and match
+17. [ ] [Both] All tests pass (unit, integration, frontend, lint, typecheck)
+18. [ ] [Both] Specification in `04_SPECIFICATION.md` accurately reflects the implementation
 
 ---
 
@@ -155,16 +157,25 @@ Things that could change the approach if the answer is different from assumed:
 ## Testing Checklist
 
 ### Backend Tests
+- [ ] Unit test files CREATED for all new/changed backend code
 - [ ] Unit tests: `backend/src/__tests__/unit.test.js` — {{describe what to test}}
 - [ ] Middleware tests: `backend/src/middleware/*.test.js` — {{if auth/permissions affected}}
 - [ ] API endpoint tests: `backend/src/__tests__/api-*.test.js` — {{describe endpoints}}
 - [ ] Integration tests: `backend/src/__tests__/integration/*.test.js` — {{describe scenarios}}
+- [ ] Every new controller method has at least one test case
+- [ ] Every new service method has at least one test case
+- [ ] Every new validator schema has at least one test case
+- [ ] Happy path AND error paths tested (not just happy path)
 
 ### Frontend Tests
+- [ ] Unit test files CREATED for all new/changed frontend code
 - [ ] Unit tests: `frontend/src/__tests__/` — {{describe what to test}}
 - [ ] Component tests: `frontend/cypress/component/` — {{if new UI component}}
 - [ ] E2E tests: `frontend/cypress/e2e/` — {{if user flow affected}}
 - [ ] API contract tests: `frontend/src/__tests__/api-contract.test.ts` — {{if response shapes changed}}
+- [ ] Every new API client function has at least one test case
+- [ ] Every new/composed UI component has at least one test case
+- [ ] Loading, error, and empty states tested
 
 ### CI Requirements
 - [ ] `npm test` — backend unit tests pass
@@ -186,7 +197,7 @@ Things that could change the approach if the answer is different from assumed:
 - ❌ **Hardcoding API paths** — use the same pattern as existing API clients (e.g., `/api/v1/github/${projectId}/repo`)
 - ❌ **Skipping error handling** — all API calls must use `.catch()` or try/catch
 - ❌ **Testing only happy paths** — test error cases, empty states, loading states
-- ❌ **Merging without tests** — every change must have tests
+- ❌ **Merging without tests** — every change must have tests; new/changed code requires new/modified test files, not just verifying existing tests still pass
 - ❌ **Skipping the Specification file** — if a small model will execute this ticket, fill out `04_SPECIFICATION.md` with exact file operations
 
 ---

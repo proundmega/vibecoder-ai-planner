@@ -10,7 +10,7 @@ const setProviderConfigSchema = Joi.object({
     'string.empty': 'model is required',
     'any.required': 'model is required',
   }),
-  api_key_credential_id: Joi.string().uuid().allow(null).optional(),
+  api_key: Joi.string().allow('').optional(),
   fallback_provider: Joi.string().allow('').optional(),
 });
 

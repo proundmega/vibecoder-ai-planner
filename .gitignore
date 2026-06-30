@@ -36,6 +36,12 @@ yarn-error.log*
 # Test
 coverage/
 
+# Agent build outputs
+agent/target/
+
+# Lock files
+package-lock.json
+
 # Database
 *.sqlite
 *.sqlite3

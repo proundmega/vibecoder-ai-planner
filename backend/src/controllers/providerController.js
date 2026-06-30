@@ -260,13 +260,14 @@ async function getProviderConfig(req, res, next) {
         id: row.id,
         projectId: row.project_id,
         provider: row.provider,
-        endpointUrl: row.endpoint_url,
+        endpoint_url: row.endpoint_url,
         model: row.model,
-        fallbackProvider: row.fallback_provider,
-        routingRules: row.routing_rules,
-        isActive: row.is_active,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
+        api_key: row.api_key_encrypted ? maskToken(decrypt(row.api_key_encrypted)) : null,
+        fallback_provider: row.fallback_provider,
+        routing_rules: row.routing_rules,
+        is_active: row.is_active,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
       },
     });
   } catch (error) {
@@ -277,13 +278,13 @@ async function getProviderConfig(req, res, next) {
 async function setProviderConfig(req, res, next) {
   try {
     const { projectId } = req.params;
-    const { provider, endpointUrl, model, apiKey, fallbackProvider, routingRules } = req.body;
+    const { provider, endpoint_url, model, api_key, fallback_provider, routing_rules } = req.body;
 
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
     const { pool } = require('../db');
-    const encryptedKey = apiKey ? encrypt(apiKey) : null;
+    const encryptedKey = api_key ? encrypt(api_key) : null;
 
     const result = await pool.query(
       `INSERT INTO provider_configs (project_id, provider, endpoint_url, model, api_key_encrypted, fallback_provider, routing_rules, is_active, updated_at)
@@ -296,7 +297,7 @@ async function setProviderConfig(req, res, next) {
            routing_rules = COALESCE(EXCLUDED.routing_rules, provider_configs.routing_rules),
            updated_at = NOW()
        RETURNING *`,
-      [projectId, provider, endpointUrl || null, model, encryptedKey, fallbackProvider || null, routingRules || '{}']
+      [projectId, provider, endpoint_url || null, model, encryptedKey, fallback_provider || null, routing_rules || '{}']
     );
 
     const row = result.rows[0];
@@ -306,13 +307,14 @@ async function setProviderConfig(req, res, next) {
         id: row.id,
         projectId: row.project_id,
         provider: row.provider,
-        endpointUrl: row.endpoint_url,
+        endpoint_url: row.endpoint_url,
         model: row.model,
-        fallbackProvider: row.fallback_provider,
-        routingRules: row.routing_rules,
-        isActive: row.is_active,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
+        api_key: row.api_key_encrypted ? maskToken(decrypt(row.api_key_encrypted)) : null,
+        fallback_provider: row.fallback_provider,
+        routing_rules: row.routing_rules,
+        is_active: row.is_active,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
       },
     });
   } catch (error) {
@@ -346,15 +348,15 @@ async function deleteProviderConfig(req, res, next) {
 async function testProviderConnection(req, res, next) {
   try {
     const { projectId } = req.params;
-    const { provider, endpointUrl, model, apiKey } = req.body;
+    const { provider, endpoint_url, model, api_key } = req.body;
 
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
     const config = {
-      apiKey: apiKey || null,
+      apiKey: api_key || null,
       model: model || null,
-      baseUrl: endpointUrl || null,
+      baseUrl: endpoint_url || null,
     };
 
     const router = new ProviderRouter(project.id);
