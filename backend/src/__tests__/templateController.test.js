@@ -10,7 +10,7 @@ describe('Template Controller', () => {
 
   beforeEach(() => {
     req = {
-      params: { id: 'proj-1' },
+      params: { projectId: 'proj-1' },
       body: {},
       user: { userId: 1 },
     };
@@ -108,13 +108,14 @@ describe('Template Controller', () => {
   });
 
   describe('deleteTemplate', () => {
-    it('should delete a template', async () => {
+    it('should delete a template using templateId param', async () => {
       const deletedTemplate = { id: 't1', name: 'Deleted Template' };
-      req.params = { id: 't1' };
+      req.params = { id: 'proj-1', templateId: 't1' };
       TemplateService.delete.mockResolvedValue(deletedTemplate);
 
       await templateController.deleteTemplate(req, res, next);
 
+      expect(TemplateService.delete).toHaveBeenCalledWith('t1', 1);
       expect(res.json).toHaveBeenCalledWith({
         success: true,
         data: deletedTemplate,
@@ -122,12 +123,13 @@ describe('Template Controller', () => {
     });
 
     it('should return 404 when template not found', async () => {
-      req.params = { id: 't1' };
+      req.params = { id: 'proj-1', templateId: 'nonexistent' };
       TemplateService.delete.mockResolvedValue(null);
 
       await templateController.deleteTemplate(req, res, next);
 
       expect(next).toHaveBeenCalled();
+      expect(TemplateService.delete).toHaveBeenCalledWith('nonexistent', 1);
     });
   });
 });

@@ -96,6 +96,19 @@ describe('Route Ordering', () => {
       expect(res.body.data.name).toBe('Deleted');
     });
 
+    it('should pass templateId (not projectId) to TemplateService.delete', async () => {
+      TemplateService.delete.mockResolvedValue({ id: 't1', name: 'Deleted' });
+      const res = await request(app)
+        .delete('/api/v1/projects/42/templates/t99')
+        .set('Authorization', 'Bearer mock-token');
+
+      expect(res.statusCode).toBe(200);
+      // First arg must be templateId 't99', not projectId '42'
+      const calls = TemplateService.delete.mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      expect(calls[0][0]).toBe('t99');
+    });
+
     it('should route GET /api/v1/providers/projects/1/provider to providerController.getProviderConfig', async () => {
       const res = await request(app)
         .get('/api/v1/providers/projects/1/provider')

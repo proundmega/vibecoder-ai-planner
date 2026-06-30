@@ -10,7 +10,7 @@ UPDATE tickets SET phase = 'done' WHERE status = 'done';
 -- Phase transition log
 CREATE TABLE ticket_phases (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    ticket_id BIGINT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
     from_phase VARCHAR(32),
     to_phase VARCHAR(32) NOT NULL,
     actor_type VARCHAR(16) NOT NULL DEFAULT 'system',

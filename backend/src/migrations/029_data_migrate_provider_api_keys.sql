@@ -1,0 +1,15 @@
+-- Data migration: populate api_key_encrypted from existing api_key_credential_id references
+--
+-- This migration copies decrypted API keys from the credentials table into
+-- the new api_key_encrypted column for existing provider_configs rows.
+--
+-- IMPORTANT: This must be run as a Node.js script (not raw SQL) because:
+-- 1. API keys in credentials.api_key_encrypted are encrypted with the app's secret
+-- 2. Decryption requires the DECRYPTION_KEY environment variable
+-- 3. The app's crypto.decrypt() function is needed
+--
+-- Run with: node backend/src/migrations/migrate_provider_api_keys.js
+--
+-- After running, verify with:
+--   SELECT id, provider, api_key_encrypted IS NOT NULL as has_key, api_key_credential_id
+--   FROM provider_configs WHERE api_key_credential_id IS NOT NULL;

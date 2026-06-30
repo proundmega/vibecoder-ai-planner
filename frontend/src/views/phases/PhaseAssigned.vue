@@ -22,12 +22,9 @@ onMounted(async () => {
     const response = await get('/api/v1/agents')
     agents.value = response || []
   } catch (e) {
+    console.error('Failed to load agents:', e)
+    error.value = 'Failed to load agents. Please check your connection and try again.'
     agents.value = []
-    // Stubs for when agents API isn't available yet
-    agents.value = [
-      { id: 'agent-1', name: 'Agent Alpha', status: 'idle', cpu_usage: '45%', memory_usage: '2.1GB' },
-      { id: 'agent-2', name: 'Agent Beta', status: 'online', cpu_usage: '72%', memory_usage: '3.4GB' },
-    ]
   } finally {
     loading.value = false
   }

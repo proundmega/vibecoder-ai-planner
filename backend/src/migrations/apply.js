@@ -24,6 +24,7 @@ const SQL_FILES = [
   path.join(__dirname, './018_ticket_phases.sql'),
   path.join(__dirname, './021_agent_heartbeats.sql'),
   path.join(__dirname, './029_provider_config_api_key.sql'),
+  path.join(__dirname, './030_uuid_to_bigint_fk.sql'),
 ];
 
 function splitSQLStatements(sql) {
