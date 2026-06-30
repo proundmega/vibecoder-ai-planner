@@ -6,6 +6,7 @@ vi.mock('../api/client', () => ({
   post: vi.fn(),
   patch: vi.fn(),
   del: vi.fn(),
+  put: vi.fn(),
 }))
 
 describe('providers API', () => {
@@ -83,6 +84,52 @@ describe('providers API', () => {
 
       expect(post).toHaveBeenCalledWith('/api/v1/providers/proj-123/providers/prov-1/test')
       expect(result).toEqual({ success: true, message: 'Connected' })
+    })
+  })
+
+  describe('setProviderConfig', () => {
+    it('sends PUT request with snake_case fields including api_key', async () => {
+      const { put } = await import('../api/client')
+      put.mockResolvedValue({ id: 'c1', provider: 'openai', model: 'gpt-4o' })
+
+      const result = await providers.setProviderConfig('proj-123', {
+        provider: 'openai',
+        model: 'gpt-4o',
+        endpoint_url: 'https://api.openai.com/v1',
+        api_key: 'sk-ant-1234',
+        fallback_provider: null,
+      })
+
+      expect(put).toHaveBeenCalledWith('/api/v1/providers/projects/proj-123/provider', {
+        provider: 'openai',
+        model: 'gpt-4o',
+        endpoint_url: 'https://api.openai.com/v1',
+        api_key: 'sk-ant-1234',
+        fallback_provider: null,
+      })
+      expect(result).toEqual({ id: 'c1', provider: 'openai', model: 'gpt-4o' })
+    })
+  })
+
+  describe('testProviderConnection', () => {
+    it('sends POST request with api_key', async () => {
+      const { post } = await import('../api/client')
+      post.mockResolvedValue({ success: true, data: { valid: true } })
+
+      const result = await providers.testProviderConnection('proj-123', {
+        provider: 'openai',
+        model: 'gpt-4o',
+        endpoint_url: 'https://api.openai.com/v1',
+        api_key: 'sk-ant-1234',
+      })
+
+      expect(post).toHaveBeenCalledWith('/api/v1/providers/projects/proj-123/provider/test', {
+        provider: 'openai',
+        model: 'gpt-4o',
+        endpoint_url: 'https://api.openai.com/v1',
+        api_key: 'sk-ant-1234',
+      })
+      expect(result).toEqual({ success: true, data: { valid: true } })
     })
   })
 })

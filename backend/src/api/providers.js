@@ -8,6 +8,12 @@ const { addProviderSchema, updateProviderSchema } = require('../validators/provi
 const ProviderService = require('../services/ProviderService');
 const { setProviderConfigSchema, testProviderConnectionSchema, resolveProviderSchema } = require('../validators/providerConfig');
 
+// Provider config routes (local model settings) — must be before other /providers routes
+router.get('/projects/:projectId/provider', verifyToken, providerController.getProviderConfig);
+router.put('/projects/:projectId/provider', verifyToken, validate(setProviderConfigSchema), providerController.setProviderConfig);
+router.delete('/projects/:projectId/provider', verifyToken, providerController.deleteProviderConfig);
+router.post('/projects/:projectId/provider/test', verifyToken, validate(testProviderConnectionSchema), providerController.testProviderConnection);
+
 /**
  * @openapi
  * /providers/{projectId}/providers:

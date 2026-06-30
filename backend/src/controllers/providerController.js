@@ -236,10 +236,153 @@ async function testProvider(req, res, next) {
   }
 }
 
+async function getProviderConfig(req, res, next) {
+  try {
+    const { projectId } = req.params;
+
+    const project = await Project.findById(projectId);
+    if (!project) throw new NotFoundError('Project not found');
+
+    const { pool } = require('../db');
+    const result = await pool.query(
+      'SELECT * FROM provider_configs WHERE project_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [projectId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({ success: true, data: null });
+    }
+
+    const row = result.rows[0];
+    res.json({
+      success: true,
+      data: {
+        id: row.id,
+        projectId: row.project_id,
+        provider: row.provider,
+        endpoint_url: row.endpoint_url,
+        model: row.model,
+        api_key: row.api_key_encrypted ? maskToken(decrypt(row.api_key_encrypted)) : null,
+        fallback_provider: row.fallback_provider,
+        routing_rules: row.routing_rules,
+        is_active: row.is_active,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function setProviderConfig(req, res, next) {
+  try {
+    const { projectId } = req.params;
+    const { provider, endpoint_url, model, api_key, fallback_provider, routing_rules } = req.body;
+
+    const project = await Project.findById(projectId);
+    if (!project) throw new NotFoundError('Project not found');
+
+    const { pool } = require('../db');
+    const encryptedKey = api_key ? encrypt(api_key) : null;
+
+    const result = await pool.query(
+      `INSERT INTO provider_configs (project_id, provider, endpoint_url, model, api_key_encrypted, fallback_provider, routing_rules, is_active, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW())
+       ON CONFLICT (project_id, provider) DO UPDATE
+       SET endpoint_url = EXCLUDED.endpoint_url,
+           model = EXCLUDED.model,
+           api_key_encrypted = COALESCE(EXCLUDED.api_key_encrypted, provider_configs.api_key_encrypted),
+           fallback_provider = COALESCE(EXCLUDED.fallback_provider, provider_configs.fallback_provider),
+           routing_rules = COALESCE(EXCLUDED.routing_rules, provider_configs.routing_rules),
+           updated_at = NOW()
+       RETURNING *`,
+      [projectId, provider, endpoint_url || null, model, encryptedKey, fallback_provider || null, routing_rules || '{}']
+    );
+
+    const row = result.rows[0];
+    res.status(201).json({
+      success: true,
+      data: {
+        id: row.id,
+        projectId: row.project_id,
+        provider: row.provider,
+        endpoint_url: row.endpoint_url,
+        model: row.model,
+        api_key: row.api_key_encrypted ? maskToken(decrypt(row.api_key_encrypted)) : null,
+        fallback_provider: row.fallback_provider,
+        routing_rules: row.routing_rules,
+        is_active: row.is_active,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function deleteProviderConfig(req, res, next) {
+  try {
+    const { projectId } = req.params;
+
+    const project = await Project.findById(projectId);
+    if (!project) throw new NotFoundError('Project not found');
+
+    const { pool } = require('../db');
+    const result = await pool.query(
+      'DELETE FROM provider_configs WHERE project_id = $1 RETURNING *',
+      [projectId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new NotFoundError('Provider config not found');
+    }
+
+    res.json({ success: true, data: { message: 'Provider config deleted' } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function testProviderConnection(req, res, next) {
+  try {
+    const { projectId } = req.params;
+    const { provider, endpoint_url, model, api_key } = req.body;
+
+    const project = await Project.findById(projectId);
+    if (!project) throw new NotFoundError('Project not found');
+
+    const config = {
+      apiKey: api_key || null,
+      model: model || null,
+      baseUrl: endpoint_url || null,
+    };
+
+    const router = new ProviderRouter(project.id);
+    const providerInstance = router.createProvider(provider || 'openai', config);
+    const isValid = await providerInstance.validate();
+
+    res.json({
+      success: true,
+      data: {
+        valid: isValid,
+        message: isValid ? 'Connection successful' : 'Connection failed',
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   addProvider,
   updateProvider,
   deleteProvider,
   listProviders,
   testProvider,
+  getProviderConfig,
+  setProviderConfig,
+  deleteProviderConfig,
+  testProviderConnection,
 };

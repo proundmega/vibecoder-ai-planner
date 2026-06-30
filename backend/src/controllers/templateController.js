@@ -4,10 +4,10 @@ const { NotFoundError } = require('../errors/HttpError');
 
 async function listTemplates(req, res, next) {
   try {
-    const { id } = req.params;
-    const project = await Project.findById(id);
+    const { projectId } = req.params;
+    const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
-    const templates = await TemplateService.list(id, req.user.userId);
+    const templates = await TemplateService.list(projectId, req.user.userId);
     res.json({
       success: true,
       data: templates,
@@ -19,9 +19,9 @@ async function listTemplates(req, res, next) {
 
 async function createTemplate(req, res, next) {
   try {
-    const { id } = req.params;
+    const { projectId } = req.params;
     const { name, description, file_definitions } = req.body;
-    const project = await Project.findById(id);
+    const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
     if (!name || !name.trim()) {
       throw new Error('Template name is required');
@@ -29,7 +29,7 @@ async function createTemplate(req, res, next) {
     if (!file_definitions || !Array.isArray(file_definitions) || file_definitions.length === 0) {
       throw new Error('At least one file definition is required');
     }
-    const template = await TemplateService.create(id, name.trim(), description, file_definitions, req.user.userId);
+    const template = await TemplateService.create(projectId, name.trim(), description, file_definitions, req.user.userId);
     res.status(201).json({
       success: true,
       data: template,
@@ -41,7 +41,7 @@ async function createTemplate(req, res, next) {
 
 async function deleteTemplate(req, res, next) {
   try {
-    const { id: templateId } = req.params;
+    const { templateId } = req.params;
     const template = await TemplateService.delete(templateId, req.user.userId);
     if (!template) {
       throw new NotFoundError('Template not found or unauthorized');

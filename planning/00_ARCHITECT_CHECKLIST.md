@@ -70,6 +70,8 @@ Before starting any implementation, complete ALL items below. Do NOT skip any st
 - [ ] Integration test scenarios defined
 - [ ] Edge cases explicitly tested (not just happy path)
 - [ ] If frontend: component tests for new UI, E2E for user flows
+- [ ] New test files CREATED for all new/changed code (not just verifying existing tests pass)
+- [ ] Regression test added for any bug fix (reproduces the original failure condition)
 
 ### Implementation Readiness
 

@@ -89,7 +89,7 @@ const memoryDeleting = ref(null)
 const memoryLoaded = ref(false)
 
 // Provider Config state
-const providerConfig = ref({ provider: 'openai', model: '', endpoint_url: '', api_key_credential_id: null, fallback_provider: null })
+const providerConfig = ref({ provider: 'openai', model: '', endpoint_url: '', api_key: '', fallback_provider: null })
 const providerConfigLoading = ref(false)
 const providerConfigSaving = ref(false)
 const providerConfigTestResult = ref(null)
@@ -403,7 +403,7 @@ async function loadProviderConfig() {
         provider: cfg.provider || 'openai',
         model: cfg.model || '',
         endpoint_url: cfg.endpoint_url || '',
-        api_key_credential_id: cfg.api_key_credential_id || null,
+        api_key: cfg.api_key || '',
         fallback_provider: cfg.fallback_provider || null,
       }
     }
@@ -505,6 +505,11 @@ async function testProviderConfigConnection() {
           <div class="form-group">
             <label>Model</label>
             <input v-model="providerConfig.model" type="text" placeholder="gpt-4o, codellama:34b, ..." />
+          </div>
+
+          <div class="form-group">
+            <label>API Key <span class="optional">(optional)</span></label>
+            <input v-model="providerConfig.api_key" type="password" placeholder="sk-... (optional for local models)" />
           </div>
 
           <div class="form-group">
@@ -1097,6 +1102,12 @@ async function testProviderConfigConnection() {
   font-size: 13px;
   font-weight: 600;
   color: #374151;
+}
+
+.form-group label .optional {
+  font-weight: 400;
+  color: #9ca3af;
+  font-size: 12px;
 }
 
 .form-group input,

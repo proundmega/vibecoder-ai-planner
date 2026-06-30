@@ -183,10 +183,17 @@ For each file being created or modified, specify exactly what changes:
 
 ### f) Testing
 
+**MANDATORY: You must CREATE new test files or EXTEND existing test files for all new/changed code.**
+**It is NOT sufficient to only verify that existing tests still pass.**
+
 #### Backend Unit Tests
-- [ ] Test controller: `backend/src/__tests__/api-[feature].test.js`
-- [ ] Test service: `backend/src/__tests__/unit.test.js`
-- [ ] Test middleware: `backend/src/middleware/*.test.js` (if auth/permissions affected)
+- [ ] Test controller: `backend/src/__tests__/api-[feature].test.js` — CREATED or EXTENDED
+- [ ] Test service: `backend/src/__tests__/unit.test.js` — CREATED or EXTENDED
+- [ ] Test middleware: `backend/src/middleware/*.test.js` (if auth/permissions affected) — CREATED or EXTENDED
+- [ ] Every new controller method has at least one test case
+- [ ] Every new service method has at least one test case
+- [ ] Every new validator schema has at least one test case
+- [ ] Happy path AND error paths tested (not just happy path)
 
 #### Backend Integration Tests
 - [ ] Full request lifecycle: HTTP → middleware → controller → service → DB → response
@@ -195,8 +202,11 @@ For each file being created or modified, specify exactly what changes:
 - [ ] Error handling: invalid requests return proper error responses
 
 #### Frontend Unit Tests
-- [ ] API client: `frontend/src/__tests__/[feature].test.js`
-- [ ] Component rendering: if new UI component
+- [ ] API client: `frontend/src/__tests__/[feature].test.js` — CREATED or EXTENDED
+- [ ] Component rendering: if new UI component — CREATED or EXTENDED
+- [ ] Every new API client function has at least one test case
+- [ ] Every new/composed UI component has at least one test case
+- [ ] Loading, error, and empty states tested
 
 #### Frontend E2E Tests
 - [ ] User flow: [describe the flow to test]
@@ -261,7 +271,7 @@ frontend/src/api/generated/           → REGENERATE (types)
 - [ ] Frontend UI handles loading, error, and empty states
 - [ ] Frontend UI extends existing code rather than creating new (when possible)
 - [ ] Frontend types match backend response shapes
-- [ ] All tests written and passing
+- [ ] All tests written and passing — new/changed code has corresponding test files CREATED or EXTENDED
 - [ ] OpenAPI spec regenerated if backend routes changed
 - [ ] Generated TypeScript types regenerated if response shapes changed
 - [ ] Specification in `04_SPECIFICATION.md` matches what was actually implemented
