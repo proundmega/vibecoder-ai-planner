@@ -31,7 +31,7 @@ jest.mock('../db', () => {
           model: 'gpt-4',
           api_key_encrypted: null,
           fallback_provider: null,
-          routing_rules: '{}',
+          routing_rules: {},
           is_active: true,
           created_at: new Date(),
           updated_at: new Date(),

@@ -362,6 +362,12 @@ async function handleShowTemplateSelect() {
         <button v-if="canUpdate() && ticket?.status === 'review'" @click="changeStatus('done')" :disabled="hasPendingApproval">Mark as Done</button>
       </div>
 
+      <div class="phase-flow-link">
+        <router-link :to="{ name: 'PhaseFlow', params: { id: route.params.id, ticketId: ticketId } }" class="btn-phase-flow">
+          View Phase Flow
+        </router-link>
+      </div>
+
       <div v-if="hasPendingApproval" class="approval-status">
         <div class="approval-badge pending">
           ⏳ Awaiting Approval
@@ -1167,5 +1173,25 @@ h1 {
 .custom-template.selected {
   border-color: #8b5cf6;
   background: #ede9fe;
+}
+
+.phase-flow-link {
+  margin-top: 16px;
+}
+
+.btn-phase-flow {
+  display: inline-block;
+  padding: 8px 16px;
+  background: #8b5cf6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.btn-phase-flow:hover {
+  background: #7c3aed;
 }
 </style>
