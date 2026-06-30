@@ -68,6 +68,15 @@ backend lint → backend test → frontend test --run → frontend contract test
 frontend lint → frontend typecheck → frontend build
 ```
 
+### Bug fix protocol
+
+Every bug fix **must** include a regression test that reproduces the failure condition.
+
+- **Route bugs** (wrong handler, missing route, ordering issues): use `supertest` against the Express app in `src/__tests__/routeOrdering.test.js` or a dedicated route test file. Mock `jsonwebtoken`, `PermissionService`, and DB models as needed.
+- **Service/controller bugs**: add or extend unit tests in `src/__tests__/` using the existing jest mocks.
+- **Frontend bugs**: add or extend Vitest unit tests in `frontend/src/__tests__/`.
+- Run the full test suite after changes: `npm test` (backend), `npm test -- --run` (frontend).
+
 ## API
 
 All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ success: false, error: { code, message } }`.
