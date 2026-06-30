@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS agent_heartbeats (
     agent_id BIGINT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
     last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    current_ticket_id UUID REFERENCES tickets(id),
+    current_ticket_id BIGINT REFERENCES tickets(id),
     current_step VARCHAR(64),
     memory_usage JSONB DEFAULT '{}',
     cpu_usage JSONB DEFAULT '{}',

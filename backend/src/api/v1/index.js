@@ -24,10 +24,10 @@ const { verifyToken } = require('../../middleware/auth');
 const { requireAnyPermission } = require('../../middleware/permissions');
 const agentHeartbeatRouter = require('./agentHeartbeat');
 
-// Template routes (under /projects/:projectId/templates) — must be before router.use('/projects')
-router.get('/projects/:projectId/templates', verifyToken, requireAnyPermission('TICKET_UPDATE'), (req, res, next) => templateController.listTemplates(req, res, next).catch(next));
-router.post('/projects/:projectId/templates', verifyToken, requireAnyPermission('TICKET_UPDATE'), (req, res, next) => templateController.createTemplate(req, res, next).catch(next));
-router.delete('/projects/:projectId/templates/:id', verifyToken, requireAnyPermission('TICKET_UPDATE'), (req, res, next) => templateController.deleteTemplate(req, res, next).catch(next));
+// Template routes (under /projects/:id/templates) — must be before router.use('/projects')
+router.get('/projects/:id/templates', verifyToken, requireAnyPermission('TICKET_UPDATE'), (req, res, next) => templateController.listTemplates(req, res, next).catch(next));
+router.post('/projects/:id/templates', verifyToken, requireAnyPermission('TICKET_UPDATE'), (req, res, next) => templateController.createTemplate(req, res, next).catch(next));
+router.delete('/projects/:id/templates/:templateId', verifyToken, requireAnyPermission('TICKET_UPDATE'), (req, res, next) => templateController.deleteTemplate(req, res, next).catch(next));
 
 // Attachment routes — must be before router.use('/tickets')
 router.post('/tickets/:ticketId/attachments', verifyToken, ticketAttachmentUpload.single('file'), (req, res, next) => ticketAttachmentController.upload(req, res, next).catch(next));

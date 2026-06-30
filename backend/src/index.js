@@ -64,8 +64,27 @@ const routes = require('./api/routes');
 app.use('/api', routes);
 
 // WebSocket upgrade handler for terminal proxy (only in non-test mode)
+let server;
 let wss;
+
+// Error handler
+const { errorHandler } = require('./middleware/errorHandler');
+app.use(errorHandler);
+
+// Start server (skip in test mode — supertest uses the app directly)
+const PORT = process.env.PORT || 3001;
 if (process.env.NODE_ENV !== 'test') {
+  server = app.listen(PORT, () => {
+    logger.info(`Vibecode API Server running on port ${PORT}`);
+    logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  });
+
+  server.on('error', (err) => {
+    logger.error('Server error:', err);
+    process.exit(1);
+  });
+
+  // WebSocket upgrade handler for terminal proxy
   const { createTerminalWSS, verifyTerminalToken } = require('./api/terminal');
   wss = createTerminalWSS();
 
@@ -94,25 +113,6 @@ if (process.env.NODE_ENV !== 'test') {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
     }
-  });
-}
-
-// Error handler
-const { errorHandler } = require('./middleware/errorHandler');
-app.use(errorHandler);
-
-// Start server (skip in test mode — supertest uses the app directly)
-const PORT = process.env.PORT || 3001;
-let server;
-if (process.env.NODE_ENV !== 'test') {
-  server = app.listen(PORT, () => {
-    logger.info(`Vibecode API Server running on port ${PORT}`);
-    logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  });
-
-  server.on('error', (err) => {
-    logger.error('Server error:', err);
-    process.exit(1);
   });
 
   const { pool } = require('./db');

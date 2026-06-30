@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS review_diffs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    ticket_id BIGINT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
     file_path VARCHAR(512) NOT NULL,
     action VARCHAR(16) NOT NULL,
     old_content TEXT,

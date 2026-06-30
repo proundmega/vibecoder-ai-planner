@@ -1,6 +1,6 @@
 CREATE TABLE provider_configs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     provider VARCHAR(32) NOT NULL DEFAULT 'openai',
     endpoint_url VARCHAR(512),
     model VARCHAR(128) NOT NULL,

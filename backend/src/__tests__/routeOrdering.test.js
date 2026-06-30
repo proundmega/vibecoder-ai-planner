@@ -9,6 +9,42 @@ jest.mock('../services/PermissionService', () => ({
   hasAnyPermission: jest.fn().mockResolvedValue(true),
   hasAllPermissions: jest.fn().mockResolvedValue(true),
 }));
+jest.mock('../utils/crypto', () => ({
+  encrypt: jest.fn((text) => text ? `encrypted:${text}` : null),
+  decrypt: jest.fn((text) => text?.replace('encrypted:', '') || ''),
+  maskToken: jest.fn((text) => text ? text.substring(0, 3) + '***' : ''),
+}));
+
+jest.mock('../db', () => {
+  const pool = {
+    query: jest.fn(),
+    stats: jest.fn(() => ({ idleCount: 1 })),
+  };
+  pool.query.mockImplementation((sql, params) => {
+    if (sql.includes('INSERT INTO provider_configs')) {
+      return Promise.resolve({
+        rows: [{
+          id: 'pc-1',
+          project_id: 1,
+          provider: 'openai',
+          endpoint_url: null,
+          model: 'gpt-4',
+          api_key_encrypted: null,
+          fallback_provider: null,
+          routing_rules: '{}',
+          is_active: true,
+          created_at: new Date(),
+          updated_at: new Date(),
+        }],
+      });
+    }
+    if (sql.includes('SELECT * FROM provider_configs')) {
+      return Promise.resolve({ rows: [] });
+    }
+    return Promise.resolve({ rows: [] });
+  });
+  return { pool };
+});
 
 // Override jwt mock to return a user with role for these tests
 jest.mock('jsonwebtoken', () => ({
@@ -58,6 +94,27 @@ describe('Route Ordering', () => {
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.name).toBe('Deleted');
+    });
+
+    it('should route GET /api/v1/providers/projects/1/provider to providerController.getProviderConfig', async () => {
+      const res = await request(app)
+        .get('/api/v1/providers/projects/1/provider')
+        .set('Authorization', 'Bearer mock-token');
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toBeNull();
+    });
+
+    it('should route PUT /api/v1/providers/projects/1/provider to providerController.setProviderConfig', async () => {
+      const res = await request(app)
+        .put('/api/v1/providers/projects/1/provider')
+        .set('Authorization', 'Bearer mock-token')
+        .send({ provider: 'openai', model: 'gpt-4' });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.provider).toBe('openai');
     });
 
     it('should route GET /api/v1/projects/1 to projectsRouter.getProject', async () => {

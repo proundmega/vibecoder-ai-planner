@@ -1,6 +1,6 @@
 CREATE TABLE milestones (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   name VARCHAR(128) NOT NULL,
   description TEXT,
   target_date DATE,
