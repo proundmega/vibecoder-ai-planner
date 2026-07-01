@@ -21,13 +21,11 @@ describe('templates API', () => {
       expect(result).toEqual({ success: true, data: [{ id: 't1', name: 'Test' }] })
     })
 
-    it('returns empty array on error', async () => {
+    it('throws on error', async () => {
       const { get } = await import('../api/client')
       get.mockRejectedValue(new Error('fail'))
 
-      const result = await templates.listTemplates('proj-1')
-
-      expect(result).toEqual([])
+      await expect(templates.listTemplates('proj-1')).rejects.toThrow('fail')
     })
   })
 

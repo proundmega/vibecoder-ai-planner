@@ -25,8 +25,7 @@ const templateOptions = [
 
 onMounted(async () => {
   try {
-    const response = await listTemplates(props.projectId)
-    templates.value = response?.data || []
+    templates.value = await listTemplates(props.projectId)
   } catch (e) {
     console.error('Failed to load templates:', e)
   }

@@ -6,14 +6,22 @@ describe('BP-12: Graceful Shutdown', () => {
   let exitCode;
   let originalExit;
   let originalSetTimeout;
+  let timers = [];
 
   beforeEach(() => {
     exitCode = null;
+    timers = [];
     originalExit = process.exit;
     originalSetTimeout = global.setTimeout;
 
     process.exit = jest.fn((code) => {
       exitCode = code;
+    });
+
+    global.setTimeout = jest.fn((fn, ms) => {
+      const id = { fn, ms };
+      timers.push(id);
+      return id;
     });
 
     mockServer = {
@@ -33,7 +41,7 @@ describe('BP-12: Graceful Shutdown', () => {
     resetShutdownState();
   });
 
-  it('should register SIGTERM handler', () => {
+  it('should register SIGTERM and SIGINT handlers', () => {
     const handlers = {};
     process.on = jest.fn((signal, handler) => {
       handlers[signal] = handler;
@@ -43,6 +51,18 @@ describe('BP-12: Graceful Shutdown', () => {
 
     expect(process.on).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
     expect(process.on).toHaveBeenCalledWith('SIGINT', expect.any(Function));
+  });
+
+  it('should NOT set a force timeout on startup (only after signal)', () => {
+    const handlers = {};
+    process.on = jest.fn((signal, handler) => {
+      handlers[signal] = handler;
+    });
+
+    gracefulShutdown(mockServer, mockPool);
+
+    // No timers should be scheduled yet — timeout only fires after signal
+    expect(timers.length).toBe(0);
   });
 
   it('should close server and pool on SIGTERM', async () => {
@@ -105,21 +125,39 @@ describe('BP-12: Graceful Shutdown', () => {
     expect(process.exit).toHaveBeenCalledWith(1);
   });
 
-  it('should force exit after timeout', () => {
+  it('should set force timeout after signal and clear on success', async () => {
     const handlers = {};
     process.on = jest.fn((signal, handler) => {
       handlers[signal] = handler;
     });
 
-    global.setTimeout = jest.fn((fn, ms) => {
-      if (ms >= 30000) {
-        fn();
-      }
+    gracefulShutdown(mockServer, mockPool);
+
+    // Trigger signal — this should schedule the force timeout
+    await handlers['SIGTERM']();
+
+    expect(timers.length).toBe(1);
+    expect(timers[0].ms).toBe(30000);
+
+    // Clear the force timer (simulating successful shutdown completing before timeout)
+    timers = [];
+    expect(process.exit).toHaveBeenCalledWith(0);
+  });
+
+  it('should force exit after timeout when signal is received', async () => {
+    const handlers = {};
+    process.on = jest.fn((signal, handler) => {
+      handlers[signal] = handler;
     });
 
     gracefulShutdown(mockServer, mockPool);
 
-    expect(global.setTimeout).toHaveBeenCalled();
+    await handlers['SIGTERM']();
+
+    // Manually trigger the force timeout timer
+    const forceTimer = timers.find(t => t.ms >= 30000);
+    forceTimer.fn();
+
     expect(process.exit).toHaveBeenCalledWith(1);
   });
 });

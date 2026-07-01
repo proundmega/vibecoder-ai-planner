@@ -307,8 +307,7 @@ async function loadPlanningFile(key) {
 
 async function handleShowTemplateSelect() {
   try {
-    const response = await listTemplates(ticket.value.project_id)
-    customTemplates.value = response?.data || []
+    customTemplates.value = await listTemplates(ticket.value.project_id)
   } catch (err) {
     console.error('Failed to load custom templates:', err)
     customTemplates.value = []

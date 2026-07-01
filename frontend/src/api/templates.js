@@ -1,7 +1,7 @@
 import { get, post, del } from './client'
 
 export function listTemplates(projectId) {
-  return get(`/api/v1/projects/${projectId}/templates`).catch(() => [])
+  return get(`/api/v1/projects/${projectId}/templates`)
 }
 
 export function createTemplate(projectId, data) {

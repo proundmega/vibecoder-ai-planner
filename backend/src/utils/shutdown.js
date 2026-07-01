@@ -14,6 +14,8 @@ async function gracefulShutdown(server, pool, cleanupHooks = []) {
     isShuttingDown = true;
     logger.info(`${signal} received. Starting graceful shutdown...`);
 
+    const forceTimer = setTimeout(forceShutdown, SHUTDOWN_TIMEOUT_MS);
+
     try {
       for (const hook of cleanupHooks) {
         try {
@@ -35,6 +37,7 @@ async function gracefulShutdown(server, pool, cleanupHooks = []) {
       }
 
       logger.info('Shutdown complete.');
+      clearTimeout(forceTimer);
       process.exit(0);
     } catch (error) {
       logger.error('Error during shutdown:', error);
@@ -49,8 +52,6 @@ async function gracefulShutdown(server, pool, cleanupHooks = []) {
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
-
-  setTimeout(forceShutdown, SHUTDOWN_TIMEOUT_MS);
 }
 
 function resetShutdownState() {

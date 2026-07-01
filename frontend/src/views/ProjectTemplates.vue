@@ -22,8 +22,7 @@ const createSuccess = ref(null)
 onMounted(async () => {
   templatesLoading.value = true
   try {
-    const response = await listTemplates(projectId)
-    templatesData.value = response?.data || []
+    templatesData.value = await listTemplates(projectId)
   } catch (err) {
     console.error('Failed to load templates:', err)
     templatesError.value = 'Failed to load templates'
@@ -45,8 +44,7 @@ async function handleCreateTemplate() {
       description: newDescription.value.trim() || null,
       file_definitions: validFiles.map(f => ({ key: f.key.trim(), content: f.content })),
     })
-    const response = await listTemplates(projectId)
-    templatesData.value = response?.data || []
+    templatesData.value = await listTemplates(projectId)
     showCreateModal.value = false
     newName.value = ''
     newDescription.value = ''
