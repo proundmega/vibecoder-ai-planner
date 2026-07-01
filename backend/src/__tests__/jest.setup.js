@@ -70,7 +70,11 @@ jest.mock('../utils/logger', () => {
 jest.mock('pg', () => {
   const pool = {
     query: jest.fn().mockResolvedValue({ rows: [] }),
-    on: jest.fn()
+    on: jest.fn(),
+    connect: jest.fn().mockResolvedValue({
+      query: jest.fn().mockResolvedValue({ rows: [] }),
+      release: jest.fn(),
+    }),
   };
   return { Pool: jest.fn().mockImplementation(() => pool) };
 });
