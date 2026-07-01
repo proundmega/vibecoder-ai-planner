@@ -27,6 +27,12 @@ const SQL_FILES = [
   path.join(__dirname, './030_uuid_to_bigint_fk.sql'),
 ];
 
+const DATA_MIGRATIONS = [
+  path.join(__dirname, './migrate_provider_api_keys.js'),
+];
+
+const { spawn } = require('child_process');
+
 function splitSQLStatements(sql) {
   const statements = [];
   let current = '';
@@ -121,9 +127,30 @@ async function runMigration(file) {
   }
 }
 
+function runDataMigration(file) {
+  return new Promise((resolve) => {
+    console.log(`\n--- Running data migration: ${path.basename(file)} ---`);
+    const child = spawn(process.execPath, [file], {
+      cwd: path.join(__dirname, '..'),
+      env: { ...process.env },
+      stdio: 'inherit',
+    });
+    child.on('close', (code) => {
+      if (code !== 0) {
+        console.error(`Data migration ${path.basename(file)} exited with code ${code}`);
+      }
+      resolve();
+    });
+  });
+}
+
 async function migrate() {
   for (const sqlFile of SQL_FILES) {
     await runMigration(sqlFile);
+  }
+
+  for (const dataMigration of DATA_MIGRATIONS) {
+    await runDataMigration(dataMigration);
   }
 
   console.log('\n\n✓ Migrations completed successfully!');

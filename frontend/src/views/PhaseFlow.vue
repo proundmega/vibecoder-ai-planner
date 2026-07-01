@@ -2,6 +2,16 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchPhases, fetchAllowedPhases, transitionPhase } from '@/api/phases'
+import PhaseDraft from './phases/PhaseDraft.vue'
+import PhasePlanning from './phases/PhasePlanning.vue'
+import PhasePlanApproved from './phases/PhasePlanApproved.vue'
+import PhaseAssigned from './phases/PhaseAssigned.vue'
+import PhaseInProgress from './phases/PhaseInProgress.vue'
+import PhaseBlocked from './phases/PhaseBlocked.vue'
+import PhaseReview from './phases/PhaseReview.vue'
+import PhaseHumanApproval from './phases/PhaseHumanApproval.vue'
+import PhaseDone from './phases/PhaseDone.vue'
+import PhaseDeployed from './phases/PhaseDeployed.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,7 +25,18 @@ const allowedTransitions = ref([])
 const phaseHistory = ref([])
 const transitioning = ref(false)
 
-const phaseComponents = {}
+const phaseComponents = {
+  draft: PhaseDraft,
+  planning: PhasePlanning,
+  plan_approved: PhasePlanApproved,
+  assigned: PhaseAssigned,
+  in_progress: PhaseInProgress,
+  blocked: PhaseBlocked,
+  review: PhaseReview,
+  human_approval: PhaseHumanApproval,
+  done: PhaseDone,
+  deployed: PhaseDeployed,
+}
 
 const phaseLabels = {
   draft: 'Draft',
@@ -40,7 +61,8 @@ const currentPhaseIndex = computed(() => {
 })
 
 const phaseProgress = computed(() => {
-  return ((currentPhaseIndex.value + 1) / phaseOrder.length) * 100
+  if (phaseOrder.length <= 1) return 100
+  return (currentPhaseIndex.value / (phaseOrder.length - 1)) * 100
 })
 
 async function loadPhaseData() {
