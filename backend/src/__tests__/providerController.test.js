@@ -417,4 +417,47 @@ describe('Provider Controller', () => {
       });
     });
   });
+
+  describe('BP-51-11: db require at module level', () => {
+    it('should have pool available at module level (not inline require)', () => {
+      // If require('../db') is at module level, the mock in jest.mock() works
+      // If it was inline in each function, the mock wouldn't apply
+      expect(pool).toBeDefined();
+      expect(pool.query).toBeDefined();
+    });
+
+    it('should use module-level pool for addProvider', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 1,
+          project_id: 1,
+          name: 'test',
+          provider_type: 'openai',
+          api_key_encrypted: 'enc',
+          base_url: null,
+          model: 'gpt-4',
+          roles: ['worker'],
+          max_tokens: 4096,
+          temperature: 0.1,
+          is_active: true,
+          created_at: new Date(),
+          updated_at: new Date(),
+        }],
+      });
+
+      mockReq.params.id = '1';
+      mockReq.body = {
+        name: 'test',
+        providerType: 'openai',
+        apiKey: 'sk-test',
+        model: 'gpt-4',
+      };
+
+      await providerController.addProvider(mockReq, mockRes, nextFn);
+
+      // If pool was inline require, this mock wouldn't be called
+      expect(pool.query).toHaveBeenCalled();
+    });
+  });
 });

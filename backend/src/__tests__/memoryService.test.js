@@ -276,4 +276,141 @@ describe('MemoryService', () => {
       );
     });
   });
+
+  describe('BP-51-01/BP-51-07: searchSimilar SQL param index and threshold', () => {
+    test('should use 4 SQL parameters (projectId, limit, queryEmbedding, threshold)', async () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+      process.env.OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
+
+      global.fetch = jest.fn().mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: [{ embedding: [0.1, 0.2, 0.3] }] }),
+      });
+
+      const mockRow = {
+        id: 1,
+        project_id: 100,
+        agent_id: 1,
+        content: 'Test',
+        embedding: [0.1, 0.2, 0.3],
+        metadata: JSON.stringify({}),
+        created_at: new Date(),
+        updated_at: new Date(),
+        agent_name: 'Agent 1',
+        agent_email: 'agent1@test.com',
+        similarity: 0.85,
+      };
+
+      require('../db').pool.query.mockResolvedValueOnce({ rows: [mockRow] });
+
+      const result = await MemoryService.searchSimilar(100, 'test query', 10, 0.3);
+
+      expect(result).toHaveLength(1);
+
+      // Verify the query was called with 4 parameters, not 3
+      const queryCall = require('../db').pool.query.mock.calls[0];
+      const values = queryCall[1];
+      expect(values).toHaveLength(4);
+      expect(values[0]).toBe(100);       // projectId = $1
+      expect(values[1]).toBe(10);        // limit = $2
+      expect(values[2]).toEqual([0.1, 0.2, 0.3]); // queryEmbedding = $3
+      expect(values[3]).toBe(0.3);       // threshold = $4
+    });
+
+    test('should use $3 for queryEmbedding placeholder (not $4)', async () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+      process.env.OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
+
+      global.fetch = jest.fn().mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: [{ embedding: [0.5] }] }),
+      });
+
+      require('../db').pool.query.mockResolvedValueOnce({ rows: [] });
+
+      await MemoryService.searchSimilar(50, 'query', 5, 0.5);
+
+      const queryCall = require('../db').pool.query.mock.calls[0];
+      const sql = queryCall[0];
+
+      // The embedding should be referenced as $3, not $4
+      expect(sql).toMatch(/<=> \$3/);
+      expect(sql).not.toMatch(/<=> \$4/);
+    });
+
+    test('should include threshold filter in SQL WHERE clause', async () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+      process.env.OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
+
+      global.fetch = jest.fn().mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: [{ embedding: [0.1] }] }),
+      });
+
+      require('../db').pool.query.mockResolvedValueOnce({ rows: [] });
+
+      await MemoryService.searchSimilar(1, 'query', 10, 0.7);
+
+      const queryCall = require('../db').pool.query.mock.calls[0];
+      const sql = queryCall[0];
+
+      // Should have threshold filter in SQL
+      expect(sql).toMatch(/>= \$4/);
+    });
+
+    test('should not do client-side filtering after SQL', async () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+      process.env.OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
+
+      global.fetch = jest.fn().mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: [{ embedding: [0.1] }] }),
+      });
+
+      // Return rows that would fail a client-side threshold filter
+      const mockRows = [
+        {
+          id: 1,
+          project_id: 100,
+          agent_id: 1,
+          content: 'Low similarity',
+          embedding: [0.1],
+          metadata: JSON.stringify({}),
+          created_at: new Date(),
+          updated_at: new Date(),
+          agent_name: 'Agent 1',
+          agent_email: 'agent1@test.com',
+          similarity: 0.2, // Below threshold
+        },
+      ];
+
+      require('../db').pool.query.mockResolvedValueOnce({ rows: mockRows });
+
+      // With threshold 0.5, client-side filter would return []
+      // But SQL filter means the row IS returned (since SQL already filtered)
+      const result = await MemoryService.searchSimilar(100, 'query', 10, 0.5);
+
+      // The row is returned because SQL handles the filtering
+      // In the old code, this would have been client-side filtered to []
+      expect(result).toHaveLength(1);
+    });
+
+    test('should return empty array when no embedding available', async () => {
+      // No OPENAI_API_KEY set
+      delete process.env.OPENAI_API_KEY;
+
+      const result = await MemoryService.searchSimilar(100, 'query');
+      expect(result).toEqual([]);
+    });
+
+    test('should return empty array when embedding generation fails', async () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+      global.fetch = jest.fn().mockResolvedValueOnce({
+        ok: false,
+      });
+
+      const result = await MemoryService.searchSimilar(100, 'query');
+      expect(result).toEqual([]);
+    });
+  });
 });
