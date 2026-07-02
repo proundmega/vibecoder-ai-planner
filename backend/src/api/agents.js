@@ -1,8 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const TicketService = require('../services/TicketService');
-const ProjectService = require('../services/ProjectService');
 const AgentService = require('../services/AgentService');
 const { verifyToken } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
