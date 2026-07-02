@@ -395,10 +395,10 @@ class TicketService {
       `UPDATE tickets 
         SET assigned_agent_id = NULL, locked_at = NULL, status = 'backlog'
         WHERE status = 'in_progress' 
-        AND locked_at < NOW() - INTERVAL '${staleMinutes} minutes'
+        AND locked_at < NOW() - make_interval(mins => $1)
         AND assigned_agent_id IS NOT NULL
         RETURNING id, title, assigned_agent_id, locked_at`,
-      []
+      [staleMinutes]
     );
 
     return result.rows;

@@ -89,6 +89,25 @@ describe('TicketService', () => {
         expect(err.message).toBe('staleMinutes must be a positive number');
       }
     });
+
+    test('should use parameterized make_interval() instead of string interpolation (BP-51-02 regression)', async () => {
+      const mockRows = [];
+      require('../db').pool.query.mockResolvedValueOnce({ rows: mockRows });
+
+      await TicketService.recoverOrphanedTickets(60);
+
+      const queryCall = require('../db').pool.query.mock.calls[0];
+      const sql = queryCall[0];
+      const values = queryCall[1];
+
+      // Should use make_interval with parameter, not string interpolation
+      expect(sql).toContain('make_interval(mins => $1)');
+      expect(sql).not.toContain("INTERVAL '");
+      expect(sql).not.toContain('${');
+
+      // staleMinutes should be passed as a parameter value
+      expect(values).toEqual([60]);
+    });
   });
 
   describe('BP-51-06: undefined field handling in update', () => {
