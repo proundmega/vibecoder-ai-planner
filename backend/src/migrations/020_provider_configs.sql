@@ -4,7 +4,7 @@ CREATE TABLE provider_configs (
     provider VARCHAR(32) NOT NULL DEFAULT 'openai',
     endpoint_url VARCHAR(512),
     model VARCHAR(128) NOT NULL,
-    api_key_credential_id UUID REFERENCES credentials(id),
+    api_key_credential_id BIGINT REFERENCES project_credentials(id),
     fallback_provider VARCHAR(32),
     routing_rules JSONB DEFAULT '{}',
     is_active BOOLEAN DEFAULT true,
