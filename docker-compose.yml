@@ -29,6 +29,7 @@ services:
       - AGENT_IMAGE=vibecode-agent
       - CONTAINER_NETWORK=vibecode_default
       - REPO_VOLUME=vibecode_repos
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
     volumes:
       - uploads_data:/app/uploads
       - /var/run/docker.sock:/var/run/docker.sock

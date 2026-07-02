@@ -5,23 +5,19 @@ describe('BP-06: Input Validation - Memory Validators', () => {
   describe('addMemorySchema', () => {
     it('should validate valid memory creation', () => {
       const { error } = addMemorySchema.validate({
-        ticketId: '123e4567-e89b-12d3-a456-426614174000',
         content: 'Test memory content',
       });
       expect(!error).toBe(true);
     });
 
     it('should reject memory without content', () => {
-      const { error } = addMemorySchema.validate({
-        ticketId: '123e4567-e89b-12d3-a456-426614174000',
-      });
+      const { error } = addMemorySchema.validate({});
       expect(error).toBeDefined();
       expect(error.message).toContain('content');
     });
 
     it('should reject memory with empty content', () => {
       const { error } = addMemorySchema.validate({
-        ticketId: '123e4567-e89b-12d3-a456-426614174000',
         content: '',
       });
       expect(error).toBeDefined();
@@ -30,7 +26,6 @@ describe('BP-06: Input Validation - Memory Validators', () => {
 
     it('should accept memory with embedding', () => {
       const { error } = addMemorySchema.validate({
-        ticketId: '123e4567-e89b-12d3-a456-426614174000',
         content: 'Test memory content',
         embedding: [0.1, 0.2, 0.3],
       });

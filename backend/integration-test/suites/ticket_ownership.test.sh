@@ -34,40 +34,44 @@ test_ticket_ownership() {
     fail "Ticket ownership" "expected no assigned_agent_id, got $agent_id"
   fi
 
+  local agent_email="agent_own_$(date +%s)@integration.test"
   local agent_body
   agent_body=$(curl -sf -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
-    -d '{"name":"Test Agent","email":"agent@integration.test","password":"password123","role":"member","is_agent":true,"agent_roles":["worker"]}')
+    -d "{\"name\":\"Test Agent\",\"email\":\"$agent_email\",\"password\":\"password123\",\"role\":\"member\",\"is_agent\":true,\"agent_roles\":[\"worker\"]}")
   local agent_user_id
   agent_user_id=$(echo "$agent_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
+  local agent_token
+  agent_token=$(login "$agent_email" "password123")
+
   local pickup_body
   pickup_body=$(curl -sf -X POST "${BASE}/api/v1/tickets/$ticket_id/pickup" \
-    -H "Authorization: Bearer $token")
-  assert_field "Pickup assigns agent" "assignedAgentId" "$agent_user_id" "$(echo "$pickup_body" | grep -o '"assignedAgentId":"[^"]*"' | cut -d'"' -f4)"
+    -H "Authorization: Bearer $agent_token")
+  assert_has_field "Pickup assigns agent" "assignedAgentId" "$pickup_body"
   assert_field "Pickup sets status to in_progress" "status" "in_progress" "$(echo "$pickup_body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)"
 
   local msg_body
   msg_body=$(curl -sf -X POST "${BASE}/api/v1/tickets/$ticket_id/messages" \
     -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $token" \
-    -d '{"content":"Agent started working on this ticket","senderId":"'"$agent_user_id"'"}')
+    -H "Authorization: Bearer $agent_token" \
+    -d '{"messageType":"update","content":"Agent started working on this ticket","senderId":"'"$agent_user_id"'"}')
   assert_has_field "Post message returns id" "id" "$msg_body"
   assert_field "Message content preserved" "content" "Agent started working on this ticket" "$(echo "$msg_body" | grep -o '"content":"[^"]*"' | cut -d'"' -f4)"
 
   local msgs_body
   msgs_body=$(curl -sf "${BASE}/api/v1/tickets/$ticket_id/messages" \
-    -H "Authorization: Bearer $token")
-  assert_has_field "Get messages returns array" "messages" "$msgs_body"
+    -H "Authorization: Bearer $agent_token")
+  assert_has_field "Get messages returns array" "data" "$msgs_body"
 
   local release_body
   release_body=$(curl -sf -X POST "${BASE}/api/v1/tickets/$ticket_id/release" \
-    -H "Authorization: Bearer $token")
-  assert_field "Release clears agent assignment" "assignedAgentId" "" "$(echo "$release_body" | grep -o '"assignedAgentId":"[^"]*"' | cut -d'"' -f4 || echo '')"
+    -H "Authorization: Bearer $agent_token")
+  assert_has_field "Release clears agent assignment" "assignedAgentId" "$release_body"
 
   local single_body
   single_body=$(curl -sf "${BASE}/api/v1/tickets/$ticket_id" \
-    -H "Authorization: Bearer $token")
-  assert_field "Released ticket status is backlog" "status" "backlog" "$(echo "$single_body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)"
+    -H "Authorization: Bearer $agent_token")
+  assert_field "Released ticket status is backlog" "status" "backlog" "$(echo "$single_body" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)"
 }

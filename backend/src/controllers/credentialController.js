@@ -4,24 +4,24 @@ const Project = require('../models/project');
 
 async function addCredential(req, res, next) {
   try {
-    const { id } = req.params;
-    const { name, credentialType, key, metadata, expiresAt } = req.body;
+    const { projectId } = req.params;
+    const { name, type, key, metadata, expiresAt } = req.body;
 
-    const project = await Project.findById(id);
+    const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    if (!name || !credentialType || !key) {
+    if (!name || !type || !key) {
       return res.status(400).json({
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'name, credential_type, and key are required',
+          message: 'name, type, and key are required',
         },
       });
     }
 
     const credential = await CredentialService.addCredential(
-      id, name, credentialType, key, metadata || {}, req.user.userId
+      projectId, name, type, key, metadata || {}, req.user.userId
     );
 
     res.status(201).json({
@@ -46,12 +46,12 @@ async function addCredential(req, res, next) {
 
 async function listCredentials(req, res, next) {
   try {
-    const { id } = req.params;
+    const { projectId } = req.params;
 
-    const project = await Project.findById(id);
+    const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    const credentials = await CredentialService.listCredentials(id);
+    const credentials = await CredentialService.listCredentials(projectId);
 
     res.json({
       success: true,
@@ -75,17 +75,17 @@ async function listCredentials(req, res, next) {
 
 async function updateCredential(req, res, next) {
   try {
-    const { id, credentialId } = req.params;
+    const { projectId, credentialId } = req.params;
 
-    const project = await Project.findById(id);
+    const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    const existing = await CredentialService.getCredential(id, credentialId);
+    const existing = await CredentialService.getCredential(projectId, credentialId);
     if (!existing) throw new NotFoundError('Credential not found');
 
     const updates = {};
     if (req.body.name !== undefined) updates.name = req.body.name;
-    if (req.body.credentialType !== undefined) updates.credentialType = req.body.credentialType;
+    if (req.body.type !== undefined) updates.credentialType = req.body.type;
     if (req.body.key !== undefined) updates.key = req.body.key;
     if (req.body.metadata !== undefined) updates.metadata = req.body.metadata;
     if (req.body.expiresAt !== undefined) updates.expiresAt = req.body.expiresAt;
@@ -117,9 +117,9 @@ async function updateCredential(req, res, next) {
 
 async function deleteCredential(req, res, next) {
   try {
-    const { id, credentialId } = req.params;
+    const { projectId, credentialId } = req.params;
 
-    const project = await Project.findById(id);
+    const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
     const credential = await CredentialService.deleteCredential(credentialId);
@@ -137,10 +137,10 @@ async function deleteCredential(req, res, next) {
 
 async function rotateCredential(req, res, next) {
   try {
-    const { id, credentialId } = req.params;
+    const { projectId, credentialId } = req.params;
     const { key } = req.body;
 
-    const project = await Project.findById(id);
+    const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
     if (!key) {
@@ -154,7 +154,7 @@ async function rotateCredential(req, res, next) {
     }
 
     const credential = await CredentialService.rotateCredential(
-      id, credentialId, key, req.user.userId
+      projectId, credentialId, key, req.user.userId
     );
 
     if (!credential) throw new NotFoundError('Credential not found');
@@ -181,7 +181,7 @@ async function rotateCredential(req, res, next) {
 
 async function getDecryptedKey(req, res, next) {
   try {
-    const { id } = req.params;
+    const { projectId } = req.params;
     const { type } = req.query;
 
     if (!type) {
@@ -194,10 +194,10 @@ async function getDecryptedKey(req, res, next) {
       });
     }
 
-    const project = await Project.findById(id);
+    const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    const key = await CredentialService.getDecryptedKey(id, type);
+    const key = await CredentialService.getDecryptedKey(projectId, type);
 
     if (!key) {
       return res.status(404).json({

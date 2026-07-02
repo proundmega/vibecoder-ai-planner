@@ -22,7 +22,7 @@ test_shared_agent_memory() {
   agent_body=$(curl -sf -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
-    -d '{"name":"Memory Agent","email":"memory_agent@integration.test","password":"password123","role":"member","is_agent":true,"agent_roles":["worker"]}')
+    -d "{\"name\":\"Memory Agent\",\"email\":\"memory_agent_$(date +%s)@integration.test\",\"password\":\"password123\",\"role\":\"member\",\"is_agent\":true,\"agent_roles\":[\"worker\"]}")
   local agent_id
   agent_id=$(echo "$agent_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
@@ -44,7 +44,7 @@ test_shared_agent_memory() {
   local list_body
   list_body=$(curl -sf "${BASE}/api/v1/memory/project/$proj_id" \
     -H "Authorization: Bearer $token")
-  assert_has_field "List project memories returns array" "memories" "$list_body"
+  assert_has_field "List project memories returns array" "data" "$list_body"
 
   local single_body
   single_body=$(curl -sf "${BASE}/api/v1/memory/$mem_id" \
@@ -57,11 +57,13 @@ test_shared_agent_memory() {
     -d '{"content":"The project uses pgvector for semantic search","metadata":{"source":"architecture","tags":["vector","search"]}}' >/dev/null 2>&1
 
   local search_body
-  search_body=$(curl -sf "${BASE}/api/v1/memory/project/$proj_id/search" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $token" \
-    -d '{"query":"database storage"}')
-  assert_has_field "Search returns results" "results" "$search_body"
+  search_body=$(curl -sf "${BASE}/api/v1/memory/project/$proj_id/search?query=database+storage" \
+    -H "Authorization: Bearer $token")
+  if echo "$search_body" | grep -q '"data"'; then
+    pass "Search returns data field"
+  else
+    fail "Search" "missing data field"
+  fi
 
   local update_body
   update_body=$(curl -sf -X PUT "${BASE}/api/v1/memory/$mem_id" \
@@ -73,7 +75,7 @@ test_shared_agent_memory() {
   local agent_mem_body
   agent_mem_body=$(curl -sf "${BASE}/api/v1/memory/agent/$agent_id" \
     -H "Authorization: Bearer $token")
-  assert_has_field "List agent memories returns array" "memories" "$agent_mem_body"
+  assert_has_field "List agent memories returns array" "data" "$agent_mem_body"
 
   local delete_code
   delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/memory/$mem_id" \

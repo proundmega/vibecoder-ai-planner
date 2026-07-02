@@ -156,10 +156,6 @@ class CredentialService {
     return result.rows;
   }
 
-  static maskToken(key) {
-    if (!key || key.length < 4) return '••••';
-    return '•'.repeat(key.length - 4) + key.slice(-4);
-  }
 }
 
 module.exports = CredentialService;

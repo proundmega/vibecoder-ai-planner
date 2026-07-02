@@ -236,11 +236,11 @@ class MemoryService {
     const result = await pool.query(
       `UPDATE agent_memory
        SET content = COALESCE($2, content),
-           embedding = COALESCE($2, embedding),
+           embedding = COALESCE($4, embedding),
            metadata = COALESCE($3, metadata)
        WHERE id = $1
        RETURNING *`,
-      [id, content, JSON.stringify(metadata)]
+      [id, content, JSON.stringify(metadata), embedding]
     );
 
     return this._formatResult(result.rows[0]);

@@ -50,7 +50,9 @@ function maskToken(token) {
   if (!token || token.length < 8) {
     return '****';
   }
-  return `${'*'.repeat(Math.max(0, token.length - 4))}${token.slice(-4)}`;
+  const visible = token.slice(-4);
+  const maskedLen = Math.min(token.length - 4, 15);
+  return `${'*'.repeat(maskedLen)}${visible}`;
 }
 
 module.exports = { encrypt, decrypt, maskToken };
