@@ -47,7 +47,7 @@ function decrypt(encryptedText) {
 }
 
 function maskToken(token) {
-  if (!token || token.length < 8) {
+  if (!token || token.length < 5) {
     return '****';
   }
   const visible = token.slice(-4);

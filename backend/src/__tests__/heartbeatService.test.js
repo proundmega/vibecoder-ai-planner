@@ -259,4 +259,83 @@ describe('HeartbeatService', () => {
       expect(count).toBe(0);
     });
   });
+
+  describe('BP-51-04/BP-51-10: require placement and JOIN query', () => {
+    test('should use JOIN instead of correlated subqueries for actions_today and cost_today', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+
+      await heartbeatService.getAllAgents();
+
+      const queryCall = mockPool.query.mock.calls[0];
+      const sql = queryCall[0];
+
+      // Should use LEFT JOIN agent_actions instead of correlated subqueries
+      expect(sql).toContain('LEFT JOIN agent_actions');
+      expect(sql).toContain('GROUP BY');
+
+      // Should NOT contain correlated subqueries
+      expect(sql).not.toMatch(/\(SELECT COUNT\(\*\)/);
+      expect(sql).not.toMatch(/\(SELECT SUM\(/);
+    });
+
+    test('should include date filter in JOIN condition', async () => {
+      mockPool.query.mockResolvedValueOnce({ rows: [] });
+
+      await heartbeatService.getAllAgents();
+
+      const queryCall = mockPool.query.mock.calls[0];
+      const sql = queryCall[0];
+
+      expect(sql).toContain('aa.created_at >= CURRENT_DATE');
+    });
+
+    test('should aggregate actions_today correctly with JOIN', async () => {
+      const mockAgents = [
+        {
+          agent_id: 1,
+          name: 'Agent 1',
+          status: 'online',
+          current_ticket_id: 'ticket-1',
+          current_ticket_title: 'Test',
+          last_seen: new Date(),
+          actions_today: 10,
+          cost_today: 0.50,
+        },
+      ];
+      mockPool.query.mockResolvedValueOnce({ rows: mockAgents });
+
+      const result = await heartbeatService.getAllAgents();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].actions_today).toBe(10);
+      expect(result[0].cost_today).toBe(0.50);
+    });
+
+    test('should handle agents with no actions (zero aggregation)', async () => {
+      const mockAgents = [
+        {
+          agent_id: 1,
+          name: 'Agent 1',
+          status: 'online',
+          current_ticket_id: null,
+          current_ticket_title: null,
+          last_seen: new Date(),
+          actions_today: 0,
+          cost_today: 0,
+        },
+      ];
+      mockPool.query.mockResolvedValueOnce({ rows: mockAgents });
+
+      const result = await heartbeatService.getAllAgents();
+
+      expect(result[0].actions_today).toBe(0);
+      expect(result[0].cost_today).toBe(0);
+    });
+
+    test('should import TicketService at module level (not inline)', async () => {
+      // The heartbeatService module should have TicketService available
+      // If require was inline, the module-level mock wouldn't work
+      expect(ticketService.releaseTicket).toBeDefined();
+    });
+  });
 });

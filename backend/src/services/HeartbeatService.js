@@ -1,4 +1,5 @@
 const { pool } = require('../db');
+const TicketService = require('./TicketService');
 
 class HeartbeatService {
   async recordHeartbeat(agentId, { ticketId, step, memory, cpu }) {
@@ -40,17 +41,13 @@ class HeartbeatService {
         t.title as current_ticket_title,
         ah.last_seen,
         ah.current_step,
-        COALESCE(
-          (SELECT COUNT(*) FROM agent_actions aa WHERE aa.agent_id = ah.agent_id AND aa.created_at >= CURRENT_DATE),
-          0
-        ) as actions_today,
-        COALESCE(
-          (SELECT SUM(aa.cost_incurred) FROM agent_actions aa WHERE aa.agent_id = ah.agent_id AND aa.created_at >= CURRENT_DATE),
-          0
-        ) as cost_today
+        COALESCE(COUNT(aa.id), 0) as actions_today,
+        COALESCE(SUM(aa.cost_incurred), 0) as cost_today
       FROM agent_heartbeats ah
       LEFT JOIN agents a ON a.id = ah.agent_id
       LEFT JOIN tickets t ON t.id = ah.current_ticket_id
+      LEFT JOIN agent_actions aa ON aa.agent_id = ah.agent_id AND aa.created_at >= CURRENT_DATE
+      GROUP BY ah.agent_id, a.name, ah.status, ah.current_ticket_id, t.title, ah.last_seen, ah.current_step
       ORDER BY ah.last_seen DESC NULLS LAST`
     );
     return result.rows;
@@ -69,7 +66,6 @@ class HeartbeatService {
     for (const agent of staleAgents) {
       if (agent.current_ticket_id) {
         try {
-          const TicketService = require('./TicketService');
           await TicketService.releaseTicket(agent.current_ticket_id);
         } catch (err) {
           console.error(`Failed to release ticket ${agent.current_ticket_id} for stale agent ${agent.agent_id}:`, err.message);

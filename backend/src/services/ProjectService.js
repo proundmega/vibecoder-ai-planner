@@ -19,10 +19,10 @@ class ProjectService {
 
   async update(id, data, userId) {
     const project = await Project.findById(id);
-    if (!project) throw new Error('Project not found');
-    if (project.ownerId !== userId) throw new Error('Unauthorized');
+    if (!project) throw new NotFoundError('Project not found');
+    if (project.ownerId !== userId) throw new ForbiddenError('Unauthorized');
 
-    return await Project.update(id, ...Object.values(data));
+    return await Project.update(id, data.name, data.description, userId);
   }
 
   async delete(id, userId) {
