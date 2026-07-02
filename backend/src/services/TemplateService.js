@@ -631,7 +631,7 @@ async function functionName(params): ReturnType
     const { pool } = require('../db');
     const result = await pool.query(
       `UPDATE project_templates 
-       SET name = $1, description = $2, file_definitions = $3::jsonb, updated_at = NOW()
+       SET name = $1, description = $2, file_definitions = $3::jsonb
        WHERE id = $4 AND created_by = $5 RETURNING *`,
       [name.trim(), description || null, JSON.stringify(fileDefinitions), templateId, userId]
     );
