@@ -17,7 +17,7 @@ const setProviderConfigSchema = Joi.object({
 const testProviderConnectionSchema = Joi.object({
   endpoint_url: Joi.string().uri().allow('').optional(),
   model: Joi.string().optional(),
-  api_key: Joi.string().optional(),
+  api_key: Joi.string().allow('').optional(),
 });
 
 const resolveProviderSchema = Joi.object({
