@@ -2,6 +2,7 @@ const ProviderRouter = require('../services/ProviderRouter');
 const { encrypt, decrypt, maskToken } = require('../utils/crypto');
 const { NotFoundError } = require('../errors/HttpError');
 const Project = require('../models/project');
+const { pool } = require('../db');
 
 async function addProvider(req, res, next) {
   try {
@@ -13,7 +14,6 @@ async function addProvider(req, res, next) {
 
     const encryptedKey = encrypt(apiKey);
 
-    const { pool } = require('../db');
     const result = await pool.query(
       `INSERT INTO project_providers (project_id, name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -52,8 +52,6 @@ async function updateProvider(req, res, next) {
 
     const project = await Project.findById(id);
     if (!project) throw new NotFoundError('Project not found');
-
-    const { pool } = require('../db');
 
     const updates = [];
     const values = [];
@@ -139,7 +137,6 @@ async function deleteProvider(req, res, next) {
     const project = await Project.findById(id);
     if (!project) throw new NotFoundError('Project not found');
 
-    const { pool } = require('../db');
     const result = await pool.query(
       'DELETE FROM project_providers WHERE id = $1 AND project_id = $2 RETURNING *',
       [providerId, id]
@@ -162,7 +159,6 @@ async function listProviders(req, res, next) {
     const project = await Project.findById(id);
     if (!project) throw new NotFoundError('Project not found');
 
-    const { pool } = require('../db');
     const result = await pool.query(
       `SELECT id, project_id, name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, is_active, created_at, updated_at
        FROM project_providers
@@ -200,7 +196,6 @@ async function testProvider(req, res, next) {
     const project = await Project.findById(id);
     if (!project) throw new NotFoundError('Project not found');
 
-    const { pool } = require('../db');
     const result = await pool.query(
       'SELECT * FROM project_providers WHERE id = $1 AND project_id = $2',
       [providerId, id]
@@ -243,7 +238,6 @@ async function getProviderConfig(req, res, next) {
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    const { pool } = require('../db');
     const result = await pool.query(
       'SELECT * FROM provider_configs WHERE project_id = $1 ORDER BY created_at DESC LIMIT 1',
       [projectId]
@@ -283,7 +277,6 @@ async function setProviderConfig(req, res, next) {
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    const { pool } = require('../db');
     const encryptedKey = api_key ? encrypt(api_key) : null;
 
     const result = await pool.query(
@@ -329,7 +322,6 @@ async function deleteProviderConfig(req, res, next) {
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    const { pool } = require('../db');
     const result = await pool.query(
       'DELETE FROM provider_configs WHERE project_id = $1 RETURNING *',
       [projectId]

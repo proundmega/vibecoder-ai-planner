@@ -86,22 +86,23 @@ exports.requireRole = (...allowedRoles) => {
   };
 };
 
-exports.requireActiveUser = (req, res, next) => {
+exports.requireActiveUser = async (req, res, next) => {
   if (!req.user || !req.user.userId) {
     return res.status(403).json({ error: 'Account deactivated' });
   }
   
-  pool.query('SELECT is_active FROM users WHERE id = $1', [req.user.userId])
-    .then(result => {
-      if (result.rows.length === 0 || !result.rows[0].is_active) {
-        return res.status(403).json({ error: 'Account deactivated' });
-      }
-      next();
-    })
-    .catch(() => res.status(403).json({ error: 'Account deactivated' }));
+  try {
+    const result = await pool.query('SELECT is_active FROM users WHERE id = $1', [req.user.userId]);
+    if (result.rows.length === 0 || !result.rows[0].is_active) {
+      return res.status(403).json({ error: 'Account deactivated' });
+    }
+    next();
+  } catch {
+    return res.status(403).json({ error: 'Account deactivated' });
+  }
 };
 
-exports.agentAuth = (req, res, next) => {
+exports.agentAuth = async (req, res, next) => {
   try {
     const apiKey = req.headers['x-api-key'];
     
@@ -121,15 +122,12 @@ exports.agentAuth = (req, res, next) => {
     }
 
     // Real agent lookup from database
-    AgentService.getAgentByApiKey(apiKey)
-      .then(agent => {
-        if (!agent) {
-          return res.status(401).json({ error: 'Invalid API key' });
-        }
-        req.agent = agent;
-        next();
-      })
-      .catch(() => res.status(401).json({ error: 'Invalid agent credentials' }));
+    const agent = await AgentService.getAgentByApiKey(apiKey);
+    if (!agent) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+    req.agent = agent;
+    next();
   } catch (error) {
     console.error('agentAuth:', error);
     return res.status(401).json({ error: 'Invalid agent credentials' });
@@ -137,7 +135,7 @@ exports.agentAuth = (req, res, next) => {
 };
 
 // Combined auth: accepts either JWT token or agent API key
-exports.verifyTokenOrAgent = (req, res, next) => {
+exports.verifyTokenOrAgent = async (req, res, next) => {
   // Try JWT first
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
     return exports.verifyToken(req, res, next);
@@ -165,21 +163,22 @@ exports.verifyTokenOrAgent = (req, res, next) => {
   }
 
   // Real agent lookup from database
-  AgentService.getAgentByApiKey(apiKey)
-    .then(agent => {
-      if (!agent) {
-        return res.status(401).json({ error: 'Invalid API key' });
-      }
-      req.agent = agent;
-      req.user = {
-        userId: agent.id,
-        id: agent.id,
-        email: agent.email || 'agent@vibecode.local',
-        role: agent.role || 'member',
-      };
-      next();
-    })
-    .catch(() => res.status(401).json({ error: 'Invalid agent credentials' }));
+  try {
+    const agent = await AgentService.getAgentByApiKey(apiKey);
+    if (!agent) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+    req.agent = agent;
+    req.user = {
+      userId: agent.id,
+      id: agent.id,
+      email: agent.email || 'agent@vibecode.local',
+      role: agent.role || 'member',
+    };
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Invalid agent credentials' });
+  }
 };
 
 // Rate limiting middleware

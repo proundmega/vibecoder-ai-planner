@@ -173,18 +173,18 @@ class MemoryService {
     try {
       const result = await pool.query(
         `SELECT am.*, u.name as agent_name, u.email as agent_email,
-                1 - (am.embedding <=> $4) as similarity
-         FROM agent_memory am
-         LEFT JOIN users u ON am.agent_id = u.id
-         WHERE am.project_id = $1
-         AND am.embedding IS NOT NULL
-         ORDER BY am.embedding <=> $4
-         LIMIT $2`,
-        [projectId, limit, queryEmbedding]
+                1 - (am.embedding <=> $3) as similarity
+          FROM agent_memory am
+          LEFT JOIN users u ON am.agent_id = u.id
+          WHERE am.project_id = $1
+          AND am.embedding IS NOT NULL
+          AND (1 - (am.embedding <=> $3)) >= $4
+          ORDER BY am.embedding <=> $3
+          LIMIT $2`,
+        [projectId, limit, queryEmbedding, threshold]
       );
 
-      const memories = result.rows.map(row => this._formatResultWithUserInfo(row));
-      return memories.filter(m => m.similarity >= threshold);
+      return result.rows.map(row => this._formatResultWithUserInfo(row));
     } catch (error) {
       if (error.message.includes('does not exist')) {
         return [];

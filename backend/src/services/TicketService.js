@@ -111,11 +111,11 @@ class TicketService {
 
     return await Ticket.update(
       id,
-      data.title,
-      data.description,
-      data.status,
-      data.priority,
-      data.assigneeId,
+      data.title !== undefined ? data.title : null,
+      data.description !== undefined ? data.description : null,
+      data.status !== undefined ? data.status : null,
+      data.priority !== undefined ? data.priority : null,
+      data.assigneeId !== undefined ? data.assigneeId : null,
       userId
     );
   }
@@ -387,13 +387,17 @@ class TicketService {
   async recoverOrphanedTickets(staleMinutes = 60) {
     const { pool } = require('../db');
 
+    if (typeof staleMinutes !== 'number' || staleMinutes <= 0) {
+      throw new ValidationError('staleMinutes must be a positive number');
+    }
+
     const result = await pool.query(
       `UPDATE tickets 
-       SET assigned_agent_id = NULL, locked_at = NULL, status = 'backlog'
-       WHERE status = 'in_progress' 
-       AND locked_at < NOW() - INTERVAL '${staleMinutes} minutes'
-       AND assigned_agent_id IS NOT NULL
-       RETURNING id, title, assigned_agent_id, locked_at`,
+        SET assigned_agent_id = NULL, locked_at = NULL, status = 'backlog'
+        WHERE status = 'in_progress' 
+        AND locked_at < NOW() - INTERVAL '${staleMinutes} minutes'
+        AND assigned_agent_id IS NOT NULL
+        RETURNING id, title, assigned_agent_id, locked_at`,
       []
     );
 
