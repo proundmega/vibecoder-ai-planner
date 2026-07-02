@@ -21,9 +21,9 @@ test_usage_tracking() {
   local pricing_body
   pricing_body=$(curl -sf "${BASE}/api/v1/usage/pricing/models" \
     -H "Authorization: Bearer $token")
-  assert_has_field "Model pricing returns models" "models" "$pricing_body"
+  assert_has_field "Model pricing returns models" "data" "$pricing_body"
 
-  if echo "$pricing_body" | grep -q '"claude"'; then
+  if echo "$pricing_body" | grep -qi '"claude-'; then
     pass "Pricing includes Claude models"
   else
     fail "Usage pricing" "Claude models not found"
@@ -38,10 +38,10 @@ test_usage_tracking() {
   local usage_body
   usage_body=$(curl -sf "${BASE}/api/v1/usage/projects/$proj_id/usage" \
     -H "Authorization: Bearer $token")
-  assert_has_field "Project usage returns data" "usage" "$usage_body"
+  assert_has_field "Project usage returns data" "data" "$usage_body"
 
   local user_usage_body
   user_usage_body=$(curl -sf "${BASE}/api/v1/usage/users/me/usage" \
     -H "Authorization: Bearer $token")
-  assert_has_field "User usage returns data" "usage" "$user_usage_body"
+  assert_has_field "User usage returns data" "data" "$user_usage_body"
 }

@@ -7,7 +7,16 @@ const AgentService = require('../services/AgentService');
 const { verifyToken } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
-const { createTicketSchema, editTicketSchema, claimTicketSchema, statusChangeSchema } = require('../validators/agents');
+const { editTicketSchema, claimTicketSchema, statusChangeSchema } = require('../validators/agents');
+const Joi = require('joi');
+const createAgentSchema = Joi.object({
+  name: Joi.string().min(1).max(100).required().messages({
+    'string.empty': 'name is required',
+    'string.min': 'name must be at least 1 character',
+    'string.max': 'name must not exceed 100 characters',
+    'any.required': 'name is required',
+  }),
+});
 
 /**
  * @openapi
@@ -38,7 +47,7 @@ const { createTicketSchema, editTicketSchema, claimTicketSchema, statusChangeSch
  *       400:
  *         description: Creation failed
  */
-router.post('/create', verifyToken, requireAnyPermission('AGENT_CREATE'), validate(createTicketSchema), async (req, res) => {
+router.post('/create', verifyToken, requireAnyPermission('AGENT_CREATE'), validate(createAgentSchema), async (req, res) => {
   try {
     const { name } = req.body;
     const apiKey = `ak_${crypto.randomBytes(24).toString('hex')}`;

@@ -48,7 +48,7 @@ describe('Credential Controller', () => {
       mockReq.params.id = '1';
       mockReq.body = {
         name: 'Anthropic API Key',
-        credentialType: 'anthropic',
+        type: 'anthropic',
         key: 'sk-ant-api03-abc123',
       };
 
@@ -69,7 +69,7 @@ describe('Credential Controller', () => {
       Project.findById.mockResolvedValue({ id: 1 });
 
       mockReq.params.id = '1';
-      mockReq.body = { name: 'Test', credentialType: 'anthropic' };
+      mockReq.body = { name: 'Test', type: 'anthropic' };
 
       await credentialController.addCredential(mockReq, mockRes, nextFn);
 

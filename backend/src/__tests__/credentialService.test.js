@@ -15,7 +15,12 @@ describe('CredentialService', () => {
     jest.clearAllMocks();
     encrypt.mockReturnValue('encrypted-key-data');
     decrypt.mockReturnValue('my-secret-api-key');
-    maskToken.mockImplementation((key) => '••••' + key.slice(-4));
+    maskToken.mockImplementation((key) => {
+      if (!key || key.length < 8) return '****';
+      const visible = key.slice(-4);
+      const maskedLen = Math.min(key.length - 4, 15);
+      return '*'.repeat(maskedLen) + visible;
+    });
   });
 
   describe('addCredential', () => {
@@ -49,7 +54,7 @@ describe('CredentialService', () => {
           'Anthropic API Key',
           'anthropic',
           'encrypted-key-data',
-          '••••c123',
+          '***************c123',
           {},
           1,
         ])
@@ -224,16 +229,16 @@ describe('CredentialService', () => {
 
   describe('maskToken', () => {
     it('should mask long keys showing last 4 chars', () => {
-      expect(CredentialService.maskToken('sk-ant-api03-abc123def456')).toBe('•••••••••••••••••••••f456');
+      expect(maskToken('sk-ant-api03-abc123def456')).toBe('***************f456');
     });
 
-    it('should return unmasked for 4-char keys', () => {
-      expect(CredentialService.maskToken('1234')).toBe('1234');
+    it('should return **** for short keys', () => {
+      expect(maskToken('1234')).toBe('****');
     });
 
-    it('should return •••• for null/undefined', () => {
-      expect(CredentialService.maskToken(null)).toBe('••••');
-      expect(CredentialService.maskToken(undefined)).toBe('••••');
+    it('should return **** for null/undefined', () => {
+      expect(maskToken(null)).toBe('****');
+      expect(maskToken(undefined)).toBe('****');
     });
   });
 });

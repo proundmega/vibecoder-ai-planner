@@ -19,20 +19,21 @@ test_credentials() {
     | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   local code
-  code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/projects/$proj_id/credentials")
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/credentials/$proj_id/credentials")
   assert_status "Credentials without auth returns 401" "401" "$code"
 
   local cred_body
-  cred_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/credentials" \
+  cred_body=$(curl -sf -X POST "${BASE}/api/v1/credentials/$proj_id/credentials" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
-    -d '{"name":"Test API Key","type":"api_key","value":"sk-test-secret-key-12345"}')
+    -d '{"name":"Test API Key","type":"api_key","key":"sk-test-secret-key-12345"}')
   assert_has_field "Add credential returns id" "id" "$cred_body"
   assert_field "Credential name preserved" "name" "Test API Key" "$(echo "$cred_body" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)"
-  assert_field "Credential type preserved" "type" "api_key" "$(echo "$cred_body" | grep -o '"type":"[^"]*"' | cut -d'"' -f4)"
+  assert_field "Credential type preserved" "credentialType" "api_key" "$(echo "$cred_body" | grep -o '"credentialType":"[^"]*"' | cut -d'"' -f4)"
 
   local cred_id
   cred_id=$(echo "$cred_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+  local current_cred_id="$cred_id"
 
   if echo "$cred_body" | grep -q '"keyMasked"'; then
     pass "Credential response includes keyMasked field"
@@ -41,40 +42,41 @@ test_credentials() {
   fi
 
   local list_body
-  list_body=$(curl -sf "${BASE}/api/v1/projects/$proj_id/credentials" \
+  list_body=$(curl -sf "${BASE}/api/v1/credentials/$proj_id/credentials" \
     -H "Authorization: Bearer $token")
-  assert_has_field "List credentials returns array" "credentials" "$list_body"
+  assert_has_field "List credentials returns array" "data" "$list_body"
 
-  curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/credentials" \
+  curl -sf -X POST "${BASE}/api/v1/credentials/$proj_id/credentials" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
-    -d '{"name":"GitHub PAT","type":"github_pat","value":"ghp_test_pat_abc123xyz"}' >/dev/null 2>&1
+    -d '{"name":"GitHub PAT","type":"api_key","key":"ghp_test_pat_abc123xyz"}' >/dev/null 2>&1
 
   local update_body
-  update_body=$(curl -sf -X PATCH "${BASE}/api/v1/projects/$proj_id/credentials/$cred_id" \
+  update_body=$(curl -sf -X PATCH "${BASE}/api/v1/credentials/$proj_id/credentials/$cred_id" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Updated API Key"}')
   assert_field "Update credential name" "name" "Updated API Key" "$(echo "$update_body" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)"
 
   local rotate_body
-  rotate_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/credentials/$cred_id/rotate" \
+  rotate_body=$(curl -sf -X POST "${BASE}/api/v1/credentials/$proj_id/credentials/$current_cred_id/rotate" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
-    -d '{"newValue":"sk-rotated-key-67890"}')
-  assert_has_field "Rotate credential returns new key" "decryptedKey" "$rotate_body"
+    -d '{"key":"sk-rotated-key-67890"}')
+  assert_has_field "Rotate credential returns keyMasked" "keyMasked" "$rotate_body"
+  current_cred_id=$(echo "$rotate_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   local decrypt_body
-  decrypt_body=$(curl -sf "${BASE}/api/v1/projects/$proj_id/credentials/decrypt" \
+  decrypt_body=$(curl -sf "${BASE}/api/v1/credentials/$proj_id/credentials/decrypt?type=api_key" \
     -H "Authorization: Bearer $token")
-  if echo "$decrypt_body" | grep -q '"decryptedKey"'; then
+  if echo "$decrypt_body" | grep -q '"key"'; then
     pass "Decrypt returns decrypted key"
   else
-    fail "Credentials decrypt" "missing decryptedKey"
+    fail "Credentials decrypt" "missing key field"
   fi
 
   local delete_code
-  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/projects/$proj_id/credentials/$cred_id" \
+  delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/credentials/$proj_id/credentials/$current_cred_id" \
     -H "Authorization: Bearer $token")
   assert_status "Delete credential" "200" "$delete_code"
 }

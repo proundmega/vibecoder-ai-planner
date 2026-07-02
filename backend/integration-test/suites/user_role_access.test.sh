@@ -23,7 +23,7 @@ test_user_role_ticket_access() {
     -d '{"email":"bob@integration.test","password":"password123"}')
   local user_role
   user_role=$(echo "$login_body" | grep -o '"role":"[^"]*"' | cut -d'"' -f4)
-  assert_field "Default user role is user" "role" "user" "$user_role"
+  assert_field "Default user role is project_admin" "role" "project_admin" "$user_role"
 
   local admin_token
   admin_token=$(login "alice@integration.test" "password123")

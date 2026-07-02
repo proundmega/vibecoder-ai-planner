@@ -50,7 +50,7 @@ test_approvals_api() {
   local pending_body
   pending_body=$(curl -sf "${BASE}/api/v1/approvals/pending" \
     -H "Authorization: Bearer $admin_token")
-  assert_has_field "Get pending approvals" "approvals" "$pending_body"
+  assert_has_field "Get pending approvals" "data" "$pending_body"
 
   local approve_body
   approve_body=$(curl -sf -X POST "${BASE}/api/v1/approvals/$approval_id/approve" \

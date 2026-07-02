@@ -21,10 +21,10 @@ test_billing() {
   local billing_body
   billing_body=$(curl -sf "${BASE}/api/v1/billing/projects/$proj_id/billing" \
     -H "Authorization: Bearer $token")
-  assert_has_field "Project billing returns data" "billing" "$billing_body"
+  assert_has_field "Project billing returns data" "data" "$billing_body"
 
   local user_billing_body
   user_billing_body=$(curl -sf "${BASE}/api/v1/billing/users/me/billing" \
     -H "Authorization: Bearer $token")
-  assert_has_field "User billing returns data" "billing" "$user_billing_body"
+  assert_has_field "User billing returns data" "data" "$user_billing_body"
 }
