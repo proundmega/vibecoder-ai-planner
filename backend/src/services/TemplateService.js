@@ -556,7 +556,8 @@ async function functionName(params): ReturnType
   static async list(projectId, userId) {
     const { pool } = require('../db');
     const result = await pool.query(
-      `SELECT pt.*, u.name as created_by_name 
+      `SELECT pt.*, jsonb_array_length(pt.file_definitions)::int AS file_definitions_count,
+              u.name as created_by_name 
        FROM project_templates pt 
        LEFT JOIN users u ON pt.created_by = u.id 
        WHERE pt.project_id = $1 
@@ -622,6 +623,17 @@ async function functionName(params): ReturnType
     const result = await pool.query(
       'DELETE FROM project_templates WHERE id = $1 AND created_by = $2 RETURNING *',
       [templateId, userId]
+    );
+    return result.rows[0];
+  }
+
+  static async update(templateId, userId, name, description, fileDefinitions) {
+    const { pool } = require('../db');
+    const result = await pool.query(
+      `UPDATE project_templates 
+       SET name = $1, description = $2, file_definitions = $3::jsonb, updated_at = NOW()
+       WHERE id = $4 AND created_by = $5 RETURNING *`,
+      [name.trim(), description || null, JSON.stringify(fileDefinitions), templateId, userId]
     );
     return result.rows[0];
   }

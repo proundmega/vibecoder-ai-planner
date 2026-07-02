@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { listTemplates, createTemplate, deleteTemplate } from '@/api/templates'
+import { listTemplates, createTemplate, updateTemplate, deleteTemplate } from '@/api/templates'
 
 const route = useRoute()
 const projectId = route.params.id
@@ -10,12 +10,19 @@ const templatesLoading = ref(true)
 const templatesError = ref(null)
 const templatesData = ref([])
 const showCreateModal = ref(false)
+const showEditModal = ref(false)
 const createActionLoading = ref(false)
+const updateActionLoading = ref(null)
 const deleteActionLoading = ref(null)
 
 const newName = ref('')
 const newDescription = ref('')
 const newFiles = ref([{ key: '', content: '' }])
+
+const editingTemplate = ref(null)
+const editName = ref('')
+const editDescription = ref('')
+const editFiles = ref([{ key: '', content: '' }])
 
 const createSuccess = ref(null)
 
@@ -69,6 +76,41 @@ async function handleDeleteTemplate(id) {
   }
 }
 
+function handleEditTemplate(template) {
+  editingTemplate.value = template
+  editName.value = template.name
+  editDescription.value = template.description || ''
+  editFiles.value = template.file_definitions && template.file_definitions.length > 0 
+    ? template.file_definitions.map(f => ({ key: f.key || '', content: f.content || '' }))
+    : [{ key: '', content: '' }]
+  showEditModal.value = true
+}
+
+async function handleUpdateTemplate() {
+  if (!editName.value.trim()) return
+  const validFiles = editFiles.value.filter(f => f.key.trim())
+  if (validFiles.length === 0) return
+
+  updateActionLoading.value = editingTemplate.value.id
+  try {
+    await updateTemplate(projectId, editingTemplate.value.id, {
+      name: editName.value.trim(),
+      description: editDescription.value.trim() || null,
+      file_definitions: validFiles.map(f => ({ key: f.key.trim(), content: f.content })),
+    })
+    templatesData.value = await listTemplates(projectId)
+    showEditModal.value = false
+    editingTemplate.value = null
+    editName.value = ''
+    editDescription.value = ''
+    editFiles.value = [{ key: '', content: '' }]
+  } catch (err) {
+    templatesError.value = err.message || 'Failed to update template'
+  } finally {
+    updateActionLoading.value = null
+  }
+}
+
 function addFileRow() {
   newFiles.value.push({ key: '', content: '' })
 }
@@ -76,6 +118,16 @@ function addFileRow() {
 function removeFileRow(index) {
   if (newFiles.value.length > 1) {
     newFiles.value.splice(index, 1)
+  }
+}
+
+function addEditFileRow() {
+  editFiles.value.push({ key: '', content: '' })
+}
+
+function removeEditFileRow(index) {
+  if (editFiles.value.length > 1) {
+    editFiles.value.splice(index, 1)
   }
 }
 </script>
@@ -113,13 +165,22 @@ function removeFileRow(index) {
               <span>{{ new Date(template.created_at).toLocaleDateString() }}</span>
             </div>
           </div>
-          <button
-            @click="handleDeleteTemplate(template.id)"
-            :disabled="deleteActionLoading === template.id"
-            class="btn-delete"
-          >
-            {{ deleteActionLoading === template.id ? 'Deleting...' : 'Delete' }}
-          </button>
+          <div class="template-actions">
+            <button
+              @click="handleEditTemplate(template)"
+              :disabled="updateActionLoading === template.id"
+              class="btn-edit"
+            >
+              {{ updateActionLoading === template.id ? 'Saving...' : 'Edit' }}
+            </button>
+            <button
+              @click="handleDeleteTemplate(template.id)"
+              :disabled="deleteActionLoading === template.id"
+              class="btn-delete"
+            >
+              {{ deleteActionLoading === template.id ? 'Deleting...' : 'Delete' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -156,6 +217,42 @@ function removeFileRow(index) {
             {{ createActionLoading ? 'Creating...' : 'Create Template' }}
           </button>
           <button @click="showCreateModal = false" class="btn-secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div v-if="showEditModal" class="modal" @click.self="showEditModal = false">
+      <div class="modal-content">
+        <h3>Edit Template</h3>
+
+        <div class="form-group">
+          <label>Template Name</label>
+          <input v-model="editName" type="text" placeholder="e.g., Sprint Planning" class="input" />
+        </div>
+
+        <div class="form-group">
+          <label>Description (optional)</label>
+          <input v-model="editDescription" type="text" placeholder="What is this template for?" class="input" />
+        </div>
+
+        <div class="form-group">
+          <label>Files</label>
+          <div v-for="(file, index) in editFiles" :key="index" class="file-row">
+            <input v-model="file.key" type="text" placeholder="File name (e.g., 01_REQUIREMENT.md)" class="input file-key" />
+            <textarea v-model="file.content" placeholder="Template content..." class="textarea file-content" rows="3" />
+            <button @click="removeEditFileRow(index)" class="btn-remove" :disabled="editFiles.length === 1">
+              Remove
+            </button>
+          </div>
+          <button @click="addEditFileRow" class="btn-add-file">+ Add File</button>
+        </div>
+
+        <div class="form-actions">
+          <button @click="handleUpdateTemplate" :disabled="updateActionLoading === editingTemplate?.id" class="btn-primary">
+            {{ updateActionLoading === editingTemplate?.id ? 'Saving...' : 'Save Changes' }}
+          </button>
+          <button @click="showEditModal = false" class="btn-secondary">Cancel</button>
         </div>
       </div>
     </div>
@@ -240,6 +337,12 @@ function removeFileRow(index) {
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
+}
+
+.template-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .template-info h3 {
@@ -372,6 +475,27 @@ function removeFileRow(index) {
 
 .btn-secondary:hover {
   background: #f9fafb;
+}
+
+.btn-edit {
+  padding: 8px 16px;
+  background: #dbeafe;
+  color: #2563eb;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.btn-edit:hover:not(:disabled) {
+  background: #bfdbfe;
+}
+
+.btn-edit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .btn-delete {

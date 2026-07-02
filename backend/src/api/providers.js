@@ -126,7 +126,7 @@ router.delete('/:projectId/providers/:providerId', verifyToken, requireAnyPermis
  *       200:
  *         description: Connection test result
  */
-router.post('/:projectId/providers/:providerId/test', verifyToken, validate(testProviderConnectionSchema), providerController.testProvider);
+router.post('/:projectId/providers/:providerId/test', verifyToken, providerController.testProvider);
 
 /**
  * @openapi
