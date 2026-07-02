@@ -6,10 +6,10 @@ const { pool } = require('../db');
 
 async function addProvider(req, res, next) {
   try {
-    const { id } = req.params;
+    const { projectId } = req.params;
     const { name, providerType, apiKey, baseUrl, model, roles, maxTokens, temperature } = req.body;
 
-    const project = await Project.findById(id);
+    const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
     const encryptedKey = encrypt(apiKey);
@@ -18,7 +18,7 @@ async function addProvider(req, res, next) {
       `INSERT INTO project_providers (project_id, name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [id, name, providerType, encryptedKey, baseUrl || null, model, roles || ['worker'], maxTokens || 4096, temperature || 0.1]
+      [projectId, name, providerType, encryptedKey, baseUrl || null, model || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1]
     );
 
     const row = result.rows[0];
@@ -47,10 +47,10 @@ async function addProvider(req, res, next) {
 
 async function updateProvider(req, res, next) {
   try {
-    const { id, providerId } = req.params;
+    const { projectId, providerId } = req.params;
     const { name, providerType, apiKey, baseUrl, model, roles, maxTokens, temperature, isActive } = req.body;
 
-    const project = await Project.findById(id);
+    const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
     const updates = [];
@@ -99,7 +99,7 @@ async function updateProvider(req, res, next) {
 
     const result = await pool.query(
       `UPDATE project_providers SET ${updates.join(', ')} WHERE id = $${paramIndex} AND project_id = $1 RETURNING *`,
-      [id, ...values]
+      [projectId, ...values]
     );
 
     if (result.rows.length === 0) {
@@ -132,14 +132,14 @@ async function updateProvider(req, res, next) {
 
 async function deleteProvider(req, res, next) {
   try {
-    const { id, providerId } = req.params;
+    const { projectId, providerId } = req.params;
 
-    const project = await Project.findById(id);
+    const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
     const result = await pool.query(
       'DELETE FROM project_providers WHERE id = $1 AND project_id = $2 RETURNING *',
-      [providerId, id]
+      [providerId, projectId]
     );
 
     if (result.rows.length === 0) {
@@ -154,9 +154,9 @@ async function deleteProvider(req, res, next) {
 
 async function listProviders(req, res, next) {
   try {
-    const { id } = req.params;
+    const { projectId } = req.params;
 
-    const project = await Project.findById(id);
+    const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
     const result = await pool.query(
@@ -164,7 +164,7 @@ async function listProviders(req, res, next) {
        FROM project_providers
        WHERE project_id = $1
        ORDER BY created_at DESC`,
-      [id]
+      [projectId]
     );
 
     const providers = result.rows.map(row => ({
@@ -191,14 +191,14 @@ async function listProviders(req, res, next) {
 
 async function testProvider(req, res, next) {
   try {
-    const { id, providerId } = req.params;
+    const { projectId, providerId } = req.params;
 
-    const project = await Project.findById(id);
+    const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
     const result = await pool.query(
       'SELECT * FROM project_providers WHERE id = $1 AND project_id = $2',
-      [providerId, id]
+      [providerId, projectId]
     );
 
     if (result.rows.length === 0) {

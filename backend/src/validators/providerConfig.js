@@ -11,13 +11,15 @@ const setProviderConfigSchema = Joi.object({
     'any.required': 'model is required',
   }),
   api_key: Joi.string().allow('').optional(),
-  fallback_provider: Joi.string().allow('').optional(),
+  fallback_provider: Joi.string().allow('').allow(null).optional(),
 });
 
 const testProviderConnectionSchema = Joi.object({
+  provider: Joi.string().optional(),
   endpoint_url: Joi.string().uri().allow('').optional(),
   model: Joi.string().optional(),
   api_key: Joi.string().allow('').optional(),
+  fallback_provider: Joi.string().allow('').allow(null).optional(),
 });
 
 const resolveProviderSchema = Joi.object({

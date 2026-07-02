@@ -11,17 +11,14 @@ const addProviderSchema = Joi.object({
     'string.empty': 'providerType is required',
     'any.required': 'providerType is required',
   }),
-  apiKey: Joi.string().min(1).required().messages({
-    'string.empty': 'apiKey is required',
-    'any.required': 'apiKey is required',
-  }),
+  apiKey: Joi.string().allow('').optional(),
   baseUrl: Joi.string().uri().allow('').optional(),
 });
 
 const updateProviderSchema = Joi.object({
   name: Joi.string().min(1).max(100).optional(),
   providerType: Joi.string().min(1).optional(),
-  apiKey: Joi.string().min(1).optional(),
+  apiKey: Joi.string().allow('').optional(),
   baseUrl: Joi.string().uri().allow('').optional(),
 });
 

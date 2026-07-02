@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS project_providers (
   is_active BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT valid_provider_type CHECK (provider_type IN ('claude', 'openai', 'generic')),
+  CONSTRAINT valid_provider_type CHECK (provider_type IN ('claude', 'openai', 'generic', 'ollama', 'vllm', 'llamacpp', 'custom')),
   CONSTRAINT valid_roles CHECK (array_length(roles, 1) > 0)
 );
 
