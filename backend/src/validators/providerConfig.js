@@ -15,11 +15,7 @@ const setProviderConfigSchema = Joi.object({
 });
 
 const testProviderConnectionSchema = Joi.object({
-  endpoint_url: Joi.string().uri().required().messages({
-    'string.empty': 'endpoint_url is required',
-    'string.uri': 'endpoint_url must be a valid URI',
-    'any.required': 'endpoint_url is required',
-  }),
+  endpoint_url: Joi.string().uri().allow('').optional(),
   model: Joi.string().optional(),
   api_key: Joi.string().optional(),
 });
