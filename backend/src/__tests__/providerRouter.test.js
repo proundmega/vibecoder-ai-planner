@@ -157,6 +157,34 @@ describe('ProviderRouter', () => {
       expect(provider.chat).toBeDefined();
     });
 
+    it('should create GenericProvider for ollama type', () => {
+      const router = new ProviderRouter(1);
+      const provider = router.createProvider('ollama', { apiKey: 'test', model: 'llama3', baseUrl: 'http://localhost:11434/v1' });
+      expect(GenericProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'llama3', maxTokens: undefined, temperature: undefined, baseUrl: 'http://localhost:11434/v1' });
+      expect(provider.chat).toBeDefined();
+    });
+
+    it('should create GenericProvider for vllm type', () => {
+      const router = new ProviderRouter(1);
+      const provider = router.createProvider('vllm', { apiKey: 'test', model: 'meta-llama/Llama-3-8b', baseUrl: 'http://localhost:8000/v1' });
+      expect(GenericProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'meta-llama/Llama-3-8b', maxTokens: undefined, temperature: undefined, baseUrl: 'http://localhost:8000/v1' });
+      expect(provider.chat).toBeDefined();
+    });
+
+    it('should create GenericProvider for llamacpp type', () => {
+      const router = new ProviderRouter(1);
+      const provider = router.createProvider('llamacpp', { apiKey: 'test', model: 'llama-3-8b', baseUrl: 'http://localhost:8081' });
+      expect(GenericProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'llama-3-8b', maxTokens: undefined, temperature: undefined, baseUrl: 'http://localhost:8081' });
+      expect(provider.chat).toBeDefined();
+    });
+
+    it('should create GenericProvider for custom type', () => {
+      const router = new ProviderRouter(1);
+      const provider = router.createProvider('custom', { apiKey: 'test', model: 'custom-model', baseUrl: 'http://custom-api.com' });
+      expect(GenericProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'custom-model', maxTokens: undefined, temperature: undefined, baseUrl: 'http://custom-api.com' });
+      expect(provider.chat).toBeDefined();
+    });
+
     it('should throw error for unknown provider type', () => {
       const router = new ProviderRouter(1);
       expect(() => router.createProvider('unknown', {})).toThrow('Unknown provider type: unknown');

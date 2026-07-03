@@ -58,6 +58,10 @@ class ProviderRouter {
       case 'openai':
         return new OpenAIProvider(config);
       case 'generic':
+      case 'ollama':
+      case 'vllm':
+      case 'llamacpp':
+      case 'custom':
         return new GenericProvider(config);
       default:
         throw new Error(`Unknown provider type: ${type}`);
