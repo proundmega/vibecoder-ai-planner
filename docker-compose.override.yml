@@ -5,6 +5,9 @@ services:
     environment:
       - NODE_ENV=development
       - INTEGRATION_TESTS=1
+      - DOCKER_API_URL=/var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   frontend:
     ports:
