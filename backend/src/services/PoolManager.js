@@ -1,7 +1,6 @@
-const Docker = require('dockerode');
 const crypto = require('crypto');
+const { docker } = require('../utils/docker');
 
-const DOCKER_SOCKET = process.env.DOCKER_SOCKET || '/var/run/docker.sock';
 const AGENT_IMAGE = process.env.AGENT_IMAGE || 'vibecode-agent';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:3001';
 const IDLE_TIMEOUT_MS = parseInt(process.env.AGENT_IDLE_TIMEOUT_MS) || 300000;
@@ -11,7 +10,7 @@ const REPO_VOLUME = process.env.REPO_VOLUME || 'vibecode_repos';
 class PoolManager {
   constructor() {
     try {
-      this.docker = new Docker({ socketPath: DOCKER_SOCKET });
+      this.docker = docker;
       this.docker.ping().catch(() => { this.docker = null; });
     } catch {
       this.docker = null;
@@ -30,7 +29,7 @@ class PoolManager {
 
   async requestAgent(projectId, repoUrl, providerConfig = {}) {
     if (!this.docker) {
-      throw new Error('Docker daemon not available. Ensure DOCKER_SOCKET is configured and accessible.');
+      throw new Error('Docker daemon not available. Ensure DOCKER_API_URL is configured and accessible.');
     }
 
     for (const [id, entry] of this.pool) {

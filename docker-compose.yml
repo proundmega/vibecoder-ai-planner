@@ -1,4 +1,22 @@
 services:
+  docker-proxy:
+    image: tutum/docker-socket-proxy:latest
+    container_name: vibecode-docker-proxy
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+    networks:
+      - vibecode
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:2375/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
   migrate:
     build:
       context: ./backend
@@ -25,16 +43,17 @@ services:
       - PORT=3001
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@postgres:5432/vibecode
       - JWT_SECRET=${JWT_SECRET}
-      - DOCKER_SOCKET=/var/run/docker.sock
+      - DOCKER_API_URL=http://docker-proxy:2375
       - AGENT_IMAGE=vibecode-agent
       - CONTAINER_NETWORK=vibecode_default
       - REPO_VOLUME=vibecode_repos
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
     volumes:
       - uploads_data:/app/uploads
-      - /var/run/docker.sock:/var/run/docker.sock
       - vibecode_repos:/repos
     depends_on:
+      docker-proxy:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     healthcheck:
@@ -96,6 +115,8 @@ services:
 
 networks:
   default:
+    driver: bridge
+  vibecode:
     driver: bridge
 
 volumes:
