@@ -13,6 +13,7 @@ const messages = ref([])
 const processing = ref(false)
 const apiKey = ref('')
 const dailyUsage = ref({ used: 0, limit: 100 })
+const errorMessage = ref('')
 
 const quickActionsList = ['Find Bugs', 'Review Code', 'Generate Docs', 'Test Scenarios']
 
@@ -84,7 +85,7 @@ async function handleQuickAction() {
 
 async function handleSubmit() {
   if (!selectedAgentId.value) {
-    alert('Please select an agent first')
+    errorMessage.value = 'Please select an agent first'
     return
   }
 
@@ -238,6 +239,10 @@ async function getRecentDailyUsage() {
           >
             {{ processing ? 'Processing...' : 'Send' }}
           </button>
+        </div>
+
+        <div v-if="errorMessage" class="input-error">
+          <p>{{ errorMessage }}</p>
         </div>
       </form>
     </div>
@@ -465,6 +470,19 @@ textarea:disabled {
 .submit-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.input-error {
+  padding: 8px 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #dc2626;
+  font-size: 13px;
+}
+
+.input-error p {
+  margin: 0;
 }
 
 .usage-warning {

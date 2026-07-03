@@ -267,7 +267,7 @@ async function handleUpdateProvider() {
       updates.fallback_provider = null
     }
     await updateProvider(projectId, editingProvider.value.id, updates)
-    showEditProvider(editingProvider.value)
+    editingProvider.value = null
     await loadProviders()
   } catch (err) {
     providersError.value = err.message || 'Failed to update provider'
