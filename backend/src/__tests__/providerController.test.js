@@ -599,7 +599,9 @@ describe('Provider Controller', () => {
 
       await providerController.addProvider(mockReq, mockRes, nextFn);
 
-      expect(encrypt).toHaveBeenCalledWith('');
+      expect(encrypt).not.toHaveBeenCalled();
+      const callArgs = pool.query.mock.calls[0][1];
+      expect(callArgs[3]).toBeNull();
       expect(mockRes.status).toHaveBeenCalledWith(201);
     });
   });
@@ -628,6 +630,30 @@ describe('Provider Controller', () => {
       const callArgs = pool.query.mock.calls[0][1];
       expect(callArgs).toContain('gpt-4o');
     });
+
+    it('should default to ollama model for ollama provider', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 1, project_id: 1, name: 'ollama-local', provider_type: 'ollama',
+          api_key_encrypted: null, base_url: null, model: 'llama3',
+          roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+          is_active: true, created_at: new Date(), updated_at: new Date(),
+        }],
+      });
+
+      mockReq.params.projectId = '1';
+      mockReq.body = {
+        name: 'ollama-local',
+        providerType: 'ollama',
+        apiKey: '',
+      };
+
+      await providerController.addProvider(mockReq, mockRes, nextFn);
+
+      const callArgs = pool.query.mock.calls[0][1];
+      expect(callArgs).toContain('llama3');
+    });
   });
 
   describe('updateProvider: empty body guard', () => {
@@ -642,6 +668,38 @@ describe('Provider Controller', () => {
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
       expect(pool.query).not.toHaveBeenCalled();
+    });
+
+    it('should use correct SQL parameter indices for providerId', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 1, project_id: 1, name: 'updated', provider_type: 'openai',
+          api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
+          roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+          is_active: true, created_at: new Date(), updated_at: new Date(),
+        }],
+      });
+
+      mockReq.params.projectId = '1';
+      mockReq.params.providerId = '42';
+      mockReq.body = { name: 'updated', model: 'gpt-4' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        data: expect.objectContaining({ name: 'updated' }),
+      });
+
+      const query = pool.query.mock.calls[0][0];
+      const args = pool.query.mock.calls[0][1];
+
+      expect(query).toContain('WHERE id = $4');
+      expect(args).toContain('42');
+      expect(args[0]).toBe('1');
+      expect(args[1]).toBe('updated');
+      expect(args[2]).toBe('gpt-4');
     });
   });
 });

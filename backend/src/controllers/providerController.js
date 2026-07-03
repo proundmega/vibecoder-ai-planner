@@ -12,13 +12,20 @@ async function addProvider(req, res, next) {
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    const encryptedKey = encrypt(apiKey);
+    const encryptedKey = apiKey ? encrypt(apiKey) : null;
+
+    const localModels = {
+      ollama: 'llama3',
+      vllm: 'meta-llama/Llama-3-8b',
+      llamacpp: 'llama-3-8b',
+      custom: 'custom-model',
+    };
 
     const result = await pool.query(
       `INSERT INTO project_providers (project_id, name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [projectId, name, providerType, encryptedKey, baseUrl || null, model || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1]
+      [projectId, name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1]
     );
 
     const row = result.rows[0];
@@ -67,7 +74,7 @@ async function updateProvider(req, res, next) {
     }
     if (apiKey !== undefined) {
       updates.push(`api_key_encrypted = $${paramIndex++}`);
-      values.push(encrypt(apiKey));
+      values.push(apiKey ? encrypt(apiKey) : null);
     }
     if (baseUrl !== undefined) {
       updates.push(`base_url = $${paramIndex++}`);
@@ -100,6 +107,7 @@ async function updateProvider(req, res, next) {
 
     updates.push(`updated_at = NOW()`);
     values.push(providerId);
+    paramIndex++;
 
     const result = await pool.query(
       `UPDATE project_providers SET ${updates.join(', ')} WHERE id = $${paramIndex} AND project_id = $1 RETURNING *`,
