@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getRepoStatus, connectRepo, disconnectRepo, listBranches, listPRs, createBranch } from '@/api/github'
-import { listProviders, addProvider, updateProvider, deleteProvider, testProvider, fetchProviderConfig, setProviderConfig, testProviderConnection } from '@/api/providers'
+import { listProviders, addProvider, updateProvider, deleteProvider, testProvider, setDirector, fetchProviderConfig, setProviderConfig, testProviderConnection } from '@/api/providers'
 import { getProjectUsage } from '@/api/usage'
 import { getProjectBilling } from '@/api/billing'
 import { getProjectMemory, searchMemory, addMemory, updateMemory, deleteMemory } from '@/api/memory'
@@ -19,7 +19,6 @@ const tabs = [
   { id: 'tickets', label: 'Tickets' },
   { id: 'approvals', label: 'Approvals' },
   { id: 'github', label: 'GitHub' },
-  { id: 'provider-config', label: 'Provider Config' },
   { id: 'ai', label: 'AI Chat' },
   { id: 'providers', label: 'AI Providers' },
   { id: 'usage', label: 'Usage & Billing' },
@@ -48,19 +47,31 @@ const showAddProvider = ref(false)
 const newProviderName = ref('')
 const newProviderType = ref('openai')
 const newProviderKey = ref('')
+const newProviderModel = ref('')
+const newProviderEndpoint = ref('')
+const newProviderFallback = ref(null)
 const editingProvider = ref(null)
 const editProviderName = ref('')
 const editProviderKey = ref('')
+const editProviderModel = ref('')
+const editProviderEndpoint = ref('')
+const editProviderFallback = ref(null)
 const providerTestResult = ref(null)
 const providerTestLoading = ref(false)
 const providersLoaded = ref(false)
+const directorProviderId = ref(null)
 
 const providerTypes = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'anthropic', label: 'Anthropic' },
+  { value: 'claude', label: 'Claude' },
   { value: 'azure', label: 'Azure OpenAI' },
   { value: 'google', label: 'Google Gemini' },
   { value: 'cohere', label: 'Cohere' },
+  { value: 'ollama', label: 'Ollama (local)' },
+  { value: 'vllm', label: 'vLLM (local)' },
+  { value: 'llamacpp', label: 'llama.cpp (local)' },
+  { value: 'custom', label: 'Custom (OpenAI-compatible)' },
 ]
 
 // Usage state
@@ -125,9 +136,6 @@ async function switchTab(tabId) {
   } else if (tabId === 'memory' && !memoryLoaded.value) {
     await loadMemory()
     memoryLoaded.value = true
-  } else if (tabId === 'provider-config' && !providerConfigLoaded.value) {
-    await loadProviderConfig()
-    providerConfigLoaded.value = true
   }
   activeTab.value = tabId
   if (tabId === 'tickets') {
@@ -224,6 +232,8 @@ async function loadProviders() {
   providersError.value = null
   try {
     providers.value = await listProviders(projectId)
+    const director = providers.value.find(p => p.is_project_director)
+    directorProviderId.value = director ? director.id : null
     providersLoaded.value = true
   } catch (_err) {
     providersError.value = 'Failed to load providers'
@@ -233,12 +243,21 @@ async function loadProviders() {
 }
 
 async function handleAddProvider() {
-  if (!newProviderName.value.trim() || !newProviderKey.value.trim()) return
+  if (!newProviderName.value.trim()) return
+  const isCloudProvider = ['openai', 'anthropic', 'claude', 'azure', 'google', 'cohere'].includes(newProviderType.value)
+  if (isCloudProvider && !newProviderKey.value.trim()) return
   try {
-    await addProvider(projectId, newProviderName.value.trim(), newProviderType.value, newProviderKey.value.trim())
+    const options = {}
+    if (newProviderModel.value.trim()) options.model = newProviderModel.value.trim()
+    if (newProviderEndpoint.value.trim()) options.endpoint_url = newProviderEndpoint.value.trim()
+    if (newProviderFallback.value) options.fallback_provider = newProviderFallback.value
+    await addProvider(projectId, newProviderName.value.trim(), newProviderType.value, newProviderKey.value.trim(), options)
     showAddProvider.value = false
     newProviderName.value = ''
     newProviderKey.value = ''
+    newProviderModel.value = ''
+    newProviderEndpoint.value = ''
+    newProviderFallback.value = null
     await loadProviders()
   } catch (err) {
     providersError.value = err.message || 'Failed to add provider'
@@ -252,6 +271,17 @@ async function handleUpdateProvider() {
     if (editProviderKey.value.trim()) {
       updates.apiKey = editProviderKey.value.trim()
     }
+    if (editProviderModel.value.trim()) {
+      updates.model = editProviderModel.value.trim()
+    }
+    if (editProviderEndpoint.value.trim()) {
+      updates.endpoint_url = editProviderEndpoint.value.trim()
+    }
+    if (editProviderFallback.value) {
+      updates.fallback_provider = editProviderFallback.value
+    } else if (editProviderFallback.value === null) {
+      updates.fallback_provider = null
+    }
     await updateProvider(projectId, editingProvider.value.id, updates)
     showEditProvider(editingProvider.value)
     await loadProviders()
@@ -264,6 +294,9 @@ function showEditProvider(provider) {
   editingProvider.value = provider
   editProviderName.value = provider.name
   editProviderKey.value = ''
+  editProviderModel.value = provider.model || ''
+  editProviderEndpoint.value = provider.endpoint_url || ''
+  editProviderFallback.value = provider.fallback_provider || null
 }
 
 async function handleDeleteProvider(providerId) {
@@ -285,6 +318,15 @@ async function handleTestProvider(providerId) {
     providerTestResult.value = { success: false, message: err.message }
   } finally {
     providerTestLoading.value = false
+  }
+}
+
+async function handleSetDirector(providerId) {
+  try {
+    await setDirector(projectId, providerId)
+    await loadProviders()
+  } catch (err) {
+    providersError.value = err.message || 'Failed to set director'
   }
 }
 
@@ -481,60 +523,6 @@ async function testProviderConfigConnection() {
         </router-link>
       </div>
 
-      <!-- Provider Config Tab -->
-      <div v-if="activeTab === 'provider-config'" class="tab-panel">
-        <div v-if="providerConfigLoading" class="loading">Loading...</div>
-        <div v-else class="provider-config-panel">
-          <h3>AI Provider Configuration</h3>
-          <p class="description">Configure which AI provider and model this project uses for ticket processing.</p>
-
-          <div class="form-group">
-            <label>Provider</label>
-            <select v-model="providerConfig.provider">
-              <option v-for="pt in providerConfigTypes" :key="pt.value" :value="pt.value">
-                {{ pt.label }}
-              </option>
-            </select>
-          </div>
-
-          <div v-if="['ollama','vllm','llamacpp','custom'].includes(providerConfig.provider)" class="form-group">
-            <label>Endpoint URL</label>
-            <input v-model="providerConfig.endpoint_url" type="text" placeholder="http://192.168.1.50:11434/v1" />
-          </div>
-
-          <div class="form-group">
-            <label>Model</label>
-            <input v-model="providerConfig.model" type="text" placeholder="gpt-4o, codellama:34b, ..." />
-          </div>
-
-          <div class="form-group">
-            <label>API Key <span class="optional">(optional)</span></label>
-            <input v-model="providerConfig.api_key" type="password" placeholder="sk-... (optional for local models)" />
-          </div>
-
-          <div class="form-group">
-            <label>Fallback Provider</label>
-            <select v-model="providerConfig.fallback_provider">
-              <option :value="null">(none)</option>
-              <option v-for="pt in providerConfigTypes.filter(p => p.value !== providerConfig.provider)" :key="pt.value" :value="pt.value">
-                {{ pt.label }}
-              </option>
-            </select>
-          </div>
-
-          <div class="form-actions">
-            <button @click="saveProviderConfig" :disabled="providerConfigSaving" class="btn-submit">
-              {{ providerConfigSaving ? 'Saving...' : 'Save Config' }}
-            </button>
-            <button @click="testProviderConfigConnection" class="btn-cancel">Test Connection</button>
-          </div>
-
-          <div v-if="providerConfigTestResult" :class="['test-result', providerConfigTestResult.valid ? 'success' : 'error']">
-            <p>{{ providerConfigTestResult.valid ? `Connected (${providerConfigTestResult.message})` : providerConfigTestResult.message }}</p>
-          </div>
-        </div>
-      </div>
-
       <!-- AI Chat Tab -->
       <div v-if="activeTab === 'ai'" class="tab-panel">
         <router-view v-if="isChildRoute" />
@@ -628,6 +616,11 @@ async function testProviderConfigConnection() {
             <button v-if="!showAddProvider" @click="showAddProvider = true" class="btn-primary">Add Provider</button>
           </div>
 
+          <div v-if="directorProviderId" class="director-info">
+            <span class="director-badge">🎯 Project Director</span>
+            <span class="director-label">This provider is used as the default for all AI operations.</span>
+          </div>
+
           <div v-if="showAddProvider" class="add-form">
             <h4>Add New Provider</h4>
             <div class="form-row">
@@ -644,9 +637,28 @@ async function testProviderConfigConnection() {
                 </select>
               </div>
             </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Model <span class="optional">(optional)</span></label>
+                <input v-model="newProviderModel" type="text" placeholder="gpt-4o, llama3, ..." />
+              </div>
+              <div class="form-group">
+                <label>API Key <span class="optional">(required for cloud providers)</span></label>
+                <input v-model="newProviderKey" type="password" placeholder="sk-..." />
+              </div>
+            </div>
+            <div v-if="['ollama','vllm','llamacpp','custom'].includes(newProviderType)" class="form-group">
+              <label>Endpoint URL</label>
+              <input v-model="newProviderEndpoint" type="text" placeholder="http://localhost:11434/v1" />
+            </div>
             <div class="form-group">
-              <label>API Key</label>
-              <input v-model="newProviderKey" type="password" placeholder="sk-..." />
+              <label>Fallback Provider <span class="optional">(optional)</span></label>
+              <select v-model="newProviderFallback">
+                <option :value="null">(none)</option>
+                <option v-for="pt in providerTypes.filter(p => p.value !== newProviderType)" :key="pt.value" :value="pt.value">
+                  {{ pt.label }}
+                </option>
+              </select>
             </div>
             <div class="form-actions">
               <button @click="handleAddProvider" class="btn-submit">Add</button>
@@ -659,13 +671,22 @@ async function testProviderConfigConnection() {
           </div>
 
           <div v-else class="provider-list">
-            <div v-for="provider in providers" :key="provider.id" class="provider-card">
+            <div v-for="provider in providers" :key="provider.id" class="provider-card" :class="{ 'director': provider.is_project_director }">
               <div class="provider-info">
-                <h4>{{ provider.name }}</h4>
+                <div class="provider-header">
+                  <h4>{{ provider.name }}</h4>
+                  <span v-if="provider.is_project_director" class="director-badge">🎯 Director</span>
+                </div>
                 <span class="provider-type">{{ provider.providerType }}</span>
+                <span v-if="provider.model" class="provider-model">Model: {{ provider.model }}</span>
+                <span v-if="provider.endpoint_url" class="provider-endpoint">{{ provider.endpoint_url }}</span>
+                <span v-if="provider.fallback_provider" class="provider-fallback">Fallback: {{ provider.fallback_provider }}</span>
                 <span class="provider-key-masked">{{ '•'.repeat(12) }}{{ provider.api_key?.slice(-4) || '' }}</span>
               </div>
               <div class="provider-actions">
+                <button v-if="!provider.is_project_director" @click="handleSetDirector(provider.id)" class="btn-small" title="Set as project director">
+                  🎯
+                </button>
                 <button @click="handleTestProvider(provider.id)" :disabled="providerTestLoading" class="btn-small">
                   {{ providerTestLoading ? 'Testing...' : 'Test' }}
                 </button>
@@ -682,8 +703,25 @@ async function testProviderConfigConnection() {
               <input v-model="editProviderName" type="text" />
             </div>
             <div class="form-group">
+              <label>Model</label>
+              <input v-model="editProviderModel" type="text" placeholder="gpt-4o, llama3, ..." />
+            </div>
+            <div class="form-group">
               <label>API Key (leave blank to keep current)</label>
               <input v-model="editProviderKey" type="password" placeholder="New API key" />
+            </div>
+            <div v-if="['ollama','vllm','llamacpp','custom'].includes(editingProvider.providerType)" class="form-group">
+              <label>Endpoint URL</label>
+              <input v-model="editProviderEndpoint" type="text" placeholder="http://localhost:11434/v1" />
+            </div>
+            <div class="form-group">
+              <label>Fallback Provider</label>
+              <select v-model="editProviderFallback">
+                <option :value="null">(none)</option>
+                <option v-for="pt in providerTypes.filter(p => p.value !== editingProvider.providerType)" :key="pt.value" :value="pt.value">
+                  {{ pt.label }}
+                </option>
+              </select>
             </div>
             <div class="form-actions">
               <button @click="handleUpdateProvider" class="btn-submit">Save</button>
@@ -1312,6 +1350,58 @@ async function testProviderConfigConnection() {
 .provider-actions {
   display: flex;
   gap: 6px;
+}
+
+.provider-card.director {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.provider-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.director-badge {
+  background: #f59e0b;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.director-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.director-label {
+  color: #92400e;
+  font-size: 14px;
+}
+
+.provider-model {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.provider-endpoint {
+  color: #3b82f6;
+  font-size: 13px;
+  font-family: monospace;
+}
+
+.provider-fallback {
+  color: #6b7280;
+  font-size: 13px;
 }
 
 .test-result {
