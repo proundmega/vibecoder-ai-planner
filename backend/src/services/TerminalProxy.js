@@ -1,7 +1,5 @@
-const Docker = require('dockerode');
 const logger = require('../utils/logger');
-
-const docker = new Docker();
+const { docker } = require('../utils/docker');
 
 class TerminalProxy {
   constructor(ws, agentId) {
