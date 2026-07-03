@@ -12,7 +12,7 @@ const requestLogger = (req, res, next) => {
     const logData = {
       requestId: req.requestId,
       userId: req.user?.userId || req.user?.id || 'anonymous',
-      ip: req.ip || req.connection?.remoteAddress || 'unknown',
+      ip: req.ip || req.socket?.remoteAddress || 'unknown',
       method: req.method,
       path: req.originalUrl || req.url,
       status: res.statusCode,

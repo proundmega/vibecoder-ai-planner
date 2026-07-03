@@ -1,6 +1,7 @@
 const Ticket = require('../models/ticket');
 const Project = require('../models/project');
 const User = require('../models/user');
+const { pool } = require('../db');
 const PermissionService = require('../services/PermissionService');
 const TicketPlanningService = require('../services/TicketPlanningService');
 const TicketAttachmentService = require('../services/TicketAttachmentService');
@@ -40,7 +41,6 @@ class TicketService {
         filename: a.filename,
         contentType: a.content_type,
         sizeBytes: a.size_bytes,
-        storedPath: a.stored_path,
         uploadedBy: a.uploaded_by_name || null,
         uploadedAt: a.created_at,
       })),
@@ -72,7 +72,7 @@ class TicketService {
       const project = await Project.findById(ticket.projectId);
       if (!project) throw new NotFoundError('Project not found');
       
-      const { pool } = require('../db');
+      
       const projectMember = await pool.query(
         'SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2',
         [ticket.projectId, data.assigneeId]
@@ -84,7 +84,7 @@ class TicketService {
 
     // Validate milestone exists and belongs to same project (if changing)
     if (data.milestone_id !== undefined) {
-      const { pool } = require('../db');
+      
       if (data.milestone_id !== null) {
         const milestoneCheck = await pool.query(
           'SELECT id FROM milestones WHERE id = $1 AND project_id = $2',
@@ -125,7 +125,7 @@ class TicketService {
     if (!ticket) throw new NotFoundError('Ticket not found');
 
     if (milestone_id !== undefined) {
-      const { pool } = require('../db');
+      
       if (milestone_id !== null) {
         const milestoneCheck = await pool.query(
           'SELECT id FROM milestones WHERE id = $1 AND project_id = $2',
@@ -150,7 +150,7 @@ class TicketService {
       }
     }
 
-    const { pool } = require('../db');
+    
     const sets = [];
     const vals = [];
     let idx = 1;
@@ -228,7 +228,7 @@ class TicketService {
   }
 
   async getAgentTickets(agentId, projectId) {
-    const { pool } = require('../db');
+    
     // For non-user agents, get tickets in their owner's projects
     const result = await pool.query(
       `SELECT t.*, u.name as assignee_name, p.name as project_name 
@@ -249,7 +249,7 @@ class TicketService {
   }
 
   async pickUpTicket(ticketId, agentId) {
-    const { pool } = require('../db');
+    
 
     const ticketResult = await pool.query(
       'SELECT * FROM tickets WHERE id = $1',
@@ -286,7 +286,7 @@ class TicketService {
   }
 
   async releaseTicket(ticketId, adminId) {
-    const { pool } = require('../db');
+    
 
     const ticketResult = await pool.query(
       'SELECT * FROM tickets WHERE id = $1',
@@ -314,7 +314,7 @@ class TicketService {
   }
 
   async enforceOwnership(ticketId, userId) {
-    const { pool } = require('../db');
+    
 
     const result = await pool.query(
       'SELECT assigned_agent_id FROM tickets WHERE id = $1',
@@ -339,7 +339,7 @@ class TicketService {
     if (!ticket) throw new NotFoundError('Ticket not found');
     if (!ticket.depends_on || ticket.depends_on.length === 0) return;
 
-    const { pool } = require('../db');
+    
     const placeholders = ticket.depends_on.map((_, i) => `$${i + 2}`).join(', ');
     const deps = await pool.query(
       `SELECT id, title, status, phase FROM tickets WHERE id IN (${placeholders})`,
@@ -385,7 +385,7 @@ class TicketService {
   }
 
   async recoverOrphanedTickets(staleMinutes = 60) {
-    const { pool } = require('../db');
+    
 
     if (typeof staleMinutes !== 'number' || staleMinutes <= 0) {
       throw new ValidationError('staleMinutes must be a positive number');

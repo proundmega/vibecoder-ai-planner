@@ -1,5 +1,7 @@
 const Project = require('../models/project');
 const Ticket = require('../models/ticket');
+const User = require('../models/user');
+const { pool } = require('../db');
 const PermissionService = require('../services/PermissionService');
 const { GitHubProvider } = require('../providers/github');
 const { encrypt, decrypt } = require('../utils/crypto');
@@ -10,7 +12,7 @@ class GitHubService {
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    const user = await require('../models/user').find(userId);
+    const user = await User.find(userId);
     const isAdmin = await PermissionService.hasPermission(user?.role || 'user', 'PROJECT_MANAGE_MEMBERS');
     if (!isAdmin && project.ownerId !== parseInt(userId)) {
       throw new ForbiddenError('Only project owner or admin can connect a repository');
@@ -25,7 +27,7 @@ class GitHubService {
 
     const encryptedToken = encrypt(accessToken);
 
-    const { pool } = require('../db');
+    
     const result = await pool.query(
       `INSERT INTO project_repos (project_id, provider, repo_url, access_token_encrypted, default_branch, is_active)
        VALUES ($1, 'github', $2, $3, $4, TRUE)
@@ -42,7 +44,7 @@ class GitHubService {
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    const { pool } = require('../db');
+    
     await pool.query(
       'UPDATE project_repos SET is_active = FALSE, updated_at = NOW() WHERE project_id = $1',
       [projectId]
@@ -55,7 +57,7 @@ class GitHubService {
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    const { pool } = require('../db');
+    
     const result = await pool.query(
       'SELECT * FROM project_repos WHERE project_id = $1 AND is_active = TRUE',
       [projectId]
@@ -67,7 +69,7 @@ class GitHubService {
   }
 
   async getProjectRepos(projectId) {
-    const { pool } = require('../db');
+    
     const result = await pool.query(
       'SELECT * FROM project_repos WHERE project_id = $1 AND is_active = TRUE ORDER BY created_at DESC',
       [projectId]
@@ -89,7 +91,7 @@ class GitHubService {
     const provider = new GitHubProvider(decrypt(repo.accessTokenEncrypted));
     const branchName = await provider.createBranch(repo, ticket.id, ticket.title);
 
-    const { pool } = require('../db');
+    
     await pool.query(
       'UPDATE tickets SET branch_name = $1, updated_at = NOW() WHERE id = $2',
       [branchName, ticketId]
@@ -116,7 +118,7 @@ class GitHubService {
       repo, ticket.id, ticket.title, ticket.branchName, description || ticket.description
     );
 
-    const { pool } = require('../db');
+    
     await pool.query(
       'UPDATE tickets SET pr_url = $1, pr_state = $2, updated_at = NOW() WHERE id = $3',
       [pr.url, pr.state, ticketId]
@@ -140,7 +142,7 @@ class GitHubService {
       console.warn(`Failed to delete branch ${ticket.branchName}:`, error.message);
     }
 
-    const { pool } = require('../db');
+    
     await pool.query(
       'UPDATE tickets SET branch_name = NULL, pr_url = NULL, pr_state = NULL, updated_at = NOW() WHERE id = $1',
       [ticketId]

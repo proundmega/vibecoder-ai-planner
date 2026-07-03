@@ -1,38 +1,34 @@
 jest.useFakeTimers();
 
-jest.mock('dockerode', () => {
-  const mockDocker = {
-    ping: jest.fn().mockResolvedValue(undefined),
-    createContainer: jest.fn().mockResolvedValue({
-      id: 'container-1',
-      start: jest.fn().mockResolvedValue(undefined),
-      stop: jest.fn().mockResolvedValue(undefined),
-      remove: jest.fn().mockResolvedValue(undefined),
-    }),
-  };
-  const MockDocker = jest.fn((opts) => mockDocker);
-  MockDocker.prototype = mockDocker;
-  return MockDocker;
-});
+const mockDockerObj = {
+  ping: jest.fn().mockResolvedValue(undefined),
+  createContainer: jest.fn().mockResolvedValue({
+    id: 'container-1',
+    start: jest.fn().mockResolvedValue(undefined),
+    stop: jest.fn().mockResolvedValue(undefined),
+    remove: jest.fn().mockResolvedValue(undefined),
+  }),
+};
+
+jest.mock('../utils/docker', () => ({
+  docker: mockDockerObj,
+  DOCKER_URL: 'http://docker-proxy:2375',
+}));
 
 describe('PoolManager', () => {
   let pm;
-  let Docker;
-  let mockDocker;
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     global.setInterval = jest.fn(); // Prevent actual intervals
-    Docker = require('dockerode');
-    mockDocker = Docker();
-    mockDocker.ping.mockResolvedValue(undefined);
-    // Clear require cache to get a fresh instance with mocked Docker
+    mockDockerObj.ping.mockResolvedValue(undefined);
+    // Clear require cache to get a fresh instance with mocked docker
     delete require.cache[require.resolve('../services/PoolManager')];
     pm = require('../services/PoolManager');
     // Ensure docker is set (constructor may set it to null if ping fails)
     if (!pm.docker) {
-      pm.docker = mockDocker;
+      pm.docker = mockDockerObj;
     }
   });
 
@@ -43,7 +39,6 @@ describe('PoolManager', () => {
 
   describe('constructor', () => {
     it('initializes docker client', () => {
-      expect(Docker).toHaveBeenCalledWith({ socketPath: expect.any(String) });
       expect(pm.docker.ping).toHaveBeenCalled();
     });
   });

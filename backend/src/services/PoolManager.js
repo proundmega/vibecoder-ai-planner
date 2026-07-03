@@ -6,6 +6,7 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:3001';
 const IDLE_TIMEOUT_MS = parseInt(process.env.AGENT_IDLE_TIMEOUT_MS) || 300000;
 const CONTAINER_NETWORK = process.env.CONTAINER_NETWORK || 'vibecode_default';
 const REPO_VOLUME = process.env.REPO_VOLUME || 'vibecode_repos';
+const MAX_POOL_SIZE = parseInt(process.env.MAX_AGENT_POOL_SIZE) || 50;
 
 class PoolManager {
   constructor() {
@@ -16,6 +17,7 @@ class PoolManager {
       this.docker = null;
     }
     this.pool = new Map();
+    this.maxPoolSize = MAX_POOL_SIZE;
     this._startCleanupInterval();
   }
 
@@ -30,6 +32,10 @@ class PoolManager {
   async requestAgent(projectId, repoUrl, providerConfig = {}) {
     if (!this.docker) {
       throw new Error('Docker daemon not available. Ensure DOCKER_API_URL is configured and accessible.');
+    }
+
+    if (this.pool.size >= this.maxPoolSize) {
+      throw new Error(`Agent pool full (${this.pool.size}/${this.maxPoolSize}). No idle agents available.`);
     }
 
     for (const [id, entry] of this.pool) {

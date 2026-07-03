@@ -88,22 +88,45 @@ class Ticket {
     if (current && status) {
       const allowed = VALID_TRANSITIONS[current.status] || [];
       if (!allowed.includes(status)) {
-      throw new ValidationError(`Invalid status transition from ${current.status} to ${status}`);
+        throw new ValidationError(`Invalid status transition from ${current.status} to ${status}`);
       }
     }
 
-    const query = `UPDATE tickets SET 
-      title = COALESCE($1, title),
-      description = COALESCE($2, description),
-      status = COALESCE($3, status),
-      priority = COALESCE($4, priority),
-      assignee_id = COALESCE($5, assignee_id),
-      updated_at = NOW()
-    WHERE id = $6`;
+    const fields = [];
+    const values = [];
+    let idx = 1;
 
-    await pool.query(query, [
-      title, description, status, priority, assigneeId, id
-    ]);
+    if (title !== undefined) {
+      fields.push(`title = $${idx}`);
+      values.push(title);
+      idx++;
+    }
+    if (description !== undefined) {
+      fields.push(`description = $${idx}`);
+      values.push(description);
+      idx++;
+    }
+    if (status !== undefined) {
+      fields.push(`status = $${idx}`);
+      values.push(status);
+      idx++;
+    }
+    if (priority !== undefined) {
+      fields.push(`priority = $${idx}`);
+      values.push(priority);
+      idx++;
+    }
+    if (assigneeId !== undefined) {
+      fields.push(`assignee_id = $${idx}`);
+      values.push(assigneeId);
+      idx++;
+    }
+
+    fields.push('updated_at = NOW()');
+    values.push(id);
+
+    const query = `UPDATE tickets SET ${fields.join(', ')} WHERE id = $${idx}`;
+    await pool.query(query, values);
   }
 
   static async delete(id) {
