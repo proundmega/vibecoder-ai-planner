@@ -2,8 +2,7 @@ const jwt = require('jsonwebtoken');
 const authService = require('../auth');
 const { pool } = require('../db');
 const AgentService = require('../services/AgentService');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
+const { getSecret } = require('../utils/jwt');
 
 const AUTH_LOCKOUT_ATTEMPTS = parseInt(process.env.AUTH_LOCKOUT_ATTEMPTS) || 10;
 const AUTH_LOCKOUT_WINDOW_MS = parseInt(process.env.AUTH_LOCKOUT_WINDOW_MS) || 15 * 60 * 1000;
@@ -59,7 +58,7 @@ exports.verifyToken = (req, res, next) => {
       return res.status(401).json({ error: 'Missing authentication token' });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, getSecret());
     req.user = decoded;
     next();
   } catch (error) {

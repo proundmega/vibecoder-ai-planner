@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 const UserService = require('./services/UserService');
 const User = require('./models/user');
 const TOKEN_EXPIRY_MINUTES = parseInt(process.env.TOKEN_EXPIRY_MINUTES) || 30;
-const TOKEN_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
+const { getSecret } = require('./utils/jwt');
 
 class AuthService {
   async register(name, email, password, role = 'project_admin', userCreatedBy = null) {
@@ -33,7 +33,7 @@ class AuthService {
     
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
-      TOKEN_SECRET,
+      getSecret(),
       { expiresIn: `${TOKEN_EXPIRY_MINUTES}m` }
     );
     
@@ -45,7 +45,7 @@ class AuthService {
     
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
-      TOKEN_SECRET,
+      getSecret(),
       { expiresIn: `${TOKEN_EXPIRY_MINUTES}m` }
     );
     
@@ -54,7 +54,7 @@ class AuthService {
 
   async verifyToken(token) {
     try {
-      return jwt.verify(token, TOKEN_SECRET);
+      return jwt.verify(token, getSecret());
     } catch (error) {
       console.error('verifyToken:', error);
       return null;

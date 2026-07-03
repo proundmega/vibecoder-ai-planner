@@ -1,20 +1,25 @@
 const crypto = require('crypto');
 
 const ALGORITHM = 'aes-256-gcm';
-const MASTER_KEY = process.env.ENCRYPTION_KEY;
+let keyBuffer = null;
 
-if (!MASTER_KEY) {
-  console.warn('WARNING: ENCRYPTION_KEY not set. Encryption disabled.');
+if (process.env.NODE_ENV !== 'test') {
+  const MASTER_KEY = process.env.ENCRYPTION_KEY;
+  if (!MASTER_KEY) {
+    throw new Error('ENCRYPTION_KEY environment variable is required for encryption operations.');
+  }
+  keyBuffer = Buffer.from(MASTER_KEY, 'hex');
+  if (keyBuffer.length !== 32) {
+    throw new Error('ENCRYPTION_KEY must be a 64-character hexadecimal string (256 bits).');
+  }
 }
 
 function encrypt(text) {
-  if (!MASTER_KEY) {
+  if (!keyBuffer) {
     throw new Error('ENCRYPTION_KEY environment variable is required');
   }
-
   const iv = crypto.randomBytes(16);
-  const key = Buffer.from(MASTER_KEY, 'hex');
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  const cipher = crypto.createCipheriv(ALGORITHM, keyBuffer, iv);
 
   let encrypted = cipher.update(text, 'utf8', 'hex');
   encrypted += cipher.final('hex');
@@ -24,10 +29,9 @@ function encrypt(text) {
 }
 
 function decrypt(encryptedText) {
-  if (!MASTER_KEY) {
+  if (!keyBuffer) {
     throw new Error('ENCRYPTION_KEY environment variable is required');
   }
-
   const parts = encryptedText.split(':');
   if (parts.length !== 3) {
     throw new Error('Invalid encrypted text format');
@@ -36,9 +40,8 @@ function decrypt(encryptedText) {
   const [ivHex, authTagHex, encrypted] = parts;
   const iv = Buffer.from(ivHex, 'hex');
   const authTag = Buffer.from(authTagHex, 'hex');
-  const key = Buffer.from(MASTER_KEY, 'hex');
 
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  const decipher = crypto.createDecipheriv(ALGORITHM, keyBuffer, iv);
   decipher.setAuthTag(authTag);
 
   let decrypted = decipher.update(encrypted, 'hex', 'utf8');

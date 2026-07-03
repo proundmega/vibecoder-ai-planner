@@ -1,6 +1,7 @@
 const requiredEnvVars = [
-  { key: 'JWT_SECRET', description: 'JWT signing secret' },
+  { key: 'JWT_SECRET', description: 'JWT signing secret (min 32 chars)' },
   { key: 'DATABASE_URL', description: 'PostgreSQL connection string' },
+  { key: 'ENCRYPTION_KEY', description: 'AES-256 encryption key (64 hex chars)' },
 ];
 
 const optionalEnvVars = {
@@ -57,6 +58,27 @@ function validateEnv() {
     }
   }
 
+  // JWT_SECRET must be at least 32 characters
+  if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
+    invalid.push({
+      key: 'JWT_SECRET',
+      value: '(too short)',
+      expected: 'at least 32 characters',
+    });
+  }
+
+  // ENCRYPTION_KEY must be exactly 64 hex characters
+  if (process.env.ENCRYPTION_KEY) {
+    const encKey = process.env.ENCRYPTION_KEY;
+    if (!/^[0-9a-f]{64}$/i.test(encKey)) {
+      invalid.push({
+        key: 'ENCRYPTION_KEY',
+        value: '(invalid format)',
+        expected: '64 hexadecimal characters (256-bit key)',
+      });
+    }
+  }
+
   return { missing, invalid, valid: missing.length === 0 && invalid.length === 0 };
 }
 
@@ -82,10 +104,8 @@ if (process.env.NODE_ENV !== 'test') {
   const result = validateEnv();
   if (!result.valid) {
     console.error('\n' + formatEnvErrors(result) + '\n');
-    if (result.missing.length > 0) {
-      console.error('Environment validation failed. Please check your .env file.\n');
-      process.exit(1);
-    }
+    console.error('Environment validation failed. Please check your .env file.\n');
+    process.exit(1);
   } else {
     console.log('Environment variables validated successfully.');
   }

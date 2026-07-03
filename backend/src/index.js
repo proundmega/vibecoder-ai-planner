@@ -18,6 +18,7 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,ht
 
 // Middleware
 app.use(helmet({
+  serverHeader: false,
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],

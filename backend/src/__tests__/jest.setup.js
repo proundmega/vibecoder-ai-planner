@@ -97,3 +97,9 @@ jest.mock('jsonwebtoken', () => {
     sign: jest.fn().mockReturnValue('mock-token')
   };
 });
+
+// Set required env vars for tests
+process.env.JWT_SECRET = 'test-secret-key-at-least-32-chars-long';
+process.env.DATABASE_URL = 'postgresql://localhost/test';
+process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+process.env.NODE_ENV = 'test';

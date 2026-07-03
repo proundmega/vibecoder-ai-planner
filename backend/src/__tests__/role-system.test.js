@@ -60,7 +60,7 @@ jest.mock('../services/PermissionService', () => ({
   clearCache: jest.fn(),
 }));
 
-process.env.JWT_SECRET = 'test-secret';
+process.env.JWT_SECRET = 'test-secret-key-at-least-32-chars';
 process.env.TOKEN_EXPIRY_HOURS = '24';
 
 // Helper to create mock user objects matching DB row format with proper User properties

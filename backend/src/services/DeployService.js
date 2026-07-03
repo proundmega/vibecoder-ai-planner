@@ -1,4 +1,5 @@
 const db = require('../db');
+const logger = require('../utils/logger');
 
 async function createEnvironment(projectId, name, webhookUrl, branchPattern = '*') {
   const { rows } = await db.pool.query(
@@ -117,6 +118,9 @@ async function updateDeploymentStatus(deploymentId, status) {
 async function _sendWebhook(url, payload) {
   const body = JSON.stringify(payload);
   const parsed = new URL(url);
+  if (parsed.protocol === 'http:') {
+    logger.warn('Webhook sent over HTTP (unencrypted): ' + url);
+  }
   const mod = parsed.protocol === 'https:' ? require('https') : require('http');
   return new Promise((resolve, reject) => {
     const req = mod.request(url, {

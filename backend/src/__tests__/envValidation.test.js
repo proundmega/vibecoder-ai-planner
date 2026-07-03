@@ -14,8 +14,9 @@ describe('BP-10: Environment Variable Validation', () => {
 
   describe('validateEnv', () => {
     it('should pass when all required env vars are present', () => {
-      process.env.JWT_SECRET = 'test-secret';
+      process.env.JWT_SECRET = 'test-secret-key-at-least-32-chars-long';
       process.env.DATABASE_URL = 'postgresql://localhost/test';
+      process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
       const result = validateEnv();
       expect(result.valid).toBe(true);
       expect(result.missing).toEqual([]);
@@ -23,15 +24,18 @@ describe('BP-10: Environment Variable Validation', () => {
     });
 
     it('should report missing required env vars', () => {
-      process.env.JWT_SECRET = 'test-secret';
+      delete process.env.DATABASE_URL;
+      process.env.JWT_SECRET = 'test-secret-key-at-least-32-chars-long';
+      process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
       const result = validateEnv();
       expect(result.valid).toBe(false);
       expect(result.missing).toContain('DATABASE_URL');
     });
 
     it('should apply defaults to missing optional env vars', () => {
-      process.env.JWT_SECRET = 'test-secret';
+      process.env.JWT_SECRET = 'test-secret-key-at-least-32-chars-long';
       process.env.DATABASE_URL = 'postgresql://localhost/test';
+      process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
       delete process.env.NODE_ENV;
       delete process.env.PORT;
       delete process.env.LOG_LEVEL;
@@ -44,8 +48,9 @@ describe('BP-10: Environment Variable Validation', () => {
     });
 
     it('should validate NODE_ENV valid values', () => {
-      process.env.JWT_SECRET = 'test-secret';
+      process.env.JWT_SECRET = 'test-secret-key-at-least-32-chars-long';
       process.env.DATABASE_URL = 'postgresql://localhost/test';
+      process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
       process.env.NODE_ENV = 'invalid';
       
       const result = validateEnv();
@@ -57,8 +62,9 @@ describe('BP-10: Environment Variable Validation', () => {
     });
 
     it('should validate integer env vars', () => {
-      process.env.JWT_SECRET = 'test-secret';
+      process.env.JWT_SECRET = 'test-secret-key-at-least-32-chars-long';
       process.env.DATABASE_URL = 'postgresql://localhost/test';
+      process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
       process.env.PORT = 'not-a-number';
       
       const result = validateEnv();
@@ -70,8 +76,9 @@ describe('BP-10: Environment Variable Validation', () => {
     });
 
     it('should normalize integer env vars to string', () => {
-      process.env.JWT_SECRET = 'test-secret';
+      process.env.JWT_SECRET = 'test-secret-key-at-least-32-chars-long';
       process.env.DATABASE_URL = 'postgresql://localhost/test';
+      process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
       process.env.PORT = '8080';
       
       validateEnv();
@@ -80,8 +87,9 @@ describe('BP-10: Environment Variable Validation', () => {
     });
 
     it('should reject negative integer env vars', () => {
-      process.env.JWT_SECRET = 'test-secret';
+      process.env.JWT_SECRET = 'test-secret-key-at-least-32-chars-long';
       process.env.DATABASE_URL = 'postgresql://localhost/test';
+      process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
       process.env.PORT = '-1';
       
       const result = validateEnv();
@@ -89,9 +97,45 @@ describe('BP-10: Environment Variable Validation', () => {
     });
 
     it('should accept valid LOG_LEVEL values', () => {
-      process.env.JWT_SECRET = 'test-secret';
+      process.env.JWT_SECRET = 'test-secret-key-at-least-32-chars-long';
       process.env.DATABASE_URL = 'postgresql://localhost/test';
+      process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
       process.env.LOG_LEVEL = 'debug';
+      
+      const result = validateEnv();
+      expect(result.valid).toBe(true);
+    });
+
+    it('should reject JWT_SECRET shorter than 32 characters', () => {
+      process.env.JWT_SECRET = 'short';
+      process.env.DATABASE_URL = 'postgresql://localhost/test';
+      process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+      
+      const result = validateEnv();
+      expect(result.valid).toBe(false);
+      expect(result.invalid).toContainEqual(expect.objectContaining({
+        key: 'JWT_SECRET',
+        expected: 'at least 32 characters',
+      }));
+    });
+
+    it('should reject ENCRYPTION_KEY with invalid format', () => {
+      process.env.JWT_SECRET = 'test-secret-key-at-least-32-chars-long';
+      process.env.DATABASE_URL = 'postgresql://localhost/test';
+      process.env.ENCRYPTION_KEY = 'not-valid-hex';
+      
+      const result = validateEnv();
+      expect(result.valid).toBe(false);
+      expect(result.invalid).toContainEqual(expect.objectContaining({
+        key: 'ENCRYPTION_KEY',
+        expected: '64 hexadecimal characters (256-bit key)',
+      }));
+    });
+
+    it('should accept valid ENCRYPTION_KEY format', () => {
+      process.env.JWT_SECRET = 'test-secret-key-at-least-32-chars-long';
+      process.env.DATABASE_URL = 'postgresql://localhost/test';
+      process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
       
       const result = validateEnv();
       expect(result.valid).toBe(true);

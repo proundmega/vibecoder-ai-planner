@@ -3,6 +3,7 @@ const User = require('../models/user');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
 const { ValidationError, NotFoundError } = require('../errors/HttpError');
+const { getSecret } = require('../utils/jwt');
 
 class UserService {
   async register(name, email, password, role = 'project_admin', userCreatedBy = null) {
@@ -38,9 +39,8 @@ class UserService {
   }
 
   async getCurrentUser(token) {
-    const JWT_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
     const jwt = require('jsonwebtoken');
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, getSecret());
     const user = await User.find(decoded.userId);
     return user;
   }
