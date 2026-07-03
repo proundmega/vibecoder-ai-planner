@@ -51,6 +51,8 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - vibecode_repos:/repos
+    networks:
+      - vibecode
     depends_on:
       docker-proxy:
         condition: service_healthy
