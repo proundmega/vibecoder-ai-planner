@@ -1,6 +1,13 @@
 const { pool, transaction } = require('../db');
 const { ValidationError } = require('../errors/HttpError');
 
+const VALID_TRANSITIONS = {
+  backlog: ['in_progress'],
+  in_progress: ['review', 'backlog'],
+  review: ['done', 'backlog'],
+  done: [],
+};
+
 class Ticket {
   constructor(data) {
     this.id = data.id;
@@ -79,15 +86,9 @@ class Ticket {
     // Fetch current ticket to validate transitions
     const current = await Ticket.findById(id);
     if (current && status) {
-      const validTransitions = {
-        backlog: ['in_progress'],
-        in_progress: ['review', 'backlog'],
-        review: ['done', 'backlog'],
-        done: [],
-      };
-      const allowed = validTransitions[current.status] || [];
+      const allowed = VALID_TRANSITIONS[current.status] || [];
       if (!allowed.includes(status)) {
-     throw new ValidationError(`Invalid status transition from ${current.status} to ${status}`);
+      throw new ValidationError(`Invalid status transition from ${current.status} to ${status}`);
       }
     }
 
@@ -135,14 +136,7 @@ class Ticket {
     const current = await Ticket.findById(id);
     if (!current) throw new Error('Ticket not found');
 
-    const validTransitions = {
-      'backlog': ['in_progress'],
-      'in_progress': ['review', 'backlog'],
-      'review': ['done', 'backlog'],
-      'done': [],
-    };
-
-    const allowed = validTransitions[current.status] || [];
+    const allowed = VALID_TRANSITIONS[current.status] || [];
     if (!allowed.includes(status)) {
       throw new ValidationError(`Invalid status transition from ${current.status} to ${status}`);
     }
