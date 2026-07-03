@@ -52,6 +52,12 @@ class ServiceUnavailableError extends AppError {
   }
 }
 
+class UtilityError extends AppError {
+  constructor(message = 'Utility error', statusCode = 500) {
+    super(message, statusCode, 'UTILITY_ERROR');
+  }
+}
+
 module.exports = {
   AppError,
   NotFoundError,
@@ -61,4 +67,5 @@ module.exports = {
   ConflictError,
   RateLimitError,
   ServiceUnavailableError,
+  UtilityError,
 };

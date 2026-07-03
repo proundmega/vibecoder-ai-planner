@@ -97,8 +97,9 @@ exports.requireActiveUser = async (req, res, next) => {
       return res.status(403).json({ error: 'Account deactivated' });
     }
     next();
-  } catch {
-    return res.status(403).json({ error: 'Account deactivated' });
+  } catch (err) {
+    console.error('requireActiveUser DB error:', err.message);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 };
 

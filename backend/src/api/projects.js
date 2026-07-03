@@ -4,6 +4,7 @@ const { requireAnyPermission } = require('../middleware/permissions');
 const { verifyToken } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { createProjectSchema, updateProjectSchema } = require('../validators/projects');
+const { updateTicketSchema } = require('../validators/tickets');
 const projectController = require('../controllers/projectController');
 
 /**
@@ -243,7 +244,7 @@ router.post('/:id/tickets', verifyToken, requireAnyPermission('TICKET_CREATE'), 
  *       200:
  *         description: Ticket updated
  */
-router.put('/tickets/:ticketId', verifyToken, requireAnyPermission('TICKET_UPDATE'), projectController.updateProjectTicket);
+router.put('/tickets/:ticketId', verifyToken, requireAnyPermission('TICKET_UPDATE'), validate(updateTicketSchema), projectController.updateProjectTicket);
 
 /**
  * @openapi

@@ -271,7 +271,7 @@ router.post('/auth/login', rateLimiter(5, 60000), validate(loginSchema), async (
  *       401:
  *         description: Unauthorized
  */
-router.get('/auth/me', verifyToken, async (req, res) => {
+router.get('/auth/me', verifyToken, rateLimiter(30, 60000), async (req, res) => {
   try {
     const user = await User.find(req.user.userId);
     if (!user) {

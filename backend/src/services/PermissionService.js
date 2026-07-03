@@ -56,20 +56,47 @@ function clearCache() {
   permissionCache.clear();
 }
 
-// Load initial cache on startup
+// Load initial cache on startup with retry
+let initPromise = null;
+
 async function init() {
-  const result = await pool.query(
-    `SELECT r.name FROM roles r ORDER BY r.name`
-  );
-  for (const row of result.rows) {
-    await resolvePermissions(row.name);
-  }
+  if (initPromise) return initPromise;
+  initPromise = (async () => {
+    try {
+      const result = await pool.query(
+        `SELECT r.name FROM roles r ORDER BY r.name`
+      );
+      for (const row of result.rows) {
+        await resolvePermissions(row.name);
+      }
+    } catch (err) {
+      console.error('PermissionService init failed, will retry on first request:', err.message);
+      initPromise = null;
+      throw err;
+    }
+  })();
+  return initPromise;
 }
 
-init().catch(console.error);
+init().catch((err) => {
+  console.error('PermissionService init failed at startup:', err.message);
+});
+
+// Wrap resolvePermissions to auto-retry init on first call if cache is empty
+const originalResolvePermissions = resolvePermissions;
+async function resolvePermissionsWithRetry(roleName) {
+  if (!permissionCache.has(roleName)) {
+    try {
+      await init();
+    } catch {
+      // init failed, will retry on next call
+    }
+  }
+  return originalResolvePermissions(roleName);
+}
 
 module.exports = {
-  resolvePermissions,
+  resolvePermissions: resolvePermissionsWithRetry,
   hasPermission,
   hasAnyPermission,
   hasAllPermissions,
