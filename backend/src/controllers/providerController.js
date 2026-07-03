@@ -94,6 +94,10 @@ async function updateProvider(req, res, next) {
       values.push(isActive);
     }
 
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'No fields to update' } });
+    }
+
     updates.push(`updated_at = NOW()`);
     values.push(providerId);
 

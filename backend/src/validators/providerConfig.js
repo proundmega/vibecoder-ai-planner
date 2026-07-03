@@ -12,7 +12,15 @@ const setProviderConfigSchema = Joi.object({
   }),
   api_key: Joi.string().allow('').optional(),
   fallback_provider: Joi.string().allow('').allow(null).optional(),
+}).custom((value, helpers) => {
+  const { provider, endpoint_url } = value;
+  if (provider && !LOCAL_PROVIDER_TYPES.includes(provider) && endpoint_url === '') {
+    return helpers.error('any.invalid', { value: 'endpoint_url cannot be empty for cloud providers' });
+  }
+  return value;
 });
+
+const LOCAL_PROVIDER_TYPES = ['ollama', 'vllm', 'llamacpp', 'custom'];
 
 const testProviderConnectionSchema = Joi.object({
   provider: Joi.string().optional(),
@@ -20,6 +28,12 @@ const testProviderConnectionSchema = Joi.object({
   model: Joi.string().optional(),
   api_key: Joi.string().allow('').optional(),
   fallback_provider: Joi.string().allow('').allow(null).optional(),
+}).custom((value, helpers) => {
+  const { provider, endpoint_url } = value;
+  if (provider && !LOCAL_PROVIDER_TYPES.includes(provider) && endpoint_url === '') {
+    return helpers.error('any.invalid', { value: 'endpoint_url cannot be empty for cloud providers' });
+  }
+  return value;
 });
 
 const resolveProviderSchema = Joi.object({

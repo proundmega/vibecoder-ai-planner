@@ -629,4 +629,19 @@ describe('Provider Controller', () => {
       expect(callArgs).toContain('gpt-4o');
     });
   });
+
+  describe('updateProvider: empty body guard', () => {
+    it('should return 400 when no fields to update', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+
+      mockReq.params.projectId = '1';
+      mockReq.params.providerId = '1';
+      mockReq.body = {};
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+  });
 });
