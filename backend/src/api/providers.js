@@ -6,13 +6,25 @@ const { validate } = require('../middleware/validate');
 const providerController = require('../controllers/providerController');
 const { addProviderSchema, updateProviderSchema } = require('../validators/providers');
 const ProviderService = require('../services/ProviderService');
-const { setProviderConfigSchema, testProviderConnectionSchema, resolveProviderSchema } = require('../validators/providerConfig');
 
-// Provider config routes (local model settings) — must be before other /providers routes
+// Deprecated routes (410 Gone) — kept for backward compatibility
 router.get('/projects/:projectId/provider', verifyToken, providerController.getProviderConfig);
-router.put('/projects/:projectId/provider', verifyToken, validate(setProviderConfigSchema), providerController.setProviderConfig);
+router.put('/projects/:projectId/provider', verifyToken, providerController.setProviderConfig);
 router.delete('/projects/:projectId/provider', verifyToken, providerController.deleteProviderConfig);
-router.post('/projects/:projectId/provider/test', verifyToken, validate(testProviderConnectionSchema), providerController.testProviderConnection);
+router.post('/projects/:projectId/provider/test', verifyToken, providerController.testProviderConnection);
+router.post('/projects/:projectId/provider/resolve', verifyToken, async (req, res, next) => {
+  try {
+    const ticketInfo = {
+      labels: req.body.labels || [],
+      priority: req.body.priority || 'medium',
+      phase: req.body.phase || 'backlog',
+    };
+    const config = await ProviderService.resolveProvider(req.params.projectId, ticketInfo);
+    res.json({ success: true, data: config });
+  } catch (err) {
+    next(err);
+  }
+});
 
 /**
  * @openapi
@@ -130,6 +142,27 @@ router.post('/:projectId/providers/:providerId/test', verifyToken, providerContr
 
 /**
  * @openapi
+ * /providers/{projectId}/providers/{providerId}/directorate:
+ *   patch:
+ *     tags: [Providers]
+ *     summary: Set provider as project director
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: path
+ *         name: providerId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Provider set as director
+ */
+router.patch('/:projectId/providers/:providerId/directorate', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), providerController.setDirector);
+
+/**
+ * @openapi
  * /providers/{projectId}/provider/resolve:
  *   post:
  *     tags: [Providers]
@@ -154,7 +187,7 @@ router.post('/:projectId/providers/:providerId/test', verifyToken, providerContr
  *       200:
  *         description: Resolved provider config
  */
-router.post('/:projectId/provider/resolve', verifyToken, validate(resolveProviderSchema), async (req, res, next) => {
+router.post('/:projectId/provider/resolve', verifyToken, async (req, res, next) => {
   try {
     const ticketInfo = {
       labels: req.body.labels || [],

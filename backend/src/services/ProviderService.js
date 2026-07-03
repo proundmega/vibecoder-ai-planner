@@ -5,8 +5,8 @@ class ProviderService {
   async getProjectProvider(projectId) {
     const result = await pool.query(
       `SELECT * FROM project_providers
-       WHERE project_id = $1 AND is_active = true
-       ORDER BY created_at DESC LIMIT 1`,
+       WHERE project_id = $1 AND is_project_director = true
+       LIMIT 1`,
       [projectId]
     );
     return result.rows[0] || null;

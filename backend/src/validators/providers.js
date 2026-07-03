@@ -13,6 +13,14 @@ const addProviderSchema = Joi.object({
   }),
   apiKey: Joi.string().allow('').optional(),
   baseUrl: Joi.string().uri().allow('').optional(),
+  model: Joi.string().min(1).optional(),
+  maxTokens: Joi.number().integer().min(1).optional(),
+  temperature: Joi.number().min(0).max(1).optional(),
+  roles: Joi.array().items(Joi.string()).optional(),
+  endpoint_url: Joi.string().uri().allow('').optional(),
+  fallback_provider: Joi.string().allow('').allow(null).optional(),
+  routing_rules: Joi.object().optional(),
+  is_project_director: Joi.boolean().optional(),
 });
 
 const updateProviderSchema = Joi.object({
@@ -20,6 +28,15 @@ const updateProviderSchema = Joi.object({
   providerType: Joi.string().min(1).optional(),
   apiKey: Joi.string().allow('').optional(),
   baseUrl: Joi.string().uri().allow('').optional(),
+  model: Joi.string().min(1).optional(),
+  maxTokens: Joi.number().integer().min(1).optional(),
+  temperature: Joi.number().min(0).max(1).optional(),
+  roles: Joi.array().items(Joi.string()).optional(),
+  isActive: Joi.boolean().optional(),
+  endpoint_url: Joi.string().uri().allow('').optional(),
+  fallback_provider: Joi.string().allow('').allow(null).optional(),
+  routing_rules: Joi.object().optional(),
+  is_project_director: Joi.boolean().optional(),
 });
 
 module.exports = { addProviderSchema, updateProviderSchema };

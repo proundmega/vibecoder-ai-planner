@@ -109,25 +109,25 @@ describe('Route Ordering', () => {
       expect(calls[0][0]).toBe('t99');
     });
 
-    it('should route GET /api/v1/providers/projects/1/provider to providerController.getProviderConfig', async () => {
+    it('should route GET /api/v1/providers/projects/1/provider to providerController.getProviderConfig (410 Gone)', async () => {
       const res = await request(app)
         .get('/api/v1/providers/projects/1/provider')
         .set('Authorization', 'Bearer mock-token');
 
-      expect(res.statusCode).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data).toBeNull();
+      expect(res.statusCode).toBe(410);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error.code).toBe('GONE');
     });
 
-    it('should route PUT /api/v1/providers/projects/1/provider to providerController.setProviderConfig', async () => {
+    it('should route PUT /api/v1/providers/projects/1/provider to providerController.setProviderConfig (410 Gone)', async () => {
       const res = await request(app)
         .put('/api/v1/providers/projects/1/provider')
         .set('Authorization', 'Bearer mock-token')
         .send({ provider: 'openai', model: 'gpt-4' });
 
-      expect(res.statusCode).toBe(201);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.provider).toBe('openai');
+      expect(res.statusCode).toBe(410);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error.code).toBe('GONE');
     });
 
     it('should route GET /api/v1/projects/1 to projectsRouter.getProject', async () => {

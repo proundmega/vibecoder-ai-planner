@@ -52,6 +52,10 @@ describe('Provider Controller', () => {
           max_tokens: 4096,
           temperature: 0.1,
           is_active: true,
+          endpoint_url: null,
+          fallback_provider: null,
+          routing_rules: '{}',
+          is_project_director: false,
           created_at: new Date(),
           updated_at: new Date(),
         }],
@@ -96,6 +100,10 @@ describe('Provider Controller', () => {
           max_tokens: 8192,
           temperature: 0.2,
           is_active: true,
+          endpoint_url: null,
+          fallback_provider: null,
+          routing_rules: '{}',
+          is_project_director: false,
           created_at: new Date(),
           updated_at: new Date(),
         }],
@@ -159,6 +167,10 @@ describe('Provider Controller', () => {
             max_tokens: 4096,
             temperature: 0.1,
             is_active: true,
+            endpoint_url: null,
+            fallback_provider: null,
+            routing_rules: '{}',
+            is_project_director: false,
             created_at: new Date(),
             updated_at: new Date(),
           },
@@ -219,201 +231,51 @@ describe('Provider Controller', () => {
   });
 
   describe('getProviderConfig', () => {
-    it('should return provider config with masked api_key', async () => {
+    it('should return 410 Gone (deprecated)', async () => {
       Project.findById.mockResolvedValue({ id: 1 });
-      pool.query.mockResolvedValueOnce({
-        rows: [{
-          id: 1,
-          project_id: 1,
-          provider: 'openai',
-          endpoint_url: 'https://api.openai.com/v1',
-          model: 'gpt-4o',
-          api_key_encrypted: 'encrypted-key',
-          fallback_provider: 'claude',
-          routing_rules: {},
-          is_active: true,
-          created_at: new Date(),
-          updated_at: new Date(),
-        }],
-      });
 
       mockReq.params.projectId = '1';
 
       await providerController.getProviderConfig(mockReq, mockRes, nextFn);
 
+      expect(mockRes.status).toHaveBeenCalledWith(410);
       expect(mockRes.json).toHaveBeenCalledWith({
-        success: true,
-        data: expect.objectContaining({
-          provider: 'openai',
-          model: 'gpt-4o',
-          api_key: '****-key',
-          endpoint_url: 'https://api.openai.com/v1',
-          fallback_provider: 'claude',
-        }),
-      });
-    });
-
-    it('should return null api_key when not set', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
-      pool.query.mockResolvedValueOnce({
-        rows: [{
-          id: 1,
-          project_id: 1,
-          provider: 'openai',
-          endpoint_url: null,
-          model: 'gpt-4o',
-          api_key_encrypted: null,
-          fallback_provider: null,
-          routing_rules: {},
-          is_active: true,
-          created_at: new Date(),
-          updated_at: new Date(),
-        }],
-      });
-
-      mockReq.params.projectId = '1';
-
-      await providerController.getProviderConfig(mockReq, mockRes, nextFn);
-
-      expect(mockRes.json).toHaveBeenCalledWith({
-        success: true,
-        data: expect.objectContaining({
-          api_key: null,
-        }),
-      });
-    });
-
-    it('should return null when no config exists', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
-      pool.query.mockResolvedValueOnce({ rows: [] });
-
-      mockReq.params.projectId = '1';
-
-      await providerController.getProviderConfig(mockReq, mockRes, nextFn);
-
-      expect(mockRes.json).toHaveBeenCalledWith({
-        success: true,
-        data: null,
+        success: false,
+        error: expect.objectContaining({ code: 'GONE' }),
       });
     });
   });
 
   describe('setProviderConfig', () => {
-    it('should store encrypted api_key with snake_case fields', async () => {
+    it('should return 410 Gone (deprecated)', async () => {
       Project.findById.mockResolvedValue({ id: 1 });
-      pool.query.mockResolvedValueOnce({
-        rows: [{
-          id: 1,
-          project_id: 1,
-          provider: 'openai',
-          endpoint_url: 'https://api.openai.com/v1',
-          model: 'gpt-4o',
-          api_key_encrypted: 'encrypted-key',
-          fallback_provider: null,
-          routing_rules: {},
-          is_active: true,
-          created_at: new Date(),
-          updated_at: new Date(),
-        }],
-      });
 
       mockReq.params.projectId = '1';
-      mockReq.body = {
-        provider: 'openai',
-        model: 'gpt-4o',
-        endpoint_url: 'https://api.openai.com/v1',
-        api_key: 'sk-ant-1234',
-        fallback_provider: null,
-      };
-
-      await providerController.setProviderConfig(mockReq, mockRes, nextFn);
-
-      expect(encrypt).toHaveBeenCalledWith('sk-ant-1234');
-      expect(mockRes.status).toHaveBeenCalledWith(201);
-      expect(mockRes.json).toHaveBeenCalledWith({
-        success: true,
-        data: expect.objectContaining({
-          provider: 'openai',
-          model: 'gpt-4o',
-          api_key: '****-key',
-          endpoint_url: 'https://api.openai.com/v1',
-        }),
-      });
-    });
-
-    it('should handle empty api_key as null', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
-      pool.query.mockResolvedValueOnce({
-        rows: [{
-          id: 1,
-          project_id: 1,
-          provider: 'openai',
-          endpoint_url: null,
-          model: 'gpt-4o',
-          api_key_encrypted: null,
-          fallback_provider: null,
-          routing_rules: {},
-          is_active: true,
-          created_at: new Date(),
-          updated_at: new Date(),
-        }],
-      });
-
-      mockReq.params.projectId = '1';
-      mockReq.body = {
-        provider: 'openai',
-        model: 'gpt-4o',
-        api_key: '',
-      };
-
-      await providerController.setProviderConfig(mockReq, mockRes, nextFn);
-
-      expect(encrypt).not.toHaveBeenCalled();
-      expect(mockRes.json).toHaveBeenCalledWith({
-        success: true,
-        data: expect.objectContaining({
-          api_key: null,
-        }),
-      });
-    });
-
-    it('should return 404 when project not found', async () => {
-      Project.findById.mockResolvedValue(null);
-
-      mockReq.params.projectId = '999';
       mockReq.body = { provider: 'openai', model: 'gpt-4o' };
 
       await providerController.setProviderConfig(mockReq, mockRes, nextFn);
 
-      expect(nextFn).toHaveBeenCalled();
+      expect(mockRes.status).toHaveBeenCalledWith(410);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: false,
+        error: expect.objectContaining({ code: 'GONE' }),
+      });
     });
   });
 
   describe('testProviderConnection', () => {
-    it('should test connection with snake_case api_key', async () => {
+    it('should return 410 Gone (deprecated)', async () => {
       Project.findById.mockResolvedValue({ id: 1 });
 
-      const mockProvider = {
-        validate: jest.fn().mockResolvedValue(true),
-      };
-      ProviderRouter.prototype.createProvider = jest.fn().mockReturnValue(mockProvider);
-
       mockReq.params.projectId = '1';
-      mockReq.body = {
-        provider: 'openai',
-        model: 'gpt-4o',
-        endpoint_url: 'https://api.openai.com/v1',
-        api_key: 'sk-ant-1234',
-      };
+      mockReq.body = { provider: 'openai', model: 'gpt-4o' };
 
       await providerController.testProviderConnection(mockReq, mockRes, nextFn);
 
+      expect(mockRes.status).toHaveBeenCalledWith(410);
       expect(mockRes.json).toHaveBeenCalledWith({
-        success: true,
-        data: {
-          valid: true,
-          message: 'Connection successful',
-        },
+        success: false,
+        error: expect.objectContaining({ code: 'GONE' }),
       });
     });
   });
@@ -469,7 +331,9 @@ describe('Provider Controller', () => {
           id: 1, project_id: 1, name: 'test', provider_type: 'ollama',
           api_key_encrypted: 'enc', base_url: null, model: 'llama3',
           roles: ['worker'], max_tokens: 4096, temperature: 0.1,
-          is_active: true, created_at: new Date(), updated_at: new Date(),
+          is_active: true, endpoint_url: null, fallback_provider: null,
+          routing_rules: '{}', is_project_director: false,
+          created_at: new Date(), updated_at: new Date(),
         }],
       });
 
@@ -493,7 +357,9 @@ describe('Provider Controller', () => {
           id: 1, project_id: 1, name: 'updated', provider_type: 'openai',
           api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
           roles: ['worker'], max_tokens: 4096, temperature: 0.1,
-          is_active: true, created_at: new Date(), updated_at: new Date(),
+          is_active: true, endpoint_url: null, fallback_provider: null,
+          routing_rules: '{}', is_project_director: false,
+          created_at: new Date(), updated_at: new Date(),
         }],
       });
 
@@ -535,7 +401,9 @@ describe('Provider Controller', () => {
           id: 1, project_id: 1, name: 'test', provider_type: 'claude',
           api_key_encrypted: 'enc', base_url: null, model: 'claude-3',
           roles: ['worker'], max_tokens: 4096, temperature: 0.1,
-          is_active: true, created_at: new Date(), updated_at: new Date(),
+          is_active: true, endpoint_url: null, fallback_provider: null,
+          routing_rules: '{}', is_project_director: false,
+          created_at: new Date(), updated_at: new Date(),
         }],
       });
 
@@ -584,9 +452,11 @@ describe('Provider Controller', () => {
       pool.query.mockResolvedValueOnce({
         rows: [{
           id: 1, project_id: 1, name: 'ollama-local', provider_type: 'ollama',
-          api_key_encrypted: 'encrypted-key', base_url: null, model: 'llama3',
+          api_key_encrypted: null, base_url: null, model: 'llama3',
           roles: ['worker'], max_tokens: 4096, temperature: 0.1,
-          is_active: true, created_at: new Date(), updated_at: new Date(),
+          is_active: true, endpoint_url: null, fallback_provider: null,
+          routing_rules: '{}', is_project_director: false,
+          created_at: new Date(), updated_at: new Date(),
         }],
       });
 
@@ -614,7 +484,9 @@ describe('Provider Controller', () => {
           id: 1, project_id: 1, name: 'test', provider_type: 'openai',
           api_key_encrypted: 'encrypted-key', base_url: null, model: 'gpt-4o',
           roles: ['worker'], max_tokens: 4096, temperature: 0.1,
-          is_active: true, created_at: new Date(), updated_at: new Date(),
+          is_active: true, endpoint_url: null, fallback_provider: null,
+          routing_rules: '{}', is_project_director: false,
+          created_at: new Date(), updated_at: new Date(),
         }],
       });
 
@@ -638,7 +510,9 @@ describe('Provider Controller', () => {
           id: 1, project_id: 1, name: 'ollama-local', provider_type: 'ollama',
           api_key_encrypted: null, base_url: null, model: 'llama3',
           roles: ['worker'], max_tokens: 4096, temperature: 0.1,
-          is_active: true, created_at: new Date(), updated_at: new Date(),
+          is_active: true, endpoint_url: null, fallback_provider: null,
+          routing_rules: '{}', is_project_director: false,
+          created_at: new Date(), updated_at: new Date(),
         }],
       });
 
@@ -677,7 +551,9 @@ describe('Provider Controller', () => {
           id: 1, project_id: 1, name: 'updated', provider_type: 'openai',
           api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
           roles: ['worker'], max_tokens: 4096, temperature: 0.1,
-          is_active: true, created_at: new Date(), updated_at: new Date(),
+          is_active: true, endpoint_url: null, fallback_provider: null,
+          routing_rules: '{}', is_project_director: false,
+          created_at: new Date(), updated_at: new Date(),
         }],
       });
 
