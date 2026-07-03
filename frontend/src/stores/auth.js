@@ -90,6 +90,7 @@ export function useAuthStore() {
     permissions.value = []
     localStorage.removeItem('vibecode_user')
     localStorage.removeItem('vibecode_token')
+    localStorage.removeItem('vibecode_permissions')
   }
 
   const isAuthenticated = () => !!token.value
