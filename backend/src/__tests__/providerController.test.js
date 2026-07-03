@@ -57,7 +57,7 @@ describe('Provider Controller', () => {
         }],
       });
 
-      mockReq.params.id = '1';
+      mockReq.params.projectId = '1';
       mockReq.body = {
         name: 'claude-pro',
         providerType: 'claude',
@@ -101,7 +101,7 @@ describe('Provider Controller', () => {
         }],
       });
 
-      mockReq.params.id = '1';
+      mockReq.params.projectId = '1';
       mockReq.params.providerId = '1';
       mockReq.body = {
         name: 'claude-pro-updated',
@@ -130,7 +130,7 @@ describe('Provider Controller', () => {
         rows: [{ id: 1, project_id: 1 }],
       });
 
-      mockReq.params.id = '1';
+      mockReq.params.projectId = '1';
       mockReq.params.providerId = '1';
 
       await providerController.deleteProvider(mockReq, mockRes, nextFn);
@@ -165,7 +165,7 @@ describe('Provider Controller', () => {
         ],
       });
 
-      mockReq.params.id = '1';
+      mockReq.params.projectId = '1';
 
       await providerController.listProviders(mockReq, mockRes, nextFn);
 
@@ -203,7 +203,7 @@ describe('Provider Controller', () => {
       };
       ProviderRouter.prototype.createProvider = jest.fn().mockReturnValue(mockProvider);
 
-      mockReq.params.id = '1';
+      mockReq.params.projectId = '1';
       mockReq.params.providerId = '1';
 
       await providerController.testProvider(mockReq, mockRes, nextFn);
@@ -446,7 +446,7 @@ describe('Provider Controller', () => {
         }],
       });
 
-      mockReq.params.id = '1';
+      mockReq.params.projectId = '1';
       mockReq.body = {
         name: 'test',
         providerType: 'openai',
@@ -458,6 +458,175 @@ describe('Provider Controller', () => {
 
       // If pool was inline require, this mock wouldn't be called
       expect(pool.query).toHaveBeenCalled();
+    });
+  });
+
+  describe('Provider param naming: projectId vs id', () => {
+    it('should use projectId param for addProvider', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 1, project_id: 1, name: 'test', provider_type: 'ollama',
+          api_key_encrypted: 'enc', base_url: null, model: 'llama3',
+          roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+          is_active: true, created_at: new Date(), updated_at: new Date(),
+        }],
+      });
+
+      mockReq.params.projectId = '1';
+      mockReq.body = {
+        name: 'test',
+        providerType: 'ollama',
+        apiKey: '',
+      };
+
+      await providerController.addProvider(mockReq, mockRes, nextFn);
+
+      expect(Project.findById).toHaveBeenCalledWith('1');
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+    });
+
+    it('should use projectId param for updateProvider', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 1, project_id: 1, name: 'updated', provider_type: 'openai',
+          api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
+          roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+          is_active: true, created_at: new Date(), updated_at: new Date(),
+        }],
+      });
+
+      mockReq.params.projectId = '1';
+      mockReq.params.providerId = '1';
+      mockReq.body = { name: 'updated' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(Project.findById).toHaveBeenCalledWith('1');
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        data: expect.objectContaining({ name: 'updated' }),
+      });
+    });
+
+    it('should use projectId param for deleteProvider', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: 1, project_id: 1 }],
+      });
+
+      mockReq.params.projectId = '1';
+      mockReq.params.providerId = '1';
+
+      await providerController.deleteProvider(mockReq, mockRes, nextFn);
+
+      expect(Project.findById).toHaveBeenCalledWith('1');
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        data: { message: 'Provider deleted' },
+      });
+    });
+
+    it('should use projectId param for listProviders', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 1, project_id: 1, name: 'test', provider_type: 'claude',
+          api_key_encrypted: 'enc', base_url: null, model: 'claude-3',
+          roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+          is_active: true, created_at: new Date(), updated_at: new Date(),
+        }],
+      });
+
+      mockReq.params.projectId = '1';
+
+      await providerController.listProviders(mockReq, mockRes, nextFn);
+
+      expect(Project.findById).toHaveBeenCalledWith('1');
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        data: expect.arrayContaining([
+          expect.objectContaining({ name: 'test' }),
+        ]),
+      });
+    });
+
+    it('should use projectId param for testProvider', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 1, project_id: 1, name: 'test', provider_type: 'openai',
+          api_key_encrypted: 'encrypted-key', model: 'gpt-4',
+          max_tokens: 4096, temperature: 0.1, base_url: null,
+        }],
+      });
+
+      const mockProvider = { validate: jest.fn().mockResolvedValue(true) };
+      ProviderRouter.prototype.createProvider = jest.fn().mockReturnValue(mockProvider);
+
+      mockReq.params.projectId = '1';
+      mockReq.params.providerId = '1';
+
+      await providerController.testProvider(mockReq, mockRes, nextFn);
+
+      expect(Project.findById).toHaveBeenCalledWith('1');
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        data: { valid: true, message: 'Connection successful' },
+      });
+    });
+  });
+
+  describe('addProvider: empty apiKey allowed for local models', () => {
+    it('should accept empty apiKey string', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 1, project_id: 1, name: 'ollama-local', provider_type: 'ollama',
+          api_key_encrypted: 'encrypted-key', base_url: null, model: 'llama3',
+          roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+          is_active: true, created_at: new Date(), updated_at: new Date(),
+        }],
+      });
+
+      mockReq.params.projectId = '1';
+      mockReq.body = {
+        name: 'ollama-local',
+        providerType: 'ollama',
+        apiKey: '',
+      };
+
+      await providerController.addProvider(mockReq, mockRes, nextFn);
+
+      expect(encrypt).toHaveBeenCalledWith('');
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+    });
+  });
+
+  describe('addProvider: default model when not provided', () => {
+    it('should default model to gpt-4o when not sent', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 1, project_id: 1, name: 'test', provider_type: 'openai',
+          api_key_encrypted: 'encrypted-key', base_url: null, model: 'gpt-4o',
+          roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+          is_active: true, created_at: new Date(), updated_at: new Date(),
+        }],
+      });
+
+      mockReq.params.projectId = '1';
+      mockReq.body = {
+        name: 'test',
+        providerType: 'openai',
+        apiKey: 'sk-test',
+      };
+
+      await providerController.addProvider(mockReq, mockRes, nextFn);
+
+      const callArgs = pool.query.mock.calls[0][1];
+      expect(callArgs).toContain('gpt-4o');
     });
   });
 });
