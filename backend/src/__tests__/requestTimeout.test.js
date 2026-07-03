@@ -99,12 +99,16 @@ describe('Request Timeout Middleware', () => {
 
 describe('Slow Request Logger', () => {
   let req, res, next;
-  let warnSpy;
+  let loggerModule;
   let originalDateNow;
   let mockDate = 1000;
 
   beforeEach(() => {
-    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    jest.resetModules();
+    loggerModule = require('../utils/logger');
+    if (!loggerModule.warn || typeof loggerModule.warn !== 'function') {
+      loggerModule.warn = jest.fn();
+    }
     originalDateNow = global.Date.now;
     global.Date.now = jest.fn(() => mockDate);
     req = { method: 'GET', path: '/test' };
@@ -117,11 +121,11 @@ describe('Slow Request Logger', () => {
   });
 
   afterEach(() => {
-    warnSpy.mockRestore();
     global.Date.now = originalDateNow;
   });
 
   it('should call next()', () => {
+    const { slowRequestLogger } = require('../middleware/slowRequest');
     const middleware = slowRequestLogger(5000);
     middleware(req, res, next);
     
@@ -129,11 +133,8 @@ describe('Slow Request Logger', () => {
   });
 
   it('should log slow requests', () => {
-    // Reload module to pick up mocked Date.now
-    jest.resetModules();
-    const { slowRequestLogger: slowRequestLoggerReloaded } = require('../middleware/slowRequest');
-    
-    const middleware = slowRequestLoggerReloaded(100);
+    const { slowRequestLogger } = require('../middleware/slowRequest');
+    const middleware = slowRequestLogger(100);
     middleware(req, res, next);
     
     // Simulate slow request
@@ -142,18 +143,23 @@ describe('Slow Request Logger', () => {
     // Trigger finish event
     res.on.mock.calls[0][1]();
     
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Slow request: GET /test'));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('took 200ms'));
+    expect(loggerModule.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Slow request: GET /test')
+    );
+    expect(loggerModule.warn).toHaveBeenCalledWith(
+      expect.stringContaining('took 200ms')
+    );
   });
 
   it('should not log fast requests', () => {
+    const { slowRequestLogger } = require('../middleware/slowRequest');
     const middleware = slowRequestLogger(5000);
     middleware(req, res, next);
     
     // Trigger finish event immediately
     res.on.mock.calls[0][1]();
     
-    expect(warnSpy).not.toHaveBeenCalled();
+    expect(loggerModule.warn).not.toHaveBeenCalled();
   });
 
   

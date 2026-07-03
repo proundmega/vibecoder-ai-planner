@@ -1,5 +1,6 @@
 const { pool } = require('../db');
 const TicketService = require('./TicketService');
+const logger = require('../utils/logger');
 
 class HeartbeatService {
   async recordHeartbeat(agentId, { ticketId, step, memory, cpu }) {
@@ -68,7 +69,7 @@ class HeartbeatService {
         try {
           await TicketService.releaseTicket(agent.current_ticket_id);
         } catch (err) {
-          console.error(`Failed to release ticket ${agent.current_ticket_id} for stale agent ${agent.agent_id}:`, err.message);
+          logger.error(`Failed to release ticket ${agent.current_ticket_id} for stale agent ${agent.agent_id}:`, err.message);
         }
       }
     }

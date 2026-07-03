@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
 const User = require('../models/user');
+const logger = require('../utils/logger');
 
 // Get current user
 router.get('/', verifyToken, async (req, res) => {
@@ -17,7 +18,7 @@ router.get('/', verifyToken, async (req, res) => {
       plan: user.currentPlan
     });
   } catch (error) {
-    console.error('GET /api/users', error);
+    logger.error('GET /api/users', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -29,7 +30,7 @@ router.put('/profile', verifyToken, async (req, res) => {
     // In a real app, this would update DB
     res.json({ message: 'Profile updated', name, avatar });
   } catch (error) {
-    console.error('PUT /api/users/profile', error);
+    logger.error('PUT /api/users/profile', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -46,7 +47,7 @@ router.get('/stats', verifyToken, async (req, res) => {
       apiCalls: 156
     });
   } catch (error) {
-    console.error('GET /api/users/stats', error);
+    logger.error('GET /api/users/stats', error);
     res.status(500).json({ error: error.message });
   }
 });

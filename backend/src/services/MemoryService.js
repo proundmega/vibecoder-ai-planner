@@ -1,5 +1,6 @@
 const { pool } = require('../db');
 const { NotFoundError, ServiceUnavailableError } = require('../errors/HttpError');
+const logger = require('../utils/logger');
 
 class MemoryService {
   static _memoryTableAvailable = null;
@@ -56,7 +57,7 @@ class MemoryService {
           embedding = data.data[0].embedding;
         }
       } catch (error) {
-        console.error('Failed to generate embedding:', error.message);
+        logger.error('Failed to generate embedding:', error.message);
       }
     }
 
@@ -162,7 +163,7 @@ class MemoryService {
           queryEmbedding = data.data[0].embedding;
         }
       } catch (error) {
-        console.error('Failed to generate query embedding:', error.message);
+        logger.error('Failed to generate query embedding:', error.message);
       }
     }
 
@@ -229,7 +230,7 @@ class MemoryService {
           embedding = data.data[0].embedding;
         }
       } catch (error) {
-        console.error('Failed to generate embedding:', error.message);
+        logger.error('Failed to generate embedding:', error.message);
       }
     }
 

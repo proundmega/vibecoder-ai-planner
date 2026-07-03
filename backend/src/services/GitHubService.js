@@ -4,6 +4,7 @@ const PermissionService = require('../services/PermissionService');
 const { GitHubProvider } = require('../providers/github');
 const { encrypt, decrypt } = require('../utils/crypto');
 const { NotFoundError, ForbiddenError, ValidationError } = require('../errors/HttpError');
+const logger = require('../utils/logger');
 
 class GitHubService {
   async connectProject(projectId, repoUrl, accessToken, userId) {
@@ -137,7 +138,7 @@ class GitHubService {
     try {
       await provider.deleteBranch(repo, ticket.branchName);
     } catch (error) {
-      console.warn(`Failed to delete branch ${ticket.branchName}:`, error.message);
+      logger.warn(`Failed to delete branch ${ticket.branchName}:`, error.message);
     }
 
     const { pool } = require('../db');

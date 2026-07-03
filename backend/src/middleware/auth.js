@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const authService = require('../auth');
 const { pool } = require('../db');
 const AgentService = require('../services/AgentService');
+const logger = require('../utils/logger');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
 
@@ -63,7 +64,7 @@ exports.verifyToken = (req, res, next) => {
     req.user = decoded;
     next();
   } catch (error) {
-    console.error('verifyToken:', error);
+    logger.error('verifyToken:', error);
     return res.status(401).json({ error: 'Invalid authentication token' });
   }
 };
@@ -129,7 +130,7 @@ exports.agentAuth = async (req, res, next) => {
     req.agent = agent;
     next();
   } catch (error) {
-    console.error('agentAuth:', error);
+    logger.error('agentAuth:', error);
     return res.status(401).json({ error: 'Invalid agent credentials' });
   }
 };

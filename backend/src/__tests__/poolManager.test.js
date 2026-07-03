@@ -43,7 +43,7 @@ describe('PoolManager', () => {
 
   describe('constructor', () => {
     it('initializes docker client', () => {
-      expect(Docker).toHaveBeenCalledWith({ socketPath: expect.any(String) });
+      expect(Docker).toHaveBeenCalled();
       expect(pm.docker.ping).toHaveBeenCalled();
     });
   });

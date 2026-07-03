@@ -1,4 +1,5 @@
 const { pool } = require('../db');
+const logger = require('../utils/logger');
 
 // In-memory cache: role_name -> Set of permission codes
 const permissionCache = new Map();
@@ -66,7 +67,7 @@ async function init() {
   }
 }
 
-init().catch(console.error);
+init().catch(logger.error);
 
 module.exports = {
   resolvePermissions,

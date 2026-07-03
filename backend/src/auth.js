@@ -3,6 +3,7 @@ const UserService = require('./services/UserService');
 const User = require('./models/user');
 const TOKEN_EXPIRY_MINUTES = parseInt(process.env.TOKEN_EXPIRY_MINUTES) || 30;
 const TOKEN_SECRET = process.env.JWT_SECRET || 'vibecode-dev-secret-do-not-use-in-production';
+const logger = require('./utils/logger');
 
 class AuthService {
   async register(name, email, password, role = 'project_admin', userCreatedBy = null) {
@@ -56,7 +57,7 @@ class AuthService {
     try {
       return jwt.verify(token, TOKEN_SECRET);
     } catch (error) {
-      console.error('verifyToken:', error);
+      logger.error('verifyToken:', error);
       return null;
     }
   }

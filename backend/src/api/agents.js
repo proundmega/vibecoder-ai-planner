@@ -7,6 +7,7 @@ const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
 const { editTicketSchema, claimTicketSchema, statusChangeSchema } = require('../validators/agents');
 const Joi = require('joi');
+const logger = require('../utils/logger');
 const createAgentSchema = Joi.object({
   name: Joi.string().min(1).max(100).required().messages({
     'string.empty': 'name is required',
@@ -52,7 +53,7 @@ router.post('/create', verifyToken, requireAnyPermission('AGENT_CREATE'), valida
     const agent = await AgentService.create(name, apiKey, req.user.userId);
     res.status(201).json({ ...agent, generatedApiKey: apiKey });
   } catch (error) {
-    console.error('POST /api/agents/create', error);
+    logger.error('POST /api/agents/create', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -81,7 +82,7 @@ router.get('/', verifyToken, requireAnyPermission('AGENT_READ'), async (req, res
     const agents = await AgentService.list(req.user.userId);
     res.json({ agents });
   } catch (error) {
-    console.error('GET /api/agents', error);
+    logger.error('GET /api/agents', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -108,7 +109,7 @@ router.post('/revoke/:agentId', verifyToken, requireAnyPermission('AGENT_REVOKE'
     await AgentService.revokeApiKey(req.params.agentId);
     res.json({ message: 'API key revoked' });
   } catch (error) {
-    console.error('POST /api/agents/revoke/:agentId', error);
+    logger.error('POST /api/agents/revoke/:agentId', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -135,7 +136,7 @@ router.delete('/:agentId', verifyToken, requireAnyPermission('AGENT_DELETE'), as
     await AgentService.delete(req.params.agentId);
     res.json({ message: 'Agent deleted' });
   } catch (error) {
-    console.error('DELETE /api/agents/:agentId', error);
+    logger.error('DELETE /api/agents/:agentId', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -193,7 +194,7 @@ router.get('/:agentId/history', async (req, res, next) => {
       })),
     });
   } catch (error) {
-    console.error('GET /api/agents/:agentId/history', error);
+    logger.error('GET /api/agents/:agentId/history', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -229,7 +230,7 @@ router.get('/:agentId/key', verifyToken, async (req, res) => {
       maxActionsPerDay: agent.max_actions_per_day,
     });
   } catch (error) {
-    console.error('GET /api/agents/:agentId/key', error);
+    logger.error('GET /api/agents/:agentId/key', error);
     res.status(500).json({ error: error.message });
   }
 });
