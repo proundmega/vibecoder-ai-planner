@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getRepoStatus, connectRepo, disconnectRepo, listBranches, listPRs, createBranch } from '@/api/github'
-import { listProviders, addProvider, updateProvider, deleteProvider, testProvider, setDirector, fetchProviderConfig, setProviderConfig, testProviderConnection } from '@/api/providers'
+import { listProviders, addProvider, updateProvider, deleteProvider, testProvider, setDirector } from '@/api/providers'
 import { getProjectUsage } from '@/api/usage'
 import { getProjectBilling } from '@/api/billing'
 import { getProjectMemory, searchMemory, addMemory, updateMemory, deleteMemory } from '@/api/memory'
@@ -98,22 +98,6 @@ const editingMemory = ref(null)
 const memorySaving = ref(false)
 const memoryDeleting = ref(null)
 const memoryLoaded = ref(false)
-
-// Provider Config state
-const providerConfig = ref({ provider: 'openai', model: '', endpoint_url: '', api_key: '', fallback_provider: null })
-const providerConfigLoading = ref(false)
-const providerConfigSaving = ref(false)
-const providerConfigTestResult = ref(null)
-const providerConfigLoaded = ref(false)
-
-const providerConfigTypes = [
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'claude', label: 'Claude' },
-  { value: 'ollama', label: 'Ollama (local)' },
-  { value: 'vllm', label: 'vLLM (local)' },
-  { value: 'llamacpp', label: 'llama.cpp (local)' },
-  { value: 'custom', label: 'Custom (OpenAI-compatible)' },
-]
 
 onMounted(() => {
   if (activeTab.value === 'github') loadGitHub()
@@ -436,48 +420,7 @@ async function handleDeleteMemory(memoryId) {
   }
 }
 
-async function loadProviderConfig() {
-  providerConfigLoading.value = true
-  try {
-    const cfg = await fetchProviderConfig(projectId)
-    if (cfg) {
-      providerConfig.value = {
-        provider: cfg.provider || 'openai',
-        model: cfg.model || '',
-        endpoint_url: cfg.endpoint_url || '',
-        api_key: cfg.api_key || '',
-        fallback_provider: cfg.fallback_provider || null,
-      }
-    }
-    providerConfigLoaded.value = true
-  } catch (_err) {
-    providerConfigLoaded.value = true
-  } finally {
-    providerConfigLoading.value = false
-  }
-}
 
-async function saveProviderConfig() {
-  providerConfigSaving.value = true
-  try {
-    await setProviderConfig(projectId, providerConfig.value)
-    providerConfigLoaded.value = true
-  } catch (err) {
-    alert(err.message || 'Failed to save provider config')
-  } finally {
-    providerConfigSaving.value = false
-  }
-}
-
-async function testProviderConfigConnection() {
-  providerConfigTestResult.value = null
-  try {
-    const result = await testProviderConnection(projectId, providerConfig.value)
-    providerConfigTestResult.value = result
-  } catch (err) {
-    providerConfigTestResult.value = { success: false, error: err.message }
-  }
-}
 </script>
 
 <template>

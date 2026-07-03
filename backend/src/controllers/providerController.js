@@ -1,6 +1,6 @@
 const ProviderRouter = require('../services/ProviderRouter');
 const { encrypt, decrypt, maskToken } = require('../utils/crypto');
-const { NotFoundError, ConflictError } = require('../errors/HttpError');
+const { NotFoundError } = require('../errors/HttpError');
 const Project = require('../models/project');
 const { pool } = require('../db');
 
@@ -21,21 +21,23 @@ async function addProvider(req, res, next) {
       custom: 'custom-model',
     };
 
-    const result = await pool.query(
-      `INSERT INTO project_providers (project_id, name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-       RETURNING *`,
-      [projectId, name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, routing_rules || '{}', is_project_director || false]
-    );
-
+    let row;
     if (is_project_director) {
-      await pool.query(
-        'UPDATE project_providers SET is_project_director = false WHERE project_id = $1 AND id != $2',
-        [projectId, result.rows[0].id]
+      const txResult = await pool.query(
+        'BEGIN; UPDATE project_providers SET is_project_director = false WHERE project_id = $1; INSERT INTO project_providers (project_id, name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true) RETURNING *; COMMIT',
+        [projectId, name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, routing_rules || '{}']
       );
+      row = txResult.rows[0];
+    } else {
+      const result = await pool.query(
+        `INSERT INTO project_providers (project_id, name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         RETURNING *`,
+        [projectId, name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, routing_rules || '{}', false]
+      );
+      row = result.rows[0];
     }
 
-    const row = result.rows[0];
     res.status(201).json({
       success: true,
       data: {
@@ -125,8 +127,8 @@ async function updateProvider(req, res, next) {
     }
     if (is_project_director !== undefined && is_project_director) {
       await pool.query(
-        'UPDATE project_providers SET is_project_director = false WHERE project_id = $1 AND id != $2',
-        [projectId, providerId]
+        'BEGIN; UPDATE project_providers SET is_project_director = false WHERE project_id = $1; COMMIT',
+        [projectId]
       );
       updates.push(`is_project_director = $${paramIndex++}`);
       values.push(true);
@@ -299,13 +301,8 @@ async function setDirector(req, res, next) {
     }
 
     await pool.query(
-      'UPDATE project_providers SET is_project_director = false WHERE project_id = $1 AND id != $2',
+      'BEGIN; UPDATE project_providers SET is_project_director = false WHERE project_id = $1; UPDATE project_providers SET is_project_director = true, updated_at = NOW() WHERE id = $2 AND project_id = $1; COMMIT',
       [projectId, providerId]
-    );
-
-    await pool.query(
-      'UPDATE project_providers SET is_project_director = true, updated_at = NOW() WHERE id = $1 AND project_id = $2',
-      [providerId, projectId]
     );
 
     const updated = await pool.query(

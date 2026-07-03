@@ -79,6 +79,10 @@ describe('Provider Controller', () => {
           name: 'claude-pro',
           providerType: 'claude',
           model: 'claude-sonnet-4-20250514',
+          endpoint_url: null,
+          fallback_provider: null,
+          routing_rules: '{}',
+          is_project_director: false,
         }),
       });
     });
@@ -126,6 +130,10 @@ describe('Provider Controller', () => {
         data: expect.objectContaining({
           name: 'claude-pro-updated',
           model: 'claude-3-opus-20240229',
+          endpoint_url: null,
+          fallback_provider: null,
+          routing_rules: '{}',
+          is_project_director: false,
         }),
       });
     });
@@ -187,6 +195,10 @@ describe('Provider Controller', () => {
           expect.objectContaining({
             name: 'claude-pro',
             providerType: 'claude',
+            endpoint_url: null,
+            fallback_provider: null,
+            routing_rules: '{}',
+            is_project_director: false,
           }),
         ]),
       });
@@ -576,6 +588,148 @@ describe('Provider Controller', () => {
       expect(args[0]).toBe('1');
       expect(args[1]).toBe('updated');
       expect(args[2]).toBe('gpt-4');
+    });
+  });
+
+  describe('setDirector', () => {
+    it('should set director and return updated provider', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ id: 1, project_id: 1 }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: 1, project_id: 1, name: 'openai-pro', provider_type: 'openai', api_key_encrypted: 'enc', base_url: null, model: 'gpt-4o', roles: ['worker'], max_tokens: 4096, temperature: 0.1, is_active: true, endpoint_url: null, fallback_provider: null, routing_rules: '{}', is_project_director: true, created_at: new Date(), updated_at: new Date() }] });
+
+      mockReq.params.projectId = '1';
+      mockReq.params.providerId = '1';
+
+      await providerController.setDirector(mockReq, mockRes, nextFn);
+
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        data: expect.objectContaining({
+          name: 'openai-pro',
+          providerType: 'openai',
+          is_project_director: true,
+          endpoint_url: null,
+          fallback_provider: null,
+          routing_rules: '{}',
+        }),
+      });
+    });
+
+    it('should demote existing director when setting new one', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ id: 2, project_id: 1 }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: 2, project_id: 1, name: 'new-director', provider_type: 'claude', api_key_encrypted: 'enc', base_url: null, model: 'claude-sonnet', roles: ['worker'], max_tokens: 4096, temperature: 0.1, is_active: true, endpoint_url: null, fallback_provider: null, routing_rules: '{}', is_project_director: true, created_at: new Date(), updated_at: new Date() }] });
+
+      mockReq.params.projectId = '1';
+      mockReq.params.providerId = '2';
+
+      await providerController.setDirector(mockReq, mockRes, nextFn);
+
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        data: expect.objectContaining({
+          name: 'new-director',
+          is_project_director: true,
+        }),
+      });
+
+      // Verify the demote query was called (first call after provider existence check)
+      const demoteCall = pool.query.mock.calls.find(call => call[0].includes('is_project_director = false'));
+      expect(demoteCall).toBeDefined();
+    });
+
+    it('should return 404 for non-existent provider', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      mockReq.params.projectId = '1';
+      mockReq.params.providerId = '999';
+
+      await providerController.setDirector(mockReq, mockRes, nextFn);
+
+      expect(nextFn).toHaveBeenCalled();
+      expect(nextFn.mock.calls[0][0]).toBeInstanceOf(Error);
+    });
+  });
+
+  describe('addProvider: director promotion in transaction', () => {
+    it('should demote existing directors when adding as director', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 2, project_id: 1, name: 'new-director', provider_type: 'openai',
+          api_key_encrypted: 'encrypted-key', base_url: null, model: 'gpt-4o',
+          roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+          is_active: true, endpoint_url: null, fallback_provider: null,
+          routing_rules: '{}', is_project_director: true,
+          created_at: new Date(), updated_at: new Date(),
+        }],
+      });
+
+      mockReq.params.projectId = '1';
+      mockReq.body = {
+        name: 'new-director',
+        providerType: 'openai',
+        apiKey: 'sk-test',
+        is_project_director: true,
+      };
+
+      await providerController.addProvider(mockReq, mockRes, nextFn);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        data: expect.objectContaining({
+          name: 'new-director',
+          is_project_director: true,
+        }),
+      });
+
+      // Verify transaction query was used (BEGIN...COMMIT)
+      const txCall = pool.query.mock.calls[0][0];
+      expect(txCall).toContain('BEGIN');
+      expect(txCall).toContain('COMMIT');
+    });
+  });
+
+  describe('updateProvider: director transaction', () => {
+    it('should wrap director demote in transaction', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 1, project_id: 1, name: 'promoted', provider_type: 'openai',
+            api_key_encrypted: 'enc', base_url: null, model: 'gpt-4o',
+            roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+            is_active: true, endpoint_url: null, fallback_provider: null,
+            routing_rules: '{}', is_project_director: true,
+            created_at: new Date(), updated_at: new Date(),
+          }],
+        });
+
+      mockReq.params.projectId = '1';
+      mockReq.params.providerId = '1';
+      mockReq.body = { name: 'promoted', is_project_director: true };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        data: expect.objectContaining({
+          name: 'promoted',
+          is_project_director: true,
+        }),
+      });
+
+      // Verify the first query (director demote) uses BEGIN/COMMIT
+      const demoteQuery = pool.query.mock.calls[0][0];
+      expect(demoteQuery).toContain('BEGIN');
+      expect(demoteQuery).toContain('COMMIT');
     });
   });
 });
