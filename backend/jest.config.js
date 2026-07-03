@@ -16,7 +16,7 @@ module.exports = {
   },
   verbose: true,
   forceExit: true,
-  restoreMocks: false,
+  restoreMocks: true,
   watchPathIgnorePatterns: ['/node_modules/', '/coverage/'],
   testTimeout: 10000,
   collectCoverageFrom: [
