@@ -529,8 +529,8 @@ async function testProviderConfigConnection() {
             <button @click="testProviderConfigConnection" class="btn-cancel">Test Connection</button>
           </div>
 
-          <div v-if="providerConfigTestResult" :class="['test-result', providerConfigTestResult.success ? 'success' : 'error']">
-            <p>{{ providerConfigTestResult.success ? `Connected (${providerConfigTestResult.latency_ms}ms)` : 'Failed: ' + providerConfigTestResult.error }}</p>
+          <div v-if="providerConfigTestResult" :class="['test-result', providerConfigTestResult.valid ? 'success' : 'error']">
+            <p>{{ providerConfigTestResult.valid ? `Connected (${providerConfigTestResult.message})` : providerConfigTestResult.message }}</p>
           </div>
         </div>
       </div>
