@@ -104,8 +104,10 @@ if (process.env.NODE_ENV !== 'test') {
   const result = validateEnv();
   if (!result.valid) {
     console.error('\n' + formatEnvErrors(result) + '\n');
-    console.error('Environment validation failed. Please check your .env file.\n');
-    process.exit(1);
+    if (result.missing.length > 0) {
+      console.error('Environment validation failed. Please check your .env file.\n');
+      process.exit(1);
+    }
   } else {
     console.log('Environment variables validated successfully.');
   }
