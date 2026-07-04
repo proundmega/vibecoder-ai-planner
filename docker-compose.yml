@@ -2,7 +2,7 @@ name: vibecode
 
 services:
   docker-proxy:
-    image: tutum/docker-socket-proxy:latest
+    image: moul/docker-socket-proxy:latest
     container_name: vibecode-docker-proxy
     restart: unless-stopped
     volumes:
