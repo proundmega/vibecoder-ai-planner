@@ -29,7 +29,7 @@ function getToken(): string {
 
 function connectWs(): WebSocket {
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const url = `${protocol}://${window.location.host}/api/terminal/${agentId}`
+  const url = `${protocol}://${window.location.host}/api/terminal/${agentId}?token=${getToken()}`
   return new WebSocket(url)
 }
 
