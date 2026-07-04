@@ -114,9 +114,19 @@ done
 ```bash
 assert_field() {
   local label="$1" field="$2" expected="$3" json="$4"
-  local actual=$(echo "$json" | jq -r "if has(\"$field\") then .$field else \"__MISSING__\" end")
-  if [ "$actual" = "__MISSING__" ]; then
+  # Check if field exists at all (distinguishes null from missing)
+  local exists=$(echo "$json" | jq "has(\"$field\")")
+  if [ "$exists" = "false" ]; then
     fail "$label" "Field '$field' not found in JSON"
+    return
+  fi
+  local actual=$(echo "$json" | jq -r ".$field // \"__NULL__\"")
+  if [ "$actual" = "__NULL__" ]; then
+    if [ "$expected" = "__NULL__" ]; then
+      pass "$label"
+    else
+      fail "$label" "Expected $field=$expected, got null"
+    fi
   elif [ "$actual" != "$expected" ]; then
     fail "$label" "Expected $field=$expected, got $actual"
   else

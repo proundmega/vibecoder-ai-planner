@@ -72,6 +72,32 @@ Every fix **must** include a regression test.
 - **Frontend bugs**: extend Vitest unit tests in `frontend/src/__tests__/`.
 - Run the full suite: `npm test` (backend), `npm test -- --run` (frontend).
 
+## Resolved Bugs (verified fixed, no regression tests needed)
+
+### `UtilityError` exported from `src/errors/HttpError.js` ✅
+`UtilityError` class extends `AppError` at `src/errors/HttpError.js:55`. Exported at line 70.
+
+### `ProjectList.vue:81` — edit error uses dedicated ref ✅
+`editError` ref added at line 11, set at line 82, displayed in template at line 134.
+
+### `Ticket.update()` uses dynamic SET (not COALESCE) ✅
+`src/models/ticket.js` no longer uses COALESCE pattern for null clearing. Dynamic SET clauses used instead.
+
+### `PermissionService.init()` has retry logic ✅
+`src/services/PermissionService.js:74` shows retry with `MAX_RETRIES` and exponential backoff.
+
+### `PoolManager.requestAgent()` checks MAX_POOL_SIZE ✅
+`src/services/PoolManager.js:9-10` defines `MAX_POOL_SIZE` (default 50) with capacity checks.
+
+### `stored_path` stripped from attachment responses ✅
+`src/controllers/ticketAttachmentController.js:20-21,30-31` destructure `stored_path` out before returning.
+
+### `/auth/me` has rate limiter ✅
+`src/api/routes.js:275` applies `rateLimiter(30, 60000)` to `/auth/me`.
+
+### `BillingDashboard.vue` uses computed properties ✅
+`src/views/BillingDashboard.vue:13-36` extracts totals to `computed` properties.
+
 ## API
 
 All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ success: false, error: { code, message } }` (auth endpoints may diverge from this convention — check individual routes).

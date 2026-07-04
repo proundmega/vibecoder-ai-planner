@@ -103,11 +103,12 @@ Steps must be executed in this exact order (dependencies between steps are noted
 #### Phase 3: Bash Suite
 
 1. Modify `backend/integration-test/helpers.sh`:
-   - Add jq-based `assert_field(label, field, expected, json)`:
-     - `echo "$json" | jq -r ".$field"` → compare to expected
-     - Handle missing field, null, wrong value
-   - Add `assert_has_field(label, field, json)`: `jq` test for field existence
-   - Add `assert_no_field(label, field, json)`: `jq` test for field absence
+    - Add jq-based `assert_field(label, field, expected, json)`:
+      - Use `jq "has(\"$field\")"` to check field existence (distinguishes null from missing)
+      - Use `jq -r ".$field // \"__NULL__\""` for value comparison (null sentinel not valid JSON)
+      - Handle missing field, null, wrong value
+    - Add `assert_has_field(label, field, json)`: `jq "has(\"$field\")"` test
+    - Add `assert_no_field(label, field, json)`: `jq "!has(\"$field\")"` test
    - Fix `register()`:
      - Single curl call: `curl -s -w "\n%{http_code}" -X POST ...`
      - Split: `http_code=$(echo "$response" | tail -1); body=$(echo "$response" | sed '$d')`
