@@ -1,5 +1,6 @@
 const MemoryService = require('../services/MemoryService');
 const { NotFoundError } = require('../errors/HttpError');
+const logger = require('../utils/logger');
 
 jest.mock('../db', () => ({
   pool: {
@@ -411,6 +412,103 @@ describe('MemoryService', () => {
 
       const result = await MemoryService.searchSimilar(100, 'query');
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('BP-54: Logger error paths', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    test('should call logger.error when embedding generation fails in addMemory', async () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+      process.env.OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
+
+      global.fetch = jest.fn().mockRejectedValueOnce(new Error('API rate limit exceeded'));
+
+      const mockRow = {
+        id: 1,
+        project_id: 100,
+        agent_id: 1,
+        content: 'Test memory',
+        embedding: null,
+        metadata: JSON.stringify({}),
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+
+      require('../db').pool.query.mockResolvedValueOnce({ rows: [mockRow] });
+
+      const result = await MemoryService.addMemory(100, 1, 'Test memory');
+
+      expect(logger.error).toHaveBeenCalledWith('Failed to generate embedding:', 'API rate limit exceeded');
+      expect(result.embedding).toBeNull();
+    });
+
+    test('should call logger.error when query embedding generation fails in searchSimilar', async () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+      process.env.OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
+
+      global.fetch = jest.fn().mockRejectedValueOnce(new Error('Invalid API key'));
+
+      const result = await MemoryService.searchSimilar(100, 'query');
+
+      expect(logger.error).toHaveBeenCalledWith('Failed to generate query embedding:', 'Invalid API key');
+      expect(result).toEqual([]);
+    });
+
+    test('should call logger.error when embedding generation fails in updateMemory', async () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+      process.env.OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
+
+      const mockRow = {
+        id: 1,
+        project_id: 100,
+        agent_id: 1,
+        content: 'Original content',
+        embedding: [0.1, 0.2, 0.3],
+        metadata: JSON.stringify({}),
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+
+      global.fetch = jest.fn().mockRejectedValueOnce(new Error('Network error'));
+
+      require('../db').pool.query
+        .mockResolvedValueOnce({ rows: [mockRow] })
+        .mockResolvedValueOnce({ rows: [mockRow] });
+
+      const result = await MemoryService.updateMemory(1, 'Updated content', {});
+
+      expect(logger.error).toHaveBeenCalledWith('Failed to generate embedding:', 'Network error');
+      expect(result.embedding).toEqual([0.1, 0.2, 0.3]);
+    });
+
+    test('should not call logger.error when embedding generation succeeds in addMemory', async () => {
+      process.env.OPENAI_API_KEY = 'test-key';
+      process.env.OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
+
+      global.fetch = jest.fn().mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: [{ embedding: [0.1, 0.2, 0.3] }] }),
+      });
+
+      const mockRow = {
+        id: 1,
+        project_id: 100,
+        agent_id: 1,
+        content: 'Test memory',
+        embedding: [0.1, 0.2, 0.3],
+        metadata: JSON.stringify({}),
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+
+      require('../db').pool.query.mockResolvedValueOnce({ rows: [mockRow] });
+
+      await MemoryService.addMemory(100, 1, 'Test memory');
+
+      expect(logger.error).not.toHaveBeenCalled();
     });
   });
 });
