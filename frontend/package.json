@@ -10,7 +10,7 @@
     "test": "vitest",
     "typecheck": "vue-tsc --noEmit",
     "generate:api": "openapi-typescript-codegen --input ../backend/src/api/openapi-generated.json --output src/api/generated --exportServices true",
-    "generate:spec": "cd ../backend && node -e \"const specs = require('./src/api/openapi-spec'); require('fs').writeFileSync('./src/api/openapi-generated.json', JSON.stringify(specs, null, 2));\"",
+    "generate:spec": "cd ../backend && npm run generate:spec",
     "cypress:open": "cypress open",
     "cypress:component": "cypress run --component --browser chrome",
     "cypress:e2e": "cypress run --e2e --browser chrome --headless",

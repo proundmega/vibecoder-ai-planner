@@ -143,6 +143,26 @@ export function validateApiResponse(data: unknown): string[] {
   return errors;
 }
 
+export function validateApiResponseStrict(data: unknown): void {
+  const errors = validateApiResponse(data);
+  if (errors.length > 0) {
+    throw new Error(`API response validation failed: ${errors.join('; ')}`);
+  }
+}
+
+export function validateSchema(schemaName: string) {
+  const schema = schemas[schemaName];
+  if (!schema) {
+    throw new Error(`Unknown schema: ${schemaName}`);
+  }
+  return (data: unknown): void => {
+    const errors = validateValue(data, schema, schemaName);
+    if (errors.length > 0) {
+      throw new Error(`${schemaName} validation failed: ${errors.join('; ')}`);
+    }
+  };
+}
+
 export function validateAndExtract<T>(data: unknown, validator: (data: unknown) => string[], expectedType: string): T {
   const errors = validator(data);
   if (errors.length > 0) {
