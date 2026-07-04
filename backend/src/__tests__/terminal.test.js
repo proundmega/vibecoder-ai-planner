@@ -6,7 +6,7 @@ jest.mock('jsonwebtoken');
 
 const jwt = require('jsonwebtoken');
 
-describe('api/terminal.js verifyTerminalToken (BP-66)', () => {
+describe('api/terminal.js verifyTerminalToken (BP-58)', () => {
   const VALID_TOKEN = 'mock-token';
   const DECODED_USER = { id: 'user-1', email: 'user@test.com', role: 'super_admin' };
 

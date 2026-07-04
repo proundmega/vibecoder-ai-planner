@@ -44,11 +44,7 @@ onMounted(() => {
 
   ws = connectWs()
 
-  ws.onopen = () => {
-    const token = getToken()
-    ws!.send(JSON.stringify({ type: 'auth', token }))
-    term?.focus()
-  }
+  ws.onopen = () => { term?.focus() }
 
   ws.onmessage = (event) => {
     if (event.data instanceof Blob) {
