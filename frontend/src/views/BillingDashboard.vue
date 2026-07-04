@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { getUserBilling } from '@/api/billing'
@@ -9,6 +9,30 @@ const router = useRouter()
 const billingLoading = ref(true)
 const billingError = ref(null)
 const billingData = ref([])
+
+const totalCost = computed(() => {
+  return billingData.value.reduce((sum, b) => sum + (parseFloat(b.total_cost_usd) || 0), 0).toFixed(4)
+})
+
+const totalCalls = computed(() => {
+  return billingData.value.reduce((sum, b) => sum + (parseInt(b.total_calls) || 0), 0).toLocaleString()
+})
+
+const totalTokensIn = computed(() => {
+  return billingData.value.reduce((sum, b) => sum + (parseInt(b.total_tokens_in) || 0), 0).toLocaleString()
+})
+
+const totalTokensOut = computed(() => {
+  return billingData.value.reduce((sum, b) => sum + (parseInt(b.total_tokens_out) || 0), 0).toLocaleString()
+})
+
+const billingPeriods = computed(() => {
+  return new Set(billingData.value.map(b => b.billing_month)).size
+})
+
+const projects = computed(() => {
+  return new Set(billingData.value.map(b => b.project_id)).size
+})
 
 onMounted(async () => {
   if (authStore.user?.role !== 'project_admin') {
@@ -48,25 +72,25 @@ onMounted(async () => {
           <div class="summary-card">
             <div class="summary-label">Total Cost</div>
             <div class="summary-value">
-              ${{ billingData.reduce((sum, b) => sum + (parseFloat(b.total_cost_usd) || 0), 0).toFixed(4) }}
+              ${{ totalCost }}
             </div>
           </div>
           <div class="summary-card">
             <div class="summary-label">Total Calls</div>
             <div class="summary-value">
-              {{ billingData.reduce((sum, b) => sum + (parseInt(b.total_calls) || 0), 0).toLocaleString() }}
+              {{ totalCalls }}
             </div>
           </div>
           <div class="summary-card">
             <div class="summary-label">Billing Periods</div>
             <div class="summary-value">
-              {{ new Set(billingData.map(b => b.billing_month)).size }}
+              {{ billingPeriods }}
             </div>
           </div>
           <div class="summary-card">
             <div class="summary-label">Projects</div>
             <div class="summary-value">
-              {{ new Set(billingData.map(b => b.project_id)).size }}
+              {{ projects }}
             </div>
           </div>
         </div>
@@ -98,10 +122,10 @@ onMounted(async () => {
               <tfoot>
                 <tr class="total-row">
                   <td colspan="2"><strong>Total</strong></td>
-                  <td><strong>{{ billingData.reduce((sum, b) => sum + (parseInt(b.total_calls) || 0), 0).toLocaleString() }}</strong></td>
-                  <td><strong>{{ billingData.reduce((sum, b) => sum + (parseInt(b.total_tokens_in) || 0), 0).toLocaleString() }}</strong></td>
-                  <td><strong>{{ billingData.reduce((sum, b) => sum + (parseInt(b.total_tokens_out) || 0), 0).toLocaleString() }}</strong></td>
-                  <td><strong>${{ billingData.reduce((sum, b) => sum + (parseFloat(b.total_cost_usd) || 0), 0).toFixed(4) }}</strong></td>
+                  <td><strong>{{ totalCalls }}</strong></td>
+                  <td><strong>{{ totalTokensIn }}</strong></td>
+                  <td><strong>{{ totalTokensOut }}</strong></td>
+                  <td><strong>${{ totalCost }}</strong></td>
                 </tr>
               </tfoot>
             </table>

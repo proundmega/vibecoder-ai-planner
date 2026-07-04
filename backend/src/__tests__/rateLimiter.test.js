@@ -243,6 +243,39 @@ describe('Account Lockout', () => {
   });
 });
 
+describe('Rate Limiter — high-volume regression', () => {
+  it('should return 429 after 31 requests within 60 seconds', () => {
+    const mockRes = createMockRes();
+    const limiter = auth.rateLimiter(30, 60000);
+    const req = { ip: '10.0.2.1', connection: { remoteAddress: '10.0.2.1' } };
+    const next = jest.fn();
+
+    // Send 31 requests; first 30 should pass, 31st should be blocked
+    for (let i = 0; i < 31; i++) {
+      limiter(req, mockRes, next);
+    }
+
+    expect(next).toHaveBeenCalledTimes(30);
+    expect(mockRes.status).toHaveBeenCalledWith(429);
+    expect(mockRes.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.stringContaining('Too many requests') })
+    );
+  });
+
+  it('should set Retry-After header on 429 response', () => {
+    const mockRes = createMockRes();
+    const limiter = auth.rateLimiter(30, 60000);
+    const req = { ip: '10.0.2.2', connection: { remoteAddress: '10.0.2.2' } };
+    const next = jest.fn();
+
+    for (let i = 0; i < 31; i++) {
+      limiter(req, mockRes, next);
+    }
+
+    expect(mockRes.set).toHaveBeenCalledWith('Retry-After', expect.any(String));
+  });
+});
+
 function createMockRes() {
   return {
     status: jest.fn().mockReturnThis(),

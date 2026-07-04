@@ -88,22 +88,47 @@ class Ticket {
     if (current && status) {
       const allowed = VALID_TRANSITIONS[current.status] || [];
       if (!allowed.includes(status)) {
-      throw new ValidationError(`Invalid status transition from ${current.status} to ${status}`);
+        throw new ValidationError(`Invalid status transition from ${current.status} to ${status}`);
       }
     }
 
-    const query = `UPDATE tickets SET 
-      title = COALESCE($1, title),
-      description = COALESCE($2, description),
-      status = COALESCE($3, status),
-      priority = COALESCE($4, priority),
-      assignee_id = COALESCE($5, assignee_id),
-      updated_at = NOW()
-    WHERE id = $6`;
+    // Build dynamic SET clause — only include fields that are not undefined
+    // This allows passing null to actually clear a field (COALESCE would preserve existing value)
+    const sets = [];
+    const vals = [];
+    let idx = 1;
 
-    await pool.query(query, [
-      title, description, status, priority, assigneeId, id
-    ]);
+    if (title !== undefined) {
+      sets.push(`title = $${idx}`);
+      vals.push(title);
+      idx++;
+    }
+    if (description !== undefined) {
+      sets.push(`description = $${idx}`);
+      vals.push(description);
+      idx++;
+    }
+    if (status !== undefined) {
+      sets.push(`status = $${idx}`);
+      vals.push(status);
+      idx++;
+    }
+    if (priority !== undefined) {
+      sets.push(`priority = $${idx}`);
+      vals.push(priority);
+      idx++;
+    }
+    if (assigneeId !== undefined) {
+      sets.push(`assignee_id = $${idx}`);
+      vals.push(assigneeId);
+      idx++;
+    }
+
+    sets.push(`updated_at = NOW()`);
+    vals.push(id);
+
+    const query = `UPDATE tickets SET ${sets.join(', ')} WHERE id = $${idx}`;
+    await pool.query(query, vals);
   }
 
   static async delete(id) {
