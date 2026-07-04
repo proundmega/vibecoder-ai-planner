@@ -75,7 +75,8 @@ async function updateProvider(req, res, next) {
 
     const updates = [];
     const values = [];
-    let paramIndex = 1;
+    let paramIndex = 3;
+    let hasApiKey = false;
 
     if (name !== undefined) {
       updates.push(`name = $${paramIndex++}`);
@@ -84,10 +85,6 @@ async function updateProvider(req, res, next) {
     if (providerType !== undefined) {
       updates.push(`provider_type = $${paramIndex++}`);
       values.push(providerType);
-    }
-    if (apiKey !== undefined) {
-      updates.push(`api_key_encrypted = $${paramIndex++}`);
-      values.push(apiKey ? encrypt(apiKey) : null);
     }
     if (baseUrl !== undefined) {
       updates.push(`base_url = $${paramIndex++}`);
@@ -126,30 +123,64 @@ async function updateProvider(req, res, next) {
       values.push(routing_rules || '{}');
     }
     if (is_project_director !== undefined && is_project_director) {
-      await pool.query(
-        'BEGIN; UPDATE project_providers SET is_project_director = false WHERE project_id = $1; COMMIT',
-        [projectId]
-      );
       updates.push(`is_project_director = $${paramIndex++}`);
       values.push(true);
+    }
+    if (apiKey !== undefined) {
+      hasApiKey = true;
+    }
+
+    if (updates.length === 0 && !hasApiKey) {
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'No fields to update' } });
+    }
+
+    const existing = await pool.query(
+      'SELECT * FROM project_providers WHERE id = $1 AND project_id = $2',
+      [providerId, projectId]
+    );
+
+    if (existing.rows.length === 0) {
+      throw new NotFoundError('Provider not found');
+    }
+
+    const existingRow = existing.rows[0];
+
+    if (hasApiKey) {
+      if (apiKey) {
+        updates.push(`api_key_encrypted = $${paramIndex++}`);
+        values.push(encrypt(apiKey));
+      } else {
+        const existingDecrypted = decrypt(existingRow.api_key_encrypted);
+        const existingMasked = maskToken(existingDecrypted);
+        if (apiKey === existingMasked) {
+          // Key unchanged (client sent back the masked version)
+          if (updates.length === 0 && !is_project_director) {
+            return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'No fields to update' } });
+          }
+        } else {
+          updates.push(`api_key_encrypted = $${paramIndex++}`);
+          values.push(null);
+        }
+      }
     }
 
     if (updates.length === 0) {
       return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'No fields to update' } });
     }
 
+    if (is_project_director !== undefined && is_project_director) {
+      await pool.query(
+        'BEGIN; UPDATE project_providers SET is_project_director = false WHERE project_id = $1; COMMIT',
+        [projectId]
+      );
+    }
+
     updates.push(`updated_at = NOW()`);
-    values.push(providerId);
-    paramIndex++;
 
     const result = await pool.query(
-      `UPDATE project_providers SET ${updates.join(', ')} WHERE id = $${paramIndex} AND project_id = $1 RETURNING *`,
-      [projectId, ...values]
+      `UPDATE project_providers SET ${updates.join(', ')} WHERE id = $2 AND project_id = $1 RETURNING *`,
+      [projectId, providerId, ...values]
     );
-
-    if (result.rows.length === 0) {
-      throw new NotFoundError('Provider not found');
-    }
 
     const row = result.rows[0];
     res.json({
@@ -259,6 +290,11 @@ async function testProvider(req, res, next) {
     }
 
     const providerConfig = result.rows[0];
+
+    if (!providerConfig.base_url || typeof providerConfig.base_url !== 'string') {
+      throw new Error('Base URL is required for this provider type');
+    }
+
     const decryptedKey = decrypt(providerConfig.api_key_encrypted);
     const config = {
       apiKey: decryptedKey,

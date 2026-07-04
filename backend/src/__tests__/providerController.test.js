@@ -91,27 +91,49 @@ describe('Provider Controller', () => {
   describe('updateProvider', () => {
     it('should update a provider', async () => {
       Project.findById.mockResolvedValue({ id: 1 });
-      pool.query.mockResolvedValueOnce({
-        rows: [{
-          id: 1,
-          project_id: 1,
-          name: 'claude-pro-updated',
-          provider_type: 'claude',
-          api_key_encrypted: 'encrypted-key',
-          base_url: null,
-          model: 'claude-3-opus-20240229',
-          roles: ['planner', 'reviewer'],
-          max_tokens: 8192,
-          temperature: 0.2,
-          is_active: true,
-          endpoint_url: null,
-          fallback_provider: null,
-          routing_rules: '{}',
-          is_project_director: false,
-          created_at: new Date(),
-          updated_at: new Date(),
-        }],
-      });
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 1,
+            project_id: 1,
+            name: 'claude-pro',
+            provider_type: 'claude',
+            api_key_encrypted: 'encrypted-key',
+            base_url: null,
+            model: 'claude-sonnet-4-20250514',
+            roles: ['planner'],
+            max_tokens: 4096,
+            temperature: 0.1,
+            is_active: true,
+            endpoint_url: null,
+            fallback_provider: null,
+            routing_rules: '{}',
+            is_project_director: false,
+            created_at: new Date(),
+            updated_at: new Date(),
+          }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 1,
+            project_id: 1,
+            name: 'claude-pro-updated',
+            provider_type: 'claude',
+            api_key_encrypted: 'encrypted-key',
+            base_url: null,
+            model: 'claude-3-opus-20240229',
+            roles: ['planner', 'reviewer'],
+            max_tokens: 8192,
+            temperature: 0.2,
+            is_active: true,
+            endpoint_url: null,
+            fallback_provider: null,
+            routing_rules: '{}',
+            is_project_director: false,
+            created_at: new Date(),
+            updated_at: new Date(),
+          }],
+        });
 
       mockReq.params.projectId = '1';
       mockReq.params.providerId = '1';
@@ -218,7 +240,7 @@ describe('Provider Controller', () => {
           model: 'claude-sonnet-4-20250514',
           max_tokens: 4096,
           temperature: 0.1,
-          base_url: null,
+          base_url: 'https://api.anthropic.com',
         }],
       });
 
@@ -364,16 +386,27 @@ describe('Provider Controller', () => {
 
     it('should use projectId param for updateProvider', async () => {
       Project.findById.mockResolvedValue({ id: 1 });
-      pool.query.mockResolvedValueOnce({
-        rows: [{
-          id: 1, project_id: 1, name: 'updated', provider_type: 'openai',
-          api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
-          roles: ['worker'], max_tokens: 4096, temperature: 0.1,
-          is_active: true, endpoint_url: null, fallback_provider: null,
-          routing_rules: '{}', is_project_director: false,
-          created_at: new Date(), updated_at: new Date(),
-        }],
-      });
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 1, project_id: 1, name: 'old', provider_type: 'openai',
+            api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
+            roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+            is_active: true, endpoint_url: null, fallback_provider: null,
+            routing_rules: '{}', is_project_director: false,
+            created_at: new Date(), updated_at: new Date(),
+          }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 1, project_id: 1, name: 'updated', provider_type: 'openai',
+            api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
+            roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+            is_active: true, endpoint_url: null, fallback_provider: null,
+            routing_rules: '{}', is_project_director: false,
+            created_at: new Date(), updated_at: new Date(),
+          }],
+        });
 
       mockReq.params.projectId = '1';
       mockReq.params.providerId = '1';
@@ -438,7 +471,7 @@ describe('Provider Controller', () => {
         rows: [{
           id: 1, project_id: 1, name: 'test', provider_type: 'openai',
           api_key_encrypted: 'encrypted-key', model: 'gpt-4',
-          max_tokens: 4096, temperature: 0.1, base_url: null,
+          max_tokens: 4096, temperature: 0.1, base_url: 'https://api.openai.com',
         }],
       });
 
@@ -558,16 +591,27 @@ describe('Provider Controller', () => {
 
     it('should use correct SQL parameter indices for providerId', async () => {
       Project.findById.mockResolvedValue({ id: 1 });
-      pool.query.mockResolvedValueOnce({
-        rows: [{
-          id: 1, project_id: 1, name: 'updated', provider_type: 'openai',
-          api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
-          roles: ['worker'], max_tokens: 4096, temperature: 0.1,
-          is_active: true, endpoint_url: null, fallback_provider: null,
-          routing_rules: '{}', is_project_director: false,
-          created_at: new Date(), updated_at: new Date(),
-        }],
-      });
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 42, project_id: 1, name: 'old', provider_type: 'openai',
+            api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
+            roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+            is_active: true, endpoint_url: null, fallback_provider: null,
+            routing_rules: '{}', is_project_director: false,
+            created_at: new Date(), updated_at: new Date(),
+          }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 42, project_id: 1, name: 'updated', provider_type: 'openai',
+            api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
+            roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+            is_active: true, endpoint_url: null, fallback_provider: null,
+            routing_rules: '{}', is_project_director: false,
+            created_at: new Date(), updated_at: new Date(),
+          }],
+        });
 
       mockReq.params.projectId = '1';
       mockReq.params.providerId = '42';
@@ -580,14 +624,15 @@ describe('Provider Controller', () => {
         data: expect.objectContaining({ name: 'updated' }),
       });
 
-      const query = pool.query.mock.calls[0][0];
-      const args = pool.query.mock.calls[0][1];
+      const query = pool.query.mock.calls[1][0];
+      const args = pool.query.mock.calls[1][1];
 
-      expect(query).toContain('WHERE id = $4');
+      expect(query).toContain('WHERE id = $2');
       expect(args).toContain('42');
       expect(args[0]).toBe('1');
-      expect(args[1]).toBe('updated');
-      expect(args[2]).toBe('gpt-4');
+      expect(args[1]).toBe('42');
+      expect(args[2]).toBe('updated');
+      expect(args[3]).toBe('gpt-4');
     });
   });
 
@@ -700,6 +745,16 @@ describe('Provider Controller', () => {
     it('should wrap director demote in transaction', async () => {
       Project.findById.mockResolvedValue({ id: 1 });
       pool.query
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 1, project_id: 1, name: 'old', provider_type: 'openai',
+            api_key_encrypted: 'enc', base_url: null, model: 'gpt-4o',
+            roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+            is_active: true, endpoint_url: null, fallback_provider: null,
+            routing_rules: '{}', is_project_director: false,
+            created_at: new Date(), updated_at: new Date(),
+          }],
+        })
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({
           rows: [{
@@ -726,8 +781,8 @@ describe('Provider Controller', () => {
         }),
       });
 
-      // Verify the first query (director demote) uses BEGIN/COMMIT
-      const demoteQuery = pool.query.mock.calls[0][0];
+      // Verify the director demote query uses BEGIN/COMMIT (second call after existing fetch)
+      const demoteQuery = pool.query.mock.calls[1][0];
       expect(demoteQuery).toContain('BEGIN');
       expect(demoteQuery).toContain('COMMIT');
     });

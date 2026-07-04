@@ -38,6 +38,17 @@ class GenericProvider extends ProviderInterface {
   }
 
   async validate() {
+    if (!this.baseURL || typeof this.baseURL !== 'string') {
+      throw new Error('Base URL is required for validation');
+    }
+    try {
+      const url = new URL(this.baseURL);
+      if (!url.protocol.startsWith('http')) {
+        throw new Error('Base URL must use http or https protocol');
+      }
+    } catch (urlError) {
+      throw new Error(`Invalid base URL: ${urlError.message}`);
+    }
     try {
       await axios.post(
         `${this.baseURL}/chat/completions`,
