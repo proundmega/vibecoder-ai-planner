@@ -19,6 +19,6 @@ CREATE TABLE IF NOT EXISTS project_providers (
   CONSTRAINT valid_roles CHECK (array_length(roles, 1) > 0)
 );
 
-CREATE INDEX idx_project_providers_project_id ON project_providers(project_id);
-CREATE INDEX idx_project_providers_is_active ON project_providers(is_active);
-CREATE INDEX idx_project_providers_roles ON project_providers USING GIN(roles);
+CREATE INDEX IF NOT EXISTS idx_project_providers_project_id ON project_providers(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_providers_is_active ON project_providers(is_active);
+CREATE INDEX IF NOT EXISTS idx_project_providers_roles ON project_providers USING GIN(roles);

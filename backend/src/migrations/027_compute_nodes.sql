@@ -13,6 +13,6 @@ CREATE TABLE IF NOT EXISTS compute_nodes (
   UNIQUE(hostname)
 );
 
-CREATE INDEX idx_compute_nodes_status ON compute_nodes(status);
+CREATE INDEX IF NOT EXISTS idx_compute_nodes_status ON compute_nodes(status);
 
 COMMENT ON TABLE compute_nodes IS 'Remote Docker hosts for agent provisioning via SSH';

@@ -18,8 +18,8 @@ CREATE TABLE IF NOT EXISTS usage_logs (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_usage_logs_project_id ON usage_logs(project_id);
-CREATE INDEX idx_usage_logs_user_id ON usage_logs(user_id);
-CREATE INDEX idx_usage_logs_agent_id ON usage_logs(agent_id);
-CREATE INDEX idx_usage_logs_created_at ON usage_logs(created_at);
-CREATE INDEX idx_usage_logs_model ON usage_logs(model);
+CREATE INDEX IF NOT EXISTS idx_usage_logs_project_id ON usage_logs(project_id);
+CREATE INDEX IF NOT EXISTS idx_usage_logs_user_id ON usage_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_usage_logs_agent_id ON usage_logs(agent_id);
+CREATE INDEX IF NOT EXISTS idx_usage_logs_created_at ON usage_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_usage_logs_model ON usage_logs(model);

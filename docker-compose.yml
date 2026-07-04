@@ -34,6 +34,7 @@ services:
       - vibecode
     environment:
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@postgres:5432/vibecode
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
     depends_on:
       postgres:
         condition: service_healthy

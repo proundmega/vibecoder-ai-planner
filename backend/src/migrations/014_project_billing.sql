@@ -15,5 +15,5 @@ CREATE TABLE IF NOT EXISTS project_billing (
   CONSTRAINT unique_project_month UNIQUE (project_id, billing_month)
 );
 
-CREATE INDEX idx_project_billing_month ON project_billing(billing_month);
-CREATE INDEX idx_project_billing_project_id ON project_billing(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_billing_month ON project_billing(billing_month);
+CREATE INDEX IF NOT EXISTS idx_project_billing_project_id ON project_billing(project_id);

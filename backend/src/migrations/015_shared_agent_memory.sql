@@ -34,6 +34,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger to auto-update updated_at
+DROP TRIGGER IF EXISTS update_agent_memory_updated_at_trigger ON agent_memory;
 CREATE TRIGGER update_agent_memory_updated_at_trigger
   BEFORE UPDATE ON agent_memory
   FOR EACH ROW

@@ -17,6 +17,6 @@ CREATE TABLE IF NOT EXISTS project_credentials (
   CONSTRAINT valid_credential_type CHECK (credential_type IN ('anthropic', 'openai', 'github', 'custom'))
 );
 
-CREATE INDEX idx_project_credentials_project_id ON project_credentials(project_id);
-CREATE INDEX idx_project_credentials_is_active ON project_credentials(is_active);
-CREATE INDEX idx_project_credentials_type ON project_credentials(credential_type);
+CREATE INDEX IF NOT EXISTS idx_project_credentials_project_id ON project_credentials(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_credentials_is_active ON project_credentials(is_active);
+CREATE INDEX IF NOT EXISTS idx_project_credentials_type ON project_credentials(credential_type);

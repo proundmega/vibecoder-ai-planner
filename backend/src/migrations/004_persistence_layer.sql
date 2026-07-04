@@ -66,11 +66,17 @@ CREATE TRIGGER set_users_updated_at
   EXECUTE FUNCTION set_updated_at();
 
 -- 9. Add soft delete check constraint to tickets
-ALTER TABLE tickets ADD CONSTRAINT chk_tickets_deleted_at CHECK (
-  (status = 'done' AND deleted_at IS NOT NULL) OR deleted_at IS NULL
-);
+DO $$ BEGIN
+  ALTER TABLE tickets ADD CONSTRAINT chk_tickets_deleted_at CHECK (
+    (status = 'done' AND deleted_at IS NOT NULL) OR deleted_at IS NULL
+  );
+  EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- 10. Add soft delete check constraint to projects
-ALTER TABLE projects ADD CONSTRAINT chk_projects_deleted_at CHECK (
-  deleted_at IS NULL OR deleted_at IS NOT NULL
-);
+DO $$ BEGIN
+  ALTER TABLE projects ADD CONSTRAINT chk_projects_deleted_at CHECK (
+    deleted_at IS NULL OR deleted_at IS NOT NULL
+  );
+  EXCEPTION WHEN duplicate_object THEN null;
+END $$;

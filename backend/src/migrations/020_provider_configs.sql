@@ -1,4 +1,4 @@
-CREATE TABLE provider_configs (
+CREATE TABLE IF NOT EXISTS provider_configs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     provider VARCHAR(32) NOT NULL DEFAULT 'openai',
@@ -13,4 +13,4 @@ CREATE TABLE provider_configs (
     UNIQUE(project_id, provider)
 );
 
-CREATE INDEX idx_provider_configs_project ON provider_configs(project_id);
+CREATE INDEX IF NOT EXISTS idx_provider_configs_project ON provider_configs(project_id);

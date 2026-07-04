@@ -16,5 +16,5 @@ CREATE TABLE IF NOT EXISTS project_repos (
   CONSTRAINT unique_project_repo UNIQUE (project_id, provider)
 );
 
-CREATE INDEX idx_project_repos_project_id ON project_repos(project_id);
-CREATE INDEX idx_project_repos_is_active ON project_repos(is_active);
+CREATE INDEX IF NOT EXISTS idx_project_repos_project_id ON project_repos(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_repos_is_active ON project_repos(is_active);
