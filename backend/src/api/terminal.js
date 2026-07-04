@@ -1,8 +1,9 @@
 const jwt = require('jsonwebtoken');
+const { getSecret } = require('../utils/jwt');
 
 function verifyTerminalToken(token) {
   if (!token) throw new Error('Missing token');
-  return jwt.verify(token, process.env.JWT_SECRET);
+  return jwt.verify(token, getSecret());
 }
 
 function createTerminalWSS() {

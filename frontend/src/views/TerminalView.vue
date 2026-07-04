@@ -29,7 +29,7 @@ function getToken(): string {
 
 function connectWs(): WebSocket {
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const url = `${protocol}://${window.location.host}/api/terminal/${agentId}`
+  const url = `${protocol}://${window.location.host}/api/terminal/${agentId}?token=${getToken()}`
   return new WebSocket(url)
 }
 
@@ -44,11 +44,7 @@ onMounted(() => {
 
   ws = connectWs()
 
-  ws.onopen = () => {
-    const token = getToken()
-    ws!.send(JSON.stringify({ type: 'auth', token }))
-    term?.focus()
-  }
+  ws.onopen = () => { term?.focus() }
 
   ws.onmessage = (event) => {
     if (event.data instanceof Blob) {
