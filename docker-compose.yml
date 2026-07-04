@@ -30,6 +30,8 @@ services:
       dockerfile: Dockerfile
     container_name: vibecode-migrate
     restart: "no"
+    networks:
+      - vibecode
     environment:
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@postgres:5432/vibecode
     depends_on:
@@ -90,6 +92,8 @@ services:
       dockerfile: Dockerfile
     container_name: vibecode-frontend
     restart: unless-stopped
+    networks:
+      - vibecode
     ports:
       - "3002:80"
     environment:
@@ -113,6 +117,8 @@ services:
     image: pgvector/pgvector:pg15
     container_name: vibecode-postgres
     restart: unless-stopped
+    networks:
+      - vibecode
     environment:
       - POSTGRES_DB=vibecode
       - POSTGRES_USER=postgres
@@ -135,6 +141,8 @@ services:
     container_name: vibecode-pgadmin
     restart: unless-stopped
     profiles: ["dev"]
+    networks:
+      - vibecode
     ports:
       - "5050:80"
     environment:
@@ -149,8 +157,6 @@ services:
           cpus: '0.5'
 
 networks:
-  default:
-    driver: bridge
   vibecode:
     driver: bridge
 
