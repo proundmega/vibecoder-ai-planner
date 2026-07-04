@@ -17,7 +17,9 @@ class TicketAttachmentController {
     }
 
     const attachment = await TicketAttachmentService.upload(ticketId, req.file, userId);
-    res.status(201).json({ success: true, data: attachment, message: 'Attachment uploaded successfully' });
+    // Strip stored_path — it reveals internal filesystem layout
+    const { stored_path, ...safeAttachment } = attachment;
+    res.status(201).json({ success: true, data: safeAttachment, message: 'Attachment uploaded successfully' });
   }
 
   async list(req, res) {
@@ -25,7 +27,9 @@ class TicketAttachmentController {
     const userId = req.user.userId;
 
     const attachments = await TicketAttachmentService.list(ticketId, userId);
-    res.json({ success: true, data: attachments });
+    // Strip stored_path from each attachment — it reveals internal filesystem layout
+    const safeAttachments = attachments.map(({ stored_path, ...safe }) => safe);
+    res.json({ success: true, data: safeAttachments });
   }
 
   async get(req, res) {

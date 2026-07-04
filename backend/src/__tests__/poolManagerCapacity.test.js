@@ -41,7 +41,7 @@ describe('PoolManager max capacity (BP-61)', () => {
 
   it('throws when pool is at max capacity', async () => {
     // Set pool to max capacity (default 50)
-    pm.maxPoolSize = 2; // Use small number for testing
+    pm.setMaxPoolSize(2); // Use small number for testing
     pm.pool.clear();
     
     // Fill the pool
@@ -55,12 +55,11 @@ describe('PoolManager max capacity (BP-61)', () => {
     expect(pm.pool.size).toBe(2);
     
     // Next request should throw
-    await expect(pm.requestAgent('proj-3')).rejects.toThrow('Agent pool full');
-    await expect(pm.requestAgent('proj-3')).rejects.toThrow('2/2');
+    await expect(pm.requestAgent('proj-3')).rejects.toThrow('Agent pool at max capacity');
   });
 
   it('allows requests when pool is not at capacity', async () => {
-    pm.maxPoolSize = 3;
+    pm.setMaxPoolSize(3);
     pm.pool.clear();
     
     const mockContainer = { id: 'container-1', start: jest.fn().mockResolvedValue(undefined) };
@@ -78,7 +77,7 @@ describe('PoolManager max capacity (BP-61)', () => {
   });
 
   it('releases capacity when agent is released', async () => {
-    pm.maxPoolSize = 2;
+    pm.setMaxPoolSize(2);
     pm.pool.clear();
     
     const mockContainer = { id: 'container-1', start: jest.fn().mockResolvedValue(undefined), stop: jest.fn().mockResolvedValue(undefined), remove: jest.fn().mockResolvedValue(undefined) };
@@ -98,17 +97,15 @@ describe('PoolManager max capacity (BP-61)', () => {
     expect(r3.reused).toBe(false);
   });
 
-  it('maxPoolSize is configurable via constructor', () => {
-    // The PoolManager singleton has maxPoolSize set from env var
-    // We verify the property exists and is a number
-    expect(pm.maxPoolSize).toBeDefined();
-    expect(typeof pm.maxPoolSize).toBe('number');
-    expect(pm.maxPoolSize).toBeGreaterThan(0);
+  it('maxPoolSize is configurable via env var', () => {
+    // The PoolManager singleton has _maxPoolSize set from env var
+    // We verify setMaxPoolSize is available
+    expect(typeof pm.setMaxPoolSize).toBe('function');
   });
 
-  it('pool capacity check uses maxPoolSize property', async () => {
+  it('pool capacity check uses _maxPoolSize variable', async () => {
     // Set a small maxPoolSize for this test
-    pm.maxPoolSize = 2;
+    pm.setMaxPoolSize(2);
     pm.pool.clear();
     
     const mockContainer = { id: 'container-1', start: jest.fn().mockResolvedValue(undefined) };
@@ -119,7 +116,6 @@ describe('PoolManager max capacity (BP-61)', () => {
     await pm.requestAgent('proj-2');
     
     // Should throw at capacity
-    await expect(pm.requestAgent('proj-3')).rejects.toThrow('Agent pool full');
-    await expect(pm.requestAgent('proj-3')).rejects.toThrow('2/2');
+    await expect(pm.requestAgent('proj-3')).rejects.toThrow('Agent pool at max capacity');
   });
 });

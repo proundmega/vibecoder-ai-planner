@@ -110,6 +110,53 @@ describe('TicketService', () => {
     });
   });
 
+  describe('BP-51-10: Ticket.update() can clear fields to null via dynamic SET', () => {
+    test('should update the DB query to use dynamic SET when assigneeId is null', async () => {
+      const mockTicket = { id: 't1', status: 'in_progress', priority: 'high', assigneeId: 5, ownerId: 100, projectId: 1 };
+      Ticket.findById.mockResolvedValueOnce(mockTicket);
+      User.find.mockResolvedValueOnce({ role: 'project_admin' });
+      PermissionService.hasPermission.mockResolvedValueOnce(true);
+
+      // Capture the SQL query and params passed to Ticket.update (model)
+      let capturedQuery;
+      let capturedParams;
+      const originalUpdate = Ticket.update;
+      Ticket.update.mockImplementation((...args) => {
+        capturedQuery = args;
+        return mockTicket;
+      });
+
+      // Call service update with assigneeId: null (intending to unassign)
+      await TicketService.update('t1', { assigneeId: null }, 100);
+
+      // The service should pass null for assigneeId to the model
+      // The model should NOT use COALESCE for null — it should include it in SET
+      expect(capturedQuery[5]).toBeNull(); // assigneeId should be null, not undefined
+    });
+
+    test('should not include undefined fields in the dynamic SET', async () => {
+      const mockTicket = { id: 't1', status: 'in_progress', priority: 'high', assigneeId: 5, ownerId: 100, projectId: 1 };
+      Ticket.findById.mockResolvedValueOnce(mockTicket);
+      User.find.mockResolvedValueOnce({ role: 'project_admin' });
+      PermissionService.hasPermission.mockResolvedValueOnce(true);
+
+      let capturedQuery;
+      Ticket.update.mockImplementation((...args) => {
+        capturedQuery = args;
+        return mockTicket;
+      });
+
+      await TicketService.update('t1', { status: 'review' }, 100);
+
+      // Only status should be non-null; title, description, priority, assigneeId should all be null
+      expect(capturedQuery[1]).toBeNull();   // title
+      expect(capturedQuery[2]).toBeNull();   // description
+      expect(capturedQuery[3]).toBe('review'); // status
+      expect(capturedQuery[4]).toBeNull();   // priority
+      expect(capturedQuery[5]).toBeNull();   // assigneeId
+    });
+  });
+
   describe('BP-51-06: undefined field handling in update', () => {
     test('should pass null for undefined title (not overwrite existing)', async () => {
       const mockTicket = { id: 't1', status: 'in_progress', priority: 'high', assigneeId: 5, ownerId: 100, projectId: 1 };

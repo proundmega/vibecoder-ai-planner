@@ -1,4 +1,5 @@
 const { pool } = require('../db');
+const logger = require('../utils/logger');
 
 // In-memory cache: role_name -> Set of permission codes
 const permissionCache = new Map();
@@ -57,18 +58,34 @@ function clearCache() {
 }
 
 // Load initial cache on startup
-async function init() {
-  const result = await pool.query(
-    `SELECT r.name FROM roles r ORDER BY r.name`
-  );
-  for (const row of result.rows) {
-    await resolvePermissions(row.name);
+const MAX_RETRIES = parseInt(process.env.PERMISSION_INIT_RETRIES) || 3;
+const RETRY_DELAY_MS = parseInt(process.env.PERMISSION_INIT_RETRY_DELAY_MS) || 1000;
+
+async function init(retries = MAX_RETRIES) {
+  try {
+    const result = await pool.query(
+      `SELECT r.name FROM roles r ORDER BY r.name`
+    );
+    for (const row of result.rows) {
+      await resolvePermissions(row.name);
+    }
+  } catch (err) {
+    if (retries > 0) {
+      logger.warn(`PermissionService.init() failed, retrying (${MAX_RETRIES - retries + 1}/${MAX_RETRIES})...`);
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+      return init(retries - 1);
+    }
+    logger.error(`PermissionService.init() failed after ${MAX_RETRIES} retries:`, err);
+    throw err;
   }
 }
 
-init().catch(console.error);
+if (process.env.NODE_ENV !== 'test') {
+  init().catch(logger.error);
+}
 
 module.exports = {
+  init,
   resolvePermissions,
   hasPermission,
   hasAnyPermission,

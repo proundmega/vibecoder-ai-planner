@@ -30,6 +30,9 @@ describe('PoolManager', () => {
     if (!pm.docker) {
       pm.docker = mockDockerObj;
     }
+    // Reset pool and max pool size for clean state
+    pm.pool.clear();
+    pm.setMaxPoolSize(50);
   });
 
   afterEach(() => {
@@ -60,6 +63,27 @@ describe('PoolManager', () => {
       pm.docker = null;
 
       await expect(pm.requestAgent('proj-1')).rejects.toThrow('Docker daemon not available');
+    });
+
+    it('throws when pool is at max capacity', async () => {
+      const mockContainer = { id: 'c1', start: jest.fn().mockResolvedValue(undefined) };
+      pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
+
+      // Clear pool and set max pool size to 3 for this test
+      pm.pool.clear();
+      pm.setMaxPoolSize(3);
+
+      // Fill pool to max
+      await pm.requestAgent('proj-1');
+      await pm.requestAgent('proj-2');
+      await pm.requestAgent('proj-3');
+
+      // Next request should throw
+      await expect(pm.requestAgent('proj-4')).rejects.toThrow(/max capacity/);
+
+      // Reset to default
+      pm.pool.clear();
+      pm.setMaxPoolSize(50);
     });
 
     it('creates new container when no idle agents', async () => {

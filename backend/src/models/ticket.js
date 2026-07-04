@@ -92,41 +92,43 @@ class Ticket {
       }
     }
 
-    const fields = [];
-    const values = [];
+    // Build dynamic SET clause — only include fields that are not undefined
+    // This allows passing null to actually clear a field (COALESCE would preserve existing value)
+    const sets = [];
+    const vals = [];
     let idx = 1;
 
     if (title !== undefined) {
-      fields.push(`title = $${idx}`);
-      values.push(title);
+      sets.push(`title = $${idx}`);
+      vals.push(title);
       idx++;
     }
     if (description !== undefined) {
-      fields.push(`description = $${idx}`);
-      values.push(description);
+      sets.push(`description = $${idx}`);
+      vals.push(description);
       idx++;
     }
     if (status !== undefined) {
-      fields.push(`status = $${idx}`);
-      values.push(status);
+      sets.push(`status = $${idx}`);
+      vals.push(status);
       idx++;
     }
     if (priority !== undefined) {
-      fields.push(`priority = $${idx}`);
-      values.push(priority);
+      sets.push(`priority = $${idx}`);
+      vals.push(priority);
       idx++;
     }
     if (assigneeId !== undefined) {
-      fields.push(`assignee_id = $${idx}`);
-      values.push(assigneeId);
+      sets.push(`assignee_id = $${idx}`);
+      vals.push(assigneeId);
       idx++;
     }
 
-    fields.push('updated_at = NOW()');
-    values.push(id);
+    sets.push(`updated_at = NOW()`);
+    vals.push(id);
 
-    const query = `UPDATE tickets SET ${fields.join(', ')} WHERE id = $${idx}`;
-    await pool.query(query, values);
+    const query = `UPDATE tickets SET ${sets.join(', ')} WHERE id = $${idx}`;
+    await pool.query(query, vals);
   }
 
   static async delete(id) {
