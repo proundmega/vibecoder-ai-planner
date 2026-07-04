@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../auth');
 const User = require('../models/user');
+const logger = require('../utils/logger');
 
 // Middleware
 const { verifyToken, verifyTokenOrAgent, agentAuth, rateLimiter, trackAgentAction, recordFailedAttempt, clearFailedAttempts, checkAccountLockout, getLockoutRemainingMs } = require('../middleware/auth');
@@ -188,7 +189,7 @@ router.post('/auth/register', rateLimiter(3, 60000), validate(registerSchema), a
     const result = await registerUserBound(name, email, password, role || 'project_admin', user_created_by || null);
     res.status(201).json({ ...result, message: 'Registration successful' });
   } catch (error) {
-    console.error('POST /api/auth/register', error);
+    logger.error('POST /api/auth/register', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -246,7 +247,7 @@ router.post('/auth/login', rateLimiter(5, 60000), validate(loginSchema), async (
   } catch (error) {
     const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
     recordFailedAttempt(clientIp);
-    console.error('POST /api/auth/login', error);
+    logger.error('POST /api/auth/login', error);
     res.status(401).json({ error: error.message });
   }
 });
@@ -279,7 +280,7 @@ router.get('/auth/me', verifyToken, rateLimiter(30, 60000), async (req, res) => 
     }
     res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role, plan: user.currentPlan, isActive: user.isActive }, authenticated: true });
   } catch (error) {
-    console.error('GET /api/auth/me', error);
+    logger.error('GET /api/auth/me', error);
     res.status(401).json({ error: 'Unauthorized' });
   }
 });

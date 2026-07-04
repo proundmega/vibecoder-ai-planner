@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
+const logger = require('../utils/logger');
 
 // Get all pricing tiers
 router.get('/tiers', verifyToken, async (req, res) => {
@@ -29,7 +30,7 @@ router.get('/tiers', verifyToken, async (req, res) => {
       }
     ]);
   } catch (error) {
-    console.error('GET /api/pricing/tiers', error);
+    logger.error('GET /api/pricing/tiers', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -47,7 +48,7 @@ router.get('/user/:userId', verifyToken, async (req, res) => {
       upgradeAvailable: true
     });
   } catch (error) {
-    console.error('GET /api/pricing/user/:userId', error);
+    logger.error('GET /api/pricing/user/:userId', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -62,7 +63,7 @@ router.post('/checkout', verifyToken, async (req, res) => {
       checkoutUrl: `https://checkout.example.com/session/${sessionId}`
     });
   } catch (error) {
-    console.error('POST /api/pricing/checkout', error);
+    logger.error('POST /api/pricing/checkout', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -73,7 +74,7 @@ router.post('/upgrade/:userId', verifyToken, async (req, res) => {
     const { tierId } = req.body;
     res.json({ message: 'Subscription upgraded', plan: tierId });
   } catch (error) {
-    console.error('POST /api/pricing/upgrade/:userId', error);
+    logger.error('POST /api/pricing/upgrade/:userId', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -89,7 +90,7 @@ router.get('/usage', verifyToken, async (req, res) => {
       remaining: 550
     });
   } catch (error) {
-    console.error('GET /api/pricing/usage', error);
+    logger.error('GET /api/pricing/usage', error);
     res.status(500).json({ error: error.message });
   }
 });

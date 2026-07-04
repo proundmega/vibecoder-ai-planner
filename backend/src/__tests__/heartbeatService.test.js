@@ -222,9 +222,6 @@ describe('HeartbeatService', () => {
     });
 
     test('should handle ticket release failure gracefully', async () => {
-      const consoleError = console.error;
-      console.error = jest.fn();
-
       mockPool.query.mockImplementation((sql) => {
         if (sql.includes('agent_heartbeats') && sql.includes('agent_id')) {
           return Promise.resolve({
@@ -238,12 +235,12 @@ describe('HeartbeatService', () => {
 
       const count = await heartbeatService.cleanupStaleAgents();
       expect(count).toBe(1);
-      expect(console.error).toHaveBeenCalledWith(
+      const logger = require('../utils/logger');
+      expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining('Failed to release ticket'),
         expect.any(String)
       );
 
-      console.error = consoleError;
       ticketService.releaseTicket.mockResolvedValue({ id: 'ticket-1' });
     });
 

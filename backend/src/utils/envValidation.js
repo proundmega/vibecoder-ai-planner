@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 const requiredEnvVars = [
   { key: 'JWT_SECRET', description: 'JWT signing secret (min 32 chars)' },
   { key: 'DATABASE_URL', description: 'PostgreSQL connection string' },
@@ -103,13 +105,11 @@ function formatEnvErrors(errors) {
 if (process.env.NODE_ENV !== 'test') {
   const result = validateEnv();
   if (!result.valid) {
-    console.error('\n' + formatEnvErrors(result) + '\n');
-    if (result.missing.length > 0) {
-      console.error('Environment validation failed. Please check your .env file.\n');
-      process.exit(1);
-    }
+    logger.error('\n' + formatEnvErrors(result) + '\n');
+    logger.error('Environment validation failed. Please check your .env file.\n');
+    process.exit(1);
   } else {
-    console.log('Environment variables validated successfully.');
+    logger.info('Environment variables validated successfully.');
   }
 }
 

@@ -5,6 +5,7 @@ const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
 const ApprovalService = require('../services/ApprovalService');
 const { createApprovalSchema, approveSchema, rejectSchema } = require('../validators/approvals');
+const logger = require('../utils/logger');
 
 /**
  * @openapi
@@ -31,7 +32,7 @@ router.post('/', verifyToken, validate(createApprovalSchema), async (req, res) =
     const approval = await ApprovalService.create(ticketId, req.user.userId);
     res.status(201).json({ success: true, data: approval });
   } catch (error) {
-    console.error('POST /api/approvals', error);
+    logger.error('POST /api/approvals', error);
     res.status(400).json({ error: { message: error.message } });
   }
 });
@@ -64,7 +65,7 @@ router.get('/', verifyToken, requireAnyPermission('APPROVAL_VIEW'), async (req, 
     const result = await ApprovalService.getAll({ status, page, perPage });
     res.json(result);
   } catch (error) {
-    console.error('GET /api/approvals', error);
+    logger.error('GET /api/approvals', error);
     res.status(500).json({ error: { message: error.message } });
   }
 });
@@ -84,7 +85,7 @@ router.get('/pending', verifyToken, async (req, res) => {
     const approvals = await ApprovalService.getPendingByRequester(req.user.userId);
     res.json({ success: true, data: approvals });
   } catch (error) {
-    console.error('GET /api/approvals/pending', error);
+    logger.error('GET /api/approvals/pending', error);
     res.status(500).json({ error: { message: error.message } });
   }
 });
@@ -109,7 +110,7 @@ router.get('/ticket/:ticketId', verifyToken, async (req, res) => {
     const approvals = await ApprovalService.getByTicketId(req.params.ticketId);
     res.json({ success: true, data: approvals });
   } catch (error) {
-    console.error('GET /api/approvals/ticket/:ticketId', error);
+    logger.error('GET /api/approvals/ticket/:ticketId', error);
     res.status(500).json({ error: { message: error.message } });
   }
 });
@@ -136,7 +137,7 @@ router.post('/:approvalId/approve', verifyToken, requireAnyPermission('APPROVAL_
     const approval = await ApprovalService.approve(req.params.approvalId, req.user.userId);
     res.json({ success: true, data: approval, message: 'Approval request approved' });
   } catch (error) {
-    console.error('POST /api/approvals/:approvalId/approve', error);
+    logger.error('POST /api/approvals/:approvalId/approve', error);
     res.status(400).json({ error: { message: error.message } });
   }
 });
@@ -163,7 +164,7 @@ router.post('/:approvalId/reject', verifyToken, requireAnyPermission('APPROVAL_R
     const approval = await ApprovalService.reject(req.params.approvalId, req.user.userId);
     res.json({ success: true, data: approval, message: 'Approval request rejected' });
   } catch (error) {
-    console.error('POST /api/approvals/:approvalId/reject', error);
+    logger.error('POST /api/approvals/:approvalId/reject', error);
     res.status(400).json({ error: { message: error.message } });
   }
 });
