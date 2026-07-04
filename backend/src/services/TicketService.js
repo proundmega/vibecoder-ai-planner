@@ -21,7 +21,7 @@ class TicketService {
     return await Ticket.findByProject(projectId, userId);
   }
 
-  async findByStatus(projectId, status, userId) {
+  async findByStatus(projectId, status) {
     return await Ticket.findByStatus(projectId, status);
   }
 
@@ -285,7 +285,7 @@ class TicketService {
     return result.rows[0];
   }
 
-  async releaseTicket(ticketId, adminId) {
+  async releaseTicket(ticketId) {
     const { pool } = require('../db');
 
     const ticketResult = await pool.query(

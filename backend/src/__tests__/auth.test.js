@@ -66,14 +66,14 @@ describe('auth middleware', () => {
       expect(nextFn).not.toHaveBeenCalled();
     });
 
-    test('should return 403 on database error (no unhandled rejection)', async () => {
+    test('should return 500 on database error (no unhandled rejection)', async () => {
       mockReq.user = { userId: 1 };
       pool.query.mockRejectedValueOnce(new Error('DB connection failed'));
 
       await auth.requireActiveUser(mockReq, mockRes, nextFn);
 
-      expect(mockRes.status).toHaveBeenCalledWith(403);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Account deactivated' });
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Internal server error' });
       expect(nextFn).not.toHaveBeenCalled();
     });
   });

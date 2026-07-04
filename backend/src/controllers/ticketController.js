@@ -67,7 +67,7 @@ async function getProjectTickets(req, res, next) {
   try {
     let tickets;
     if (req.query.status) {
-      tickets = await TicketService.findByStatus(req.params.projectId, req.query.status, req.user.userId);
+      tickets = await TicketService.findByStatus(req.params.projectId, req.query.status);
     } else {
       tickets = await TicketService.findByProject(req.params.projectId, req.user.userId);
     }

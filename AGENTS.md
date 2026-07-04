@@ -95,3 +95,29 @@ When making architectural changes, read `planning/` templates in order: `00_ARCH
 **Check existing infrastructure first** — if backend API exists, work frontend-only. If frontend exists, work backend-first. Both exist → extend. Neither → plan both.
 
 Create new planning suites in `planning/bp-XX-name/` for multi-file changes requiring architectural decisions.
+
+## Known Bugs (regression tests required)
+
+### `UtilityError` missing from `src/errors/HttpError.js`
+`ProvisioningService.js:5` does `const { UtilityError } = require('../errors/HttpError')` but `HttpError.js` does not define or export `UtilityError`. This will throw at runtime. Fix: add `UtilityError` class to `HttpError.js` that extends `AppError`, then add a regression test.
+
+### `ProjectList.vue:81` — edit error sets wrong ref
+`handleEdit()` catch block sets `deleteError.value = 'Failed to update project'` instead of a dedicated edit-error ref. The template shows `createError || deleteError` for inline errors (line 133), so edit failures incorrectly display as delete errors. Fix: add `editError` ref and update the template to include it.
+
+### `Ticket.update()` COALESCE prevents clearing fields to null
+`src/models/ticket.js:95-101` uses `COALESCE($5, assignee_id)` pattern — passing `null` for any field leaves the existing DB value unchanged. To actually clear a field (e.g., unassign), the query must use dynamic SET clauses instead of COALESCE. Fix: build SET list dynamically, only including fields that are non-null in the update payload.
+
+### `PermissionService.init()` has no retry logic
+`src/services/PermissionService.js:61-68` calls `pool.query()` once with no retry. If the DB is temporarily unavailable at startup, permissions fail to load and all auth checks break. Fix: wrap in retry with configurable attempts/delay.
+
+### `PoolManager.requestAgent()` has no max capacity
+`src/services/PoolManager.js:30` always creates a new container when no idle agents exist. No `MAX_POOL_SIZE` check. Fix: add a configurable max and throw when reached.
+
+### `stored_path` exposed in attachment responses
+Ticket attachment listing and individual attachment endpoints return `stored_path` (server filesystem path) in responses. This leaks internal storage layout. Fix: strip `stored_path` from serialized responses.
+
+### `/auth/me` has no rate limiting
+`/api/auth/register` and `/api/auth/login` have rate limiting, but `/api/auth/me` does not. Add `rateLimiter(31, 60000)` to prevent enumeration abuse.
+
+### `BillingDashboard.vue` uses inline computations
+Totals are computed inline in the template (lines 51, 56, 59, 63, 101-104) rather than as Vue `computed` properties. This makes them untestable and repeats logic. Fix: extract to computed properties.

@@ -1,4 +1,4 @@
-const { AppError, NotFoundError, ValidationError, ForbiddenError, UnauthorizedError, ConflictError } = require('../errors/HttpError');
+const { AppError, NotFoundError, ValidationError, ForbiddenError, UnauthorizedError, ConflictError, UtilityError, ServiceUnavailableError } = require('../errors/HttpError');
 const { errorHandler } = require('../middleware/errorHandler');
 const { requestId } = require('../middleware/requestId');
 const { paginate, formatPaginatedResponse } = require('../utils/pagination');
@@ -55,6 +55,38 @@ describe('Custom Error Classes', () => {
     const err = new ConflictError('Email already exists');
     expect(err.statusCode).toBe(409);
     expect(err.code).toBe('CONFLICT');
+  });
+
+  it('should create UtilityError with correct properties', () => {
+    const err = new UtilityError('Compute node not found', 404);
+    expect(err.message).toBe('Compute node not found');
+    expect(err.statusCode).toBe(404);
+    expect(err.code).toBe('UTILITY_ERROR');
+    expect(err.isOperational).toBe(true);
+  });
+
+  it('should create UtilityError with default 500 status', () => {
+    const err = new UtilityError('Utility error');
+    expect(err.statusCode).toBe(500);
+    expect(err.code).toBe('UTILITY_ERROR');
+  });
+
+  it('should be an instance of AppError', () => {
+    const err = new UtilityError('test');
+    expect(err).toBeInstanceOf(AppError);
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it('should create ServiceUnavailableError with 503 status', () => {
+    const err = new ServiceUnavailableError('Down for maintenance');
+    expect(err.statusCode).toBe(503);
+    expect(err.code).toBe('SERVICE_UNAVAILABLE');
+  });
+
+  it('should be an instance of AppError', () => {
+    const err = new ServiceUnavailableError('test');
+    expect(err).toBeInstanceOf(AppError);
+    expect(err).toBeInstanceOf(Error);
   });
 });
 

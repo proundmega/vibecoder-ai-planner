@@ -8,6 +8,7 @@ const projects = ref([])
 const loading = ref(true)
 const error = ref(null)
 const createError = ref(null)
+const editError = ref(null)
 const deleteError = ref(null)
 
 const showCreateModal = ref(false)
@@ -78,7 +79,7 @@ async function handleEdit() {
     }
   } catch (err) {
     console.error('Failed to update project:', err)
-    deleteError.value = 'Failed to update project'
+    editError.value = 'Failed to update project'
   } finally {
     updating.value = false
   }
@@ -130,9 +131,9 @@ async function handleDelete() {
     </div>
 
     <div v-else>
-      <div v-if="createError || deleteError" class="error-inline">
-        <p>{{ createError || deleteError }}</p>
-        <button @click="createError = null; deleteError = null">Dismiss</button>
+      <div v-if="createError || editError || deleteError" class="error-inline">
+        <p>{{ createError || editError || deleteError }}</p>
+        <button @click="createError = null; editError = null; deleteError = null">Dismiss</button>
       </div>
       <div class="projects-grid">
          <div v-for="project in projects" :key="project.id" class="project-card">

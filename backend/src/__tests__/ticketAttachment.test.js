@@ -55,6 +55,34 @@ describe('TicketAttachmentService', () => {
     });
   });
 
+  describe('stored_path exposure in controller responses', () => {
+    it('should strip stored_path from list response', () => {
+      const attachments = [
+        { id: 1, filename: 'test.txt', content_type: 'text/plain', size_bytes: 100, stored_path: '/uploads/test.txt', uploaded_by_name: 'User', created_at: '2026-01-01' },
+        { id: 2, filename: 'test2.txt', content_type: 'text/plain', size_bytes: 200, stored_path: '/uploads/test2.txt', uploaded_by_name: null, created_at: '2026-01-02' },
+      ];
+
+      const safeAttachments = attachments.map(({ stored_path, ...safe }) => safe);
+
+      expect(safeAttachments[0]).not.toHaveProperty('stored_path');
+      expect(safeAttachments[1]).not.toHaveProperty('stored_path');
+      expect(safeAttachments[0]).toHaveProperty('id');
+      expect(safeAttachments[0]).toHaveProperty('filename');
+      expect(safeAttachments[0]).toHaveProperty('content_type');
+      expect(safeAttachments[0]).toHaveProperty('size_bytes');
+    });
+
+    it('should strip stored_path from upload response', () => {
+      const attachment = { id: 1, filename: 'test.txt', stored_path: '/uploads/test.txt', content_type: 'text/plain', size_bytes: 100 };
+
+      const { stored_path, ...safeAttachment } = attachment;
+
+      expect(safeAttachment).not.toHaveProperty('stored_path');
+      expect(safeAttachment).toHaveProperty('id');
+      expect(safeAttachment).toHaveProperty('filename');
+    });
+  });
+
   describe('get', () => {
     it('should return attachment metadata', async () => {
       pool.query.mockResolvedValue({

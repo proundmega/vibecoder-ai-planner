@@ -71,8 +71,7 @@ async function getProjectTicketsByStatus(req, res, next) {
   try {
     const tickets = await TicketService.findByStatus(
       req.params.id,
-      req.params.status.toLowerCase(),
-      req.user.userId
+      req.params.status.toLowerCase()
     );
     res.json({ success: true, data: tickets });
   } catch (error) {

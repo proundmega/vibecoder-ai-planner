@@ -27,7 +27,7 @@ async function gracefulShutdown(server, pool, cleanupHooks = []) {
 
       if (server) {
         logger.info('Stopping HTTP server...');
-        server.close();
+        await new Promise((resolve) => server.close(resolve));
       }
 
       if (pool) {
