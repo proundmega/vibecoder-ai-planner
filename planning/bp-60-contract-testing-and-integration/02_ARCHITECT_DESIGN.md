@@ -114,7 +114,7 @@ done
 ```bash
 assert_field() {
   local label="$1" field="$2" expected="$3" json="$4"
-  local actual=$(echo "$json" | jq -r ".$field // \"__MISSING__\"")
+  local actual=$(echo "$json" | jq -r "if has(\"$field\") then .$field else \"__MISSING__\" end")
   if [ "$actual" = "__MISSING__" ]; then
     fail "$label" "Field '$field' not found in JSON"
   elif [ "$actual" != "$expected" ]; then
@@ -124,6 +124,7 @@ assert_field() {
   fi
 }
 ```
+Note: `jq has()` distinguishes missing fields from JSON `null` — a field with value `null` produces the string `"null"` rather than `"__MISSING__"`. This is correct behavior: the field exists, it's just null. Callers expecting a null value should assert against the string `"null"`.
 
 **Fix register/login**: Change from two `curl` calls to one:
 ```bash
