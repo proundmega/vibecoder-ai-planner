@@ -1,4 +1,6 @@
+
 const { pool } = require('../db');
+const Ticket = require('../models/ticket');
 const TemplateService = require('./TemplateService');
 const { NotFoundError } = require('../errors/HttpError');
 
@@ -158,8 +160,8 @@ class TicketPlanningService {
   }
 
   async _getCustomTemplate(ticketId, templateName) {
-    const { pool } = require('../db');
-    const ticket = await require('../models/ticket').findById(ticketId);
+    
+    const ticket = await Ticket.findById(ticketId);
     if (!ticket) throw new Error('Ticket not found');
 
     const result = await pool.query(

@@ -1,4 +1,5 @@
 const Project = require('../models/project');
+const { pool } = require('../db');
 const TicketService = require('../services/TicketService');
 const { NotFoundError, ForbiddenError, ValidationError } = require('../errors/HttpError');
 
@@ -44,7 +45,7 @@ class ProjectService {
   }
 
   async getMemberships(projectId) {
-    const { pool } = require('../db');
+    
     const result = await pool.query(
       `SELECT pm.*, u.name as user_name, u.email as user_email 
        FROM project_memberships pm 

@@ -228,7 +228,7 @@ router.post('/auth/register', rateLimiter(3, 60000), validate(registerSchema), a
  */
 router.post('/auth/login', rateLimiter(5, 60000), validate(loginSchema), async (req, res) => {
   try {
-    const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+    const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
     
     if (checkAccountLockout(clientIp)) {
       const remainingMs = getLockoutRemainingMs(clientIp);
@@ -245,7 +245,7 @@ router.post('/auth/login', rateLimiter(5, 60000), validate(loginSchema), async (
     clearFailedAttempts(clientIp);
     res.json({ message: 'Login successful', ...result });
   } catch (error) {
-    const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+    const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
     recordFailedAttempt(clientIp);
     logger.error('POST /api/auth/login', error);
     res.status(401).json({ error: error.message });

@@ -554,7 +554,7 @@ async function functionName(params): ReturnType
   }
 
   static async list(projectId, userId) {
-    const { pool } = require('../db');
+    
     const result = await pool.query(
       `SELECT pt.*, jsonb_array_length(pt.file_definitions)::int AS file_definitions_count,
               u.name as created_by_name 
@@ -568,7 +568,7 @@ async function functionName(params): ReturnType
   }
 
   static async create(projectId, name, description, fileDefinitions, userId) {
-    const { pool } = require('../db');
+    
     const result = await pool.query(
       `INSERT INTO project_templates (project_id, name, description, file_definitions, created_by)
        VALUES ($1, $2, $3, $4::jsonb, $5)
@@ -579,7 +579,7 @@ async function functionName(params): ReturnType
   }
 
   static async apply(ticketId, templateId, userId) {
-    const { pool } = require('../db');
+    
     const templateResult = await pool.query(
       'SELECT * FROM project_templates WHERE id = $1',
       [templateId]
@@ -619,7 +619,7 @@ async function functionName(params): ReturnType
   }
 
   static async delete(templateId, userId) {
-    const { pool } = require('../db');
+    
     const result = await pool.query(
       'DELETE FROM project_templates WHERE id = $1 AND created_by = $2 RETURNING *',
       [templateId, userId]
@@ -628,7 +628,7 @@ async function functionName(params): ReturnType
   }
 
   static async update(templateId, userId, name, description, fileDefinitions) {
-    const { pool } = require('../db');
+    
     const result = await pool.query(
       `UPDATE project_templates 
        SET name = $1, description = $2, file_definitions = $3::jsonb

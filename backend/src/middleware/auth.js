@@ -189,7 +189,7 @@ exports.rateLimiter = (maxRequests = 10, timeWindow = 60 * 1000) => {
     // Skip rate limiting during integration tests
     if (process.env.INTEGRATION_TESTS === '1') return next();
     
-    const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+    const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
     let requests = rateLimits.get(clientIp);
     
     if (!requests) {
