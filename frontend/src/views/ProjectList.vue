@@ -9,6 +9,7 @@ const loading = ref(true)
 const error = ref(null)
 const createError = ref(null)
 const editError = ref(null)
+const deleteError = ref(null)
 
 const showCreateModal = ref(false)
 const projectName = ref('')
@@ -99,11 +100,11 @@ async function handleDelete() {
       showDeleteModal.value = false
       deletingProject.value = null
     } else {
-      editError.value = result.error || 'Failed to delete project'
+      deleteError.value = result.error || 'Failed to delete project'
     }
   } catch (err) {
     console.error('Failed to delete project:', err)
-    editError.value = 'Failed to delete project'
+    deleteError.value = 'Failed to delete project'
   } finally {
     deleting.value = false
   }
@@ -130,9 +131,9 @@ async function handleDelete() {
     </div>
 
     <div v-else>
-      <div v-if="createError || editError" class="error-inline">
-        <p>{{ createError || editError }}</p>
-        <button @click="createError = null; editError = null">Dismiss</button>
+      <div v-if="createError || editError || deleteError" class="error-inline">
+        <p>{{ createError || editError || deleteError }}</p>
+        <button @click="createError = null; editError = null; deleteError = null">Dismiss</button>
       </div>
       <div class="projects-grid">
          <div v-for="project in projects" :key="project.id" class="project-card">

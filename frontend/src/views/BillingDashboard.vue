@@ -10,24 +10,29 @@ const billingLoading = ref(true)
 const billingError = ref(null)
 const billingData = ref([])
 
-const totalCost = computed(() =>
-  billingData.value.reduce((sum, b) => sum + (parseFloat(b.total_cost_usd) || 0), 0)
-)
-const totalCalls = computed(() =>
-  billingData.value.reduce((sum, b) => sum + (parseInt(b.total_calls) || 0), 0)
-)
-const totalTokensIn = computed(() =>
-  billingData.value.reduce((sum, b) => sum + (parseInt(b.total_tokens_in) || 0), 0)
-)
-const totalTokensOut = computed(() =>
-  billingData.value.reduce((sum, b) => sum + (parseInt(b.total_tokens_out) || 0), 0)
-)
-const billingPeriods = computed(() =>
-  new Set(billingData.value.map(b => b.billing_month)).size
-)
-const projectCount = computed(() =>
-  new Set(billingData.value.map(b => b.project_id)).size
-)
+const totalCost = computed(() => {
+  return billingData.value.reduce((sum, b) => sum + (parseFloat(b.total_cost_usd) || 0), 0).toFixed(4)
+})
+
+const totalCalls = computed(() => {
+  return billingData.value.reduce((sum, b) => sum + (parseInt(b.total_calls) || 0), 0).toLocaleString()
+})
+
+const totalTokensIn = computed(() => {
+  return billingData.value.reduce((sum, b) => sum + (parseInt(b.total_tokens_in) || 0), 0).toLocaleString()
+})
+
+const totalTokensOut = computed(() => {
+  return billingData.value.reduce((sum, b) => sum + (parseInt(b.total_tokens_out) || 0), 0).toLocaleString()
+})
+
+const billingPeriods = computed(() => {
+  return new Set(billingData.value.map(b => b.billing_month)).size
+})
+
+const projects = computed(() => {
+  return new Set(billingData.value.map(b => b.project_id)).size
+})
 
 onMounted(async () => {
   if (authStore.user?.role !== 'project_admin') {
@@ -67,13 +72,13 @@ onMounted(async () => {
           <div class="summary-card">
             <div class="summary-label">Total Cost</div>
             <div class="summary-value">
-              ${{ totalCost.toFixed(4) }}
+              ${{ totalCost }}
             </div>
           </div>
           <div class="summary-card">
             <div class="summary-label">Total Calls</div>
             <div class="summary-value">
-              {{ totalCalls.toLocaleString() }}
+              {{ totalCalls }}
             </div>
           </div>
           <div class="summary-card">
@@ -85,7 +90,7 @@ onMounted(async () => {
           <div class="summary-card">
             <div class="summary-label">Projects</div>
             <div class="summary-value">
-              {{ projectCount }}
+              {{ projects }}
             </div>
           </div>
         </div>
@@ -117,10 +122,10 @@ onMounted(async () => {
               <tfoot>
                 <tr class="total-row">
                   <td colspan="2"><strong>Total</strong></td>
-                  <td><strong>{{ totalCalls.toLocaleString() }}</strong></td>
-                  <td><strong>{{ totalTokensIn.toLocaleString() }}</strong></td>
-                  <td><strong>{{ totalTokensOut.toLocaleString() }}</strong></td>
-                  <td><strong>${{ totalCost.toFixed(4) }}</strong></td>
+                  <td><strong>{{ totalCalls }}</strong></td>
+                  <td><strong>{{ totalTokensIn }}</strong></td>
+                  <td><strong>{{ totalTokensOut }}</strong></td>
+                  <td><strong>${{ totalCost }}</strong></td>
                 </tr>
               </tfoot>
             </table>
