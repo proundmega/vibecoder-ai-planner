@@ -113,7 +113,6 @@ services:
     image: pgvector/pgvector:pg15
     container_name: vibecode-postgres
     restart: unless-stopped
-    profiles: ["dev", "production"]
     environment:
       - POSTGRES_DB=vibecode
       - POSTGRES_USER=postgres
