@@ -16,10 +16,20 @@ services:
       - DRY_RUN=${DRY_RUN:-false}
       - MAX_TICKETS=${MAX_TICKETS:-1}
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - vibecode
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+
+  api:
+    external: true
+    name: vibecode-api
 
 networks:
   vibecode:

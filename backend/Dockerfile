@@ -1,16 +1,13 @@
-FROM node:18-alpine AS builder
+FROM node:18-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm install --production
+RUN npm ci --omit=dev
 
-FROM node:18-alpine AS runner
+FROM node:18-alpine
 WORKDIR /app
 RUN apk add --no-cache curl
-COPY --from=builder /app/package*.json ./
-RUN npm ci --only=production
-COPY --from=builder /app/src ./src
-
+COPY --from=deps /app/node_modules ./node_modules
+COPY src ./src
+USER node
 EXPOSE 3001
 CMD ["node", "src/index.js"]
