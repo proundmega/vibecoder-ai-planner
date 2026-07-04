@@ -14,6 +14,8 @@ services:
     networks:
       - vibecode
     healthcheck:
+      # tecnativa/docker-socket-proxy serves Docker API on :2375; /version is a lightweight GET
+      # that returns JSON (no redirect), so wget --spider succeeds on TCP+HTTP 200
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:2375/version"]
       interval: 5s
       timeout: 3s

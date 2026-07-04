@@ -1,4 +1,5 @@
-process.env.DATABASE_URL = 'postgresql://postgres:changeme@localhost:5432/vibecode';
+require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:changeme@localhost:5432/vibecode';
 process.env.NODE_ENV = 'test';
 process.env.INTEGRATION_TESTS = '1';
 

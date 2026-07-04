@@ -135,8 +135,8 @@ async function updateProvider(req, res, next) {
     }
 
     const existing = await pool.query(
-      'SELECT * FROM project_providers WHERE id = $1 AND project_id = $2',
-      [providerId, projectId]
+      'SELECT * FROM project_providers WHERE project_id = $1 AND id = $2',
+      [projectId, providerId]
     );
 
     if (existing.rows.length === 0) {
@@ -146,21 +146,28 @@ async function updateProvider(req, res, next) {
     const existingRow = existing.rows[0];
 
     if (hasApiKey) {
-      if (apiKey) {
-        updates.push(`api_key_encrypted = $${paramIndex++}`);
-        values.push(encrypt(apiKey));
-      } else {
+      let keyProvided = false;
+      if (apiKey && apiKey !== '') {
+        keyProvided = true;
         const existingDecrypted = decrypt(existingRow.api_key_encrypted);
         const existingMasked = maskToken(existingDecrypted);
         if (apiKey === existingMasked) {
           // Key unchanged (client sent back the masked version)
-          if (updates.length === 0 && !is_project_director) {
-            return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'No fields to update' } });
-          }
         } else {
+          updates.push(`api_key_encrypted = $${paramIndex++}`);
+          values.push(encrypt(apiKey));
+        }
+      } else {
+        // apiKey is empty string - check if different from masked version
+        const existingDecrypted = decrypt(existingRow.api_key_encrypted);
+        const existingMasked = maskToken(existingDecrypted);
+        if (apiKey !== existingMasked) {
           updates.push(`api_key_encrypted = $${paramIndex++}`);
           values.push(null);
         }
+      }
+      if (!keyProvided) {
+        hasApiKey = false;
       }
     }
 
@@ -168,43 +175,92 @@ async function updateProvider(req, res, next) {
       return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'No fields to update' } });
     }
 
-    if (is_project_director !== undefined && is_project_director) {
-      await pool.query(
-        'BEGIN; UPDATE project_providers SET is_project_director = false WHERE project_id = $1; COMMIT',
-        [projectId]
-      );
-    }
-
     updates.push(`updated_at = NOW()`);
 
-    const result = await pool.query(
-      `UPDATE project_providers SET ${updates.join(', ')} WHERE id = $2 AND project_id = $1 RETURNING *`,
-      [projectId, providerId, ...values]
-    );
+    const isDirectorPromotion = is_project_director !== undefined && is_project_director;
 
-    const row = result.rows[0];
-    res.json({
-      success: true,
-      data: {
-        id: row.id,
-        projectId: row.project_id,
-        name: row.name,
-        providerType: row.provider_type,
-        apiKey: maskToken(decrypt(row.api_key_encrypted)),
-        baseUrl: row.base_url,
-        model: row.model,
-        roles: row.roles,
-        maxTokens: row.max_tokens,
-        temperature: row.temperature,
-        isActive: row.is_active,
-        endpoint_url: row.endpoint_url,
-        fallback_provider: row.fallback_provider,
-        routing_rules: row.routing_rules,
-        is_project_director: row.is_project_director,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      },
-    });
+    if (isDirectorPromotion) {
+      // Issue 1+2: demotion + update must be in a single transaction to avoid orphans
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(
+          'UPDATE project_providers SET is_project_director = false WHERE project_id = $1',
+          [projectId]
+        );
+        const result = await client.query(
+          `UPDATE project_providers SET ${updates.join(', ')} WHERE project_id = $1 AND id = $2 RETURNING *`,
+          [projectId, providerId, ...values]
+        );
+        await client.query('COMMIT');
+
+        if (result.rows.length === 0) {
+          throw new NotFoundError('Provider not found');
+        }
+
+        const row = result.rows[0];
+        res.json({
+          success: true,
+          data: {
+            id: row.id,
+            projectId: row.project_id,
+            name: row.name,
+            providerType: row.provider_type,
+            apiKey: maskToken(decrypt(row.api_key_encrypted)),
+            baseUrl: row.base_url,
+            model: row.model,
+            roles: row.roles,
+            maxTokens: row.max_tokens,
+            temperature: row.temperature,
+            isActive: row.is_active,
+            endpoint_url: row.endpoint_url,
+            fallback_provider: row.fallback_provider,
+            routing_rules: row.routing_rules,
+            is_project_director: row.is_project_director,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+          },
+        });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    } else {
+      const result = await pool.query(
+        `UPDATE project_providers SET ${updates.join(', ')} WHERE project_id = $1 AND id = $2 RETURNING *`,
+        [projectId, providerId, ...values]
+      );
+
+      if (result.rows.length === 0) {
+        throw new NotFoundError('Provider not found');
+      }
+
+      const row = result.rows[0];
+      res.json({
+        success: true,
+        data: {
+          id: row.id,
+          projectId: row.project_id,
+          name: row.name,
+          providerType: row.provider_type,
+          apiKey: maskToken(decrypt(row.api_key_encrypted)),
+          baseUrl: row.base_url,
+          model: row.model,
+          roles: row.roles,
+          maxTokens: row.max_tokens,
+          temperature: row.temperature,
+          isActive: row.is_active,
+          endpoint_url: row.endpoint_url,
+          fallback_provider: row.fallback_provider,
+          routing_rules: row.routing_rules,
+          is_project_director: row.is_project_director,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        },
+      });
+    }
   } catch (error) {
     next(error);
   }
@@ -218,8 +274,8 @@ async function deleteProvider(req, res, next) {
     if (!project) throw new NotFoundError('Project not found');
 
     const result = await pool.query(
-      'DELETE FROM project_providers WHERE id = $1 AND project_id = $2 RETURNING *',
-      [providerId, projectId]
+      'DELETE FROM project_providers WHERE project_id = $1 AND id = $2 RETURNING *',
+      [projectId, providerId]
     );
 
     if (result.rows.length === 0) {
@@ -281,8 +337,8 @@ async function testProvider(req, res, next) {
     if (!project) throw new NotFoundError('Project not found');
 
     const result = await pool.query(
-      'SELECT * FROM project_providers WHERE id = $1 AND project_id = $2',
-      [providerId, projectId]
+      'SELECT * FROM project_providers WHERE project_id = $1 AND id = $2',
+      [projectId, providerId]
     );
 
     if (result.rows.length === 0) {
@@ -328,8 +384,8 @@ async function setDirector(req, res, next) {
     if (!project) throw new NotFoundError('Project not found');
 
     const result = await pool.query(
-      'SELECT id FROM project_providers WHERE id = $1 AND project_id = $2',
-      [providerId, projectId]
+      'SELECT id FROM project_providers WHERE project_id = $1 AND id = $2',
+      [projectId, providerId]
     );
 
     if (result.rows.length === 0) {
@@ -337,13 +393,13 @@ async function setDirector(req, res, next) {
     }
 
     await pool.query(
-      'BEGIN; UPDATE project_providers SET is_project_director = false WHERE project_id = $1; UPDATE project_providers SET is_project_director = true, updated_at = NOW() WHERE id = $2 AND project_id = $1; COMMIT',
+      'BEGIN; UPDATE project_providers SET is_project_director = false WHERE project_id = $1; UPDATE project_providers SET is_project_director = true, updated_at = NOW() WHERE project_id = $1 AND id = $2; COMMIT',
       [projectId, providerId]
     );
 
     const updated = await pool.query(
-      'SELECT * FROM project_providers WHERE id = $1 AND project_id = $2',
-      [providerId, projectId]
+      'SELECT * FROM project_providers WHERE project_id = $1 AND id = $2',
+      [projectId, providerId]
     );
 
     const row = updated.rows[0];

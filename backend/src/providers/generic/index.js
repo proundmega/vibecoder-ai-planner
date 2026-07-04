@@ -1,6 +1,23 @@
 const axios = require('axios');
 const ProviderInterface = require('../base/ProviderInterface');
 
+function isPrivateHostname(hostname) {
+  if (!hostname || typeof hostname !== 'string') return true;
+  const lower = hostname.toLowerCase();
+  if (lower === 'localhost' || lower === '127.0.0.1' || lower === '::1') return true;
+  if (/^127\./.test(lower)) return true;
+  if (/^10\./.test(lower)) return true;
+  if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(lower)) return true;
+  if (/^192\.168\./.test(lower)) return true;
+  if (/^169\.254\./.test(lower)) return true;
+  if (/^0\.0\.0\.0$/.test(lower)) return true;
+  if (/^\.internal$/.test(lower)) return true;
+  if (/\.local$/.test(lower)) return true;
+  if (/^metadata\.google\.internal$/.test(lower)) return true;
+  if (/\.amazonaws\.com$/.test(lower) && !/^[a-z0-9-]+\.[a-z0-9-]+\.amazonaws\.com$/.test(lower)) return true;
+  return false;
+}
+
 class GenericProvider extends ProviderInterface {
   constructor(config) {
     super();
@@ -45,6 +62,9 @@ class GenericProvider extends ProviderInterface {
       const url = new URL(this.baseURL);
       if (!url.protocol.startsWith('http')) {
         throw new Error('Base URL must use http or https protocol');
+      }
+      if (isPrivateHostname(url.hostname)) {
+        throw new Error('Base URL must not point to a private or internal host');
       }
     } catch (urlError) {
       throw new Error(`Invalid base URL: ${urlError.message}`);
