@@ -768,6 +768,90 @@ describe('Provider Controller', () => {
       expect(encrypt).toHaveBeenCalledWith('sk-ant-new-key-5678');
     });
 
+    it('should encrypt new key when existing api_key_encrypted is null (Issue A regression)', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 1, project_id: 1, name: 'no-key-provider', provider_type: 'openai',
+            api_key_encrypted: null, base_url: null, model: 'gpt-4',
+            roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+            is_active: true, endpoint_url: null, fallback_provider: null,
+            routing_rules: '{}', is_project_director: false,
+            created_at: new Date(), updated_at: new Date(),
+          }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 1, project_id: 1, name: 'no-key-provider', provider_type: 'openai',
+            api_key_encrypted: 'encrypted-new-key', base_url: null, model: 'gpt-4',
+            roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+            is_active: true, endpoint_url: null, fallback_provider: null,
+            routing_rules: '{}', is_project_director: false,
+            created_at: new Date(), updated_at: new Date(),
+          }],
+        });
+
+      mockReq.params.projectId = '1';
+      mockReq.params.providerId = '1';
+      mockReq.body = { apiKey: 'sk-new-for-null-provider' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(encrypt).toHaveBeenCalledWith('sk-new-for-null-provider');
+      expect(mockRes.status).not.toHaveBeenCalled();
+      expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    });
+
+    it('should return 200 when client sends only masked apiKey (Issue B regression)', async () => {
+      Project.findById.mockResolvedValue({ id: 1 });
+      const existingDecrypted = 'sk-ant-existing-key-1234';
+      const existingMasked = '****1234';
+      decrypt.mockReturnValueOnce(existingDecrypted);
+      maskToken.mockReturnValueOnce(existingMasked);
+
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 1, project_id: 1, name: 'old', provider_type: 'openai',
+            api_key_encrypted: 'existing-encrypted', base_url: null, model: 'gpt-4',
+            roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+            is_active: true, endpoint_url: null, fallback_provider: null,
+            routing_rules: '{}', is_project_director: false,
+            created_at: new Date(), updated_at: new Date(),
+          }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 1, project_id: 1, name: 'old', provider_type: 'openai',
+            api_key_encrypted: 'existing-encrypted', base_url: null, model: 'gpt-4',
+            roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+            is_active: true, endpoint_url: null, fallback_provider: null,
+            routing_rules: '{}', is_project_director: false,
+            created_at: new Date(), updated_at: new Date(),
+          }],
+        });
+
+      decrypt.mockReturnValueOnce(existingDecrypted);
+      maskToken.mockReturnValueOnce(existingMasked);
+
+      mockReq.params.projectId = '1';
+      mockReq.params.providerId = '1';
+      mockReq.body = { apiKey: '****1234' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        data: expect.objectContaining({
+          name: 'old',
+          apiKey: '****1234',
+        }),
+      });
+      expect(encrypt).not.toHaveBeenCalled();
+    });
+
   describe('setDirector', () => {
     it('should set director and return updated provider', async () => {
       Project.findById.mockResolvedValue({ id: 1 });

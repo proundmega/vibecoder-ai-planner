@@ -76,7 +76,7 @@ async function updateProvider(req, res, next) {
     const updates = [];
     const values = [];
     let paramIndex = 3;
-    let hasApiKey = false;
+    let apiKeyFieldSent = false;
 
     if (name !== undefined) {
       updates.push(`name = $${paramIndex++}`);
@@ -127,10 +127,10 @@ async function updateProvider(req, res, next) {
       values.push(true);
     }
     if (apiKey !== undefined) {
-      hasApiKey = true;
+      apiKeyFieldSent = true;
     }
 
-    if (updates.length === 0 && !hasApiKey) {
+    if (updates.length === 0 && !apiKeyFieldSent) {
       return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'No fields to update' } });
     }
 
@@ -145,33 +145,63 @@ async function updateProvider(req, res, next) {
 
     const existingRow = existing.rows[0];
 
-    if (hasApiKey) {
-      let keyProvided = false;
+    if (apiKeyFieldSent) {
+      const existingHasKey = existingRow.api_key_encrypted != null;
       if (apiKey && apiKey !== '') {
-        keyProvided = true;
-        const existingDecrypted = decrypt(existingRow.api_key_encrypted);
-        const existingMasked = maskToken(existingDecrypted);
-        if (apiKey === existingMasked) {
-          // Key unchanged (client sent back the masked version)
+        if (existingHasKey) {
+          const existingDecrypted = decrypt(existingRow.api_key_encrypted);
+          const existingMasked = maskToken(existingDecrypted);
+          if (apiKey === existingMasked) {
+            // Key unchanged (client sent back the masked version)
+          } else {
+            updates.push(`api_key_encrypted = $${paramIndex++}`);
+            values.push(encrypt(apiKey));
+          }
         } else {
+          // No existing key — encrypt the new one directly (Issue A fix)
           updates.push(`api_key_encrypted = $${paramIndex++}`);
           values.push(encrypt(apiKey));
         }
       } else {
-        // apiKey is empty string - check if different from masked version
-        const existingDecrypted = decrypt(existingRow.api_key_encrypted);
-        const existingMasked = maskToken(existingDecrypted);
-        if (apiKey !== existingMasked) {
+        // apiKey is empty string — clear the key
+        if (existingHasKey) {
           updates.push(`api_key_encrypted = $${paramIndex++}`);
           values.push(null);
         }
       }
-      if (!keyProvided) {
-        hasApiKey = false;
-      }
     }
 
     if (updates.length === 0) {
+      if (apiKeyFieldSent) {
+        // Issue B: client sent only masked apiKey — no-op, return 200 with existing data
+        const result = await pool.query(
+          'SELECT * FROM project_providers WHERE project_id = $1 AND id = $2',
+          [projectId, providerId]
+        );
+        const row = result.rows[0];
+        return res.status(200).json({
+          success: true,
+          data: {
+            id: row.id,
+            projectId: row.project_id,
+            name: row.name,
+            providerType: row.provider_type,
+            apiKey: row.api_key_encrypted ? maskToken(decrypt(row.api_key_encrypted)) : null,
+            baseUrl: row.base_url,
+            model: row.model,
+            roles: row.roles,
+            maxTokens: row.max_tokens,
+            temperature: row.temperature,
+            isActive: row.is_active,
+            endpoint_url: row.endpoint_url,
+            fallback_provider: row.fallback_provider,
+            routing_rules: row.routing_rules,
+            is_project_director: row.is_project_director,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+          },
+        });
+      }
       return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'No fields to update' } });
     }
 

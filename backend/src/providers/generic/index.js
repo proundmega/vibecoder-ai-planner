@@ -11,7 +11,7 @@ function isPrivateHostname(hostname) {
   if (/^192\.168\./.test(lower)) return true;
   if (/^169\.254\./.test(lower)) return true;
   if (/^0\.0\.0\.0$/.test(lower)) return true;
-  if (/^\.internal$/.test(lower)) return true;
+  if (/\.internal$/.test(lower)) return true;
   if (/\.local$/.test(lower)) return true;
   if (/^metadata\.google\.internal$/.test(lower)) return true;
   if (/\.amazonaws\.com$/.test(lower) && !/^[a-z0-9-]+\.[a-z0-9-]+\.amazonaws\.com$/.test(lower)) return true;
@@ -26,9 +26,33 @@ class GenericProvider extends ProviderInterface {
     this.maxTokens = config.maxTokens || 4096;
     this.temperature = config.temperature || 0.1;
     this.apiKey = config.apiKey;
+    if (this.baseURL && typeof this.baseURL === 'string') {
+      try {
+        const url = new URL(this.baseURL);
+        if (isPrivateHostname(url.hostname)) {
+          throw new Error('Base URL must not point to a private or internal host');
+        }
+      } catch (urlError) {
+        if (urlError.message.includes('Base URL must not point to a private')) {
+          throw urlError;
+        }
+      }
+    }
   }
 
   async chat(messages, options = {}) {
+    if (this.baseURL && typeof this.baseURL === 'string') {
+      try {
+        const url = new URL(this.baseURL);
+        if (isPrivateHostname(url.hostname)) {
+          throw new Error('Base URL must not point to a private or internal host');
+        }
+      } catch (urlError) {
+        if (urlError.message.includes('Base URL must not point to a private')) {
+          throw urlError;
+        }
+      }
+    }
     const response = await axios.post(
       `${this.baseURL}/chat/completions`,
       {
