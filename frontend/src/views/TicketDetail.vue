@@ -163,10 +163,6 @@ async function addCommentText() {
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024 // 10 MB
 
-function formatMaxSize(bytes) {
-  return formatFileSize(bytes)
-}
-
 async function handleFileUpload(event) {
   const file = event.target.files[0]
   if (!file || !ticket.value) return
@@ -179,7 +175,7 @@ async function handleFileUpload(event) {
   } catch (err) {
     console.error('Failed to upload file:', err)
     if (err.status === 413) {
-      uploadError.value = `File too large. Maximum allowed size is ${formatMaxSize(MAX_UPLOAD_SIZE)}.`
+      uploadError.value = `File too large. Maximum allowed size is ${formatFileSize(MAX_UPLOAD_SIZE)}.`
     } else {
       uploadError.value = err.message || 'Failed to upload file'
     }

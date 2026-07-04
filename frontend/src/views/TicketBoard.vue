@@ -74,7 +74,7 @@ async function loadTickets(projectId) {
 
 async function handleDrop(ticketId, newStatus) {
   const ticket = tickets.value.find(t => t.id === ticketId)
-  if (!ticket || !canUpdateTicket(ticket)) return
+  if (!ticket || !canUpdateThisTicket(ticket)) return
 
   try {
     await updateTicket(ticket.id, { status: newStatus })
@@ -84,7 +84,7 @@ async function handleDrop(ticketId, newStatus) {
   }
 }
 
-function canUpdateTicket(ticket) {
+function canUpdateThisTicket(ticket) {
   if (!authStore.user.value) return false
   if (authStore.canUpdateTicket()) return true
   if (ticket.assignee_id && ticket.assignee_id === authStore.user.value.id) return true
@@ -96,11 +96,13 @@ async function handleCreateTicket() {
   creating.value = true
   creationError.value = null
   try {
-    await createTicket(selectedProjectId.value, newTicketTitle.value.trim(), newTicketDesc.value.trim())
+    const newTicket = await createTicket(selectedProjectId.value, newTicketTitle.value.trim(), newTicketDesc.value.trim())
+    if (newTicket) {
+      tickets.value.unshift(newTicket)
+    }
     showCreateTicket.value = false
     newTicketTitle.value = ''
     newTicketDesc.value = ''
-    await loadTickets(selectedProjectId.value)
   } catch (err) {
     console.error('Failed to create ticket:', err)
     creationError.value = 'Failed to create ticket. Please try again.'
