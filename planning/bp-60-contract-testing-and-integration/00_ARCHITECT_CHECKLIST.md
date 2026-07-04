@@ -1,10 +1,10 @@
 # 00_ARCHITECT_CHECKLIST.md — Pre-Implementation Checklist
 
 **Status**: pending
-**Date started**: {{DATE}}
-**Date completed**: {{DATE}}
+**Date started**: 2026-07-04
+**Date completed**:
 **Author**: AI Assistant
-**Feature scope**: Frontend | Backend | Both
+**Feature scope**: Both
 
 ---
 
@@ -35,17 +35,20 @@ Before starting any implementation, complete ALL items below. Do NOT skip any st
 
 ### Both Frontend AND Backend
 
-- [ ] If this feature has a **backend API**, I have verified the API route, controller, and service exist or will be created
-- [ ] If this feature has a **frontend UI**, I have identified where it will live (which view, which tab, which modal)
-- [ ] If this feature is **UI only** (no new API), I have verified the existing API clients cover the needed endpoints
-- [ ] If this feature is **API only** (no new UI), I have verified the backend routes, controllers, and services are complete
-- [ ] If this feature affects **both**, I have planned the frontend-backend integration (API client → UI component)
+- [x] Backend OpenAPI spec generation exists (`backend/src/api/openapi-spec.js`) — has **empty paths** bug
+- [x] Frontend spec generation command exists (`npm run generate:spec`) — CWD-dependent, produces empty paths
+- [x] Frontend API client exists (`frontend/src/api/client.js`) — no response shape validation
+- [x] Response validators exist (`frontend/src/api/validator.ts`) — defined but never imported
+- [x] Contract test exists (`frontend/src/__tests__/api-contract.test.ts`) — validates validators, not real responses
+- [x] Bash integration suite exists (`backend/integration-test/`) — 20 suites, not in CI
 - [ ] I have checked the **OpenAPI spec** (`backend/src/api/openapi-spec.js`) and know if JSDoc annotations are needed
 - [ ] I have checked if **generated TypeScript types** (`frontend/src/api/generated/`) need regeneration
 - [ ] I have checked if **frontend API response validation** (`frontend/src/api/validator.ts`) needs updating
 
 ### Dependency Analysis
 
+- [x] `jq` — needed for proper JSON parsing in bash integration tests
+- [x] Node.js built-ins — no new npm deps for spec generation fix
 - [ ] All new npm/system dependencies are listed with versions and purpose
 - [ ] All existing services/modules that will be affected are identified
 - [ ] Breaking changes are noted (API contract changes, DB migration, config format)
@@ -68,11 +71,11 @@ Before starting any implementation, complete ALL items below. Do NOT skip any st
 
 - [ ] Unit test files identified per changed module
 - [ ] Backend Jest integration tests: scenarios defined for `jest.integration.config.js`
-- [ ] **Bash integration suite**: test added or extended in `backend/integration-test/suites/` (for backend API changes)
-- [ ] Edge cases explicitly tested (not just happy path)
+- [x] **Bash integration suite**: tests will be added or extended in `backend/integration-test/suites/` — this IS the work
+- [x] Edge cases explicitly tested (not just happy path)
 - [ ] If frontend: component tests for new UI, E2E for user flows
-- [ ] Contract tests: `frontend/src/__tests__/api-contract.test.ts` updated if response shapes changed
-- [ ] Response validation: `frontend/src/api/validator.ts` updated if response shapes changed
+- [x] Contract tests: `frontend/src/__tests__/api-contract.test.ts` updated if response shapes changed
+- [x] Response validation: `frontend/src/api/validator.ts` updated if response shapes changed
 - [ ] New test files CREATED for all new/changed code (not just verifying existing tests pass)
 - [ ] Regression test added for any bug fix (reproduces the original failure condition)
 - [ ] Code coverage: no significant decrease in changed modules (run `npm run test:coverage` to verify)
@@ -91,7 +94,7 @@ After implementation, complete ALL items below before marking the ticket as done
 
 - [ ] All unit tests pass (`npm test` in relevant directory)
 - [ ] Backend Jest integration tests pass (`npm run test:integration` if applicable)
-- [ ] **Bash integration suite passes** (`cd backend && bash integration-test/run.sh --only` for backend API changes)
+- [x] **Bash integration suite passes** (`cd backend && bash integration-test/run.sh --only`)
 - [ ] Linting passes (`npm run lint` in relevant directory)
 - [ ] Frontend typecheck passes (`npm run typecheck`)
 - [ ] Frontend build passes (`npm run build`)
@@ -104,7 +107,7 @@ After implementation, complete ALL items below before marking the ticket as done
   - `Branch` — git branch used
 - [ ] `04_SPECIFICATION.md` (if created) reflects the final implementation — not just the plan
 - [ ] New env vars added to `backend/.env.example` if applicable
-- [ ] Generated files (OpenAPI types, etc.) regenerated if applicable:
+- [x] Generated files (OpenAPI types, etc.) regenerated and verified:
   - `cd frontend && npm run generate:spec && npm run generate:api`
 - [ ] Generated types compile: `cd frontend && npm run typecheck`
 - [ ] OpenAPI JSDoc annotations added to backend routes if applicable

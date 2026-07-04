@@ -122,8 +122,11 @@ Things that could change the approach if the answer is different from assumed:
 14. [ ] [Frontend UI] The UI component uses existing patterns (modals, tabs, cards)
 15. [ ] [Both] OpenAPI spec is updated with JSDoc annotations
 16. [ ] [Both] Generated TypeScript types are regenerated and match
-17. [ ] [Both] All tests pass (unit, integration, frontend, lint, typecheck)
-18. [ ] [Both] Specification in `04_SPECIFICATION.md` accurately reflects the implementation
+17. [ ] [Both] Bash integration suite passes (run `cd backend && bash integration-test/run.sh --only`) if backend API changed
+18. [ ] [Both] Contract test (`api-contract.test.ts`) updated and passing if response shapes changed
+19. [ ] [Both] Code coverage checked — no significant decrease
+20. [ ] [Both] All tests pass (unit, integration, frontend, lint, typecheck)
+21. [ ] [Both] Specification in `04_SPECIFICATION.md` accurately reflects the implementation
 
 ---
 
@@ -161,11 +164,13 @@ Things that could change the approach if the answer is different from assumed:
 - [ ] Unit tests: `backend/src/__tests__/unit.test.js` — {{describe what to test}}
 - [ ] Middleware tests: `backend/src/middleware/*.test.js` — {{if auth/permissions affected}}
 - [ ] API endpoint tests: `backend/src/__tests__/api-*.test.js` — {{describe endpoints}}
-- [ ] Integration tests: `backend/src/__tests__/integration/*.test.js` — {{describe scenarios}}
+- [ ] Jest integration tests: `backend/src/__tests__/integration/*.test.js` — {{describe scenarios}}
+- [ ] **Bash integration suite**: test added or extended in `backend/integration-test/suites/` — {{describe scenario}}
 - [ ] Every new controller method has at least one test case
 - [ ] Every new service method has at least one test case
 - [ ] Every new validator schema has at least one test case
 - [ ] Happy path AND error paths tested (not just happy path)
+- [ ] Code coverage: run `npm run test:coverage` — no significant decrease in changed modules
 
 ### Frontend Tests
 - [ ] Unit test files CREATED for all new/changed frontend code
@@ -173,6 +178,7 @@ Things that could change the approach if the answer is different from assumed:
 - [ ] Component tests: `frontend/cypress/component/` — {{if new UI component}}
 - [ ] E2E tests: `frontend/cypress/e2e/` — {{if user flow affected}}
 - [ ] API contract tests: `frontend/src/__tests__/api-contract.test.ts` — {{if response shapes changed}}
+- [ ] Response validation: `frontend/src/api/validator.ts` — {{update if response shapes changed}}
 - [ ] Every new API client function has at least one test case
 - [ ] Every new/composed UI component has at least one test case
 - [ ] Loading, error, and empty states tested
@@ -180,6 +186,7 @@ Things that could change the approach if the answer is different from assumed:
 ### CI Requirements
 - [ ] `npm test` — backend unit tests pass
 - [ ] `npm run test:integration` — backend integration tests pass (if applicable)
+- [ ] `cd backend && bash integration-test/run.sh --only` — bash integration suite passes (if applicable)
 - [ ] `npm run lint` — no lint errors
 - [ ] `npm run typecheck` — frontend typecheck passes
 - [ ] `npm run build` — frontend build passes
@@ -198,6 +205,12 @@ Things that could change the approach if the answer is different from assumed:
 - ❌ **Skipping error handling** — all API calls must use `.catch()` or try/catch
 - ❌ **Testing only happy paths** — test error cases, empty states, loading states
 - ❌ **Merging without tests** — every change must have tests; new/changed code requires new/modified test files, not just verifying existing tests still pass
+- ❌ **No bash integration test for backend changes** — if the change adds or modifies an API endpoint, add a curl-based test in `backend/integration-test/suites/`
+- ❌ **Skipping the bash integration suite** — `backend/integration-test/run.sh --only` should pass before merging backend changes
+- ❌ **Response validation not updated** — if backend response shapes change, update `frontend/src/api/validator.ts` and `frontend/src/__tests__/api-contract.test.ts`
+- ❌ **Contract test not updated** — if a field name, type, or enum changes in an API response, the contract test must be updated to match
+- ❌ **Generated types stale** — after OpenAPI spec changes, regenerate types and verify they compile (`npm run generate:spec && npm run generate:api && npm run typecheck`); consider importing them instead of hand-writing types
+- ❌ **Ignoring coverage regressions** — run `npm run test:coverage` and check that coverage in changed modules doesn't drop significantly
 - ❌ **Skipping the Specification file** — if a small model will execute this ticket, fill out `04_SPECIFICATION.md` with exact file operations
 
 ---

@@ -71,12 +71,44 @@ import { ... } from '...'
 
 ## Test Expectations
 
-### {{Component or Module Name}}
+List every test case the model must create, organized by layer. Do not write "test it works" — each case must describe a specific input, expected output, and why it matters.
+
+### Backend Unit Tests — {{Component or Module Name}}
 ```
-✓ Test 1 — specific scenario
-✓ Test 2 — specific scenario
-✓ Test 3 — error case
-✓ Test 4 — edge case
+✓ [happy] createFoo with valid input returns foo object
+✓ [error] createFoo with duplicate name returns 400
+✓ [error] createFoo without required field returns ValidationError
+✓ [edge] setAssignee(null) clears assignee (dynamic SET, not COALESCE)
+```
+
+**Minimum**: 1 happy + 1 error per new controller/service method, 1 per new validator.
+
+### Backend Bash Integration Tests
+```
+✓ [happy] POST /api/v1/foo returns 201 with foo object
+✓ [auth] POST /api/v1/foo without token returns 401
+✓ [perm] user role POST /api/v1/foo returns 403
+✓ [flow] create → GET /api/v1/foo/:id → DELETE → GET /api/v1/foo/:id returns 404
+```
+
+**Minimum**: happy path, auth failure, permission denial, multi-step lifecycle.
+
+### Frontend Unit Tests — {{Component or Module Name}}
+```
+✓ [api] createFoo() calls POST /api/v1/foo with correct body
+✓ [api] createFoo() returns null when backend returns 400
+✓ [ui] FooList renders loading spinner while fetching
+✓ [ui] FooList renders "No foos" when list is empty
+✓ [ui] FooList renders error message on fetch failure
+```
+
+**Minimum**: 1 per API client function + loading/empty/error states per UI component.
+
+### Frontend Contract Tests
+```
+✓ [shape] Foo response contains id, name, createdAt (no snake_case fields)
+✓ [enum] Foo status accepts expected values (active|inactive|archived)
+✓ [error] Error response uses { error: { code, message } } format
 ```
 
 ---

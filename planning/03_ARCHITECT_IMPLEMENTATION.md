@@ -194,12 +194,21 @@ For each file being created or modified, specify exactly what changes:
 - [ ] Every new service method has at least one test case
 - [ ] Every new validator schema has at least one test case
 - [ ] Happy path AND error paths tested (not just happy path)
+- [ ] Code coverage: run `npm run test:coverage` — no significant decrease in changed modules
 
-#### Backend Integration Tests
+#### Backend Jest Integration Tests
 - [ ] Full request lifecycle: HTTP → middleware → controller → service → DB → response
 - [ ] Role-based access: correct 403 responses
 - [ ] Data persistence: inserted/updated data survives across requests
 - [ ] Error handling: invalid requests return proper error responses
+
+#### Backend Bash Integration Suite
+**Add a curl-based test in `backend/integration-test/suites/` for backend API changes.**
+- [ ] New suite file: `backend/integration-test/suites/[feature].test.sh` — CREATED
+- [ ] Test function registered in `backend/integration-test/run.sh` `main()` function
+- [ ] Suite covers: happy path (200/201), auth failure (401), permission denial (403), validation error (400), not-found (404)
+- [ ] Multi-step flows tested where applicable (create → read → update → delete → verify gone)
+- [ ] Suite runs cleanly: `cd backend && bash integration-test/run.sh --only`
 
 #### Frontend Unit Tests
 - [ ] API client: `frontend/src/__tests__/[feature].test.js` — CREATED or EXTENDED
@@ -213,8 +222,11 @@ For each file being created or modified, specify exactly what changes:
 - [ ] Auth flow: [describe if auth is involved]
 
 #### Frontend Contract Tests
-- [ ] Response shapes match OpenAPI spec: `frontend/src/__tests__/api-contract.test.ts`
-- [ ] Field names match (snake_case vs camelCase)
+- [ ] Response schema updated in `frontend/src/api/validator.ts` if response shapes changed
+- [ ] Contract test: `frontend/src/__tests__/api-contract.test.ts` — EXTENDED with new field/enum tests
+- [ ] Field names match (snake_case vs camelCase — `validator.ts` should catch mismatches)
+- [ ] Generated types regenerated: `npm run generate:spec && npm run generate:api` (after backend JSDoc updates)
+- [ ] Generated types compile: `npm run typecheck`
 
 ---
 
@@ -274,6 +286,11 @@ frontend/src/api/generated/           → REGENERATE (types)
 - [ ] All tests written and passing — new/changed code has corresponding test files CREATED or EXTENDED
 - [ ] OpenAPI spec regenerated if backend routes changed
 - [ ] Generated TypeScript types regenerated if response shapes changed
+- [ ] Generated types compile: `npm run typecheck`
+- [ ] Response validation updated: `frontend/src/api/validator.ts` matches backend changes
+- [ ] Contract test updated: `frontend/src/__tests__/api-contract.test.ts` covers any new/changed fields
+- [ ] Bash integration suite test added or extended for API changes
+- [ ] Coverage checked: no significant decrease in changed modules
 - [ ] Specification in `04_SPECIFICATION.md` matches what was actually implemented
 
 ---
@@ -282,16 +299,17 @@ frontend/src/api/generated/           → REGENERATE (types)
 
 1. [ ] Backend: `npm test` passes
 2. [ ] Backend: `npm run test:integration` passes (if applicable)
-3. [ ] Backend: `npm run lint` passes
-4. [ ] Frontend: `npm run lint` passes
-5. [ ] Frontend: `npm run typecheck` passes
-6. [ ] Frontend: `npm run build` passes
-7. [ ] Frontend: `npm test -- --run` passes
-8. [ ] API endpoint responds correctly: `curl http://localhost:3001/api/v1/[feature]`
-9. [ ] Frontend UI loads correctly in browser
-10. [ ] Auth/permissions work correctly
-11. [ ] Error cases handled gracefully
-12. [ ] If specification file exists: implementation matches the spec
+3. [ ] **Backend: `cd backend && bash integration-test/run.sh --only` passes (if backend API changed)**
+4. [ ] Backend: `npm run lint` passes
+5. [ ] Frontend: `npm run lint` passes
+6. [ ] Frontend: `npm run typecheck` passes
+7. [ ] Frontend: `npm run build` passes
+8. [ ] Frontend: `npm test -- --run` passes
+9. [ ] API endpoint responds correctly: `curl http://localhost:3001/api/v1/[feature]`
+10. [ ] Frontend UI loads correctly in browser
+11. [ ] Auth/permissions work correctly
+12. [ ] Error cases handled gracefully
+13. [ ] If specification file exists: implementation matches the spec
 
 ---
 

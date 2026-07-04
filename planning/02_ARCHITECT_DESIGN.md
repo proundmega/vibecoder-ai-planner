@@ -248,6 +248,37 @@ Add GitHub branch info to TicketDetail.vue:
 
 ---
 
+## Testing Strategy
+
+### Test Layers
+
+| Layer | Tool | Location | What It Catches |
+|-------|------|----------|-----------------|
+| Backend unit | Jest | `backend/src/__tests__/*.test.js` | Controller/service logic, edge cases, error paths |
+| Middleware | Jest | `backend/src/middleware/*.test.js` | Auth, permissions, validation |
+| Jest integration | Jest + real PG | `backend/src/__tests__/integration/*.test.js` | HTTP→DB lifecycle, role-based access |
+| **Bash integration** | curl + helpers | `backend/integration-test/suites/*.test.sh` | Real API responses, multi-step flows, Docker environment |
+| Frontend unit | Vitest | `frontend/src/__tests__/*.test.js` | API client calls, component render, state management |
+| Contract | Vitest | `frontend/src/__tests__/api-contract.test.ts` | Response shape against `validator.ts` schemas |
+| Component | Cypress | `frontend/cypress/component/` | UI component behavior |
+| E2E | Cypress | `frontend/cypress/e2e/` | Full user flows |
+
+### Bash Integration Suite — When to Add Tests
+
+Add a new `.test.sh` suite in `backend/integration-test/suites/` when:
+- A new API endpoint is added
+- An existing endpoint's response shape, status codes, or auth requirements change
+- A multi-step workflow needs validation (e.g., create → assign → transition → verify)
+- Role/permission boundaries are affected
+
+### Frontend-Backend Contract Testing
+
+- Response schemas in `frontend/src/api/validator.ts` must mirror the backend's actual response shapes
+- When adding or changing a backend endpoint, update `validator.ts` and add a test case in `api-contract.test.ts`
+- Generated TypeScript types from OpenAPI spec should ideally be imported rather than hand-writing types — verify by running `npm run generate:spec && npm run generate:api && npm run typecheck`
+
+---
+
 ## Risks and Edge Cases
 
 ### Backend Risks
