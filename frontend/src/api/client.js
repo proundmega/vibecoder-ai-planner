@@ -37,49 +37,61 @@ function apiFetch(url, options = {}) {
     })
 }
 
-function extractData(response) {
-  return response.json().then(data => data.data !== undefined ? data.data : data)
+function extractData(response, validator) {
+  return response.json().then(data => {
+    if (validator && typeof validator === 'function') {
+      validator(data)
+    }
+    return data.data !== undefined ? data.data : data
+  })
 }
 
 export function get(url, options = {}) {
-  return apiFetch(url, options).then(extractData)
+  return apiFetch(url, options).then(res => extractData(res, options.validate))
 }
 
-export function post(url, body) {
-  return apiFetch(url, {
+export function post(url, body, options = {}) {
+  const opts = {
     method: 'POST',
     body: JSON.stringify(body),
-  }).then(extractData)
+    ...options,
+  }
+  return apiFetch(url, opts).then(res => extractData(res, options.validate))
 }
 
-export function put(url, body) {
-  return apiFetch(url, {
+export function put(url, body, options = {}) {
+  const opts = {
     method: 'PUT',
     body: JSON.stringify(body),
-  }).then(extractData)
+    ...options,
+  }
+  return apiFetch(url, opts).then(res => extractData(res, options.validate))
 }
 
-export function del(url) {
-  return apiFetch(url, { method: 'DELETE' }).then(extractData)
+export function del(url, options = {}) {
+  return apiFetch(url, { method: 'DELETE', ...options }).then(res => extractData(res, options.validate))
 }
 
-export function patch(url, body) {
+export function patch(url, body, options = {}) {
   const opts = { method: 'PATCH' }
   if (body !== undefined) {
     opts.body = JSON.stringify(body)
   }
-  return apiFetch(url, opts).then(extractData)
+  return apiFetch(url, opts).then(res => extractData(res, options.validate))
 }
 
-export function postWithHeaders(url, body, extraHeaders = {}) {
-  return apiFetch(url, {
+export function postWithHeaders(url, body, extraHeaders = {}, options = {}) {
+  const { validate, ...rest } = options
+  const opts = {
     method: 'POST',
     body: JSON.stringify(body),
-    headers: extraHeaders,
-  }).then(extractData)
+    ...rest,
+    headers: { ...extraHeaders, ...(rest.headers || {}) },
+  }
+  return apiFetch(url, opts).then(res => extractData(res, validate))
 }
 
-export function postMultipart(url, formData) {
+export function postMultipart(url, formData, options = {}) {
   const authStore = useAuthStore()
   const token = authStore.token.value
   const headers = {}
@@ -108,6 +120,6 @@ export function postMultipart(url, formData) {
       err.status = response.status
       throw err
     }
-    return response.json().then(data => data.data !== undefined ? data.data : data)
+    return extractData(response, options.validate)
   })
 }

@@ -31,15 +31,14 @@ clean_db() {
 register() {
   local name="$1" email="$2" password="$3"
   local role="${4:-project_admin}"
-  local code body
-  body=$(curl -sf -X POST "$BASE/api/auth/register" \
+  local response http_code body
+  response=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/auth/register" \
     -H "Content-Type: application/json" \
     -d "{\"name\":\"$name\",\"email\":\"$email\",\"password\":\"$password\",\"role\":\"$role\"}")
-  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/register" \
-    -H "Content-Type: application/json" \
-    -d "{\"name\":\"$name\",\"email\":\"$email\",\"password\":\"$password\",\"role\":\"$role\"}")
-  if [ "$code" = "201" ]; then
-    echo "$body" | grep -o '"token":"[^"]*"' | cut -d'"' -f4
+  http_code=$(echo "$response" | tail -1)
+  body=$(echo "$response" | sed '$d')
+  if [ "$http_code" = "201" ]; then
+    echo "$body" | jq -r '.token // empty'
   else
     echo ""
   fi
@@ -47,15 +46,14 @@ register() {
 
 login() {
   local email="$1" password="$2"
-  local code
-  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/login" \
+  local response http_code body
+  response=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/auth/login" \
     -H "Content-Type: application/json" \
     -d "{\"email\":\"$email\",\"password\":\"$password\"}")
-  if [ "$code" = "200" ]; then
-    curl -s -X POST "$BASE/api/auth/login" \
-      -H "Content-Type: application/json" \
-      -d "{\"email\":\"$email\",\"password\":\"$password\"}" \
-      | grep -o '"token":"[^"]*"' | cut -d'"' -f4
+  http_code=$(echo "$response" | tail -1)
+  body=$(echo "$response" | sed '$d')
+  if [ "$http_code" = "200" ]; then
+    echo "$body" | jq -r '.token // empty'
   else
     echo ""
   fi
@@ -71,6 +69,56 @@ assert_status() {
 }
 
 assert_field() {
+  local label="$1" field="$2" expected="$3" data="$4"
+  # If data is a JSON object or array, extract field via jq
+  if [[ "$data" == \{* ]] || [[ "$data" == \[* ]]; then
+    if ! echo "$data" | jq -e "has(\"$field\")" >/dev/null 2>&1; then
+      fail "$label" "Field '$field' not found in JSON"
+      return
+    fi
+    local actual
+    actual=$(echo "$data" | jq -r ".$field // \"__NULL__\"")
+    if [ "$actual" = "__NULL__" ]; then
+      if [ "$expected" = "__NULL__" ]; then
+        pass "$label ($field=null)"
+      else
+        fail "$label" "Expected $field=$expected, got null"
+      fi
+    elif [ "$actual" != "$expected" ]; then
+      fail "$label" "Expected $field=$expected, got $field=$actual"
+    else
+      pass "$label ($field=$expected)"
+    fi
+  else
+    # Scalar value — legacy comparison (pre-extracted value passed as $4)
+    if [ "$data" = "$expected" ]; then
+      pass "$label ($field=$expected)"
+    else
+      fail "$label" "expected $field=$expected, got $field=$data"
+    fi
+  fi
+}
+
+assert_has_field() {
+  local label="$1" field="$2" json="$3"
+  if echo "$json" | jq -e "has(\"$field\")" >/dev/null 2>&1; then
+    pass "$label (has $field)"
+  else
+    fail "$label" "missing field $field"
+  fi
+}
+
+assert_no_field() {
+  local label="$1" field="$2" json="$3"
+  if ! echo "$json" | jq -e "has(\"$field\")" >/dev/null 2>&1; then
+    pass "$label (no $field)"
+  else
+    fail "$label" "unexpected field $field"
+  fi
+}
+
+# Legacy grep-based versions for backwards compatibility
+assert_field_legacy() {
   local label="$1" field="$2" expected="$3" actual="$4"
   if [ "$actual" = "$expected" ]; then
     pass "$label ($field=$expected)"
@@ -79,7 +127,7 @@ assert_field() {
   fi
 }
 
-assert_has_field() {
+assert_has_field_legacy() {
   local label="$1" field="$2" json="$3"
   if echo "$json" | grep -q "\"$field\""; then
     pass "$label (has $field)"
@@ -88,7 +136,7 @@ assert_has_field() {
   fi
 }
 
-assert_no_field() {
+assert_no_field_legacy() {
   local label="$1" field="$2" json="$3"
   if ! echo "$json" | grep -q "\"$field\""; then
     pass "$label (no $field)"

@@ -203,6 +203,3253 @@
       "BearerAuth": []
     }
   ],
-  "paths": {},
+  "paths": {
+    "/users": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "List users for current project",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "role",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "perPage",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "users": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/User"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Create a new user",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "email",
+                  "password"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "member",
+                      "project_admin",
+                      "super_admin"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created"
+          },
+          "400": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/users/{id}": {
+      "put": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Update user",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "is_active": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User updated"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Delete user (soft delete)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User deleted"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    },
+    "/users/{id}/toggle-active": {
+      "patch": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Toggle user active status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User status toggled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    },
+    "/users/super-admin": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "List all users (super admin only)",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_active",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "perPage",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of all users"
+          },
+          "403": {
+            "description": "Forbidden - super admin only"
+          }
+        }
+      }
+    },
+    "/usage/projects/{id}/usage": {
+      "get": {
+        "tags": [
+          "Usage"
+        ],
+        "summary": "Get usage for a project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usage data for project"
+          }
+        }
+      }
+    },
+    "/usage/users/me/usage": {
+      "get": {
+        "tags": [
+          "Usage"
+        ],
+        "summary": "Get usage for current user",
+        "responses": {
+          "200": {
+            "description": "Usage data for user"
+          }
+        }
+      }
+    },
+    "/usage/pricing/models": {
+      "get": {
+        "tags": [
+          "Usage"
+        ],
+        "summary": "Get model pricing info",
+        "responses": {
+          "200": {
+            "description": "Pricing information for all models"
+          }
+        }
+      }
+    },
+    "/tickets": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Create a new ticket",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "projectId",
+                  "title"
+                ],
+                "properties": {
+                  "projectId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "priority": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "urgent"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Ticket created"
+          }
+        }
+      }
+    },
+    "/tickets/project/{projectId}": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Get tickets for a project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "backlog",
+                "in_progress",
+                "review",
+                "done"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tickets"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Get single ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ticket details"
+          },
+          "404": {
+            "description": "Ticket not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Update ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "priority": {
+                    "type": "string"
+                  },
+                  "assigneeId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ticket updated"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Delete ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ticket deleted"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/status": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Change ticket status (agent workflow)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "backlog",
+                      "in_progress",
+                      "review",
+                      "done"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Status updated"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/pickup": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Agent picks up a ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ticket picked up"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/release": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Agent releases a ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ticket released"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/comments": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Get ticket comments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of comments"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Add comment to ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Comment added"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/messages": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Get ticket messages",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of messages"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Post message to ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "messageType": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Message posted"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/phases": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Get phase transition history",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Phase history"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/phases/current": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Get current phase",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current phase"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/phases/allowed": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Get allowed next phases",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Allowed next phases"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/phases/transition": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Transition ticket to a new phase",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "toPhase"
+                ],
+                "properties": {
+                  "toPhase": {
+                    "type": "string"
+                  },
+                  "actorType": {
+                    "type": "string",
+                    "enum": [
+                      "human",
+                      "agent",
+                      "system"
+                    ]
+                  },
+                  "metadata": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Phase transitioned"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/review/diff": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Get PR diff for a ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PR diff files"
+          },
+          "400": {
+            "description": "No PR linked or invalid URL"
+          },
+          "404": {
+            "description": "Ticket not found"
+          }
+        }
+      }
+    },
+    "/tickets/{id}/planning": {
+      "get": {
+        "tags": [
+          "Planning"
+        ],
+        "summary": "List planning files for a ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Planning files list"
+          }
+        }
+      }
+    },
+    "/tickets/{id}/planning/{fileKey}": {
+      "get": {
+        "tags": [
+          "Planning"
+        ],
+        "summary": "Get a specific planning file",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "fileKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Planning file content"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Planning"
+        ],
+        "summary": "Create or update a planning file",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "fileKey",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "content"
+                ],
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Planning file updated"
+          }
+        }
+      }
+    },
+    "/tickets/{id}/planning/apply-template": {
+      "post": {
+        "tags": [
+          "Planning"
+        ],
+        "summary": "Apply a template to create initial planning files",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "templateName"
+                ],
+                "properties": {
+                  "templateName": {
+                    "type": "string",
+                    "enum": [
+                      "architecture",
+                      "technical",
+                      "simple"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Template applied"
+          }
+        }
+      }
+    },
+    "/tickets/{id}/planning/status": {
+      "patch": {
+        "tags": [
+          "Planning"
+        ],
+        "summary": "Update planning status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "not_started",
+                      "template_selected",
+                      "in_progress",
+                      "review",
+                      "completed"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Status updated"
+          }
+        }
+      }
+    },
+    "/tickets/{id}/attachments": {
+      "get": {
+        "tags": [
+          "Attachments"
+        ],
+        "summary": "List attachments for a ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachments list"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Attachments"
+        ],
+        "summary": "Upload an attachment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Attachment uploaded"
+          }
+        }
+      }
+    },
+    "/tickets/{id}/attachments/{attachmentId}": {
+      "delete": {
+        "tags": [
+          "Attachments"
+        ],
+        "summary": "Delete an attachment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "attachmentId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachment deleted"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Health check",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Server is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string"
+                        },
+                        "database": {
+                          "type": "string"
+                        },
+                        "timestamp": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database disconnected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/version": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "API version info",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "API version information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/docs": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "API documentation index",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "API documentation endpoints"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Server metrics",
+        "responses": {
+          "200": {
+            "description": "Server metrics including uptime and memory usage"
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Register a new user",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "email",
+                  "password"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "member",
+                      "project_admin",
+                      "super_admin"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User registered successfully"
+          },
+          "400": {
+            "description": "Validation error or user already exists"
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Login and get JWT token",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "password"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string"
+                    },
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials"
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Get current user info",
+        "responses": {
+          "200": {
+            "description": "Current user information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    },
+                    "authenticated": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/providers/{projectId}/providers": {
+      "get": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "List providers for project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of providers"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "Add provider to project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "apiKey": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Provider added"
+          }
+        }
+      }
+    },
+    "/providers/{projectId}/providers/{providerId}": {
+      "patch": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "Update provider",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "providerId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "apiKey": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Provider updated"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "Delete provider",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "providerId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Provider deleted"
+          }
+        }
+      }
+    },
+    "/providers/{projectId}/providers/{providerId}/test": {
+      "post": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "Test provider connection",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "providerId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connection test result"
+          }
+        }
+      }
+    },
+    "/providers/{projectId}/providers/{providerId}/directorate": {
+      "patch": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "Set provider as project director",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "providerId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Provider set as director"
+          }
+        }
+      }
+    },
+    "/providers/{projectId}/provider/resolve": {
+      "post": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "Resolve AI provider for a ticket based on routing rules",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ticket_id": {
+                    "type": "string"
+                  },
+                  "labels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "priority": {
+                    "type": "string"
+                  },
+                  "phase": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resolved provider config"
+          }
+        }
+      }
+    },
+    "/projects": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "List projects for current user",
+        "responses": {
+          "200": {
+            "description": "List of projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Project"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Create a new project",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Project created"
+          },
+          "400": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/projects/{id}": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Get project details",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project details with ticket info"
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Update project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Project updated"
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Delete project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project deleted"
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        }
+      }
+    },
+    "/projects/{id}/tickets": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Get all tickets for a project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tickets"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Create ticket in project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "priority": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "urgent"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Ticket created"
+          }
+        }
+      }
+    },
+    "/projects/{id}/tickets/status/{status}": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Get tickets by status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "status",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "backlog",
+                "in_progress",
+                "review",
+                "done"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Filtered tickets"
+          }
+        }
+      }
+    },
+    "/projects/{id}/members": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Get project members",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of project members"
+          }
+        }
+      }
+    },
+    "/projects/{id}/users": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Get users who can be assigned to tickets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of assignable users"
+          }
+        }
+      }
+    },
+    "/projects/tickets/{ticketId}": {
+      "put": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Update ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "priority": {
+                    "type": "string"
+                  },
+                  "assigneeId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ticket updated"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Delete ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ticket deleted"
+          }
+        }
+      }
+    },
+    "/projects/{id}/tickets/{ticketId}/status": {
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "summary": "Update ticket status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "backlog",
+                      "in_progress",
+                      "review",
+                      "done"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Status updated"
+          }
+        }
+      }
+    },
+    "/permissions/{roleName}": {
+      "get": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Get permissions for a role",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "roleName",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "member",
+                "project_admin",
+                "super_admin"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of permission codes for the role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memory/project/{projectId}": {
+      "get": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Get memories for a project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of memories"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Add memory to a project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Memory added"
+          }
+        }
+      }
+    },
+    "/memory/project/{projectId}/search": {
+      "get": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Search memories in a project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results"
+          }
+        }
+      }
+    },
+    "/memory/agent/{agentId}": {
+      "get": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Get memories for an agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of agent memories"
+          }
+        }
+      }
+    },
+    "/memory/{id}": {
+      "get": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Get a specific memory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Memory details"
+          },
+          "404": {
+            "description": "Memory not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Update a memory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Memory updated"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Memory"
+        ],
+        "summary": "Delete a memory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Memory deleted"
+          },
+          "404": {
+            "description": "Memory not found"
+          }
+        }
+      }
+    },
+    "/github/{projectId}/repo": {
+      "get": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Get repository connection status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repository status"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Disconnect repository",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repository disconnected"
+          }
+        }
+      }
+    },
+    "/github/{projectId}/repo/connect": {
+      "post": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Connect repository to project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repoUrl": {
+                    "type": "string"
+                  },
+                  "branch": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Repository connected"
+          }
+        }
+      }
+    },
+    "/github/{projectId}/branches": {
+      "get": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "List branches for project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of branches"
+          }
+        }
+      }
+    },
+    "/github/{ticketId}/branch": {
+      "post": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Create branch for ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Branch created"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Delete branch for ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Branch deleted"
+          }
+        }
+      }
+    },
+    "/github/{projectId}/prs": {
+      "get": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "List pull requests for project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of PRs"
+          }
+        }
+      }
+    },
+    "/github/{ticketId}/pr": {
+      "post": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Create pull request for ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PR created"
+          }
+        }
+      }
+    },
+    "/csp-report": {
+      "post": {
+        "tags": [
+          "System"
+        ],
+        "summary": "CSP violation report endpoint",
+        "security": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "csp-report": {
+                    "type": "object",
+                    "properties": {
+                      "document-uri": {
+                        "type": "string"
+                      },
+                      "referrer": {
+                        "type": "string"
+                      },
+                      "blocked-uri": {
+                        "type": "string"
+                      },
+                      "violated-directive": {
+                        "type": "string"
+                      },
+                      "original-policy": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Report received"
+          }
+        }
+      }
+    },
+    "/credentials/{projectId}/credentials": {
+      "get": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "List credentials for project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of credentials"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "Add credential to project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "credential": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Credential added"
+          }
+        }
+      }
+    },
+    "/credentials/{projectId}/credentials/{credentialId}": {
+      "patch": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "Update credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "credentialId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "credential": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Credential updated"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "Delete (deactivate) credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "credentialId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Credential deleted"
+          }
+        }
+      }
+    },
+    "/credentials/{projectId}/credentials/{credentialId}/rotate": {
+      "post": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "Rotate credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "credentialId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Credential rotated"
+          }
+        }
+      }
+    },
+    "/credentials/{projectId}/credentials/decrypt": {
+      "get": {
+        "tags": [
+          "Credentials"
+        ],
+        "summary": "Get decrypted key for agent use",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Decrypted key"
+          }
+        }
+      }
+    },
+    "/billing/projects/{id}/billing": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Get billing for a project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Billing data for project"
+          }
+        }
+      }
+    },
+    "/billing/users/me/billing": {
+      "get": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Get billing for current user",
+        "responses": {
+          "200": {
+            "description": "Billing data for user"
+          }
+        }
+      }
+    },
+    "/approvals": {
+      "post": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Create approval request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ticketId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Approval request created"
+          },
+          "400": {
+            "description": "Validation error"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Get all approvals (super admin only)",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "perPage",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of all approvals"
+          },
+          "403": {
+            "description": "Forbidden - super admin only"
+          }
+        }
+      }
+    },
+    "/approvals/pending": {
+      "get": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Get pending approvals for current user",
+        "responses": {
+          "200": {
+            "description": "List of pending approvals"
+          }
+        }
+      }
+    },
+    "/approvals/ticket/{ticketId}": {
+      "get": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Get approvals for a ticket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of approvals for ticket"
+          }
+        }
+      }
+    },
+    "/approvals/{approvalId}/approve": {
+      "post": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Approve request",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approvalId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Approval approved"
+          },
+          "400": {
+            "description": "Approval failed"
+          }
+        }
+      }
+    },
+    "/approvals/{approvalId}/reject": {
+      "post": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Reject request",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approvalId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Approval rejected"
+          },
+          "400": {
+            "description": "Rejection failed"
+          }
+        }
+      }
+    },
+    "/agents/create": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Create a new agent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agent created with API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "user_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "api_key": {
+                      "type": "string"
+                    },
+                    "generatedApiKey": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Creation failed"
+          }
+        }
+      }
+    },
+    "/agents": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "List user's agents",
+        "responses": {
+          "200": {
+            "description": "List of agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agents": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Agent"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/revoke/{agentId}": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Revoke agent API key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API key revoked"
+          },
+          "400": {
+            "description": "Revoke failed"
+          }
+        }
+      }
+    },
+    "/agents/{agentId}": {
+      "delete": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Delete agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent deleted"
+          },
+          "400": {
+            "description": "Deletion failed"
+          }
+        }
+      }
+    },
+    "/agents/{agentId}/history": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Get agent activity history",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent activity history"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/agents/{agentId}/key": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Get agent API key info (preview only)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent key info"
+          },
+          "404": {
+            "description": "Agent not found"
+          }
+        }
+      }
+    }
+  },
   "tags": []
 }

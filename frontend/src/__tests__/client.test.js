@@ -241,4 +241,139 @@ describe('client API', () => {
       })
     })
   })
+
+  describe('validator integration', () => {
+    it('calls validator function when validate option is provided', async () => {
+      const mockValidator = vi.fn()
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true, data: { id: 1 } }),
+      })
+
+      await client.get('/api/test', { validate: mockValidator })
+
+      expect(mockValidator).toHaveBeenCalledWith({ success: true, data: { id: 1 } })
+    })
+
+    it('does not call validator when validate option is not provided', async () => {
+      const mockValidator = vi.fn()
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true, data: { id: 1 } }),
+      })
+
+      await client.get('/api/test')
+
+      expect(mockValidator).not.toHaveBeenCalled()
+    })
+
+    it('throws when validator throws on bad response', async () => {
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true, data: { id: 1 } }),
+      })
+
+      const badValidator = () => { throw new Error('Validation failed') }
+
+      await expect(client.get('/api/test', { validate: badValidator })).rejects.toThrow('Validation failed')
+    })
+
+    it('validator is called with extracted data for post', async () => {
+      const mockValidator = vi.fn()
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true, data: { id: 2, created: true } }),
+      })
+
+      await client.post('/api/test', { name: 'test' }, { validate: mockValidator })
+
+      expect(mockValidator).toHaveBeenCalledWith({ success: true, data: { id: 2, created: true } })
+    })
+
+    it('validator is called with extracted data for put', async () => {
+      const mockValidator = vi.fn()
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true, data: { id: 1, updated: true } }),
+      })
+
+      await client.put('/api/test/1', { name: 'updated' }, { validate: mockValidator })
+
+      expect(mockValidator).toHaveBeenCalledWith({ success: true, data: { id: 1, updated: true } })
+    })
+
+    it('validator is called with extracted data for patch', async () => {
+      const mockValidator = vi.fn()
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true, data: { id: 1 } }),
+      })
+
+      await client.patch('/api/test/1', { name: 'patched' }, { validate: mockValidator })
+
+      expect(mockValidator).toHaveBeenCalledWith({ success: true, data: { id: 1 } })
+    })
+
+    it('validator is called with extracted data for del', async () => {
+      const mockValidator = vi.fn()
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true, data: { deleted: true } }),
+      })
+
+      await client.del('/api/test/1', { validate: mockValidator })
+
+      expect(mockValidator).toHaveBeenCalledWith({ success: true, data: { deleted: true } })
+    })
+
+    it('validator is called with extracted data for postWithHeaders', async () => {
+      const mockValidator = vi.fn()
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true, data: { id: 1 } }),
+      })
+
+      await client.postWithHeaders('/api/test', { name: 'test' }, { 'X-API-Key': 'key' }, { validate: mockValidator })
+
+      expect(mockValidator).toHaveBeenCalledWith({ success: true, data: { id: 1 } })
+    })
+
+    it('validator is called with extracted data for postMultipart', async () => {
+      const mockValidator = vi.fn()
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true, data: { id: 1, filename: 'test.txt' } }),
+      })
+
+      const formData = new FormData()
+      await client.postMultipart('/api/test/upload', formData, { validate: mockValidator })
+
+      expect(mockValidator).toHaveBeenCalledWith({ success: true, data: { id: 1, filename: 'test.txt' } })
+    })
+
+    it('validator can check response shape before data extraction', async () => {
+      const strictValidator = (data) => {
+        if (!data.success) throw new Error('success must be true')
+        if (!data.data) throw new Error('data must be present')
+      }
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true, data: { id: 1 } }),
+      })
+
+      await expect(client.get('/api/test', { validate: strictValidator })).resolves.toEqual({ id: 1 })
+    })
+
+    it('validator rejects missing data field', async () => {
+      const strictValidator = (data) => {
+        if (!data.data) throw new Error('data must be present')
+      }
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      })
+
+      await expect(client.get('/api/test', { validate: strictValidator })).rejects.toThrow('data must be present')
+    })
+  })
 })

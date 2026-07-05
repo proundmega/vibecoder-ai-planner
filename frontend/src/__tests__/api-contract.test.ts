@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateUser, validateProject, validateTicket, validateAgent, validateApiResponse } from '../api/validator';
+import { validateUser, validateProject, validateTicket, validateAgent, validateApiResponse, validateApiResponseStrict, validateSchema, validateAndExtract } from '../api/validator';
 
 describe('API Response Contract Tests', () => {
   describe('validateApiResponse', () => {
@@ -143,6 +143,85 @@ describe('API Response Contract Tests', () => {
       const errors = validateAgent(invalidAgent);
       expect(errors).toContain('root.id: required field missing');
       expect(errors).toContain('root.user_id: required field missing');
+    });
+  });
+
+  describe('validateApiResponseStrict', () => {
+    it('should not throw for valid API response', () => {
+      const validResponse = {
+        success: true,
+        data: { id: '123', name: 'Test' },
+      };
+      expect(() => validateApiResponseStrict(validResponse)).not.toThrow();
+    });
+
+    it('should throw for response without success field', () => {
+      const invalidResponse = {
+        data: { id: '123', name: 'Test' },
+      };
+      expect(() => validateApiResponseStrict(invalidResponse)).toThrow('root.success: required field missing');
+    });
+
+    it('should throw for response without data field', () => {
+      const invalidResponse = {
+        success: true,
+      };
+      expect(() => validateApiResponseStrict(invalidResponse)).toThrow('root.data: required field missing');
+    });
+
+    it('should throw for non-object response', () => {
+      expect(() => validateApiResponseStrict('string')).toThrow('root: response must be an object');
+      expect(() => validateApiResponseStrict(null)).toThrow('root: response must be an object');
+      expect(() => validateApiResponseStrict(123)).toThrow('root: response must be an object');
+    });
+  });
+
+  describe('validateSchema', () => {
+    it('should create a validator for User schema', () => {
+      const validate = validateSchema('User');
+      const validUser = {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        name: 'John Doe',
+        email: 'john@example.com',
+        role: 'user',
+        isActive: true,
+      };
+      expect(() => validate(validUser)).not.toThrow();
+    });
+
+    it('should throw for invalid User', () => {
+      const validate = validateSchema('User');
+      const invalidUser = { name: 'John' };
+      expect(() => validate(invalidUser)).toThrow();
+    });
+
+    it('should create a validator for Ticket schema', () => {
+      const validate = validateSchema('Ticket');
+      const validTicket = {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        title: 'Test',
+        status: 'backlog',
+        owner_id: '123e4567-e89b-12d3-a456-426614174001',
+        project_id: '123e4567-e89b-12d3-a456-426614174002',
+      };
+      expect(() => validate(validTicket)).not.toThrow();
+    });
+
+    it('should throw for unknown schema', () => {
+      expect(() => validateSchema('UnknownSchema')).toThrow('Unknown schema: UnknownSchema');
+    });
+  });
+
+  describe('validateAndExtract', () => {
+    it('should extract data when validation passes', () => {
+      const data = { id: '123e4567-e89b-12d3-a456-426614174000', name: 'Test', email: 'test@test.com', role: 'user', isActive: true };
+      const result = validateAndExtract(data, validateUser, 'User');
+      expect(result).toEqual(data);
+    });
+
+    it('should throw when validation fails', () => {
+      const invalidData = { name: 'No ID' };
+      expect(() => validateAndExtract(invalidData, validateUser, 'User')).toThrow();
     });
   });
 });

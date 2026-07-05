@@ -10,7 +10,8 @@
     "lint": "eslint src/",
     "db:migrate": "node src/migrations/apply.js",
     "db:reset": "node src/migrations/apply.js",
-    "test:integration": "jest --config jest.integration.config.js --passWithNoTests"
+    "test:integration": "jest --config jest.integration.config.js --passWithNoTests",
+    "generate:spec": "node -e \"const specs = require('./src/api/openapi-spec'); require('fs').writeFileSync('./src/api/openapi-generated.json', JSON.stringify(specs, null, 2));\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.1",

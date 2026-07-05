@@ -2,6 +2,7 @@
 # Full integration test suite — runs against real Docker containers + real PostgreSQL.
 # Usage: ./run.sh          (brings up docker compose first)
 #        ./run.sh --only   (skips docker compose up, assumes services already running)
+#        ./run.sh --list   (prints suite names without running)
 #
 # Test suites are split into individual files under suites/ for easy editing:
 #   health.test.sh          — Health & version checks
@@ -24,7 +25,26 @@
 #   usage_tracking.test.sh    — Usage logging & model pricing
 #   billing.test.sh           — Billing aggregation
 #   agent_memory.test.sh      — Shared agent memory (pgvector)
+#   agent_lifecycle.test.sh   — Agent pickup → message → release
+#   agent_auth.test.sh        — X-API-Key header tests
+#   rate_limiter.test.sh      — Rate limit enforcement
+#   file_upload.test.sh       — Attachment upload
+#   permission_matrix.test.sh — Role × endpoint matrix
 set -euo pipefail
+
+# ── List flag (before dependency check so it works regardless) ────────────────
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SUITES_DIR="$ROOT/integration-test/suites"
+if [[ "${1:-}" == "--list" ]]; then
+  echo "Available test suites:"
+  for suite_file in "$SUITES_DIR"/*.test.sh; do
+    basename "$suite_file" .test.sh
+  done
+  exit 0
+fi
+
+# ── Check dependencies ────────────────────────────────────────────────────────
+command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required. Install with: apt-get install jq"; exit 1; }
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BASE="http://localhost:3001"
@@ -92,26 +112,16 @@ main() {
   echo "  $(date '+%Y-%m-%d %H:%M:%S')"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-  test_health
-  test_auth
-  test_projects
-  test_tickets
-  test_status_transitions
-  test_agents
-  test_user_role_ticket_access
-  test_route_ordering
-  test_ticket_crud_via_frontend_endpoint
-  test_frontend_api_proxy
-  test_role_based_user_management
-  test_role_based_ticket_permissions
-  test_approvals_api
-  test_jwt_token_expiry
-  test_credentials
-  test_ticket_ownership
-  test_usage_tracking
-  test_billing
-  test_shared_agent_memory
-  test_frontend
+  # Auto-discover test functions from suite files
+  for suite_file in "$SUITES_DIR"/*.test.sh; do
+    base=$(basename "$suite_file" .test.sh)
+    func_name="test_${base}"
+    if declare -f "$func_name" > /dev/null; then
+      echo ""
+      echo "--- Running: $base ---"
+      $func_name
+    fi
+  done
 
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
