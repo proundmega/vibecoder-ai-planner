@@ -81,13 +81,14 @@ export function patch(url, body, options = {}) {
 }
 
 export function postWithHeaders(url, body, extraHeaders = {}, options = {}) {
+  const { validate, ...rest } = options
   const opts = {
     method: 'POST',
     body: JSON.stringify(body),
-    headers: extraHeaders,
-    ...options,
+    ...rest,
+    headers: { ...extraHeaders, ...(rest.headers || {}) },
   }
-  return apiFetch(url, opts).then(res => extractData(res, options.validate))
+  return apiFetch(url, opts).then(res => extractData(res, validate))
 }
 
 export function postMultipart(url, formData, options = {}) {

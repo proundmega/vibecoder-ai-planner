@@ -69,23 +69,33 @@ assert_status() {
 }
 
 assert_field() {
-  local label="$1" field="$2" expected="$3" json="$4"
-  if ! echo "$json" | jq -e "has(\"$field\")" >/dev/null 2>&1; then
-    fail "$label" "Field '$field' not found in JSON"
-    return
-  fi
-  local actual
-  actual=$(echo "$json" | jq -r ".$field // \"__NULL__\"")
-  if [ "$actual" = "__NULL__" ]; then
-    if [ "$expected" = "__NULL__" ]; then
-      pass "$label ($field=null)"
-    else
-      fail "$label" "Expected $field=$expected, got null"
+  local label="$1" field="$2" expected="$3" data="$4"
+  # If data is a JSON object or array, extract field via jq
+  if [[ "$data" == \{* ]] || [[ "$data" == \[* ]]; then
+    if ! echo "$data" | jq -e "has(\"$field\")" >/dev/null 2>&1; then
+      fail "$label" "Field '$field' not found in JSON"
+      return
     fi
-  elif [ "$actual" != "$expected" ]; then
-    fail "$label" "Expected $field=$expected, got $field=$actual"
+    local actual
+    actual=$(echo "$data" | jq -r ".$field // \"__NULL__\"")
+    if [ "$actual" = "__NULL__" ]; then
+      if [ "$expected" = "__NULL__" ]; then
+        pass "$label ($field=null)"
+      else
+        fail "$label" "Expected $field=$expected, got null"
+      fi
+    elif [ "$actual" != "$expected" ]; then
+      fail "$label" "Expected $field=$expected, got $field=$actual"
+    else
+      pass "$label ($field=$expected)"
+    fi
   else
-    pass "$label ($field=$expected)"
+    # Scalar value — legacy comparison (pre-extracted value passed as $4)
+    if [ "$data" = "$expected" ]; then
+      pass "$label ($field=$expected)"
+    else
+      fail "$label" "expected $field=$expected, got $field=$data"
+    fi
   fi
 }
 

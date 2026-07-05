@@ -30,23 +30,33 @@ test_agent_lifecycle() {
     -H "Content-Type: application/json" \
     -d '{"title":"Lifecycle Ticket","description":"Test ticket","status":"backlog"}')
   ticket_id=$(echo "$ticket_body" | jq -r '.id // empty')
-  assert_field "Ticket has id" "id" "__NULL__" "$ticket_id" || true
-  assert_field "Ticket status is backlog" "status" "backlog" "$(echo "$ticket_body" | jq -r '.status // empty')"
+  assert_field "Ticket has id" "id" "__NULL__" "$ticket_body"
+  assert_field "Ticket status is backlog" "status" "backlog" "$ticket_body"
 
-  # Create agent user
+  # Register a separate user to act as the agent
+  local agent_user_token agent_user_id
+  agent_user_token=$(register "Agent Actor" "agent-actor@lifecycle.test" "password123" "user")
+  # Get agent user's DB id from /auth/me
+  local me_body
+  me_body=$(curl -sf "$BASE/api/auth/me" \
+    -H "Authorization: Bearer $agent_user_token")
+  agent_user_id=$(echo "$me_body" | jq -r '.user.id // empty')
+
+  # Create agent record linked to that user
   local agent_body agent_id
   agent_body=$(curl -sf "$BASE/api/v1/agents" \
     -H "Authorization: Bearer $user_token" \
     -H "Content-Type: application/json" \
-    -d "{\"user_id\":\"$ticket_id\"}" 2>/dev/null || true)
+    -d "{\"name\":\"Lifecycle Agent\",\"user_id\":\"$agent_user_id\"}")
+  agent_id=$(echo "$agent_body" | jq -r '.id // empty')
 
-  # Agent logs in to get their token
-  agent_token=$(login "agent@lifecycle.test" "password123" 2>/dev/null || echo "")
+  # Agent logs in as their user
+  agent_token=$(login "agent-actor@lifecycle.test" "password123")
 
   # Agent picks up ticket
   local pickup_body pickup_code
-  pickup_body=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/agents/test-agent-id/pickup" \
-    -H "Authorization: Bearer $user_token" \
+  pickup_body=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/agents/$agent_id/pickup" \
+    -H "Authorization: Bearer $agent_token" \
     -H "Content-Type: application/json" \
     -d "{\"ticket_id\":\"$ticket_id\"}")
   pickup_code=$(echo "$pickup_body" | tail -1)
@@ -56,27 +66,27 @@ test_agent_lifecycle() {
   local ticket_after
   ticket_after=$(curl -sf "$BASE/api/v1/tickets/$ticket_id" \
     -H "Authorization: Bearer $user_token")
-  assert_field "Ticket status is in_progress after pickup" "status" "in_progress" "$(echo "$ticket_after" | jq -r '.status // empty')"
+  assert_field "Ticket status is in_progress after pickup" "status" "in_progress" "$ticket_after"
 
   # Agent posts a message
   local msg_body msg_code
   msg_body=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/tickets/$ticket_id/messages" \
-    -H "Authorization: Bearer $user_token" \
+    -H "Authorization: Bearer $agent_token" \
     -H "Content-Type: application/json" \
     -d '{"content":"Agent working on this ticket","sender":"agent"}')
   msg_code=$(echo "$msg_body" | tail -1)
   assert_status "Agent posts message" "201" "$msg_code"
 
   # Verify message exists
-  local msg_count
-  msg_count=$(curl -sf "$BASE/api/v1/tickets/$ticket_id/messages" \
-    -H "Authorization: Bearer $user_token" | jq 'length')
-  assert_field "Ticket has at least 1 message" "message count" "1" "$msg_count"
+  local msg_list
+  msg_list=$(curl -sf "$BASE/api/v1/tickets/$ticket_id/messages" \
+    -H "Authorization: Bearer $user_token")
+  assert_field "Ticket has at least 1 message" "0" "1" "$msg_list"
 
   # Agent releases ticket
   local release_body release_code
-  release_body=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/agents/test-agent-id/release" \
-    -H "Authorization: Bearer $user_token" \
+  release_body=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/agents/$agent_id/release" \
+    -H "Authorization: Bearer $agent_token" \
     -H "Content-Type: application/json" \
     -d "{\"ticket_id\":\"$ticket_id\"}")
   release_code=$(echo "$release_body" | tail -1)
@@ -86,5 +96,5 @@ test_agent_lifecycle() {
   local ticket_final
   ticket_final=$(curl -sf "$BASE/api/v1/tickets/$ticket_id" \
     -H "Authorization: Bearer $user_token")
-  assert_field "Ticket status is backlog after release" "status" "backlog" "$(echo "$ticket_final" | jq -r '.status // empty')"
+  assert_field "Ticket status is backlog after release" "status" "backlog" "$ticket_final"
 }

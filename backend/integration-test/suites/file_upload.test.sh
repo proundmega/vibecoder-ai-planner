@@ -54,9 +54,6 @@ test_file_upload() {
   # Verify stored_path is NOT in response (security: don't expose internal paths)
   assert_no_field "Upload response does NOT expose stored_path" "stored_path" "$upload_json"
 
-  # Clean up temp file
-  rm -f "$tmpfile"
-
   # Test: Upload to non-existent ticket returns 404
   local notfound_code
   notfound_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/tickets/nonexistent-id/attachments" \
@@ -69,4 +66,7 @@ test_file_upload() {
   auth_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/tickets/$ticket_id/attachments" \
     -F "file=@$tmpfile;type=text/plain" 2>/dev/null)
   assert_status "Unauthenticated upload returns 401" "401" "$auth_code"
+
+  # Clean up temp file
+  rm -f "$tmpfile"
 }

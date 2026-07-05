@@ -30,15 +30,13 @@ test_agent_auth() {
     -d '{"name":"Test Agent"}')
   api_key=$(echo "$agent_body" | jq -r '.api_key // empty')
 
-  # Test 1: Valid X-API-Key should succeed
+  # Test 1: Valid X-API-Key should not return 401
   local code_valid
   code_valid=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/agents/test-agent-id/pickup" \
     -H "X-API-Key: $api_key" \
     -H "Content-Type: application/json" \
     -d '{"ticket_id":"dummy"}')
-  # Note: This may return 403/404 if the agent doesn't exist, but should NOT return 401
-  assert_status "Valid X-API-Key does not return 401" "401" "$code_valid" || true
-  # The key should be accepted (not 401)
+  # Agent endpoint may return 403/404 if agent doesn't exist, but auth should pass (not 401)
   if [ "$code_valid" != "401" ]; then
     pass "Valid X-API-Key accepted (HTTP $code_valid)"
   else
