@@ -6,6 +6,10 @@ const requiredEnvVars = [
   { key: 'ENCRYPTION_KEY', description: 'AES-256 encryption key (64 hex chars)' },
 ];
 
+const productionRequiredEnvVars = [
+  { key: 'REDIS_URL', description: 'Redis connection string' },
+];
+
 const optionalEnvVars = {
   NODE_ENV: { validValues: ['development', 'test', 'production'], default: 'development' },
   PORT: { type: 'int', default: 3001 },
@@ -81,6 +85,15 @@ function validateEnv() {
     }
   }
 
+  // REDIS_URL required in production
+  if (process.env.NODE_ENV === 'production') {
+    for (const { key, description } of productionRequiredEnvVars) {
+      if (!process.env[key]) {
+        missing.push(key);
+      }
+    }
+  }
+
   return { missing, invalid, valid: missing.length === 0 && invalid.length === 0 };
 }
 
@@ -90,7 +103,9 @@ function formatEnvErrors(errors) {
     lines.push('Missing required environment variables:');
     for (const key of errors.missing) {
       const varDef = requiredEnvVars.find(v => v.key === key);
-      lines.push(`  - ${key} (${varDef?.description || ''})`);
+      const prodVarDef = productionRequiredEnvVars.find(v => v.key === key);
+      const description = varDef?.description || prodVarDef?.description || '';
+      lines.push(`  - ${key} (${description})`);
     }
   }
   if (errors.invalid.length > 0) {
@@ -113,4 +128,4 @@ if (process.env.NODE_ENV !== 'test') {
   }
 }
 
-module.exports = { validateEnv, formatEnvErrors, requiredEnvVars, optionalEnvVars };
+module.exports = { validateEnv, formatEnvErrors, requiredEnvVars, productionRequiredEnvVars, optionalEnvVars };

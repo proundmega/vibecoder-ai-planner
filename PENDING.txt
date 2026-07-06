@@ -2,6 +2,32 @@
 
 Tickets that have planning docs in `planning/` but have NOT been implemented yet (no git history).
 
+## Suggested Implementation Order
+
+### Phase 1: Backend Foundations
+1. **bp-53** (P1) — Distributed State Management
+2. **bt-53** — Redis integration tests (depends on bp-53)
+
+### Phase 2: UI Foundations
+3. **bp-56** (P2) — Shared CSS and Component Design System
+4. **bt-56** — Design system tests (depends on bp-56)
+
+### Phase 3: Code Quality
+5. **bp-57** (P3) — Frontend JS → TypeScript migration
+6. **bt-57** — TypeScript migration tests (depends on bp-57)
+
+### Phase 4: Feature Gaps (independent, can parallelize)
+7. **fg-01** — Provider field mismatch
+8. **fg-02** — Usage field mismatch
+9. **fg-03** — Billing field mismatch
+10. **fg-04** — Template name mismatch
+11. **fg-05** — Memory search UI
+12. **fg-06** — Agents API paths
+13. **fg-07** — Orphaned migration
+
+### Phase 5: Cross-Cutting Concerns
+14. **pa-01** — Permission system
+
 ## Backend (bp-*)
 
 | ID | Directory | Priority | Description |

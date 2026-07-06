@@ -1,18 +1,72 @@
 const { pool } = require('../db');
 const logger = require('../utils/logger');
+const {
+  get,
+  set,
+  del,
+  scan,
+  isRedisAvailable,
+} = require('../utils/redis');
 
-// In-memory cache: role_name -> Set of permission codes
+// In-memory fallback cache
 const permissionCache = new Map();
+
+const PERMISSION_CACHE_TTL = parseInt(process.env.PERMISSION_CACHE_TTL) || 60;
+
+// Track whether init has been attempted
+let initPromise = null;
+let cacheInitialized = false;
+
+async function ensureInit() {
+  if (cacheInitialized) return;
+  if (initPromise) return initPromise;
+
+  initPromise = (async () => {
+    try {
+      const result = await pool.query(
+        `SELECT r.name FROM roles r ORDER BY r.name`
+      );
+      for (const row of result.rows) {
+        await resolvePermissions(row.name);
+      }
+      cacheInitialized = true;
+    } catch (err) {
+      logger.warn(`PermissionService init failed: ${err.message}. Will retry on next permission check.`);
+      cacheInitialized = false;
+      throw err;
+    } finally {
+      initPromise = null;
+    }
+  })();
+
+  return initPromise;
+}
 
 /**
  * Resolve all permission codes for a given role name.
- * Cached after first call per role.
+ * Uses Redis cache with TTL, falls back to in-memory Map.
  */
 async function resolvePermissions(roleName) {
-  if (permissionCache.has(roleName)) {
-    return permissionCache.get(roleName);
+  // Check cache first (Redis or in-memory)
+  const cached = await getCachedPermissions(roleName);
+  if (cached !== null) {
+    return cached;
   }
 
+  // Ensure init has run to populate cache
+  try {
+    await ensureInit();
+  } catch (err) {
+    // If init fails, continue without cache - will retry next time
+  }
+
+  // Check cache again after init
+  const reCached = await getCachedPermissions(roleName);
+  if (reCached !== null) {
+    return reCached;
+  }
+
+  // Cache miss - query DB directly (bypass init to avoid duplicate roles query)
   const result = await pool.query(
     `SELECT p.code FROM permissions p
      JOIN role_permissions rp ON rp.permission_id = p.id
@@ -22,8 +76,48 @@ async function resolvePermissions(roleName) {
   );
 
   const permissions = new Set(result.rows.map(row => row.code));
-  permissionCache.set(roleName, permissions);
+  await setCachedPermissions(roleName, permissions);
   return permissions;
+}
+
+async function getCachedPermissions(roleName) {
+  // Try Redis first
+  if (isRedisAvailable()) {
+    try {
+      const data = await get(`permcache:${roleName}`);
+      if (data) {
+        const perms = JSON.parse(data);
+        const set = new Set(perms);
+        permissionCache.set(roleName, set);
+        return set;
+      }
+    } catch (err) {
+      // Fall through to in-memory
+    }
+  }
+
+  // In-memory fallback
+  if (permissionCache.has(roleName)) {
+    return permissionCache.get(roleName);
+  }
+
+  return null;
+}
+
+async function setCachedPermissions(roleName, permissions) {
+  const data = JSON.stringify([...permissions]);
+  
+  // Try Redis first
+  if (isRedisAvailable()) {
+    try {
+      await set(`permcache:${roleName}`, data, PERMISSION_CACHE_TTL);
+    } catch (err) {
+      logger.warn(`Redis cache set failed for ${roleName}: ${err.message}`);
+    }
+  }
+
+  // In-memory fallback
+  permissionCache.set(roleName, permissions);
 }
 
 /**
@@ -51,10 +145,49 @@ async function hasAllPermissions(roleName, permissionCodes) {
 }
 
 /**
+ * Invalidate cache for a specific role.
+ */
+async function invalidateRoleCache(roleName) {
+  // Try Redis first
+  if (isRedisAvailable()) {
+    try {
+      await del(`permcache:${roleName}`);
+    } catch (err) {
+      logger.warn(`Redis cache invalidation failed for ${roleName}: ${err.message}`);
+    }
+  }
+
+  // In-memory fallback
+  permissionCache.delete(roleName);
+}
+
+/**
+ * Invalidate all cached permissions.
+ */
+async function invalidateAll() {
+  // Try Redis first
+  if (isRedisAvailable()) {
+    try {
+      const roles = await scan('permcache:*', 100);
+      for (const role of roles) {
+        await del(role);
+      }
+    } catch (err) {
+      logger.warn(`Redis cache invalidation failed: ${err.message}`);
+    }
+  }
+
+  // In-memory fallback
+  permissionCache.clear();
+  cacheInitialized = false;
+  initPromise = null;
+}
+
+/**
  * Clear the permission cache (call after migrations).
  */
 function clearCache() {
-  permissionCache.clear();
+  invalidateAll();
 }
 
 // Load initial cache on startup
@@ -67,8 +200,19 @@ async function init(retries = MAX_RETRIES) {
       `SELECT r.name FROM roles r ORDER BY r.name`
     );
     for (const row of result.rows) {
-      await resolvePermissions(row.name);
+      // Populate cache directly to avoid duplicate roles query from ensureInit
+      const permsResult = await pool.query(
+        `SELECT p.code FROM permissions p
+         JOIN role_permissions rp ON rp.permission_id = p.id
+         JOIN roles r ON r.id = rp.role_id
+         WHERE r.name = $1`,
+        [row.name]
+      );
+      const permissions = new Set(permsResult.rows.map(r => r.code));
+      permissionCache.set(row.name, permissions);
+      await setCachedPermissions(row.name, permissions);
     }
+    cacheInitialized = true;
   } catch (err) {
     if (retries > 0) {
       logger.warn(`PermissionService.init() failed, retrying (${MAX_RETRIES - retries + 1}/${MAX_RETRIES})...`);
@@ -91,4 +235,6 @@ module.exports = {
   hasAnyPermission,
   hasAllPermissions,
   clearCache,
+  invalidateRoleCache,
+  invalidateAll,
 };

@@ -7,6 +7,9 @@ describe('PermissionService.init() retry', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Reset mock implementations to prevent test pollution
+    const { pool } = require('../db');
+    pool.query.mockReset().mockResolvedValue({ rows: [] });
     delete require.cache[require.resolve('../services/PermissionService')];
     pm = require('../services/PermissionService');
   });
@@ -18,7 +21,7 @@ describe('PermissionService.init() retry', () => {
 
     await pm.init(2);
 
-    // 1st roles query fails + 2nd roles query succeeds + resolvePermissions for 'user' + resolvePermissions for 'admin' = 4
+    // 1st roles query fails + 2nd roles query succeeds + permissions for 'user' + permissions for 'admin' = 4
     expect(pool.query).toHaveBeenCalledTimes(4);
   });
 
@@ -34,6 +37,7 @@ describe('PermissionService.init() retry', () => {
 
     await pm.init(3);
 
-    expect(pool.query).toHaveBeenCalledTimes(1);
+    // roles query (1) + permissions query for 'user' (1) = 2
+    expect(pool.query).toHaveBeenCalledTimes(2);
   });
 });

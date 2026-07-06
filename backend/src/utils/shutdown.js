@@ -1,4 +1,5 @@
 const logger = require('./logger');
+const { closeRedis } = require('./redis');
 
 const SHUTDOWN_TIMEOUT_MS = parseInt(process.env.SHUTDOWN_TIMEOUT_MS) || 30000;
 
@@ -24,6 +25,10 @@ async function gracefulShutdown(server, pool, cleanupHooks = []) {
           logger.error('Error during cleanup hook:', err.message);
         }
       }
+
+      logger.info('Closing Redis connection...');
+      await closeRedis();
+      logger.info('Redis connection closed.');
 
       if (server) {
         logger.info('Stopping HTTP server...');

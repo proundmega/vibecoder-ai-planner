@@ -3,13 +3,60 @@ const authService = require('../auth');
 const { pool } = require('../db');
 const AgentService = require('../services/AgentService');
 const { getSecret } = require('../utils/jwt');
+const {
+  getRedis,
+  isRedisAvailable,
+  zadd,
+  zremrangebyscore,
+  zcard,
+  expire,
+  set,
+  get,
+  del,
+  evalScript,
+} = require('../utils/redis');
 
 const AUTH_LOCKOUT_ATTEMPTS = parseInt(process.env.AUTH_LOCKOUT_ATTEMPTS) || 10;
 const AUTH_LOCKOUT_WINDOW_MS = parseInt(process.env.AUTH_LOCKOUT_WINDOW_MS) || 15 * 60 * 1000;
 
+// In-memory fallback stores
 const failedAttempts = new Map();
+const rateLimits = new Map();
 
-function checkAccountLockout(ip) {
+// Lua script for atomic sliding window rate limiting
+const RATE_LIMIT_LUA_SCRIPT = `
+  redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, ARGV[1])
+  local count = redis.call('ZCARD', KEYS[1])
+  if count >= tonumber(ARGV[2]) then
+    return {1, count, 0}
+  end
+  redis.call('ZADD', KEYS[1], ARGV[3], ARGV[3] .. ':' .. math.random())
+  redis.call('EXPIRE', KEYS[1], math.ceil(ARGV[4] / 1000) + 1)
+  return {0, count + 1, ARGV[4]}
+`;
+
+async function checkAccountLockout(ip) {
+  // Try Redis first
+  if (isRedisAvailable()) {
+    try {
+      const data = await getRedis().get(`lockout:${ip}`);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (parsed.count >= AUTH_LOCKOUT_ATTEMPTS) {
+          if (Date.now() < parsed.lockedUntil) {
+            return true;
+          }
+          await del(`lockout:${ip}`);
+          return false;
+        }
+      }
+      return false;
+    } catch (err) {
+      // Fall through to in-memory
+    }
+  }
+
+  // In-memory fallback
   const attempt = failedAttempts.get(ip);
   if (!attempt) return false;
   if (attempt.count >= AUTH_LOCKOUT_ATTEMPTS) {
@@ -22,14 +69,57 @@ function checkAccountLockout(ip) {
   return false;
 }
 
-function getLockoutRemainingMs(ip) {
+async function getLockoutRemainingMs(ip) {
+  // Try Redis first
+  if (isRedisAvailable()) {
+    try {
+      const data = await getRedis().get(`lockout:${ip}`);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (parsed.lockedUntil) {
+          const remaining = parsed.lockedUntil - Date.now();
+          return remaining > 0 ? remaining : 0;
+        }
+      }
+      return 0;
+    } catch (err) {
+      // Fall through to in-memory
+    }
+  }
+
+  // In-memory fallback
   const attempt = failedAttempts.get(ip);
   if (!attempt || !attempt.lockedUntil) return 0;
   const remaining = attempt.lockedUntil - Date.now();
   return remaining > 0 ? remaining : 0;
 }
 
-function recordFailedAttempt(ip) {
+async function recordFailedAttempt(ip) {
+  // Try Redis first
+  if (isRedisAvailable()) {
+    try {
+      const existing = await get(`lockout:${ip}`);
+      let count = 1;
+      let lockedUntil = 0;
+
+      if (existing) {
+        const parsed = JSON.parse(existing);
+        count = parsed.count + 1;
+        lockedUntil = parsed.lockedUntil || 0;
+      }
+
+      if (count >= AUTH_LOCKOUT_ATTEMPTS && lockedUntil === 0) {
+        lockedUntil = Date.now() + AUTH_LOCKOUT_WINDOW_MS;
+      }
+
+      await set(`lockout:${ip}`, JSON.stringify({ count, lockedUntil }), Math.ceil(AUTH_LOCKOUT_WINDOW_MS / 1000));
+      return;
+    } catch (err) {
+      // Fall through to in-memory
+    }
+  }
+
+  // In-memory fallback
   let attempt = failedAttempts.get(ip);
   if (!attempt) {
     attempt = { count: 0, lockedUntil: 0 };
@@ -42,6 +132,16 @@ function recordFailedAttempt(ip) {
 }
 
 function clearFailedAttempts(ip) {
+  // Try Redis first
+  if (isRedisAvailable()) {
+    try {
+      del(`lockout:${ip}`);
+    } catch (err) {
+      // Fall through to in-memory
+    }
+  }
+
+  // In-memory fallback
   failedAttempts.delete(ip);
 }
 
@@ -181,15 +281,55 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
   }
 };
 
-// Rate limiting middleware
+// Rate limiting middleware with Redis-backed sliding window
 exports.rateLimiter = (maxRequests = 10, timeWindow = 60 * 1000) => {
-  const rateLimits = new Map();
-  
-  return (req, res, next) => {
+  return async (req, res, next) => {
     // Skip rate limiting during integration tests
     if (process.env.INTEGRATION_TESTS === '1') return next();
     
     const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
+    const key = `ratelimit:${clientIp}`;
+    
+    // Try Redis sliding window first
+    if (isRedisAvailable()) {
+      try {
+        const now = Date.now();
+        const windowStart = 0; // We clean old entries every request
+        
+        const result = await evalScript(
+          RATE_LIMIT_LUA_SCRIPT,
+          [key],
+          [String(windowStart), String(maxRequests), String(now), String(timeWindow)]
+        );
+        
+        if (result) {
+          const [limited, count, ttl] = result;
+          const resetTimestamp = Math.ceil((now + timeWindow) / 1000);
+          const retryAfter = Math.ceil((now + timeWindow - now) / 1000);
+          
+          res.set({
+            'X-RateLimit-Limit': String(maxRequests),
+            'X-RateLimit-Remaining': String(Math.max(0, maxRequests - count)),
+            'X-RateLimit-Reset': String(resetTimestamp),
+          });
+          
+          if (limited === 1) {
+            res.set('Retry-After', String(retryAfter > 0 ? retryAfter : 1));
+            return res.status(429).json({ 
+              error: 'Too many requests, please try again later.', 
+              retryAfter: retryAfter > 0 ? retryAfter : 1 
+            });
+          }
+          
+          req.rateLimits = { [clientIp]: { count, resetAt: now + timeWindow } };
+          return next();
+        }
+      } catch (err) {
+        // Fall through to in-memory
+      }
+    }
+    
+    // In-memory fallback
     let requests = rateLimits.get(clientIp);
     
     if (!requests) {
@@ -214,7 +354,7 @@ exports.rateLimiter = (maxRequests = 10, timeWindow = 60 * 1000) => {
     if (requests.count > maxRequests) {
       res.set('Retry-After', String(retryAfter > 0 ? retryAfter : 1));
       return res.status(429).json({ 
-        error: `Too many requests, please try again later.`, 
+        error: 'Too many requests, please try again later.', 
         retryAfter: retryAfter > 0 ? retryAfter : 1 
       });
     }

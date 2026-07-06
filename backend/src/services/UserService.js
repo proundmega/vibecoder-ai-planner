@@ -4,6 +4,7 @@ const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
 const { ValidationError, NotFoundError } = require('../errors/HttpError');
 const { getSecret } = require('../utils/jwt');
+const logger = require('../utils/logger');
 
 class UserService {
   async register(name, email, password, role = 'project_admin', userCreatedBy = null) {
@@ -177,7 +178,7 @@ class UserService {
       throw new ValidationError('Cannot update your own account');
     }
     
-    const { name, is_active } = updates;
+    const { name, is_active, role } = updates;
     const sets = [];
     const params = [];
     let paramIndex = 1;
@@ -192,6 +193,12 @@ class UserService {
       params.push(is_active);
     }
     
+    const oldRole = targetUser.role;
+    if (role !== undefined && role !== oldRole) {
+      sets.push(`role = $${paramIndex++}`);
+      params.push(role);
+    }
+    
     if (sets.length === 0) return null;
     
     sets.push(`updated_at = NOW()`);
@@ -202,7 +209,19 @@ class UserService {
       params
     );
     
-    return result.rows.length > 0 ? new User(result.rows[0]) : null;
+    const updatedUser = result.rows.length > 0 ? new User(result.rows[0]) : null;
+    
+    // Invalidate permission caches when role changes
+    if (updatedUser && role && role !== oldRole) {
+      try {
+        await PermissionService.invalidateRoleCache(oldRole);
+        await PermissionService.invalidateRoleCache(role);
+      } catch (err) {
+        logger.warn(`Failed to invalidate permission cache for role change: ${err.message}`);
+      }
+    }
+    
+    return updatedUser;
   }
 
   async toggleUserActive(userId, adminId) {
