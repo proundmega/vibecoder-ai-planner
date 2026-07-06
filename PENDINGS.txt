@@ -6,18 +6,18 @@
 2. **bt-53** - Redis integration tests ✅ COMPLETED (included in bp-53)
 3. **bp-56** (P2) - Shared CSS and Component Design System ✅ COMPLETED (PR #39)
 4. **bt-56** - Design system tests ✅ COMPLETED (35 tests passing)
-5. **bp-57** (P3) - Frontend JS → TypeScript migration
+5. **bp-57** (P3) - Frontend JS → TypeScript migration ✅ COMPLETED (PR #40)
 6. **bt-57** - TypeScript migration tests (depends on bp-57)
-7. **fg-01** → **fg-07** - Feature Gaps (field mismatches, memory search UI, agents API paths, orphaned migration)
-8. **pa-01** - Permission system
-9. **Doc Update** - Refresh planning docs for **bp-58** and **bp-60** to reflect completed code
+7. **fg-01** → **fg-07** - Feature Gaps ✅ ALREADY FIXED (code in HEAD, planning docs stale)
+8. **pa-01** - Permission system ✅ ALREADY COMPLETE (migration, service, middleware, routes, frontend all implemented)
+9. **Doc Update** - Refresh planning docs for **bp-58**, **bp-60**, **fg-01** through **fg-07**, and **pa-01**
 
 ## Ticket Categories
 
 ### Backend (bp-*)
 - bp-53: Distributed State Management ✅ COMPLETED
-- bp-56: Shared CSS and Component Design System
-- bp-57: Frontend JS → TypeScript migration
+- bp-56: Shared CSS and Component Design System ✅ COMPLETED
+- bp-57: Frontend JS → TypeScript migration ✅ COMPLETED
 - bp-58: [Stale docs, code exists in HEAD]
 - bp-60: [Stale docs, code exists in HEAD]
 
@@ -42,6 +42,6 @@
 
 ## Notes
 - bp-58 and bp-60 have code in HEAD but stale planning docs
-- bp-53, bp-56, and bp-57 have zero git history
+- bp-53, bp-56, and bp-57 have been completed
 - Respect dependency chains (backfill tests depend on feature implementations)
 - Create a branch per ticket, implement it, then create a PR for each branch
