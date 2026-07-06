@@ -186,8 +186,8 @@ async function invalidateAll() {
 /**
  * Clear the permission cache (call after migrations).
  */
-function clearCache() {
-  invalidateAll();
+async function clearCache() {
+  await invalidateAll();
 }
 
 // Load initial cache on startup

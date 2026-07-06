@@ -153,18 +153,17 @@ jest.mock('../utils/redis', () => {
     }
     const entries = rateLimitState.get(key);
 
-    // Remove old entries outside the window
-    const windowEnd = now - windowStart;
-    const validEntries = entries.filter(e => e >= windowEnd);
-    rateLimitState.set(key, validEntries);
+    // Remove entries with scores <= windowStart (matches Lua script: ZREMRANGEBYSCORE key 0 windowStart)
+    const remaining = entries.filter(e => e > windowStart);
+    rateLimitState.set(key, remaining);
 
-    if (validEntries.length >= maxRequests) {
-      return [1, validEntries.length, 0];
+    if (remaining.length >= maxRequests) {
+      return [1, remaining.length, 0];
     }
 
-    validEntries.push(now);
-    rateLimitState.set(key, validEntries);
-    return [0, validEntries.length, timeWindow];
+    remaining.push(now);
+    rateLimitState.set(key, remaining);
+    return [0, remaining.length, timeWindow];
   }
 
   const mock = {

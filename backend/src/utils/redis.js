@@ -33,26 +33,31 @@ function connectRedis() {
       logger.warn(`Redis connection lost. Retrying in ${delay}ms (attempt ${times})...`);
       return delay;
     },
-    onError: (err) => {
-      logger.error(`Redis error: ${err.message}`);
-      isAvailable = false;
-    },
-    onConnect: () => {
-      logger.info('Redis connected successfully.');
-    },
-    onReady: () => {
-      isAvailable = true;
-      reconnectAttempts = 0;
-      logger.info('Redis connection ready.');
-    },
-    onClose: () => {
-      logger.warn('Redis connection closed.');
-      isAvailable = false;
-    },
-    onReconnecting: () => {
-      logger.info('Redis reconnecting...');
-      isAvailable = false;
-    },
+  });
+
+  redisClient.on('error', (err) => {
+    logger.error(`Redis error: ${err.message}`);
+    isAvailable = false;
+  });
+
+  redisClient.on('connect', () => {
+    logger.info('Redis connected successfully.');
+  });
+
+  redisClient.on('ready', () => {
+    isAvailable = true;
+    reconnectAttempts = 0;
+    logger.info('Redis connection ready.');
+  });
+
+  redisClient.on('close', () => {
+    logger.warn('Redis connection closed.');
+    isAvailable = false;
+  });
+
+  redisClient.on('reconnecting', () => {
+    logger.info('Redis reconnecting...');
+    isAvailable = false;
   });
 
   return redisClient;

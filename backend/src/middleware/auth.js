@@ -294,7 +294,7 @@ exports.rateLimiter = (maxRequests = 10, timeWindow = 60 * 1000) => {
     if (isRedisAvailable()) {
       try {
         const now = Date.now();
-        const windowStart = 0; // We clean old entries every request
+        const windowStart = now - timeWindow; // Prune entries outside the window
         
         const result = await evalScript(
           RATE_LIMIT_LUA_SCRIPT,
