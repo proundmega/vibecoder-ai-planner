@@ -32,7 +32,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 
 | ID | Directory | Priority | Description |
 |----|-----------|----------|-------------|
-| bp-53 | `bp-53-distributed-state` | P1 | Distributed State Management |
+| ~~bp-53~~ | `bp-53-distributed-state` | P1 | ~~Distributed State Management~~ ✅ Done (PR #38) |
 | bp-56 | `bp-56-design-system` | P2 | Shared CSS and Component Design System |
 | bp-57 | `bp-57-migrate-to-typescript` | P3 | Frontend JS → TypeScript migration |
 
@@ -40,7 +40,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 
 | ID | Directory | Depends On | Description |
 |----|-----------|------------|-------------|
-| bt-53 | `bt-53-backfill-redis-integration-tests` | bp-53 | Redis integration tests |
+| ~~bt-53~~ | `bt-53-backfill-redis-integration-tests` | bp-53 | ~~Redis integration tests~~ ✅ Covered in bp-53 PR |
 | bt-56 | `bt-56-backfill-design-system-tests` | bp-56 | Design system tests |
 | bt-57 | `bt-57-backfill-typescript-migration-tests` | bp-57 | TypeScript migration tests |
 
@@ -65,7 +65,8 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 ## Notes
 
 - bp-58 (security hardening) and bp-60 (contract testing) have code in HEAD but their planning docs are stale (still say "planned"). They are effectively done but need doc updates.
-- bp-53, bp-56, bp-57 have zero git history — truly pending.
+- bp-53 is **completed** (PR #38, branch fix/bp-53-distributed-state).
+- bp-56, bp-57 have zero git history — truly pending.
 - All bt-* suites are test backfills for corresponding bp-* suites.
 - fg-08 through fg-12 were implemented (merged into a single commit) but have no separate planning directory.
 - fg-29 was implemented but planning doc was stale — moved to `planning/DONE/`.
