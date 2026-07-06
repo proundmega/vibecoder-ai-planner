@@ -1,22 +1,45 @@
 <template>
   <div class="login">
-    <h1>Sign In</h1>
-    <form @submit.prevent="handleLogin">
-      <input v-model="email" type="email" placeholder="Email" required />
-      <input v-model="password" type="password" placeholder="Password" required />
-      <button type="submit" :disabled="loading">{{ loading ? 'Signing in...' : 'Login' }}</button>
-      <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
+    <h1 class="login__title">Sign In</h1>
+    <form @submit.prevent="handleLogin" class="login__form">
+      <VInput
+        v-model="email"
+        type="email"
+        label="Email"
+        placeholder="Email"
+        required
+      />
+      <VInput
+        v-model="password"
+        type="password"
+        label="Password"
+        placeholder="Password"
+        required
+      />
+      <VButton
+        type="submit"
+        variant="primary"
+        :loading="loading"
+        full-width
+      >
+        {{ loading ? 'Signing in...' : 'Login' }}
+      </VButton>
+      <p v-if="errorMessage" class="login__error">{{ errorMessage }}</p>
     </form>
-    <p class="link"><router-link to="/register">Don't have an account? Register</router-link></p>
+    <p class="login__link">
+      <router-link to="/register">Don't have an account? Register</router-link>
+    </p>
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { loginUser } from '@/api/auth.js'
 import { get } from '@/api/client.js'
+import VInput from '@/components/VInput.vue'
+import VButton from '@/components/VButton.vue'
 
 const email = ref('')
 const password = ref('')
@@ -60,38 +83,25 @@ const handleLogin = async () => {
   margin: 100px auto;
   padding: 30px;
 }
-.login h1 {
+
+.login__title {
   margin-bottom: 20px;
+  color: var(--color-text);
 }
-.login input {
-  width: 100%;
-  padding: 10px;
-  margin-bottom: 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
+
+.login__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-.login button {
-  width: 100%;
-  padding: 10px;
-  background: #3b82f6;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.login button:hover:not(:disabled) {
-  background: #2563eb;
-}
-.login button:disabled {
-  background: #9ca3af;
-  cursor: not-allowed;
-}
-.error {
-  color: #ef4444;
+
+.login__error {
+  color: var(--color-danger);
   margin-top: 10px;
-  font-size: 14px;
+  font-size: var(--font-size-sm);
 }
-.link {
+
+.login__link {
   margin-top: 15px;
 }
 </style>
