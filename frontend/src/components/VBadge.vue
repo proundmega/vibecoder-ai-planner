@@ -9,14 +9,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, withDefaults } from 'vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue?: boolean
   color?: 'default' | 'primary' | 'danger' | 'success' | 'warning' | 'info'
   size?: 'small' | 'medium' | 'large'
   dot?: boolean
-}>()
+}>(), {
+  modelValue: undefined,
+  color: 'default',
+  size: 'medium',
+  dot: false
+})
 
 const showBadge = computed(() => props.modelValue !== false)
 </script>

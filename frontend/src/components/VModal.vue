@@ -13,9 +13,9 @@
         aria-modal="true"
         @keydown.escape="close"
       >
-        <div v-if="$slots.header || title" class="v-modal__header">
+        <div v-if="$slots.header || title || closable" class="v-modal__header">
           <slot name="header">
-            <h3 class="v-modal__title">{{ title }}</h3>
+            <h3 v-if="title" class="v-modal__title">{{ title }}</h3>
           </slot>
           <button v-if="closable" class="v-modal__close" @click="close">&times;</button>
         </div>

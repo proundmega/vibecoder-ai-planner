@@ -4,8 +4,8 @@
 
 1. **bp-53** (P1) - Distributed State Management ✅ COMPLETED (PR #38)
 2. **bt-53** - Redis integration tests ✅ COMPLETED (included in bp-53)
-3. **bp-56** (P2) - Shared CSS and Component Design System (IN PROGRESS)
-4. **bt-56** - Design system tests (depends on bp-56)
+3. **bp-56** (P2) - Shared CSS and Component Design System ✅ COMPLETED (PR #39)
+4. **bt-56** - Design system tests ✅ COMPLETED (35 tests passing)
 5. **bp-57** (P3) - Frontend JS → TypeScript migration
 6. **bt-57** - TypeScript migration tests (depends on bp-57)
 7. **fg-01** → **fg-07** - Feature Gaps (field mismatches, memory search UI, agents API paths, orphaned migration)
