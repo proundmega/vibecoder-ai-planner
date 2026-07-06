@@ -17,13 +17,19 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+const props = withDefaults(defineProps<{
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'link'
   size?: 'small' | 'medium' | 'large'
   loading?: boolean
   disabled?: boolean
   fullWidth?: boolean
-}>()
+}>(), {
+  variant: 'primary',
+  size: 'medium',
+  loading: false,
+  disabled: false,
+  fullWidth: false
+})
 
 defineEmits<{
   click: [event: MouseEvent]

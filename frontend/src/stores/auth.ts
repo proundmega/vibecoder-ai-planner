@@ -1,24 +1,69 @@
-import { ref } from 'vue'
+import { ref, Ref } from 'vue'
 
-let instance = null
+export interface User {
+  id: string
+  name: string
+  email: string
+  role: string
+}
+
+let instance: {
+  user: Ref<User | null>
+  token: Ref<string>
+  permissions: Ref<string[]>
+  loading: Ref<boolean>
+  error: Ref<string | null>
+  isAuthenticated: () => boolean
+  hasRole: (role: string) => boolean
+  hasAnyRole: (roles: string[]) => boolean
+  canAccess: (allowedRoles: string[]) => boolean
+  hasPermission: (permCode: string) => boolean
+  hasAnyPermission: (permCodes: string[]) => boolean
+  isProjectAdmin: () => boolean
+  isMember: () => boolean
+  isUser: () => boolean
+  isSuperAdmin: () => boolean
+  canCreateUser: () => boolean
+  canDeleteUser: () => boolean
+  canToggleUser: () => boolean
+  canAccessUsers: () => boolean
+  canCreateTicket: () => boolean
+  canUpdateTicket: () => boolean
+  canDeleteTicket: () => boolean
+  canChangeTicketStatus: () => boolean
+  canCommentTicket: () => boolean
+  canCreateProject: () => boolean
+  canDeleteProject: () => boolean
+  canCreateAgent: () => boolean
+  canDeleteAgent: () => boolean
+  canApprove: () => boolean
+  canReject: () => boolean
+  setUser: (data: User | null) => void
+  setToken: (newToken: string) => void
+  setPermissions: (perms: string[]) => void
+  syncPermissions: (fetchFn: (role: string) => Promise<string[]>) => Promise<void>
+  setLoading: (value: boolean) => void
+  setLoadingError: (errMsg: string) => void
+  logout: () => void
+} | null = null
 
 export function useAuthStore() {
   if (instance) {
     return instance
   }
 
-  const user = ref(JSON.parse(localStorage.getItem('vibecode_user') || 'null'))
-  const token = ref(localStorage.getItem('vibecode_token') || '')
-  const permissions = ref(JSON.parse(localStorage.getItem('vibecode_permissions') || '[]'))
+  const user = ref<User | null>(JSON.parse(localStorage.getItem('vibecode_user') || 'null'))
+  const token = ref<string>(localStorage.getItem('vibecode_token') || '')
+  const permissions = ref<string[]>(JSON.parse(localStorage.getItem('vibecode_permissions') || '[]'))
   const loading = ref(false)
-  const error = ref(null)
+  const error = ref<string | null>(null)
 
-  const setUser = (data) => {
+  const setUser = (data: User | null) => {
     user.value = data
     localStorage.setItem('vibecode_user', JSON.stringify(data))
   }
 
-  const setToken = (newToken) => {
+  const setToken = (newToken: string) => {
     token.value = newToken
     if (newToken) {
       localStorage.setItem('vibecode_token', newToken)
@@ -27,14 +72,14 @@ export function useAuthStore() {
     }
   }
 
-  const setPermissions = (perms) => {
+  const setPermissions = (perms: string[]) => {
     permissions.value = Array.isArray(perms) ? perms : []
     localStorage.setItem('vibecode_permissions', JSON.stringify(permissions.value))
   }
 
-  const syncPermissions = async (fetchFn) => {
+  const syncPermissions = async (fetchFn: (role: string) => Promise<string[]>) => {
     if (!user.value?.role) return
-    const expectedPerms = new Set([
+    const expectedPerms = new Set<string>([
       'TICKET_CREATE', 'TICKET_READ', 'TICKET_UPDATE', 'TICKET_STATUS_CHANGE', 'TICKET_COMMENT',
       'PROJECT_READ', 'AGENT_READ', 'PRICING_READ', 'DASHBOARD_READ',
     ])
@@ -75,11 +120,11 @@ export function useAuthStore() {
     }
   }
 
-  const setLoading = (value) => {
+  const setLoading = (value: boolean) => {
     loading.value = value
   }
 
-  const setLoadingError = (errMsg) => {
+  const setLoadingError = (errMsg: string) => {
     error.value = errMsg
     loading.value = false
   }
@@ -95,26 +140,26 @@ export function useAuthStore() {
 
   const isAuthenticated = () => !!token.value
 
-  const hasRole = (role) => {
+  const hasRole = (role: string) => {
     return user.value?.role === role
   }
 
-  const hasAnyRole = (roles) => {
+  const hasAnyRole = (roles: string[]) => {
     if (!user.value?.role) return false
     return roles.includes(user.value.role)
   }
 
-  const canAccess = (allowedRoles) => {
+  const canAccess = (allowedRoles: string[]) => {
     if (!allowedRoles || allowedRoles.length === 0) return true
     return hasAnyRole(allowedRoles)
   }
 
-  const hasPermission = (permCode) => {
+  const hasPermission = (permCode: string) => {
     if (user.value?.role === 'super_admin') return true
     return permissions.value.includes(permCode)
   }
 
-  const hasAnyPermission = (permCodes) => {
+  const hasAnyPermission = (permCodes: string[]) => {
     if (user.value?.role === 'super_admin') return true
     if (!Array.isArray(permCodes)) return false
     return permCodes.some(p => permissions.value.includes(p))
