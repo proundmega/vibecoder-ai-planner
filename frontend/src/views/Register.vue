@@ -1,23 +1,53 @@
 <template>
   <div class="register">
-    <h1>Create Account</h1>
-    <form @submit.prevent="handleRegister">
-      <input v-model="name" type="text" placeholder="Name" required />
-      <input v-model="email" type="email" placeholder="Email" required />
-      <input v-model="password" type="password" placeholder="Password (min 6 chars)" required minlength="6" />
-      <button type="submit" :disabled="loading">{{ loading ? 'Creating...' : 'Register' }}</button>
-      <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
+    <h1 class="register__title">Create Account</h1>
+    <form @submit.prevent="handleRegister" class="register__form">
+      <VInput
+        v-model="name"
+        type="text"
+        label="Name"
+        placeholder="Name"
+        required
+      />
+      <VInput
+        v-model="email"
+        type="email"
+        label="Email"
+        placeholder="Email"
+        required
+      />
+      <VInput
+        v-model="password"
+        type="password"
+        label="Password"
+        placeholder="Password (min 6 chars)"
+        required
+        minlength="6"
+      />
+      <VButton
+        type="submit"
+        variant="primary"
+        :loading="loading"
+        full-width
+      >
+        {{ loading ? 'Creating...' : 'Register' }}
+      </VButton>
+      <p v-if="errorMessage" class="register__error">{{ errorMessage }}</p>
     </form>
-    <p class="link"><router-link to="/login">Already have an account? Login</router-link></p>
+    <p class="register__link">
+      <router-link to="/login">Already have an account? Login</router-link>
+    </p>
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { registerUser } from '@/api/auth.js'
 import { get } from '@/api/client.js'
+import VInput from '@/components/VInput.vue'
+import VButton from '@/components/VButton.vue'
 
 const name = ref('')
 const email = ref('')
@@ -60,38 +90,25 @@ const handleRegister = async () => {
   margin: 100px auto;
   padding: 30px;
 }
-.register h1 {
+
+.register__title {
   margin-bottom: 20px;
+  color: var(--color-text);
 }
-.register input {
-  width: 100%;
-  padding: 10px;
-  margin-bottom: 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
+
+.register__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-.register button {
-  width: 100%;
-  padding: 10px;
-  background: #3b82f6;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.register button:hover:not(:disabled) {
-  background: #2563eb;
-}
-.register button:disabled {
-  background: #9ca3af;
-  cursor: not-allowed;
-}
-.error {
-  color: #ef4444;
+
+.register__error {
+  color: var(--color-danger);
   margin-top: 10px;
-  font-size: 14px;
+  font-size: var(--font-size-sm);
 }
-.link {
+
+.register__link {
   margin-top: 15px;
 }
 </style>

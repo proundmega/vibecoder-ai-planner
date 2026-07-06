@@ -13,7 +13,7 @@
         </div>
         <div class="nav-right">
           <span class="nav-user">{{ authStore.user?.value?.name || 'User' }}</span>
-          <button @click="handleLogout" class="nav-logout">Logout</button>
+          <VButton variant="ghost" size="small" @click="handleLogout">Logout</VButton>
         </div>
       </div>
     </nav>
@@ -30,11 +30,12 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { get } from '@/api/client.js'
+import VButton from '@/components/VButton.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -67,16 +68,10 @@ const handleLogout = () => {
 </script>
 
 <style>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-  background: #f5f5f5;
-  color: #1a1a1a;
+  font-family: var(--font-family);
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
 }
 
 .app {
@@ -84,7 +79,7 @@ body {
 }
 
 .navbar {
-  background: #1e293b;
+  background: var(--color-nav-bg);
   box-shadow: 0 1px 3px rgba(0,0,0,0.15);
 }
 
@@ -100,7 +95,7 @@ body {
 
 .nav-brand {
   color: white;
-  font-size: 18px;
+  font-size: var(--font-size-lg);
   font-weight: 700;
   text-decoration: none;
 }
@@ -111,19 +106,19 @@ body {
 }
 
 .nav-link {
-  color: #94a3b8;
+  color: var(--color-nav-text);
   text-decoration: none;
-  font-size: 14px;
+  font-size: var(--font-size-base);
   font-weight: 500;
   padding: 6px 0;
   border-bottom: 2px solid transparent;
-  transition: color 0.15s;
+  transition: color var(--transition-fast);
 }
 
 .nav-link:hover,
 .nav-link.router-link-active {
   color: white;
-  border-bottom-color: #3b82f6;
+  border-bottom-color: var(--color-primary);
 }
 
 .nav-right {
@@ -133,24 +128,7 @@ body {
 }
 
 .nav-user {
-  color: #cbd5e1;
-  font-size: 14px;
-}
-
-.nav-logout {
-  padding: 6px 14px;
-  background: transparent;
-  color: #94a3b8;
-  border: 1px solid #475569;
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.nav-logout:hover {
-  background: #ef4444;
-  border-color: #ef4444;
-  color: white;
+  color: var(--color-nav-active);
+  font-size: var(--font-size-base);
 }
 </style>
