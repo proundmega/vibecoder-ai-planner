@@ -109,6 +109,7 @@ process.env.REDIS_URL = 'redis://localhost:6379';
 jest.mock('../utils/redis', () => {
   const rateLimitState = new Map();
   const store = new Map(); // For get/set/del operations
+  const sortedSets = new Map(); // For zadd/zcard/zremrangebyscore
 
   const mockRedis = {
     get: jest.fn().mockImplementation((key) => {
@@ -117,17 +118,52 @@ jest.mock('../utils/redis', () => {
     }),
     set: jest.fn().mockImplementation((key, value, ttl) => {
       store.set(key, value);
-      return Promise.resolve('OK');
+      return Promise.resolve(true);
     }),
     del: jest.fn().mockImplementation((key) => {
+      const existed = store.has(key);
       store.delete(key);
-      return Promise.resolve(1);
+      return Promise.resolve(existed ? 1 : 0);
     }),
-    zadd: jest.fn().mockResolvedValue(1),
-    zremrangebyscore: jest.fn().mockResolvedValue(0),
-    zcard: jest.fn().mockResolvedValue(0),
+    zadd: jest.fn().mockImplementation((key, score, member) => {
+      if (!sortedSets.has(key)) {
+        sortedSets.set(key, new Map());
+      }
+      const set = sortedSets.get(key);
+      const wasNew = !set.has(member);
+      set.set(member, score);
+      return Promise.resolve(wasNew ? 1 : 0);
+    }),
+    zremrangebyscore: jest.fn().mockImplementation((key, min, max) => {
+      if (!sortedSets.has(key)) return Promise.resolve(0);
+      const set = sortedSets.get(key);
+      let removed = 0;
+      for (const [member, score] of set) {
+        if (score >= min && score <= max) {
+          set.delete(member);
+          removed++;
+        }
+      }
+      return Promise.resolve(removed);
+    }),
+    zcard: jest.fn().mockImplementation((key) => {
+      if (!sortedSets.has(key)) return Promise.resolve(0);
+      return Promise.resolve(sortedSets.get(key).size);
+    }),
     expire: jest.fn().mockResolvedValue(1),
-    scan: jest.fn().mockResolvedValue(['0', []]),
+    scan: jest.fn().mockImplementation((cursor, ...args) => {
+      const matchIdx = args.indexOf('MATCH');
+      const matchPattern = matchIdx >= 0 ? args[matchIdx + 1] : '*';
+      const regexPattern = '^' + matchPattern.replace(/\*/g, '.*') + '$';
+      const regex = new RegExp(regexPattern);
+      const results = [];
+      for (const key of store.keys()) {
+        if (regex.test(key)) {
+          results.push(key);
+        }
+      }
+      return Promise.resolve(['0', results]);
+    }),
     ping: jest.fn().mockResolvedValue('PONG'),
     quit: jest.fn().mockResolvedValue('OK'),
     eval: jest.fn().mockImplementation((script, numKeys, ...args) => {
@@ -135,6 +171,11 @@ jest.mock('../utils/redis', () => {
       const argv = args.slice(numKeys);
       if (script.includes('ZREMRANGEBYSCORE') && script.includes('ZCARD')) {
         return Promise.resolve(simulateRateLimit(keys, argv));
+      }
+      if (script.includes('redis.call("GET"')) {
+        const key = keys[0];
+        const val = store.get(key);
+        return Promise.resolve(val || null);
       }
       return Promise.resolve([0, 1, 60000]);
     }),
@@ -183,14 +224,21 @@ jest.mock('../utils/redis', () => {
       if (script.includes('ZREMRANGEBYSCORE') && script.includes('ZCARD')) {
         return Promise.resolve(simulateRateLimit(keys, args));
       }
+      if (script.includes('redis.call("GET"')) {
+        const key = keys[0];
+        const val = store.get(key);
+        return Promise.resolve(val || null);
+      }
       return Promise.resolve([0, 1, 60000]);
     }),
-    scan: jest.fn().mockImplementation((match, count) => mockRedis.scan(match, count)),
+    scan: jest.fn().mockImplementation((match, count) => mockRedis.scan('0', 'MATCH', match, 'COUNT', count || 100)),
     getPrefixedKey: jest.fn().mockImplementation((key) => `vibecode:${key}`),
     healthCheck: jest.fn().mockResolvedValue({ status: 'healthy' }),
     _resetRateLimitState: () => rateLimitState.clear(),
     _resetStore: () => store.clear(),
+    _resetSortedSets: () => sortedSets.clear(),
     _rateLimitState: rateLimitState,
+    _sortedSets: sortedSets,
   };
 
   return mock;
