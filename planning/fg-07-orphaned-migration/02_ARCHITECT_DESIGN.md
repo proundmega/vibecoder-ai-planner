@@ -67,6 +67,40 @@ Add `001_base_schema.sql` to the migration order.
 
 ---
 
+## File-Level Impact Matrix
+
+| File | Action | Specific Changes |
+|------|--------|-----------------|
+| `backend/src/migrations/001_base_schema.sql` | DELETE | Orphaned file, not referenced in apply.js |
+| `backend/src/migrations/001_base_schema_rollback.sql` | DELETE | Rollback for orphaned file |
+
+---
+
+## Testing Strategy
+
+### Test Layers
+
+| Layer | Tool | Location | What It Catches |
+|-------|------|----------|-----------------|
+| Backend unit | Jest | `backend/src/__tests__/` | Migration rollback test passes |
+| Bash integration | curl + helpers | `backend/integration-test/` | Fresh database migration works |
+
+### Backend Bash Integration Suite — When to Add Tests
+
+Add a test in `backend/integration-test/suites/` to verify:
+- Fresh database migration (`npm run db:migrate`) works after file deletion
+- Only `001_create_tables.sql` exists (not `001_base_schema.sql`)
+
+---
+
+## Security Considerations
+
+- No new endpoints — this is a file cleanup
+- No new data exposure — migration files contain schema, not secrets
+- No input changes — this is a file deletion
+
+---
+
 ## Data Flow Diagram
 
 ```
@@ -120,6 +154,12 @@ Add `001_base_schema.sql` to the migration order.
 - **Pros**: Would run the file
 - **Cons**: Likely a duplicate, would cause errors
 - **Decision**: Option A is correct
+
+---
+
+## Specification Generation
+
+- [ ] `04_SPECIFICATION.md` has been created with exact file operations for each file (if a small model will execute this ticket)
 
 ---
 

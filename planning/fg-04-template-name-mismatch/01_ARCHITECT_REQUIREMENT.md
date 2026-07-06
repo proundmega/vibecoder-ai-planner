@@ -70,6 +70,25 @@ This is a **BOTH frontend and backend fix**. The backend only defines `'architec
 
 ---
 
+## Impact Analysis
+
+| Component | Change Type | Details |
+|-----------|-------------|---------|
+| `backend/src/api/ticketPlanning.js` | MODIFY | Update OpenAPI spec enum: `[architect]` → `[architecture, technical, simple]` |
+| `backend/src/controllers/ticketPlanningController.js` | MODIFY | Update template mapping: replace `'architect'` with three template entries |
+| `frontend/src/views/TicketDetail.vue` | MODIFY (verify) | Template options already correct — verify no changes needed |
+| `database` | NONE | No schema changes |
+| `config` | NONE | No env var changes |
+
+---
+
+## Known Unknowns
+
+1. **[Existing `'architect'` references]**: Other code may reference `'architect'` (tests, other controllers). **Resolution**: grep `grep -rn "'architect'" backend/src/` before changing.
+2. **[Template file content]**: The `'architect'` template maps to specific file content. **Resolution**: Ensure each of the three new names maps to appropriate content (system design, technical implementation, simple task list).
+
+---
+
 ## Important Design Decisions
 
 **DECISION POINTS**:
@@ -109,6 +128,26 @@ This is a **BOTH frontend and backend fix**. The backend only defines `'architec
 - Adding more template types beyond the three defined
 - Template file content customization by users
 - Backend changes to the planning file structure
+- Changes to the planning file storage mechanism
+
+---
+
+## Performance Considerations
+
+- Expected load: N/A (this is a template name fix, no new queries)
+- N+1 queries to avoid: N/A
+- Caching strategy: N/A
+- Pagination needed: N/A
+
+---
+
+## Security Considerations
+
+- Authentication required: YES (existing — planning endpoints are behind auth)
+- Authorization check: YES (existing — ticket-level access control)
+- Input validation: YES (existing — template name validated against enum)
+- Rate limiting: N/A (not a user-facing endpoint)
+- Sensitive data handling: No change — planning files contain user content, not secrets
 
 ---
 
@@ -121,6 +160,11 @@ This is a **BOTH frontend and backend fix**. The backend only defines `'architec
 ### Frontend Tests
 - [ ] Unit tests: `npm test -- --run` — no regressions
 - [ ] Manual verification: apply each template in the UI, verify files are created
+
+### Frontend Contract Tests
+- [ ] `frontend/src/__tests__/api-contract.test.ts` — verify apply-template response shape
+- [ ] Generated types regenerated: `cd frontend && npm run generate:spec && npm run generate:api` (after backend OpenAPI spec update)
+- [ ] Generated types compile: `cd frontend && npm run typecheck`
 
 ### CI Requirements
 - [ ] `npm test` — backend unit tests pass

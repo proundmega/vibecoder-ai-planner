@@ -69,6 +69,24 @@ This is a **FRONTEND-ONLY fix**. The backend API is correct — it expects `prov
 
 ---
 
+## Impact Analysis
+
+| Component | Change Type | Details |
+|-----------|-------------|---------|
+| `frontend/src/api/providers.js` | MODIFY | Rename `provider` → `providerType` in `addProvider()` |
+| `frontend/src/views/ProjectDetail.vue` | MODIFY | Rename `provider` → `providerType` in provider form data |
+| `database` | NONE | No schema changes |
+| `config` | NONE | No env var changes |
+
+---
+
+## Known Unknowns
+
+1. **[Provider form variable names]**: The form state may use `provider` in multiple places (add form, edit form, template bindings). **Resolution**: grep for all `provider` references in the provider tab section of ProjectDetail.vue before starting.
+2. **[Existing NULL values]**: Existing providers in the database already have NULL `provider_type`. **Resolution**: Not in scope to backfill — they will continue showing as "Unknown" until manually updated.
+
+---
+
 ## Important Design Decisions
 
 **No design decisions require user input. All choices follow existing patterns.**
@@ -95,6 +113,26 @@ The fix is straightforward: rename `provider` to `providerType` in the frontend.
 - Adding new provider types or changing the enum of allowed types
 - Backend changes to the `providerType` field handling
 - Database migration for the `project_providers` table
+- Backfilling existing NULL `provider_type` values in the database
+
+---
+
+## Performance Considerations
+
+- Expected load: N/A (this is a field rename, no new queries or computations)
+- N+1 queries to avoid: N/A
+- Caching strategy: N/A
+- Pagination needed: N/A
+
+---
+
+## Security Considerations
+
+- Authentication required: YES (existing — all provider endpoints are behind auth)
+- Authorization check: YES (existing — project-level access control)
+- Input validation: YES (existing — Joi schemas in `backend/src/validators/provider.js`)
+- Rate limiting: YES (existing — rate limiter applies to auth endpoints)
+- Sensitive data handling: API key is stored encrypted (existing behavior, unchanged)
 
 ---
 
@@ -107,6 +145,10 @@ The fix is straightforward: rename `provider` to `providerType` in the frontend.
 ### Frontend Tests
 - [ ] Unit tests: `npm test -- --run` — verify no regressions
 - [ ] Manual verification: add a provider in the UI, check database has `provider_type` populated
+
+### Frontend Contract Tests
+- [ ] `frontend/src/__tests__/api-contract.test.ts` — verify provider response shape includes `providerType` (not `provider`)
+- [ ] `frontend/src/api/validator.ts` — verify provider schema expects `providerType` field
 
 ### CI Requirements
 - [ ] `npm test` — backend unit tests pass

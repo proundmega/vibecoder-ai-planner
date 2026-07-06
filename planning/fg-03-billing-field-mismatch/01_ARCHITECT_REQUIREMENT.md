@@ -84,6 +84,23 @@ The frontend expects:
 
 ---
 
+## Impact Analysis
+
+| Component | Change Type | Details |
+|-----------|-------------|---------|
+| `frontend/src/views/ProjectDetail.vue` | MODIFY | Fix billing card field paths in Usage & Billing tab (~lines 560-610) |
+| `database` | NONE | No schema changes |
+| `config` | NONE | No env var changes |
+
+---
+
+## Known Unknowns
+
+1. **[Exact line numbers]**: The billing tab section line numbers may have shifted. **Resolution**: grep for `billing.total_cost` or `billing.current_period` in ProjectDetail.vue to find the actual location.
+2. **[Billing data availability]**: Many projects may have no billing records. **Resolution**: Show "N/A" or "0" for empty data.
+
+---
+
 ## Important Design Decisions
 
 **DECISION POINTS**:
@@ -124,6 +141,25 @@ The frontend expects:
 - Adding `current_period_start/end` fields to the billing API
 - Creating a billing history page
 - Backend changes to the billing response structure (beyond minimal mapping)
+- Modifying the usage breakdown display (already works correctly)
+
+---
+
+## Performance Considerations
+
+- Expected load: N/A (this is a template field fix, no new queries)
+- N+1 queries to avoid: N/A
+- Caching strategy: N/A
+- Pagination needed: N/A
+
+---
+
+## Security Considerations
+
+- Authentication required: YES (existing — billing endpoints are behind auth)
+- Authorization check: YES (existing — project-level access control)
+- Input validation: N/A (no input changes, only output field references)
+- Sensitive data handling: No change — billing data contains no secrets
 
 ---
 
@@ -132,6 +168,10 @@ The frontend expects:
 ### Frontend Tests
 - [ ] Unit tests: `npm test -- --run` — no regressions
 - [ ] Manual verification: Navigate to Usage & Billing tab, verify billing cards show actual values
+
+### Frontend Contract Tests
+- [ ] `frontend/src/__tests__/api-contract.test.ts` — verify billing response shape includes `total_cost_usd`, `billing_month`, `total_calls`
+- [ ] `frontend/src/api/validator.ts` — verify billing response schema expects array of billing rows
 
 ### CI Requirements
 - [ ] `npm run lint` — frontend lint passes

@@ -53,6 +53,24 @@ This is a **CLEANUP task**. The file `001_base_schema.sql` exists but is never r
 
 ---
 
+## Impact Analysis
+
+| Component | Change Type | Details |
+|-----------|-------------|---------|
+| `backend/src/migrations/001_base_schema.sql` | DELETE | Orphaned file, not referenced in apply.js |
+| `backend/src/migrations/001_base_schema_rollback.sql` | DELETE | Rollback for orphaned file |
+| `database` | NONE | No schema changes (orphaned file is never run) |
+| `config` | NONE | No env var changes |
+
+---
+
+## Known Unknowns
+
+1. **[File content comparison]**: `001_base_schema.sql` may or may not be a duplicate of `001_create_tables.sql`. **Resolution**: Run `diff` before deleting. If different, investigate why.
+2. **[AGENTS.md accuracy]**: AGENTS.md may reference `001_base_schema.sql` in the migration order. **Resolution**: Check and update if needed.
+
+---
+
 ## Important Design Decisions
 
 **No design decisions require user input. All choices follow existing patterns.**
@@ -78,6 +96,25 @@ The decision is straightforward:
 - Changes to migration content
 - Database schema changes
 - Creating new migrations
+- Modifying `apply.js` (it already references the correct file)
+
+---
+
+## Performance Considerations
+
+- Expected load: N/A — this is a file cleanup, no runtime impact
+- N+1 queries to avoid: N/A
+- Caching strategy: N/A
+- Pagination needed: N/A
+
+---
+
+## Security Considerations
+
+- Authentication required: N/A — this is a file cleanup
+- Authorization check: N/A
+- Input validation: N/A
+- Sensitive data handling: No change — migration files contain schema, not secrets
 
 ---
 
@@ -86,6 +123,9 @@ The decision is straightforward:
 ### Backend Tests
 - [ ] Unit tests: `npm test` — migration rollback test should still pass
 - [ ] Manual: Verify `apply.js` still references the correct `001_create_tables.sql`
+
+### Frontend Contract Tests
+- N/A — no API changes
 
 ### CI Requirements
 - [ ] `npm test` — backend tests pass

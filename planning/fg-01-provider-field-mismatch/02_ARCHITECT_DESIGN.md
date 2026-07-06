@@ -67,6 +67,42 @@ Accept both `provider` and `providerType` for backward compatibility.
 
 ---
 
+## File-Level Impact Matrix
+
+| File | Action | Specific Changes |
+|------|--------|-----------------|
+| `frontend/src/api/providers.js` | MODIFY | Line ~8: rename `provider` → `providerType` in `addProvider()` parameter and body |
+| `frontend/src/views/ProjectDetail.vue` | MODIFY | Provider form section (~line 438+): rename all `provider` references to `providerType` in form state, submission object, template bindings |
+
+---
+
+## Testing Strategy
+
+### Test Layers
+
+| Layer | Tool | Location | What It Catches |
+|-------|------|----------|-----------------|
+| Frontend unit | Vitest | `frontend/src/__tests__/providers.test.js` | API client sends correct field name |
+| Frontend contract | Vitest | `frontend/src/__tests__/api-contract.test.ts` | Response shape includes `providerType` |
+| Frontend component | Cypress | `frontend/cypress/component/` | Provider form renders and submits correctly |
+| Frontend E2E | Cypress | `frontend/cypress/e2e/` | Full add-provider flow |
+
+### Frontend-Backend Contract Testing
+
+- Response schemas in `frontend/src/api/validator.ts` must include `providerType` (not `provider`)
+- If the contract test has a provider shape assertion, update `provider` → `providerType`
+- Generated TypeScript types from OpenAPI spec should include `providerType` — verify by running `npm run generate:spec && npm run generate:api && npm run typecheck`
+
+---
+
+## Security Considerations
+
+- No new endpoints — existing auth/authorization applies unchanged
+- No new data exposure — field rename does not change what data is returned
+- Input validation unchanged — backend Joi schema already expects `providerType`
+
+---
+
 ## Data Flow Diagram
 
 ```
@@ -130,6 +166,12 @@ Accept both `provider` and `providerType` for backward compatibility.
 - **Pros**: Centralized transformation
 - **Cons**: Over-engineering a single field rename
 - **Decision**: Option A is simpler
+
+---
+
+## Specification Generation
+
+- [ ] `04_SPECIFICATION.md` has been created with exact file operations for each file (if a small model will execute this ticket)
 
 ---
 

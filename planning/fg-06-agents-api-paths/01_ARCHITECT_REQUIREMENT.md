@@ -92,6 +92,24 @@ This is a **FRONTEND-ONLY fix**. The backend routes are correct and mounted at `
 
 ---
 
+## Impact Analysis
+
+| Component | Change Type | Details |
+|-----------|-------------|---------|
+| `frontend/src/api/agents.js` | MODIFY | Fix all endpoint paths, remove dead ticket functions |
+| `frontend/src/views/AIAssistant.vue` | VERIFY | Check for usages of removed ticket functions |
+| `database` | NONE | No schema changes |
+| `config` | NONE | No env var changes |
+
+---
+
+## Known Unknowns
+
+1. **[Exact line numbers]**: The agents API client line numbers may have shifted. **Resolution**: Read `frontend/src/api/agents.js` to find actual function locations.
+2. **[UI usages]**: `AIAssistant.vue` or other components may use the removed ticket functions. **Resolution**: grep for all usages before removing.
+
+---
+
 ## Important Design Decisions
 
 **DECISION POINTS**:
@@ -124,6 +142,26 @@ This is a **FRONTEND-ONLY fix**. The backend routes are correct and mounted at `
 - Creating ticket endpoints in the agents router
 - Backend changes to agents routes
 - New UI components for agent management
+- Adding new agent endpoints
+
+---
+
+## Performance Considerations
+
+- Expected load: N/A — this is a path fix, no new queries or computations
+- N+1 queries to avoid: N/A
+- Caching strategy: N/A
+- Pagination needed: N/A
+
+---
+
+## Security Considerations
+
+- Authentication required: YES (existing — agents endpoints require auth)
+- Authorization check: YES (existing — project-level access control)
+- Input validation: YES (existing — Joi schemas in agents router)
+- Rate limiting: N/A (agents are admin-managed, not user-facing)
+- Sensitive data handling: API keys are returned in agent responses — existing behavior unchanged
 
 ---
 
@@ -132,6 +170,10 @@ This is a **FRONTEND-ONLY fix**. The backend routes are correct and mounted at `
 ### Frontend Tests
 - [ ] Unit tests: `npm test -- --run` — no regressions
 - [ ] Manual verification: Create agent, list agents, verify API calls succeed
+
+### Frontend Contract Tests
+- [ ] `frontend/src/__tests__/api-contract.test.ts` — verify agent response shapes (createAgent, listAgents, getAgentKeyInfo, getAgentHistory)
+- [ ] `frontend/src/api/validator.ts` — verify agent response schemas match backend
 
 ### CI Requirements
 - [ ] `npm run lint` — frontend lint passes

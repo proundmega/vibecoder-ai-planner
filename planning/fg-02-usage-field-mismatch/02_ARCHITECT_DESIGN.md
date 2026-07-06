@@ -91,6 +91,41 @@ Modify the backend controller to return `total_requests`, `total_cost`, etc.
 
 ---
 
+## File-Level Impact Matrix
+
+| File | Action | Specific Changes |
+|------|--------|-----------------|
+| `frontend/src/views/ProjectDetail.vue` | MODIFY | Usage tab section (~lines 520-540): fix field paths in usage cards |
+
+---
+
+## Testing Strategy
+
+### Test Layers
+
+| Layer | Tool | Location | What It Catches |
+|-------|------|----------|-----------------|
+| Frontend unit | Vitest | `frontend/src/__tests__/usage.test.js` | API client returns correct shape |
+| Frontend contract | Vitest | `frontend/src/__tests__/api-contract.test.ts` | Response shape includes `totals` object |
+| Frontend component | Cypress | `frontend/cypress/component/` | Usage cards render with mock data |
+| Frontend E2E | Cypress | `frontend/cypress/e2e/` | Full usage tab flow |
+
+### Frontend-Backend Contract Testing
+
+- Response schemas in `frontend/src/api/validator.ts` must include `totals` object with `totalCalls`, `totalCost`, `totalTokensIn`, `totalTokensOut`
+- If the contract test has a usage shape assertion, verify it matches the backend's actual response
+- Generated TypeScript types from OpenAPI spec should include the `totals` structure — verify by running `npm run generate:spec && npm run generate:api && npm run typecheck`
+
+---
+
+## Security Considerations
+
+- No new endpoints — existing auth/authorization applies unchanged
+- No new data exposure — field fix does not change what data is returned
+- No input changes — this is purely a template rendering fix
+
+---
+
 ## Data Flow Diagram
 
 ```
@@ -151,6 +186,12 @@ Modify the backend controller to return `total_requests`, `total_cost`, etc.
 - **Pros**: Frontend works without changes
 - **Cons**: Breaks existing contract, other consumers affected
 - **Decision**: Option A is correct — fix the broken consumer
+
+---
+
+## Specification Generation
+
+- [ ] `04_SPECIFICATION.md` has been created with exact file operations for each file (if a small model will execute this ticket)
 
 ---
 

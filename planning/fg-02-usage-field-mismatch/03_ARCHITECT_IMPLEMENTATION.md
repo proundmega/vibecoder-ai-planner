@@ -22,7 +22,7 @@
 
 ### a) Purpose
 
-Fix the usage cards in the Usage & Billing tab so they display actual values instead of 0. The frontend accesses wrong field names that don't exist in the backend response.
+Fix the usage cards in the Usage & Billing tab so they display actual values instead of 0. The frontend accesses wrong field names (`total_requests`, `total_cost`, `total_tokens`, `avg_response_time_ms`) that don't exist in the backend response. The backend returns `totals.totalCalls`, `totals.totalCost`, `totals.totalTokensIn`, `totals.totalTokensOut`.
 
 ---
 
@@ -30,94 +30,136 @@ Fix the usage cards in the Usage & Billing tab so they display actual values ins
 
 **Backend API already exists — no changes needed.**
 
-#### Phase 1: Frontend UI
+#### Implementation Order
 
-1. Fix `frontend/src/views/ProjectDetail.vue` — usage tab section (~lines 520-540):
+Steps must be executed in this exact order (dependencies between steps are noted):
 
-   Update the usage cards to use correct field paths:
-   ```vue
-   <!-- "Total Requests" card → show totalCalls -->
-   <div class="usage-value">{{ usage.totals?.totalCalls || 0 }}</div>
-   
-   <!-- "Total Cost" card → show totalCost -->
-   <div class="usage-value">${{ (usage.totals?.totalCost || 0).toFixed(4) }}</div>
-   
-   <!-- "Total Tokens" card → show combined in+out -->
-   <div class="usage-value">{{ (usage.totals?.totalTokensIn || 0) + (usage.totals?.totalTokensOut || 0) }}</div>
-   
-   <!-- Remove "Avg Response Time" card — backend doesn't provide this -->
-   ```
+1. **[Fix usage card field paths]** — `frontend/src/views/ProjectDetail.vue`
+   - Find the usage tab section (~lines 520-540, grep for `usage.total_requests` or `usage.total_cost`)
+   - Update card field paths:
+     - `usage.total_requests` → `usage.totals?.totalCalls || 0`
+     - `usage.total_cost` → `usage.totals?.totalCost || 0` (format as currency)
+     - `usage.total_tokens` → `usage.totals?.totalTokensIn || 0` + `usage.totals?.totalTokensOut || 0` (or show two separate cards)
+   - Remove "Avg Response Time" card (backend doesn't provide this)
+   - *Depends on*: nothing
 
-2. Also update the card labels to be more descriptive:
-   - "Total Requests" → "Total Calls"
-   - "Total Tokens" → "Total Tokens" (kept, but shows combined in+out)
-
-3. If you prefer to show tokens in and out separately (recommended):
-   - Replace "Total Tokens" card with two cards: "Tokens In" and "Tokens Out"
-   - `{{ usage.totals?.totalTokensIn || 0 }}` and `{{ usage.totals?.totalTokensOut || 0 }}`
-
-#### Phase 2: Testing
-
-4. Run frontend tests: `cd frontend && npm test -- --run`
-5. Run frontend lint: `cd frontend && npm run lint`
-6. Run frontend typecheck: `cd frontend && npm run typecheck`
-7. Manual test: Navigate to Usage & Billing tab, verify cards show actual values
+2. **[Run verification]** — `cd frontend`
+   - `npm test -- --run` — no regressions
+   - `npm run lint` — no lint errors
+   - `npm run typecheck` — no TS errors
+   - *Depends on*: Step 1
 
 ---
 
-### c) Dependencies
+### c) Per-File Action Plan
 
-- None — frontend-only fix
+#### `frontend/src/views/ProjectDetail.vue` (MODIFY)
+- **Change**: Fix usage card field paths in Usage & Billing tab
+- **Position**: Usage tab section (~lines 520-540)
+- **Specific changes**:
+  ```vue
+  <!-- Before: -->
+  <div class="usage-value">{{ usage.total_requests || 0 }}</div>
+  <div class="usage-value">${{ (usage.total_cost || 0).toFixed(4) }}</div>
+  <div class="usage-value">{{ usage.total_tokens || 0 }}</div>
+  <div class="usage-value">{{ usage.avg_response_time_ms || 0 }}ms</div>
+
+  <!-- After: -->
+  <div class="usage-value">{{ usage.totals?.totalCalls || 0 }}</div>
+  <div class="usage-value">${{ (usage.totals?.totalCost || 0).toFixed(4) }}</div>
+  <div class="usage-value">{{ (usage.totals?.totalTokensIn || 0) + (usage.totals?.totalTokensOut || 0) }}</div>
+  <!-- Remove avg_response_time_ms card entirely -->
+  ```
+- **Imports needed**: None (existing imports unchanged)
+- **Safety**: Use optional chaining (`?.`) and `|| 0` fallback for all field accesses
 
 ---
 
-### d) Risks/Edge Cases
+### d) Dependencies
 
-- **[Risk]**: `usage` is null/undefined before data loads
-  **[Mitigation]**: Use optional chaining (`?.`) and `|| 0` fallback
+- None — this is a frontend-only fix, no backend changes, no new dependencies
 
 ---
 
-### e) Testing
+### e) Risks/Edge Cases
+
+- **[Risk]**: `usage` might be `null` or `undefined` before data loads
+  **[Mitigation]**: Use optional chaining (`?.`) and fallback to `0`
+
+---
+
+### f) Testing
+
+**MANDATORY: You must CREATE new test files or EXTEND existing test files for all new/changed code.**
+**It is NOT sufficient to only verify that existing tests still pass.**
+
+#### Backend Unit Tests
+- No backend changes — existing tests should pass
+
+#### Backend Jest Integration Tests
+- N/A — no backend changes
+
+#### Backend Bash Integration Suite
+- N/A — no backend API changes
 
 #### Frontend Unit Tests
-- [ ] `npm test -- --run` — no regressions
+- [ ] `npm test -- --run` — verify no regressions in `frontend/src/__tests__/usage.test.js`
+- [ ] If `usage.test.js` exists: verify it tests the usage API client response shape
 
-#### CI Requirements
-- [ ] `npm run lint` — frontend lint passes
-- [ ] `npm run typecheck` — frontend typecheck passes
+#### Frontend E2E Tests
+- [ ] Manual: Navigate to Usage & Billing tab, verify cards show actual values (not 0)
+
+#### Frontend Contract Tests
+- [ ] `frontend/src/__tests__/api-contract.test.ts` — verify usage response shape includes `totals.totalCalls`, `totals.totalCost`, `totals.totalTokensIn`, `totals.totalTokensOut`
+- [ ] `frontend/src/api/validator.ts` — verify usage response schema expects `totals` object
 
 ---
 
-### f) Migration Notes
+### g) Migration Notes
 
 Not applicable — no database changes.
 
 ---
 
-### g) Files Changed
+### h) Files Changed
 
 **Frontend:**
 ```
-frontend/src/views/ProjectDetail.vue  → fix usage card field paths
+frontend/src/views/ProjectDetail.vue  → MODIFY: fix usage card field paths in Usage & Billing tab
 ```
 
 ---
 
-### h) Code Review Checklist
+### i) Code Review Checklist
 
-- [ ] Usage cards use `usage.totals.totalCalls`, `usage.totals.totalCost`, etc.
+- [ ] Usage cards use `usage.totals?.totalCalls`, `usage.totals?.totalCost`, etc.
 - [ ] Optional chaining used for safety (`?.`)
-- [ ] Fallback to 0 for empty data
-- [ ] All tests pass
+- [ ] Fallback to 0 for empty data (`|| 0`)
+- [ ] "Avg Response Time" card removed (backend doesn't provide this)
 - [ ] No backend changes needed
+- [ ] Frontend API client follows existing patterns (`get`, `post`, `put`, `del`, `patch` from `./client`)
+- [ ] Frontend UI follows existing patterns (CSS classes, component structure)
+- [ ] Frontend UI handles loading, error, and empty states (unchanged from before)
+- [ ] All tests written and passing — existing tests still pass
+- [ ] OpenAPI spec regenerated if backend routes changed (N/A — no backend changes)
+- [ ] Generated TypeScript types regenerated if response shapes changed (N/A — no backend changes)
+- [ ] Generated types compile: `npm run typecheck`
+- [ ] Response validation updated: `frontend/src/api/validator.ts` matches backend changes (N/A — no backend changes)
+- [ ] Contract test updated: `frontend/src/__tests__/api-contract.test.ts` covers usage shape with `totals` object
+- [ ] Coverage checked: no significant decrease in changed modules
 
 ---
 
-### i) Post-Deploy Verification
+### j) Post-Deploy Verification
 
 1. [ ] `cd frontend && npm test -- --run` passes
 2. [ ] `cd frontend && npm run lint` passes
 3. [ ] `cd frontend && npm run typecheck` passes
-4. [ ] Navigate to Usage & Billing tab → cards show actual values (not 0)
-5. [ ] Make an API call, refresh tab → values update
+4. [ ] `cd frontend && npm run build` passes
+5. [ ] Navigate to Usage & Billing tab → cards show actual values (not 0)
+6. [ ] Make an API call, refresh tab → values update
+7. [ ] Verify no console errors for undefined properties
+
+---
+
+*Fill in all sections before starting implementation. Update status as work progresses. The "Files Changed" section is the most important — it prevents agents from creating redundant code by forcing them to check what already exists.*

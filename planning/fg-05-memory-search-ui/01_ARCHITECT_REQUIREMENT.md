@@ -69,6 +69,24 @@ This is a **FRONTEND-ONLY task**. The backend API and frontend API client alread
 
 ---
 
+## Impact Analysis
+
+| Component | Change Type | Details |
+|-----------|-------------|---------|
+| `frontend/src/views/ProjectDetail.vue` | MODIFY | Add search input, handler, and result display to Memory tab (~line 612+) |
+| `frontend/src/api/memory.js` | VERIFY | Verify `searchMemory` is exported (if missing, add it) |
+| `database` | NONE | No schema changes |
+| `config` | NONE | No env var changes |
+
+---
+
+## Known Unknowns
+
+1. **[Exact line numbers]**: The Memory tab section line numbers may have shifted. **Resolution**: grep for `Memory tab` or `memory-list` in ProjectDetail.vue to find the actual location.
+2. **[searchMemory export]**: The API client may or may not export `searchMemory`. **Resolution**: Check `frontend/src/api/memory.js` — if missing, add the export.
+
+---
+
 ## Important Design Decisions
 
 **No design decisions require user input. All choices follow existing patterns.**
@@ -100,6 +118,26 @@ The search UI should follow the existing pattern in the Memory tab:
 - Backend changes to the search API
 - Advanced search features (filters, sorting, pagination within results)
 - Search history or recent searches
+- Debounced/real-time search (Enter key search only)
+
+---
+
+## Performance Considerations
+
+- Expected load: N/A — search triggered by user action, not automatic
+- N+1 queries to avoid: N/A
+- Caching strategy: N/A
+- Pagination needed: NO — search results displayed as a list (backend handles pagination internally)
+
+---
+
+## Security Considerations
+
+- Authentication required: YES (existing — memory endpoints are behind auth)
+- Authorization check: YES (existing — project-level access control)
+- Input validation: YES (existing — query parameter validated in backend)
+- Rate limiting: N/A (search is user-triggered, not automatic)
+- Sensitive data handling: No change — memory content is user-created, not secrets
 
 ---
 
@@ -108,6 +146,10 @@ The search UI should follow the existing pattern in the Memory tab:
 ### Frontend Tests
 - [ ] Unit tests: `npm test -- --run` — no regressions
 - [ ] Manual verification: Enter search query, verify matching memories displayed
+
+### Frontend Contract Tests
+- [ ] `frontend/src/__tests__/api-contract.test.ts` — verify memory search response shape includes `id`, `content`, `metadata`, `agent_name`
+- [ ] `frontend/src/api/validator.ts` — verify memory response schema matches backend
 
 ### CI Requirements
 - [ ] `npm run lint` — frontend lint passes

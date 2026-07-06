@@ -22,101 +22,124 @@
 
 ### a) Purpose
 
-Remove the orphaned migration file `001_base_schema.sql` which is not referenced in `apply.js` and duplicates `001_create_tables.sql`. Having two files with the same prefix is confusing.
+Remove the orphaned migration file `001_base_schema.sql` which is not referenced in `apply.js` and duplicates `001_create_tables.sql`. Having two files with the same prefix `001_` is confusing and could cause issues if someone accidentally runs the wrong file.
 
 ---
 
 ### b) Actions
 
-#### Phase 1: Investigation
+#### Implementation Order
 
-1. Compare the two `001_` migration files:
-   ```bash
-   diff backend/src/migrations/001_base_schema.sql backend/src/migrations/001_create_tables.sql
-   ```
+Steps must be executed in this exact order (dependencies between steps are noted):
 
-2. If they are identical or very similar → proceed to deletion.
-3. If they differ significantly → read both files to understand the difference. Check if `001_base_schema.sql` contains additional tables/columns not in `001_create_tables.sql`.
+1. **[Compare migration files]** — `backend/src/migrations/`
+   - Run `diff backend/src/migrations/001_base_schema.sql backend/src/migrations/001_create_tables.sql`
+   - If identical or very similar → proceed to deletion
+   - If different → read both files to understand the difference, check if `001_base_schema.sql` contains additional tables/columns
+   - *Depends on*: nothing
 
-#### Phase 2: Cleanup
+2. **[Delete orphaned files]** — `backend/src/migrations/`
+   - Delete `001_base_schema.sql`
+   - Delete `001_base_schema_rollback.sql`
+   - *Depends on*: Step 1
 
-4. Delete the orphaned files:
-   ```bash
-   rm backend/src/migrations/001_base_schema.sql
-   rm backend/src/migrations/001_base_schema_rollback.sql
-   ```
+3. **[Verify cleanup]** — `backend/src/migrations/`
+   - Run `ls backend/src/migrations/001*` — should show only `001_create_tables.sql` and `001_create_tables_rollback.sql`
+   - Run `grep "001" backend/src/migrations/apply.js` — should show `./001_create_tables.sql`
+   - *Depends on*: Step 2
 
-5. Verify only one `001_` file remains:
-   ```bash
-   ls backend/src/migrations/001*
-   # Should show only: 001_create_tables.sql  001_create_tables_rollback.sql
-   ```
-
-6. Verify `apply.js` still references the correct file:
-   ```bash
-   grep "001" backend/src/migrations/apply.js
-   # Should show: ./001_create_tables.sql
-   ```
-
-#### Phase 3: Testing
-
-7. Run backend tests: `cd backend && npm test`
-8. Verify migration rollback test passes (it checks all files in apply.js have rollbacks)
+4. **[Run verification]** — `cd backend`
+   - `npm test` — migration rollback test should pass
+   - *Depends on*: Steps 1, 2, 3
 
 ---
 
-### c) Dependencies
+### c) Per-File Action Plan
 
-- None
+#### `backend/src/migrations/001_base_schema.sql` (DELETE)
+- **What to remove**: Entire file
+- **Reason**: Orphaned — not referenced in `apply.js`, duplicate of `001_create_tables.sql`
+
+#### `backend/src/migrations/001_base_schema_rollback.sql` (DELETE)
+- **What to remove**: Entire file
+- **Reason**: Rollback for orphaned file
+
+#### `backend/src/migrations/apply.js` (NONE)
+- **No changes needed** — already references `001_create_tables.sql`
 
 ---
 
-### d) Risks/Edge Cases
+### d) Dependencies
+
+- None — this is a file cleanup, no runtime dependencies
+
+---
+
+### e) Risks/Edge Cases
 
 - **[Risk]**: `001_base_schema.sql` contains unique schema not in `001_create_tables.sql`
-  **[Mitigation]**: Compare files before deleting. If different, check if the unique content should be added to `001_create_tables.sql` instead.
+  **[Mitigation]**: Compare files with `diff` before deleting. If different, check if the unique content should be added to `001_create_tables.sql` instead.
 
 ---
 
-### e) Testing
+### f) Testing
+
+**MANDATORY: You must CREATE new test files or EXTEND existing test files for all new/changed code.**
+**It is NOT sufficient to only verify that existing tests still pass.**
 
 #### Backend Unit Tests
-- [ ] `npm test` — migration rollback test should pass
+- [ ] `npm test` — migration rollback test should pass (verifies all files in apply.js have rollbacks)
 
-#### CI Requirements
-- [ ] `npm test` — backend tests pass
+#### Backend Jest Integration Tests
+- N/A — no backend API changes
+
+#### Backend Bash Integration Suite
+- [ ] Fresh database migration works: `cd backend && npm run db:migrate` — should complete without errors
+- [ ] Verify only `001_create_tables.sql` exists: `ls backend/src/migrations/001*`
+
+#### Frontend Unit Tests
+- N/A — no frontend changes
+
+#### Frontend Contract Tests
+- N/A — no API changes
 
 ---
 
-### f) Migration Notes
+### g) Migration Notes
 
 Not applicable — this is a cleanup task, not a database migration.
 
 ---
 
-### g) Files Changed
+### h) Files Changed
 
 **Backend:**
 ```
-backend/src/migrations/001_base_schema.sql          → deleted
-backend/src/migrations/001_base_schema_rollback.sql → deleted
+backend/src/migrations/001_base_schema.sql          → DELETE
+backend/src/migrations/001_base_schema_rollback.sql → DELETE
 ```
 
 ---
 
-### h) Code Review Checklist
+### i) Code Review Checklist
 
-- [ ] Compared `001_base_schema.sql` with `001_create_tables.sql`
-- [ ] Orphaned files deleted
-- [ ] Only one `001_` migration file remains
-- [ ] `apply.js` still references the correct file
-- [ ] All tests pass
+- [ ] Compared `001_base_schema.sql` with `001_create_tables.sql` using `diff`
+- [ ] Orphaned files deleted (`001_base_schema.sql`, `001_base_schema_rollback.sql`)
+- [ ] Only one `001_` migration file remains (`001_create_tables.sql`)
+- [ ] `apply.js` still references the correct file (`./001_create_tables.sql`)
 - [ ] No database changes needed
+- [ ] All tests written and passing — existing tests still pass
+- [ ] Coverage checked: no significant decrease in changed modules
 
 ---
 
-### i) Post-Deploy Verification
+### j) Post-Deploy Verification
 
 1. [ ] `cd backend && npm test` passes
 2. [ ] `ls backend/src/migrations/001*` shows only `001_create_tables.sql` and `001_create_tables_rollback.sql`
-3. [ ] Fresh database migration (`npm run db:migrate`) works correctly
+3. [ ] Fresh database migration works: `cd backend && npm run db:migrate` — completes without errors
+4. [ ] Migration rollback test passes (verifies all applied migrations have rollbacks)
+
+---
+
+*Fill in all sections before starting implementation. Update status as work progresses. The "Files Changed" section is the most important — it prevents agents from creating redundant code by forcing them to check what already exists.*

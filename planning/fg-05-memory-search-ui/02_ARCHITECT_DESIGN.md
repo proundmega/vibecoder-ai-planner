@@ -99,6 +99,42 @@ function clearSearch() {
 
 ---
 
+## File-Level Impact Matrix
+
+| File | Action | Specific Changes |
+|------|--------|-----------------|
+| `frontend/src/views/ProjectDetail.vue` | MODIFY | Add search input, handler, and result display to Memory tab (~line 612+) |
+| `frontend/src/api/memory.js` | VERIFY | Verify `searchMemory` is exported (if missing, add it) |
+
+---
+
+## Testing Strategy
+
+### Test Layers
+
+| Layer | Tool | Location | What It Catches |
+|-------|------|----------|-----------------|
+| Frontend unit | Vitest | `frontend/src/__tests__/memory.test.js` | API client `searchMemory` calls correct endpoint |
+| Frontend contract | Vitest | `frontend/src/__tests__/api-contract.test.ts` | Response shape includes `id`, `content`, `metadata` |
+| Frontend component | Cypress | `frontend/cypress/component/` | Search input renders and triggers search |
+| Frontend E2E | Cypress | `frontend/cypress/e2e/` | Full search flow: type → Enter → results → clear |
+
+### Frontend-Backend Contract Testing
+
+- Response schemas in `frontend/src/api/validator.ts` must include memory search result fields: `id`, `content`, `metadata`, `agent_name`
+- If the contract test has a memory shape assertion, verify it matches the backend's actual response
+- Generated TypeScript types from OpenAPI spec should include the memory search response — verify by running `npm run generate:spec && npm run generate:api && npm run typecheck`
+
+---
+
+## Security Considerations
+
+- No new endpoints — existing auth/authorization applies unchanged
+- No new data exposure — search returns same memory fields, just filtered
+- Input validation unchanged — query parameter already validated in backend
+
+---
+
 ## Data Flow Diagram
 
 ```
@@ -162,6 +198,12 @@ function clearSearch() {
 - **Pros**: Users can compare search results with full list
 - **Cons**: More complex UI, takes more space
 - **Decision**: Replace the list with search results (simpler)
+
+---
+
+## Specification Generation
+
+- [ ] `04_SPECIFICATION.md` has been created with exact file operations for each file (if a small model will execute this ticket)
 
 ---
 

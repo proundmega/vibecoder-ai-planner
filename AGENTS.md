@@ -9,8 +9,8 @@ Read highest-value sources first: `README*`, root manifests, workspace config, l
 ## Quick Start
 
 ```bash
-docker compose up --build                        # full stack: frontend :3000 (override), API :3001, PG :5432
-docker compose -f docker-compose.yml up --build  # production-style: frontend :3002, API :3001
+docker compose up --build                        # dev: frontend :3000, API :3001, PG :5432
+docker compose -f docker-compose.yml up --build  # prod-style: frontend :3002, API :3001
 
 # Manual dev:
 cd backend && npm run dev          # API :3001, uses `node --watch`
@@ -51,7 +51,7 @@ planning/               → 00-04 templates + bp-XX/, bt-XX/, fg-XX/ suites
 ### Backend (from `backend/`)
 ```bash
 npm run dev          # node --watch src/index.js → :3001
-npm test             # Jest unit tests only (jest --passWithNoTests)
+npm test             # Jest unit tests (jest --passWithNoTests)
 npm run test:coverage # Jest with coverage
 npm run test:integration # Real PG at postgresql://postgres:changeme@localhost:5432/vibecode
 npm run lint         # ESLint flat config (eslint.config.js)
@@ -85,7 +85,7 @@ docker compose --profile dev up    # includes pgadmin on :5050
 - Test files: `src/__tests__/*.test.js` + `src/middleware/*.test.js`. Default config does NOT pick up top-level `*.test.js`.
 - `setupFilesAfterEnv`: `src/__tests__/jest.setup.js` — mocks pg, winston, bcryptjs, uuid, jsonwebtoken. No real DB needed.
 - `moduleDirectories: ['node_modules', '<rootDir>']` + `moduleNameMapper` for `models/`, `services/` — `require('services/Foo')` works.
-- Integration tests: `jest.integration.config.js` — real PG, `maxWorkers:1`, `testTimeout:30000`, no mock restore.
+- Integration tests: `jest.integration.config.js` — real PG, `maxWorkers:1`, `testTimeout:30000`, no mock restore (`restoreMocks: false`).
 - Bash integration suite: `backend/integration-test/run.sh` — curl against Docker containers + real PG.
 
 ### Frontend (Vitest + Cypress)

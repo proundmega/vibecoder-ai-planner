@@ -84,6 +84,23 @@ The frontend accesses `usage.total_requests`, `usage.total_cost`, etc. which don
 
 ---
 
+## Impact Analysis
+
+| Component | Change Type | Details |
+|-----------|-------------|---------|
+| `frontend/src/views/ProjectDetail.vue` | MODIFY | Fix usage card field paths in Usage & Billing tab (~lines 520-540) |
+| `database` | NONE | No schema changes |
+| `config` | NONE | No env var changes |
+
+---
+
+## Known Unknowns
+
+1. **[Exact line numbers]**: The usage tab section line numbers may have shifted if other changes were made to ProjectDetail.vue. **Resolution**: grep for `usage.total_requests` or `usage.total_cost` in ProjectDetail.vue to find the actual location.
+2. **[Token display preference]**: Should tokens be shown as one combined value or two separate cards? **Resolution**: Per the design doc, show two separate cards ("Tokens In" and "Tokens Out").
+
+---
+
 ## Important Design Decisions
 
 **DECISION POINTS**:
@@ -124,6 +141,25 @@ The frontend accesses `usage.total_requests`, `usage.total_cost`, etc. which don
 - Adding response time tracking to `usage_logs` table
 - Backend changes to the usage response structure
 - New API endpoints for usage
+- Modifying the breakdown array display (already works correctly)
+
+---
+
+## Performance Considerations
+
+- Expected load: N/A (this is a template field fix, no new queries)
+- N+1 queries to avoid: N/A
+- Caching strategy: N/A
+- Pagination needed: N/A
+
+---
+
+## Security Considerations
+
+- Authentication required: YES (existing — usage endpoints are behind auth)
+- Authorization check: YES (existing — project-level access control)
+- Input validation: N/A (no input changes, only output field references)
+- Sensitive data handling: No change — usage data contains no secrets
 
 ---
 
@@ -132,6 +168,10 @@ The frontend accesses `usage.total_requests`, `usage.total_cost`, etc. which don
 ### Frontend Tests
 - [ ] Unit tests: `npm test -- --run` — no regressions
 - [ ] Manual verification: Navigate to Usage & Billing tab, verify cards show correct values
+
+### Frontend Contract Tests
+- [ ] `frontend/src/__tests__/api-contract.test.ts` — verify usage response shape includes `totals.totalCalls`, `totals.totalCost`, `totals.totalTokensIn`, `totals.totalTokensOut`
+- [ ] `frontend/src/api/validator.ts` — verify usage response schema expects `totals` object
 
 ### CI Requirements
 - [ ] `npm run lint` — frontend lint passes

@@ -94,6 +94,41 @@ Modify `billingController.js` to return a normalized response with `total_cost`,
 
 ---
 
+## File-Level Impact Matrix
+
+| File | Action | Specific Changes |
+|------|--------|-----------------|
+| `frontend/src/views/ProjectDetail.vue` | MODIFY | Billing tab section (~lines 560-610): fix field paths in billing cards and daily_costs table |
+
+---
+
+## Testing Strategy
+
+### Test Layers
+
+| Layer | Tool | Location | What It Catches |
+|-------|------|----------|-----------------|
+| Frontend unit | Vitest | `frontend/src/__tests__/billing.test.js` | API client returns correct shape |
+| Frontend contract | Vitest | `frontend/src/__tests__/api-contract.test.ts` | Response shape includes billing row fields |
+| Frontend component | Cypress | `frontend/cypress/component/` | Billing cards render with mock data |
+| Frontend E2E | Cypress | `frontend/cypress/e2e/` | Full billing tab flow |
+
+### Frontend-Backend Contract Testing
+
+- Response schemas in `frontend/src/api/validator.ts` must include billing row fields: `total_cost_usd`, `billing_month`, `total_calls`
+- If the contract test has a billing shape assertion, verify it matches the backend's actual response (array of rows)
+- Generated TypeScript types from OpenAPI spec should include the billing row structure — verify by running `npm run generate:spec && npm run generate:api && npm run typecheck`
+
+---
+
+## Security Considerations
+
+- No new endpoints — existing auth/authorization applies unchanged
+- No new data exposure — field fix does not change what data is returned
+- No input changes — this is purely a template rendering fix
+
+---
+
 ## Data Flow Diagram
 
 ```
@@ -154,6 +189,12 @@ Modify `billingController.js` to return a normalized response with `total_cost`,
 - **Pros**: Frontend works without changes
 - **Cons**: Requires adding non-existent fields (plan, current_period)
 - **Decision**: Option A is correct — fix the broken consumer
+
+---
+
+## Specification Generation
+
+- [ ] `04_SPECIFICATION.md` has been created with exact file operations for each file (if a small model will execute this ticket)
 
 ---
 

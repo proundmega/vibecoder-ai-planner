@@ -32,6 +32,81 @@
 
 ---
 
+## File-Level Impact Matrix
+
+| File | Action | Specific Changes |
+|------|--------|-----------------|
+| `backend/src/migrations/005_permission_system.sql` | CREATE | New migration: 3 tables + seed data |
+| `backend/src/migrations/apply.js` | MODIFY | Add 005_permission_system.sql to SQL_FILES array |
+| `backend/src/services/PermissionService.js` | CREATE | New service: permission resolution + caching |
+| `backend/src/middleware/permissions.js` | MODIFY | Rewrite: permission-based middleware |
+| `backend/src/api/permissions.js` | CREATE | New route: GET /permissions/:roleName |
+| `backend/src/api/v1/index.js` | MODIFY | Mount permissions router |
+| `backend/src/api/users.js` | MODIFY | Replace requireRole with permission middleware |
+| `backend/src/api/projects.js` | MODIFY | Replace requireRole with permission middleware |
+| `backend/src/api/tickets.js` | MODIFY | Replace requireRole with permission middleware |
+| `backend/src/api/agents.js` | MODIFY | Replace requireRole with permission middleware |
+| `backend/src/api/approvals.js` | MODIFY | Replace requireRole with permission middleware |
+| `backend/src/services/TicketService.js` | MODIFY | Replace inline role checks with PermissionService |
+| `backend/src/services/UserService.js` | MODIFY | Replace inline role checks with PermissionService |
+| `backend/src/services/ApprovalService.js` | MODIFY | Replace inline role checks with PermissionService |
+| `frontend/src/stores/auth.js` | MODIFY | Add permission helpers + loadRolePermissions |
+| `frontend/src/views/TicketBoard.vue` | MODIFY | Replace role checks with hasPermission |
+| `frontend/src/views/TicketDetail.vue` | MODIFY | Replace role checks with hasPermission |
+| `frontend/src/views/UserManagement.vue` | MODIFY | Replace role checks with hasPermission |
+| `frontend/src/views/SuperAdminUsers.vue` | MODIFY | Replace role checks with hasPermission |
+| `frontend/src/views/TicketEditModal.vue` | MODIFY | Replace role checks with hasPermission |
+| `frontend/src/views/UserModal.vue` | MODIFY | Replace role checks with hasPermission |
+| `frontend/src/views/App.vue` | MODIFY | Replace role checks with hasPermission |
+| `frontend/src/router/index.ts` | MODIFY | Update route guards |
+
+---
+
+## Testing Strategy
+
+### Test Layers
+
+| Layer | Tool | Location | What It Catches |
+|-------|------|----------|-----------------|
+| Backend unit | Jest | `backend/src/__tests__/permissionService.test.js` | PermissionService methods, cache behavior |
+| Middleware | Jest | `backend/src/middleware/permissions.test.js` | requireAnyPermission, requireAllPermissions |
+| Jest integration | Jest + real PG | `backend/src/__tests__/integration/api-permissions.test.js` | Full request lifecycle, role-based access |
+| **Bash integration** | curl + helpers | `backend/integration-test/suites/permissions.test.sh` | Real API responses, multi-step flows |
+| Frontend unit | Vitest | `frontend/src/__tests__/authStore.test.ts` | hasPermission, hasAnyPermission helpers |
+| Frontend contract | Vitest | `frontend/src/__tests__/api-contract.test.ts` | Permissions endpoint response shape |
+| Frontend component | Cypress | `frontend/cypress/component/` | Permission-based UI elements |
+| Frontend E2E | Cypress | `frontend/cypress/e2e/` | Full permission-based user flows |
+
+### Bash Integration Suite — When to Add Tests
+
+Add a new `.test.sh` suite in `backend/integration-test/suites/permissions.test.sh` for:
+- GET `/api/permissions/super_admin` → 200 with all 26 codes
+- GET `/api/permissions/user` → 200 with 8 codes
+- GET `/api/permissions/nonexistent` → 404
+- POST `/api/tickets` with TICKET_CREATE permission → 201
+- POST `/api/tickets` without TICKET_CREATE permission → 403
+- DELETE `/api/users/:id` with USER_DELETE permission → 200
+- DELETE `/api/users/:id` without USER_DELETE permission → 403
+
+### Frontend-Backend Contract Testing
+
+- Response schemas in `frontend/src/api/validator.ts` must include permissions endpoint response: `{ success: true, data: [permissionCodes] }`
+- If the contract test has a permissions shape assertion, verify it matches the backend's actual response
+- Generated TypeScript types from OpenAPI spec should include the permissions response — verify by running `npm run generate:spec && npm run generate:api && npm run typecheck`
+
+---
+
+## Security Considerations
+
+- New endpoints require authentication: YES — `GET /permissions/:roleName` requires auth
+- New endpoints require specific permissions: N/A — permissions endpoint returns permissions for the authenticated user's own role
+- Input validated against: Joi schema for role name (must exist in roles table)
+- Rate limiting: N/A — permission checks are fast, no rate limiting needed
+- Sensitive data in responses: Permission codes are not secrets, but role-permission mappings should not be exposed to unauthorized users
+- SQL injection protection: Parameterized queries used in PermissionService
+
+---
+
 ## Database Schema
 
 ### New Tables
@@ -495,6 +570,12 @@ const canCreate = computed(() => {
 **Exception**: `requireAllPermissions` (AND logic) — used when multiple distinct permissions are required for a single action (rare, but exists for high-privilege actions).
 
 **Example**: Deleting a user might require both `USER_DELETE` AND `USER_READ` (read to verify, delete to remove). In practice, `USER_DELETE` alone should suffice — AND logic is available for edge cases.
+
+---
+
+## Specification Generation
+
+- [ ] `04_SPECIFICATION.md` has been created with exact file operations for each file (if a small model will execute this ticket)
 
 ---
 

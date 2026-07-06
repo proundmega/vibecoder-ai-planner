@@ -83,6 +83,55 @@ Accept both `'architect'` and `'architecture'` (and map them to the same content
 
 ---
 
+## File-Level Impact Matrix
+
+| File | Action | Specific Changes |
+|------|--------|-----------------|
+| `backend/src/api/ticketPlanning.js` | MODIFY | Update OpenAPI spec enum: `[architect]` → `[architecture, technical, simple]` |
+| `backend/src/controllers/ticketPlanningController.js` | MODIFY | Update template mapping: replace `'architect'` with three entries |
+| `frontend/src/views/TicketDetail.vue` | VERIFY | Template options already correct — verify no changes needed |
+
+---
+
+## Testing Strategy
+
+### Test Layers
+
+| Layer | Tool | Location | What It Catches |
+|-------|------|----------|-----------------|
+| Backend unit | Jest | `backend/src/__tests__/ticketPlanning.test.js` or `backend/src/__tests__/unit.test.js` | `applyTemplate` accepts all three template names |
+| Backend Jest integration | Jest + real PG | `backend/src/__tests__/integration/` | Full request lifecycle for apply-template endpoint |
+| **Bash integration** | curl + helpers | `backend/integration-test/suites/` | Real API response with template names |
+| Frontend unit | Vitest | `frontend/src/__tests__/ticketPlanning.test.js` | API client sends correct template name |
+| Frontend contract | Vitest | `frontend/src/__tests__/api-contract.test.ts` | Response shape matches after backend changes |
+| Frontend E2E | Cypress | `frontend/cypress/e2e/` | Full template application flow |
+
+### Backend Bash Integration Suite — When to Add Tests
+
+Add a new `.test.sh` suite in `backend/integration-test/suites/` for the apply-template endpoint:
+- Test: POST with `templateName: 'architecture'` → 200
+- Test: POST with `templateName: 'technical'` → 200
+- Test: POST with `templateName: 'simple'` → 200
+- Test: POST with `templateName: 'architect'` → 400 (old name no longer valid)
+- Test: POST with unknown template name → 400
+
+### Frontend-Backend Contract Testing
+
+- Generated TypeScript types from OpenAPI spec should reflect the updated enum — verify by running `npm run generate:spec && npm run generate:api && npm run typecheck`
+- If the contract test has a template shape assertion, verify it matches the backend's actual response
+
+---
+
+## Security Considerations
+
+- Authentication required: YES (existing — planning endpoints require auth)
+- Authorization check: YES (existing — ticket-level access control)
+- Input validation: YES (template name validated against enum)
+- Rate limiting: N/A (not a user-facing endpoint)
+- Sensitive data handling: No change — planning files contain user content, not secrets
+
+---
+
 ## Data Flow Diagram
 
 ```
@@ -145,6 +194,12 @@ Accept both `'architect'` and `'architecture'` (and map them to the same content
 - **Pros**: Backward compatible
 - **Cons**: Unnecessary complexity, no other callers
 - **Decision**: Option A is cleaner
+
+---
+
+## Specification Generation
+
+- [ ] `04_SPECIFICATION.md` has been created with exact file operations for each file (if a small model will execute this ticket)
 
 ---
 

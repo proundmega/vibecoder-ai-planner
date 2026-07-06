@@ -101,6 +101,42 @@ Change the ticket functions to call `/api/v1/tickets/` instead of `/api/v1/agent
 
 ---
 
+## File-Level Impact Matrix
+
+| File | Action | Specific Changes |
+|------|--------|-----------------|
+| `frontend/src/api/agents.js` | MODIFY | Fix all endpoint paths (remove duplicated `agents/` segment), remove 5 dead ticket functions |
+| `frontend/src/views/AIAssistant.vue` | VERIFY | Check for usages of removed ticket functions |
+
+---
+
+## Testing Strategy
+
+### Test Layers
+
+| Layer | Tool | Location | What It Catches |
+|-------|------|----------|-----------------|
+| Frontend unit | Vitest | `frontend/src/__tests__/agents.test.js` | API client functions call correct endpoints |
+| Frontend contract | Vitest | `frontend/src/__tests__/api-contract.test.ts` | Response shapes match backend |
+| Frontend component | Cypress | `frontend/cypress/component/` | Agent operations work with correct paths |
+| Frontend E2E | Cypress | `frontend/cypress/e2e/` | Full agent creation/list flow |
+
+### Frontend-Backend Contract Testing
+
+- Response schemas in `frontend/src/api/validator.ts` must include agent response fields: `id`, `name`, `user_id`, `api_key`, `generatedApiKey`
+- If the contract test has an agent shape assertion, verify it matches the backend's actual response
+- Generated TypeScript types from OpenAPI spec should include the agent response — verify by running `npm run generate:spec && npm run generate:api && npm run typecheck`
+
+---
+
+## Security Considerations
+
+- No new endpoints — existing auth/authorization applies unchanged
+- No new data exposure — path fix does not change what data is returned
+- No input changes — this is purely a path correction
+
+---
+
 ## Data Flow Diagram
 
 ```
@@ -161,6 +197,12 @@ Change the ticket functions to call `/api/v1/tickets/` instead of `/api/v1/agent
 - **Pros**: Preserves ticket functions
 - **Cons**: Mixes auth patterns (agent key vs. token)
 - **Decision**: Option A is simpler
+
+---
+
+## Specification Generation
+
+- [ ] `04_SPECIFICATION.md` has been created with exact file operations for each file (if a small model will execute this ticket)
 
 ---
 
