@@ -1,0 +1,46 @@
+# Pending Tickets
+
+Tickets that have planning docs in `planning/` but have NOT been implemented yet (no git history).
+
+## Backend (bp-*)
+
+| ID | Directory | Priority | Description |
+|----|-----------|----------|-------------|
+| bp-53 | `bp-53-distributed-state` | P1 | Distributed State Management |
+| bp-56 | `bp-56-design-system` | P2 | Shared CSS and Component Design System |
+| bp-57 | `bp-57-migrate-to-typescript` | P3 | Frontend JS → TypeScript migration |
+
+## Test Backfills (bt-*)
+
+| ID | Directory | Depends On | Description |
+|----|-----------|------------|-------------|
+| bt-53 | `bt-53-backfill-redis-integration-tests` | bp-53 | Redis integration tests |
+| bt-56 | `bt-56-backfill-design-system-tests` | bp-56 | Design system tests |
+| bt-57 | `bt-57-backfill-typescript-migration-tests` | bp-57 | TypeScript migration tests |
+
+## Feature Gaps (fg-*)
+
+| ID | Directory | Description |
+|----|-----------|-------------|
+| fg-01 | `fg-01-provider-field-mismatch` | Provider field mismatch |
+| fg-02 | `fg-02-usage-field-mismatch` | Usage field mismatch |
+| fg-03 | `fg-03-billing-field-mismatch` | Billing field mismatch |
+| fg-04 | `fg-04-template-name-mismatch` | Template name mismatch |
+| fg-05 | `fg-05-memory-search-ui` | Memory search UI |
+| fg-06 | `fg-06-agents-api-paths` | Agents API paths |
+| fg-07 | `fg-07-orphaned-migration` | Orphaned migration |
+
+## Other (pa-*)
+
+| ID | Directory | Description |
+|----|-----------|-------------|
+| pa-01 | `pa-01-permission-system` | Permission system |
+
+## Notes
+
+- bp-58 (security hardening) and bp-60 (contract testing) have code in HEAD but their planning docs are stale (still say "planned"). They are effectively done but need doc updates.
+- bp-53, bp-56, bp-57 have zero git history — truly pending.
+- All bt-* suites are test backfills for corresponding bp-* suites.
+- fg-08 through fg-12 were implemented (merged into a single commit) but have no separate planning directory.
+- fg-29 was implemented but planning doc was stale — moved to `planning/DONE/`.
+- bt-52, bt-54, bt-55, bt-58, bt-59 moved to `planning/DONE/` — their corresponding bp-* suites are implemented.
