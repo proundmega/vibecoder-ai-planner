@@ -79,6 +79,30 @@ describe('ticketPlanning API', () => {
       })
       expect(result).toEqual({ applied: true, files: ['design.md', 'tasks.md'] })
     })
+
+    it('sends POST request with built-in template name "architecture"', async () => {
+      const { post } = await import('../api/client')
+      post.mockResolvedValue({ applied: true, files: ['00_CHECKLIST.md', '01_REQUIREMENT.md'] })
+
+      const result = await ticketPlanning.applyTemplate('ticket-1', 'architecture')
+
+      expect(post).toHaveBeenCalledWith('/api/v1/tickets/ticket-1/planning/apply-template', {
+        templateName: 'architecture',
+      })
+      expect(result).toEqual({ applied: true, files: ['00_CHECKLIST.md', '01_REQUIREMENT.md'] })
+    })
+
+    it('sends POST request with built-in template name "technical"', async () => {
+      const { post } = await import('../api/client')
+      post.mockResolvedValue({ applied: true, files: ['01_TECHNICAL_REQUIREMENT.md'] })
+
+      const result = await ticketPlanning.applyTemplate('ticket-1', 'technical')
+
+      expect(post).toHaveBeenCalledWith('/api/v1/tickets/ticket-1/planning/apply-template', {
+        templateName: 'technical',
+      })
+      expect(result).toEqual({ applied: true, files: ['01_TECHNICAL_REQUIREMENT.md'] })
+    })
   })
 
   describe('updatePlanningStatus', () => {

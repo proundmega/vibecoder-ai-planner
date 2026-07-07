@@ -71,6 +71,137 @@ describe('TicketPlanningService', () => {
       expect(result.files[0].version).toBe(2);
     });
   });
+
+  describe('applyTemplate', () => {
+    function createMockClient(queryMock) {
+      const client = {
+        query: queryMock || jest.fn(),
+        release: jest.fn(),
+      };
+      pool.connect.mockResolvedValue(client);
+      return client;
+    }
+
+    it('should apply architecture template (regression: must be "architecture", not "architect")', async () => {
+      const client = createMockClient(jest.fn().mockResolvedValue({ rows: [] }));
+
+      await TicketPlanningService.applyTemplate('ticket-1', 'architecture', 'user-1');
+
+      expect(client.query).toHaveBeenCalledWith('BEGIN');
+      expect(client.query).toHaveBeenCalledWith(
+        'UPDATE tickets SET planning_status = \'template_selected\', template_schema = $1 WHERE id = $2',
+        ['architecture', 'ticket-1']
+      );
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
+      expect(client.release).toHaveBeenCalled();
+    });
+
+    it('should apply specification template', async () => {
+      const client = createMockClient(jest.fn().mockResolvedValue({ rows: [] }));
+
+      await TicketPlanningService.applyTemplate('ticket-1', 'specification', 'user-1');
+
+      expect(client.query).toHaveBeenCalledWith('BEGIN');
+      expect(client.query).toHaveBeenCalledWith(
+        'UPDATE tickets SET planning_status = \'template_selected\', template_schema = $1 WHERE id = $2',
+        ['specification', 'ticket-1']
+      );
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('should apply technical template', async () => {
+      const client = createMockClient(jest.fn().mockResolvedValue({ rows: [] }));
+
+      await TicketPlanningService.applyTemplate('ticket-1', 'technical', 'user-1');
+
+      expect(client.query).toHaveBeenCalledWith('BEGIN');
+      expect(client.query).toHaveBeenCalledWith(
+        'UPDATE tickets SET planning_status = \'template_selected\', template_schema = $1 WHERE id = $2',
+        ['technical', 'ticket-1']
+      );
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('should apply simple template', async () => {
+      const client = createMockClient(jest.fn().mockResolvedValue({ rows: [] }));
+
+      await TicketPlanningService.applyTemplate('ticket-1', 'simple', 'user-1');
+
+      expect(client.query).toHaveBeenCalledWith('BEGIN');
+      expect(client.query).toHaveBeenCalledWith(
+        'UPDATE tickets SET planning_status = \'template_selected\', template_schema = $1 WHERE id = $2',
+        ['simple', 'ticket-1']
+      );
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('should insert planning files with correct content for architecture template', async () => {
+      const client = createMockClient(jest.fn().mockResolvedValue({ rows: [] }));
+
+      await TicketPlanningService.applyTemplate('ticket-1', 'architecture', 'user-1');
+
+      const insertCalls = client.query.mock.calls.filter(
+        call => call[0].includes('INSERT INTO ticket_planning')
+      );
+      expect(insertCalls.length).toBe(5);
+      expect(insertCalls[0][0]).toContain('INSERT INTO ticket_planning');
+      expect(insertCalls[0][1][0]).toBe('ticket-1');
+      expect(insertCalls[0][1][1]).toBe('00_ARCHITECT_CHECKLIST.md');
+      expect(insertCalls[0][1][2]).toContain('ARCHITECT_CHECKLIST');
+      expect(insertCalls[0][1][3]).toBe('user-1');
+    });
+
+    it('should rollback on error', async () => {
+      const client = createMockClient(
+        jest.fn()
+          .mockResolvedValueOnce({ rows: [] })
+          .mockRejectedValueOnce(new Error('DB error'))
+      );
+
+      await expect(
+        TicketPlanningService.applyTemplate('ticket-1', 'architecture', 'user-1')
+      ).rejects.toThrow('DB error');
+
+      const calls = client.query.mock.calls;
+      const rollbackCall = calls.find(call => call[0] === 'ROLLBACK');
+      expect(rollbackCall).toBeDefined();
+      expect(calls.find(call => call[0] === 'COMMIT')).toBeUndefined();
+    });
+
+    it('should use custom template fallback when template name is not built-in', async () => {
+      const Ticket = require('../models/ticket');
+      const client = createMockClient(
+        jest.fn()
+          .mockResolvedValueOnce({ rows: [] })
+          .mockResolvedValueOnce({ rows: [] })
+      );
+
+      Ticket.findById = jest.fn().mockResolvedValue({ id: 't1', project_id: 1, title: 'Test' });
+      pool.query = jest.fn().mockResolvedValue({
+        rows: [{ id: 1, project_id: 1, name: 'custom', file_definitions: JSON.stringify([{ key: 'custom.md', content: 'custom content' }]) }]
+      });
+
+      await TicketPlanningService.applyTemplate('ticket-1', 'my-custom-template', 'user-1');
+
+      expect(Ticket.findById).toHaveBeenCalledWith('ticket-1');
+      const updateCalls = client.query.mock.calls.filter(
+        call => call[0].includes('UPDATE tickets')
+      );
+      expect(updateCalls.length).toBe(1);
+      expect(updateCalls[0][1]).toEqual(['my-custom-template', 'ticket-1']);
+    });
+
+    it('should throw NotFoundError for non-existent custom template', async () => {
+      const Ticket = require('../models/ticket');
+      Ticket.findById = jest.fn().mockResolvedValue({ id: 't1', project_id: 1, title: 'Test' });
+      pool.query = jest.fn().mockResolvedValue({ rows: [] });
+      createMockClient(jest.fn());
+
+      await expect(
+        TicketPlanningService.applyTemplate('ticket-1', 'nonexistent-template', 'user-1')
+      ).rejects.toThrow('Custom template not found: nonexistent-template');
+    });
+  });
 });
 
 describe('TemplateService', () => {
