@@ -1,6 +1,9 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import VModal from '@/components/VModal.vue'
+import VButton from '@/components/VButton.vue'
+import VInput from '@/components/VInput.vue'
 
 const props = defineProps({
   isEdit: { type: Boolean, default: false },
@@ -89,137 +92,53 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="$emit('close')">
-    <div class="modal">
-      <h2>{{ isEdit ? 'Edit User' : 'Create New User' }}</h2>
+  <VModal :modelValue="true" :title="isEdit ? 'Edit User' : 'Create New User'" @close="emit('close')">
+    <form @submit.prevent="handleSubmit">
+      <VInput v-model="name" label="Name" placeholder="User name" required />
       
-      <form @submit.prevent="handleSubmit">
-        <label>Name</label>
-        <input v-model="name" type="text" placeholder="User name" required />
-        
-        <label>Email</label>
-        <input v-model="email" type="email" placeholder="user@example.com" required />
-        
-        <label v-if="!isEdit">Password</label>
-        <input
-          v-if="!isEdit"
-          v-model="password"
-          type="password"
-          placeholder="Min 6 characters"
-          minlength="6"
-          required
-        />
-        
-        <label>Role</label>
-        <select v-model="role" :disabled="isEdit">
-          <option v-for="r in availableRoles" :key="r.value" :value="r.value">
-            {{ r.label }}
-          </option>
-        </select>
-        <p v-if="isEdit" class="hint">Role cannot be changed after account creation</p>
-        
-        <p v-if="error" class="error">{{ error }}</p>
-        
-        <div class="modal-actions">
-          <button type="button" @click="$emit('close')" class="btn-cancel">Cancel</button>
-          <button type="submit" :disabled="loading" class="btn-submit">
-            {{ loading ? 'Saving...' : (isEdit ? 'Save' : 'Create') }}
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
+      <VInput v-model="email" label="Email" placeholder="user@example.com" type="email" required />
+      
+      <VInput v-if="!isEdit" v-model="password" label="Password" placeholder="Min 6 characters" type="password" minlength="6" required />
+      
+      <VInput v-model="role" label="Role" type="select" :disabled="isEdit">
+        <option v-for="r in availableRoles" :key="r.value" :value="r.value">
+          {{ r.label }}
+        </option>
+      </VInput>
+      
+      <p v-if="isEdit" class="hint">Role cannot be changed after account creation</p>
+      <p v-if="error" class="error">{{ error }}</p>
+      
+      <div class="modal-actions">
+        <VButton variant="secondary" @click="emit('close')">Cancel</VButton>
+        <VButton type="submit" variant="primary" :loading="loading">
+          {{ loading ? 'Saving...' : (isEdit ? 'Save' : 'Create') }}
+        </VButton>
+      </div>
+    </form>
+  </VModal>
 </template>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.modal {
-  background: white;
-  border-radius: 12px;
-  padding: 28px;
-  width: 480px;
-  max-width: 90vw;
-}
-
-.modal h2 {
-  margin-bottom: 20px;
-  font-size: 20px;
-  color: #1f2937;
-}
-
-.modal label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #374151;
-}
-
-.modal input,
-.modal select {
-  width: 100%;
-  padding: 10px;
-  margin-bottom: 16px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
-.modal select:disabled {
-  background: #f3f4f6;
-  cursor: not-allowed;
-}
-
 .hint {
-  font-size: 12px;
-  color: #6b7280;
-  margin: -10px 0 16px 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin: calc(var(--spacing-xs) * -1) 0 var(--spacing-md) 0;
 }
 
 .error {
-  color: #ef4444;
-  font-size: 13px;
-  margin: 0 0 12px 0;
-  padding: 8px 12px;
-  background: #fee2e2;
-  border-radius: 6px;
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--spacing-sm) 0;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-danger-light);
+  border-radius: var(--radius-md);
 }
 
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  margin-top: 8px;
-}
-
-.btn-cancel {
-  padding: 10px 20px;
-  background: white;
-  color: #6b7280;
-  border: 1px solid #d1d5db;
-}
-
-.btn-cancel:hover {
-  background: #f9fafb;
-}
-
-.btn-submit {
-  padding: 10px 20px;
-  background: #3b82f6;
-  color: white;
-}
-
-.btn-submit:disabled {
-  background: #9ca3af;
-  cursor: not-allowed;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
 }
 </style>

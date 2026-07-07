@@ -8,10 +8,38 @@
       <span v-if="$slots.prefix" class="v-input__prefix">
         <slot name="prefix" />
       </span>
-      <input
+      <textarea
+        v-if="type === 'textarea'"
         :id="id"
         v-bind="$attrs"
-        :type="type"
+        :value="modelValue"
+        :placeholder="placeholder"
+        :disabled="disabled"
+        :required="required"
+        :rows="rows || 4"
+        class="v-input__field"
+        data-type="textarea"
+        @input="$emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
+        @change="$emit('change', $event)"
+      />
+      <select
+        v-else-if="type === 'select'"
+        :id="id"
+        v-bind="$attrs"
+        :value="modelValue"
+        :disabled="disabled"
+        :required="required"
+        class="v-input__field"
+        data-type="select"
+        @change="handleChange"
+      >
+        <slot />
+      </select>
+      <input
+        v-else
+        :id="id"
+        v-bind="$attrs"
+        :type="type || 'text'"
         :value="modelValue"
         :placeholder="placeholder"
         :disabled="disabled"
@@ -32,24 +60,42 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-defineProps<{
+withDefaults(defineProps<{
   modelValue?: string
   label?: string
-  type?: string
+  type?: 'text' | 'email' | 'password' | 'textarea' | 'select' | 'number' | 'date'
   placeholder?: string
   error?: string
   help?: string
   disabled?: boolean
   required?: boolean
   size?: 'small' | 'medium' | 'large'
-}>()
+  rows?: number
+}>(), {
+  modelValue: '',
+  label: '',
+  type: 'text',
+  placeholder: '',
+  error: '',
+  help: '',
+  disabled: false,
+  required: false,
+  size: 'medium',
+  rows: 4
+})
 
-defineEmits<{
+const emit = defineEmits<{
   'update:modelValue': [value: string]
   change: [event: Event]
 }>()
 
 const id = computed(() => `v-input-${Math.random().toString(36).substr(2, 9)}`)
+
+function handleChange(event: Event) {
+  const target = event.target as HTMLSelectElement
+  emit('update:modelValue', target.value)
+  emit('change', event)
+}
 </script>
 
 <style scoped>
@@ -122,6 +168,19 @@ const id = computed(() => `v-input-${Math.random().toString(36).substr(2, 9)}`)
   background: var(--color-bg-tertiary);
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+.v-input__field[data-type='textarea'] {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.v-input__field[data-type='select'] {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--spacing-sm) center;
+  padding-right: var(--spacing-xl);
 }
 
 .v-input__error {

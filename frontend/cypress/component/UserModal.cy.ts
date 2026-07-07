@@ -13,7 +13,7 @@ describe('UserModal.vue', () => {
   it('should render name and email fields in create mode', () => {
     resetAuthStore('project_admin');
     cy.mount(UserModal);
-    cy.get('.modal h2').should('contain', 'Create New User');
+    cy.get('.v-modal__title').should('contain', 'Create New User');
     cy.get('input[placeholder="User name"]').should('exist');
     cy.get('input[placeholder="user@example.com"]').should('exist');
     cy.get('input[type="password"]').should('exist');
@@ -27,7 +27,7 @@ describe('UserModal.vue', () => {
         user: { id: '1', name: 'Test User', email: 'test@example.com', role: 'user' }
       }
     });
-    cy.get('.modal h2').should('contain', 'Edit User');
+    cy.get('.v-modal__title').should('contain', 'Edit User');
     cy.get('input[placeholder="User name"]').should('have.value', 'Test User');
     cy.get('input[placeholder="user@example.com"]').should('have.value', 'test@example.com');
     cy.get('input[type="password"]').should('not.exist');
@@ -36,15 +36,15 @@ describe('UserModal.vue', () => {
   it('should show role options based on creator role (project_admin)', () => {
     resetAuthStore('project_admin');
     cy.mount(UserModal);
-    cy.get('select').should('exist');
-    cy.get('select option').should('have.length.greaterThan', 0);
+    cy.get('[data-type="select"]').should('exist');
+    cy.get('[data-type="select"] option').should('have.length.greaterThan', 0);
   });
 
   it('should show validation error on empty submit', () => {
     resetAuthStore('project_admin');
     cy.mount(UserModal);
     cy.get('form').submit();
-    cy.get('.error').should('contain', 'Name and email are required');
+    cy.get('.v-input__error').should('contain', 'Name and email are required');
   });
 
   it('should show password validation error for short password', () => {
@@ -54,7 +54,7 @@ describe('UserModal.vue', () => {
     cy.get('input[placeholder="user@example.com"]').type('test@example.com');
     cy.get('input[type="password"]').type('short');
     cy.get('button[type="submit"]').click();
-    cy.get('.error').should('contain', 'at least 6 characters');
+    cy.get('.v-input__error').should('contain', 'at least 6 characters');
   });
 
   it('should emit submit event with correct data', () => {
@@ -81,6 +81,6 @@ describe('UserModal.vue', () => {
         onClose: handleClose
       }
     });
-    cy.get('.btn-cancel').click();
+    cy.get('.v-btn--secondary').click();
   });
 });
