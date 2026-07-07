@@ -4,6 +4,7 @@ import * as agents from '../api/agents'
 vi.mock('../api/client', () => ({
   get: vi.fn(),
   post: vi.fn(),
+  del: vi.fn(),
   postWithHeaders: vi.fn(),
 }))
 
@@ -58,5 +59,23 @@ describe('agents API', () => {
     await agents.getAgentHistory('agent-1')
 
     expect(get).toHaveBeenCalledWith('/api/v1/agents/agent-1/history', {})
+  })
+
+  it('deleteAgent calls del with correct URL', async () => {
+    const { del } = await import('../api/client')
+    del.mockResolvedValue({ success: true })
+
+    await agents.deleteAgent('agent-1')
+
+    expect(del).toHaveBeenCalledWith('/api/v1/agents/agent-1')
+  })
+
+  it('revokeAgentKey calls post with correct URL', async () => {
+    const { post } = await import('../api/client')
+    post.mockResolvedValue({ success: true })
+
+    await agents.revokeAgentKey('agent-1')
+
+    expect(post).toHaveBeenCalledWith('/api/v1/agents/revoke/agent-1')
   })
 })

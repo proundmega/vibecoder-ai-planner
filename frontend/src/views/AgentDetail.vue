@@ -1,12 +1,26 @@
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, onMounted, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { fetchAgentDetail } from '@/api/agents'
+import { useAuthStore } from '@/stores/auth'
+import { deleteAgent, revokeAgentKey } from '@/api/agents'
 
 const route = useRoute()
 const agent = ref(null)
 const loading = ref(true)
 const error = ref(null)
+const authStore = useAuthStore()
+const router = useRouter()
+const showRevokeConfirm = ref(false)
+const showDeleteConfirm = ref(false)
+const actionLoading = ref(false)
+const actionError = ref(null)
+
+const canRevoke = computed(() => authStore.user.value?.role === 'super_admin')
+const canDelete = computed(() => {
+  const role = authStore.user.value?.role
+  return role === 'super_admin' || role === 'project_admin'
+})
 
 onMounted(async () => {
   try {
@@ -26,6 +40,36 @@ function formatCost(cost) {
 
 function formatDate(dateStr) {
   return dateStr ? new Date(dateStr).toLocaleString() : '—'
+}
+
+async function handleRevoke() {
+  actionLoading.value = true
+  actionError.value = null
+  try {
+    const agentId = agent.value.agent_id || agent.value.id
+    await revokeAgentKey(agentId)
+    showRevokeConfirm.value = false
+    const data = await fetchAgentDetail(route.params.id)
+    agent.value = data
+  } catch (err) {
+    actionError.value = err.message || 'Failed to revoke API key'
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function handleDelete() {
+  actionLoading.value = true
+  actionError.value = null
+  try {
+    const agentId = agent.value.agent_id || agent.value.id
+    await deleteAgent(agentId)
+    router.push('/agents')
+  } catch (err) {
+    actionError.value = err.message || 'Failed to delete agent'
+  } finally {
+    actionLoading.value = false
+  }
 }
 </script>
 
@@ -83,6 +127,45 @@ function formatDate(dateStr) {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div v-if="canRevoke || canDelete" class="actions-section">
+        <h2>Actions</h2>
+        <div class="actions-buttons">
+          <button v-if="canRevoke" class="btn-danger-outline" @click="showRevokeConfirm = true" :disabled="actionLoading">
+            Revoke API Key
+          </button>
+          <button v-if="canDelete" class="btn-danger" @click="showDeleteConfirm = true" :disabled="actionLoading">
+            Delete Agent
+          </button>
+        </div>
+        <div v-if="actionError" class="error">{{ actionError }}</div>
+      </div>
+
+      <div v-if="showRevokeConfirm" class="modal-overlay" @click.self="showRevokeConfirm = false">
+        <div class="modal modal-sm">
+          <h3>Revoke API Key</h3>
+          <p>Are you sure you want to revoke the API key for <strong>{{ agent.agent_name || agent.name }}</strong>? The agent will no longer be able to make API calls.</p>
+          <div class="modal-actions">
+            <button class="btn-danger" @click="handleRevoke" :disabled="actionLoading">
+              {{ actionLoading ? 'Revoking...' : 'Revoke' }}
+            </button>
+            <button class="btn-cancel" @click="showRevokeConfirm = false" :disabled="actionLoading">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
+        <div class="modal modal-sm">
+          <h3>Delete Agent</h3>
+          <p>Are you sure you want to delete <strong>{{ agent.agent_name || agent.name }}</strong>? This action cannot be undone.</p>
+          <div class="modal-actions">
+            <button class="btn-danger" @click="handleDelete" :disabled="actionLoading">
+              {{ actionLoading ? 'Deleting...' : 'Delete' }}
+            </button>
+            <button class="btn-cancel" @click="showDeleteConfirm = false" :disabled="actionLoading">Cancel</button>
+          </div>
+        </div>
       </div>
 
       <router-link to="/agents" class="back-link">← Back to Agents</router-link>
@@ -229,5 +312,122 @@ function formatDate(dateStr) {
 
 .back-link:hover {
   text-decoration: underline;
+}
+
+.actions-section {
+  margin-bottom: 1.5rem;
+}
+
+.actions-section h2 {
+  font-size: 18px;
+  color: #1f2937;
+  margin: 0 0 1rem 0;
+}
+
+.actions-buttons {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn-danger {
+  padding: 8px 16px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+.btn-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-danger-outline {
+  padding: 8px 16px;
+  background: white;
+  color: #ef4444;
+  border: 1px solid #ef4444;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.btn-danger-outline:hover:not(:disabled) {
+  background: #fef2f2;
+}
+
+.btn-danger-outline:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.modal-sm {
+  max-width: 400px;
+}
+
+.modal h3 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  color: #1f2937;
+}
+
+.modal p {
+  margin: 0 0 20px;
+  color: #374151;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.btn-cancel {
+  padding: 8px 16px;
+  background: white;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.btn-cancel:hover:not(:disabled) {
+  background: #f9fafb;
+}
+
+.btn-cancel:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>

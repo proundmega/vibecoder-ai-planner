@@ -1,4 +1,4 @@
-import { get, post } from './client'
+import { get, post, del } from './client'
 
 export function getAgentKeyInfo(agentId) {
   return get(`/api/v1/agents/${agentId}/key`)
@@ -23,4 +23,12 @@ export function fetchAgentStatusList() {
 
 export function fetchAgentDetail(agentId) {
   return get(`/api/v1/agents-status/${agentId}`)
+}
+
+export function deleteAgent(agentId) {
+  return del(`/api/v1/agents/${agentId}`)
+}
+
+export function revokeAgentKey(agentId) {
+  return post(`/api/v1/agents/revoke/${agentId}`)
 }
