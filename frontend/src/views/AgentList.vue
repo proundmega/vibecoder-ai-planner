@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchAgentStatusList } from '@/api/agents'
-import { createAgent } from '@/api/agents'
+import { createAgent, listAgents } from '@/api/agents'
 import AgentModal from '@/components/AgentModal.vue'
 
 const agents = ref([])
@@ -10,6 +10,9 @@ const loading = ref(true)
 const error = ref(null)
 const showCreateModal = ref(false)
 const createError = ref(null)
+const activeTab = ref('heartbeat')
+const agentsData = ref([])
+const loadingAgents = ref(false)
 const router = useRouter()
 let pollInterval = null
 
@@ -55,6 +58,32 @@ async function handleCreate(name) {
     createError.value = err.message || 'Failed to create agent'
   }
 }
+
+const tabs = [
+  { id: 'heartbeat', label: 'Heartbeat' },
+  { id: 'agents', label: 'Agents' },
+]
+
+async function loadCrudAgents() {
+  loadingAgents.value = true
+  try {
+    const data = await listAgents()
+    agentsData.value = data || []
+  } catch {
+    agentsData.value = []
+  } finally {
+    loadingAgents.value = false
+  }
+}
+
+function formatKeyPreview(key) {
+  if (!key) return '—'
+  return key.substring(0, 8) + '****'
+}
+
+function formatDate(dateStr) {
+  return dateStr ? new Date(dateStr).toLocaleDateString() : '—'
+}
 </script>
 
 <template>
@@ -67,53 +96,101 @@ async function handleCreate(name) {
     </div>
     <AgentModal v-model:show="showCreateModal" @created="handleCreate" />
     <div v-if="createError" class="error">{{ createError }}</div>
-    <div v-if="loading" class="loading">Loading agents...</div>
-    <div v-else-if="error" class="error">{{ error }}</div>
-    <div v-else>
-      <table v-if="agents.length > 0" class="agent-table">
+
+    <div class="tabs">
+      <button
+        v-for="tab in tabs"
+        :key="tab.id"
+        :class="['tab', { active: activeTab === tab.id }]"
+        @click="activeTab = tab.id"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
+
+    <!-- Heartbeat Tab -->
+    <div v-if="activeTab === 'heartbeat'">
+      <div v-if="loading" class="loading">Loading agents...</div>
+      <div v-else-if="error" class="error">{{ error }}</div>
+      <div v-else>
+        <table v-if="agents.length > 0" class="agent-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Status</th>
+              <th>Current Ticket</th>
+              <th>Actions Today</th>
+              <th>Cost Today</th>
+              <th>Last Seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="agent in agents"
+              :key="agent.agent_id"
+              @click="viewDetail(agent.agent_id)"
+              class="agent-row"
+            >
+              <td>{{ agent.name || agent.agent_id }}</td>
+              <td>
+                <span :class="['status-badge', statusClass(agent.status)]">
+                  {{ agent.status }}
+                </span>
+              </td>
+              <td>
+                <router-link
+                  v-if="agent.current_ticket_id"
+                  :to="`/projects/?ticket=${agent.current_ticket_id}`"
+                  @click.stop
+                >
+                  {{ agent.current_ticket_title || agent.current_ticket_id.substring(0, 8) + '...' }}
+                </router-link>
+                <span v-else class="none">—</span>
+              </td>
+              <td>{{ agent.actions_today }}</td>
+              <td>{{ formatCost(agent.cost_today) }}</td>
+              <td>
+                {{ agent.last_seen ? new Date(agent.last_seen).toLocaleString() : 'Never' }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty-state">
+          <p>No heartbeat data found.</p>
+          <p class="empty-hint">Agents may not have sent heartbeats recently.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agents Tab (CRUD) -->
+    <div v-if="activeTab === 'agents'">
+      <div v-if="loadingAgents" class="loading">Loading agents...</div>
+      <table v-else-if="agentsData.length > 0" class="agent-table">
         <thead>
           <tr>
             <th>Name</th>
-            <th>Status</th>
-            <th>Current Ticket</th>
-            <th>Actions Today</th>
-            <th>Cost Today</th>
-            <th>Last Seen</th>
+            <th>API Key</th>
+            <th>Rate Limit</th>
+            <th>Created</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          <tr
-            v-for="agent in agents"
-            :key="agent.agent_id"
-            @click="viewDetail(agent.agent_id)"
-            class="agent-row"
-          >
-            <td>{{ agent.name || agent.agent_id }}</td>
+          <tr v-for="agent in agentsData" :key="agent.id">
+            <td>{{ agent.name }}</td>
+            <td><code>{{ formatKeyPreview(agent.api_key) }}</code></td>
+            <td>{{ agent.rate_limit || 100 }}</td>
+            <td>{{ formatDate(agent.created_at) }}</td>
             <td>
-              <span :class="['status-badge', statusClass(agent.status)]">
-                {{ agent.status }}
-              </span>
-            </td>
-            <td>
-              <router-link
-                v-if="agent.current_ticket_id"
-                :to="`/projects/?ticket=${agent.current_ticket_id}`"
-                @click.stop
-              >
-                {{ agent.current_ticket_title || agent.current_ticket_id.substring(0, 8) + '...' }}
+              <router-link :to="`/agents/${agent.id}`" class="link-details">
+                View Details
               </router-link>
-              <span v-else class="none">—</span>
-            </td>
-            <td>{{ agent.actions_today }}</td>
-            <td>{{ formatCost(agent.cost_today) }}</td>
-            <td>
-              {{ agent.last_seen ? new Date(agent.last_seen).toLocaleString() : 'Never' }}
             </td>
           </tr>
         </tbody>
       </table>
       <div v-else class="empty-state">
-        <p>No agents found.</p>
+        <p>No agents created yet.</p>
         <p class="empty-hint">Click "Create Agent" to get started.</p>
       </div>
     </div>
@@ -238,5 +315,42 @@ async function handleCreate(name) {
 
 .btn-primary:hover {
   background: #2563eb;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 1rem;
+}
+
+.tab {
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 14px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.tab:hover {
+  color: #374151;
+}
+
+.tab.active {
+  color: #3b82f6;
+  border-bottom-color: #3b82f6;
+}
+
+.link-details {
+  color: #3b82f6;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.link-details:hover {
+  text-decoration: underline;
 }
 </style>
