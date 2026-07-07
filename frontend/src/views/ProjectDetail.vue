@@ -233,7 +233,7 @@ async function handleAddProvider() {
   try {
     const options = {}
     if (newProviderModel.value.trim()) options.model = newProviderModel.value.trim()
-    if (newProviderEndpoint.value.trim()) options.endpoint_url = newProviderEndpoint.value.trim()
+    if (newProviderEndpoint.value.trim()) options.baseUrl = newProviderEndpoint.value.trim()
     if (newProviderFallback.value) options.fallback_provider = newProviderFallback.value
     await addProvider(projectId, newProviderName.value.trim(), newProviderType.value, newProviderKey.value.trim(), options)
     showAddProvider.value = false
@@ -259,7 +259,7 @@ async function handleUpdateProvider() {
       updates.model = editProviderModel.value.trim()
     }
     if (editProviderEndpoint.value.trim()) {
-      updates.endpoint_url = editProviderEndpoint.value.trim()
+      updates.baseUrl = editProviderEndpoint.value.trim()
     }
     if (editProviderFallback.value) {
       updates.fallback_provider = editProviderFallback.value
