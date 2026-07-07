@@ -2,10 +2,14 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchAgentStatusList } from '@/api/agents'
+import { createAgent } from '@/api/agents'
+import AgentModal from '@/components/AgentModal.vue'
 
 const agents = ref([])
 const loading = ref(true)
 const error = ref(null)
+const showCreateModal = ref(false)
+const createError = ref(null)
 const router = useRouter()
 let pollInterval = null
 
@@ -41,11 +45,28 @@ function statusClass(status) {
 function formatCost(cost) {
   return `$${Number(cost || 0).toFixed(2)}`
 }
+
+async function handleCreate(name) {
+  try {
+    await createAgent(name)
+    showCreateModal.value = false
+    createError.value = null
+  } catch (err) {
+    createError.value = err.message || 'Failed to create agent'
+  }
+}
 </script>
 
 <template>
   <div class="agent-list">
-    <h1>Agents</h1>
+    <div class="header-row">
+      <h1>Agents</h1>
+      <button class="btn-primary" @click="showCreateModal = true">
+        Create Agent
+      </button>
+    </div>
+    <AgentModal v-model:show="showCreateModal" @created="handleCreate" />
+    <div v-if="createError" class="error">{{ createError }}</div>
     <div v-if="loading" class="loading">Loading agents...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else>
@@ -93,6 +114,7 @@ function formatCost(cost) {
       </table>
       <div v-else class="empty-state">
         <p>No agents found.</p>
+        <p class="empty-hint">Click "Create Agent" to get started.</p>
       </div>
     </div>
   </div>
@@ -188,5 +210,33 @@ function formatCost(cost) {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   color: #6b7280;
+}
+
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.empty-hint {
+  color: #9ca3af;
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.btn-primary {
+  padding: 8px 16px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.btn-primary:hover {
+  background: #2563eb;
 }
 </style>
