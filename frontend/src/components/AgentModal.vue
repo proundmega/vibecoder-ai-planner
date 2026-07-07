@@ -25,14 +25,7 @@ async function submit() {
   }
   loading.value = true
   error.value = ''
-  try {
-    emit('created', name.value.trim())
-    close()
-  } catch (err) {
-    error.value = err.message || 'Failed to create agent'
-  } finally {
-    loading.value = false
-  }
+  emit('created', name.value.trim())
 }
 </script>
 

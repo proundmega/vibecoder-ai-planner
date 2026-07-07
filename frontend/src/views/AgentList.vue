@@ -66,6 +66,7 @@ async function handleCreate(name) {
       </button>
     </div>
     <AgentModal v-model:show="showCreateModal" @created="handleCreate" />
+    <div v-if="createError" class="error">{{ createError }}</div>
     <div v-if="loading" class="loading">Loading agents...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else>
