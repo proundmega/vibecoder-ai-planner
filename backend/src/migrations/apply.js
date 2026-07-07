@@ -66,6 +66,32 @@ function splitSQLStatements(sql) {
       continue;
     }
 
+    // Handle -- comments: skip to end of line so $$ in comments doesn't trigger dollar quotes
+    if (remaining.startsWith('--')) {
+      const newlineIdx = remaining.indexOf('\n');
+      if (newlineIdx === -1) {
+        current += remaining;
+        i = sql.length - 1;
+      } else {
+        current += remaining.slice(0, newlineIdx + 1);
+        i += newlineIdx;
+      }
+      continue;
+    }
+
+    // Handle /* */ block comments
+    if (remaining.startsWith('/*')) {
+      const endIdx = remaining.indexOf('*/');
+      if (endIdx === -1) {
+        current += remaining;
+        i = sql.length - 1;
+      } else {
+        current += remaining.slice(0, endIdx + 2);
+        i += endIdx + 1;
+      }
+      continue;
+    }
+
     if (remaining.startsWith('$$')) {
       inDollarQuote = true;
       dollarTag = '$$';

@@ -51,3 +51,7 @@ tmp/
 temp/
 *.tmp
 *.cache
+
+# Test artifacts
+cypress/screenshots/
+cypress/videos/

@@ -2,6 +2,7 @@ const axios = require('axios');
 const ProviderInterface = require('../base/ProviderInterface');
 
 function isPrivateHostname(hostname) {
+  if (process.env.ALLOW_PRIVATE_HOSTS === '1') return false;
   if (!hostname || typeof hostname !== 'string') return true;
   const lower = hostname.toLowerCase();
   if (lower === 'localhost' || lower === '127.0.0.1' || lower === '::1') return true;

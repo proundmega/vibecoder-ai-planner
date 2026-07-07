@@ -377,7 +377,8 @@ async function testProvider(req, res, next) {
 
     const providerConfig = result.rows[0];
 
-    if (!providerConfig.base_url || typeof providerConfig.base_url !== 'string') {
+    const baseUrl = providerConfig.base_url || providerConfig.endpoint_url;
+    if (!baseUrl || typeof baseUrl !== 'string') {
       throw new Error('Base URL is required for this provider type');
     }
 
@@ -387,7 +388,7 @@ async function testProvider(req, res, next) {
       model: providerConfig.model,
       maxTokens: providerConfig.max_tokens,
       temperature: providerConfig.temperature,
-      baseUrl: providerConfig.base_url,
+      baseUrl: baseUrl,
     };
 
     const router = new ProviderRouter(project.id);
@@ -397,6 +398,7 @@ async function testProvider(req, res, next) {
     res.json({
       success: true,
       data: {
+        success: isValid,
         valid: isValid,
         message: isValid ? 'Connection successful' : 'Invalid API key',
       },

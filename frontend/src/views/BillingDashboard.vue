@@ -35,7 +35,7 @@ const projects = computed(() => {
 })
 
 onMounted(async () => {
-  if (authStore.user?.role !== 'project_admin') {
+  if (authStore.user.value?.role !== 'project_admin') {
     router.push('/dashboard')
     return
   }

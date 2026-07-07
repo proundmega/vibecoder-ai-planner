@@ -26,7 +26,7 @@ class ProviderRouter {
         model: row.model,
         maxTokens: row.max_tokens,
         temperature: row.temperature,
-        baseUrl: row.base_url,
+        baseUrl: row.base_url || row.endpoint_url,
       };
 
       const provider = this.createProvider(row.provider_type, config);

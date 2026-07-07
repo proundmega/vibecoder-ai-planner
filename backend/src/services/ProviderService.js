@@ -68,7 +68,7 @@ class ProviderService {
 
     return {
       provider: ruleConfig.provider || baseConfig.provider_type,
-      endpoint_url: ruleConfig.endpoint_url || baseConfig.base_url || null,
+      endpoint_url: ruleConfig.endpoint_url || ruleConfig.base_url || baseConfig.base_url || null,
       model: ruleConfig.model || baseConfig.model,
       api_key: apiKey,
       max_tokens: ruleConfig.max_tokens || baseConfig.max_tokens || 4096,
@@ -82,7 +82,7 @@ class ProviderService {
   _defaultProvider(config) {
     return {
       provider: config.provider_type,
-      endpoint_url: config.base_url || null,
+      endpoint_url: config.base_url || config.endpoint_url || null,
       model: config.model,
       api_key: decrypt(config.api_key_encrypted),
       max_tokens: config.max_tokens || 4096,
