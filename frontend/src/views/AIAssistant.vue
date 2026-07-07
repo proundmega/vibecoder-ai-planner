@@ -161,8 +161,7 @@ async function getRecentDailyUsage() {
   <div class="ai-panel">
     <header class="ai-header">
       <h2>
-        <span class="ai-icon">AI</span>
-        AI Assistant
+        <span class="ai-icon">AI</span> Assistant
       </h2>
       <div class="agent-selector">
         <label for="agent-select">Use Agent:</label>
