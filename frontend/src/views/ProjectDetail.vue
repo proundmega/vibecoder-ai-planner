@@ -672,8 +672,8 @@ async function handleDeleteMemory(memoryId) {
             </div>
           </div>
 
-          <div v-if="providerTestResult" class="test-result" :class="providerTestResult.success ? 'success' : 'error'">
-            <p>{{ providerTestResult.message || (providerTestResult.success ? 'Connection successful!' : 'Connection failed') }}</p>
+          <div v-if="providerTestResult" class="test-result" :class="(providerTestResult.success || providerTestResult.valid) ? 'success' : 'error'">
+            <p>{{ providerTestResult.message || ((providerTestResult.success || providerTestResult.valid) ? 'Connection successful!' : 'Connection failed') }}</p>
           </div>
         </div>
       </div>

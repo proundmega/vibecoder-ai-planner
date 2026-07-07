@@ -398,6 +398,7 @@ async function testProvider(req, res, next) {
     res.json({
       success: true,
       data: {
+        success: isValid,
         valid: isValid,
         message: isValid ? 'Connection successful' : 'Invalid API key',
       },
