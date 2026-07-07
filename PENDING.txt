@@ -33,9 +33,11 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | ID | Directory | Priority | Description |
 |----|-----------|----------|-------------|
 | ~~bp-53~~ | `bp-53-distributed-state` | P1 | ~~Distributed State Management~~ ✅ Done (PR #38) |
+| ~~bp-68~~ | `bp-68-integration-test-fixes` | P1 | ~~Fix 83 failing bash integration tests~~ ✅ Done (PR #44) |
+| ~~bp-69~~ | `bp-69-agent-creation-ui` | P1 | ~~Add Create Agent button and modal~~ ✅ Done (PR #46) |
+| ~~bp-70~~ | `bp-70-agent-detail-actions` | P1 | ~~Add agent delete/revoke actions and CRUD table~~ ✅ Done (PR #47) |
 | bp-56 | `bp-56-design-system` | P2 | Shared CSS and Component Design System |
 | bp-57 | `bp-57-migrate-to-typescript` | P3 | Frontend JS → TypeScript migration |
-| bp-68 | `bp-68-integration-test-fixes` | P1 | Fix 83 failing bash integration tests (155/159 passing, 0 remaining) ✅ |
 
 ## Test Backfills (bt-*)
 
@@ -67,6 +69,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 
 - bp-58 (security hardening) and bp-60 (contract testing) have code in HEAD but their planning docs are stale (still say "planned"). They are effectively done but need doc updates.
 - bp-53 is **completed** (PR #38, branch fix/bp-53-distributed-state).
+- bp-68, bp-69, bp-70 are **completed** (PRs #44, #46, #47).
 - bp-56, bp-57 have zero git history — truly pending.
 - All bt-* suites are test backfills for corresponding bp-* suites.
 - fg-08 through fg-12 were implemented (merged into a single commit) but have no separate planning directory.
