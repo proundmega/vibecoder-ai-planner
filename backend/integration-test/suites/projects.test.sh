@@ -9,7 +9,7 @@ test_projects() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   local token
-  token=$(login "alice@integration.test" "password123")
+  token=$(seed_user "alice@integration.test" "password123")
 
   local code
   code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/projects")

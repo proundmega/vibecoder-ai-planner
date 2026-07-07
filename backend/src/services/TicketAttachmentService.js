@@ -1,11 +1,24 @@
 const { pool } = require('../db');
 const path = require('path');
+const { AppError } = require('../errors/HttpError');
 const fs = require('fs');
 
 const uploadDir = path.join(__dirname, '../../uploads/tickets');
 
 class TicketAttachmentService {
   async upload(ticketId, file, userId) {
+    let ticketResult;
+    try {
+      ticketResult = await pool.query('SELECT id FROM tickets WHERE id = $1', [ticketId]);
+    } catch (err) {
+      if (err.code === '22P02' || err.message.includes('invalid input syntax')) {
+        throw new AppError('Ticket not found', 404, 'NOT_FOUND');
+      }
+      throw err;
+    }
+    if (ticketResult.rows.length === 0) {
+      throw new AppError('Ticket not found', 404, 'NOT_FOUND');
+    }
     const storedPath = file.path;
     const result = await pool.query(
       `INSERT INTO ticket_attachments (ticket_id, filename, content_type, size_bytes, stored_path, uploaded_by)

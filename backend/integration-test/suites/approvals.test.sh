@@ -9,7 +9,7 @@ test_approvals_api() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   local admin_token
-  admin_token=$(login "alice@integration.test" "password123")
+  admin_token=$(seed_user "alice@integration.test" "password123")
 
   local proj_id
   proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
@@ -65,9 +65,9 @@ test_approvals_api() {
   assert_status "Cannot approve already approved" "400" "$approve_code"
 
   local user_token
-  user_token=$(login "perm_user@integration.test" "password123")
+  user_token=$(seed_user "perm_user@integration.test" "password123" "user")
   local user_approve_code
-  user_approve_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE}/api/v1/approvals/1/approve" \
+  user_approve_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE}/api/v1/approvals/$approval_id/approve" \
     -H "Authorization: Bearer $user_token")
   assert_status "User role cannot approve" "403" "$user_approve_code"
 }

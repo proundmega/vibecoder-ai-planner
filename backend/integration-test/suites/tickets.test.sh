@@ -9,7 +9,7 @@ test_tickets() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   local token
-  token=$(login "alice@integration.test" "password123")
+  token=$(seed_user "alice@integration.test" "password123")
 
   local proj_id
   proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \

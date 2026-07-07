@@ -9,7 +9,7 @@ test_role_based_ticket_permissions() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   local admin_token
-  admin_token=$(login "alice@integration.test" "password123")
+  admin_token=$(seed_user "alice@integration.test" "password123")
 
   local proj_id
   proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \

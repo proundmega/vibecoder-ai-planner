@@ -11,15 +11,20 @@ test_permission_matrix() {
   # Register 4 users with different roles
   local super_admin_token project_admin_token member_token user_token
 
-  super_admin_token=$(register "Super Admin" "super@test.com" "password123" "super_admin")
+  # super_admin cannot be registered via API - create directly in DB then login
+  sudo docker exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+    "DELETE FROM users WHERE email='super@test.com';" >/dev/null 2>&1 || true
+  sudo docker exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+    "INSERT INTO users (email, name, password_hash, role, current_plan, is_active, created_at, updated_at) VALUES ('super@test.com', 'Super Admin', '\$2a\$10\$WzRoM7eyFmF7BzIsQPsMmuvs1yE9tptHKln5pI83/E1ENNJOObh.2', 'super_admin', 'free', true, NOW(), NOW()) RETURNING id;" >/dev/null 2>&1 || true
+  super_admin_token=$(seed_user "super@test.com" "password123" "super_admin")
   project_admin_token=$(register "Project Admin" "padmin@test.com" "password123" "project_admin")
   member_token=$(register "Member" "member@test.com" "password123" "member")
   user_token=$(register "User" "user@test.com" "password123" "user")
 
-  assert_has_field "Register super_admin" "token" "{\"token\":\"$super_admin_token\"}"
-  assert_has_field "Register project_admin" "token" "{\"token\":\"$project_admin_token\"}"
-  assert_has_field "Register member" "token" "{\"token\":\"$member_token\"}"
-  assert_has_field "Register user" "token" "{\"token\":\"$user_token\"}"
+  if [ -n "$super_admin_token" ]; then pass "Register super_admin (got token)"; else fail "Register super_admin" "no token returned"; fi
+  if [ -n "$project_admin_token" ]; then pass "Register project_admin (got token)"; else fail "Register project_admin" "no token returned"; fi
+  if [ -n "$member_token" ]; then pass "Register member (got token)"; else fail "Register member" "no token returned"; fi
+  if [ -n "$user_token" ]; then pass "Register user (got token)"; else fail "Register user" "no token returned"; fi
 
   # ── Project Creation ──────────────────────────────────────────────────────
 
@@ -61,7 +66,7 @@ test_permission_matrix() {
   local my_projects proj_id
   my_projects=$(curl -sf "$BASE/api/v1/projects" \
     -H "Authorization: Bearer $project_admin_token")
-  proj_id=$(echo "$my_projects" | jq -r '.[0].id // empty')
+  proj_id=$(echo "$my_projects" | jq -r '(.data // .) | if type == "array" then .[0].id else .id end // empty')
 
   # Create a ticket owned by project_admin
   local ticket_body ticket_id owner_id
@@ -69,7 +74,7 @@ test_permission_matrix() {
     -H "Authorization: Bearer $project_admin_token" \
     -H "Content-Type: application/json" \
     -d '{"title":"Permission Test Ticket","description":"For testing permissions","status":"backlog"}')
-  ticket_id=$(echo "$ticket_body" | jq -r '.id // empty')
+  ticket_id=$(echo "$ticket_body" | extract_id)
   owner_id=$(echo "$ticket_body" | jq -r '.owner_id // empty')
 
   # ── Ticket Deletion ───────────────────────────────────────────────────────
@@ -85,7 +90,7 @@ test_permission_matrix() {
     -H "Authorization: Bearer $project_admin_token" \
     -H "Content-Type: application/json" \
     -d '{"title":"Permission Test Ticket 2","description":"For testing permissions","status":"backlog"}')
-  ticket_id=$(echo "$ticket_body" | jq -r '.id // empty')
+  ticket_id=$(echo "$ticket_body" | extract_id)
 
   # user cannot delete others' tickets
   local user_del_code
@@ -126,7 +131,7 @@ test_permission_matrix() {
     -H "Authorization: Bearer $project_admin_token" \
     -H "Content-Type: application/json" \
     -d '{"title":"Permission Test Ticket 3","description":"For testing permissions","status":"backlog"}')
-  ticket_id=$(echo "$ticket_body" | jq -r '.id // empty')
+  ticket_id=$(echo "$ticket_body" | extract_id)
 
   # user can transition own ticket: backlog → in_progress
   local user_trans_code

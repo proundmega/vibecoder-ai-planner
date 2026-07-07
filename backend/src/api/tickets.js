@@ -30,7 +30,7 @@ const GitHubService = require('../services/GitHubService');
  *       201:
  *         description: Ticket created
  */
-router.post('/', verifyToken, requireAnyPermission('TICKET_CREATE'), validate(createTicketSchema), ticketController.createTicket);
+router.post('/', verifyTokenOrAgent, requireAnyPermission('TICKET_CREATE'), validate(createTicketSchema), ticketController.createTicket);
 
 /**
  * @openapi

@@ -229,8 +229,12 @@ router.post('/auth/register', rateLimiter(3, 60000), validate(registerSchema), a
 router.post('/auth/login', rateLimiter(5, 60000), validate(loginSchema), async (req, res) => {
   try {
     const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
+    console.log('DEBUG LOGIN: clientIp=' + clientIp + ' INTEGRATION_TESTS=' + process.env.INTEGRATION_TESTS);
     
-    if (checkAccountLockout(clientIp)) {
+    const locked = await checkAccountLockout(clientIp);
+    console.log('DEBUG LOGIN: locked=' + locked);
+    
+    if (locked) {
       const remainingMs = getLockoutRemainingMs(clientIp);
       const retryAfter = Math.ceil(remainingMs / 1000);
       res.set('Retry-After', String(retryAfter));

@@ -63,6 +63,9 @@ done
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 main() {
+  # Set INTEGRATION_TESTS=1 BEFORE any docker compose commands to disable rate limiting
+  export INTEGRATION_TESTS=1
+
   local skip_start=false
   if [[ "${1:-}" == "--only" ]]; then
     skip_start=true
@@ -81,10 +84,6 @@ main() {
   wait_for_api
   clean_db
 
-  # Set INTEGRATION_TESTS=1 to disable rate limiting for integration tests
-  cd "$ROOT"
-  grep -q 'INTEGRATION_TESTS' docker-compose.override.yml 2>/dev/null || \
-    sed -i '/NODE_ENV=development/a\      - INTEGRATION_TESTS=1' docker-compose.override.yml 2>/dev/null || true
   sudo docker compose up -d --force-recreate api 2>&1 | tail -3
   sleep 8
 
@@ -116,10 +115,23 @@ main() {
   for suite_file in "$SUITES_DIR"/*.test.sh; do
     base=$(basename "$suite_file" .test.sh)
     func_name="test_${base}"
-    if declare -f "$func_name" > /dev/null; then
+    
+    # Try exact match first, then check if any test_* function is defined in this file
+    if declare -f "$func_name" > /dev/null 2>&1; then
       echo ""
       echo "--- Running: $base ---"
       $func_name
+    else
+      # Find the actual test function name defined in this suite file
+      actual_func=$(grep -oP '^\s*test_\w+\(\)' "$suite_file" | head -1 | tr -d ' ()')
+      if [ -n "$actual_func" ] && declare -f "$actual_func" > /dev/null 2>&1; then
+        echo ""
+        echo "--- Running: $base (as $actual_func) ---"
+        $actual_func
+      else
+        echo ""
+        echo "--- Skipping: $base (no test function found) ---"
+      fi
     fi
   done
 
