@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@cypress/vue": "^4.2.2",
+    "@types/node": "^26.1.0",
     "@typescript-eslint/eslint-plugin": "^8.59.4",
     "@typescript-eslint/parser": "^8.59.4",
     "@vitejs/plugin-vue": "^4.5.2",

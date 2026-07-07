@@ -2,6 +2,9 @@
 import { ref, onMounted, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { fetchProjectUsers, updateTicket } from '@/api/tickets'
+import VModal from '@/components/VModal.vue'
+import VButton from '@/components/VButton.vue'
+import VInput from '@/components/VInput.vue'
 
 const props = defineProps({
   ticket: { type: Object, required: true },
@@ -72,132 +75,41 @@ async function handleSave() {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="$emit('close')">
-    <div class="modal">
-      <h2>Edit Ticket</h2>
+  <VModal v-model="$attrs['onUpdate:modelValue'] ?? true" title="Edit Ticket" size="large" @close="emit('close')">
+    <form @submit.prevent="handleSave">
+      <VInput v-model="title" label="Title" placeholder="Ticket title" :error="error" required />
       
-      <form @submit.prevent="handleSave">
-        <label>Title</label>
-        <input v-model="title" type="text" placeholder="Ticket title" required />
-        
-        <label>Description</label>
-        <textarea v-model="description" placeholder="Ticket description" rows="4"></textarea>
-        
-        <label>Priority</label>
-        <select v-model="priority">
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-          <option value="urgent">Urgent</option>
-        </select>
-        
-        <label>Assignee</label>
-        <select v-model="assigneeId">
-          <option :value="null">Unassigned</option>
-          <option v-for="user in assignees" :key="user.id" :value="user.id">
-            {{ user.name || user.email }}
-          </option>
-        </select>
-        
-        <p v-if="error" class="error">{{ error }}</p>
-        
-        <div class="modal-actions">
-          <button type="button" @click="$emit('close')" class="btn-cancel">Cancel</button>
-          <button type="submit" :disabled="saving || !canEdit" class="btn-submit">
-            {{ saving ? 'Saving...' : 'Save Changes' }}
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
+      <VInput v-model="description" label="Description" placeholder="Ticket description" type="textarea" />
+      
+      <VInput v-model="priority" label="Priority" type="select">
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+        <option value="urgent">Urgent</option>
+      </VInput>
+      
+      <VInput v-model="assigneeId" label="Assignee" type="select">
+        <option :value="null">Unassigned</option>
+        <option v-for="user in assignees" :key="user.id" :value="user.id">
+          {{ user.name || user.email }}
+        </option>
+      </VInput>
+      
+      <div class="modal-actions">
+        <VButton variant="secondary" @click="emit('close')">Cancel</VButton>
+        <VButton type="submit" variant="primary" :loading="saving" :disabled="!canEdit">
+          {{ saving ? 'Saving...' : 'Save Changes' }}
+        </VButton>
+      </div>
+    </form>
+  </VModal>
 </template>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.modal {
-  background: white;
-  border-radius: 12px;
-  padding: 28px;
-  width: 560px;
-  max-width: 90vw;
-  max-height: 90vh;
-  overflow-y: auto;
-}
-
-.modal h2 {
-  margin-bottom: 20px;
-  font-size: 20px;
-  color: #1f2937;
-}
-
-.modal label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #374151;
-}
-
-.modal input,
-.modal textarea,
-.modal select {
-  width: 100%;
-  padding: 10px;
-  margin-bottom: 16px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 14px;
-  font-family: inherit;
-}
-
-.modal textarea {
-  resize: vertical;
-}
-
-.error {
-  color: #ef4444;
-  font-size: 13px;
-  margin: 0 0 12px 0;
-  padding: 8px 12px;
-  background: #fee2e2;
-  border-radius: 6px;
-}
-
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  margin-top: 8px;
-}
-
-.btn-cancel {
-  padding: 10px 20px;
-  background: white;
-  color: #6b7280;
-  border: 1px solid #d1d5db;
-}
-
-.btn-cancel:hover {
-  background: #f9fafb;
-}
-
-.btn-submit {
-  padding: 10px 20px;
-  background: #3b82f6;
-  color: white;
-}
-
-.btn-submit:disabled {
-  background: #9ca3af;
-  cursor: not-allowed;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
 }
 </style>
