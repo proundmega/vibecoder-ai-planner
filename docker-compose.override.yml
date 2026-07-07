@@ -4,7 +4,6 @@ services:
       - "3001:3001"
     environment:
       - NODE_ENV=development
-      - INTEGRATION_TESTS=1
       - DOCKER_API_URL=/var/run/docker.sock
       - ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
     volumes:

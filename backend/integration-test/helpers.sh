@@ -46,9 +46,9 @@ register() {
     -H "Content-Type: application/json" \
     -d "{\"name\":\"$name\",\"email\":\"$email\",\"password\":\"$password\",\"role\":\"$role\"}")
   http_code=$(echo "$response" | tail -1)
-  body="${response%$'\n'*}"
+  body=$(echo "$response" | sed '$d')
   if [ "$http_code" = "201" ]; then
-    echo "$body" | jq -r '.token // empty'
+    echo "$body" | jq -r '.token'
   else
     echo "" >&2
     echo "REGISTER FAILED: $http_code $body" >&2
@@ -58,16 +58,16 @@ register() {
 seed_user() {
   # Register a user if they don't exist, then login and return token.
   # This ensures tests work after clean_db deletes all users.
-  local email="$1" password="$2" role="${3:-project_admin}"
+  local email="$1" password="$2" role="${3:-project_admin}" name="${4:-User}"
   local response http_code body
   # Try login first (fast path if user exists with correct password)
   response=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/auth/login" \
     -H "Content-Type: application/json" \
     -d "{\"email\":\"$email\",\"password\":\"$password\"}")
   http_code=$(echo "$response" | tail -1)
-  body="${response%$'\n'*}"
+  body=$(echo "$response" | sed '$d')
   if [ "$http_code" = "200" ]; then
-    echo "$body" | jq -r '.token // empty'
+    echo "$body" | jq -r '.token'
     return
   fi
   # User doesn't exist or has wrong password — delete any existing user and register fresh
@@ -75,11 +75,11 @@ seed_user() {
     "DELETE FROM users WHERE email='$email';" >/dev/null 2>&1 || true
   response=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/auth/register" \
     -H "Content-Type: application/json" \
-    -d "{\"name\":\"User\",\"email\":\"$email\",\"password\":\"$password\",\"role\":\"$role\"}")
+    -d "{\"name\":\"$name\",\"email\":\"$email\",\"password\":\"$password\",\"role\":\"$role\"}")
   http_code=$(echo "$response" | tail -1)
-  body="${response%$'\n'*}"
+  body=$(echo "$response" | sed '$d')
   if [ "$http_code" = "201" ]; then
-    echo "$body" | jq -r '.token // empty'
+    echo "$body" | jq -r '.token'
   else
     echo ""
   fi
@@ -92,9 +92,9 @@ login() {
     -H "Content-Type: application/json" \
     -d "{\"email\":\"$email\",\"password\":\"$password\"}")
   http_code=$(echo "$response" | tail -1)
-  body="${response%$'\n'*}"
+  body=$(echo "$response" | sed '$d')
   if [ "$http_code" = "200" ]; then
-    echo "$body" | jq -r '.token // empty'
+    echo "$body" | jq -r '.token'
   else
     echo ""
   fi
@@ -114,10 +114,10 @@ assert_field() {
   # If data is a JSON object or array, extract field via jq
   if [[ "$data" == \{* ]] || [[ "$data" == \[* ]]; then
     local actual
-    actual=$(echo "$data" | jq -r ".$field // empty" 2>/dev/null)
+    actual=$(echo "$data" | jq -r ".$field" 2>/dev/null)
     if [ -z "$actual" ]; then
       # Field not at root, try inside .data (handle both object and array cases)
-      actual=$(echo "$data" | jq -r '(.data // .) | if type == "array" then .[0] else . end | .'"$field"' // empty' 2>/dev/null)
+      actual=$(echo "$data" | jq -r '(.data // .) | if type == "array" then .[0] else . end | .'"$field" 2>/dev/null)
     fi
     if [ -z "$actual" ]; then
       actual="__NULL__"
@@ -209,7 +209,7 @@ extract_field() {
     json=$(cat)
     field="id"
   fi
-  echo "$json" | jq -r "(.data // .) | if type == \"array\" then .[0] | .${field} // empty else .${field} // empty end" 2>/dev/null
+  echo "$json" | jq -r "(.data // .) | if type == \"array\" then .[0].${field} else .${field} end" 2>/dev/null
 }
 
 # Extract ID from API response
@@ -220,6 +220,6 @@ extract_id() {
   else
     local json
     json=$(cat)
-    echo "$json" | jq -r "(.data // .) | if type == \"array\" then .[0].id else .id end // empty" 2>/dev/null
+    echo "$json" | jq -r "(.data // .) | if type == \"array\" then .[0].id else .id end" 2>/dev/null
   fi
 }
