@@ -9,6 +9,19 @@ This file bridges the planning docs (01–03) and the code. It specifies exact f
 
 ---
 
+## Test-First Requirement
+
+**Test stub files MUST be created before any production code.** This prevents the model from skipping tests.
+
+The model MUST:
+1. Create **empty test stub files** (with imports, `describe` blocks, and stub `it` blocks) for every test file listed in "Test Expectations" below
+2. Create **production code files** (implementation + components)
+3. Fill in the test stubs with actual assertions
+
+Only after all test stubs exist as empty files may the model begin implementing production code. Do not defer test creation to a later step.
+
+---
+
 ## File Operations
 
 Each entry specifies exactly what the model should produce. The model MUST NOT create, modify, or delete any file not listed here.

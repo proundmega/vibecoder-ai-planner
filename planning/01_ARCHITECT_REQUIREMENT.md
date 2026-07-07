@@ -124,7 +124,7 @@ Things that could change the approach if the answer is different from assumed:
 16. [ ] [Both] Generated TypeScript types are regenerated and match
 17. [ ] [Both] Bash integration suite passes (run `cd backend && bash integration-test/run.sh --only`) if backend API changed
 18. [ ] [Both] Contract test (`api-contract.test.ts`) updated and passing if response shapes changed
-19. [ ] [Both] Code coverage checked — no significant decrease
+19. [ ] [Both] **Coverage threshold enforced**: `npm run test:coverage` (backend) or `npm test -- --run --coverage` (frontend) — min 60% lines, functions, branches, statements
 20. [ ] [Both] All tests pass (unit, integration, frontend, lint, typecheck)
 21. [ ] [Both] Specification in `04_SPECIFICATION.md` accurately reflects the implementation
 
@@ -159,6 +159,12 @@ Things that could change the approach if the answer is different from assumed:
 
 ## Testing Checklist
 
+### Test-First Requirement (if 04_SPECIFICATION.md exists)
+
+- [ ] Empty test stub files created BEFORE any production code (listed as first file operations)
+- [ ] Test stubs contain imports, `describe` blocks, and stub `it` blocks
+- [ ] After implementation: test stubs filled in with actual assertions
+
 ### Backend Tests
 - [ ] Unit test files CREATED for all new/changed backend code
 - [ ] Unit tests: `backend/src/__tests__/unit.test.js` — {{describe what to test}}
@@ -170,7 +176,7 @@ Things that could change the approach if the answer is different from assumed:
 - [ ] Every new service method has at least one test case
 - [ ] Every new validator schema has at least one test case
 - [ ] Happy path AND error paths tested (not just happy path)
-- [ ] Code coverage: run `npm run test:coverage` — no significant decrease in changed modules
+- [ ] **Coverage threshold (60%)**: `npm run test:coverage` — min 60% lines, functions, branches, statements
 
 ### Frontend Tests
 - [ ] Unit test files CREATED for all new/changed frontend code
@@ -185,11 +191,13 @@ Things that could change the approach if the answer is different from assumed:
 
 ### CI Requirements
 - [ ] `npm test` — backend unit tests pass
+- [ ] `npm run test:coverage` — backend coverage threshold passes (60%)
 - [ ] `npm run test:integration` — backend integration tests pass (if applicable)
 - [ ] `cd backend && bash integration-test/run.sh --only` — bash integration suite passes (if applicable)
 - [ ] `npm run lint` — no lint errors
 - [ ] `npm run typecheck` — frontend typecheck passes
 - [ ] `npm run build` — frontend build passes
+- [ ] `npm test -- --run --coverage` — frontend tests + coverage pass (60%)
 
 ---
 
@@ -210,8 +218,9 @@ Things that could change the approach if the answer is different from assumed:
 - ❌ **Response validation not updated** — if backend response shapes change, update `frontend/src/api/validator.ts` and `frontend/src/__tests__/api-contract.test.ts`
 - ❌ **Contract test not updated** — if a field name, type, or enum changes in an API response, the contract test must be updated to match
 - ❌ **Generated types stale** — after OpenAPI spec changes, regenerate types and verify they compile (`npm run generate:spec && npm run generate:api && npm run typecheck`); consider importing them instead of hand-writing types
-- ❌ **Ignoring coverage regressions** — run `npm run test:coverage` and check that coverage in changed modules doesn't drop significantly
+- ❌ **Ignoring coverage threshold** — CI enforces 60% min; run `npm run test:coverage` locally before pushing
 - ❌ **Skipping the Specification file** — if a small model will execute this ticket, fill out `04_SPECIFICATION.md` with exact file operations
+- ❌ **Skipping test stubs** — when `04_SPECIFICATION.md` exists, create test stubs BEFORE production code, not after
 
 ---
 

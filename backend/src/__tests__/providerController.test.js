@@ -261,6 +261,7 @@ describe('Provider Controller', () => {
       expect(mockRes.json).toHaveBeenCalledWith({
         success: true,
         data: {
+          success: true,
           valid: true,
           message: 'Connection successful',
         },
@@ -490,7 +491,7 @@ describe('Provider Controller', () => {
       expect(Project.findById).toHaveBeenCalledWith('1');
       expect(mockRes.json).toHaveBeenCalledWith({
         success: true,
-        data: { valid: true, message: 'Connection successful' },
+        data: { success: true, valid: true, message: 'Connection successful' },
       });
     });
   });

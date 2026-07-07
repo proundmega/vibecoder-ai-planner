@@ -186,6 +186,10 @@ For each file being created or modified, specify exactly what changes:
 **MANDATORY: You must CREATE new test files or EXTEND existing test files for all new/changed code.**
 **It is NOT sufficient to only verify that existing tests still pass.**
 
+#### Test-First Requirement
+
+If `04_SPECIFICATION.md` exists, the implementing model MUST create **empty test stub files** (with imports, `describe` blocks, and stub `it` blocks) **before** creating any production code. Test stubs are listed as the first file operations in `04_SPECIFICATION.md`.
+
 #### Backend Unit Tests
 - [ ] Test controller: `backend/src/__tests__/api-[feature].test.js` — CREATED or EXTENDED
 - [ ] Test service: `backend/src/__tests__/unit.test.js` — CREATED or EXTENDED
@@ -194,7 +198,7 @@ For each file being created or modified, specify exactly what changes:
 - [ ] Every new service method has at least one test case
 - [ ] Every new validator schema has at least one test case
 - [ ] Happy path AND error paths tested (not just happy path)
-- [ ] Code coverage: run `npm run test:coverage` — no significant decrease in changed modules
+- [ ] **Coverage threshold (60%)**: run `npm run test:coverage` — must pass 60% min on lines, functions, branches, statements
 
 #### Backend Jest Integration Tests
 - [ ] Full request lifecycle: HTTP → middleware → controller → service → DB → response
@@ -290,7 +294,7 @@ frontend/src/api/generated/           → REGENERATE (types)
 - [ ] Response validation updated: `frontend/src/api/validator.ts` matches backend changes
 - [ ] Contract test updated: `frontend/src/__tests__/api-contract.test.ts` covers any new/changed fields
 - [ ] Bash integration suite test added or extended for API changes
-- [ ] Coverage checked: no significant decrease in changed modules
+- [ ] **Coverage threshold enforced**: `npm run test:coverage` (backend) or `npm test -- --run --coverage` (frontend) — min 60% lines, functions, branches, statements
 - [ ] Specification in `04_SPECIFICATION.md` matches what was actually implemented
 
 ---
@@ -301,15 +305,16 @@ frontend/src/api/generated/           → REGENERATE (types)
 2. [ ] Backend: `npm run test:integration` passes (if applicable)
 3. [ ] **Backend: `cd backend && bash integration-test/run.sh --only` passes (if backend API changed)**
 4. [ ] Backend: `npm run lint` passes
-5. [ ] Frontend: `npm run lint` passes
-6. [ ] Frontend: `npm run typecheck` passes
-7. [ ] Frontend: `npm run build` passes
-8. [ ] Frontend: `npm test -- --run` passes
-9. [ ] API endpoint responds correctly: `curl http://localhost:3001/api/v1/[feature]`
-10. [ ] Frontend UI loads correctly in browser
-11. [ ] Auth/permissions work correctly
-12. [ ] Error cases handled gracefully
-13. [ ] If specification file exists: implementation matches the spec
+5. [ ] **Backend: `npm run test:coverage` passes (60% min threshold)**
+6. [ ] Frontend: `npm run lint` passes
+7. [ ] Frontend: `npm run typecheck` passes
+8. [ ] Frontend: `npm run build` passes
+9. [ ] Frontend: `npm test -- --run --coverage` passes (60% min threshold)
+10. [ ] API endpoint responds correctly: `curl http://localhost:3001/api/v1/[feature]`
+11. [ ] Frontend UI loads correctly in browser
+12. [ ] Auth/permissions work correctly
+13. [ ] Error cases handled gracefully
+14. [ ] If specification file exists: implementation matches the spec
 
 ---
 

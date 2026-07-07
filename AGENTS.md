@@ -103,11 +103,25 @@ Backend CI job runs a real PostgreSQL service container.
 ### Bug fix protocol
 Every fix **must** include a regression test.
 - **Route bugs**: `supertest` against Express app in `src/__tests__/routeOrdering.test.js` or a new route test.
-- **Service/controller bugs**: extend unit tests in `src/__tests__/` using existing jest mocks.
+- **Service/controller bugs**: extend unit tests in `src/__tests__/using existing jest mocks.
 - **Frontend bugs**: extend Vitest unit tests in `frontend/src/__tests__/`.
 - After fixing, run tests in order: the layer you changed, then the other layer, then integration tests.
 - For backend changes: `npm test` → `npm test -- --run` (frontend) → `npm run test:integration` → `bash backend/integration-test/run.sh`.
 - For frontend changes: `npm test -- --run` → `npm test` (backend) → `npm run test:integration` → `bash backend/integration-test/run.sh`.
+
+### Coverage threshold (60%)
+Both backend and frontend enforce a **60% minimum coverage threshold** (lines, functions, branches, statements) in CI:
+- Backend: `npm run test:coverage` — Jest with built-in Istanbul
+- Frontend: `npm test -- --run --coverage` — Vitest with `@vitest/coverage-v8`
+- CI will fail if coverage drops below 60%. Run coverage locally before pushing.
+
+### Test-first requirement
+When a `04_SPECIFICATION.md` is created for a ticket, it includes a **Test-First Requirement** section. The implementing model MUST:
+1. Create empty test stub files (with imports, `describe` blocks, stub `it` blocks) **before** any production code
+2. Create production code files
+3. Fill in test stubs with actual assertions
+
+This prevents models from skipping tests. The test stubs are listed as the first file operations in `04_SPECIFICATION.md`.
 
 ## API
 

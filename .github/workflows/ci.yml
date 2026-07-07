@@ -42,9 +42,9 @@ jobs:
         working-directory: ./backend
         run: npm run lint
 
-      - name: Run backend tests
+      - name: Run backend tests with coverage
         working-directory: ./backend
-        run: npm test
+        run: npm run test:coverage
 
       - name: Run backend contract tests
         working-directory: ./frontend
@@ -73,6 +73,10 @@ jobs:
       - name: Run frontend lint
         working-directory: ./frontend
         run: npm run lint
+
+      - name: Run frontend tests with coverage
+        working-directory: ./frontend
+        run: npm test -- --run --coverage
 
       - name: Run frontend typecheck
         working-directory: ./frontend

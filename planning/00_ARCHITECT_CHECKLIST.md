@@ -73,9 +73,10 @@ Before starting any implementation, complete ALL items below. Do NOT skip any st
 - [ ] If frontend: component tests for new UI, E2E for user flows
 - [ ] Contract tests: `frontend/src/__tests__/api-contract.test.ts` updated if response shapes changed
 - [ ] Response validation: `frontend/src/api/validator.ts` updated if response shapes changed
+- [ ] **Test stubs created BEFORE production code** — if `04_SPECIFICATION.md` exists, stub files are the first file operations, listed under "Test Expectations"
 - [ ] New test files CREATED for all new/changed code (not just verifying existing tests pass)
 - [ ] Regression test added for any bug fix (reproduces the original failure condition)
-- [ ] Code coverage: no significant decrease in changed modules (run `npm run test:coverage` to verify)
+- [ ] **Coverage threshold (60%)**: run `npm run test:coverage` (backend) or `npm test -- --run --coverage` (frontend) — CI enforces 60% min on lines, functions, branches, statements
 
 ### Implementation Readiness
 
@@ -95,7 +96,7 @@ After implementation, complete ALL items below before marking the ticket as done
 - [ ] Linting passes (`npm run lint` in relevant directory)
 - [ ] Frontend typecheck passes (`npm run typecheck`)
 - [ ] Frontend build passes (`npm run build`)
-- [ ] Code coverage checked: no significant decrease in changed modules
+- [ ] **Coverage threshold enforced**: `npm run test:coverage` (backend) or `npm test -- --run --coverage` (frontend) — must pass 60% min on lines, functions, branches, statements
 - [ ] All action items in `03_ARCHITECT_IMPLEMENTATION.md` are completed
 - [ ] All testing checklist items in `01_ARCHITECT_REQUIREMENT.md` are verified
 - [ ] `03_ARCHITECT_IMPLEMENTATION.md` has been updated with:
