@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const AgentService = require('../services/AgentService');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
 const { editTicketSchema, claimTicketSchema, statusChangeSchema } = require('../validators/agents');
@@ -46,7 +46,7 @@ const createAgentSchema = Joi.object({
  *       400:
  *         description: Creation failed
  */
-router.post('/create', verifyToken, requireAnyPermission('AGENT_CREATE'), validate(createAgentSchema), async (req, res) => {
+router.post('/create', verifyTokenOrAgent, requireAnyPermission('AGENT_CREATE'), validate(createAgentSchema), async (req, res) => {
   try {
     const { name } = req.body;
     const apiKey = `ak_${crypto.randomBytes(24).toString('hex')}`;
@@ -77,7 +77,7 @@ router.post('/create', verifyToken, requireAnyPermission('AGENT_CREATE'), valida
  *                   items:
  *                     $ref: '#/components/schemas/Agent'
  */
-router.get('/', verifyToken, requireAnyPermission('AGENT_READ'), async (req, res) => {
+router.get('/', verifyTokenOrAgent, requireAnyPermission('AGENT_READ'), async (req, res) => {
   try {
     const agents = await AgentService.list(req.user.userId);
     res.json({ agents });
@@ -104,7 +104,7 @@ router.get('/', verifyToken, requireAnyPermission('AGENT_READ'), async (req, res
  *       400:
  *         description: Revoke failed
  */
-router.post('/revoke/:agentId', verifyToken, requireAnyPermission('AGENT_REVOKE'), async (req, res) => {
+router.post('/revoke/:agentId', verifyTokenOrAgent, requireAnyPermission('AGENT_REVOKE'), async (req, res) => {
   try {
     await AgentService.revokeApiKey(req.params.agentId);
     res.json({ message: 'API key revoked' });
@@ -131,7 +131,7 @@ router.post('/revoke/:agentId', verifyToken, requireAnyPermission('AGENT_REVOKE'
  *       400:
  *         description: Deletion failed
  */
-router.delete('/:agentId', verifyToken, requireAnyPermission('AGENT_DELETE'), async (req, res) => {
+router.delete('/:agentId', verifyTokenOrAgent, requireAnyPermission('AGENT_DELETE'), async (req, res) => {
   try {
     await AgentService.delete(req.params.agentId);
     res.json({ message: 'Agent deleted' });
@@ -216,7 +216,7 @@ router.get('/:agentId/history', async (req, res, next) => {
  *       404:
  *         description: Agent not found
  */
-router.get('/:agentId/key', verifyToken, async (req, res) => {
+router.get('/:agentId/key', verifyTokenOrAgent, async (req, res) => {
   try {
     const agents = await AgentService.list(req.user.userId);
     const agent = agents.find(a => a.id === req.params.agentId);

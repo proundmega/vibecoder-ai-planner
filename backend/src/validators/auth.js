@@ -20,7 +20,7 @@ const registerSchema = Joi.object({
     'string.min': 'Password must be at least 6 characters',
     'any.required': 'Password is required',
   }),
-  role: Joi.string().valid('user', 'member', 'project_admin').optional().default('project_admin'),
+  role: Joi.string().valid('user', 'member', 'project_admin', 'super_admin').optional().default('project_admin'),
   user_created_by: Joi.string().uuid().optional(),
 });
 

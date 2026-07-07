@@ -230,7 +230,9 @@ router.post('/auth/login', rateLimiter(5, 60000), validate(loginSchema), async (
   try {
     const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
     
-    if (checkAccountLockout(clientIp)) {
+    const locked = await checkAccountLockout(clientIp);
+    
+    if (locked) {
       const remainingMs = getLockoutRemainingMs(clientIp);
       const retryAfter = Math.ceil(remainingMs / 1000);
       res.set('Retry-After', String(retryAfter));

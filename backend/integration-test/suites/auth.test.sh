@@ -8,6 +8,12 @@ test_auth() {
   echo "  Authentication"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+  # Delete any existing user to make registration idempotent
+  sudo docker exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+    "DELETE FROM approval_requests WHERE requested_by=(SELECT id FROM users WHERE email='alice@integration.test');" >/dev/null 2>&1 || true
+  sudo docker exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+    "DELETE FROM users WHERE email='alice@integration.test';" >/dev/null 2>&1 || true
+  
   local code
   code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/register" \
     -H "Content-Type: application/json" \
@@ -21,7 +27,11 @@ test_auth() {
 
   local token
   token=$(login "alice@integration.test" "password123")
-  assert_has_field "Login returns token" "token" "{\"token\":\"$token\"}"
+  if [ -n "$token" ]; then
+    pass "Login returns token (got token)"
+  else
+    fail "Login returns token" "no token returned"
+  fi
 
   code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/login" \
     -H "Content-Type: application/json" \
@@ -31,7 +41,13 @@ test_auth() {
   local me_body
   me_body=$(curl -sf "$BASE/api/auth/me" -H "Authorization: Bearer $token")
   assert_has_field "GET /auth/me returns user" "user" "$me_body"
-  assert_has_field "GET /auth/me returns user with id" "id" "$me_body"
+  local user_id
+  user_id=$(echo "$me_body" | jq -r '(.data // .) | if type == "object" then .user.id else .id end // empty' 2>/dev/null)
+  if [ -n "$user_id" ]; then
+    pass "GET /auth/me returns user with id (got $user_id)"
+  else
+    fail "GET /auth/me returns user with id" "missing id in user object"
+  fi
 
   code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/auth/me")
   assert_status "GET /auth/me without token returns 401" "401" "$code"

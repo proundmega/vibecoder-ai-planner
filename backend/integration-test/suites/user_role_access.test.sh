@@ -26,7 +26,7 @@ test_user_role_ticket_access() {
   assert_field "Default user role is project_admin" "role" "project_admin" "$user_role"
 
   local admin_token
-  admin_token=$(login "alice@integration.test" "password123")
+  admin_token=$(seed_user "alice@integration.test" "password123")
   local proj_id
   proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \

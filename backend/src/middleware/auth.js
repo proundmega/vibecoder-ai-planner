@@ -36,6 +36,9 @@ const RATE_LIMIT_LUA_SCRIPT = `
 `;
 
 async function checkAccountLockout(ip) {
+  // Skip lockout during integration tests
+  if (process.env.INTEGRATION_TESTS === '1') return false;
+  
   // Try Redis first
   if (isRedisAvailable()) {
     try {

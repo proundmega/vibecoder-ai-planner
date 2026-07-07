@@ -9,7 +9,7 @@ test_jwt_token_expiry() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   local token
-  token=$(login "alice@integration.test" "password123")
+  token=$(seed_user "alice@integration.test" "password123")
 
   local payload
   payload=$(node -e "const parts=process.argv[1].split('.'); const buf=Buffer.from(parts[1].replace(/-/g,'+').replace(/_/g,'/'),'base64'); console.log(buf.toString('utf8'));" "$token" 2>/dev/null)

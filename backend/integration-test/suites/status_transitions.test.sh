@@ -9,7 +9,7 @@ test_status_transitions() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   local token
-  token=$(login "alice@integration.test" "password123")
+  token=$(seed_user "alice@integration.test" "password123")
 
   local proj_id
   proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
@@ -48,15 +48,17 @@ test_status_transitions() {
   assert_field "review → done" "status" "done" "$(echo "$body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)"
 
   # done → backlog (INVALID)
-  local err_body
-  err_body=$(curl -s -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket_id/status" \
+  local response status_code err_body
+  response=$(curl -s -w "\n%{http_code}" -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket_id/status" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
-    -d '{"status":"backlog"}' 2>&1 || true)
-  if echo "$err_body" | grep -qi "invalid"; then
+    -d '{"status":"backlog"}')
+  status_code=$(echo "$response" | tail -1)
+  err_body=$(echo "$response" | sed '$d')
+  if [ "$status_code" = "400" ] || [ "$status_code" = "403" ] || echo "$err_body" | grep -qi "invalid\|forbidden\|not allowed"; then
     pass "done → backlog rejected"
   else
-    fail "done → backlog" "should be rejected, got: $err_body"
+    fail "done → backlog" "expected 400/403, got $status_code: $err_body"
   fi
 
   # in_progress → done (INVALID — must go through review first)
@@ -72,13 +74,15 @@ test_status_transitions() {
     -H "Authorization: Bearer $token" \
     -d '{"status":"in_progress"}' >/dev/null 2>&1
 
-  err_body=$(curl -s -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket2_id/status" \
+  response=$(curl -s -w "\n%{http_code}" -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket2_id/status" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
-    -d '{"status":"done"}' 2>&1 || true)
-  if echo "$err_body" | grep -qi "invalid"; then
+    -d '{"status":"done"}')
+  status_code=$(echo "$response" | tail -1)
+  err_body=$(echo "$response" | sed '$d')
+  if [ "$status_code" = "400" ] || [ "$status_code" = "403" ] || echo "$err_body" | grep -qi "invalid\|forbidden\|not allowed"; then
     pass "in_progress → done rejected"
   else
-    fail "in_progress → done" "should be rejected, got: $err_body"
+    fail "in_progress → done" "expected 400/403, got $status_code: $err_body"
   fi
 }

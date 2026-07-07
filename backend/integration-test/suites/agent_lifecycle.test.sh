@@ -12,7 +12,11 @@ test_agent_lifecycle() {
 
   # Register and login user
   user_token=$(register "Lifecycle User" "lifecycle@test.com" "password123" "project_admin")
-  assert_has_field "Register lifecycle user" "token" "{\"token\":\"$user_token\"}"
+  if [ -n "$user_token" ]; then
+    pass "Register lifecycle user (got token)"
+  else
+    fail "Register lifecycle user" "no token returned"
+  fi
 
   # Create project
   local proj_body
@@ -20,8 +24,8 @@ test_agent_lifecycle() {
     -H "Authorization: Bearer $user_token" \
     -H "Content-Type: application/json" \
     -d '{"name":"Lifecycle Project","description":"For testing agent lifecycle"}')
-  project_id=$(echo "$proj_body" | jq -r '.id // empty')
-  assert_field "Project has id" "id" "__NULL__" "$project_id" || true
+  project_id=$(echo "$proj_body" | extract_id)
+  if [ -n "$project_id" ]; then pass "Project has id (got $project_id)"; else fail "Project has id" "no id returned"; fi
 
   # Create ticket in backlog
   local ticket_body
@@ -29,8 +33,8 @@ test_agent_lifecycle() {
     -H "Authorization: Bearer $user_token" \
     -H "Content-Type: application/json" \
     -d '{"title":"Lifecycle Ticket","description":"Test ticket","status":"backlog"}')
-  ticket_id=$(echo "$ticket_body" | jq -r '.id // empty')
-  assert_field "Ticket has id" "id" "__NULL__" "$ticket_body"
+  ticket_id=$(echo "$ticket_body" | extract_id)
+  if [ -n "$ticket_id" ]; then pass "Ticket has id (got $ticket_id)"; else fail "Ticket has id" "no id returned"; fi
   assert_field "Ticket status is backlog" "status" "backlog" "$ticket_body"
 
   # Register a separate user to act as the agent
@@ -44,18 +48,18 @@ test_agent_lifecycle() {
 
   # Create agent record linked to that user
   local agent_body agent_id
-  agent_body=$(curl -sf "$BASE/api/v1/agents" \
+  agent_body=$(curl -sf "$BASE/api/v1/agents/create" \
     -H "Authorization: Bearer $user_token" \
     -H "Content-Type: application/json" \
-    -d "{\"name\":\"Lifecycle Agent\",\"user_id\":\"$agent_user_id\"}")
-  agent_id=$(echo "$agent_body" | jq -r '.id // empty')
+    -d "{\"name\":\"Lifecycle Agent\"}")
+  agent_id=$(echo "$agent_body" | extract_id)
 
   # Agent logs in as their user
   agent_token=$(login "agent-actor@lifecycle.test" "password123")
 
   # Agent picks up ticket
   local pickup_body pickup_code
-  pickup_body=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/agents/$agent_id/pickup" \
+  pickup_body=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/tickets/$ticket_id/pickup" \
     -H "Authorization: Bearer $agent_token" \
     -H "Content-Type: application/json" \
     -d "{\"ticket_id\":\"$ticket_id\"}")
@@ -73,7 +77,7 @@ test_agent_lifecycle() {
   msg_body=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/tickets/$ticket_id/messages" \
     -H "Authorization: Bearer $agent_token" \
     -H "Content-Type: application/json" \
-    -d '{"content":"Agent working on this ticket","sender":"agent"}')
+    -d '{"messageType":"agent","content":"Agent working on this ticket"}')
   msg_code=$(echo "$msg_body" | tail -1)
   assert_status "Agent posts message" "201" "$msg_code"
 
@@ -81,11 +85,17 @@ test_agent_lifecycle() {
   local msg_list
   msg_list=$(curl -sf "$BASE/api/v1/tickets/$ticket_id/messages" \
     -H "Authorization: Bearer $user_token")
-  assert_field "Ticket has at least 1 message" "0" "1" "$msg_list"
+  local msg_count
+  msg_count=$(echo "$msg_list" | jq '(.data // .) | if type == "array" then length else 0 end' 2>/dev/null)
+  if [ -n "$msg_count" ] && [ "$msg_count" -ge 1 ] 2>/dev/null; then
+    pass "Ticket has at least 1 message (count=$msg_count)"
+  else
+    fail "Ticket has at least 1 message" "Expected >= 1, got $msg_count"
+  fi
 
   # Agent releases ticket
   local release_body release_code
-  release_body=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/agents/$agent_id/release" \
+  release_body=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/v1/tickets/$ticket_id/release" \
     -H "Authorization: Bearer $agent_token" \
     -H "Content-Type: application/json" \
     -d "{\"ticket_id\":\"$ticket_id\"}")

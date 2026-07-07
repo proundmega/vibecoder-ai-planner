@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAnyPermission } = require('../middleware/permissions');
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { createProjectSchema, updateProjectSchema } = require('../validators/projects');
 const { updateTicketSchema } = require('../validators/tickets');
@@ -216,7 +216,7 @@ router.get('/:id/users', verifyToken, projectController.getProjectUsers);
  *       201:
  *         description: Ticket created
  */
-router.post('/:id/tickets', verifyToken, requireAnyPermission('TICKET_CREATE'), projectController.createProjectTicket);
+router.post('/:id/tickets', verifyTokenOrAgent, requireAnyPermission('TICKET_CREATE'), projectController.createProjectTicket);
 
 /**
  * @openapi

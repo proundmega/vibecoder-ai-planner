@@ -12,7 +12,11 @@ test_file_upload() {
 
   # Register and login
   user_token=$(register "Upload User" "upload@test.com" "password123" "project_admin")
-  assert_has_field "Register upload user" "token" "{\"token\":\"$user_token\"}"
+  if [ -n "$user_token" ]; then
+    pass "Register upload user (got token)"
+  else
+    fail "Register upload user" "no token returned"
+  fi
 
   # Create project
   local proj_body
@@ -20,7 +24,7 @@ test_file_upload() {
     -H "Authorization: Bearer $user_token" \
     -H "Content-Type: application/json" \
     -d '{"name":"Upload Project","description":"For testing file uploads"}')
-  project_id=$(echo "$proj_body" | jq -r '.id // empty')
+  project_id=$(echo "$proj_body" | extract_id)
 
   # Create ticket
   local ticket_body
@@ -28,7 +32,7 @@ test_file_upload() {
     -H "Authorization: Bearer $user_token" \
     -H "Content-Type: application/json" \
     -d '{"title":"Upload Ticket","description":"Test ticket for attachments","status":"backlog"}')
-  ticket_id=$(echo "$ticket_body" | jq -r '.id // empty')
+  ticket_id=$(echo "$ticket_body" | extract_id)
 
   # Create a temp file to upload
   local tmpfile
