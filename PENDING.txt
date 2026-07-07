@@ -17,13 +17,13 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 6. **bt-57** — TypeScript migration tests (depends on bp-57)
 
 ### Phase 4: Feature Gaps (independent, can parallelize)
-7. **fg-01** — Provider field mismatch
-8. **fg-02** — Usage field mismatch
-9. **fg-03** — Billing field mismatch
-10. **fg-04** — Template name mismatch
-11. **fg-05** — Memory search UI
-12. **fg-06** — Agents API paths
-13. **fg-07** — Orphaned migration
+7. ~~**fg-01** — Provider field mismatch~~ ✅ Done
+8. ~~**fg-02** — Usage field mismatch~~ ✅ Done
+9. ~~**fg-03** — Billing field mismatch~~ ✅ Done
+10. ~~**fg-04** — Template name mismatch~~ ✅ Done
+11. ~~**fg-05** — Memory search UI~~ ✅ Done
+12. ~~**fg-06** — Agents API paths~~ ✅ Done
+13. ~~**fg-07** — Orphaned migration~~ ✅ Done
 
 ### Phase 5: Cross-Cutting Concerns
 14. **pa-01** — Permission system
@@ -51,13 +51,13 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 
 | ID | Directory | Description |
 |----|-----------|-------------|
-| fg-01 | `fg-01-provider-field-mismatch` | Provider field mismatch |
-| fg-02 | `fg-02-usage-field-mismatch` | Usage field mismatch |
-| fg-03 | `fg-03-billing-field-mismatch` | Billing field mismatch |
-| fg-04 | `fg-04-template-name-mismatch` | Template name mismatch |
-| fg-05 | `fg-05-memory-search-ui` | Memory search UI |
-| fg-06 | `fg-06-agents-api-paths` | Agents API paths |
-| fg-07 | `fg-07-orphaned-migration` | Orphaned migration |
+| fg-01 | `fg-01-provider-field-mismatch` | ~~Provider field mismatch~~ ✅ Done |
+| fg-02 | `fg-02-usage-field-mismatch` | ~~Usage field mismatch~~ ✅ Done |
+| fg-03 | `fg-03-billing-field-mismatch` | ~~Billing field mismatch~~ ✅ Done |
+| fg-04 | `fg-04-template-name-mismatch` | Template name mismatch ✅ Done (this session) |
+| fg-05 | `fg-05-memory-search-ui` | ~~Memory search UI~~ ✅ Done |
+| fg-06 | `fg-06-agents-api-paths` | ~~Agents API paths~~ ✅ Done |
+| fg-07 | `fg-07-orphaned-migration` | ~~Orphaned migration~~ ✅ Done |
 
 ## Other (pa-*)
 

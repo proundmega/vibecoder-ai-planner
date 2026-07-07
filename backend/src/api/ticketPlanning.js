@@ -99,7 +99,7 @@ router.put('/:fileKey', verifyToken, (req, res, next) => controller.upsert(req, 
  *             properties:
   *               templateName:
   *                 type: string
-  *                 enum: [architecture, technical, simple]
+   *                 enum: [architecture, technical, simple, specification]
  *     responses:
  *       200:
  *         description: Template applied

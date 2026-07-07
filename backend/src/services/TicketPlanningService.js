@@ -79,7 +79,7 @@ class TicketPlanningService {
       let templateFiles;
       let getContent;
 
-      if (templateName === 'architect') {
+      if (templateName === 'architecture') {
         templateFiles = TemplateService.getArchitectTemplate();
         getContent = TemplateService.getArchitectTemplateContent;
       } else if (templateName === 'technical') {
