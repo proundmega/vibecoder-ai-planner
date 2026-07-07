@@ -75,7 +75,7 @@ async function handleSave() {
 </script>
 
 <template>
-  <VModal v-model="$attrs['onUpdate:modelValue'] ?? true" title="Edit Ticket" size="large" @close="emit('close')">
+  <VModal :modelValue="true" title="Edit Ticket" size="large" @close="emit('close')">
     <form @submit.prevent="handleSave">
       <VInput v-model="title" label="Title" placeholder="Ticket title" :error="error" required />
       

@@ -92,7 +92,7 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <VModal v-model="true" :title="isEdit ? 'Edit User' : 'Create New User'" @close="emit('close')">
+  <VModal :modelValue="true" :title="isEdit ? 'Edit User' : 'Create New User'" @close="emit('close')">
     <form @submit.prevent="handleSubmit">
       <VInput v-model="name" label="Name" placeholder="User name" required />
       

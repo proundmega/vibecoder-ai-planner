@@ -19,10 +19,13 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
+withDefaults(defineProps<{
   padding?: 'none' | 'small' | 'medium' | 'large'
   hover?: boolean
-}>()
+}>(), {
+  padding: 'medium',
+  hover: false
+})
 </script>
 
 <style scoped>
@@ -35,18 +38,6 @@ defineProps<{
 
 .v-card--hover:hover {
   box-shadow: var(--shadow-md);
-}
-
-.v-card--small {
-  padding: var(--spacing-sm);
-}
-
-.v-card--medium {
-  padding: var(--spacing-md);
-}
-
-.v-card--large {
-  padding: var(--spacing-lg);
 }
 
 .v-card__header {

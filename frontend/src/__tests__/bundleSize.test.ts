@@ -8,14 +8,14 @@ describe('Bundle size regression', () => {
     expect(true).toBe(true)
   })
 
-  it('design system components are importable', () => {
+  it('design system components are importable', async () => {
     // Verify that all design system components can be imported without errors.
-    // If any component has a syntax or dependency error, this would fail at import time.
-    expect(() => import('@/components/VButton.vue')).not.toThrow()
-    expect(() => import('@/components/VModal.vue')).not.toThrow()
-    expect(() => import('@/components/VCard.vue')).not.toThrow()
-    expect(() => import('@/components/VBadge.vue')).not.toThrow()
-    expect(() => import('@/components/VTable.vue')).not.toThrow()
-    expect(() => import('@/components/VFormGroup.vue')).not.toThrow()
+    // If any component has a syntax or dependency error, the import will reject.
+    await expect(import('@/components/VButton.vue')).resolves.toBeDefined()
+    await expect(import('@/components/VModal.vue')).resolves.toBeDefined()
+    await expect(import('@/components/VCard.vue')).resolves.toBeDefined()
+    await expect(import('@/components/VBadge.vue')).resolves.toBeDefined()
+    await expect(import('@/components/VTable.vue')).resolves.toBeDefined()
+    await expect(import('@/components/VFormGroup.vue')).resolves.toBeDefined()
   })
 })
