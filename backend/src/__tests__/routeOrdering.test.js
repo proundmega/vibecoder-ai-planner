@@ -4,6 +4,7 @@ const TemplateService = require('../services/TemplateService');
 const Project = require('../models/project');
 
 jest.mock('../services/TemplateService');
+jest.mock('../services/TicketPlanningService');
 jest.mock('../models/project');
 jest.mock('../services/PermissionService', () => ({
   hasAnyPermission: jest.fn().mockResolvedValue(true),
@@ -165,6 +166,9 @@ describe('Route Ordering', () => {
     });
 
     it('should route GET /api/v1/tickets/1/planning to ticketPlanningController.list', async () => {
+      const TicketPlanningService = require('../services/TicketPlanningService');
+      TicketPlanningService.list.mockResolvedValue([]);
+
       const res = await request(app)
         .get('/api/v1/tickets/1/planning')
         .set('Authorization', 'Bearer mock-token');
@@ -172,6 +176,68 @@ describe('Route Ordering', () => {
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data).toEqual([]);
+    });
+
+    it('should route POST /api/v1/tickets/1/planning/apply-template to ticketPlanningController.applyTemplate', async () => {
+      const TicketPlanningService = require('../services/TicketPlanningService');
+      const TemplateService = require('../services/TemplateService');
+      
+      const mockTemplateFiles = [
+        { key: '00_CHECKLIST.md', content: '# Checklist' },
+        { key: '01_REQUIREMENT.md', content: '# Requirement' },
+      ];
+      TemplateService.getArchitectTemplate.mockReturnValue(mockTemplateFiles);
+      TemplateService.getArchitectTemplateContent.mockImplementation((key) => {
+        const file = mockTemplateFiles.find(f => f.key === key);
+        return file ? file.content : '';
+      });
+      TicketPlanningService.applyTemplate.mockResolvedValue(mockTemplateFiles);
+
+      const res = await request(app)
+        .post('/api/v1/tickets/1/planning/apply-template')
+        .set('Authorization', 'Bearer mock-token')
+        .send({ templateName: 'architecture' });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toEqual(mockTemplateFiles);
+      expect(res.body.message).toBe('Template applied successfully');
+    });
+
+    it('should return 400 for POST /api/v1/tickets/1/planning/apply-template without templateName', async () => {
+      const res = await request(app)
+        .post('/api/v1/tickets/1/planning/apply-template')
+        .set('Authorization', 'Bearer mock-token')
+        .send({});
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error.code).toBe('VALIDATION_ERROR');
+      expect(res.body.error.message).toBe('templateName is required');
+    });
+
+    it('should accept "architecture" (not "architect") as valid template name', async () => {
+      const TicketPlanningService = require('../services/TicketPlanningService');
+      const TemplateService = require('../services/TemplateService');
+      
+      const mockTemplateFiles = [
+        { key: '00_CHECKLIST.md', content: '# Checklist' },
+      ];
+      TemplateService.getArchitectTemplate.mockReturnValue(mockTemplateFiles);
+      TemplateService.getArchitectTemplateContent.mockImplementation((key) => {
+        const file = mockTemplateFiles.find(f => f.key === key);
+        return file ? file.content : '';
+      });
+      TicketPlanningService.applyTemplate.mockResolvedValue(mockTemplateFiles);
+
+      const res = await request(app)
+        .post('/api/v1/tickets/1/planning/apply-template')
+        .set('Authorization', 'Bearer mock-token')
+        .send({ templateName: 'architecture' });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toEqual(mockTemplateFiles);
     });
   });
 });

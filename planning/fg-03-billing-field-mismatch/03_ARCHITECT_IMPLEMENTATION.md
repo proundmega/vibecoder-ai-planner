@@ -6,12 +6,12 @@
 
 ## Ticket: fg-03 — Fix billing API field name mismatch
 
-**Status**: planned | in_progress | completed | blocked
+**Status**: completed
 **Priority**: P1
 **Effort**: Medium
 **Author**: AI Assistant
 **Date created**: 2026-06-19
-**Date completed**: YYYY-MM-DD
+**Date completed**: 2026-07-07
 **PR**: [link]
 **Branch**: [branch-name]
 **Scope**: Frontend
