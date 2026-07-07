@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchAgentStatusList } from '@/api/agents'
 import { createAgent, listAgents } from '@/api/agents'
@@ -35,6 +35,12 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (pollInterval) clearInterval(pollInterval)
+})
+
+watch(activeTab, (tab) => {
+  if (tab === 'agents') {
+    loadCrudAgents()
+  }
 })
 
 function viewDetail(agentId) {
