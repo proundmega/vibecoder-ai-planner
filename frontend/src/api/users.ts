@@ -12,9 +12,6 @@ export interface User {
 
 export interface UserListResponse {
   users: User[]
-  total: number
-  page: number
-  perPage: number
 }
 
 export interface ListFilters {

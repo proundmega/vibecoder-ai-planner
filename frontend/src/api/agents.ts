@@ -1,10 +1,10 @@
 import { get, post, del } from './client'
 
 export interface AgentKeyInfo {
-  agent_id: string
-  api_key: string
-  created_at: string
-  expires_at: string | null
+  name: string
+  keyPreview: string
+  rateLimit: number
+  maxActionsPerDay: number
 }
 
 export interface Agent {
@@ -16,36 +16,38 @@ export interface Agent {
   updated_at: string
 }
 
-export interface AgentHistoryEntry {
-  id: string
-  agent_id: string
-  action: string
-  details: Record<string, unknown>
-  created_at: string
+export interface AgentHistorySummary {
+  agentName: string
+  totalActions: number
+  totalCost: number
+  daily: { date: string; count: number; totalCost: number }[]
 }
 
 export interface AgentStatus {
-  id: string
-  agent_id: string
+  agent_id: number
+  name: string
   status: string
   last_seen: string
-  tasks_completed: number
-  tasks_failed: number
+  current_ticket_id: number | null
+  current_ticket_title: string | null
+  current_step: string | null
+  actions_today: number
+  cost_today: number
 }
 
 export function getAgentKeyInfo(agentId: string): Promise<AgentKeyInfo> {
   return get(`/api/v1/agents/${agentId}/key`)
 }
 
-export function createAgent(name: string): Promise<Agent> {
-  return post('/api/v1/agents/create', { name })
+export function createAgent(name: string): Promise<Agent & { generatedApiKey: string }> {
+  return post<Agent & { generatedApiKey: string }>('/api/v1/agents/create', { name })
 }
 
-export function listAgents(): Promise<Agent[]> {
-  return get('/api/v1/agents/')
+export function listAgents(): Promise<{ agents: Agent[] }> {
+  return get<{ agents: Agent[] }>('/api/v1/agents/')
 }
 
-export function getAgentHistory(agentId: string, apiKey: string | null = null): Promise<AgentHistoryEntry[]> {
+export function getAgentHistory(agentId: string, apiKey: string | null = null): Promise<AgentHistorySummary> {
   const options = apiKey ? { headers: { 'x-api-key': apiKey } } : {}
   return get(`/api/v1/agents/${agentId}/history`, options as Record<string, unknown>)
 }

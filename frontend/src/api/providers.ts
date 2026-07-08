@@ -62,8 +62,8 @@ export function setProviderConfig(projectId: string, config: Record<string, unkn
   return put<ProviderConfig>(`/api/v1/providers/projects/${projectId}/provider`, config).catch(() => null) as Promise<ProviderConfig | null>
 }
 
-export function deleteProviderConfig(projectId: string): Promise<void> {
-  return del<void>(`/api/v1/providers/projects/${projectId}/provider`).catch(() => {})
+export function deleteProviderConfig(projectId: string): Promise<void | null> {
+  return del<void>(`/api/v1/providers/projects/${projectId}/provider`).catch(() => null)
 }
 
 export function testProviderConnection(projectId: string, config: Record<string, unknown>): Promise<{ success: boolean; message: string } | null> {

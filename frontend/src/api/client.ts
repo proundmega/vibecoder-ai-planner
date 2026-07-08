@@ -83,7 +83,10 @@ export function del<T = unknown>(url: string, options: ApiOptions = {}): Promise
 }
 
 export function patch<T = unknown>(url: string, body?: unknown, options: ApiOptions = {}): Promise<T> {
-  const opts: ApiOptions = { method: 'PATCH' }
+  const opts: ApiOptions = {
+    method: 'PATCH',
+    ...options,
+  }
   if (body !== undefined) {
     opts.body = JSON.stringify(body)
   }

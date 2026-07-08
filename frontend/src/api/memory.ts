@@ -15,7 +15,7 @@ export function getProjectMemory(projectId: string): Promise<Memory[]> {
 }
 
 export function searchMemory(projectId: string, query: string): Promise<Memory[]> {
-  return get<Memory[]>(`/api/v1/memory/project/${projectId}/search`, { params: { q: query } } as Record<string, unknown>).catch(() => []) as Promise<Memory[]>
+  return get<Memory[]>(`/api/v1/memory/project/${projectId}/search?query=${encodeURIComponent(query)}`).catch(() => []) as Promise<Memory[]>
 }
 
 export function getAgentMemory(agentId: string): Promise<Memory[]> {

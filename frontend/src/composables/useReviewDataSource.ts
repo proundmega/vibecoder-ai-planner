@@ -24,7 +24,7 @@ export function useReviewDataSource(ticketId: string) {
       if (github && github.files && github.files.length > 0) {
         source.value = 'github'
         files.value = github.files.map((entry) => ({
-          filename: entry.path || entry.old_path || 'unknown',
+          filename: entry.filename,
           status: entry.status || 'modified',
           patch: entry.patch || '',
           additions: entry.additions || 0,

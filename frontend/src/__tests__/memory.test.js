@@ -33,15 +33,13 @@ describe('memory API', () => {
   })
 
   describe('searchMemory', () => {
-    it('sends GET request with query params', async () => {
+    it('sends GET request with query params in URL', async () => {
       const { get } = await import('../api/client')
       get.mockResolvedValue([{ id: 'm1', content: 'relevant' }])
 
       const result = await memory.searchMemory('proj-123', 'bug')
 
-      expect(get).toHaveBeenCalledWith('/api/v1/memory/project/proj-123/search', {
-        params: { q: 'bug' },
-      })
+      expect(get).toHaveBeenCalledWith('/api/v1/memory/project/proj-123/search?query=bug')
       expect(result).toEqual([{ id: 'm1', content: 'relevant' }])
     })
 

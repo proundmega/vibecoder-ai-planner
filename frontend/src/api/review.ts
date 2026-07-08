@@ -11,14 +11,13 @@ export interface ReviewComment {
 }
 
 export interface DiffEntry {
-  path: string
-  old_path: string | null
-  old_sha: string
-  new_sha: string
+  filename: string
   status: string
   additions: number
   deletions: number
+  changes: number
   patch: string
+  contentsUrl: string
 }
 
 export interface LocalDiffEntry {
