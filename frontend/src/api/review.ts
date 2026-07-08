@@ -33,8 +33,13 @@ export interface LocalDiffEntry {
   created_at?: string
 }
 
-export function getGithubDiff(ticketId: string): Promise<DiffEntry[]> {
-  return get(`/api/v1/tickets/${ticketId}/review/diff`)
+export interface GithubDiffResponse {
+  files: DiffEntry[]
+  prNumber: number
+}
+
+export function getGithubDiff(ticketId: string): Promise<GithubDiffResponse> {
+  return get<GithubDiffResponse>(`/api/v1/tickets/${ticketId}/review/diff`)
 }
 
 export function getLocalDiff(ticketId: string): Promise<LocalDiffEntry[]> {

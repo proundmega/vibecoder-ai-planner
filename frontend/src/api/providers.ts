@@ -16,8 +16,8 @@ export interface Provider {
   fallback_provider?: string | null
   routing_rules?: string
   is_project_director?: boolean
-  created_at: string
-  updated_at: string
+  createdAt: string
+  updatedAt: string
 }
 
 export interface ProviderConfig {

@@ -21,9 +21,9 @@ export function useReviewDataSource(ticketId: string) {
     error.value = null
     try {
       const github = await getGithubDiff(ticketId)
-      if (github && github.length > 0) {
+      if (github && github.files && github.files.length > 0) {
         source.value = 'github'
-        files.value = github.map((entry) => ({
+        files.value = github.files.map((entry) => ({
           filename: entry.path || entry.old_path || 'unknown',
           status: entry.status || 'modified',
           patch: entry.patch || '',
