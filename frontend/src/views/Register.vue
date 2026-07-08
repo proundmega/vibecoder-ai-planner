@@ -44,8 +44,8 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { registerUser } from '@/api/auth.js'
-import { get } from '@/api/client.js'
+import { registerUser } from '@/api/auth'
+import { get } from '@/api/client'
 import VInput from '@/components/VInput.vue'
 import VButton from '@/components/VButton.vue'
 
@@ -67,9 +67,9 @@ const handleRegister = async () => {
     authStore.setUser(data.user)
     if (data.user?.role) {
       try {
-        const perms = await get(`/api/v1/permissions/${data.user.role}`)
+        const perms = await get<string[]>(`/api/v1/permissions/${data.user.role}`)
         authStore.setPermissions(perms)
-        await authStore.syncPermissions((role) => get(`/api/v1/permissions/${role}`))
+        await authStore.syncPermissions((role) => get<string[]>(`/api/v1/permissions/${role}`))
       } catch (e) {
         console.error('Failed to fetch permissions:', e)
       }
@@ -77,7 +77,7 @@ const handleRegister = async () => {
     router.push('/dashboard')
   } catch (err) {
     console.error('Registration failed:', err)
-    errorMessage.value = err.message || 'Registration failed. Please try again.'
+    errorMessage.value = err instanceof Error ? err.message : 'Registration failed. Please try again.'
   } finally {
     loading.value = false
   }

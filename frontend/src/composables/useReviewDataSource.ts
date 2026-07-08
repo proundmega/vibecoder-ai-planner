@@ -21,23 +21,29 @@ export function useReviewDataSource(ticketId: string) {
     error.value = null
     try {
       const github = await getGithubDiff(ticketId)
-      if (github?.files?.length > 0) {
+      if (github && github.files && github.files.length > 0) {
         source.value = 'github'
-        files.value = github.files
+        files.value = github.files.map((entry) => ({
+          filename: entry.filename,
+          status: entry.status || 'modified',
+          patch: entry.patch || '',
+          additions: entry.additions || 0,
+          deletions: entry.deletions || 0,
+        }))
         return
       }
     } catch { /* no github PR, try local */ }
 
     try {
       const local = await getLocalDiff(ticketId)
-      if (local?.files?.length > 0) {
+      if (local && local.length > 0) {
         source.value = 'local'
-        files.value = local.files.map((f: any) => ({
+        files.value = local.map((f) => ({
           filename: f.file_path,
           status: f.action === 'create' ? 'added' : f.action === 'delete' ? 'deleted' : 'modified',
-          patch: computePatch(f.old_content, f.new_content, f.file_path),
-          additions: f.action === 'delete' ? 0 : countLines(f.new_content),
-          deletions: f.action === 'create' ? 0 : countLines(f.old_content),
+          patch: computePatch(f.old_content || '', f.new_content || '', f.file_path),
+          additions: f.action === 'delete' ? 0 : countLines(f.new_content || ''),
+          deletions: f.action === 'create' ? 0 : countLines(f.old_content || ''),
         }))
         return
       }

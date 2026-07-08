@@ -82,7 +82,7 @@ describe('providers API', () => {
 
       const result = await providers.testProvider('proj-123', 'prov-1')
 
-      expect(post).toHaveBeenCalledWith('/api/v1/providers/proj-123/providers/prov-1/test')
+      expect(post).toHaveBeenCalledWith('/api/v1/providers/proj-123/providers/prov-1/test', undefined)
       expect(result).toEqual({ success: true, message: 'Connected' })
     })
   })

@@ -1,7 +1,7 @@
 import { get, post, patch, del } from './client'
 
-export function getActiveCredentials(projectId: string) {
-  return get(`/api/v1/credentials/${projectId}/credentials`).catch(() => [])
+export function getActiveCredentials(projectId: string): Promise<Record<string, unknown>[]> {
+  return get<Record<string, unknown>[]>(`/api/v1/credentials/${projectId}/credentials`).catch(() => []) as Promise<Record<string, unknown>[]>
 }
 
 export function addCredential(projectId: string, data: { name: string; credential: string }) {

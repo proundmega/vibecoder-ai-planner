@@ -115,11 +115,12 @@ describe('users API', () => {
       const { post } = await import('../api/client')
       post.mockResolvedValue({ id: 'u1', name: 'New User', role: 'user' })
 
-      const result = await users.createUser({ name: 'New User', email: 'new@example.com', role: 'user' })
+      const result = await users.createUser({ name: 'New User', email: 'new@example.com', password: 'password123', role: 'user' })
 
       expect(post).toHaveBeenCalledWith('/api/v1/users', {
         name: 'New User',
         email: 'new@example.com',
+        password: 'password123',
         role: 'user',
       })
       expect(result).toEqual({ id: 'u1', name: 'New User', role: 'user' })
@@ -129,11 +130,12 @@ describe('users API', () => {
       const { post } = await import('../api/client')
       post.mockResolvedValue({ id: 'u1' })
 
-      await users.createUser({ name: 'Test', email: 't@t.com', role: 'member', description: 'Desc' })
+      await users.createUser({ name: 'Test', email: 't@t.com', password: 'secret', role: 'member', description: 'Desc' })
 
       expect(post).toHaveBeenCalledWith('/api/v1/users', {
         name: 'Test',
         email: 't@t.com',
+        password: 'secret',
         role: 'member',
         description: 'Desc',
       })
@@ -168,21 +170,21 @@ describe('users API', () => {
   describe('toggleUserActive', () => {
     it('sends PATCH to correct URL', async () => {
       const { patch } = await import('../api/client')
-      patch.mockResolvedValue({ id: 'u1', is_active: false })
+      patch.mockResolvedValue({ id: 'u1', isActive: false })
 
       const result = await users.toggleUserActive('u1')
 
-      expect(patch).toHaveBeenCalledWith('/api/v1/users/u1/toggle-active')
-      expect(result).toEqual({ id: 'u1', is_active: false })
+      expect(patch).toHaveBeenCalledWith('/api/v1/users/u1/toggle-active', undefined)
+      expect(result).toEqual({ id: 'u1', isActive: false })
     })
 
     it('returns updated user data', async () => {
       const { patch } = await import('../api/client')
-      patch.mockResolvedValue({ id: 'u1', is_active: true })
+      patch.mockResolvedValue({ id: 'u1', isActive: true })
 
       const result = await users.toggleUserActive('u1')
 
-      expect(result.is_active).toBe(true)
+      expect(result.isActive).toBe(true)
     })
   })
 

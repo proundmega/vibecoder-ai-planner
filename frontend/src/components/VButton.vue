@@ -17,7 +17,7 @@
 </template>
 
 <script setup lang="ts">
-const props = withDefaults(defineProps<{
+withDefaults(defineProps<{
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'link'
   size?: 'small' | 'medium' | 'large'
   loading?: boolean

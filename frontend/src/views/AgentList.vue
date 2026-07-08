@@ -73,8 +73,8 @@ const tabs = [
 async function loadCrudAgents() {
   loadingAgents.value = true
   try {
-    const data = await listAgents()
-    agentsData.value = data || []
+    const { agents } = await listAgents()
+    agentsData.value = agents || []
   } catch {
     agentsData.value = []
   } finally {

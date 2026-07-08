@@ -36,8 +36,8 @@
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { loginUser } from '@/api/auth.js'
-import { get } from '@/api/client.js'
+import { loginUser } from '@/api/auth'
+import { get } from '@/api/client'
 import VInput from '@/components/VInput.vue'
 import VButton from '@/components/VButton.vue'
 
@@ -59,18 +59,18 @@ const handleLogin = async () => {
     authStore.setUser(data.user)
     if (data.user?.role) {
       try {
-        const perms = await get(`/api/v1/permissions/${data.user.role}`)
+        const perms = await get<string[]>(`/api/v1/permissions/${data.user.role}`)
         authStore.setPermissions(perms)
-        await authStore.syncPermissions((role) => get(`/api/v1/permissions/${role}`))
+        await authStore.syncPermissions((role) => get<string[]>(`/api/v1/permissions/${role}`))
       } catch (e) {
         console.error('Failed to fetch permissions:', e)
       }
     }
-    const redirect = route.query.redirect || '/dashboard'
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
     router.push(redirect)
   } catch (err) {
     console.error('Login failed:', err)
-    errorMessage.value = err.message || 'Login failed. Please check your credentials.'
+    errorMessage.value = err instanceof Error ? err.message : 'Login failed. Please check your credentials.'
   } finally {
     loading.value = false
   }

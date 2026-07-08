@@ -53,21 +53,21 @@ describe('usage API', () => {
   describe('getModelPricing', () => {
     it('sends GET request to correct URL', async () => {
       const { get } = await import('../api/client')
-      get.mockResolvedValue([{ model: 'gpt-4', input: 0.03 }])
+      get.mockResolvedValue({ models: [{ model: 'gpt-4', pricing: { input_cost_per_million: 0.03, output_cost_per_million: 0.06 } }] })
 
       const result = await usage.getModelPricing()
 
       expect(get).toHaveBeenCalledWith('/api/v1/usage/pricing/models')
-      expect(result).toEqual([{ model: 'gpt-4', input: 0.03 }])
+      expect(result).toEqual({ models: [{ model: 'gpt-4', pricing: { input_cost_per_million: 0.03, output_cost_per_million: 0.06 } }] })
     })
 
-    it('returns empty array on error', async () => {
+    it('returns empty models array on error', async () => {
       const { get } = await import('../api/client')
       get.mockRejectedValue(new Error('Network error'))
 
       const result = await usage.getModelPricing()
 
-      expect(result).toEqual([])
+      expect(result).toEqual({ models: [] })
     })
   })
 })
