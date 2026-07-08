@@ -26,7 +26,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 13. ~~**fg-07** — Orphaned migration~~ ✅ Done
 
 ### Phase 5: Cross-Cutting Concerns
-14. **pa-01** — Permission system
+14. ~~**pa-01** — Permission system~~ ✅ Done (this session)
 
 ## Backend (bp-*)
 
@@ -37,7 +37,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | ~~bp-69~~ | `bp-69-agent-creation-ui` | P1 | ~~Add Create Agent button and modal~~ ✅ Done (PR #46) |
 | ~~bp-70~~ | `bp-70-agent-detail-actions` | P1 | ~~Add agent delete/revoke actions and CRUD table~~ ✅ Done (PR #47) |
 | ~~bp-56~~ | `bp-56-design-system` | P2 | ~~Shared CSS and Component Design System~~ ✅ Done (this session) |
-| bp-57 | `bp-57-migrate-to-typescript` | P3 | Frontend JS → TypeScript migration |
+| ~~bp-57~~ | `bp-57-migrate-to-typescript` | P3 | ~~Frontend JS → TypeScript migration~~ ✅ Done (PR #50) |
 
 ## Test Backfills (bt-*)
 
@@ -45,7 +45,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 |----|-----------|------------|-------------|
 | ~~bt-53~~ | `bt-53-backfill-redis-integration-tests` | bp-53 | ~~Redis integration tests~~ ✅ Covered in bp-53 PR |
 | ~~bt-56~~ | `bt-56-backfill-design-system-tests` | bp-56 | ~~Design system tests~~ ✅ Done (this session) |
-| bt-57 | `bt-57-backfill-typescript-migration-tests` | bp-57 | TypeScript migration tests |
+| ~~bt-57~~ | `bt-57-backfill-typescript-migration-tests` | bp-57 | ~~TypeScript migration tests~~ ✅ Done (this session) |
 
 ## Feature Gaps (fg-*)
 
@@ -63,15 +63,19 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 
 | ID | Directory | Description |
 |----|-----------|-------------|
-| pa-01 | `pa-01-permission-system` | Permission system |
+| ~~pa-01~~ | `pa-01-permission-system` | ~~Permission system~~ ✅ Done (this session) |
 
 ## Notes
 
 - bp-58 (security hardening) and bp-60 (contract testing) have code in HEAD but their planning docs are stale (still say "planned"). They are effectively done but need doc updates.
 - bp-53 is **completed** (PR #38, branch fix/bp-53-distributed-state).
+- bp-56 is **completed** (this session).
+- bp-57 is **completed** (PR #50, this session).
 - bp-68, bp-69, bp-70 are **completed** (PRs #44, #46, #47).
-- bp-56 is **completed** (this session). bp-57 has zero git history — truly pending.
+- pa-01 is **completed** (this session — permission system was already implemented, only remaining frontend role checks were cleaned up).
+- bt-53, bt-56, bt-57 are **completed** (test backfills for corresponding bp-* suites).
 - All bt-* suites are test backfills for corresponding bp-* suites.
+- fg-01 through fg-07 are **completed** (this session).
 - fg-08 through fg-12 were implemented (merged into a single commit) but have no separate planning directory.
 - fg-29 was implemented but planning doc was stale — moved to `planning/DONE/`.
 - bt-52, bt-54, bt-55, bt-58, bt-59 moved to `planning/DONE/` — their corresponding bp-* suites are implemented.
