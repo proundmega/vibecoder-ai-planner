@@ -216,7 +216,7 @@ async function loadProviders() {
   providersError.value = null
   try {
     providers.value = await listProviders(projectId)
-    const director = providers.value.find(p => p.is_project_director)
+    const director = providers.value.find(p => p.isProjectDirector)
     directorProviderId.value = director ? director.id : null
     providersLoaded.value = true
   } catch (_err) {
@@ -234,7 +234,7 @@ async function handleAddProvider() {
     const options = {}
     if (newProviderModel.value.trim()) options.model = newProviderModel.value.trim()
     if (newProviderEndpoint.value.trim()) options.baseUrl = newProviderEndpoint.value.trim()
-    if (newProviderFallback.value) options.fallback_provider = newProviderFallback.value
+    if (newProviderFallback.value) options.fallbackProvider = newProviderFallback.value
     await addProvider(projectId, newProviderName.value.trim(), newProviderType.value, newProviderKey.value.trim(), options)
     showAddProvider.value = false
     newProviderName.value = ''
@@ -262,9 +262,9 @@ async function handleUpdateProvider() {
       updates.baseUrl = editProviderEndpoint.value.trim()
     }
     if (editProviderFallback.value) {
-      updates.fallback_provider = editProviderFallback.value
+      updates.fallbackProvider = editProviderFallback.value
     } else if (editProviderFallback.value === null) {
-      updates.fallback_provider = null
+      updates.fallbackProvider = null
     }
     await updateProvider(projectId, editingProvider.value.id, updates)
     editingProvider.value = null
@@ -279,8 +279,8 @@ function showEditProvider(provider) {
   editProviderName.value = provider.name
   editProviderKey.value = ''
   editProviderModel.value = provider.model || ''
-  editProviderEndpoint.value = provider.endpoint_url || ''
-  editProviderFallback.value = provider.fallback_provider || null
+  editProviderEndpoint.value = provider.endpointUrl || ''
+  editProviderFallback.value = provider.fallbackProvider || null
 }
 
 async function handleDeleteProvider(providerId) {
@@ -614,20 +614,20 @@ async function handleDeleteMemory(memoryId) {
           </div>
 
           <div v-else class="provider-list">
-            <div v-for="provider in providers" :key="provider.id" class="provider-card" :class="{ 'director': provider.is_project_director }">
+            <div v-for="provider in providers" :key="provider.id" class="provider-card" :class="{ 'director': provider.isProjectDirector }">
               <div class="provider-info">
                 <div class="provider-header">
                   <h4>{{ provider.name }}</h4>
-                  <span v-if="provider.is_project_director" class="director-badge">🎯 Director</span>
+                  <span v-if="provider.isProjectDirector" class="director-badge">🎯 Director</span>
                 </div>
                 <span class="provider-type">{{ provider.providerType }}</span>
                 <span v-if="provider.model" class="provider-model">Model: {{ provider.model }}</span>
-                <span v-if="provider.endpoint_url" class="provider-endpoint">{{ provider.endpoint_url }}</span>
-                <span v-if="provider.fallback_provider" class="provider-fallback">Fallback: {{ provider.fallback_provider }}</span>
+                <span v-if="provider.endpointUrl" class="provider-endpoint">{{ provider.endpointUrl }}</span>
+                <span v-if="provider.fallbackProvider" class="provider-fallback">Fallback: {{ provider.fallbackProvider }}</span>
                 <span class="provider-key-masked">{{ '•'.repeat(12) }}{{ provider.api_key?.slice(-4) || '' }}</span>
               </div>
               <div class="provider-actions">
-                <button v-if="!provider.is_project_director" @click="handleSetDirector(provider.id)" class="btn-small" title="Set as project director">
+                <button v-if="!provider.isProjectDirector" @click="handleSetDirector(provider.id)" class="btn-small" title="Set as project director">
                   🎯
                 </button>
                 <button @click="handleTestProvider(provider.id)" :disabled="providerTestLoading" class="btn-small">

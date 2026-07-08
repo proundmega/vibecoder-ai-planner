@@ -8,10 +8,14 @@ export interface AgentKeyInfo {
 }
 
 export interface Agent {
-  id: string
+  id: number
   name: string
-  project_id: string
-  status: string
+  api_key: string | null
+  owner_id: number
+  rate_limit: number
+  max_actions_per_day: number
+  current_daily_usage: number
+  last_reset_at: string | null
   created_at: string
   updated_at: string
 }
