@@ -170,21 +170,21 @@ describe('users API', () => {
   describe('toggleUserActive', () => {
     it('sends PATCH to correct URL', async () => {
       const { patch } = await import('../api/client')
-      patch.mockResolvedValue({ id: 'u1', is_active: false })
+      patch.mockResolvedValue({ id: 'u1', isActive: false })
 
       const result = await users.toggleUserActive('u1')
 
       expect(patch).toHaveBeenCalledWith('/api/v1/users/u1/toggle-active', undefined)
-      expect(result).toEqual({ id: 'u1', is_active: false })
+      expect(result).toEqual({ id: 'u1', isActive: false })
     })
 
     it('returns updated user data', async () => {
       const { patch } = await import('../api/client')
-      patch.mockResolvedValue({ id: 'u1', is_active: true })
+      patch.mockResolvedValue({ id: 'u1', isActive: true })
 
       const result = await users.toggleUserActive('u1')
 
-      expect(result.is_active).toBe(true)
+      expect(result.isActive).toBe(true)
     })
   })
 
