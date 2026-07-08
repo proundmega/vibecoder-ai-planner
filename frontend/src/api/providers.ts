@@ -12,10 +12,10 @@ export interface Provider {
   maxTokens?: number
   temperature?: number
   isActive?: boolean
-  endpointUrl?: string
-  fallbackProvider?: string | null
-  routingRules?: string
-  isProjectDirector?: boolean
+  endpoint_url?: string
+  fallback_provider?: string | null
+  routing_rules?: string
+  is_project_director?: boolean
   createdAt: string
   updatedAt: string
 }
