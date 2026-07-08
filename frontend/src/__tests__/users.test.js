@@ -172,7 +172,7 @@ describe('users API', () => {
 
       const result = await users.toggleUserActive('u1')
 
-      expect(patch).toHaveBeenCalledWith('/api/v1/users/u1/toggle-active')
+      expect(patch).toHaveBeenCalledWith('/api/v1/users/u1/toggle-active', undefined)
       expect(result).toEqual({ id: 'u1', is_active: false })
     })
 

@@ -1,6 +1,5 @@
 import { ref } from 'vue'
-import { getGithubDiff, getLocalDiff } from '../api/review'
-import { computePatch, countLines } from '../utils/diff'
+import { getGithubDiff } from '../api/review'
 
 export interface DiffFile {
   filename: string
@@ -21,27 +20,18 @@ export function useReviewDataSource(ticketId: string) {
     error.value = null
     try {
       const github = await getGithubDiff(ticketId)
-      if (github?.files?.length > 0) {
+      if (github && github.length > 0) {
         source.value = 'github'
-        files.value = github.files
-        return
-      }
-    } catch { /* no github PR, try local */ }
-
-    try {
-      const local = await getLocalDiff(ticketId)
-      if (local?.files?.length > 0) {
-        source.value = 'local'
-        files.value = local.files.map((f: any) => ({
-          filename: f.file_path,
-          status: f.action === 'create' ? 'added' : f.action === 'delete' ? 'deleted' : 'modified',
-          patch: computePatch(f.old_content, f.new_content, f.file_path),
-          additions: f.action === 'delete' ? 0 : countLines(f.new_content),
-          deletions: f.action === 'create' ? 0 : countLines(f.old_content),
+        files.value = github.map((entry) => ({
+          filename: entry.path || entry.old_path || 'unknown',
+          status: entry.status || 'modified',
+          patch: entry.patch || '',
+          additions: entry.additions || 0,
+          deletions: entry.deletions || 0,
         }))
         return
       }
-    } catch { /* no diff available */ }
+    } catch { /* no github PR, try local */ }
 
     source.value = null
     files.value = []

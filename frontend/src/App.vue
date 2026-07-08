@@ -34,7 +34,7 @@
 import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { get } from '@/api/client.js'
+import { get } from '@/api/client'
 import VButton from '@/components/VButton.vue'
 
 const authStore = useAuthStore()

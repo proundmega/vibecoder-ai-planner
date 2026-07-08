@@ -40,13 +40,13 @@ describe('billing API', () => {
       expect(result).toEqual({ total: 25.0 })
     })
 
-    it('returns null on error', async () => {
+    it('returns empty array on error', async () => {
       const { get } = await import('../api/client')
       get.mockRejectedValue(new Error('Network error'))
 
       const result = await billing.getUserBilling()
 
-      expect(result).toBeNull()
+      expect(result).toEqual([])
     })
   })
 })

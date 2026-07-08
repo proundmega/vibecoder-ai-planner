@@ -60,10 +60,10 @@ export function get<T = unknown>(url: string, options: ApiOptions = {}): Promise
   return apiFetch(url, options).then((res: Response) => extractData<T>(res, options.validate))
 }
 
-export function post<T = unknown>(url: string, body: unknown, options: ApiOptions = {}): Promise<T> {
+export function post<T = unknown>(url: string, body?: unknown, options: ApiOptions = {}): Promise<T> {
   const opts: ApiOptions = {
     method: 'POST',
-    body: JSON.stringify(body),
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     ...options,
   }
   return apiFetch(url, opts).then((res: Response) => extractData<T>(res, options.validate))
