@@ -16,11 +16,8 @@ const showDeleteConfirm = ref(false)
 const actionLoading = ref(false)
 const actionError = ref(null)
 
-const canRevoke = computed(() => authStore.user.value?.role === 'super_admin')
-const canDelete = computed(() => {
-  const role = authStore.user.value?.role
-  return role === 'super_admin' || role === 'project_admin'
-})
+const canRevoke = computed(() => authStore.canRevokeAgent())
+const canDelete = computed(() => authStore.canDeleteAgent())
 
 onMounted(async () => {
   try {

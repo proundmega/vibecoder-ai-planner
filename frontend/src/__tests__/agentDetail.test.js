@@ -24,7 +24,11 @@ describe('AgentDetail', () => {
 
   async function createWrapper(role) {
     const { useAuthStore } = await import('@/stores/auth')
-    useAuthStore.mockImplementation(() => ({ user: { value: { role } } }))
+    useAuthStore.mockImplementation(() => ({
+      user: { value: { role } },
+      canRevokeAgent: () => role === 'super_admin',
+      canDeleteAgent: () => role === 'super_admin' || role === 'project_admin',
+    }))
 
     const { fetchAgentDetail } = await import('@/api/agents')
     fetchAgentDetail.mockResolvedValue({ agent_id: 'agent-1', agent_name: 'Test Agent', status: 'online' })

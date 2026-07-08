@@ -13,8 +13,8 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 4. ~~**bt-56** — Design system tests~~ ✅ Done (this session)
 
 ### Phase 3: Code Quality
-5. **bp-57** (P3) — Frontend JS → TypeScript migration
-6. **bt-57** — TypeScript migration tests (depends on bp-57)
+5. ~~**bp-57** (P3) — Frontend JS → TypeScript migration~~ ✅ Done (PR #50)
+6. ~~**bt-57** — TypeScript migration tests~~ ✅ Done (this session)
 
 ### Phase 4: Feature Gaps (independent, can parallelize)
 7. ~~**fg-01** — Provider field mismatch~~ ✅ Done

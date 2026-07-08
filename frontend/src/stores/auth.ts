@@ -36,6 +36,7 @@ let instance: {
   canDeleteProject: () => boolean
   canCreateAgent: () => boolean
   canDeleteAgent: () => boolean
+  canRevokeAgent: () => boolean
   canApprove: () => boolean
   canReject: () => boolean
   setUser: (data: User | null) => void
@@ -183,6 +184,7 @@ export function useAuthStore() {
   const canDeleteProject = () => hasAnyPermission(['PROJECT_DELETE'])
   const canCreateAgent = () => hasAnyPermission(['AGENT_CREATE'])
   const canDeleteAgent = () => hasAnyPermission(['AGENT_DELETE'])
+  const canRevokeAgent = () => hasAnyPermission(['AGENT_REVOKE'])
   const canApprove = () => hasAnyPermission(['APPROVAL_APPROVE'])
   const canReject = () => hasAnyPermission(['APPROVAL_REJECT'])
 
@@ -215,6 +217,7 @@ export function useAuthStore() {
     canDeleteProject,
     canCreateAgent,
     canDeleteAgent,
+    canRevokeAgent,
     canApprove,
     canReject,
     setUser,
