@@ -40,13 +40,13 @@ describe('usage API', () => {
       expect(result).toEqual({ totalCost: 5.5 })
     })
 
-    it('returns empty array on error', async () => {
+    it('returns null on error', async () => {
       const { get } = await import('../api/client')
       get.mockRejectedValue(new Error('Network error'))
 
       const result = await usage.getUserUsage()
 
-      expect(result).toEqual([])
+      expect(result).toBeNull()
     })
   })
 

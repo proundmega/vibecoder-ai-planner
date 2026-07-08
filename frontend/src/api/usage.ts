@@ -21,8 +21,8 @@ export function getProjectUsage(projectId: string): Promise<Usage | null> {
   return get<Usage>(`/api/v1/usage/projects/${projectId}/usage`).catch(() => null) as Promise<Usage | null>
 }
 
-export function getUserUsage(): Promise<Usage[]> {
-  return get<Usage[]>('/api/v1/usage/users/me/usage').catch(() => []) as Promise<Usage[]>
+export function getUserUsage(): Promise<Usage[] | null> {
+  return get<Usage[]>('/api/v1/usage/users/me/usage').catch(() => null) as Promise<Usage[] | null>
 }
 
 export function getModelPricing(): Promise<ModelPricing[]> {

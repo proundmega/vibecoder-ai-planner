@@ -82,7 +82,7 @@ export function del<T = unknown>(url: string, options: ApiOptions = {}): Promise
   return apiFetch(url, { method: 'DELETE', ...options }).then((res: Response) => extractData<T>(res, options.validate))
 }
 
-export function patch<T = unknown>(url: string, body: unknown, options: ApiOptions = {}): Promise<T> {
+export function patch<T = unknown>(url: string, body?: unknown, options: ApiOptions = {}): Promise<T> {
   const opts: ApiOptions = { method: 'PATCH' }
   if (body !== undefined) {
     opts.body = JSON.stringify(body)

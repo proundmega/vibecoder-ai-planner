@@ -2,9 +2,20 @@ import { get, post, patch, del, put } from './client'
 
 export interface Provider {
   id: string
+  projectId: string
   name: string
-  provider_type: string
-  project_id: string
+  providerType: string
+  apiKey?: string
+  baseUrl?: string
+  model?: string
+  roles?: string[]
+  maxTokens?: number
+  temperature?: number
+  isActive?: boolean
+  endpoint_url?: string
+  fallback_provider?: string | null
+  routing_rules?: string
+  is_project_director?: boolean
   created_at: string
   updated_at: string
 }

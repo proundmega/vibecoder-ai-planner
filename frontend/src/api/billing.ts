@@ -14,6 +14,6 @@ export function getProjectBilling(projectId: string): Promise<Billing | null> {
   return get<Billing>(`/api/v1/billing/projects/${projectId}/billing`).catch(() => null) as Promise<Billing | null>
 }
 
-export function getUserBilling(): Promise<Billing[]> {
-  return get<Billing[]>('/api/v1/billing/users/me/billing').catch(() => []) as Promise<Billing[]>
+export function getUserBilling(): Promise<Billing[] | null> {
+  return get<Billing[]>('/api/v1/billing/users/me/billing').catch(() => null) as Promise<Billing[] | null>
 }
