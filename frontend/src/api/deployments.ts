@@ -19,7 +19,7 @@ export interface Deployment {
   commit_sha: string | null
   deployed_at: string
   rolled_back_at: string | null
-  metadata: Record<string, any> | null
+   metadata: Record<string, unknown> | null
 }
 
 export function listEnvironments(projectId: string): Promise<Environment[]> {

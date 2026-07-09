@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 
-const props = defineProps({
+defineProps({
   phaseData: { type: Object, required: true },
   ticketId: { type: String, required: true },
   projectId: { type: String, required: true },

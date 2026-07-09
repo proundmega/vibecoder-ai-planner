@@ -94,7 +94,7 @@ async function fetchMilestones() {
   error.value = null
   try {
     milestones.value = await listMilestones(projectId.value)
-  } catch (err) {
+  } catch (_err) {
     error.value = 'Failed to load milestones'
   } finally {
     loading.value = false
@@ -107,7 +107,7 @@ async function selectMilestone(milestone: Milestone) {
   try {
     progress.value = await getMilestoneProgress(milestone.id)
     tickets.value = await getMilestoneTickets(milestone.id)
-  } catch (err) {
+  } catch (_err) {
     error.value = 'Failed to load milestone details'
   }
 }

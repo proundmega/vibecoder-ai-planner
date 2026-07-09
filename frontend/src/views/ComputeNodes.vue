@@ -97,7 +97,7 @@ async function fetchNodes() {
   error.value = null
   try {
     nodes.value = await listComputeNodes()
-  } catch (err) {
+  } catch (_err) {
     error.value = 'Failed to load compute nodes'
   } finally {
     loading.value = false
@@ -113,7 +113,7 @@ async function testNode(id: string) {
     if (result.success) {
       await fetchNodes()
     }
-  } catch (err) {
+  } catch (_err) {
     error.value = 'Test connection failed'
     testResults.value[id] = { success: false, error: 'Connection failed' }
   } finally {
@@ -131,7 +131,7 @@ async function deleteNode(id: string) {
   try {
     await deleteComputeNode(id)
     await fetchNodes()
-  } catch (err) {
+  } catch (_err) {
     error.value = 'Failed to delete node'
   }
 }

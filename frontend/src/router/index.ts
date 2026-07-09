@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router';
+import { createRouter, createWebHistory, type RouteLocationNormalized, type NavigationGuardNext } from 'vue-router';
 
 function isAuthenticated() {
   try {
@@ -146,7 +146,7 @@ const routes = [
     name: 'AgentTerminal',
     component: () => import('../views/TerminalView.vue'),
     meta: { requiresAuth: true },
-    beforeEnter: (_to: any, _from: any, next: any) => {
+    beforeEnter: (_to: RouteLocationNormalized, _from: RouteLocationNormalized, next: NavigationGuardNext) => {
       const userStr = localStorage.getItem('vibecode_user')
       if (userStr) {
         try {

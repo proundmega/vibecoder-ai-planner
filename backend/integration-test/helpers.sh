@@ -115,11 +115,11 @@ assert_field() {
   if [[ "$data" == \{* ]] || [[ "$data" == \[* ]]; then
     local actual
     actual=$(echo "$data" | jq -r ".$field" 2>/dev/null)
-    if [ -z "$actual" ]; then
+    if [ -z "$actual" ] || [ "$actual" = "null" ]; then
       # Field not at root, try inside .data (handle both object and array cases)
       actual=$(echo "$data" | jq -r '(.data // .) | if type == "array" then .[0] else . end | .'"$field" 2>/dev/null)
     fi
-    if [ -z "$actual" ]; then
+    if [ -z "$actual" ] || [ "$actual" = "null" ]; then
       actual="__NULL__"
     fi
     if [ "$actual" = "__NULL__" ]; then
@@ -196,11 +196,11 @@ assert_no_field_legacy() {
 # Usage: extract_field "$json" "id"  OR  echo "$json" | extract_field "id"
 extract_field() {
   local json field
-  if [ -n "$2" ]; then
+  if [ -n "${2:-}" ]; then
     # Called as extract_field "$json" "field"
     json="$1"
     field="$2"
-  elif [ -n "$1" ]; then
+  elif [ -n "${1:-}" ]; then
     # Called as echo "$json" | extract_field "field"
     json=$(cat)
     field="$1"
@@ -215,7 +215,7 @@ extract_field() {
 # Extract ID from API response
 # Usage: extract_id "$json"  OR  echo "$json" | extract_id
 extract_id() {
-  if [ -n "$1" ]; then
+  if [ -n "${1:-}" ]; then
     extract_field "$1" "id"
   else
     local json
