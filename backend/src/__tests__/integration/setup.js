@@ -20,10 +20,47 @@ function splitSQLStatements(sql) {
   let inSingleQuote = false;
   let inDollarQuote = false;
   let dollarTag = '';
+  let inLineComment = false;
+  let inBlockComment = false;
 
   for (let i = 0; i < sql.length; i++) {
     const char = sql[i];
     const remaining = sql.slice(i);
+
+    // Handle line comments: -- until end of line
+    if (!inSingleQuote && !inDollarQuote && !inBlockComment && remaining.startsWith('--')) {
+      inLineComment = true;
+      current += '--';
+      i += 1;
+      continue;
+    }
+
+    // Handle block comments: /* ... */
+    if (!inSingleQuote && !inDollarQuote && !inLineComment && remaining.startsWith('/*')) {
+      inBlockComment = true;
+      current += '/*';
+      i += 1;
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (remaining.startsWith('*/')) {
+        current += '*/';
+        i += 1;
+        inBlockComment = false;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (inLineComment) {
+      if (char === '\n') {
+        inLineComment = false;
+        current += char;
+      }
+      continue;
+    }
 
     if (inDollarQuote) {
       if (remaining.startsWith(dollarTag)) {

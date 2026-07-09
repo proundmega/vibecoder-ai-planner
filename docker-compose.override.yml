@@ -7,6 +7,7 @@ services:
       - ALLOW_PRIVATE_HOSTS=1
       - DOCKER_API_URL=/var/run/docker.sock
       - ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      - INTEGRATION_TESTS=1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 

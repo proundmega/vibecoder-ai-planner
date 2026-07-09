@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, nextTick, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { html, parse } from 'diff2html'
 
 const props = defineProps({
@@ -13,7 +13,6 @@ const emit = defineEmits(['line-click', 'file-expand'])
 const internalViewMode = ref(props.viewMode)
 const collapsedFiles = ref(new Set())
 const diffContainers = ref(new Map())
-const selectedLines = ref(new Map())
 
 const commentsByFile = computed(() => {
   const map = {}
@@ -86,11 +85,6 @@ watch(internalViewMode, () => {
     if (el) renderDiff(f.filename, f.patch, el)
   }
 })
-
-function getCommentsForLine(filename, lineNum) {
-  const fileComments = commentsByFile.value[filename] || []
-  return fileComments.filter(c => c.line_number === lineNum)
-}
 
 function hasComments(filename) {
   const fileComments = commentsByFile.value[filename] || []

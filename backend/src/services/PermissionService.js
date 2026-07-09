@@ -16,18 +16,20 @@ const PERMISSION_CACHE_TTL = parseInt(process.env.PERMISSION_CACHE_TTL) || 60;
 // Track whether init has been attempted
 let initPromise = null;
 let cacheInitialized = false;
+let initInProgress = false;
 
 async function ensureInit() {
   if (cacheInitialized) return;
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
+    initInProgress = true;
     try {
       const result = await pool.query(
         `SELECT r.name FROM roles r ORDER BY r.name`
       );
       for (const row of result.rows) {
-        await resolvePermissions(row.name);
+        await resolvePermissionsDirect(row.name);
       }
       cacheInitialized = true;
     } catch (err) {
@@ -36,6 +38,7 @@ async function ensureInit() {
       throw err;
     } finally {
       initPromise = null;
+      initInProgress = false;
     }
   })();
 
@@ -46,6 +49,21 @@ async function ensureInit() {
  * Resolve all permission codes for a given role name.
  * Uses Redis cache with TTL, falls back to in-memory Map.
  */
+async function resolvePermissionsDirect(roleName) {
+  // Query DB directly without cache checks (used during init to avoid deadlock)
+  const result = await pool.query(
+    `SELECT p.code FROM permissions p
+     JOIN role_permissions rp ON rp.permission_id = p.id
+     JOIN roles r ON r.id = rp.role_id
+     WHERE r.name = $1`,
+    [roleName]
+  );
+
+  const permissions = new Set(result.rows.map(row => row.code));
+  permissionCache.set(roleName, permissions);
+  return permissions;
+}
+
 async function resolvePermissions(roleName) {
   // Check cache first (Redis or in-memory)
   const cached = await getCachedPermissions(roleName);
@@ -66,7 +84,7 @@ async function resolvePermissions(roleName) {
     return reCached;
   }
 
-  // Cache miss - query DB directly (bypass init to avoid duplicate roles query)
+  // Cache miss - query DB directly (bypass init to avoid deadlock during init)
   const result = await pool.query(
     `SELECT p.code FROM permissions p
      JOIN role_permissions rp ON rp.permission_id = p.id

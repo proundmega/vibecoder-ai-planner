@@ -30,7 +30,7 @@
 #   rate_limiter.test.sh      — Rate limit enforcement
 #   file_upload.test.sh       — Attachment upload
 #   permission_matrix.test.sh — Role × endpoint matrix
-set -euo pipefail
+set -uo pipefail
 
 # ── List flag (before dependency check so it works regardless) ────────────────
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -85,7 +85,7 @@ main() {
   clean_db
 
   sudo docker compose up -d --force-recreate api 2>&1 | tail -3
-  sleep 8
+   sleep 8
 
   # Allow frontend nginx to resolve the api hostname
   sleep 3
