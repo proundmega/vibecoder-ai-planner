@@ -2,7 +2,6 @@
 import { ref } from 'vue'
 
 defineProps({
-  phaseData: { type: Object, required: true },
   ticketId: { type: String, required: true },
   projectId: { type: String, required: true },
 })

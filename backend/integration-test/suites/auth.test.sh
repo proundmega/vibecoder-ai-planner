@@ -39,7 +39,7 @@ test_auth() {
   assert_status "Reject wrong password" "401" "$code"
 
   local me_body
-  me_body=$(curl -sf "$BASE/api/auth/me" -H "Authorization: Bearer $token")
+  me_body=$(curl_sf "$BASE/api/auth/me" -H "Authorization: Bearer $token")
   assert_has_field "GET /auth/me returns user" "user" "$me_body"
   local user_id
   user_id=$(echo "$me_body" | jq -r '(.data // .) | if type == "object" then .user.id else .id end // empty' 2>/dev/null)

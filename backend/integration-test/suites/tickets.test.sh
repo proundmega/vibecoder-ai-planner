@@ -12,7 +12,7 @@ test_tickets() {
   token=$(seed_user "alice@integration.test" "password123")
 
   local proj_id
-  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
+  proj_id=$(curl_sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Ticket Test Project","description":""}' \
@@ -25,7 +25,7 @@ test_tickets() {
   assert_status "Create ticket without auth" "401" "$code"
 
   local ticket_body
-  ticket_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
+  ticket_body=$(curl_sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"title":"Fix critical bug","description":"Users cannot login","priority":"high"}')
@@ -37,11 +37,11 @@ test_tickets() {
   ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   local list_body
-  list_body=$(curl -sf "${BASE}/api/v1/projects/$proj_id/tickets" -H "Authorization: Bearer $token")
+  list_body=$(curl_sf "${BASE}/api/v1/projects/$proj_id/tickets" -H "Authorization: Bearer $token")
   assert_has_field "List tickets returns array" "id" "$list_body"
 
   local single_body
-  single_body=$(curl -sf "${BASE}/api/v1/tickets/$ticket_id" -H "Authorization: Bearer $token")
+  single_body=$(curl_sf "${BASE}/api/v1/tickets/$ticket_id" -H "Authorization: Bearer $token")
   assert_field "Get ticket by id" "title" "Fix critical bug" "$(echo "$single_body" | grep -o '"title":"[^"]*"' | cut -d'"' -f4)"
 
   code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "${BASE}/api/v1/tickets/$ticket_id" \

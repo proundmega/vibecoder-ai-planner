@@ -16,7 +16,7 @@ test_projects() {
   assert_status "List projects without auth" "401" "$code"
 
   local proj_body
-  proj_body=$(curl -sf -X POST "${BASE}/api/v1/projects" \
+  proj_body=$(curl_sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Integration Test Project","description":"Created by integration tests"}')
@@ -27,11 +27,11 @@ test_projects() {
   proj_id=$(echo "$proj_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   local list_body
-  list_body=$(curl -sf "${BASE}/api/v1/projects" -H "Authorization: Bearer $token")
+  list_body=$(curl_sf "${BASE}/api/v1/projects" -H "Authorization: Bearer $token")
   assert_has_field "List projects returns array" "id" "$list_body"
 
   local single_body
-  single_body=$(curl -sf "${BASE}/api/v1/projects/$proj_id" -H "Authorization: Bearer $token")
+  single_body=$(curl_sf "${BASE}/api/v1/projects/$proj_id" -H "Authorization: Bearer $token")
   assert_field "Get project by id" "name" "Integration Test Project" "$(echo "$single_body" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)"
 
   code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/projects/999999999" -H "Authorization: Bearer $token")

@@ -12,7 +12,7 @@ test_role_based_user_management() {
   admin_token=$(login "alice@integration.test" "password123")
 
   local member_body
-  member_body=$(curl -sf -X POST "${BASE}/api/v1/users" \
+  member_body=$(curl_sf -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"name":"Member User","email":"member@integration.test","password":"password123","role":"member"}')
@@ -23,7 +23,7 @@ test_role_based_user_management() {
   member_id=$(echo "$member_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   local user_body
-  user_body=$(curl -sf -X POST "${BASE}/api/v1/users" \
+  user_body=$(curl_sf -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"name":"AI User","email":"aiuser@integration.test","password":"password123","role":"user"}')
@@ -31,14 +31,14 @@ test_role_based_user_management() {
   assert_field "Created user has user role" "role" "user" "$(echo "$user_body" | grep -o '"role":"[^"]*"' | cut -d'"' -f4)"
 
   local update_body
-  update_body=$(curl -sf -X PUT "${BASE}/api/v1/users/$member_id" \
+  update_body=$(curl_sf -X PUT "${BASE}/api/v1/users/$member_id" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"name":"Updated Member"}')
   assert_field "Admin can update user name" "name" "Updated Member" "$(echo "$update_body" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)"
 
   local deact_body
-  deact_body=$(curl -sf -X PATCH "${BASE}/api/v1/users/$member_id/toggle-active" \
+  deact_body=$(curl_sf -X PATCH "${BASE}/api/v1/users/$member_id/toggle-active" \
     -H "Authorization: Bearer $admin_token")
   assert_field "Admin can deactivate user" "isActive" "false" "$(echo "$deact_body" | grep -o '"isActive":[a-z]*' | cut -d':' -f2)"
 
@@ -49,12 +49,12 @@ test_role_based_user_management() {
   assert_status "Deactivated user cannot login" "401" "$deact_login_code"
 
   local react_body
-  react_body=$(curl -sf -X PATCH "${BASE}/api/v1/users/$member_id/toggle-active" \
+  react_body=$(curl_sf -X PATCH "${BASE}/api/v1/users/$member_id/toggle-active" \
     -H "Authorization: Bearer $admin_token")
   assert_field "Admin can reactivate user" "isActive" "true" "$(echo "$react_body" | grep -o '"isActive":[a-z]*' | cut -d':' -f2)"
 
   local list_body
-  list_body=$(curl -sf "${BASE}/api/v1/users" \
+  list_body=$(curl_sf "${BASE}/api/v1/users" \
     -H "Authorization: Bearer $admin_token")
   assert_has_field "Admin can list users" "users" "$list_body"
 
@@ -70,7 +70,7 @@ test_role_based_user_management() {
   local member_token
   member_token=$(login "member@integration.test" "password123")
   local member_create_body
-  member_create_body=$(curl -sf -X POST "${BASE}/api/v1/users" \
+  member_create_body=$(curl_sf -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $member_token" \
     -d '{"name":"Agent","email":"agent@integration.test","password":"password123","role":"user"}')

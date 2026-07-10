@@ -12,14 +12,14 @@ test_frontend_api_proxy() {
   token=$(seed_user "alice@integration.test" "password123")
 
   local proj_id
-  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
+  proj_id=$(curl_sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Proxy Test Project","description":""}' \
     | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   local ticket_body
-  ticket_body=$(curl -sf -X POST "http://localhost:3000/api/v1/tickets" \
+  ticket_body=$(curl_sf -X POST "http://localhost:3000/api/v1/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d "{\"projectId\":\"$proj_id\",\"title\":\"Proxy Test Ticket\",\"description\":\"Test via frontend proxy\"}")
@@ -29,7 +29,7 @@ test_frontend_api_proxy() {
   ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   local list_body
-  list_body=$(curl -sf "http://localhost:3000/api/v1/projects/$proj_id/tickets" \
+  list_body=$(curl_sf "http://localhost:3000/api/v1/projects/$proj_id/tickets" \
     -H "Authorization: Bearer $token")
   assert_has_field "List tickets via frontend proxy returns array" "id" "$list_body"
 

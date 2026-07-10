@@ -20,7 +20,7 @@ test_agent_auth() {
 
   # Create a project
   local proj_body project_id
-  proj_body=$(curl -sf "$BASE/api/v1/projects" \
+  proj_body=$(curl_sf "$BASE/api/v1/projects" \
     -H "Authorization: Bearer $user_token" \
     -H "Content-Type: application/json" \
     -d '{"name":"Auth Project","description":"For testing agent auth"}')
@@ -28,7 +28,7 @@ test_agent_auth() {
 
   # Get agent's API key by creating an agent
   local agent_body agent_id
-  agent_body=$(curl -sf "$BASE/api/v1/agents/create" \
+  agent_body=$(curl_sf "$BASE/api/v1/agents/create" \
     -H "Authorization: Bearer $user_token" \
     -H "Content-Type: application/json" \
     -d '{"name":"Test Agent"}')

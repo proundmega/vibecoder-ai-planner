@@ -64,13 +64,13 @@ test_permission_matrix() {
 
   # Get the project_id from project_admin's project
   local my_projects proj_id
-  my_projects=$(curl -sf "$BASE/api/v1/projects" \
+  my_projects=$(curl_sf "$BASE/api/v1/projects" \
     -H "Authorization: Bearer $project_admin_token")
   proj_id=$(echo "$my_projects" | jq -r '(.data // .) | if type == "array" then .[0].id else .id end // empty')
 
   # Create a ticket owned by project_admin
   local ticket_body ticket_id owner_id
-  ticket_body=$(curl -sf "$BASE/api/v1/projects/$proj_id/tickets" \
+  ticket_body=$(curl_sf "$BASE/api/v1/projects/$proj_id/tickets" \
     -H "Authorization: Bearer $project_admin_token" \
     -H "Content-Type: application/json" \
     -d '{"title":"Permission Test Ticket","description":"For testing permissions","status":"backlog"}')
@@ -86,7 +86,7 @@ test_permission_matrix() {
   assert_status "Owner can delete own ticket" "200" "$owner_del_code"
 
   # Recreate ticket for remaining tests
-  ticket_body=$(curl -sf "$BASE/api/v1/projects/$proj_id/tickets" \
+  ticket_body=$(curl_sf "$BASE/api/v1/projects/$proj_id/tickets" \
     -H "Authorization: Bearer $project_admin_token" \
     -H "Content-Type: application/json" \
     -d '{"title":"Permission Test Ticket 2","description":"For testing permissions","status":"backlog"}')
@@ -127,7 +127,7 @@ test_permission_matrix() {
   # ── Ticket Status Transitions ─────────────────────────────────────────────
 
   # Recreate ticket for transition tests
-  ticket_body=$(curl -sf "$BASE/api/v1/projects/$proj_id/tickets" \
+  ticket_body=$(curl_sf "$BASE/api/v1/projects/$proj_id/tickets" \
     -H "Authorization: Bearer $project_admin_token" \
     -H "Content-Type: application/json" \
     -d '{"title":"Permission Test Ticket 3","description":"For testing permissions","status":"backlog"}')

@@ -12,14 +12,14 @@ test_ticket_crud_via_frontend_endpoint() {
   token=$(seed_user "alice@integration.test" "password123")
 
   local proj_id
-  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
+  proj_id=$(curl_sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Frontend CRUD Test Project","description":""}' \
     | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   local ticket_body
-  ticket_body=$(curl -sf -X POST "${BASE}/api/v1/tickets" \
+  ticket_body=$(curl_sf -X POST "${BASE}/api/v1/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d "{\"projectId\":\"$proj_id\",\"title\":\"Frontend CRUD Ticket\",\"description\":\"Test CRUD via /api/tickets\",\"priority\":\"high\"}")
@@ -37,7 +37,7 @@ test_ticket_crud_via_frontend_endpoint() {
   assert_status "Update ticket via /api/tickets/:id" "200" "$update_code"
 
   local single_body
-  single_body=$(curl -sf "${BASE}/api/v1/tickets/$ticket_id" \
+  single_body=$(curl_sf "${BASE}/api/v1/tickets/$ticket_id" \
     -H "Authorization: Bearer $token")
   assert_field "Updated ticket title" "title" "Updated Frontend CRUD Ticket" "$(echo "$single_body" | grep -o '"title":"[^"]*"' | cut -d'"' -f4)"
 
