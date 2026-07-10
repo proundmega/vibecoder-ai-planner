@@ -6,7 +6,7 @@ export interface ComputeNode {
   ssh_port: number
   ssh_user: string
   ssh_key_credential_id: string
-   labels: Record<string, unknown>
+  labels: Record<string, unknown>
   capacity: number
   status: 'online' | 'offline' | 'draining' | 'degraded'
   failure_count: number
@@ -34,7 +34,7 @@ export function createComputeNode(data: {
   ssh_port?: number
   ssh_user: string
   ssh_key_credential_id: string
-   labels?: Record<string, unknown>
+  labels?: Record<string, unknown>
   capacity?: number
 }): Promise<ComputeNode> {
   return post('/api/v1/compute-nodes', data)

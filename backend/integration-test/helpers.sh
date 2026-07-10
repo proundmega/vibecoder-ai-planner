@@ -9,9 +9,23 @@ TESTS=()
 pass() { PASS=$((PASS + 1)); TESTS+=("✓ $1"); }
 fail() { FAIL=$((FAIL + 1)); TESTS+=("✗ $1 — $2"); }
 
-# curl with -sf but doesn't abort on HTTP errors (returns empty on failure)
+# curl with -sf but doesn't abort on HTTP errors (returns empty on failure).
+# Logs non-HTTP errors (DNS, connection refused, timeout) to stderr for debugging.
 curl_sf() {
-  curl -sf "$@" 2>/dev/null || true
+  local output http_code
+  output=$(curl -s -w '\n%{http_code}' "$@" 2>/dev/null) || {
+    # curl failed (network error, DNS, timeout, etc.) — log for debugging
+    echo "curl_sf: network error calling $*" >&2
+    return
+  }
+  http_code="${output##*$'\n'}"
+  output="${output%$'\n'*}"
+  # HTTP 4xx/5xx — return empty (test expects failure)
+  if [[ "$http_code" =~ ^[45][0-9][0-9]$ ]]; then
+    return
+  fi
+  # Success or other — return body
+  printf '%s' "$output"
 }
 
 wait_for_api() {
