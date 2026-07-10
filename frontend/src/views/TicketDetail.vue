@@ -339,8 +339,7 @@ async function handleShowTemplateSelect() {
 
       <div class="meta">
         <span>Priority: <strong>{{ ticket?.priority || 'medium' }}</strong></span>
-        <span v-if="ticket?.assignee_name">Assignee: <strong>{{ ticket.assignee_name }}</strong></span>
-        <span v-if="ticket?.owner_email">Created by: <strong>{{ ticket.owner_email }}</strong></span>
+        <span v-if="ticket?.assigneeName">Assignee: <strong>{{ ticket.assigneeName }}</strong></span>
       </div>
 
       <div v-if="ticket?.description" class="description">

@@ -1,7 +1,20 @@
 import { get, post, patch, del } from './client'
 
-export function getActiveCredentials(projectId: string): Promise<Record<string, unknown>[]> {
-  return get<Record<string, unknown>[]>(`/api/v1/credentials/${projectId}/credentials`).catch(() => []) as Promise<Record<string, unknown>[]>
+export interface Credential {
+  id: string
+  projectId: string
+  name: string
+  credentialType: string
+  keyMasked: string
+  metadata: Record<string, unknown> | null
+  expiresAt: string | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export function getActiveCredentials(projectId: string): Promise<Credential[]> {
+  return get<Credential[]>(`/api/v1/credentials/${projectId}/credentials`).catch(() => []) as Promise<Credential[]>
 }
 
 export function addCredential(projectId: string, data: { name: string; credential: string }) {

@@ -33,6 +33,7 @@ const githubSuccess = ref(null)
 const showConnectForm = ref(false)
 const repoUrl = ref('')
 const repoBranch = ref('main')
+const repoAccessToken = ref('')
 const branches = ref([])
 const prs = ref([])
 const creatingBranch = ref(false)
@@ -167,12 +168,13 @@ async function handleConnectRepo() {
   githubError.value = null
   githubSuccess.value = null
   try {
-    await connectRepo(projectId, repoUrl.value.trim(), repoBranch.value.trim() || 'main')
+    await connectRepo(projectId, repoUrl.value.trim(), repoAccessToken.value.trim())
     githubSuccess.value = 'Repository connected successfully'
     await loadGitHub()
     showConnectForm.value = false
     repoUrl.value = ''
     repoBranch.value = 'main'
+    repoAccessToken.value = ''
   } catch (err) {
     githubError.value = err.message || 'Failed to connect repository'
   } finally {
@@ -200,7 +202,7 @@ async function handleCreateBranch() {
   creatingBranch.value = true
   githubError.value = null
   try {
-    await createBranch(branchTicketId.value.trim(), `ticket-${branchTicketId.value.trim()}`)
+    await createBranch(branchTicketId.value.trim(), `ticket-${branchTicketId.value.trim()}`, projectId)
     githubSuccess.value = 'Branch created successfully'
     await loadBranches()
     branchTicketId.value = ''
@@ -319,7 +321,7 @@ async function loadUsage() {
   usageError.value = null
   try {
     const result = await getProjectUsage(projectId)
-    usage.value = result?.data || null
+    usage.value = result || null
   } catch (_err) {
     usageError.value = 'Failed to load usage data'
   } finally {
@@ -332,7 +334,7 @@ async function loadBilling() {
   billingError.value = null
   try {
     const result = await getProjectBilling(projectId)
-    billing.value = result?.data || []
+    billing.value = result || []
   } catch (_err) {
     billingError.value = 'Failed to load billing data'
   } finally {
@@ -362,7 +364,7 @@ async function handleSearch() {
   searchResults.value = []
   try {
     const result = await searchMemory(projectId, searchQuery.value)
-    searchResults.value = result.data || []
+    searchResults.value = result || []
   } catch (error) {
     memoryError.value = error.message || 'Search failed'
   } finally {
@@ -496,6 +498,10 @@ async function handleDeleteMemory(memoryId) {
               <div class="form-group">
                 <label>Default Branch</label>
                 <input v-model="repoBranch" type="text" placeholder="main" />
+              </div>
+              <div class="form-group">
+                <label>GitHub Personal Access Token</label>
+                <input v-model="repoAccessToken" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
               </div>
               <div class="form-actions">
                 <button @click="handleConnectRepo" :disabled="githubLoading" class="btn-submit">

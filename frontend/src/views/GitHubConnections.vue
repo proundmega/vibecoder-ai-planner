@@ -13,6 +13,7 @@ const githubRepo = ref(null)
 const showConnectForm = ref(false)
 const repoUrl = ref('')
 const repoBranch = ref('main')
+const repoAccessToken = ref('')
 
 const branches = ref([])
 const showCreateBranch = ref(false)
@@ -64,13 +65,14 @@ async function handleConnectRepo() {
   repoError.value = null
   repoSuccess.value = null
   try {
-    await connectRepo(projectId, repoUrl.value.trim(), repoBranch.value.trim() || 'main')
+    await connectRepo(projectId, repoUrl.value.trim(), repoAccessToken.value.trim())
     repoSuccess.value = 'Repository connected successfully'
     await loadBranches()
     await loadPRs()
     showConnectForm.value = false
     repoUrl.value = ''
     repoBranch.value = 'main'
+    repoAccessToken.value = ''
     const status = await getRepoStatus(projectId)
     githubRepo.value = status
   } catch (err) {
@@ -101,7 +103,7 @@ async function handleCreateBranch() {
   repoError.value = null
   repoSuccess.value = null
   try {
-    await createBranch(branchTicketId.value.trim(), `ticket-${branchTicketId.value.trim()}`)
+    await createBranch(branchTicketId.value.trim(), `ticket-${branchTicketId.value.trim()}`, projectId)
     repoSuccess.value = 'Branch created successfully'
     await loadBranches()
     branchTicketId.value = ''
@@ -169,6 +171,7 @@ async function handleCreatePR() {
           <div v-if="showConnectForm" class="connect-form">
             <input v-model="repoUrl" type="text" placeholder="https://github.com/owner/repo" class="input" />
             <input v-model="repoBranch" type="text" placeholder="Branch (default: main)" class="input" />
+            <input v-model="repoAccessToken" type="password" placeholder="GitHub Personal Access Token" class="input" />
             <div class="form-actions">
               <button @click="handleConnectRepo" class="btn-primary">Connect</button>
               <button @click="showConnectForm = false" class="btn-secondary">Cancel</button>

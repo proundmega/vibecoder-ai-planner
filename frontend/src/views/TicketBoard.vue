@@ -87,7 +87,7 @@ async function handleDrop(ticketId, newStatus) {
 function canUpdateThisTicket(ticket) {
   if (!authStore.user.value) return false
   if (authStore.canUpdateTicket()) return true
-  if (ticket.assignee_id && ticket.assignee_id === authStore.user.value.id) return true
+  if (ticket.assigneeId && ticket.assigneeId === authStore.user.value.id) return true
   return false
 }
 

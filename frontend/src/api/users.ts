@@ -5,10 +5,12 @@ export interface User {
   name: string
   email: string
   role: string
-  isActive: boolean
-  currentPlan: string
-  userCreatedBy: string | null
-  createdAt: string
+  is_active: boolean
+  current_plan: string
+  user_created_by: string | null
+  created_at: string
+  updated_at?: string
+  last_login_at?: string
 }
 
 export interface UserListResponse {

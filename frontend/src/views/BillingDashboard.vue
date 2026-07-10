@@ -11,7 +11,7 @@ const billingError = ref(null)
 const billingData = ref([])
 
 const totalCost = computed(() => {
-  return billingData.value.reduce((sum, b) => sum + (parseFloat(b.total_cost_usd) || 0), 0).toFixed(4)
+  return billingData.value.reduce((sum, b) => sum + (parseFloat(b.total_cost) || 0), 0).toFixed(4)
 })
 
 const totalCalls = computed(() => {
@@ -116,7 +116,7 @@ onMounted(async () => {
                   <td>{{ parseInt(row.total_calls || 0).toLocaleString() }}</td>
                   <td>{{ parseInt(row.total_tokens_in || 0).toLocaleString() }}</td>
                   <td>{{ parseInt(row.total_tokens_out || 0).toLocaleString() }}</td>
-                  <td>${{ (parseFloat(row.total_cost_usd) || 0).toFixed(4) }}</td>
+                  <td>${{ (parseFloat(row.total_cost) || 0).toFixed(4) }}</td>
                 </tr>
               </tbody>
               <tfoot>

@@ -5,11 +5,16 @@ export interface Ticket {
   title: string
   description?: string
   status: string
-  project_id: string
-  owner_id?: string
-  assigned_to?: string
-  created_at?: string
-  updated_at?: string
+  priority: string
+  projectId: string
+  ownerId?: string
+  assigneeId?: string
+  assigneeName?: string
+  planningStatus?: string
+  templateSchema?: string | null
+  phase?: string
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface Comment {

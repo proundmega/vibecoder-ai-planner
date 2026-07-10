@@ -32,15 +32,15 @@ describe('github API', () => {
   })
 
   describe('connectRepo', () => {
-    it('sends POST request with repoUrl and branch', async () => {
+    it('sends POST request with repoUrl and accessToken', async () => {
       const { post } = await import('../api/client')
       post.mockResolvedValue({ connected: true, repo: 'org/repo' })
 
-      const result = await github.connectRepo('proj-123', 'https://github.com/org/repo', 'main')
+      const result = await github.connectRepo('proj-123', 'https://github.com/org/repo', 'ghp_testtoken123')
 
       expect(post).toHaveBeenCalledWith('/api/v1/github/proj-123/repo/connect', {
         repoUrl: 'https://github.com/org/repo',
-        branch: 'main',
+        accessToken: 'ghp_testtoken123',
       })
       expect(result).toEqual({ connected: true, repo: 'org/repo' })
     })
