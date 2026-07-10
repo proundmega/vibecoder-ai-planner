@@ -425,10 +425,9 @@ async function handleShowTemplateSelect() {
           </div>
 
           <div v-if="!editingFile && planningFiles.length > 0" class="planning-list">
-            <div v-for="file in planningFiles" :key="file.key" class="planning-file" :class="{ active: planningStatus === file.status }">
+            <div v-for="file in planningFiles" :key="file.key" class="planning-file">
               <div class="file-info">
                 <span class="file-name">{{ file.key }}</span>
-                <span v-if="file.status" class="file-status" :class="file.status">{{ file.status }}</span>
               </div>
               <button @click="editingFile = file; editingContent = ''; loadPlanningFile(file.key)" class="btn-small">Edit</button>
             </div>

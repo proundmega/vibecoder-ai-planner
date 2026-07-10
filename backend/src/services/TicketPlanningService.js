@@ -15,7 +15,21 @@ class TicketPlanningService {
        ORDER BY tp.file_key ASC, tp.version DESC`,
       [ticketId]
     );
-    return result.rows;
+    const latestFiles = {};
+    for (const row of result.rows) {
+      const key = row.file_key;
+      if (!latestFiles[key] || row.version > latestFiles[key].version) {
+        latestFiles[key] = row;
+      }
+    }
+    return Object.values(latestFiles).map(f => ({
+      key: f.file_key,
+      content: f.content,
+      version: f.version,
+      updated_at: f.updated_at,
+      created_by_name: f.created_by_name || null,
+      ticket_title: f.ticket_title || null,
+    }));
   }
 
   async get(ticketId, fileKey, userId) {
@@ -29,7 +43,16 @@ class TicketPlanningService {
        LIMIT 1`,
       [ticketId, fileKey]
     );
-    return result.rows[0] || null;
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      key: row.file_key,
+      content: row.content,
+      version: row.version,
+      updated_at: row.updated_at,
+      created_by_name: row.created_by_name || null,
+      ticket_title: row.ticket_title || null,
+    };
   }
 
   async upsert(ticketId, fileKey, content, userId) {
@@ -138,11 +161,11 @@ class TicketPlanningService {
 
   async getPlanningForTicket(ticket, userId) {
     const files = await this.list(ticket.id, userId);
-    
+
     const latestFiles = {};
     for (const file of files) {
-      if (!latestFiles[file.file_key] || file.version > latestFiles[file.file_key].version) {
-        latestFiles[file.file_key] = file;
+      if (!latestFiles[file.key] || file.version > latestFiles[file.key].version) {
+        latestFiles[file.key] = file;
       }
     }
 
@@ -150,7 +173,7 @@ class TicketPlanningService {
       status: ticket.planningStatus || 'not_started',
       templateSchema: ticket.templateSchema || null,
       files: Object.values(latestFiles).map(f => ({
-        fileKey: f.file_key,
+        fileKey: f.key,
         content: f.content,
         version: f.version,
         updatedAt: f.updated_at,

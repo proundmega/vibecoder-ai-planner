@@ -30,7 +30,7 @@ describe('TicketPlanningService', () => {
       const result = await TicketPlanningService.list('ticket-1', 'user-1');
       expect(pool.query).toHaveBeenCalled();
       expect(result).toHaveLength(1);
-      expect(result[0].file_key).toBe('00_CHECKLIST.md');
+      expect(result[0].key).toBe('00_CHECKLIST.md');
     });
   });
 
@@ -41,7 +41,7 @@ describe('TicketPlanningService', () => {
       });
 
       const result = await TicketPlanningService.get('ticket-1', '01_REQUIREMENT.md', 'user-1');
-      expect(result.file_key).toBe('01_REQUIREMENT.md');
+      expect(result.key).toBe('01_REQUIREMENT.md');
     });
 
     it('should return null for non-existent file', async () => {
