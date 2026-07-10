@@ -20,7 +20,7 @@ test_agent_lifecycle() {
 
   # Create project
   local proj_body
-  proj_body=$(curl -sf "$BASE/api/v1/projects" \
+  proj_body=$(curl_sf "$BASE/api/v1/projects" \
     -H "Authorization: Bearer $user_token" \
     -H "Content-Type: application/json" \
     -d '{"name":"Lifecycle Project","description":"For testing agent lifecycle"}')
@@ -29,7 +29,7 @@ test_agent_lifecycle() {
 
   # Create ticket in backlog
   local ticket_body
-  ticket_body=$(curl -sf "$BASE/api/v1/projects/$project_id/tickets" \
+  ticket_body=$(curl_sf "$BASE/api/v1/projects/$project_id/tickets" \
     -H "Authorization: Bearer $user_token" \
     -H "Content-Type: application/json" \
     -d '{"title":"Lifecycle Ticket","description":"Test ticket","status":"backlog"}')
@@ -42,13 +42,13 @@ test_agent_lifecycle() {
   agent_user_token=$(register "Agent Actor" "agent-actor@lifecycle.test" "password123" "user")
   # Get agent user's DB id from /auth/me
   local me_body
-  me_body=$(curl -sf "$BASE/api/auth/me" \
+  me_body=$(curl_sf "$BASE/api/auth/me" \
     -H "Authorization: Bearer $agent_user_token")
   agent_user_id=$(echo "$me_body" | jq -r '.user.id // empty')
 
   # Create agent record linked to that user
   local agent_body agent_id
-  agent_body=$(curl -sf "$BASE/api/v1/agents/create" \
+  agent_body=$(curl_sf "$BASE/api/v1/agents/create" \
     -H "Authorization: Bearer $user_token" \
     -H "Content-Type: application/json" \
     -d "{\"name\":\"Lifecycle Agent\"}")
@@ -68,7 +68,7 @@ test_agent_lifecycle() {
 
   # Verify ticket status changed to in_progress
   local ticket_after
-  ticket_after=$(curl -sf "$BASE/api/v1/tickets/$ticket_id" \
+  ticket_after=$(curl_sf "$BASE/api/v1/tickets/$ticket_id" \
     -H "Authorization: Bearer $user_token")
   assert_field "Ticket status is in_progress after pickup" "status" "in_progress" "$ticket_after"
 
@@ -83,7 +83,7 @@ test_agent_lifecycle() {
 
   # Verify message exists
   local msg_list
-  msg_list=$(curl -sf "$BASE/api/v1/tickets/$ticket_id/messages" \
+  msg_list=$(curl_sf "$BASE/api/v1/tickets/$ticket_id/messages" \
     -H "Authorization: Bearer $user_token")
   local msg_count
   msg_count=$(echo "$msg_list" | jq '(.data // .) | if type == "array" then length else 0 end' 2>/dev/null)
@@ -104,7 +104,7 @@ test_agent_lifecycle() {
 
   # Verify ticket status returned to backlog
   local ticket_final
-  ticket_final=$(curl -sf "$BASE/api/v1/tickets/$ticket_id" \
+  ticket_final=$(curl_sf "$BASE/api/v1/tickets/$ticket_id" \
     -H "Authorization: Bearer $user_token")
   assert_field "Ticket status is backlog after release" "status" "backlog" "$ticket_final"
 }

@@ -9,6 +9,11 @@ TESTS=()
 pass() { PASS=$((PASS + 1)); TESTS+=("✓ $1"); }
 fail() { FAIL=$((FAIL + 1)); TESTS+=("✗ $1 — $2"); }
 
+# curl with -sf but doesn't abort on HTTP errors (returns empty on failure)
+curl_sf() {
+  curl -sf "$@" 2>/dev/null || true
+}
+
 wait_for_api() {
   echo "Waiting for API on :3001..."
   for i in $(seq 1 $RETRIES); do

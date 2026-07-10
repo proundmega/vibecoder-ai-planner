@@ -12,14 +12,14 @@ test_status_transitions() {
   token=$(seed_user "alice@integration.test" "password123")
 
   local proj_id
-  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
+  proj_id=$(curl_sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Transition Test Project","description":""}' \
     | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   local ticket_id
-  ticket_id=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
+  ticket_id=$(curl_sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"title":"Transition ticket","description":""}' \
@@ -27,21 +27,21 @@ test_status_transitions() {
 
   # backlog → in_progress (valid)
   local body
-  body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket_id/status" \
+  body=$(curl_sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket_id/status" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"status":"in_progress"}')
   assert_field "backlog → in_progress" "status" "in_progress" "$(echo "$body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)"
 
   # in_progress → review (valid)
-  body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket_id/status" \
+  body=$(curl_sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket_id/status" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"status":"review"}')
   assert_field "in_progress → review" "status" "review" "$(echo "$body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)"
 
   # review → done (valid)
-  body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket_id/status" \
+  body=$(curl_sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets/$ticket_id/status" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"status":"done"}')
@@ -63,7 +63,7 @@ test_status_transitions() {
 
   # in_progress → done (INVALID — must go through review first)
   local ticket2_id
-  ticket2_id=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
+  ticket2_id=$(curl_sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"title":"Skip review ticket","description":""}' \

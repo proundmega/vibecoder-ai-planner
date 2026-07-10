@@ -20,7 +20,7 @@ test_file_upload() {
 
   # Create project
   local proj_body
-  proj_body=$(curl -sf "$BASE/api/v1/projects" \
+  proj_body=$(curl_sf "$BASE/api/v1/projects" \
     -H "Authorization: Bearer $user_token" \
     -H "Content-Type: application/json" \
     -d '{"name":"Upload Project","description":"For testing file uploads"}')
@@ -28,7 +28,7 @@ test_file_upload() {
 
   # Create ticket
   local ticket_body
-  ticket_body=$(curl -sf "$BASE/api/v1/projects/$project_id/tickets" \
+  ticket_body=$(curl_sf "$BASE/api/v1/projects/$project_id/tickets" \
     -H "Authorization: Bearer $user_token" \
     -H "Content-Type: application/json" \
     -d '{"title":"Upload Ticket","description":"Test ticket for attachments","status":"backlog"}')

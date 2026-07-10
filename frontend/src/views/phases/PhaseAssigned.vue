@@ -3,7 +3,6 @@ import { ref, onMounted } from 'vue'
 import { get } from '@/api/client'
 
 defineProps({
-  phaseData: { type: Object, required: true },
   ticketId: { type: String, required: true },
   projectId: { type: String, required: true },
 })

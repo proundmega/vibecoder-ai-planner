@@ -12,19 +12,19 @@ test_route_ordering() {
   token=$(seed_user "alice@integration.test" "password123")
 
   local proj_id
-  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
+  proj_id=$(curl_sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Route Order Test Project","description":""}' \
     | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
-  curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
+  curl_sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"title":"Route order ticket","description":""}' >/dev/null 2>&1
 
   local tickets_body
-  tickets_body=$(curl -sf "${BASE}/api/v1/projects/$proj_id/tickets" \
+  tickets_body=$(curl_sf "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Authorization: Bearer $token")
   if echo "$tickets_body" | grep -q '"title"'; then
     pass "GET /projects/:id/tickets returns tickets array"
@@ -33,7 +33,7 @@ test_route_ordering() {
   fi
 
   local proj_body
-  proj_body=$(curl -sf "${BASE}/api/v1/projects/$proj_id" \
+  proj_body=$(curl_sf "${BASE}/api/v1/projects/$proj_id" \
     -H "Authorization: Bearer $token")
   if echo "$proj_body" | grep -q '"name"'; then
     pass "GET /projects/:id returns project details"

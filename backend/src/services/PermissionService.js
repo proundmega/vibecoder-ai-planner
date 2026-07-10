@@ -16,14 +16,12 @@ const PERMISSION_CACHE_TTL = parseInt(process.env.PERMISSION_CACHE_TTL) || 60;
 // Track whether init has been attempted
 let initPromise = null;
 let cacheInitialized = false;
-let initInProgress = false;
 
 async function ensureInit() {
   if (cacheInitialized) return;
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
-    initInProgress = true;
     try {
       const result = await pool.query(
         `SELECT r.name FROM roles r ORDER BY r.name`
@@ -38,7 +36,6 @@ async function ensureInit() {
       throw err;
     } finally {
       initPromise = null;
-      initInProgress = false;
     }
   })();
 
@@ -49,15 +46,16 @@ async function ensureInit() {
  * Resolve all permission codes for a given role name.
  * Uses Redis cache with TTL, falls back to in-memory Map.
  */
+const ROLE_PERMISSIONS_SQL = `SELECT p.code FROM permissions p
+  JOIN role_permissions rp ON rp.permission_id = p.id
+  JOIN roles r ON r.id = rp.role_id
+  WHERE r.name = $1`;
+
 async function resolvePermissionsDirect(roleName) {
-  // Query DB directly without cache checks (used during init to avoid deadlock)
-  const result = await pool.query(
-    `SELECT p.code FROM permissions p
-     JOIN role_permissions rp ON rp.permission_id = p.id
-     JOIN roles r ON r.id = rp.role_id
-     WHERE r.name = $1`,
-    [roleName]
-  );
+  // Query DB directly without cache checks — used during ensureInit() to avoid
+  // deadlock (ensureInit → resolvePermissions → getCachedPermissions → Redis → initPromise).
+  // Redis cache is populated by setCachedPermissions() after the query completes.
+  const result = await pool.query(ROLE_PERMISSIONS_SQL, [roleName]);
 
   const permissions = new Set(result.rows.map(row => row.code));
   permissionCache.set(roleName, permissions);
@@ -85,13 +83,7 @@ async function resolvePermissions(roleName) {
   }
 
   // Cache miss - query DB directly (bypass init to avoid deadlock during init)
-  const result = await pool.query(
-    `SELECT p.code FROM permissions p
-     JOIN role_permissions rp ON rp.permission_id = p.id
-     JOIN roles r ON r.id = rp.role_id
-     WHERE r.name = $1`,
-    [roleName]
-  );
+  const result = await pool.query(ROLE_PERMISSIONS_SQL, [roleName]);
 
   const permissions = new Set(result.rows.map(row => row.code));
   await setCachedPermissions(roleName, permissions);
@@ -219,13 +211,7 @@ async function init(retries = MAX_RETRIES) {
     );
     for (const row of result.rows) {
       // Populate cache directly to avoid duplicate roles query from ensureInit
-      const permsResult = await pool.query(
-        `SELECT p.code FROM permissions p
-         JOIN role_permissions rp ON rp.permission_id = p.id
-         JOIN roles r ON r.id = rp.role_id
-         WHERE r.name = $1`,
-        [row.name]
-      );
+      const permsResult = await pool.query(ROLE_PERMISSIONS_SQL, [row.name]);
       const permissions = new Set(permsResult.rows.map(r => r.code));
       permissionCache.set(row.name, permissions);
       await setCachedPermissions(row.name, permissions);

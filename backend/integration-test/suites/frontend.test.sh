@@ -13,7 +13,7 @@ test_frontend() {
   assert_status "Frontend serves SPA" "200" "$code"
 
   local body
-  body=$(curl -sf "http://localhost:3000/")
+  body=$(curl_sf "http://localhost:3000/")
   if echo "$body" | grep -q 'id="app"'; then
     pass "Frontend serves SPA with app div"
   else

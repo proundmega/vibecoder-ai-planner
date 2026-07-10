@@ -12,24 +12,24 @@ test_role_based_ticket_permissions() {
   admin_token=$(seed_user "alice@integration.test" "password123")
 
   local proj_id
-  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
+  proj_id=$(curl_sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"name":"Ticket Permissions Project","description":""}' \
     | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
-  curl -sf -X POST "${BASE}/api/v1/users" \
+  curl_sf -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"name":"Member","email":"perm_member@integration.test","password":"password123","role":"member"}' >/dev/null 2>&1
 
-  curl -sf -X POST "${BASE}/api/v1/users" \
+  curl_sf -X POST "${BASE}/api/v1/users" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"name":"User","email":"perm_user@integration.test","password":"password123","role":"user"}' >/dev/null 2>&1
 
   local ticket_body
-  ticket_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
+  ticket_body=$(curl_sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"title":"Member Delete Ticket","description":"Test"}')
@@ -43,7 +43,7 @@ test_role_based_ticket_permissions() {
     -H "Authorization: Bearer $member_token")
   assert_status "Member can delete tickets" "200" "$delete_code"
 
-  ticket_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
+  ticket_body=$(curl_sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $admin_token" \
     -d '{"title":"Owned Ticket","description":"Test"}')
@@ -56,7 +56,7 @@ test_role_based_ticket_permissions() {
   assert_status "User role cannot delete others' tickets" "403" "$delete_code"
 
   local own_ticket_body
-  own_ticket_body=$(curl -sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
+  own_ticket_body=$(curl_sf -X POST "${BASE}/api/v1/projects/$proj_id/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $user_token" \
     -d '{"title":"My Ticket","description":"Test"}')

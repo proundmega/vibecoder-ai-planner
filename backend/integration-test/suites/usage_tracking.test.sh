@@ -12,14 +12,14 @@ test_usage_tracking() {
   token=$(seed_user "alice@integration.test" "password123")
 
   local proj_id
-  proj_id=$(curl -sf -X POST "${BASE}/api/v1/projects" \
+  proj_id=$(curl_sf -X POST "${BASE}/api/v1/projects" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Usage Test Project","description":""}' \
     | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   local pricing_body
-  pricing_body=$(curl -sf "${BASE}/api/v1/usage/pricing/models" \
+  pricing_body=$(curl_sf "${BASE}/api/v1/usage/pricing/models" \
     -H "Authorization: Bearer $token")
   assert_has_field "Model pricing returns models" "data" "$pricing_body"
 
@@ -36,12 +36,12 @@ test_usage_tracking() {
   fi
 
   local usage_body
-  usage_body=$(curl -sf "${BASE}/api/v1/usage/projects/$proj_id/usage" \
+  usage_body=$(curl_sf "${BASE}/api/v1/usage/projects/$proj_id/usage" \
     -H "Authorization: Bearer $token")
   assert_has_field "Project usage returns data" "data" "$usage_body"
 
   local user_usage_body
-  user_usage_body=$(curl -sf "${BASE}/api/v1/usage/users/me/usage" \
+  user_usage_body=$(curl_sf "${BASE}/api/v1/usage/users/me/usage" \
     -H "Authorization: Bearer $token")
   assert_has_field "User usage returns data" "data" "$user_usage_body"
 }
