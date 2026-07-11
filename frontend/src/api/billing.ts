@@ -2,12 +2,12 @@ import { get } from './client'
 
 export interface Billing {
   project_id: string
-  user_id: string | null
-  current_period_start: string
-  current_period_end: string
-  total_usage: number
-  total_cost: number
-  plan: string
+  project_name?: string
+  billing_month: string
+  total_cost_usd: number
+  total_tokens_in: number
+  total_tokens_out: number
+  total_calls: number
 }
 
 export function getProjectBilling(projectId: string): Promise<Billing | null> {

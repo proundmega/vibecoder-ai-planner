@@ -399,7 +399,7 @@ async function handleUpdateMemory() {
   memorySaving.value = true
   memoryError.value = null
   try {
-    await updateMemory(editingMemory.value.id, { content: editMemoryContent.value.trim() })
+    await updateMemory(editingMemory.value.id, editMemoryContent.value.trim())
     editingMemory.value = null
     editMemoryContent.value = ''
     await loadMemory()

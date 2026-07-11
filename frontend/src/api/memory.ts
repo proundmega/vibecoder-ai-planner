@@ -30,8 +30,8 @@ export function addMemory(projectId: string, content: string, metadata: Record<s
   return post<Memory>(`/api/v1/memory/project/${projectId}`, { content, metadata })
 }
 
-export function updateMemory(id: string, updates: Partial<Memory>): Promise<Memory> {
-  return put<Memory>(`/api/v1/memory/${id}`, updates)
+export function updateMemory(id: string, content: string, metadata?: Record<string, unknown>): Promise<Memory> {
+  return put<Memory>(`/api/v1/memory/${id}`, { content, metadata })
 }
 
 export function deleteMemory(id: string): Promise<void> {

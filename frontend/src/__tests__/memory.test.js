@@ -111,13 +111,13 @@ describe('memory API', () => {
   })
 
   describe('updateMemory', () => {
-    it('sends PUT request with updates', async () => {
+    it('sends PUT request with content and metadata', async () => {
       const { put } = await import('../api/client')
       put.mockResolvedValue({ id: 'm1', content: 'updated' })
 
-      const result = await memory.updateMemory('m1', { content: 'updated' })
+      const result = await memory.updateMemory('m1', 'updated')
 
-      expect(put).toHaveBeenCalledWith('/api/v1/memory/m1', { content: 'updated' })
+      expect(put).toHaveBeenCalledWith('/api/v1/memory/m1', { content: 'updated', metadata: undefined })
       expect(result).toEqual({ id: 'm1', content: 'updated' })
     })
   })

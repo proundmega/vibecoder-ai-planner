@@ -11,7 +11,7 @@ const billingError = ref(null)
 const billingData = ref([])
 
 const totalCost = computed(() => {
-  return billingData.value.reduce((sum, b) => sum + (parseFloat(b.total_cost) || 0), 0).toFixed(4)
+  return billingData.value.reduce((sum, b) => sum + (parseFloat(b.total_cost_usd) || 0), 0).toFixed(4)
 })
 
 const totalCalls = computed(() => {

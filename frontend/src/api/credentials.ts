@@ -17,11 +17,11 @@ export function getActiveCredentials(projectId: string): Promise<Credential[]> {
   return get<Credential[]>(`/api/v1/credentials/${projectId}/credentials`).catch(() => []) as Promise<Credential[]>
 }
 
-export function addCredential(projectId: string, data: { name: string; credential: string }) {
+export function addCredential(projectId: string, data: { name: string; type: string; key: string; metadata?: Record<string, unknown>; expiresAt?: string }) {
   return post(`/api/v1/credentials/${projectId}/credentials`, data)
 }
 
-export function updateCredential(projectId: string, credentialId: string, data: Partial<{ name: string; credential: string }>) {
+export function updateCredential(projectId: string, credentialId: string, data: Partial<{ name: string; type: string; key: string; metadata: Record<string, unknown>; expiresAt: string; isActive: boolean }>) {
   return patch(`/api/v1/credentials/${projectId}/credentials/${credentialId}`, data)
 }
 
