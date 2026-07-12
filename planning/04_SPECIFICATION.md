@@ -142,6 +142,19 @@ List every test case the model must create, organized by layer. Do not write "te
 
 ---
 
+## Pending Scope Items
+
+**All deferred improvements from previous tickets' "Out of Scope" sections that are relevant to this ticket have been presented to the user in the 01/02/03 documents above.**
+
+| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
+|---|-------------|-------------|----------|----------------------|---------------|
+| 1 | [ticket-id] | [improvement description] | [category] | [bp-XX-name] | ☐ |
+| 2 | ... | ... | ... | ... | ☐ |
+
+**If no deferred improvements are found, write: "No deferred improvements found in previous tickets."**
+
+---
+
 ## Files NOT to Change
 
 - {{file path}} — unrelated to this ticket

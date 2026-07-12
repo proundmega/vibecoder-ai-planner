@@ -274,6 +274,31 @@ frontend/src/api/generated/           → REGENERATE (types)
 
 ---
 
+### Pending Scope Items to Present to User
+
+**MANDATORY**: Before presenting this ticket to the user, list all deferred improvements found in previous tickets' "Out of Scope" sections that are relevant to this ticket's domain. The user must be aware of follow-up work before approving implementation.
+
+Common goldmine categories:
+- **Security**: account lockout, API key rotation/expiry, IP whitelisting
+- **Observability**: Prometheus metrics, log aggregation, distributed tracing
+- **Infrastructure**: S3 migration, PgBouncer, CDN caching, cache warming
+- **Developer experience**: migration dry-run, env var documentation generator
+- **UX**: rate limit countdown UI, usage alerts, real-time billing dashboard
+- **Testing**: Cypress component tests, integration test coverage gaps
+
+### Items to Present
+
+| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
+|---|-------------|-------------|----------|----------------------|---------------|
+| 1 | [ticket-id] | [improvement description] | [category] | [bp-XX-name] | ☐ |
+| 2 | ... | ... | ... | ... | ☐ |
+
+**If no deferred improvements are found, write: "No deferred improvements found in previous tickets."**
+
+**All items above must be presented to the user before ticket approval.**
+
+---
+
 ### i) Code Review Checklist
 
 - [ ] Backend follows existing patterns (controller/service/model separation)
@@ -296,6 +321,7 @@ frontend/src/api/generated/           → REGENERATE (types)
 - [ ] Bash integration suite test added or extended for API changes
 - [ ] **Coverage threshold enforced**: `npm run test:coverage` (backend) or `npm test -- --run --coverage` (frontend) — min 60% lines, functions, branches, statements
 - [ ] Specification in `04_SPECIFICATION.md` matches what was actually implemented
+- [ ] **Pending scope items presented to user**: All deferred improvements from previous tickets have been listed above and presented to the user
 
 ---
 

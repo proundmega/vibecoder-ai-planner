@@ -314,6 +314,31 @@ Add a new `.test.sh` suite in `backend/integration-test/suites/` when:
 
 ---
 
+## Pending Scope Items to Present to User
+
+**MANDATORY**: Before presenting this ticket to the user, list all deferred improvements found in previous tickets' "Out of Scope" sections that are relevant to this ticket's domain. The user must be aware of follow-up work before approving implementation.
+
+Common goldmine categories:
+- **Security**: account lockout, API key rotation/expiry, IP whitelisting
+- **Observability**: Prometheus metrics, log aggregation, distributed tracing
+- **Infrastructure**: S3 migration, PgBouncer, CDN caching, cache warming
+- **Developer experience**: migration dry-run, env var documentation generator
+- **UX**: rate limit countdown UI, usage alerts, real-time billing dashboard
+- **Testing**: Cypress component tests, integration test coverage gaps
+
+### Items to Present
+
+| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
+|---|-------------|-------------|----------|----------------------|---------------|
+| 1 | [ticket-id] | [improvement description] | [category] | [bp-XX-name] | ☐ |
+| 2 | ... | ... | ... | ... | ☐ |
+
+**If no deferred improvements are found, write: "No deferred improvements found in previous tickets."**
+
+**All items above must be presented to the user before ticket approval.**
+
+---
+
 ## Specification Generation
 
 If a small model (7B–34B) will execute this ticket, the information above should be distilled into `04_SPECIFICATION.md` — a file that specifies exact file paths, imports, function signatures, test expectations, and edge cases. The small model should not need to make any architecture decisions; those are encoded in the Specification.
@@ -322,6 +347,7 @@ If a small model (7B–34B) will execute this ticket, the information above shou
 - [ ] Test expectations are specific (not "test it works" but "returns 400 when email is missing")
 - [ ] Edge cases are enumerated explicitly
 - [ ] Imports and dependencies are listed per file
+- [ ] **Pending scope items presented to user**: All deferred improvements from previous tickets have been listed above and presented to the user
 
 ---
 

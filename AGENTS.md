@@ -150,6 +150,8 @@ Create new planning suites in `planning/bp-XX-name/` for multi-file changes requ
 
 **Pending tickets**: See `PENDING.txt` for all unimplemented planning suites. Completed suites are in `planning/DONE/`.
 
+**Pending scope requirement**: Every planning document (01, 02, 03, 04) MUST include a "Pending Scope Items to Present to User" section that lists all deferred improvements found in previous tickets' "Out of Scope" sections. This ensures the user is aware of follow-up work before approving implementation.
+
 ## Coding methodology
 
 All code changes **must** follow the IPEE methodology defined in `ai/CODING.md` and `ai/IPEE.md`:
@@ -160,6 +162,19 @@ All code changes **must** follow the IPEE methodology defined in `ai/CODING.md` 
 4. **Evaluate** — test against expected outcomes, edge cases, performance
 
 State which IPEE step you're in at each moment. Skipping any step is not permitted.
+
+## Deferred Improvements (Goldmine)
+
+Every planning ticket has an "Out of Scope" section. These are deferred improvements — small, high-value changes that were intentionally left for later. **Before starting any ticket, scan the "Out of Scope" sections of previously committed tickets** (in `planning/DONE/` and `planning/archived/`). Common goldmine categories:
+
+- **Security**: account lockout, API key rotation/expiry, IP whitelisting
+- **Observability**: Prometheus metrics, log aggregation, distributed tracing
+- **Infrastructure**: S3 migration, PgBouncer, CDN caching, cache warming
+- **Developer experience**: migration dry-run, env var documentation generator, CI integration
+- **UX**: rate limit countdown UI, usage alerts, real-time billing dashboard
+- **Testing**: Cypress component tests, integration test coverage gaps
+
+When you create a new ticket, list ALL deferred improvements from "Out of Scope" sections as follow-up items. This prevents the backlog from becoming a graveyard of half-done ideas.
 
 ## Gotchas
 

@@ -1,0 +1,177 @@
+# Future Ideas
+
+High-value improvements that were identified during deferred improvement scans but are not currently planned. These are kept here so they don't get lost in the backlog.
+
+## Infrastructure
+
+### S3 Migration for Planning Files
+- **Source**: bp-14-ticket-planning (archived/bp-14-ticket-planning)
+- **Description**: Migrate planning files from filesystem to S3. The filesystem approach won't work at scale — planning files are stored locally and don't work with multi-instance deployments.
+- **Scope**: 
+  - S3 bucket for planning files
+  - Backend service to upload/download planning files from S3
+  - Migration script to move existing files to S3
+  - Configurable storage backend (filesystem vs S3 via env var)
+- **Priority**: P2
+- **Why deferred**: Requires S3 setup, adds AWS dependency, existing filesystem works for single-instance deployments
+
+### CDN Caching
+- **Source**: bp-11-api-caching (archived/bp-11-api-caching)
+- **Description**: Add CDN-level caching for static assets (CloudFront, Cloudflare). Currently all assets are served directly from the backend/Docker containers.
+- **Scope**:
+  - CloudFront/Cloudflare configuration
+  - Cache invalidation strategy
+  - TTL configuration for static assets
+  - Cache warming for frequently accessed pages
+- **Priority**: P3
+- **Why deferred**: Adds infrastructure complexity, current setup works for development/small deployments
+
+## Observability (Already Partially Planned)
+
+### Log Aggregation Pipeline
+- **Source**: bp-07-structured-logging (archived/bp-07-structured-logging)
+- **Description**: Ship logs to Datadog, CloudWatch, or similar. Currently logs go to Winston file transport only.
+- **Priority**: P2
+- **Why deferred**: Requires external service subscription, adds cost
+
+### Distributed Tracing
+- **Source**: bp-07-structured-logging (archived/bp-07-structured-logging)
+- **Description**: Add OpenTelemetry/Jaeger for distributed tracing across backend services and Java agents.
+- **Priority**: P3
+- **Why deferred**: Adds tracing overhead, not needed for single-instance deployments
+
+## Security (Already Partially Planned)
+
+### Email Notification on Lockout
+- **Source**: bp-71-account-lockout
+- **Description**: Send email to user when their account is locked after failed login attempts.
+- **Priority**: P2
+- **Why deferred**: Requires email service setup (SendGrid, SES, etc.), adds external dependency
+
+### Log File Rotation
+- **Source**: bp-07-structured-logging (archived/bp-07-structured-logging)
+- **Description**: Use winston-daily-rotate-file to rotate logs and prevent disk space exhaustion.
+- **Priority**: P3
+- **Why deferred**: Low urgency — disk space is rarely an issue in Docker containers
+
+## Testing (Already Partially Planned)
+
+### Cypress E2E Tests
+- **Source**: bp-60-contract-testing-and-integration
+- **Description**: Add Cypress E2E tests for critical user flows. Currently only 7 e2e specs exist, covering basic flows.
+- **Priority**: P2
+- **Why deferred**: Requires Chrome/Chromium in CI, adds test execution time
+
+### Full Pact-style Contract Testing
+- **Source**: bp-60-contract-testing-and-integration
+- **Description**: Replace Vitest contract tests with Pact for true consumer-driven contract testing between frontend and backend.
+- **Priority**: P3
+- **Why deferred**: Pact adds complexity, current Vitest contract tests work well enough
+
+## UX
+
+### Planning File Diff Viewer
+- **Source**: bp-14-ticket-planning (archived/bp-14-ticket-planning)
+- **Description**: Inline diff viewer for planning files with version history. Planning files have no version history UI.
+- **Priority**: P3
+- **Why deferred**: Requires versioning system for planning files, adds storage overhead
+
+### Planning File PDF Export
+- **Source**: bp-14-ticket-planning (archived/bp-14-ticket-planning)
+- **Description**: Export planning files as PDF for sharing with stakeholders.
+- **Priority**: P4
+- **Why deferred**: Low demand, requires PDF generation library
+
+### AI-Assisted Planning File Generation
+- **Source**: bp-14-ticket-planning (archived/bp-14-ticket-planning)
+- **Description**: AI agents fill in planning file templates automatically based on project context.
+- **Priority**: P3
+- **Why deferred**: Requires AI integration, complex UX
+
+### Template Marketplace
+- **Source**: bp-14-ticket-planning (archived/bp-14-ticket-planning)
+- **Description**: Share planning templates between projects or across organizations.
+- **Priority**: P4
+- **Why deferred**: Requires multi-tenant architecture, template versioning
+
+## Developer Experience (Already Partially Planned)
+
+### Migration Dry-Run
+- **Source**: bp-09-migration-rollback (archived/bp-09-migration-rollback)
+- **Description**: Preview migrations before applying them. This is now bp-79 and has been created.
+- **Priority**: P2
+- **Status**: ✅ Already planned as bp-79
+
+### Environment Variable Documentation Generator
+- **Source**: bp-10-env-validation (archived/bp-10-env-validation)
+- **Description**: Auto-generate `.env.example` from actual env var requirements. Currently env vars are documented in README but not auto-generated.
+- **Priority**: P3
+- **Why deferred**: Low urgency, env vars are few enough to maintain manually
+
+### Environment Variable Hot-Reloading
+- **Source**: bp-10-env-validation (archived/bp-10-env-validation)
+- **Description**: Reload env vars without restarting the backend. Currently requires restart.
+- **Priority**: P4
+- **Why deferred**: Complex to implement correctly, restart is acceptable for now
+
+## Other
+
+### Cache Analytics Dashboard
+- **Source**: bp-11-api-caching (archived/bp-11-api-caching)
+- **Description**: Dashboard showing cache hit/miss ratios, memory usage, and evictions.
+- **Priority**: P4
+- **Why deferred**: Requires Redis caching implementation first
+
+### Request Timeout UI
+- **Source**: bp-04-request-timeout (archived/bp-04-request-timeout)
+- **Description**: Show "request is taking long" indicators on frontend. Currently timeouts are silent.
+- **Priority**: P3
+- **Why deferred**: Low urgency, most requests complete quickly
+
+### Milestone Gantt Chart
+- **Source**: bp-39-milestones (archived/bp-39-milestone-flow-ui)
+- **Description**: Visual Gantt chart for milestone progress tracking.
+- **Priority**: P3
+- **Why deferred**: Requires charting library, complex UX
+
+### Agent List Redesign
+- **Source**: bp-70-agent-detail-actions
+- **Description**: Redesign AgentList.vue heartbeat table for better readability.
+- **Priority**: P3
+- **Why deferred**: Cosmetic change, current table works
+
+### Agent Edit Name
+- **Source**: bp-69-agent-creation-ui, bp-70-agent-detail-actions
+- **Description**: Allow editing agent names. Mentioned in TWO separate tickets.
+- **Priority**: P2
+- **Status**: ✅ Already planned as bp-77
+
+### API Key Masking in List Response
+- **Source**: bp-69-agent-creation-ui
+- **Description**: Mask API keys in list responses (show only first 8 chars).
+- **Priority**: P2
+- **Status**: ✅ Partially done — key preview exists in GET /agents/:agentId/key but not in list endpoint
+
+### Project Agents Table Migration
+- **Source**: bp-69-agent-creation-ui
+- **Description**: Missing `project_agents` table migration. Agents are currently per-user, not per-project.
+- **Priority**: P2
+- **Why deferred**: Requires schema change, affects agent authorization logic
+
+---
+
+## How to Use
+
+When creating a new ticket:
+1. Scan this file for relevant deferred improvements
+2. If one matches, create a bp-XX ticket and remove it from this file
+3. If multiple match, prioritize by impact and effort
+4. If none match, check `planning/DONE/` and `planning/archived/` Out of Scope sections
+
+## Priority Legend
+
+- **P0**: Critical — must do before production
+- **P1**: High — should do soon
+- **P2**: Medium — do when capacity allows
+- **P3**: Low — nice to have
+- **P4**: Minimal — future consideration

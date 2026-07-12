@@ -73,6 +73,44 @@
 
 ---
 
+## Pending Scope Items to Present to User
+
+**MANDATORY**: Before presenting this ticket to the user, list all deferred improvements found in previous tickets' "Out of Scope" sections that are relevant to this ticket's domain. The user must be aware of follow-up work before approving implementation.
+
+Common goldmine categories:
+- **Security**: account lockout, API key rotation/expiry, IP whitelisting
+- **Observability**: Prometheus metrics, log aggregation, distributed tracing
+- **Infrastructure**: S3 migration, PgBouncer, CDN caching, cache warming
+- **Developer experience**: migration dry-run, env var documentation generator
+- **UX**: rate limit countdown UI, usage alerts, real-time billing dashboard
+- **Testing**: Cypress component tests, integration test coverage gaps
+
+### Items to Present
+
+| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
+|---|-------------|-------------|----------|----------------------|---------------|
+| 1 | [ticket-id] | [improvement description] | [category] | [bp-XX-name] | ☐ |
+| 2 | ... | ... | ... | ... | ☐ |
+
+**If no deferred improvements are found, write: "No deferred improvements found in previous tickets."**
+
+**All items above must be presented to the user before ticket approval.**
+
+---
+
+## Deferred Improvements Found (Internal Tracking)
+
+For internal tracking — these are the same items above but without the "User Notified" column. Create follow-up tickets for each item.
+
+| # | From Ticket | Improvement | Category | Suggested Next Ticket |
+|---|-------------|-------------|----------|----------------------|
+| 1 | [ticket-id] | [improvement description] | [category] | [bp-XX-name] |
+| 2 | ... | ... | ... | ... |
+
+**If no deferred improvements are found, write: "No deferred improvements found in previous tickets."**
+
+---
+
 ## Impact Analysis
 
 | Component | Change Type | Details |

@@ -32,12 +32,26 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 
 | ID | Directory | Priority | Description |
 |----|-----------|----------|-------------|
+| **bp-01** | `bp-01-root-providers` | P1 | Move AI providers from per-project to global; connect agents to providers |
+| **bp-02** | `bp-02-agent-provider-resolution` | P1 | Java agents fetch provider config from backend at startup |
+| **bp-03** | `bp-03-pool-provider-resolve` | P1 | PoolManager resolves provider config and passes all env vars |
+| **bp-04** | `bp-04-usage-billing` | P2 | Wire up usage tracking and billing to actual AI calls |
 | ~~bp-53~~ | `bp-53-distributed-state` | P1 | ~~Distributed State Management~~ ✅ Done (PR #38) |
 | ~~bp-68~~ | `bp-68-integration-test-fixes` | P1 | ~~Fix 83 failing bash integration tests~~ ✅ Done (PR #44) |
 | ~~bp-69~~ | `bp-69-agent-creation-ui` | P1 | ~~Add Create Agent button and modal~~ ✅ Done (PR #46) |
 | ~~bp-70~~ | `bp-70-agent-detail-actions` | P1 | ~~Add agent delete/revoke actions and CRUD table~~ ✅ Done (PR #47) |
 | ~~bp-56~~ | `bp-56-design-system` | P2 | ~~Shared CSS and Component Design System~~ ✅ Done (this session) |
 | ~~bp-57~~ | `bp-57-migrate-to-typescript` | P3 | ~~Frontend JS → TypeScript migration~~ ✅ Done (PR #50) |
+| **bp-71** | `bp-71-account-lockout` | P1 | Account lockout after 10 failed login attempts |
+| **bp-72** | `bp-72-rate-limit-ui` | P2 | Rate limit countdown UI on frontend |
+| **bp-73** | `bp-73-ip-whitelisting` | P2 | IP whitelisting for rate limit exceptions |
+| **bp-74** | `bp-74-api-key-rotation` | P1 | API key rotation and expiry for agents |
+| **bp-75** | `bp-75-log-rotation` | P3 | Log file rotation with winston-daily-rotate-file |
+| **bp-76** | `bp-76-prometheus-metrics` | P1 | Prometheus metrics export (request duration, DB pool, process metrics) |
+| **bp-77** | `bp-77-agent-edit-name` | P2 | Edit agent names (backend PUT + frontend inline edit) |
+| **bp-78** | `bp-78-csp-reporting` | P2 | CSP violation reporting dashboard (DB storage + frontend UI) |
+| **bp-79** | `bp-79-migration-dry-run` | P2 | Migration dry-run mode (--dry-run flag for preview) |
+| **bp-80** | `bp-80-pgbouncer` | P2 | PgBouncer deployment (connection pooling proxy) |
 
 ## Test Backfills (bt-*)
 
