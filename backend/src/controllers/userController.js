@@ -1,4 +1,5 @@
 const UserService = require('../services/UserService');
+const { pool } = require('../db');
 
 async function listUsers(req, res, next) {
   try {
@@ -76,6 +77,33 @@ async function listAllUsers(req, res, next) {
   }
 }
 
+async function unlockUser(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      'UPDATE users SET login_attempts = 0, locked_until = NULL WHERE id = $1 RETURNING id, email, login_attempts, locked_until',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found',
+        },
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result.rows[0],
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   listUsers,
   createUser,
@@ -83,4 +111,5 @@ module.exports = {
   toggleUserActive,
   deleteUser,
   listAllUsers,
+  unlockUser,
 };

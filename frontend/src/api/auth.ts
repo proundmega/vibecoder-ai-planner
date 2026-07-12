@@ -33,12 +33,27 @@ export async function registerUser(name: string, email: string, password: string
   return (data.success ? data.data : data) as { token: string; user: User }
 }
 
-export async function loginUser(email: string, password: string): Promise<{ token: string; user: User }> {
+export interface LockoutError {
+  code: string
+  message: string
+  lockedUntil: string
+  retryAfter: number
+}
+
+export async function loginUser(email: string, password: string): Promise<{ token: string; user: User } | { lockout: LockoutError }> {
   const response = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
   })
+  if (response.status === 423) {
+    const body = await response.json().catch(() => null)
+    const lockout = body?.error as LockoutError | undefined
+    if (lockout) {
+      return { lockout }
+    }
+    throw new Error('Account locked')
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => null)
     const message = extractErrorMessage(body) || 'Login failed'

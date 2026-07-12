@@ -35,6 +35,7 @@ const SQL_FILES = [
   path.join(__dirname, './030_uuid_to_bigint_fk.sql'),
   path.join(__dirname, './031_expand_credential_types.sql'),
   path.join(__dirname, './031_unify_providers.sql'),
+  path.join(__dirname, './032_add_locked_until_to_users.sql'),
 ];
 
 const DATA_MIGRATIONS = [

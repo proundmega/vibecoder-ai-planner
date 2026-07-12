@@ -12,6 +12,8 @@ class User {
     this.isActive = data.is_active !== false;
     this.userCreatedBy = data.user_created_by || null;
     this.createdAt = data.created_at;
+    this.lockedUntil = data.locked_until ? new Date(data.locked_until) : null;
+    this.loginAttempts = data.login_attempts || 0;
   }
 
   static async create(name, email, password, role = 'project_admin', userCreatedBy = null) {

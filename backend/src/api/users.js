@@ -175,4 +175,25 @@ router.delete('/:id', verifyToken, requireAnyPermission('USER_DELETE'), userCont
  */
 router.get('/super-admin', verifyToken, requireAnyPermission('USER_VIEW_ALL'), userController.listAllUsers);
 
+/**
+ * @openapi
+ * /users/{id}/unlock:
+ *   post:
+ *     tags: [Users]
+ *     summary: Unlock a locked user account (super admin only)
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: User unlocked successfully
+ *       403:
+ *         description: Forbidden - super admin only
+ *       404:
+ *         description: User not found
+ */
+router.post('/:id/unlock', verifyToken, requireAnyPermission('USER_VIEW_ALL'), userController.unlockUser);
+
 module.exports = router;
