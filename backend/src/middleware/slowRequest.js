@@ -24,7 +24,7 @@ function slowRequestLogger(thresholdMs = 5000) {
         logger.warn(`Slow request: ${req.method} ${req.path} took ${duration}ms (threshold: ${thresholdMs}ms)`);
       }
       
-      const path = req.route?.path || req.originalUrl;
+      const path = req.route?.path || 'unmatched';
       const status = res.statusCode ? res.statusCode.toString() : 'unknown';
       httpRequestDurationHistogram.observe(
         { method: req.method, path, status },

@@ -72,7 +72,7 @@ router.get('/admin/ip-whitelist', verifyToken, requireAnyPermission('USER_VIEW_A
   }
 });
 
-router.post('/admin/ip-whitelist', verifyToken, requireAnyPermission('USER_VIEW_ALL'), async (req, res, next) => {
+router.post('/admin/ip-whitelist', verifyToken, requireAnyPermission('USER_UPDATE'), async (req, res, next) => {
   try {
     const { ip_address, description } = req.body;
     if (!ip_address) {
@@ -88,7 +88,7 @@ router.post('/admin/ip-whitelist', verifyToken, requireAnyPermission('USER_VIEW_
   }
 });
 
-router.delete('/admin/ip-whitelist/:id', verifyToken, requireAnyPermission('USER_VIEW_ALL'), async (req, res, next) => {
+router.delete('/admin/ip-whitelist/:id', verifyToken, requireAnyPermission('USER_UPDATE'), async (req, res, next) => {
   try {
     const { id } = req.params;
     const result = await IpWhitelistService.delete(id);

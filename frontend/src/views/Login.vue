@@ -1,13 +1,7 @@
 <template>
   <div class="login">
     <h1 class="login__title">Sign In</h1>
-    <div v-if="rateLimitStore.rateLimitActive" class="rate-limit-banner">
-      <svg class="rate-limit-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"/>
-        <polyline points="12 6 12 12 16 14"/>
-      </svg>
-      <span>Too many requests. Try again in {{ Math.floor(Number(rateLimitStore.countdownSeconds) / 60) }}m {{ Number(rateLimitStore.countdownSeconds) % 60 }}s.</span>
-    </div>
+    <RateLimitBanner />
     <div v-if="lockoutActive" class="lockout-banner">
       <svg class="lockout-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
@@ -59,6 +53,7 @@ import { loginUser } from '@/api/auth'
 import { get } from '@/api/client'
 import VInput from '@/components/VInput.vue'
 import VButton from '@/components/VButton.vue'
+import RateLimitBanner from '@/components/RateLimitBanner.vue'
 
 const email = ref('')
 const password = ref('')
@@ -196,23 +191,6 @@ onUnmounted(() => {
 }
 
 .lockout-icon {
-  flex-shrink: 0;
-}
-
-.rate-limit-banner {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  margin-bottom: 1rem;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 0.5rem;
-  color: #92400e;
-  font-size: 0.875rem;
-}
-
-.rate-limit-icon {
   flex-shrink: 0;
 }
 </style>

@@ -162,5 +162,29 @@ describe('Slow Request Logger', () => {
     expect(loggerModule.warn).not.toHaveBeenCalled();
   });
 
+  it('should use "unmatched" label for 404 requests (no req.route)', async () => {
+    const { slowRequestLogger } = require('../middleware/slowRequest');
+    const { register } = require('../metrics');
+    
+    const reqNoRoute = {
+      method: 'GET',
+      path: '/api/nonexistent-uuid-1234-5678-9abc-def012345678',
+      originalUrl: '/api/nonexistent-uuid-1234-5678-9abc-def012345678',
+    };
+    const resFinish = {
+      on: jest.fn((event, cb) => {
+        if (event === 'finish') cb();
+      }),
+      statusCode: 404,
+    };
+    const middleware = slowRequestLogger(5000);
+    middleware(reqNoRoute, resFinish, jest.fn());
+    
+    const metricsOutput = await register.metrics();
+    
+    expect(metricsOutput).toContain('path="unmatched"');
+    expect(metricsOutput).not.toContain('nonexistent-uuid');
+  });
+
   
 });

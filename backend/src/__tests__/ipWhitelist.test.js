@@ -106,7 +106,10 @@ describe('IpWhitelistService', () => {
 
   it('validates IPv6 addresses', async () => {
     expect(IpWhitelistService.validateIp('2001:0db8:85a3:0000:0000:8a2e:0370:7334')).toBe(true);
-    expect(IpWhitelistService.validateIp('::1')).toBe(false);
-    expect(IpWhitelistService.validateIp('fe80::1')).toBe(false);
+    expect(IpWhitelistService.validateIp('::1')).toBe(true);
+    expect(IpWhitelistService.validateIp('fe80::1')).toBe(true);
+    expect(IpWhitelistService.validateIp('2001:db8::1')).toBe(true);
+    expect(IpWhitelistService.validateIp('::')).toBe(true);
+    expect(IpWhitelistService.validateIp('not-an-ip')).toBe(false);
   });
 });

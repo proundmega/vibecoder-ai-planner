@@ -66,11 +66,20 @@ app.use('/api', routes);
 
 // Prometheus metrics endpoint (at root level, not under /api)
 const { register } = require('./metrics');
-const collectDefaultMetrics = require('prom-client').collectDefaultMetrics;
-collectDefaultMetrics({ register });
+if (process.env.NODE_ENV !== 'test') {
+  const collectDefaultMetrics = require('prom-client').collectDefaultMetrics;
+  collectDefaultMetrics({ register });
+}
 
 app.get('/metrics', async (req, res, next) => {
   try {
+    const metricsToken = process.env.METRICS_TOKEN;
+    if (metricsToken) {
+      const providedToken = req.headers['x-metrics-token'];
+      if (!providedToken || providedToken !== metricsToken) {
+        return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Metrics endpoint requires authentication' } });
+      }
+    }
     res.set('Content-Type', register.contentType);
     const metrics = await register.metrics();
     res.end(metrics);

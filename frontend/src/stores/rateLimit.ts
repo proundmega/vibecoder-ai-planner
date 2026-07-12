@@ -78,8 +78,6 @@ function createRateLimitStore() {
     }
   }
 
-  restoreFromStorage();
-
   return {
     rateLimitActive,
     retryAt,

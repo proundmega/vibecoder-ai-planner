@@ -43,11 +43,11 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | ~~bp-56~~ | `bp-56-design-system` | P2 | ~~Shared CSS and Component Design System~~ ✅ Done (this session) |
 | ~~bp-57~~ | `bp-57-migrate-to-typescript` | P3 | ~~Frontend JS → TypeScript migration~~ ✅ Done (PR #50) |
 | **bp-71** | `bp-71-account-lockout` | P1 | ~~Account lockout after 10 failed login attempts~~ ✅ Done (PR #52) |
-| **bp-72** | `bp-72-rate-limit-ui` | P2 | ~~Rate limit countdown UI on frontend~~ ✅ Done (PR #54) |
-| **bp-73** | `bp-73-ip-whitelisting` | P2 | ~~IP whitelisting for rate limit exceptions~~ ✅ Done (PR #55) |
+| **bp-72** | `bp-72-rate-limit-ui` | P2 | ~~Rate limit countdown UI on frontend~~ ✅ Done (PR #54) — Issue 1: Register.vue disable inputs, Issue 2: rateLimit.ts lazy restore, Issue 3: shared RateLimitBanner component. Regression tests: registerRateLimit.test.ts (disabled state), ipWhitelistPermissions.test.js (USER_UPDATE permission boundary) |
+| **bp-73** | `bp-73-ip-whitelisting` | P2 | ~~IP whitelisting for rate limit exceptions~~ ✅ Done (PR #55) — Issue 4: IPv6 compressed notation via net.isIP(), Issue 5: USER_UPDATE permission for create/delete, Issue 6: in-memory LRU cache for isWhitelisted() |
 | **bp-74** | `bp-74-api-key-rotation` | P1 | ~~API key rotation and expiry for agents~~ ✅ Done (PR #53, review fixes applied: bcrypt migration, hash-only lookup, shared auth helper, constant INTERVAL) |
 | **bp-75** | `bp-75-log-rotation` | P3 | Log file rotation with winston-daily-rotate-file |
-| **bp-76** | `bp-76-prometheus-metrics` | P1 | Prometheus metrics export (request duration, DB pool, process metrics) |
+| **bp-76** | `bp-76-prometheus-metrics` | P1 | Prometheus metrics export (request duration, DB pool, process metrics) — Issue 7: 'unmatched' label for 404s, Issue 8: METRICS_TOKEN auth, Issue 9: skip collectDefaultMetrics in test mode. Regression test: requestTimeout.test.js (unmatched label for 404 paths) |
 | **bp-77** | `bp-77-agent-edit-name` | P2 | Edit agent names (backend PUT + frontend inline edit) |
 | **bp-78** | `bp-78-csp-reporting` | P2 | CSP violation reporting dashboard (DB storage + frontend UI) |
 | **bp-79** | `bp-79-migration-dry-run` | P2 | Migration dry-run mode (--dry-run flag for preview) |

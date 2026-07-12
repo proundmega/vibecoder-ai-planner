@@ -1,6 +1,14 @@
 const { pool } = require('../db');
+const net = require('net');
+
+const WHITELIST_CACHE_TTL = 60000;
+const whitelistCache = new Map();
 
 class IpWhitelistService {
+  static clearCache() {
+    whitelistCache.clear();
+  }
+
   static async list() {
     const result = await pool.query(
       'SELECT id, ip_address, description, created_by, created_at FROM ip_whitelist ORDER BY created_at DESC'
@@ -22,6 +30,7 @@ class IpWhitelistService {
        RETURNING id, ip_address, description, created_by, created_at`,
       [ipAddress, description || '', createdBy]
     );
+    IpWhitelistService.clearCache();
     return result.rows[0];
   }
 
@@ -36,21 +45,27 @@ class IpWhitelistService {
       error.code = 'IP_NOT_FOUND';
       throw error;
     }
+    IpWhitelistService.clearCache();
     return result.rows[0];
   }
 
   static async isWhitelisted(ipAddress) {
+    const cached = whitelistCache.get(ipAddress);
+    if (cached && Date.now() - cached.timestamp < WHITELIST_CACHE_TTL) {
+      return cached.value;
+    }
     const result = await pool.query(
       'SELECT 1 FROM ip_whitelist WHERE ip_address = $1',
       [ipAddress]
     );
-    return result.rows.length > 0;
+    const value = result.rows.length > 0;
+    whitelistCache.set(ipAddress, { value, timestamp: Date.now() });
+    return value;
   }
 
   static validateIp(ip) {
-    const ipv4 = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-    const ipv6 = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
-    return ipv4.test(ip) || ipv6.test(ip);
+    const version = net.isIP(ip);
+    return version === 4 || version === 6;
   }
 }
 
