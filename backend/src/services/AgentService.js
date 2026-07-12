@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 
 const SALT_ROUNDS = 10;
 const DEFAULT_KEY_EXPIRY_DAYS = 30;
-const PREFIX_LENGTH = 12;
+const PREFIX_LENGTH = 20;
 
 class AgentService {
   async create(name, apiKey, userId, providerId = null) {

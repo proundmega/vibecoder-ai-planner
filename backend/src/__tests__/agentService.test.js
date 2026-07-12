@@ -22,7 +22,7 @@ describe('AgentService', () => {
       // Query should NOT include plaintext key
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO agents'),
-        expect.arrayContaining(['Test Agent', '$2a$10$mockhash123456789012345678901234567890', '$2a$10$mockh', expect.any(Date), 'user-1', null, 100, 1000])
+        expect.arrayContaining(['Test Agent', '$2a$10$mockhash123456789012345678901234567890', '$2a$10$mockhash12345', expect.any(Date), 'user-1', null, 100, 1000])
       );
       // Result should include plaintext key for the user to copy
       expect(result.api_key).toBe('key-123');

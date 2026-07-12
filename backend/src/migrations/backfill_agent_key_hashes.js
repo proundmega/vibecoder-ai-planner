@@ -14,7 +14,7 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 
 const SALT_ROUNDS = 10;
-const PREFIX_LENGTH = 12;
+const PREFIX_LENGTH = 20;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -45,7 +45,7 @@ async function migrate() {
         const hash = await bcrypt.hash(agent.api_key, SALT_ROUNDS);
         const prefix = hash.substring(0, PREFIX_LENGTH);
         await pool.query(
-          'UPDATE agents SET api_key_hash = $1, api_key_hash_prefix = $2 WHERE id = $3',
+          'UPDATE agents SET api_key_hash = $1, api_key_hash_prefix = $2, api_key = NULL WHERE id = $3',
           [hash, prefix, agent.id]
         );
         console.log(`  Hashed: agent ${agent.id} (${agent.name}) — prefix: ${prefix}`);

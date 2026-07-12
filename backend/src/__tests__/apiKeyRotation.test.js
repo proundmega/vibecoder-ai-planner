@@ -41,7 +41,7 @@ describe('AgentService - API Key Rotation', () => {
     const queryArgs = pool.query.mock.calls[0][1];
     expect(queryArgs[0]).toBe('test-agent');
     expect(queryArgs[1]).toBe(mockHash);
-    expect(queryArgs[2]).toBe(mockHash.substring(0, 12));
+    expect(queryArgs[2]).toBe(mockHash.substring(0, 20));
   });
 
   it('sets api_key_expires_at to 30 days from now', async () => {
@@ -116,7 +116,7 @@ describe('AgentService - API Key Rotation', () => {
 
     // Should pass prefix as parameter
     const queryArgs = pool.query.mock.calls[0][1];
-    expect(queryArgs[0]).toBe(mockHash.substring(0, 12));
+    expect(queryArgs[0]).toBe(mockHash.substring(0, 20));
   });
 
   it('getAgentByApiKey returns null for wrong key', async () => {
