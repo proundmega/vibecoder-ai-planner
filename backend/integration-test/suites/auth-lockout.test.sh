@@ -49,14 +49,12 @@ test_account_lockout() {
 
   # 4. 11th attempt should return 423 (account locked)
   echo "3. Checking 423 response on 11th attempt..."
-  local lockout_response
-  lockout_response=$(curl -s -X POST "$BASE/api/auth/login" \
-    -H "Content-Type: application/json" \
-    -d '{"email":"lockout-test@example.com","password":"wrongpassword"}')
   local lockout_status
-  lockout_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/auth/login" \
+  local lockout_response
+  lockout_status=$(curl -s -o /tmp/lockout.json -w '%{http_code}' -X POST "$BASE/api/auth/login" \
     -H "Content-Type: application/json" \
     -d '{"email":"lockout-test@example.com","password":"wrongpassword"}')
+  lockout_response=$(cat /tmp/lockout.json)
 
   if [ "$lockout_status" = "423" ]; then
     pass "Account locked with 423 response"
@@ -87,12 +85,11 @@ test_account_lockout() {
   admin_token=$(seed_user "admin@integration.test" "adminpass123" "super_admin" "Admin")
   
   if [ -n "$admin_token" ]; then
-    local unlock_response
-    unlock_response=$(curl -s -X POST "$BASE/api/v1/users/$user_id/unlock" \
-      -H "Authorization: Bearer $admin_token")
     local unlock_status
-    unlock_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/users/$user_id/unlock" \
+    local unlock_response
+    unlock_status=$(curl -s -o /tmp/unlock.json -w '%{http_code}' -X POST "$BASE/api/v1/users/$user_id/unlock" \
       -H "Authorization: Bearer $admin_token")
+    unlock_response=$(cat /tmp/unlock.json)
 
     if [ "$unlock_status" = "200" ]; then
       pass "Admin unlock endpoint returns 200"

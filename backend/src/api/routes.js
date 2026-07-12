@@ -246,6 +246,7 @@ router.post('/auth/login', rateLimiter(5, 60000), validate(loginSchema), async (
     const { email, password } = req.body;
     const result = await loginUserBound(email, password);
     clearFailedAttempts(clientIp);
+    await UserService.resetFailedAttempts(result.user.id);
     res.json({ message: 'Login successful', ...result });
   } catch (error) {
     if (error.code === 'ACCOUNT_LOCKED') {
