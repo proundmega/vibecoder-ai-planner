@@ -43,8 +43,8 @@ export function getAgentKeyInfo(agentId: string): Promise<AgentKeyInfo> {
   return get(`/api/v1/agents/${agentId}/key`)
 }
 
-export function createAgent(name: string): Promise<Agent & { generatedApiKey: string }> {
-  return post<Agent & { generatedApiKey: string }>('/api/v1/agents/create', { name })
+export function createAgent(name: string, providerId?: string): Promise<Agent & { generatedApiKey: string }> {
+  return post<Agent & { generatedApiKey: string }>('/api/v1/agents/create', { name, providerId: providerId || undefined })
 }
 
 export function listAgents(): Promise<{ agents: Agent[] }> {

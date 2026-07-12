@@ -56,11 +56,11 @@ export function deleteProvider(id: string): Promise<void> {
 }
 
 export function testProvider(id: string): Promise<{ success: boolean; valid: boolean; message: string }> {
-  return post<{ success: boolean; valid: boolean; message: string }>(`/api/v1/providers/${id}/test`, undefined)
+  return post<{ success: boolean; valid: boolean; message: string }>(`/api/v1/providers/${id}/test`)
 }
 
 export function setDirector(id: string): Promise<Provider> {
-  return patch<Provider>(`/api/v1/providers/${id}/directorship`, undefined)
+  return patch<Provider>(`/api/v1/providers/${id}/directorship`)
 }
 
 export function getProviderAgents(id: string): Promise<{ id: string; name: string; provider_id: string }[]> {
