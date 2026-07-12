@@ -5,34 +5,44 @@ const bcrypt = require('bcryptjs');
 
 const SALT_ROUNDS = 10;
 const DEFAULT_KEY_EXPIRY_DAYS = 30;
+const PREFIX_LENGTH = 20;
 
 class AgentService {
-  async create(name, apiKey, userId) {
+  async create(name, apiKey, userId, providerId = null) {
+    if (providerId) {
+      const providerCheck = await pool.query('SELECT id FROM providers WHERE id = $1', [providerId]);
+      if (providerCheck.rows.length === 0) {
+        throw new Error('PROVIDER_NOT_FOUND');
+      }
+    }
+
     const apiKeyHash = await bcrypt.hash(apiKey, SALT_ROUNDS);
+    const apiKeyHashPrefix = apiKeyHash.substring(0, PREFIX_LENGTH);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + DEFAULT_KEY_EXPIRY_DAYS);
 
     const result = await pool.query(
-      `INSERT INTO agents (name, api_key, api_key_hash, api_key_expires_at, owner_id, rate_limit, max_actions_per_day) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7) 
-       RETURNING id, name, api_key, api_key_expires_at, created_at`,
-      [name, apiKey, apiKeyHash, expiresAt, userId, 100, 1000]
+      `INSERT INTO agents (name, api_key_hash, api_key_hash_prefix, api_key_expires_at, owner_id, provider_id, rate_limit, max_actions_per_day) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+       RETURNING id, name, api_key_expires_at, provider_id, created_at`,
+      [name, apiKeyHash, apiKeyHashPrefix, expiresAt, userId, providerId, 100, 1000]
     );
-    return result.rows[0];
+    return { ...result.rows[0], api_key: apiKey };
   }
 
   async rotateKey(agentId, userId) {
     const apiKey = crypto.randomBytes(32).toString('hex');
     const apiKeyHash = await bcrypt.hash(apiKey, SALT_ROUNDS);
+    const apiKeyHashPrefix = apiKeyHash.substring(0, PREFIX_LENGTH);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + DEFAULT_KEY_EXPIRY_DAYS);
 
     const result = await pool.query(
       `UPDATE agents 
-       SET api_key = $1, api_key_hash = $2, api_key_expires_at = $3
+       SET api_key_hash = $1, api_key_hash_prefix = $2, api_key_expires_at = $3
        WHERE id = $4 AND owner_id = $5
-       RETURNING id, name, api_key, api_key_expires_at`,
-      [apiKey, apiKeyHash, expiresAt, agentId, userId]
+       RETURNING id, name, api_key_expires_at`,
+      [apiKeyHash, apiKeyHashPrefix, expiresAt, agentId, userId]
     );
 
     if (result.rows.length === 0) {
@@ -40,12 +50,16 @@ class AgentService {
     }
 
     const agent = result.rows[0];
-    return { ...agent, apiKey };
+    return { ...agent, api_key: apiKey };
   }
 
   async list(userId) {
     const result = await pool.query(
-      'SELECT * FROM agents WHERE owner_id = $1 ORDER BY created_at DESC',
+      `SELECT agents.*, providers.name as provider_name, providers.provider_type as provider_type
+       FROM agents 
+       LEFT JOIN providers ON agents.provider_id = providers.id
+       WHERE agents.owner_id = $1 
+       ORDER BY agents.created_at DESC`,
       [userId]
     );
     return result.rows;
@@ -115,11 +129,24 @@ class AgentService {
   }
 
   async getAgentByApiKey(apiKey) {
+    const apiKeyHash = await bcrypt.hash(apiKey, SALT_ROUNDS);
+    const apiKeyHashPrefix = apiKeyHash.substring(0, PREFIX_LENGTH);
+
     const result = await pool.query(
-      'SELECT * FROM agents WHERE api_key = $1',
-      [apiKey]
+      `SELECT agents.*, providers.name as provider_name, providers.provider_type as provider_type
+       FROM agents 
+       LEFT JOIN providers ON agents.provider_id = providers.id
+       WHERE agents.api_key_hash_prefix = $1`,
+      [apiKeyHashPrefix]
     );
-    return result.rows[0];
+
+    // Verify with bcrypt.compare (timing-safe) since prefix is not unique
+    for (const agent of result.rows) {
+      if (agent.api_key_hash && await bcrypt.compare(apiKey, agent.api_key_hash)) {
+        return agent;
+      }
+    }
+    return null;
   }
 
   async getAgentTickets(agentId, projectId) {

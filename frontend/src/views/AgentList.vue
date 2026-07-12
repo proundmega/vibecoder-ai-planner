@@ -1,8 +1,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchAgentStatusList } from '@/api/agents'
-import { createAgent, listAgents } from '@/api/agents'
+import { fetchAgentStatusList, createAgent, listAgents } from '@/api/agents'
+import { listProviders } from '@/api/providers'
 import AgentModal from '@/components/AgentModal.vue'
 
 const agents = ref([])
@@ -13,6 +13,8 @@ const createError = ref(null)
 const activeTab = ref('heartbeat')
 const agentsData = ref([])
 const loadingAgents = ref(false)
+const providers = ref([])
+const selectedProviderId = ref(null)
 const router = useRouter()
 let pollInterval = null
 
@@ -28,8 +30,17 @@ async function loadAgents() {
   }
 }
 
+async function loadProviders() {
+  try {
+    providers.value = await listProviders()
+  } catch (err) {
+    console.error('Failed to load providers:', err)
+  }
+}
+
 onMounted(() => {
   loadAgents()
+  loadProviders()
   pollInterval = setInterval(loadAgents, 10000)
 })
 
@@ -55,9 +66,9 @@ function formatCost(cost) {
   return `$${Number(cost || 0).toFixed(2)}`
 }
 
-async function handleCreate(name) {
+async function handleCreate(name, providerId) {
   try {
-    await createAgent(name)
+    await createAgent(name, providerId)
     showCreateModal.value = false
     createError.value = null
   } catch (err) {
@@ -100,7 +111,7 @@ function formatDate(dateStr) {
         Create Agent
       </button>
     </div>
-    <AgentModal v-model:show="showCreateModal" @created="handleCreate" />
+    <AgentModal v-model:show="showCreateModal" :providers="providers" v-model:selectedProvider="selectedProviderId" @created="handleCreate" />
     <div v-if="createError" class="error">{{ createError }}</div>
 
     <div class="tabs">
@@ -175,6 +186,7 @@ function formatDate(dateStr) {
         <thead>
           <tr>
             <th>Name</th>
+            <th>Provider</th>
             <th>API Key</th>
             <th>Rate Limit</th>
             <th>Created</th>
@@ -184,6 +196,7 @@ function formatDate(dateStr) {
         <tbody>
           <tr v-for="agent in agentsData" :key="agent.id">
             <td>{{ agent.name }}</td>
+            <td>{{ agent.provider_name || '—' }}</td>
             <td><code>{{ formatKeyPreview(agent.api_key) }}</code></td>
             <td>{{ agent.rate_limit || 100 }}</td>
             <td>{{ formatDate(agent.created_at) }}</td>

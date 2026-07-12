@@ -2,20 +2,19 @@ const { pool } = require('../db');
 const { decrypt } = require('../utils/crypto');
 
 class ProviderService {
-  async getProjectProvider(projectId) {
+  async getGlobalProvider() {
     const result = await pool.query(
-      `SELECT * FROM project_providers
-       WHERE project_id = $1 AND is_project_director = true
-       LIMIT 1`,
-      [projectId]
+      `SELECT * FROM providers
+       WHERE is_project_director = true AND is_active = true
+       LIMIT 1`
     );
     return result.rows[0] || null;
   }
 
-  async resolveProvider(projectId, ticketInfo) {
-    const config = await this.getProjectProvider(projectId);
+  async resolveProvider(ticketInfo) {
+    const config = await this.getGlobalProvider();
     if (!config) {
-      throw new Error('No active provider configuration found for this project');
+      throw new Error('No active provider configuration found');
     }
 
     const rules = config.routing_rules;

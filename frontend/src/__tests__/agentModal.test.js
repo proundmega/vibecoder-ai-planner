@@ -32,12 +32,12 @@ describe('AgentModal', () => {
     expect(wrapper.find('input').exists()).toBe(false)
   })
 
-  it('emits submit with trimmed name', async () => {
+  it('emits submit with trimmed name and null provider', async () => {
     const wrapper = mount(AgentModal, { ...mountOptions, props: { show: true }, attachTo: container })
     await wrapper.find('input').setValue('  My Agent  ')
     await wrapper.find('form').trigger('submit')
     expect(wrapper.emitted('created')).toBeTruthy()
-    expect(wrapper.emitted('created')[0]).toEqual(['My Agent'])
+    expect(wrapper.emitted('created')[0]).toEqual(['My Agent', null])
   })
 
   it('shows error when submitting empty name', async () => {

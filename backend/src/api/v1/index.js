@@ -23,6 +23,7 @@ const ticketAttachmentUpload = require('../../middleware/multer');
 const { verifyToken } = require('../../middleware/auth');
 const { requireAnyPermission } = require('../../middleware/permissions');
 const agentHeartbeatRouter = require('./agentHeartbeat');
+const IpWhitelistService = require('../../services/IpWhitelistService');
 
 // Template routes (under /projects/:projectId/templates) — must be before router.use('/projects')
 router.get('/projects/:projectId/templates', verifyToken, requireAnyPermission('TICKET_UPDATE'), (req, res, next) => templateController.listTemplates(req, res, next).catch(next));
@@ -60,5 +61,44 @@ router.use('/billing', billingRouter);
 router.use('/memory', memoryRouter);
 router.use('/tickets', reviewRouter);
 router.use('/agents-status', agentHeartbeatRouter);
+
+// IP Whitelist routes (super admin only)
+router.get('/admin/ip-whitelist', verifyToken, requireAnyPermission('USER_VIEW_ALL'), async (req, res, next) => {
+  try {
+    const ips = await IpWhitelistService.list();
+    res.json({ success: true, data: ips });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/admin/ip-whitelist', verifyToken, requireAnyPermission('USER_VIEW_ALL'), async (req, res, next) => {
+  try {
+    const { ip_address, description } = req.body;
+    if (!ip_address) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'MISSING_IP', message: 'ip_address is required' }
+      });
+    }
+    const ip = await IpWhitelistService.create(ip_address, description, req.user.userId);
+    res.status(201).json({ success: true, data: ip });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/admin/ip-whitelist/:id', verifyToken, requireAnyPermission('USER_VIEW_ALL'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const result = await IpWhitelistService.delete(id);
+    res.json({
+      success: true,
+      data: { ...result, message: 'IP removed from whitelist' }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 module.exports = router;

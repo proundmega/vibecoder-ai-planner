@@ -1,16 +1,11 @@
 const ProviderRouter = require('../services/ProviderRouter');
 const { encrypt, decrypt, maskToken } = require('../utils/crypto');
 const { NotFoundError } = require('../errors/HttpError');
-const Project = require('../models/project');
 const { pool } = require('../db');
 
 async function addProvider(req, res, next) {
   try {
-    const { projectId } = req.params;
     const { name, providerType, apiKey, baseUrl, model, roles, maxTokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director } = req.body;
-
-    const project = await Project.findById(projectId);
-    if (!project) throw new NotFoundError('Project not found');
 
     const encryptedKey = apiKey ? encrypt(apiKey) : null;
 
@@ -24,16 +19,16 @@ async function addProvider(req, res, next) {
     let row;
     if (is_project_director) {
       const txResult = await pool.query(
-        'BEGIN; UPDATE project_providers SET is_project_director = false WHERE project_id = $1; INSERT INTO project_providers (project_id, name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true) RETURNING *; COMMIT',
-        [projectId, name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, routing_rules || '{}']
+        'BEGIN; UPDATE providers SET is_project_director = false; INSERT INTO providers (name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *; COMMIT',
+        [name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, routing_rules || '{}', true]
       );
       row = txResult.rows[0];
     } else {
       const result = await pool.query(
-        `INSERT INTO project_providers (project_id, name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director)
+        `INSERT INTO providers (name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director, is_active)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING *`,
-        [projectId, name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, routing_rules || '{}', false]
+        [name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, routing_rules || '{}', false, true]
       );
       row = result.rows[0];
     }
@@ -42,7 +37,6 @@ async function addProvider(req, res, next) {
       success: true,
       data: {
         id: row.id,
-        projectId: row.project_id,
         name: row.name,
         providerType: row.provider_type,
         apiKey: maskToken(apiKey),
@@ -67,16 +61,23 @@ async function addProvider(req, res, next) {
 
 async function updateProvider(req, res, next) {
   try {
-    const { projectId, providerId } = req.params;
+    const { id } = req.params;
     const { name, providerType, apiKey, baseUrl, model, roles, maxTokens, temperature, isActive, endpoint_url, fallback_provider, routing_rules, is_project_director } = req.body;
 
-    const project = await Project.findById(projectId);
-    if (!project) throw new NotFoundError('Project not found');
+    const existing = await pool.query(
+      'SELECT * FROM providers WHERE id = $1',
+      [id]
+    );
+
+    if (existing.rows.length === 0) {
+      throw new NotFoundError('Provider not found');
+    }
+
+    const existingRow = existing.rows[0];
 
     const updates = [];
     const values = [];
-    let paramIndex = 3;
-    let apiKeyFieldSent = false;
+    let paramIndex = 1;
 
     if (name !== undefined) {
       updates.push(`name = $${paramIndex++}`);
@@ -126,82 +127,26 @@ async function updateProvider(req, res, next) {
       updates.push(`is_project_director = $${paramIndex++}`);
       values.push(true);
     }
-    if (apiKey !== undefined) {
-      apiKeyFieldSent = true;
-    }
 
-    if (updates.length === 0 && !apiKeyFieldSent) {
-      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'No fields to update' } });
-    }
-
-    const existing = await pool.query(
-      'SELECT * FROM project_providers WHERE project_id = $1 AND id = $2',
-      [projectId, providerId]
-    );
-
-    if (existing.rows.length === 0) {
-      throw new NotFoundError('Provider not found');
-    }
-
-    const existingRow = existing.rows[0];
-
-    if (apiKeyFieldSent) {
+    if (apiKey !== undefined && apiKey !== '') {
       const existingHasKey = existingRow.api_key_encrypted != null;
-      if (apiKey && apiKey !== '') {
-        if (existingHasKey) {
-          const existingDecrypted = decrypt(existingRow.api_key_encrypted);
-          const existingMasked = maskToken(existingDecrypted);
-          if (apiKey === existingMasked) {
-            // Key unchanged (client sent back the masked version)
-          } else {
-            updates.push(`api_key_encrypted = $${paramIndex++}`);
-            values.push(encrypt(apiKey));
-          }
-        } else {
-          // No existing key — encrypt the new one directly (Issue A fix)
+      if (existingHasKey) {
+        const existingDecrypted = decrypt(existingRow.api_key_encrypted);
+        const existingMasked = maskToken(existingDecrypted);
+        if (apiKey !== existingMasked) {
           updates.push(`api_key_encrypted = $${paramIndex++}`);
           values.push(encrypt(apiKey));
         }
       } else {
-        // apiKey is empty string — clear the key
-        if (existingHasKey) {
-          updates.push(`api_key_encrypted = $${paramIndex++}`);
-          values.push(null);
-        }
+        updates.push(`api_key_encrypted = $${paramIndex++}`);
+        values.push(encrypt(apiKey));
       }
+    } else if (apiKey === '') {
+      updates.push(`api_key_encrypted = $${paramIndex++}`);
+      values.push(null);
     }
 
     if (updates.length === 0) {
-      if (apiKeyFieldSent) {
-        // Issue B: client sent only masked apiKey — no-op, return 200 with existing data
-        const result = await pool.query(
-          'SELECT * FROM project_providers WHERE project_id = $1 AND id = $2',
-          [projectId, providerId]
-        );
-        const row = result.rows[0];
-        return res.status(200).json({
-          success: true,
-          data: {
-            id: row.id,
-            projectId: row.project_id,
-            name: row.name,
-            providerType: row.provider_type,
-            apiKey: row.api_key_encrypted ? maskToken(decrypt(row.api_key_encrypted)) : null,
-            baseUrl: row.base_url,
-            model: row.model,
-            roles: row.roles,
-            maxTokens: row.max_tokens,
-            temperature: row.temperature,
-            isActive: row.is_active,
-            endpoint_url: row.endpoint_url,
-            fallback_provider: row.fallback_provider,
-            routing_rules: row.routing_rules,
-            is_project_director: row.is_project_director,
-            createdAt: row.created_at,
-            updatedAt: row.updated_at,
-          },
-        });
-      }
       return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'No fields to update' } });
     }
 
@@ -210,17 +155,13 @@ async function updateProvider(req, res, next) {
     const isDirectorPromotion = is_project_director !== undefined && is_project_director;
 
     if (isDirectorPromotion) {
-      // Issue 1+2: demotion + update must be in a single transaction to avoid orphans
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        await client.query(
-          'UPDATE project_providers SET is_project_director = false WHERE project_id = $1',
-          [projectId]
-        );
+        await client.query('UPDATE providers SET is_project_director = false');
         const result = await client.query(
-          `UPDATE project_providers SET ${updates.join(', ')} WHERE project_id = $1 AND id = $2 RETURNING *`,
-          [projectId, providerId, ...values]
+          `UPDATE providers SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+          [...values, id]
         );
         await client.query('COMMIT');
 
@@ -233,7 +174,6 @@ async function updateProvider(req, res, next) {
           success: true,
           data: {
             id: row.id,
-            projectId: row.project_id,
             name: row.name,
             providerType: row.provider_type,
             apiKey: maskToken(decrypt(row.api_key_encrypted)),
@@ -259,8 +199,8 @@ async function updateProvider(req, res, next) {
       }
     } else {
       const result = await pool.query(
-        `UPDATE project_providers SET ${updates.join(', ')} WHERE project_id = $1 AND id = $2 RETURNING *`,
-        [projectId, providerId, ...values]
+        `UPDATE providers SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+        [...values, id]
       );
 
       if (result.rows.length === 0) {
@@ -272,7 +212,6 @@ async function updateProvider(req, res, next) {
         success: true,
         data: {
           id: row.id,
-          projectId: row.project_id,
           name: row.name,
           providerType: row.provider_type,
           apiKey: maskToken(decrypt(row.api_key_encrypted)),
@@ -298,14 +237,11 @@ async function updateProvider(req, res, next) {
 
 async function deleteProvider(req, res, next) {
   try {
-    const { projectId, providerId } = req.params;
-
-    const project = await Project.findById(projectId);
-    if (!project) throw new NotFoundError('Project not found');
+    const { id } = req.params;
 
     const result = await pool.query(
-      'DELETE FROM project_providers WHERE project_id = $1 AND id = $2 RETURNING *',
-      [projectId, providerId]
+      'DELETE FROM providers WHERE id = $1 RETURNING *',
+      [id]
     );
 
     if (result.rows.length === 0) {
@@ -320,25 +256,17 @@ async function deleteProvider(req, res, next) {
 
 async function listProviders(req, res, next) {
   try {
-    const { projectId } = req.params;
-
-    const project = await Project.findById(projectId);
-    if (!project) throw new NotFoundError('Project not found');
-
     const result = await pool.query(
-      `SELECT id, project_id, name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, is_active, endpoint_url, fallback_provider, routing_rules, is_project_director, created_at, updated_at
-       FROM project_providers
-       WHERE project_id = $1
-       ORDER BY created_at DESC`,
-      [projectId]
+      `SELECT id, name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, is_active, endpoint_url, fallback_provider, routing_rules, is_project_director, created_at, updated_at
+       FROM providers
+       ORDER BY created_at DESC`
     );
 
     const providers = result.rows.map(row => ({
       id: row.id,
-      projectId: row.project_id,
       name: row.name,
       providerType: row.provider_type,
-      apiKey: maskToken(decrypt(row.api_key_encrypted)),
+      apiKey: row.api_key_encrypted ? maskToken(decrypt(row.api_key_encrypted)) : null,
       baseUrl: row.base_url,
       model: row.model,
       roles: row.roles,
@@ -359,16 +287,68 @@ async function listProviders(req, res, next) {
   }
 }
 
-async function testProvider(req, res, next) {
+async function getProvider(req, res, next) {
   try {
-    const { projectId, providerId } = req.params;
-
-    const project = await Project.findById(projectId);
-    if (!project) throw new NotFoundError('Project not found');
+    const { id } = req.params;
 
     const result = await pool.query(
-      'SELECT * FROM project_providers WHERE project_id = $1 AND id = $2',
-      [projectId, providerId]
+      'SELECT * FROM providers WHERE id = $1',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      throw new NotFoundError('Provider not found');
+    }
+
+    const row = result.rows[0];
+    res.json({
+      success: true,
+      data: {
+        id: row.id,
+        name: row.name,
+        providerType: row.provider_type,
+        apiKey: row.api_key_encrypted ? maskToken(decrypt(row.api_key_encrypted)) : null,
+        baseUrl: row.base_url,
+        model: row.model,
+        roles: row.roles,
+        maxTokens: row.max_tokens,
+        temperature: row.temperature,
+        isActive: row.is_active,
+        endpoint_url: row.endpoint_url,
+        fallback_provider: row.fallback_provider,
+        routing_rules: row.routing_rules,
+        is_project_director: row.is_project_director,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getProviderAgents(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      'SELECT id, name, provider_id FROM agents WHERE provider_id = $1',
+      [id]
+    );
+
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function testProvider(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      'SELECT * FROM providers WHERE id = $1',
+      [id]
     );
 
     if (result.rows.length === 0) {
@@ -391,7 +371,7 @@ async function testProvider(req, res, next) {
       baseUrl: baseUrl,
     };
 
-    const router = new ProviderRouter(project.id);
+    const router = new ProviderRouter(null);
     const provider = router.createProvider(providerConfig.provider_type, config);
     const isValid = await provider.validate();
 
@@ -410,14 +390,11 @@ async function testProvider(req, res, next) {
 
 async function setDirector(req, res, next) {
   try {
-    const { projectId, providerId } = req.params;
-
-    const project = await Project.findById(projectId);
-    if (!project) throw new NotFoundError('Project not found');
+    const { id } = req.params;
 
     const result = await pool.query(
-      'SELECT id FROM project_providers WHERE project_id = $1 AND id = $2',
-      [projectId, providerId]
+      'SELECT id FROM providers WHERE id = $1',
+      [id]
     );
 
     if (result.rows.length === 0) {
@@ -425,13 +402,13 @@ async function setDirector(req, res, next) {
     }
 
     await pool.query(
-      'BEGIN; UPDATE project_providers SET is_project_director = false WHERE project_id = $1; UPDATE project_providers SET is_project_director = true, updated_at = NOW() WHERE project_id = $1 AND id = $2; COMMIT',
-      [projectId, providerId]
+      'BEGIN; UPDATE providers SET is_project_director = false; UPDATE providers SET is_project_director = true, updated_at = NOW() WHERE id = $1; COMMIT',
+      [id]
     );
 
     const updated = await pool.query(
-      'SELECT * FROM project_providers WHERE project_id = $1 AND id = $2',
-      [projectId, providerId]
+      'SELECT * FROM providers WHERE id = $1',
+      [id]
     );
 
     const row = updated.rows[0];
@@ -439,7 +416,6 @@ async function setDirector(req, res, next) {
       success: true,
       data: {
         id: row.id,
-        projectId: row.project_id,
         name: row.name,
         providerType: row.provider_type,
         baseUrl: row.base_url,
@@ -461,54 +437,6 @@ async function setDirector(req, res, next) {
   }
 }
 
-async function getProviderConfig(req, res, next) {
-  try {
-    const { projectId } = req.params;
-    res.status(410).json({
-      success: false,
-      error: { code: 'GONE', message: 'Provider Config has been merged into AI Providers. Use GET /api/v1/providers/:projectId/providers?director=true to get the project director.' },
-    });
-  } catch (error) {
-    next(error);
-  }
-}
-
-async function setProviderConfig(req, res, next) {
-  try {
-    const { projectId } = req.params;
-    res.status(410).json({
-      success: false,
-      error: { code: 'GONE', message: 'Provider Config has been merged into AI Providers. Use PUT /api/v1/providers/:projectId/providers/:providerId to update, or POST /api/v1/providers/:projectId/providers to create.' },
-    });
-  } catch (error) {
-    next(error);
-  }
-}
-
-async function deleteProviderConfig(req, res, next) {
-  try {
-    const { projectId } = req.params;
-    res.status(410).json({
-      success: false,
-      error: { code: 'GONE', message: 'Provider Config has been merged into AI Providers. Use DELETE /api/v1/providers/:projectId/providers/:providerId to delete a provider.' },
-    });
-  } catch (error) {
-    next(error);
-  }
-}
-
-async function testProviderConnection(req, res, next) {
-  try {
-    const { projectId } = req.params;
-    res.status(410).json({
-      success: false,
-      error: { code: 'GONE', message: 'Provider Config has been merged into AI Providers. Use POST /api/v1/providers/:projectId/providers/:providerId/test to test a specific provider.' },
-    });
-  } catch (error) {
-    next(error);
-  }
-}
-
 module.exports = {
   addProvider,
   updateProvider,
@@ -516,8 +444,6 @@ module.exports = {
   listProviders,
   testProvider,
   setDirector,
-  getProviderConfig,
-  setProviderConfig,
-  deleteProviderConfig,
-  testProviderConnection,
+  getProvider,
+  getProviderAgents,
 };

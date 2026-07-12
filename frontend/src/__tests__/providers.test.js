@@ -6,7 +6,6 @@ vi.mock('../api/client', () => ({
   post: vi.fn(),
   patch: vi.fn(),
   del: vi.fn(),
-  put: vi.fn(),
 }))
 
 describe('providers API', () => {
@@ -17,9 +16,9 @@ describe('providers API', () => {
       const { get } = await import('../api/client')
       get.mockResolvedValue([{ id: 'p1', name: 'OpenAI' }])
 
-      const result = await providers.listProviders('proj-123')
+      const result = await providers.listProviders()
 
-      expect(get).toHaveBeenCalledWith('/api/v1/providers/proj-123/providers')
+      expect(get).toHaveBeenCalledWith('/api/v1/providers')
       expect(result).toEqual([{ id: 'p1', name: 'OpenAI' }])
     })
 
@@ -27,7 +26,7 @@ describe('providers API', () => {
       const { get } = await import('../api/client')
       get.mockRejectedValue(new Error('Network error'))
 
-      const result = await providers.listProviders('proj-123')
+      const result = await providers.listProviders()
 
       expect(result).toEqual([])
     })
@@ -38,14 +37,32 @@ describe('providers API', () => {
       const { post } = await import('../api/client')
       post.mockResolvedValue({ id: 'p1', name: 'OpenAI', providerType: 'openai' })
 
-      const result = await providers.addProvider('proj-123', 'OpenAI', 'openai', 'sk-xxx')
-
-      expect(post).toHaveBeenCalledWith('/api/v1/providers/proj-123/providers', {
+      const result = await providers.addProvider({
         name: 'OpenAI',
         providerType: 'openai',
         apiKey: 'sk-xxx',
+        model: 'gpt-4o',
+      })
+
+      expect(post).toHaveBeenCalledWith('/api/v1/providers', {
+        name: 'OpenAI',
+        providerType: 'openai',
+        apiKey: 'sk-xxx',
+        model: 'gpt-4o',
       })
       expect(result).toEqual({ id: 'p1', name: 'OpenAI', providerType: 'openai' })
+    })
+  })
+
+  describe('getProvider', () => {
+    it('sends GET request to correct URL', async () => {
+      const { get } = await import('../api/client')
+      get.mockResolvedValue({ id: 'p1', name: 'OpenAI' })
+
+      const result = await providers.getProvider('p1')
+
+      expect(get).toHaveBeenCalledWith('/api/v1/providers/p1')
+      expect(result).toEqual({ id: 'p1', name: 'OpenAI' })
     })
   })
 
@@ -54,9 +71,9 @@ describe('providers API', () => {
       const { patch } = await import('../api/client')
       patch.mockResolvedValue({ id: 'p1', name: 'Updated Name' })
 
-      const result = await providers.updateProvider('proj-123', 'prov-1', { name: 'Updated Name' })
+      const result = await providers.updateProvider('p1', { name: 'Updated Name' })
 
-      expect(patch).toHaveBeenCalledWith('/api/v1/providers/proj-123/providers/prov-1', {
+      expect(patch).toHaveBeenCalledWith('/api/v1/providers/p1', {
         name: 'Updated Name',
       })
       expect(result).toEqual({ id: 'p1', name: 'Updated Name' })
@@ -68,9 +85,9 @@ describe('providers API', () => {
       const { del } = await import('../api/client')
       del.mockResolvedValue({ deleted: true })
 
-      const result = await providers.deleteProvider('proj-123', 'prov-1')
+      const result = await providers.deleteProvider('p1')
 
-      expect(del).toHaveBeenCalledWith('/api/v1/providers/proj-123/providers/prov-1')
+      expect(del).toHaveBeenCalledWith('/api/v1/providers/p1')
       expect(result).toEqual({ deleted: true })
     })
   })
@@ -78,58 +95,51 @@ describe('providers API', () => {
   describe('testProvider', () => {
     it('sends POST request to correct URL', async () => {
       const { post } = await import('../api/client')
-      post.mockResolvedValue({ success: true, message: 'Connected' })
+      post.mockResolvedValue({ success: true, valid: true, message: 'Connected' })
 
-      const result = await providers.testProvider('proj-123', 'prov-1')
+      const result = await providers.testProvider('p1')
 
-      expect(post).toHaveBeenCalledWith('/api/v1/providers/proj-123/providers/prov-1/test', undefined)
-      expect(result).toEqual({ success: true, message: 'Connected' })
+      expect(post).toHaveBeenCalledWith('/api/v1/providers/p1/test')
+      expect(result).toEqual({ success: true, valid: true, message: 'Connected' })
     })
   })
 
-  describe('setProviderConfig', () => {
-    it('sends PUT request with snake_case fields including api_key', async () => {
-      const { put } = await import('../api/client')
-      put.mockResolvedValue({ id: 'c1', provider: 'openai', model: 'gpt-4o' })
+  describe('setDirector', () => {
+    it('sends PATCH request to correct URL', async () => {
+      const { patch } = await import('../api/client')
+      patch.mockResolvedValue({ id: 'p1', name: 'OpenAI', is_project_director: true })
 
-      const result = await providers.setProviderConfig('proj-123', {
-        provider: 'openai',
-        model: 'gpt-4o',
-        endpoint_url: 'https://api.openai.com/v1',
-        api_key: 'sk-ant-1234',
-        fallback_provider: null,
-      })
+      const result = await providers.setDirector('p1')
 
-      expect(put).toHaveBeenCalledWith('/api/v1/providers/projects/proj-123/provider', {
-        provider: 'openai',
-        model: 'gpt-4o',
-        endpoint_url: 'https://api.openai.com/v1',
-        api_key: 'sk-ant-1234',
-        fallback_provider: null,
-      })
-      expect(result).toEqual({ id: 'c1', provider: 'openai', model: 'gpt-4o' })
+      expect(patch).toHaveBeenCalledWith('/api/v1/providers/p1/directorship')
+      expect(result).toEqual({ id: 'p1', name: 'OpenAI', is_project_director: true })
     })
   })
 
-  describe('testProviderConnection', () => {
-    it('sends POST request with api_key', async () => {
+  describe('getProviderAgents', () => {
+    it('sends GET request to correct URL', async () => {
+      const { get } = await import('../api/client')
+      get.mockResolvedValue([{ id: 1, name: 'Agent 1', provider_id: 'p1' }])
+
+      const result = await providers.getProviderAgents('p1')
+
+      expect(get).toHaveBeenCalledWith('/api/v1/providers/p1/agents')
+      expect(result).toEqual([{ id: 1, name: 'Agent 1', provider_id: 'p1' }])
+    })
+  })
+
+  describe('resolveProvider', () => {
+    it('sends POST request with input', async () => {
       const { post } = await import('../api/client')
-      post.mockResolvedValue({ success: true, data: { valid: true } })
+      post.mockResolvedValue({ provider: 'p1', model: 'gpt-4o' })
 
-      const result = await providers.testProviderConnection('proj-123', {
-        provider: 'openai',
-        model: 'gpt-4o',
-        endpoint_url: 'https://api.openai.com/v1',
-        api_key: 'sk-ant-1234',
-      })
+      const result = await providers.resolveProvider({ labels: ['code-review'], priority: 'high' })
 
-      expect(post).toHaveBeenCalledWith('/api/v1/providers/projects/proj-123/provider/test', {
-        provider: 'openai',
-        model: 'gpt-4o',
-        endpoint_url: 'https://api.openai.com/v1',
-        api_key: 'sk-ant-1234',
+      expect(post).toHaveBeenCalledWith('/api/v1/providers/resolve', {
+        labels: ['code-review'],
+        priority: 'high',
       })
-      expect(result).toEqual({ success: true, data: { valid: true } })
+      expect(result).toEqual({ provider: 'p1', model: 'gpt-4o' })
     })
   })
 })

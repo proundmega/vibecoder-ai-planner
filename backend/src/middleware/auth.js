@@ -4,6 +4,7 @@ const { pool } = require('../db');
 const AgentService = require('../services/AgentService');
 const { getSecret } = require('../utils/jwt');
 const bcrypt = require('bcryptjs');
+const IpWhitelistService = require('../services/IpWhitelistService');
 const {
   getRedis,
   isRedisAvailable,
@@ -206,6 +207,36 @@ exports.requireActiveUser = async (req, res, next) => {
   }
 };
 
+async function authenticateAgentByApiKey(apiKey) {
+  // Mock validation for test keys
+  if (apiKey.startsWith('test-') || apiKey === 'mock-agent-key') {
+    return {
+      id: 'mock-agent-1',
+      name: 'GitHub PR Bot',
+      rateLimitCount: 0,
+      _mock: true,
+    };
+  }
+
+  const agent = await AgentService.getAgentByApiKey(apiKey);
+  if (!agent) {
+    return null;
+  }
+
+  // Check expiry
+  if (agent.api_key_expires_at && new Date(agent.api_key_expires_at) < new Date()) {
+    return { ...agent, _expired: true };
+  }
+
+  // Verify hash (bcrypt.compare is timing-safe)
+  const valid = await bcrypt.compare(apiKey, agent.api_key_hash);
+  if (!valid) {
+    return null;
+  }
+
+  return agent;
+}
+
 exports.agentAuth = async (req, res, next) => {
   try {
     const apiKey = req.headers['x-api-key'];
@@ -214,25 +245,12 @@ exports.agentAuth = async (req, res, next) => {
       return res.status(401).json({ error: 'Missing API key' });
     }
 
-    // Mock validation for test keys
-    if (apiKey.startsWith('test-') || apiKey === 'mock-agent-key') {
-      req.agent = {
-        id: 'mock-agent-1',
-        name: 'GitHub PR Bot',
-        rateLimitCount: req.rateLimitCount || 0
-      };
-      req.rateLimitCount = (req.agent.rateLimitCount || 0) + 1;
-      return next();
-    }
-
-    // Real agent lookup from database
-    const agent = await AgentService.getAgentByApiKey(apiKey);
+    const agent = await authenticateAgentByApiKey(apiKey);
     if (!agent) {
       return res.status(401).json({ error: 'Invalid API key' });
     }
 
-    // Check expiry
-    if (agent.api_key_expires_at && new Date(agent.api_key_expires_at) < new Date()) {
+    if (agent._expired) {
       return res.status(401).json({
         error: {
           code: 'KEY_EXPIRED',
@@ -242,13 +260,8 @@ exports.agentAuth = async (req, res, next) => {
       });
     }
 
-    // Verify hash (bcrypt.compare is timing-safe)
-    const valid = await bcrypt.compare(apiKey, agent.api_key_hash);
-    if (!valid) {
-      return res.status(401).json({ error: 'Invalid API key' });
-    }
-
     req.agent = agent;
+    req.rateLimitCount = req.rateLimitCount || 0;
     next();
   } catch (error) {
     console.error('agentAuth:', error);
@@ -269,30 +282,13 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
     return res.status(401).json({ error: 'Missing authentication token' });
   }
 
-  // Mock validation for test keys
-  if (apiKey.startsWith('test-') || apiKey === 'mock-agent-key') {
-    req.agent = {
-      id: 'mock-agent-1',
-      name: 'GitHub PR Bot',
-    };
-    req.user = {
-      userId: req.agent.id,
-      id: req.agent.id,
-      email: 'agent@vibecode.local',
-      role: 'member',
-    };
-    return next();
-  }
-
-  // Real agent lookup from database
   try {
-    const agent = await AgentService.getAgentByApiKey(apiKey);
+    const agent = await authenticateAgentByApiKey(apiKey);
     if (!agent) {
       return res.status(401).json({ error: 'Invalid API key' });
     }
 
-    // Check expiry
-    if (agent.api_key_expires_at && new Date(agent.api_key_expires_at) < new Date()) {
+    if (agent._expired) {
       return res.status(401).json({
         error: {
           code: 'KEY_EXPIRED',
@@ -300,12 +296,6 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
           expiredAt: agent.api_key_expires_at,
         },
       });
-    }
-
-    // Verify hash (bcrypt.compare is timing-safe)
-    const valid = await bcrypt.compare(apiKey, agent.api_key_hash);
-    if (!valid) {
-      return res.status(401).json({ error: 'Invalid API key' });
     }
 
     req.agent = agent;
@@ -326,6 +316,17 @@ exports.rateLimiter = (maxRequests = 10, timeWindow = 60 * 1000) => {
   return async (req, res, next) => {
     // Skip rate limiting during integration tests
     if (process.env.INTEGRATION_TESTS === '1') return next();
+    
+    // Check IP whitelist
+    try {
+      const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
+      const isWhitelisted = await IpWhitelistService.isWhitelisted(clientIp);
+      if (isWhitelisted) {
+        return next();
+      }
+    } catch (error) {
+      console.error('IP whitelist check failed:', error.message);
+    }
     
     const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
     const key = `ratelimit:${clientIp}`;

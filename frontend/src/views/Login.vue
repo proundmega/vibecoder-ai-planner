@@ -1,6 +1,13 @@
 <template>
   <div class="login">
     <h1 class="login__title">Sign In</h1>
+    <div v-if="rateLimitStore.rateLimitActive" class="rate-limit-banner">
+      <svg class="rate-limit-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <polyline points="12 6 12 12 16 14"/>
+      </svg>
+      <span>Too many requests. Try again in {{ Math.floor(Number(rateLimitStore.countdownSeconds) / 60) }}m {{ Number(rateLimitStore.countdownSeconds) % 60 }}s.</span>
+    </div>
     <div v-if="lockoutActive" class="lockout-banner">
       <svg class="lockout-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
@@ -44,9 +51,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onUnmounted } from 'vue'
+import { ref, onUnmounted, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useRateLimitStore } from '@/stores/rateLimit'
 import { loginUser } from '@/api/auth'
 import { get } from '@/api/client'
 import VInput from '@/components/VInput.vue'
@@ -61,8 +69,13 @@ const lockedUntil = ref<string | null>(null)
 const countdownSeconds = ref(0)
 let countdownTimer: ReturnType<typeof setTimeout> | null = null
 const authStore = useAuthStore()
+const rateLimitStore = useRateLimitStore()
 const router = useRouter()
 const route = useRoute()
+
+onMounted(() => {
+  rateLimitStore.restoreFromStorage();
+});
 
 function startCountdown() {
   const update = () => {
@@ -119,7 +132,11 @@ const handleLogin = async () => {
     countdownSeconds.value = 0
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
     router.push(redirect)
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.error?.code === 'RATE_LIMITED') {
+      rateLimitStore.setRateLimit(err.error.retryAfter);
+      return;
+    }
     console.error('Login failed:', err)
     errorMessage.value = err instanceof Error ? err.message : 'Login failed. Please check your credentials.'
   } finally {
@@ -179,6 +196,23 @@ onUnmounted(() => {
 }
 
 .lockout-icon {
+  flex-shrink: 0;
+}
+
+.rate-limit-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 0.5rem;
+  color: #92400e;
+  font-size: 0.875rem;
+}
+
+.rate-limit-icon {
   flex-shrink: 0;
 }
 </style>

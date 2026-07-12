@@ -13,12 +13,12 @@ describe('ProviderService', () => {
     decrypt.mockReturnValue('decrypted-mock-key');
   });
 
-  describe('getProjectProvider', () => {
-    it('returns active provider config for project', async () => {
-      const mockConfig = { id: 'pp1', project_id: 1, provider_type: 'openai', model: 'gpt-4' };
+  describe('getGlobalProvider', () => {
+    it('returns active provider config', async () => {
+      const mockConfig = { id: 1, provider_type: 'openai', model: 'gpt-4' };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.getProjectProvider(1);
+      const result = await ProviderService.getGlobalProvider();
 
       expect(result).toEqual(mockConfig);
     });
@@ -26,7 +26,7 @@ describe('ProviderService', () => {
     it('returns null when no active config', async () => {
       pool.query.mockResolvedValueOnce({ rows: [] });
 
-      const result = await ProviderService.getProjectProvider(999);
+      const result = await ProviderService.getGlobalProvider();
 
       expect(result).toBeNull();
     });
@@ -36,18 +36,18 @@ describe('ProviderService', () => {
     it('throws when no active provider config', async () => {
       pool.query.mockResolvedValueOnce({ rows: [] });
 
-      await expect(ProviderService.resolveProvider(1, {})).rejects.toThrow('No active provider configuration found for this project');
+      await expect(ProviderService.resolveProvider({})).rejects.toThrow('No active provider configuration found');
     });
 
     it('returns default provider when no routing rules', async () => {
       const mockConfig = {
-        id: 'pp1', provider_type: 'openai', model: 'gpt-4',
+        id: 1, provider_type: 'openai', model: 'gpt-4',
         base_url: 'https://api.openai.com', api_key_encrypted: 'enc-key',
         max_tokens: 4096, temperature: 0.1,
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider(1, { labels: [], priority: 'medium' });
+      const result = await ProviderService.resolveProvider({ labels: [], priority: 'medium' });
 
       expect(result).toEqual({
         provider: 'openai',
@@ -62,20 +62,20 @@ describe('ProviderService', () => {
 
     it('returns default provider when rules array is empty', async () => {
       const mockConfig = {
-        id: 'pp1', provider_type: 'openai', model: 'gpt-4',
+        id: 1, provider_type: 'openai', model: 'gpt-4',
         base_url: 'https://api.openai.com', api_key_encrypted: 'enc-key',
         routing_rules: { rules: [] },
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider(1, {});
+      const result = await ProviderService.resolveProvider({});
 
       expect(result.provider).toBe('openai');
     });
 
     it('matches rule by label (OR logic)', async () => {
       const mockConfig = {
-        id: 'pp1', provider_type: 'openai', model: 'gpt-4',
+        id: 1, provider_type: 'openai', model: 'gpt-4',
         api_key_encrypted: 'enc-key',
         routing_rules: {
           rules: [
@@ -86,14 +86,14 @@ describe('ProviderService', () => {
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider(1, { labels: ['backend', 'urgent'] });
+      const result = await ProviderService.resolveProvider({ labels: ['backend', 'urgent'] });
 
       expect(result.provider).toBe('backend-model');
     });
 
     it('matches rule by priority', async () => {
       const mockConfig = {
-        id: 'pp1', provider_type: 'openai', model: 'gpt-4',
+        id: 1, provider_type: 'openai', model: 'gpt-4',
         api_key_encrypted: 'enc-key',
         routing_rules: {
           rules: [
@@ -104,14 +104,14 @@ describe('ProviderService', () => {
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider(1, { priority: 'high' });
+      const result = await ProviderService.resolveProvider({ priority: 'high' });
 
       expect(result.provider).toBe('expensive-model');
     });
 
     it('matches rule by combined label AND priority', async () => {
       const mockConfig = {
-        id: 'pp1', provider_type: 'openai', model: 'gpt-4',
+        id: 1, provider_type: 'openai', model: 'gpt-4',
         api_key_encrypted: 'enc-key',
         routing_rules: {
           rules: [
@@ -122,14 +122,14 @@ describe('ProviderService', () => {
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider(1, { labels: ['frontend'], priority: 'high' });
+      const result = await ProviderService.resolveProvider({ labels: ['frontend'], priority: 'high' });
 
       expect(result.provider).toBe('premium');
     });
 
     it('returns fallback when no rule matches', async () => {
       const mockConfig = {
-        id: 'pp1', provider_type: 'openai', model: 'gpt-4',
+        id: 1, provider_type: 'openai', model: 'gpt-4',
         api_key_encrypted: 'enc-key',
         routing_rules: {
           rules: [
@@ -140,7 +140,7 @@ describe('ProviderService', () => {
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider(1, { labels: ['backend'] });
+      const result = await ProviderService.resolveProvider({ labels: ['backend'] });
 
       expect(result.provider).toBe('fallback-model');
       expect(result.is_fallback).toBe(true);
@@ -148,7 +148,7 @@ describe('ProviderService', () => {
 
     it('uses rule-level api_key when present', async () => {
       const mockConfig = {
-        id: 'pp1', provider_type: 'openai', model: 'gpt-4',
+        id: 1, provider_type: 'openai', model: 'gpt-4',
         api_key_encrypted: 'enc-key',
         routing_rules: {
           rules: [
@@ -158,14 +158,14 @@ describe('ProviderService', () => {
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider(1, { labels: ['test'] });
+      const result = await ProviderService.resolveProvider({ labels: ['test'] });
 
       expect(result.api_key).toBe('rule-key');
     });
 
     it('uses rule-level endpoint_url and model overrides', async () => {
       const mockConfig = {
-        id: 'pp1', provider_type: 'openai', model: 'gpt-4',
+        id: 1, provider_type: 'openai', model: 'gpt-4',
         base_url: 'https://api.openai.com', api_key_encrypted: 'enc-key',
         max_tokens: 4096, temperature: 0.1,
         routing_rules: {
@@ -176,7 +176,7 @@ describe('ProviderService', () => {
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider(1, {});
+      const result = await ProviderService.resolveProvider({});
 
       expect(result.provider).toBe('custom');
       expect(result.endpoint_url).toBe('https://custom.api');

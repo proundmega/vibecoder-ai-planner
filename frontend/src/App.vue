@@ -6,6 +6,7 @@
         <div class="nav-links">
           <router-link to="/dashboard" class="nav-link">Dashboard</router-link>
           <router-link to="/projects" class="nav-link">Projects</router-link>
+          <router-link to="/providers" class="nav-link">Providers</router-link>
           <router-link to="/approvals" class="nav-link">Approvals</router-link>
           <router-link v-if="showBillingLink" to="/billing" class="nav-link">Billing</router-link>
           <router-link v-if="showUsersLink" to="/users" class="nav-link">Users</router-link>

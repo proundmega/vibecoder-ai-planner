@@ -135,10 +135,10 @@ router.get('/docs', (req, res) => {
 
 /**
  * @openapi
- * /metrics:
+ * /api/metrics:
  *   get:
  *     tags: [System]
- *     summary: Server metrics
+ *     summary: Server metrics (JSON format)
  *     responses:
  *       200:
  *         description: Server metrics including uptime and memory usage

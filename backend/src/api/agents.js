@@ -48,12 +48,15 @@ const createAgentSchema = Joi.object({
  */
 router.post('/create', verifyTokenOrAgent, requireAnyPermission('AGENT_CREATE'), validate(createAgentSchema), async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, providerId } = req.body;
     const apiKey = `ak_${crypto.randomBytes(24).toString('hex')}`;
-    const agent = await AgentService.create(name, apiKey, req.user.userId);
+    const agent = await AgentService.create(name, apiKey, req.user.userId, providerId || null);
     res.status(201).json({ ...agent, generatedApiKey: apiKey });
   } catch (error) {
     logger.error('POST /api/agents/create', error);
+    if (error.message === 'PROVIDER_NOT_FOUND') {
+      return res.status(404).json({ error: 'Provider not found' });
+    }
     res.status(400).json({ error: error.message });
   }
 });

@@ -1,5 +1,6 @@
 import router from '../router'
 import { useAuthStore } from '../stores/auth'
+import { useRateLimitStore } from '../stores/rateLimit'
 
 interface ApiOptions extends RequestInit {
   validate?: (data: unknown) => void
@@ -7,10 +8,22 @@ interface ApiOptions extends RequestInit {
 
 interface ExtendedError extends Error {
   status?: number
+  rateLimitInfo?: { retryAfter: number; retryAt: string }
+}
+
+interface RateLimitError {
+  success: false;
+  error: {
+    code: 'RATE_LIMITED';
+    message: string;
+    retryAfter: number;
+    retryAt: string;
+  };
 }
 
 function apiFetch(url: string, options: ApiOptions = {}): Promise<Response> {
   const authStore = useAuthStore()
+  const rateLimitStore = useRateLimitStore()
   const token = authStore.token.value
 
   const headers: Record<string, string> = {
@@ -30,6 +43,29 @@ function apiFetch(url: string, options: ApiOptions = {}): Promise<Response> {
         const err = new Error('Unauthorized') as ExtendedError
         err.status = 401
         throw err
+      }
+      if (response.status === 429) {
+        const retryAfterHeader = response.headers.get('Retry-After') || '60';
+        const retryAfter = parseInt(retryAfterHeader, 10);
+        const retryAt = new Date(Date.now() + retryAfter * 1000).toISOString();
+        
+        rateLimitStore.setRateLimit(retryAfter);
+        
+        const rateLimitError = {
+          success: false as const,
+          error: {
+            code: 'RATE_LIMITED' as const,
+            message: `Too many requests. Please try again in ${retryAfter} seconds.`,
+            retryAfter,
+            retryAt,
+          }
+        };
+        
+        const err = new Error(rateLimitError.error.message) as ExtendedError & RateLimitError;
+        err.status = 429;
+        err.rateLimitInfo = { retryAfter, retryAt };
+        Object.assign(err, { error: rateLimitError.error });
+        throw err;
       }
       if (!response.ok) {
         let message = `HTTP ${response.status}`

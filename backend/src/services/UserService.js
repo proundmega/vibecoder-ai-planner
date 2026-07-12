@@ -7,6 +7,7 @@ const { getSecret } = require('../utils/jwt');
 const logger = require('../utils/logger');
 
 const MAX_LOGIN_ATTEMPTS = 10;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
 class UserService {
   async register(name, email, password, role = 'project_admin', userCreatedBy = null) {
@@ -274,10 +275,11 @@ class UserService {
   }
 
   async incrementFailedAttempts(userId) {
+    const lockoutDuration = `${LOCKOUT_DURATION_MS / 1000 / 60} minutes`;
     const result = await pool.query(
       `UPDATE users SET login_attempts = COALESCE(login_attempts, 0) + 1,
        locked_until = CASE
-         WHEN COALESCE(login_attempts, 0) + 1 >= $2 THEN NOW() + INTERVAL '15 minutes'
+         WHEN COALESCE(login_attempts, 0) + 1 >= $2 THEN NOW() + INTERVAL '${lockoutDuration}'
          ELSE locked_until
        END
        WHERE id = $1

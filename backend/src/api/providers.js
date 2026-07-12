@@ -7,53 +7,24 @@ const providerController = require('../controllers/providerController');
 const { addProviderSchema, updateProviderSchema } = require('../validators/providers');
 const ProviderService = require('../services/ProviderService');
 
-// Deprecated routes (410 Gone) — kept for backward compatibility
-router.get('/projects/:projectId/provider', verifyToken, providerController.getProviderConfig);
-router.put('/projects/:projectId/provider', verifyToken, providerController.setProviderConfig);
-router.delete('/projects/:projectId/provider', verifyToken, providerController.deleteProviderConfig);
-router.post('/projects/:projectId/provider/test', verifyToken, providerController.testProviderConnection);
-router.post('/projects/:projectId/provider/resolve', verifyToken, async (req, res, next) => {
-  try {
-    const ticketInfo = {
-      labels: req.body.labels || [],
-      priority: req.body.priority || 'medium',
-      phase: req.body.phase || 'backlog',
-    };
-    const config = await ProviderService.resolveProvider(req.params.projectId, ticketInfo);
-    res.json({ success: true, data: config });
-  } catch (err) {
-    next(err);
-  }
-});
-
 /**
  * @openapi
- * /providers/{projectId}/providers:
+ * /providers:
  *   get:
  *     tags: [Providers]
- *     summary: List providers for project
- *     parameters:
- *       - in: path
- *         name: projectId
- *         required: true
- *         schema: { type: string, format: uuid }
+ *     summary: List all providers
  *     responses:
  *       200:
  *         description: List of providers
  */
-router.get('/:projectId/providers', verifyToken, providerController.listProviders);
+router.get('/', verifyToken, providerController.listProviders);
 
 /**
  * @openapi
- * /providers/{projectId}/providers:
+ * /providers:
  *   post:
  *     tags: [Providers]
- *     summary: Add provider to project
- *     parameters:
- *       - in: path
- *         name: projectId
- *         required: true
- *         schema: { type: string, format: uuid }
+ *     summary: Add a new provider
  *     requestBody:
  *       content:
  *         application/json:
@@ -61,29 +32,54 @@ router.get('/:projectId/providers', verifyToken, providerController.listProvider
  *             type: object
  *             properties:
  *               name: { type: string }
- *               provider: { type: string }
+ *               providerType: { type: string }
  *               apiKey: { type: string }
  *     responses:
  *       201:
- *         description: Provider added
+ *         description: Provider created
  */
-router.post('/:projectId/providers', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), validate(addProviderSchema), providerController.addProvider);
+router.post('/', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), validate(addProviderSchema), providerController.addProvider);
+
+// Deprecation stubs for old per-project routes — must come before :/id routes
+const deprecatedRoute = (req, res) => {
+  res.status(410).json({
+    success: false,
+    error: { code: 'DEPRECATED', message: 'Providers are now global. Use /api/v1/providers instead.' }
+  });
+};
+
+router.use('/projects/:projectId/provider', deprecatedRoute);
+router.use('/projects/:projectId/providers', deprecatedRoute);
+router.use('/projects/:projectId/providers/', deprecatedRoute);
 
 /**
  * @openapi
- * /providers/{projectId}/providers/{providerId}:
- *   patch:
+ * /providers/{id}:
+ *   get:
  *     tags: [Providers]
- *     summary: Update provider
+ *     summary: Get a provider by ID
  *     parameters:
  *       - in: path
- *         name: projectId
+ *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Provider details
+ */
+router.get('/:id', verifyToken, providerController.getProvider);
+
+/**
+ * @openapi
+ * /providers/{id}:
+ *   patch:
+ *     tags: [Providers]
+ *     summary: Update a provider
+ *     parameters:
  *       - in: path
- *         name: providerId
+ *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { type: string }
  *     requestBody:
  *       content:
  *         application/json:
@@ -91,110 +87,106 @@ router.post('/:projectId/providers', verifyToken, requireAnyPermission('PROJECT_
  *             type: object
  *             properties:
  *               name: { type: string }
- *               apiKey: { type: string }
  *     responses:
  *       200:
  *         description: Provider updated
  */
-router.patch('/:projectId/providers/:providerId', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), validate(updateProviderSchema), providerController.updateProvider);
+router.patch('/:id', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), validate(updateProviderSchema), providerController.updateProvider);
 
 /**
  * @openapi
- * /providers/{projectId}/providers/{providerId}:
+ * /providers/{id}:
  *   delete:
  *     tags: [Providers]
- *     summary: Delete provider
+ *     summary: Delete a provider
  *     parameters:
  *       - in: path
- *         name: projectId
+ *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
- *       - in: path
- *         name: providerId
- *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { type: string }
  *     responses:
  *       200:
  *         description: Provider deleted
  */
-router.delete('/:projectId/providers/:providerId', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), providerController.deleteProvider);
+router.delete('/:id', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), providerController.deleteProvider);
 
 /**
  * @openapi
- * /providers/{projectId}/providers/{providerId}/test:
+ * /providers/{id}/test:
  *   post:
  *     tags: [Providers]
  *     summary: Test provider connection
  *     parameters:
  *       - in: path
- *         name: projectId
+ *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
- *       - in: path
- *         name: providerId
- *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { type: string }
  *     responses:
  *       200:
  *         description: Connection test result
  */
-router.post('/:projectId/providers/:providerId/test', verifyToken, providerController.testProvider);
+router.post('/:id/test', verifyToken, providerController.testProvider);
 
 /**
  * @openapi
- * /providers/{projectId}/providers/{providerId}/directorate:
+ * /providers/{id}/directorship:
  *   patch:
  *     tags: [Providers]
- *     summary: Set provider as project director
+ *     summary: Set provider as director
  *     parameters:
  *       - in: path
- *         name: projectId
+ *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
- *       - in: path
- *         name: providerId
- *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Provider set as director
+ *         description: Directorship updated
  */
-router.patch('/:projectId/providers/:providerId/directorate', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), providerController.setDirector);
+router.patch('/:id/directorship', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), providerController.setDirector);
 
 /**
  * @openapi
- * /providers/{projectId}/provider/resolve:
- *   post:
+ * /providers/{id}/agents:
+ *   get:
  *     tags: [Providers]
- *     summary: Resolve AI provider for a ticket based on routing rules
+ *     summary: Get agents for a provider
  *     parameters:
  *       - in: path
- *         name: projectId
+ *         name: id
  *         required: true
  *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: List of agents
+ */
+router.get('/:id/agents', verifyToken, providerController.getProviderAgents);
+
+/**
+ * @openapi
+ * /providers/resolve:
+ *   post:
+ *     tags: [Providers]
+ *     summary: Resolve provider for a ticket
  *     requestBody:
- *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
  *             properties:
- *               ticket_id: { type: string }
  *               labels: { type: array, items: { type: string } }
  *               priority: { type: string }
- *               phase: { type: string }
  *     responses:
  *       200:
  *         description: Resolved provider config
  */
-router.post('/:projectId/provider/resolve', verifyToken, async (req, res, next) => {
+router.post('/resolve', verifyToken, async (req, res, next) => {
   try {
     const ticketInfo = {
       labels: req.body.labels || [],
       priority: req.body.priority || 'medium',
       phase: req.body.phase || 'backlog',
     };
-    const config = await ProviderService.resolveProvider(req.params.projectId, ticketInfo);
+    const config = await ProviderService.resolveProvider(ticketInfo);
     res.json({ success: true, data: config });
   } catch (err) {
     next(err);
