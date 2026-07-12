@@ -43,6 +43,7 @@ const SQL_FILES = [
 
 const DATA_MIGRATIONS = [
   path.join(__dirname, './migrate_provider_api_keys.js'),
+  path.join(__dirname, './backfill_agent_key_hashes.js'),
 ];
 
 const { spawn } = require('child_process');

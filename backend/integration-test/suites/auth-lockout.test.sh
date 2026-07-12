@@ -45,6 +45,10 @@ test_account_lockout() {
     else
       fail "Failed login attempt $i" "expected 401 or 429, got $login_code"
     fi
+    # Add delay to avoid IP rate limiter (5 req/min) interfering with lockout test
+    if [ "$i" -lt 10 ]; then
+      sleep 1
+    fi
   done
 
   # 4. 11th attempt should return 423 (account locked)

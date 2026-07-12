@@ -1,5 +1,11 @@
 const AgentService = require('../services/AgentService');
 const { pool } = require('../db');
+const bcrypt = require('bcryptjs');
+
+jest.mock('bcryptjs', () => ({
+  hash: jest.fn().mockResolvedValue('$2a$10$mockhash123456789012345678901234567890'),
+  compare: jest.fn().mockResolvedValue(true),
+}));
 
 describe('AgentService', () => {
   beforeEach(() => {
@@ -7,17 +13,19 @@ describe('AgentService', () => {
   });
 
   describe('create', () => {
-    it('creates agent with defaults', async () => {
-      const mockRow = { id: 'a1', name: 'Test Agent', api_key: 'key-123', rate_limit: 100, max_actions_per_day: 1000 };
+    it('creates agent with defaults (no plaintext key stored)', async () => {
+      const mockRow = { id: 'a1', name: 'Test Agent', api_key_expires_at: new Date() };
       pool.query.mockResolvedValueOnce({ rows: [mockRow] });
 
       const result = await AgentService.create('Test Agent', 'key-123', 'user-1');
 
+      // Query should NOT include plaintext key
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO agents'),
-        expect.arrayContaining(['Test Agent', 'key-123', 'user-1', 100, 1000])
+        expect.arrayContaining(['Test Agent', '$2a$10$mockhash123456789012345678901234567890', expect.any(Date), 'user-1', null, 100, 1000])
       );
-      expect(result).toEqual(mockRow);
+      // Result should include plaintext key for the user to copy
+      expect(result.api_key).toBe('key-123');
     });
   });
 
@@ -141,21 +149,35 @@ describe('AgentService', () => {
   });
 
   describe('getAgentByApiKey', () => {
-    it('finds agent by exact api_key', async () => {
-      const mockRow = { id: 'a1', name: 'Agent', api_key: 'key-123' };
+    it('finds agent by hash comparison', async () => {
+      bcrypt.compare.mockResolvedValueOnce(true);
+      const mockRow = { id: 'a1', name: 'Agent', api_key_hash: '$2a$10$hash', provider_name: null, provider_type: null };
       pool.query.mockResolvedValueOnce({ rows: [mockRow] });
 
       const result = await AgentService.getAgentByApiKey('key-123');
 
-      expect(result).toEqual(mockRow);
+      expect(result).not.toBeNull();
+      expect(result.name).toBe('Agent');
     });
 
-    it('returns undefined when no match', async () => {
-      pool.query.mockResolvedValueOnce({ rows: [] });
+    it('returns null when no match', async () => {
+      bcrypt.compare.mockResolvedValueOnce(false);
+      const mockRow = { id: 'a1', name: 'Agent', api_key_hash: '$2a$10$hash', provider_name: null, provider_type: null };
+      pool.query.mockResolvedValueOnce({ rows: [mockRow] });
 
       const result = await AgentService.getAgentByApiKey('wrong-key');
 
-      expect(result).toBeUndefined();
+      expect(result).toBeNull();
+    });
+
+    it('skips agents with null hash (query filters them)', async () => {
+      // The SQL query filters WHERE api_key_hash IS NOT NULL
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      const result = await AgentService.getAgentByApiKey('any-key');
+
+      expect(result).toBeNull();
+      expect(bcrypt.compare).not.toHaveBeenCalled();
     });
   });
 

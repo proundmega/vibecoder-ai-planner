@@ -1,10 +1,13 @@
 const auth = require('../middleware/auth');
-const { pool } = require('../db');
 const AgentService = require('../services/AgentService');
 
-jest.mock('../db');
 jest.mock('../services/AgentService', () => ({
   getAgentByApiKey: jest.fn(),
+}));
+
+jest.mock('bcryptjs', () => ({
+  hash: jest.fn().mockResolvedValue('$2a$10$mockhash'),
+  compare: jest.fn().mockResolvedValue(true),
 }));
 
 describe('Agent Key Rotation - Middleware', () => {
@@ -21,6 +24,7 @@ describe('Agent Key Rotation - Middleware', () => {
       headers: {},
       user: null,
       agent: null,
+      rateLimitCount: 0,
     };
   });
 
@@ -29,7 +33,6 @@ describe('Agent Key Rotation - Middleware', () => {
     const mockAgent = {
       id: 1,
       name: 'test-agent',
-      api_key: 'ak_test123',
       api_key_hash: '$2a$10$hash',
       api_key_expires_at: expiredDate,
     };
@@ -50,20 +53,16 @@ describe('Agent Key Rotation - Middleware', () => {
   });
 
   it('allows valid key with correct hash', async () => {
-    const bcrypt = require('bcryptjs');
-    const validKey = 'ak_valid123';
-    const hash = await bcrypt.hash(validKey, 10);
     const futureDate = new Date(Date.now() + 86400000);
     const mockAgent = {
       id: 1,
       name: 'test-agent',
-      api_key: validKey,
-      api_key_hash: hash,
+      api_key_hash: '$2a$10$hash',
       api_key_expires_at: futureDate,
     };
     AgentService.getAgentByApiKey.mockResolvedValue(mockAgent);
 
-    mockReq.headers['x-api-key'] = validKey;
+    mockReq.headers['x-api-key'] = 'ak_valid123';
     await auth.agentAuth(mockReq, mockRes, nextFn);
 
     expect(nextFn).toHaveBeenCalled();
