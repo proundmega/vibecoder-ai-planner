@@ -7,16 +7,23 @@ const SALT_ROUNDS = 10;
 const DEFAULT_KEY_EXPIRY_DAYS = 30;
 
 class AgentService {
-  async create(name, apiKey, userId) {
+  async create(name, apiKey, userId, providerId = null) {
+    if (providerId) {
+      const providerCheck = await pool.query('SELECT id FROM providers WHERE id = $1', [providerId]);
+      if (providerCheck.rows.length === 0) {
+        throw new Error('PROVIDER_NOT_FOUND');
+      }
+    }
+
     const apiKeyHash = await bcrypt.hash(apiKey, SALT_ROUNDS);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + DEFAULT_KEY_EXPIRY_DAYS);
 
     const result = await pool.query(
-      `INSERT INTO agents (name, api_key, api_key_hash, api_key_expires_at, owner_id, rate_limit, max_actions_per_day) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7) 
-       RETURNING id, name, api_key, api_key_expires_at, created_at`,
-      [name, apiKey, apiKeyHash, expiresAt, userId, 100, 1000]
+      `INSERT INTO agents (name, api_key, api_key_hash, api_key_expires_at, owner_id, provider_id, rate_limit, max_actions_per_day) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+       RETURNING id, name, api_key, api_key_expires_at, provider_id, created_at`,
+      [name, apiKey, apiKeyHash, expiresAt, userId, providerId, 100, 1000]
     );
     return result.rows[0];
   }
@@ -45,7 +52,11 @@ class AgentService {
 
   async list(userId) {
     const result = await pool.query(
-      'SELECT * FROM agents WHERE owner_id = $1 ORDER BY created_at DESC',
+      `SELECT agents.*, providers.name as provider_name, providers.provider_type as provider_type
+       FROM agents 
+       LEFT JOIN providers ON agents.provider_id = providers.id
+       WHERE agents.owner_id = $1 
+       ORDER BY agents.created_at DESC`,
       [userId]
     );
     return result.rows;
@@ -116,7 +127,10 @@ class AgentService {
 
   async getAgentByApiKey(apiKey) {
     const result = await pool.query(
-      'SELECT * FROM agents WHERE api_key = $1',
+      `SELECT agents.*, providers.name as provider_name, providers.provider_type as provider_type
+       FROM agents 
+       LEFT JOIN providers ON agents.provider_id = providers.id
+       WHERE agents.api_key = $1`,
       [apiKey]
     );
     return result.rows[0];

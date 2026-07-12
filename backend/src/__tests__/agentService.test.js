@@ -29,7 +29,7 @@ describe('AgentService', () => {
       const result = await AgentService.list('user-1');
 
       expect(pool.query).toHaveBeenCalledWith(
-        'SELECT * FROM agents WHERE owner_id = $1 ORDER BY created_at DESC',
+        expect.stringContaining('SELECT agents.*'),
         ['user-1']
       );
       expect(result).toEqual(mockRows);

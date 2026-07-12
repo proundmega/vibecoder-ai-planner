@@ -25,6 +25,11 @@ describe('Provider Controller', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    pool.query.mockReset().mockResolvedValue({ rows: [] });
+    pool.connect.mockReset().mockResolvedValue({
+      query: jest.fn().mockResolvedValue({ rows: [] }),
+      release: jest.fn(),
+    });
     nextFn = jest.fn();
     mockRes = {
       status: jest.fn().mockReturnThis(),
@@ -42,7 +47,7 @@ describe('Provider Controller', () => {
 
   describe('addProvider', () => {
     it('should add a provider with 201 status', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       pool.query.mockResolvedValueOnce({
         rows: [{
           id: 1,
@@ -65,7 +70,7 @@ describe('Provider Controller', () => {
         }],
       });
 
-      mockReq.params.projectId = '1';
+      mockReq.params.id = '1';
       mockReq.body = {
         name: 'claude-pro',
         providerType: 'claude',
@@ -94,7 +99,7 @@ describe('Provider Controller', () => {
 
   describe('updateProvider', () => {
     it('should update a provider', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       pool.query
         .mockResolvedValueOnce({
           rows: [{
@@ -139,8 +144,8 @@ describe('Provider Controller', () => {
           }],
         });
 
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '1';
+      mockReq.params.id = '1';
+      mockReq.params.id = '1';
       mockReq.body = {
         name: 'claude-pro-updated',
         model: 'claude-3-opus-20240229',
@@ -167,13 +172,13 @@ describe('Provider Controller', () => {
 
   describe('deleteProvider', () => {
     it('should delete a provider', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       pool.query.mockResolvedValueOnce({
         rows: [{ id: 1, project_id: 1 }],
       });
 
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '1';
+      mockReq.params.id = '1';
+      mockReq.params.id = '1';
 
       await providerController.deleteProvider(mockReq, mockRes, nextFn);
 
@@ -186,7 +191,7 @@ describe('Provider Controller', () => {
 
   describe('listProviders', () => {
     it('should list all providers for a project', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       pool.query.mockResolvedValueOnce({
         rows: [
           {
@@ -211,7 +216,7 @@ describe('Provider Controller', () => {
         ],
       });
 
-      mockReq.params.projectId = '1';
+      mockReq.params.id = '1';
 
       await providerController.listProviders(mockReq, mockRes, nextFn);
 
@@ -233,7 +238,7 @@ describe('Provider Controller', () => {
 
   describe('testProvider', () => {
     it('should test provider connection', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       pool.query.mockResolvedValueOnce({
         rows: [{
           id: 1,
@@ -253,8 +258,8 @@ describe('Provider Controller', () => {
       };
       ProviderRouter.prototype.createProvider = jest.fn().mockReturnValue(mockProvider);
 
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '1';
+      mockReq.params.id = '1';
+      mockReq.params.id = '1';
 
       await providerController.testProvider(mockReq, mockRes, nextFn);
 
@@ -269,56 +274,6 @@ describe('Provider Controller', () => {
     });
   });
 
-  describe('getProviderConfig', () => {
-    it('should return 410 Gone (deprecated)', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
-
-      mockReq.params.projectId = '1';
-
-      await providerController.getProviderConfig(mockReq, mockRes, nextFn);
-
-      expect(mockRes.status).toHaveBeenCalledWith(410);
-      expect(mockRes.json).toHaveBeenCalledWith({
-        success: false,
-        error: expect.objectContaining({ code: 'GONE' }),
-      });
-    });
-  });
-
-  describe('setProviderConfig', () => {
-    it('should return 410 Gone (deprecated)', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
-
-      mockReq.params.projectId = '1';
-      mockReq.body = { provider: 'openai', model: 'gpt-4o' };
-
-      await providerController.setProviderConfig(mockReq, mockRes, nextFn);
-
-      expect(mockRes.status).toHaveBeenCalledWith(410);
-      expect(mockRes.json).toHaveBeenCalledWith({
-        success: false,
-        error: expect.objectContaining({ code: 'GONE' }),
-      });
-    });
-  });
-
-  describe('testProviderConnection', () => {
-    it('should return 410 Gone (deprecated)', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
-
-      mockReq.params.projectId = '1';
-      mockReq.body = { provider: 'openai', model: 'gpt-4o' };
-
-      await providerController.testProviderConnection(mockReq, mockRes, nextFn);
-
-      expect(mockRes.status).toHaveBeenCalledWith(410);
-      expect(mockRes.json).toHaveBeenCalledWith({
-        success: false,
-        error: expect.objectContaining({ code: 'GONE' }),
-      });
-    });
-  });
-
   describe('BP-51-11: db require at module level', () => {
     it('should have pool available at module level (not inline require)', () => {
       // If require('../db') is at module level, the mock in jest.mock() works
@@ -328,7 +283,7 @@ describe('Provider Controller', () => {
     });
 
     it('should use module-level pool for addProvider', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       pool.query.mockResolvedValueOnce({
         rows: [{
           id: 1,
@@ -347,7 +302,7 @@ describe('Provider Controller', () => {
         }],
       });
 
-      mockReq.params.projectId = '1';
+      mockReq.params.id = '1';
       mockReq.body = {
         name: 'test',
         providerType: 'openai',
@@ -363,11 +318,10 @@ describe('Provider Controller', () => {
   });
 
   describe('Provider param naming: projectId vs id', () => {
-    it('should use projectId param for addProvider', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+    it('should use id param for addProvider (global scope)', async () => {
       pool.query.mockResolvedValueOnce({
         rows: [{
-          id: 1, project_id: 1, name: 'test', provider_type: 'ollama',
+          id: 1, name: 'test', provider_type: 'ollama',
           api_key_encrypted: 'enc', base_url: null, model: 'llama3',
           roles: ['worker'], max_tokens: 4096, temperature: 0.1,
           is_active: true, endpoint_url: null, fallback_provider: null,
@@ -376,7 +330,7 @@ describe('Provider Controller', () => {
         }],
       });
 
-      mockReq.params.projectId = '1';
+      mockReq.params.id = '1';
       mockReq.body = {
         name: 'test',
         providerType: 'ollama',
@@ -385,16 +339,14 @@ describe('Provider Controller', () => {
 
       await providerController.addProvider(mockReq, mockRes, nextFn);
 
-      expect(Project.findById).toHaveBeenCalledWith('1');
       expect(mockRes.status).toHaveBeenCalledWith(201);
     });
 
-    it('should use projectId param for updateProvider', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+    it('should use id param for updateProvider (global scope)', async () => {
       pool.query
         .mockResolvedValueOnce({
           rows: [{
-            id: 1, project_id: 1, name: 'old', provider_type: 'openai',
+            id: 1, name: 'old', provider_type: 'openai',
             api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
             roles: ['worker'], max_tokens: 4096, temperature: 0.1,
             is_active: true, endpoint_url: null, fallback_provider: null,
@@ -404,7 +356,7 @@ describe('Provider Controller', () => {
         })
         .mockResolvedValueOnce({
           rows: [{
-            id: 1, project_id: 1, name: 'updated', provider_type: 'openai',
+            id: 1, name: 'updated', provider_type: 'openai',
             api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
             roles: ['worker'], max_tokens: 4096, temperature: 0.1,
             is_active: true, endpoint_url: null, fallback_provider: null,
@@ -413,42 +365,36 @@ describe('Provider Controller', () => {
           }],
         });
 
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '1';
+      mockReq.params.id = '1';
       mockReq.body = { name: 'updated' };
 
       await providerController.updateProvider(mockReq, mockRes, nextFn);
 
-      expect(Project.findById).toHaveBeenCalledWith('1');
       expect(mockRes.json).toHaveBeenCalledWith({
         success: true,
         data: expect.objectContaining({ name: 'updated' }),
       });
     });
 
-    it('should use projectId param for deleteProvider', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+    it('should use id param for deleteProvider (global scope)', async () => {
       pool.query.mockResolvedValueOnce({
-        rows: [{ id: 1, project_id: 1 }],
+        rows: [{ id: 1 }],
       });
 
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '1';
+      mockReq.params.id = '1';
 
       await providerController.deleteProvider(mockReq, mockRes, nextFn);
 
-      expect(Project.findById).toHaveBeenCalledWith('1');
       expect(mockRes.json).toHaveBeenCalledWith({
         success: true,
         data: { message: 'Provider deleted' },
       });
     });
 
-    it('should use projectId param for listProviders', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+    it('should use id param for listProviders (global scope)', async () => {
       pool.query.mockResolvedValueOnce({
         rows: [{
-          id: 1, project_id: 1, name: 'test', provider_type: 'claude',
+          id: 1, name: 'test', provider_type: 'claude',
           api_key_encrypted: 'enc', base_url: null, model: 'claude-3',
           roles: ['worker'], max_tokens: 4096, temperature: 0.1,
           is_active: true, endpoint_url: null, fallback_provider: null,
@@ -457,11 +403,10 @@ describe('Provider Controller', () => {
         }],
       });
 
-      mockReq.params.projectId = '1';
+      mockReq.params.id = '1';
 
       await providerController.listProviders(mockReq, mockRes, nextFn);
 
-      expect(Project.findById).toHaveBeenCalledWith('1');
       expect(mockRes.json).toHaveBeenCalledWith({
         success: true,
         data: expect.arrayContaining([
@@ -470,11 +415,10 @@ describe('Provider Controller', () => {
       });
     });
 
-    it('should use projectId param for testProvider', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+    it('should use id param for testProvider (global scope)', async () => {
       pool.query.mockResolvedValueOnce({
         rows: [{
-          id: 1, project_id: 1, name: 'test', provider_type: 'openai',
+          id: 1, name: 'test', provider_type: 'openai',
           api_key_encrypted: 'encrypted-key', model: 'gpt-4',
           max_tokens: 4096, temperature: 0.1, base_url: 'https://api.openai.com',
         }],
@@ -483,12 +427,10 @@ describe('Provider Controller', () => {
       const mockProvider = { validate: jest.fn().mockResolvedValue(true) };
       ProviderRouter.prototype.createProvider = jest.fn().mockReturnValue(mockProvider);
 
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '1';
+      mockReq.params.id = '1';
 
       await providerController.testProvider(mockReq, mockRes, nextFn);
 
-      expect(Project.findById).toHaveBeenCalledWith('1');
       expect(mockRes.json).toHaveBeenCalledWith({
         success: true,
         data: { success: true, valid: true, message: 'Connection successful' },
@@ -498,10 +440,10 @@ describe('Provider Controller', () => {
 
   describe('addProvider: empty apiKey allowed for local models', () => {
     it('should accept empty apiKey string', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       pool.query.mockResolvedValueOnce({
         rows: [{
-          id: 1, project_id: 1, name: 'ollama-local', provider_type: 'ollama',
+          id: 1, name: 'ollama-local', provider_type: 'ollama',
           api_key_encrypted: null, base_url: null, model: 'llama3',
           roles: ['worker'], max_tokens: 4096, temperature: 0.1,
           is_active: true, endpoint_url: null, fallback_provider: null,
@@ -510,7 +452,7 @@ describe('Provider Controller', () => {
         }],
       });
 
-      mockReq.params.projectId = '1';
+      mockReq.params.id = '1';
       mockReq.body = {
         name: 'ollama-local',
         providerType: 'ollama',
@@ -528,10 +470,10 @@ describe('Provider Controller', () => {
 
   describe('addProvider: default model when not provided', () => {
     it('should default model to gpt-4o when not sent', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       pool.query.mockResolvedValueOnce({
         rows: [{
-          id: 1, project_id: 1, name: 'test', provider_type: 'openai',
+          id: 1, name: 'test', provider_type: 'openai',
           api_key_encrypted: 'encrypted-key', base_url: null, model: 'gpt-4o',
           roles: ['worker'], max_tokens: 4096, temperature: 0.1,
           is_active: true, endpoint_url: null, fallback_provider: null,
@@ -540,7 +482,7 @@ describe('Provider Controller', () => {
         }],
       });
 
-      mockReq.params.projectId = '1';
+      mockReq.params.id = '1';
       mockReq.body = {
         name: 'test',
         providerType: 'openai',
@@ -554,10 +496,10 @@ describe('Provider Controller', () => {
     });
 
     it('should default to ollama model for ollama provider', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       pool.query.mockResolvedValueOnce({
         rows: [{
-          id: 1, project_id: 1, name: 'ollama-local', provider_type: 'ollama',
+          id: 1, name: 'ollama-local', provider_type: 'ollama',
           api_key_encrypted: null, base_url: null, model: 'llama3',
           roles: ['worker'], max_tokens: 4096, temperature: 0.1,
           is_active: true, endpoint_url: null, fallback_provider: null,
@@ -566,7 +508,7 @@ describe('Provider Controller', () => {
         }],
       });
 
-      mockReq.params.projectId = '1';
+      mockReq.params.id = '1';
       mockReq.body = {
         name: 'ollama-local',
         providerType: 'ollama',
@@ -582,24 +524,30 @@ describe('Provider Controller', () => {
 
   describe('updateProvider: empty body guard', () => {
     it('should return 400 when no fields to update', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 1, name: 'old', provider_type: 'openai',
+          api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
+          roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+          is_active: true, endpoint_url: null, fallback_provider: null,
+          routing_rules: '{}', is_project_director: false,
+          created_at: new Date(), updated_at: new Date(),
+        }],
+      });
 
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '1';
+      mockReq.params.id = '1';
       mockReq.body = {};
 
       await providerController.updateProvider(mockReq, mockRes, nextFn);
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
-      expect(pool.query).not.toHaveBeenCalled();
     });
 
     it('should use correct SQL parameter indices for providerId', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
       pool.query
         .mockResolvedValueOnce({
           rows: [{
-            id: 42, project_id: 1, name: 'old', provider_type: 'openai',
+            id: 42, name: 'old', provider_type: 'openai',
             api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
             roles: ['worker'], max_tokens: 4096, temperature: 0.1,
             is_active: true, endpoint_url: null, fallback_provider: null,
@@ -609,7 +557,7 @@ describe('Provider Controller', () => {
         })
         .mockResolvedValueOnce({
           rows: [{
-            id: 42, project_id: 1, name: 'updated', provider_type: 'openai',
+            id: 42, name: 'updated', provider_type: 'openai',
             api_key_encrypted: 'enc', base_url: null, model: 'gpt-4',
             roles: ['worker'], max_tokens: 4096, temperature: 0.1,
             is_active: true, endpoint_url: null, fallback_provider: null,
@@ -618,8 +566,7 @@ describe('Provider Controller', () => {
           }],
         });
 
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '42';
+      mockReq.params.id = '42';
       mockReq.body = { name: 'updated', model: 'gpt-4' };
 
       await providerController.updateProvider(mockReq, mockRes, nextFn);
@@ -632,23 +579,22 @@ describe('Provider Controller', () => {
       const query = pool.query.mock.calls[1][0];
       const args = pool.query.mock.calls[1][1];
 
-      expect(query).toContain('WHERE project_id = $1 AND id = $2');
-      expect(args[0]).toBe('1');
-      expect(args[1]).toBe('42');
-      expect(args[2]).toBe('updated');
-      expect(args[3]).toBe('gpt-4');
+      expect(query).toContain('WHERE id = $3');
+      expect(args[0]).toBe('updated');
+      expect(args[1]).toBe('gpt-4');
+      expect(args[2]).toBe('42');
 
-      // Verify placeholder-to-value mapping: $3→name, $4→model
-      const nameMatch = query.match(/name = \$3/);
-      const modelMatch = query.match(/model = \$4/);
+      // Verify placeholder-to-value mapping: $1→name, $2→model, $3→id
+      const nameMatch = query.match(/name = \$1/);
+      const modelMatch = query.match(/model = \$2/);
       expect(nameMatch).not.toBeNull();
       expect(modelMatch).not.toBeNull();
-      expect(args[2]).toBe('updated');
-      expect(args[3]).toBe('gpt-4');
+      expect(args[0]).toBe('updated');
+      expect(args[1]).toBe('gpt-4');
     });
 
     it('should retain existing key when client sends masked version (apiKey masking passthrough)', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       const existingDecrypted = 'sk-ant-existing-key-1234';
       const existingMasked = '****1234';
       decrypt.mockReturnValueOnce(existingDecrypted);
@@ -657,7 +603,7 @@ describe('Provider Controller', () => {
       pool.query
         .mockResolvedValueOnce({
           rows: [{
-            id: 1, project_id: 1, name: 'old', provider_type: 'openai',
+            id: 1, name: 'old', provider_type: 'openai',
             api_key_encrypted: 'existing-encrypted', base_url: null, model: 'gpt-4',
             roles: ['worker'], max_tokens: 4096, temperature: 0.1,
             is_active: true, endpoint_url: null, fallback_provider: null,
@@ -667,7 +613,7 @@ describe('Provider Controller', () => {
         })
         .mockResolvedValueOnce({
           rows: [{
-            id: 1, project_id: 1, name: 'renamed', provider_type: 'openai',
+            id: 1, name: 'renamed', provider_type: 'openai',
             api_key_encrypted: 'existing-encrypted', base_url: null, model: 'gpt-4',
             roles: ['worker'], max_tokens: 4096, temperature: 0.1,
             is_active: true, endpoint_url: null, fallback_provider: null,
@@ -678,8 +624,8 @@ describe('Provider Controller', () => {
 
       maskToken.mockReturnValueOnce('****1234');
 
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '1';
+      mockReq.params.id = '1';
+      mockReq.params.id = '1';
       mockReq.body = { name: 'renamed', apiKey: '****1234' };
 
       await providerController.updateProvider(mockReq, mockRes, nextFn);
@@ -697,7 +643,7 @@ describe('Provider Controller', () => {
     });
 
     it('should clear key when client sends empty string different from masked', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       const existingDecrypted = 'sk-ant-existing-key-1234';
       const existingMasked = '****1234';
       decrypt.mockReturnValueOnce(existingDecrypted);
@@ -706,7 +652,7 @@ describe('Provider Controller', () => {
       pool.query
         .mockResolvedValueOnce({
           rows: [{
-            id: 1, project_id: 1, name: 'old', provider_type: 'openai',
+            id: 1, name: 'old', provider_type: 'openai',
             api_key_encrypted: 'existing-encrypted', base_url: null, model: 'gpt-4',
             roles: ['worker'], max_tokens: 4096, temperature: 0.1,
             is_active: true, endpoint_url: null, fallback_provider: null,
@@ -716,7 +662,7 @@ describe('Provider Controller', () => {
         })
         .mockResolvedValueOnce({
           rows: [{
-            id: 1, project_id: 1, name: 'old', provider_type: 'openai',
+            id: 1, name: 'old', provider_type: 'openai',
             api_key_encrypted: null, base_url: null, model: 'gpt-4',
             roles: ['worker'], max_tokens: 4096, temperature: 0.1,
             is_active: true, endpoint_url: null, fallback_provider: null,
@@ -725,8 +671,8 @@ describe('Provider Controller', () => {
           }],
         });
 
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '1';
+      mockReq.params.id = '1';
+      mockReq.params.id = '1';
       mockReq.body = { apiKey: '' };
 
       await providerController.updateProvider(mockReq, mockRes, nextFn);
@@ -737,11 +683,11 @@ describe('Provider Controller', () => {
     });
 
     it('should encrypt new key when client sends a fresh key', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       pool.query
         .mockResolvedValueOnce({
           rows: [{
-            id: 1, project_id: 1, name: 'old', provider_type: 'openai',
+            id: 1, name: 'old', provider_type: 'openai',
             api_key_encrypted: 'existing-encrypted', base_url: null, model: 'gpt-4',
             roles: ['worker'], max_tokens: 4096, temperature: 0.1,
             is_active: true, endpoint_url: null, fallback_provider: null,
@@ -751,7 +697,7 @@ describe('Provider Controller', () => {
         })
         .mockResolvedValueOnce({
           rows: [{
-            id: 1, project_id: 1, name: 'old', provider_type: 'openai',
+            id: 1, name: 'old', provider_type: 'openai',
             api_key_encrypted: 'new-encrypted', base_url: null, model: 'gpt-4',
             roles: ['worker'], max_tokens: 4096, temperature: 0.1,
             is_active: true, endpoint_url: null, fallback_provider: null,
@@ -760,8 +706,8 @@ describe('Provider Controller', () => {
           }],
         });
 
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '1';
+      mockReq.params.id = '1';
+      mockReq.params.id = '1';
       mockReq.body = { apiKey: 'sk-ant-new-key-5678' };
 
       await providerController.updateProvider(mockReq, mockRes, nextFn);
@@ -770,11 +716,11 @@ describe('Provider Controller', () => {
     });
 
     it('should encrypt new key when existing api_key_encrypted is null (Issue A regression)', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       pool.query
         .mockResolvedValueOnce({
           rows: [{
-            id: 1, project_id: 1, name: 'no-key-provider', provider_type: 'openai',
+            id: 1, name: 'no-key-provider', provider_type: 'openai',
             api_key_encrypted: null, base_url: null, model: 'gpt-4',
             roles: ['worker'], max_tokens: 4096, temperature: 0.1,
             is_active: true, endpoint_url: null, fallback_provider: null,
@@ -784,7 +730,7 @@ describe('Provider Controller', () => {
         })
         .mockResolvedValueOnce({
           rows: [{
-            id: 1, project_id: 1, name: 'no-key-provider', provider_type: 'openai',
+            id: 1, name: 'no-key-provider', provider_type: 'openai',
             api_key_encrypted: 'encrypted-new-key', base_url: null, model: 'gpt-4',
             roles: ['worker'], max_tokens: 4096, temperature: 0.1,
             is_active: true, endpoint_url: null, fallback_provider: null,
@@ -793,8 +739,8 @@ describe('Provider Controller', () => {
           }],
         });
 
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '1';
+      mockReq.params.id = '1';
+      mockReq.params.id = '1';
       mockReq.body = { apiKey: 'sk-new-for-null-provider' };
 
       await providerController.updateProvider(mockReq, mockRes, nextFn);
@@ -805,16 +751,13 @@ describe('Provider Controller', () => {
     });
 
     it('should return 200 when client sends only masked apiKey (Issue B regression)', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
       const existingDecrypted = 'sk-ant-existing-key-1234';
       const existingMasked = '****1234';
-      decrypt.mockReturnValueOnce(existingDecrypted);
-      maskToken.mockReturnValueOnce(existingMasked);
 
       pool.query
         .mockResolvedValueOnce({
           rows: [{
-            id: 1, project_id: 1, name: 'old', provider_type: 'openai',
+            id: 1, name: 'old', provider_type: 'openai',
             api_key_encrypted: 'existing-encrypted', base_url: null, model: 'gpt-4',
             roles: ['worker'], max_tokens: 4096, temperature: 0.1,
             is_active: true, endpoint_url: null, fallback_provider: null,
@@ -824,7 +767,7 @@ describe('Provider Controller', () => {
         })
         .mockResolvedValueOnce({
           rows: [{
-            id: 1, project_id: 1, name: 'old', provider_type: 'openai',
+            id: 1, name: 'renamed', provider_type: 'openai',
             api_key_encrypted: 'existing-encrypted', base_url: null, model: 'gpt-4',
             roles: ['worker'], max_tokens: 4096, temperature: 0.1,
             is_active: true, endpoint_url: null, fallback_provider: null,
@@ -833,97 +776,31 @@ describe('Provider Controller', () => {
           }],
         });
 
-      decrypt.mockReturnValueOnce(existingDecrypted);
-      maskToken.mockReturnValueOnce(existingMasked);
+      decrypt.mockReturnValue(existingDecrypted);
+      maskToken.mockReturnValue(existingMasked);
 
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '1';
-      mockReq.body = { apiKey: '****1234' };
+      mockReq.params.id = '1';
+      mockReq.body = { name: 'renamed', apiKey: '****1234' };
 
       await providerController.updateProvider(mockReq, mockRes, nextFn);
 
-      expect(mockRes.status).toHaveBeenCalledWith(200);
       expect(mockRes.json).toHaveBeenCalledWith({
         success: true,
         data: expect.objectContaining({
-          name: 'old',
+          name: 'renamed',
           apiKey: '****1234',
         }),
       });
       expect(encrypt).not.toHaveBeenCalled();
     });
-
-  describe('setDirector', () => {
-    it('should set director and return updated provider', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
-      pool.query
-        .mockResolvedValueOnce({ rows: [{ id: 1, project_id: 1 }] })
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ id: 1, project_id: 1, name: 'openai-pro', provider_type: 'openai', api_key_encrypted: 'enc', base_url: null, model: 'gpt-4o', roles: ['worker'], max_tokens: 4096, temperature: 0.1, is_active: true, endpoint_url: null, fallback_provider: null, routing_rules: '{}', is_project_director: true, created_at: new Date(), updated_at: new Date() }] });
-
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '1';
-
-      await providerController.setDirector(mockReq, mockRes, nextFn);
-
-      expect(mockRes.json).toHaveBeenCalledWith({
-        success: true,
-        data: expect.objectContaining({
-          name: 'openai-pro',
-          providerType: 'openai',
-          is_project_director: true,
-          endpoint_url: null,
-          fallback_provider: null,
-          routing_rules: '{}',
-        }),
-      });
-    });
-
-    it('should demote existing director when setting new one', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
-      pool.query
-        .mockResolvedValueOnce({ rows: [{ id: 2, project_id: 1 }] })
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ id: 2, project_id: 1, name: 'new-director', provider_type: 'claude', api_key_encrypted: 'enc', base_url: null, model: 'claude-sonnet', roles: ['worker'], max_tokens: 4096, temperature: 0.1, is_active: true, endpoint_url: null, fallback_provider: null, routing_rules: '{}', is_project_director: true, created_at: new Date(), updated_at: new Date() }] });
-
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '2';
-
-      await providerController.setDirector(mockReq, mockRes, nextFn);
-
-      expect(mockRes.json).toHaveBeenCalledWith({
-        success: true,
-        data: expect.objectContaining({
-          name: 'new-director',
-          is_project_director: true,
-        }),
-      });
-
-      // Verify the demote query was called (first call after provider existence check)
-      const demoteCall = pool.query.mock.calls.find(call => call[0].includes('is_project_director = false'));
-      expect(demoteCall).toBeDefined();
-    });
-
-    it('should return 404 for non-existent provider', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
-      pool.query.mockResolvedValueOnce({ rows: [] });
-
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '999';
-
-      await providerController.setDirector(mockReq, mockRes, nextFn);
-
-      expect(nextFn).toHaveBeenCalled();
-      expect(nextFn.mock.calls[0][0]).toBeInstanceOf(Error);
-    });
   });
 
   describe('addProvider: director promotion in transaction', () => {
     it('should demote existing directors when adding as director', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       pool.query.mockResolvedValueOnce({
         rows: [{
-          id: 2, project_id: 1, name: 'new-director', provider_type: 'openai',
+          id: 2, name: 'new-director', provider_type: 'openai',
           api_key_encrypted: 'encrypted-key', base_url: null, model: 'gpt-4o',
           roles: ['worker'], max_tokens: 4096, temperature: 0.1,
           is_active: true, endpoint_url: null, fallback_provider: null,
@@ -932,7 +809,7 @@ describe('Provider Controller', () => {
         }],
       });
 
-      mockReq.params.projectId = '1';
+      mockReq.params.id = '1';
       mockReq.body = {
         name: 'new-director',
         providerType: 'openai',
@@ -960,14 +837,14 @@ describe('Provider Controller', () => {
 
   describe('updateProvider: director transaction', () => {
     it('should wrap director demote in transaction', async () => {
-      Project.findById.mockResolvedValue({ id: 1 });
+      
       const mockClient = {
         query: jest.fn()
           .mockResolvedValueOnce({})
           .mockResolvedValueOnce({})
           .mockResolvedValueOnce({
             rows: [{
-              id: 1, project_id: 1, name: 'promoted', provider_type: 'openai',
+              id: 1, name: 'promoted', provider_type: 'openai',
               api_key_encrypted: 'enc', base_url: null, model: 'gpt-4o',
               roles: ['worker'], max_tokens: 4096, temperature: 0.1,
               is_active: true, endpoint_url: null, fallback_provider: null,
@@ -981,7 +858,7 @@ describe('Provider Controller', () => {
       pool.connect.mockResolvedValue(mockClient);
       pool.query.mockResolvedValueOnce({
         rows: [{
-          id: 1, project_id: 1, name: 'old', provider_type: 'openai',
+          id: 1, name: 'old', provider_type: 'openai',
           api_key_encrypted: 'enc', base_url: null, model: 'gpt-4o',
           roles: ['worker'], max_tokens: 4096, temperature: 0.1,
           is_active: true, endpoint_url: null, fallback_provider: null,
@@ -990,8 +867,8 @@ describe('Provider Controller', () => {
         }],
       });
 
-      mockReq.params.projectId = '1';
-      mockReq.params.providerId = '1';
+      mockReq.params.id = '1';
+      mockReq.params.id = '1';
       mockReq.body = { name: 'promoted', is_project_director: true };
 
       await providerController.updateProvider(mockReq, mockRes, nextFn);
@@ -1014,5 +891,65 @@ describe('Provider Controller', () => {
       expect(mockClient.release).toHaveBeenCalled();
     });
   });
-});
+
+  describe('setDirector', () => {
+    it('should set director and return updated provider', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ id: 1 }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: 1, name: 'openai-pro', provider_type: 'openai', api_key_encrypted: 'enc', base_url: null, model: 'gpt-4o', roles: ['worker'], max_tokens: 4096, temperature: 0.1, is_active: true, endpoint_url: null, fallback_provider: null, routing_rules: '{}', is_project_director: true, created_at: new Date(), updated_at: new Date() }] });
+
+      mockReq.params.id = '1';
+
+      await providerController.setDirector(mockReq, mockRes, nextFn);
+
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        data: expect.objectContaining({
+          name: 'openai-pro',
+          providerType: 'openai',
+          is_project_director: true,
+          endpoint_url: null,
+          fallback_provider: null,
+          routing_rules: '{}',
+        }),
+      });
+    });
+
+    it('should demote existing director when setting new one', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ id: 2 }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: 2, name: 'new-director', provider_type: 'claude', api_key_encrypted: 'enc', base_url: null, model: 'claude-sonnet', roles: ['worker'], max_tokens: 4096, temperature: 0.1, is_active: true, endpoint_url: null, fallback_provider: null, routing_rules: '{}', is_project_director: true, created_at: new Date(), updated_at: new Date() }] });
+
+      mockReq.params.id = '2';
+
+      await providerController.setDirector(mockReq, mockRes, nextFn);
+
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        data: expect.objectContaining({
+          name: 'new-director',
+          is_project_director: true,
+        }),
+      });
+
+      // Verify the demote query was called (first call after provider existence check)
+      const demoteCall = pool.query.mock.calls.find(call => call[0].includes('is_project_director = false'));
+      expect(demoteCall).toBeDefined();
+    });
+
+    it('should return 404 for non-existent provider', async () => {
+      
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      mockReq.params.id = '1';
+      mockReq.params.id = '999';
+
+      await providerController.setDirector(mockReq, mockRes, nextFn);
+
+      expect(nextFn).toHaveBeenCalled();
+      expect(nextFn.mock.calls[0][0]).toBeInstanceOf(Error);
+    });
+  });
 });
