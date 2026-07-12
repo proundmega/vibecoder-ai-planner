@@ -36,6 +36,7 @@ const SQL_FILES = [
   path.join(__dirname, './031_expand_credential_types.sql'),
   path.join(__dirname, './031_unify_providers.sql'),
   path.join(__dirname, './032_add_locked_until_to_users.sql'),
+  path.join(__dirname, './033_add_api_key_expiry_to_agents.sql'),
 ];
 
 const DATA_MIGRATIONS = [

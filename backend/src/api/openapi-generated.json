@@ -3480,6 +3480,58 @@
           }
         }
       }
+    },
+    "/agents/:agentId/rotate-key": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Rotate agent API key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API key rotated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agentId": {
+                      "type": "integer"
+                    },
+                    "agentName": {
+                      "type": "string"
+                    },
+                    "newApiKey": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found"
+          }
+        }
+      }
     }
   },
   "tags": []

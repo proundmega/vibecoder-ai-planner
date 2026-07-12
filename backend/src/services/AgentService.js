@@ -1,15 +1,46 @@
 const { pool } = require('../db');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+
+const SALT_ROUNDS = 10;
+const DEFAULT_KEY_EXPIRY_DAYS = 30;
 
 class AgentService {
   async create(name, apiKey, userId) {
+    const apiKeyHash = await bcrypt.hash(apiKey, SALT_ROUNDS);
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + DEFAULT_KEY_EXPIRY_DAYS);
+
     const result = await pool.query(
-      `INSERT INTO agents (name, api_key, owner_id, rate_limit, max_actions_per_day) 
-       VALUES ($1, $2, $3, $4, $5) 
-       RETURNING *`,
-      [name, apiKey, userId, 100, 1000]
+      `INSERT INTO agents (name, api_key, api_key_hash, api_key_expires_at, owner_id, rate_limit, max_actions_per_day) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7) 
+       RETURNING id, name, api_key, api_key_expires_at, created_at`,
+      [name, apiKey, apiKeyHash, expiresAt, userId, 100, 1000]
     );
     return result.rows[0];
+  }
+
+  async rotateKey(agentId, userId) {
+    const apiKey = crypto.randomBytes(32).toString('hex');
+    const apiKeyHash = await bcrypt.hash(apiKey, SALT_ROUNDS);
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + DEFAULT_KEY_EXPIRY_DAYS);
+
+    const result = await pool.query(
+      `UPDATE agents 
+       SET api_key = $1, api_key_hash = $2, api_key_expires_at = $3
+       WHERE id = $4 AND owner_id = $5
+       RETURNING id, name, api_key, api_key_expires_at`,
+      [apiKey, apiKeyHash, expiresAt, agentId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('AGENT_NOT_FOUND');
+    }
+
+    const agent = result.rows[0];
+    return { ...agent, apiKey };
   }
 
   async list(userId) {

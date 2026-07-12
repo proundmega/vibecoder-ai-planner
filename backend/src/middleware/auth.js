@@ -3,6 +3,7 @@ const authService = require('../auth');
 const { pool } = require('../db');
 const AgentService = require('../services/AgentService');
 const { getSecret } = require('../utils/jwt');
+const bcrypt = require('bcryptjs');
 const {
   getRedis,
   isRedisAvailable,
@@ -229,6 +230,24 @@ exports.agentAuth = async (req, res, next) => {
     if (!agent) {
       return res.status(401).json({ error: 'Invalid API key' });
     }
+
+    // Check expiry
+    if (agent.api_key_expires_at && new Date(agent.api_key_expires_at) < new Date()) {
+      return res.status(401).json({
+        error: {
+          code: 'KEY_EXPIRED',
+          message: `API key expired on ${new Date(agent.api_key_expires_at).toISOString()}`,
+          expiredAt: agent.api_key_expires_at,
+        },
+      });
+    }
+
+    // Verify hash (bcrypt.compare is timing-safe)
+    const valid = await bcrypt.compare(apiKey, agent.api_key_hash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+
     req.agent = agent;
     next();
   } catch (error) {
@@ -271,6 +290,24 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
     if (!agent) {
       return res.status(401).json({ error: 'Invalid API key' });
     }
+
+    // Check expiry
+    if (agent.api_key_expires_at && new Date(agent.api_key_expires_at) < new Date()) {
+      return res.status(401).json({
+        error: {
+          code: 'KEY_EXPIRED',
+          message: `API key expired on ${new Date(agent.api_key_expires_at).toISOString()}`,
+          expiredAt: agent.api_key_expires_at,
+        },
+      });
+    }
+
+    // Verify hash (bcrypt.compare is timing-safe)
+    const valid = await bcrypt.compare(apiKey, agent.api_key_hash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid API key' });
+    }
+
     req.agent = agent;
     req.user = {
       userId: agent.id,

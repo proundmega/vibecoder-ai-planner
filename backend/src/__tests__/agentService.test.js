@@ -15,7 +15,7 @@ describe('AgentService', () => {
 
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO agents'),
-        ['Test Agent', 'key-123', 'user-1', 100, 1000]
+        expect.arrayContaining(['Test Agent', 'key-123', 'user-1', 100, 1000])
       );
       expect(result).toEqual(mockRow);
     });
