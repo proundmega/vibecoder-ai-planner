@@ -10,7 +10,7 @@ const pool = new Pool({
   maxUses: parseInt(process.env.DATABASE_MAX_USES) || 10000,
 });
 
-pool.on('error', (err, client) => {
+pool.on('error', (err, pgClient) => {
   logger.error('Unexpected error on idle client', err);
   process.exit(-1);
 });

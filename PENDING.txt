@@ -44,7 +44,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | ~~bp-57~~ | `bp-57-migrate-to-typescript` | P3 | ~~Frontend JS → TypeScript migration~~ ✅ Done (PR #50) |
 | **bp-71** | `bp-71-account-lockout` | P1 | ~~Account lockout after 10 failed login attempts~~ ✅ Done (PR #52) |
 | **bp-72** | `bp-72-rate-limit-ui` | P2 | ~~Rate limit countdown UI on frontend~~ ✅ Done (PR #54) |
-| **bp-73** | `bp-73-ip-whitelisting` | P2 | IP whitelisting for rate limit exceptions |
+| **bp-73** | `bp-73-ip-whitelisting` | P2 | ~~IP whitelisting for rate limit exceptions~~ ✅ Done (PR #55) |
 | **bp-74** | `bp-74-api-key-rotation` | P1 | ~~API key rotation and expiry for agents~~ ✅ Done (PR #53) |
 | **bp-75** | `bp-75-log-rotation` | P3 | Log file rotation with winston-daily-rotate-file |
 | **bp-76** | `bp-76-prometheus-metrics` | P1 | Prometheus metrics export (request duration, DB pool, process metrics) |

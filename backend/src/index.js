@@ -64,6 +64,21 @@ app.get('/api/openapi.json', (req, res) => {
 const routes = require('./api/routes');
 app.use('/api', routes);
 
+// Prometheus metrics endpoint (at root level, not under /api)
+const { register } = require('./metrics');
+const collectDefaultMetrics = require('prom-client').collectDefaultMetrics;
+collectDefaultMetrics({ register });
+
+app.get('/metrics', async (req, res, next) => {
+  try {
+    res.set('Content-Type', register.contentType);
+    const metrics = await register.metrics();
+    res.end(metrics);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // WebSocket upgrade handler for terminal proxy (only in non-test mode)
 let server;
 let wss;
