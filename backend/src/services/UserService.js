@@ -7,7 +7,6 @@ const { getSecret } = require('../utils/jwt');
 const logger = require('../utils/logger');
 
 const MAX_LOGIN_ATTEMPTS = 10;
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 
 class UserService {
   async register(name, email, password, role = 'project_admin', userCreatedBy = null) {
