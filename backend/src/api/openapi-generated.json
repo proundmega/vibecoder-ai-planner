@@ -487,6 +487,36 @@
         }
       }
     },
+    "/users/{id}/unlock": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Unlock a locked user account (super admin only)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User unlocked successfully"
+          },
+          "403": {
+            "description": "Forbidden - super admin only"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        }
+      }
+    },
     "/usage/projects/{id}/usage": {
       "get": {
         "tags": [
@@ -1231,7 +1261,8 @@
                     "enum": [
                       "architecture",
                       "technical",
-                      "simple"
+                      "simple",
+                      "specification"
                     ]
                   }
                 }
@@ -3443,6 +3474,58 @@
         "responses": {
           "200": {
             "description": "Agent key info"
+          },
+          "404": {
+            "description": "Agent not found"
+          }
+        }
+      }
+    },
+    "/agents/:agentId/rotate-key": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Rotate agent API key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API key rotated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agentId": {
+                      "type": "integer"
+                    },
+                    "agentName": {
+                      "type": "string"
+                    },
+                    "newApiKey": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           },
           "404": {
             "description": "Agent not found"

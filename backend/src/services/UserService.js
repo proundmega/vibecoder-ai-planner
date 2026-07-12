@@ -2,9 +2,11 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/user');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
-const { ValidationError, NotFoundError } = require('../errors/HttpError');
+const { ValidationError, NotFoundError, AppError } = require('../errors/HttpError');
 const { getSecret } = require('../utils/jwt');
 const logger = require('../utils/logger');
+
+const MAX_LOGIN_ATTEMPTS = 10;
 
 class UserService {
   async register(name, email, password, role = 'project_admin', userCreatedBy = null) {
@@ -29,6 +31,18 @@ class UserService {
 
     if (!user.isActive) {
       throw new ValidationError('Account deactivated. Contact support.');
+    }
+
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      const retryAfter = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 1000);
+      const err = new AppError(
+        `Account locked. Try again in ${Math.floor(retryAfter / 60)}m ${retryAfter % 60}s.`,
+        423,
+        'ACCOUNT_LOCKED'
+      );
+      err.lockedUntil = user.lockedUntil;
+      err.retryAfter = retryAfter;
+      throw err;
     }
 
     const isValid = await bcrypt.compare(password, user.passwordHash);
@@ -257,6 +271,38 @@ class UserService {
     }
     
     await User.delete(userId);
+  }
+
+  async incrementFailedAttempts(userId) {
+    const result = await pool.query(
+      `UPDATE users SET login_attempts = COALESCE(login_attempts, 0) + 1,
+       locked_until = CASE
+         WHEN COALESCE(login_attempts, 0) + 1 >= $2 THEN NOW() + INTERVAL '15 minutes'
+         ELSE locked_until
+       END
+       WHERE id = $1
+       RETURNING login_attempts, locked_until`,
+      [userId, MAX_LOGIN_ATTEMPTS]
+    );
+    return result.rows[0];
+  }
+
+  async resetFailedAttempts(userId) {
+    await pool.query(
+      'UPDATE users SET login_attempts = 0, locked_until = NULL WHERE id = $1',
+      [userId]
+    );
+  }
+
+  async unlockUser(userId) {
+    const result = await pool.query(
+      'UPDATE users SET login_attempts = 0, locked_until = NULL WHERE id = $1 RETURNING id, email, login_attempts, locked_until',
+      [userId]
+    );
+    if (result.rows.length === 0) {
+      return null;
+    }
+    return result.rows[0];
   }
 }
 

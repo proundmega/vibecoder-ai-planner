@@ -19,6 +19,7 @@ const {
   login: loginUser,
   verifyToken: verifyTokenHandler
 } = auth;
+const UserService = require('../services/UserService');
 
 const registerUserBound = registerUser.bind(auth);
 const loginUserBound = loginUser.bind(auth);
@@ -245,10 +246,34 @@ router.post('/auth/login', rateLimiter(5, 60000), validate(loginSchema), async (
     const { email, password } = req.body;
     const result = await loginUserBound(email, password);
     clearFailedAttempts(clientIp);
+    await UserService.resetFailedAttempts(result.user.id);
     res.json({ message: 'Login successful', ...result });
   } catch (error) {
+    if (error.code === 'ACCOUNT_LOCKED') {
+      const retryAfter = error.retryAfter || Math.ceil((error.lockedUntil.getTime() - Date.now()) / 1000);
+      return res.status(423).json({
+        success: false,
+        error: {
+          code: 'ACCOUNT_LOCKED',
+          message: error.message,
+          lockedUntil: error.lockedUntil,
+          retryAfter: Math.max(0, retryAfter),
+        }
+      });
+    }
+    
     const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
     recordFailedAttempt(clientIp);
+    
+    try {
+      const user = await User.findByEmail(req.body.email);
+      if (user) {
+        await UserService.incrementFailedAttempts(user.id);
+      }
+    } catch (dbErr) {
+      logger.error('Failed to increment login attempts', dbErr);
+    }
+    
     logger.error('POST /api/auth/login', error);
     res.status(401).json({ error: error.message });
   }

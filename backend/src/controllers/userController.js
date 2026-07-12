@@ -76,6 +76,29 @@ async function listAllUsers(req, res, next) {
   }
 }
 
+async function unlockUser(req, res, next) {
+  try {
+    const result = await UserService.unlockUser(req.params.id);
+
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found',
+        },
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   listUsers,
   createUser,
@@ -83,4 +106,5 @@ module.exports = {
   toggleUserActive,
   deleteUser,
   listAllUsers,
+  unlockUser,
 };

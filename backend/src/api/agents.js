@@ -235,4 +235,53 @@ router.get('/:agentId/key', verifyTokenOrAgent, async (req, res) => {
   }
 });
 
+/**
+ * @openapi
+ * /agents/:agentId/rotate-key:
+ *   post:
+ *     tags: [Agents]
+ *     summary: Rotate agent API key
+ *     parameters:
+ *       - in: path
+ *         name: agentId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: API key rotated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 agentId: { type: integer }
+ *                 agentName: { type: string }
+ *                 newApiKey: { type: string }
+ *                 expiresAt: { type: string, format: date-time }
+ *                 message: { type: string }
+ *       404:
+ *         description: Agent not found
+ */
+router.post('/:agentId/rotate-key', verifyTokenOrAgent, requireAnyPermission('AGENT_REVOKE'), async (req, res) => {
+  try {
+    const result = await AgentService.rotateKey(req.params.agentId, req.user.userId);
+    res.json({
+      success: true,
+      data: {
+        agentId: result.id,
+        agentName: result.name,
+        newApiKey: result.apiKey,
+        expiresAt: result.api_key_expires_at,
+        message: 'Key rotated. Store this key securely — it will not be shown again.',
+      },
+    });
+  } catch (error) {
+    if (error.message === 'AGENT_NOT_FOUND') {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+    logger.error('POST /api/agents/:agentId/rotate-key', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
