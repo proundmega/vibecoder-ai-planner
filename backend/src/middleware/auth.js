@@ -4,6 +4,7 @@ const { pool } = require('../db');
 const AgentService = require('../services/AgentService');
 const { getSecret } = require('../utils/jwt');
 const bcrypt = require('bcryptjs');
+const IpWhitelistService = require('../services/IpWhitelistService');
 const {
   getRedis,
   isRedisAvailable,
@@ -326,6 +327,17 @@ exports.rateLimiter = (maxRequests = 10, timeWindow = 60 * 1000) => {
   return async (req, res, next) => {
     // Skip rate limiting during integration tests
     if (process.env.INTEGRATION_TESTS === '1') return next();
+    
+    // Check IP whitelist
+    try {
+      const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
+      const isWhitelisted = await IpWhitelistService.isWhitelisted(clientIp);
+      if (isWhitelisted) {
+        return next();
+      }
+    } catch (error) {
+      console.error('IP whitelist check failed:', error.message);
+    }
     
     const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
     const key = `ratelimit:${clientIp}`;
