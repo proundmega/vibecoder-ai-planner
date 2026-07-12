@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getRepoStatus, connectRepo, disconnectRepo, listBranches, listPRs, createBranch } from '@/api/github'
-import { listProviders, addProvider, updateProvider, deleteProvider, testProvider, setDirector } from '@/api/providers'
+
 import { getProjectUsage } from '@/api/usage'
 import { getProjectBilling } from '@/api/billing'
 import { getProjectMemory, searchMemory, addMemory, updateMemory, deleteMemory } from '@/api/memory'
@@ -20,7 +20,6 @@ const tabs = [
   { id: 'approvals', label: 'Approvals' },
   { id: 'github', label: 'GitHub' },
   { id: 'ai', label: 'AI Chat' },
-  { id: 'providers', label: 'AI Providers' },
   { id: 'usage', label: 'Usage & Billing' },
   { id: 'memory', label: 'Memory' },
 ]
@@ -39,41 +38,6 @@ const prs = ref([])
 const creatingBranch = ref(false)
 const branchTicketId = ref('')
 const githubLoaded = ref(false)
-
-// Providers state
-const providers = ref([])
-const providersLoading = ref(false)
-const providersError = ref(null)
-const showAddProvider = ref(false)
-const newProviderName = ref('')
-const newProviderType = ref('openai')
-const newProviderKey = ref('')
-const newProviderModel = ref('')
-const newProviderEndpoint = ref('')
-const newProviderFallback = ref(null)
-const editingProvider = ref(null)
-const editProviderName = ref('')
-const editProviderKey = ref('')
-const editProviderModel = ref('')
-const editProviderEndpoint = ref('')
-const editProviderFallback = ref(null)
-const providerTestResult = ref(null)
-const providerTestLoading = ref(false)
-const providersLoaded = ref(false)
-const directorProviderId = ref(null)
-
-const providerTypes = [
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'claude', label: 'Claude' },
-  { value: 'azure', label: 'Azure OpenAI' },
-  { value: 'google', label: 'Google Gemini' },
-  { value: 'cohere', label: 'Cohere' },
-  { value: 'ollama', label: 'Ollama (local)' },
-  { value: 'vllm', label: 'vLLM (local)' },
-  { value: 'llamacpp', label: 'llama.cpp (local)' },
-  { value: 'custom', label: 'Custom (OpenAI-compatible)' },
-]
 
 // Usage state
 const usage = ref(null)
@@ -102,7 +66,6 @@ const memoryLoaded = ref(false)
 
 onMounted(() => {
   if (activeTab.value === 'github') loadGitHub()
-  if (activeTab.value === 'providers') loadProviders()
   if (activeTab.value === 'usage') loadUsage()
   if (activeTab.value === 'memory') loadMemory()
 })
@@ -112,9 +75,6 @@ async function switchTab(tabId) {
   if (tabId === 'github' && !githubLoaded.value) {
     await loadGitHub()
     githubLoaded.value = true
-  } else if (tabId === 'providers' && !providersLoaded.value) {
-    await loadProviders()
-    providersLoaded.value = true
   } else if (tabId === 'usage' && !usage.value) {
     await loadUsage()
     await loadBilling()
