@@ -14,10 +14,7 @@ jest.mock('bcryptjs', () => ({
 describe('AgentService - API Key Rotation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    bcrypt.compare.mockImplementation(async (key, hash) => {
-      // For testing, we'll set up specific mock implementations per test
-      return true;
-    });
+    bcrypt.compare.mockImplementation(async (key, hash) => true);
   });
 
   it('hashes api_key on agent creation (no plaintext stored)', async () => {
@@ -38,6 +35,13 @@ describe('AgentService - API Key Rotation', () => {
     const insertQuery = pool.query.mock.calls[0][0];
     expect(insertQuery).not.toContain('api_key,');
     expect(insertQuery).toContain('api_key_hash');
+    expect(insertQuery).toContain('api_key_hash_prefix');
+
+    // Query args: name, hash, prefix, expiresAt, userId, providerId, rateLimit, maxActions
+    const queryArgs = pool.query.mock.calls[0][1];
+    expect(queryArgs[0]).toBe('test-agent');
+    expect(queryArgs[1]).toBe(mockHash);
+    expect(queryArgs[2]).toBe(mockHash.substring(0, 12));
   });
 
   it('sets api_key_expires_at to 30 days from now', async () => {
@@ -48,7 +52,7 @@ describe('AgentService - API Key Rotation', () => {
     await AgentService.create('test-agent', plainKey, 1);
 
     const queryArgs = pool.query.mock.calls[0][1];
-    const expiresAt = queryArgs[2];
+    const expiresAt = queryArgs[3];
     const now = new Date();
     const thirtyDaysFromNow = new Date(now);
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
@@ -77,6 +81,7 @@ describe('AgentService - API Key Rotation', () => {
     const updateQuery = pool.query.mock.calls[0][0];
     expect(updateQuery).not.toContain('api_key =');
     expect(updateQuery).toContain('api_key_hash =');
+    expect(updateQuery).toContain('api_key_hash_prefix =');
   });
 
   it('throws error when rotating non-existent agent', async () => {
@@ -85,13 +90,16 @@ describe('AgentService - API Key Rotation', () => {
     await expect(AgentService.rotateKey(999, 1)).rejects.toThrow('AGENT_NOT_FOUND');
   });
 
-  it('getAgentByApiKey finds agent by hash comparison', async () => {
+  it('getAgentByApiKey uses prefix lookup for O(1) candidate selection', async () => {
+    const mockHash = '$2a$10$prefix123456789012345678901234567890';
+    bcrypt.hash.mockResolvedValue(mockHash);
     bcrypt.compare.mockResolvedValueOnce(true);
+    
     pool.query.mockResolvedValueOnce({ 
       rows: [{ 
         id: 1, 
         name: 'test-agent', 
-        api_key_hash: '$2a$10$hash',
+        api_key_hash: mockHash,
         provider_name: null,
         provider_type: null
       }] 
@@ -100,10 +108,19 @@ describe('AgentService - API Key Rotation', () => {
     const agent = await AgentService.getAgentByApiKey('key-123');
     expect(agent).not.toBeNull();
     expect(agent.name).toBe('test-agent');
-    expect(bcrypt.compare).toHaveBeenCalledWith('key-123', '$2a$10$hash');
+
+    // Should query by prefix, not by full hash or IS NOT NULL
+    const query = pool.query.mock.calls[0][0];
+    expect(query).toContain('api_key_hash_prefix =');
+    expect(query).not.toContain('api_key_hash IS NOT NULL');
+
+    // Should pass prefix as parameter
+    const queryArgs = pool.query.mock.calls[0][1];
+    expect(queryArgs[0]).toBe(mockHash.substring(0, 12));
   });
 
   it('getAgentByApiKey returns null for wrong key', async () => {
+    bcrypt.hash.mockResolvedValue('$2a$10$wrongkey123456789012345678901234567890');
     bcrypt.compare.mockResolvedValueOnce(false);
     pool.query.mockResolvedValueOnce({ 
       rows: [{ 
@@ -119,9 +136,8 @@ describe('AgentService - API Key Rotation', () => {
     expect(agent).toBeNull();
   });
 
-  it('getAgentByApiKey skips agents with null hash (query filters them)', async () => {
-    // The SQL query filters WHERE api_key_hash IS NOT NULL
-    // So agents with null hash are never returned
+  it('getAgentByApiKey returns null when no candidates match prefix', async () => {
+    bcrypt.hash.mockResolvedValue('$2a$10$nonexistent123456789012345678901234567890');
     pool.query.mockResolvedValueOnce({ rows: [] });
 
     const agent = await AgentService.getAgentByApiKey('any_key');
@@ -129,21 +145,23 @@ describe('AgentService - API Key Rotation', () => {
     expect(bcrypt.compare).not.toHaveBeenCalled();
   });
 
-  it('getAgentByApiKey tries all agents until match found', async () => {
-    bcrypt.compare
-      .mockResolvedValueOnce(false) // First agent doesn't match
-      .mockResolvedValueOnce(true); // Second agent matches
+  it('getAgentByApiKey verifies with bcrypt.compare after prefix lookup', async () => {
+    const mockHash = '$2a$10$prefix123456789012345678901234567890';
+    bcrypt.hash.mockResolvedValue(mockHash);
+    bcrypt.compare.mockResolvedValueOnce(false); // Prefix matches but hash doesn't
     
     pool.query.mockResolvedValueOnce({ 
-      rows: [
-        { id: 1, name: 'Agent 1', api_key_hash: '$2a$10$hash1', provider_name: null, provider_type: null },
-        { id: 2, name: 'Agent 2', api_key_hash: '$2a$10$hash2', provider_name: null, provider_type: null },
-      ] 
+      rows: [{ 
+        id: 1, 
+        name: 'test-agent', 
+        api_key_hash: '$2a$10$differenthash1234567890123456789012345678',
+        provider_name: null,
+        provider_type: null
+      }] 
     });
 
     const agent = await AgentService.getAgentByApiKey('key-123');
-    expect(agent).not.toBeNull();
-    expect(agent.name).toBe('Agent 2');
-    expect(bcrypt.compare).toHaveBeenCalledTimes(2);
+    expect(agent).toBeNull();
+    expect(bcrypt.compare).toHaveBeenCalled();
   });
 });

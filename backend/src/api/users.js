@@ -194,6 +194,6 @@ router.get('/super-admin', verifyToken, requireAnyPermission('USER_VIEW_ALL'), u
  *       404:
  *         description: User not found
  */
-router.post('/:id/unlock', verifyToken, requireAnyPermission('USER_VIEW_ALL'), userController.unlockUser);
+router.post('/:id/unlock', verifyToken, requireAnyPermission('USER_UPDATE'), userController.unlockUser);
 
 module.exports = router;

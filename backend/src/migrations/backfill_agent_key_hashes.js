@@ -5,8 +5,8 @@
  * Run: node backend/src/migrations/backfill_agent_key_hashes.js
  *
  * This reads all agents with plaintext api_key values, bcrypt-hashes them,
- * and stores the hash in api_key_hash. After this migration, api_key can
- * be safely NULL'd for security.
+ * and stores the hash in api_key_hash and the first 12 chars in api_key_hash_prefix.
+ * After this migration, api_key can be safely NULL'd for security.
  */
 
 require('dotenv').config();
@@ -14,6 +14,7 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 
 const SALT_ROUNDS = 10;
+const PREFIX_LENGTH = 12;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -42,11 +43,12 @@ async function migrate() {
     for (const agent of rows) {
       try {
         const hash = await bcrypt.hash(agent.api_key, SALT_ROUNDS);
+        const prefix = hash.substring(0, PREFIX_LENGTH);
         await pool.query(
-          'UPDATE agents SET api_key_hash = $1 WHERE id = $2',
-          [hash, agent.id]
+          'UPDATE agents SET api_key_hash = $1, api_key_hash_prefix = $2 WHERE id = $3',
+          [hash, prefix, agent.id]
         );
-        console.log(`  Hashed: agent ${agent.id} (${agent.name})`);
+        console.log(`  Hashed: agent ${agent.id} (${agent.name}) — prefix: ${prefix}`);
         hashed++;
       } catch (err) {
         console.error(`  Error hashing agent ${agent.id}: ${err.message}`);
