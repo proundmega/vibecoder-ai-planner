@@ -14,9 +14,9 @@ import { useRateLimitStore } from '@/stores/rateLimit'
 
 const rateLimitStore = useRateLimitStore()
 
-const minutes = computed(() => Math.floor(Number(rateLimitStore.countdownSeconds) / 60))
-const seconds = computed(() => Number(rateLimitStore.countdownSeconds) % 60)
-const active = computed(() => rateLimitStore.rateLimitActive)
+const minutes = computed(() => Math.floor(Number(rateLimitStore.countdownSeconds.value) / 60))
+const seconds = computed(() => Number(rateLimitStore.countdownSeconds.value) % 60)
+const active = computed(() => rateLimitStore.rateLimitActive.value)
 </script>
 
 <style scoped>
