@@ -18,7 +18,10 @@ CREATE TABLE IF NOT EXISTS providers (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE providers ADD CONSTRAINT IF NOT EXISTS unique_provider_name_type UNIQUE (name, provider_type);
+DO $$ BEGIN
+  ALTER TABLE providers ADD CONSTRAINT unique_provider_name_type UNIQUE (name, provider_type);
+  EXCEPTION WHEN duplicate_object THEN null;
+END $$;
 
 -- Add provider_id to agents
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS provider_id BIGINT REFERENCES providers(id) ON DELETE SET NULL;
