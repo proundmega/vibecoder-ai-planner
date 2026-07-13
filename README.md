@@ -127,9 +127,12 @@ Required for `docker compose up`:
 
 | Variable | Where | Description |
 |----------|-------|-------------|
-| `NGINX_HEALTH_LOG` | Frontend (Docker) | Set to `enabled` to show health check requests in access logs. Default: suppressed (`/dev/null`). |
 | `METRICS_TOKEN` | Backend | If set, `/metrics` endpoint requires `X-Metrics-Token` header. If unset, no auth required. |
 | `NODE_ENV=test` | Backend | Skips server listen; supertest uses the app directly. Also disables Prometheus default metrics collection. |
+
+### Health Check Logging
+
+Docker health checks use `wget --spider` (frontend) and `curl -f` (backend) to avoid noisy access logs. Health check endpoints (`/api/health`, `/api/version`) are automatically skipped by the backend request logger. The `docker-proxy` service logs are from a third-party image and cannot be suppressed from this project.
 
 ## Project Structure
 
