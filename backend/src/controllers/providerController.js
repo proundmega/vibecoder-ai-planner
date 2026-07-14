@@ -9,6 +9,10 @@ async function addProvider(req, res, next) {
 
     const encryptedKey = apiKey ? encrypt(apiKey) : null;
 
+    const normalizedRoutingRules = routing_rules
+      ? (typeof routing_rules === 'string' ? JSON.parse(routing_rules) : routing_rules)
+      : {};
+
     const localModels = {
       ollama: 'llama3',
       vllm: 'meta-llama/Llama-3-8b',
@@ -24,7 +28,7 @@ async function addProvider(req, res, next) {
         await client.query('UPDATE providers SET is_project_director = false');
         const txResult = await client.query(
           'INSERT INTO providers (name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *',
-          [name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, routing_rules || '{}', true]
+          [name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, JSON.stringify(normalizedRoutingRules), true]
         );
         await client.query('COMMIT');
         row = txResult.rows[0];
@@ -39,7 +43,7 @@ async function addProvider(req, res, next) {
         `INSERT INTO providers (name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director, is_active)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING *`,
-        [name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, routing_rules || '{}', false, true]
+         [name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, JSON.stringify(normalizedRoutingRules), false, true]
       );
       row = result.rows[0];
     }
@@ -74,6 +78,10 @@ async function updateProvider(req, res, next) {
   try {
     const { id } = req.params;
     const { name, providerType, apiKey, baseUrl, model, roles, maxTokens, temperature, isActive, endpoint_url, fallback_provider, routing_rules, is_project_director } = req.body;
+
+    const normalizedRoutingRules = routing_rules
+      ? (typeof routing_rules === 'string' ? JSON.parse(routing_rules) : routing_rules)
+      : undefined;
 
     const existing = await pool.query(
       'SELECT * FROM providers WHERE id = $1',
@@ -130,9 +138,9 @@ async function updateProvider(req, res, next) {
       updates.push(`fallback_provider = $${paramIndex++}`);
       values.push(fallback_provider || null);
     }
-    if (routing_rules !== undefined) {
+    if (normalizedRoutingRules !== undefined) {
       updates.push(`routing_rules = $${paramIndex++}`);
-      values.push(routing_rules || '{}');
+      values.push(JSON.stringify(normalizedRoutingRules));
     }
     if (is_project_director !== undefined && is_project_director) {
       updates.push(`is_project_director = $${paramIndex++}`);

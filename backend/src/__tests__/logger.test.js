@@ -132,4 +132,223 @@ describe('Request Logger Middleware', () => {
       done();
     }, 50);
   });
+
+  it('should suppress info logging for health endpoints', (done) => {
+    const infoSpy = jest.spyOn(logger, 'info');
+    const mockReq = {
+      method: 'GET',
+      path: '/api/health',
+      originalUrl: '/api/health',
+      requestId: 'health-test-id',
+      ip: '127.0.0.1',
+      get: jest.fn(() => 'TestAgent/1.0'),
+      user: {},
+    };
+    const listeners = {};
+    const mockRes = {
+      statusCode: 200,
+      on: jest.fn((event, callback) => { listeners[event] = callback; }),
+      emit: jest.fn((event) => { if (listeners[event]) listeners[event](); }),
+      end: jest.fn(),
+    };
+    const nextFn = jest.fn();
+    
+    requestLogger(mockReq, mockRes, nextFn);
+    mockRes.end();
+    
+    setTimeout(() => {
+      expect(infoSpy).not.toHaveBeenCalled();
+      infoSpy.mockRestore();
+      done();
+    }, 50);
+  });
+
+  it('should suppress info logging for /api/version endpoint', (done) => {
+    const infoSpy = jest.spyOn(logger, 'info');
+    const mockReq = {
+      method: 'GET',
+      path: '/api/version',
+      originalUrl: '/api/version',
+      requestId: 'version-test-id',
+      ip: '127.0.0.1',
+      get: jest.fn(() => 'TestAgent/1.0'),
+      user: {},
+    };
+    const listeners = {};
+    const mockRes = {
+      statusCode: 200,
+      on: jest.fn((event, callback) => { listeners[event] = callback; }),
+      emit: jest.fn((event) => { if (listeners[event]) listeners[event](); }),
+      end: jest.fn(),
+    };
+    const nextFn = jest.fn();
+    
+    requestLogger(mockReq, mockRes, nextFn);
+    mockRes.end();
+    
+    setTimeout(() => {
+      expect(infoSpy).not.toHaveBeenCalled();
+      infoSpy.mockRestore();
+      done();
+    }, 50);
+  });
+
+  it('should suppress info logging for /health endpoint', (done) => {
+    const infoSpy = jest.spyOn(logger, 'info');
+    const mockReq = {
+      method: 'GET',
+      path: '/health',
+      originalUrl: '/health',
+      requestId: 'health-short-id',
+      ip: '127.0.0.1',
+      get: jest.fn(() => 'TestAgent/1.0'),
+      user: {},
+    };
+    const listeners = {};
+    const mockRes = {
+      statusCode: 200,
+      on: jest.fn((event, callback) => { listeners[event] = callback; }),
+      emit: jest.fn((event) => { if (listeners[event]) listeners[event](); }),
+      end: jest.fn(),
+    };
+    const nextFn = jest.fn();
+    
+    requestLogger(mockReq, mockRes, nextFn);
+    mockRes.end();
+    
+    setTimeout(() => {
+      expect(infoSpy).not.toHaveBeenCalled();
+      infoSpy.mockRestore();
+      done();
+    }, 50);
+  });
+
+  it('should suppress info logging for /version endpoint', (done) => {
+    const infoSpy = jest.spyOn(logger, 'info');
+    const mockReq = {
+      method: 'GET',
+      path: '/version',
+      originalUrl: '/version',
+      requestId: 'version-short-id',
+      ip: '127.0.0.1',
+      get: jest.fn(() => 'TestAgent/1.0'),
+      user: {},
+    };
+    const listeners = {};
+    const mockRes = {
+      statusCode: 200,
+      on: jest.fn((event, callback) => { listeners[event] = callback; }),
+      emit: jest.fn((event) => { if (listeners[event]) listeners[event](); }),
+      end: jest.fn(),
+    };
+    const nextFn = jest.fn();
+    
+    requestLogger(mockReq, mockRes, nextFn);
+    mockRes.end();
+    
+    setTimeout(() => {
+      expect(infoSpy).not.toHaveBeenCalled();
+      infoSpy.mockRestore();
+      done();
+    }, 50);
+  });
+
+  it('should still log info for non-health endpoints', (done) => {
+    const infoSpy = jest.spyOn(logger, 'info');
+    const mockReq = {
+      method: 'GET',
+      path: '/api/v1/projects',
+      originalUrl: '/api/v1/projects',
+      requestId: 'non-health-id',
+      ip: '127.0.0.1',
+      get: jest.fn(() => 'TestAgent/1.0'),
+      user: { userId: 'user-1' },
+    };
+    const listeners = {};
+    const mockRes = {
+      statusCode: 200,
+      on: jest.fn((event, callback) => { listeners[event] = callback; }),
+      emit: jest.fn((event) => { if (listeners[event]) listeners[event](); }),
+      end: jest.fn(),
+    };
+    const nextFn = jest.fn();
+    
+    requestLogger(mockReq, mockRes, nextFn);
+    mockRes.end();
+    
+    setTimeout(() => {
+      expect(infoSpy).toHaveBeenCalledWith('Request completed', expect.objectContaining({
+        path: '/api/v1/projects',
+        status: 200,
+      }));
+      infoSpy.mockRestore();
+      done();
+    }, 50);
+  });
+
+  it('should still log errors for health endpoint 500 responses', (done) => {
+    const errorSpy = jest.spyOn(logger, 'error');
+    const mockReq = {
+      method: 'GET',
+      path: '/api/health',
+      originalUrl: '/api/health',
+      requestId: 'health-error-id',
+      ip: '127.0.0.1',
+      get: jest.fn(() => 'TestAgent/1.0'),
+      user: {},
+    };
+    const listeners = {};
+    const mockRes = {
+      statusCode: 500,
+      on: jest.fn((event, callback) => { listeners[event] = callback; }),
+      emit: jest.fn((event) => { if (listeners[event]) listeners[event](); }),
+      end: jest.fn(),
+    };
+    const nextFn = jest.fn();
+    
+    requestLogger(mockReq, mockRes, nextFn);
+    mockRes.end();
+    
+    setTimeout(() => {
+      expect(errorSpy).toHaveBeenCalledWith('Request failed', expect.objectContaining({
+        path: '/api/health',
+        status: 500,
+      }));
+      errorSpy.mockRestore();
+      done();
+    }, 50);
+  });
+
+  it('should still log warnings for health endpoint 400 responses', (done) => {
+    const warnSpy = jest.spyOn(logger, 'warn');
+    const mockReq = {
+      method: 'GET',
+      path: '/api/health',
+      originalUrl: '/api/health',
+      requestId: 'health-warn-id',
+      ip: '127.0.0.1',
+      get: jest.fn(() => 'TestAgent/1.0'),
+      user: {},
+    };
+    const listeners = {};
+    const mockRes = {
+      statusCode: 400,
+      on: jest.fn((event, callback) => { listeners[event] = callback; }),
+      emit: jest.fn((event) => { if (listeners[event]) listeners[event](); }),
+      end: jest.fn(),
+    };
+    const nextFn = jest.fn();
+    
+    requestLogger(mockReq, mockRes, nextFn);
+    mockRes.end();
+    
+    setTimeout(() => {
+      expect(warnSpy).toHaveBeenCalledWith('Client error', expect.objectContaining({
+        path: '/api/health',
+        status: 400,
+      }));
+      warnSpy.mockRestore();
+      done();
+    }, 50);
+  });
 });

@@ -8,7 +8,7 @@ const requestLogger = (req, res, next) => {
   req.requestId = crypto.randomUUID();
   req.startTime = startTime;
 
-  const isHealthCheck = HEALTH_ENDPOINTS.has(req.path);
+  const isHealthCheck = HEALTH_ENDPOINTS.has(req.originalUrl) || HEALTH_ENDPOINTS.has(req.path);
 
   const originalEnd = res.end;
   res.end = function(...args) {
