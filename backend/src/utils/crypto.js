@@ -3,10 +3,18 @@ const crypto = require('crypto');
 const ALGORITHM = 'aes-256-gcm';
 let keyBuffer = null;
 
+const MASTER_KEY = process.env.ENCRYPTION_KEY;
 if (process.env.NODE_ENV !== 'test') {
-  const MASTER_KEY = process.env.ENCRYPTION_KEY;
   if (!MASTER_KEY) {
     throw new Error('ENCRYPTION_KEY environment variable is required for encryption operations.');
+  }
+  keyBuffer = Buffer.from(MASTER_KEY, 'hex');
+  if (keyBuffer.length !== 32) {
+    throw new Error('ENCRYPTION_KEY must be a 64-character hexadecimal string (256 bits).');
+  }
+} else if (process.env.INTEGRATION_TESTS) {
+  if (!MASTER_KEY) {
+    throw new Error('ENCRYPTION_KEY environment variable is required for integration tests.');
   }
   keyBuffer = Buffer.from(MASTER_KEY, 'hex');
   if (keyBuffer.length !== 32) {

@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS compute_nodes (
   failure_count INTEGER DEFAULT 0,
   last_seen TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(hostname)
+  CONSTRAINT uq_compute_nodes_hostname UNIQUE(hostname)
 );
 
 CREATE INDEX IF NOT EXISTS idx_compute_nodes_status ON compute_nodes(status);

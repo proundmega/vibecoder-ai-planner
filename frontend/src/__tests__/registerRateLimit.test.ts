@@ -27,7 +27,7 @@ vi.mock('vue-router', () => ({
 }))
 
 describe('Register.vue - Rate Limit Disabled State', () => {
-  let wrapper: VueWrapper<InstanceType<typeof Register>>
+  let wrapper: VueWrapper<any>
 
   beforeEach(() => {
     vi.clearAllMocks()

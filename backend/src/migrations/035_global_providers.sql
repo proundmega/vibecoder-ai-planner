@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS providers (
   id BIGSERIAL PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
   provider_type VARCHAR(50) NOT NULL DEFAULT 'claude',
-  api_key_encrypted TEXT NOT NULL,
+  api_key_encrypted TEXT,
   base_url TEXT,
   model VARCHAR(100) NOT NULL,
   roles TEXT[] NOT NULL DEFAULT ARRAY['worker'],
@@ -18,7 +18,11 @@ CREATE TABLE IF NOT EXISTS providers (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+ALTER TABLE providers DROP CONSTRAINT IF EXISTS unique_provider_name_type;
 ALTER TABLE providers ADD CONSTRAINT unique_provider_name_type UNIQUE (name, provider_type);
+
+-- Ensure api_key_encrypted allows NULL (for providers without API keys like local LLMs)
+ALTER TABLE providers ALTER COLUMN api_key_encrypted DROP NOT NULL;
 
 -- Add provider_id to agents
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS provider_id BIGINT REFERENCES providers(id) ON DELETE SET NULL;

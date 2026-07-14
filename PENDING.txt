@@ -32,7 +32,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 
 | ID | Directory | Priority | Description |
 |----|-----------|----------|-------------|
-| **bp-01** | `bp-01-root-providers` | P1 | 🔄 In Progress — Migration 035 created, providers routes/services/agent updates done, frontend Providers page + AgentModal provider selector + tests done. 421 frontend tests pass, 1072 backend tests pass. |
+| **bp-01** | `bp-01-root-providers` | P1 | ✅ Done (PR #57) — Global providers migration, routes, services, frontend page, AgentModal provider selector, all tests pass. |
 | **bp-02** | `bp-02-agent-provider-resolution` | P1 | Java agents fetch provider config from backend at startup |
 | **bp-03** | `bp-03-pool-provider-resolve` | P1 | PoolManager resolves provider config and passes all env vars |
 | **bp-04** | `bp-04-usage-billing` | P2 | Wire up usage tracking and billing to actual AI calls |

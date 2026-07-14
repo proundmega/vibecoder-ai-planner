@@ -1,4 +1,4 @@
-CREATE TABLE ip_whitelist (
+CREATE TABLE IF NOT EXISTS ip_whitelist (
   id SERIAL PRIMARY KEY,
   ip_address VARCHAR(45) NOT NULL UNIQUE,
   description TEXT DEFAULT '',
@@ -6,4 +6,4 @@ CREATE TABLE ip_whitelist (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_ip_whitelist_ip_address ON ip_whitelist(ip_address);
+CREATE INDEX IF NOT EXISTS idx_ip_whitelist_ip_address ON ip_whitelist(ip_address);

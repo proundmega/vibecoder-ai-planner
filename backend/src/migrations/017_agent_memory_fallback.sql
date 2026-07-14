@@ -14,7 +14,7 @@ BEGIN
     RAISE NOTICE 'agent_memory table already exists, skipping fallback migration';
   ELSE
     -- Create table without vector extension dependency
-    CREATE TABLE agent_memory (
+    CREATE TABLE IF NOT EXISTS agent_memory (
       id BIGSERIAL PRIMARY KEY,
       project_id BIGINT REFERENCES projects(id) ON DELETE CASCADE,
       agent_id BIGINT REFERENCES users(id) ON DELETE CASCADE,

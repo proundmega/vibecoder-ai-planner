@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS ticket_planning (
   created_by BIGINT REFERENCES users(id),
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(ticket_id, file_key, version)
+  CONSTRAINT uq_ticket_planning UNIQUE (ticket_id, file_key, version)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ticket_planning_ticket_id ON ticket_planning(ticket_id);

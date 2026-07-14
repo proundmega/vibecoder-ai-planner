@@ -19,7 +19,7 @@ const addProviderSchema = Joi.object({
   roles: Joi.array().items(Joi.string()).optional(),
   endpoint_url: Joi.string().uri().allow('').optional(),
   fallback_provider: Joi.string().allow('').allow(null).optional(),
-  routing_rules: Joi.object().optional(),
+  routing_rules: Joi.alternatives().try(Joi.string(), Joi.object()).optional(),
   is_project_director: Joi.boolean().optional(),
 });
 
@@ -35,7 +35,7 @@ const updateProviderSchema = Joi.object({
   isActive: Joi.boolean().optional(),
   endpoint_url: Joi.string().uri().allow('').optional(),
   fallback_provider: Joi.string().allow('').allow(null).optional(),
-  routing_rules: Joi.object().optional(),
+  routing_rules: Joi.alternatives().try(Joi.string(), Joi.object()).optional(),
   is_project_director: Joi.boolean().optional(),
 });
 
