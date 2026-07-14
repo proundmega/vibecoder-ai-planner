@@ -381,9 +381,9 @@ async function testProvider(req, res, next) {
       throw new Error('Base URL is required for this provider type');
     }
 
-    const decryptedKey = decrypt(providerConfig.api_key_encrypted);
+    const apiKey = providerConfig.api_key_encrypted ? decrypt(providerConfig.api_key_encrypted) : null;
     const config = {
-      apiKey: decryptedKey,
+      apiKey,
       model: providerConfig.model,
       maxTokens: providerConfig.max_tokens,
       temperature: providerConfig.temperature,
