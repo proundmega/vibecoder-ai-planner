@@ -54,7 +54,7 @@ router.post('/create', verifyTokenOrAgent, requireAnyPermission('AGENT_CREATE'),
   try {
     const { name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays } = req.body;
     const apiKey = `ak_${crypto.randomBytes(24).toString('hex')}`;
-    const agent = await AgentService.create(name, apiKey, req.user.userId, providerId || null, rateLimit, maxActionsPerDay, keyExpiryDays);
+    const agent = await AgentService.create(name, apiKey, req.user.userId, { providerId: providerId || null, rateLimit, maxActionsPerDay, keyExpiryDays });
     res.status(201).json({ ...agent, generatedApiKey: apiKey });
   } catch (error) {
     logger.error('POST /api/agents/create', error);

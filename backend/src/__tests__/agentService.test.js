@@ -177,7 +177,7 @@ describe('AgentService', () => {
       const mockRow = { id: 'a1', name: 'Custom Agent', api_key_expires_at: new Date() };
       pool.query.mockResolvedValueOnce({ rows: [mockRow] });
 
-      const result = await AgentService.create('Custom Agent', 'key-456', 'user-1', 'prov-1', 500, 5000, 60);
+      const result = await AgentService.create('Custom Agent', 'key-456', 'user-1', { providerId: 'prov-1', rateLimit: 500, maxActionsPerDay: 5000, keyExpiryDays: 60 });
 
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO agents'),
@@ -186,7 +186,7 @@ describe('AgentService', () => {
       expect(result.api_key).toBe('key-456');
     });
 
-    it('creates agent with defaults when no custom limits provided', async () => {
+    it('creates agent with defaults when no options provided', async () => {
       const mockRow = { id: 'a1', name: 'Default Agent', api_key_expires_at: new Date() };
       pool.query.mockResolvedValueOnce({ rows: [mockRow] });
 

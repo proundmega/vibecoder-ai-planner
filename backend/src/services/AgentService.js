@@ -8,7 +8,7 @@ const DEFAULT_KEY_EXPIRY_DAYS = 30;
 const PREFIX_LENGTH = 20;
 
 class AgentService {
-  async create(name, apiKey, userId, providerId = null, rateLimit = 100, maxActionsPerDay = 1000, keyExpiryDays = 30) {
+  async create(name, apiKey, userId, { providerId = null, rateLimit = 100, maxActionsPerDay = 1000, keyExpiryDays = 30 } = {}) {
     if (providerId) {
       const providerCheck = await pool.query('SELECT id FROM providers WHERE id = $1', [providerId]);
       if (providerCheck.rows.length === 0) {
