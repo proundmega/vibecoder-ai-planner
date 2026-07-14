@@ -23,10 +23,21 @@ class HeartbeatService {
 
   async getAgentStatus(agentId) {
     const result = await pool.query(
-      `SELECT ah.*, a.name as agent_name
-       FROM agent_heartbeats ah
-       LEFT JOIN agents a ON a.id = ah.agent_id
-       WHERE ah.agent_id = $1`,
+      `SELECT
+        a.id as agent_id,
+        a.name as agent_name,
+        a.owner_id,
+        a.rate_limit,
+        a.max_actions_per_day,
+        ah.last_seen,
+        ah.current_ticket_id,
+        ah.current_step,
+        ah.memory_usage,
+        ah.cpu_usage,
+        COALESCE(ah.status, 'offline') as status
+      FROM agents a
+      LEFT JOIN agent_heartbeats ah ON ah.agent_id = a.id
+      WHERE a.id = $1`,
       [agentId]
     );
     return result.rows[0] || null;

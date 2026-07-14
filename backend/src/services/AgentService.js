@@ -8,7 +8,7 @@ const DEFAULT_KEY_EXPIRY_DAYS = 30;
 const PREFIX_LENGTH = 20;
 
 class AgentService {
-  async create(name, apiKey, userId, providerId = null) {
+  async create(name, apiKey, userId, providerId = null, rateLimit = 100, maxActionsPerDay = 1000, keyExpiryDays = 30) {
     if (providerId) {
       const providerCheck = await pool.query('SELECT id FROM providers WHERE id = $1', [providerId]);
       if (providerCheck.rows.length === 0) {
@@ -19,13 +19,13 @@ class AgentService {
     const apiKeyHash = await bcrypt.hash(apiKey, SALT_ROUNDS);
     const apiKeyHashPrefix = apiKeyHash.substring(0, PREFIX_LENGTH);
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + DEFAULT_KEY_EXPIRY_DAYS);
+    expiresAt.setDate(expiresAt.getDate() + keyExpiryDays);
 
     const result = await pool.query(
       `INSERT INTO agents (name, api_key_hash, api_key_hash_prefix, api_key_expires_at, owner_id, provider_id, rate_limit, max_actions_per_day) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
        RETURNING id, name, api_key_expires_at, provider_id, created_at`,
-      [name, apiKeyHash, apiKeyHashPrefix, expiresAt, userId, providerId, 100, 1000]
+      [name, apiKeyHash, apiKeyHashPrefix, expiresAt, userId, providerId, rateLimit, maxActionsPerDay]
     );
     return { ...result.rows[0], api_key: apiKey };
   }
@@ -100,7 +100,7 @@ class AgentService {
         AND DATE(aa.created_at) = DATE($1)
       WHERE a.id = $2
       GROUP BY a.id
-    `);
+    `, [agentId, date]);
     const row = result.rows[0];
     if (!row) return { available: 0, used: 0, limit: 100 };
     

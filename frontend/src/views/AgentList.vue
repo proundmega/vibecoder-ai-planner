@@ -66,9 +66,9 @@ function formatCost(cost) {
   return `$${Number(cost || 0).toFixed(2)}`
 }
 
-async function handleCreate(name, providerId) {
+async function handleCreate(name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays) {
   try {
-    await createAgent(name, providerId)
+    await createAgent({ name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays })
     showCreateModal.value = false
     createError.value = null
   } catch (err) {

@@ -143,4 +143,60 @@ describe('AgentService', () => {
       );
     });
   });
+
+  describe('getAgentDailyLimit', () => {
+    it('returns daily limit with correct parameters', async () => {
+      const mockRow = { rate_limit: 200, max_actions_per_day: 5000, actions_today: 5 };
+      pool.query.mockResolvedValueOnce({ rows: [mockRow] });
+      const testDate = new Date('2026-01-15');
+
+      const result = await AgentService.getAgentDailyLimit('a1', testDate);
+
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT'),
+        ['a1', testDate]
+      );
+      expect(result.used).toBe(5);
+      expect(result.limit).toBe(5000);
+      expect(result.available).toBe(4995);
+    });
+
+    it('returns default when agent not found', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      const result = await AgentService.getAgentDailyLimit('nonexistent');
+
+      expect(result.available).toBe(0);
+      expect(result.used).toBe(0);
+      expect(result.limit).toBe(100);
+    });
+  });
+
+  describe('create with custom limits', () => {
+    it('creates agent with custom rate limit and max actions', async () => {
+      const mockRow = { id: 'a1', name: 'Custom Agent', api_key_expires_at: new Date() };
+      pool.query.mockResolvedValueOnce({ rows: [mockRow] });
+
+      const result = await AgentService.create('Custom Agent', 'key-456', 'user-1', 'prov-1', 500, 5000, 60);
+
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO agents'),
+        expect.arrayContaining(['Custom Agent', expect.any(String), expect.any(String), expect.any(Date), 'user-1', 'prov-1', 500, 5000])
+      );
+      expect(result.api_key).toBe('key-456');
+    });
+
+    it('creates agent with defaults when no custom limits provided', async () => {
+      const mockRow = { id: 'a1', name: 'Default Agent', api_key_expires_at: new Date() };
+      pool.query.mockResolvedValueOnce({ rows: [mockRow] });
+
+      const result = await AgentService.create('Default Agent', 'key-789', 'user-1');
+
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO agents'),
+        expect.arrayContaining([expect.any(String), expect.any(String), expect.any(String), expect.any(Date), 'user-1', null, 100, 1000])
+      );
+      expect(result.api_key).toBe('key-789');
+    });
+  });
 });

@@ -23,13 +23,34 @@ describe('agents API', () => {
     expect(get).toHaveBeenCalledWith('/api/v1/agents/agent-1/key')
   })
 
-  it('createAgent calls post with correct URL', async () => {
+  it('createAgent calls post with correct URL and params', async () => {
     const { post } = await import('../api/client')
     post.mockResolvedValue({ id: 'agent-1', name: 'Test Agent' })
 
-    await agents.createAgent('Test Agent')
+    await agents.createAgent({ name: 'Test Agent', rateLimit: 200, maxActionsPerDay: 5000 })
 
-    expect(post).toHaveBeenCalledWith('/api/v1/agents/create', { name: 'Test Agent' })
+    expect(post).toHaveBeenCalledWith('/api/v1/agents/create', {
+      name: 'Test Agent',
+      providerId: undefined,
+      rateLimit: 200,
+      maxActionsPerDay: 5000,
+      keyExpiryDays: undefined,
+    })
+  })
+
+  it('createAgent sends minimal params', async () => {
+    const { post } = await import('../api/client')
+    post.mockResolvedValue({ id: 'agent-1', name: 'Test Agent' })
+
+    await agents.createAgent({ name: 'Test Agent' })
+
+    expect(post).toHaveBeenCalledWith('/api/v1/agents/create', {
+      name: 'Test Agent',
+      providerId: undefined,
+      rateLimit: undefined,
+      maxActionsPerDay: undefined,
+      keyExpiryDays: undefined,
+    })
   })
 
   it('listAgents calls get with correct URL', async () => {
