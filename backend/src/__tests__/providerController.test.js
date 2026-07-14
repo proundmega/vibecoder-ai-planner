@@ -797,19 +797,25 @@ describe('Provider Controller', () => {
 
   describe('addProvider: director promotion in transaction', () => {
     it('should demote existing directors when adding as director', async () => {
-      
-      pool.query.mockResolvedValueOnce({
-        rows: [{
-          id: 2, name: 'new-director', provider_type: 'openai',
-          api_key_encrypted: 'encrypted-key', base_url: null, model: 'gpt-4o',
-          roles: ['worker'], max_tokens: 4096, temperature: 0.1,
-          is_active: true, endpoint_url: null, fallback_provider: null,
-          routing_rules: '{}', is_project_director: true,
-          created_at: new Date(), updated_at: new Date(),
-        }],
-      });
+      const mockClient = {
+        query: jest.fn()
+          .mockResolvedValueOnce({}) // BEGIN
+          .mockResolvedValueOnce({}) // UPDATE providers SET is_project_director = false
+          .mockResolvedValueOnce({
+            rows: [{
+              id: 2, name: 'new-director', provider_type: 'openai',
+              api_key_encrypted: 'encrypted-key', base_url: null, model: 'gpt-4o',
+              roles: ['worker'], max_tokens: 4096, temperature: 0.1,
+              is_active: true, endpoint_url: null, fallback_provider: null,
+              routing_rules: '{}', is_project_director: true,
+              created_at: new Date(), updated_at: new Date(),
+            }],
+          }) // INSERT
+          .mockResolvedValueOnce({}), // COMMIT
+        release: jest.fn(),
+      };
+      pool.connect.mockResolvedValueOnce(mockClient);
 
-      mockReq.params.id = '1';
       mockReq.body = {
         name: 'new-director',
         providerType: 'openai',
@@ -828,10 +834,11 @@ describe('Provider Controller', () => {
         }),
       });
 
-      // Verify transaction query was used (BEGIN...COMMIT)
-      const txCall = pool.query.mock.calls[0][0];
-      expect(txCall).toContain('BEGIN');
-      expect(txCall).toContain('COMMIT');
+      // Verify transaction queries were used
+      expect(mockClient.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+      expect(mockClient.query).toHaveBeenNthCalledWith(2, 'UPDATE providers SET is_project_director = false');
+      expect(mockClient.query).toHaveBeenNthCalledWith(4, 'COMMIT');
+      expect(mockClient.release).toHaveBeenCalled();
     });
   });
 
@@ -894,10 +901,20 @@ describe('Provider Controller', () => {
 
   describe('setDirector', () => {
     it('should set director and return updated provider', async () => {
-      pool.query
-        .mockResolvedValueOnce({ rows: [{ id: 1 }] })
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ id: 1, name: 'openai-pro', provider_type: 'openai', api_key_encrypted: 'enc', base_url: null, model: 'gpt-4o', roles: ['worker'], max_tokens: 4096, temperature: 0.1, is_active: true, endpoint_url: null, fallback_provider: null, routing_rules: '{}', is_project_director: true, created_at: new Date(), updated_at: new Date() }] });
+      pool.query.mockResolvedValueOnce({ rows: [{ id: 1 }] }); // SELECT id FROM providers
+
+      const mockClient = {
+        query: jest.fn()
+          .mockResolvedValueOnce({}) // BEGIN
+          .mockResolvedValueOnce({}) // UPDATE providers SET is_project_director = false
+          .mockResolvedValueOnce({}) // UPDATE providers SET is_project_director = true
+          .mockResolvedValueOnce({}) // COMMIT
+          .mockResolvedValueOnce({
+            rows: [{ id: 1, name: 'openai-pro', provider_type: 'openai', api_key_encrypted: 'enc', base_url: null, model: 'gpt-4o', roles: ['worker'], max_tokens: 4096, temperature: 0.1, is_active: true, endpoint_url: null, fallback_provider: null, routing_rules: '{}', is_project_director: true, created_at: new Date(), updated_at: new Date() }],
+          }), // SELECT * FROM providers
+        release: jest.fn(),
+      };
+      pool.connect.mockResolvedValueOnce(mockClient);
 
       mockReq.params.id = '1';
 
@@ -917,10 +934,20 @@ describe('Provider Controller', () => {
     });
 
     it('should demote existing director when setting new one', async () => {
-      pool.query
-        .mockResolvedValueOnce({ rows: [{ id: 2 }] })
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ id: 2, name: 'new-director', provider_type: 'claude', api_key_encrypted: 'enc', base_url: null, model: 'claude-sonnet', roles: ['worker'], max_tokens: 4096, temperature: 0.1, is_active: true, endpoint_url: null, fallback_provider: null, routing_rules: '{}', is_project_director: true, created_at: new Date(), updated_at: new Date() }] });
+      pool.query.mockResolvedValueOnce({ rows: [{ id: 2 }] }); // SELECT id FROM providers
+
+      const mockClient = {
+        query: jest.fn()
+          .mockResolvedValueOnce({}) // BEGIN
+          .mockResolvedValueOnce({}) // UPDATE providers SET is_project_director = false
+          .mockResolvedValueOnce({}) // UPDATE providers SET is_project_director = true
+          .mockResolvedValueOnce({}) // COMMIT
+          .mockResolvedValueOnce({
+            rows: [{ id: 2, name: 'new-director', provider_type: 'claude', api_key_encrypted: 'enc', base_url: null, model: 'claude-sonnet', roles: ['worker'], max_tokens: 4096, temperature: 0.1, is_active: true, endpoint_url: null, fallback_provider: null, routing_rules: '{}', is_project_director: true, created_at: new Date(), updated_at: new Date() }],
+          }), // SELECT * FROM providers
+        release: jest.fn(),
+      };
+      pool.connect.mockResolvedValueOnce(mockClient);
 
       mockReq.params.id = '2';
 
@@ -934,13 +961,12 @@ describe('Provider Controller', () => {
         }),
       });
 
-      // Verify the demote query was called (first call after provider existence check)
-      const demoteCall = pool.query.mock.calls.find(call => call[0].includes('is_project_director = false'));
+      // Verify the demote query was called
+      const demoteCall = mockClient.query.mock.calls.find(call => call[0].includes('is_project_director = false'));
       expect(demoteCall).toBeDefined();
     });
 
     it('should return 404 for non-existent provider', async () => {
-      
       pool.query.mockResolvedValueOnce({ rows: [] });
 
       mockReq.params.id = '1';

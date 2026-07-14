@@ -7,6 +7,14 @@ const { createProjectSchema, updateProjectSchema } = require('../validators/proj
 const { updateTicketSchema } = require('../validators/tickets');
 const projectController = require('../controllers/projectController');
 
+// Deprecation stubs for old per-project provider routes
+router.use('/:projectId/providers', (req, res) => {
+  res.status(410).json({
+    success: false,
+    error: { code: 'DEPRECATED', message: 'Providers are now global. Use /api/v1/providers instead.' }
+  });
+});
+
 /**
  * @openapi
  * /projects:

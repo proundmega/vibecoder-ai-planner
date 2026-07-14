@@ -3,8 +3,8 @@ const crypto = require('crypto');
 const ALGORITHM = 'aes-256-gcm';
 let keyBuffer = null;
 
-if (process.env.NODE_ENV !== 'test') {
-  const MASTER_KEY = process.env.ENCRYPTION_KEY;
+const MASTER_KEY = process.env.ENCRYPTION_KEY;
+if (process.env.NODE_ENV !== 'test' || process.env.INTEGRATION_TESTS) {
   if (!MASTER_KEY) {
     throw new Error('ENCRYPTION_KEY environment variable is required for encryption operations.');
   }

@@ -18,11 +18,22 @@ async function addProvider(req, res, next) {
 
     let row;
     if (is_project_director) {
-      const txResult = await pool.query(
-        'BEGIN; UPDATE providers SET is_project_director = false; INSERT INTO providers (name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *; COMMIT',
-        [name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, routing_rules || '{}', true]
-      );
-      row = txResult.rows[0];
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('UPDATE providers SET is_project_director = false');
+        const txResult = await client.query(
+          'INSERT INTO providers (name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *',
+          [name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, routing_rules || '{}', true]
+        );
+        await client.query('COMMIT');
+        row = txResult.rows[0];
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
     } else {
       const result = await pool.query(
         `INSERT INTO providers (name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director, is_active)
@@ -401,37 +412,45 @@ async function setDirector(req, res, next) {
       throw new NotFoundError('Provider not found');
     }
 
-    await pool.query(
-      'BEGIN; UPDATE providers SET is_project_director = false; UPDATE providers SET is_project_director = true, updated_at = NOW() WHERE id = $1; COMMIT',
-      [id]
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('UPDATE providers SET is_project_director = false');
+      await client.query('UPDATE providers SET is_project_director = true, updated_at = NOW() WHERE id = $1', [id]);
+      await client.query('COMMIT');
 
-    const updated = await pool.query(
-      'SELECT * FROM providers WHERE id = $1',
-      [id]
-    );
+      const updated = await client.query(
+        'SELECT * FROM providers WHERE id = $1',
+        [id]
+      );
 
-    const row = updated.rows[0];
-    res.json({
-      success: true,
-      data: {
-        id: row.id,
-        name: row.name,
-        providerType: row.provider_type,
-        baseUrl: row.base_url,
-        model: row.model,
-        roles: row.roles,
-        maxTokens: row.max_tokens,
-        temperature: row.temperature,
-        isActive: row.is_active,
-        endpoint_url: row.endpoint_url,
-        fallback_provider: row.fallback_provider,
-        routing_rules: row.routing_rules,
-        is_project_director: row.is_project_director,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      },
-    });
+      const row = updated.rows[0];
+      res.json({
+        success: true,
+        data: {
+          id: row.id,
+          name: row.name,
+          providerType: row.provider_type,
+          baseUrl: row.base_url,
+          model: row.model,
+          roles: row.roles,
+          maxTokens: row.max_tokens,
+          temperature: row.temperature,
+          isActive: row.is_active,
+          endpoint_url: row.endpoint_url,
+          fallback_provider: row.fallback_provider,
+          routing_rules: row.routing_rules,
+          is_project_director: row.is_project_director,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        },
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   } catch (error) {
     next(error);
   }
