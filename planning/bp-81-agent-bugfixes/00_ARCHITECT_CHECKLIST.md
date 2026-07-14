@@ -56,12 +56,12 @@
 
 ## Post-Implementation
 
-- [ ] All backend tests pass (`npm test` in `backend/`)
-- [ ] All frontend tests pass (`npm test -- --run` in `frontend/`)
-- [ ] Backend lint passes (`npm run lint` in `backend/`)
-- [ ] Frontend lint passes (`npm run lint` in `frontend/`)
-- [ ] Frontend typecheck passes (`npm run typecheck` in `frontend/`)
-- [ ] Coverage threshold met (60%)
+- [x] All backend tests pass (`npm test` in `backend/`)
+- [x] All frontend tests pass (`npm test -- --run` in `frontend/`)
+- [x] Backend lint passes (`npm run lint` in `backend/`)
+- [x] Frontend lint passes (`npm run lint` in `frontend/`)
+- [x] Frontend typecheck passes (`npm run typecheck` in `frontend/`)
+- [x] Coverage threshold met (60%)
 
 ## When to Ask the User
 

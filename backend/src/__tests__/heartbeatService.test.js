@@ -130,6 +130,53 @@ describe('HeartbeatService', () => {
       const result = await heartbeatService.getAgentStatus(999);
       expect(result).toBeNull();
     });
+
+    test('should query from agents table (not agent_heartbeats) so agents without heartbeat are found', async () => {
+      mockPool.query.mockResolvedValueOnce({
+        rows: [{
+          agent_id: 5,
+          agent_name: 'New Agent',
+          owner_id: 1,
+          rate_limit: 100,
+          max_actions_per_day: 1000,
+          last_seen: null,
+          current_ticket_id: null,
+          current_step: null,
+          memory_usage: null,
+          cpu_usage: null,
+          status: 'offline',
+        }],
+      });
+
+      const result = await heartbeatService.getAgentStatus(5);
+
+      expect(result).not.toBeNull();
+      expect(result.agent_id).toBe(5);
+      expect(result.status).toBe('offline');
+      expect(result.last_seen).toBeNull();
+
+      const sql = mockPool.query.mock.calls[0][0];
+      expect(sql).toContain('FROM agents a');
+      expect(sql).toContain('LEFT JOIN agent_heartbeats');
+      expect(sql).not.toMatch(/FROM agent_heartbeats/);
+    });
+
+    test('should default status to offline when agent_heartbeats row is missing', async () => {
+      mockPool.query.mockResolvedValueOnce({
+        rows: [{
+          agent_id: 10,
+          agent_name: 'No Heartbeat Agent',
+          status: 'offline',
+          last_seen: null,
+        }],
+      });
+
+      const result = await heartbeatService.getAgentStatus(10);
+
+      expect(result.status).toBe('offline');
+      const sql = mockPool.query.mock.calls[0][0];
+      expect(sql).toContain("COALESCE(ah.status, 'offline') as status");
+    });
   });
 
   describe('getAllAgents', () => {
