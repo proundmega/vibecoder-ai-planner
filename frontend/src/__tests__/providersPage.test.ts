@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, VueWrapper } from '@vue/test-utils'
 import ProvidersPage from '@/views/Providers.vue'
 import * as providersApi from '@/api/providers'
@@ -33,7 +33,7 @@ describe('ProvidersPage', () => {
   }
 
   it('renders page header with title and Add Provider button', async () => {
-    vi.mocked(providersApi.listProviders).mockResolvedValue([])
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([])
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
     expect(wrapper.find('h1').text()).toBe('AI Providers')
@@ -41,13 +41,13 @@ describe('ProvidersPage', () => {
   })
 
   it('shows loading state initially', () => {
-    vi.mocked(providersApi.listProviders).mockReturnValue(new Promise(() => {}))
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockReturnValue(new Promise(() => {}))
     wrapper = mount(ProvidersPage, mountOptions)
     expect(wrapper.find('.loading').text()).toContain('Loading')
   })
 
   it('shows empty state when no providers', async () => {
-    vi.mocked(providersApi.listProviders).mockResolvedValue([])
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([])
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -63,7 +63,7 @@ describe('ProvidersPage', () => {
       { id: '1', name: 'OpenAI', providerType: 'openai', model: 'gpt-4o', is_project_director: true, is_active: true },
       { id: '2', name: 'Claude', providerType: 'anthropic', model: 'claude-3', is_project_director: false, is_active: true },
     ]
-    vi.mocked(providersApi.listProviders).mockResolvedValue(mockProviders as any)
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue(mockProviders)
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -74,7 +74,7 @@ describe('ProvidersPage', () => {
   })
 
   it('shows add form when Add Provider button is clicked', async () => {
-    vi.mocked(providersApi.listProviders).mockResolvedValue([])
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([])
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -87,8 +87,8 @@ describe('ProvidersPage', () => {
   })
 
   it('submits add provider form with correct data', async () => {
-    vi.mocked(providersApi.listProviders).mockResolvedValue([])
-    vi.mocked(providersApi.addProvider).mockResolvedValue({ id: '1', name: 'Test' } as any)
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(providersApi.addProvider as ReturnType<typeof vi.fn>).mockResolvedValue({ id: '1', name: 'Test' })
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -117,7 +117,7 @@ describe('ProvidersPage', () => {
 
   it('shows edit form when Edit button is clicked', async () => {
     const mockProviders = [{ id: '1', name: 'OpenAI', providerType: 'openai', model: 'gpt-4o', is_project_director: false, is_active: true }]
-    vi.mocked(providersApi.listProviders).mockResolvedValue(mockProviders as any)
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue(mockProviders)
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -135,8 +135,8 @@ describe('ProvidersPage', () => {
 
   it('deletes provider when Delete button is clicked', async () => {
     const mockProviders = [{ id: '1', name: 'OpenAI', providerType: 'openai', model: 'gpt-4o', is_project_director: false, is_active: true }]
-    vi.mocked(providersApi.listProviders).mockResolvedValue(mockProviders as any)
-    vi.mocked(providersApi.deleteProvider).mockResolvedValue(undefined)
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue(mockProviders)
+    ;(providersApi.deleteProvider as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -152,7 +152,7 @@ describe('ProvidersPage', () => {
   })
 
   it('skips delete when user cancels confirmation', async () => {
-    vi.mocked(providersApi.listProviders).mockResolvedValue([])
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([])
     vi.mocked(confirm).mockReturnValue(false)
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
@@ -162,8 +162,8 @@ describe('ProvidersPage', () => {
 
   it('tests provider connection', async () => {
     const mockProviders = [{ id: '1', name: 'OpenAI', providerType: 'openai', model: 'gpt-4o', is_project_director: false, is_active: true }]
-    vi.mocked(providersApi.listProviders).mockResolvedValue(mockProviders as any)
-    vi.mocked(providersApi.testProvider).mockResolvedValue({ success: true, valid: true, message: 'OK' } as any)
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue(mockProviders)
+    ;(providersApi.testProvider as ReturnType<typeof vi.fn>).mockResolvedValue({ success: true, valid: true, message: 'OK' })
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -181,8 +181,8 @@ describe('ProvidersPage', () => {
 
   it('sets director on provider', async () => {
     const mockProviders = [{ id: '1', name: 'OpenAI', providerType: 'openai', model: 'gpt-4o', is_project_director: false, is_active: true }]
-    vi.mocked(providersApi.listProviders).mockResolvedValue(mockProviders as any)
-    vi.mocked(providersApi.setDirector).mockResolvedValue({ id: '1', is_project_director: true } as any)
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue(mockProviders)
+    ;(providersApi.setDirector as ReturnType<typeof vi.fn>).mockResolvedValue({ id: '1', is_project_director: true })
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -199,7 +199,7 @@ describe('ProvidersPage', () => {
 
   it('disables director button on current director', async () => {
     const mockProviders = [{ id: '1', name: 'OpenAI', providerType: 'openai', model: 'gpt-4o', is_project_director: true, is_active: true }]
-    vi.mocked(providersApi.listProviders).mockResolvedValue(mockProviders as any)
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue(mockProviders)
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -213,7 +213,7 @@ describe('ProvidersPage', () => {
   })
 
   it('shows error message when loading fails', async () => {
-    vi.mocked(providersApi.listProviders).mockRejectedValue(new Error('Network error'))
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'))
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -224,8 +224,8 @@ describe('ProvidersPage', () => {
   })
 
   it('resets form after successful add', async () => {
-    vi.mocked(providersApi.listProviders).mockResolvedValue([])
-    vi.mocked(providersApi.addProvider).mockResolvedValue({ id: '1', name: 'Test' } as any)
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(providersApi.addProvider as ReturnType<typeof vi.fn>).mockResolvedValue({ id: '1', name: 'Test' })
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -245,7 +245,7 @@ describe('ProvidersPage', () => {
   })
 
   it('shows endpoint_url field for ollama provider type', async () => {
-    vi.mocked(providersApi.listProviders).mockResolvedValue([])
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([])
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
@@ -261,7 +261,7 @@ describe('ProvidersPage', () => {
   })
 
   it('hides endpoint_url field for openai provider type', async () => {
-    vi.mocked(providersApi.listProviders).mockResolvedValue([])
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([])
     wrapper = mount(ProvidersPage, mountOptions)
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
