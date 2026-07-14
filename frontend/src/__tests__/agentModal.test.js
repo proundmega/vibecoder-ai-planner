@@ -37,7 +37,7 @@ describe('AgentModal', () => {
     await wrapper.find('input').setValue('  My Agent  ')
     await wrapper.find('form').trigger('submit')
     expect(wrapper.emitted('created')).toBeTruthy()
-    expect(wrapper.emitted('created')[0]).toEqual(['My Agent', null])
+    expect(wrapper.emitted('created')[0]).toEqual(['My Agent', null, 100, 1000, 30])
   })
 
   it('shows error when submitting empty name', async () => {

@@ -15,6 +15,9 @@ const emit = defineEmits(['update:show', 'created', 'update:selectedProvider'])
 const name = ref('')
 const error = ref('')
 const loading = ref(false)
+const rateLimit = ref(100)
+const maxActionsPerDay = ref(1000)
+const keyExpiryDays = ref(30)
 
 const providerOptions = computed(() => props.providers.map(p => ({
   value: p.id,
@@ -25,6 +28,9 @@ function close() {
   emit('update:show', false)
   name.value = ''
   error.value = ''
+  rateLimit.value = 100
+  maxActionsPerDay.value = 1000
+  keyExpiryDays.value = 30
   emit('update:selectedProvider', null)
 }
 
@@ -39,7 +45,7 @@ async function submit() {
   }
   loading.value = true
   error.value = ''
-  emit('created', name.value.trim(), props.selectedProvider)
+  emit('created', name.value.trim(), props.selectedProvider, rateLimit.value, maxActionsPerDay.value, keyExpiryDays.value)
 }
 </script>
 
@@ -66,6 +72,20 @@ async function submit() {
           No providers configured. <router-link to="/providers">Go to Providers</router-link> to add one.
         </p>
       </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Rate Limit (req/min)</label>
+          <input type="number" v-model.number="rateLimit" min="1" max="10000" :disabled="loading" />
+        </div>
+        <div class="form-group">
+          <label>Max Actions/Day</label>
+          <input type="number" v-model.number="maxActionsPerDay" min="1" max="100000" :disabled="loading" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>API Key Expiry (days)</label>
+        <input type="number" v-model.number="keyExpiryDays" min="1" max="365" :disabled="loading" />
+      </div>
       <div class="modal-actions">
         <VButton type="submit" variant="primary" :loading="loading" :disabled="!name.trim()">
           {{ loading ? 'Creating...' : 'Create' }}
@@ -81,6 +101,12 @@ async function submit() {
   margin-bottom: var(--spacing-md);
 }
 
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-md);
+}
+
 .form-group label {
   display: block;
   margin-bottom: var(--spacing-xs);
@@ -88,7 +114,8 @@ async function submit() {
   font-size: var(--font-size-sm);
 }
 
-.form-group select {
+.form-group select,
+.form-group input[type="number"] {
   width: 100%;
   padding: var(--spacing-sm);
   border: 1px solid var(--color-border);

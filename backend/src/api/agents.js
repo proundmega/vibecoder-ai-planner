@@ -15,6 +15,10 @@ const createAgentSchema = Joi.object({
     'string.max': 'name must not exceed 100 characters',
     'any.required': 'name is required',
   }),
+  providerId: Joi.alternatives().try(Joi.string(), Joi.number()).optional().allow(null),
+  rateLimit: Joi.number().integer().min(1).max(10000).optional(),
+  maxActionsPerDay: Joi.number().integer().min(1).max(100000).optional(),
+  keyExpiryDays: Joi.number().integer().min(1).max(365).optional(),
 });
 
 /**
@@ -48,9 +52,9 @@ const createAgentSchema = Joi.object({
  */
 router.post('/create', verifyTokenOrAgent, requireAnyPermission('AGENT_CREATE'), validate(createAgentSchema), async (req, res) => {
   try {
-    const { name, providerId } = req.body;
+    const { name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays } = req.body;
     const apiKey = `ak_${crypto.randomBytes(24).toString('hex')}`;
-    const agent = await AgentService.create(name, apiKey, req.user.userId, providerId || null);
+    const agent = await AgentService.create(name, apiKey, req.user.userId, providerId || null, rateLimit, maxActionsPerDay, keyExpiryDays);
     res.status(201).json({ ...agent, generatedApiKey: apiKey });
   } catch (error) {
     logger.error('POST /api/agents/create', error);

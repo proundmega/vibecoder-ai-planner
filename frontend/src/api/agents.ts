@@ -43,8 +43,22 @@ export function getAgentKeyInfo(agentId: string): Promise<AgentKeyInfo> {
   return get(`/api/v1/agents/${agentId}/key`)
 }
 
-export function createAgent(name: string, providerId?: string): Promise<Agent & { generatedApiKey: string }> {
-  return post<Agent & { generatedApiKey: string }>('/api/v1/agents/create', { name, providerId: providerId || undefined })
+export interface CreateAgentParams {
+  name: string
+  providerId?: string
+  rateLimit?: number
+  maxActionsPerDay?: number
+  keyExpiryDays?: number
+}
+
+export function createAgent(params: CreateAgentParams): Promise<Agent & { generatedApiKey: string }> {
+  return post<Agent & { generatedApiKey: string }>('/api/v1/agents/create', {
+    name: params.name,
+    providerId: params.providerId || undefined,
+    rateLimit: params.rateLimit,
+    maxActionsPerDay: params.maxActionsPerDay,
+    keyExpiryDays: params.keyExpiryDays,
+  })
 }
 
 export function listAgents(): Promise<{ agents: Agent[] }> {
