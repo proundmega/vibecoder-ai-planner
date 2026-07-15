@@ -83,13 +83,10 @@ describe('PoolManager', () => {
       pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
 
       const { pool } = require('../db');
-      pool.query
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
-        });
+      pool.query.mockReset();
+      pool.query.mockResolvedValueOnce({
+        rows: [{ provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096, temperature: 0.1 }],
+      });
 
       const result = await pm.requestAgent('proj-1', 'https://github.com/repo');
 
@@ -122,31 +119,16 @@ describe('PoolManager', () => {
       pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
 
       const { pool } = require('../db');
+      pool.query.mockReset();
       pool.query
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
-        });
+        .mockResolvedValueOnce({ rows: [{ provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096, temperature: 0.1 }] })
+        .mockResolvedValueOnce({ rows: [{ provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096, temperature: 0.1 }] })
+        .mockResolvedValueOnce({ rows: [{ provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096, temperature: 0.1 }] })
+        .mockResolvedValueOnce({ rows: [{ provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096, temperature: 0.1 }] })
+        .mockResolvedValueOnce({ rows: [{ provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096, temperature: 0.1 }] })
+        .mockResolvedValueOnce({ rows: [{ provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096, temperature: 0.1 }] })
+        .mockResolvedValueOnce({ rows: [{ provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096, temperature: 0.1 }] })
+        .mockResolvedValueOnce({ rows: [{ provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096, temperature: 0.1 }] });
 
       // Clear pool and set max pool size to 3 for this test
       pm.pool.clear();
@@ -187,13 +169,8 @@ describe('PoolManager', () => {
       pm.docker.createContainer = jest.fn().mockRejectedValue(new Error('No such image: vibecode-agent'));
 
       const { pool } = require('../db');
-      pool.query
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
-        });
+      pool.query.mockReset();
+      pool.query.mockResolvedValueOnce({ rows: [{ provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096, temperature: 0.1 }] });
 
       await expect(pm.requestAgent('proj-1')).rejects.toThrow("Agent image 'vibecode-agent' not found");
     });
@@ -379,13 +356,8 @@ describe('PoolManager', () => {
       pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
 
       const { pool } = require('../db');
-      pool.query
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
-        });
+      pool.query.mockReset();
+      pool.query.mockResolvedValueOnce({ rows: [{ provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096, temperature: 0.1 }] });
 
       await pm.requestAgent('proj-1', 'https://github.com/repo', {});
 

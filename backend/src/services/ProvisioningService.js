@@ -6,7 +6,11 @@ const { UtilityError } = require('../errors/HttpError');
 const PoolManager = require('./PoolManager');
 
 function shellEscape(str) {
-  return str.replace(/'/g, "'\"'\"'").replace(/"/g, '\\"');
+  return str
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\$/g, '\\$')
+    .replace(/`/g, '\\`');
 }
 
 class ProvisioningService {

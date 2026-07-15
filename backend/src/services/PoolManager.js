@@ -59,14 +59,14 @@ class PoolManager {
 
   async autoSelectProvider() {
     let result = await pool.query(
-      `SELECT provider_type, api_key_encrypted, base_url, model, max_tokens
+      `SELECT provider_type, api_key_encrypted, base_url, model, max_tokens, temperature
        FROM providers WHERE is_active = true AND 'worker' = ANY(roles)
        ORDER BY created_at ASC LIMIT 1`
     );
 
     if (result.rows.length === 0) {
       result = await pool.query(
-        `SELECT provider_type, api_key_encrypted, base_url, model, max_tokens
+        `SELECT provider_type, api_key_encrypted, base_url, model, max_tokens, temperature
          FROM providers WHERE is_active = true
          ORDER BY created_at ASC LIMIT 1`
       );
@@ -83,7 +83,7 @@ class PoolManager {
       base_url: p.base_url,
       model: p.model,
       max_tokens: p.max_tokens || 4096,
-      temperature: null,
+      temperature: p.temperature,
     };
   }
 
