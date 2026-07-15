@@ -51,28 +51,62 @@ public class AgentApp {
     }
 
     private AiProvider createAiProvider() {
+        Map<String, Object> providerConfig = null;
+        try {
+            providerConfig = apiService.getProviderConfig(config.getAgentId());
+            log.info("Fetched provider config from backend: type={}, model={}",
+                providerConfig.get("provider_type"), providerConfig.get("model"));
+        } catch (Exception e) {
+            log.warn("Failed to fetch provider config from backend, falling back to env vars: {}", e.getMessage());
+        }
+
+        if (providerConfig != null && providerConfig.get("api_key") != null) {
+            String apiKey = (String) providerConfig.get("api_key");
+            String baseUrl = (String) providerConfig.get("base_url");
+            String model = (String) providerConfig.get("model");
+            String providerType = (String) providerConfig.get("provider_type");
+            Integer maxTokens = providerConfig.get("max_tokens") != null ?
+                (Integer) providerConfig.get("max_tokens") : config.getAiMaxTokens();
+
+            if (baseUrl != null && !baseUrl.isBlank()) {
+                log.info("Using OpenAI-compatible provider from backend config: {}, model: {}", baseUrl, model);
+                return new OpenAiCompatibleProvider(baseUrl, model, apiKey, maxTokens);
+            }
+
+            String type = providerType != null ? providerType.toLowerCase() : "claude";
+            switch (type) {
+                case "openai":
+                    log.info("Using OpenAI provider from backend config, model: {}", model);
+                    return new OpenAiProvider(apiKey, model);
+                case "claude":
+                default:
+                    log.info("Using Claude provider from backend config, model: {}", model);
+                    return new ClaudeProvider(apiKey, model);
+            }
+        }
+
+        // Fall back to env vars
         String endpointUrl = config.getAiEndpointUrl();
         String model = config.getAiModel();
         String apiKey = config.getAiApiKey();
 
         if (apiKey == null || apiKey.isBlank()) {
-            log.warn("No AI_API_KEY set, will try to fetch from backend credentials");
+            log.warn("No AI_API_KEY set (from env or backend), agent may not function");
         }
 
-        // If AI_ENDPOINT_URL is set, use OpenAI-compatible provider
         if (endpointUrl != null && !endpointUrl.isBlank()) {
-            log.info("Using OpenAI-compatible provider with endpoint: {}, model: {}", endpointUrl, model);
+            log.info("Using OpenAI-compatible provider with env endpoint: {}, model: {}", endpointUrl, model);
             return new OpenAiCompatibleProvider(endpointUrl, model, apiKey, config.getAiMaxTokens());
         }
 
         String provider = config.getAiProvider().toLowerCase();
         switch (provider) {
             case "openai":
-                log.info("Using OpenAI provider, model: {}", model);
+                log.info("Using OpenAI provider from env, model: {}", model);
                 return new OpenAiProvider(apiKey, model);
             case "claude":
             default:
-                log.info("Using Claude provider, model: {}", model);
+                log.info("Using Claude provider from env, model: {}", model);
                 return new ClaudeProvider(apiKey, model);
         }
     }

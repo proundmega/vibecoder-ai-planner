@@ -41,4 +41,13 @@ const statusChangeSchema = Joi.object({
   }),
 });
 
-module.exports = { createTicketSchema, editTicketSchema, claimTicketSchema, statusChangeSchema };
+const updateAgentSchema = Joi.object({
+  name: Joi.string().min(1).max(100).required().messages({
+    'string.empty': 'name is required',
+    'string.min': 'name must be at least 1 character',
+    'string.max': 'name must not exceed 100 characters',
+    'any.required': 'name is required',
+  }),
+});
+
+module.exports = { createTicketSchema, editTicketSchema, claimTicketSchema, statusChangeSchema, updateAgentSchema };

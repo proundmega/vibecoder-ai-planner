@@ -18,8 +18,8 @@ COPY --from=build /app/target/agent-*.jar agent.jar
 RUN addgroup -S agent && adduser -S agent -G agent
 USER agent
 
-# Health check
+# Health check — agent is a CLI app, no HTTP server
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget -qO- http://localhost:8080/health || exit 1
+    CMD pgrep -f "java -jar agent.jar" || exit 1
 
 ENTRYPOINT ["java", "-jar", "agent.jar"]

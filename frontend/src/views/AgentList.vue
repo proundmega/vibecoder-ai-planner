@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchAgentStatusList, createAgent, listAgents } from '@/api/agents'
+import { fetchAgentStatusList, createAgent, listAgents, updateAgentName } from '@/api/agents'
 import { listProviders } from '@/api/providers'
 import AgentModal from '@/components/AgentModal.vue'
 
@@ -17,6 +17,8 @@ const providers = ref([])
 const selectedProviderId = ref(null)
 const router = useRouter()
 let pollInterval = null
+const editingAgentId = ref(null)
+const editName = ref('')
 
 async function loadAgents() {
   try {
@@ -74,6 +76,26 @@ async function handleCreate(name, providerId, rateLimit, maxActionsPerDay, keyEx
   } catch (err) {
     createError.value = err.message || 'Failed to create agent'
   }
+}
+
+function startEdit(agent) {
+  editingAgentId.value = agent.id
+  editName.value = agent.name
+}
+
+async function saveEdit(agent) {
+  if (!editName.value.trim()) return
+  try {
+    await updateAgentName(String(agent.id), editName.value.trim())
+    editingAgentId.value = null
+    loadCrudAgents()
+  } catch (err) {
+    console.error('Failed to update agent name:', err)
+  }
+}
+
+function cancelEdit() {
+  editingAgentId.value = null
 }
 
 const tabs = [
@@ -193,10 +215,17 @@ function formatDate(dateStr) {
             <th>Actions</th>
           </tr>
         </thead>
-        <tbody>
-          <tr v-for="agent in agentsData" :key="agent.id">
-            <td>{{ agent.name }}</td>
-            <td>{{ agent.provider_name || '—' }}</td>
+          <tbody>
+            <tr v-for="agent in agentsData" :key="agent.id">
+              <td v-if="editingAgentId === agent.id">
+                <input v-model="editName" @keyup.enter="saveEdit(agent)" @keyup.escape="cancelEdit" @blur="saveEdit(agent)" class="edit-input" />
+                <button @click="cancelEdit" class="btn-sm">Cancel</button>
+              </td>
+              <td v-else>
+                <span>{{ agent.name }}</span>
+                <button @click="startEdit(agent)" class="btn-edit" title="Edit name">Edit</button>
+              </td>
+              <td>{{ agent.provider_name || '—' }}</td>
             <td><code>{{ formatKeyPreview(agent.api_key) }}</code></td>
             <td>{{ agent.rate_limit || 100 }}</td>
             <td>{{ formatDate(agent.created_at) }}</td>
@@ -371,5 +400,37 @@ function formatDate(dateStr) {
 
 .link-details:hover {
   text-decoration: underline;
+}
+
+.edit-input {
+  padding: 4px 8px;
+  border: 1px solid #3b82f6;
+  border-radius: 4px;
+  font-size: 14px;
+  width: 200px;
+}
+
+.btn-edit {
+  padding: 2px 8px;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+.btn-edit:hover {
+  background: #e5e7eb;
+}
+
+.btn-sm {
+  padding: 2px 8px;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 4px;
 }
 </style>

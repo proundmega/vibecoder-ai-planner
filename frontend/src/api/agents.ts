@@ -1,4 +1,4 @@
-import { get, post, del } from './client'
+import { get, post, del, put } from './client'
 
 export interface AgentKeyInfo {
   name: string
@@ -84,4 +84,24 @@ export function deleteAgent(agentId: string): Promise<void> {
 
 export function revokeAgentKey(agentId: string): Promise<void> {
   return post(`/api/v1/agents/revoke/${agentId}`)
+}
+
+export interface UpdateAgentNameParams {
+  name: string
+}
+
+export function updateAgentName(agentId: string, name: string): Promise<{ id: number; name: string }> {
+  return put(`/api/v1/agents/${agentId}`, { name })
+}
+
+export interface ProviderConfig {
+  providerType: string
+  apiKey: string | null
+  baseUrl: string | null
+  model: string | null
+  maxTokens: number | null
+}
+
+export function getAgentProviderConfig(agentId: string): Promise<ProviderConfig> {
+  return get(`/api/v1/agents/${agentId}/provider-config`)
 }

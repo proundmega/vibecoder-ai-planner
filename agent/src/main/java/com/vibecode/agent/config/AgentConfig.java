@@ -45,7 +45,7 @@ public class AgentConfig {
 
     public AgentConfig() {
         this.agentApiKey = requireEnv("AGENT_API_KEY");
-        this.agentId = getEnv("AGENT_ID", null);
+        this.agentId = requireEnv("AGENT_ID");
         this.backendUrl = requireEnv("BACKEND_URL");
         this.projectId = requireEnv("PROJECT_ID");
         this.repoOwner = requireEnv("REPO_OWNER");

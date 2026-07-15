@@ -208,7 +208,7 @@ public class ApiService {
      * Send a heartbeat to the backend to indicate the agent is alive.
      */
     public void sendHeartbeat(String agentId, String currentTicketId, String currentStep,
-                              Map<String, Object> memoryUsage, Map<String, Object> cpuUsage) throws IOException {
+                               Map<String, Object> memoryUsage, Map<String, Object> cpuUsage) throws IOException {
         String url = baseUrl + "/agents-status/" + agentId + "/heartbeat";
         Map<String, Object> body = new java.util.HashMap<>();
         if (currentTicketId != null) body.put("current_ticket_id", currentTicketId);
@@ -216,5 +216,26 @@ public class ApiService {
         if (memoryUsage != null) body.put("memory_usage", memoryUsage);
         if (cpuUsage != null) body.put("cpu_usage", cpuUsage);
         executePost(url, body, new TypeReference<ApiResponse<Object>>() {});
+    }
+
+    /**
+     * Get decrypted provider config for this agent from the backend.
+     */
+    public Map<String, Object> getProviderConfig(String agentId) throws IOException {
+        String url = baseUrl + "/agents/" + agentId + "/provider-config";
+        ApiResponse<Map<String, Object>> response = executeGet(url, new TypeReference<ApiResponse<Map<String, Object>>>() {});
+        
+        if (response.hasError()) {
+            throw new IOException("Failed to get provider config: " + response.getError());
+        }
+        
+        return response.getData();
+    }
+
+    /**
+     * Return the underlying OkHttpClient for reuse (e.g., in TicketProcessor).
+     */
+    public OkHttpClient getHttpClient() {
+        return httpClient;
     }
 }

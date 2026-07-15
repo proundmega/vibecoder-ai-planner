@@ -78,6 +78,14 @@ public class TicketProcessor {
         }
         log.info("Ticket {} picked up, status: {}", ticket.getId(), pickedUp.getStatus());
 
+        // Post "started working" message BEFORE processing
+        try {
+            apiService.postMessage(pickedUp.getId(), "update",
+                "Started working on: " + pickedUp.getTitle());
+        } catch (IOException e) {
+            log.warn("Failed to post started message: {}", e.getMessage());
+        }
+
         // Set tracking variables for heartbeat reporting
         currentTicketId = String.valueOf(pickedUp.getId());
         currentStep = "processing";
@@ -132,10 +140,6 @@ public class TicketProcessor {
             } else {
                 log.info("[DRY RUN] Would commit and push");
             }
-
-            // Step 8: Post progress message
-            apiService.postMessage(pickedUp.getId(), "update",
-                "Started working on: " + pickedUp.getTitle());
 
             // Step 9: Create PR (if not dry run)
             String prUrl = null;
@@ -201,12 +205,7 @@ public class TicketProcessor {
                 .get()
                 .build();
 
-            try (Response response = new OkHttpClient.Builder()
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .build()
-                .newCall(request)
-                .execute()) {
+            try (Response response = apiService.getHttpClient().newCall(request).execute()) {
                 
                 if (!response.isSuccessful()) {
                     log.warn("Failed to fetch planning docs for ticket {}: {}", ticketId, response.code());
