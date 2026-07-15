@@ -5,7 +5,7 @@ const AgentService = require('../services/AgentService');
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
-const { editTicketSchema, claimTicketSchema, statusChangeSchema } = require('../validators/agents');
+const { editTicketSchema, claimTicketSchema, statusChangeSchema, updateAgentSchema } = require('../validators/agents');
 const Joi = require('joi');
 const logger = require('../utils/logger');
 const createAgentSchema = Joi.object({
@@ -118,6 +118,46 @@ router.post('/revoke/:agentId', verifyTokenOrAgent, requireAnyPermission('AGENT_
   } catch (error) {
     logger.error('POST /api/agents/revoke/:agentId', error);
     res.status(400).json({ error: error.message });
+  }
+});
+
+/**
+ * @openapi
+ * /agents/{agentId}:
+ *   put:
+ *     tags: [Agents]
+ *     summary: Update agent name
+ *     parameters:
+ *       - in: path
+ *         name: agentId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *     responses:
+ *       200:
+ *         description: Agent updated
+ *       400:
+ *         description: Validation failed
+ *       404:
+ *         description: Agent not found
+ */
+router.put('/:agentId', verifyTokenOrAgent, requireAnyPermission('AGENT_REVOKE'), validate(updateAgentSchema), async (req, res) => {
+  try {
+    const { name } = req.body;
+    const result = await AgentService.updateName(req.params.agentId, name, req.user.userId);
+    res.json(result);
+  } catch (error) {
+    if (error.message === 'AGENT_NOT_FOUND') {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+    logger.error('PUT /api/agents/:agentId', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -239,6 +279,51 @@ router.get('/:agentId/key', verifyTokenOrAgent, async (req, res) => {
   } catch (error) {
     logger.error('GET /api/agents/:agentId/key', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @openapi
+ * /agents/{agentId}/provider-config:
+ *   get:
+ *     tags: [Agents]
+ *     summary: Get decrypted provider config for agent
+ *     parameters:
+ *       - in: path
+ *         name: agentId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     headers:
+ *       X-API-Key:
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Provider config
+ *       401:
+ *         description: Missing API key
+ *       404:
+ *         description: Agent or provider not found
+ */
+router.get('/:agentId/provider-config', async (req, res, next) => {
+  try {
+    const apiKey = req.headers['x-api-key'];
+    if (!apiKey) {
+      return res.status(401).json({ error: 'X-API-Key header required' });
+    }
+    const config = await AgentService.getProviderConfig(req.params.agentId, apiKey);
+    res.json(config);
+  } catch (error) {
+    const errorMessages = {
+      AGENT_NOT_FOUND: 'Agent not found',
+      NO_PROVIDER: 'Agent has no provider configured',
+      PROVIDER_NOT_FOUND: 'Provider configuration not found',
+    };
+    if (error.message in errorMessages) {
+      return res.status(404).json({ error: errorMessages[error.message] });
+    }
+    logger.error('GET /api/agents/:agentId/provider-config', error);
+    next(error);
   }
 });
 

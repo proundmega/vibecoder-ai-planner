@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const { docker } = require('../utils/docker');
+const AgentService = require('./AgentService');
+const { pool } = require('../db');
 
 const AGENT_IMAGE = process.env.AGENT_IMAGE || 'vibecode-agent';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:3001';
@@ -54,10 +56,23 @@ class PoolManager {
     const agentId = this._generateAgentId();
     const apiKey = this._generateApiKey();
 
+    // Create a DB agent record so heartbeat/auth flow works the same as manual agents
+    let dbAgent;
+    try {
+      dbAgent = await AgentService.create(
+        `pool-${agentId}`,
+        apiKey,
+        0,
+        { rateLimit: 1000, maxActionsPerDay: 10000, keyExpiryDays: 1 }
+      );
+    } catch (err) {
+      throw new Error(`Failed to create DB record for pool agent: ${err.message}`);
+    }
+
     const env = [
       `BACKEND_URL=${BACKEND_URL}`,
-      `API_KEY=${apiKey}`,
-      `AGENT_ID=${agentId}`,
+      `AGENT_API_KEY=${apiKey}`,
+      `AGENT_ID=${dbAgent.id}`,
       `REPO_CLONE_DIR=/repos`,
     ];
     if (providerConfig.endpoint) env.push(`AI_ENDPOINT_URL=${providerConfig.endpoint}`);
@@ -93,9 +108,10 @@ class PoolManager {
         ticketId: null,
         startedAt: Date.now(),
         lastActiveAt: Date.now(),
+        dbAgentId: dbAgent.id,
       });
 
-      return { agentId, containerId: container.id, reused: false };
+      return { agentId, containerId: container.id, reused: false, dbAgentId: dbAgent.id };
     } catch (err) {
       if (err.message && err.message.includes('No such image')) {
         throw new Error(`Agent image '${AGENT_IMAGE}' not found. Run: cd agent && docker build -t ${AGENT_IMAGE} .`);
@@ -108,6 +124,15 @@ class PoolManager {
     const entry = this.pool.get(agentId);
     if (!entry) throw new Error(`Agent ${agentId} not found in pool`);
     await this._destroyContainer(agentId);
+    // Clean up the DB agent record
+    if (entry.dbAgentId) {
+      try {
+        await pool.query('DELETE FROM agents WHERE id = $1', [entry.dbAgentId]);
+      } catch (err) {
+        // Log but don't fail — record may already be gone
+        console.error(`Failed to delete DB record for pool agent ${agentId}:`, err.message);
+      }
+    }
   }
 
   getStatus() {

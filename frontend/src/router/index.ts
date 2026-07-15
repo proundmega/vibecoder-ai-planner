@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory, type RouteLocationNormalized, type NavigationGuardNext } from 'vue-router';
+import { createRouter, createWebHistory } from 'vue-router';
 
 function isAuthenticated() {
   try {
@@ -147,22 +147,7 @@ const routes = [
       },
     ],
   },
-  {
-    path: '/agents/:id/terminal',
-    name: 'AgentTerminal',
-    component: () => import('../views/TerminalView.vue'),
-    meta: { requiresAuth: true },
-    beforeEnter: (_to: RouteLocationNormalized, _from: RouteLocationNormalized, next: NavigationGuardNext) => {
-      const userStr = localStorage.getItem('vibecode_user')
-      if (userStr) {
-        try {
-          const user = JSON.parse(userStr)
-          if (user.role === 'super_admin') return next()
-        } catch { /* ignore */ }
-      }
-      next({ name: 'Dashboard' })
-    },
-  },
+
   {
     path: '/:pathMatch(.*)*',
     redirect: '/projects',

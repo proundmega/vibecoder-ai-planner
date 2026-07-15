@@ -65,16 +65,8 @@ class AgentService {
     return result.rows;
   }
 
-  async getApiKey(agentId) {
-    const result = await pool.query(
-      'SELECT api_key FROM agents WHERE id = $1',
-      [agentId]
-    );
-    return result.rows[0] ? result.rows[0].api_key : null;
-  }
-
   async revokeApiKey(agentId) {
-    await pool.query('UPDATE agents SET api_key = NULL WHERE id = $1', [agentId]);
+    await pool.query('UPDATE agents SET api_key_hash = NULL, api_key_hash_prefix = NULL WHERE id = $1', [agentId]);
   }
 
   async registerAction(agentId, actionType, tableName, recordId) {
@@ -126,6 +118,36 @@ class AgentService {
 
   async delete(agentId) {
     await pool.query('DELETE FROM agents WHERE id = $1', [agentId]);
+  }
+
+  async updateName(agentId, name, userId) {
+    const result = await pool.query(
+      'UPDATE agents SET name = $1 WHERE id = $2 AND owner_id = $3 RETURNING id, name, updated_at',
+      [name, agentId, userId]
+    );
+    if (result.rows.length === 0) throw new Error('AGENT_NOT_FOUND');
+    return result.rows[0];
+  }
+
+  async getProviderConfig(agentId, apiKey) {
+    const agent = await this.getAgentByApiKey(apiKey);
+    if (!agent) throw new Error('AGENT_NOT_FOUND');
+    if (!agent.provider_id) throw new Error('NO_PROVIDER');
+    const enc = require('../utils/crypto');
+    const result = await pool.query(
+      `SELECT p.provider_type, p.api_key_encrypted, p.base_url, p.model, p.max_tokens
+       FROM providers p WHERE p.id = $1`, [agent.provider_id]
+    );
+    if (result.rows.length === 0) throw new Error('PROVIDER_NOT_FOUND');
+    const provider = result.rows[0];
+    const decryptedKey = provider.api_key_encrypted ? enc.decrypt(provider.api_key_encrypted) : null;
+    return { success: true, data: {
+      provider_type: provider.provider_type,
+      api_key: decryptedKey,
+      base_url: provider.base_url,
+      model: provider.model,
+      max_tokens: provider.max_tokens,
+    }};
   }
 
   async getAgentByApiKey(apiKey) {

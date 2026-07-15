@@ -78,13 +78,14 @@ public class GitHubService {
         // Get the SHA of the file (or tree)
         String treeSha = createTree(filePath, content);
 
+        // Get the latest commit SHA from the branch to use as parent
+        String parentSha = getBranchSha(branchName);
+
         // Create the commit
-        Map<String, Object> parentSha = new HashMap<>();
-        // We'd need to get the latest commit SHA first - simplified version
         Map<String, Object> commitBody = new HashMap<>();
         commitBody.put("message", message);
         commitBody.put("tree", treeSha);
-        // parent_sha would go here in a full implementation
+        commitBody.put("parent", parentSha);
 
         String bodyJson = objectMapper.writeValueAsString(commitBody);
         RequestBody body = RequestBody.create(bodyJson, MediaType.get("application/json"));

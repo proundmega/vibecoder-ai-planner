@@ -44,30 +44,12 @@ describe('AgentService', () => {
     });
   });
 
-  describe('getApiKey', () => {
-    it('returns api_key when agent exists', async () => {
-      pool.query.mockResolvedValueOnce({ rows: [{ api_key: 'key-123' }] });
-
-      const result = await AgentService.getApiKey('a1');
-
-      expect(result).toBe('key-123');
-    });
-
-    it('returns null when agent not found', async () => {
-      pool.query.mockResolvedValueOnce({ rows: [] });
-
-      const result = await AgentService.getApiKey('a1');
-
-      expect(result).toBeNull();
-    });
-  });
-
   describe('revokeApiKey', () => {
-    it('sets api_key to NULL', async () => {
+    it('sets api_key_hash to NULL', async () => {
       await AgentService.revokeApiKey('a1');
 
       expect(pool.query).toHaveBeenCalledWith(
-        'UPDATE agents SET api_key = NULL WHERE id = $1',
+        'UPDATE agents SET api_key_hash = NULL, api_key_hash_prefix = NULL WHERE id = $1',
         ['a1']
       );
     });
