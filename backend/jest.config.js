@@ -14,6 +14,7 @@ module.exports = {
     '^models/(.*)$': '<rootDir>/src/models/$1',
     '^services/(.*)$': '<rootDir>/src/services/$1',
   },
+  maxWorkers: 1,
   verbose: true,
   forceExit: true,
   restoreMocks: true,
