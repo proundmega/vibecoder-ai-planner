@@ -312,18 +312,15 @@ describe('PoolManager', () => {
   describe('autoSelectProvider', () => {
     it('selects worker provider first', async () => {
       const { pool } = require('../db');
-      pool.query
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 8192 }],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 8192 }],
-        });
+      pool.query.mockReset();
+      pool.query.mockResolvedValueOnce({
+        rows: [{ provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 8192 }],
+      });
 
       const config = await pm.autoSelectProvider();
 
       expect(config.provider_type).toBe('claude');
-      expect(pool.query).toHaveBeenCalledTimes(2);
+      expect(pool.query).toHaveBeenCalledTimes(1);
     });
 
     it('falls back to any active provider', async () => {
@@ -332,16 +329,13 @@ describe('PoolManager', () => {
       pool.query
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({
-          rows: [{ id: 'any-1', provider_type: 'openai', api_key_encrypted: 'enc2', base_url: 'https://api.openai.com', model: 'gpt-4', max_tokens: 4096 }],
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: 'any-1', provider_type: 'openai', api_key_encrypted: 'enc2', base_url: 'https://api.openai.com', model: 'gpt-4', max_tokens: 4096 }],
+          rows: [{ provider_type: 'openai', api_key_encrypted: 'enc2', base_url: 'https://api.openai.com', model: 'gpt-4', max_tokens: 4096 }],
         });
 
       const config = await pm.autoSelectProvider();
 
       expect(config.provider_type).toBe('openai');
-      expect(pool.query).toHaveBeenCalledTimes(3);
+      expect(pool.query).toHaveBeenCalledTimes(2);
     });
 
     it('throws when no providers exist', async () => {

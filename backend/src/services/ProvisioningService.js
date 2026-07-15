@@ -3,7 +3,11 @@ const { pool } = require('../db');
 const CredentialService = require('./CredentialService');
 const logger = require('../utils/logger');
 const { UtilityError } = require('../errors/HttpError');
-const { decrypt } = require('../utils/crypto');
+const PoolManager = require('./PoolManager');
+
+function shellEscape(str) {
+  return str.replace(/'/g, "'\"'\"'").replace(/"/g, '\\"');
+}
 
 class ProvisioningService {
   async getNode(id) {
@@ -51,23 +55,21 @@ class ProvisioningService {
   async spawnAgent(nodeId, env) {
     // Resolve provider config if provider_id is provided
     if (env.provider_id) {
-      const providerResult = await pool.query(
-        `SELECT provider_type, api_key_encrypted, base_url, model, max_tokens
-         FROM providers WHERE id = $1 AND is_active = true`,
-        [env.provider_id]
-      );
-
-      if (providerResult.rows.length > 0) {
-        const p = providerResult.rows[0];
-        env.AI_PROVIDER = p.provider_type;
-        env.AI_MODEL = p.model;
-        env.AI_MAX_TOKENS = p.max_tokens || 4096;
-        if (p.api_key_encrypted) {
-          env.AI_API_KEY = decrypt(p.api_key_encrypted);
+      try {
+        const providerConfig = await PoolManager.resolveProviderConfig(env.provider_id);
+        env.AI_PROVIDER = providerConfig.provider_type;
+        env.AI_MAX_TOKENS = providerConfig.max_tokens || 4096;
+        if (providerConfig.model) {
+          env.AI_MODEL = providerConfig.model;
         }
-        if (p.base_url) {
-          env.AI_ENDPOINT_URL = p.base_url;
+        if (providerConfig.api_key) {
+          env.AI_API_KEY = providerConfig.api_key;
         }
+        if (providerConfig.base_url) {
+          env.AI_ENDPOINT_URL = providerConfig.base_url;
+        }
+      } catch (err) {
+        throw new Error(`Provider resolution failed for remote spawn: ${err.message}`);
       }
       delete env.provider_id;
     }
@@ -77,7 +79,7 @@ class ProvisioningService {
     const ssh = await this.connect(node, key);
 
     const envFlags = Object.entries(env)
-      .map(([k, v]) => `-e ${k}=${v}`)
+      .map(([k, v]) => `-e ${k}="${shellEscape(String(v))}"`)
       .join(' ');
 
     const cmd = `docker run -d --name agent-${env.id} ` +

@@ -10,7 +10,6 @@ const IDLE_TIMEOUT_MS = parseInt(process.env.AGENT_IDLE_TIMEOUT_MS) || 300000;
 const CONTAINER_NETWORK = process.env.CONTAINER_NETWORK || 'vibecode_default';
 const REPO_VOLUME = process.env.REPO_VOLUME || 'vibecode_repos';
 let _maxPoolSize = parseInt(process.env.MAX_POOL_SIZE) || 50;
-const MAX_POOL_SIZE = _maxPoolSize;
 
 function setMaxPoolSize(size) {
   _maxPoolSize = size;
@@ -60,14 +59,14 @@ class PoolManager {
 
   async autoSelectProvider() {
     let result = await pool.query(
-      `SELECT id, provider_type, api_key_encrypted, base_url, model, max_tokens
+      `SELECT provider_type, api_key_encrypted, base_url, model, max_tokens
        FROM providers WHERE is_active = true AND 'worker' = ANY(roles)
        ORDER BY created_at ASC LIMIT 1`
     );
 
     if (result.rows.length === 0) {
       result = await pool.query(
-        `SELECT id, provider_type, api_key_encrypted, base_url, model, max_tokens
+        `SELECT provider_type, api_key_encrypted, base_url, model, max_tokens
          FROM providers WHERE is_active = true
          ORDER BY created_at ASC LIMIT 1`
       );
@@ -77,7 +76,15 @@ class PoolManager {
       throw new Error('No active providers configured');
     }
 
-    return this.resolveProviderConfig(result.rows[0].id);
+    const p = result.rows[0];
+    return {
+      provider_type: p.provider_type,
+      api_key: p.api_key_encrypted ? decrypt(p.api_key_encrypted) : null,
+      base_url: p.base_url,
+      model: p.model,
+      max_tokens: p.max_tokens || 4096,
+      temperature: null,
+    };
   }
 
   async requestAgent(projectId, repoUrl, options = {}) {
@@ -147,11 +154,15 @@ class PoolManager {
       `AGENT_ID=${dbAgent.id}`,
       `REPO_CLONE_DIR=/repos`,
       `AI_PROVIDER=${providerConfig.provider_type}`,
-      `AI_MODEL=${providerConfig.model}`,
-      `AI_API_KEY=${providerConfig.api_key}`,
       `AI_MAX_TOKENS=${providerConfig.max_tokens}`,
     ];
 
+    if (providerConfig.model) {
+      env.push(`AI_MODEL=${providerConfig.model}`);
+    }
+    if (providerConfig.api_key) {
+      env.push(`AI_API_KEY=${providerConfig.api_key}`);
+    }
     if (providerConfig.base_url) {
       env.push(`AI_ENDPOINT_URL=${providerConfig.base_url}`);
     }
