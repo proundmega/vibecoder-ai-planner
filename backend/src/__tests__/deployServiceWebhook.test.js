@@ -28,7 +28,7 @@ describe('DeployService webhook HTTP warning (BP-58)', () => {
   });
 
   it('logs warning when webhook URL uses HTTP protocol', async () => {
-    pool.query.mockImplementation((sql, params) => {
+    pool.query.mockImplementation((sql, _params) => {
       if (sql.includes('SELECT d.*, e.webhook_url')) {
         return Promise.resolve({
           rows: [{
@@ -61,7 +61,7 @@ describe('DeployService webhook HTTP warning (BP-58)', () => {
   });
 
   it('does not log HTTP warning for HTTPS webhooks', async () => {
-    pool.query.mockImplementation((sql, params) => {
+    pool.query.mockImplementation((sql, _params) => {
       if (sql.includes('SELECT d.*, e.webhook_url')) {
         return Promise.resolve({
           rows: [{

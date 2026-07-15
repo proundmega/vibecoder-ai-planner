@@ -8,13 +8,13 @@ const provisioning = require('../services/ProvisioningService');
 const { createNodeSchema, updateNodeSchema } = require('../validators/computeNodes');
 
 // GET /api/v1/compute-nodes
-router.get('/', verifyToken, requireAnyPermission('PROJECT_UPDATE'), async (req, res, next) => {
+router.get('/', verifyToken, requireAnyPermission('PROJECT_UPDATE'), async (req, res, _next) => {
   const result = await pool.query('SELECT * FROM compute_nodes ORDER BY hostname');
   res.json({ success: true, data: result.rows });
 });
 
 // POST /api/v1/compute-nodes
-router.post('/', verifyToken, requireAnyPermission('PROJECT_UPDATE'), validate(createNodeSchema), async (req, res, next) => {
+router.post('/', verifyToken, requireAnyPermission('PROJECT_UPDATE'), validate(createNodeSchema), async (req, res, _next) => {
   const { hostname, ssh_port, ssh_user, ssh_key_credential_id, labels, capacity } = req.body;
   const result = await pool.query(
     `INSERT INTO compute_nodes (hostname, ssh_port, ssh_user, ssh_key_credential_id, labels, capacity)
@@ -25,7 +25,7 @@ router.post('/', verifyToken, requireAnyPermission('PROJECT_UPDATE'), validate(c
 });
 
 // PUT /api/v1/compute-nodes/:id
-router.put('/:id', verifyToken, requireAnyPermission('PROJECT_UPDATE'), validate(updateNodeSchema), async (req, res, next) => {
+router.put('/:id', verifyToken, requireAnyPermission('PROJECT_UPDATE'), validate(updateNodeSchema), async (req, res, _next) => {
   const { hostname, ssh_port, ssh_user, ssh_key_credential_id, labels, capacity, status } = req.body;
   const sets = []; const vals = []; let idx = 1;
   if (hostname !== undefined) { sets.push('hostname=$' + idx++); vals.push(hostname); }
@@ -43,13 +43,13 @@ router.put('/:id', verifyToken, requireAnyPermission('PROJECT_UPDATE'), validate
 });
 
 // DELETE /api/v1/compute-nodes/:id
-router.delete('/:id', verifyToken, requireAnyPermission('PROJECT_UPDATE'), async (req, res, next) => {
+router.delete('/:id', verifyToken, requireAnyPermission('PROJECT_UPDATE'), async (req, res, _next) => {
   await pool.query('DELETE FROM compute_nodes WHERE id = $1', [req.params.id]);
   res.json({ success: true, data: null });
 });
 
 // POST /api/v1/compute-nodes/:id/test
-router.post('/:id/test', verifyToken, requireAnyPermission('PROJECT_UPDATE'), async (req, res, next) => {
+router.post('/:id/test', verifyToken, requireAnyPermission('PROJECT_UPDATE'), async (req, res, _next) => {
   const result = await provisioning.testConnection(req.params.id);
   res.json({ success: result.success, data: result });
 });

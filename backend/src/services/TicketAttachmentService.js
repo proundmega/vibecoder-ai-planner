@@ -29,7 +29,7 @@ class TicketAttachmentService {
     return result.rows[0];
   }
 
-  async list(ticketId, userId) {
+  async list(ticketId, _userId) {
     const result = await pool.query(
       `SELECT ta.*, u.name as uploaded_by_name
        FROM ticket_attachments ta
@@ -41,7 +41,7 @@ class TicketAttachmentService {
     return result.rows;
   }
 
-  async get(attachmentId, ticketId, userId) {
+  async get(attachmentId, ticketId, _userId) {
     const result = await pool.query(
       `SELECT ta.*, u.name as uploaded_by_name, t.title as ticket_title
        FROM ticket_attachments ta

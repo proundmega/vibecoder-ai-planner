@@ -96,7 +96,7 @@ async function getAppliedMigrations(pool) {
   return result.rows;
 }
 
-async function recordMigration(pool, version, name) {
+async function _recordMigration(pool, version, name) {
   await pool.query('INSERT INTO _migrations (version, name) VALUES ($1, $2)', [version, name]);
 }
 

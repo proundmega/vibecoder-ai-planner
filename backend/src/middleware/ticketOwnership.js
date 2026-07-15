@@ -1,5 +1,5 @@
 const TicketService = require('../services/TicketService');
-const { ForbiddenError, NotFoundError } = require('../errors/HttpError');
+const { ForbiddenError } = require('../errors/HttpError');
 
 /**
  * Middleware to enforce ticket ownership.

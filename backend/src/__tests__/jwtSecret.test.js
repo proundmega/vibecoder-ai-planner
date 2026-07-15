@@ -1,4 +1,4 @@
-const { ValidationError } = require('../errors/HttpError');
+// HttpError imported for type reference
 
 // Capture original JWT_SECRET before any tests run
 const ORIGINAL_JWT_SECRET = process.env.JWT_SECRET;

@@ -1,4 +1,3 @@
-const { validate } = require('../middleware/validate');
 const { createTicketSchema, editTicketSchema, claimTicketSchema, statusChangeSchema } = require('../validators/agents');
 
 describe('BP-06: Input Validation - Agents Validators', () => {

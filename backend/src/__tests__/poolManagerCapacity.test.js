@@ -10,7 +10,7 @@ jest.mock('dockerode', () => {
       remove: jest.fn().mockResolvedValue(undefined),
     }),
   };
-  const MockDocker = jest.fn((opts) => mockDocker);
+  const MockDocker = jest.fn((_opts) => mockDocker);
   MockDocker.prototype = mockDocker;
   return MockDocker;
 });

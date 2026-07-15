@@ -1,5 +1,4 @@
 const { requestTimeout } = require('../middleware/requestTimeout');
-const { slowRequestLogger } = require('../middleware/slowRequest');
 
 describe('Request Timeout Middleware', () => {
   let req, res, next;
@@ -22,7 +21,7 @@ describe('Request Timeout Middleware', () => {
     next = jest.fn();
     
     // Mock setTimeout to capture the callback
-    global.setTimeout = jest.fn((cb, ms) => {
+    global.setTimeout = jest.fn((cb, _ms) => {
       timeoutCallback = cb;
       return 1;
     });

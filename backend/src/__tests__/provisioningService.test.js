@@ -115,7 +115,7 @@ describe('ProvisioningService', () => {
       const mockNode = { id: 'cn1', hostname: '10.0.0.1', ssh_user: 'ubuntu', ssh_port: 22 };
       pool.query.mockResolvedValueOnce({ rows: [mockNode] });
 
-      const result = await ProvisioningService.spawnAgent('cn1', { id: 'proj-1' });
+      await ProvisioningService.spawnAgent('cn1', { id: 'proj-1' });
 
       expect(pool.query).toHaveBeenCalledWith(
         'UPDATE compute_nodes SET last_seen = NOW(), failure_count = 0 WHERE id = $1',

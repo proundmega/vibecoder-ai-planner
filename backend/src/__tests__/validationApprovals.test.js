@@ -1,4 +1,3 @@
-const { validate } = require('../middleware/validate');
 const { createApprovalSchema, approveSchema, rejectSchema } = require('../validators/approvals');
 
 describe('BP-06: Input Validation - Approvals Validators', () => {

@@ -38,7 +38,7 @@ router.put('/profile', verifyToken, async (req, res) => {
 // Get user stats
 router.get('/stats', verifyToken, async (req, res) => {
   try {
-    const { userId } = req.params;
+    const { userId: _userId } = req.params;
     // Get ticket count, projects created, etc.
     res.json({
       totalTickets: 42,

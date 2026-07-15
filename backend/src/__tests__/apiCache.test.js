@@ -72,7 +72,7 @@ describe('BP-11: API Response Caching', () => {
       const mockRes = {
         statusCode: 200,
         headers: {},
-        json: jest.fn((body) => mockRes),
+        json: jest.fn((_body) => mockRes),
         set: jest.fn(function(key, value) {
           this.headers[key] = value;
           return this;
@@ -106,7 +106,7 @@ describe('BP-11: API Response Caching', () => {
       const mockRes = {
         statusCode: 200,
         headers: {},
-        json: jest.fn((body) => mockRes),
+        json: jest.fn((_body) => mockRes),
         set: jest.fn(function(key, value) {
           this.headers[key] = value;
           return this;
@@ -138,7 +138,7 @@ describe('BP-11: API Response Caching', () => {
       const mockRes = {
         statusCode: 200,
         headers: {},
-        json: jest.fn((body) => mockRes),
+        json: jest.fn((_body) => mockRes),
         set: jest.fn(function(key, value) {
           this.headers[key] = value;
           return this;

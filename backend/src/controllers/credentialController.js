@@ -5,7 +5,7 @@ const Project = require('../models/project');
 async function addCredential(req, res, next) {
   try {
     const { projectId } = req.params;
-    const { name, type, key, metadata, expiresAt } = req.body;
+    const { name, type, key, metadata, expiresAt: _expiresAt } = req.body;
 
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');

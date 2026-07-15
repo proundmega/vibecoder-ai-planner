@@ -1,10 +1,9 @@
-const Joi = require('joi');
 const { setProviderConfigSchema, testProviderConnectionSchema } = require('../validators/providerConfig');
 
 describe('providerConfig validators', () => {
   describe('setProviderConfigSchema', () => {
     it('should accept empty endpoint_url for local providers', () => {
-      const { error, value } = setProviderConfigSchema.validate({
+      const { error } = setProviderConfigSchema.validate({
         provider: 'ollama',
         model: 'llama3',
         endpoint_url: '',

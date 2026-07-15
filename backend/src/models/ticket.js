@@ -36,7 +36,7 @@ class Ticket {
     return new Ticket(result.rows[0]);
   }
 
-  static async findByProject(projectId, uid) {
+  static async findByProject(projectId, _uid) {
     const result = await pool.query(
       'SELECT t.*, u.name as assignee_name, p.name as project_name ' +
       'FROM tickets t ' +
@@ -82,7 +82,7 @@ class Ticket {
     });
   }
 
-  static async update(id, title, description, status, priority, assigneeId, userId) {
+  static async update(id, title, description, status, priority, assigneeId, _userId) {
     // Fetch current ticket to validate transitions
     const current = await Ticket.findById(id);
     if (current && status) {
@@ -157,7 +157,7 @@ class Ticket {
     });
   }
 
-  static async updateStatus(id, status, userId) {
+  static async updateStatus(id, status, _userId) {
     const current = await Ticket.findById(id);
     if (!current) throw new Error('Ticket not found');
 

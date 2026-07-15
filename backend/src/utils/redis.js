@@ -3,7 +3,6 @@ const logger = require('./logger');
 
 let redisClient = null;
 let isAvailable = false;
-let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_DELAY_MS = 1000;
 
@@ -23,7 +22,6 @@ function connectRedis() {
     maxRetriesPerRequest: 3,
     lazyConnect: true,
     retryStrategy: (times) => {
-      reconnectAttempts = times;
       if (times > MAX_RECONNECT_ATTEMPTS) {
         logger.warn(`Redis reconnect failed after ${times} attempts. Falling back to in-memory.`);
         isAvailable = false;
@@ -46,7 +44,6 @@ function connectRedis() {
 
   redisClient.on('ready', () => {
     isAvailable = true;
-    reconnectAttempts = 0;
     logger.info('Redis connection ready.');
   });
 
@@ -223,7 +220,7 @@ async function scan(match, count) {
   try {
     const prefixedMatch = getPrefixedKey(match);
     const cursor = '0';
-    const [nextCursor, keys] = await redisClient.scan(cursor, 'MATCH', prefixedMatch, 'COUNT', count || 100);
+    const [_nextCursor, keys] = await redisClient.scan(cursor, 'MATCH', prefixedMatch, 'COUNT', count || 100);
     return keys.map(key => key.slice(REDIS_PREFIX.length));
   } catch (err) {
     logger.warn(`Redis SCAN failed for pattern ${match}: ${err.message}. Falling back to in-memory.`);

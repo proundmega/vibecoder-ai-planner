@@ -30,8 +30,6 @@ jest.mock('../services/AgentService', () => ({
   create: jest.fn().mockResolvedValue({ id: 'agent-1' }),
 }));
 
-let dockerModule;
-
 describe('PoolManager', () => {
   let pm;
 

@@ -1,6 +1,5 @@
 const providerController = require('../controllers/providerController');
 const ProviderRouter = require('../services/ProviderRouter');
-const Project = require('../models/project');
 const { encrypt, decrypt, maskToken } = require('../utils/crypto');
 
 jest.mock('../services/ProviderRouter');

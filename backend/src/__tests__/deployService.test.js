@@ -158,11 +158,10 @@ describe('DeployService', () => {
     });
 
     it('sets status=failed on webhook error', async () => {
-      let errorReject;
-      http.request.mockImplementation((url, opts, cb) => {
+      http.request.mockImplementation((_url, _opts, _cb) => {
         const mockReq = {
           on: jest.fn((event, handler) => {
-            if (event === 'error') { errorReject = handler; handler(new Error('webhook failed')); }
+            if (event === 'error') { handler(new Error('webhook failed')); }
             if (event === 'timeout') { mockReq.destroy(); handler(new Error('Webhook timeout after 10s')); }
             return mockReq;
           }),
@@ -178,7 +177,7 @@ describe('DeployService', () => {
         .mockResolvedValueOnce({ rows: [{ id: 'e1', name: 'staging', webhook_url: 'https://hooks.example.com' }] })
         .mockResolvedValueOnce({ rows: [{ id: 'd1', ticket_id: 't1', environment_id: 'e1' }] });
 
-      const result = await DeployService.triggerDeploy('t1', 'e1');
+      await DeployService.triggerDeploy('t1', 'e1');
 
       expect(pool.query).toHaveBeenNthCalledWith(
         4,

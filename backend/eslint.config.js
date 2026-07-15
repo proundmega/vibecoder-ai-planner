@@ -15,7 +15,7 @@ module.exports = [
       }
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: 'console' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_|^console' }],
       'no-console': 'off'
     }
   }

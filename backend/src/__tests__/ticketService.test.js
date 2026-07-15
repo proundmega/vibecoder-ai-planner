@@ -119,8 +119,6 @@ describe('TicketService', () => {
 
       // Capture the SQL query and params passed to Ticket.update (model)
       let capturedQuery;
-      let capturedParams;
-      const originalUpdate = Ticket.update;
       Ticket.update.mockImplementation((...args) => {
         capturedQuery = args;
         return mockTicket;

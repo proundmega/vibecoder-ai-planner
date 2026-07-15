@@ -14,7 +14,7 @@ jest.mock('bcryptjs', () => ({
 describe('AgentService - API Key Rotation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    bcrypt.compare.mockImplementation(async (key, hash) => true);
+    bcrypt.compare.mockImplementation(async (_key, _hash) => true);
   });
 
   it('hashes api_key on agent creation (no plaintext stored)', async () => {

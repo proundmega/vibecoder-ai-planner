@@ -1,4 +1,4 @@
-const { AppError, UtilityError, NotFoundError, ValidationError } = require('../errors/HttpError');
+const { AppError, UtilityError } = require('../errors/HttpError');
 
 describe('UtilityError (BP-60)', () => {
   it('is exported from HttpError', () => {

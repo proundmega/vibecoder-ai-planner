@@ -36,7 +36,7 @@ describe('PermissionService retry logic (BP-60)', () => {
       }
       if (sql.includes('SELECT p.code FROM permissions')) {
         // Return permissions based on role
-        const role = sql.match(/\$1/);
+        const _role = sql.match(/\$1/);
         if (sql.includes('user') && !sql.includes('super_admin')) {
           return Promise.resolve({
             rows: [
@@ -95,9 +95,9 @@ describe('PermissionService retry logic (BP-60)', () => {
     mockPool.query.mockClear();
     
     // Reset the query implementation for this test
-    let callNum = 0;
+    let _callNum = 0;
     mockPool.query.mockImplementation((sql) => {
-      callNum++;
+      _callNum++;
       if (sql.includes('SELECT r.name FROM roles') && callNum === 1) {
         return Promise.reject(new Error('DB connection failed'));
       }
@@ -123,9 +123,9 @@ describe('PermissionService retry logic (BP-60)', () => {
 
   it('does not retry when cache already has the role', async () => {
     // First, populate the cache
-    let callNum = 0;
+    let _callNum = 0;
     mockPool.query.mockImplementation((sql) => {
-      callNum++;
+      _callNum++;
       if (sql.includes('SELECT p.code FROM permissions')) {
         return Promise.resolve({
           rows: [{ code: 'PROJECT_READ' }],
@@ -148,9 +148,9 @@ describe('PermissionService retry logic (BP-60)', () => {
   });
 
   it('hasPermission works after retry', async () => {
-    let callNum = 0;
+    let _callNum = 0;
     mockPool.query.mockImplementation((sql) => {
-      callNum++;
+      _callNum++;
       if (sql.includes('SELECT r.name FROM roles') && callNum === 1) {
         return Promise.reject(new Error('DB connection failed'));
       }
@@ -172,9 +172,9 @@ describe('PermissionService retry logic (BP-60)', () => {
   });
 
   it('hasAnyPermission works after retry', async () => {
-    let callNum = 0;
+    let _callNum = 0;
     mockPool.query.mockImplementation((sql) => {
-      callNum++;
+      _callNum++;
       if (sql.includes('SELECT r.name FROM roles') && callNum === 1) {
         return Promise.reject(new Error('DB connection failed'));
       }
@@ -196,9 +196,9 @@ describe('PermissionService retry logic (BP-60)', () => {
   });
 
   it('hasAllPermissions works after retry', async () => {
-    let callNum = 0;
+    let _callNum = 0;
     mockPool.query.mockImplementation((sql) => {
-      callNum++;
+      _callNum++;
       if (sql.includes('SELECT r.name FROM roles') && callNum === 1) {
         return Promise.reject(new Error('DB connection failed'));
       }

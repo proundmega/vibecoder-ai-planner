@@ -1,5 +1,4 @@
 const jwt = require('jsonwebtoken');
-const authService = require('../auth');
 const { pool } = require('../db');
 const AgentService = require('../services/AgentService');
 const { getSecret } = require('../utils/jwt');
@@ -8,10 +7,6 @@ const IpWhitelistService = require('../services/IpWhitelistService');
 const {
   getRedis,
   isRedisAvailable,
-  zadd,
-  zremrangebyscore,
-  zcard,
-  expire,
   set,
   get,
   del,
@@ -344,7 +339,7 @@ exports.rateLimiter = (maxRequests = 10, timeWindow = 60 * 1000) => {
         );
         
         if (result) {
-          const [limited, count, ttl] = result;
+          const [limited, count, _ttl] = result;
           const resetTimestamp = Math.ceil((now + timeWindow) / 1000);
           const retryAfter = Math.ceil((now + timeWindow - now) / 1000);
           

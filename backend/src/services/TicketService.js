@@ -22,7 +22,7 @@ class TicketService {
     return await Ticket.findByProject(projectId, userId);
   }
 
-  async findByStatus(projectId, status, userId) {
+  async findByStatus(projectId, status, _userId) {
     return await Ticket.findByStatus(projectId, status);
   }
 
@@ -214,7 +214,7 @@ class TicketService {
     await Ticket.updateStatus(ticketId, status, userId);
   }
 
-  async getComments(ticketId, userId) {
+  async getComments(ticketId, _userId) {
     const ticket = await Ticket.findById(ticketId);
     if (!ticket) throw new NotFoundError('Ticket not found');
     return await Ticket.getComments(ticketId);
@@ -285,7 +285,7 @@ class TicketService {
     return result.rows[0];
   }
 
-  async releaseTicket(ticketId, adminId) {
+  async releaseTicket(ticketId, _adminId) {
     
 
     const ticketResult = await pool.query(

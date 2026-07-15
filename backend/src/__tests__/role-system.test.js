@@ -14,15 +14,7 @@ jest.mock('../db', () => {
 const { pool } = require('../db');
 
 // User model methods (used by UserService tests via pool.query mocks)
-const mockUserFind = jest.fn();
-const mockUserFindByEmail = jest.fn();
-const mockUserExistsByEmail = jest.fn();
-const mockUserFindAll = jest.fn();
-const mockUserUpdate = jest.fn();
-const mockUserToggleActive = jest.fn();
-const mockUserDelete = jest.fn();
-const mockUserFindByRole = jest.fn();
-const mockUserCreate = jest.fn();
+const _mockUserFind = jest.fn();
 
 // Mock Ticket model
 const mockTicketFindById = jest.fn();
@@ -44,12 +36,6 @@ jest.mock('../models/ticket', () => {
   mockTicket.create = mockTicketCreate;
   return mockTicket;
 });
-
-// Approval model methods (used by ApprovalService tests via pool.query mocks)
-const mockApprovalFindById = jest.fn();
-const mockApprovalApprove = jest.fn();
-const mockApprovalReject = jest.fn();
-const mockApprovalGetByTicketAndRequester = jest.fn();
 
 // Mock PermissionService
 const mockPermissionHasPermission = jest.fn();
@@ -92,7 +78,7 @@ function makeUser(overrides = {}) {
 }
 
 // Helper to create approval row objects
-function makeApproval(overrides = {}) {
+function _makeApproval(overrides = {}) {
   return {
     id: 1,
     ticket_id: 1,

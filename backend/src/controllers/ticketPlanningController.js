@@ -1,5 +1,5 @@
 const TicketPlanningService = require('../services/TicketPlanningService');
-const { NotFoundError, ForbiddenError } = require('../errors/HttpError');
+// HttpError imported for type reference
 
 class TicketPlanningController {
   async list(req, res) {

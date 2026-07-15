@@ -5,7 +5,7 @@ const TemplateService = require('./TemplateService');
 const { NotFoundError } = require('../errors/HttpError');
 
 class TicketPlanningService {
-  async list(ticketId, userId) {
+  async list(ticketId, _userId) {
     const result = await pool.query(
       `SELECT tp.*, u.name as created_by_name, t.title as ticket_title
        FROM ticket_planning tp
@@ -32,7 +32,7 @@ class TicketPlanningService {
     }));
   }
 
-  async get(ticketId, fileKey, userId) {
+  async get(ticketId, fileKey, _userId) {
     const result = await pool.query(
       `SELECT tp.*, u.name as created_by_name, t.title as ticket_title
        FROM ticket_planning tp
@@ -147,7 +147,7 @@ class TicketPlanningService {
     }
   }
 
-  async updateStatus(ticketId, status, userId) {
+  async updateStatus(ticketId, status, _userId) {
     const validStatuses = ['not_started', 'template_selected', 'in_progress', 'review', 'completed'];
     if (!validStatuses.includes(status)) {
       throw new Error(`Invalid planning status: ${status}. Must be one of: ${validStatuses.join(', ')}`);

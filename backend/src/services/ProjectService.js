@@ -8,7 +8,7 @@ class ProjectService {
     return await Project.findAll(userId);
   }
 
-  async getOne(id, userId) {
+  async getOne(id, _userId) {
     const project = await Project.findById(id);
     if (!project) throw new NotFoundError('Project not found');
     return project;
@@ -39,7 +39,7 @@ class ProjectService {
     await Project.delete(id);
   }
 
-  async updateMembership(id, userId, role, action) {
+  async updateMembership(id, userId, _role, _action) {
     await Project.share(id, userId);
     return { success: true };
   }

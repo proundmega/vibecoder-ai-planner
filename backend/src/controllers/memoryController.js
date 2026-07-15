@@ -1,5 +1,5 @@
 const MemoryService = require('../services/MemoryService');
-const { NotFoundError } = require('../errors/HttpError');
+// HttpError imported for type reference
 
 async function addMemory(req, res, next) {
   try {

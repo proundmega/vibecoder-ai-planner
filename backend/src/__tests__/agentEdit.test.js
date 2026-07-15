@@ -1,7 +1,7 @@
 const request = require('supertest');
 const app = require('../index');
 const AgentService = require('../services/AgentService');
-const bcrypt = require('bcryptjs');
+// bcryptjs imported for type reference
 
 jest.mock('../db', () => ({
   pool: {
@@ -39,11 +39,8 @@ const { pool } = require('../db');
 describe('Agent Edit & Provider Config — Route Level', () => {
   let updateNameSpy;
   let getProviderConfigSpy;
-  let callCount;
-
   beforeEach(() => {
     jest.clearAllMocks()
-    callCount = 0
     updateNameSpy = jest.spyOn(AgentService, 'updateName').mockResolvedValue({ id: 'a1', name: 'New Name', updated_at: new Date() })
     getProviderConfigSpy = jest.spyOn(AgentService, 'getProviderConfig').mockResolvedValue({ success: true, data: { provider_type: 'claude', api_key: 'decrypted-key', base_url: null, model: 'claude-sonnet-4-20250514', max_tokens: 4096 } })
   })

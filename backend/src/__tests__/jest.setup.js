@@ -116,7 +116,7 @@ jest.mock('../utils/redis', () => {
       const val = store.get(key);
       return val !== undefined ? Promise.resolve(val) : Promise.resolve(null);
     }),
-    set: jest.fn().mockImplementation((key, value, ttl) => {
+    set: jest.fn().mockImplementation((key, value, _ttl) => {
       store.set(key, value);
       return Promise.resolve(true);
     }),

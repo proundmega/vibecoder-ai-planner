@@ -1,5 +1,4 @@
 const cors = require('../middleware/cors');
-const http = require('http');
 const request = require('supertest');
 
 describe('CORS Middleware', () => {

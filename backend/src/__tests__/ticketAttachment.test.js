@@ -1,5 +1,4 @@
 const TicketAttachmentService = require('../services/TicketAttachmentService');
-const fs = require('fs');
 
 jest.mock('../db', () => ({
   pool: {
@@ -62,7 +61,7 @@ describe('TicketAttachmentService', () => {
         { id: 2, filename: 'test2.txt', content_type: 'text/plain', size_bytes: 200, stored_path: '/uploads/test2.txt', uploaded_by_name: null, created_at: '2026-01-02' },
       ];
 
-      const safeAttachments = attachments.map(({ stored_path, ...safe }) => safe);
+      const safeAttachments = attachments.map(({ stored_path: _stored_path, ...safe }) => safe);
 
       expect(safeAttachments[0]).not.toHaveProperty('stored_path');
       expect(safeAttachments[1]).not.toHaveProperty('stored_path');
@@ -75,7 +74,7 @@ describe('TicketAttachmentService', () => {
     it('should strip stored_path from upload response', () => {
       const attachment = { id: 1, filename: 'test.txt', stored_path: '/uploads/test.txt', content_type: 'text/plain', size_bytes: 100 };
 
-      const { stored_path, ...safeAttachment } = attachment;
+      const { stored_path: _stored_path, ...safeAttachment } = attachment;
 
       expect(safeAttachment).not.toHaveProperty('stored_path');
       expect(safeAttachment).toHaveProperty('id');
