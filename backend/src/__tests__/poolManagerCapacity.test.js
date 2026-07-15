@@ -15,6 +15,21 @@ jest.mock('dockerode', () => {
   return MockDocker;
 });
 
+jest.mock('../utils/crypto', () => ({
+  decrypt: jest.fn((key) => `decrypted-${key}`),
+}));
+
+jest.mock('../db', () => {
+  const mockPool = {
+    query: jest.fn(),
+  };
+  return { pool: mockPool };
+});
+
+jest.mock('../services/AgentService', () => ({
+  create: jest.fn().mockResolvedValue({ id: 'agent-1' }),
+}));
+
 describe('PoolManager max capacity (BP-61)', () => {
   let pm;
   let Docker;
@@ -27,6 +42,10 @@ describe('PoolManager max capacity (BP-61)', () => {
     Docker = require('dockerode');
     mockDocker = Docker();
     mockDocker.ping.mockResolvedValue(undefined);
+    
+    const { pool } = require('../db');
+    pool.query.mockReset();
+    
     delete require.cache[require.resolve('../services/PoolManager')];
     pm = require('../services/PoolManager');
     if (!pm.docker) {
@@ -39,10 +58,31 @@ describe('PoolManager max capacity (BP-61)', () => {
     jest.useRealTimers();
   });
 
-  it('throws when pool is at max capacity', async () => {
+  it('throws when pool is max capacity', async () => {
     // Set pool to max capacity (default 50)
     pm.setMaxPoolSize(2); // Use small number for testing
     pm.pool.clear();
+    
+    const { pool } = require('../db');
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      });
     
     // Fill the pool
     const mockContainer = { id: 'container-1', start: jest.fn().mockResolvedValue(undefined) };
@@ -62,6 +102,27 @@ describe('PoolManager max capacity (BP-61)', () => {
     pm.setMaxPoolSize(3);
     pm.pool.clear();
     
+    const { pool } = require('../db');
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      });
+    
     const mockContainer = { id: 'container-1', start: jest.fn().mockResolvedValue(undefined) };
     pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
     
@@ -79,6 +140,33 @@ describe('PoolManager max capacity (BP-61)', () => {
   it('releases capacity when agent is released', async () => {
     pm.setMaxPoolSize(2);
     pm.pool.clear();
+    
+    const { pool } = require('../db');
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      });
     
     const mockContainer = { id: 'container-1', start: jest.fn().mockResolvedValue(undefined), stop: jest.fn().mockResolvedValue(undefined), remove: jest.fn().mockResolvedValue(undefined) };
     pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
@@ -107,6 +195,27 @@ describe('PoolManager max capacity (BP-61)', () => {
     // Set a small maxPoolSize for this test
     pm.setMaxPoolSize(2);
     pm.pool.clear();
+    
+    const { pool } = require('../db');
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+      });
     
     const mockContainer = { id: 'container-1', start: jest.fn().mockResolvedValue(undefined) };
     pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { docker } = require('../utils/docker');
 const AgentService = require('./AgentService');
 const { pool } = require('../db');
+const { decrypt } = require('../utils/crypto');
 
 const AGENT_IMAGE = process.env.AGENT_IMAGE || 'vibecode-agent';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:3001';
@@ -35,13 +36,67 @@ class PoolManager {
     return 'pool-' + crypto.randomBytes(24).toString('hex');
   }
 
-  async requestAgent(projectId, repoUrl, providerConfig = {}) {
+  async resolveProviderConfig(providerId) {
+    const result = await pool.query(
+      `SELECT provider_type, api_key_encrypted, base_url, model, max_tokens, temperature
+       FROM providers WHERE id = $1 AND is_active = true`,
+      [providerId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('Provider not found or inactive');
+    }
+
+    const p = result.rows[0];
+    return {
+      provider_type: p.provider_type,
+      api_key: p.api_key_encrypted ? decrypt(p.api_key_encrypted) : null,
+      base_url: p.base_url,
+      model: p.model,
+      max_tokens: p.max_tokens || 4096,
+      temperature: p.temperature,
+    };
+  }
+
+  async autoSelectProvider() {
+    let result = await pool.query(
+      `SELECT id, provider_type, api_key_encrypted, base_url, model, max_tokens
+       FROM providers WHERE is_active = true AND 'worker' = ANY(roles)
+       ORDER BY created_at ASC LIMIT 1`
+    );
+
+    if (result.rows.length === 0) {
+      result = await pool.query(
+        `SELECT id, provider_type, api_key_encrypted, base_url, model, max_tokens
+         FROM providers WHERE is_active = true
+         ORDER BY created_at ASC LIMIT 1`
+      );
+    }
+
+    if (result.rows.length === 0) {
+      throw new Error('No active providers configured');
+    }
+
+    return this.resolveProviderConfig(result.rows[0].id);
+  }
+
+  async requestAgent(projectId, repoUrl, options = {}) {
     if (!this.docker) {
       throw new Error('Docker daemon not available. Ensure DOCKER_API_URL is configured and accessible.');
     }
 
     if (this.pool.size >= _maxPoolSize) {
       throw new Error(`Agent pool at max capacity (${_maxPoolSize}). No new agents can be created.`);
+    }
+
+    // Handle legacy: third arg was providerConfig object (has endpoint/apiKey/model keys)
+    let resolvedOptions = options;
+    if (arguments.length === 3 && typeof options === 'object' && !options.providerId && !options.repoUrl) {
+      const hasLegacyKeys = 'endpoint' in options || 'apiKey' in options || 'model' in options;
+      if (hasLegacyKeys) {
+        // Old style: requestAgent(projectId, repoUrl, { endpoint, apiKey, model })
+        resolvedOptions = { legacyProviderConfig: options };
+      }
     }
 
     for (const [id, entry] of this.pool) {
@@ -55,6 +110,23 @@ class PoolManager {
 
     const agentId = this._generateAgentId();
     const apiKey = this._generateApiKey();
+
+    let providerConfig = null;
+    if (resolvedOptions.providerId) {
+      providerConfig = await this.resolveProviderConfig(resolvedOptions.providerId);
+    } else if (resolvedOptions.legacyProviderConfig) {
+      // Legacy: caller passed raw provider config
+      providerConfig = {
+        provider_type: 'generic',
+        api_key: resolvedOptions.legacyProviderConfig.apiKey || null,
+        base_url: resolvedOptions.legacyProviderConfig.endpoint || null,
+        model: resolvedOptions.legacyProviderConfig.model || null,
+        max_tokens: 4096,
+      };
+    } else {
+      // Auto-resolve
+      providerConfig = await this.autoSelectProvider();
+    }
 
     // Create a DB agent record so heartbeat/auth flow works the same as manual agents
     let dbAgent;
@@ -74,10 +146,15 @@ class PoolManager {
       `AGENT_API_KEY=${apiKey}`,
       `AGENT_ID=${dbAgent.id}`,
       `REPO_CLONE_DIR=/repos`,
+      `AI_PROVIDER=${providerConfig.provider_type}`,
+      `AI_MODEL=${providerConfig.model}`,
+      `AI_API_KEY=${providerConfig.api_key}`,
+      `AI_MAX_TOKENS=${providerConfig.max_tokens}`,
     ];
-    if (providerConfig.endpoint) env.push(`AI_ENDPOINT_URL=${providerConfig.endpoint}`);
-    if (providerConfig.apiKey) env.push(`AI_API_KEY=${providerConfig.apiKey}`);
-    if (providerConfig.model) env.push(`AI_MODEL=${providerConfig.model}`);
+
+    if (providerConfig.base_url) {
+      env.push(`AI_ENDPOINT_URL=${providerConfig.base_url}`);
+    }
 
     try {
       const container = await this.docker.createContainer({

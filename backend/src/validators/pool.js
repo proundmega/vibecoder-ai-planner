@@ -7,7 +7,12 @@ const requestAgentSchema = Joi.object({
     'any.required': 'project_id is required',
   }),
   repo_url: Joi.string().uri().allow('').optional(),
-  provider_config: Joi.object().optional(),
+  provider_id: Joi.alternatives().try(Joi.string(), Joi.number()).optional(),
+  provider_config: Joi.object({
+    endpoint: Joi.string().uri().optional(),
+    apiKey: Joi.string().optional(),
+    model: Joi.string().optional(),
+  }).optional(),
 });
 
 const releaseAgentSchema = Joi.object({

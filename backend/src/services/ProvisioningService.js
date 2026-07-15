@@ -3,6 +3,7 @@ const { pool } = require('../db');
 const CredentialService = require('./CredentialService');
 const logger = require('../utils/logger');
 const { UtilityError } = require('../errors/HttpError');
+const { decrypt } = require('../utils/crypto');
 
 class ProvisioningService {
   async getNode(id) {
@@ -48,6 +49,29 @@ class ProvisioningService {
   }
 
   async spawnAgent(nodeId, env) {
+    // Resolve provider config if provider_id is provided
+    if (env.provider_id) {
+      const providerResult = await pool.query(
+        `SELECT provider_type, api_key_encrypted, base_url, model, max_tokens
+         FROM providers WHERE id = $1 AND is_active = true`,
+        [env.provider_id]
+      );
+
+      if (providerResult.rows.length > 0) {
+        const p = providerResult.rows[0];
+        env.AI_PROVIDER = p.provider_type;
+        env.AI_MODEL = p.model;
+        env.AI_MAX_TOKENS = p.max_tokens || 4096;
+        if (p.api_key_encrypted) {
+          env.AI_API_KEY = decrypt(p.api_key_encrypted);
+        }
+        if (p.base_url) {
+          env.AI_ENDPOINT_URL = p.base_url;
+        }
+      }
+      delete env.provider_id;
+    }
+
     const node = await this.getNode(nodeId);
     const key = await this.getKey(node);
     const ssh = await this.connect(node, key);
