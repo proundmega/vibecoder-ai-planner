@@ -9,14 +9,10 @@ describe('Rate Limiter Middleware', () => {
       ip: '127.0.0.1',
       connection: { remoteAddress: '127.0.0.1' },
     };
-    // Reset rate limit state and store between tests
     const redisModule = require('../utils/redis');
-    if (redisModule._resetRateLimitState) {
-      redisModule._resetRateLimitState();
-    }
-    if (redisModule._resetStore) {
-      redisModule._resetStore();
-    }
+    if (redisModule._resetRateLimitState) redisModule._resetRateLimitState();
+    if (redisModule._resetStore) redisModule._resetStore();
+    if (redisModule._resetSortedSets) redisModule._resetSortedSets();
   });
 
   afterEach(() => {
