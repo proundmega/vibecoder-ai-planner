@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory, type RouteLocationNormalized, type NavigationGuardNext } from 'vue-router';
+import { createRouter, createWebHistory } from 'vue-router';
 
 function isAuthenticated() {
   try {

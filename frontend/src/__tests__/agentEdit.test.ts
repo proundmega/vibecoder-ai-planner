@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import AgentList from '@/views/AgentList.vue'
 import * as agentsApi from '@/api/agents'
-import * as providersApi from '@/api/providers'
 
 vi.mock('@/api/agents', () => ({
   fetchAgentStatusList: vi.fn(),
@@ -39,7 +38,7 @@ describe('AgentList inline edit', () => {
     ;(agentsApi.listAgents as ReturnType<typeof vi.fn>).mockResolvedValue({ agents: mockAgents })
     wrapper = mount(AgentList)
     // Switch to Agents tab and wait for data to load
-    wrapper.vm.activeTab = 'agents'
+    ;(wrapper.vm as unknown as { activeTab: string }).activeTab = 'agents'
     await wrapper.vm.$nextTick()
     await new Promise(r => setTimeout(r, 100))
   })
@@ -61,7 +60,7 @@ describe('AgentList inline edit', () => {
     await new Promise(r => setTimeout(r, 50))
     const input = wrapper.find('.edit-input')
     expect(input.exists()).toBe(true)
-    expect(input.element.value).toBe('Agent Alpha')
+    expect((input.element as HTMLInputElement).value).toBe('Agent Alpha')
   })
 
   it('saving calls updateAgentName API', async () => {
