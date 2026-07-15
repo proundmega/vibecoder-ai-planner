@@ -18,7 +18,7 @@ pipeline {
     stages {
         stage('Detect Changes') {
             when {
-                not { branch 'main' }
+                not { branch 'master' }
             }
             steps {
                 script {
