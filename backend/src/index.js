@@ -147,7 +147,7 @@ if (process.env.NODE_ENV !== 'test') {
     HeartbeatService.cleanupStaleAgents().catch(err => {
       logger.error('Stale agent cleanup failed:', err.message);
     });
-  }, 60000);
+  }, 300000);
 
   gracefulShutdown(server, pool, [() => clearInterval(cleanupInterval)]);
 }

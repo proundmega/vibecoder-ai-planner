@@ -314,8 +314,13 @@ router.get('/:agentId/provider-config', async (req, res, next) => {
     const config = await AgentService.getProviderConfig(req.params.agentId, apiKey);
     res.json(config);
   } catch (error) {
-    if (error.message === 'AGENT_NOT_FOUND' || error.message === 'NO_PROVIDER' || error.message === 'PROVIDER_NOT_FOUND') {
-      return res.status(404).json({ error: error.message });
+    const errorMessages = {
+      AGENT_NOT_FOUND: 'Agent not found',
+      NO_PROVIDER: 'Agent has no provider configured',
+      PROVIDER_NOT_FOUND: 'Provider configuration not found',
+    };
+    if (error.message in errorMessages) {
+      return res.status(404).json({ error: errorMessages[error.message] });
     }
     logger.error('GET /api/agents/:agentId/provider-config', error);
     next(error);
