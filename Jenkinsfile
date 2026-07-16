@@ -37,19 +37,41 @@ pipeline {
             }
         }
 
+        stage('Setup') {
+            when {
+                anyOf {
+                    expression { env.BACKEND_CHANGED == 'true' }
+                    expression { env.FRONTEND_CHANGED == 'true' }
+                    expression { env.MIGRATIONS_CHANGED == 'true' }
+                    expression { env.AGENT_CHANGED == 'true' }
+                }
+            }
+            steps {
+                script {
+                    if (env.BACKEND_CHANGED == 'true') {
+                        nodejs('Node') {
+                            dir('backend') {
+                                sh 'npm ci'
+                            }
+                        }
+                    }
+                    if (env.FRONTEND_CHANGED == 'true') {
+                        nodejs('Node') {
+                            dir('frontend') {
+                                sh 'npm ci'
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Backend') {
             when {
                 anyOf {
                     branch 'master'
                     expression { env.BACKEND_CHANGED == 'true' }
                     expression { env.MIGRATIONS_CHANGED == 'true' }
-                }
-            }
-            steps {
-                nodejs('Node') {
-                    dir('backend') {
-                        sh 'npm ci'
-                    }
                 }
             }
             parallel {
@@ -97,13 +119,6 @@ pipeline {
                 anyOf {
                     branch 'master'
                     expression { env.FRONTEND_CHANGED == 'true' }
-                }
-            }
-            steps {
-                nodejs('Node') {
-                    dir('frontend') {
-                        sh 'npm ci'
-                    }
                 }
             }
             parallel {
@@ -166,7 +181,6 @@ pipeline {
             steps {
                 nodejs('Node') {
                     dir('frontend') {
-                        sh 'npm ci'
                         sh 'npm test -- --run src/__tests__/api-contract.test.ts'
                     }
                 }
