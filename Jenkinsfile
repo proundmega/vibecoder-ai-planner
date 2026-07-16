@@ -45,12 +45,18 @@ pipeline {
                     expression { env.MIGRATIONS_CHANGED == 'true' }
                 }
             }
+            steps {
+                nodejs('Node') {
+                    dir('backend') {
+                        sh 'npm ci'
+                    }
+                }
+            }
             parallel {
                 stage('Backend Lint') {
                     steps {
                         nodejs('Node') {
                             dir('backend') {
-                                sh 'npm ci'
                                 sh 'npm run lint'
                             }
                         }
@@ -60,7 +66,6 @@ pipeline {
                     steps {
                         nodejs('Node') {
                             dir('backend') {
-                                sh 'npm ci'
                                 sh 'node --check src/index.js'
                             }
                         }
@@ -70,7 +75,6 @@ pipeline {
                     steps {
                         nodejs('Node') {
                             dir('backend') {
-                                sh 'npm ci'
                                 sh 'npm test'
                             }
                         }
@@ -80,7 +84,6 @@ pipeline {
                     steps {
                         nodejs('Node') {
                             dir('backend') {
-                                sh 'npm ci'
                                 sh 'npm run test:coverage'
                             }
                         }
@@ -96,12 +99,18 @@ pipeline {
                     expression { env.FRONTEND_CHANGED == 'true' }
                 }
             }
+            steps {
+                nodejs('Node') {
+                    dir('frontend') {
+                        sh 'npm ci'
+                    }
+                }
+            }
             parallel {
                 stage('Frontend Lint') {
                     steps {
                         nodejs('Node') {
                             dir('frontend') {
-                                sh 'npm ci'
                                 sh 'npm run lint'
                             }
                         }
@@ -111,7 +120,6 @@ pipeline {
                     steps {
                         nodejs('Node') {
                             dir('frontend') {
-                                sh 'npm ci'
                                 sh 'npm run typecheck'
                             }
                         }
@@ -121,7 +129,6 @@ pipeline {
                     steps {
                         nodejs('Node') {
                             dir('frontend') {
-                                sh 'npm ci'
                                 sh 'npm test -- --run'
                             }
                         }
@@ -131,7 +138,6 @@ pipeline {
                     steps {
                         nodejs('Node') {
                             dir('frontend') {
-                                sh 'npm ci'
                                 sh 'npm test -- --run --coverage'
                             }
                         }
@@ -141,7 +147,6 @@ pipeline {
                     steps {
                         nodejs('Node') {
                             dir('frontend') {
-                                sh 'npm ci'
                                 sh 'npm run build'
                             }
                         }
