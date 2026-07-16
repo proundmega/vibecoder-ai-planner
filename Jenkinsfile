@@ -51,7 +51,7 @@ pipeline {
                         dir('backend') {
                             sh '''
                                 export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
                                 nvm install 18
                                 nvm use 18
                                 npm ci
@@ -65,7 +65,7 @@ pipeline {
                         dir('backend') {
                             sh '''
                                 export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
                                 nvm install 18
                                 nvm use 18
                                 npm ci
@@ -79,7 +79,7 @@ pipeline {
                         dir('backend') {
                             sh '''
                                 export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
                                 nvm install 18
                                 nvm use 18
                                 npm ci
@@ -98,7 +98,7 @@ pipeline {
                         dir('backend') {
                             sh '''
                                 export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
                                 nvm install 18
                                 nvm use 18
                                 npm ci
@@ -128,7 +128,7 @@ pipeline {
                         dir('frontend') {
                             sh '''
                                 export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
                                 nvm install 18
                                 nvm use 18
                                 npm ci
@@ -142,7 +142,7 @@ pipeline {
                         dir('frontend') {
                             sh '''
                                 export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
                                 nvm install 18
                                 nvm use 18
                                 npm ci
@@ -156,7 +156,7 @@ pipeline {
                         dir('frontend') {
                             sh '''
                                 export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
                                 nvm install 18
                                 nvm use 18
                                 npm ci
@@ -175,7 +175,7 @@ pipeline {
                         dir('frontend') {
                             sh '''
                                 export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
                                 nvm install 18
                                 nvm use 18
                                 npm ci
@@ -189,7 +189,7 @@ pipeline {
                         dir('frontend') {
                             sh '''
                                 export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
                                 nvm install 18
                                 nvm use 18
                                 npm ci
@@ -213,7 +213,7 @@ pipeline {
                 dir('frontend') {
                     sh '''
                         export NVM_DIR="$HOME/.nvm"
-                        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+                        [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
                         nvm install 18
                         nvm use 18
                         npm ci
@@ -253,7 +253,7 @@ pipeline {
                 dir('backend') {
                     sh '''
                         export NVM_DIR="$HOME/.nvm"
-                        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+                        [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
                         nvm install 18
                         nvm use 18
 
