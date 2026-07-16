@@ -48,43 +48,31 @@ pipeline {
             parallel {
                 stage('Backend Lint') {
                     steps {
-                        dir('backend') {
-                            sh '''
-                                export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-                                nvm install 18
-                                nvm use 18
-                                npm ci
-                                npm run lint
-                            '''
+                        nodejs('Node') {
+                            dir('backend') {
+                                sh 'npm ci'
+                                sh 'npm run lint'
+                            }
                         }
                     }
                 }
                 stage('Backend Syntax') {
                     steps {
-                        dir('backend') {
-                            sh '''
-                                export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-                                nvm install 18
-                                nvm use 18
-                                npm ci
-                                node --check src/index.js
-                            '''
+                        nodejs('Node') {
+                            dir('backend') {
+                                sh 'npm ci'
+                                sh 'node --check src/index.js'
+                            }
                         }
                     }
                 }
                 stage('Backend Unit Tests') {
                     steps {
-                        dir('backend') {
-                            sh '''
-                                export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-                                nvm install 18
-                                nvm use 18
-                                npm ci
-                                npm test
-                            '''
+                        nodejs('Node') {
+                            dir('backend') {
+                                sh 'npm ci'
+                                sh 'npm test'
+                            }
                         }
                     }
                     post {
@@ -95,15 +83,11 @@ pipeline {
                 }
                 stage('Backend Coverage') {
                     steps {
-                        dir('backend') {
-                            sh '''
-                                export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-                                nvm install 18
-                                nvm use 18
-                                npm ci
-                                npm run test:coverage
-                            '''
+                        nodejs('Node') {
+                            dir('backend') {
+                                sh 'npm ci'
+                                sh 'npm run test:coverage'
+                            }
                         }
                     }
                     post {
@@ -125,43 +109,31 @@ pipeline {
             parallel {
                 stage('Frontend Lint') {
                     steps {
-                        dir('frontend') {
-                            sh '''
-                                export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-                                nvm install 18
-                                nvm use 18
-                                npm ci
-                                npm run lint
-                            '''
+                        nodejs('Node') {
+                            dir('frontend') {
+                                sh 'npm ci'
+                                sh 'npm run lint'
+                            }
                         }
                     }
                 }
                 stage('Frontend Typecheck') {
                     steps {
-                        dir('frontend') {
-                            sh '''
-                                export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-                                nvm install 18
-                                nvm use 18
-                                npm ci
-                                npm run typecheck
-                            '''
+                        nodejs('Node') {
+                            dir('frontend') {
+                                sh 'npm ci'
+                                sh 'npm run typecheck'
+                            }
                         }
                     }
                 }
                 stage('Frontend Unit Tests') {
                     steps {
-                        dir('frontend') {
-                            sh '''
-                                export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-                                nvm install 18
-                                nvm use 18
-                                npm ci
-                                npm test -- --run
-                            '''
+                        nodejs('Node') {
+                            dir('frontend') {
+                                sh 'npm ci'
+                                sh 'npm test -- --run'
+                            }
                         }
                     }
                     post {
@@ -172,29 +144,21 @@ pipeline {
                 }
                 stage('Frontend Coverage') {
                     steps {
-                        dir('frontend') {
-                            sh '''
-                                export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-                                nvm install 18
-                                nvm use 18
-                                npm ci
-                                npm test -- --run --coverage
-                            '''
+                        nodejs('Node') {
+                            dir('frontend') {
+                                sh 'npm ci'
+                                sh 'npm test -- --run --coverage'
+                            }
                         }
                     }
                 }
                 stage('Frontend Build') {
                     steps {
-                        dir('frontend') {
-                            sh '''
-                                export NVM_DIR="$HOME/.nvm"
-                                [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-                                nvm install 18
-                                nvm use 18
-                                npm ci
-                                npm run build
-                            '''
+                        nodejs('Node') {
+                            dir('frontend') {
+                                sh 'npm ci'
+                                sh 'npm run build'
+                            }
                         }
                     }
                 }
@@ -210,15 +174,11 @@ pipeline {
                 }
             }
             steps {
-                dir('frontend') {
-                    sh '''
-                        export NVM_DIR="$HOME/.nvm"
-                        [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-                        nvm install 18
-                        nvm use 18
-                        npm ci
-                        npm test -- --run src/__tests__/api-contract.test.ts
-                    '''
+                nodejs('Node') {
+                    dir('frontend') {
+                        sh 'npm ci'
+                        sh 'npm test -- --run src/__tests__/api-contract.test.ts'
+                    }
                 }
             }
         }
@@ -250,36 +210,41 @@ pipeline {
                 }
             }
             steps {
-                dir('backend') {
-                    sh '''
-                        export NVM_DIR="$HOME/.nvm"
-                        [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-                        nvm install 18
-                        nvm use 18
-
-                        # Write .env for docker compose
-                        cat > ../.env <<EOF
+                nodejs('Node') {
+                    script {
+                        // Write .env for docker compose
+                        sh """
+                            cat > .env <<EOF
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 JWT_SECRET=${JWT_SECRET}
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
 PGADMIN_PASSWORD=changeme
 EOF
+                        """
 
-                        # Build and start services
-                        docker compose down --remove-orphans || true
-                        docker compose build api
-                        docker compose up -d postgres redis api frontend migrate
+                        // Build and start services
+                        sh 'docker compose down --remove-orphans || true'
+                        sh 'docker compose build api'
+                        sh 'docker compose up -d postgres redis api frontend migrate'
 
-                        # Wait for health
-                        timeout 120 bash -c 'until curl -sf http://localhost:3001/api/health; do sleep 5; done'
+                        // Wait for health
+                        waitUntil(timeout: 120, interval: 5) {
+                            def status = sh(
+                                script: 'curl -sf http://localhost:3001/api/health || true',
+                                returnStatus: true
+                            )
+                            return status == 0
+                        }
 
-                        # Jest integration tests
-                        INTEGRATION_TESTS=1 DATABASE_URL="${DATABASE_URL}" \
-                            npx jest --config jest.integration.config.js --verbose
+                        // Jest integration tests
+                        sh """
+                            INTEGRATION_TESTS=1 DATABASE_URL="${DATABASE_URL}" \
+                            npx jest --config backend/jest.integration.config.js --verbose
+                        """
 
-                        # Bash integration tests
-                        bash integration-test/run.sh --only
-                    '''
+                        // Bash integration tests
+                        sh 'bash backend/integration-test/run.sh --only'
+                    }
                 }
             }
             post {
