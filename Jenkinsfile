@@ -75,11 +75,6 @@ pipeline {
                             }
                         }
                     }
-                    post {
-                        always {
-                            junit allowEmptyResults: true, testResults: 'backend/test-results/**/*.xml'
-                        }
-                    }
                 }
                 stage('Backend Coverage') {
                     steps {
@@ -88,11 +83,6 @@ pipeline {
                                 sh 'npm ci'
                                 sh 'npm run test:coverage'
                             }
-                        }
-                    }
-                    post {
-                        always {
-                            junit allowEmptyResults: true, testResults: 'backend/coverage/junit.xml'
                         }
                     }
                 }
@@ -134,11 +124,6 @@ pipeline {
                                 sh 'npm ci'
                                 sh 'npm test -- --run'
                             }
-                        }
-                    }
-                    post {
-                        always {
-                            junit allowEmptyResults: true, testResults: 'frontend/test-results/**/*.xml'
                         }
                     }
                 }
