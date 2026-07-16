@@ -12,7 +12,6 @@ pipeline {
         JWT_SECRET = 'jenkins-ci-secret'
         ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
         DATABASE_URL = "postgresql://postgres:${POSTGRES_PASSWORD}@localhost:5432/vibecode"
-        INTEGRATION_TESTS = '1'
     }
 
     stages {
@@ -239,7 +238,7 @@ EOF
 
                         // Jest integration tests
                         sh """
-                            DATABASE_URL="${DATABASE_URL}" \
+                            INTEGRATION_TESTS=1 DATABASE_URL="${DATABASE_URL}" \
                             npx jest --config backend/jest.integration.config.js --verbose
                         """
 
