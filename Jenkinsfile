@@ -40,6 +40,7 @@ pipeline {
         stage('Setup') {
             when {
                 anyOf {
+                    branch 'master'
                     expression { env.BACKEND_CHANGED == 'true' }
                     expression { env.FRONTEND_CHANGED == 'true' }
                     expression { env.MIGRATIONS_CHANGED == 'true' }
@@ -48,14 +49,14 @@ pipeline {
             }
             steps {
                 script {
-                    if (env.BACKEND_CHANGED == 'true') {
+                    if (env.BACKEND_CHANGED == 'true' || branch == 'master') {
                         nodejs('Node') {
                             dir('backend') {
                                 sh 'npm ci'
                             }
                         }
                     }
-                    if (env.FRONTEND_CHANGED == 'true') {
+                    if (env.FRONTEND_CHANGED == 'true' || branch == 'master') {
                         nodejs('Node') {
                             dir('frontend') {
                                 sh 'npm ci'
