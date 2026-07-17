@@ -249,7 +249,7 @@ EOF
                             }
                         }
 
-                        // Wait for health (check API + PostgreSQL, 3 attempts, 3s apart; fail after 30s)
+                        // Wait for health (check API + PostgreSQL port, 3 attempts, 3s apart; fail after 30s)
                         def healthy = false
                         def elapsed = 0
                         def checks = 0
@@ -258,18 +258,18 @@ EOF
                             elapsed += 3
                             checks++
                             def apiStatus = sh(
-                                script: 'curl -sf http://localhost:3001/api/health || true',
+                                script: 'curl -sf http://localhost:3001/api/health',
                                 returnStatus: true
                             )
                             def pgStatus = sh(
-                                script: 'pg_isready -h 127.0.0.1 -p 5432 -U postgres',
-                                returnStatus: true
+                                script: 'bash -c "echo > /dev/tcp/127.0.0.1/5432" 2>/dev/null && echo ok || echo fail',
+                                returnStdout: true
                             )
-                            if (apiStatus == 0 && pgStatus == 0) {
+                            if (apiStatus == 0 && pgStatus.trim() == 'ok') {
                                 healthy = true
                                 break
                             }
-                            echo "Health check attempt ${checks}/3 failed (api: ${apiStatus}, pg: ${pgStatus}, elapsed: ${elapsed}s)"
+                            echo "Health check attempt ${checks}/3 failed (api: ${apiStatus}, pg: ${pgStatus.trim()}, elapsed: ${elapsed}s)"
                         }
                         if (!healthy) {
                             echo "ERROR: Stack not healthy after 30s (3 checks failed)"
