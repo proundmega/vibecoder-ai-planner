@@ -230,7 +230,7 @@ EOF
                         // Build and start services
                         sh 'docker compose down --remove-orphans || true'
                         sh 'docker compose build'
-                        sh 'docker compose up -d postgres redis api frontend migrate'
+                        sh 'docker compose up -d'
 
                         // Wait for health
                         waitUntil(timeout: 120, interval: 5) {
