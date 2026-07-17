@@ -234,13 +234,13 @@ EOF
                         sh 'docker compose -f docker-compose.yml up -d'
 
                         // Log logs for any unhealthy containers immediately
-                        def unhealthy = sh(
-                            script: 'docker compose ps --filter "health=unhealthy" --format "{{.Name}}" || true',
+                        def unhealthyContainers = sh(
+                            script: 'docker compose ps --format "{{.Name}} {{.Health}}" 2>/dev/null | grep -v "healthy" | grep -v "N/A" | awk "{print \$1}" || true',
                             returnStdout: true
                         ).trim()
-                        if (unhealthy) {
+                        if (unhealthyContainers) {
                             echo "ERROR: The following containers are unhealthy:"
-                            for (def container : unhealthy.split('\\n')) {
+                            for (def container : unhealthyContainers.split('\\n')) {
                                 if (container.trim()) {
                                     echo "--- Logs for ${container.trim()} ---"
                                     sh "docker compose logs --tail=100 ${container.trim()} || true"
@@ -262,7 +262,7 @@ EOF
                                 returnStatus: true
                             )
                             def pgStatus = sh(
-                                script: 'bash -c "echo > /dev/tcp/127.0.0.1/5432" 2>/dev/null && echo ok || echo fail',
+                                script: "bash -c 'echo > /dev/tcp/127.0.0.1/5432' 2>/dev/null && echo ok || echo fail",
                                 returnStdout: true
                             )
                             if (apiStatus == 0 && pgStatus.trim() == 'ok') {
@@ -273,7 +273,7 @@ EOF
                         }
                         if (!healthy) {
                             echo "ERROR: Stack not healthy after 30s (3 checks failed)"
-                            sh 'docker compose logs --tail=50 || true'
+                            sh 'docker compose logs --tail=100 || true'
                             sh 'docker compose ps || true'
                             error("Integration stack failed to start within 30 seconds")
                         }
