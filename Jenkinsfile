@@ -229,7 +229,7 @@ EOF
 
                         // Build and start services
                         sh 'docker compose down --remove-orphans || true'
-                        sh 'docker compose build api'
+                        sh 'docker compose build'
                         sh 'docker compose up -d postgres redis api frontend migrate'
 
                         // Wait for health
