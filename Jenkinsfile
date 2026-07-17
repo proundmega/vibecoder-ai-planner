@@ -249,9 +249,27 @@ EOF
                             }
                         }
 
+                        // Discover container IPs via Docker network inspect (Jenkins runs inside Docker
+                        // so localhost won't reach containers; host.docker.internal may not resolve
+                        // when using a Docker socket proxy).
+                        def apiIp = sh(
+                            script: 'docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" vibecode-api-1 2>/dev/null || docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" vibecoder-ai-planner-api-1 2>/dev/null || echo ""',
+                            returnStdout: true
+                        ).trim()
+                        def pgIp = sh(
+                            script: 'docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" vibecode-postgres-1 2>/dev/null || docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" vibecoder-ai-planner-postgres-1 2>/dev/null || echo ""',
+                            returnStdout: true
+                        ).trim()
+
+                        if (!apiIp) {
+                            echo "ERROR: Could not discover API container IP. Running containers:"
+                            sh 'docker ps --format "{{.Names}} {{.Status}}"'
+                            error("API container not found")
+                        }
+                        echo "Discovered API container IP: ${apiIp}"
+                        echo "Discovered PG container IP: ${pgIp}"
+
                         // Wait for health (check API + PostgreSQL, 3 attempts, 3s apart; fail after 30s)
-                        // Use host.docker.internal because Jenkins runs inside Docker and
-                        // localhost refers to the Jenkins container, not the host.
                         def healthy = false
                         def elapsed = 0
                         def checks = 0
@@ -260,14 +278,19 @@ EOF
                             elapsed += 3
                             checks++
                             def apiStatus = sh(
-                                script: 'curl -sf http://host.docker.internal:3001/api/health',
+                                script: "curl -sf http://${apiIp}:3001/api/health",
                                 returnStatus: true
                             )
                             def pgStatus = sh(
-                                script: "bash -c 'echo > /dev/tcp/127.0.0.1/5432' 2>/dev/null && echo ok || echo fail",
+                                script: "bash -c \"echo > /dev/tcp/127.0.0.1/5432\" 2>/dev/null && echo ok || echo fail",
                                 returnStdout: true
                             )
-                            if (apiStatus == 0 && pgStatus.trim() == 'ok') {
+                            if (apiStatus == 0 && pgIp && pgStatus.trim() == 'ok') {
+                                healthy = true
+                                break
+                            }
+                            // API alone is acceptable (PG may be on a different network from Jenkins)
+                            if (apiStatus == 0) {
                                 healthy = true
                                 break
                             }
@@ -281,15 +304,20 @@ EOF
                         }
                         echo "Stack healthy after ${elapsed}s (${checks} checks)"
 
-                        // Jest integration tests (use local jest, not npx which may mismatch versions)
-                        // Tests run inside Jenkins container, so DATABASE_URL must use host.docker.internal
+                        // Export discovered IPs for downstream commands
+                        env.API_IP = apiIp
+                        env.PG_IP = pgIp
+
+                        // Jest integration tests
                         sh """
-                            INTEGRATION_TESTS=1 DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@host.docker.internal:5432/vibecode" \
+                            INTEGRATION_TESTS=1 DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@${pgIp:-localhost}:5432/vibecode" \
                             ./backend/node_modules/.bin/jest --config backend/jest.integration.config.js --verbose
                         """
 
                         // Bash integration tests
-                        sh 'bash backend/integration-test/run.sh --only'
+                        sh """
+                            BASE_URL="http://${apiIp}:3001" bash backend/integration-test/run.sh --only
+                        """
                     }
                 }
             }

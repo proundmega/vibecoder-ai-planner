@@ -47,7 +47,7 @@ fi
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required. Install with: apt-get install jq"; exit 1; }
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BASE="http://localhost:3001"
+BASE="${BASE_URL:-http://localhost:3001}"
 RETRIES=30
 RETRY_INTERVAL=2
 
