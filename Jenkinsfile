@@ -49,14 +49,14 @@ pipeline {
             }
             steps {
                 script {
-                    if (env.BACKEND_CHANGED == 'true' || branch == 'master') {
+                    if (env.BACKEND_CHANGED == 'true' || env.BRANCH_NAME == 'master') {
                         nodejs('Node') {
                             dir('backend') {
                                 sh 'npm ci'
                             }
                         }
                     }
-                    if (env.FRONTEND_CHANGED == 'true' || branch == 'master') {
+                    if (env.FRONTEND_CHANGED == 'true' || env.BRANCH_NAME == 'master') {
                         nodejs('Node') {
                             dir('frontend') {
                                 sh 'npm ci'
