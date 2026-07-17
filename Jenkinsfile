@@ -9,7 +9,7 @@ pipeline {
 
     environment {
         POSTGRES_PASSWORD = 'changeme'
-        JWT_SECRET = 'jenkins-ci-secret'
+        JWT_SECRET = 'jenkins-ci-secret-for-testing-purposes-2026'
         ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
         DATABASE_URL = "postgresql://postgres:${POSTGRES_PASSWORD}@localhost:5432/vibecode"
     }
