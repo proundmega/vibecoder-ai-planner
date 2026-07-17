@@ -11,7 +11,8 @@ pipeline {
         POSTGRES_PASSWORD = 'changeme'
         JWT_SECRET = 'jenkins-ci-secret-for-testing-purposes-2026'
         ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
-        DATABASE_URL = "postgresql://postgres:${POSTGRES_PASSWORD}@localhost:5432/vibecode"
+        // DATABASE_URL removed — docker-compose.yml sets it to postgres:5432 for the API container.
+        // Integration tests set their own DATABASE_URL pointing to localhost:5432 (published port).
     }
 
     stages {
@@ -261,7 +262,7 @@ EOF
                                 returnStatus: true
                             )
                             def pgStatus = sh(
-                                script: 'pg_isready -h localhost -p 5432 -U postgres || true',
+                                script: 'pg_isready -h 127.0.0.1 -p 5432 -U postgres',
                                 returnStatus: true
                             )
                             if (apiStatus == 0 && pgStatus == 0) {
@@ -279,8 +280,9 @@ EOF
                         echo "Stack healthy after ${elapsed}s (${checks} checks)"
 
                         // Jest integration tests (use local jest, not npx which may mismatch versions)
+                        // Tests run on the host, so DATABASE_URL must point to localhost:5432 (published port)
                         sh """
-                            INTEGRATION_TESTS=1 DATABASE_URL="${DATABASE_URL}" \
+                            INTEGRATION_TESTS=1 DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@localhost:5432/vibecode" \
                             ./backend/node_modules/.bin/jest --config backend/jest.integration.config.js --verbose
                         """
 
