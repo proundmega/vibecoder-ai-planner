@@ -2,10 +2,10 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const AgentService = require('../services/AgentService');
-const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
+const { verifyTokenOrAgent } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
-const { editTicketSchema, claimTicketSchema, statusChangeSchema, updateAgentSchema } = require('../validators/agents');
+const { updateAgentSchema } = require('../validators/agents');
 const Joi = require('joi');
 const logger = require('../utils/logger');
 const createAgentSchema = Joi.object({
@@ -205,7 +205,7 @@ router.delete('/:agentId', verifyTokenOrAgent, requireAnyPermission('AGENT_DELET
  *       403:
  *         description: Forbidden
  */
-router.get('/:agentId/history', async (req, res, next) => {
+router.get('/:agentId/history', async (req, res, _next) => {
   try {
     const apiKey = req.headers['x-api-key'];
     let agent;

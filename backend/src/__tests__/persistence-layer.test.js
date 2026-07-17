@@ -38,7 +38,7 @@ describe('Persistence Layer - Transaction Support', () => {
         return result;
       });
 
-      const result = await transaction(async (client) => {
+      const result = await transaction(async (_client) => {
         return { id: '1' };
       });
 

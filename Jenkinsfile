@@ -12,14 +12,12 @@ pipeline {
         JWT_SECRET = 'jenkins-ci-secret'
         ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
         DATABASE_URL = "postgresql://postgres:${POSTGRES_PASSWORD}@localhost:5432/vibecode"
-        INTEGRATION_TESTS = '1'
     }
 
     stages {
         stage('Detect Changes') {
-            agent { label 'master' }
             when {
-                branch 'PR-*'
+                not { branch 'master' }
             }
             steps {
                 script {
@@ -39,6 +37,36 @@ pipeline {
             }
         }
 
+        stage('Setup') {
+            when {
+                anyOf {
+                    branch 'master'
+                    expression { env.BACKEND_CHANGED == 'true' }
+                    expression { env.FRONTEND_CHANGED == 'true' }
+                    expression { env.MIGRATIONS_CHANGED == 'true' }
+                    expression { env.AGENT_CHANGED == 'true' }
+                }
+            }
+            steps {
+                script {
+                    if (env.BACKEND_CHANGED == 'true' || branch == 'master') {
+                        nodejs('Node') {
+                            dir('backend') {
+                                sh 'npm ci'
+                            }
+                        }
+                    }
+                    if (env.FRONTEND_CHANGED == 'true' || branch == 'master') {
+                        nodejs('Node') {
+                            dir('frontend') {
+                                sh 'npm ci'
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Backend') {
             when {
                 anyOf {
@@ -50,43 +78,37 @@ pipeline {
             parallel {
                 stage('Backend Lint') {
                     steps {
-                        dir('backend') {
-                            sh 'npm ci'
-                            sh 'npm run lint'
+                        nodejs('Node') {
+                            dir('backend') {
+                                sh 'npm run lint'
+                            }
                         }
                     }
                 }
                 stage('Backend Syntax') {
                     steps {
-                        dir('backend') {
-                            sh 'npm ci'
-                            sh 'node --check src/index.js'
+                        nodejs('Node') {
+                            dir('backend') {
+                                sh 'node --check src/index.js'
+                            }
                         }
                     }
                 }
                 stage('Backend Unit Tests') {
                     steps {
-                        dir('backend') {
-                            sh 'npm ci'
-                            sh 'npm test'
-                        }
-                    }
-                    post {
-                        always {
-                            junit allowEmptyResults: true, testResults: 'backend/test-results/**/*.xml'
+                        nodejs('Node') {
+                            dir('backend') {
+                                sh 'npm test'
+                            }
                         }
                     }
                 }
                 stage('Backend Coverage') {
                     steps {
-                        dir('backend') {
-                            sh 'npm ci'
-                            sh 'npm run test:coverage'
-                        }
-                    }
-                    post {
-                        always {
-                            junit allowEmptyResults: true, testResults: 'backend/coverage/junit.xml'
+                        nodejs('Node') {
+                            dir('backend') {
+                                sh 'npm run test:coverage'
+                            }
                         }
                     }
                 }
@@ -103,46 +125,46 @@ pipeline {
             parallel {
                 stage('Frontend Lint') {
                     steps {
-                        dir('frontend') {
-                            sh 'npm ci'
-                            sh 'npm run lint'
+                        nodejs('Node') {
+                            dir('frontend') {
+                                sh 'npm run lint'
+                            }
                         }
                     }
                 }
                 stage('Frontend Typecheck') {
                     steps {
-                        dir('frontend') {
-                            sh 'npm ci'
-                            sh 'npm run typecheck'
+                        nodejs('Node') {
+                            dir('frontend') {
+                                sh 'npm run typecheck'
+                            }
                         }
                     }
                 }
                 stage('Frontend Unit Tests') {
                     steps {
-                        dir('frontend') {
-                            sh 'npm ci'
-                            sh 'npm test -- --run'
-                        }
-                    }
-                    post {
-                        always {
-                            junit allowEmptyResults: true, testResults: 'frontend/test-results/**/*.xml'
+                        nodejs('Node') {
+                            dir('frontend') {
+                                sh 'npm test -- --run'
+                            }
                         }
                     }
                 }
                 stage('Frontend Coverage') {
                     steps {
-                        dir('frontend') {
-                            sh 'npm ci'
-                            sh 'npm test -- --run --coverage'
+                        nodejs('Node') {
+                            dir('frontend') {
+                                sh 'npm test -- --run --coverage'
+                            }
                         }
                     }
                 }
                 stage('Frontend Build') {
                     steps {
-                        dir('frontend') {
-                            sh 'npm ci'
-                            sh 'npm run build'
+                        nodejs('Node') {
+                            dir('frontend') {
+                                sh 'npm run build'
+                            }
                         }
                     }
                 }
@@ -158,9 +180,10 @@ pipeline {
                 }
             }
             steps {
-                dir('frontend') {
-                    sh 'npm ci'
-                    sh 'npm test -- --run src/__tests__/api-contract.test.ts'
+                nodejs('Node') {
+                    dir('frontend') {
+                        sh 'npm test -- --run src/__tests__/api-contract.test.ts'
+                    }
                 }
             }
         }
@@ -173,8 +196,10 @@ pipeline {
                 }
             }
             steps {
-                dir('agent') {
-                    sh 'mvn package -q -DskipTests'
+                tool(name: 'Maven', type: 'maven') {
+                    dir('agent') {
+                        sh 'mvn package -q -DskipTests'
+                    }
                 }
             }
         }
@@ -190,39 +215,41 @@ pipeline {
                 }
             }
             steps {
-                script {
-                    // Write .env for docker compose
-                    sh """
-                        cat > .env <<EOF
+                nodejs('Node') {
+                    script {
+                        // Write .env for docker compose
+                        sh """
+                            cat > .env <<EOF
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 JWT_SECRET=${JWT_SECRET}
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
 PGADMIN_PASSWORD=changeme
 EOF
-                    """
+                        """
 
-                    // Build and start services
-                    sh 'docker compose down --remove-orphans || true'
-                    sh 'docker compose build api'
-                    sh 'docker compose up -d postgres redis api frontend migrate'
+                        // Build and start services
+                        sh 'docker compose down --remove-orphans || true'
+                        sh 'docker compose build api'
+                        sh 'docker compose up -d postgres redis api frontend migrate'
 
-                    // Wait for health
-                    waitUntil(timeout: 120, interval: 5) {
-                        def status = sh(
-                            script: 'curl -sf http://localhost:3001/api/health || true',
-                            returnStatus: true
-                        )
-                        return status == 0
+                        // Wait for health
+                        waitUntil(timeout: 120, interval: 5) {
+                            def status = sh(
+                                script: 'curl -sf http://localhost:3001/api/health || true',
+                                returnStatus: true
+                            )
+                            return status == 0
+                        }
+
+                        // Jest integration tests
+                        sh """
+                            INTEGRATION_TESTS=1 DATABASE_URL="${DATABASE_URL}" \
+                            npx jest --config backend/jest.integration.config.js --verbose
+                        """
+
+                        // Bash integration tests
+                        sh 'bash backend/integration-test/run.sh --only'
                     }
-
-                    // Jest integration tests
-                    sh """
-                        DATABASE_URL="${DATABASE_URL}" \
-                        npx jest --config backend/jest.integration.config.js --verbose
-                    """
-
-                    // Bash integration tests
-                    sh 'bash backend/integration-test/run.sh --only'
                 }
             }
             post {

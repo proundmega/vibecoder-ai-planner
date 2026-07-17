@@ -4,7 +4,7 @@ const { verifyToken } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
 const ApprovalService = require('../services/ApprovalService');
-const { createApprovalSchema, approveSchema, rejectSchema } = require('../validators/approvals');
+const { createApprovalSchema } = require('../validators/approvals');
 const logger = require('../utils/logger');
 
 /**

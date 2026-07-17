@@ -8,8 +8,17 @@ const { requestAgentSchema, releaseAgentSchema } = require('../validators/pool')
 
 router.post('/pool/request', verifyToken, requireAnyPermission('PROJECT_ADMIN'), validate(requestAgentSchema), async (req, res, next) => {
   try {
-    const { project_id, repo_url, provider_config } = req.body;
-    const result = await poolManager.requestAgent(project_id, repo_url, provider_config || {});
+    const { project_id, repo_url, provider_id, provider_config } = req.body;
+    let result;
+    
+    if (provider_id) {
+      result = await poolManager.requestAgent(project_id, repo_url, { providerId: provider_id });
+    } else if (provider_config) {
+      result = await poolManager.requestAgent(project_id, repo_url, { legacyProviderConfig: provider_config });
+    } else {
+      result = await poolManager.requestAgent(project_id, repo_url, {});
+    }
+    
     res.json({ success: true, data: result });
   } catch (err) { next(err); }
 });

@@ -1,4 +1,3 @@
-const { validate } = require('../middleware/validate');
 const { addMemorySchema, updateMemorySchema } = require('../validators/memory');
 
 describe('BP-06: Input Validation - Memory Validators', () => {

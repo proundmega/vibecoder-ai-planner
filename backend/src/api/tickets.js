@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAnyPermission, requireAllPermissions } = require('../middleware/permissions');
+const { requireAnyPermission } = require('../middleware/permissions');
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema } = require('../validators/tickets');

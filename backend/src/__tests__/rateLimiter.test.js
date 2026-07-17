@@ -9,14 +9,10 @@ describe('Rate Limiter Middleware', () => {
       ip: '127.0.0.1',
       connection: { remoteAddress: '127.0.0.1' },
     };
-    // Reset rate limit state and store between tests
     const redisModule = require('../utils/redis');
-    if (redisModule._resetRateLimitState) {
-      redisModule._resetRateLimitState();
-    }
-    if (redisModule._resetStore) {
-      redisModule._resetStore();
-    }
+    if (redisModule._resetRateLimitState) redisModule._resetRateLimitState();
+    if (redisModule._resetStore) redisModule._resetStore();
+    if (redisModule._resetSortedSets) redisModule._resetSortedSets();
   });
 
   afterEach(() => {
@@ -170,7 +166,6 @@ describe('Account Lockout', () => {
     originalAuthLockoutAttempts = process.env.AUTH_LOCKOUT_ATTEMPTS;
     process.env.AUTH_LOCKOUT_ATTEMPTS = '10';
     jest.useRealTimers();
-    // Reset rate limit state and store between tests
     const redisModule = require('../utils/redis');
     if (redisModule._resetRateLimitState) {
       redisModule._resetRateLimitState();
@@ -279,7 +274,6 @@ describe('Rate Limiter — high-volume regression', () => {
   });
 
   it('should return 429 after 31 requests within 60 seconds', async () => {
-    // Reset state at the start of this test
     const redisModule = require('../utils/redis');
     if (redisModule._resetRateLimitState) {
       redisModule._resetRateLimitState();
@@ -292,7 +286,6 @@ describe('Rate Limiter — high-volume regression', () => {
     const req = { ip: '10.0.2.1', connection: { remoteAddress: '10.0.2.1' } };
     const next = jest.fn();
 
-    // Send 31 requests; first 30 should pass, 31st should be blocked
     for (let i = 0; i < 31; i++) {
       await limiter(req, mockRes, next);
     }

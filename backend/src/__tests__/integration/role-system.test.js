@@ -224,7 +224,6 @@ describe('Role System Integration', () => {
 
   describe('Users API - Member creates user', () => {
     let memberToken;
-    let memberUserId;
 
     beforeEach(async () => {
       const adminRes = await request(app)
@@ -620,7 +619,6 @@ describe('Role System Integration', () => {
 
   describe('Ticket Delete - Role-Based Permissions', () => {
     let adminToken;
-    let adminUserId;
     let projectId;
     let memberEmail;
 

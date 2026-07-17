@@ -44,7 +44,7 @@ jest.mock('../db', () => {
     query: jest.fn(),
     stats: jest.fn(() => ({ idleCount: 1 })),
   };
-  pool.query.mockImplementation((sql, params) => {
+  pool.query.mockImplementation((sql, _params) => {
     if (sql.includes('INSERT INTO provider_configs')) {
       return Promise.resolve({
         rows: [{

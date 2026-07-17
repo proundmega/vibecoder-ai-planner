@@ -3,6 +3,15 @@ const { pool } = require('../db');
 const CredentialService = require('./CredentialService');
 const logger = require('../utils/logger');
 const { UtilityError } = require('../errors/HttpError');
+const PoolManager = require('./PoolManager');
+
+function shellEscape(str) {
+  return str
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\$/g, '\\$')
+    .replace(/`/g, '\\`');
+}
 
 class ProvisioningService {
   async getNode(id) {
@@ -48,12 +57,33 @@ class ProvisioningService {
   }
 
   async spawnAgent(nodeId, env) {
+    // Resolve provider config if provider_id is provided
+    if (env.provider_id) {
+      try {
+        const providerConfig = await PoolManager.resolveProviderConfig(env.provider_id);
+        env.AI_PROVIDER = providerConfig.provider_type;
+        env.AI_MAX_TOKENS = providerConfig.max_tokens || 4096;
+        if (providerConfig.model) {
+          env.AI_MODEL = providerConfig.model;
+        }
+        if (providerConfig.api_key) {
+          env.AI_API_KEY = providerConfig.api_key;
+        }
+        if (providerConfig.base_url) {
+          env.AI_ENDPOINT_URL = providerConfig.base_url;
+        }
+      } catch (err) {
+        throw new Error(`Provider resolution failed for remote spawn: ${err.message}`);
+      }
+      delete env.provider_id;
+    }
+
     const node = await this.getNode(nodeId);
     const key = await this.getKey(node);
     const ssh = await this.connect(node, key);
 
     const envFlags = Object.entries(env)
-      .map(([k, v]) => `-e ${k}=${v}`)
+      .map(([k, v]) => `-e ${k}="${shellEscape(String(v))}"`)
       .join(' ');
 
     const cmd = `docker run -d --name agent-${env.id} ` +

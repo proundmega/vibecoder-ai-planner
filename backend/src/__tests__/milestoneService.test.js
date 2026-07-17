@@ -1,5 +1,5 @@
 const MilestoneService = require('../services/MilestoneService');
-const { ValidationError, NotFoundError } = require('../errors/HttpError');
+// HttpError imported for type reference
 
 describe('MilestoneService', () => {
   const pool = require('../db').pool;

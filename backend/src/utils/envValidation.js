@@ -29,7 +29,7 @@ function validateEnv() {
   const missing = [];
   const invalid = [];
 
-  for (const { key, description } of requiredEnvVars) {
+  for (const { key, description: _description } of requiredEnvVars) {
     if (!process.env[key]) {
       missing.push(key);
     }
@@ -87,7 +87,7 @@ function validateEnv() {
 
   // REDIS_URL required in production
   if (process.env.NODE_ENV === 'production') {
-    for (const { key, description } of productionRequiredEnvVars) {
+    for (const { key, description: _description } of productionRequiredEnvVars) {
       if (!process.env[key]) {
         missing.push(key);
       }

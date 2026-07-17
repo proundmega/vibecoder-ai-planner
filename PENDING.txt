@@ -34,7 +34,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 |----|-----------|----------|-------------|
 | **bp-01** | `bp-01-root-providers` | P1 | ✅ Done (PR #57) — Global providers migration, routes, services, frontend page, AgentModal provider selector, all tests pass. |
 | **bp-02** | `bp-02-agent-provider-resolution` | P1 | ~~Java agents fetch provider config from backend at startup~~ ✅ Done (bp-99 PR) |
-| **bp-03** | `bp-03-pool-provider-resolve` | P1 | PoolManager resolves provider config and passes all env vars |
+| **bp-03** | `bp-03-pool-provider-resolve` | P1 | ~~PoolManager resolves provider config and passes all env vars~~ ✅ Done (this session) — Provider resolution in PoolManager, auto-select worker provider, all 5 env vars passed (AI_PROVIDER, AI_MODEL, AI_API_KEY, AI_ENDPOINT_URL, AI_MAX_TOKENS), legacy provider_config backward compat, ProvisioningService provider resolution |
 | **bp-04** | `bp-04-usage-billing` | P2 | Wire up usage tracking and billing to actual AI calls |
 | ~~bp-53~~ | `bp-53-distributed-state` | P1 | ~~Distributed State Management~~ ✅ Done (PR #38) |
 | ~~bp-68~~ | `bp-68-integration-test-fixes` | P1 | ~~Fix 83 failing bash integration tests~~ ✅ Done (PR #44) |
@@ -95,3 +95,5 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 - fg-29 was implemented but planning doc was stale — moved to `planning/DONE/`.
 - bt-52, bt-54, bt-55, bt-58, bt-59 moved to `planning/DONE/` — their corresponding bp-* suites are implemented.
 - bp-99 is **completed** (this session) — 12 agent system fixes: PoolManager env var/ID mismatch, provider config fetch (bp-02), agent rename (bp-77), Docker health check, stale agent cleanup, TicketProcessor message ordering, GitHubService.createCommit() parent SHA, AGENT_ID required, deprecated getApiKey() removal, planning docs client reuse.
+
+- **bp-98** | `bp-98-node-24-migration` | P1 | Migrate from Node 18 to Node 24 LTS ("Krypton") — Configuration-only migration: .nvmrc, engines fields, GitHub Actions CI, Jenkinsfile, AGENTS.md documentation. Node 18 EOL April 2026, Node 24 LTS until April 2028. Zero production code changes.

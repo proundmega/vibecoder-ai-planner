@@ -24,8 +24,8 @@ jest.mock('uuid', () => ({
 
 // Mock bcrypt
 jest.mock('bcryptjs', () => ({
-  hash: jest.fn((str, salt) => Promise.resolve('$2b$10$' + Array(48).fill('0').join(''))),
-  compare: jest.fn((str, hash) => Promise.resolve(str === 'test123')),
+  hash: jest.fn((_str, _salt) => Promise.resolve('$2b$10$' + Array(48).fill('0').join(''))),
+  compare: jest.fn((_str, _hash) => Promise.resolve(_str === 'test123')),
   genSalt: jest.fn(() => Promise.resolve('$2b$10$'))
 }));
 

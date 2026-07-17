@@ -1,5 +1,5 @@
 class ProviderInterface {
-  async chat(messages, options = {}) {
+  async chat(messages, _options = {}) {
     throw new Error('Not implemented');
   }
 

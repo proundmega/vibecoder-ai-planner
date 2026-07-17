@@ -137,7 +137,7 @@ describe('Ticket.update() null field support (BP-61)', () => {
   it('does not include undefined fields in UPDATE', async () => {
     const mockTicket = { id: 't1', title: 'Test', status: 'backlog', ownerId: 'user-1', assigneeId: 'user-1', projectId: 'p1' };
     
-    pool.query.mockImplementation((sql, params) => {
+    pool.query.mockImplementation((sql, _params) => {
       if (sql.includes('SELECT * FROM tickets WHERE id =')) {
         return Promise.resolve({ rows: [mockTicket] });
       }

@@ -1,13 +1,13 @@
 # 03_ARCHITECT_IMPLEMENTATION.md — Implementation Template
 
-**Status**: planned
+**Status**: completed
 **Priority**: P1
 **Effort**: Medium
 **Author**: AI Assistant
 **Date created**: 2026-07-12
-**Date completed**: {{YYYY-MM-DD}}
+**Date completed**: 2026-07-15
 **PR**: {{link}}
-**Branch**: {{branch-name}}
+**Branch**: fix/bp-03-pool-provider-resolve
 **Scope**: Backend
 
 **Dependencies**: bp-01 (providers table must exist first)

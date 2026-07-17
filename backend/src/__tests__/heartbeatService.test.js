@@ -13,7 +13,7 @@ jest.mock('../services/TicketService', () => ({
 }));
 
 const heartbeatService = require('../services/HeartbeatService');
-const { NotFoundError, ValidationError } = require('../errors/HttpError');
+// HttpError imported for type reference
 
 describe('HeartbeatService', () => {
   const mockPool = require('../db').pool;

@@ -1,7 +1,7 @@
 const { AppError } = require('../errors/HttpError');
 const logger = require('../utils/logger');
 
-function errorHandler(err, req, res, next) {
+function errorHandler(err, req, res, _next) {
   const requestId = req.requestId || 'N/A';
   logger.error(`[ERROR] Request ${requestId}:`, err.message);
   if (process.env.NODE_ENV === 'development' && err.stack) {

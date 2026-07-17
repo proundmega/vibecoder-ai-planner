@@ -1,5 +1,3 @@
-const Joi = require('joi');
-
 function validate(schema) {
   return (req, res, next) => {
     const options = {

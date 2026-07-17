@@ -1,15 +1,15 @@
-const { gracefulShutdown, isShuttingDown, resetShutdownState } = require('../utils/shutdown');
+const { gracefulShutdown, resetShutdownState } = require('../utils/shutdown');
 
 describe('BP-12: Graceful Shutdown', () => {
   let mockServer;
   let mockPool;
-  let exitCode;
+  let _exitCode;
   let originalExit;
   let originalSetTimeout;
   let timers = [];
 
   beforeEach(() => {
-    exitCode = null;
+    _exitCode = null;
     timers = [];
     originalExit = process.exit;
     originalSetTimeout = global.setTimeout;

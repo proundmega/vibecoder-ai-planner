@@ -5,7 +5,7 @@ const User = require('../models/user');
 const logger = require('../utils/logger');
 
 // Middleware
-const { verifyToken, verifyTokenOrAgent, agentAuth, rateLimiter, trackAgentAction, recordFailedAttempt, clearFailedAttempts, checkAccountLockout, getLockoutRemainingMs } = require('../middleware/auth');
+const { verifyToken, rateLimiter, recordFailedAttempt, clearFailedAttempts, checkAccountLockout, getLockoutRemainingMs } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { registerSchema, loginSchema } = require('../validators/auth');
 const { apiVersion } = require('../middleware/apiVersion');
@@ -16,8 +16,7 @@ const { pool } = require('../db');
 
 const {
   register: registerUser,
-  login: loginUser,
-  verifyToken: verifyTokenHandler
+  login: loginUser
 } = auth;
 const UserService = require('../services/UserService');
 
@@ -322,7 +321,6 @@ router.get('/auth/me', verifyToken, rateLimiter(30, 60000), async (req, res) => 
 // API v1 routes (versioned)
 const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS) || 30000;
 const SLOW_REQUEST_THRESHOLD_MS = parseInt(process.env.SLOW_REQUEST_THRESHOLD_MS) || 5000;
-const LONG_TIMEOUT_MS = 60000; // 60 seconds for long-running endpoints
 
 router.use('/v1', 
   apiVersion('v1'),

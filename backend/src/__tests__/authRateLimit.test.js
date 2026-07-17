@@ -30,55 +30,17 @@ jest.mock('../utils/crypto', () => ({
   maskToken: jest.fn((text) => text ? text.substring(0, 3) + '***' : ''),
 }));
 
-// Redis mock for supertest tests
-jest.mock('../utils/redis', () => {
-  const rateLimitState = new Map();
-
-  return {
-    connectRedis: jest.fn(),
-    ensureConnected: jest.fn().mockResolvedValue(true),
-    closeRedis: jest.fn().mockResolvedValue(undefined),
-    isRedisAvailable: jest.fn().mockReturnValue(true),
-    getRedis: jest.fn().mockReturnValue({ ping: jest.fn().mockResolvedValue('PONG') }),
-    get: jest.fn().mockResolvedValue(null),
-    set: jest.fn().mockResolvedValue('OK'),
-    del: jest.fn().mockResolvedValue(1),
-    zadd: jest.fn().mockResolvedValue(1),
-    zremrangebyscore: jest.fn().mockResolvedValue(0),
-    zcard: jest.fn().mockResolvedValue(0),
-    expire: jest.fn().mockResolvedValue(1),
-    evalScript: jest.fn().mockImplementation((script, keys, args) => {
-      if (script.includes('ZREMRANGEBYSCORE') && script.includes('ZCARD')) {
-        const [key] = keys;
-        const maxRequests = parseInt(args[1]);
-        const now = parseFloat(args[2]);
-
-        if (!rateLimitState.has(key)) {
-          rateLimitState.set(key, []);
-        }
-        const entries = rateLimitState.get(key);
-
-        if (entries.length >= maxRequests) {
-          return Promise.resolve([1, entries.length, 0]);
-        }
-
-        entries.push(now);
-        return Promise.resolve([0, entries.length, 60000]);
-      }
-      return Promise.resolve([0, 1, 60000]);
-    }),
-    scan: jest.fn().mockResolvedValue(['0', []]),
-    getPrefixedKey: jest.fn().mockImplementation((key) => `vibecode:${key}`),
-    healthCheck: jest.fn().mockResolvedValue({ status: 'healthy' }),
-    _resetRateLimitState: () => rateLimitState.clear(),
-  };
-});
-
 describe('GET /auth/me rate limiter (BP-60)', () => {
   beforeEach(() => {
     const redisModule = require('../utils/redis');
     if (redisModule._resetRateLimitState) {
       redisModule._resetRateLimitState();
+    }
+    if (redisModule._resetStore) {
+      redisModule._resetStore();
+    }
+    if (redisModule._resetSortedSets) {
+      redisModule._resetSortedSets();
     }
   });
 

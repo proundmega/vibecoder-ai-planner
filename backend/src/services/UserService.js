@@ -62,7 +62,7 @@ class UserService {
   }
 
   async updateProfile(userId, updates) {
-    const { name, ...rest } = updates;
+    const { name, ..._rest } = updates;
     
     const result = await pool.query(
       `UPDATE users 
@@ -182,7 +182,7 @@ class UserService {
   }
 
   async updateUser(userId, adminId, updates) {
-    const admin = await User.find(adminId);
+    const _admin = await User.find(adminId);
     const targetUser = await User.find(userId);
     
     if (!targetUser) {
@@ -240,7 +240,7 @@ class UserService {
   }
 
   async toggleUserActive(userId, adminId) {
-    const admin = await User.find(adminId);
+    const _admin = await User.find(adminId);
     const targetUser = await User.find(userId);
     
     if (!targetUser) {
@@ -260,7 +260,7 @@ class UserService {
   }
 
   async deleteUser(userId, adminId) {
-    const admin = await User.find(adminId);
+    const _admin = await User.find(adminId);
     const targetUser = await User.find(userId);
     
     if (!targetUser) {

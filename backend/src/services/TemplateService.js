@@ -553,7 +553,7 @@ async function functionName(params): ReturnType
     return templates[fileKey] || '';
   }
 
-  static async list(projectId, userId) {
+  static async list(projectId, _userId) {
     
     const result = await pool.query(
       `SELECT pt.*, jsonb_array_length(pt.file_definitions)::int AS file_definitions_count,

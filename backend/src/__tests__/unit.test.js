@@ -65,9 +65,9 @@ describe('Vibecode AI Planner - Mocked Tests', () => {
 
   describe('Permission Middleware (Simulated)', () => {
     it('Permission check logic', () => {
-      const permissions = ['create_project', 'update_project', 'delete_project'];
+      const _permissions = ['create_project', 'update_project', 'delete_project'];
       const granted = ['create_project'];
-      const required = ['update_project'];
+      const _required = ['update_project'];
       
       const hasPermission = (req, perm) => req.granted.includes(perm);
       

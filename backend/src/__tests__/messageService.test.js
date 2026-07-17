@@ -1,5 +1,5 @@
 const MessageService = require('../services/MessageService');
-const { ValidationError, NotFoundError } = require('../errors/HttpError');
+// HttpError imported for type reference
 
 jest.mock('../db', () => ({
   pool: {

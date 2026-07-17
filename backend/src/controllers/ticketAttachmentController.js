@@ -1,5 +1,5 @@
 const TicketAttachmentService = require('../services/TicketAttachmentService');
-const { NotFoundError, ForbiddenError } = require('../errors/HttpError');
+// HttpError imported for type reference
 const path = require('path');
 const fs = require('fs');
 
@@ -18,7 +18,7 @@ class TicketAttachmentController {
 
     const attachment = await TicketAttachmentService.upload(ticketId, req.file, userId);
     // Strip stored_path — it reveals internal filesystem layout
-    const { stored_path, ...safeAttachment } = attachment;
+    const { stored_path: _stored_path, ...safeAttachment } = attachment;
     res.status(201).json({ success: true, data: safeAttachment, message: 'Attachment uploaded successfully' });
   }
 
@@ -28,7 +28,7 @@ class TicketAttachmentController {
 
     const attachments = await TicketAttachmentService.list(ticketId, userId);
     // Strip stored_path from each attachment — it reveals internal filesystem layout
-    const safeAttachments = attachments.map(({ stored_path, ...safe }) => safe);
+    const safeAttachments = attachments.map(({ stored_path: _stored_path, ...safe }) => safe);
     res.json({ success: true, data: safeAttachments });
   }
 
