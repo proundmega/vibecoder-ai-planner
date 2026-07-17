@@ -232,6 +232,22 @@ EOF
                         sh 'docker compose build'
                         sh 'docker compose up -d'
 
+                        // Log logs for any unhealthy containers immediately
+                        def unhealthy = sh(
+                            script: 'docker compose ps --filter "health=unhealthy" --format "{{.Name}}" || true',
+                            returnStdout: true
+                        ).trim()
+                        if (unhealthy) {
+                            echo "ERROR: The following containers are unhealthy:"
+                            for (def container : unhealthy.split('\\n')) {
+                                if (container.trim()) {
+                                    echo "--- Logs for ${container.trim()} ---"
+                                    sh "docker compose logs --tail=100 ${container.trim()} || true"
+                                    echo "--- End logs for ${container.trim()} ---"
+                                }
+                            }
+                        }
+
                         // Wait for health (3 checks, 3s apart; fail after 30s)
                         def healthy = false
                         def elapsed = 0
