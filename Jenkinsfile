@@ -227,10 +227,10 @@ PGADMIN_PASSWORD=changeme
 EOF
                         """
 
-                        // Build and start services
+                        // Build and start services (use production compose, not dev override)
                         // sh 'docker compose down --remove-orphans || true'  // commented for debugging
-                        sh 'docker compose build'
-                        sh 'docker compose up -d'
+                        sh 'docker compose -f docker-compose.yml build'
+                        sh 'docker compose -f docker-compose.yml up -d'
 
                         // Log logs for any unhealthy containers immediately
                         def unhealthy = sh(
@@ -248,7 +248,7 @@ EOF
                             }
                         }
 
-                        // Wait for health (3 checks, 3s apart; fail after 30s)
+                        // Wait for health (check API + PostgreSQL, 3 attempts, 3s apart; fail after 30s)
                         def healthy = false
                         def elapsed = 0
                         def checks = 0
@@ -256,15 +256,19 @@ EOF
                             sleep(time: 3, unit: 'SECONDS')
                             elapsed += 3
                             checks++
-                            def status = sh(
+                            def apiStatus = sh(
                                 script: 'curl -sf http://localhost:3001/api/health || true',
                                 returnStatus: true
                             )
-                            if (status == 0) {
+                            def pgStatus = sh(
+                                script: 'pg_isready -h localhost -p 5432 -U postgres || true',
+                                returnStatus: true
+                            )
+                            if (apiStatus == 0 && pgStatus == 0) {
                                 healthy = true
                                 break
                             }
-                            echo "Health check attempt ${checks}/3 failed (elapsed: ${elapsed}s)"
+                            echo "Health check attempt ${checks}/3 failed (api: ${apiStatus}, pg: ${pgStatus}, elapsed: ${elapsed}s)"
                         }
                         if (!healthy) {
                             echo "ERROR: Stack not healthy after 30s (3 checks failed)"
