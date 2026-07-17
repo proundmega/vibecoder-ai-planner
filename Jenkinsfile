@@ -249,7 +249,9 @@ EOF
                             }
                         }
 
-                        // Wait for API health (3 attempts, 3s apart; fail after 30s)
+                        // Wait for health (check API + PostgreSQL, 3 attempts, 3s apart; fail after 30s)
+                        // Use host.docker.internal because Jenkins runs inside Docker and
+                        // localhost refers to the Jenkins container, not the host.
                         def healthy = false
                         def elapsed = 0
                         def checks = 0
@@ -258,14 +260,18 @@ EOF
                             elapsed += 3
                             checks++
                             def apiStatus = sh(
-                                script: 'curl -sf http://localhost:3001/api/health',
+                                script: 'curl -sf http://host.docker.internal:3001/api/health',
                                 returnStatus: true
                             )
-                            if (apiStatus == 0) {
+                            def pgStatus = sh(
+                                script: "bash -c 'echo > /dev/tcp/127.0.0.1/5432' 2>/dev/null && echo ok || echo fail",
+                                returnStdout: true
+                            )
+                            if (apiStatus == 0 && pgStatus.trim() == 'ok') {
                                 healthy = true
                                 break
                             }
-                            echo "Health check attempt ${checks}/3 failed (api: ${apiStatus}, elapsed: ${elapsed}s)"
+                            echo "Health check attempt ${checks}/3 failed (api: ${apiStatus}, pg: ${pgStatus.trim()}, elapsed: ${elapsed}s)"
                         }
                         if (!healthy) {
                             echo "ERROR: Stack not healthy after 30s (3 checks failed)"
@@ -276,9 +282,9 @@ EOF
                         echo "Stack healthy after ${elapsed}s (${checks} checks)"
 
                         // Jest integration tests (use local jest, not npx which may mismatch versions)
-                        // Tests run on the host, so DATABASE_URL must point to localhost:5432 (published port)
+                        // Tests run inside Jenkins container, so DATABASE_URL must use host.docker.internal
                         sh """
-                            INTEGRATION_TESTS=1 DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@localhost:5432/vibecode" \
+                            INTEGRATION_TESTS=1 DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@host.docker.internal:5432/vibecode" \
                             ./backend/node_modules/.bin/jest --config backend/jest.integration.config.js --verbose
                         """
 
