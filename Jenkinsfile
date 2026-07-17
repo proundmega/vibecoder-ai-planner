@@ -274,10 +274,10 @@ EOF
                         }
                         echo "Stack healthy after ${elapsed}s (${checks} checks)"
 
-                        // Jest integration tests
+                        // Jest integration tests (use local jest, not npx which may mismatch versions)
                         sh """
                             INTEGRATION_TESTS=1 DATABASE_URL="${DATABASE_URL}" \
-                            npx jest --config backend/jest.integration.config.js --verbose
+                            ./backend/node_modules/.bin/jest --config backend/jest.integration.config.js --verbose
                         """
 
                         // Bash integration tests
