@@ -232,14 +232,31 @@ EOF
                         sh 'docker compose build'
                         sh 'docker compose up -d'
 
-                        // Wait for health
-                        waitUntil(timeout: 120, interval: 5) {
+                        // Wait for health (3 checks, 3s apart; fail after 30s)
+                        def healthy = false
+                        def elapsed = 0
+                        def checks = 0
+                        while (elapsed < 30 && checks < 3) {
+                            sleep(time: 3, unit: 'SECONDS')
+                            elapsed += 3
+                            checks++
                             def status = sh(
                                 script: 'curl -sf http://localhost:3001/api/health || true',
                                 returnStatus: true
                             )
-                            return status == 0
+                            if (status == 0) {
+                                healthy = true
+                                break
+                            }
+                            echo "Health check attempt ${checks}/3 failed (elapsed: ${elapsed}s)"
                         }
+                        if (!healthy) {
+                            echo "ERROR: Stack not healthy after 30s (3 checks failed)"
+                            sh 'docker compose logs --tail=50 || true'
+                            sh 'docker compose ps || true'
+                            error("Integration stack failed to start within 30 seconds")
+                        }
+                        echo "Stack healthy after ${elapsed}s (${checks} checks)"
 
                         // Jest integration tests
                         sh """
