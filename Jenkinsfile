@@ -228,7 +228,7 @@ EOF
                         """
 
                         // Build and start services
-                        sh 'docker compose down --remove-orphans || true'
+                        // sh 'docker compose down --remove-orphans || true'  // commented for debugging
                         sh 'docker compose build'
                         sh 'docker compose up -d'
 
