@@ -271,7 +271,7 @@ EOF
             }
             post {
                 always {
-                    sh 'docker compose down -v || true'
+                    // sh 'docker compose down -v || true'  // commented for debugging
                 }
             }
         }
