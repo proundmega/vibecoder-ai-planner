@@ -272,7 +272,7 @@ EOF
                             docker exec -w /app vibecode-test bash -c '
                                 OUTPUT=$(./node_modules/.bin/jest --config jest.integration.config.js --verbose 2>&1)
                                 echo "$OUTPUT"
-                                if echo "$OUTPUT" | grep -qE "(Test Suites:|Tests:).*failed"; then
+                                if echo "$OUTPUT" | grep -E "^(Test Suites:|Tests:)" | grep -qi "failed"; then
                                     exit 1
                                 fi
                             '
