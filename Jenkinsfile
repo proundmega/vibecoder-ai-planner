@@ -262,9 +262,17 @@ EOF
                         }
                         echo "Infra ready after ${elapsed}s (${checks} checks)"
 
-                        // Run integration tests (test service: jest + bash suites)
-                        // --exit-code-from test ensures the pipeline fails if tests fail
-                        sh 'docker compose -f docker-compose.yml -f docker-compose.test.yml --exit-code-from test up test'
+                        // Start test container (no auto-run command, tests run via exec)
+                        sh 'docker compose -f docker-compose.yml -f docker-compose.test.yml up -d test'
+
+                        // Run integration tests inside the test container
+                        // Exit codes propagate directly to the pipeline
+                        sh """
+                            docker exec -w /app vibecode-test sh -c '
+                                ./node_modules/.bin/jest --config jest.integration.config.js --verbose &&
+                                BASE_URL=http://api:3001 sh integration-test/run.sh --only
+                            '
+                        """
                     }
                 }
             }

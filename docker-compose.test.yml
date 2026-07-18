@@ -22,11 +22,7 @@ services:
         condition: service_healthy
       api:
         condition: service_healthy
-    command: >
-      sh -c "
-        ./node_modules/.bin/jest --config jest.integration.config.js --verbose &&
-        BASE_URL=http://api:3001 sh integration-test/run.sh --only
-      "
+    command: sleep infinity
     deploy:
       resources:
         limits:
