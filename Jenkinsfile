@@ -228,12 +228,12 @@ PGADMIN_PASSWORD=changeme
 EOF
                         """
 
-                        // Build and start services (use production compose, not dev override)
+                        // Build infra (production compose) + test service
                         sh 'docker compose -f docker-compose.yml down --remove-orphans || true'
-                        sh 'docker compose -f docker-compose.yml build'
+                        sh 'docker compose -f docker-compose.yml -f docker-compose.test.yml build'
                         sh 'docker compose -f docker-compose.yml up -d'
 
-                        // Wait for services to be ready (3 attempts, 3s apart; fail after 30s)
+                        // Wait for infra to be ready (3 attempts, 3s apart; fail after 30s)
                         def ready = false
                         def elapsed = 0
                         def checks = 0
@@ -259,25 +259,10 @@ EOF
                             sh 'docker compose -f docker-compose.yml ps || true'
                             error("Integration stack failed to start within 30 seconds")
                         }
-                        echo "Stack ready after ${elapsed}s (${checks} checks)"
+                        echo "Infra ready after ${elapsed}s (${checks} checks)"
 
-                        // Jest integration tests — run from Jenkins container using published PG port
-                        sh """
-                            DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@localhost:5432/vibecode" \
-                            ./backend/node_modules/.bin/jest --config backend/jest.integration.config.js --verbose
-                        """
-
-                        // Integration tests — run inside the API container via docker exec
-                        sh """
-                            docker exec -w /app vibecode-api sh -c '
-                                export BASE_URL=http://localhost:3001
-                                source integration-test/helpers.sh
-                                for suite_file in integration-test/suites/*.test.sh; do
-                                    source "$suite_file"
-                                done
-                                main
-                            '
-                        """
+                        // Run integration tests (test service: jest + bash suites)
+                        sh 'docker compose -f docker-compose.yml -f docker-compose.test.yml up test'
                     }
                 }
             }

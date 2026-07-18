@@ -1,0 +1,35 @@
+name: vibecode
+
+services:
+  test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    container_name: vibecode-test
+    restart: "no"
+    networks:
+      - vibecode
+    environment:
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@postgres:5432/vibecode
+      - NODE_ENV=test
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    command: >
+      sh -c "
+        ./node_modules/.bin/jest --config jest.integration.config.js --verbose &&
+        BASE_URL=http://api:3001 sh integration-test/run.sh --only
+      "
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+
+networks:
+  vibecode:
+    driver: bridge
