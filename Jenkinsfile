@@ -265,11 +265,16 @@ EOF
                         // Start test container (no auto-run command, tests run via exec)
                         sh 'docker compose -f docker-compose.yml -f docker-compose.test.yml up -d test'
 
-                        // Run integration tests inside the test container
-                        // Exit codes propagate directly to the pipeline
+                        // Run Jest integration tests inside the test container
                         sh """
                             docker exec -w /app vibecode-test bash -c '
-                                ./node_modules/.bin/jest --config jest.integration.config.js --verbose &&
+                                ./node_modules/.bin/jest --config jest.integration.config.js --verbose
+                            '
+                        """
+
+                        // Run bash integration tests inside the test container
+                        sh """
+                            docker exec -w /app vibecode-test bash -c '
                                 BASE_URL=http://api:3001 bash integration-test/run.sh --only
                             '
                         """
