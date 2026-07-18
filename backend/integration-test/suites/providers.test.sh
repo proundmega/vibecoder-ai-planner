@@ -1,6 +1,47 @@
 #!/usr/bin/env bash
 # Provider route tests
 
+# Helper: single curl call that captures both body and HTTP code
+# Usage: http_post "url" "headers..." "data" -> sets HTTP_CODE and RESPONSE_BODY
+http_post() {
+  local url="$1"; shift
+  local headers=("$@")
+  local data="${headers[-1]}"
+  # If last arg starts with -d, it's data; otherwise it's part of headers
+  if [[ "$data" == -d* ]]; then
+    unset 'headers[-1]'
+    headers+=("-d" "$data")
+  fi
+  local response
+  response=$(curl -s -w '\n%{http_code}' -X POST "$url" "${headers[@]}")
+  HTTP_CODE="${response##*$'\n'}"
+  RESPONSE_BODY="${response%$'\n'*}"
+}
+
+http_get() {
+  local url="$1"; shift
+  local response
+  response=$(curl -s -w '\n%{http_code}' "$url" "$@")
+  HTTP_CODE="${response##*$'\n'}"
+  RESPONSE_BODY="${response%$'\n'*}"
+}
+
+http_patch() {
+  local url="$1"; shift
+  local response
+  response=$(curl -s -w '\n%{http_code}' -X PATCH "$url" "$@")
+  HTTP_CODE="${response##*$'\n'}"
+  RESPONSE_BODY="${response%$'\n'*}"
+}
+
+http_delete() {
+  local url="$1"; shift
+  local response
+  response=$(curl -s -w '\n%{http_code}' -X DELETE "$url" "$@")
+  HTTP_CODE="${response##*$'\n'}"
+  RESPONSE_BODY="${response%$'\n'*}"
+}
+
 test_providers() {
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -11,25 +52,24 @@ test_providers() {
   token=$(seed_user "providers@integration.test" "password123" "project_admin" "Provider Test User")
 
   # --- Create Provider ---
-  local body
-  body=$(curl -s -X POST "${BASE}/api/v1/providers" \
+  http_post "${BASE}/api/v1/providers" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
-    -d '{"name":"Integration Provider","providerType":"openai","apiKey":"sk-integration-test-key","model":"gpt-4o","roles":["worker"]}')
-  assert_status "Create provider" "201" "$(echo "$body" | jq -r '.success' 2>/dev/null)"
-  assert_field "Create provider (success)" "success" "true" "$body"
-  assert_has_field "Create provider (has id)" "id" "$body"
+    -d '{"name":"Integration Provider","providerType":"openai","apiKey":"sk-integration-test-key","model":"gpt-4o","roles":["worker"]}'
+  assert_status "Create provider" "201" "$HTTP_CODE"
+  assert_field "Create provider (success)" "success" "true" "$RESPONSE_BODY"
+  assert_has_field "Create provider (has id)" "id" "$RESPONSE_BODY"
 
   local provider_id
-  provider_id=$(echo "$body" | jq -r '(.data // .) | .id')
+  provider_id=$(echo "$RESPONSE_BODY" | jq -r '(.data // .) | .id')
 
   # --- List Providers ---
-  body=$(curl -s "${BASE}/api/v1/providers" \
-    -H "Authorization: Bearer $token")
-  assert_status "List providers" "200" "$(echo "$body" | jq -r '.success' 2>/dev/null)"
-  assert_field "List providers (success)" "success" "true" "$body"
+  http_get "${BASE}/api/v1/providers" \
+    -H "Authorization: Bearer $token"
+  assert_status "List providers" "200" "$HTTP_CODE"
+  assert_field "List providers (success)" "success" "true" "$RESPONSE_BODY"
   local count
-  count=$(echo "$body" | jq '.data | length')
+  count=$(echo "$RESPONSE_BODY" | jq '.data | length')
   if [ "$count" -gt 0 ]; then
     pass "List providers (has $count providers)"
   else
@@ -37,24 +77,23 @@ test_providers() {
   fi
 
   # --- Get Provider by ID ---
-  body=$(curl -s "${BASE}/api/v1/providers/$provider_id" \
-    -H "Authorization: Bearer $token")
-  assert_status "Get provider by ID" "200" "$(echo "$body" | jq -r '.success' 2>/dev/null)"
-  assert_field "Get provider (name)" "name" "Integration Provider" "$body"
+  http_get "${BASE}/api/v1/providers/$provider_id" \
+    -H "Authorization: Bearer $token"
+  assert_status "Get provider by ID" "200" "$HTTP_CODE"
+  assert_field "Get provider (name)" "name" "Integration Provider" "$RESPONSE_BODY"
 
   # --- Get non-existent provider ---
-  local http_code
   http_code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/providers/999999999" \
     -H "Authorization: Bearer $token")
   assert_status "Get non-existent provider" "404" "$http_code"
 
   # --- Update Provider ---
-  body=$(curl -s -X PATCH "${BASE}/api/v1/providers/$provider_id" \
+  http_patch "${BASE}/api/v1/providers/$provider_id" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
-    -d '{"name":"Updated Provider","model":"gpt-4o"}')
-  assert_status "Update provider" "200" "$(echo "$body" | jq -r '.success' 2>/dev/null)"
-  assert_field "Update provider (name)" "name" "Updated Provider" "$body"
+    -d '{"name":"Updated Provider","model":"gpt-4o"}'
+  assert_status "Update provider" "200" "$HTTP_CODE"
+  assert_field "Update provider (name)" "name" "Updated Provider" "$RESPONSE_BODY"
 
   # --- Update with empty body ---
   http_code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH "${BASE}/api/v1/providers/$provider_id" \
@@ -64,43 +103,43 @@ test_providers() {
   assert_status "Update with empty body" "400" "$http_code"
 
   # --- Set Director ---
-  body=$(curl -s -X PATCH "${BASE}/api/v1/providers/$provider_id/directorship" \
-    -H "Authorization: Bearer $token")
-  assert_status "Set provider as director" "200" "$(echo "$body" | jq -r '.success' 2>/dev/null)"
-  assert_field "Set director (is_project_director)" "is_project_director" "true" "$body"
+  http_patch "${BASE}/api/v1/providers/$provider_id/directorship" \
+    -H "Authorization: Bearer $token"
+  assert_status "Set provider as director" "200" "$HTTP_CODE"
+  assert_field "Set director (is_project_director)" "is_project_director" "true" "$RESPONSE_BODY"
 
   # --- Test Provider Connection ---
-  body=$(curl -s -X POST "${BASE}/api/v1/providers/$provider_id/test" \
-    -H "Authorization: Bearer $token")
-  assert_status "Test provider connection" "200" "$(echo "$body" | jq -r '.success' 2>/dev/null)"
-  assert_has_field "Test provider (has message)" "message" "$body"
+  http_post "${BASE}/api/v1/providers/$provider_id/test" \
+    -H "Authorization: Bearer $token"
+  assert_status "Test provider connection" "200" "$HTTP_CODE"
+  assert_has_field "Test provider (has message)" "message" "$RESPONSE_BODY"
 
   # --- Get Provider Agents ---
-  body=$(curl -s "${BASE}/api/v1/providers/$provider_id/agents" \
-    -H "Authorization: Bearer $token")
-  assert_status "Get provider agents" "200" "$(echo "$body" | jq -r '.success' 2>/dev/null)"
+  http_get "${BASE}/api/v1/providers/$provider_id/agents" \
+    -H "Authorization: Bearer $token"
+  assert_status "Get provider agents" "200" "$HTTP_CODE"
 
   # --- Resolve Provider ---
-  body=$(curl -s -X POST "${BASE}/api/v1/providers/resolve" \
+  http_post "${BASE}/api/v1/providers/resolve" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
-    -d '{"labels":["test"],"priority":"high"}')
-  assert_status "Resolve provider" "200" "$(echo "$body" | jq -r '.success' 2>/dev/null)"
-  assert_has_field "Resolve provider (has provider)" "provider" "$body"
+    -d '{"labels":["test"],"priority":"high"}'
+  assert_status "Resolve provider" "200" "$HTTP_CODE"
+  assert_has_field "Resolve provider (has provider)" "provider" "$RESPONSE_BODY"
 
   # --- Create another provider with routing rules ---
-  curl -s -X POST "${BASE}/api/v1/providers" \
+  http_post "${BASE}/api/v1/providers" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Routing Provider","providerType":"claude","apiKey":"sk-claude","model":"claude-3","is_project_director":true,"routing_rules":{"rules":[{"match":{"labels":["frontend"]},"model":"claude-3"}]}}' >/dev/null
 
-  body=$(curl -s -X POST "${BASE}/api/v1/providers/resolve" \
+  http_post "${BASE}/api/v1/providers/resolve" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
-    -d '{"labels":["frontend"],"priority":"high"}')
-  assert_status "Resolve with routing rules" "200" "$(echo "$body" | jq -r '.success' 2>/dev/null)"
+    -d '{"labels":["frontend"],"priority":"high"}'
+  assert_status "Resolve with routing rules" "200" "$HTTP_CODE"
   local resolved_model
-  resolved_model=$(echo "$body" | jq -r '.data.model')
+  resolved_model=$(echo "$RESPONSE_BODY" | jq -r '.data.model')
   if [ "$resolved_model" = "claude-3" ]; then
     pass "Resolve routing rules (model=claude-3)"
   else
@@ -108,9 +147,9 @@ test_providers() {
   fi
 
   # --- Delete Provider ---
-  http_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/providers/$provider_id" \
-    -H "Authorization: Bearer $token")
-  assert_status "Delete provider" "200" "$http_code"
+  http_delete "${BASE}/api/v1/providers/$provider_id" \
+    -H "Authorization: Bearer $token"
+  assert_status "Delete provider" "200" "$HTTP_CODE"
 
   # --- Verify deleted provider returns 404 ---
   http_code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/providers/$provider_id" \
@@ -142,7 +181,7 @@ test_providers() {
   assert_status "Create provider without auth" "401" "$http_code"
 
   # --- Unique constraint: duplicate name+type ---
-  curl -s -X POST "${BASE}/api/v1/providers" \
+  http_post "${BASE}/api/v1/providers" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d '{"name":"Unique Test","providerType":"openai","apiKey":"sk-first"}' >/dev/null
