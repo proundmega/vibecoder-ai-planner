@@ -268,22 +268,22 @@ EOF
                         // Run Jest integration tests inside the test container
                         // forceExit: true returns exit code 1 when DB connections are still open,
                         // so check output for failures instead of relying on exit code
-                        sh """
+                        sh '''
                             docker exec -w /app vibecode-test bash -c '
-                                OUTPUT=$($$(pwd)/node_modules/.bin/jest --config jest.integration.config.js --verbose 2>&1)
+                                OUTPUT=$(./node_modules/.bin/jest --config jest.integration.config.js --verbose 2>&1)
                                 echo "$OUTPUT"
                                 if echo "$OUTPUT" | grep -q "failed"; then
                                     exit 1
                                 fi
                             '
-                        """
+                        '''
 
                         // Run bash integration tests inside the test container
-                        sh """
+                        sh '''
                             docker exec -w /app vibecode-test bash -c '
                                 BASE_URL=http://api:3001 bash integration-test/run.sh --only
                             '
-                        """
+                        '''
                     }
                 }
             }
