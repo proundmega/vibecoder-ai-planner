@@ -1,6 +1,10 @@
 name: vibecode
 
 services:
+  api:
+    environment:
+      - INTEGRATION_TESTS=1
+
   postgres:
     ports:
       - "5432:5432"
@@ -22,6 +26,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=test
       - BASE_URL=http://api:3001
+      - FRONTEND_URL=http://frontend:80
     depends_on:
       postgres:
         condition: service_healthy

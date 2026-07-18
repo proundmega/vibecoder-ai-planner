@@ -7,12 +7,13 @@ test_frontend() {
   echo "  Frontend"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+  local frontend_url="${FRONTEND_URL:-http://localhost:3000}"
   local code
-  code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000/")
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$frontend_url/")
   assert_status "Frontend serves SPA" "200" "$code"
 
   local body
-  body=$(curl_sf "http://localhost:3000/")
+  body=$(curl_sf "$frontend_url/")
   if echo "$body" | grep -q 'id="app"'; then
     pass "Frontend serves SPA with app div"
   else
