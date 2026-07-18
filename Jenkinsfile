@@ -263,7 +263,8 @@ EOF
                         echo "Infra ready after ${elapsed}s (${checks} checks)"
 
                         // Run integration tests (test service: jest + bash suites)
-                        sh 'docker compose -f docker-compose.yml -f docker-compose.test.yml up test'
+                        // --exit-code-from test ensures the pipeline fails if tests fail
+                        sh 'docker compose -f docker-compose.yml -f docker-compose.test.yml --exit-code-from test up test'
                     }
                 }
             }
