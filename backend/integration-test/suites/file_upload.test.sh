@@ -24,6 +24,10 @@ test_file_upload() {
     -H "Content-Type: application/json" \
     -d '{"name":"Upload Project","description":"For testing file uploads"}')
   project_id=$(echo "$proj_body" | extract_id)
+  if [ -z "$project_id" ]; then
+    fail "File Upload" "project creation failed — body=$proj_body"
+    return
+  fi
 
   # Create ticket
   local ticket_body
@@ -32,11 +36,24 @@ test_file_upload() {
     -H "Content-Type: application/json" \
     -d '{"title":"Upload Ticket","description":"Test ticket for attachments","status":"backlog"}')
   ticket_id=$(echo "$ticket_body" | extract_id)
+  if [ -z "$ticket_id" ]; then
+    fail "File Upload" "ticket creation failed — body=$ticket_body"
+    return
+  fi
 
   # Create a temp file to upload
   local tmpfile
   tmpfile=$(mktemp /tmp/upload_test_XXXXXX.txt)
   echo "This is a test attachment file for integration testing." > "$tmpfile"
+
+  # Verify API is still running before upload
+  local health_code
+  health_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/health" 2>/dev/null)
+  if [ "$health_code" != "200" ]; then
+    fail "File Upload" "API unhealthy before upload (HTTP $health_code) — check API logs"
+    rm -f "$tmpfile"
+    return
+  fi
 
   # Upload file as attachment
   local upload_body upload_code
