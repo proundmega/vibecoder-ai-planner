@@ -30,6 +30,8 @@
 #   rate_limiter.test.sh      — Rate limit enforcement
 #   file_upload.test.sh       — Attachment upload
 #   permission_matrix.test.sh — Role × endpoint matrix
+# set -o pipefail: catches pipe failures in output (e.g., grep returning 1 when no match)
+# without set -e, so suites can handle failures explicitly via pass()/fail()
 set -o pipefail
 
 # ── List flag (before dependency check so it works regardless) ────────────────
@@ -61,8 +63,12 @@ main() {
   export INTEGRATION_TESTS=1
 
   local skip_start=false
+  local verbose=false
   if [[ "${1:-}" == "--only" ]]; then
     skip_start=true
+  fi
+  if [[ "${1:-}" == "--verbose" ]]; then
+    verbose=true
   fi
 
   if ! $skip_start; then
@@ -93,12 +99,14 @@ main() {
     exit 1
   fi
   echo "Admin token seeded: ${ADMIN_TOKEN:0:10}..."
-  # Verify user exists in database
-  echo "DEBUG: Checking if admin user exists in DB..."
-  if docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c "SELECT id FROM users WHERE email='admin@vibecode.dev';" >/dev/null 2>&1; then
-    echo "DEBUG: Admin user EXISTS in database"
-  else
-    echo "DEBUG: Admin user NOT FOUND in database"
+  if $verbose; then
+    # Verify user exists in database
+    echo "DEBUG: Checking if admin user exists in DB..."
+    if docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c "SELECT id FROM users WHERE email='admin@vibecode.dev';" >/dev/null 2>&1; then
+      echo "DEBUG: Admin user EXISTS in database"
+    else
+      echo "DEBUG: Admin user NOT FOUND in database"
+    fi
   fi
 
   echo ""

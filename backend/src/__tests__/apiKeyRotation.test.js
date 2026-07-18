@@ -86,6 +86,26 @@ describe('AgentService - API Key Rotation', () => {
     expect(updateQuery).toContain('api_key_hash_prefix =');
   });
 
+  it('rotateKey generates key with ak_ prefix format matching create()', async () => {
+    bcrypt.hash.mockResolvedValue('$2a$10$mockhash');
+    pool.query.mockResolvedValueOnce({ rows: [{ 
+      id: 1, 
+      name: 'test-agent', 
+      api_key_expires_at: new Date()
+    }] });
+
+    const result = await AgentService.rotateKey(1, 1);
+
+    // New key should use ak_ prefix format (64 hex chars after ak_)
+    expect(result.api_key).toMatch(/^ak_[0-9a-f]{48}$/);
+    expect(result.api_key.length).toBe(51); // ak_ (3) + 48 hex chars
+
+    // Prefix should be SHA256 of the full key (including ak_ prefix)
+    const queryArgs = pool.query.mock.calls[0][1];
+    const expectedPrefix = crypto.createHash('sha256').update(result.api_key).digest('hex').substring(0, 20);
+    expect(queryArgs[1]).toBe(expectedPrefix);
+  });
+
   it('throws error when rotating non-existent agent', async () => {
     pool.query.mockResolvedValueOnce({ rows: [] });
 

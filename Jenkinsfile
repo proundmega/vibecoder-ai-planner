@@ -13,6 +13,8 @@ pipeline {
         ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
         // DATABASE_URL removed — docker-compose.yml sets it to postgres:5432 for the API container.
         // Integration tests set their own DATABASE_URL pointing to localhost:5432 (published port).
+        // DOCKER_COMPOSE_FILE avoids Groovy interpreting hyphens in triple-quoted strings
+        DOCKER_COMPOSE_FILE = 'docker-compose.yml'
     }
 
     stages {
@@ -230,20 +232,22 @@ EOF
                         """
 
                         // Build infra (production compose) + test service
-                        sh 'docker compose -f docker-compose.yml down --remove-orphans || true'
-                        sh 'docker compose -f docker-compose.yml -f docker-compose.test.yml build'
-                        sh 'docker compose -f docker-compose.yml up -d'
+                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} down --remove-orphans || true"
+                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml build"
+                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} up -d"
 
-                        // Wait for infra to be ready (3 attempts, 3s apart; fail after 30s)
+                        // Wait for infra to be ready (10 attempts, 6s apart; fail after 60s)
+                        // docker-compose has start_period: 30s for API health check + migrate runs DB migrations
+                        // 60s gives enough time for cold starts with migrations
                         def ready = false
                         def elapsed = 0
                         def checks = 0
-                        while (elapsed < 30 && checks < 3) {
-                            sleep(time: 3, unit: 'SECONDS')
-                            elapsed += 3
+                        while (elapsed < 60 && checks < 10) {
+                            sleep(time: 6, unit: 'SECONDS')
+                            elapsed += 6
                             checks++
                             def ps = sh(
-                                script: 'docker compose -f docker-compose.yml ps --format "{{.Name}} {{.Status}}" 2>/dev/null',
+                                script: "docker compose -f \${DOCKER_COMPOSE_FILE} ps --format \"{{.Name}} {{.Status}}\" 2>/dev/null",
                                 returnStdout: true
                             )
                             def apiUp = ps =~ /vibecode-api.*Up/
@@ -252,18 +256,18 @@ EOF
                                 ready = true
                                 break
                             }
-                            echo "Service check attempt ${checks}/3 (api: ${apiUp}, pg: ${pgUp}, elapsed: ${elapsed}s)"
+                            echo "Service check attempt ${checks}/10 (api: ${apiUp}, pg: ${pgUp}, elapsed: ${elapsed}s)"
                         }
                         if (!ready) {
-                            echo "ERROR: Stack not ready after 30s (3 checks failed)"
-                            sh 'docker compose -f docker-compose.yml logs --tail=100 || true'
-                            sh 'docker compose -f docker-compose.yml ps || true'
-                            error("Integration stack failed to start within 30 seconds")
+                            echo "ERROR: Stack not ready after 60s (10 checks failed)"
+                            sh "docker compose -f \${DOCKER_COMPOSE_FILE} logs --tail=100 || true"
+                            sh "docker compose -f \${DOCKER_COMPOSE_FILE} ps || true"
+                            error("Integration stack failed to start within 60 seconds")
                         }
                         echo "Infra ready after ${elapsed}s (${checks} checks)"
 
                         // Start test container (no auto-run command, tests run via exec)
-                        sh 'docker compose -f docker-compose.yml -f docker-compose.test.yml up -d test'
+                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml up -d test"
 
                         // Run Jest integration tests inside the test container
                         // forceExit: true returns exit code 1 when DB connections are still open,

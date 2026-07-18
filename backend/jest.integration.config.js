@@ -14,6 +14,10 @@ module.exports = {
     '^services/(.*)$': '<rootDir>/src/services/$1',
   },
   verbose: true,
+  // forceExit: true needed because pg Pool connections in global.db and test
+  // setups may not fully close before Jest exits. afterAll calls pool.end()
+  // but async cleanup can race with Jest exit. Without this flag, Jest
+  // returns exit code 1 even when all tests pass.
   forceExit: true,
   restoreMocks: false,
   watchPathIgnorePatterns: ['/node_modules/', '/coverage/'],

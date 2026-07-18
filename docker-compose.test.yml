@@ -1,6 +1,10 @@
 name: vibecode
 
 services:
+  postgres:
+    ports:
+      - "5432:5432"
+
   test:
     build:
       context: ./backend

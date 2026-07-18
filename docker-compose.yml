@@ -145,8 +145,6 @@ services:
     image: pgvector/pgvector:pg15
     container_name: vibecode-postgres
     restart: unless-stopped
-    ports:
-      - "5432:5432"
     networks:
       - vibecode
     environment:

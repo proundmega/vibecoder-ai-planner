@@ -26,7 +26,8 @@ export default defineConfig({
         'src/**/*.test.*',
         'src/api/generated/**',
         'src/main.ts',
-        // Untested views
+        // Untested views — add new views here if intentionally untested
+        // TODO: Consider inverting to include-only pattern for better maintainability
         'src/views/AIAssistant.vue',
         'src/views/ApprovalsQueue.vue',
         'src/views/BillingDashboard.vue',
