@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Frontend API proxy tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_frontend_api_proxy() {
   echo ""
@@ -43,3 +42,4 @@ test_frontend_api_proxy() {
   code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000/api/v1/projects")
   assert_status "Unauthenticated request via proxy returns 401" "401" "$code"
 }
+test_frontend_api_proxy

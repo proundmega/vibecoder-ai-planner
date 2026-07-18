@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # JWT token expiry tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_jwt_token_expiry() {
   echo ""
@@ -29,3 +28,4 @@ test_jwt_token_expiry() {
     -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIxIiwiZW1haWwiOiJ0ZXN0QHRlc3QuY29tIiwiaWF0IjoxNTE2MjM5MDIyLCJleHAiOjE1MTYyMzkwMjJ9.invalid")
   assert_status "Invalid JWT token is rejected" "401" "$code"
 }
+test_jwt_token_expiry

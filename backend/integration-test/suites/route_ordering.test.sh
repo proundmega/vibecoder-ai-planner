@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Route ordering tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_route_ordering() {
   echo ""
@@ -41,3 +40,4 @@ test_route_ordering() {
     fail "Route ordering" "GET /projects/:id did not return project details"
   fi
 }
+test_route_ordering

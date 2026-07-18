@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Ticket status transition tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_status_transitions() {
   echo ""
@@ -86,3 +85,4 @@ test_status_transitions() {
     fail "in_progress → done" "expected 400/403, got $status_code: $err_body"
   fi
 }
+test_status_transitions

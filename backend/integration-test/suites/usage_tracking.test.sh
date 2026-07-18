@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Usage tracking & cost logging tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_usage_tracking() {
   echo ""
@@ -45,3 +44,4 @@ test_usage_tracking() {
     -H "Authorization: Bearer $token")
   assert_has_field "User usage returns data" "data" "$user_usage_body"
 }
+test_usage_tracking

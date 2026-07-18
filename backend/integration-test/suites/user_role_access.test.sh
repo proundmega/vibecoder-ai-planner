@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # User role ticket access tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_user_role_ticket_access() {
   echo ""
@@ -53,3 +52,4 @@ test_user_role_ticket_access() {
     -H "Authorization: Bearer $token")
   assert_field "Regular user can get ticket by id" "title" "User Role Ticket" "$(echo "$single_body" | grep -o '"title":"[^"]*"' | cut -d'"' -f4)"
 }
+test_user_role_ticket_access

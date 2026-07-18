@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Ticket CRUD tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_tickets() {
   echo ""
@@ -56,3 +55,4 @@ test_tickets() {
   code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/tickets/$ticket_id" -H "Authorization: Bearer $token")
   assert_status "Deleted ticket returns 404" "404" "$code"
 }
+test_tickets

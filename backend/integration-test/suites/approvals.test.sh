@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Approvals API tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_approvals_api() {
   echo ""
@@ -71,3 +70,4 @@ test_approvals_api() {
     -H "Authorization: Bearer $user_token")
   assert_status "User role cannot approve" "403" "$user_approve_code"
 }
+test_approvals_api

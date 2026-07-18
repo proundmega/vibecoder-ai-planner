@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # AI Agent tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_agents() {
   echo ""
@@ -25,3 +24,4 @@ test_agents() {
   code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/agents")
   assert_status "List agents without auth" "401" "$code"
 }
+test_agents

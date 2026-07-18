@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # File upload / attachment tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_file_upload() {
   echo ""
@@ -74,3 +73,4 @@ test_file_upload() {
   # Clean up temp file
   rm -f "$tmpfile"
 }
+test_file_upload

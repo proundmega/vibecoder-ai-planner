@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Project CRUD tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_projects() {
   echo ""
@@ -43,3 +42,4 @@ test_projects() {
   code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/projects/$proj_id" -H "Authorization: Bearer $token")
   assert_status "Deleted project returns 404" "404" "$code"
 }
+test_projects

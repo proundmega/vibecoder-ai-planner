@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Role-based ticket permission tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_role_based_ticket_permissions() {
   echo ""
@@ -66,3 +65,4 @@ test_role_based_ticket_permissions() {
     -H "Authorization: Bearer $user_token")
   assert_status "User role can delete own tickets" "200" "$delete_code"
 }
+test_role_based_ticket_permissions

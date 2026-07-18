@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Shared agent memory tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_shared_agent_memory() {
   echo ""
@@ -82,3 +81,4 @@ test_shared_agent_memory() {
     -H "Authorization: Bearer $token")
   assert_status "Delete memory" "200" "$delete_code"
 }
+test_shared_agent_memory

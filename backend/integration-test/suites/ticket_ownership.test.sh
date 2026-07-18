@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Ticket ownership & agent orchestration tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_ticket_ownership() {
   echo ""
@@ -75,3 +74,4 @@ test_ticket_ownership() {
     -H "Authorization: Bearer $agent_token")
   assert_field "Released ticket status is backlog" "status" "backlog" "$(echo "$single_body" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)"
 }
+test_ticket_ownership

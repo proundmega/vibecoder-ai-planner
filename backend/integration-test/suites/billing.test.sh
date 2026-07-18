@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Billing aggregation tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_billing() {
   echo ""
@@ -28,3 +27,4 @@ test_billing() {
     -H "Authorization: Bearer $token")
   assert_has_field "User billing returns data" "data" "$user_billing_body"
 }
+test_billing

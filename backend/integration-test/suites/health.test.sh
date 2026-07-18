@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Health & Version tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_health() {
   echo ""
@@ -15,3 +14,4 @@ test_health() {
   body=$(curl_sf "$BASE/api/version")
   assert_field "Version returns 1.0.0" "version" "1.0.0" "$(echo "$body" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)"
 }
+test_health

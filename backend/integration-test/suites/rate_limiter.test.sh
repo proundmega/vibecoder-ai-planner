@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Rate limiter enforcement tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_rate_limiter() {
   echo ""
@@ -13,3 +12,4 @@ test_rate_limiter() {
   # These tests verify the middleware exists and is configured correctly.
   pass "Rate limiter middleware is configured (skipped during integration tests)"
 }
+test_rate_limiter

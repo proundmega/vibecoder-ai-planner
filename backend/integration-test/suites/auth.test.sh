@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Authentication tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_auth() {
   echo ""
@@ -55,3 +54,4 @@ test_auth() {
   code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/auth/me" -H "Authorization: Bearer invalid-token")
   assert_status "GET /auth/me with invalid token returns 401" "401" "$code"
 }
+test_auth

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # X-API-Key header authentication tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_agent_auth() {
   echo ""
@@ -76,3 +75,4 @@ test_agent_auth() {
     fail "X-API-Key for ticket creation" "returned 401"
   fi
 }
+test_agent_auth

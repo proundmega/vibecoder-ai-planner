@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Agent lifecycle: pickup → message → release
-source "$ROOT/integration-test/helpers.sh"
 
 test_agent_lifecycle() {
   echo ""
@@ -108,3 +107,4 @@ test_agent_lifecycle() {
     -H "Authorization: Bearer $user_token")
   assert_field "Ticket status is backlog after release" "status" "backlog" "$ticket_final"
 }
+test_agent_lifecycle

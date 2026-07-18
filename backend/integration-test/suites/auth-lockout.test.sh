@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Account lockout integration test
 # Tests per-user lockout: 10 failed attempts → 423 response
-source "$ROOT/integration-test/helpers.sh"
 
 test_account_lockout() {
   echo ""
@@ -114,3 +113,4 @@ test_account_lockout() {
   echo ""
   echo "Account lockout tests complete."
 }
+test_account_lockout

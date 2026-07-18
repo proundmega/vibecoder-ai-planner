@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Role-based user management tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_role_based_user_management() {
   echo ""
@@ -93,3 +92,4 @@ test_role_based_user_management() {
     -H "Authorization: Bearer $admin_token")
   assert_status "Non-super-admin cannot access super-admin endpoint" "403" "$super_code"
 }
+test_role_based_user_management

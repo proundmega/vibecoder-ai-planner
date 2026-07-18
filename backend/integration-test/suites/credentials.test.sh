@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Secure API Keys (credentials) tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_credentials() {
   echo ""
@@ -80,3 +79,4 @@ test_credentials() {
     -H "Authorization: Bearer $token")
   assert_status "Delete credential" "200" "$delete_code"
 }
+test_credentials

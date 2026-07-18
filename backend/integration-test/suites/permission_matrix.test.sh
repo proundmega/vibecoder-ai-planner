@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Permission matrix: 4 roles x key endpoints
-source "$ROOT/integration-test/helpers.sh"
 
 test_permission_matrix() {
   echo ""
@@ -143,3 +142,4 @@ test_permission_matrix() {
   # Just verify the transition endpoint works
   pass "Ticket status transition endpoint accessible"
 }
+test_permission_matrix

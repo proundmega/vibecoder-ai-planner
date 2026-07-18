@@ -2,6 +2,7 @@
 
 BASE_URL="${BASE_URL:-http://localhost:3001}"
 
+
 echo "=== IP Whitelist Integration Test ==="
 
 # 1. List whitelisted IPs
@@ -21,11 +22,11 @@ echo "   Create response: $CREATE_RESPONSE"
 IP_ID=$(echo "$CREATE_RESPONSE" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
 
 if [ -z "$IP_ID" ]; then
-  echo "   FAIL: Could not create whitelist entry. Response: $CREATE_RESPONSE"
+  fail "Could not create whitelist entry" "$CREATE_RESPONSE"
   exit 1
 fi
 
-echo "   Created IP ID: $IP_ID"
+pass "Created IP ID: $IP_ID"
 
 # 3. Verify IP is in whitelist
 echo "3. Verifying IP in whitelist..."
@@ -33,9 +34,9 @@ VERIFY_RESPONSE=$(curl -s -X GET "$BASE_URL/api/v1/admin/ip-whitelist" \
   -H "Authorization: Bearer $ADMIN_TOKEN" 2>&1)
 
 if echo "$VERIFY_RESPONSE" | grep -q "203.0.113.50"; then
-  echo "   PASS: IP found in whitelist"
+  pass "IP found in whitelist"
 else
-  echo "   FAIL: IP not found in whitelist. Response: $VERIFY_RESPONSE"
+  fail "IP not found in whitelist" "$VERIFY_RESPONSE"
   exit 1
 fi
 
@@ -47,9 +48,9 @@ INVALID_RESPONSE=$(curl -s -X POST "$BASE_URL/api/v1/admin/ip-whitelist" \
   -d '{"ip_address": "not-an-ip", "description": "test"}' 2>&1)
 
 if echo "$INVALID_RESPONSE" | grep -q '"error"'; then
-  echo "   PASS: Invalid IP rejected"
+  pass "Invalid IP rejected"
 else
-  echo "   FAIL: Invalid IP accepted. Response: $INVALID_RESPONSE"
+  fail "Invalid IP accepted" "$INVALID_RESPONSE"
   exit 1
 fi
 
@@ -59,11 +60,11 @@ DELETE_RESPONSE=$(curl -s -X DELETE "$BASE_URL/api/v1/admin/ip-whitelist/$IP_ID"
   -H "Authorization: Bearer $ADMIN_TOKEN" 2>&1)
 
 if echo "$DELETE_RESPONSE" | grep -q '"success":true'; then
-  echo "   PASS: IP deleted successfully"
+  pass "IP deleted successfully"
 else
-  echo "   FAIL: IP deletion failed. Response: $DELETE_RESPONSE"
+  fail "IP deletion failed" "$DELETE_RESPONSE"
   exit 1
 fi
 
 echo ""
-echo "PASS: IP whitelist integration test complete"
+pass "IP whitelist integration test complete"

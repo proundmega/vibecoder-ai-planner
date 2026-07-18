@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Frontend SPA tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_frontend() {
   echo ""
@@ -20,3 +19,4 @@ test_frontend() {
     fail "Frontend" "app div not found in response"
   fi
 }
+test_frontend

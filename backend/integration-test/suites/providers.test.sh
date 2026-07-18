@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Provider route tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_providers() {
   echo ""
@@ -166,3 +165,4 @@ test_providers() {
     -d '{"name":"Unique Test","providerType":"claude","apiKey":"sk-claude"}')
   assert_status "Same name, different type allowed" "201" "$http_code"
 }
+test_providers

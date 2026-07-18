@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Ticket CRUD via frontend endpoint tests
-source "$ROOT/integration-test/helpers.sh"
 
 test_ticket_crud_via_frontend_endpoint() {
   echo ""
@@ -51,3 +50,4 @@ test_ticket_crud_via_frontend_endpoint() {
     -H "Authorization: Bearer $token")
   assert_status "Deleted ticket returns 404" "404" "$code"
 }
+test_ticket_crud_via_frontend_endpoint
