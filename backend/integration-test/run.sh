@@ -79,20 +79,20 @@ main() {
     echo "  Starting Docker Compose"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     cd "$ROOT"
-    sudo docker compose down --remove-orphans 2>/dev/null || true
-    sudo docker compose build api 2>&1 | tail -3
-    sudo docker compose up -d 2>&1 | tail -5
+    docker compose down --remove-orphans 2>/dev/null || true
+    docker compose build api 2>&1 | tail -3
+    docker compose up -d 2>&1 | tail -5
   fi
 
   wait_for_api
   clean_db
 
-  sudo docker compose up -d --force-recreate api 2>&1 | tail -3
+  docker compose up -d --force-recreate api 2>&1 | tail -3
    sleep 8
 
   # Allow frontend nginx to resolve the api hostname
   sleep 3
-  sudo docker restart vibecode-frontend 2>/dev/null || true
+  docker restart vibecode-frontend 2>/dev/null || true
   sleep 3
 
   echo ""

@@ -281,7 +281,11 @@ EOF
                         // Run bash integration tests inside the test container
                         sh '''
                             docker exec -w /app vibecode-test bash -c '
-                                BASE_URL=http://api:3001 bash integration-test/run.sh --only
+                                set -x
+                                BASE_URL=http://api:3001 bash integration-test/run.sh --only 2>&1
+                                EXIT_CODE=$?
+                                echo "--- bash test exit code: $EXIT_CODE ---"
+                                exit $EXIT_CODE
                             '
                         '''
                     }

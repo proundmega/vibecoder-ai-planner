@@ -9,6 +9,21 @@ TESTS=()
 pass() { PASS=$((PASS + 1)); TESTS+=("✓ $1"); }
 fail() { FAIL=$((FAIL + 1)); TESTS+=("✗ $1 — $2"); }
 
+# Docker exec helper — uses `docker exec` directly (no sudo) since
+# the CI test container runs as root. Falls back to `sudo docker exec`
+# for local development where the script may be run outside a container.
+docker_exec() {
+  local container="$1"; shift
+  if docker exec "$container" "$@" >/dev/null 2>&1; then
+    return 0
+  elif command -v sudo >/dev/null 2>&1 && sudo docker exec "$container" "$@" >/dev/null 2>&1; then
+    return 0
+  else
+    echo "docker_exec: failed to execute on container '$container': $*" >&2
+    return 1
+  fi
+}
+
 # curl with -sf but doesn't abort on HTTP errors (returns empty on failure).
 # Logs non-HTTP errors (DNS, connection refused, timeout) to stderr for debugging.
 curl_sf() {
@@ -43,14 +58,14 @@ wait_for_api() {
 
 clean_db() {
   echo "Cleaning database..."
-  sudo docker exec vibecode-postgres psql -U postgres -d vibecode \
+  docker_exec postgres psql -U postgres -d vibecode \
     -c "DELETE FROM agent_memory CASCADE; DELETE FROM usage_logs CASCADE; DELETE FROM project_billing CASCADE; DELETE FROM project_credentials CASCADE; DELETE FROM ticket_messages CASCADE; DELETE FROM tickets CASCADE; DELETE FROM agent_actions CASCADE; DELETE FROM ai_actions CASCADE; DELETE FROM projects CASCADE; DELETE FROM users CASCADE;" 2>/dev/null || true
   # Clear Redis rate limit and lockout state
-  sudo docker exec vibecode-redis redis-cli KEYS "lockout:*" 2>/dev/null | while read -r key; do
-    sudo docker exec vibecode-redis redis-cli DEL "$key" 2>/dev/null || true
+  docker_exec redis redis-cli KEYS "lockout:*" 2>/dev/null | while read -r key; do
+    docker_exec redis redis-cli DEL "$key" 2>/dev/null || true
   done
-  sudo docker exec vibecode-redis redis-cli KEYS "ratelimit:*" 2>/dev/null | while read -r key; do
-    sudo docker exec vibecode-redis redis-cli DEL "$key" 2>/dev/null || true
+  docker_exec redis redis-cli KEYS "ratelimit:*" 2>/dev/null | while read -r key; do
+    docker_exec redis redis-cli DEL "$key" 2>/dev/null || true
   done
 }
 
@@ -59,7 +74,7 @@ register() {
   local role="${4:-project_admin}"
   local response http_code body
   # If user already exists, delete them first to make registration idempotent
-  sudo docker exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+  docker_exec postgres psql -U postgres -d vibecode -t -c \
     "DELETE FROM users WHERE email='$email';" >/dev/null 2>&1 || true
   response=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/auth/register" \
     -H "Content-Type: application/json" \
@@ -90,7 +105,7 @@ seed_user() {
     return
   fi
   # User doesn't exist or has wrong password — delete any existing user and register fresh
-  sudo docker exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+  docker_exec postgres psql -U postgres -d vibecode -t -c \
     "DELETE FROM users WHERE email='$email';" >/dev/null 2>&1 || true
   response=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/auth/register" \
     -H "Content-Type: application/json" \
