@@ -268,9 +268,9 @@ EOF
                         // Run integration tests inside the test container
                         // Exit codes propagate directly to the pipeline
                         sh """
-                            docker exec -w /app vibecode-test sh -c '
+                            docker exec -w /app vibecode-test bash -c '
                                 ./node_modules/.bin/jest --config jest.integration.config.js --verbose &&
-                                BASE_URL=http://api:3001 sh integration-test/run.sh --only
+                                BASE_URL=http://api:3001 bash integration-test/run.sh --only
                             '
                         """
                     }
