@@ -7,6 +7,7 @@ test_frontend_api_proxy() {
   echo "  Frontend API Proxy"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+  local frontend_url="${FRONTEND_URL:-http://localhost:3000}"
   local token
   token=$(seed_user "alice@integration.test" "password123")
 
@@ -18,7 +19,7 @@ test_frontend_api_proxy() {
     | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   local ticket_body
-  ticket_body=$(curl_sf -X POST "http://localhost:3000/api/v1/tickets" \
+  ticket_body=$(curl_sf -X POST "${frontend_url}/api/v1/tickets" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
     -d "{\"projectId\":\"$proj_id\",\"title\":\"Proxy Test Ticket\",\"description\":\"Test via frontend proxy\"}")
@@ -28,7 +29,7 @@ test_frontend_api_proxy() {
   ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
   local list_body
-  list_body=$(curl_sf "http://localhost:3000/api/v1/projects/$proj_id/tickets" \
+  list_body=$(curl_sf "${frontend_url}/api/v1/projects/$proj_id/tickets" \
     -H "Authorization: Bearer $token")
   assert_has_field "List tickets via frontend proxy returns array" "id" "$list_body"
 
@@ -39,7 +40,7 @@ test_frontend_api_proxy() {
   fi
 
   local code
-  code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000/api/v1/projects")
+  code=$(curl -s -o /dev/null -w '%{http_code}' "${frontend_url}/api/v1/projects")
   assert_status "Unauthenticated request via proxy returns 401" "401" "$code"
 }
 test_frontend_api_proxy
