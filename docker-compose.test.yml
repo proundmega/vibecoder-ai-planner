@@ -13,6 +13,7 @@ services:
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@postgres:5432/vibecode
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
       - JWT_SECRET=${JWT_SECRET:-jenkins-ci-secret-for-testing-purposes-2026}
+      - REDIS_URL=redis://redis:6379
       - NODE_ENV=test
     depends_on:
       postgres:
