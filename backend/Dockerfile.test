@@ -5,7 +5,7 @@ RUN npm ci
 
 FROM node:18-alpine
 WORKDIR /app
-RUN apk add --no-cache curl bash && mkdir -p /app/uploads/tickets && chown -R node:node /app/uploads
+RUN apk add --no-cache curl bash jq && mkdir -p /app/uploads/tickets && chown -R node:node /app/uploads
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 USER node
