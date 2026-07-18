@@ -261,11 +261,12 @@ EOF
                         }
                         echo "Stack ready after ${elapsed}s (${checks} checks)"
 
-                        // Jest integration tests — run in-process via supertest (no HTTP needed)
-                        // The app is loaded directly, so DATABASE_URL points to docker service name
+                        // Jest integration tests — run inside API container where 'postgres' is resolvable
                         sh """
-                            DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/vibecode" \
-                            ./backend/node_modules/.bin/jest --config backend/jest.integration.config.js --verbose
+                            docker exec -w /app vibecode-api bash -c '
+                                DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/vibecode" \
+                                ./node_modules/.bin/jest --config jest.integration.config.js --verbose
+                            '
                         """
 
                         // Bash integration tests — run inside the API container via docker exec
