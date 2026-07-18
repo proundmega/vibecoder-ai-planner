@@ -30,7 +30,7 @@
 #   rate_limiter.test.sh      — Rate limit enforcement
 #   file_upload.test.sh       — Attachment upload
 #   permission_matrix.test.sh — Role × endpoint matrix
-set -uo pipefail
+set -o pipefail
 
 # ── List flag (before dependency check so it works regardless) ────────────────
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -53,6 +53,9 @@ RETRY_INTERVAL=2
 
 # ── Source helpers ────────────────────────────────────────────────────────────
 source "$ROOT/integration-test/helpers.sh"
+
+# ── Seed admin user for suites that need ADMIN_TOKEN ────────────────────────
+ADMIN_TOKEN=$(seed_user "admin@vibecode.dev" "password123" "super_admin" "Admin")
 
 # ── Source all test suites ────────────────────────────────────────────────────
 SUITES_DIR="$ROOT/integration-test/suites"
