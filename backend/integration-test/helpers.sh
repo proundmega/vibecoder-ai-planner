@@ -24,6 +24,19 @@ docker_exec() {
   fi
 }
 
+# Docker exec helper that captures output — same fallback logic but
+# returns stdout to the caller (useful for SELECT queries etc.)
+docker_exec_out() {
+  local container="$1"; shift
+  local output
+  output=$(docker exec "$container" "$@" 2>/dev/null) && { echo "$output"; return 0; }
+  if command -v sudo >/dev/null 2>&1; then
+    output=$(sudo docker exec "$container" "$@" 2>/dev/null) && { echo "$output"; return 0; }
+  fi
+  echo "docker_exec_out: failed to execute on container '$container': $*" >&2
+  return 1
+}
+
 # Docker compose helper — tries `docker compose` first, falls back to `sudo docker compose`
 docker_compose() {
   if docker compose "$@" 2>&1; then

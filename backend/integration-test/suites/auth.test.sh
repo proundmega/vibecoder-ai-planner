@@ -8,9 +8,9 @@ test_auth() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   # Delete any existing user to make registration idempotent
-  sudo docker exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+  docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c \
     "DELETE FROM approval_requests WHERE requested_by=(SELECT id FROM users WHERE email='alice@integration.test');" >/dev/null 2>&1 || true
-  sudo docker exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+  docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c \
     "DELETE FROM users WHERE email='alice@integration.test';" >/dev/null 2>&1 || true
   
   local code

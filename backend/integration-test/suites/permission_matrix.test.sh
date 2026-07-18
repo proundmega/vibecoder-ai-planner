@@ -11,9 +11,9 @@ test_permission_matrix() {
   local super_admin_token project_admin_token member_token user_token
 
   # super_admin cannot be registered via API - create directly in DB then login
-  sudo docker exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+  docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c \
     "DELETE FROM users WHERE email='super@test.com';" >/dev/null 2>&1 || true
-  sudo docker exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+  docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c \
     "INSERT INTO users (email, name, password_hash, role, current_plan, is_active, created_at, updated_at) VALUES ('super@test.com', 'Super Admin', '\$2a\$10\$WzRoM7eyFmF7BzIsQPsMmuvs1yE9tptHKln5pI83/E1ENNJOObh.2', 'super_admin', 'free', true, NOW(), NOW()) RETURNING id;" >/dev/null 2>&1 || true
   super_admin_token=$(seed_user "super@test.com" "password123" "super_admin")
   project_admin_token=$(register "Project Admin" "padmin@test.com" "password123" "project_admin")
