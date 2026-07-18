@@ -232,7 +232,7 @@ EOF
                         """
 
                         // Build infra (production compose) + test service
-                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} down --remove-orphans || true"
+                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} down -v --remove-orphans || true"
                         sh "docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml build"
                         sh "docker compose -f \${DOCKER_COMPOSE_FILE} up -d"
 
