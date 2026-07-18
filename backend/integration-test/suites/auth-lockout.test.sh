@@ -9,7 +9,7 @@ test_account_lockout() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   # Clean up any existing test user
-  sudo docker exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+  docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c \
     "DELETE FROM users WHERE email='lockout-test@example.com';" >/dev/null 2>&1 || true
 
   # 1. Register a new user
@@ -22,7 +22,7 @@ test_account_lockout() {
 
   # 2. Get user ID for verification
   local user_id
-  user_id=$(sudo docker exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+  user_id=$(docker_exec_out vibecode-postgres psql -U postgres -d vibecode -t -c \
     "SELECT id FROM users WHERE email='lockout-test@example.com';" | tr -d ' ')
   if [ -n "$user_id" ]; then
     pass "Found user ID: $user_id"
