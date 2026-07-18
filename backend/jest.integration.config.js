@@ -14,7 +14,7 @@ module.exports = {
     '^services/(.*)$': '<rootDir>/src/services/$1',
   },
   verbose: true,
-  forceExit: true,
+  // forceExit removed — Jest exits cleanly with afterAll hooks
   restoreMocks: false,
   watchPathIgnorePatterns: ['/node_modules/', '/coverage/'],
   testTimeout: 30000,
