@@ -106,7 +106,7 @@ main() {
   echo "  Jest Integration Tests (PostgreSQL)"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   cd "$ROOT"
-  DATABASE_URL="postgresql://postgres:changeme@localhost:5432/vibecode" npx jest --config jest.integration.config.js --verbose 2>&1 | tail -20
+  npx jest --config jest.integration.config.js --verbose 2>&1 | tail -20
   JEST_EXIT=${PIPESTATUS[0]}
   if [ "$JEST_EXIT" -ne 0 ]; then
     echo ""

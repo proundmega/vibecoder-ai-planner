@@ -7,6 +7,8 @@ services:
       dockerfile: Dockerfile.test
     container_name: vibecode-test
     restart: "no"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - vibecode
     environment:
@@ -15,6 +17,7 @@ services:
       - JWT_SECRET=${JWT_SECRET:-jenkins-ci-secret-for-testing-purposes-2026}
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=test
+      - BASE_URL=http://api:3001
     depends_on:
       postgres:
         condition: service_healthy
