@@ -19,7 +19,10 @@ describe('Role System Integration', () => {
     try { await cleanTable('approval_requests'); } catch (e) {}
     try { await cleanTable('tickets'); } catch (e) {}
     try { await cleanTable('projects'); } catch (e) {}
-    try { await cleanTable('users'); } catch (e) {}
+    // Preserve admin user used by bash integration tests
+    try {
+      await pool.query(`DELETE FROM users WHERE email != 'admin@vibecode.dev'`);
+    } catch (e) {}
   });
 
   afterAll(async () => {

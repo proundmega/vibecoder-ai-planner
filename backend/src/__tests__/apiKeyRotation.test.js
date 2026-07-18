@@ -1,6 +1,7 @@
 const AgentService = require('../services/AgentService');
 const { pool } = require('../db');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 jest.mock('../db', () => ({
   pool: { query: jest.fn() }
@@ -41,7 +42,8 @@ describe('AgentService - API Key Rotation', () => {
     const queryArgs = pool.query.mock.calls[0][1];
     expect(queryArgs[0]).toBe('test-agent');
     expect(queryArgs[1]).toBe(mockHash);
-    expect(queryArgs[2]).toBe(mockHash.substring(0, 20));
+    const expectedPrefix = crypto.createHash('sha256').update(plainKey).digest('hex').substring(0, 20);
+    expect(queryArgs[2]).toBe(expectedPrefix);
   });
 
   it('sets api_key_expires_at to 30 days from now', async () => {
@@ -116,7 +118,8 @@ describe('AgentService - API Key Rotation', () => {
 
     // Should pass prefix as parameter
     const queryArgs = pool.query.mock.calls[0][1];
-    expect(queryArgs[0]).toBe(mockHash.substring(0, 20));
+    const expectedPrefix = crypto.createHash('sha256').update('key-123').digest('hex').substring(0, 20);
+    expect(queryArgs[0]).toBe(expectedPrefix);
   });
 
   it('getAgentByApiKey returns null for wrong key', async () => {

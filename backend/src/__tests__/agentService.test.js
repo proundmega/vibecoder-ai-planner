@@ -1,6 +1,7 @@
 const AgentService = require('../services/AgentService');
 const { pool } = require('../db');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 jest.mock('bcryptjs', () => ({
   hash: jest.fn().mockResolvedValue('$2a$10$mockhash123456789012345678901234567890'),
@@ -22,7 +23,7 @@ describe('AgentService', () => {
       // Query should NOT include plaintext key
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO agents'),
-        expect.arrayContaining(['Test Agent', '$2a$10$mockhash123456789012345678901234567890', '$2a$10$mockhash12345', expect.any(Date), 'user-1', null, 100, 1000])
+        expect.arrayContaining(['Test Agent', '$2a$10$mockhash123456789012345678901234567890', '65803be0872fa538d3ac', expect.any(Date), 'user-1', null, 100, 1000])
       );
       // Result should include plaintext key for the user to copy
       expect(result.api_key).toBe('key-123');

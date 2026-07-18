@@ -26,8 +26,9 @@ describe('Vibecode Integration (PostgreSQL)', () => {
     } catch (e) {
       console.error('Cleanup projects failed:', e.message);
     }
+    // Preserve admin user used by bash integration tests
     try {
-      await cleanTable('users');
+      await pool.query(`DELETE FROM users WHERE email != 'admin@vibecode.dev'`);
     } catch (e) {
       console.error('Cleanup users failed:', e.message);
     }

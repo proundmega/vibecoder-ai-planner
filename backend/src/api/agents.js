@@ -362,7 +362,7 @@ router.post('/:agentId/rotate-key', verifyTokenOrAgent, requireAnyPermission('AG
       data: {
         agentId: result.id,
         agentName: result.name,
-        newApiKey: result.apiKey,
+        newApiKey: result.api_key,
         expiresAt: result.api_key_expires_at,
         message: 'Key rotated. Store this key securely — it will not be shown again.',
       },

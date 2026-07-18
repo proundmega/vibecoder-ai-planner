@@ -70,20 +70,20 @@ main() {
     echo "  Starting Docker Compose"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     cd "$ROOT"
-    docker compose down --remove-orphans 2>/dev/null || true
-    docker compose build api 2>&1 | tail -3
-    docker compose up -d 2>&1 | tail -5
+    docker_compose down --remove-orphans 2>/dev/null || true
+    docker_compose build api 2>&1 | tail -3
+    docker_compose up -d 2>&1 | tail -5
   fi
 
   wait_for_api
   clean_db
 
-  docker compose up -d --force-recreate api 2>&1 | tail -3
+  docker_compose up -d --force-recreate api 2>&1 | tail -3
    sleep 8
 
   # Allow frontend nginx to resolve the api hostname
   sleep 3
-  docker restart vibecode-frontend 2>/dev/null || true
+  docker_cmd restart vibecode-frontend 2>/dev/null || true
   sleep 3
 
   # Seed admin user AFTER API is ready
@@ -93,6 +93,13 @@ main() {
     exit 1
   fi
   echo "Admin token seeded: ${ADMIN_TOKEN:0:10}..."
+  # Verify user exists in database
+  echo "DEBUG: Checking if admin user exists in DB..."
+  if docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c "SELECT id FROM users WHERE email='admin@vibecode.dev';" >/dev/null 2>&1; then
+    echo "DEBUG: Admin user EXISTS in database"
+  else
+    echo "DEBUG: Admin user NOT FOUND in database"
+  fi
 
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

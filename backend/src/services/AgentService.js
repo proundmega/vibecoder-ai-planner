@@ -6,6 +6,11 @@ const SALT_ROUNDS = 10;
 const DEFAULT_KEY_EXPIRY_DAYS = 30;
 const PREFIX_LENGTH = 20;
 
+// Deterministic hash for API key lookup (bcrypt generates different hashes each time)
+function deterministicApiKeyPrefix(apiKey) {
+  return crypto.createHash('sha256').update(apiKey).digest('hex').substring(0, PREFIX_LENGTH);
+}
+
 class AgentService {
   async create(name, apiKey, userId, { providerId = null, rateLimit = 100, maxActionsPerDay = 1000, keyExpiryDays = 30 } = {}) {
     if (providerId) {
@@ -16,7 +21,7 @@ class AgentService {
     }
 
     const apiKeyHash = await bcrypt.hash(apiKey, SALT_ROUNDS);
-    const apiKeyHashPrefix = apiKeyHash.substring(0, PREFIX_LENGTH);
+    const apiKeyLookupPrefix = deterministicApiKeyPrefix(apiKey);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + keyExpiryDays);
 
@@ -24,15 +29,15 @@ class AgentService {
       `INSERT INTO agents (name, api_key_hash, api_key_hash_prefix, api_key_expires_at, owner_id, provider_id, rate_limit, max_actions_per_day) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
        RETURNING id, name, api_key_expires_at, provider_id, created_at`,
-      [name, apiKeyHash, apiKeyHashPrefix, expiresAt, userId, providerId, rateLimit, maxActionsPerDay]
+      [name, apiKeyHash, apiKeyLookupPrefix, expiresAt, userId, providerId, rateLimit, maxActionsPerDay]
     );
     return { ...result.rows[0], api_key: apiKey };
   }
 
   async rotateKey(agentId, userId) {
-    const apiKey = crypto.randomBytes(32).toString('hex');
+    const apiKey = `ak_${crypto.randomBytes(24).toString('hex')}`;
     const apiKeyHash = await bcrypt.hash(apiKey, SALT_ROUNDS);
-    const apiKeyHashPrefix = apiKeyHash.substring(0, PREFIX_LENGTH);
+    const apiKeyLookupPrefix = deterministicApiKeyPrefix(apiKey);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + DEFAULT_KEY_EXPIRY_DAYS);
 
@@ -41,7 +46,7 @@ class AgentService {
        SET api_key_hash = $1, api_key_hash_prefix = $2, api_key_expires_at = $3
        WHERE id = $4 AND owner_id = $5
        RETURNING id, name, api_key_expires_at`,
-      [apiKeyHash, apiKeyHashPrefix, expiresAt, agentId, userId]
+      [apiKeyHash, apiKeyLookupPrefix, expiresAt, agentId, userId]
     );
 
     if (result.rows.length === 0) {
@@ -150,15 +155,14 @@ class AgentService {
   }
 
   async getAgentByApiKey(apiKey) {
-    const apiKeyHash = await bcrypt.hash(apiKey, SALT_ROUNDS);
-    const apiKeyHashPrefix = apiKeyHash.substring(0, PREFIX_LENGTH);
+    const apiKeyLookupPrefix = deterministicApiKeyPrefix(apiKey);
 
     const result = await pool.query(
       `SELECT agents.*, providers.name as provider_name, providers.provider_type as provider_type
        FROM agents 
        LEFT JOIN providers ON agents.provider_id = providers.id
-       WHERE agents.api_key_hash_prefix = $1`,
-      [apiKeyHashPrefix]
+        WHERE agents.api_key_hash_prefix = $1`,
+      [apiKeyLookupPrefix]
     );
 
     // Verify with bcrypt.compare (timing-safe) since prefix is not unique

@@ -24,6 +24,28 @@ docker_exec() {
   fi
 }
 
+# Docker compose helper — tries `docker compose` first, falls back to `sudo docker compose`
+docker_compose() {
+  if docker compose "$@" 2>&1; then
+    return 0
+  elif command -v sudo >/dev/null 2>&1 && sudo docker compose "$@" 2>&1; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# Docker command helper — tries `docker` first, falls back to `sudo docker`
+docker_cmd() {
+  if docker "$@" 2>&1; then
+    return 0
+  elif command -v sudo >/dev/null 2>&1 && sudo docker "$@" 2>&1; then
+    return 0
+  else
+    return 1
+  fi
+}
+
 # curl with -sf but doesn't abort on HTTP errors (returns empty on failure).
 # Logs non-HTTP errors (DNS, connection refused, timeout) to stderr for debugging.
 curl_sf() {
@@ -58,14 +80,14 @@ wait_for_api() {
 
 clean_db() {
   echo "Cleaning database..."
-  docker_exec postgres psql -U postgres -d vibecode \
+  docker_exec vibecode-postgres psql -U postgres -d vibecode \
     -c "DELETE FROM agent_memory CASCADE; DELETE FROM usage_logs CASCADE; DELETE FROM project_billing CASCADE; DELETE FROM project_credentials CASCADE; DELETE FROM ticket_messages CASCADE; DELETE FROM tickets CASCADE; DELETE FROM agent_actions CASCADE; DELETE FROM ai_actions CASCADE; DELETE FROM projects CASCADE; DELETE FROM users CASCADE;" 2>/dev/null || true
   # Clear Redis rate limit and lockout state
-  docker_exec redis redis-cli KEYS "lockout:*" 2>/dev/null | while read -r key; do
-    docker_exec redis redis-cli DEL "$key" 2>/dev/null || true
+  docker_exec vibecode-redis redis-cli KEYS "lockout:*" 2>/dev/null | while read -r key; do
+    docker_exec vibecode-redis redis-cli DEL "$key" 2>/dev/null || true
   done
-  docker_exec redis redis-cli KEYS "ratelimit:*" 2>/dev/null | while read -r key; do
-    docker_exec redis redis-cli DEL "$key" 2>/dev/null || true
+  docker_exec vibecode-redis redis-cli KEYS "ratelimit:*" 2>/dev/null | while read -r key; do
+    docker_exec vibecode-redis redis-cli DEL "$key" 2>/dev/null || true
   done
 }
 
@@ -74,7 +96,7 @@ register() {
   local role="${4:-project_admin}"
   local response http_code body
   # If user already exists, delete them first to make registration idempotent
-  docker_exec postgres psql -U postgres -d vibecode -t -c \
+  docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c \
     "DELETE FROM users WHERE email='$email';" >/dev/null 2>&1 || true
   response=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/auth/register" \
     -H "Content-Type: application/json" \
@@ -94,6 +116,31 @@ seed_user() {
   # This ensures tests work after clean_db deletes all users.
   local email="$1" password="$2" role="${3:-project_admin}" name="${4:-User}"
   local response http_code body
+  
+  # Super admin users must be created directly in the database (registration blocks super_admin)
+  if [ "$role" = "super_admin" ]; then
+    # Delete any existing user with this email
+    docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+      "DELETE FROM users WHERE email='$email';" >/dev/null 2>&1 || true
+    # Create user with pre-hashed password (bcrypt hash of "password123")
+    docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+      "INSERT INTO users (name, email, password_hash, role, current_plan) VALUES ('$name', '$email', '\$2a\$10\$w5R6QoObfPOSxsdCjYHW5Oukvy6rqTsnVCwtWHOlc67VFqXV9CGBe', '$role', 'free') RETURNING id;" >/dev/null 2>&1
+    if [ $? -eq 0 ]; then
+      # User created successfully, login to get token
+      response=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/auth/login" \
+        -H "Content-Type: application/json" \
+        -d "{\"email\":\"$email\",\"password\":\"$password\"}")
+      http_code=$(echo "$response" | tail -1)
+      body=$(echo "$response" | sed '$d')
+      if [ "$http_code" = "200" ]; then
+        echo "$body" | jq -r '.token'
+        return
+      fi
+    fi
+    echo ""
+    return
+  fi
+  
   # Try login first (fast path if user exists with correct password)
   response=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/auth/login" \
     -H "Content-Type: application/json" \
@@ -105,7 +152,7 @@ seed_user() {
     return
   fi
   # User doesn't exist or has wrong password — delete any existing user and register fresh
-  docker_exec postgres psql -U postgres -d vibecode -t -c \
+  docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c \
     "DELETE FROM users WHERE email='$email';" >/dev/null 2>&1 || true
   response=$(curl -s -w "\n%{http_code}" -X POST "$BASE/api/auth/register" \
     -H "Content-Type: application/json" \
