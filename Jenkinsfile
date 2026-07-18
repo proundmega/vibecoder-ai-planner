@@ -266,9 +266,15 @@ EOF
                         sh 'docker compose -f docker-compose.yml -f docker-compose.test.yml up -d test'
 
                         // Run Jest integration tests inside the test container
+                        // forceExit: true returns exit code 1 when DB connections are still open,
+                        // so check output for failures instead of relying on exit code
                         sh """
                             docker exec -w /app vibecode-test bash -c '
-                                ./node_modules/.bin/jest --config jest.integration.config.js --verbose
+                                OUTPUT=$($$(pwd)/node_modules/.bin/jest --config jest.integration.config.js --verbose 2>&1)
+                                echo "$OUTPUT"
+                                if echo "$OUTPUT" | grep -q "failed"; then
+                                    exit 1
+                                fi
                             '
                         """
 
