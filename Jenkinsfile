@@ -229,95 +229,54 @@ EOF
                         """
 
                         // Build and start services (use production compose, not dev override)
-                        // sh 'docker compose down --remove-orphans || true'  // commented for debugging
                         sh 'docker compose -f docker-compose.yml build'
                         sh 'docker compose -f docker-compose.yml up -d'
 
-                        // Log logs for any unhealthy containers immediately
-                        def unhealthyContainers = sh(
-                            script: 'docker compose ps --format "{{.Name}} {{.Health}}" 2>/dev/null | grep -v "healthy" | grep -v "N/A" | awk "{print \$1}" || true',
-                            returnStdout: true
-                        ).trim()
-                        if (unhealthyContainers) {
-                            echo "ERROR: The following containers are unhealthy:"
-                            for (def container : unhealthyContainers.split('\\n')) {
-                                if (container.trim()) {
-                                    echo "--- Logs for ${container.trim()} ---"
-                                    sh "docker compose logs --tail=100 ${container.trim()} || true"
-                                    echo "--- End logs for ${container.trim()} ---"
-                                }
-                            }
-                        }
-
-                        // Discover container IPs via docker ps + inspect (Jenkins runs inside Docker
-                        // so localhost won't reach containers; host.docker.internal may not resolve
-                        // when using a Docker socket proxy).
-                        // Container names are "vibecode-{service}" — discovered dynamically.
-                        def apiIp = sh(
-                            script: 'docker ps --filter "name=vibecode-api" --format "{{.ID}}" | head -1 | xargs -I{} docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" {} 2>/dev/null || echo ""',
-                            returnStdout: true
-                        ).trim()
-                        def pgIp = sh(
-                            script: 'docker ps --filter "name=vibecode-postgres" --format "{{.ID}}" | head -1 | xargs -I{} docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" {} 2>/dev/null || echo ""',
-                            returnStdout: true
-                        ).trim()
-
-                        if (!apiIp) {
-                            echo "ERROR: Could not discover API container IP. Running containers:"
-                            sh 'docker ps --format "{{.Names}} {{.Status}}"'
-                            error("API container not found")
-                        }
-                        echo "Discovered API container IP: ${apiIp}"
-                        echo "Discovered PG container IP: ${pgIp}"
-
-                        // Wait for health (check API + PostgreSQL, 3 attempts, 3s apart; fail after 30s)
-                        def healthy = false
+                        // Wait for services to be ready (3 attempts, 3s apart; fail after 30s)
+                        def ready = false
                         def elapsed = 0
                         def checks = 0
                         while (elapsed < 30 && checks < 3) {
                             sleep(time: 3, unit: 'SECONDS')
                             elapsed += 3
                             checks++
-                            def apiStatus = sh(
-                                script: "curl -sf http://${apiIp}:3001/api/health",
-                                returnStatus: true
-                            )
-                            def pgStatus = sh(
-                                script: "bash -c \"echo > /dev/tcp/127.0.0.1/5432\" 2>/dev/null && echo ok || echo fail",
+                            def ps = sh(
+                                script: 'docker compose -f docker-compose.yml ps --format "{{.Name}} {{.Status}}" 2>/dev/null',
                                 returnStdout: true
                             )
-                            if (apiStatus == 0 && pgIp && pgStatus.trim() == 'ok') {
-                                healthy = true
+                            def apiUp = ps =~ /vibecode-api.*Up/
+                            def pgUp = ps =~ /vibecode-postgres.*Up/
+                            if (apiUp && pgUp) {
+                                ready = true
                                 break
                             }
-                            // API alone is acceptable (PG may be on a different network from Jenkins)
-                            if (apiStatus == 0) {
-                                healthy = true
-                                break
-                            }
-                            echo "Health check attempt ${checks}/3 failed (api: ${apiStatus}, pg: ${pgStatus.trim()}, elapsed: ${elapsed}s)"
+                            echo "Service check attempt ${checks}/3 (api: ${apiUp}, pg: ${pgUp}, elapsed: ${elapsed}s)"
                         }
-                        if (!healthy) {
-                            echo "ERROR: Stack not healthy after 30s (3 checks failed)"
-                            sh 'docker compose logs --tail=100 || true'
-                            sh 'docker compose ps || true'
+                        if (!ready) {
+                            echo "ERROR: Stack not ready after 30s (3 checks failed)"
+                            sh 'docker compose -f docker-compose.yml logs --tail=100 || true'
+                            sh 'docker compose -f docker-compose.yml ps || true'
                             error("Integration stack failed to start within 30 seconds")
                         }
-                        echo "Stack healthy after ${elapsed}s (${checks} checks)"
+                        echo "Stack ready after ${elapsed}s (${checks} checks)"
 
-                        // Export discovered IPs for downstream commands
-                        env.API_IP = apiIp
-                        env.PG_IP = pgIp
-
-                        // Jest integration tests
+                        // Jest integration tests — run in-process via supertest (no HTTP needed)
+                        // The app is loaded directly, so DATABASE_URL points to docker service name
                         sh """
-                            INTEGRATION_TESTS=1 DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@${pgIp:-localhost}:5432/vibecode" \
+                            DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/vibecode" \
                             ./backend/node_modules/.bin/jest --config backend/jest.integration.config.js --verbose
                         """
 
-                        // Bash integration tests
+                        // Bash integration tests — run inside the API container via docker exec
                         sh """
-                            BASE_URL="http://${apiIp}:3001" bash backend/integration-test/run.sh --only
+                            docker exec -w /app vibecode-api bash -c '
+                                export BASE_URL=http://localhost:3001
+                                source integration-test/helpers.sh
+                                for suite_file in integration-test/suites/*.test.sh; do
+                                    source "$suite_file"
+                                done
+                                main
+                            '
                         """
                     }
                 }
