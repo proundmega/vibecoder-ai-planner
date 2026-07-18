@@ -183,6 +183,7 @@ pipeline {
             steps {
                 nodejs('Node') {
                     dir('frontend') {
+                        sh 'npm ci'
                         sh './node_modules/.bin/vitest --run src/__tests__/api-contract.test.ts'
                     }
                 }
