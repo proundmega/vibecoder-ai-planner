@@ -229,6 +229,7 @@ EOF
                         """
 
                         // Build and start services (use production compose, not dev override)
+                        sh 'docker compose -f docker-compose.yml down --remove-orphans || true'
                         sh 'docker compose -f docker-compose.yml build'
                         sh 'docker compose -f docker-compose.yml up -d'
 
