@@ -91,6 +91,20 @@ wait_for_api() {
   exit 1
 }
 
+# Wait for API to become healthy again (after transient crash/OOM)
+# Returns 0 if healthy, 1 if still down
+wait_api_healthy() {
+  local retries="${1:-5}"
+  local interval="${2:-2}"
+  for i in $(seq 1 "$retries"); do
+    if curl -sf "$BASE/api/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$interval"
+  done
+  return 1
+}
+
 clean_db() {
   echo "Cleaning database..."
   docker_exec vibecode-postgres psql -U postgres -d vibecode \

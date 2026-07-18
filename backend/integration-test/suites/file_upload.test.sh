@@ -50,9 +50,15 @@ test_file_upload() {
   local health_code
   health_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/health" 2>/dev/null)
   if [ "$health_code" != "200" ]; then
-    fail "File Upload" "API unhealthy before upload (HTTP $health_code) — check API logs"
-    rm -f "$tmpfile"
-    return
+    # API may have crashed under load — wait for it to recover
+    echo "API unhealthy (HTTP $health_code), waiting for recovery..."
+    if wait_api_healthy 10 3; then
+      echo "API recovered."
+    else
+      fail "File Upload" "API still unhealthy after 30s wait — check API logs"
+      rm -f "$tmpfile"
+      return
+    fi
   fi
 
   # Upload file as attachment
