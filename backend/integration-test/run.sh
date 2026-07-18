@@ -129,11 +129,13 @@ main() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   # Source and run each test suite (suites have inline code, not function-wrapped)
+  # Add small delay between suites to give resource-constrained API time to recover
   for suite_file in "$SUITES_DIR"/*.test.sh; do
     base=$(basename "$suite_file" .test.sh)
     echo ""
     echo "--- Running: $base ---"
     source "$suite_file"
+    sleep 2
   done
 
   echo ""
