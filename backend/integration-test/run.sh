@@ -54,15 +54,6 @@ RETRY_INTERVAL=2
 # ── Source helpers ────────────────────────────────────────────────────────────
 source "$ROOT/integration-test/helpers.sh"
 
-# ── Seed admin user for suites that need ADMIN_TOKEN ────────────────────────
-ADMIN_TOKEN=$(seed_user "admin@vibecode.dev" "password123" "super_admin" "Admin")
-
-# ── Source all test suites ────────────────────────────────────────────────────
-SUITES_DIR="$ROOT/integration-test/suites"
-for suite_file in "$SUITES_DIR"/*.test.sh; do
-  source "$suite_file"
-done
-
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 main() {
@@ -95,6 +86,14 @@ main() {
   docker restart vibecode-frontend 2>/dev/null || true
   sleep 3
 
+  # Seed admin user AFTER API is ready
+  ADMIN_TOKEN=$(seed_user "admin@vibecode.dev" "password123" "super_admin" "Admin")
+  if [ -z "$ADMIN_TOKEN" ]; then
+    echo "FATAL: Failed to seed admin user. API may be unreachable."
+    exit 1
+  fi
+  echo "Admin token seeded: ${ADMIN_TOKEN:0:10}..."
+
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "  Jest Integration Tests (PostgreSQL)"
@@ -114,28 +113,12 @@ main() {
   echo "  $(date '+%Y-%m-%d %H:%M:%S')"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-  # Auto-discover test functions from suite files
+  # Source and run each test suite (suites have inline code, not function-wrapped)
   for suite_file in "$SUITES_DIR"/*.test.sh; do
     base=$(basename "$suite_file" .test.sh)
-    func_name="test_${base}"
-    
-    # Try exact match first, then check if any test_* function is defined in this file
-    if declare -f "$func_name" > /dev/null 2>&1; then
-      echo ""
-      echo "--- Running: $base ---"
-      $func_name
-    else
-      # Find the actual test function name defined in this suite file
-      actual_func=$(grep -oP '^\s*test_\w+\(\)' "$suite_file" | head -1 | tr -d ' ()')
-      if [ -n "$actual_func" ] && declare -f "$actual_func" > /dev/null 2>&1; then
-        echo ""
-        echo "--- Running: $base (as $actual_func) ---"
-        $actual_func
-      else
-        echo ""
-        echo "--- Skipping: $base (no test function found) ---"
-      fi
-    fi
+    echo ""
+    echo "--- Running: $base ---"
+    source "$suite_file"
   done
 
   echo ""
