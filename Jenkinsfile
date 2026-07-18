@@ -249,15 +249,16 @@ EOF
                             }
                         }
 
-                        // Discover container IPs via Docker network inspect (Jenkins runs inside Docker
+                        // Discover container IPs via docker ps + inspect (Jenkins runs inside Docker
                         // so localhost won't reach containers; host.docker.internal may not resolve
                         // when using a Docker socket proxy).
+                        // Container names are "vibecode-{service}" — discovered dynamically.
                         def apiIp = sh(
-                            script: 'docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" vibecode-api-1 2>/dev/null || docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" vibecoder-ai-planner-api-1 2>/dev/null || echo ""',
+                            script: 'docker ps --filter "name=vibecode-api" --format "{{.ID}}" | head -1 | xargs -I{} docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" {} 2>/dev/null || echo ""',
                             returnStdout: true
                         ).trim()
                         def pgIp = sh(
-                            script: 'docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" vibecode-postgres-1 2>/dev/null || docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" vibecoder-ai-planner-postgres-1 2>/dev/null || echo ""',
+                            script: 'docker ps --filter "name=vibecode-postgres" --format "{{.ID}}" | head -1 | xargs -I{} docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" {} 2>/dev/null || echo ""',
                             returnStdout: true
                         ).trim()
 
