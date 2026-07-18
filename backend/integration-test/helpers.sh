@@ -199,7 +199,12 @@ assert_status() {
   if [ "$actual" = "$expected" ]; then
     pass "$label (HTTP $actual)"
   else
-    fail "$label" "expected HTTP $expected, got HTTP $actual"
+    # Add diagnostic context for common failure modes
+    local detail="expected HTTP $expected, got HTTP $actual"
+    if [ "$actual" = "000" ]; then
+      detail="$detail — curl could not connect (check if API is running: curl $BASE/api/health)"
+    fi
+    fail "$label" "$detail"
   fi
 }
 
