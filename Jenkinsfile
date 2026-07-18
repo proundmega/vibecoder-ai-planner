@@ -261,17 +261,15 @@ EOF
                         }
                         echo "Stack ready after ${elapsed}s (${checks} checks)"
 
-                        // Jest integration tests — run inside API container where 'postgres' is resolvable
+                        // Jest integration tests — run from Jenkins container using published PG port
                         sh """
-                            docker exec -w /app vibecode-api bash -c '
-                                DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/vibecode" \
-                                ./node_modules/.bin/jest --config jest.integration.config.js --verbose
-                            '
+                            DATABASE_URL="postgresql://postgres:${POSTGRES_PASSWORD}@localhost:5432/vibecode" \
+                            ./backend/node_modules/.bin/jest --config backend/jest.integration.config.js --verbose
                         """
 
-                        // Bash integration tests — run inside the API container via docker exec
+                        // Integration tests — run inside the API container via docker exec
                         sh """
-                            docker exec -w /app vibecode-api bash -c '
+                            docker exec -w /app vibecode-api sh -c '
                                 export BASE_URL=http://localhost:3001
                                 source integration-test/helpers.sh
                                 for suite_file in integration-test/suites/*.test.sh; do
