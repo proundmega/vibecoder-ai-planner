@@ -86,80 +86,97 @@ This file bridges the planning docs (01–03) and the code. It specifies exact f
 
 ---
 
-### MODIFY: `.github/workflows/ci.yml`
+### MODIFY: `backend/Dockerfile`
 
-**Change** line 34 (backend job):
-```yaml
-# Before
-node-version: '18'
-# After
-node-version: '24'
-```
+**Change** all `node:18-alpine` to `node:24-alpine`:
 
-**Change** line 66 (frontend job):
-```yaml
-# Before
-node-version: '18'
-# After
-node-version: '24'
-```
-
-**Pattern**: Search for `node-version: '18'` and replace with `node-version: '24'`.
-
----
-
-### MODIFY: `Jenkinsfile`
-
-**Replace** all `nodejs('Node') { ... }` blocks with explicit nvm scripts.
-
-**Pattern** for each stage:
-
-**Before**:
-```groovy
-stage('Backend Lint') {
-    steps {
-        nodejs('Node') {
-            dir('backend') {
-                sh 'npm ci'
-                sh 'npm run lint'
-            }
-        }
-    }
-}
+**Before** (line 1 and line 6):
+```dockerfile
+FROM node:18-alpine AS deps
+...
+FROM node:18-alpine
 ```
 
 **After**:
-```groovy
-stage('Backend Lint') {
-    steps {
-        dir('backend') {
-            sh '''
-                export NVM_DIR="$HOME/.nvm"
-                [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-                nvm install 24
-                nvm use 24
-                npm ci
-                npm run lint
-            '''
-        }
-    }
-}
+```dockerfile
+FROM node:24-alpine AS deps
+...
+FROM node:24-alpine
 ```
 
-**Stages to update**:
-1. Backend Lint
-2. Backend Syntax
-3. Backend Unit Tests
-4. Backend Coverage
-5. Frontend Lint
-6. Frontend Typecheck
-7. Frontend Unit Tests
-8. Frontend Coverage
-9. Frontend Build
-10. Contract Test
-11. Integration Tests
+**Pattern**: Search for `node:18-alpine` and replace with `node:24-alpine`.
 
-**Note**: The Integration Tests stage already uses `dir('backend')` with a single `sh` block — just change `nvm install 18` to `nvm install 24` and `nvm use 18` to `nvm use 24`.
+---
+
+### MODIFY: `backend/Dockerfile.test`
+
+**Change** all `node:18-alpine` to `node:24-alpine`:
+
+**Before** (line 1 and line 6):
+```dockerfile
+FROM node:18-alpine AS deps
+...
+FROM node:18-alpine
+```
+
+**After**:
+```dockerfile
+FROM node:24-alpine AS deps
+...
+FROM node:24-alpine
+```
+
+**Pattern**: Search for `node:18-alpine` and replace with `node:24-alpine`.
+
+---
+
+### MODIFY: `frontend/Dockerfile`
+
+**Change** `node:18-alpine` to `node:24-alpine`:
+
+**Before** (line 1):
+```dockerfile
+FROM node:18-alpine AS builder
+```
+
+**After**:
+```dockerfile
+FROM node:24-alpine AS builder
+```
+
+**Pattern**: Search for `node:18-alpine` and replace with `node:24-alpine`.
+
+---
+
+### VERIFY: `Jenkinsfile`
+
+**Status**: Already uses `nvm install 24 && nvm use 24` from bp-99. No changes needed.
+
+**Verify** all stages use Node 24:
+- Backend Lint, Backend Syntax, Backend Unit Tests, Backend Coverage
+- Frontend Lint, Frontend Typecheck, Frontend Unit Tests, Frontend Coverage
+- Frontend Build, Contract Test, Integration Tests
+
+All should already have `nvm install 24` and `nvm use 24` from the bp-99 fix.
+
+---
+
+### MODIFY: `AGENTS.md`
+
+**Update** the following sections:
+
+1. **Quick Start** — Change Node version references:
+   - Before: `Node 18+` or `Node 18`
+   - After: `Node 24 LTS`
+
+2. **Gotchas** — Add or update Node version note:
+   - Add: `Backend requires Node 24 LTS (not 18 or 20). Use nvm to switch versions.`
+
+3. **Commands** — Ensure all commands are compatible with Node 24 (no changes needed, but verify)
+
+**Search patterns**:
+- `node:18-alpine` → `node:24-alpine` (in Dockerfile references)
+- `Node 18` → `Node 24 LTS`
 
 ---
 
@@ -194,7 +211,7 @@ stage('Backend Lint') {
 4. `npm test -- --run` passes (frontend)
 5. `npm run typecheck` passes (frontend)
 6. `npm run build` passes (frontend)
-7. GitHub Actions CI runs successfully
+7. Docker images build successfully with `docker compose up --build`
 8. Jenkins CI runs successfully
 
 ---
@@ -203,7 +220,7 @@ stage('Backend Lint') {
 
 1. **[npm 11 lockfile format]**: npm 11 (shipped with Node 24) may generate slightly different `package-lock.json`. If `npm ci` fails, regenerate lockfiles with `npm install` on Node 24.
 2. **[vue-tsc ESM resolution]**: Node 24's stricter ESM may affect vue-tsc. If vue-tsc fails, verify `@volar/typescript` is installed correctly.
-3. **[Jenkins nvm availability]**: Jenkins environment must have nvm installed. If nvm is not available, install it in the pipeline or configure a Jenkins-managed Node 24 tool.
+3. **[Jenkins nvm availability]**: Jenkins environment must have nvm installed (already configured in Jenkinsfile from bp-99).
 4. **[OpenSSL 3.5 TLS]**: Node 24 uses OpenSSL 3.5 with stricter cipher requirements. If any external connection fails, verify the target supports modern TLS.
 
 ---
@@ -212,7 +229,7 @@ stage('Backend Lint') {
 
 - `.nvmrc` format: Single line with version number (e.g., `24`)
 - `engines` field format: `"engines": { "node": ">=X.Y.Z" }`
-- GitHub Actions pattern: `actions/setup-node@v3` with `node-version: 'XX'`
+- Docker pattern: `FROM node:XX-alpine` (change all occurrences)
 - Jenkins pattern: `sh ''' ... '''` with nvm setup + commands
 
 ---
@@ -223,13 +240,12 @@ stage('Backend Lint') {
 
 | # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
 |---|-------------|-------------|----------|----------------------|---------------|
-| 1 | bp-60 | CI integration (separate Jenkins job) | CI/CD | bp-98-node-24-migration | ☐ |
-| 2 | bp-58 | HTTPS termination (reverse proxy) | Security | bp-87-https-termination | ☐ |
-| 3 | bp-58 | Secrets management (Vault, etc.) | Security | bp-88-secrets-management | ☐ |
-| 4 | bp-60 | Frontend E2E tests in Cypress | Testing | bp-89-frontend-e2e-cypress | ☐ |
-| 5 | bp-99 | Java agent unit tests | Testing | bp-90-java-agent-tests | ☐ |
-| 6 | bp-99 | Prometheus metrics for agent health | Observability | bp-76-prometheus-metrics | ☐ |
-| 7 | bp-99 | Runtime provider config reload | Developer Experience | bp-91-provider-reload | ☐ |
+| 1 | bp-58 | HTTPS termination (reverse proxy) | Security | bp-87-https-termination | ☐ |
+| 2 | bp-58 | Secrets management (Vault, etc.) | Security | bp-88-secrets-management | ☐ |
+| 3 | bp-60 | Frontend E2E tests in Cypress | Testing | bp-89-frontend-e2e-cypress | ☐ |
+| 4 | bp-99 | Java agent unit tests | Testing | bp-90-java-agent-tests | ☐ |
+| 5 | bp-99 | Prometheus metrics for agent health | Observability | bp-76-prometheus-metrics | ☐ |
+| 6 | bp-99 | Runtime provider config reload | Developer Experience | bp-91-provider-reload | ☐ |
 
 **All items above must be presented to the user before ticket approval.**
 

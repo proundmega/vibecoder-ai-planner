@@ -2,7 +2,7 @@
 
 **Status**: Working draft
 **Author**: AI Assistant
-**Scope**: Backend | Frontend | CI/CD (Both)
+**Scope**: Backend | Frontend | CI/CD (Jenkins only)
 **Related**: `01_ARCHITECT_REQUIREMENT.md`, `03_ARCHITECT_IMPLEMENTATION.md`
 
 ---
@@ -11,7 +11,7 @@
 
 The project is pinned to Node 18, which reaches end-of-life in April 2026. Node 24 LTS ("Krypton") provides security updates until April 2028. The project needs to migrate to Node 24 to maintain LTS support, benefit from V8 improvements, and align with the ecosystem's direction.
 
-Recent Jenkins runs using `nodejs('Node')` resolved to Node 26.5.0 (not a configured version), causing transitive dependency failures. This highlights the risk of implicit Node version management — explicit version pinning is required.
+Developers are seeing Node runtime warnings and errors that Node 24's stricter validation would surface earlier. Docker images use `node:18-alpine` which is outdated. Jenkins already uses explicit nvm scripts (fixed in bp-99), but still references older Node versions.
 
 ---
 
@@ -23,23 +23,23 @@ Recent Jenkins runs using `nodejs('Node')` resolved to Node 26.5.0 (not a config
 - Code: CommonJS (`require()`), no ESM
 - Dependencies: Jest 29, supertest, ioredis, pg, winston, bcryptjs, jsonwebtoken
 - Tested with: Node 20 (locally), Node 18 (CI)
+- Docker: `backend/Dockerfile` uses `node:18-alpine`, `backend/Dockerfile.test` uses `node:18-alpine`
 
 ### Existing Frontend
 - `frontend/package.json`: `"engines": {"node": ">=18.0.0 <26.0.0"}`
 - Code: TypeScript/Vue 3, uses Vitest, vue-tsc, vite 5
 - Dependencies: vitest 1.x, vue-tsc 2.x, typescript 5.x, cypress 15.x
 - Tested with: Node 20 (locally), Node 18 (CI)
+- Docker: `frontend/Dockerfile` uses `node:18-alpine`
 
 ### Existing CI/CD
-- **GitHub Actions** (`.github/workflows/ci.yml`): `actions/setup-node@v3` with `node-version: '18'`
-- **Jenkinsfile**: `nodejs('Node')` — Jenkins-managed tool, resolved to Node 26.5.0 recently
+- **Jenkinsfile**: Uses explicit `nvm install 24 && nvm use 24` (already fixed from `nodejs('Node')` in bp-99)
 - **Local dev**: No `.nvmrc`, relies on system Node version
 
 ### Gap Analysis
 - No explicit Node version enforcement in backend
 - Frontend `engines` field blocks Node 24 (`<26.0.0` is fine, but lower bound is 18)
-- GitHub Actions CI pins Node 18 explicitly
-- Jenkins uses implicit tool resolution (unreliable)
+- Docker images all use `node:18-alpine`
 - No `.nvmrc` for local dev consistency
 
 ---
@@ -52,12 +52,14 @@ Set all version constraints to `>=24.0.0`, requiring Node 24 everywhere. This is
 
 **Changes:**
 ```
-backend/package.json    → engines: { "node": ">=24.0.0" }
-frontend/package.json   → engines: { "node": ">=24.0.0" }
-.github/workflows/ci.yml → node-version: '24'
-Jenkinsfile             → nvm install 24 && nvm use 24 (replace nodejs('Node'))
-.nvmrc                  → CREATE with "24"
-AGENTS.md               → Update Quick Start and Gotchas sections
+backend/package.json        → engines: { "node": ">=24.0.0" }
+frontend/package.json       → engines: { "node": ">=24.0.0" }
+backend/Dockerfile          → node:18-alpine → node:24-alpine
+backend/Dockerfile.test     → node:18-alpine → node:24-alpine
+frontend/Dockerfile         → node:18-alpine → node:24-alpine
+Jenkinsfile                 → nvm install 24 && nvm use 24 (already done in bp-99)
+.nvmrc                      → CREATE with "24"
+AGENTS.md                   → Update Quick Start and Gotchas sections
 ```
 
 **Pros:**
@@ -92,8 +94,10 @@ Keep `>=18.0.0 <26.0.0` to allow Node 18-23 during transition.
 |------|--------|-----------------|
 | `backend/package.json` | MODIFY | Add `"engines": { "node": ">=24.0.0" }` |
 | `frontend/package.json` | MODIFY | Change engines to `{ "node": ">=24.0.0" }` |
-| `.github/workflows/ci.yml` | MODIFY | Change `node-version: '18'` to `'24'` in both jobs |
-| `Jenkinsfile` | MODIFY | Replace all `nodejs('Node')` blocks with explicit nvm + Node 24 |
+| `backend/Dockerfile` | MODIFY | Change `node:18-alpine` to `node:24-alpine` |
+| `backend/Dockerfile.test` | MODIFY | Change `node:18-alpine` to `node:24-alpine` |
+| `frontend/Dockerfile` | MODIFY | Change `node:18-alpine` to `node:24-alpine` |
+| `Jenkinsfile` | VERIFY | Already uses `nvm install 24 && nvm use 24` from bp-99 |
 | `.nvmrc` | CREATE | Add `24` |
 | `AGENTS.md` | MODIFY | Update Quick Start, Gotchas, and commands sections |
 
@@ -104,7 +108,6 @@ Keep `>=18.0.0 <26.0.0` to allow Node 18-23 during transition.
 ```
 [Developer] → [nvm install 24] → [Node 24 runtime]
        ↓
-[CI/CD] → [GitHub Actions: setup-node@v3 with node-version: '24']
 [CI/CD] → [Jenkins: nvm install 24]
        ↓
 [npm ci] → [Install dependencies] → [Run tests]
@@ -115,11 +118,6 @@ Keep `>=18.0.0 <26.0.0` to allow Node 18-23 during transition.
 2. Node 24 is activated
 3. `npm ci` installs dependencies
 4. `npm run dev` starts development server
-
-### CI Flow (GitHub Actions)
-1. `actions/setup-node@v3` installs Node 24
-2. `npm ci` installs dependencies
-3. Tests run with Node 24 runtime
 
 ### CI Flow (Jenkins)
 1. `nvm install 24 && nvm use 24` activates Node 24
@@ -184,15 +182,13 @@ None. This is a configuration-only migration.
 | Frontend unit | Vitest | `frontend/src/__tests__/*.test.js` | Node 24 compatibility with Vue 3 tooling |
 | Frontend typecheck | vue-tsc | `frontend/` | Node 24 compatibility with TypeScript |
 | Frontend build | Vite | `frontend/` | Node 24 compatibility with build tooling |
-| CI | GitHub Actions | `.github/workflows/ci.yml` | End-to-end CI with Node 24 |
 | CI | Jenkinsfile | `Jenkinsfile` | End-to-end Jenkins with Node 24 |
 
 ### Verification Steps
 
 1. **Local**: Install Node 24 via nvm, run full test suite
 2. **Local**: Verify `npm ci` works with lockfiles
-3. **CI**: Push to branch, verify GitHub Actions runs
-4. **CI**: Push to PR, verify Jenkins runs
+3. **CI**: Push to PR, verify Jenkins runs
 
 ---
 
@@ -207,22 +203,21 @@ None. This is a configuration-only migration.
 - **[cypress 15]**: Cypress may have Node 24 compatibility issues. Mitigation: Cypress 15.x supports Node 24
 
 ### Integration Risks
-- **[Jenkins nvm availability]**: Jenkins environment may not have nvm installed. Mitigation: Use `actions/setup-node@v3` pattern or install nvm in pipeline
-- **[GitHub Actions setup-node@v3]**: Verify `node-version: '24'` is supported (it is — supports all LTS versions)
+- **[Jenkins nvm availability]**: Jenkins environment may not have nvm installed. Mitigation: nvm is already configured in Jenkinsfile from bp-99
 
 ### Edge Cases
 - **Lockfile compatibility**: `package-lock.json` generated with npm 10 may need regeneration with npm 11
-- **Docker images**: Development Docker Compose uses `node:20-alpine` — should be updated (deferred to bp-92)
+- **Docker images**: All Docker images need updating to `node:24-alpine`
 - **Java agent Docker**: Uses `eclipse-temurin` (Java 17), not Node — no changes needed
 
 ---
 
 ## Alternative Designs Considered
 
-### Alternative 1: Use `engines` field only (no CI changes)
+### Alternative 1: Use `engines` field only (no Docker changes)
 - **Pros**: Minimal changes
-- **Cons**: CI would still use Node 18, creating inconsistency
-- **Decision**: Not chosen — CI must match local dev
+- **Cons**: Docker images would still use Node 18, creating inconsistency
+- **Decision**: Not chosen — Docker must match local dev
 
 ### Alternative 2: Use Node 20 LTS instead of 24
 - **Pros**: More conservative, longer track record
@@ -244,13 +239,12 @@ None. This is a configuration-only migration.
 
 | # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
 |---|-------------|-------------|----------|----------------------|---------------|
-| 1 | bp-60 | CI integration (separate Jenkins job) | CI/CD | bp-98-node-24-migration | ☐ |
-| 2 | bp-58 | HTTPS termination (reverse proxy) | Security | bp-87-https-termination | ☐ |
-| 3 | bp-58 | Secrets management (Vault, etc.) | Security | bp-88-secrets-management | ☐ |
-| 4 | bp-60 | Frontend E2E tests in Cypress | Testing | bp-89-frontend-e2e-cypress | ☐ |
-| 5 | bp-99 | Java agent unit tests | Testing | bp-90-java-agent-tests | ☐ |
-| 6 | bp-99 | Prometheus metrics for agent health | Observability | bp-76-prometheus-metrics | ☐ |
-| 7 | bp-99 | Runtime provider config reload | Developer Experience | bp-91-provider-reload | ☐ |
+| 1 | bp-58 | HTTPS termination (reverse proxy) | Security | bp-87-https-termination | ☐ |
+| 2 | bp-58 | Secrets management (Vault, etc.) | Security | bp-88-secrets-management | ☐ |
+| 3 | bp-60 | Frontend E2E tests in Cypress | Testing | bp-89-frontend-e2e-cypress | ☐ |
+| 4 | bp-99 | Java agent unit tests | Testing | bp-90-java-agent-tests | ☐ |
+| 5 | bp-99 | Prometheus metrics for agent health | Observability | bp-76-prometheus-metrics | ☐ |
+| 6 | bp-99 | Runtime provider config reload | Developer Experience | bp-91-provider-reload | ☐ |
 
 **All items above must be presented to the user before ticket approval.**
 
