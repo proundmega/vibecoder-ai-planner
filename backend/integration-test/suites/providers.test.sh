@@ -5,15 +5,8 @@
 # Usage: http_post "url" "headers..." "data" -> sets HTTP_CODE and RESPONSE_BODY
 http_post() {
   local url="$1"; shift
-  local headers=("$@")
-  local data="${headers[-1]}"
-  # If last arg starts with -d, it's data; otherwise it's part of headers
-  if [[ "$data" == -d* ]]; then
-    unset 'headers[-1]'
-    headers+=("-d" "$data")
-  fi
   local response
-  response=$(curl -s -w '\n%{http_code}' -X POST "$url" "${headers[@]}")
+  response=$(curl -s -w '\n%{http_code}' -X POST "$url" "$@")
   HTTP_CODE="${response##*$'\n'}"
   RESPONSE_BODY="${response%$'\n'*}"
 }
