@@ -273,6 +273,77 @@ describe('Provider Controller', () => {
     });
   });
 
+  describe('testProvider: INTEGRATION_TESTS mode', () => {
+    const origEnv = process.env;
+
+    beforeEach(() => {
+      jest.resetModules();
+      process.env = { ...origEnv };
+      process.env.INTEGRATION_TESTS = '1';
+    });
+
+    afterEach(() => {
+      process.env = origEnv;
+    });
+
+    it('should skip base_url requirement and ProviderRouter validation when INTEGRATION_TESTS=1', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 1,
+          name: 'test-provider',
+          provider_type: 'openai',
+          api_key_encrypted: 'encrypted-key',
+          model: 'gpt-4',
+          max_tokens: 4096,
+          temperature: 0.1,
+          base_url: null,
+        }],
+      });
+
+      mockReq.params.id = '1';
+
+      await providerController.testProvider(mockReq, mockRes, nextFn);
+
+      expect(mockRes.json).toHaveBeenCalledWith({
+        success: true,
+        data: {
+          success: true,
+          valid: true,
+          message: 'Connection successful (integration test mode)',
+        },
+      });
+      expect(ProviderRouter).not.toHaveBeenCalled();
+    });
+
+    it('should return success even with fake API key', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 2,
+          name: 'fake-key-provider',
+          provider_type: 'claude',
+          api_key_encrypted: 'encrypted-key',
+          model: 'claude-3',
+          max_tokens: 4096,
+          temperature: 0.1,
+          base_url: null,
+        }],
+      });
+
+      mockReq.params.id = '2';
+
+      await providerController.testProvider(mockReq, mockRes, nextFn);
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            success: true,
+            valid: true,
+          }),
+        })
+      );
+    });
+  });
+
   describe('BP-51-11: db require at module level', () => {
     it('should have pool available at module level (not inline require)', () => {
       // If require('../db') is at module level, the mock in jest.mock() works
