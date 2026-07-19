@@ -14,7 +14,7 @@
 **Date completed**: YYYY-MM-DD
 **PR**: [link]
 **Branch**: [branch-name]
-**Scope**: Backend | Frontend | CI/CD (Both)
+**Scope**: Backend | Frontend | CI/CD (Jenkins only)
 
 **Dependencies**: None
 
@@ -44,20 +44,28 @@ Migrate the project from Node 18 to Node 24 LTS ("Krypton") across all environme
    - Change engines to `{ "node": ">=24.0.0" }`
    - *Depends on*: nothing
 
-4. **[Update GitHub Actions CI]** — `.github/workflows/ci.yml`
-   - Change `node-version: '18'` to `'24'` in both backend and frontend jobs
+4. **[Update backend Dockerfile]** — `backend/Dockerfile`
+   - Change `node:18-alpine` to `node:24-alpine`
    - *Depends on*: nothing
 
-5. **[Update Jenkinsfile]** — `Jenkinsfile`
-   - Replace all `nodejs('Node')` blocks with explicit nvm + Node 24
+5. **[Update backend test Dockerfile]** — `backend/Dockerfile.test`
+   - Change `node:18-alpine` to `node:24-alpine`
    - *Depends on*: nothing
 
-6. **[Update AGENTS.md]** — `AGENTS.md`
+6. **[Update frontend Dockerfile]** — `frontend/Dockerfile`
+   - Change `node:18-alpine` to `node:24-alpine`
+   - *Depends on*: nothing
+
+7. **[Verify Jenkinsfile]** — `Jenkinsfile`
+   - Already uses `nvm install 24 && nvm use 24` from bp-99 — verify it's correct
+   - *Depends on*: nothing
+
+8. **[Update AGENTS.md]** — `AGENTS.md`
    - Update Quick Start section to mention Node 24
    - Update Gotchas section if applicable
    - *Depends on*: nothing
 
-7. **[Verify tests pass]** — Local verification
+9. **[Verify tests pass]** — Local verification
    - Run `npm test` in `backend/`
    - Run `npm test -- --run` in `frontend/`
    - Run `npm run typecheck` in `frontend/`
@@ -86,26 +94,35 @@ Migrate the project from Node 18 to Node 24 LTS ("Krypton") across all environme
 - **Logic**: Enforce Node 24+ for frontend development
 - **Position**: After `devDependencies` block
 
-#### `.github/workflows/ci.yml` (MODIFY)
+#### `backend/Dockerfile` (MODIFY)
 
-- **Change**: `node-version: '18'` → `node-version: '24'`
-- **Lines to change**: Line 34 (backend job), Line 66 (frontend job)
-- **Pattern**: Follow existing `actions/setup-node@v3` usage
+- **Change**: `node:18-alpine` → `node:24-alpine` (lines 1 and 6)
+- **Logic**: Use Node 24 base image for production builds
+- **Position**: All `FROM node:18-alpine` statements
 
-#### `Jenkinsfile` (MODIFY)
+#### `backend/Dockerfile.test` (MODIFY)
 
-- **Replace**: All `nodejs('Node') { ... }` blocks with explicit nvm scripts
-- **Pattern**:
-  ```groovy
-  sh '''
-      export NVM_DIR="$HOME/.nvm"
-      [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-      nvm install 24
-      nvm use 24
-      [original commands]
-  '''
-  ```
-- **Stages to update**: Backend Lint, Backend Syntax, Backend Unit Tests, Backend Coverage, Frontend Lint, Frontend Typecheck, Frontend Unit Tests, Frontend Coverage, Frontend Build, Contract Test, Integration Tests
+- **Change**: `node:18-alpine` → `node:24-alpine` (lines 1 and 6)
+- **Logic**: Use Node 24 base image for test builds
+- **Position**: All `FROM node:18-alpine` statements
+
+#### `frontend/Dockerfile` (MODIFY)
+
+- **Change**: `node:18-alpine` → `node:24-alpine` (line 1)
+- **Logic**: Use Node 24 base image for frontend builds
+- **Position**: `FROM node:18-alpine AS builder`
+
+#### `Jenkinsfile` (VERIFY)
+
+- **Status**: Already uses `nvm install 24 && nvm use 24` from bp-99
+- **Action**: Verify all stages use Node 24 (should already be correct)
+- **Pattern**: `sh ''' ... nvm install 24 ... nvm use 24 ... '''`
+
+#### `AGENTS.md` (MODIFY)
+
+- **Update Quick Start**: Change "Node 18+" references to "Node 24 LTS"
+- **Update Gotchas**: Add note about Node 24 requirement
+- **Update Commands**: Ensure all commands are compatible with Node 24
 
 #### `AGENTS.md` (MODIFY)
 
@@ -147,8 +164,10 @@ Migrate the project from Node 18 to Node 24 LTS ("Krypton") across all environme
 - [ ] `npm run typecheck` — TypeScript compilation passes
 - [ ] `npm run build` — production build passes
 
+#### Docker Build Verification
+- [ ] `docker compose up --build` — all Docker images build successfully
+
 #### CI Verification
-- [ ] GitHub Actions CI runs successfully (backend + frontend jobs)
 - [ ] Jenkins CI runs successfully (all stages)
 
 ---
@@ -166,8 +185,10 @@ None. This is a configuration-only migration. No database changes, no API change
 .nvmrc                          → CREATE (add "24")
 backend/package.json            → MODIFY (add engines field)
 frontend/package.json           → MODIFY (update engines field)
-.github/workflows/ci.yml        → MODIFY (change node-version to '24')
-Jenkinsfile                     → MODIFY (replace nodejs('Node') with nvm + Node 24)
+backend/Dockerfile              → MODIFY (node:18-alpine → node:24-alpine)
+backend/Dockerfile.test         → MODIFY (node:18-alpine → node:24-alpine)
+frontend/Dockerfile             → MODIFY (node:18-alpine → node:24-alpine)
+Jenkinsfile                     → VERIFY (already uses nvm + Node 24 from bp-99)
 AGENTS.md                       → MODIFY (update documentation)
 ```
 
@@ -178,7 +199,9 @@ AGENTS.md                       → MODIFY (update documentation)
 - [ ] `.nvmrc` contains `24`
 - [ ] `backend/package.json` has `"engines": { "node": ">=24.0.0" }`
 - [ ] `frontend/package.json` has `"engines": { "node": ">=24.0.0" }`
-- [ ] `.github/workflows/ci.yml` uses `node-version: '24'` in both jobs
+- [ ] `backend/Dockerfile` uses `node:24-alpine`
+- [ ] `backend/Dockerfile.test` uses `node:24-alpine`
+- [ ] `frontend/Dockerfile` uses `node:24-alpine`
 - [ ] `Jenkinsfile` uses explicit nvm + Node 24 in all stages
 - [ ] `AGENTS.md` updated to reflect Node 24 requirement
 - [ ] All tests pass with Node 24
@@ -195,7 +218,7 @@ AGENTS.md                       → MODIFY (update documentation)
 4. [ ] Local: `npm test -- --run` passes (frontend)
 5. [ ] Local: `npm run typecheck` passes (frontend)
 6. [ ] Local: `npm run build` passes (frontend)
-7. [ ] GitHub Actions CI runs successfully
+7. [ ] Docker images build successfully with `docker compose up --build`
 8. [ ] Jenkins CI runs successfully
 
 ---
@@ -208,13 +231,12 @@ AGENTS.md                       → MODIFY (update documentation)
 
 | # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
 |---|-------------|-------------|----------|----------------------|---------------|
-| 1 | bp-60 | CI integration (separate Jenkins job) | CI/CD | bp-98-node-24-migration | ☐ |
-| 2 | bp-58 | HTTPS termination (reverse proxy) | Security | bp-87-https-termination | ☐ |
-| 3 | bp-58 | Secrets management (Vault, etc.) | Security | bp-88-secrets-management | ☐ |
-| 4 | bp-60 | Frontend E2E tests in Cypress | Testing | bp-89-frontend-e2e-cypress | ☐ |
-| 5 | bp-99 | Java agent unit tests | Testing | bp-90-java-agent-tests | ☐ |
-| 6 | bp-99 | Prometheus metrics for agent health | Observability | bp-76-prometheus-metrics | ☐ |
-| 7 | bp-99 | Runtime provider config reload | Developer Experience | bp-91-provider-reload | ☐ |
+| 1 | bp-58 | HTTPS termination (reverse proxy) | Security | bp-87-https-termination | ☐ |
+| 2 | bp-58 | Secrets management (Vault, etc.) | Security | bp-88-secrets-management | ☐ |
+| 3 | bp-60 | Frontend E2E tests in Cypress | Testing | bp-89-frontend-e2e-cypress | ☐ |
+| 4 | bp-99 | Java agent unit tests | Testing | bp-90-java-agent-tests | ☐ |
+| 5 | bp-99 | Prometheus metrics for agent health | Observability | bp-76-prometheus-metrics | ☐ |
+| 6 | bp-99 | Runtime provider config reload | Developer Experience | bp-91-provider-reload | ☐ |
 
 **All items above must be presented to the user before ticket approval.**
 

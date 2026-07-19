@@ -4,7 +4,7 @@
 **Date started**: 2025-07-16
 **Date completed**: {{DATE}}
 **Author**: AI Assistant
-**Feature scope**: Backend | Frontend | CI/CD (Both)
+**Feature scope**: Backend | Frontend | CI/CD (Jenkins only)
 
 ---
 

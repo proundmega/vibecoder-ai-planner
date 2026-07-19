@@ -4,7 +4,7 @@
 **Date created**: 2025-07-16
 **Date completed**: {{DATE}}
 **Author**: AI Assistant
-**Scope**: Backend | Frontend | CI/CD (Both)
+**Scope**: Backend | Frontend | CI/CD (Jenkins only)
 **Priority**: P1
 **Effort**: Medium
 
@@ -12,13 +12,13 @@
 
 ## Requirement
 
-Migrate the project from Node 18 to Node 24 LTS ("Krypton") across all environments: local development, Jenkins CI, and GitHub Actions CI.
+Migrate the project from Node 18 to Node 24 LTS ("Krypton") across all environments: local development and Jenkins CI.
 
 **Why**: Node 18 reaches end-of-life in April 2026. Node 24 LTS runs until April 2028, providing 2+ years of security updates. Node 24 includes stricter runtime validation, better ESM/CJS interoperability, modern Web API support, and OpenSSL 3.5 security hardening.
 
-**Problem**: The project is currently pinned to Node 18 in `engines` fields and Jenkinsfile, while GitHub Actions CI uses Node 18 via `actions/setup-node@v3`. The `engines` field currently blocks Node 24 (`>=18 <26`). Jenkins is configured with `nodejs('Node')` which resolves to an arbitrary version — it ran Node 26.5.0 in a recent run, causing transitive dependency resolution failures with `execa` and `@volar/typescript`.
+**Problem**: The project is currently pinned to Node 18 in `engines` fields and Docker images. The `engines` field currently blocks Node 24 (`>=18 <26`). Developers are seeing Node runtime warnings and errors that Node 24's stricter validation would surface earlier. Jenkins uses explicit nvm scripts (already fixed from `nodejs('Node')`), but the project's configuration still references Node 18/20.
 
-**Value**: 2+ years of LTS support, modern security defaults, better module resolution, and alignment with the Node.js ecosystem's current direction.
+**Value**: 2+ years of LTS support, modern security defaults, better module resolution, elimination of Node runtime warnings/errors through stricter validation, and alignment with the Node.js ecosystem's current direction.
 
 ---
 
@@ -36,8 +36,8 @@ Migrate the project from Node 18 to Node 24 LTS ("Krypton") across all environme
 - Dependencies: vitest 1.x, vue-tsc 2.x, typescript 5.x, cypress 15.x
 
 ### CI/CD
-- **GitHub Actions** (`.github/workflows/ci.yml`): Uses `actions/setup-node@v3` with `node-version: '18'` (both backend and frontend jobs)
-- **Jenkinsfile**: Uses `nodejs('Node')` — a Jenkins-managed tool that resolved to Node 26.5.0 recently. Each stage has its own `nodejs('Node')` block.
+- **Jenkinsfile**: Uses explicit `nvm install 24 && nvm use 24` in all stages (already fixed from `nodejs('Node')` in bp-99/fix/jenkins-pipeline-lint)
+- **Docker images**: `backend/Dockerfile` uses `node:18-alpine`, `backend/Dockerfile.test` uses `node:18-alpine`, `frontend/Dockerfile` uses `node:18-alpine`
 - `.nvmrc`: Does not exist
 
 ### Key Insight
@@ -49,12 +49,12 @@ This is a **configuration-only migration** — no production code changes requir
 ## Scope
 
 ### In Scope
-- [ ] Update `backend/package.json` engines field to `>=18.0.0 <26.0.0` (keep lower bound for now, bump later)
-- [ ] Update `frontend/package.json` engines field to `>=24.0.0` (frontend only, since it's TypeScript/Vue)
-- [ ] Update `.github/workflows/ci.yml` to use `node-version: '24'`
-- [ ] Update `Jenkinsfile` to use explicit `nvm install 24 && nvm use 24` instead of `nodejs('Node')`
+- [ ] Update `backend/package.json` engines field to `>=24.0.0`
+- [ ] Update `frontend/package.json` engines field to `>=24.0.0`
+- [ ] Update `Jenkinsfile` to use `nvm install 24 && nvm use 24` (already done in bp-99, verify it's correct)
 - [ ] Create `.nvmrc` file with `24` for local development consistency
-- [ ] Verify all tests pass with Node 24 (already confirmed locally)
+- [ ] Update Docker base images to `node:24-alpine` (backend/Dockerfile, backend/Dockerfile.test, frontend/Dockerfile)
+- [ ] Verify all tests pass with Node 24
 - [ ] Update `AGENTS.md` documentation to reflect Node 24 requirement
 
 ### Out of Scope
@@ -105,10 +105,12 @@ This is a **configuration-only migration** — no production code changes requir
 
 | Component | Change Type | Details |
 |-----------|-------------|---------|
-| `backend/package.json` | MODIFY | Update engines field |
-| `frontend/package.json` | MODIFY | Update engines field |
-| `.github/workflows/ci.yml` | MODIFY | Change node-version from '18' to '24' |
-| `Jenkinsfile` | MODIFY | Replace `nodejs('Node')` with explicit nvm + Node 24 |
+| `backend/package.json` | MODIFY | Add engines field `>=24.0.0` |
+| `frontend/package.json` | MODIFY | Update engines field to `>=24.0.0` |
+| `backend/Dockerfile` | MODIFY | Change `node:18-alpine` to `node:24-alpine` |
+| `backend/Dockerfile.test` | MODIFY | Change `node:18-alpine` to `node:24-alpine` |
+| `frontend/Dockerfile` | MODIFY | Change `node:18-alpine` to `node:24-alpine` |
+| `Jenkinsfile` | MODIFY | Update nvm to Node 24 (already fixed from nodejs('Node')) |
 | `.nvmrc` | CREATE | Add `24` for local development |
 | `AGENTS.md` | MODIFY | Update Quick Start and gotchas sections |
 
@@ -119,7 +121,7 @@ This is a **configuration-only migration** — no production code changes requir
 1. **[npm 11 compatibility]**: Node 24 ships with npm 11 by default. Has `npm ci` behavior changed? Need to verify with a clean install.
 2. **[vue-tsc compatibility]**: `vue-tsc` 2.x may have issues with Node 24's stricter ESM resolution. Already seen breakage with Node 26.
 3. **[Jenkins Node 24 availability]**: Does the Jenkins infrastructure have Node 24 installed, or will nvm be required?
-4. **[Docker base images]**: Should we also update Docker base images to `node:24-alpine`? (Out of scope for this ticket, but worth noting)
+4. **[Docker base images]**: Should we also update Docker base images to `node:24-alpine`? (Included in scope for this ticket)
 
 ---
 
@@ -131,13 +133,12 @@ This is a **configuration-only migration** — no production code changes requir
    - **Recommendation**: `>=24.0.0` — clean break, no need to support old versions
    - **Alternative**: Keep `>=18.0.0 <26.0.0` for backward compatibility during transition
 
-2. **Jenkins tool configuration**: Should we replace `nodejs('Node')` with explicit nvm scripts (as done for Node 18), or configure a Jenkins-managed Node 24 tool?
-   - **Recommendation**: Explicit nvm scripts (same pattern as Node 18 fix) — more portable, no Jenkins tool config dependency
-   - **Alternative**: Configure Jenkins to use Node 24 as the "Node" tool
+2. **Jenkins tool configuration**: Already fixed — uses explicit nvm scripts (from bp-99). Verify Node 24 is used.
+    - **Status**: Already resolved — `nvm install 24 && nvm use 24` in all stages
 
-3. **Docker images**: Should Node 24 Docker base image updates be included in this ticket or deferred?
-   - **Recommendation**: Deferred to a follow-up ticket (bp-92-docker-updates) — affects agent compute nodes, not just CI
-   - **Alternative**: Include now for consistency
+3. **Docker images**: Should Node 24 Docker base image updates be included in this ticket?
+    - **Recommendation**: Include now for consistency — all environments should use Node 24
+    - **Alternative**: Defer to a follow-up ticket (bp-92-docker-updates)
 
 ---
 
@@ -146,17 +147,19 @@ This is a **configuration-only migration** — no production code changes requir
 1. [ ] `.nvmrc` exists with `24`
 2. [ ] `backend/package.json` engines field updated to `>=24.0.0`
 3. [ ] `frontend/package.json` engines field updated to `>=24.0.0`
-4. [ ] `.github/workflows/ci.yml` uses `node-version: '24'` for both backend and frontend jobs
-5. [ ] `Jenkinsfile` uses explicit `nvm install 24 && nvm use 24` in all stages
-6. [ ] `AGENTS.md` updated to reflect Node 24 requirement in Quick Start and Gotchas
-7. [ ] All backend tests pass with Node 24 (`npm test` in `backend/`)
-8. [ ] All frontend tests pass with Node 24 (`npm test -- --run` in `frontend/`)
-9. [ ] Backend lint passes (`npm run lint` in `backend/`)
-10. [ ] Frontend lint passes (`npm run lint` in `frontend/`)
-11. [ ] Frontend typecheck passes (`npm run typecheck` in `frontend/`)
-12. [ ] Frontend build passes (`npm run build` in `frontend/`)
-13. [ ] GitHub Actions CI runs successfully with Node 24
-14. [ ] Jenkins CI runs successfully with Node 24
+4. [ ] `backend/Dockerfile` uses `node:24-alpine`
+5. [ ] `backend/Dockerfile.test` uses `node:24-alpine`
+6. [ ] `frontend/Dockerfile` uses `node:24-alpine`
+7. [ ] `Jenkinsfile` uses `nvm install 24 && nvm use 24` in all stages
+8. [ ] `AGENTS.md` updated to reflect Node 24 requirement in Quick Start and Gotchas
+9. [ ] All backend tests pass with Node 24 (`npm test` in `backend/`)
+10. [ ] All frontend tests pass with Node 24 (`npm test -- --run` in `frontend/`)
+11. [ ] Backend lint passes (`npm run lint` in `backend/`)
+12. [ ] Frontend lint passes (`npm run lint` in `frontend/`)
+13. [ ] Frontend typecheck passes (`npm run typecheck` in `frontend/`)
+14. [ ] Frontend build passes (`npm run build` in `frontend/`)
+15. [ ] Docker images build successfully with Node 24 base
+16. [ ] Jenkins CI runs successfully with Node 24
 
 ---
 
@@ -205,7 +208,6 @@ This is a **configuration-only migration** — no production code changes requir
 - [ ] `npm run build` — production build passes
 
 ### CI Verification
-- [ ] GitHub Actions CI runs successfully (backend + frontend jobs)
 - [ ] Jenkins CI runs successfully (all stages)
 
 ---
