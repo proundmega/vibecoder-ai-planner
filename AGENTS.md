@@ -93,12 +93,15 @@ docker compose --profile dev up    # includes pgadmin on :5050
 - Contract test: `frontend/src/__tests__/api-contract.test.ts` — verified in CI.
 - Cypress seed: `cypress/support/seed.ts`.
 
-### CI (`.github/workflows/ci.yml`)
+### CI (Jenkins pipeline — `Jenkinsfile`)
 ```
 backend job:  setup node → npm ci → lint → test → contract test (frontend/api-contract.test.ts) → node --check src/index.js
 frontend job: setup node → npm ci → lint → typecheck → build
+integration job: docker compose up → Jest integration tests → bash integration tests
 ```
-Backend CI job runs a real PostgreSQL service container.
+Backend CI job runs a real PostgreSQL service container. Integration tests use `docker-compose.test.yml` with a dedicated test container.
+
+**File upload tests** (`file_upload.test.sh`) are skipped in CI (`CI=1` env var) because multer + disk I/O causes API crashes under cumulative load from 13+ preceding test suites on resource-constrained builders. Run locally with `CI=` (unset) + `bash backend/integration-test/run.sh --only`.
 
 ### Bug fix protocol
 Every fix **must** include a regression test.
