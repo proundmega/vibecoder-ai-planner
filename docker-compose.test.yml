@@ -27,6 +27,7 @@ services:
       - NODE_ENV=test
       - BASE_URL=http://api:3001
       - FRONTEND_URL=http://frontend:80
+      - CI=1
     depends_on:
       postgres:
         condition: service_healthy
