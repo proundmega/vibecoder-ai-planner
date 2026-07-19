@@ -30,10 +30,10 @@ pipeline {
                     ).trim()
                     echo "Changed files:\n${diff}"
 
-                    env.BACKEND_CHANGED = (diff =~ '(^|/)backend/' || diff =~ 'Jenkinsfile' || diff =~ 'docker-compose') ? 'true' : 'false'
-                    env.FRONTEND_CHANGED = (diff =~ '(^|/)frontend/' || diff =~ 'Jenkinsfile') ? 'true' : 'false'
-                    env.AGENT_CHANGED = (diff =~ '(^|/)agent/') ? 'true' : 'false'
-                    env.MIGRATIONS_CHANGED = (diff =~ '(^|/)migrations/') ? 'true' : 'false'
+                    env.BACKEND_CHANGED = (diff.contains('backend/') || diff.contains('Jenkinsfile') || diff.contains('docker-compose')) ? 'true' : 'false'
+                    env.FRONTEND_CHANGED = (diff.contains('frontend/') || diff.contains('Jenkinsfile')) ? 'true' : 'false'
+                    env.AGENT_CHANGED = (diff.contains('agent/')) ? 'true' : 'false'
+                    env.MIGRATIONS_CHANGED = (diff.contains('migrations/')) ? 'true' : 'false'
 
                     echo "Backend: ${env.BACKEND_CHANGED}, Frontend: ${env.FRONTEND_CHANGED}, Agent: ${env.AGENT_CHANGED}, Migrations: ${env.MIGRATIONS_CHANGED}"
                 }
