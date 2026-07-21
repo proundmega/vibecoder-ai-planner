@@ -56,9 +56,10 @@ Migrate the project from Node 18 to Node 24 LTS ("Krypton") across all environme
    - Change `node:18-alpine` to `node:24-alpine`
    - *Depends on*: nothing
 
-7. **[Verify Jenkinsfile]** — `Jenkinsfile`
-   - Already uses `nvm install 24 && nvm use 24` from bp-99 — verify it's correct
-   - *Depends on*: nothing
+7. **[Update Jenkinsfile]** — `Jenkinsfile`
+    - Replace `nodejs('Node')` with explicit `nvm install 24 && nvm use 24` in all stages
+    - NOTE: Jenkins does NOT have nvm installed — use `nodejs('Node')` Jenkins wrapper with Node 24 tool configured in Jenkins
+    - *Depends on*: nothing
 
 8. **[Update AGENTS.md]** — `AGENTS.md`
    - Update Quick Start section to mention Node 24
