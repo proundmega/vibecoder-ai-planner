@@ -36,7 +36,7 @@ backend/src/
 
 frontend/src/
   stores/auth.js        → singleton Pinia store; tokens/permissions in localStorage
-  api/client.js         → native `fetch` (NOT axios, despite axios being a dep)
+  api/client.ts         → native `fetch` (NOT axios, despite axios being a dep)
   api/generated/        → TS types via openapi-typescript-codegen
   router/index.ts       → reads vibecode_token directly from localStorage
 
@@ -51,9 +51,10 @@ planning/               → 00-04 templates + bp-XX/, bt-XX/, fg-XX/ suites
 ### Backend (from `backend/`)
 ```bash
 npm run dev          # node --watch src/index.js → :3001
+npm start            # production start (no watch)
 npm test             # Jest unit tests (jest --passWithNoTests)
-npm run test:coverage # Jest with coverage
-npm run test:integration # Real PG at postgresql://postgres:changeme@localhost:5432/vibecode
+npm run test:coverage # Jest with coverage (60% threshold)
+npm run test:integration # Real PG integration tests (jest.integration.config.js)
 npm run lint         # ESLint flat config (eslint.config.js)
 npm run db:migrate   # node src/migrations/apply.js
 npm run db:reset     # same as migrate
@@ -64,6 +65,7 @@ npm run generate:spec # Generate openapi-generated.json from JSDoc
 ```bash
 npm run dev          # Vite :3000, proxies /api → :3001
 npm run build        # vite build
+npm run preview      # preview prod build
 npm run lint         # ESLint flat config (eslint.config.js)
 npm test             # Vitest in **watch mode**; use `npm test -- --run` for CI
 npm run typecheck    # vue-tsc --noEmit (strict + noUnusedLocals + noUnusedParameters)
@@ -77,43 +79,47 @@ npm run cypress:component # cypress run --component --browser chrome
 docker compose up --build          # dev mode (override: frontend :3000, API :3001, PG :5432)
 docker compose -f docker-compose.yml up --build  # production ports (frontend :3002)
 docker compose --profile dev up    # includes pgadmin on :5050
+docker compose down -v           # stop and remove volumes
 ```
 
 ## Testing
 
 ### Backend (Jest)
-- Test files: `src/__tests__/*.test.js` + `src/middleware/*.test.js`. Default config does NOT pick up top-level `*.test.js`.
-- `setupFilesAfterEnv`: `src/__tests__/jest.setup.js` — mocks pg, winston, bcryptjs, uuid, jsonwebtoken. No real DB needed.
+- Test files: `src/__tests__/*.test.js` + `src/__tests__/unit.test.js` + `src/middleware/*.test.js`. Default config ignores `integration/` and `docker/` paths.
+- `setupFilesAfterEnv`: `src/__tests__/jest.setup.js` — mocks pg, winston, bcryptjs, uuid, jsonwebtoken, and provides a full Redis mock with rate-limit simulation. No real DB needed.
 - `moduleDirectories: ['node_modules', '<rootDir>']` + `moduleNameMapper` for `models/`, `services/` — `require('services/Foo')` works.
-- Integration tests: `jest.integration.config.js` — real PG, `maxWorkers:1`, `testTimeout:30000`, no mock restore (`restoreMocks: false`).
-- Bash integration suite: `backend/integration-test/run.sh` — curl against Docker containers + real PG.
+- `maxWorkers: 1`, `testTimeout: 10000`, `forceExit: true`, `restoreMocks: true`.
+- Integration tests: `jest.integration.config.js` — real PG, `maxWorkers:1`, `testTimeout:30000`, `restoreMocks: false`, `forceExit: true`. Test paths: `**/integration/**/*.test.js` + `**/docker.test.js`.
+- Bash integration suite: `backend/integration-test/run.sh` — curl against Docker containers + real PG. Sets `INTEGRATION_TESTS=1` to disable rate limiting. Run with `bash backend/integration-test/run.sh --only` (assumes services running).
+- **File upload tests** (`file_upload.test.sh`) are skipped in CI (`CI=1` env var). Run locally with `CI=` (unset).
 
 ### Frontend (Vitest + Cypress)
-- 22 unit test files in `src/__tests__/`. 7 Cypress e2e specs + 5 component specs in `cypress/`.
-- Contract test: `frontend/src/__tests__/api-contract.test.ts` — verified in CI.
-- Cypress seed: `cypress/support/seed.ts`.
+- 22+ unit test files in `src/__tests__/`. `setupFiles: src/__tests__/setup.ts` loads design-tokens.css variables into DOM for tests.
+- 7 Cypress e2e specs + 5 component specs in `cypress/`. Seed: `cypress/support/seed.ts`.
+- Contract test: `src/__tests__/api-contract.test.ts` — verified in CI.
+- Coverage excludes many views/components intentionally listed in `vitest.config.ts`.
 
-### CI (Jenkins pipeline — `Jenkinsfile`)
+### CI (Jenkins — `Jenkinsfile`)
 ```
-backend job:  setup node → npm ci → lint → test → contract test (frontend/api-contract.test.ts) → node --check src/index.js
-frontend job: setup node → npm ci → lint → typecheck → build
+backend job:  npm ci → lint → syntax check → unit test → coverage
+frontend job: npm ci → lint → typecheck → unit test → coverage → build
+contract test: vitest run api-contract.test.ts (runs after backend+frontend)
 integration job: docker compose up → Jest integration tests → bash integration tests
+agent job: mvn package -q -DskipTests
 ```
-Backend CI job runs a real PostgreSQL service container. Integration tests use `docker-compose.test.yml` with a dedicated test container.
-
-**File upload tests** (`file_upload.test.sh`) are skipped in CI (`CI=1` env var) because multer + disk I/O causes API crashes under cumulative load from 13+ preceding test suites on resource-constrained builders. Run locally with `CI=` (unset) + `bash backend/integration-test/run.sh --only`.
+Change detection: only runs changed layers (not full pipeline on every branch). Backend CI uses a real PostgreSQL service container. Integration tests run in a dedicated `docker-compose.test.yml` test container.
 
 ### Bug fix protocol
 Every fix **must** include a regression test.
 - **Route bugs**: `supertest` against Express app in `src/__tests__/routeOrdering.test.js` or a new route test.
-- **Service/controller bugs**: extend unit tests in `src/__tests__/using existing jest mocks.
+- **Service/controller bugs**: extend unit tests in `src/__tests__/` using existing jest mocks.
 - **Frontend bugs**: extend Vitest unit tests in `frontend/src/__tests__/`.
 - After fixing, run tests in order: the layer you changed, then the other layer, then integration tests.
 - For backend changes: `npm test` → `npm test -- --run` (frontend) → `npm run test:integration` → `bash backend/integration-test/run.sh`.
 - For frontend changes: `npm test -- --run` → `npm test` (backend) → `npm run test:integration` → `bash backend/integration-test/run.sh`.
 
 ### Coverage threshold (60%)
-Both backend and frontend enforce a **60% minimum coverage threshold** (lines, functions, branches, statements) in CI:
+Both backend and frontend enforce a **60% minimum coverage** (lines, functions, branches, statements) in CI.
 - Backend: `npm run test:coverage` — Jest with built-in Istanbul
 - Frontend: `npm test -- --run --coverage` — Vitest with `@vitest/coverage-v8`
 - CI will fail if coverage drops below 60%. Run coverage locally before pushing.
@@ -139,9 +145,11 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 
 **Ticket status transitions**: `backlog→in_progress`, `in_progress→review|backlog`, `review→done|backlog`. `done` has no outgoing transitions.
 
-**Migrations**: run by `src/migrations/apply.js` in array order (37 SQL files + 2 data migrations). Notable non-numeric entries: 011/012 after 014; 020 after 018 (no 019); 029 and 031 each have two files. Each SQL has a `_rollback.sql` counterpart.
+**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 37 SQL files + 2 data migrations. Notable non-numeric entries: 011/012 after 014; 020 after 018 (no 019); 029 and 031 each have two files. Each SQL has a `_rollback.sql` counterpart.
 
 **Frontend auth**: 3 localStorage keys — `vibecode_token`, `vibecode_user`, `vibecode_permissions`. Route guards read localStorage directly (no Pinia dependency).
+
+**WebSocket terminal proxy**: `/api/terminal/` — super_admin only, token via URL param.
 
 ## Planning
 
@@ -153,7 +161,7 @@ Create new planning suites in `planning/bp-XX-name/` for multi-file changes requ
 
 **Pending tickets**: See `PENDING.txt` for all unimplemented planning suites. Completed suites are in `planning/DONE/`.
 
-**Pending scope requirement**: Every planning document (01, 02, 03, 04) MUST include a "Pending Scope Items to Present to User" section that lists all deferred improvements found in previous tickets' "Out of Scope" sections. This ensures the user is aware of follow-up work before approving implementation.
+**Pending scope requirement**: Every planning document (01, 02, 03, 04) MUST include a "Pending Scope Items to Present to User" section that lists all deferred improvements found in previous tickets' "Out of Scope" sections.
 
 ## Coding methodology
 
@@ -177,17 +185,20 @@ Every planning ticket has an "Out of Scope" section. These are deferred improvem
 - **UX**: rate limit countdown UI, usage alerts, real-time billing dashboard
 - **Testing**: Cypress component tests, integration test coverage gaps
 
-When you create a new ticket, list ALL deferred improvements from "Out of Scope" sections as follow-up items. This prevents the backlog from becoming a graveyard of half-done ideas.
+When you create a new ticket, list ALL deferred improvements from "Out of Scope" sections as follow-up items.
 
 ## Gotchas
 
 - Backend ESLint uses **flat config** (`eslint.config.js`), not `.eslintrc*`.
 - Frontend ESLint uses flat config with TypeScript + Vue plugins; Vue components require `PascalCase` names, `camelCase` props, and `require-default-prop`.
-- Frontend `api/client.js` uses native `fetch` — **not axios** (axios is a transitive dep but unused for API calls).
+- Frontend `api/client.ts` uses native `fetch` — **not axios** (axios is a dep but unused for API calls).
 - Docker compose has two modes: `docker compose up` uses `docker-compose.override.yml` (dev ports 3000/3001); `docker compose -f docker-compose.yml up` uses production ports (frontend 3002).
 - Backend `npm run dev` uses `node --watch` (Node 18+ experimental flag).
 - Frontend `npm test` runs Vitest in watch mode; CI uses `npm test -- --run`.
-- Jest mocks pg, winston, bcryptjs, uuid, jsonwebtoken — no real DB for unit tests.
+- Jest mocks pg, winston, bcryptjs, uuid, jsonwebtoken, **and provides a full Redis mock** — no real DB needed.
 - Integration tests (`npm run test:integration`) use a real PG at `postgresql://postgres:changeme@localhost:5432/vibecode` with `maxWorkers:1`.
-- Migration order in `apply.js` is array order, not numeric — 011/012 appear after 014.
-- TypeScript strict mode: `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCases in Switch` are all errors.
+- Migration order in `apply.js` is **array order**, not numeric — 011/012 appear after 014.
+- TypeScript strict mode: `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch` are all errors.
+- `INTEGRATION_TESTS=1` env var disables rate limiting (used by bash integration suite).
+- Frontend `vitest.config.ts` has a long exclude list of intentionally untested views/components — don't be surprised by low coverage there.
+- `docker-compose.override.yml` sets `NODE_ENV=development`, `ALLOW_PRIVATE_HOSTS=1`, and mounts `/var/run/docker.sock` for local dev.

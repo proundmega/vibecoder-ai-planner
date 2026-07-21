@@ -161,9 +161,8 @@ describe('Slow Request Logger', () => {
     expect(loggerModule.warn).not.toHaveBeenCalled();
   });
 
-  it('should use "unmatched" label for 404 requests (no req.route)', async () => {
+  it('should not record metrics (requestLogger handles that)', () => {
     const { slowRequestLogger } = require('../middleware/slowRequest');
-    const { register } = require('../metrics');
     
     const reqNoRoute = {
       method: 'GET',
@@ -179,10 +178,8 @@ describe('Slow Request Logger', () => {
     const middleware = slowRequestLogger(5000);
     middleware(reqNoRoute, resFinish, jest.fn());
     
-    const metricsOutput = await register.metrics();
-    
-    expect(metricsOutput).toContain('path="unmatched"');
-    expect(metricsOutput).not.toContain('nonexistent-uuid');
+    // slowRequestLogger only logs slow requests, metrics recording is handled by requestLogger.js
+    expect(resFinish.on).toHaveBeenCalled();
   });
 
   
