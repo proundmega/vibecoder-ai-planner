@@ -1,5 +1,6 @@
 const logger = require('../utils/logger');
 const crypto = require('crypto');
+const { httpRequestDurationHistogram, httpRequestsTotal } = require('./slowRequest');
 
 const HEALTH_ENDPOINTS = new Set(['/api/health', '/api/version', '/health', '/version']);
 
@@ -31,6 +32,13 @@ const requestLogger = (req, res, next) => {
     } else if (!isHealthCheck) {
       logger.info('Request completed', logData);
     }
+
+    const path = req.route?.path || 'unmatched';
+    httpRequestDurationHistogram.observe(
+      { method: req.method, path, status: res.statusCode.toString() },
+      duration / 1000
+    );
+    httpRequestsTotal.inc({ method: req.method, path, status: res.statusCode.toString() });
 
     originalEnd.apply(res, args);
   };

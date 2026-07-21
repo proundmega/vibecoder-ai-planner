@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 const logger = require('./utils/logger');
+const { createGauge } = require('./metrics');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || process.env.DATABASE_URL_LOCAL,
@@ -44,4 +45,15 @@ async function transaction(fn) {
   }
 }
 
-module.exports = { pool, connect, transaction };
+// DB pool prometheus gauges
+const dbPoolTotal = createGauge('db_pool_total', 'Total connections in the pool');
+const dbPoolIdle = createGauge('db_pool_idle', 'Idle connections in the pool');
+const dbPoolWaiting = createGauge('db_pool_waiting', 'Waiting clients requesting a connection');
+
+function updatePoolMetrics() {
+  dbPoolTotal.set(pool.totalCount || 0);
+  dbPoolIdle.set(pool.idleCount || 0);
+  dbPoolWaiting.set(pool.waitingCount || 0);
+}
+
+module.exports = { pool, connect, transaction, updatePoolMetrics };

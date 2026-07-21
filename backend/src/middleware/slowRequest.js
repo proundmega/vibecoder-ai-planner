@@ -37,4 +37,4 @@ function slowRequestLogger(thresholdMs = 5000) {
   };
 }
 
-module.exports = { slowRequestLogger };
+module.exports = { slowRequestLogger, httpRequestDurationHistogram, httpRequestsTotal };
