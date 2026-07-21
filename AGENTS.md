@@ -12,7 +12,8 @@ Read highest-value sources first: `README*`, root manifests, workspace config, l
 docker compose up --build                        # dev: frontend :3000, API :3001, PG :5432
 docker compose -f docker-compose.yml up --build  # prod-style: frontend :3002, API :3001
 
-# Manual dev:
+# Manual dev (requires Node 24 LTS):
+nvm use 24                          # or use `.nvmrc`
 cd backend && npm run dev          # API :3001, uses `node --watch`
 cd ../frontend && npm run dev      # Vite :3000, proxies /api → :3001
 ```
@@ -193,7 +194,7 @@ When you create a new ticket, list ALL deferred improvements from "Out of Scope"
 - Frontend ESLint uses flat config with TypeScript + Vue plugins; Vue components require `PascalCase` names, `camelCase` props, and `require-default-prop`.
 - Frontend `api/client.ts` uses native `fetch` — **not axios** (axios is a dep but unused for API calls).
 - Docker compose has two modes: `docker compose up` uses `docker-compose.override.yml` (dev ports 3000/3001); `docker compose -f docker-compose.yml up` uses production ports (frontend 3002).
-- Backend `npm run dev` uses `node --watch` (Node 18.11+, stabilized).
+- Backend `npm run dev` uses `node --watch` (Node 24 LTS required).
 - Frontend `npm test` runs Vitest in watch mode; CI uses `npm test -- --run`.
 - Jest mocks pg, winston, bcryptjs, uuid, jsonwebtoken, **and provides a full Redis mock** — no real DB needed.
 - Integration tests (`npm run test:integration`) use a real PG at `postgresql://postgres:changeme@localhost:5432/vibecode` with `maxWorkers:1`.

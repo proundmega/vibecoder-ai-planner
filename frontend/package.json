@@ -18,34 +18,35 @@
     "cypress:all": "cypress run --component --browser chrome && cypress run --e2e --browser chrome --headless"
   },
   "dependencies": {
+    "@vue/devtools-api": "^8.1.5",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "axios": "^1.6.2",
+    "axios": "^1.18.1",
     "diff": "^9.0.0",
     "diff2html": "^3.4.56",
-    "pinia": "^2.1.7",
-    "vue": "^3.3.11",
-    "vue-router": "^4.2.5"
+    "pinia": "^4.0.2",
+    "vue": "^3.5.40",
+    "vue-router": "^5.2.0"
   },
   "devDependencies": {
     "@cypress/vue": "^4.2.2",
-    "@types/node": "^26.1.0",
-    "@typescript-eslint/eslint-plugin": "^8.59.4",
-    "@typescript-eslint/parser": "^8.59.4",
-    "@vitejs/plugin-vue": "^4.5.2",
+    "@types/node": "^26.1.1",
+    "@typescript-eslint/eslint-plugin": "^8.65.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "@vitejs/plugin-vue": "^4.6.2",
     "@vitest/coverage-v8": "^1.6.1",
     "@vue/test-utils": "^2.4.11",
-    "cypress": "^15.16.0",
+    "cypress": "^15.19.0",
     "cypress-localstorage-commands": "^2.3.0",
-    "eslint": "^8.54.0",
-    "eslint-plugin-vue": "^10.9.1",
+    "eslint": "^10.7.0",
+    "eslint-plugin-vue": "^10.10.0",
     "jsdom": "^29.1.1",
-    "openapi-typescript-codegen": "^0.30.0",
-    "typescript": "^5.3.2",
-    "vite": "^5.0.8",
-    "vitest": "^1.1.0",
-    "vue-eslint-parser": "^10.4.0",
-    "vue-tsc": "^2.0.0"
+    "openapi-typescript-codegen": "^0.31.0",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21",
+    "vitest": "^1.6.1",
+    "vue-eslint-parser": "^10.4.1",
+    "vue-tsc": "^2.2.12"
   },
   "engines": {
     "node": ">=24.0.0"

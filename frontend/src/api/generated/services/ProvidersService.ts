@@ -7,156 +7,159 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class ProvidersService {
     /**
-     * List providers for project
-     * @param projectId
+     * List all providers
      * @returns any List of providers
      * @throws ApiError
      */
-    public static getProvidersProviders(
-        projectId: string,
-    ): CancelablePromise<any> {
+    public static getProviders(): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/providers/{projectId}/providers',
-            path: {
-                'projectId': projectId,
-            },
+            url: '/providers',
         });
     }
     /**
-     * Add provider to project
-     * @param projectId
+     * Add a new provider
      * @param requestBody
-     * @returns any Provider added
+     * @returns any Provider created
      * @throws ApiError
      */
-    public static postProvidersProviders(
-        projectId: string,
+    public static postProviders(
         requestBody?: {
             name?: string;
-            provider?: string;
+            providerType?: string;
             apiKey?: string;
         },
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/providers/{projectId}/providers',
-            path: {
-                'projectId': projectId,
-            },
+            url: '/providers',
             body: requestBody,
             mediaType: 'application/json',
         });
     }
     /**
-     * Update provider
-     * @param projectId
-     * @param providerId
+     * Get a provider by ID
+     * @param id
+     * @returns any Provider details
+     * @throws ApiError
+     */
+    public static getProviders1(
+        id: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/providers/{id}',
+            path: {
+                'id': id,
+            },
+        });
+    }
+    /**
+     * Update a provider
+     * @param id
      * @param requestBody
      * @returns any Provider updated
      * @throws ApiError
      */
-    public static patchProvidersProviders(
-        projectId: string,
-        providerId: string,
+    public static patchProviders(
+        id: string,
         requestBody?: {
             name?: string;
-            apiKey?: string;
         },
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'PATCH',
-            url: '/providers/{projectId}/providers/{providerId}',
+            url: '/providers/{id}',
             path: {
-                'projectId': projectId,
-                'providerId': providerId,
+                'id': id,
             },
             body: requestBody,
             mediaType: 'application/json',
         });
     }
     /**
-     * Delete provider
-     * @param projectId
-     * @param providerId
+     * Delete a provider
+     * @param id
      * @returns any Provider deleted
      * @throws ApiError
      */
-    public static deleteProvidersProviders(
-        projectId: string,
-        providerId: string,
+    public static deleteProviders(
+        id: string,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'DELETE',
-            url: '/providers/{projectId}/providers/{providerId}',
+            url: '/providers/{id}',
             path: {
-                'projectId': projectId,
-                'providerId': providerId,
+                'id': id,
             },
         });
     }
     /**
      * Test provider connection
-     * @param projectId
-     * @param providerId
+     * @param id
      * @returns any Connection test result
      * @throws ApiError
      */
-    public static postProvidersProvidersTest(
-        projectId: string,
-        providerId: string,
+    public static postProvidersTest(
+        id: string,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/providers/{projectId}/providers/{providerId}/test',
+            url: '/providers/{id}/test',
             path: {
-                'projectId': projectId,
-                'providerId': providerId,
+                'id': id,
             },
         });
     }
     /**
-     * Set provider as project director
-     * @param projectId
-     * @param providerId
-     * @returns any Provider set as director
+     * Set provider as director
+     * @param id
+     * @returns any Directorship updated
      * @throws ApiError
      */
-    public static patchProvidersProvidersDirectorate(
-        projectId: string,
-        providerId: string,
+    public static patchProvidersDirectorship(
+        id: string,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'PATCH',
-            url: '/providers/{projectId}/providers/{providerId}/directorate',
+            url: '/providers/{id}/directorship',
             path: {
-                'projectId': projectId,
-                'providerId': providerId,
+                'id': id,
             },
         });
     }
     /**
-     * Resolve AI provider for a ticket based on routing rules
-     * @param projectId
+     * Get agents for a provider
+     * @param id
+     * @returns any List of agents
+     * @throws ApiError
+     */
+    public static getProvidersAgents(
+        id: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/providers/{id}/agents',
+            path: {
+                'id': id,
+            },
+        });
+    }
+    /**
+     * Resolve provider for a ticket
      * @param requestBody
      * @returns any Resolved provider config
      * @throws ApiError
      */
-    public static postProvidersProviderResolve(
-        projectId: string,
-        requestBody: {
-            ticket_id?: string;
+    public static postProvidersResolve(
+        requestBody?: {
             labels?: Array<string>;
             priority?: string;
-            phase?: string;
         },
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/providers/{projectId}/provider/resolve',
-            path: {
-                'projectId': projectId,
-            },
+            url: '/providers/resolve',
             body: requestBody,
             mediaType: 'application/json',
         });

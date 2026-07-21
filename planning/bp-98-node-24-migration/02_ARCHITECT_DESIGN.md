@@ -33,7 +33,7 @@ Developers are seeing Node runtime warnings and errors that Node 24's stricter v
 - Docker: `frontend/Dockerfile` uses `node:18-alpine`
 
 ### Existing CI/CD
-- **Jenkinsfile**: Uses explicit `nvm install 24 && nvm use 24` (already fixed from `nodejs('Node')` in bp-99)
+- **Jenkinsfile**: Uses `nodejs('Node')` Jenkins wrapper (Node 24 configured as Jenkins tool; Jenkins does NOT have nvm installed)
 - **Local dev**: No `.nvmrc`, relies on system Node version
 
 ### Gap Analysis

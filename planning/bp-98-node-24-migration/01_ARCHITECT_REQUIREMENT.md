@@ -36,7 +36,7 @@ Migrate the project from Node 18 to Node 24 LTS ("Krypton") across all environme
 - Dependencies: vitest 1.x, vue-tsc 2.x, typescript 5.x, cypress 15.x
 
 ### CI/CD
-- **Jenkinsfile**: Uses explicit `nvm install 24 && nvm use 24` in all stages (already fixed from `nodejs('Node')` in bp-99/fix/jenkins-pipeline-lint)
+- **Jenkinsfile**: Uses `nodejs('Node')` Jenkins wrapper (Node 24 configured as Jenkins tool; Jenkins does NOT have nvm installed)
 - **Docker images**: `backend/Dockerfile` uses `node:18-alpine`, `backend/Dockerfile.test` uses `node:18-alpine`, `frontend/Dockerfile` uses `node:18-alpine`
 - `.nvmrc`: Does not exist
 
@@ -51,7 +51,7 @@ This is a **configuration-only migration** — no production code changes requir
 ### In Scope
 - [ ] Update `backend/package.json` engines field to `>=24.0.0`
 - [ ] Update `frontend/package.json` engines field to `>=24.0.0`
-- [ ] Update `Jenkinsfile` to use `nvm install 24 && nvm use 24` (already done in bp-99, verify it's correct)
+- [ ] Update `Jenkinsfile` to use `nodejs('Node')` Jenkins wrapper (Node 24 configured as Jenkins tool; Jenkins does NOT have nvm installed)
 - [ ] Create `.nvmrc` file with `24` for local development consistency
 - [ ] Update Docker base images to `node:24-alpine` (backend/Dockerfile, backend/Dockerfile.test, frontend/Dockerfile)
 - [ ] Verify all tests pass with Node 24
