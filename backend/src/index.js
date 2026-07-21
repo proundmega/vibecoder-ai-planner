@@ -64,7 +64,7 @@ app.get('/api/openapi.json', (req, res) => {
 const routes = require('./api/routes');
 app.use('/api', routes);
 
-// Prometheus metrics endpoint (at root level, not under /api)
+// Prometheus metrics setup (collectDefaultMetrics + pool gauge updates)
 const { register } = require('./metrics');
 const { updatePoolMetrics } = require('./db');
 if (process.env.NODE_ENV !== 'test') {
@@ -73,6 +73,8 @@ if (process.env.NODE_ENV !== 'test') {
   setInterval(updatePoolMetrics, 5000).unref();
 }
 
+// Prometheus metrics endpoint (root level, not under /api)
+// JSDoc annotations are in openapi-metrics.js for swagger-jsdoc discovery
 app.get('/metrics', async (req, res, next) => {
   try {
     updatePoolMetrics();

@@ -99,7 +99,7 @@ const options = {
     },
     security: [{ BearerAuth: [] }],
   },
-  apis: ['./src/api/*.js', './src/api/routes.js'],
+  apis: ['./src/api/*.js', './src/api/routes.js', './src/api/openapi-metrics.js'],
 };
 
 const specs = swaggerJsdoc(options);
