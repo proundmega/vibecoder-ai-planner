@@ -79,7 +79,7 @@ export class PlanningService {
     public static postTicketsPlanningApplyTemplate(
         id: string,
         requestBody: {
-            templateName: 'architecture' | 'technical' | 'simple';
+            templateName: 'architecture' | 'technical' | 'simple' | 'specification';
         },
     ): CancelablePromise<any> {
         return __request(OpenAPI, {

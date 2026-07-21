@@ -56,14 +56,34 @@ export class SystemService {
         });
     }
     /**
-     * Server metrics
+     * Server metrics (JSON format)
      * @returns any Server metrics including uptime and memory usage
      * @throws ApiError
      */
-    public static getMetrics(): CancelablePromise<any> {
+    public static getApiMetrics(): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/metrics',
+        });
+    }
+    /**
+     * Prometheus metrics endpoint
+     * @param xMetricsToken Required if METRICS_TOKEN env var is set
+     * @returns string Prometheus-format metrics (text/plain)
+     * @throws ApiError
+     */
+    public static getMetrics(
+        xMetricsToken?: string,
+    ): CancelablePromise<string> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/metrics',
+            headers: {
+                'x-metrics-token': xMetricsToken,
+            },
+            errors: {
+                401: `Unauthorized when METRICS_TOKEN is set and token is missing or incorrect`,
+            },
         });
     }
     /**

@@ -68,6 +68,33 @@ export class AgentsService {
         });
     }
     /**
+     * Update agent name
+     * @param agentId
+     * @param requestBody
+     * @returns any Agent updated
+     * @throws ApiError
+     */
+    public static putAgents(
+        agentId: string,
+        requestBody?: {
+            name?: string;
+        },
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/agents/{agentId}',
+            path: {
+                'agentId': agentId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Validation failed`,
+                404: `Agent not found`,
+            },
+        });
+    }
+    /**
      * Delete agent
      * @param agentId
      * @returns any Agent deleted
@@ -119,6 +146,53 @@ export class AgentsService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/agents/{agentId}/key',
+            path: {
+                'agentId': agentId,
+            },
+            errors: {
+                404: `Agent not found`,
+            },
+        });
+    }
+    /**
+     * Get decrypted provider config for agent
+     * @param agentId
+     * @returns any Provider config
+     * @throws ApiError
+     */
+    public static getAgentsProviderConfig(
+        agentId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/agents/{agentId}/provider-config',
+            path: {
+                'agentId': agentId,
+            },
+            errors: {
+                401: `Missing API key`,
+                404: `Agent or provider not found`,
+            },
+        });
+    }
+    /**
+     * Rotate agent API key
+     * @param agentId
+     * @returns any API key rotated successfully
+     * @throws ApiError
+     */
+    public static postAgentsAgentIdRotateKey(
+        agentId: string,
+    ): CancelablePromise<{
+        agentId?: number;
+        agentName?: string;
+        newApiKey?: string;
+        expiresAt?: string;
+        message?: string;
+    }> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/agents/:agentId/rotate-key',
             path: {
                 'agentId': agentId,
             },

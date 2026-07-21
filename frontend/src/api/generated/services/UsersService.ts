@@ -167,4 +167,25 @@ export class UsersService {
             },
         });
     }
+    /**
+     * Unlock a locked user account (super admin only)
+     * @param id
+     * @returns any User unlocked successfully
+     * @throws ApiError
+     */
+    public static postUsersUnlock(
+        id: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/users/{id}/unlock',
+            path: {
+                'id': id,
+            },
+            errors: {
+                403: `Forbidden - super admin only`,
+                404: `User not found`,
+            },
+        });
+    }
 }
