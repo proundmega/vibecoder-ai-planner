@@ -6,14 +6,14 @@
 
 ## Ticket: bp-98 — Node 24 LTS Migration
 
-**Status**: planned
+**Status**: completed
 **Priority**: P1
 **Effort**: Medium
 **Author**: AI Assistant
 **Date created**: 2025-07-16
-**Date completed**: YYYY-MM-DD
-**PR**: [link]
-**Branch**: [branch-name]
+**Date completed**: 2026-07-21
+**PR**: [pending]
+**Branch**: fix/bp-98-node-24-migration
 **Scope**: Backend | Frontend | CI/CD (Jenkins only)
 
 **Dependencies**: None

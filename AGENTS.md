@@ -193,7 +193,7 @@ When you create a new ticket, list ALL deferred improvements from "Out of Scope"
 - Frontend ESLint uses flat config with TypeScript + Vue plugins; Vue components require `PascalCase` names, `camelCase` props, and `require-default-prop`.
 - Frontend `api/client.ts` uses native `fetch` — **not axios** (axios is a dep but unused for API calls).
 - Docker compose has two modes: `docker compose up` uses `docker-compose.override.yml` (dev ports 3000/3001); `docker compose -f docker-compose.yml up` uses production ports (frontend 3002).
-- Backend `npm run dev` uses `node --watch` (Node 18+ experimental flag).
+- Backend `npm run dev` uses `node --watch` (Node 18.11+, stabilized).
 - Frontend `npm test` runs Vitest in watch mode; CI uses `npm test -- --run`.
 - Jest mocks pg, winston, bcryptjs, uuid, jsonwebtoken, **and provides a full Redis mock** — no real DB needed.
 - Integration tests (`npm run test:integration`) use a real PG at `postgresql://postgres:changeme@localhost:5432/vibecode` with `maxWorkers:1`.

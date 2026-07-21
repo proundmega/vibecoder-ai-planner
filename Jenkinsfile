@@ -53,17 +53,13 @@ pipeline {
             steps {
                 script {
                     if (env.BACKEND_CHANGED == 'true' || env.BRANCH_NAME == 'master') {
-                        nodejs('Node') {
-                            dir('backend') {
-                                sh 'npm ci'
-                            }
+                        dir('backend') {
+                            sh 'nvm install 24 && nvm use 24 && npm ci'
                         }
                     }
                     if (env.FRONTEND_CHANGED == 'true' || env.BRANCH_NAME == 'master') {
-                        nodejs('Node') {
-                            dir('frontend') {
-                                sh 'npm ci'
-                            }
+                        dir('frontend') {
+                            sh 'nvm install 24 && nvm use 24 && npm ci'
                         }
                     }
                 }
@@ -81,37 +77,29 @@ pipeline {
             parallel {
                 stage('Backend Lint') {
                     steps {
-                        nodejs('Node') {
-                            dir('backend') {
-                                sh 'npm run lint'
-                            }
+                        dir('backend') {
+                            sh 'nvm install 24 && nvm use 24 && npm run lint'
                         }
                     }
                 }
                 stage('Backend Syntax') {
                     steps {
-                        nodejs('Node') {
-                            dir('backend') {
-                                sh 'node --check src/index.js'
-                            }
+                        dir('backend') {
+                            sh 'nvm install 24 && nvm use 24 && node --check src/index.js'
                         }
                     }
                 }
                 stage('Backend Unit Tests') {
                     steps {
-                        nodejs('Node') {
-                            dir('backend') {
-                                sh 'npm test'
-                            }
+                        dir('backend') {
+                            sh 'nvm install 24 && nvm use 24 && npm test'
                         }
                     }
                 }
                 stage('Backend Coverage') {
                     steps {
-                        nodejs('Node') {
-                            dir('backend') {
-                                sh 'npm run test:coverage'
-                            }
+                        dir('backend') {
+                            sh 'nvm install 24 && nvm use 24 && npm run test:coverage'
                         }
                     }
                 }
@@ -128,46 +116,36 @@ pipeline {
             parallel {
                 stage('Frontend Lint') {
                     steps {
-                        nodejs('Node') {
-                            dir('frontend') {
-                                sh 'npm run lint'
-                            }
+                        dir('frontend') {
+                            sh 'nvm install 24 && nvm use 24 && npm run lint'
                         }
                     }
                 }
                 stage('Frontend Typecheck') {
                     steps {
-                        nodejs('Node') {
-                            dir('frontend') {
-                                sh 'npm run typecheck'
-                            }
+                        dir('frontend') {
+                            sh 'nvm install 24 && nvm use 24 && npm run typecheck'
                         }
                     }
                 }
                 stage('Frontend Unit Tests') {
                     steps {
-                        nodejs('Node') {
-                            dir('frontend') {
-                                sh 'npm test -- --run'
-                            }
+                        dir('frontend') {
+                            sh 'nvm install 24 && nvm use 24 && npm test -- --run'
                         }
                     }
                 }
                 stage('Frontend Coverage') {
                     steps {
-                        nodejs('Node') {
-                            dir('frontend') {
-                                sh 'npm test -- --run --coverage'
-                            }
+                        dir('frontend') {
+                            sh 'nvm install 24 && nvm use 24 && npm test -- --run --coverage'
                         }
                     }
                 }
                 stage('Frontend Build') {
                     steps {
-                        nodejs('Node') {
-                            dir('frontend') {
-                                sh 'npm run build'
-                            }
+                        dir('frontend') {
+                            sh 'nvm install 24 && nvm use 24 && npm run build'
                         }
                     }
                 }
@@ -183,11 +161,9 @@ pipeline {
                 }
             }
             steps {
-                nodejs('Node') {
-                    dir('frontend') {
-                        sh 'npm ci'
-                        sh './node_modules/.bin/vitest --run src/__tests__/api-contract.test.ts'
-                    }
+                dir('frontend') {
+                    sh 'nvm install 24 && nvm use 24 && npm ci'
+                    sh 'nvm install 24 && nvm use 24 && ./node_modules/.bin/vitest --run src/__tests__/api-contract.test.ts'
                 }
             }
         }
@@ -219,80 +195,78 @@ pipeline {
                 }
             }
             steps {
-                nodejs('Node') {
-                    script {
-                        // Write .env for docker compose
-                        sh """
-                            cat > .env <<EOF
+                script {
+                    // Write .env for docker compose
+                    sh """
+                        cat > .env <<EOF
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 JWT_SECRET=${JWT_SECRET}
 ENCRYPTION_KEY=${ENCRYPTION_KEY}
 PGADMIN_PASSWORD=changeme
 EOF
-                        """
+                    """
 
-                        // Build infra (production compose) + test service
-                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} down -v --remove-orphans || true"
-                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml build"
-                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} up -d"
+                    // Build infra (production compose) + test service
+                    sh "docker compose -f \${DOCKER_COMPOSE_FILE} down -v --remove-orphans || true"
+                    sh "docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml build"
+                    sh "docker compose -f \${DOCKER_COMPOSE_FILE} up -d"
 
-                        // Wait for infra to be ready (10 attempts, 6s apart; fail after 60s)
-                        // docker-compose has start_period: 30s for API health check + migrate runs DB migrations
-                        // 60s gives enough time for cold starts with migrations
-                        def ready = false
-                        def elapsed = 0
-                        def checks = 0
-                        while (elapsed < 60 && checks < 10) {
-                            sleep(time: 6, unit: 'SECONDS')
-                            elapsed += 6
-                            checks++
-                            def ps = sh(
-                                script: "docker compose -f \${DOCKER_COMPOSE_FILE} ps --format \"{{.Name}} {{.Status}}\" 2>/dev/null",
-                                returnStdout: true
-                            )
-                            def apiUp = ps =~ /vibecode-api.*Up/
-                            def pgUp = ps =~ /vibecode-postgres.*Up/
-                            if (apiUp && pgUp) {
-                                ready = true
-                                break
-                            }
-                            echo "Service check attempt ${checks}/10 (api: ${apiUp}, pg: ${pgUp}, elapsed: ${elapsed}s)"
+                    // Wait for infra to be ready (10 attempts, 6s apart; fail after 60s)
+                    // docker-compose has start_period: 30s for API health check + migrate runs DB migrations
+                    // 60s gives enough time for cold starts with migrations
+                    def ready = false
+                    def elapsed = 0
+                    def checks = 0
+                    while (elapsed < 60 && checks < 10) {
+                        sleep(time: 6, unit: 'SECONDS')
+                        elapsed += 6
+                        checks++
+                        def ps = sh(
+                            script: "docker compose -f \${DOCKER_COMPOSE_FILE} ps --format \"{{.Name}} {{.Status}}\" 2>/dev/null",
+                            returnStdout: true
+                        )
+                        def apiUp = ps =~ /vibecode-api.*Up/
+                        def pgUp = ps =~ /vibecode-postgres.*Up/
+                        if (apiUp && pgUp) {
+                            ready = true
+                            break
                         }
-                        if (!ready) {
-                            echo "ERROR: Stack not ready after 60s (10 checks failed)"
-                            sh "docker compose -f \${DOCKER_COMPOSE_FILE} logs --tail=100 || true"
-                            sh "docker compose -f \${DOCKER_COMPOSE_FILE} ps || true"
-                            error("Integration stack failed to start within 60 seconds")
-                        }
-                        echo "Infra ready after ${elapsed}s (${checks} checks)"
-
-                        // Start test container (no auto-run command, tests run via exec)
-                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml up -d test"
-
-                        // Run Jest integration tests inside the test container
-                        // forceExit: true returns exit code 1 when DB connections are still open,
-                        // so check output for failures instead of relying on exit code
-                        sh '''
-                            docker exec -w /app vibecode-test bash -c '
-                                OUTPUT=$(./node_modules/.bin/jest --config jest.integration.config.js --verbose 2>&1)
-                                echo "$OUTPUT"
-                                if echo "$OUTPUT" | grep -E "^(Test Suites:|Tests:)" | grep -qi "failed"; then
-                                    exit 1
-                                fi
-                            '
-                        '''
-
-                        // Run bash integration tests inside the test container
-                        sh '''
-                            docker exec -w /app vibecode-test bash -c '
-                                set -x
-                                BASE_URL=http://api:3001 bash integration-test/run.sh --only 2>&1
-                                EXIT_CODE=$?
-                                echo "--- bash test exit code: $EXIT_CODE ---"
-                                exit $EXIT_CODE
-                            '
-                        '''
+                        echo "Service check attempt ${checks}/10 (api: ${apiUp}, pg: ${pgUp}, elapsed: ${elapsed}s)"
                     }
+                    if (!ready) {
+                        echo "ERROR: Stack not ready after 60s (10 checks failed)"
+                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} logs --tail=100 || true"
+                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} ps || true"
+                        error("Integration stack failed to start within 60 seconds")
+                    }
+                    echo "Infra ready after ${elapsed}s (${checks} checks)"
+
+                    // Start test container (no auto-run command, tests run via exec)
+                    sh "docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml up -d test"
+
+                    // Run Jest integration tests inside the test container
+                    // forceExit: true returns exit code 1 when DB connections are still open,
+                    // so check output for failures instead of relying on exit code
+                    sh '''
+                        docker exec -w /app vibecode-test bash -c '
+                            OUTPUT=$(./node_modules/.bin/jest --config jest.integration.config.js --verbose 2>&1)
+                            echo "$OUTPUT"
+                            if echo "$OUTPUT" | grep -E "^(Test Suites:|Tests:)" | grep -qi "failed"; then
+                                exit 1
+                            fi
+                        '
+                    '''
+
+                    // Run bash integration tests inside the test container
+                    sh '''
+                        docker exec -w /app vibecode-test bash -c '
+                            set -x
+                            BASE_URL=http://api:3001 bash integration-test/run.sh --only 2>&1
+                            EXIT_CODE=$?
+                            echo "--- bash test exit code: $EXIT_CODE ---"
+                            exit $EXIT_CODE
+                        '
+                    '''
                 }
             }
         }
