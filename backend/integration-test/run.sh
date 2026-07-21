@@ -85,8 +85,9 @@ main() {
   wait_for_api
   clean_db
 
-  docker_compose up -d --force-recreate api 2>&1 | tail -3
-   sleep 8
+   docker_compose up -d --force-recreate api 2>&1 | tail -3
+    sleep 8
+   wait_for_api
 
   # Allow frontend nginx to resolve the api hostname
   sleep 3
