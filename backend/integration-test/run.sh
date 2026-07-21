@@ -30,6 +30,7 @@
 #   rate_limiter.test.sh      — Rate limit enforcement
 #   file_upload.test.sh       — Attachment upload
 #   permission_matrix.test.sh — Role × endpoint matrix
+#   metrics.test.sh           — Prometheus metrics endpoints
 # set -o pipefail: catches pipe failures in output (e.g., grep returning 1 when no match)
 # without set -e, so suites can handle failures explicitly via pass()/fail()
 set -o pipefail
@@ -84,8 +85,9 @@ main() {
   wait_for_api
   clean_db
 
-  docker_compose up -d --force-recreate api 2>&1 | tail -3
-   sleep 8
+   docker_compose up -d --force-recreate api 2>&1 | tail -3
+    sleep 8
+   wait_for_api
 
   # Allow frontend nginx to resolve the api hostname
   sleep 3

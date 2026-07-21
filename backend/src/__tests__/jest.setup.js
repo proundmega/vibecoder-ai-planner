@@ -75,6 +75,7 @@ jest.mock('pg', () => {
       query: jest.fn().mockResolvedValue({ rows: [] }),
       release: jest.fn(),
     }),
+    stats: jest.fn().mockReturnValue({ totalCount: 5, idleCount: 3, waitingCount: 0 }),
   };
   return { Pool: jest.fn().mockImplementation(() => pool) };
 });

@@ -2394,6 +2394,66 @@
         }
       }
     },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Prometheus metrics endpoint",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-metrics-token",
+            "required": false,
+            "description": "Required if METRICS_TOKEN env var is set",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prometheus-format metrics (text/plain)",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized when METRICS_TOKEN is set and token is missing or incorrect",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "example": "UNAUTHORIZED"
+                        },
+                        "message": {
+                          "type": "string",
+                          "example": "Metrics endpoint requires authentication"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/memory/project/{projectId}": {
       "get": {
         "tags": [
@@ -3363,6 +3423,48 @@
       }
     },
     "/agents/{agentId}": {
+      "put": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Update agent name",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent updated"
+          },
+          "400": {
+            "description": "Validation failed"
+          },
+          "404": {
+            "description": "Agent not found"
+          }
+        }
+      },
       "delete": {
         "tags": [
           "Agents"
@@ -3439,6 +3541,44 @@
           },
           "404": {
             "description": "Agent not found"
+          }
+        }
+      }
+    },
+    "/agents/{agentId}/provider-config": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Get decrypted provider config for agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "headers": {
+          "X-API-Key": {
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Provider config"
+          },
+          "401": {
+            "description": "Missing API key"
+          },
+          "404": {
+            "description": "Agent or provider not found"
           }
         }
       }

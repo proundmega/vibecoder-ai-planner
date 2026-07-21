@@ -143,13 +143,6 @@ router.get('/docs', (req, res) => {
  *         description: Server metrics including uptime and memory usage
  */
 router.get('/metrics', (req, res) => {
-  const metricsToken = process.env.METRICS_TOKEN;
-  if (metricsToken) {
-    const providedToken = req.headers['x-metrics-token'];
-    if (!providedToken || providedToken !== metricsToken) {
-      return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Metrics endpoint requires authentication' } });
-    }
-  }
   res.json({
     success: true,
     data: {

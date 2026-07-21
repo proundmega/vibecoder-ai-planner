@@ -1,6 +1,8 @@
 const logger = require('../utils/logger');
 const { createHistogram, createCounter } = require('../metrics');
 
+// Metrics created here and registered in shared prom-client registry
+// Actual recording happens in requestLogger.js to avoid double-counting
 const httpRequestDurationHistogram = createHistogram(
   'http_request_duration_seconds',
   'HTTP request duration in seconds',
@@ -23,18 +25,10 @@ function slowRequestLogger(thresholdMs = 5000) {
       if (duration > thresholdMs) {
         logger.warn(`Slow request: ${req.method} ${req.path} took ${duration}ms (threshold: ${thresholdMs}ms)`);
       }
-      
-      const path = req.route?.path || 'unmatched';
-      const status = res.statusCode ? res.statusCode.toString() : 'unknown';
-      httpRequestDurationHistogram.observe(
-        { method: req.method, path, status },
-        duration / 1000
-      );
-      httpRequestsTotal.inc({ method: req.method, path, status });
     });
     
     next();
   };
 }
 
-module.exports = { slowRequestLogger };
+module.exports = { slowRequestLogger, httpRequestDurationHistogram, httpRequestsTotal };
