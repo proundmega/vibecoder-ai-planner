@@ -23,4 +23,14 @@ public interface AiProvider {
      * Get the provider type name.
      */
     String getType();
+
+    /**
+     * Get the number of input tokens used in the last response.
+     */
+    int getTokensIn();
+
+    /**
+     * Get the number of output tokens used in the last response.
+     */
+    int getTokensOut();
 }

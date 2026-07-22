@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
 const logger = require('../utils/logger');
+const { MODEL_PRICING, getModelPricing, getAllModels } = require('../utils/pricing');
 
 // Get all pricing tiers
 router.get('/tiers', verifyToken, async (req, res) => {
@@ -91,6 +92,27 @@ router.get('/usage', verifyToken, async (req, res) => {
     });
   } catch (error) {
     logger.error('GET /api/pricing/usage', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get model pricing data
+router.get('/models', verifyToken, async (req, res) => {
+  try {
+    res.json({ success: true, data: { models: getAllModels(), pricing: MODEL_PRICING } });
+  } catch (error) {
+    logger.error('GET /api/pricing/models', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get pricing for a specific model
+router.get('/model/:modelName', verifyToken, async (req, res) => {
+  try {
+    const pricing = getModelPricing(req.params.modelName);
+    res.json({ success: true, data: { model: req.params.modelName, pricing } });
+  } catch (error) {
+    logger.error('GET /api/pricing/model/:modelName', error);
     res.status(500).json({ error: error.message });
   }
 });
