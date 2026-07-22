@@ -15,6 +15,25 @@ class UsageLogger {
     );
   }
 
+  static async reportUsage(agentId, data) {
+    const { provider_type, model, tokens_in, tokens_out, duration_ms, ticket_id, project_id } = data;
+
+    if (!provider_type || !model || tokens_in == null || tokens_out == null) {
+      const err = new Error('Missing required fields: provider_type, model, tokens_in, tokens_out');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const cost = calculateCost(model, tokens_in, tokens_out);
+
+    await pool.query(
+      `INSERT INTO usage_logs
+       (agent_id, provider_type, model, tokens_in, tokens_out, cost_usd, duration_ms, ticket_id, project_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [agentId, provider_type, model, tokens_in, tokens_out, cost, duration_ms || 0, ticket_id || null, project_id || null]
+    );
+  }
+
   static async getProjectUsage(projectId, since, until) {
     const result = await pool.query(
       `SELECT

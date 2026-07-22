@@ -238,7 +238,26 @@ public class TicketProcessor {
         }
         String systemPrompt = buildSystemPrompt(ticket, planningDocs, fileContext);
         String userMessage = "Ticket: " + ticket.getTitle() + "\n\n" + ticket.getDescription();
-        return aiProvider.generateResponse(systemPrompt, userMessage);
+        
+        long startTime = System.currentTimeMillis();
+        String generatedContent = aiProvider.generateResponse(systemPrompt, userMessage);
+        long durationMs = System.currentTimeMillis() - startTime;
+        
+        try {
+            apiService.reportUsage(
+                config.getAgentId(),
+                aiProvider.getType(),
+                config.getAiModel(),
+                aiProvider.getTokensIn(),
+                aiProvider.getTokensOut(),
+                durationMs,
+                ticket.getId()
+            );
+        } catch (Exception e) {
+            log.warn("Failed to report usage for ticket {}: {}", ticket.getId(), e.getMessage());
+        }
+        
+        return generatedContent;
     }
 
     private String buildSystemPrompt(Ticket ticket, List<String> planningDocs, List<String> fileContext) {

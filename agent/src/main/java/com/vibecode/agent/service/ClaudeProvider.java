@@ -6,6 +6,7 @@ import com.vibecode.agent.config.AgentConfig;
 import okhttp3.*;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,8 @@ public class ClaudeProvider implements AiProvider {
     private final String model;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private int tokensIn = 0;
+    private int tokensOut = 0;
 
     public ClaudeProvider(String apiKey, String model) {
         this.apiKey = apiKey;
@@ -37,28 +40,19 @@ public class ClaudeProvider implements AiProvider {
 
     @Override
     public String generateResponse(String systemPrompt, String userMessage) throws IOException {
-        String json = objectMapper.writeValueAsString(new Object[]{
-            Map.of(
-                "role", "user",
-                "content", userMessage
-            )
-        });
-
-        // Build the messages array
-        java.util.List<java.util.Map<String, Object>> messages = new java.util.ArrayList<>();
-        java.util.Map<String, Object> msg = new java.util.HashMap<>();
+        List<Map<String, Object>> messages = new ArrayList<>();
+        Map<String, Object> msg = new HashMap<>();
         msg.put("role", "user");
         msg.put("content", userMessage);
         messages.add(msg);
 
-        java.util.Map<String, Object> requestBody = new java.util.HashMap<>();
+        Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", model);
         requestBody.put("max_tokens", 4096);
         requestBody.put("system", systemPrompt);
         requestBody.put("messages", messages);
 
         String bodyJson = objectMapper.writeValueAsString(requestBody);
-
         RequestBody body = RequestBody.create(bodyJson, MediaType.get("application/json"));
 
         Request request = new Request.Builder()
@@ -78,6 +72,10 @@ public class ClaudeProvider implements AiProvider {
             String responseBody = response.body() != null ? response.body().string() : "";
             JsonNode root = objectMapper.readTree(responseBody);
             JsonNode content = root.path("content").get(0);
+            
+            this.tokensIn = root.path("usage").path("input_tokens").asInt(0);
+            this.tokensOut = root.path("usage").path("output_tokens").asInt(0);
+            
             return content.path("text").asText();
         }
     }
@@ -85,5 +83,15 @@ public class ClaudeProvider implements AiProvider {
     @Override
     public String getType() {
         return "claude";
+    }
+
+    @Override
+    public int getTokensIn() {
+        return tokensIn;
+    }
+
+    @Override
+    public int getTokensOut() {
+        return tokensOut;
     }
 }

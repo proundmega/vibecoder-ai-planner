@@ -1,8 +1,8 @@
 # 01_ARCHITECT_REQUIREMENT.md — Feature Planning Template
 
-**Status**: planned
+**Status**: completed
 **Date created**: 2026-07-12
-**Date completed**: {{YYYY-MM-DD}}
+**Date completed**: 2026-07-21
 **Author**: AI Assistant
 **Scope**: Backend | Java Agent
 **Priority**: P2
@@ -135,18 +135,18 @@ Option C: Both — API trigger + optional scheduled task.
 
 ## Acceptance Criteria
 
-1. [ ] [DB] `usage_logs.agent_id` references `agents(id)`
-2. [ ] [Backend] `POST /api/v1/agents/:agentId/usage` accepts and stores usage report
-3. [ ] [Backend] Usage endpoint authenticates via X-API-Key
-4. [ ] [Backend] Backend provider `chat()` methods log usage via UsageLogger
-5. [ ] [Backend] `POST /api/v1/billing/aggregate` triggers daily aggregation
-6. [ ] [Backend] Pricing endpoints return real data from `MODEL_PRICING`
-7. [ ] [Backend] `GET /usage/projects/:id/usage` returns provider-level breakdown
-8. [ ] [Java Agent] Agent reports usage after each AI call
-9. [ ] [Java Agent] Usage includes tokens_in, tokens_out, duration_ms, provider_type, model
-10. [ ] [Tests] Backend unit tests for usage logging
-11. [ ] [Tests] Backend integration tests for usage endpoint
-12. [ ] [Tests] Backend unit tests for billing aggregation
+1. [x] [DB] `usage_logs.agent_id` references `agents(id)` — migration 036
+2. [x] [Backend] `POST /api/v1/agents/:agentId/usage` accepts and stores usage report
+3. [x] [Backend] Usage endpoint authenticates via X-API-Key
+4. [x] [Backend] Backend provider `chat()` methods log usage via UsageLogger
+5. [x] [Backend] `POST /api/v1/billing/aggregate` triggers daily aggregation
+6. [x] [Backend] Pricing endpoints return real data from `MODEL_PRICING`
+7. [x] [Backend] `GET /usage/projects/:id/usage` returns provider-level breakdown
+8. [x] [Java Agent] Agent reports usage after each AI call
+9. [x] [Java Agent] Usage includes tokens_in, tokens_out, duration_ms, provider_type, model
+10. [x] [Tests] Backend unit tests for usage logging (3 new tests)
+11. [x] [Tests] Backend integration tests for usage endpoint
+12. [x] [Tests] Backend unit tests for billing aggregation
 
 ---
 

@@ -1,5 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const ProviderInterface = require('../base/ProviderInterface');
+const UsageLogger = require('../../services/UsageLogger');
 
 class ClaudeProvider extends ProviderInterface {
   constructor(config) {
@@ -11,6 +12,10 @@ class ClaudeProvider extends ProviderInterface {
     this.model = config.model || 'claude-sonnet-4-20250514';
     this.maxTokens = config.maxTokens || 4096;
     this.temperature = config.temperature || 0.1;
+    this.projectId = config.projectId;
+    this.userId = config.userId;
+    this.agentId = config.agentId;
+    this.ticketId = config.ticketId;
   }
 
   formatSystemPrompt(systemPrompt) {
@@ -18,6 +23,7 @@ class ClaudeProvider extends ProviderInterface {
   }
 
   async chat(messages, options = {}) {
+    const startTime = Date.now();
     const systemPrompt = messages.find(m => m.role === 'system');
     const contentMessages = messages.filter(m => m.role !== 'system');
 
@@ -36,6 +42,21 @@ class ClaudeProvider extends ProviderInterface {
     }
 
     const response = await this.client.messages.create(params);
+    const duration = Date.now() - startTime;
+
+    const usage = {
+      input_tokens: response.usage?.input_tokens || 0,
+      output_tokens: response.usage?.output_tokens || 0,
+    };
+
+    try {
+      await UsageLogger.log(
+        this.projectId, this.userId, this.agentId,
+        'claude', this.model, usage, duration, this.ticketId
+      );
+    } catch (e) {
+      console.error('Failed to log usage:', e.message);
+    }
 
     return {
       content: response.content[0].text,

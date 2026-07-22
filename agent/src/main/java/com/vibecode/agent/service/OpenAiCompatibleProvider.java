@@ -24,6 +24,8 @@ public class OpenAiCompatibleProvider implements AiProvider {
     private final int maxTokens;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private int tokensIn = 0;
+    private int tokensOut = 0;
 
     public OpenAiCompatibleProvider(String endpointUrl, String model, String apiKey, int maxTokens) {
         this.endpointUrl = endpointUrl;
@@ -65,7 +67,6 @@ public class OpenAiCompatibleProvider implements AiProvider {
             .header("Content-Type", "application/json")
             .post(body);
 
-        // Only add Authorization header if apiKey is set
         if (apiKey != null && !apiKey.isBlank()) {
             requestBuilder.header("Authorization", "Bearer " + apiKey);
         }
@@ -81,29 +82,47 @@ public class OpenAiCompatibleProvider implements AiProvider {
             String responseBody = response.body() != null ? response.body().string() : "";
             JsonNode root = objectMapper.readTree(responseBody);
             
-            // Try standard OpenAI format: choices[0].message.content
             JsonNode choices = root.path("choices");
+            String content = null;
+            
             if (choices.isArray() && choices.size() > 0) {
-                JsonNode content = choices.get(0).path("message").path("content");
-                if (content.isTextual()) {
-                    return content.asText();
+                JsonNode contentNode = choices.get(0).path("message").path("content");
+                if (contentNode.isTextual()) {
+                    content = contentNode.asText();
                 }
             }
             
-            // Fallback for some servers that return choices[0].text
-            if (choices.isArray() && choices.size() > 0) {
+            if (content == null && choices.isArray() && choices.size() > 0) {
                 JsonNode text = choices.get(0).path("text");
                 if (text.isTextual()) {
-                    return text.asText();
+                    content = text.asText();
                 }
             }
-
-            throw new IOException("Could not parse AI response - no content found in choices");
+            
+            if (content == null) {
+                throw new IOException("Could not parse AI response - no content found in choices");
+            }
+            
+            JsonNode usage = root.path("usage");
+            this.tokensIn = usage.path("prompt_tokens").asInt(0);
+            this.tokensOut = usage.path("completion_tokens").asInt(0);
+            
+            return content;
         }
     }
 
     @Override
     public String getType() {
         return "openai-compatible";
+    }
+
+    @Override
+    public int getTokensIn() {
+        return tokensIn;
+    }
+
+    @Override
+    public int getTokensOut() {
+        return tokensOut;
     }
 }

@@ -39,6 +39,7 @@ const SQL_FILES = [
   path.join(__dirname, './033_add_api_key_expiry_to_agents.sql'),
   path.join(__dirname, './034_create_ip_whitelist_table.sql'),
   path.join(__dirname, './035_global_providers.sql'),
+  path.join(__dirname, './036_fix_usage_logs_fk.sql'),
 ];
 
 const DATA_MIGRATIONS = [

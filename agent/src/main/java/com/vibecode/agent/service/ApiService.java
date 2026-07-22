@@ -238,4 +238,22 @@ public class ApiService {
     public OkHttpClient getHttpClient() {
         return httpClient;
     }
+
+    /**
+     * Report usage to the backend for billing/monitoring.
+     */
+    public void reportUsage(String agentId, String providerType, String model,
+                            int tokensIn, int tokensOut, long durationMs, Long ticketId) throws IOException {
+        String url = baseUrl + "/usage/agents/" + agentId + "/usage";
+        
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("provider_type", providerType);
+        body.put("model", model);
+        body.put("tokens_in", tokensIn);
+        body.put("tokens_out", tokensOut);
+        body.put("duration_ms", durationMs);
+        if (ticketId != null) body.put("ticket_id", ticketId);
+        
+        executePost(url, body, new TypeReference<ApiResponse<Object>>() {});
+    }
 }

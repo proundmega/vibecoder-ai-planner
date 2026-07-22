@@ -1,5 +1,6 @@
 const axios = require('axios');
 const ProviderInterface = require('../base/ProviderInterface');
+const UsageLogger = require('../../services/UsageLogger');
 
 function isPrivateHostname(hostname) {
   if (process.env.ALLOW_PRIVATE_HOSTS === '1') return false;
@@ -27,6 +28,10 @@ class GenericProvider extends ProviderInterface {
     this.maxTokens = config.maxTokens || 4096;
     this.temperature = config.temperature || 0.1;
     this.apiKey = config.apiKey;
+    this.projectId = config.projectId;
+    this.userId = config.userId;
+    this.agentId = config.agentId;
+    this.ticketId = config.ticketId;
     if (this.baseURL && typeof this.baseURL === 'string') {
       try {
         const url = new URL(this.baseURL);
@@ -54,6 +59,7 @@ class GenericProvider extends ProviderInterface {
         }
       }
     }
+    const startTime = Date.now();
     const response = await axios.post(
       `${this.baseURL}/chat/completions`,
       {
@@ -70,11 +76,27 @@ class GenericProvider extends ProviderInterface {
         timeout: 60000,
       }
     );
+    const duration = Date.now() - startTime;
 
     const choice = response.data.choices[0];
+    const usage = response.data.usage || {};
+
+    try {
+      await UsageLogger.log(
+        this.projectId, this.userId, this.agentId,
+        'generic', this.model, usage, duration, this.ticketId
+      );
+    } catch (e) {
+      console.error('Failed to log usage:', e.message);
+    }
+
     return {
       content: choice.message.content,
-      usage: response.data.usage,
+      usage: {
+        promptTokens: usage.prompt_tokens || 0,
+        completionTokens: usage.completion_tokens || 0,
+        totalTokens: usage.total_tokens || 0,
+      },
       stop_reason: choice.finish_reason,
     };
   }

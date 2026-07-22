@@ -24,6 +24,8 @@ public class OpenAiProvider implements AiProvider {
     private final String model;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private int tokensIn = 0;
+    private int tokensOut = 0;
 
     public OpenAiProvider(String apiKey, String model) {
         this.apiKey = apiKey;
@@ -73,6 +75,11 @@ public class OpenAiProvider implements AiProvider {
             String responseBody = response.body() != null ? response.body().string() : "";
             JsonNode root = objectMapper.readTree(responseBody);
             JsonNode choices = root.path("choices").get(0);
+            
+            JsonNode usage = root.path("usage");
+            this.tokensIn = usage.path("prompt_tokens").asInt(0);
+            this.tokensOut = usage.path("completion_tokens").asInt(0);
+            
             return choices.path("message").path("content").asText();
         }
     }
@@ -80,5 +87,15 @@ public class OpenAiProvider implements AiProvider {
     @Override
     public String getType() {
         return "openai";
+    }
+
+    @Override
+    public int getTokensIn() {
+        return tokensIn;
+    }
+
+    @Override
+    public int getTokensOut() {
+        return tokensOut;
     }
 }
