@@ -7,6 +7,10 @@ pipeline {
         disableConcurrentBuilds()
     }
 
+    tools {
+        maven 'Maven'
+    }
+
     environment {
         POSTGRES_PASSWORD = 'changeme'
         JWT_SECRET = 'jenkins-ci-secret-for-testing-purposes-2026'
@@ -200,7 +204,7 @@ pipeline {
                 }
             }
             steps {
-                maven 'Maven' {
+                withMaven(maven: 'Maven') {
                     dir('agent') {
                         sh 'mvn package -q -DskipTests'
                     }
