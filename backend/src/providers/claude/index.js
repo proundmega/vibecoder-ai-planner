@@ -1,6 +1,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const ProviderInterface = require('../base/ProviderInterface');
 const UsageLogger = require('../../services/UsageLogger');
+const logger = require('../../utils/logger');
 
 class ClaudeProvider extends ProviderInterface {
   constructor(config) {
@@ -55,7 +56,7 @@ class ClaudeProvider extends ProviderInterface {
         'claude', this.model, usage, duration, this.ticketId
       );
     } catch (e) {
-      console.error('Failed to log usage:', e.message);
+      logger.warn('Failed to log usage:', e.message);
     }
 
     return {

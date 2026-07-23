@@ -87,9 +87,9 @@ This is a **backend API + Java agent + migration** task. The infrastructure exis
 
 | Component | Change Type | Details |
 |-----------|-------------|---------|
-| `backend/src/migrations/033_fix_usage_logs_fk.sql` | CREATE | Fix agent_id FK, add indexes |
-| `backend/src/migrations/033_fix_usage_logs_fk_rollback.sql` | CREATE | Rollback FK change |
-| `backend/src/migrations/apply.js` | MODIFY | Add 033 to SQL_FILES |
+| `backend/src/migrations/036_fix_usage_logs_fk.sql` | CREATE | Fix agent_id FK, add indexes |
+| `backend/src/migrations/036_fix_usage_logs_fk_rollback.sql` | CREATE | Rollback FK change |
+| `backend/src/migrations/apply.js` | MODIFY | Add 036 to SQL_FILES |
 | `backend/src/services/UsageLogger.js` | MODIFY | Add `reportUsage()` for agent reporting |
 | `backend/src/services/BillingService.js` | MODIFY | Add `aggregateDailyBilling()` public method, make schedulable |
 | `backend/src/api/usage.js` | MODIFY | Add agent usage reporting endpoint |

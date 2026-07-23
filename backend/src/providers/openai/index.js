@@ -1,6 +1,7 @@
 const OpenAI = require('openai');
 const ProviderInterface = require('../base/ProviderInterface');
 const UsageLogger = require('../../services/UsageLogger');
+const logger = require('../../utils/logger');
 
 class OpenAIProvider extends ProviderInterface {
   constructor(config) {
@@ -36,7 +37,7 @@ class OpenAIProvider extends ProviderInterface {
         'openai', this.model, usage, duration, this.ticketId
       );
     } catch (e) {
-      console.error('Failed to log usage:', e.message);
+      logger.warn('Failed to log usage:', e.message);
     }
 
     return {

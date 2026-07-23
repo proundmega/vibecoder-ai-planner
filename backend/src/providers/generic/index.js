@@ -1,6 +1,7 @@
 const axios = require('axios');
 const ProviderInterface = require('../base/ProviderInterface');
 const UsageLogger = require('../../services/UsageLogger');
+const logger = require('../../utils/logger');
 
 function isPrivateHostname(hostname) {
   if (process.env.ALLOW_PRIVATE_HOSTS === '1') return false;
@@ -87,7 +88,7 @@ class GenericProvider extends ProviderInterface {
         'generic', this.model, usage, duration, this.ticketId
       );
     } catch (e) {
-      console.error('Failed to log usage:', e.message);
+      logger.warn('Failed to log usage:', e.message);
     }
 
     return {

@@ -24,13 +24,13 @@ Connect the existing but disconnected usage tracking and billing infrastructure 
 
 **Implementation Order:**
 
-1. **Database migration** — `backend/src/migrations/033_fix_usage_logs_fk.sql`
+1. **Database migration** — `backend/src/migrations/036_fix_usage_logs_fk.sql`
    - Fix `agent_id` FK to reference `agents(id)`
    - Add indexes
    - *Depends on*: nothing
 
 2. **Update migration apply order** — `backend/src/migrations/apply.js`
-   - Add 033
+    - Add 036
    - *Depends on*: Step 1
 
 3. **Backend: UsageLogger** — `backend/src/services/UsageLogger.js`
@@ -83,7 +83,7 @@ Connect the existing but disconnected usage tracking and billing infrastructure 
 
 ### c) Per-File Action Plan
 
-#### `backend/src/migrations/033_fix_usage_logs_fk.sql` (CREATE)
+#### `backend/src/migrations/036_fix_usage_logs_fk.sql` (CREATE)
 
 ```sql
 -- Fix agent_id FK: currently references users(id), should reference agents(id)
@@ -99,7 +99,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_logs_created_at ON usage_logs(created_at);
 
 #### `backend/src/migrations/apply.js` (MODIFY)
 
-Add `'033_fix_usage_logs_fk.sql'` after 032 entries.
+Add `'036_fix_usage_logs_fk.sql'` after 032 entries.
 
 #### `backend/src/services/UsageLogger.js` (MODIFY)
 
@@ -373,11 +373,11 @@ private String generateContent(Ticket ticket, List<String> planningDocs) throws 
 
 ### g) Migration Notes
 
-Migration: `backend/src/migrations/033_fix_usage_logs_fk.sql`
+Migration: `backend/src/migrations/036_fix_usage_logs_fk.sql`
 - Fixes `agent_id` FK from `users(id)` to `agents(id)`
 - Adds indexes on `agent_id`, `provider_type`, `created_at`
 
-Rollback: `backend/src/migrations/033_fix_usage_logs_fk_rollback.sql`
+Rollback: `backend/src/migrations/036_fix_usage_logs_fk_rollback.sql`
 - Reverts FK to `users(id)`
 - Drops added indexes
 
@@ -387,8 +387,8 @@ Rollback: `backend/src/migrations/033_fix_usage_logs_fk_rollback.sql`
 
 **Backend:**
 ```
-backend/src/migrations/033_fix_usage_logs_fk.sql              → CREATE
-backend/src/migrations/033_fix_usage_logs_fk_rollback.sql     → CREATE
+backend/src/migrations/036_fix_usage_logs_fk.sql              → CREATE
+backend/src/migrations/036_fix_usage_logs_fk_rollback.sql     → CREATE
 backend/src/migrations/apply.js                               → MODIFY
 backend/src/services/UsageLogger.js                           → MODIFY
 backend/src/services/BillingService.js                        → MODIFY

@@ -4,32 +4,16 @@ const { verifyToken } = require('../middleware/auth');
 const logger = require('../utils/logger');
 const { MODEL_PRICING, getModelPricing, getAllModels } = require('../utils/pricing');
 
-// Get all pricing tiers
+// Get all pricing tiers (model pricing data)
 router.get('/tiers', verifyToken, async (req, res) => {
   try {
-    res.json([
-      {
-        id: 'free',
-        name: 'Free',
-        price: 0,
-        includedCostLimit: 100,
-        features: ['Basic projects', 'Up to 10 active projects', 'Community support']
-      },
-      {
-        id: 'pro',
-        name: 'Professional',
-        price: 29,
-        includedCostLimit: 1000,
-        features: ['Unlimited projects', 'AI agent access', 'Priority support', 'Advanced analytics']
-      },
-      {
-        id: 'enterprise',
-        name: 'Enterprise',
-        price: 99,
-        includedCostLimit: null,
-        features: ['Unlimited everything', 'Custom AI models', 'Dedicated support', 'SSO', 'Custom integrations']
-      }
-    ]);
+    const tiers = Object.entries(MODEL_PRICING)
+      .filter(([key]) => key !== 'default')
+      .map(([model, pricing]) => ({
+        model,
+        pricing,
+      }));
+    res.json({ success: true, data: tiers });
   } catch (error) {
     logger.error('GET /api/pricing/tiers', error);
     res.status(500).json({ error: error.message });
