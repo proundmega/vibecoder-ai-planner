@@ -79,13 +79,6 @@ class ProviderRouter {
     }
   }
 
-  static async getProvidersForProject(projectId) {
-    const rows = await pool.query(
-      `SELECT * FROM project_providers WHERE project_id = $1 AND is_active = true`,
-      [projectId]
-    );
-    return rows.rows;
-  }
 }
 
 module.exports = ProviderRouter;
