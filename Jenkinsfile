@@ -204,10 +204,8 @@ pipeline {
                 }
             }
             steps {
-                withMaven(maven: 'Maven') {
-                    dir('agent') {
-                        sh 'mvn package -q -DskipTests'
-                    }
+                dir('agent') {
+                    sh 'mvn package -q -DskipTests'
                 }
             }
         }
