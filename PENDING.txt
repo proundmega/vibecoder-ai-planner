@@ -53,6 +53,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | **bp-79** | `bp-79-migration-dry-run` | P2 | Migration dry-run mode (--dry-run flag for preview) |
 | **bp-80** | `bp-80-pgbouncer` | P2 | PgBouncer deployment (connection pooling proxy) |
 | **bp-99** | `bp-99-agent-system-fixes` | P1 | ~~Agent system fixes and feature completion (12 issues)~~ ✅ Done (this session) — Fixes: PoolManager env var/ID mismatch, provider config fetch, agent rename, health check, stale cleanup, message ordering, GitHub commit SHA, AGENT_ID required, deprecated methods, planning docs client reuse |
+| **bp-100** | `bp-100-planning-usage-tracking` | P2 | Attach AI usage tracking to the planning object itself: requirement extraction, plan generation, refinement, and validation. Per-stage billing and customer-facing cost explanations. |
 
 ## Test Backfills (bt-*)
 
