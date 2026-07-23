@@ -201,7 +201,14 @@ pipeline {
             }
             steps {
                 dir('agent') {
-                    sh 'mvn package -q -DskipTests'
+                    sh '''
+                        if ! command -v mvn &> /dev/null; then
+                            curl -fsSL https://dlcdn.apache.org/maven/maven-3/3.9.9/binaries/apache-maven-3.9.9-bin.tar.gz -o /tmp/maven.tar.gz
+                            tar -xzf /tmp/maven.tar.gz -C /opt
+                        fi
+                        export PATH="/opt/apache-maven-3.9.9/bin:$PATH"
+                        mvn package -q -DskipTests
+                    '''
                 }
             }
         }
