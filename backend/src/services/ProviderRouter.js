@@ -5,8 +5,9 @@ const OpenAIProvider = require('../providers/openai');
 const GenericProvider = require('../providers/generic');
 
 class ProviderRouter {
-  constructor(projectId) {
+  constructor(projectId, context = {}) {
     this.projectId = projectId;
+    this.context = context; // { userId, agentId, ticketId }
     this.providers = new Map();
     this.loaded = false;
   }
@@ -27,6 +28,10 @@ class ProviderRouter {
         maxTokens: row.max_tokens,
         temperature: row.temperature,
         baseUrl: row.base_url || row.endpoint_url,
+        projectId: this.projectId,
+        userId: this.context.userId || null,
+        agentId: this.context.agentId || null,
+        ticketId: this.context.ticketId || null,
       };
 
       const provider = this.createProvider(row.provider_type, config);
@@ -45,6 +50,12 @@ class ProviderRouter {
       throw new Error(`No provider configured for role: ${role}`);
     }
     return provider;
+  }
+
+  static async getProvidersForProject(projectId, context = {}) {
+    const instance = new ProviderRouter(projectId, context);
+    await instance.loadProviders();
+    return instance;
   }
 
   getAllProviders() {
@@ -68,13 +79,6 @@ class ProviderRouter {
     }
   }
 
-  static async getProvidersForProject(projectId) {
-    const rows = await pool.query(
-      `SELECT * FROM project_providers WHERE project_id = $1 AND is_active = true`,
-      [projectId]
-    );
-    return rows.rows;
-  }
 }
 
 module.exports = ProviderRouter;

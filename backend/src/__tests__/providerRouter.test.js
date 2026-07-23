@@ -78,6 +78,10 @@ describe('ProviderRouter', () => {
         maxTokens: 4096,
         temperature: 0.1,
         baseUrl: undefined,
+        projectId: 1,
+        userId: null,
+        agentId: null,
+        ticketId: null,
       });
       expect(OpenAIProvider).toHaveBeenCalledWith({
         apiKey: 'openai-key',
@@ -85,6 +89,10 @@ describe('ProviderRouter', () => {
         maxTokens: 8192,
         temperature: 0.2,
         baseUrl: undefined,
+        projectId: 1,
+        userId: null,
+        agentId: null,
+        ticketId: null,
       });
     });
 

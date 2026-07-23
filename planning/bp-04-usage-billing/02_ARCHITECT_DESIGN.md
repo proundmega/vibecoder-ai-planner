@@ -212,9 +212,9 @@ public int getTokensOut() { return this.tokensOut; }
 
 | File | Action | Specific Changes |
 |------|--------|-----------------|
-| `backend/src/migrations/033_fix_usage_logs_fk.sql` | CREATE | Fix agent_id FK, add indexes |
-| `backend/src/migrations/033_fix_usage_logs_fk_rollback.sql` | CREATE | Rollback |
-| `backend/src/migrations/apply.js` | MODIFY | Add 033 |
+| `backend/src/migrations/036_fix_usage_logs_fk.sql` | CREATE | Fix agent_id FK, add indexes |
+| `backend/src/migrations/036_fix_usage_logs_fk_rollback.sql` | CREATE | Rollback |
+| `backend/src/migrations/apply.js` | MODIFY | Add 036 |
 | `backend/src/api/usage.js` | MODIFY | Add `POST /agents/:agentId/usage` endpoint |
 | `backend/src/api/billing.js` | MODIFY | Add `POST /aggregate` endpoint |
 | `backend/src/services/UsageLogger.js` | MODIFY | Add `reportUsage()` static method |

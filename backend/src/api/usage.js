@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, agentAuth } = require('../middleware/auth');
 const usageController = require('../controllers/usageController');
 const UsageLogger = require('../services/UsageLogger');
 
@@ -80,10 +80,23 @@ router.get('/pricing/models', verifyToken, usageController.getModelPricing);
  *         description: Missing required fields
  *       401:
  *         description: Missing or invalid API key
+ *       403:
+ *         description: Agent ID mismatch — agent can only report its own usage
  */
-router.post('/agents/:agentId/usage', verifyToken, async (req, res, next) => {
+router.post('/agents/:agentId/usage', agentAuth, async (req, res, next) => {
   try {
-    const agentId = parseInt(req.params.agentId);
+    // Enforce: agent can only report usage for its own agent ID
+    if (String(req.agent.id) !== String(req.params.agentId)) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Agents can only report usage for their own agent ID',
+        },
+      });
+    }
+
+    const agentId = req.params.agentId;
     const usage = req.body;
 
     if (!usage.provider_type || !usage.model || usage.tokens_in == null || usage.tokens_out == null) {

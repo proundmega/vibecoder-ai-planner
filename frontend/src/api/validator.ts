@@ -167,7 +167,6 @@ export function validateAndExtract<T>(data: unknown, validator: (data: unknown) 
   const errors = validator(data);
   if (errors.length > 0) {
     const errorMsg = `API response validation failed for ${expectedType}: ${errors.join('; ')}`;
-    console.error(errorMsg, data);
     throw new Error(errorMsg);
   }
   return data as T;
