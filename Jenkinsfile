@@ -200,7 +200,7 @@ pipeline {
                 }
             }
             steps {
-                tool(name: 'Maven', type: 'maven') {
+                tool(name: 'Maven') {
                     dir('agent') {
                         sh 'mvn package -q -DskipTests'
                     }
