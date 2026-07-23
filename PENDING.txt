@@ -53,7 +53,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | **bp-79** | `bp-79-migration-dry-run` | P2 | Migration dry-run mode (--dry-run flag for preview) |
 | **bp-80** | `bp-80-pgbouncer` | P2 | PgBouncer deployment (connection pooling proxy) |
 | **bp-99** | `bp-99-agent-system-fixes` | P1 | ~~Agent system fixes and feature completion (12 issues)~~ ✅ Done (this session) — Fixes: PoolManager env var/ID mismatch, provider config fetch, agent rename, health check, stale cleanup, message ordering, GitHub commit SHA, AGENT_ID required, deprecated methods, planning docs client reuse |
-| **bp-100** | `bp-100-planning-usage-tracking` | P2 | Attach AI usage tracking to the planning object itself: requirement extraction, plan generation, refinement, and validation. Per-stage billing and customer-facing cost explanations. |
+| **bp-100** | `bp-100-planning-usage-tracking` | P2 | ~~Attach AI usage tracking to the planning object itself~~ ✅ Done (this session) — Migration 038 adds usage columns to ticket_planning + planning_stage/file_key to usage_logs. UsageLogger extended with planning context. New API endpoints: GET /tickets/:id/planning/usage (aggregated), GET /tickets/:id/planning/:fileKey/usage (history). Java agent reports usage with planning_stage inference. Frontend shows usage breakdown table in TicketDetail. All 1167 backend + 516 frontend tests pass. |
 
 ## Test Backfills (bt-*)
 
@@ -99,3 +99,4 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 - bp-99 (frontend-testing) is **completed** — 85 new tests: 9 diff.ts unit tests, 28 API contract tests across 5 clients, 4 composables extracted from ProjectDetail.vue (useGitHub, useUsage, useMemory, useTabNavigation), 24 composable tests, 1 refactored file.
 
 - ~~**bp-98**~~ | `bp-98-node-24-migration` | P1 | ~~Migrate from Node 18 to Node 24 LTS ("Krypton")~~ ✅ Done (this session) — `.nvmrc`, engines fields (`>=24.0.0`), Dockerfiles (`node:24-alpine`), Jenkinsfile (explicit `nvm install 24 && nvm use 24`), AGENTS.md. All 1653 tests pass (1137 backend + 516 frontend). Zero production code changes.
+- **bp-100** is **completed** (this session) — 14 files changed, 789 insertions, 38 deletions. Migration 038 adds usage columns to ticket_planning + planning_stage/file_key to usage_logs. UsageLogger extended with planning context. New API endpoints for per-stage and per-file usage. Java agent reports usage with planning_stage inference. Frontend shows usage breakdown table. All 1167 backend + 516 frontend tests pass.
