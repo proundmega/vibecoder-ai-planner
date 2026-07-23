@@ -7,7 +7,10 @@ const { NotFoundError } = require('../errors/HttpError');
 class TicketPlanningService {
   async list(ticketId, _userId) {
     const result = await pool.query(
-      `SELECT tp.*, u.name as created_by_name, t.title as ticket_title
+      `SELECT tp.*, u.name as created_by_name, t.title as ticket_title,
+              tp.last_tokens_in, tp.last_tokens_out, tp.last_cost_usd,
+              tp.last_duration_ms, tp.last_provider_type, tp.last_model,
+              tp.last_planning_stage, tp.last_ai_call_at
        FROM ticket_planning tp
        LEFT JOIN users u ON tp.created_by = u.id
        JOIN tickets t ON tp.ticket_id = t.id
@@ -29,12 +32,23 @@ class TicketPlanningService {
       updated_at: f.updated_at,
       created_by_name: f.created_by_name || null,
       ticket_title: f.ticket_title || null,
+      last_tokens_in: f.last_tokens_in || 0,
+      last_tokens_out: f.last_tokens_out || 0,
+      last_cost_usd: parseFloat(f.last_cost_usd || 0),
+      last_duration_ms: f.last_duration_ms || 0,
+      last_provider_type: f.last_provider_type || null,
+      last_model: f.last_model || null,
+      last_planning_stage: f.last_planning_stage || null,
+      last_ai_call_at: f.last_ai_call_at || null,
     }));
   }
 
   async get(ticketId, fileKey, _userId) {
     const result = await pool.query(
-      `SELECT tp.*, u.name as created_by_name, t.title as ticket_title
+      `SELECT tp.*, u.name as created_by_name, t.title as ticket_title,
+              tp.last_tokens_in, tp.last_tokens_out, tp.last_cost_usd,
+              tp.last_duration_ms, tp.last_provider_type, tp.last_model,
+              tp.last_planning_stage, tp.last_ai_call_at
        FROM ticket_planning tp
        LEFT JOIN users u ON tp.created_by = u.id
        JOIN tickets t ON tp.ticket_id = t.id
@@ -52,6 +66,14 @@ class TicketPlanningService {
       updated_at: row.updated_at,
       created_by_name: row.created_by_name || null,
       ticket_title: row.ticket_title || null,
+      last_tokens_in: row.last_tokens_in || 0,
+      last_tokens_out: row.last_tokens_out || 0,
+      last_cost_usd: parseFloat(row.last_cost_usd || 0),
+      last_duration_ms: row.last_duration_ms || 0,
+      last_provider_type: row.last_provider_type || null,
+      last_model: row.last_model || null,
+      last_planning_stage: row.last_planning_stage || null,
+      last_ai_call_at: row.last_ai_call_at || null,
     };
   }
 
@@ -178,6 +200,14 @@ class TicketPlanningService {
         version: f.version,
         updatedAt: f.updated_at,
         createdBy: f.created_by_name || null,
+        last_tokens_in: f.last_tokens_in || 0,
+        last_tokens_out: f.last_tokens_out || 0,
+        last_cost_usd: f.last_cost_usd || 0,
+        last_duration_ms: f.last_duration_ms || 0,
+        last_provider_type: f.last_provider_type || null,
+        last_model: f.last_model || null,
+        last_planning_stage: f.last_planning_stage || null,
+        last_ai_call_at: f.last_ai_call_at || null,
       })),
     };
   }

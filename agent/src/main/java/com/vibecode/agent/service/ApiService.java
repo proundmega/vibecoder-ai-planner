@@ -243,7 +243,16 @@ public class ApiService {
      * Report usage to the backend for billing/monitoring.
      */
     public void reportUsage(String agentId, String providerType, String model,
-                            int tokensIn, int tokensOut, long durationMs, Long ticketId) throws IOException {
+                             int tokensIn, int tokensOut, long durationMs, Long ticketId) throws IOException {
+        reportUsage(agentId, providerType, model, tokensIn, tokensOut, durationMs, ticketId, null, null);
+    }
+
+    /**
+     * Report usage to the backend for billing/monitoring with planning context.
+     */
+    public void reportUsage(String agentId, String providerType, String model,
+                             int tokensIn, int tokensOut, long durationMs, Long ticketId,
+                             String planningStage, List<String> fileKeys) throws IOException {
         String url = baseUrl + "/usage/agents/" + agentId + "/usage";
         
         Map<String, Object> body = new java.util.HashMap<>();
@@ -253,6 +262,8 @@ public class ApiService {
         body.put("tokens_out", tokensOut);
         body.put("duration_ms", durationMs);
         if (ticketId != null) body.put("ticket_id", ticketId);
+        if (planningStage != null) body.put("planning_stage", planningStage);
+        if (fileKeys != null && !fileKeys.isEmpty()) body.put("file_keys", fileKeys);
         
         executePost(url, body, new TypeReference<ApiResponse<Object>>() {});
     }

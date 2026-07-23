@@ -174,3 +174,66 @@ export function postMultipart<T = unknown>(url: string, formData: FormData, opti
     return extractData<T>(response, options.validate)
   })
 }
+
+export interface UsageByStage {
+  tokensIn: number
+  tokensOut: number
+  costUsd: number
+  durationMs: number
+  callCount: number
+}
+
+export interface UsageByFile {
+  fileKey: string
+  tokensIn: number
+  tokensOut: number
+  costUsd: number
+}
+
+export interface PlanningUsageResponse {
+  ticketId: number
+  projectId: number
+  projectName: string
+  totalCost: number
+  totalTokensIn: number
+  totalTokensOut: number
+  totalDurationMs: number
+  byStage: Record<string, UsageByStage>
+  byFile: UsageByFile[]
+}
+
+export function getTicketPlanningUsage(ticketId: number): Promise<PlanningUsageResponse> {
+  return get(`/tickets/${ticketId}/planning/usage`)
+}
+
+export interface UsageHistoryEntry {
+  tokensIn: number
+  tokensOut: number
+  costUsd: number
+  durationMs: number
+  providerType: string | null
+  model: string | null
+  planningStage: string | null
+  at: string | null
+}
+
+export interface LastUsage {
+  tokensIn: number
+  tokensOut: number
+  costUsd: number
+  durationMs: number
+  providerType: string | null
+  model: string | null
+  planningStage: string | null
+  at: string | null
+}
+
+export interface PlanningFileUsageResponse {
+  fileKey: string
+  lastUsage: LastUsage | null
+  history: UsageHistoryEntry[]
+}
+
+export function getPlanningFileUsage(ticketId: number, fileKey: string): Promise<PlanningFileUsageResponse> {
+  return get(`/tickets/${ticketId}/planning/${encodeURIComponent(fileKey)}/usage`)
+}

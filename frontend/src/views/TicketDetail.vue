@@ -6,6 +6,7 @@ import { fetchTicket, updateTicket, addComment, fetchComments, deleteTicket } fr
 import { getTicketApprovals, createApproval } from '@/api/approvals'
 import { fetchAttachments, uploadAttachment, deleteAttachment } from '@/api/ticketAttachments'
 import { listPlanningFiles, getPlanningFile, upsertPlanningFile, applyTemplate, updatePlanningStatus } from '@/api/ticketPlanning'
+import { getTicketPlanningUsage } from '@/api/client'
 import { listTemplates } from '@/api/templates'
 import TicketEditModal from '@/components/TicketEditModal.vue'
 
@@ -43,6 +44,11 @@ const selectedTemplate = ref('')
 const planningStatus = ref('')
 const customTemplates = ref([])
 
+// Planning usage state
+const planningUsage = ref(null)
+const planningUsageLoading = ref(false)
+const planningUsageError = ref(null)
+
 const validTransitions = {
   backlog: ['in_progress'],
   in_progress: ['review', 'backlog'],
@@ -78,6 +84,7 @@ onMounted(async () => {
       approvals.value = await getTicketApprovals(ticketId)
       attachments.value = await fetchAttachments(ticketId)
       await loadPlanning()
+      await loadPlanningUsage()
     }
   } catch (e) {
     console.error('Failed to load ticket:', e)
@@ -301,6 +308,19 @@ async function loadPlanningFile(key) {
   }
 }
 
+async function loadPlanningUsage() {
+  planningUsageLoading.value = true
+  planningUsageError.value = null
+  try {
+    planningUsage.value = await getTicketPlanningUsage(ticketId)
+  } catch (err) {
+    console.error('Failed to load planning usage:', err)
+    planningUsageError.value = err.message || 'Failed to load usage data'
+  } finally {
+    planningUsageLoading.value = false
+  }
+}
+
 async function handleShowTemplateSelect() {
   try {
     customTemplates.value = await listTemplates(ticket.value.project_id)
@@ -427,8 +447,46 @@ async function handleShowTemplateSelect() {
             <div v-for="file in planningFiles" :key="file.key" class="planning-file">
               <div class="file-info">
                 <span class="file-name">{{ file.key }}</span>
+                <span v-if="file.last_cost_usd > 0" class="file-cost">
+                  ${{ file.last_cost_usd.toFixed(4) }}
+                </span>
               </div>
               <button @click="editingFile = file; editingContent = ''; loadPlanningFile(file.key)" class="btn-small">Edit</button>
+            </div>
+          </div>
+
+          <div v-if="!editingFile && planningUsage" class="usage-breakdown">
+            <h4>AI Usage Breakdown</h4>
+            <div v-if="planningUsageLoading" class="loading">Loading usage...</div>
+            <div v-else-if="planningUsageError" class="error">{{ planningUsageError }}</div>
+            <div v-else-if="Object.keys(planningUsage.byStage).length === 0" class="empty">
+              <p>No AI usage recorded for this ticket yet.</p>
+            </div>
+            <div v-else>
+              <div class="usage-summary">
+                <span class="total-cost">Total: ${{ planningUsage.totalCost.toFixed(4) }}</span>
+                <span class="total-tokens">{{ planningUsage.totalTokensIn.toLocaleString() }} in / {{ planningUsage.totalTokensOut.toLocaleString() }} out</span>
+              </div>
+              <table class="usage-table">
+                <thead>
+                  <tr>
+                    <th>Stage</th>
+                    <th>Tokens In</th>
+                    <th>Tokens Out</th>
+                    <th>Cost</th>
+                    <th>Calls</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(stage, name) in planningUsage.byStage" :key="name">
+                    <td>{{ name }}</td>
+                    <td>{{ stage.tokensIn.toLocaleString() }}</td>
+                    <td>{{ stage.tokensOut.toLocaleString() }}</td>
+                    <td>${{ stage.costUsd.toFixed(4) }}</td>
+                    <td>{{ stage.callCount }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -1018,6 +1076,71 @@ h1 {
 .file-status.approved {
   background: #d1fae5;
   color: #065f46;
+}
+
+.file-cost {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #fef3c7;
+  color: #92400e;
+  font-family: monospace;
+}
+
+.usage-breakdown {
+  margin-top: 20px;
+  padding: 16px;
+  background: #f0f9ff;
+  border-radius: 8px;
+  border: 1px solid #bae6fd;
+}
+
+.usage-breakdown h4 {
+  margin: 0 0 12px 0;
+  color: #0c4a6e;
+  font-size: 14px;
+}
+
+.usage-summary {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.total-cost {
+  font-weight: 700;
+  color: #059669;
+}
+
+.total-tokens {
+  color: #6b7280;
+  font-family: monospace;
+}
+
+.usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.usage-table th {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 2px solid #bae6fd;
+  color: #0c4a6e;
+  font-weight: 600;
+}
+
+.usage-table td {
+  padding: 8px;
+  border-bottom: 1px solid #e5e7eb;
+  font-family: monospace;
+}
+
+.usage-table tbody tr:hover {
+  background: #e0f2fe;
 }
 
 .planning-editor {

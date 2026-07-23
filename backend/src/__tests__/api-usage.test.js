@@ -2,6 +2,7 @@ const request = require('supertest');
 const app = require('../index');
 const UsageLogger = require('../services/UsageLogger');
 const AgentService = require('../services/AgentService');
+const PermissionService = require('../services/PermissionService');
 
 jest.mock('../services/UsageLogger');
 jest.mock('../services/AgentService');
@@ -16,34 +17,16 @@ jest.mock('../db', () => {
     query: jest.fn().mockResolvedValue({ rows: [] }),
     stats: jest.fn(() => ({ idleCount: 1 })),
   };
-  pool.query.mockImplementation((sql) => {
-    if (sql.includes('INSERT INTO provider_configs')) {
-      return Promise.resolve({
-        rows: [{
-          id: 'pc-1',
-          project_id: 1,
-          provider: 'openai',
-          endpoint_url: null,
-          model: 'gpt-4',
-          api_key_encrypted: null,
-          fallback_provider: null,
-          is_active: true,
-          created_at: new Date(),
-          updated_at: new Date(),
-        }],
-      });
-    }
-    if (sql.includes('SELECT * FROM provider_configs')) {
-      return Promise.resolve({ rows: [] });
-    }
-    return Promise.resolve({ rows: [] });
-  });
   return { pool };
 });
 
 jest.mock('jsonwebtoken', () => ({
   verify: jest.fn().mockReturnValue({ id: 'user-1', email: 'user@test.com', role: 'project_admin' }),
   sign: jest.fn().mockReturnValue('mock-token')
+}));
+
+jest.mock('../services/PermissionService', () => ({
+  hasAnyPermission: jest.fn().mockResolvedValue(true),
 }));
 
 describe('Usage API', () => {
@@ -188,6 +171,166 @@ describe('Usage API', () => {
       expect(res.body.success).toBe(true);
       expect(UsageLogger.reportUsage).toHaveBeenCalled();
     });
+
+    it('should accept planning_stage and file_keys in request body', async () => {
+      const res = await request(app)
+        .post('/api/v1/usage/agents/mock-agent-1/usage')
+        .set('X-API-Key', 'test-agent-key')
+        .send({
+          provider_type: 'claude',
+          model: 'claude-sonnet-4-20250514',
+          tokens_in: 2000,
+          tokens_out: 800,
+          duration_ms: 3500,
+          ticket_id: 42,
+          planning_stage: 'plan_generation',
+          file_keys: ['01_ARCHITECT_REQUIREMENT.md', '02_ARCHITECT_DESIGN.md'],
+        });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(UsageLogger.reportUsage).toHaveBeenCalledWith(
+        'mock-agent-1',
+        expect.objectContaining({
+          planning_stage: 'plan_generation',
+          file_keys: ['01_ARCHITECT_REQUIREMENT.md', '02_ARCHITECT_DESIGN.md'],
+        })
+      );
+    });
   });
 
+  describe('GET /api/v1/tickets/:ticketId/planning/usage', () => {
+
+    it('should return 401 without auth token', async () => {
+      const res = await request(app)
+        .get('/api/v1/tickets/42/planning/usage');
+
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('should return 404 for invalid ticket ID (NaN query returns no rows)', async () => {
+      const res = await request(app)
+        .get('/api/v1/tickets/abc/planning/usage')
+        .set('Authorization', 'Bearer mock-token');
+
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('should return 404 for non-existent ticket', async () => {
+      jest.mocked(require('../db').pool.query).mockImplementation((sql) => {
+        if (sql.includes('SELECT t.id, t.project_id')) {
+          return Promise.resolve({ rows: [] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      const res = await request(app)
+        .get('/api/v1/tickets/999/planning/usage')
+        .set('Authorization', 'Bearer mock-token');
+
+      expect(res.statusCode).toBe(404);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error.code).toBe('NOT_FOUND');
+    });
+
+
+  });
+
+  describe('GET /api/v1/tickets/:ticketId/planning/:fileKey/usage', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should return 401 without auth token', async () => {
+      const res = await request(app)
+        .get('/api/v1/tickets/42/planning/01_ARCHITECT_REQUIREMENT.md/usage');
+
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('should return last usage and history for a file', async () => {
+      jest.mocked(require('../db').pool.query).mockImplementation((sql) => {
+        if (sql.includes('last_tokens_in')) {
+          return Promise.resolve({
+            rows: [{
+              last_tokens_in: 5000,
+              last_tokens_out: 800,
+              last_cost_usd: '0.015000',
+              last_duration_ms: 8000,
+              last_provider_type: 'claude',
+              last_model: 'claude-sonnet-4-20250514',
+              last_planning_stage: 'requirement_extraction',
+              last_ai_call_at: '2026-07-23T10:30:00.000Z',
+            }],
+          });
+        }
+        if (sql.includes('created_at as at')) {
+          return Promise.resolve({
+            rows: [
+              {
+                tokens_in: 5000,
+                tokens_out: 800,
+                cost_usd: '0.015000',
+                duration_ms: 8000,
+                provider_type: 'claude',
+                model: 'claude-sonnet-4-20250514',
+                planning_stage: 'requirement_extraction',
+                at: '2026-07-23T10:30:00.000Z',
+              },
+              {
+                tokens_in: 4000,
+                tokens_out: 600,
+                cost_usd: '0.012000',
+                duration_ms: 7000,
+                provider_type: 'claude',
+                model: 'claude-sonnet-4-20250514',
+                planning_stage: 'requirement_extraction',
+                at: '2026-07-22T14:00:00.000Z',
+              },
+            ],
+          });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      const res = await request(app)
+        .get('/api/v1/tickets/42/planning/01_ARCHITECT_REQUIREMENT.md/usage')
+        .set('Authorization', 'Bearer mock-token');
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.fileKey).toBe('01_ARCHITECT_REQUIREMENT.md');
+      expect(res.body.data.lastUsage).toEqual({
+        tokensIn: 5000,
+        tokensOut: 800,
+        costUsd: 0.015,
+        durationMs: 8000,
+        providerType: 'claude',
+        model: 'claude-sonnet-4-20250514',
+        planningStage: 'requirement_extraction',
+        at: '2026-07-23T10:30:00.000Z',
+      });
+      expect(res.body.data.history).toHaveLength(2);
+      expect(res.body.data.history[0].tokensIn).toBe(5000);
+      expect(res.body.data.history[1].tokensIn).toBe(4000);
+    });
+
+    it('should return null lastUsage when planning file has no usage data', async () => {
+      jest.mocked(require('../db').pool.query).mockImplementation((sql) => {
+        if (sql.includes('last_tokens_in')) {
+          return Promise.resolve({ rows: [] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      const res = await request(app)
+        .get('/api/v1/tickets/42/planning/01_ARCHITECT_REQUIREMENT.md/usage')
+        .set('Authorization', 'Bearer mock-token');
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.lastUsage).toBeNull();
+      expect(res.body.data.history).toEqual([]);
+    });
+  });
 });

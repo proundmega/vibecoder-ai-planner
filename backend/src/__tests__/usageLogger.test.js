@@ -25,7 +25,7 @@ describe('UsageLogger', () => {
 
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO usage_logs'),
-        [1, 2, 3, 'claude', 'claude-sonnet-4-20250514', 1000, 500, expect.any(Number), 150, 10]
+        [1, 2, 3, 'claude', 'claude-sonnet-4-20250514', 1000, 500, expect.any(Number), 150, 10, null, null]
       );
 
       const cost = calculateCost('claude-sonnet-4-20250514', 1000, 500);
@@ -39,7 +39,7 @@ describe('UsageLogger', () => {
 
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO usage_logs'),
-        [1, 2, 3, 'openai', 'gpt-4o', 0, 0, 0, 100, null]
+        [1, 2, 3, 'openai', 'gpt-4o', 0, 0, 0, 100, null, null, null]
       );
     });
   });
@@ -143,7 +143,7 @@ describe('UsageLogger', () => {
 
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO usage_logs'),
-        [5, 'claude', 'claude-sonnet-4-20250514', 2000, 800, expect.any(Number), 3500, 42, 1]
+        [5, 'claude', 'claude-sonnet-4-20250514', 2000, 800, expect.any(Number), 3500, 42, 1, null, null]
       );
 
       const cost = calculateCost('claude-sonnet-4-20250514', 2000, 800);
@@ -173,7 +173,7 @@ describe('UsageLogger', () => {
 
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO usage_logs'),
-        [5, 'openai', 'gpt-4o', 500, 200, expect.any(Number), 0, null, null]
+        [5, 'openai', 'gpt-4o', 500, 200, expect.any(Number), 0, null, null, null, null]
       );
     });
   });

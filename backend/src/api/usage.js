@@ -73,6 +73,8 @@ router.get('/pricing/models', verifyToken, usageController.getModelPricing);
  *               duration_ms: { type: integer }
  *               ticket_id: { type: integer }
  *               project_id: { type: integer }
+ *               planning_stage: { type: string, enum: [requirement_extraction, plan_generation, refinement, validation] }
+ *               file_keys: { type: array, items: { type: string } }
  *     responses:
  *       200:
  *         description: Usage recorded

@@ -239,6 +239,9 @@ public class TicketProcessor {
         String systemPrompt = buildSystemPrompt(ticket, planningDocs, fileContext);
         String userMessage = "Ticket: " + ticket.getTitle() + "\n\n" + ticket.getDescription();
         
+        String planningStage = inferPlanningStage(planningDocs);
+        List<String> fileKeys = extractFileKeys(planningDocs);
+        
         long startTime = System.currentTimeMillis();
         String generatedContent = aiProvider.generateResponse(systemPrompt, userMessage);
         long durationMs = System.currentTimeMillis() - startTime;
@@ -251,13 +254,42 @@ public class TicketProcessor {
                 aiProvider.getTokensIn(),
                 aiProvider.getTokensOut(),
                 durationMs,
-                ticket.getId()
+                ticket.getId(),
+                planningStage,
+                fileKeys
             );
         } catch (Exception e) {
             log.warn("Failed to report usage for ticket {}: {}", ticket.getId(), e.getMessage());
         }
         
         return generatedContent;
+    }
+
+    private String inferPlanningStage(List<String> planningDocs) {
+        boolean hasImplementation = planningDocs.stream()
+            .anyMatch(d -> d.contains("03_ARCHITECT_IMPLEMENTATION") || d.contains("03_TECHNICAL_IMPLEMENTATION") || d.contains("03_SIMPLE_TASKS"));
+        boolean hasDesign = planningDocs.stream()
+            .anyMatch(d -> d.contains("02_ARCHITECT_DESIGN") || d.contains("02_TECHNICAL_DESIGN"));
+        boolean hasRequirement = planningDocs.stream()
+            .anyMatch(d -> d.contains("01_ARCHITECT_REQUIREMENT") || d.contains("01_TECHNICAL_REQUIREMENT") || d.contains("01_SIMPLE_TASKS"));
+        
+        if (hasImplementation) return "validation";
+        if (hasDesign) return "plan_generation";
+        if (hasRequirement) return "requirement_extraction";
+        return "requirement_extraction";
+    }
+
+    private List<String> extractFileKeys(List<String> planningDocs) {
+        List<String> keys = new ArrayList<>();
+        for (String doc : planningDocs) {
+            if (doc.startsWith("=== ")) {
+                int end = doc.indexOf(" ===");
+                if (end > 0) {
+                    keys.add(doc.substring(4, end));
+                }
+            }
+        }
+        return keys;
     }
 
     private String buildSystemPrompt(Ticket ticket, List<String> planningDocs, List<String> fileContext) {
