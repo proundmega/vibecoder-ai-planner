@@ -62,6 +62,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | **bp-105** | `bp-105-multi-provider-configs` | P3 | Allow multiple named provider configs per project |
 | **bp-106** | `bp-106-log-aggregation` | P3 | Winston transport for log aggregation (Datadog/CloudWatch) |
 | **bp-107** | `bp-107-pgbouncer-tls` | P2 | PgBouncer TLS/mTLS for database connections |
+| **bp-108** | `bp-108-agent-api-key-plaintext-exposure` | P2 | Remove plaintext api_key from GET /agents response (follow-up to bp-102) |
 
 ## Test Backfills (bt-*)
 
@@ -112,3 +113,4 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 - **bp-78** is **completed** (this session) — 10 files changed. Migration 039 creates csp_violations table. POST /api/csp-report persists violations to DB. New GET /api/v1/csp-violations (paginated, filterable) and DELETE /api/v1/csp-violations endpoints. CspViolationCleanupService deletes violations older than 30 days hourly. Frontend CspViolations.vue with directive filter, pagination, clear all. All 1183 backend + 530 frontend tests pass (1175 backend + 523 frontend total).
 - **bp-80** is **completed** (this session) — 7 files changed. PgBouncer service (edoburu/pgbouncer:latest) added to docker-compose.yml with transaction mode, 20 default pool size, 5 min pool, 5 reserve, 200 max client connections. Api and migrate services route through PgBouncer (port 6432). Backend pool size reduced from 20 to 5. Created pgbouncer/pgbouncer.ini and pgbouncer/userlist.txt config files. Integration test (pgbouncer.test.sh) with 5 test cases. All 1198 backend + 523 frontend tests pass.
 - **bp-75** is **completed** (this session) — 2 files changed. Replaced winston File transports with winston-daily-rotate-file DailyRotateFile. Daily rotation at midnight, 7-day retention, 100MB max per file, gzip compression. Separate error and combined log files maintained. All 1198 tests pass, 70.86% coverage.
+- **bp-108** is **planned** — Follow-up to bp-102. bp-102 masked `api_key_hash` and `api_key_hash_prefix` but left plaintext `api_key` in the `GET /agents` response. bp-108 removes `api_key` from the list response entirely, switches agent history endpoint to JWT auth (with `x-api-key` fallback), and updates frontend to stop depending on `api_key` from the list.
