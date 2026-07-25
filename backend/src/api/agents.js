@@ -21,6 +21,15 @@ const createAgentSchema = Joi.object({
   keyExpiryDays: Joi.number().integer().min(1).max(365).optional(),
 });
 
+function maskAgentList(agents) {
+  return agents.map(agent => {
+    const masked = { ...agent };
+    if (masked.api_key_hash) masked.api_key_hash = '***';
+    if (masked.api_key_hash_prefix) masked.api_key_hash_prefix = '***';
+    return masked;
+  });
+}
+
 /**
  * @openapi
  * /agents/create:
@@ -87,7 +96,7 @@ router.post('/create', verifyTokenOrAgent, requireAnyPermission('AGENT_CREATE'),
 router.get('/', verifyTokenOrAgent, requireAnyPermission('AGENT_READ'), async (req, res) => {
   try {
     const agents = await AgentService.list(req.user.userId);
-    res.json({ agents });
+    res.json({ agents: maskAgentList(agents) });
   } catch (error) {
     logger.error('GET /api/agents', error);
     res.status(500).json({ error: error.message });
