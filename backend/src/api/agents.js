@@ -24,6 +24,7 @@ const createAgentSchema = Joi.object({
 function maskAgentList(agents) {
   return agents.map(agent => {
     const masked = { ...agent };
+    delete masked.api_key;
     if (masked.api_key_hash) masked.api_key_hash = '***';
     if (masked.api_key_hash_prefix) masked.api_key_hash_prefix = '***';
     return masked;
@@ -214,17 +215,25 @@ router.delete('/:agentId', verifyTokenOrAgent, requireAnyPermission('AGENT_DELET
  *       403:
  *         description: Forbidden
  */
-router.get('/:agentId/history', async (req, res, _next) => {
+router.get('/:agentId/history', verifyTokenOrAgent, requireAnyPermission('AGENT_READ'), async (req, res, _next) => {
   try {
-    const apiKey = req.headers['x-api-key'];
     let agent;
-    if (apiKey) {
-      agent = await AgentService.getAgentByApiKey(apiKey);
-      if (!agent || agent.id !== req.params.agentId) {
-        return res.status(403).json({ error: 'Forbidden' });
+    if (req.user && req.user.userId) {
+      const agents = await AgentService.list(req.user.userId);
+      agent = agents.find(a => a.id === req.params.agentId);
+      if (!agent) {
+        return res.status(404).json({ error: 'Agent not found' });
       }
     } else {
-      return res.status(401).json({ error: 'Authentication required' });
+      const apiKey = req.headers['x-api-key'];
+      if (apiKey) {
+        agent = await AgentService.getAgentByApiKey(apiKey);
+        if (!agent || agent.id !== req.params.agentId) {
+          return res.status(403).json({ error: 'Forbidden' });
+        }
+      } else {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
     }
 
     const history = await AgentService.getAgentHistory(agent.id, 100);

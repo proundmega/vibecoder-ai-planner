@@ -115,10 +115,7 @@ async function loadCrudAgents() {
   }
 }
 
-function formatKeyPreview(key) {
-  if (!key) return '—'
-  return key.substring(0, 8) + '****'
-}
+
 
 function formatDate(dateStr) {
   return dateStr ? new Date(dateStr).toLocaleDateString() : '—'
@@ -226,7 +223,7 @@ function formatDate(dateStr) {
                 <button @click="startEdit(agent)" class="btn-edit" title="Edit name">Edit</button>
               </td>
               <td>{{ agent.provider_name || '—' }}</td>
-            <td><code>{{ formatKeyPreview(agent.api_key) }}</code></td>
+            <td><code>••••••••</code> <router-link :to="`/agents/${agent.id}`" class="link-details">View</router-link></td>
             <td>{{ agent.rate_limit || 100 }}</td>
             <td>{{ formatDate(agent.created_at) }}</td>
             <td>
