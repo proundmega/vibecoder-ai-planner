@@ -1,4 +1,5 @@
 const winston = require('winston');
+const DailyRotateFile = require('winston-daily-rotate-file');
 
 const SENSITIVE_FIELDS = ['password', 'token', 'apikey', 'authorization', 'secret', 'credit_card', 'ssn'];
 
@@ -21,12 +22,18 @@ function maskSensitive(obj, depth = 0) {
   return masked;
 }
 
+const logFormat = winston.format.combine(
+  winston.format.timestamp(),
+  winston.format.json()
+);
+
+const rotationDays = parseInt(process.env.LOG_ROTATION_DAYS || '7', 10);
+const rotationMaxSize = process.env.LOG_ROTATION_MAX_SIZE || '100m';
+const rotationCompress = process.env.LOG_ROTATION_COMPRESS !== 'false';
+
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json()
-  ),
+  format: logFormat,
   defaultMeta: { service: 'vibecode-api' },
   transports: [
     new winston.transports.Console({
@@ -35,25 +42,23 @@ const logger = winston.createLogger({
         winston.format.simple()
       ),
     }),
-    ...(process.env.NODE_ENV === 'production'
-      ? [
-          new winston.transports.File({ 
-            filename: 'logs/error.log', 
-            level: 'error',
-            format: winston.format.combine(
-              winston.format.timestamp(),
-              winston.format.json()
-            )
-          }),
-          new winston.transports.File({ 
-            filename: 'logs/combined.log',
-            format: winston.format.combine(
-              winston.format.timestamp(),
-              winston.format.json()
-            )
-          }),
-        ]
-      : []),
+    new DailyRotateFile({
+      filename: 'logs/error-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      level: 'error',
+      maxFiles: `${rotationDays}d`,
+      maxSize: rotationMaxSize,
+      zippedArchive: rotationCompress,
+      format: logFormat,
+    }),
+    new DailyRotateFile({
+      filename: 'logs/combined-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      maxFiles: `${rotationDays}d`,
+      maxSize: rotationMaxSize,
+      zippedArchive: rotationCompress,
+      format: logFormat,
+    }),
   ],
   exitOnError: false,
 });
