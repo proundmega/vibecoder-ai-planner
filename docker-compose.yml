@@ -131,8 +131,6 @@ services:
     restart: unless-stopped
     networks:
       - default
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -178,8 +176,6 @@ services:
     restart: unless-stopped
     networks:
       - default
-    ports:
-      - "6432:6432"
     volumes:
       - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
       - ./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
