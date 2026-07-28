@@ -6,6 +6,12 @@ jest.mock('winston', () => {
     write: jest.fn()
   }));
 
+  const MockDailyRotateFile = jest.fn().mockImplementation(() => ({
+    level: jest.fn(),
+    format: jest.fn(),
+    write: jest.fn()
+  }));
+
   return {
     createLogger: jest.fn(() => ({
       level: jest.fn(),
@@ -38,6 +44,14 @@ jest.mock('winston', () => {
       Stream: MockConsole
     }
   };
+});
+
+jest.mock('winston-daily-rotate-file', () => {
+  return jest.fn().mockImplementation(() => ({
+    level: jest.fn(),
+    format: jest.fn(),
+    write: jest.fn()
+  }));
 });
 
 // logger mock
@@ -76,6 +90,7 @@ jest.mock('pg', () => {
       release: jest.fn(),
     }),
     stats: jest.fn().mockReturnValue({ totalCount: 5, idleCount: 3, waitingCount: 0 }),
+    end: jest.fn().mockResolvedValue(undefined),
   };
   return { Pool: jest.fn().mockImplementation(() => pool) };
 });
