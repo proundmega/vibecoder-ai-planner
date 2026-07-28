@@ -17,7 +17,15 @@ const ProviderService = require('../services/ProviderService');
  *       200:
  *         description: List of providers
  */
-router.get('/', verifyToken, providerController.listProviders);
+router.get('/', verifyToken, async (req, res, next) => {
+  try {
+    const { project_id } = req.query;
+    const providers = await providerController.listProviders(project_id || null);
+    res.json({ providers });
+  } catch (err) {
+    next(err);
+  }
+});
 
 /**
  * @openapi
@@ -186,7 +194,8 @@ router.post('/resolve', verifyToken, async (req, res, next) => {
       priority: req.body.priority || 'medium',
       phase: req.body.phase || 'backlog',
     };
-    const config = await ProviderService.resolveProvider(ticketInfo);
+    const projectId = req.body.project_id || null;
+    const config = await ProviderService.resolveProvider(ticketInfo, projectId);
     res.json({ success: true, data: config });
   } catch (err) {
     next(err);

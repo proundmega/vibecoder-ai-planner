@@ -217,9 +217,9 @@ describe('Provider Controller', () => {
 
       mockReq.params.id = '1';
 
-      await providerController.listProviders(mockReq, mockRes, nextFn);
+      const result = await providerController.listProviders('1');
 
-      expect(mockRes.json).toHaveBeenCalledWith({
+      expect(result).toEqual({
         success: true,
         data: expect.arrayContaining([
           expect.objectContaining({
@@ -475,9 +475,9 @@ describe('Provider Controller', () => {
 
       mockReq.params.id = '1';
 
-      await providerController.listProviders(mockReq, mockRes, nextFn);
+      const result = await providerController.listProviders('1');
 
-      expect(mockRes.json).toHaveBeenCalledWith({
+      expect(result).toEqual({
         success: true,
         data: expect.arrayContaining([
           expect.objectContaining({ name: 'test' }),

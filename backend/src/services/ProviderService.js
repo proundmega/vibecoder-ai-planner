@@ -2,24 +2,43 @@ const { pool } = require('../db');
 const { decrypt } = require('../utils/crypto');
 
 class ProviderService {
-  async getGlobalProvider() {
+  async getProjectProviders(projectId) {
     const result = await pool.query(
       `SELECT * FROM providers
-       WHERE is_project_director = true AND is_active = true
-       LIMIT 1`
+       WHERE (project_id = $1 OR project_id IS NULL) AND is_active = true
+       ORDER BY project_id IS NULL ASC`,
+      [projectId]
     );
-    return result.rows[0] || null;
+    return result.rows;
   }
 
-  async resolveProvider(ticketInfo) {
-    const config = await this.getGlobalProvider();
-    if (!config) {
+  async resolveProvider(ticketInfo, projectId = null) {
+    const providers = await this.getProjectProviders(projectId);
+
+    if (providers.length === 0) {
       throw new Error('No active provider configuration found');
     }
 
-    const rules = config.routing_rules;
+    const projectProviders = providers.filter(p => p.project_id === projectId);
+    const globalProviders = providers.filter(p => p.project_id === null);
+
+    for (const provider of projectProviders) {
+      const config = await this._tryResolve(provider, ticketInfo);
+      if (config) return config;
+    }
+
+    for (const provider of globalProviders) {
+      const config = await this._tryResolve(provider, ticketInfo);
+      if (config) return config;
+    }
+
+    throw new Error('No matching provider configuration found');
+  }
+
+  async _tryResolve(provider, ticketInfo) {
+    const rules = provider.routing_rules;
     if (!rules || !Array.isArray(rules.rules) || rules.rules.length === 0) {
-      return this._defaultProvider(config);
+      return this._defaultProvider(provider);
     }
 
     const ticketLabels = new Set(ticketInfo.labels || []);
@@ -27,15 +46,15 @@ class ProviderService {
 
     for (const rule of rules.rules) {
       if (this._matches(rule.match, ticketLabels, ticketPriority)) {
-        return this._buildProviderConfig(config, rule, false);
+        return this._buildProviderConfig(provider, rule, false);
       }
     }
 
     if (rules.fallback) {
-      return this._buildProviderConfig(config, rules.fallback, true);
+      return this._buildProviderConfig(provider, rules.fallback, true);
     }
 
-    return this._defaultProvider(config);
+    return null;
   }
 
   _matches(match, ticketLabels, ticketPriority) {
