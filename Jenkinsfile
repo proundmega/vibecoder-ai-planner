@@ -272,16 +272,16 @@ EOF
                         // Fix DOCKER_HOST: Jenkins agent container may not resolve docker-socket-proxy
                         // via Docker's internal DNS (127.0.0.11). Go's net.Resolver (used by docker compose)
                         // uses getent which queries Docker DNS, not the system resolver.
-                        sh '
+                        sh '''
                             echo "=== DOCKER HOST RESOLUTION FIX ==="
-                            ORIGINAL_HOST="$DOCKER_HOST"
+                            ORIGINAL_HOST=$DOCKER_HOST
                             if echo "$ORIGINAL_HOST" | grep -q "^tcp://"; then
                                 HOSTNAME=$(echo "$ORIGINAL_HOST" | sed "s|tcp://||; s|:.*||")
                                 PORT=$(echo "$ORIGINAL_HOST" | sed "s|.*:||")
                                 echo "Original DOCKER_HOST: $ORIGINAL_HOST (host=$HOSTNAME, port=$PORT)"
 
                                 # Try DNS resolution with getent (used by Go runtime / docker compose)
-                                IP=$(getent hosts "$HOSTNAME" 2>/dev/null | awk "{print \$1}")
+                                IP=$(getent hosts "$HOSTNAME" 2>/dev/null | awk '{print $1}')
                                 if [ -n "$IP" ]; then
                                     echo "Resolved $HOSTNAME to $IP via getent"
                                     export DOCKER_HOST="tcp://$IP:$PORT"
@@ -292,7 +292,7 @@ EOF
                                         export DOCKER_HOST="$DOCKER_HOST_FALLBACK"
                                     else
                                         echo "No DOCKER_HOST_FALLBACK set"
-                                        echo "This is a known issue: Go'\''s net.Resolver uses Docker DNS (127.0.0.11)"
+                                        echo "This is a known issue: Go's net.Resolver uses Docker DNS (127.0.0.11)"
                                         echo "which cannot resolve hostnames from other Docker networks."
                                         echo ""
                                         echo "Fix options:"
@@ -304,7 +304,7 @@ EOF
                             fi
                             echo "Final DOCKER_HOST: $DOCKER_HOST"
                             echo "=== END DOCKER HOST RESOLUTION FIX ==="
-                        '
+                        '''
                         sh '''
                             echo "Checking for stale containers (older than 24 hours)..."
                             STALE_CONTAINERS=""
@@ -341,7 +341,7 @@ EOF
                         // Build infra (production compose) + test service
                         // Explicitly pass DOCKER_HOST to docker compose — Go plugin sometimes
                         // doesn't inherit DOCKER_HOST from Jenkins agent environment
-                        sh '
+                        sh '''
                             echo "=== PRE-COMPOSE DOCKER HOST ==="
                             echo "DOCKER_HOST=$DOCKER_HOST"
                             if echo "$DOCKER_HOST" | grep -q "://.*:"; then
@@ -351,7 +351,7 @@ EOF
                                 getent hosts "$HOST" 2>&1 || echo "FAILED: $HOST not resolvable"
                                 echo "==============================="
                             fi
-                        '
+                        '''
                         sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} down -v --remove-orphans || true"
                         sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml build"
                         sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} up -d"
