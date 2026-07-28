@@ -273,37 +273,35 @@ async function deleteProvider(req, res, next) {
   }
 }
 
-async function listProviders(req, res, next) {
-  try {
-    const result = await pool.query(
-      `SELECT id, name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, is_active, endpoint_url, fallback_provider, routing_rules, is_project_director, created_at, updated_at
-       FROM providers
-       ORDER BY created_at DESC`
-    );
+async function listProviders(projectId = null) {
+  const result = await pool.query(
+    `SELECT id, name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, is_active, endpoint_url, fallback_provider, routing_rules, is_project_director, created_at, updated_at
+      FROM providers
+      WHERE project_id = $1 OR project_id IS NULL
+      ORDER BY project_id IS NULL ASC, created_at DESC`,
+    [projectId]
+  );
 
-    const providers = result.rows.map(row => ({
-      id: row.id,
-      name: row.name,
-      providerType: row.provider_type,
-      apiKey: row.api_key_encrypted ? maskToken(decrypt(row.api_key_encrypted)) : null,
-      baseUrl: row.base_url,
-      model: row.model,
-      roles: row.roles,
-      maxTokens: row.max_tokens,
-      temperature: row.temperature,
-      isActive: row.is_active,
-      endpoint_url: row.endpoint_url,
-      fallback_provider: row.fallback_provider,
-      routing_rules: row.routing_rules,
-      is_project_director: row.is_project_director,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+  const providers = result.rows.map(row => ({
+    id: row.id,
+    name: row.name,
+    providerType: row.provider_type,
+    apiKey: row.api_key_encrypted ? maskToken(decrypt(row.api_key_encrypted)) : null,
+    baseUrl: row.base_url,
+    model: row.model,
+    roles: row.roles,
+    maxTokens: row.max_tokens,
+    temperature: row.temperature,
+    isActive: row.is_active,
+    endpoint_url: row.endpoint_url,
+    fallback_provider: row.fallback_provider,
+    routing_rules: row.routing_rules,
+    is_project_director: row.is_project_director,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
 
-    res.json({ success: true, data: providers });
-  } catch (error) {
-    next(error);
-  }
+  return { success: true, data: providers };
 }
 
 async function getProvider(req, res, next) {

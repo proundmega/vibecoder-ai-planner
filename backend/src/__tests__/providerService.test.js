@@ -13,22 +13,31 @@ describe('ProviderService', () => {
     decrypt.mockReturnValue('decrypted-mock-key');
   });
 
-  describe('getGlobalProvider', () => {
-    it('returns active provider config', async () => {
-      const mockConfig = { id: 1, provider_type: 'openai', model: 'gpt-4' };
+  describe('getProjectProviders', () => {
+    it('returns providers for a project', async () => {
+      const mockConfig = { id: 1, provider_type: 'openai', model: 'gpt-4', project_id: 'proj-1' };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.getGlobalProvider();
+      const result = await ProviderService.getProjectProviders('proj-1');
 
-      expect(result).toEqual(mockConfig);
+      expect(result).toEqual([mockConfig]);
     });
 
-    it('returns null when no active config', async () => {
+    it('returns global providers when no project match', async () => {
+      const mockConfig = { id: 1, provider_type: 'openai', model: 'gpt-4', project_id: null };
+      pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
+
+      const result = await ProviderService.getProjectProviders('proj-1');
+
+      expect(result).toEqual([mockConfig]);
+    });
+
+    it('returns empty array when no active providers', async () => {
       pool.query.mockResolvedValueOnce({ rows: [] });
 
-      const result = await ProviderService.getGlobalProvider();
+      const result = await ProviderService.getProjectProviders('proj-1');
 
-      expect(result).toBeNull();
+      expect(result).toEqual([]);
     });
   });
 
@@ -36,18 +45,18 @@ describe('ProviderService', () => {
     it('throws when no active provider config', async () => {
       pool.query.mockResolvedValueOnce({ rows: [] });
 
-      await expect(ProviderService.resolveProvider({})).rejects.toThrow('No active provider configuration found');
+      await expect(ProviderService.resolveProvider({}, 'proj-1')).rejects.toThrow('No active provider configuration found');
     });
 
     it('returns default provider when no routing rules', async () => {
       const mockConfig = {
         id: 1, provider_type: 'openai', model: 'gpt-4',
         base_url: 'https://api.openai.com', api_key_encrypted: 'enc-key',
-        max_tokens: 4096, temperature: 0.1,
+        max_tokens: 4096, temperature: 0.1, project_id: null,
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider({ labels: [], priority: 'medium' });
+      const result = await ProviderService.resolveProvider({ labels: [], priority: 'medium' }, 'proj-1');
 
       expect(result).toEqual({
         provider: 'openai',
@@ -65,10 +74,11 @@ describe('ProviderService', () => {
         id: 1, provider_type: 'openai', model: 'gpt-4',
         base_url: 'https://api.openai.com', api_key_encrypted: 'enc-key',
         routing_rules: { rules: [] },
+        project_id: null,
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider({});
+      const result = await ProviderService.resolveProvider({}, 'proj-1');
 
       expect(result.provider).toBe('openai');
     });
@@ -83,10 +93,11 @@ describe('ProviderService', () => {
             { match: { labels: ['backend'] }, provider: 'backend-model' },
           ],
         },
+        project_id: null,
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider({ labels: ['backend', 'urgent'] });
+      const result = await ProviderService.resolveProvider({ labels: ['backend', 'urgent'] }, 'proj-1');
 
       expect(result.provider).toBe('backend-model');
     });
@@ -101,10 +112,11 @@ describe('ProviderService', () => {
             { match: { priority: 'low' }, provider: 'cheap-model' },
           ],
         },
+        project_id: null,
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider({ priority: 'high' });
+      const result = await ProviderService.resolveProvider({ priority: 'high' }, 'proj-1');
 
       expect(result.provider).toBe('expensive-model');
     });
@@ -119,10 +131,11 @@ describe('ProviderService', () => {
             { match: { labels: ['frontend'], priority: 'low' }, provider: 'standard' },
           ],
         },
+        project_id: null,
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider({ labels: ['frontend'], priority: 'high' });
+      const result = await ProviderService.resolveProvider({ labels: ['frontend'], priority: 'high' }, 'proj-1');
 
       expect(result.provider).toBe('premium');
     });
@@ -137,10 +150,11 @@ describe('ProviderService', () => {
           ],
           fallback: { provider: 'fallback-model' },
         },
+        project_id: null,
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider({ labels: ['backend'] });
+      const result = await ProviderService.resolveProvider({ labels: ['backend'] }, 'proj-1');
 
       expect(result.provider).toBe('fallback-model');
       expect(result.is_fallback).toBe(true);
@@ -155,10 +169,11 @@ describe('ProviderService', () => {
             { match: { labels: ['test'] }, provider: 'test-model', api_key: 'rule-key' },
           ],
         },
+        project_id: null,
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider({ labels: ['test'] });
+      const result = await ProviderService.resolveProvider({ labels: ['test'] }, 'proj-1');
 
       expect(result.api_key).toBe('rule-key');
     });
@@ -173,10 +188,11 @@ describe('ProviderService', () => {
             { match: {}, provider: 'custom', endpoint_url: 'https://custom.api', model: 'custom-model', max_tokens: 8192, temperature: 0.5 },
           ],
         },
+        project_id: null,
       };
       pool.query.mockResolvedValueOnce({ rows: [mockConfig] });
 
-      const result = await ProviderService.resolveProvider({});
+      const result = await ProviderService.resolveProvider({}, 'proj-1');
 
       expect(result.provider).toBe('custom');
       expect(result.endpoint_url).toBe('https://custom.api');
@@ -271,6 +287,102 @@ describe('ProviderService', () => {
       const result = ProviderService._buildProviderConfig(baseConfig, ruleConfig, false);
 
       expect(result.temperature).toBe(0.7);
+    });
+  });
+
+  describe('resolveProvider - Multi-Provider', () => {
+    it('checks project-scoped providers first', async () => {
+      const globalProvider = {
+        id: 1, provider_type: 'openai', model: 'gpt-4',
+        api_key_encrypted: 'enc-key', project_id: null,
+      };
+      const projectProvider = {
+        id: 2, provider_type: 'claude', model: 'claude-sonnet',
+        api_key_encrypted: 'enc-key2', project_id: 'proj-1',
+      };
+      pool.query.mockResolvedValueOnce({ rows: [projectProvider, globalProvider] });
+
+      const result = await ProviderService.resolveProvider({}, 'proj-1');
+
+      expect(result.provider).toBe('claude');
+      expect(result.model).toBe('claude-sonnet');
+    });
+
+    it('falls back to global provider when no project match', async () => {
+      const globalProvider = {
+        id: 1, provider_type: 'openai', model: 'gpt-4',
+        api_key_encrypted: 'enc-key', project_id: null,
+      };
+      pool.query.mockResolvedValueOnce({ rows: [globalProvider] });
+
+      const result = await ProviderService.resolveProvider({}, 'proj-1');
+
+      expect(result.provider).toBe('openai');
+      expect(result.model).toBe('gpt-4');
+    });
+
+    it('returns correct providers for project', async () => {
+      const projectAProvider = {
+        id: 1, provider_type: 'openai', model: 'gpt-4',
+        api_key_encrypted: 'enc-key', project_id: 'proj-a',
+      };
+      const projectBProvider = {
+        id: 2, provider_type: 'claude', model: 'claude-sonnet',
+        api_key_encrypted: 'enc-key2', project_id: 'proj-b',
+      };
+      const globalProvider = {
+        id: 3, provider_type: 'openai', model: 'gpt-3.5',
+        api_key_encrypted: 'enc-key3', project_id: null,
+      };
+      pool.query.mockResolvedValueOnce({ rows: [projectAProvider, globalProvider] });
+
+      const result = await ProviderService.getProjectProviders('proj-a');
+
+      expect(result).toHaveLength(2);
+      expect(result[0].project_id).toBe('proj-a');
+      expect(result[1].project_id).toBeNull();
+    });
+
+    it('global provider works when no project-scoped providers exist', async () => {
+      const globalProvider = {
+        id: 1, provider_type: 'openai', model: 'gpt-4',
+        api_key_encrypted: 'enc-key', project_id: null,
+      };
+      const projectProvider = {
+        id: 2, provider_type: 'claude', model: 'claude-sonnet',
+        api_key_encrypted: 'enc-key2', project_id: 'proj-1',
+        routing_rules: {
+          rules: [{ match: { labels: ['frontend'] }, provider: 'frontend-model' }],
+        },
+      };
+      pool.query.mockResolvedValueOnce({ rows: [projectProvider, globalProvider] });
+
+      const result = await ProviderService.resolveProvider({ labels: ['backend'] }, 'proj-1');
+
+      expect(result.provider).toBe('openai');
+    });
+
+    it('providers ordered: project-scoped first, global last', async () => {
+      const globalProvider = {
+        id: 1, provider_type: 'openai', model: 'gpt-4',
+        api_key_encrypted: 'enc-key', project_id: null,
+      };
+      const projectProvider = {
+        id: 2, provider_type: 'claude', model: 'claude-sonnet',
+        api_key_encrypted: 'enc-key2', project_id: 'proj-1',
+      };
+      pool.query.mockResolvedValueOnce({ rows: [projectProvider, globalProvider] });
+
+      const providers = await ProviderService.getProjectProviders('proj-1');
+
+      expect(providers[0].project_id).toBe('proj-1');
+      expect(providers[1].project_id).toBeNull();
+    });
+
+    it('throws when empty providers list', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      await expect(ProviderService.resolveProvider({}, 'proj-1')).rejects.toThrow('No active provider configuration found');
     });
   });
 });
