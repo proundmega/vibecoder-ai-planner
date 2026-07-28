@@ -9,11 +9,28 @@ TESTS=()
 pass() { PASS=$((PASS + 1)); TESTS+=("✓ $1"); }
 fail() { FAIL=$((FAIL + 1)); TESTS+=("✗ $1 — $2"); }
 
-# Docker exec helper — uses `docker exec` directly (no sudo) since
-# the CI test container runs as root. Falls back to `sudo docker exec`
-# for local development where the script may be run outside a container.
 docker_exec() {
   local container="$1"; shift
+  local service="$container"
+  case "$container" in
+    vibecode-postgres) service="postgres" ;;
+    vibecode-redis) service="redis" ;;
+    vibecode-pgbouncer) service="pgbouncer" ;;
+    vibecode-api) service="api" ;;
+    vibecode-test) service="test" ;;
+    vibecode-docker-proxy) service="docker-proxy" ;;
+    vibecode-migrate) service="migrate" ;;
+    vibecode-frontend) service="frontend" ;;
+  esac
+  # Try docker compose exec first (resolves via project namespace)
+  if [ -f /app/compose/docker-compose.yml ]; then
+    local compose_args="-f /app/compose/docker-compose.yml"
+    [ -f /app/compose/docker-compose.test.yml ] && compose_args="$compose_args -f /app/compose/docker-compose.test.yml"
+    if docker compose $compose_args exec -T "$service" "$@" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  # Fallback: direct docker exec
   if docker exec "$container" "$@" >/dev/null 2>&1; then
     return 0
   elif command -v sudo >/dev/null 2>&1 && sudo docker exec "$container" "$@" >/dev/null 2>&1; then
@@ -24,11 +41,27 @@ docker_exec() {
   fi
 }
 
-# Docker exec helper that captures output — same fallback logic but
-# returns stdout to the caller (useful for SELECT queries etc.)
 docker_exec_out() {
   local container="$1"; shift
+  local service="$container"
+  case "$container" in
+    vibecode-postgres) service="postgres" ;;
+    vibecode-redis) service="redis" ;;
+    vibecode-pgbouncer) service="pgbouncer" ;;
+    vibecode-api) service="api" ;;
+    vibecode-test) service="test" ;;
+    vibecode-docker-proxy) service="docker-proxy" ;;
+    vibecode-migrate) service="migrate" ;;
+    vibecode-frontend) service="frontend" ;;
+  esac
   local output
+  # Try docker compose exec first
+  if [ -f /app/compose/docker-compose.yml ]; then
+    local compose_args="-f /app/compose/docker-compose.yml"
+    [ -f /app/compose/docker-compose.test.yml ] && compose_args="$compose_args -f /app/compose/docker-compose.test.yml"
+    output=$(docker compose $compose_args exec -T "$service" "$@" 2>/dev/null) && { echo "$output"; return 0; }
+  fi
+  # Fallback: direct docker exec
   output=$(docker exec "$container" "$@" 2>/dev/null) && { echo "$output"; return 0; }
   if command -v sudo >/dev/null 2>&1; then
     output=$(sudo docker exec "$container" "$@" 2>/dev/null) && { echo "$output"; return 0; }

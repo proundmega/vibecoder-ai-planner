@@ -1,9 +1,6 @@
-name: vibecode
-
 services:
   docker-proxy:
     image: tecnativa/docker-socket-proxy:latest
-    container_name: vibecode-docker-proxy
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -12,7 +9,7 @@ services:
       IMAGES: 1
       NETWORKS: 1
     networks:
-      - vibecode
+      - default
     healthcheck:
       # tecnativa/docker-socket-proxy serves Docker API on :2375; /version is a lightweight GET
       # that returns JSON (no redirect), so wget --spider succeeds on TCP+HTTP 200
@@ -30,10 +27,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: vibecode-migrate
     restart: "no"
     networks:
-      - vibecode
+      - default
     environment:
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@postgres:5432/vibecode
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
@@ -54,7 +50,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: vibecode-api
     restart: unless-stopped
     ports:
       - "3001:3001"
@@ -65,7 +60,7 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - DOCKER_API_URL=http://docker-proxy:2375
       - AGENT_IMAGE=vibecode-agent
-      - CONTAINER_NETWORK=vibecode_default
+      - CONTAINER_NETWORK=${COMPOSE_PROJECT_NAME:-vibecode}_default
       - REPO_VOLUME=vibecode_repos
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - REDIS_URL=redis://redis:6379
@@ -73,7 +68,7 @@ services:
       - uploads_data:/app/uploads
       - vibecode_repos:/repos
     networks:
-      - vibecode
+      - default
     depends_on:
       docker-proxy:
         condition: service_healthy
@@ -99,10 +94,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: vibecode-frontend
     restart: unless-stopped
     networks:
-      - vibecode
+      - default
     ports:
       - "3002:80"
     environment:
@@ -124,10 +118,9 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: vibecode-redis
     restart: unless-stopped
     networks:
-      - vibecode
+      - default
     ports:
       - "6379:6379"
     healthcheck:
@@ -143,10 +136,9 @@ services:
 
   postgres:
     image: pgvector/pgvector:pg15
-    container_name: vibecode-postgres
     restart: unless-stopped
     networks:
-      - vibecode
+      - default
     environment:
       - POSTGRES_DB=vibecode
       - POSTGRES_USER=postgres
@@ -166,11 +158,10 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: vibecode-pgadmin
     restart: unless-stopped
     profiles: ["dev"]
     networks:
-      - vibecode
+      - default
     ports:
       - "5050:80"
     environment:
@@ -185,7 +176,7 @@ services:
           cpus: '0.5'
 
 networks:
-  vibecode:
+  default:
     driver: bridge
 
 volumes:

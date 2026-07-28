@@ -4,7 +4,6 @@ pipeline {
     options {
         timestamps()
         timeout(time: 60, unit: 'MINUTES')
-        disableConcurrentBuilds()
     }
 
     tools {
@@ -15,6 +14,7 @@ pipeline {
         POSTGRES_PASSWORD = 'changeme'
         JWT_SECRET = 'jenkins-ci-secret-for-testing-purposes-2026'
         ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+        COMPOSE_PROJECT_NAME = "vibecode-${BRANCH_NAME}-${BUILD_NUMBER}"
         // DATABASE_URL removed — docker-compose.yml sets it to postgres:5432 for the API container.
         // Integration tests set their own DATABASE_URL pointing to localhost:5432 (published port).
         // DOCKER_COMPOSE_FILE avoids Groovy interpreting hyphens in triple-quoted strings
@@ -252,8 +252,8 @@ EOF
                                 script: "docker compose -f \${DOCKER_COMPOSE_FILE} ps --format \"{{.Name}} {{.Status}}\" 2>/dev/null",
                                 returnStdout: true
                             )
-                            def apiUp = ps =~ /vibecode-api.*Up/
-                            def pgUp = ps =~ /vibecode-postgres.*Up/
+                            def apiUp = ps =~ /\${COMPOSE_PROJECT_NAME}-api.*Up/
+                            def pgUp = ps =~ /\${COMPOSE_PROJECT_NAME}-postgres.*Up/
                             if (apiUp && pgUp) {
                                 ready = true
                                 break
@@ -275,7 +275,8 @@ EOF
                         // forceExit: true returns exit code 1 when DB connections are still open,
                         // so check output for failures instead of relying on exit code
                         sh '''
-                            docker exec -w /app vibecode-test bash -c '
+                            docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml exec -T test bash -c '
+                                cd /app
                                 OUTPUT=$(./node_modules/.bin/jest --config jest.integration.config.js --verbose 2>&1)
                                 echo "$OUTPUT"
                                 if echo "$OUTPUT" | grep -E "^(Test Suites:|Tests:)" | grep -qi "failed"; then
@@ -286,7 +287,8 @@ EOF
 
                         // Run bash integration tests inside the test container
                         sh '''
-                            docker exec -w /app vibecode-test bash -c '
+                            docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml exec -T test bash -c '
+                                cd /app
                                 set -x
                                 BASE_URL=http://api:3001 bash integration-test/run.sh --only 2>&1
                                 EXIT_CODE=$?
