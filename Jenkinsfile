@@ -14,7 +14,8 @@ pipeline {
         POSTGRES_PASSWORD = 'changeme'
         JWT_SECRET = 'jenkins-ci-secret-for-testing-purposes-2026'
         ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
-        COMPOSE_PROJECT_NAME = "vibecode-${BRANCH_NAME}-${BUILD_NUMBER}"
+        // Sanitize branch name: only lowercase alphanumeric + hyphens allowed by docker compose
+        COMPOSE_PROJECT_NAME = "vibecode-${BRANCH_NAME.toLowerCase().replaceAll('[^a-z0-9-]', '-')}-${BUILD_NUMBER}"
         // DATABASE_URL removed — docker-compose.yml sets it to postgres:5432 for the API container.
         // Integration tests set their own DATABASE_URL pointing to localhost:5432 (published port).
         // DOCKER_COMPOSE_FILE avoids Groovy interpreting hyphens in triple-quoted strings
@@ -260,12 +261,51 @@ EOF
                             echo "Docker internal DNS servers:"
                             cat /etc/resolv.conf 2>&1 || true
                             echo ""
+                            echo "Docker gateway (bridge network):"
+                            ip route | grep default 2>&1 || true
+                            echo ""
                             echo "Testing docker compose connectivity (will show error if broken):"
                             DOCKER_HOST=\$DOCKER_HOST docker compose ps 2>&1 || true
                             echo "=== END DOCKER DIAGNOSTICS ==="
                         '''
 
-                        // Clean up stale containers from previous runs (older than 24 hours)
+                        // Fix DOCKER_HOST: Jenkins agent container may not resolve docker-socket-proxy
+                        // via Docker's internal DNS (127.0.0.11). Go's net.Resolver (used by docker compose)
+                        // uses getent which queries Docker DNS, not the system resolver.
+                        sh '''
+                            echo "=== DOCKER HOST RESOLUTION FIX ==="
+                            ORIGINAL_HOST=\$DOCKER_HOST
+                            if [[ "\$DOCKER_HOST" == tcp://* ]]; then
+                                HOSTNAME=\$(echo \$DOCKER_HOST | sed 's|tcp://||; s|:.*||')
+                                PORT=\$(echo \$DOCKER_HOST | sed 's|.*:||')
+                                echo "Original DOCKER_HOST: \$DOCKER_HOST (host=\$HOSTNAME, port=\$PORT)"
+
+                                # Try DNS resolution with getent (used by Go runtime / docker compose)
+                                IP=\$(getent hosts \$HOSTNAME 2>/dev/null | awk '{print \$1}')
+                                if [ -n "\$IP" ]; then
+                                    echo "Resolved \$HOSTNAME to \$IP via getent"
+                                    export DOCKER_HOST="tcp://\$IP:\$PORT"
+                                else
+                                    echo "getent failed for \$HOSTNAME"
+                                    DOCKER_HOST_FALLBACK=\${DOCKER_HOST_FALLBACK:-""}
+                                    if [ -n "\$DOCKER_HOST_FALLBACK" ]; then
+                                        echo "Using DOCKER_HOST_FALLBACK: \$DOCKER_HOST_FALLBACK"
+                                        export DOCKER_HOST=\$DOCKER_HOST_FALLBACK
+                                    else
+                                        echo "No DOCKER_HOST_FALLBACK set"
+                                        echo "This is a known issue: Go's net.Resolver uses Docker DNS (127.0.0.11)"
+                                        echo "which cannot resolve hostnames from other Docker networks."
+                                        echo ""
+                                        echo "Fix options:"
+                                        echo "  1. Set DOCKER_HOST_FALLBACK=tcp://<ip>:\$PORT in Jenkins environment"
+                                        echo "  2. Add --add-host \$HOSTNAME:<IP> to Jenkins agent container"
+                                        echo "  3. Put Jenkins agent on the same Docker network as \$HOSTNAME"
+                                    fi
+                                fi
+                            fi
+                            echo "Final DOCKER_HOST: \$DOCKER_HOST"
+                            echo "=== END DOCKER HOST RESOLUTION FIX ==="
+                        '''
                         sh '''
                             echo "Checking for stale containers (older than 24 hours)..."
                             STALE_CONTAINERS=""
