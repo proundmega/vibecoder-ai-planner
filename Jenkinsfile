@@ -233,6 +233,38 @@ PGADMIN_PASSWORD=changeme
 EOF
                         """
 
+                        // Diagnostic logging for Docker/docker compose connectivity
+                        sh '''
+                            echo "=== DOCKER DIAGNOSTICS ==="
+                            echo "DOCKER_HOST=\$DOCKER_HOST"
+                            echo "DOCKER_TLS_VERIFY=\${DOCKER_TLS_VERIFY:-not set}"
+                            echo "DOCKER_CERT_PATH=\${DOCKER_CERT_PATH:-not set}"
+                            echo ""
+                            echo "docker version:"
+                            docker version 2>&1 || true
+                            echo ""
+                            echo "docker compose version:"
+                            docker compose version 2>&1 || true
+                            echo ""
+                            echo "Testing docker CLI connectivity:"
+                            docker ps --format "{{.ID}} {{.Names}} {{.Status}}" 2>&1 | head -20 || true
+                            echo ""
+                            echo "DNS resolution for docker-socket-proxy:"
+                            getent hosts docker-socket-proxy 2>&1 || true
+                            nslookup docker-socket-proxy 2>&1 || true
+                            dig docker-socket-proxy 2>&1 || true
+                            echo ""
+                            echo "Resolving via host file:"
+                            grep docker /etc/hosts 2>&1 || true
+                            echo ""
+                            echo "Docker internal DNS servers:"
+                            cat /etc/resolv.conf 2>&1 || true
+                            echo ""
+                            echo "Testing docker compose connectivity (will show error if broken):"
+                            DOCKER_HOST=\$DOCKER_HOST docker compose ps 2>&1 || true
+                            echo "=== END DOCKER DIAGNOSTICS ==="
+                        '''
+
                         // Clean up stale containers from previous runs (older than 24 hours)
                         sh '''
                             echo "Checking for stale containers (older than 24 hours)..."
@@ -268,9 +300,22 @@ EOF
                         '''
 
                         // Build infra (production compose) + test service
-                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} down -v --remove-orphans || true"
-                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml build"
-                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} up -d"
+                        // Explicitly pass DOCKER_HOST to docker compose — Go plugin sometimes
+                        // doesn't inherit DOCKER_HOST from Jenkins agent environment
+                        sh '''
+                            echo "=== PRE-COMPOSE DOCKER HOST ==="
+                            echo "DOCKER_HOST=\$DOCKER_HOST"
+                            if [[ \$DOCKER_HOST == *://*:* ]]; then
+                                HOST=\$(echo \$DOCKER_HOST | sed 's|tcp://||; s|:.*||')
+                                echo "Extracted hostname: \$HOST"
+                                echo "DNS lookup result:"
+                                getent hosts \$HOST 2>&1 || echo "FAILED: \$HOST not resolvable"
+                                echo "==============================="
+                            fi
+                        '''
+                        sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} down -v --remove-orphans || true"
+                        sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml build"
+                        sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} up -d"
 
                         // Wait for infra to be ready (10 attempts, 6s apart; fail after 60s)
                         // docker-compose has start_period: 30s for API health check + migrate runs DB migrations
@@ -283,7 +328,7 @@ EOF
                             elapsed += 6
                             checks++
                             def ps = sh(
-                                script: "docker compose -f \${DOCKER_COMPOSE_FILE} ps --format \"{{.Name}} {{.Status}}\" 2>/dev/null",
+                                script: "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} ps --format \"{{.Name}} {{.Status}}\" 2>/dev/null",
                                 returnStdout: true
                             )
                             def apiUp = ps =~ /\${COMPOSE_PROJECT_NAME}-api.*Up/
@@ -296,20 +341,20 @@ EOF
                         }
                         if (!ready) {
                             echo "ERROR: Stack not ready after 60s (10 checks failed)"
-                            sh "docker compose -f \${DOCKER_COMPOSE_FILE} logs --tail=100 || true"
-                            sh "docker compose -f \${DOCKER_COMPOSE_FILE} ps || true"
+                            sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} logs --tail=100 || true"
+                            sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} ps || true"
                             error("Integration stack failed to start within 60 seconds")
                         }
                         echo "Infra ready after ${elapsed}s (${checks} checks)"
 
                         // Start test container (no auto-run command, tests run via exec)
-                        sh "docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml up -d test"
+                        sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml up -d test"
 
                         // Run Jest integration tests inside the test container
                         // forceExit: true returns exit code 1 when DB connections are still open,
                         // so check output for failures instead of relying on exit code
                         sh '''
-                            docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml exec -T test bash -c '
+                            DOCKER_HOST=$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml exec -T test bash -c '
                                 cd /app
                                 OUTPUT=$(./node_modules/.bin/jest --config jest.integration.config.js --verbose 2>&1)
                                 echo "$OUTPUT"
@@ -321,7 +366,7 @@ EOF
 
                         // Run bash integration tests inside the test container
                         sh '''
-                            docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml exec -T test bash -c '
+                            DOCKER_HOST=$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml exec -T test bash -c '
                                 cd /app
                                 set -x
                                 BASE_URL=http://api:3001 bash integration-test/run.sh --only 2>&1
