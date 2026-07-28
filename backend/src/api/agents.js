@@ -217,23 +217,21 @@ router.delete('/:agentId', verifyTokenOrAgent, requireAnyPermission('AGENT_DELET
  */
 router.get('/:agentId/history', verifyTokenOrAgent, requireAnyPermission('AGENT_READ'), async (req, res, _next) => {
   try {
+    const apiKey = req.headers['x-api-key'];
     let agent;
-    if (req.user && req.user.userId) {
+    if (apiKey) {
+      agent = await AgentService.getAgentByApiKey(apiKey);
+      if (!agent || agent.id !== req.params.agentId) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    } else if (req.user && req.user.userId) {
       const agents = await AgentService.list(req.user.userId);
       agent = agents.find(a => a.id === req.params.agentId);
       if (!agent) {
         return res.status(404).json({ error: 'Agent not found' });
       }
     } else {
-      const apiKey = req.headers['x-api-key'];
-      if (apiKey) {
-        agent = await AgentService.getAgentByApiKey(apiKey);
-        if (!agent || agent.id !== req.params.agentId) {
-          return res.status(403).json({ error: 'Forbidden' });
-        }
-      } else {
-        return res.status(401).json({ error: 'Authentication required' });
-      }
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
     const history = await AgentService.getAgentHistory(agent.id, 100);
