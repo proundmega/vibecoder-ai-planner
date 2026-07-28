@@ -272,7 +272,7 @@ EOF
                         // Fix DOCKER_HOST: Jenkins agent container may not resolve docker-socket-proxy
                         // via Docker's internal DNS (127.0.0.11). Go's net.Resolver (used by docker compose)
                         // uses getent which queries Docker DNS, not the system resolver.
-                        // Multi-strategy discovery: DNS -> DOCKER_HOST_FALLBACK -> error with fix instructions.
+                        // Multi-strategy discovery: DNS -> docker exec -> docker network inspect -> DOCKER_HOST_FALLBACK -> error.
                         sh '''
                             echo "=== DOCKER HOST RESOLUTION FIX ==="
                             ORIGINAL_HOST=$DOCKER_HOST
@@ -288,35 +288,64 @@ EOF
                                     export DOCKER_HOST="tcp://$IP:$PORT"
                                 else
                                     echo "Strategy 1 FAILED: getent cannot resolve $HOSTNAME"
-                                    # Strategy 2: Fall back to DOCKER_HOST_FALLBACK env var
-                                    if [ -n "$DOCKER_HOST_FALLBACK" ]; then
-                                        echo "Strategy 2: Using DOCKER_HOST_FALLBACK=$DOCKER_HOST_FALLBACK"
-                                        export DOCKER_HOST="$DOCKER_HOST_FALLBACK"
+                                    # Strategy 2: Get IP from inside the container via docker exec
+                                    echo "Strategy 2: Trying docker exec to get IP..."
+                                    IP=$(docker exec "$HOSTNAME" hostname -I 2>/dev/null | awk '{print $1}')
+                                    if [ -n "$IP" ]; then
+                                        echo "Strategy 2 SUCCESS: Discovered $HOSTNAME IP=$IP via docker exec"
+                                        export DOCKER_HOST="tcp://$IP:$PORT"
                                     else
-                                        echo "Strategy 2 SKIPPED: DOCKER_HOST_FALLBACK not set"
-                                        echo ""
-                                        echo "=========================================="
-                                        echo "  DOCKER DNS RESOLUTION FAILURE"
-                                        echo "=========================================="
-                                        echo ""
-                                        echo "docker-socket-proxy is not resolvable via Docker DNS (127.0.0.11)."
-                                        echo "This usually means the Jenkins agent is on a different Docker network"
-                                        echo "than docker-socket-proxy, or the proxy container is not healthy."
-                                        echo ""
-                                        echo "To fix, choose ONE of these options:"
-                                        echo ""
-                                        echo "Option A: Set DOCKER_HOST_FALLBACK in Jenkins environment"
-                                        echo "  1. Find the docker-socket-proxy IP:"
-                                        echo "     docker inspect docker-socket-proxy --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'"
-                                        echo "  2. Add to Jenkins container environment:"
-                                        echo "     DOCKER_HOST_FALLBACK=tcp://<IP>:2375"
-                                        echo ""
-                                        echo "Option B: Add --add-host to Jenkins agent"
-                                        echo "  docker run ... --add-host docker-socket-proxy:<IP> ..."
-                                        echo ""
-                                        echo "Option C: Put both containers on the same network"
-                                        echo "  docker network connect <network> jenkins"
-                                        echo ""
+                                        echo "Strategy 2 FAILED: docker exec could not get IP"
+                                    fi
+
+                                    # Strategy 3: Discover IP via docker network inspect
+                                    if [ -z "$IP" ]; then
+                                        echo "Strategy 3: Trying docker network inspect..."
+                                        NETWORK=$(docker inspect "$HOSTNAME" --format '{{(index .NetworkSettings.Networks (index .NetworkSettings.Networks 0)).Name}}' 2>/dev/null)
+                                        if [ -n "$NETWORK" ]; then
+                                            echo "  Network: $NETWORK"
+                                            IP=$(docker network inspect "$NETWORK" --format '{{range .Containers}}{{if eq .Name "'"$HOSTNAME"'\"}}{{.IPv4Address}}{{end}}{{end}}' 2>/dev/null | sed 's|/.*||')
+                                            if [ -n "$IP" ]; then
+                                                echo "Strategy 3 SUCCESS: Discovered $HOSTNAME IP=$IP via docker network inspect"
+                                                export DOCKER_HOST="tcp://$IP:$PORT"
+                                            else
+                                                echo "  No IP found via network inspect"
+                                                echo "  All containers on $NETWORK:"
+                                                docker network inspect "$NETWORK" --format '{{range .Containers}}{{.Name}}: {{.IPv4Address}}{{"\n"}}{{end}}' 2>/dev/null | sed 's/^/    /'
+                                            fi
+                                        else
+                                            echo "Strategy 3 SKIPPED: Cannot determine network"
+                                        fi
+                                    fi
+
+                                    # Strategy 4: Fall back to DOCKER_HOST_FALLBACK env var
+                                    if [ -z "$IP" ]; then
+                                        if [ -n "$DOCKER_HOST_FALLBACK" ]; then
+                                            echo "Strategy 4: Using DOCKER_HOST_FALLBACK=$DOCKER_HOST_FALLBACK"
+                                            export DOCKER_HOST="$DOCKER_HOST_FALLBACK"
+                                        else
+                                            echo "Strategy 4 SKIPPED: DOCKER_HOST_FALLBACK not set"
+                                            echo ""
+                                            echo "=========================================="
+                                            echo "  DOCKER DNS RESOLUTION FAILURE"
+                                            echo "=========================================="
+                                            echo ""
+                                            echo "docker-socket-proxy is not resolvable via Docker DNS (127.0.0.11)."
+                                            echo "All discovery strategies failed."
+                                            echo ""
+                                            echo "To fix, set DOCKER_HOST_FALLBACK in Jenkins environment:"
+                                            echo "  1. Find the IP on the Docker host:"
+                                            echo "     docker exec docker-socket-proxy hostname -I"
+                                            echo "  2. Add to Jenkins container environment:"
+                                            echo "     DOCKER_HOST_FALLBACK=tcp://<IP>:2375"
+                                            echo ""
+                                        fi
+                                    fi
+                                fi
+                            fi
+                            echo "Final DOCKER_HOST: $DOCKER_HOST"
+                            echo "=== END DOCKER HOST RESOLUTION FIX ==="
+                        '''
                                         echo "=========================================="
                                     fi
                                 fi
