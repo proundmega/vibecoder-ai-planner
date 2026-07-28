@@ -272,6 +272,7 @@ EOF
                         // Fix DOCKER_HOST: Jenkins agent container may not resolve docker-socket-proxy
                         // via Docker's internal DNS (127.0.0.11). Go's net.Resolver (used by docker compose)
                         // uses getent which queries Docker DNS, not the system resolver.
+                        // Multi-strategy discovery: DNS -> DOCKER_HOST_FALLBACK -> error with fix instructions.
                         sh '''
                             echo "=== DOCKER HOST RESOLUTION FIX ==="
                             ORIGINAL_HOST=$DOCKER_HOST
@@ -280,25 +281,43 @@ EOF
                                 PORT=$(echo "$ORIGINAL_HOST" | sed "s|.*:||")
                                 echo "Original DOCKER_HOST: $ORIGINAL_HOST (host=$HOSTNAME, port=$PORT)"
 
-                                # Try DNS resolution with getent (used by Go runtime / docker compose)
+                                # Strategy 1: DNS resolution with getent (used by Go runtime / docker compose)
                                 IP=$(getent hosts "$HOSTNAME" 2>/dev/null | awk '{print $1}')
                                 if [ -n "$IP" ]; then
-                                    echo "Resolved $HOSTNAME to $IP via getent"
+                                    echo "Strategy 1 SUCCESS: Resolved $HOSTNAME to $IP via getent"
                                     export DOCKER_HOST="tcp://$IP:$PORT"
                                 else
-                                    echo "getent failed for $HOSTNAME"
+                                    echo "Strategy 1 FAILED: getent cannot resolve $HOSTNAME"
+                                    # Strategy 2: Fall back to DOCKER_HOST_FALLBACK env var
                                     if [ -n "$DOCKER_HOST_FALLBACK" ]; then
-                                        echo "Using DOCKER_HOST_FALLBACK: $DOCKER_HOST_FALLBACK"
+                                        echo "Strategy 2: Using DOCKER_HOST_FALLBACK=$DOCKER_HOST_FALLBACK"
                                         export DOCKER_HOST="$DOCKER_HOST_FALLBACK"
                                     else
-                                        echo "No DOCKER_HOST_FALLBACK set"
-                                        echo "This is a known issue: Go's net.Resolver uses Docker DNS (127.0.0.11)"
-                                        echo "which cannot resolve hostnames from other Docker networks."
+                                        echo "Strategy 2 SKIPPED: DOCKER_HOST_FALLBACK not set"
                                         echo ""
-                                        echo "Fix options:"
-                                        echo "  1. Set DOCKER_HOST_FALLBACK=tcp://<ip>:$PORT in Jenkins environment"
-                                        echo "  2. Add --add-host $HOSTNAME:<IP> to Jenkins agent container"
-                                        echo "  3. Put Jenkins agent on the same Docker network as $HOSTNAME"
+                                        echo "=========================================="
+                                        echo "  DOCKER DNS RESOLUTION FAILURE"
+                                        echo "=========================================="
+                                        echo ""
+                                        echo "docker-socket-proxy is not resolvable via Docker DNS (127.0.0.11)."
+                                        echo "This usually means the Jenkins agent is on a different Docker network"
+                                        echo "than docker-socket-proxy, or the proxy container is not healthy."
+                                        echo ""
+                                        echo "To fix, choose ONE of these options:"
+                                        echo ""
+                                        echo "Option A: Set DOCKER_HOST_FALLBACK in Jenkins environment"
+                                        echo "  1. Find the docker-socket-proxy IP:"
+                                        echo "     docker inspect docker-socket-proxy --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'"
+                                        echo "  2. Add to Jenkins container environment:"
+                                        echo "     DOCKER_HOST_FALLBACK=tcp://<IP>:2375"
+                                        echo ""
+                                        echo "Option B: Add --add-host to Jenkins agent"
+                                        echo "  docker run ... --add-host docker-socket-proxy:<IP> ..."
+                                        echo ""
+                                        echo "Option C: Put both containers on the same network"
+                                        echo "  docker network connect <network> jenkins"
+                                        echo ""
+                                        echo "=========================================="
                                     fi
                                 fi
                             fi
