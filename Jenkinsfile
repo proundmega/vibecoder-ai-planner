@@ -233,6 +233,33 @@ PGADMIN_PASSWORD=changeme
 EOF
                         """
 
+                        // Clean up stale containers from previous runs (older than 24 hours)
+                        sh """
+                            echo "Checking for stale containers (older than 24 hours)..."
+                            STALE_CONTAINERS=\$(docker ps -q --filter "status=running" 2>/dev/null | while read cid; do
+                                CREATED=\$(docker inspect --format='{{.Created}}' "\$cid" 2>/dev/null)
+                                if [ -n "\$CREATED" ]; then
+                                    CREATED_EPOCH=\$(date -d "\$CREATED" +%s 2>/dev/null || echo 0)
+                                    NOW_EPOCH=\$(date +%s)
+                                    AGE_HOURS=\$(( (NOW_EPOCH - CREATED_EPOCH) / 3600 ))
+                                    if [ "\$AGE_HOURS" -ge 24 ]; then
+                                        NAME=\$(docker inspect --format='{{.Name}}' "\$cid" 2>/dev/null | sed 's/^\///')
+                                        echo "\$cid \$NAME \$AGE_HOURS hours old"
+                                    fi
+                                fi
+                            done)
+                            if [ -n "\$STALE_CONTAINERS" ]; then
+                                echo "Found stale containers:"
+                                echo "\$STALE_CONTAINERS"
+                                echo "Stopping and removing stale containers..."
+                                docker stop \$STALE_CONTAINERS 2>/dev/null || true
+                                docker rm \$STALE_CONTAINERS 2>/dev/null || true
+                                echo "Stale containers removed."
+                            else
+                                echo "No stale containers found."
+                            fi
+                        """
+
                         // Build infra (production compose) + test service
                         sh "docker compose -f \${DOCKER_COMPOSE_FILE} down -v --remove-orphans || true"
                         sh "docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml build"
