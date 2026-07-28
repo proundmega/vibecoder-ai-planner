@@ -40,7 +40,9 @@ const SQL_FILES = [
   path.join(__dirname, './034_create_ip_whitelist_table.sql'),
   path.join(__dirname, './035_global_providers.sql'),
   path.join(__dirname, './036_fix_usage_logs_fk.sql'),
-  path.join(__dirname, './038_planning_usage_columns.sql'),
+   path.join(__dirname, './038_planning_usage_columns.sql'),
+   path.join(__dirname, './039_create_csp_violations.sql'),
+   path.join(__dirname, './040_telemetry_events.sql'),
 ];
 
 const DATA_MIGRATIONS = [

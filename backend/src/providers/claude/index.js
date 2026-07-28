@@ -53,7 +53,8 @@ class ClaudeProvider extends ProviderInterface {
     try {
       await UsageLogger.log(
         this.projectId, this.userId, this.agentId,
-        'claude', this.model, usage, duration, this.ticketId
+        'claude', this.model, usage, duration, this.ticketId,
+        { rawUsage: response.usage }
       );
     } catch (e) {
       logger.warn('Failed to log usage:', e.message);

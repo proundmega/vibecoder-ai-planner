@@ -85,7 +85,8 @@ class GenericProvider extends ProviderInterface {
     try {
       await UsageLogger.log(
         this.projectId, this.userId, this.agentId,
-        'generic', this.model, usage, duration, this.ticketId
+        'generic', this.model, usage, duration, this.ticketId,
+        { rawUsage: response.data.usage }
       );
     } catch (e) {
       logger.warn('Failed to log usage:', e.message);

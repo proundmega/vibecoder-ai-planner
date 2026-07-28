@@ -1,9 +1,11 @@
 const { pool } = require('../db');
 const { calculateCost } = require('../utils/pricing');
+const EventHashService = require('./EventHashService');
+const logger = require('../utils/logger');
 
 class UsageLogger {
   static async log(projectId, userId, agentId, providerType, model, usage, durationMs, ticketId = null, options = {}) {
-    const { planningStage, fileKey } = options;
+    const { planningStage, fileKey, rawUsage } = options;
     const tokensIn = usage?.input_tokens || usage?.tokens_in || 0;
     const tokensOut = usage?.output_tokens || usage?.tokens_out || 0;
     const cost = calculateCost(model, tokensIn, tokensOut);
@@ -26,10 +28,17 @@ class UsageLogger {
         [tokensIn, tokensOut, cost, durationMs || 0, providerType, model, planningStage || null, ticketId, fileKey]
       );
     }
+
+    // Dual-write to telemetry_events
+    await UsageLogger.logStructuredEvent({
+      providerType, model, rawUsage: rawUsage || usage,
+      durationMs, projectId, userId, agentId, ticketId,
+      planningStage, fileKey,
+    });
   }
 
   static async reportUsage(agentId, data) {
-    const { provider_type, model, tokens_in, tokens_out, duration_ms, ticket_id, project_id, planning_stage, file_keys } = data;
+    const { provider_type, model, tokens_in, tokens_out, duration_ms, ticket_id, project_id, planning_stage, file_keys, raw_usage } = data;
 
     if (!provider_type || !model || tokens_in == null || tokens_out == null) {
       const err = new Error('Missing required fields: provider_type, model, tokens_in, tokens_out');
@@ -60,13 +69,22 @@ class UsageLogger {
         );
       }
     }
+
+    // Dual-write to telemetry_events
+    await UsageLogger.logStructuredEvent({
+      providerType: provider_type, model,
+      rawUsage: raw_usage || { tokens_in, tokens_out }, durationMs: duration_ms,
+      projectId: project_id, userId: null, agentId,
+      ticketId: ticket_id, planningStage: planning_stage,
+      fileKey: primaryFileKey,
+    });
   }
 
   static async logPlanningUsage(planData) {
     const {
       projectId, userId, agentId,
       ticketId, planningStage, fileKeys,
-      providerType, model, tokensIn, tokensOut, durationMs,
+      providerType, model, tokensIn, tokensOut, durationMs, rawUsage,
     } = planData;
 
     const cost = calculateCost(model, tokensIn, tokensOut);
@@ -93,6 +111,13 @@ class UsageLogger {
           [tokensIn, tokensOut, cost, durationMs || 0, providerType, model,
             planningStage, ticketId, fk]
         );
+
+        // Dual-write to telemetry_events
+        await UsageLogger.logStructuredEvent({
+          providerType, model, rawUsage: rawUsage || { input_tokens: tokensIn, output_tokens: tokensOut },
+          durationMs, projectId, userId, agentId, ticketId,
+          planningStage, fileKey: fk,
+        });
       }
     } else {
       await pool.query(
@@ -105,6 +130,13 @@ class UsageLogger {
           tokensIn, tokensOut, cost, durationMs || 0, ticketId || null,
           planningStage]
       );
+
+      // Dual-write to telemetry_events
+      await UsageLogger.logStructuredEvent({
+        providerType, model, rawUsage: rawUsage || { input_tokens: tokensIn, output_tokens: tokensOut },
+        durationMs, projectId, userId, agentId, ticketId,
+        planningStage, fileKey: null,
+      });
     }
   }
 
@@ -154,6 +186,112 @@ class UsageLogger {
       [projectId, since, until]
     );
     return result.rows[0] || { total_in: 0, total_out: 0, total_cost: 0, total_calls: 0 };
+  }
+
+  static _buildRawProviderFields(providerType, rawUsage) {
+    if (!rawUsage || typeof rawUsage !== 'object') return {};
+    const raw = { ...rawUsage };
+    delete raw._request_id;
+    delete raw._response_ms;
+    return raw;
+  }
+
+  static _buildNormalizedFields(providerType, rawUsage, durationMs, model) {
+    const raw = rawUsage || {};
+    let tokensIn = 0;
+    let tokensOut = 0;
+
+    if (providerType === 'claude') {
+      tokensIn = raw.input_tokens || 0;
+      tokensOut = raw.output_tokens || 0;
+    } else if (providerType === 'openai' || providerType === 'generic') {
+      tokensIn = raw.prompt_tokens || 0;
+      tokensOut = raw.completion_tokens || 0;
+    }
+
+    return {
+      tokens_in: tokensIn,
+      tokens_out: tokensOut,
+      tokens_total: tokensIn + tokensOut,
+      duration_ms: durationMs || 0,
+      provider_type: providerType,
+      model: model || 'unknown',
+    };
+  }
+
+  static _buildDerivedMetrics(normalizedFields, model) {
+    const { tokens_in, tokens_out, duration_ms } = normalizedFields;
+    const cost = calculateCost(model, tokens_in, tokens_out);
+    const tokensPerSecond = duration_ms > 0
+      ? Math.round((tokens_out / (duration_ms / 1000)) * 10) / 10
+      : 0;
+
+    return {
+      cost_usd: cost,
+      tokens_per_second: tokensPerSecond,
+    };
+  }
+
+  static _buildFieldProvenance(providerType) {
+    const provenance = {
+      raw_provider_fields: 'raw:provider_response',
+      'normalized_fields.duration_ms': 'raw:backend_measured',
+      'derived_metrics.cost_usd': 'derived:pricing.js(model,tokens_in,tokens_out)',
+      'derived_metrics.tokens_per_second': 'derived:tokens_out/duration_ms',
+    };
+
+    if (providerType === 'claude') {
+      provenance['normalized_fields.tokens_in'] = 'normalized:input_tokens→tokens_in';
+      provenance['normalized_fields.tokens_out'] = 'normalized:output_tokens→tokens_out';
+    } else {
+      provenance['normalized_fields.tokens_in'] = 'normalized:prompt_tokens→tokens_in';
+      provenance['normalized_fields.tokens_out'] = 'normalized:completion_tokens→tokens_out';
+    }
+
+    return provenance;
+  }
+
+  static async logStructuredEvent({
+    providerType, model, rawUsage, durationMs,
+    projectId, userId, agentId, ticketId, planningStage, fileKey,
+  }) {
+    try {
+      const rawProviderFields = UsageLogger._buildRawProviderFields(providerType, rawUsage);
+      const normalizedFields = UsageLogger._buildNormalizedFields(providerType, rawUsage, durationMs, model);
+      const derivedMetrics = UsageLogger._buildDerivedMetrics(normalizedFields, model);
+      const fieldProvenance = UsageLogger._buildFieldProvenance(providerType);
+
+      const payload = {
+        schema_version: 1,
+        provider_type: providerType,
+        model: model || 'unknown',
+        raw_provider_fields: rawProviderFields,
+        normalized_fields: normalizedFields,
+        derived_metrics: derivedMetrics,
+        field_provenance: fieldProvenance,
+      };
+
+      const contentHash = EventHashService.computeHash(payload);
+
+      await pool.query(
+        `INSERT INTO telemetry_events
+         (schema_version, content_hash, provider_type, model,
+          raw_provider_fields, normalized_fields, derived_metrics, field_provenance,
+          project_id, user_id, agent_id, ticket_id, planning_stage, file_key, duration_ms)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         ON CONFLICT (content_hash) DO NOTHING`,
+        [
+          1, contentHash, providerType, model || 'unknown',
+          JSON.stringify(rawProviderFields), JSON.stringify(normalizedFields),
+          JSON.stringify(derivedMetrics), JSON.stringify(fieldProvenance),
+          projectId || null, userId || null, agentId || null,
+          ticketId || null, planningStage || null, fileKey || null,
+          durationMs || 0,
+        ]
+      );
+    } catch (e) {
+      logger.warn('Failed to write structured telemetry event:', e.message);
+    }
   }
 }
 
