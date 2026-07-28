@@ -31,10 +31,13 @@ services:
     networks:
       - default
     environment:
-      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@postgres:5432/vibecode
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@pgbouncer:6432/vibecode?sslmode=require
+      - PGSSLMODE=require
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - REDIS_URL=redis://redis:6379
     depends_on:
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -56,7 +59,7 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - PORT=3001
-      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@postgres:5432/vibecode
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@pgbouncer:6432/vibecode?sslmode=require
       - JWT_SECRET=${JWT_SECRET}
       - DOCKER_API_URL=http://docker-proxy:2375
       - AGENT_IMAGE=vibecode-agent
@@ -74,6 +77,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      pgbouncer:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -145,6 +150,13 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./pgbouncer/certs:/etc/postgresql/certs:ro
+    command: >
+      postgres
+      -c ssl=on
+      -c ssl_cert_file=/etc/postgresql/certs/server.crt
+      -c ssl_key_file=/etc/postgresql/certs/server.key
+      -c ssl_ca_file=/etc/postgresql/certs/ca.crt
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -155,6 +167,32 @@ services:
         limits:
           memory: 1G
           cpus: '1.0'
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    restart: unless-stopped
+    networks:
+      - default
+    ports:
+      - "6432:6432"
+    volumes:
+      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+      - ./pgbouncer/certs:/etc/pgbouncer/certs:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 6432 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
 
   pgadmin:
     image: dpage/pgadmin4:latest
