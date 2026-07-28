@@ -236,7 +236,8 @@ EOF
                         // Clean up stale containers from previous runs (older than 24 hours)
                         sh '''
                             echo "Checking for stale containers (older than 24 hours)..."
-                            STALE_CONTAINERS=\$(docker ps -q --filter "status=running" 2>/dev/null | while read cid; do
+                            STALE_CONTAINERS=""
+                            for cid in \$(docker ps -q --filter "status=running" 2>/dev/null); do
                                 CREATED=\$(docker inspect --format='{{.Created}}' "\$cid" 2>/dev/null)
                                 if [ -n "\$CREATED" ]; then
                                     CREATED_EPOCH=\$(date -d "\$CREATED" +%s 2>/dev/null || echo 0)
@@ -244,10 +245,16 @@ EOF
                                     AGE_HOURS=\$(( (NOW_EPOCH - CREATED_EPOCH) / 3600 ))
                                     if [ "\$AGE_HOURS" -ge 24 ]; then
                                         NAME=\$(docker inspect --format='{{.Name}}' "\$cid" 2>/dev/null | sed 's,^/,,')
-                                        echo "\$cid \$NAME \$AGE_HOURS hours old"
+                                        if echo "\$NAME" | grep -qi jenkins; then
+                                            echo "Skipping Jenkins container: \$NAME"
+                                        else
+                                            echo "\$cid \$NAME \$AGE_HOURS hours old"
+                                            STALE_CONTAINERS="\$STALE_CONTAINERS \$cid"
+                                        fi
                                     fi
                                 fi
-                            done)
+                            done
+                            STALE_CONTAINERS=\$(echo "\$STALE_CONTAINERS" | xargs)
                             if [ -n "\$STALE_CONTAINERS" ]; then
                                 echo "Found stale containers:"
                                 echo "\$STALE_CONTAINERS"
