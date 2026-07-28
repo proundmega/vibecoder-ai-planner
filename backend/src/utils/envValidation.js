@@ -23,6 +23,9 @@ const optionalEnvVars = {
   DATABASE_IDLE_TIMEOUT_MS: { type: 'int', default: 30000 },
   DATABASE_CONNECTION_TIMEOUT_MS: { type: 'int', default: 5000 },
   DATABASE_MAX_USES: { type: 'int', default: 10000 },
+  LOG_AGGREGATION_URL: { type: 'string', default: '' },
+  LOG_AGGREGATION_API_KEY: { type: 'string', default: '' },
+  LOG_AGGREGATION_SOURCE: { type: 'string', default: 'vibecode-api' },
 };
 
 function validateEnv() {

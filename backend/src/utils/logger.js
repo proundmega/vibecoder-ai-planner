@@ -63,6 +63,15 @@ const logger = winston.createLogger({
   exitOnError: false,
 });
 
+if (process.env.LOG_AGGREGATION_URL && process.env.LOG_AGGREGATION_API_KEY) {
+  const LogAggregationTransport = require('./logTransport');
+  logger.add(new LogAggregationTransport({
+    url: process.env.LOG_AGGREGATION_URL,
+    apiKey: process.env.LOG_AGGREGATION_API_KEY,
+    source: process.env.LOG_AGGREGATION_SOURCE || 'vibecode-api',
+  }));
+}
+
 logger.maskSensitive = maskSensitive;
 
 module.exports = logger;
