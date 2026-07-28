@@ -57,8 +57,8 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | **bp-100** | `bp-100-planning-usage-tracking` | P2 | ~~Attach AI usage tracking to the planning object itself~~ ✅ Done (this session) — Migration 038 adds usage columns to ticket_planning + planning_stage/file_key to usage_logs. UsageLogger extended with planning context. New API endpoints: GET /tickets/:id/planning/usage (aggregated), GET /tickets/:id/planning/:fileKey/usage (history). Java agent reports usage with planning_stage inference. Frontend shows usage breakdown table in TicketDetail. All 1167 backend + 516 frontend tests pass. |
 | **bp-101** | `bp-101-configurable-log-rotation` | P3 | Log rotation settings configurable via env vars (LOG_ROTATION_DAYS, LOG_ROTATION_MAX_SIZE, LOG_ROTATION_COMPRESS) |
 | **bp-102** | `bp-102-api-key-masking` | P2 | ~~Mask api_key_hash and api_key_hash_prefix in GET /agents response~~ ✅ Done (this session) — Added `maskAgentList()` helper in agents.js, applied to GET / handler. 7 new tests verify masking. All 43 agent tests pass.
-| **bp-103** | `bp-103-bash-suite-ci` | P2 | Add bash integration suite to Jenkinsfile CI |
-| **bp-104** | `bp-104-response-validation` | P2 | Add response validation to critical frontend API calls |
+| **bp-103** | `bp-103-bash-suite-ci` | P2 | ~~Add bash integration suite to Jenkinsfile CI~~ ✅ Already implemented (lines 287-296) |
+| **bp-104** | `bp-104-response-validation` | P2 | ❌ Deferred — Spec applied `validateSchema('User')` to permissions endpoint returning `string[]`, not User objects. Validation always fails, error silently swallowed. Login/register use raw `fetch()` in `auth.ts`, not the `get()` client. Requires restructuring `auth.ts` to use validated client.
 | **bp-105** | `bp-105-multi-provider-configs` | P3 | Allow multiple named provider configs per project |
 | **bp-106** | `bp-106-log-aggregation` | P3 | Winston transport for log aggregation (Datadog/CloudWatch) |
 | **bp-107** | `bp-107-pgbouncer-tls` | P2 | PgBouncer TLS/mTLS for database connections |
