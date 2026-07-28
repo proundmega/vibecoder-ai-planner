@@ -64,7 +64,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | **bp-107** | `bp-107-pgbouncer-tls` | P2 | PgBouncer TLS/mTLS for database connections |
 | **bp-108** | `bp-108-agent-api-key-plaintext-exposure` | P2 | ~~Remove plaintext api_key from GET /agents response~~ ✅ Done (this session) — `maskAgentList()` now deletes `api_key` from list response. History endpoint supports JWT auth + x-api-key fallback. Frontend removes `api_key` from Agent interface, shows placeholder with View link. All 1205 backend + 523 frontend tests pass. |
 | **bp-109** | `bp-109-structured-telemetry-events` | P2 | Structured telemetry events with three-layer canonical payload (raw, normalized, derived), schema versioning, content-addressing via SHA-256 |
-| **bp-110** | `bp-110-concurrent-jenkins-builds` | P2 | Concurrent Jenkins builds via dynamic COMPOSE_PROJECT_NAME — removes hardcoded container names, uses docker compose exec in bash tests |
+| **bp-110** | `bp-110-concurrent-jenkins-builds` | P2 | ✅ Done (PR #73) — Removed static `name:` and `container_name:` from docker-compose files. Uses `COMPOSE_PROJECT_NAME=vibecode-${BRANCH_NAME}-${BUILD_NUMBER}` for unique namespaces. Replaced `docker exec` with `docker compose exec` in Jenkinsfile and helpers.sh. Removed `disableConcurrentBuilds()`. Network renamed from `vibecode` to `default` (auto-prefixed).
 
 ## Test Backfills (bt-*)
 
