@@ -29,8 +29,8 @@ describe('AgentList inline edit', () => {
   let wrapper: VueWrapper
 
   const mockAgents = [
-    { id: 'a1', name: 'Agent Alpha', provider_name: 'claude', api_key: 'ak_12345678', rate_limit: 100, created_at: '2026-01-15' },
-    { id: 'a2', name: 'Agent Beta', provider_name: 'openai', api_key: 'ak_87654321', rate_limit: 200, created_at: '2026-02-20' },
+    { id: 'a1', name: 'Agent Alpha', provider_name: 'claude', rate_limit: 100, created_at: '2026-01-15' },
+    { id: 'a2', name: 'Agent Beta', provider_name: 'openai', rate_limit: 200, created_at: '2026-02-20' },
   ]
 
   beforeEach(async () => {

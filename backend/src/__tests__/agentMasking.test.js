@@ -86,13 +86,13 @@ describe('Agent API - Key Masking', () => {
     expect(res.body.agents[0].api_key_hash).not.toBe(null);
   });
 
-  it('GET /agents does not mask api_key (plaintext key for display)', async () => {
+  it('GET /agents does not include api_key in response', async () => {
     const res = await request(app)
       .get('/api/v1/agents')
       .set('Authorization', 'Bearer mock-token');
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.agents[0].api_key).toBe('ak_test123456789');
+    expect(res.body.agents[0]).not.toHaveProperty('api_key');
   });
 
   it('GET /agents/:agentId/key returns key preview', async () => {

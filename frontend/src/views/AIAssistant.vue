@@ -11,7 +11,6 @@ const input = ref('')
 const messages = ref([])
 
 const processing = ref(false)
-const apiKey = ref('')
 const dailyUsage = ref({ used: 0, limit: 100 })
 const errorMessage = ref('')
 
@@ -30,8 +29,6 @@ onMounted(async () => {
 watch(selectedAgentId, async (newId) => {
   if (!newId) return
   try {
-    const agent = agents.value.find(a => a.id === newId)
-    apiKey.value = agent?.apiKey || agent?.api_key || ''
     await loadAgentInfo()
   } catch (error) {
     console.error('Failed to load agent info:', error)
@@ -50,8 +47,6 @@ async function loadAgentInfo() {
 async function handleAgentSelect() {
   if (selectedAgentId.value) {
     await loadAgentInfo()
-  } else {
-    apiKey.value = ''
   }
 }
 
@@ -138,7 +133,7 @@ async function handleScan() {
 async function getRecentDailyUsage() {
   try {
     if (!selectedAgentId.value) return { used: 0, limit: 100 }
-    const { daily } = await getAgentHistory(selectedAgentId.value, apiKey.value)
+    const { daily } = await getAgentHistory(selectedAgentId.value)
     if (daily && daily.length > 0) {
       const today = new Date().toISOString().split('T')[0]
       const todayEntry = daily.find(d => d.date === today)

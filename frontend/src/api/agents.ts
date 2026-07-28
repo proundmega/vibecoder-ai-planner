@@ -10,7 +10,6 @@ export interface AgentKeyInfo {
 export interface Agent {
   id: number
   name: string
-  api_key: string | null
   owner_id: number
   rate_limit: number
   max_actions_per_day: number
