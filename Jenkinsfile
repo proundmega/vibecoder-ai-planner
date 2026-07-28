@@ -345,15 +345,8 @@ EOF
                             fi
                             echo "Final DOCKER_HOST: $DOCKER_HOST"
                             echo "=== END DOCKER HOST RESOLUTION FIX ==="
-                        '''
-                                        echo "=========================================="
-                                    fi
-                                fi
-                            fi
-                            echo "Final DOCKER_HOST: $DOCKER_HOST"
-                            echo "=== END DOCKER HOST RESOLUTION FIX ==="
-                        '''
-                        sh '''
+                         '''
+                         sh '''
                             echo "Checking for stale containers (older than 24 hours)..."
                             STALE_CONTAINERS=""
                             for cid in \$(docker ps -q --filter "status=running" 2>/dev/null); do
