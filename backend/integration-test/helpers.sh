@@ -74,15 +74,35 @@ docker_exec_out() {
   return 1
 }
 
-# Docker compose helper — tries `docker compose` first, falls back to `sudo docker compose`
+# Docker compose helper — auto-detects compose file location, tries `docker compose` first
 docker_compose() {
+  local compose_dir=""
+  if [ -f /app/compose/docker-compose.yml ]; then
+    compose_dir="/app/compose"
+  elif [ -f docker-compose.yml ]; then
+    compose_dir="."
+  elif [ -f "$ROOT/docker-compose.yml" ]; then
+    compose_dir="$ROOT"
+  fi
+
+  if [ -n "$compose_dir" ]; then
+    if (cd "$compose_dir" && docker compose "$@" 2>&1); then
+      return 0
+    elif command -v sudo >/dev/null 2>&1; then
+      if (cd "$compose_dir" && sudo docker compose "$@" 2>&1); then
+        return 0
+      fi
+    fi
+    return 1
+  fi
+
+  # No compose files found — try running directly (may fail)
   if docker compose "$@" 2>&1; then
     return 0
   elif command -v sudo >/dev/null 2>&1 && sudo docker compose "$@" 2>&1; then
     return 0
-  else
-    return 1
   fi
+  return 1
 }
 
 # Docker command helper — tries `docker` first, falls back to `sudo docker`

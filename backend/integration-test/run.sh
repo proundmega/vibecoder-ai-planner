@@ -76,7 +76,6 @@ main() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  Starting Docker Compose"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    cd "$ROOT"
     docker_compose down --remove-orphans 2>/dev/null || true
     docker_compose build api 2>&1 | tail -3
     docker_compose up -d 2>&1 | tail -5
