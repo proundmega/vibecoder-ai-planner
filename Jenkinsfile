@@ -565,6 +565,14 @@ PGBOUNCER_EOF
         }
         success {
             echo 'All stages passed.'
+            script {
+                try {
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml down -v --remove-orphans || true"
+                    echo 'Integration test stack cleaned up.'
+                } catch (Exception e) {
+                    echo "Cleanup failed (non-fatal): ${e.getMessage()}"
+                }
+            }
         }
         failure {
             echo 'Pipeline failed. Check logs for details.'
