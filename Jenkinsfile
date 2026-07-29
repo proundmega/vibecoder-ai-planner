@@ -474,9 +474,9 @@ PGBOUNCER_EOF
                                     chown -R 999:999 /etc/pgbouncer
                                     echo "Config generated successfully"
                                     echo "--- pgbouncer.ini ---"
-                                    cat /pgbouncer/pgbouncer.ini
+                                    cat /etc/pgbouncer/pgbouncer.ini
                                     echo "--- userlist.txt ---"
-                                    cat /pgbouncer/userlist.txt
+                                    cat /etc/pgbouncer/userlist.txt
                                 '
                             
                             echo "Certs in Docker volume:"
