@@ -2,8 +2,10 @@ services:
   api:
     environment:
       - INTEGRATION_TESTS=1
+    # CI integration tests need direct Docker socket access (not via docker-proxy)
+    # The test container mounts the host socket directly
     volumes:
-      - docker_socket:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock
 
   postgres:
     ports:

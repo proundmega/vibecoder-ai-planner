@@ -15,7 +15,8 @@ pipeline {
         JWT_SECRET = 'jenkins-ci-secret-for-testing-purposes-2026'
         ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
         // Sanitize branch name: only lowercase alphanumeric + hyphens allowed by docker compose
-        COMPOSE_PROJECT_NAME = "vibecode-${BRANCH_NAME.toLowerCase().replaceAll('[^a-z0-9-]', '-')}-${BUILD_NUMBER}"
+        // Collapse consecutive hyphens and trim leading/trailing hyphens for clean names
+        COMPOSE_PROJECT_NAME = "vibecode-${BRANCH_NAME.toLowerCase().replaceAll('[^a-z0-9-]', '-').replaceAll('-+', '-').replaceAll('^-|-$', '')}-${BUILD_NUMBER}"
         // DATABASE_URL removed — docker-compose.yml sets it to postgres:5432 for the API container.
         // Integration tests set their own DATABASE_URL pointing to localhost:5432 (published port).
         // DOCKER_COMPOSE_FILE avoids Groovy interpreting hyphens in triple-quoted strings
@@ -235,39 +236,7 @@ EOF
                         """
 
                         // Diagnostic logging for Docker/docker compose connectivity
-                        sh '''
-                            echo "=== DOCKER DIAGNOSTICS ==="
-                            echo "DOCKER_HOST=\$DOCKER_HOST"
-                            echo "DOCKER_TLS_VERIFY=\${DOCKER_TLS_VERIFY:-not set}"
-                            echo "DOCKER_CERT_PATH=\${DOCKER_CERT_PATH:-not set}"
-                            echo ""
-                            echo "docker version:"
-                            docker version 2>&1 || true
-                            echo ""
-                            echo "docker compose version:"
-                            docker compose version 2>&1 || true
-                            echo ""
-                            echo "Testing docker CLI connectivity:"
-                            docker ps --format "{{.ID}} {{.Names}} {{.Status}}" 2>&1 | head -20 || true
-                            echo ""
-                            echo "DNS resolution for docker-socket-proxy:"
-                            getent hosts docker-socket-proxy 2>&1 || true
-                            nslookup docker-socket-proxy 2>&1 || true
-                            dig docker-socket-proxy 2>&1 || true
-                            echo ""
-                            echo "Resolving via host file:"
-                            grep docker /etc/hosts 2>&1 || true
-                            echo ""
-                            echo "Docker internal DNS servers:"
-                            cat /etc/resolv.conf 2>&1 || true
-                            echo ""
-                            echo "Docker gateway (bridge network):"
-                            ip route | grep default 2>&1 || true
-                            echo ""
-                            echo "Testing docker compose connectivity (will show error if broken):"
-                            DOCKER_HOST=\$DOCKER_HOST docker compose ps 2>&1 || true
-                            echo "=== END DOCKER DIAGNOSTICS ==="
-                        '''
+                        sh 'bash scripts/jenkins-docker-diagnose.sh'
 
                         // Fix DOCKER_HOST: Jenkins agent container may not resolve docker-socket-proxy
                         // via Docker's internal DNS (127.0.0.11). Go's net.Resolver (used by docker compose)
@@ -346,50 +315,53 @@ EOF
                             echo "Final DOCKER_HOST: $DOCKER_HOST"
                             echo "=== END DOCKER HOST RESOLUTION FIX ==="
                          '''
-                         sh '''
-                            echo "=== Cleaning up containers from previous runs ==="
-                            PROJECT_NAME="\${COMPOSE_PROJECT_NAME}"
-                            echo "Target project: \$PROJECT_NAME"
-                            
-                            # Remove all containers (running or stopped) that match the project name
-                            for cid in \$(docker ps -aq --filter "name=\${PROJECT_NAME}" 2>/dev/null); do
-                                NAME=\$(docker inspect --format='{{.Name}}' "\$cid" 2>/dev/null | sed 's,^/,,')
-                                echo "Removing container: \$NAME (\$cid)"
-                            done
-                            
-                            if [ -n "\$(docker ps -aq --filter "name=\${PROJECT_NAME}" 2>/dev/null)" ]; then
-                                DOCKER_HOST=\$DOCKER_HOST docker rm -f \$(docker ps -aq --filter "name=\${PROJECT_NAME}" 2>/dev/null) 2>/dev/null || true
-                                echo "Previous containers removed."
-                            else
-                                echo "No previous containers found for project \$PROJECT_NAME."
-                            fi
-                            
-                            # Also clean up stopped containers from other projects older than 1 hour
-                            echo "Cleaning up old stopped containers (older than 1 hour)..."
-                            STALE_STOPPED=""
-                            for cid in \$(docker ps -aq --filter "status=exited" --filter "status=created" 2>/dev/null); do
-                                CREATED=\$(docker inspect --format='{{.Created}}' "\$cid" 2>/dev/null)
-                                if [ -n "\$CREATED" ]; then
-                                    CREATED_EPOCH=\$(date -d "\$CREATED" +%s 2>/dev/null || echo 0)
-                                    NOW_EPOCH=\$(date +%s)
-                                    AGE_HOURS=\$(( (NOW_EPOCH - CREATED_EPOCH) / 3600 ))
-                                    if [ "\$AGE_HOURS" -ge 1 ]; then
-                                        NAME=\$(docker inspect --format='{{.Name}}' "\$cid" 2>/dev/null | sed 's,^/,,')
-                                        if echo "\$NAME" | grep -qiE "jenkins|docker-socket-proxy"; then
-                                            echo "Skipping infrastructure container: \$NAME"
-                                        else
-                                            echo "Removing old stopped container: \$NAME (\$AGE_HOURS hours old)"
-                                            STALE_STOPPED="\$STALE_STOPPED \$cid"
-                                        fi
-                                    fi
-                                fi
-                            done
-                            STALE_STOPPED=\$(echo "\$STALE_STOPPED" | xargs)
-                            if [ -n "\$STALE_STOPPED" ]; then
-                                DOCKER_HOST=\$DOCKER_HOST docker rm \$STALE_STOPPED 2>/dev/null || true
-                                echo "Old stopped containers removed."
-                            fi
-                        '''
+                          sh '''
+                             echo "=== Cleaning up containers from previous runs ==="
+                             PROJECT_NAME="\${COMPOSE_PROJECT_NAME}"
+                             echo "Target project: \$PROJECT_NAME"
+                             
+                             # Remove only stopped containers matching the project name
+                             # (avoid killing running containers from a still-active build)
+                             STOPPED_COUNT=0
+                             for cid in \$(docker ps -aq --filter "name=\${PROJECT_NAME}" --filter "status=exited" --filter "status=created" 2>/dev/null); do
+                                 NAME=\$(docker inspect --format='{{.Name}}' "\$cid" 2>/dev/null | sed 's,^/,,')
+                                 echo "Removing stopped container: \$NAME (\$cid)"
+                                 STOPPED_COUNT=\$((STOPPED_COUNT + 1))
+                             done
+                             
+                             if [ "\$STOPPED_COUNT" -gt 0 ]; then
+                                 DOCKER_HOST=\$DOCKER_HOST docker rm \$(docker ps -aq --filter "name=\${PROJECT_NAME}" --filter "status=exited" --filter "status=created" 2>/dev/null) 2>/dev/null || true
+                                 echo "Previous stopped containers removed (\$STOPPED_COUNT)."
+                             else
+                                 echo "No previous stopped containers found for project \$PROJECT_NAME."
+                             fi
+                             
+                             # Also clean up stopped containers from other projects older than 1 hour
+                             echo "Cleaning up old stopped containers (older than 1 hour)..."
+                             STALE_STOPPED=""
+                             for cid in \$(docker ps -aq --filter "status=exited" --filter "status=created" 2>/dev/null); do
+                                 CREATED=\$(docker inspect --format='{{.Created}}' "\$cid" 2>/dev/null)
+                                 if [ -n "\$CREATED" ]; then
+                                     CREATED_EPOCH=\$(date -d "\$CREATED" +%s 2>/dev/null || echo 0)
+                                     NOW_EPOCH=\$(date +%s)
+                                     AGE_HOURS=\$(( (NOW_EPOCH - CREATED_EPOCH) / 3600 ))
+                                     if [ "\$AGE_HOURS" -ge 1 ]; then
+                                         NAME=\$(docker inspect --format='{{.Name}}' "\$cid" 2>/dev/null | sed 's,^/,,')
+                                         if echo "\$NAME" | grep -qiE "jenkins|docker-socket-proxy"; then
+                                             echo "Skipping infrastructure container: \$NAME"
+                                         else
+                                             echo "Removing old stopped container: \$NAME (\$AGE_HOURS hours old)"
+                                             STALE_STOPPED="\$STALE_STOPPED \$cid"
+                                         fi
+                                     fi
+                                 fi
+                             done
+                             STALE_STOPPED=\$(echo "\$STALE_STOPPED" | xargs)
+                             if [ -n "\$STALE_STOPPED" ]; then
+                                 DOCKER_HOST=\$DOCKER_HOST docker rm \$STALE_STOPPED 2>/dev/null || true
+                                 echo "Old stopped containers removed."
+                             fi
+                         '''
 
                         // Build infra (production compose) + test service
                         // Explicitly pass DOCKER_HOST to docker compose — Go plugin sometimes
@@ -446,6 +418,7 @@ EOF
                             echo "=== Generating pgbouncer config in Docker volume ==="
                             DOCKER_HOST=\$DOCKER_HOST docker run --rm \
                                 -v "\$CONFIG_VOLUME":/etc/pgbouncer:rw \
+                                -e PG_PASS=\${POSTGRES_PASSWORD} \
                                 alpine sh -c '
                                     mkdir -p /etc/pgbouncer && \
                                     cat > /etc/pgbouncer/pgbouncer.ini <<PGBOUNCER_EOF
@@ -469,7 +442,7 @@ stats_period = 60
 
 admin_users = postgres
 PGBOUNCER_EOF
-                                    PASS_MD5=\$(echo -n "changemepostgres" | md5sum | cut -d" " -f1)
+                                    PASS_MD5=\$(echo -n "\$PG_PASSpostgres" | md5sum | cut -d" " -f1)
                                     echo "\"postgres\" \"md5\$PASS_MD5\"" > /etc/pgbouncer/userlist.txt
                                     chown -R 999:999 /etc/pgbouncer
                                     echo "Config generated successfully"

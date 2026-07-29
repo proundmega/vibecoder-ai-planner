@@ -1,4 +1,28 @@
 services:
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+    networks:
+      - default
+    healthcheck:
+      # tecnativa/docker-socket-proxy serves Docker API on :2375; /version is a lightweight GET
+      # that returns JSON (no redirect), so wget --spider succeeds on TCP+HTTP 200
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:2375/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+
   migrate:
     build:
       context: ./backend
@@ -37,7 +61,7 @@ services:
       - PORT=3001
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@pgbouncer:6432/vibecode?sslmode=disable
       - JWT_SECRET=${JWT_SECRET}
-      - DOCKER_API_URL=/var/run/docker.sock
+      - DOCKER_API_URL=http://docker-proxy:2375
       - AGENT_IMAGE=vibecode-agent
       - CONTAINER_NETWORK=${COMPOSE_PROJECT_NAME:-vibecode}_default
       - REPO_VOLUME=vibecode_repos
@@ -46,10 +70,11 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - vibecode_repos:/repos
-      - docker_socket:/var/run/docker.sock
     networks:
       - default
     depends_on:
+      docker-proxy:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
       pgbouncer:
@@ -128,6 +153,7 @@ services:
       - POSTGRES_DB=vibecode
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_INITDB_ARGS=--password-encryption=md5
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - pgbouncer_certs:/etc/postgresql/certs:ro
@@ -137,7 +163,6 @@ services:
       -c ssl_cert_file=/etc/postgresql/certs/server.crt
       -c ssl_key_file=/etc/postgresql/certs/server.key
       -c ssl_ca_file=/etc/postgresql/certs/ca.crt
-      -c password_encryption=md5
       -c hba_file=/etc/postgresql/pg_hba.conf
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -199,6 +224,5 @@ volumes:
   postgres_data:
   uploads_data:
   vibecode_repos:
-  docker_socket:
   pgbouncer_certs:
   pgbouncer_config:
