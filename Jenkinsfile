@@ -394,6 +394,16 @@ EOF
                             fi
                         '''
                         sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} down -v --remove-orphans || true"
+                        
+                        // Generate TLS certs for PostgreSQL/PgBouncer (required for CI)
+                        sh '''
+                            echo "=== Generating TLS certificates ==="
+                            bash scripts/generate-certs.sh
+                            echo "Certificates generated:"
+                            ls -la pgbouncer/certs/
+                            echo "=== TLS certificates ready ==="
+                        '''
+                        
                         sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml build"
                         sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} up -d"
 
