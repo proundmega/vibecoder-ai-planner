@@ -5,7 +5,7 @@ RUN npm ci --omit=dev
 
 FROM node:24-alpine
 WORKDIR /app
-RUN apk add --no-cache curl && mkdir -p /app/uploads/tickets && chown -R node:node /app/uploads
+RUN apk add --no-cache curl && mkdir -p /app/uploads/tickets /app/logs && chown -R node:node /app/uploads /app/logs
 COPY --from=deps /app/node_modules ./node_modules
 COPY src ./src
 USER node

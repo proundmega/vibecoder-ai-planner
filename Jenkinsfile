@@ -470,7 +470,7 @@ stats_period = 60
 admin_users = postgres
 PGBOUNCER_EOF
                                     PASS_MD5=\$(echo -n "changemepostgres" | md5sum | cut -d" " -f1)
-                                    echo "postgres:\"md5\$PASS_MD5\"" > /etc/pgbouncer/userlist.txt
+                                    echo "\"postgres\" \"md5\$PASS_MD5\"" > /etc/pgbouncer/userlist.txt
                                     chown -R 999:999 /etc/pgbouncer
                                     echo "Config generated successfully"
                                     echo "--- pgbouncer.ini ---"
