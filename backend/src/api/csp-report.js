@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
+const { pool } = require('../db');
 
 /**
  * @openapi
@@ -27,9 +28,29 @@ const logger = require('../utils/logger');
  *       204:
  *         description: Report received
  */
-router.post('/csp-report', (req, res) => {
-  const report = req.body;
+router.post('/csp-report', async (req, res) => {
+  const report = req.body['csp-report'] || req.body;
   logger.warn('CSP Violation Report:', JSON.stringify(report, null, 2));
+  const hasDirective = report['violated-directive'] || report.violated_directive;
+  const hasBlockedUri = report['blocked-uri'] || report.blocked_uri;
+  if (!report || (!hasDirective && !hasBlockedUri)) {
+    res.status(204).send();
+    return;
+  }
+  try {
+    await pool.query(
+      'INSERT INTO csp_violations (violated_directive, blocked_uri, document_uri, referrer, original_policy) VALUES ($1, $2, $3, $4, $5)',
+      [
+        report['violated-directive'] || report.violated_directive || null,
+        report['blocked-uri'] || report.blocked_uri || null,
+        report['document-uri'] || report.document_uri || null,
+        report.referrer || null,
+        report['original-policy'] || report.original_policy || null,
+      ]
+    );
+  } catch (err) {
+    logger.error('Failed to store CSP violation:', err.message);
+  }
   res.status(204).send();
 });
 
