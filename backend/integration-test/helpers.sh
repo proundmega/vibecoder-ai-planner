@@ -74,29 +74,19 @@ docker_exec_out() {
   return 1
 }
 
-# Docker compose helper — auto-detects compose file location, tries `docker compose` first
+# Docker compose helper — uses explicit -f flags in CI, plain docker compose locally
 docker_compose() {
-  local compose_dir=""
   if [ -f /app/compose/docker-compose.yml ]; then
-    compose_dir="/app/compose"
-  elif [ -f docker-compose.yml ]; then
-    compose_dir="."
-  elif [ -f "$ROOT/docker-compose.yml" ]; then
-    compose_dir="$ROOT"
-  fi
-
-  if [ -n "$compose_dir" ]; then
-    if (cd "$compose_dir" && docker compose "$@" 2>&1); then
+    local compose_args="-f /app/compose/docker-compose.yml"
+    [ -f /app/compose/docker-compose.test.yml ] && compose_args="$compose_args -f /app/compose/docker-compose.test.yml"
+    if docker compose $compose_args "$@" 2>&1; then
       return 0
-    elif command -v sudo >/dev/null 2>&1; then
-      if (cd "$compose_dir" && sudo docker compose "$@" 2>&1); then
-        return 0
-      fi
+    elif command -v sudo >/dev/null 2>&1 && sudo docker compose $compose_args "$@" 2>&1; then
+      return 0
     fi
     return 1
   fi
 
-  # No compose files found — try running directly (may fail)
   if docker compose "$@" 2>&1; then
     return 0
   elif command -v sudo >/dev/null 2>&1 && sudo docker compose "$@" 2>&1; then

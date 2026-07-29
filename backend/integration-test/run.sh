@@ -79,14 +79,13 @@ main() {
     docker_compose down --remove-orphans 2>/dev/null || true
     docker_compose build api 2>&1 | tail -3
     docker_compose up -d 2>&1 | tail -5
+    docker_compose up -d --force-recreate api 2>&1 | tail -3
+    sleep 8
   fi
 
   wait_for_api
   clean_db
-
-   docker_compose up -d --force-recreate api 2>&1 | tail -3
-    sleep 8
-   wait_for_api
+  wait_for_api
 
   # Seed admin user AFTER API is ready
   ADMIN_TOKEN=$(seed_user "admin@vibecode.dev" "password123" "super_admin" "Admin")

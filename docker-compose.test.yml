@@ -11,12 +11,11 @@ services:
 
   test:
     build:
-      context: ./backend
-      dockerfile: Dockerfile.test
+      context: .
+      dockerfile: backend/Dockerfile.test
     restart: "no"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - .:/app/compose:ro
     networks:
       - default
     environment:
