@@ -8,8 +8,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 
   postgres:
-    ports:
-      - "5432:5432"
 
   test:
     build:
