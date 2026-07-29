@@ -395,13 +395,9 @@ EOF
                         '''
                         sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} down -v --remove-orphans || true"
                         
-                        // Generate TLS certs for PostgreSQL/PgBouncer and copy into Docker volumes
+                        // Generate TLS certs for PostgreSQL/PgBouncer inside Docker volumes
+                        // Bind mounts fail in CI because Docker daemon on host can't see Jenkins container's /var/jenkins_home/workspace
                         sh '''
-                            echo "=== Generating TLS certificates ==="
-                            bash scripts/generate-certs.sh
-                            echo "Certificates generated locally:"
-                            ls -la pgbouncer/certs/
-                            
                             echo "=== Creating Docker volumes ==="
                             CERTS_VOLUME="\${COMPOSE_PROJECT_NAME}_pgbouncer_certs"
                             CONFIG_VOLUME="\${COMPOSE_PROJECT_NAME}_pgbouncer_config"
@@ -410,17 +406,69 @@ EOF
                             DOCKER_HOST=\$DOCKER_HOST docker volume create "\$CERTS_VOLUME"
                             DOCKER_HOST=\$DOCKER_HOST docker volume create "\$CONFIG_VOLUME"
                             
-                            echo "=== Copying certs into Docker volume ==="
+                            echo "=== Generating TLS certs inside Docker volume ==="
                             DOCKER_HOST=\$DOCKER_HOST docker run --rm \
                                 -v "\$CERTS_VOLUME":/certs:rw \
-                                -v $(pwd)/pgbouncer/certs:/local:ro \
-                                alpine sh -c "cp -v /local/ca.crt /certs/ && cp -v /local/ca.key /certs/ && cp -v /local/server.crt /certs/ && cp -v /local/server.key /certs/"
+                                alpine sh -c '
+                                    apk add --no-cache openssl && \
+                                    mkdir -p /certs && \
+                                    openssl genrsa -out /certs/ca.key 4096 2>/dev/null && \
+                                    openssl req -new -x509 -days 3650 -key /certs/ca.key \
+                                        -out /certs/ca.crt -subj "/CN=Vibecode CA" 2>/dev/null && \
+                                    openssl genrsa -out /certs/server.key 4096 2>/dev/null && \
+                                    openssl req -new -key /certs/server.key \
+                                        -out /tmp/server.csr -subj "/CN=pgbouncer" 2>/dev/null && \
+                                    openssl x509 -req -days 3650 \
+                                        -in /tmp/server.csr \
+                                        -CA /certs/ca.crt \
+                                        -CAkey /certs/ca.key \
+                                        -CAcreateserial \
+                                        -out /certs/server.crt 2>/dev/null && \
+                                    chmod 600 /certs/server.key && \
+                                    chmod 644 /certs/ca.crt /certs/server.crt && \
+                                    echo "Certs generated successfully" && \
+                                    ls -la /certs/
+                                '
                             
-                            echo "=== Copying pgbouncer config into Docker volume ==="
+                            echo "=== Generating pgbouncer config in Docker volume ==="
                             DOCKER_HOST=\$DOCKER_HOST docker run --rm \
                                 -v "\$CONFIG_VOLUME":/pgbouncer:rw \
-                                -v $(pwd)/pgbouncer:/local:ro \
-                                alpine sh -c "cp -v /local/pgbouncer.ini /pgbouncer/ && cp -v /local/userlist.txt /pgbouncer/"
+                                alpine sh -c '
+                                    mkdir -p /pgbouncer && \
+                                    cat > /pgbouncer/pgbouncer.ini <<PGBOUNCER_EOF
+[databases]
+vibecode = host=postgres port=5432 dbname=vibecode sslmode=require
+
+[pgbouncer]
+listen_addr = *
+listen_port = 6432
+auth_type = md5
+auth_file = /pgbouncer/userlist.txt
+pool_mode = transaction
+default_pool_size = 20
+min_pool_size = 5
+reserve_pool_size = 5
+reserve_pool_timeout = 3
+max_client_conn = 200
+log_connections = 0
+log_disconnections = 0
+stats_period = 60
+
+# TLS settings
+ssl = require
+ssl_cert_file = /pgbouncer/certs/server.crt
+ssl_key_file = /pgbouncer/certs/server.key
+ssl_ca_file = /pgbouncer/certs/ca.crt
+admin_users = postgres
+PGBOUNCER_EOF
+                                    PASS_MD5=\$(echo -n "postgres:changeme" | md5sum | cut -d" " -f1)
+                                    echo "postgres:\"\\$PASS_MD5\"" > /pgbouncer/userlist.txt
+                                    echo "Config generated successfully"
+                                    echo "--- pgbouncer.ini ---"
+                                    cat /pgbouncer/pgbouncer.ini
+                                    echo "--- userlist.txt ---"
+                                    cat /pgbouncer/userlist.txt
+                                '
                             
                             echo "Certs in Docker volume:"
                             DOCKER_HOST=\$DOCKER_HOST docker run --rm \

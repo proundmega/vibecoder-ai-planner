@@ -153,6 +153,7 @@ services:
       - default
     volumes:
       - pgbouncer_config:/etc/pgbouncer:ro
+      - pgbouncer_certs:/etc/pgbouncer/certs:ro
     depends_on:
       postgres:
         condition: service_healthy
