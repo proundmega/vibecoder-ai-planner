@@ -153,7 +153,7 @@ services:
       - POSTGRES_DB=vibecode
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
-      - POSTGRES_INITDB_ARGS=--password-encryption=md5
+      - POSTGRES_INITDB_ARGS=--set password_encryption=md5
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - pgbouncer_certs:/etc/postgresql/certs:ro
