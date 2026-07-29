@@ -379,6 +379,8 @@ EOF
                         '''
                         sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} down -v --remove-orphans || true"
                         
+                        def pgPass = env.POSTGRES_PASSWORD
+                        
                         // Generate TLS certs for PostgreSQL/PgBouncer inside Docker volumes
                         // Bind mounts fail in CI because Docker daemon on host can't see Jenkins container's /var/jenkins_home/workspace
                         sh '''
@@ -416,7 +418,6 @@ EOF
                                 '
                             
                             echo "=== Generating pgbouncer config in Docker volume ==="
-                            def pgPass = env.POSTGRES_PASSWORD
                             DOCKER_HOST=\$DOCKER_HOST docker run --rm \
                                 -v "\$CONFIG_VOLUME":/etc/pgbouncer:rw \
                                 -e PG_PASS="${pgPass}" \
