@@ -21,7 +21,7 @@ router.get('/', verifyToken, async (req, res, next) => {
   try {
     const { project_id } = req.query;
     const providers = await providerController.listProviders(project_id || null);
-    res.json({ providers });
+    res.json({ success: true, data: providers });
   } catch (err) {
     next(err);
   }
