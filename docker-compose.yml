@@ -137,6 +137,7 @@ services:
       -c ssl_cert_file=/etc/postgresql/certs/server.crt
       -c ssl_key_file=/etc/postgresql/certs/server.key
       -c ssl_ca_file=/etc/postgresql/certs/ca.crt
+      -c password_encryption=md5
       -c hba_file=/etc/postgresql/pg_hba.conf
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
