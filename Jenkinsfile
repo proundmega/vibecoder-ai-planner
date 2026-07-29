@@ -567,8 +567,9 @@ PGBOUNCER_EOF
             echo 'All stages passed.'
             script {
                 try {
-                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml down -v --remove-orphans || true"
-                    echo 'Integration test stack cleaned up.'
+                    // Only remove containers and test-specific volumes, keep postgres_data
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml down --remove-orphans || true"
+                    echo 'Integration test stack cleaned up (data volumes preserved).'
                 } catch (Exception e) {
                     echo "Cleanup failed (non-fatal): ${e.getMessage()}"
                 }
