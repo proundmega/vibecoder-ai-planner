@@ -2,6 +2,8 @@ services:
   api:
     environment:
       - INTEGRATION_TESTS=1
+    volumes:
+      - docker_socket:/var/run/docker.sock
 
   postgres:
     ports:

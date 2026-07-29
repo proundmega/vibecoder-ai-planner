@@ -118,7 +118,9 @@ services:
           cpus: '0.5'
 
   postgres:
-    image: pgvector/pgvector:pg15
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
     restart: unless-stopped
     networks:
       - default
@@ -129,14 +131,13 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - pgbouncer_certs:/etc/postgresql/certs:ro
-      - ./pgbouncer/pg_hba.conf:/var/lib/postgresql/data/pg_hba.conf:ro
     command: >
       postgres
       -c ssl=on
       -c ssl_cert_file=/etc/postgresql/certs/server.crt
       -c ssl_key_file=/etc/postgresql/certs/server.key
       -c ssl_ca_file=/etc/postgresql/certs/ca.crt
-      -c password_encryption=md5
+      -c hba_file=/etc/postgresql/pg_hba.conf
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -154,7 +155,7 @@ services:
     networks:
       - default
     volumes:
-      - pgbouncer_config:/etc/pgbouncer:ro
+      - pgbouncer_config:/etc/pgbouncer
     depends_on:
       postgres:
         condition: service_healthy
