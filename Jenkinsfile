@@ -467,11 +467,15 @@ log_connections = 0
 log_disconnections = 0
 stats_period = 60
 
-# TLS settings
+# Client-to-pgbouncer TLS
 ssl = require
 ssl_cert_file = /certs/server.crt
 ssl_key_file = /certs/server.key
-ssl_ca_file = /certs/ca.crt
+
+# pgbouncer-to-postgres TLS
+server_tls_sslmode = verify-ca
+server_tls_ca_file = /certs/ca.crt
+
 admin_users = postgres
 PGBOUNCER_EOF
                                     PASS_MD5=\$(echo -n "postgres:changeme" | md5sum | cut -d" " -f1)
