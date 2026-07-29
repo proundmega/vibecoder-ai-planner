@@ -4,7 +4,6 @@ pipeline {
     options {
         timestamps()
         timeout(time: 60, unit: 'MINUTES')
-        githubCommitStatus()
     }
 
     tools {
