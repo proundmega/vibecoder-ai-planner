@@ -450,7 +450,7 @@ EOF
                                     mkdir -p /pgbouncer && \
                                     cat > /pgbouncer/pgbouncer.ini <<PGBOUNCER_EOF
 [databases]
-vibecode = host=postgres port=5432 dbname=vibecode sslmode=require
+vibecode = host=postgres port=5432 dbname=vibecode
 
 [pgbouncer]
 listen_addr = *
