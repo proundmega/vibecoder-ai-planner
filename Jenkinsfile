@@ -357,8 +357,8 @@ EOF
                                     AGE_HOURS=\$(( (NOW_EPOCH - CREATED_EPOCH) / 3600 ))
                                     if [ "\$AGE_HOURS" -ge 24 ]; then
                                         NAME=\$(docker inspect --format='{{.Name}}' "\$cid" 2>/dev/null | sed 's,^/,,')
-                                        if echo "\$NAME" | grep -qi jenkins; then
-                                            echo "Skipping Jenkins container: \$NAME"
+                                        if echo "\$NAME" | grep -qiE "jenkins|docker-socket-proxy"; then
+                                            echo "Skipping infrastructure container: \$NAME"
                                         else
                                             echo "\$cid \$NAME \$AGE_HOURS hours old"
                                             STALE_CONTAINERS="\$STALE_CONTAINERS \$cid"
