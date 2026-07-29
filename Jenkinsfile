@@ -469,9 +469,9 @@ stats_period = 60
 
 # TLS settings
 ssl = require
-ssl_cert_file = /pgbouncer/certs/server.crt
-ssl_key_file = /pgbouncer/certs/server.key
-ssl_ca_file = /pgbouncer/certs/ca.crt
+ssl_cert_file = /certs/server.crt
+ssl_key_file = /certs/server.key
+ssl_ca_file = /certs/ca.crt
 admin_users = postgres
 PGBOUNCER_EOF
                                     PASS_MD5=\$(echo -n "postgres:changeme" | md5sum | cut -d" " -f1)
