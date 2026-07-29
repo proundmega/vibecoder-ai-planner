@@ -445,10 +445,10 @@ EOF
                             
                             echo "=== Generating pgbouncer config in Docker volume ==="
                             DOCKER_HOST=\$DOCKER_HOST docker run --rm \
-                                -v "\$CONFIG_VOLUME":/pgbouncer:rw \
+                                -v "\$CONFIG_VOLUME":/etc/pgbouncer:rw \
                                 alpine sh -c '
-                                    mkdir -p /pgbouncer && \
-                                    cat > /pgbouncer/pgbouncer.ini <<PGBOUNCER_EOF
+                                    mkdir -p /etc/pgbouncer && \
+                                    cat > /etc/pgbouncer/pgbouncer.ini <<PGBOUNCER_EOF
 [databases]
 vibecode = host=postgres port=5432 dbname=vibecode
 
@@ -456,7 +456,7 @@ vibecode = host=postgres port=5432 dbname=vibecode
 listen_addr = *
 listen_port = 6432
 auth_type = md5
-auth_file = /pgbouncer/userlist.txt
+auth_file = /etc/pgbouncer/userlist.txt
 pool_mode = transaction
 default_pool_size = 20
 min_pool_size = 5
@@ -470,8 +470,8 @@ stats_period = 60
 admin_users = postgres
 PGBOUNCER_EOF
                                     PASS_MD5=\$(echo -n "changemepostgres" | md5sum | cut -d" " -f1)
-                                    echo "postgres:\"md5\$PASS_MD5\"" > /pgbouncer/userlist.txt
-                                    chown -R 999:999 /pgbouncer
+                                    echo "postgres:\"md5\$PASS_MD5\"" > /etc/pgbouncer/userlist.txt
+                                    chown -R 999:999 /etc/pgbouncer
                                     echo "Config generated successfully"
                                     echo "--- pgbouncer.ini ---"
                                     cat /pgbouncer/pgbouncer.ini
