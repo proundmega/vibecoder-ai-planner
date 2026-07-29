@@ -5,7 +5,11 @@ RUN npm ci
 
 FROM node:24-alpine
 WORKDIR /app
-RUN apk add --no-cache curl bash jq docker-cli docker-compose-plugin && mkdir -p /app/uploads/tickets
+RUN apk add --no-cache curl bash jq docker-cli && \
+    mkdir -p /usr/local/lib/docker/cli-plugins && \
+    curl -fsSL "https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-x86_64" -o /usr/local/lib/docker/cli-plugins/docker-compose && \
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose && \
+    mkdir -p /app/uploads/tickets
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 EXPOSE 3001
