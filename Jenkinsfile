@@ -347,35 +347,47 @@ EOF
                             echo "=== END DOCKER HOST RESOLUTION FIX ==="
                          '''
                          sh '''
-                            echo "Checking for stale containers (older than 24 hours)..."
-                            STALE_CONTAINERS=""
-                            for cid in \$(docker ps -q --filter "status=running" 2>/dev/null); do
+                            echo "=== Cleaning up containers from previous runs ==="
+                            PROJECT_NAME="\${COMPOSE_PROJECT_NAME}"
+                            echo "Target project: \$PROJECT_NAME"
+                            
+                            # Remove all containers (running or stopped) that match the project name
+                            for cid in \$(docker ps -aq --filter "name=\${PROJECT_NAME}" 2>/dev/null); do
+                                NAME=\$(docker inspect --format='{{.Name}}' "\$cid" 2>/dev/null | sed 's,^/,,')
+                                echo "Removing container: \$NAME (\$cid)"
+                            done
+                            
+                            if [ -n "\$(docker ps -aq --filter "name=\${PROJECT_NAME}" 2>/dev/null)" ]; then
+                                DOCKER_HOST=\$DOCKER_HOST docker rm -f \$(docker ps -aq --filter "name=\${PROJECT_NAME}" 2>/dev/null) 2>/dev/null || true
+                                echo "Previous containers removed."
+                            else
+                                echo "No previous containers found for project \$PROJECT_NAME."
+                            fi
+                            
+                            # Also clean up stopped containers from other projects older than 1 hour
+                            echo "Cleaning up old stopped containers (older than 1 hour)..."
+                            STALE_STOPPED=""
+                            for cid in \$(docker ps -aq --filter "status=exited" --filter "status=created" 2>/dev/null); do
                                 CREATED=\$(docker inspect --format='{{.Created}}' "\$cid" 2>/dev/null)
                                 if [ -n "\$CREATED" ]; then
                                     CREATED_EPOCH=\$(date -d "\$CREATED" +%s 2>/dev/null || echo 0)
                                     NOW_EPOCH=\$(date +%s)
                                     AGE_HOURS=\$(( (NOW_EPOCH - CREATED_EPOCH) / 3600 ))
-                                    if [ "\$AGE_HOURS" -ge 24 ]; then
+                                    if [ "\$AGE_HOURS" -ge 1 ]; then
                                         NAME=\$(docker inspect --format='{{.Name}}' "\$cid" 2>/dev/null | sed 's,^/,,')
                                         if echo "\$NAME" | grep -qiE "jenkins|docker-socket-proxy"; then
                                             echo "Skipping infrastructure container: \$NAME"
                                         else
-                                            echo "\$cid \$NAME \$AGE_HOURS hours old"
-                                            STALE_CONTAINERS="\$STALE_CONTAINERS \$cid"
+                                            echo "Removing old stopped container: \$NAME (\$AGE_HOURS hours old)"
+                                            STALE_STOPPED="\$STALE_STOPPED \$cid"
                                         fi
                                     fi
                                 fi
                             done
-                            STALE_CONTAINERS=\$(echo "\$STALE_CONTAINERS" | xargs)
-                            if [ -n "\$STALE_CONTAINERS" ]; then
-                                echo "Found stale containers:"
-                                echo "\$STALE_CONTAINERS"
-                                echo "Stopping and removing stale containers..."
-                                docker stop \$STALE_CONTAINERS 2>/dev/null || true
-                                docker rm \$STALE_CONTAINERS 2>/dev/null || true
-                                echo "Stale containers removed."
-                            else
-                                echo "No stale containers found."
+                            STALE_STOPPED=\$(echo "\$STALE_STOPPED" | xargs)
+                            if [ -n "\$STALE_STOPPED" ]; then
+                                DOCKER_HOST=\$DOCKER_HOST docker rm \$STALE_STOPPED 2>/dev/null || true
+                                echo "Old stopped containers removed."
                             fi
                         '''
 
@@ -426,6 +438,7 @@ EOF
                                         -out /certs/server.crt 2>/dev/null && \
                                     chmod 600 /certs/server.key && \
                                     chmod 644 /certs/ca.crt /certs/server.crt && \
+                                    chown -R 999:999 /certs && \
                                     echo "Certs generated successfully" && \
                                     ls -la /certs/
                                 '
@@ -463,6 +476,7 @@ admin_users = postgres
 PGBOUNCER_EOF
                                     PASS_MD5=\$(echo -n "postgres:changeme" | md5sum | cut -d" " -f1)
                                     echo "postgres:\"\\$PASS_MD5\"" > /pgbouncer/userlist.txt
+                                    chown -R 999:999 /pgbouncer
                                     echo "Config generated successfully"
                                     echo "--- pgbouncer.ini ---"
                                     cat /pgbouncer/pgbouncer.ini
