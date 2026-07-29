@@ -418,7 +418,7 @@ EOF
                             echo "=== Generating pgbouncer config in Docker volume ==="
                             DOCKER_HOST=\$DOCKER_HOST docker run --rm \
                                 -v "\$CONFIG_VOLUME":/etc/pgbouncer:rw \
-                                -e PG_PASS=\${POSTGRES_PASSWORD} \
+                                -e PG_PASS=''''${POSTGRES_PASSWORD}''' \
                                 alpine sh -c '
                                     mkdir -p /etc/pgbouncer && \
                                     cat > /etc/pgbouncer/pgbouncer.ini <<PGBOUNCER_EOF
