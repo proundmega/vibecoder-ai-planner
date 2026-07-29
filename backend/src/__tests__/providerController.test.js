@@ -219,19 +219,17 @@ describe('Provider Controller', () => {
 
       const result = await providerController.listProviders('1');
 
-      expect(result).toEqual({
-        success: true,
-        data: expect.arrayContaining([
-          expect.objectContaining({
-            name: 'claude-pro',
-            providerType: 'claude',
-            endpoint_url: null,
-            fallback_provider: null,
-            routing_rules: '{}',
-            is_project_director: false,
-          }),
-        ]),
-      });
+      expect(Array.isArray(result)).toBe(true);
+      expect(result).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          name: 'claude-pro',
+          providerType: 'claude',
+          endpoint_url: null,
+          fallback_provider: null,
+          routing_rules: '{}',
+          is_project_director: false,
+        }),
+      ]));
     });
   });
 
@@ -477,12 +475,10 @@ describe('Provider Controller', () => {
 
       const result = await providerController.listProviders('1');
 
-      expect(result).toEqual({
-        success: true,
-        data: expect.arrayContaining([
-          expect.objectContaining({ name: 'test' }),
-        ]),
-      });
+      expect(Array.isArray(result)).toBe(true);
+      expect(result).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: 'test' }),
+      ]));
     });
 
     it('should use id param for testProvider (global scope)', async () => {
