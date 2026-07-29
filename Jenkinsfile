@@ -395,13 +395,44 @@ EOF
                         '''
                         sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} down -v --remove-orphans || true"
                         
-                        // Generate TLS certs for PostgreSQL/PgBouncer (required for CI)
+                        // Generate TLS certs for PostgreSQL/PgBouncer and copy into Docker volumes
                         sh '''
                             echo "=== Generating TLS certificates ==="
                             bash scripts/generate-certs.sh
-                            echo "Certificates generated:"
+                            echo "Certificates generated locally:"
                             ls -la pgbouncer/certs/
-                            echo "=== TLS certificates ready ==="
+                            
+                            echo "=== Creating Docker volumes ==="
+                            CERTS_VOLUME="\${COMPOSE_PROJECT_NAME}_pgbouncer_certs"
+                            CONFIG_VOLUME="\${COMPOSE_PROJECT_NAME}_pgbouncer_config"
+                            DOCKER_HOST=\$DOCKER_HOST docker volume rm "\$CERTS_VOLUME" 2>/dev/null || true
+                            DOCKER_HOST=\$DOCKER_HOST docker volume rm "\$CONFIG_VOLUME" 2>/dev/null || true
+                            DOCKER_HOST=\$DOCKER_HOST docker volume create "\$CERTS_VOLUME"
+                            DOCKER_HOST=\$DOCKER_HOST docker volume create "\$CONFIG_VOLUME"
+                            
+                            echo "=== Copying certs into Docker volume ==="
+                            DOCKER_HOST=\$DOCKER_HOST docker run --rm \
+                                -v "\$CERTS_VOLUME":/certs:rw \
+                                -v $(pwd)/pgbouncer/certs:/local:ro \
+                                alpine sh -c "cp -v /local/ca.crt /certs/ && cp -v /local/ca.key /certs/ && cp -v /local/server.crt /certs/ && cp -v /local/server.key /certs/"
+                            
+                            echo "=== Copying pgbouncer config into Docker volume ==="
+                            DOCKER_HOST=\$DOCKER_HOST docker run --rm \
+                                -v "\$CONFIG_VOLUME":/pgbouncer:rw \
+                                -v $(pwd)/pgbouncer:/local:ro \
+                                alpine sh -c "cp -v /local/pgbouncer.ini /pgbouncer/ && cp -v /local/userlist.txt /pgbouncer/"
+                            
+                            echo "Certs in Docker volume:"
+                            DOCKER_HOST=\$DOCKER_HOST docker run --rm \
+                                -v "\$CERTS_VOLUME":/certs:ro \
+                                alpine ls -la /certs/
+                            
+                            echo "Config in Docker volume:"
+                            DOCKER_HOST=\$DOCKER_HOST docker run --rm \
+                                -v "\$CONFIG_VOLUME":/pgbouncer:ro \
+                                alpine ls -la /pgbouncer/
+                            
+                            echo "=== Docker volumes ready ==="
                         '''
                         
                         sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml build"
