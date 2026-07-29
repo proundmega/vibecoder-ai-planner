@@ -35,7 +35,7 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - PORT=3001
-      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@pgbouncer:6432/vibecode?sslmode=require
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@pgbouncer:6432/vibecode?sslmode=disable
       - JWT_SECRET=${JWT_SECRET}
       - DOCKER_API_URL=/var/run/docker.sock
       - AGENT_IMAGE=vibecode-agent
@@ -153,7 +153,6 @@ services:
       - default
     volumes:
       - pgbouncer_config:/etc/pgbouncer:ro
-      - pgbouncer_certs:/certs:ro
     depends_on:
       postgres:
         condition: service_healthy
