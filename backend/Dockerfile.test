@@ -5,7 +5,7 @@ RUN npm ci
 
 FROM node:24-alpine
 WORKDIR /app
-RUN apk add --no-cache curl bash jq docker-cli && mkdir -p /app/uploads/tickets
+RUN apk add --no-cache curl bash jq docker-cli docker-compose-plugin && mkdir -p /app/uploads/tickets
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 EXPOSE 3001

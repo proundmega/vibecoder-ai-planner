@@ -89,11 +89,6 @@ main() {
     sleep 8
    wait_for_api
 
-  # Allow frontend nginx to resolve the api hostname
-  sleep 3
-  docker_cmd restart vibecode-frontend 2>/dev/null || true
-  sleep 3
-
   # Seed admin user AFTER API is ready
   ADMIN_TOKEN=$(seed_user "admin@vibecode.dev" "password123" "super_admin" "Admin")
   if [ -z "$ADMIN_TOKEN" ]; then

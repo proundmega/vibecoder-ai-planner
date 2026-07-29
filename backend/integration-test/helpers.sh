@@ -30,13 +30,15 @@ docker_exec() {
       return 0
     fi
   fi
-  # Fallback: direct docker exec
-  if docker exec "$container" "$@" >/dev/null 2>&1; then
+  # Fallback: derive container name from COMPOSE_PROJECT_NAME
+  local project="${COMPOSE_PROJECT_NAME:-vibecode}"
+  local container_name="${project}_${service}_1"
+  if docker exec "$container_name" "$@" >/dev/null 2>&1; then
     return 0
-  elif command -v sudo >/dev/null 2>&1 && sudo docker exec "$container" "$@" >/dev/null 2>&1; then
+  elif command -v sudo >/dev/null 2>&1 && sudo docker exec "$container_name" "$@" >/dev/null 2>&1; then
     return 0
   else
-    echo "docker_exec: failed to execute on container '$container': $*" >&2
+    echo "docker_exec: failed to execute on container '$container_name': $*" >&2
     return 1
   fi
 }
@@ -61,12 +63,14 @@ docker_exec_out() {
     [ -f /app/compose/docker-compose.test.yml ] && compose_args="$compose_args -f /app/compose/docker-compose.test.yml"
     output=$(docker compose $compose_args exec -T "$service" "$@" 2>/dev/null) && { echo "$output"; return 0; }
   fi
-  # Fallback: direct docker exec
-  output=$(docker exec "$container" "$@" 2>/dev/null) && { echo "$output"; return 0; }
+  # Fallback: derive container name from COMPOSE_PROJECT_NAME
+  local project="${COMPOSE_PROJECT_NAME:-vibecode}"
+  local container_name="${project}_${service}_1"
+  output=$(docker exec "$container_name" "$@" 2>/dev/null) && { echo "$output"; return 0; }
   if command -v sudo >/dev/null 2>&1; then
-    output=$(sudo docker exec "$container" "$@" 2>/dev/null) && { echo "$output"; return 0; }
+    output=$(sudo docker exec "$container_name" "$@" 2>/dev/null) && { echo "$output"; return 0; }
   fi
-  echo "docker_exec_out: failed to execute on container '$container': $*" >&2
+  echo "docker_exec_out: failed to execute on container '$container_name': $*" >&2
   return 1
 }
 
