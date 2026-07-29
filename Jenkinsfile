@@ -396,8 +396,14 @@ EOF
                                 script: "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} ps --format \"{{.Name}} {{.Status}}\" 2>/dev/null",
                                 returnStdout: true
                             )
-                            def apiUp = ps =~ /\${COMPOSE_PROJECT_NAME}-api.*Up/
-                            def pgUp = ps =~ /\${COMPOSE_PROJECT_NAME}-postgres.*Up/
+                            def apiUp = sh(
+                                script: "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} ps --format '{{.Name}} {{.Status}}' 2>/dev/null | grep -q '${COMPOSE_PROJECT_NAME}-api.*Up'",
+                                returnStatus: true
+                            ) == 0
+                            def pgUp = sh(
+                                script: "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} ps --format '{{.Name}} {{.Status}}' 2>/dev/null | grep -q '${COMPOSE_PROJECT_NAME}-postgres.*Up'",
+                                returnStatus: true
+                            ) == 0
                             if (apiUp && pgUp) {
                                 ready = true
                                 break
