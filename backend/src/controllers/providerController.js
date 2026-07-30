@@ -301,7 +301,7 @@ async function listProviders(projectId = null) {
     updatedAt: row.updated_at,
   }));
 
-  return { success: true, data: providers };
+  return providers;
 }
 
 async function getProvider(req, res, next) {

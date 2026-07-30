@@ -1,11 +1,22 @@
 FROM node:24-alpine AS deps
 WORKDIR /app
-COPY package*.json ./
+COPY backend/package*.json ./
 RUN npm ci
 
 FROM node:24-alpine
 WORKDIR /app
-RUN apk add --no-cache curl bash jq docker-cli && mkdir -p /app/uploads/tickets
+RUN apk add --no-cache curl bash jq docker-cli && \
+    mkdir -p /usr/local/lib/docker/cli-plugins && \
+    curl -fsSL "https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-x86_64" -o /usr/local/lib/docker/cli-plugins/docker-compose && \
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose && \
+    mkdir -p /app/uploads/tickets
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY backend/src ./src
+COPY backend/integration-test ./integration-test
+COPY backend/jest.config.js ./jest.config.js
+COPY backend/jest.integration.config.js ./jest.integration.config.js
+RUN mkdir -p /app/compose
+COPY docker-compose.yml ./compose/docker-compose.yml
+COPY docker-compose.test.yml ./compose/docker-compose.test.yml
+COPY docker-compose.override.yml ./compose/docker-compose.override.yml
 EXPOSE 3001
