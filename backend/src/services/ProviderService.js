@@ -19,7 +19,7 @@ class ProviderService {
       throw new Error('No active provider configuration found');
     }
 
-    const projectProviders = providers.filter(p => p.project_id === projectId);
+    const projectProviders = providers.filter(p => projectId !== null && p.project_id === projectId);
     const globalProviders = providers.filter(p => p.project_id === null);
 
     for (const provider of projectProviders) {
@@ -27,7 +27,20 @@ class ProviderService {
       if (config) return config;
     }
 
-    for (const provider of globalProviders) {
+    // First pass: check providers with routing rules
+    const providersWithRules = globalProviders.filter(p =>
+      p.routing_rules && Array.isArray(p.routing_rules.rules) && p.routing_rules.rules.length > 0
+    );
+    const providersWithoutRules = globalProviders.filter(p =>
+      !p.routing_rules || !Array.isArray(p.routing_rules.rules) || p.routing_rules.rules.length === 0
+    );
+
+    for (const provider of providersWithRules) {
+      const config = await this._tryResolve(provider, ticketInfo);
+      if (config) return config;
+    }
+
+    for (const provider of providersWithoutRules) {
       const config = await this._tryResolve(provider, ticketInfo);
       if (config) return config;
     }

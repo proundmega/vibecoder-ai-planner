@@ -52,6 +52,9 @@ temp/
 *.tmp
 *.cache
 
+# PgBouncer TLS artifacts (generated, not committed)
+pgbouncer/certs/
+
 # Test artifacts
 cypress/screenshots/
 cypress/videos/

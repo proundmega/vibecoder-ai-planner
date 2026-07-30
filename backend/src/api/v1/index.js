@@ -24,6 +24,7 @@ const { verifyToken } = require('../../middleware/auth');
 const { requireAnyPermission } = require('../../middleware/permissions');
 const { pool } = require('../../db');
 const agentHeartbeatRouter = require('./agentHeartbeat');
+const cspViolationsRouter = require('../csp-violations');
 const IpWhitelistService = require('../../services/IpWhitelistService');
 
 // Template routes (under /projects/:projectId/templates) — must be before router.use('/projects')
@@ -194,6 +195,7 @@ router.use('/billing', billingRouter);
 router.use('/memory', memoryRouter);
 router.use('/tickets', reviewRouter);
 router.use('/agents-status', agentHeartbeatRouter);
+router.use('/csp-violations', cspViolationsRouter);
 
 // IP Whitelist routes (super admin only)
 router.get('/admin/ip-whitelist', verifyToken, requireAnyPermission('USER_VIEW_ALL'), async (req, res, next) => {

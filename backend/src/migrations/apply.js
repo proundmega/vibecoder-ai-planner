@@ -53,6 +53,33 @@ const DATA_MIGRATIONS = [
 
 const { spawn } = require('child_process');
 
+function classifyStatement(sql) {
+  let s = sql.trim();
+  // Strip leading block comments
+  while (s.startsWith('/*')) {
+    const end = s.indexOf('*/');
+    if (end === -1) { s = ''; break; }
+    s = s.slice(end + 2).trim();
+  }
+  // Strip leading single-line comments
+  while (s.startsWith('--')) {
+    const nl = s.indexOf('\n');
+    s = nl === -1 ? '' : s.slice(nl + 1).trim();
+  }
+  const upper = s.toUpperCase();
+  if (upper.startsWith('CREATE')) return 'CREATE';
+  if (upper.startsWith('ALTER')) return 'ALTER';
+  if (upper.startsWith('DROP')) return 'DROP';
+  if (upper.startsWith('TRUNCATE')) return 'TRUNCATE';
+  if (upper.startsWith('INSERT')) return 'INSERT';
+  if (upper.startsWith('UPDATE')) return 'UPDATE';
+  if (upper.startsWith('DELETE')) return 'DELETE';
+  if (upper.startsWith('COMMENT')) return 'COMMENT';
+  if (upper.startsWith('GRANT')) return 'GRANT';
+  if (upper.startsWith('REVOKE')) return 'REVOKE';
+  return 'OTHER';
+}
+
 function splitSQLStatements(sql) {
   const statements = [];
   let current = '';
@@ -202,4 +229,8 @@ async function migrate() {
   console.log('\n\n✓ Migrations completed successfully!');
 }
 
-migrate();
+if (require.main === module) {
+  migrate();
+}
+
+module.exports = { classifyStatement, splitSQLStatements };

@@ -12,7 +12,8 @@ describe('auth API', () => {
     it('sends POST request with correct data', async () => {
       global.fetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ success: true, data: { token: 'abc', user: { id: 1, name: 'Test' } } }),
+        status: 200,
+        json: () => Promise.resolve({ success: true, data: { token: 'abc', user: { id: 1, name: 'Test', email: 'test@example.com', role: 'user', isActive: true } } }),
       })
 
       await registerUser('Test', 'test@example.com', 'password123')
@@ -27,7 +28,8 @@ describe('auth API', () => {
     it('extracts token and user from { success, data } response', async () => {
       global.fetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ success: true, data: { token: 'abc', user: { id: 1, name: 'Test' } } }),
+        status: 200,
+        json: () => Promise.resolve({ success: true, data: { token: 'abc', user: { id: 1, name: 'Test', email: 'test@example.com', role: 'user', isActive: true } } }),
       })
 
       const result = await registerUser('Test', 'test@example.com', 'password123')
@@ -37,10 +39,11 @@ describe('auth API', () => {
       expect(result.user.name).toBe('Test')
     })
 
-    it('returns data directly when no success wrapper', async () => {
+    it('extracts token and user from response', async () => {
       global.fetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ token: 'abc', user: { id: 1 } }),
+        status: 200,
+        json: () => Promise.resolve({ success: true, data: { token: 'abc', user: { id: 1, name: 'Test', email: 'test@example.com', role: 'user', isActive: true } } }),
       })
 
       const result = await registerUser('Test', 'test@example.com', 'password123')
@@ -68,13 +71,34 @@ describe('auth API', () => {
 
       await expect(registerUser('Test', 'test@example.com', 'password123')).rejects.toThrow('Registration failed')
     })
+
+    it('throws RATE_LIMITED error on 429 response', async () => {
+      global.fetch.mockResolvedValue({
+        ok: false,
+        status: 429,
+        json: () => Promise.resolve({ retryAfter: 60, retryAt: '2025-01-01T00:00:00.000Z' }),
+      })
+
+      await expect(registerUser('Test', 'test@example.com', 'password123')).rejects.toThrow('Too many requests')
+    })
+
+    it('throws validation error on malformed response', async () => {
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ notSuccess: true, notData: { token: 'abc' } }),
+      })
+
+      await expect(registerUser('Test', 'test@example.com', 'password123')).rejects.toThrow('Response validation failed')
+    })
   })
 
   describe('loginUser', () => {
     it('sends POST request with correct data', async () => {
       global.fetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ success: true, data: { token: 'xyz', user: { id: 2, role: 'admin' } } }),
+        status: 200,
+        json: () => Promise.resolve({ success: true, data: { token: 'xyz', user: { id: 2, name: 'Test', email: 'test@example.com', role: 'admin', isActive: true } } }),
       })
 
       await loginUser('login@example.com', 'password123')
@@ -89,7 +113,8 @@ describe('auth API', () => {
     it('extracts token and user from { success, data } response', async () => {
       global.fetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ success: true, data: { token: 'xyz', user: { id: 2, role: 'admin' } } }),
+        status: 200,
+        json: () => Promise.resolve({ success: true, data: { token: 'xyz', user: { id: 2, name: 'Test', email: 'test@example.com', role: 'admin', isActive: true } } }),
       })
 
       const result = await loginUser('login@example.com', 'password123')
@@ -99,16 +124,18 @@ describe('auth API', () => {
       expect(result.user.role).toBe('admin')
     })
 
-    it('returns data directly when no success wrapper', async () => {
+    it('returns lockout object on 423 response', async () => {
       global.fetch.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ token: 'xyz', user: { id: 2 } }),
+        ok: false,
+        status: 423,
+        json: () => Promise.resolve({ error: { code: 'LOCKED', message: 'Account locked', lockedUntil: '2025-01-01T01:00:00.000Z', retryAfter: 900 } }),
       })
 
-      const result = await loginUser('login@example.com', 'password123')
+      const result = await loginUser('login@example.com', 'wrongpassword')
 
-      expect(result.token).toBe('xyz')
-      expect(result.user.id).toBe(2)
+      expect('lockout' in result).toBe(true)
+      expect(result.lockout.lockedUntil).toBe('2025-01-01T01:00:00.000Z')
+      expect(result.lockout.retryAfter).toBe(900)
     })
 
     it('throws on 401 response', async () => {
@@ -120,13 +147,33 @@ describe('auth API', () => {
 
       await expect(loginUser('login@example.com', 'wrongpassword')).rejects.toThrow('Invalid credentials')
     })
+
+    it('throws RATE_LIMITED error on 429 response', async () => {
+      global.fetch.mockResolvedValue({
+        ok: false,
+        status: 429,
+        json: () => Promise.resolve({ retryAfter: 60, retryAt: '2025-01-01T00:00:00.000Z' }),
+      })
+
+      await expect(loginUser('login@example.com', 'password123')).rejects.toThrow('Too many requests')
+    })
+
+    it('throws validation error on malformed response', async () => {
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ notSuccess: true, notData: { token: 'xyz' } }),
+      })
+
+      await expect(loginUser('login@example.com', 'password123')).rejects.toThrow('Response validation failed')
+    })
   })
 
   describe('getCurrentUser', () => {
     it('sends GET request with Authorization header', async () => {
       global.fetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ user: { id: 1, name: 'Test', role: 'admin' } }),
+        json: () => Promise.resolve({ user: { id: 1, name: 'Test', email: 'test@example.com', role: 'admin', isActive: true } }),
       })
 
       await getCurrentUser('test-token')
@@ -139,7 +186,7 @@ describe('auth API', () => {
     it('returns user object from response', async () => {
       global.fetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ user: { id: 1, name: 'Test', role: 'admin' } }),
+        json: () => Promise.resolve({ user: { id: 1, name: 'Test', email: 'test@example.com', role: 'admin', isActive: true } }),
       })
 
       const result = await getCurrentUser('test-token')
@@ -147,6 +194,17 @@ describe('auth API', () => {
       expect(result.id).toBe(1)
       expect(result.name).toBe('Test')
       expect(result.role).toBe('admin')
+    })
+
+    it('returns null when user is missing', async () => {
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({}),
+      })
+
+      const result = await getCurrentUser('test-token')
+
+      expect(result).toBeNull()
     })
 
     it('throws on 401 response', async () => {

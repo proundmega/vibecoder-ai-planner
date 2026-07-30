@@ -51,6 +51,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useRateLimitStore } from '@/stores/rateLimit'
 import { loginUser } from '@/api/auth'
 import { get } from '@/api/client'
+import { validateSchema } from '@/api/validator'
 import VInput from '@/components/VInput.vue'
 import VButton from '@/components/VButton.vue'
 import RateLimitBanner from '@/components/RateLimitBanner.vue'
@@ -108,6 +109,14 @@ const handleLogin = async () => {
       lockoutActive.value = true
       lockedUntil.value = data.lockout.lockedUntil
       startCountdown()
+      return
+    }
+    try {
+      const validateUser = validateSchema('User')
+      validateUser(data.user)
+    } catch (validationError) {
+      console.error('User validation failed:', validationError)
+      errorMessage.value = 'Failed to load user data. Please try again.'
       return
     }
     authStore.setToken(data.token)

@@ -52,6 +52,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useRateLimitStore } from '@/stores/rateLimit'
 import { registerUser } from '@/api/auth'
 import { get } from '@/api/client'
+import { validateSchema } from '@/api/validator'
 import VInput from '@/components/VInput.vue'
 import VButton from '@/components/VButton.vue'
 import RateLimitBanner from '@/components/RateLimitBanner.vue'
@@ -76,6 +77,14 @@ const handleRegister = async () => {
 
   try {
     const data = await registerUser(name.value, email.value, password.value)
+    try {
+      const validateUser = validateSchema('User')
+      validateUser(data.user)
+    } catch (validationError) {
+      console.error('User validation failed:', validationError)
+      errorMessage.value = 'Failed to load user data. Please try again.'
+      return
+    }
     authStore.setToken(data.token)
     authStore.setUser(data.user)
     if (data.user?.role) {
