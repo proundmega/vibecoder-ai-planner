@@ -37,6 +37,7 @@ import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { get } from '@/api/client'
+import { validateApiResponse } from '@/api/validator'
 import VButton from '@/components/VButton.vue'
 
 const authStore = useAuthStore()
@@ -46,7 +47,7 @@ const route = useRoute()
 onMounted(async () => {
   if (authStore.user.value?.role) {
     try {
-      await authStore.syncPermissions((role) => get(`/api/v1/permissions/${role}`))
+      await authStore.syncPermissions((role) => get(`/api/v1/permissions/${role}`, { validate: validateApiResponse }))
     } catch (e) {
       console.error('Failed to sync permissions on mount:', e)
     }
