@@ -22,9 +22,7 @@ const branchTicketId = ref('')
 const prs = ref([])
 const showCreatePR = ref(false)
 const prTicketId = ref('')
-const prTitle = ref('')
 const prBody = ref('')
-const prBranchName = ref('')
 
 const actionLoading = ref(null)
 
@@ -130,7 +128,7 @@ async function handleDeleteBranch(ticketId) {
 }
 
 async function handleCreatePR() {
-  if (!prTicketId.value.trim() || !prTitle.value.trim() || !prBranchName.value.trim()) return
+  if (!prTicketId.value.trim()) return
   actionLoading.value = 'pr'
   repoError.value = null
   repoSuccess.value = null
@@ -139,9 +137,7 @@ async function handleCreatePR() {
     repoSuccess.value = 'PR created successfully'
     await loadPRs()
     prTicketId.value = ''
-    prTitle.value = ''
     prBody.value = ''
-    prBranchName.value = ''
     showCreatePR.value = false
   } catch (err) {
     repoError.value = err.message || 'Failed to create PR'
@@ -237,9 +233,7 @@ async function handleCreatePR() {
           <div class="modal-content">
             <h3>Create Pull Request</h3>
             <input v-model="prTicketId" type="text" placeholder="Ticket ID" class="input" />
-            <input v-model="prTitle" type="text" placeholder="PR Title" class="input" />
             <textarea v-model="prBody" placeholder="PR Body (optional)" class="textarea" rows="4" />
-            <input v-model="prBranchName" type="text" placeholder="Branch Name" class="input" />
             <div class="form-actions">
               <button @click="handleCreatePR" :disabled="actionLoading === 'pr'" class="btn-primary">
                 {{ actionLoading === 'pr' ? 'Creating...' : 'Create PR' }}

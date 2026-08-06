@@ -129,17 +129,6 @@ export function patch<T = unknown>(url: string, body?: unknown, options: ApiOpti
   return apiFetch(url, opts).then((res: Response) => extractData<T>(res, options.validate))
 }
 
-export function postWithHeaders<T = unknown>(url: string, body: unknown, extraHeaders: Record<string, string> = {}, options: ApiOptions = {}): Promise<T> {
-  const { validate, ...rest } = options
-  const opts: ApiOptions = {
-    method: 'POST',
-    body: JSON.stringify(body),
-    ...rest,
-    headers: { ...extraHeaders, ...(rest.headers as Record<string, string> || {}) },
-  }
-  return apiFetch(url, opts).then((res: Response) => extractData<T>(res, validate))
-}
-
 export function postMultipart<T = unknown>(url: string, formData: FormData, options: ApiOptions = {}): Promise<T> {
   const authStore = useAuthStore()
   const token = authStore.token.value
