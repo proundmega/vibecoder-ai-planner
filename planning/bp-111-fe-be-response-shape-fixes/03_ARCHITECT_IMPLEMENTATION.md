@@ -14,6 +14,11 @@
 **Branch**: master
 **Scope**: Frontend
 
+**Follow-up (2026-08-06)**: 3 deferred items from 04_SPECIFICATION.md completed in same session:
+- PR form cleanup: Removed prTitle/prBranchName inputs from GitHubConnections.vue (backend derives from ticket)
+- Dead code: Removed postWithHeaders from client.ts (never used in production)
+- Route-mount audit: Created scripts/route-mount-audit.js (detects drift between router files and v1/index.js mounts)
+
 **Dependencies**: none (independent of fg-13; backend untouched)
 
 ---

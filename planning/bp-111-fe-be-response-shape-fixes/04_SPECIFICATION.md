@@ -221,12 +221,14 @@ export function updateTemplate(projectId: string, templateId: string, data: Part
 
 ## Pending Scope Items
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|-------------|-------------|----------|----------------------|---------------|
-| 1 | R3 (this ticket) | PR form `prTitle`/`prBranchName` inputs ignored by backend (derives from ticket); drop/hide inputs | UX | bp-XX-pr-form-cleanup | ☐ |
-| 2 | fg-13 F6 | Generated API client stale/unused; regenerate or delete | Developer experience | fg-13 F6 | ☐ |
-| 3 | fg-13 | `postWithHeaders` dead export | Developer experience | bp-XX-dead-code-cleanup | ☐ |
-| 4 | bp-80 | Route-mount drift audit tooling | Developer experience | bp-XX-route-mount-audit | ☐ |
+**All deferred improvements from bp-111 completed in same session (2026-08-06):**
+
+| # | From Ticket | Improvement | Category | Status |
+|---|-------------|-------------|----------|--------|
+| 1 | R3 (this ticket) | PR form `prTitle`/`prBranchName` inputs ignored by backend (derives from ticket); drop/hide inputs | UX | ✅ Done — removed inputs, simplified guard |
+| 2 | fg-13 F6 | Generated API client stale/unused; regenerate or delete | Developer experience | ✅ Done (fg-13) |
+| 3 | fg-13 | `postWithHeaders` dead export | Developer experience | ✅ Done — removed from client.ts |
+| 4 | bp-80 | Route-mount drift audit tooling | Developer experience | ✅ Done — scripts/route-mount-audit.js |
 
 ---
 
