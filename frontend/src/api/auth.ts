@@ -1,9 +1,24 @@
 import { User } from '../stores/auth'
-import { validateApiResponse } from './validator'
 
 interface AuthData {
   token: string
   user: User
+}
+
+function validateAuthResponse(data: unknown): string[] {
+  const errors: string[] = []
+  if (typeof data !== 'object' || data === null) {
+    errors.push('root: response must be an object')
+    return errors
+  }
+  const obj = data as Record<string, unknown>
+  if (!('token' in obj) || typeof obj.token !== 'string') {
+    errors.push('root.token: required string field missing')
+  }
+  if (!('user' in obj) || typeof obj.user !== 'object' || obj.user === null) {
+    errors.push('root.user: required object field missing')
+  }
+  return errors
 }
 
 export async function registerUser(name: string, email: string, password: string): Promise<AuthData> {
@@ -37,14 +52,12 @@ export async function registerUser(name: string, email: string, password: string
     throw new Error('Invalid response format')
   }
 
-  const validationErrors = validateApiResponse(data)
+  const validationErrors = validateAuthResponse(data)
   if (validationErrors.length > 0) {
     throw new Error(`Response validation failed: ${validationErrors.join('; ')}`)
   }
 
-  const obj = data as Record<string, unknown>
-  const result = obj.success ? (obj.data as AuthData) : (data as AuthData)
-  return result as AuthData
+  return data as AuthData
 }
 
 export interface LockoutError {
@@ -94,13 +107,12 @@ export async function loginUser(email: string, password: string): Promise<AuthDa
     throw new Error('Invalid response format')
   }
 
-  const validationErrors = validateApiResponse(data)
+  const validationErrors = validateAuthResponse(data)
   if (validationErrors.length > 0) {
     throw new Error(`Response validation failed: ${validationErrors.join('; ')}`)
   }
 
-  const obj = data as Record<string, unknown>
-  return (obj.success ? obj.data : data) as AuthData
+  return data as AuthData
 }
 
 export async function getCurrentUser(token: string): Promise<User | null> {

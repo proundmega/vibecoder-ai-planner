@@ -1,10 +1,8 @@
-import { ref, type Ref } from 'vue'
+import { ref } from 'vue'
 
 export interface TabConfig {
   id: string
   label: string
-  lazyLoad?: () => Promise<void>
-  loaded?: Ref<boolean> | boolean
 }
 
 export function useTabNavigation(tabs: TabConfig[]) {

@@ -144,7 +144,7 @@ async function handleDelete() {
                <p v-else class="no-desc">No description</p>
              </div>
              <div class="project-meta">
-               <span>Owner: {{ project.owner_name || 'You' }}</span>
+                <span>Owner: {{ project.ownerName || 'You' }}</span>
                <span>{{ project.created_at ? new Date(project.created_at).toLocaleDateString() : '' }}</span>
              </div>
            </router-link>

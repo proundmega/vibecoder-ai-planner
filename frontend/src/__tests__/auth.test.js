@@ -12,8 +12,8 @@ describe('auth API', () => {
     it('sends POST request with correct data', async () => {
       global.fetch.mockResolvedValue({
         ok: true,
-        status: 200,
-        json: () => Promise.resolve({ success: true, data: { token: 'abc', user: { id: 1, name: 'Test', email: 'test@example.com', role: 'user', isActive: true } } }),
+        status: 201,
+        json: () => Promise.resolve({ token: 'abc', user: { id: 1, name: 'Test', email: 'test@example.com', role: 'user', isActive: true } }),
       })
 
       await registerUser('Test', 'test@example.com', 'password123')
@@ -25,11 +25,11 @@ describe('auth API', () => {
       })
     })
 
-    it('extracts token and user from { success, data } response', async () => {
+    it('extracts token and user from response', async () => {
       global.fetch.mockResolvedValue({
         ok: true,
-        status: 200,
-        json: () => Promise.resolve({ success: true, data: { token: 'abc', user: { id: 1, name: 'Test', email: 'test@example.com', role: 'user', isActive: true } } }),
+        status: 201,
+        json: () => Promise.resolve({ token: 'abc', user: { id: 1, name: 'Test', email: 'test@example.com', role: 'user', isActive: true } }),
       })
 
       const result = await registerUser('Test', 'test@example.com', 'password123')
@@ -37,19 +37,6 @@ describe('auth API', () => {
       expect(result.token).toBe('abc')
       expect(result.user.id).toBe(1)
       expect(result.user.name).toBe('Test')
-    })
-
-    it('extracts token and user from response', async () => {
-      global.fetch.mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ success: true, data: { token: 'abc', user: { id: 1, name: 'Test', email: 'test@example.com', role: 'user', isActive: true } } }),
-      })
-
-      const result = await registerUser('Test', 'test@example.com', 'password123')
-
-      expect(result.token).toBe('abc')
-      expect(result.user.id).toBe(1)
     })
 
     it('throws on 400 response with error message', async () => {
@@ -98,7 +85,7 @@ describe('auth API', () => {
       global.fetch.mockResolvedValue({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ success: true, data: { token: 'xyz', user: { id: 2, name: 'Test', email: 'test@example.com', role: 'admin', isActive: true } } }),
+        json: () => Promise.resolve({ token: 'xyz', user: { id: 2, name: 'Test', email: 'test@example.com', role: 'admin', isActive: true } }),
       })
 
       await loginUser('login@example.com', 'password123')
@@ -110,11 +97,11 @@ describe('auth API', () => {
       })
     })
 
-    it('extracts token and user from { success, data } response', async () => {
+    it('extracts token and user from response', async () => {
       global.fetch.mockResolvedValue({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ success: true, data: { token: 'xyz', user: { id: 2, name: 'Test', email: 'test@example.com', role: 'admin', isActive: true } } }),
+        json: () => Promise.resolve({ token: 'xyz', user: { id: 2, name: 'Test', email: 'test@example.com', role: 'admin', isActive: true } }),
       })
 
       const result = await loginUser('login@example.com', 'password123')
@@ -162,7 +149,7 @@ describe('auth API', () => {
       global.fetch.mockResolvedValue({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ notSuccess: true, notData: { token: 'xyz' } }),
+        json: () => Promise.resolve({ notToken: 'xyz', notUser: {} }),
       })
 
       await expect(loginUser('login@example.com', 'password123')).rejects.toThrow('Response validation failed')

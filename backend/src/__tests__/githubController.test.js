@@ -25,7 +25,7 @@ describe('GitHub Controller', () => {
       const repo = { id: 1, repoUrl: 'owner/repo', defaultBranch: 'main' };
       GitHubService.connectProject.mockResolvedValue(repo);
 
-      mockReq.params.id = '1';
+      mockReq.params.projectId = '1';
       mockReq.body = { repoUrl: 'owner/repo', accessToken: 'ghp_token123' };
 
       await githubController.connectRepo(mockReq, mockRes, nextFn);
@@ -42,7 +42,7 @@ describe('GitHub Controller', () => {
     it('should disconnect a repository', async () => {
       GitHubService.disconnectProject.mockResolvedValue({ success: true });
 
-      mockReq.params.id = '1';
+      mockReq.params.projectId = '1';
 
       await githubController.disconnectRepo(mockReq, mockRes, nextFn);
 
@@ -59,7 +59,7 @@ describe('GitHub Controller', () => {
       const repo = { id: 1, repoUrl: 'owner/repo', isActive: true };
       GitHubService.getProjectRepo.mockResolvedValue(repo);
 
-      mockReq.params.id = '1';
+      mockReq.params.projectId = '1';
 
       await githubController.getRepoStatus(mockReq, mockRes, nextFn);
 
@@ -69,7 +69,7 @@ describe('GitHub Controller', () => {
     it('should return null if no repo connected', async () => {
       GitHubService.getProjectRepo.mockResolvedValue(null);
 
-      mockReq.params.id = '1';
+      mockReq.params.projectId = '1';
 
       await githubController.getRepoStatus(mockReq, mockRes, nextFn);
 

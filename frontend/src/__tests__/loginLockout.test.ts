@@ -45,7 +45,7 @@ describe('loginUser - Lockout handling', () => {
     global.fetch = vi.fn().mockResolvedValue({
       status: 200,
       ok: true,
-      json: () => Promise.resolve({ success: true, data: { token: 'abc123', user: { id: 1, email: 'test@example.com', name: 'Test', role: 'user', isActive: true } } }),
+      json: () => Promise.resolve({ token: 'abc123', user: { id: 1, email: 'test@example.com', name: 'Test', role: 'user', isActive: true } }),
     })
 
     const result = await loginUser('test@example.com', 'correctpassword')

@@ -3,10 +3,10 @@ const { NotFoundError } = require('../errors/HttpError');
 
 async function connectRepo(req, res, next) {
   try {
-    const { id } = req.params;
+    const projectId = req.params.projectId;
     const { repoUrl, accessToken } = req.body;
 
-    const repo = await GitHubService.connectProject(id, repoUrl, accessToken, req.user.userId);
+    const repo = await GitHubService.connectProject(projectId, repoUrl, accessToken, req.user.userId);
     res.status(201).json({ success: true, data: repo });
   } catch (error) {
     next(error);
@@ -15,8 +15,8 @@ async function connectRepo(req, res, next) {
 
 async function disconnectRepo(req, res, next) {
   try {
-    const { id } = req.params;
-    await GitHubService.disconnectProject(id);
+    const projectId = req.params.projectId;
+    await GitHubService.disconnectProject(projectId);
     res.json({ success: true, data: { message: 'Repository disconnected' } });
   } catch (error) {
     next(error);
@@ -25,8 +25,8 @@ async function disconnectRepo(req, res, next) {
 
 async function getRepoStatus(req, res, next) {
   try {
-    const { id } = req.params;
-    const repo = await GitHubService.getProjectRepo(id);
+    const projectId = req.params.projectId;
+    const repo = await GitHubService.getProjectRepo(projectId);
     res.json({ success: true, data: repo });
   } catch (error) {
     next(error);

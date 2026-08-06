@@ -6,6 +6,7 @@ class Project {
     this.name = data.name;
     this.description = data.description;
     this.ownerId = data.ownerId;
+    this.ownerName = data.ownerName ?? null;
     this.createdAt = data.createdAt;
   }
 
@@ -21,7 +22,7 @@ class Project {
   static async findAll(uid) {
     const result = await pool.query(
       'SELECT p.*, u.name as owner_name FROM projects p ' +
-      'JOIN users u ON p.owner_id = u.id WHERE p.owner_id = $1 AND p.deleted_at IS NULL ORDER BY p.created_at DESC',
+      'LEFT JOIN users u ON p.owner_id = u.id WHERE p.owner_id = $1 AND p.deleted_at IS NULL ORDER BY p.created_at DESC',
       [uid]
     );
     return result.rows.map(r => this.fromRow(r));
@@ -30,7 +31,7 @@ class Project {
   static async findById(id) {
     const result = await pool.query(
       'SELECT p.*, u.name as owner_name FROM projects p ' +
-      'JOIN users u ON p.owner_id = u.id WHERE p.id = $1 AND p.deleted_at IS NULL',
+      'LEFT JOIN users u ON p.owner_id = u.id WHERE p.id = $1 AND p.deleted_at IS NULL',
       [id]
     );
     return result.rows.length > 0 ? this.fromRow(result.rows[0]) : null;
