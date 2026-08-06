@@ -26,17 +26,17 @@ cd ../frontend && npm run dev      # Vite :3000, proxies /api → :3001
 backend/src/
   index.js          → exports app (NODE_ENV=test skips listen; supertest uses app directly)
   api/routes.js     → /health, /version, /docs, /metrics, /auth/*, /v1/*
-  api/v1/index.js   → 16 routers + inlined templates/attachments/planning routes
-  services/         → ~25 services
+  api/v1/index.js   → 18 mounted routers (users, projects, tickets, agents, approvals, providers, credentials, usage, billing, memory, review, ...) + inlined template/attachment/planning/ip-whitelist routes
+  services/         → ~28 services
   controllers/      → ~12 controllers
   models/           → approval, project, ticket, user
-  migrations/       → 37 .sql files + 2 data migrations; apply.js runs in array order (not numeric)
-  middleware/       → auth, permissions, validate (Joi), cors, rate limiter, CSP, requestId, error handler, timeout
-  validators/       → Joi schemas
+  migrations/       → 40 .sql files + 2 data migrations; apply.js runs in array order (not numeric)
+  middleware/       → ~15 files (auth, permissions, validate (Joi), cors, rate limiter, CSP, requestId, error handler, timeout, apiVersion, multer)
+  validators/       → 15 Joi schemas
   db.js             → pg Pool (DATABASE_URL env)
 
 frontend/src/
-  stores/auth.js        → singleton Pinia store; tokens/permissions in localStorage
+  stores/               → auth.ts (singleton Pinia store; tokens/permissions in localStorage) + rateLimit.ts
   api/client.ts         → native `fetch` (NOT axios, despite axios being a dep)
   api/generated/        → TS types via openapi-typescript-codegen
   router/index.ts       → reads vibecode_token directly from localStorage
@@ -95,8 +95,8 @@ docker compose down -v           # stop and remove volumes
 - **File upload tests** (`file_upload.test.sh`) are skipped in CI (`CI=1` env var). Run locally with `CI=` (unset).
 
 ### Frontend (Vitest + Cypress)
-- 22+ unit test files in `src/__tests__/`. `setupFiles: src/__tests__/setup.ts` loads design-tokens.css variables into DOM for tests.
-- 7 Cypress e2e specs + 5 component specs in `cypress/`. Seed: `cypress/support/seed.ts`.
+- 56 unit test files in `src/__tests__/`. `setupFiles: src/__tests__/setup.ts` loads design-tokens.css variables into DOM for tests.
+- 7 Cypress e2e specs + 6 component specs in `cypress/`. Seed: `cypress/support/seed.ts`.
 - Contract test: `src/__tests__/api-contract.test.ts` — verified in CI.
 - Coverage excludes many views/components intentionally listed in `vitest.config.ts`.
 
@@ -146,7 +146,7 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 
 **Ticket status transitions**: `backlog→in_progress`, `in_progress→review|backlog`, `review→done|backlog`. `done` has no outgoing transitions.
 
-**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 37 SQL files + 2 data migrations. Notable non-numeric entries: 011/012 after 014; 020 after 018 (no 019); 029 and 031 each have two files. Each SQL has a `_rollback.sql` counterpart.
+**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 40 SQL files + 2 data migrations (`migrate_provider_api_keys.js`, `backfill_agent_key_hashes.js`). Notable non-numeric entries: 011/012 after 014; 020 after 018 (no 019); 031 has two files. The `029_data_migrate_provider_api_keys.sql` and `030` rollback files exist on disk but are **not** in the apply array. Each SQL has a `_rollback.sql` counterpart.
 
 **Frontend auth**: 3 localStorage keys — `vibecode_token`, `vibecode_user`, `vibecode_permissions`. Route guards read localStorage directly (no Pinia dependency).
 

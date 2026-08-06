@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AIAssistant from './AIAssistant.vue'
 import { useGitHub } from '@/composables/useGitHub'
@@ -16,31 +16,64 @@ const isChildRoute = computed(() => route.name !== 'ProjectDetail')
 const tabs = [
   { id: 'tickets', label: 'Tickets' },
   { id: 'approvals', label: 'Approvals' },
-  { id: 'github', label: 'GitHub', lazyLoad: async () => await github.load(), loaded: ref(false) },
+  { id: 'github', label: 'GitHub' },
   { id: 'ai', label: 'AI Chat' },
-  { id: 'usage', label: 'Usage & Billing', lazyLoad: async () => { await usage.loadUsage(); await usage.loadBilling() }, loaded: ref(false) },
-  { id: 'memory', label: 'Memory', lazyLoad: async () => await memory.load(), loaded: ref(false) },
+  { id: 'usage', label: 'Usage & Billing' },
+  { id: 'memory', label: 'Memory' },
 ]
 
 const { activeTab } = useTabNavigation(tabs)
 
-const github = useGitHub(projectId)
-const usage = useUsage(projectId)
-const memory = useMemory(projectId)
+const githubObj = useGitHub(projectId)
+const usageObj = useUsage(projectId)
+const memoryObj = useMemory(projectId)
+
+const {
+  loading: githubLoading, error: githubError, success: githubSuccess,
+  repo: githubRepo, showConnectForm: githubShowConnectForm,
+  repoUrl: githubRepoUrl, repoBranch: githubRepoBranch, repoAccessToken: githubRepoAccessToken,
+  branches: githubBranches, prs: githubPrs, creatingBranch: githubCreatingBranch,
+  branchTicketId: githubBranchTicketId, load: githubLoad,
+  connect: githubConnect, disconnect: githubDisconnect,
+  createBranch: githubCreateBranch,
+} = githubObj
+
+const {
+  usage: usageData, usageLoading: usageLoadingState, usageError: usageErrorState,
+  billing: usageBilling, billingLoading: billingLoadingState, billingError: billingErrorState,
+  loadUsage: usageLoadUsage, loadBilling: usageLoadBilling,
+} = usageObj
+
+const {
+  memories: memoryMemories, memoryLoading: memoryLoadingState, memoryError: memoryErrorState,
+  showAddMemory: memoryShowAddMemory, searchQuery: memorySearchQuery,
+  searchResults: memorySearchResults, isSearching: memoryIsSearching,
+  editingMemory: memoryEditingMemory, editMemoryContent: memoryEditMemoryContent,
+  memorySaving: memoryMemorySaving, memoryDeleting: memoryMemoryDeleting,
+  load: memoryLoad, handleSearch: memoryHandleSearch,
+  clearSearch: memoryClearSearch, handleAdd: memoryHandleAdd,
+  handleUpdate: memoryHandleUpdate, handleDelete: memoryHandleDelete,
+} = memoryObj
+
+const loadedTabs = new Set()
+
+watch(activeTab, (tabId) => {
+  if (loadedTabs.has(tabId)) return
+  loadedTabs.add(tabId)
+  if (tabId === 'github') githubLoad()
+  else if (tabId === 'usage') { usageLoadUsage(); usageLoadBilling() }
+  else if (tabId === 'memory') memoryLoad()
+})
 
 onMounted(() => {
-  if (activeTab.value === 'github') github.load()
-  if (activeTab.value === 'usage') { usage.loadUsage(); usage.loadBilling() }
-  if (activeTab.value === 'memory') memory.load()
+  if (isChildRoute.value) return
+  githubLoad(); loadedTabs.add('github')
+  usageLoadUsage(); usageLoadBilling(); loadedTabs.add('usage')
+  memoryLoad(); loadedTabs.add('memory')
 })
 
 async function handleTabSwitch(tabId) {
   if (activeTab.value === tabId) return
-  const tab = tabs.find(t => t.id === tabId)
-  if (tab?.lazyLoad && tab.loaded) {
-    await tab.lazyLoad()
-    tab.loaded.value = true
-  }
   activeTab.value = tabId
   if (tabId === 'tickets') {
     router.push(`/projects/${projectId}/tickets`)
@@ -102,34 +135,34 @@ async function handleTabSwitch(tabId) {
           <h2>GitHub</h2>
           <router-link :to="`/projects/${projectId}/github`" class="btn-secondary">Manage GitHub</router-link>
         </div>
-        <div v-if="github.loading" class="loading">Loading...</div>
+        <div v-if="githubLoading" class="loading">Loading...</div>
         <div v-else>
-          <div v-if="github.error" class="error">{{ github.error }}</div>
-          <div v-if="github.success" class="success">{{ github.success }}</div>
+          <div v-if="githubError" class="error">{{ githubError }}</div>
+          <div v-if="githubSuccess" class="success">{{ githubSuccess }}</div>
 
-          <div v-if="!github.repo?.connected" class="github-section">
+          <div v-if="!githubRepo?.connected" class="github-section">
             <h3>Connect Repository</h3>
             <p class="description">Link your GitHub repository to enable branch creation, PR management, and ticket tracking.</p>
-            <button v-if="!github.showConnectForm" @click="github.showConnectForm = true" class="btn-primary">Connect Repository</button>
+            <button v-if="!githubShowConnectForm" @click="githubShowConnectForm = true" class="btn-primary">Connect Repository</button>
 
-            <div v-if="github.showConnectForm" class="connect-form">
+            <div v-if="githubShowConnectForm" class="connect-form">
               <div class="form-group">
                 <label>Repository URL</label>
-                <input v-model="github.repoUrl" type="text" placeholder="https://github.com/owner/repo" />
+                <input v-model="githubRepoUrl" type="text" placeholder="https://github.com/owner/repo" />
               </div>
               <div class="form-group">
                 <label>Default Branch</label>
-                <input v-model="github.repoBranch" type="text" placeholder="main" />
+                <input v-model="githubRepoBranch" type="text" placeholder="main" />
               </div>
               <div class="form-group">
                 <label>GitHub Personal Access Token</label>
-                <input v-model="github.repoAccessToken" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+                <input v-model="githubRepoAccessToken" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
               </div>
               <div class="form-actions">
-                <button @click="github.connect" :disabled="github.loading" class="btn-submit">
-                  {{ github.loading ? 'Connecting...' : 'Connect' }}
+                <button @click="githubConnect" :disabled="githubLoading" class="btn-submit">
+                  {{ githubLoading ? 'Connecting...' : 'Connect' }}
                 </button>
-                <button @click="github.showConnectForm = false" class="btn-cancel">Cancel</button>
+                <button @click="githubShowConnectForm = false" class="btn-cancel">Cancel</button>
               </div>
             </div>
           </div>
@@ -138,35 +171,35 @@ async function handleTabSwitch(tabId) {
             <div class="repo-info">
               <h3>Connected Repository</h3>
               <div class="repo-badge">
-                <span class="repo-url">{{ github.repo.repo_url }}</span>
-                <span class="repo-branch">{{ github.repo.default_branch }}</span>
+                <span class="repo-url">{{ githubRepo.repo_url }}</span>
+                <span class="repo-branch">{{ githubRepo.default_branch }}</span>
               </div>
-              <button @click="github.disconnect" :disabled="github.loading" class="btn-danger">Disconnect</button>
+              <button @click="githubDisconnect" :disabled="githubLoading" class="btn-danger">Disconnect</button>
             </div>
 
             <div class="github-panels">
               <div class="panel">
                 <h4>Branches</h4>
-                <div v-if="github.branches.length === 0" class="empty">No branches yet</div>
+                <div v-if="githubBranches.length === 0" class="empty">No branches yet</div>
                 <ul v-else class="branch-list">
-                  <li v-for="branch in github.branches" :key="branch.name" :class="{ default: branch.is_default }">
+                  <li v-for="branch in githubBranches" :key="branch.name" :class="{ default: branch.is_default }">
                     <span>{{ branch.name }}</span>
                     <span v-if="branch.is_default" class="badge">default</span>
                   </li>
                 </ul>
                 <div class="create-branch">
-                  <input v-model="github.branchTicketId" type="text" placeholder="Ticket ID for branch" />
-                  <button @click="github.createBranch(github.branchTicketId)" :disabled="github.creatingBranch || !github.branchTicketId" class="btn-small">
-                    {{ github.creatingBranch ? 'Creating...' : 'Create Branch' }}
+                  <input v-model="githubBranchTicketId" type="text" placeholder="Ticket ID for branch" />
+                  <button @click="githubCreateBranch(githubBranchTicketId)" :disabled="githubCreatingBranch || !githubBranchTicketId" class="btn-small">
+                    {{ githubCreatingBranch ? 'Creating...' : 'Create Branch' }}
                   </button>
                 </div>
               </div>
 
               <div class="panel">
                 <h4>Pull Requests</h4>
-                <div v-if="github.prs.length === 0" class="empty">No PRs yet</div>
+                <div v-if="githubPrs.length === 0" class="empty">No PRs yet</div>
                 <ul v-else class="pr-list">
-                  <li v-for="pr in github.prs" :key="pr.id">
+                  <li v-for="pr in githubPrs" :key="pr.id">
                     <a :href="pr.html_url" target="_blank" rel="noopener">{{ pr.title }}</a>
                     <span :class="['pr-state', pr.state]">{{ pr.state }}</span>
                   </li>
@@ -181,25 +214,25 @@ async function handleTabSwitch(tabId) {
         <div class="usage-billing">
           <div class="section">
             <h3>Usage</h3>
-            <div v-if="usage.usageLoading" class="loading">Loading...</div>
-            <div v-else-if="usage.usageError" class="error">{{ usage.usageError }}</div>
-            <div v-else-if="!usage.usage" class="empty">No usage data available</div>
+            <div v-if="usageLoadingState" class="loading">Loading...</div>
+            <div v-else-if="usageErrorState" class="error">{{ usageErrorState }}</div>
+            <div v-else-if="!usageData" class="empty">No usage data available</div>
             <div v-else class="usage-grid">
               <div class="usage-card">
-                <div class="usage-value">{{ usage.usage.totals?.totalCalls || 0 }}</div>
+                <div class="usage-value">{{ (usageData.totals?.totalCalls || 0) }}</div>
                 <div class="usage-label">Total Calls</div>
               </div>
               <div class="usage-card">
-                <div class="usage-value">${{ (usage.usage.totals?.totalCost || 0).toFixed(4) }}</div>
+                <div class="usage-value">${{ ((usageData.totals?.totalCost || 0)).toFixed(4) }}</div>
                 <div class="usage-label">Total Cost</div>
               </div>
               <div class="usage-card">
-                <div class="usage-value">{{ (usage.usage.totals?.totalTokensIn || 0) + (usage.usage.totals?.totalTokensOut || 0) }}</div>
+                <div class="usage-value">{{ ((usageData.totals?.totalTokensIn || 0) + (usageData.totals?.totalTokensOut || 0)) }}</div>
                 <div class="usage-label">Total Tokens</div>
               </div>
             </div>
 
-            <div v-if="usage.usage?.breakdown && usage.usage.breakdown.length > 0" class="model-breakdown">
+            <div v-if="usageData?.breakdown && usageData.breakdown.length > 0" class="model-breakdown">
               <h4>Usage by Model</h4>
               <table class="data-table">
                 <thead>
@@ -212,7 +245,7 @@ async function handleTabSwitch(tabId) {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="model in usage.usage.breakdown" :key="model.model">
+                  <tr v-for="model in usageData.breakdown" :key="model.model">
                     <td>{{ model.model }}</td>
                     <td>{{ model.calls || 0 }}</td>
                     <td>{{ (model.tokens_in || 0).toLocaleString() }}</td>
@@ -226,21 +259,21 @@ async function handleTabSwitch(tabId) {
 
           <div class="section">
             <h3>Billing</h3>
-            <div v-if="usage.billingLoading" class="loading">Loading...</div>
-            <div v-else-if="usage.billingError" class="error">{{ usage.billingError }}</div>
-            <div v-else-if="!usage.billing || usage.billing.length === 0" class="empty">No billing data available</div>
+            <div v-if="billingLoadingState" class="loading">Loading...</div>
+            <div v-else-if="billingErrorState" class="error">{{ billingErrorState }}</div>
+            <div v-else-if="!usageBilling || usageBilling.length === 0" class="empty">No billing data available</div>
             <div v-else class="billing-info">
               <div class="billing-card">
-                <div class="billing-value">${{ (usage.billing.reduce((sum, r) => sum + (r.total_cost || 0), 0) || 0).toFixed(4) }}</div>
+                <div class="billing-value">${{ (usageBilling.reduce((sum, r) => sum + (r.total_cost || 0), 0) || 0).toFixed(4) }}</div>
                 <div class="billing-label">Total Cost</div>
               </div>
               <div class="billing-card">
-                <div class="billing-value">{{ usage.billing.reduce((sum, r) => sum + (r.total_calls || 0), 0) || 0 }}</div>
+                <div class="billing-value">{{ usageBilling.reduce((sum, r) => sum + (r.total_calls || 0), 0) || 0 }}</div>
                 <div class="billing-label">Total Calls</div>
               </div>
             </div>
 
-            <div v-if="usage.billing.length > 0" class="daily-costs">
+            <div v-if="usageBilling && usageBilling.length > 0" class="daily-costs">
               <h4>Usage by Provider & Model</h4>
               <table class="data-table">
                 <thead>
@@ -254,7 +287,7 @@ async function handleTabSwitch(tabId) {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="row in usage.billing" :key="row.provider_type + '-' + row.model">
+                  <tr v-for="row in usageBilling" :key="row.provider_type + '-' + row.model">
                     <td>{{ row.provider_type }}</td>
                     <td>{{ row.model }}</td>
                     <td>{{ row.total_calls || 0 }}</td>
@@ -270,90 +303,90 @@ async function handleTabSwitch(tabId) {
       </div>
 
       <div v-if="activeTab === 'memory'" class="tab-panel">
-        <div v-if="memory.memoryLoading" class="loading">Loading...</div>
+        <div v-if="memoryLoadingState" class="loading">Loading...</div>
         <div v-else>
-          <div v-if="memory.memoryError" class="error">{{ memory.memoryError }}</div>
+          <div v-if="memoryErrorState" class="error">{{ memoryErrorState }}</div>
           <div class="panel-header">
             <h3>Agent Memory</h3>
-            <button v-if="!memory.showAddMemory" @click="memory.showAddMemory = true" class="btn-primary">Add Memory</button>
+            <button v-if="!memoryShowAddMemory" @click="memoryShowAddMemory = true" class="btn-primary">Add Memory</button>
           </div>
 
           <div class="memory-search">
             <input
-              v-model="memory.searchQuery"
-              @keyup.enter="memory.handleSearch"
-              @input="memory.handleSearch"
+              v-model="memorySearchQuery"
+              @keyup.enter="memoryHandleSearch"
+              @input="memoryHandleSearch"
               placeholder="Search memories by content..."
               class="search-input"
             />
-            <button v-if="memory.searchQuery || memory.searchResults.length > 0" @click="memory.clearSearch" class="clear-btn">
-              {{ memory.searchResults.length > 0 ? 'Clear Search' : 'Clear' }}
+            <button v-if="memorySearchQuery || memorySearchResults && memorySearchResults.length > 0" @click="memoryClearSearch" class="clear-btn">
+              {{ memorySearchResults && memorySearchResults.length > 0 ? 'Clear Search' : 'Clear' }}
             </button>
           </div>
 
-          <div v-if="memory.isSearching" class="loading">Searching...</div>
+          <div v-if="memoryIsSearching" class="loading">Searching...</div>
           <template v-else>
-            <div v-if="memory.searchResults.length > 0" class="search-results">
-              <p class="search-info">Found {{ memory.searchResults.length }} memory{{ memory.searchResults.length !== 1 ? 'ies' : 'y' }} matching "{{ memory.searchQuery }}"</p>
+            <div v-if="memorySearchResults && memorySearchResults.length > 0" class="search-results">
+              <p class="search-info">Found {{ memorySearchResults.length }} memory{{ memorySearchResults.length !== 1 ? 'ies' : 'y' }} matching "{{ memorySearchQuery }}"</p>
               <div class="memory-list">
-                <div v-for="m in memory.searchResults" :key="m.id" class="memory-card">
+                <div v-for="m in memorySearchResults" :key="m.id" class="memory-card">
                   <div class="memory-content">{{ m.content }}</div>
                   <div class="memory-meta">
                     <span>{{ new Date(m.created_at).toLocaleDateString() }}</span>
                     <span>{{ m.created_by_name || 'Unknown' }}</span>
                   </div>
                   <div class="memory-actions">
-                    <button v-if="!memory.editingMemory || memory.editingMemory.id !== m.id" @click="memory.editingMemory = m; memory.editMemoryContent = m.content" class="btn-small">Edit</button>
-                    <button @click="memory.handleDelete(m.id)" :disabled="memory.memoryDeleting === m.id" class="btn-small btn-danger">
-                      {{ memory.memoryDeleting === m.id ? 'Deleting...' : 'Delete' }}
+                    <button v-if="!memoryEditingMemory || memoryEditingMemory.id !== m.id" @click="memoryEditingMemory = m; memoryEditMemoryContent = m.content" class="btn-small">Edit</button>
+                    <button @click="memoryHandleDelete(m.id)" :disabled="memoryMemoryDeleting === m.id" class="btn-small btn-danger">
+                      {{ memoryMemoryDeleting === m.id ? 'Deleting...' : 'Delete' }}
                     </button>
                   </div>
                 </div>
               </div>
             </div>
-            <div v-else-if="memory.memories.length === 0 && !memory.showAddMemory" class="empty">
+            <div v-else-if="!memoryMemories || memoryMemories.length === 0 && !memoryShowAddMemory" class="empty">
               <p>No memories stored yet.</p>
             </div>
             <div v-else class="memory-list">
-              <div v-for="m in memory.memories" :key="m.id" class="memory-card">
+              <div v-for="m in memoryMemories" :key="m.id" class="memory-card">
                 <div class="memory-content">{{ m.content }}</div>
                 <div class="memory-meta">
                   <span>{{ new Date(m.created_at).toLocaleDateString() }}</span>
                   <span>{{ m.created_by_name || 'Unknown' }}</span>
                 </div>
                 <div class="memory-actions">
-                  <button v-if="!memory.editingMemory || memory.editingMemory.id !== m.id" @click="memory.editingMemory = m; memory.editMemoryContent = m.content" class="btn-small">Edit</button>
-                  <button @click="memory.handleDelete(m.id)" :disabled="memory.memoryDeleting === m.id" class="btn-small btn-danger">
-                    {{ memory.memoryDeleting === m.id ? 'Deleting...' : 'Delete' }}
+                  <button v-if="!memoryEditingMemory || memoryEditingMemory.id !== m.id" @click="memoryEditingMemory = m; memoryEditMemoryContent = m.content" class="btn-small">Edit</button>
+                  <button @click="memoryHandleDelete(m.id)" :disabled="memoryMemoryDeleting === m.id" class="btn-small btn-danger">
+                    {{ memoryMemoryDeleting === m.id ? 'Deleting...' : 'Delete' }}
                   </button>
                 </div>
               </div>
             </div>
           </template>
 
-          <div v-if="memory.showAddMemory" class="add-form">
+          <div v-if="memoryShowAddMemory" class="add-form">
             <div class="form-group">
               <label>Content</label>
-              <textarea v-model="memory.editMemoryContent" rows="3" placeholder="Enter memory content..."></textarea>
+              <textarea v-model="memoryEditMemoryContent" rows="3" placeholder="Enter memory content..."></textarea>
             </div>
             <div class="form-actions">
-              <button @click="memory.handleAdd" :disabled="memory.memorySaving" class="btn-submit">
-                {{ memory.memorySaving ? 'Adding...' : 'Add' }}
+              <button @click="memoryHandleAdd" :disabled="memoryMemorySaving" class="btn-submit">
+                {{ memoryMemorySaving ? 'Adding...' : 'Add' }}
               </button>
-              <button @click="memory.showAddMemory = false" class="btn-cancel">Cancel</button>
+              <button @click="memoryShowAddMemory = false" class="btn-cancel">Cancel</button>
             </div>
           </div>
 
-          <div v-if="memory.editingMemory && memory.editingMemory.id !== undefined" class="edit-form">
+          <div v-if="memoryEditingMemory && memoryEditingMemory.id !== undefined" class="edit-form">
             <div class="form-group">
               <label>Edit Memory</label>
-              <textarea v-model="memory.editMemoryContent" rows="3"></textarea>
+              <textarea v-model="memoryEditMemoryContent" rows="3"></textarea>
             </div>
             <div class="form-actions">
-              <button @click="memory.handleUpdate" :disabled="memory.memorySaving" class="btn-submit">
-                {{ memory.memorySaving ? 'Saving...' : 'Save' }}
+              <button @click="memoryHandleUpdate" :disabled="memoryMemorySaving" class="btn-submit">
+                {{ memoryMemorySaving ? 'Saving...' : 'Save' }}
               </button>
-              <button @click="memory.editingMemory = null" class="btn-cancel">Cancel</button>
+              <button @click="memoryEditingMemory = null" class="btn-cancel">Cancel</button>
             </div>
           </div>
         </div>

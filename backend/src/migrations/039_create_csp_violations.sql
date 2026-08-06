@@ -1,4 +1,4 @@
-CREATE TABLE csp_violations (
+CREATE TABLE IF NOT EXISTS csp_violations (
   id SERIAL PRIMARY KEY,
   violated_directive VARCHAR(255),
   blocked_uri VARCHAR(1024),
@@ -8,5 +8,5 @@ CREATE TABLE csp_violations (
   created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_csp_violations_created_at ON csp_violations(created_at DESC);
-CREATE INDEX idx_csp_violations_directive ON csp_violations(violated_directive);
+CREATE INDEX IF NOT EXISTS idx_csp_violations_created_at ON csp_violations(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_csp_violations_directive ON csp_violations(violated_directive);
