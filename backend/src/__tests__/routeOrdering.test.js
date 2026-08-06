@@ -10,6 +10,25 @@ jest.mock('../services/PermissionService', () => ({
   hasAnyPermission: jest.fn().mockResolvedValue(true),
   hasAllPermissions: jest.fn().mockResolvedValue(true),
 }));
+jest.mock('../services/ProvisioningService', () => ({
+  testConnection: jest.fn().mockResolvedValue({ success: true }),
+}));
+jest.mock('../services/MilestoneService', () => ({
+  list: jest.fn().mockResolvedValue([]),
+  create: jest.fn().mockResolvedValue({ id: 'm1', name: 'Test Milestone' }),
+  update: jest.fn().mockResolvedValue({ id: 'm1', name: 'Updated Milestone' }),
+  getTickets: jest.fn().mockResolvedValue([]),
+  getProgress: jest.fn().mockResolvedValue({ progress: 0 }),
+}));
+jest.mock('../services/DeployService', () => ({
+  listEnvironments: jest.fn().mockResolvedValue([]),
+  createEnvironment: jest.fn().mockResolvedValue({ id: 'e1', name: 'production' }),
+  deleteEnvironment: jest.fn().mockResolvedValue(undefined),
+  triggerDeploy: jest.fn().mockResolvedValue({ id: 'd1', status: 'in_progress' }),
+  rollbackDeployment: jest.fn().mockResolvedValue(undefined),
+  updateDeploymentStatus: jest.fn().mockResolvedValue({ id: 'd1', status: 'deployed' }),
+  getDeploymentHistory: jest.fn().mockResolvedValue([]),
+}));
 jest.mock('../utils/crypto', () => ({
   encrypt: jest.fn((text) => text ? `encrypted:${text}` : null),
   decrypt: jest.fn((text) => text?.replace('encrypted:', '') || ''),
@@ -238,6 +257,45 @@ describe('Route Ordering', () => {
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data).toEqual(mockTemplateFiles);
+    });
+
+    describe('F2/F3/F4: Mounted routers must not return 404', () => {
+      it('should route GET /api/v1/compute-nodes to computeNodesRouter (200, not 404)', async () => {
+        const res = await request(app)
+          .get('/api/v1/compute-nodes')
+          .set('Authorization', 'Bearer mock-token');
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.success).toBe(true);
+      });
+
+      it('should route GET /api/v1/projects/1/milestones to milestonesRouter (200, not 404)', async () => {
+        const res = await request(app)
+          .get('/api/v1/projects/1/milestones')
+          .set('Authorization', 'Bearer mock-token');
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.success).toBe(true);
+      });
+
+      it('should route GET /api/v1/tickets/1/deployments to deploymentsRouter (200, not 404)', async () => {
+        const res = await request(app)
+          .get('/api/v1/tickets/1/deployments')
+          .set('Authorization', 'Bearer mock-token');
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.success).toBe(true);
+      });
+
+      it('should route POST /api/v1/projects/1/environments to deploymentsRouter (201, not 404)', async () => {
+        const res = await request(app)
+          .post('/api/v1/projects/1/environments')
+          .set('Authorization', 'Bearer mock-token')
+          .send({ name: 'production', webhook_url: 'https://example.com/webhook' });
+
+        expect(res.statusCode).toBe(201);
+        expect(res.body.success).toBe(true);
+      });
     });
   });
 });

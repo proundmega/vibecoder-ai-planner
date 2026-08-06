@@ -13,35 +13,35 @@ router.get('/projects/:projectId/environments', verifyToken, async (req, res, ne
   } catch (err) { next(err); }
 });
 
-router.post('/projects/:projectId/environments', verifyToken, requireAnyPermission('PROJECT_ADMIN'), validate(createEnvironmentSchema), async (req, res, next) => {
+router.post('/projects/:projectId/environments', verifyToken, requireAnyPermission('PROJECT_UPDATE'), validate(createEnvironmentSchema), async (req, res, next) => {
   try {
     const env = await DeployService.createEnvironment(req.params.projectId, req.body.name, req.body.webhook_url, req.body.branch_pattern);
     res.status(201).json({ success: true, data: env });
   } catch (err) { next(err); }
 });
 
-router.delete('/environments/:id', verifyToken, requireAnyPermission('PROJECT_ADMIN'), async (req, res, next) => {
+router.delete('/environments/:id', verifyToken, requireAnyPermission('PROJECT_UPDATE'), async (req, res, next) => {
   try {
     await DeployService.deleteEnvironment(req.params.id);
     res.json({ success: true, data: { deleted: true } });
   } catch (err) { next(err); }
 });
 
-router.post('/tickets/:ticketId/deploy', verifyToken, validate(triggerDeploySchema), async (req, res, next) => {
+router.post('/tickets/:ticketId/deploy', verifyToken, requireAnyPermission('TICKET_UPDATE'), validate(triggerDeploySchema), async (req, res, next) => {
   try {
     const dep = await DeployService.triggerDeploy(req.params.ticketId, req.body.environment_id);
     res.json({ success: true, data: dep });
   } catch (err) { next(err); }
 });
 
-router.post('/deployments/:id/rollback', verifyToken, async (req, res, next) => {
+router.post('/deployments/:id/rollback', verifyToken, requireAnyPermission('TICKET_UPDATE'), async (req, res, next) => {
   try {
     await DeployService.rollbackDeployment(req.params.id);
     res.json({ success: true, data: { rolled_back: true } });
   } catch (err) { next(err); }
 });
 
-router.patch('/deployments/:id/status', verifyToken, validate(updateDeploymentStatusSchema), async (req, res, next) => {
+router.patch('/deployments/:id/status', verifyToken, requireAnyPermission('TICKET_STATUS_CHANGE'), validate(updateDeploymentStatusSchema), async (req, res, next) => {
   try {
     const dep = await DeployService.updateDeploymentStatus(req.params.id, req.body.status);
     res.json({ success: true, data: dep });

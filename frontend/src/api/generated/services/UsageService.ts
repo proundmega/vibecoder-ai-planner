@@ -45,4 +45,40 @@ export class UsageService {
             url: '/usage/pricing/models',
         });
     }
+    /**
+     * Java agent reports usage after AI call
+     * @param agentId
+     * @param requestBody
+     * @returns any Usage recorded
+     * @throws ApiError
+     */
+    public static postUsageAgentsUsage(
+        agentId: number,
+        requestBody: {
+            provider_type: string;
+            model: string;
+            tokens_in: number;
+            tokens_out: number;
+            duration_ms?: number;
+            ticket_id?: number;
+            project_id?: number;
+            planning_stage?: 'requirement_extraction' | 'plan_generation' | 'refinement' | 'validation';
+            file_keys?: Array<string>;
+        },
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/usage/agents/{agentId}/usage',
+            path: {
+                'agentId': agentId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Missing required fields`,
+                401: `Missing or invalid API key`,
+                403: `Agent ID mismatch — agent can only report its own usage`,
+            },
+        });
+    }
 }

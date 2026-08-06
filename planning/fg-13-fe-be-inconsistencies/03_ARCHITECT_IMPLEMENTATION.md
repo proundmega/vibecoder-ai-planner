@@ -7,8 +7,8 @@
 **Effort**: Medium
 **Author**: AI Assistant
 **Date created**: 2026-08-06
-**Date completed**:
-**PR**:
+**Date completed**: 2026-08-06
+**PR**: https://github.com/proundmega/vibecoder-ai-planner/pull/82
 **Branch**: `fix/fg-13-fe-be-inconsistencies`
 **Scope**: Both
 

@@ -25,6 +25,9 @@ const { requireAnyPermission } = require('../../middleware/permissions');
 const { pool } = require('../../db');
 const agentHeartbeatRouter = require('./agentHeartbeat');
 const cspViolationsRouter = require('../csp-violations');
+const computeNodesRouter = require('../compute-nodes');
+const milestonesRouter = require('../milestones');
+const deploymentsRouter = require('../deployments');
 const IpWhitelistService = require('../../services/IpWhitelistService');
 
 // Template routes (under /projects/:projectId/templates) — must be before router.use('/projects')
@@ -178,6 +181,15 @@ router.get('/tickets/:ticketId/planning/:fileKey/usage', verifyToken, requireAny
   }
 });
 
+// Milestone routes (under /projects/:projectId/milestones) — must be before router.use('/projects')
+router.use('/', milestonesRouter);
+
+// Deployment routes (under /projects/:projectId/environments, /tickets/:ticketId/deploy, etc.) — must be before router.use('/projects') and router.use('/tickets')
+router.use('/', deploymentsRouter);
+
+// Compute nodes routes
+router.use('/compute-nodes', computeNodesRouter);
+
 // Mount all route modules under /v1
 router.use('/users-management', userRouter);
 router.use('/users', usersManagementRouter);
@@ -196,6 +208,14 @@ router.use('/memory', memoryRouter);
 router.use('/tickets', reviewRouter);
 router.use('/agents-status', agentHeartbeatRouter);
 router.use('/csp-violations', cspViolationsRouter);
+// Milestone routes (under /projects/:projectId/milestones) — must be before router.use('/projects')
+router.use('/', milestonesRouter);
+
+// Deployment routes (under /projects/:projectId/environments, /tickets/:ticketId/deploy, etc.) — must be before router.use('/projects') and router.use('/tickets')
+router.use('/', deploymentsRouter);
+
+// Compute nodes routes
+router.use('/compute-nodes', computeNodesRouter);
 
 // IP Whitelist routes (super admin only)
 router.get('/admin/ip-whitelist', verifyToken, requireAnyPermission('USER_VIEW_ALL'), async (req, res, next) => {

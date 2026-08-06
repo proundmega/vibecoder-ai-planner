@@ -20,6 +20,7 @@ export { AttachmentsService } from './services/AttachmentsService';
 export { AuthService } from './services/AuthService';
 export { BillingService } from './services/BillingService';
 export { CredentialsService } from './services/CredentialsService';
+export { CspService } from './services/CspService';
 export { GitHubService } from './services/GitHubService';
 export { MemoryService } from './services/MemoryService';
 export { PermissionsService } from './services/PermissionsService';
