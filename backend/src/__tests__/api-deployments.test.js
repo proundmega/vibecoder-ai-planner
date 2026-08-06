@@ -89,7 +89,7 @@ describe('F4: Deployments router auth fixes', () => {
   });
 
   describe('POST /tickets/:id/deploy - TICKET_UPDATE permission', () => {
-    it('should return 200 for user with TICKET_UPDATE permission', async () => {
+    it('should return 200 when permission check passes', async () => {
       require('../services/PermissionService').hasAnyPermission.mockResolvedValue(true);
       
       const res = await request(app)
@@ -101,7 +101,7 @@ describe('F4: Deployments router auth fixes', () => {
       expect(res.body.success).toBe(true);
     });
 
-    it('should return 403 for user without TICKET_UPDATE permission', async () => {
+    it('should return 403 when permission check fails', async () => {
       require('../services/PermissionService').hasAnyPermission.mockResolvedValue(false);
       
       const res = await request(app)
@@ -115,7 +115,7 @@ describe('F4: Deployments router auth fixes', () => {
   });
 
   describe('POST /deployments/:id/rollback - TICKET_UPDATE permission', () => {
-    it('should return 200 for user with TICKET_UPDATE permission', async () => {
+    it('should return 200 when permission check passes', async () => {
       require('../services/PermissionService').hasAnyPermission.mockResolvedValue(true);
       
       const res = await request(app)
@@ -126,7 +126,7 @@ describe('F4: Deployments router auth fixes', () => {
       expect(res.body.success).toBe(true);
     });
 
-    it('should return 403 for user without TICKET_UPDATE permission', async () => {
+    it('should return 403 when permission check fails', async () => {
       require('../services/PermissionService').hasAnyPermission.mockResolvedValue(false);
       
       const res = await request(app)
@@ -139,7 +139,7 @@ describe('F4: Deployments router auth fixes', () => {
   });
 
   describe('PATCH /deployments/:id/status - TICKET_STATUS_CHANGE permission', () => {
-    it('should return 200 for user with TICKET_STATUS_CHANGE permission', async () => {
+    it('should return 200 when permission check passes', async () => {
       require('../services/PermissionService').hasAnyPermission.mockResolvedValue(true);
       
       const res = await request(app)
@@ -151,7 +151,7 @@ describe('F4: Deployments router auth fixes', () => {
       expect(res.body.success).toBe(true);
     });
 
-    it('should return 403 for user without TICKET_STATUS_CHANGE permission', async () => {
+    it('should return 403 when permission check fails', async () => {
       require('../services/PermissionService').hasAnyPermission.mockResolvedValue(false);
       
       const res = await request(app)

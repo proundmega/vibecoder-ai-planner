@@ -17,7 +17,7 @@
 **Post-merge findings (amended to PR #82)**:
 - **F5 route ordering**: Usage routes (`/tickets/:id/planning/usage`, `/tickets/:id/planning/:fileKey/usage`) were shadowed by earlier `GET /tickets/:id/planning/:fileKey` and `PUT /tickets/:id/planning/:fileKey` catch-alls. Fixed by moving usage routes + apply-template before the `:fileKey` catch-alls. Also fixed role-name-as-permission-code: `MEMBER`/`PROJECT_ADMIN`/`SUPER_ADMIN` → `TICKET_READ`.
 - **Duplicate mounts**: Milestones/deployments/compute-nodes were mounted twice (lines 184-191 correct, lines 211-218 dead code after `/projects` and `/tickets`). Removed duplicate block.
-- **TICKET_UPDATE role note**: Agent role holds TICKET_UPDATE (per `005_permission_system.sql:110`). Test comments clarify "user gets 403" refers to base `user` role (9 perms, no TICKET_UPDATE).
+- **TICKET_UPDATE guard note**: `005_permission_system.sql:110` maps the `user` role to TICKET_UPDATE, so the guard on deploy/rollback/status is effectively `verifyToken`-only. No role lacking this permission exists in the seed data. This is a latent issue, out of scope for fg-13.
 
 ---
 
