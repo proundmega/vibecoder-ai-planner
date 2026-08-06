@@ -8,11 +8,16 @@
 **Author**: AI Assistant
 **Date created**: 2026-08-06
 **Date completed**: 2026-08-06
-**PR**: https://github.com/proundmega/vibecoder-ai-planner/pull/82
+**PR**: https://github.com/proundmega/vibecoder-ai-planner/pull/82 (amended 2026-08-06 with route ordering fix)
 **Branch**: `fix/fg-13-fe-be-inconsistencies`
 **Scope**: Both
 
 **Dependencies**: none (all 7 findings are independent; F6 depends on F2–F4 JSDoc for a complete spec)
+
+**Post-merge findings (amended to PR #82)**:
+- **F5 route ordering**: Usage routes (`/tickets/:id/planning/usage`, `/tickets/:id/planning/:fileKey/usage`) were shadowed by earlier `GET /tickets/:id/planning/:fileKey` and `PUT /tickets/:id/planning/:fileKey` catch-alls. Fixed by moving usage routes + apply-template before the `:fileKey` catch-alls. Also fixed role-name-as-permission-code: `MEMBER`/`PROJECT_ADMIN`/`SUPER_ADMIN` → `TICKET_READ`.
+- **Duplicate mounts**: Milestones/deployments/compute-nodes were mounted twice (lines 184-191 correct, lines 211-218 dead code after `/projects` and `/tickets`). Removed duplicate block.
+- **TICKET_UPDATE role note**: Agent role holds TICKET_UPDATE (per `005_permission_system.sql:110`). Test comments clarify "user gets 403" refers to base `user` role (9 perms, no TICKET_UPDATE).
 
 ---
 

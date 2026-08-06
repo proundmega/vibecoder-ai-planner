@@ -101,7 +101,7 @@ describe('F4: Deployments router auth fixes', () => {
       expect(res.body.success).toBe(true);
     });
 
-    it('should return 403 for user without TICKET_UPDATE permission', async () => {
+    it('should return 403 for user without TICKET_UPDATE permission (base user role has no TICKET_UPDATE)', async () => {
       require('../services/PermissionService').hasAnyPermission.mockResolvedValue(false);
       
       const res = await request(app)
@@ -126,7 +126,7 @@ describe('F4: Deployments router auth fixes', () => {
       expect(res.body.success).toBe(true);
     });
 
-    it('should return 403 for user without TICKET_UPDATE permission', async () => {
+    it('should return 403 for user without TICKET_UPDATE permission (base user role has no TICKET_UPDATE)', async () => {
       require('../services/PermissionService').hasAnyPermission.mockResolvedValue(false);
       
       const res = await request(app)

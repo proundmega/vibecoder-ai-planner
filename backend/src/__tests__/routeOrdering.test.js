@@ -58,6 +58,18 @@ jest.mock('../db', () => {
         }],
       });
     }
+    if (sql.includes('SELECT t.id, t.project_id, p.name as project_name FROM tickets t JOIN projects p')) {
+      return Promise.resolve({ rows: [{ id: 1, project_id: 1, project_name: 'Test' }] });
+    }
+    if (sql.includes('usage_logs') && sql.includes('planning_stage')) {
+      return Promise.resolve({ rows: [] });
+    }
+    if (sql.includes('usage_logs') && sql.includes('file_key')) {
+      return Promise.resolve({ rows: [] });
+    }
+    if (sql.includes('ticket_planning') && sql.includes('last_tokens_in')) {
+      return Promise.resolve({ rows: [] });
+    }
     if (sql.includes('SELECT * FROM provider_configs')) {
       return Promise.resolve({ rows: [] });
     }
@@ -295,6 +307,28 @@ describe('Route Ordering', () => {
 
         expect(res.statusCode).toBe(201);
         expect(res.body.success).toBe(true);
+      });
+    });
+
+    describe('F5: Usage routes must not be shadowed by :fileKey catch-all', () => {
+      it('should route GET /api/v1/tickets/1/planning/usage (not treated as fileKey)', async () => {
+        const res = await request(app)
+          .get('/api/v1/tickets/1/planning/usage')
+          .set('Authorization', 'Bearer mock-token');
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.success).toBe(true);
+        expect(res.body.data.ticketId).toBe(1);
+      });
+
+      it('should route GET /api/v1/tickets/1/planning/some%2Ffile/usage (not treated as fileKey)', async () => {
+        const res = await request(app)
+          .get('/api/v1/tickets/1/planning/some%2Ffile/usage')
+          .set('Authorization', 'Bearer mock-token');
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.success).toBe(true);
+        expect(res.body.data.fileKey).toBe('some/file');
       });
     });
   });
