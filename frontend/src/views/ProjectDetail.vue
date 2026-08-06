@@ -247,10 +247,10 @@ async function handleTabSwitch(tabId) {
                 <tbody>
                   <tr v-for="model in usageData.breakdown" :key="model.model">
                     <td>{{ model.model }}</td>
-                    <td>{{ model.calls || 0 }}</td>
-                    <td>{{ (model.tokens_in || 0).toLocaleString() }}</td>
-                    <td>{{ (model.tokens_out || 0).toLocaleString() }}</td>
-                    <td>${{ (model.cost || 0).toFixed(4) }}</td>
+                    <td>{{ model.total_calls || 0 }}</td>
+                    <td>{{ (model.total_in || 0).toLocaleString() }}</td>
+                    <td>{{ (model.total_out || 0).toLocaleString() }}</td>
+                    <td>${{ (model.total_cost || 0).toFixed(4) }}</td>
                   </tr>
                 </tbody>
               </table>

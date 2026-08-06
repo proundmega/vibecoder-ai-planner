@@ -53,6 +53,6 @@ export function listPRs(projectId: string): Promise<PullRequest[]> {
   return get<PullRequest[]>(`/api/v1/github/${projectId}/prs`).catch(() => []) as Promise<PullRequest[]>
 }
 
-export function createPR(ticketId: string, title: string, body: string, branchName: string): Promise<PullRequest> {
-  return post<PullRequest>(`/api/v1/github/${ticketId}/pr`, { title, body, branchName })
+export function createPR(ticketId: string, description: string, projectId?: string): Promise<PullRequest> {
+  return post<PullRequest>(`/api/v1/github/${ticketId}/pr`, { description, projectId })
 }

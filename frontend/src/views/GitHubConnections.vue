@@ -135,7 +135,7 @@ async function handleCreatePR() {
   repoError.value = null
   repoSuccess.value = null
   try {
-    await createPR(prTicketId.value.trim(), prTitle.value.trim(), prBody.value.trim(), prBranchName.value.trim())
+    await createPR(prTicketId.value.trim(), prBody.value.trim())
     repoSuccess.value = 'PR created successfully'
     await loadPRs()
     prTicketId.value = ''

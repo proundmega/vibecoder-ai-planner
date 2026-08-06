@@ -1,17 +1,18 @@
 import { get } from './client'
 
 export interface Billing {
-  project_id: string
-  project_name?: string
-  billing_month: string
-  total_cost_usd: number
-  total_tokens_in: number
-  total_tokens_out: number
+  provider_type: string
+  model: string
+  total_cost: number
+  total_in: number
+  total_out: number
   total_calls: number
+  billing_month?: string
+  project_id?: string
 }
 
-export function getProjectBilling(projectId: string): Promise<Billing | null> {
-  return get<Billing>(`/api/v1/billing/projects/${projectId}/billing`).catch(() => null) as Promise<Billing | null>
+export function getProjectBilling(projectId: string): Promise<Billing[] | null> {
+  return get<Billing[]>(`/api/v1/billing/projects/${projectId}/billing`).catch(() => null) as Promise<Billing[] | null>
 }
 
 export function getUserBilling(): Promise<Billing[] | null> {

@@ -1,14 +1,12 @@
 import { get } from './client'
 
 export interface Usage {
-  project_id: string
-  user_id: string | null
+  provider_type?: string
   model: string
-  input_tokens: number
-  output_tokens: number
-  total_tokens: number
-  cost: number
-  period: string
+  total_in: number
+  total_out: number
+  total_cost: number
+  total_calls: number
 }
 
 export interface ModelPricing {

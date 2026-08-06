@@ -4,14 +4,14 @@
 
 ## Ticket: bp-111 — FE↔BE Response-Shape & Payload Fixes
 
-**Status**: planned
+**Status**: completed
 **Priority**: P1
 **Effort**: Small
 **Author**: AI Assistant
 **Date created**: 2026-08-06
-**Date completed**:
-**PR**:
-**Branch**:
+**Date completed**: 2026-08-06
+**PR**: (merged to master)
+**Branch**: master
 **Scope**: Frontend
 
 **Dependencies**: none (independent of fg-13; backend untouched)
