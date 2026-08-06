@@ -345,7 +345,7 @@ router.get('/:agentId/provider-config', async (req, res, next) => {
 
 /**
  * @openapi
- * /agents/:agentId/rotate-key:
+ * /agents/{agentId}/rotate-key:
  *   post:
  *     tags: [Agents]
  *     summary: Rotate agent API key
@@ -387,7 +387,7 @@ router.post('/:agentId/rotate-key', verifyTokenOrAgent, requireAnyPermission('AG
     if (error.message === 'AGENT_NOT_FOUND') {
       return res.status(404).json({ error: 'Agent not found' });
     }
-    logger.error('POST /api/agents/:agentId/rotate-key', error);
+    logger.error('POST /api/agents/{agentId}/rotate-key', error);
     res.status(500).json({ error: error.message });
   }
 });

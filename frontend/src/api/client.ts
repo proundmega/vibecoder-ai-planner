@@ -203,7 +203,7 @@ export interface PlanningUsageResponse {
 }
 
 export function getTicketPlanningUsage(ticketId: number): Promise<PlanningUsageResponse> {
-  return get(`/tickets/${ticketId}/planning/usage`)
+  return get(`/api/v1/tickets/${ticketId}/planning/usage`)
 }
 
 export interface UsageHistoryEntry {
@@ -235,5 +235,5 @@ export interface PlanningFileUsageResponse {
 }
 
 export function getPlanningFileUsage(ticketId: number, fileKey: string): Promise<PlanningFileUsageResponse> {
-  return get(`/tickets/${ticketId}/planning/${encodeURIComponent(fileKey)}/usage`)
+  return get(`/api/v1/tickets/${ticketId}/planning/${encodeURIComponent(fileKey)}/usage`)
 }

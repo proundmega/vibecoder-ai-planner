@@ -181,7 +181,7 @@ export class AgentsService {
      * @returns any API key rotated successfully
      * @throws ApiError
      */
-    public static postAgentsAgentIdRotateKey(
+    public static postAgentsRotateKey(
         agentId: string,
     ): CancelablePromise<{
         agentId?: number;
@@ -192,7 +192,7 @@ export class AgentsService {
     }> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/agents/:agentId/rotate-key',
+            url: '/agents/{agentId}/rotate-key',
             path: {
                 'agentId': agentId,
             },

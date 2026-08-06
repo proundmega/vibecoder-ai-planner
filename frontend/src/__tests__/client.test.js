@@ -376,4 +376,38 @@ describe('client API', () => {
       await expect(client.get('/api/test', { validate: strictValidator })).rejects.toThrow('data must be present')
     })
   })
+
+  describe('F5: Planning usage URLs have /api/v1 prefix', () => {
+    it('getTicketPlanningUsage calls GET /api/v1/tickets/5/planning/usage', async () => {
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ data: { ticketId: 5, totalCost: 0.01 } }),
+      })
+
+      await client.getTicketPlanningUsage(5)
+
+      expect(global.fetch).toHaveBeenCalledWith('/api/v1/tickets/5/planning/usage', {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer test-token',
+        },
+      })
+    })
+
+    it('getPlanningFileUsage calls GET /api/v1/tickets/5/planning/some%2Ffile with /api/v1 prefix', async () => {
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ data: { fileKey: 'some/file', lastUsage: null, history: [] } }),
+      })
+
+      await client.getPlanningFileUsage(5, 'some/file')
+
+      expect(global.fetch).toHaveBeenCalledWith('/api/v1/tickets/5/planning/some%2Ffile/usage', {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer test-token',
+        },
+      })
+    })
+  })
 })

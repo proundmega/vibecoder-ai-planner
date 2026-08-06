@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:3001/api",
+      "url": "/api",
       "description": "Development server"
     }
   ],
@@ -563,6 +563,97 @@
         "responses": {
           "200": {
             "description": "Pricing information for all models"
+          }
+        }
+      }
+    },
+    "/usage/agents/{agentId}/usage": {
+      "post": {
+        "tags": [
+          "Usage"
+        ],
+        "summary": "Java agent reports usage after AI call",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "provider_type",
+                  "model",
+                  "tokens_in",
+                  "tokens_out"
+                ],
+                "properties": {
+                  "provider_type": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "tokens_in": {
+                    "type": "integer"
+                  },
+                  "tokens_out": {
+                    "type": "integer"
+                  },
+                  "duration_ms": {
+                    "type": "integer"
+                  },
+                  "ticket_id": {
+                    "type": "integer"
+                  },
+                  "project_id": {
+                    "type": "integer"
+                  },
+                  "planning_stage": {
+                    "type": "string",
+                    "enum": [
+                      "requirement_extraction",
+                      "plan_generation",
+                      "refinement",
+                      "validation"
+                    ]
+                  },
+                  "file_keys": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Usage recorded"
+          },
+          "400": {
+            "description": "Missing required fields"
+          },
+          "401": {
+            "description": "Missing or invalid API key"
+          },
+          "403": {
+            "description": "Agent ID mismatch — agent can only report its own usage"
           }
         }
       }
@@ -1518,17 +1609,64 @@
         }
       }
     },
-    "/api/metrics": {
+    "/metrics": {
       "get": {
         "tags": [
           "System"
         ],
-        "summary": "Server metrics (JSON format)",
+        "summary": "Prometheus metrics endpoint",
         "responses": {
           "200": {
-            "description": "Server metrics including uptime and memory usage"
+            "description": "Prometheus-format metrics (text/plain)",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized when METRICS_TOKEN is set and token is missing or incorrect",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "example": "UNAUTHORIZED"
+                        },
+                        "message": {
+                          "type": "string",
+                          "example": "Metrics endpoint requires authentication"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
-        }
+        },
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-metrics-token",
+            "required": false,
+            "description": "Required if METRICS_TOKEN env var is set",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/auth/register": {
@@ -2394,66 +2532,6 @@
         }
       }
     },
-    "/metrics": {
-      "get": {
-        "tags": [
-          "System"
-        ],
-        "summary": "Prometheus metrics endpoint",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "x-metrics-token",
-            "required": false,
-            "description": "Required if METRICS_TOKEN env var is set",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Prometheus-format metrics (text/plain)",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized when METRICS_TOKEN is set and token is missing or incorrect",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "example": "UNAUTHORIZED"
-                        },
-                        "message": {
-                          "type": "string",
-                          "example": "Metrics endpoint requires authentication"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/memory/project/{projectId}": {
       "get": {
         "tags": [
@@ -2869,6 +2947,117 @@
         }
       }
     },
+    "/v1/csp-violations": {
+      "get": {
+        "tags": [
+          "CSP"
+        ],
+        "summary": "List CSP violations",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "directive",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of CSP violations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "violations": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "CSP"
+        ],
+        "summary": "Clear all CSP violations",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "All violations cleared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "deletedCount": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/csp-report": {
       "post": {
         "tags": [
@@ -3148,6 +3337,42 @@
         "responses": {
           "200": {
             "description": "Billing data for user"
+          }
+        }
+      }
+    },
+    "/billing/aggregate": {
+      "post": {
+        "tags": [
+          "Billing"
+        ],
+        "summary": "Trigger daily billing aggregation",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string",
+                    "format": "date"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Aggregation completed"
+          },
+          "403": {
+            "description": "Insufficient permissions"
           }
         }
       }
@@ -3583,7 +3808,7 @@
         }
       }
     },
-    "/agents/:agentId/rotate-key": {
+    "/agents/{agentId}/rotate-key": {
       "post": {
         "tags": [
           "Agents"

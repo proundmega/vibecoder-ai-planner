@@ -34,4 +34,25 @@ export class BillingService {
             url: '/billing/users/me/billing',
         });
     }
+    /**
+     * Trigger daily billing aggregation
+     * @param requestBody
+     * @returns any Aggregation completed
+     * @throws ApiError
+     */
+    public static postBillingAggregate(
+        requestBody?: {
+            date?: string;
+        },
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/billing/aggregate',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                403: `Insufficient permissions`,
+            },
+        });
+    }
 }

@@ -32,7 +32,8 @@ async function sendFeedback() {
   if (!feedbackText.value.trim()) return
   submitting.value = true
   try {
-    const response = await post(`/api/v1/tickets/${props.ticketId}/feedback`, {
+    const response = await post(`/api/v1/tickets/${props.ticketId}/messages`, {
+      messageType: 'feedback',
       content: feedbackText.value.trim(),
     })
     if (response) {

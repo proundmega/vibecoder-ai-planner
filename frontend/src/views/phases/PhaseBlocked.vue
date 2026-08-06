@@ -20,7 +20,8 @@ async function sendReply() {
   sending.value = true
   error.value = ''
   try {
-    await post(`/api/v1/tickets/${props.ticketId}/feedback`, {
+    await post(`/api/v1/tickets/${props.ticketId}/messages`, {
+      messageType: 'feedback',
       content: replyText.value.trim(),
     })
     replyText.value = ''
