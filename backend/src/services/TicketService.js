@@ -111,11 +111,11 @@ class TicketService {
 
     return await Ticket.update(
       id,
-      data.title !== undefined ? data.title : null,
-      data.description !== undefined ? data.description : null,
-      data.status !== undefined ? data.status : null,
-      data.priority !== undefined ? data.priority : null,
-      data.assigneeId !== undefined ? data.assigneeId : null,
+      data.title !== undefined ? data.title : undefined,
+      data.description !== undefined ? data.description : undefined,
+      data.status !== undefined ? data.status : undefined,
+      data.priority !== undefined ? data.priority : undefined,
+      data.assigneeId !== undefined ? data.assigneeId : undefined,
       userId
     );
   }
