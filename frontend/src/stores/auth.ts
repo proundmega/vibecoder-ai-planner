@@ -107,13 +107,16 @@ export function useAuthStore() {
       return
     }
     const stored = new Set(permissions.value)
-    const needsSync = Array.from(expectedPerms).some(p => !stored.has(p))
-    if (needsSync) {
-      try {
-        const freshPerms = await fetchFn(user.value.role)
-        setPermissions(freshPerms)
-      } catch (e) {
-        console.error('Failed to sync permissions:', e)
+    for (const perm of expectedPerms) {
+      if (!stored.has(perm)) {
+        try {
+          const freshPerms = await fetchFn(user.value.role)
+          setPermissions(freshPerms)
+          return
+        } catch (e) {
+          console.error('Failed to sync permissions:', e)
+        }
+        break
       }
     }
   }

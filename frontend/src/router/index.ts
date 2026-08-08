@@ -161,10 +161,10 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
-    path: '/terminal',
+    path: '/terminal/:id',
     name: 'TerminalView',
     component: () => import('../views/TerminalView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiredPermission: 'TERMINAL_ACCESS' },
   },
   {
     path: '/csp-violations',

@@ -10,6 +10,8 @@
           <router-link v-if="showAgentsLink" to="/agents" class="nav-link">Agents</router-link>
           <router-link to="/approvals" class="nav-link">Approvals</router-link>
           <router-link v-if="showBillingLink" to="/billing" class="nav-link">Billing</router-link>
+          <router-link v-if="showComputeNodesLink" to="/compute-nodes" class="nav-link">Compute Nodes</router-link>
+          <router-link v-if="showCspViolationsLink" to="/csp-violations" class="nav-link">CSP Violations</router-link>
           <router-link v-if="showUsersLink" to="/users" class="nav-link">Users</router-link>
           <router-link v-if="showSuperAdminLink" to="/super-admin/users" class="nav-link">Super Admin</router-link>
         </div>
@@ -65,6 +67,8 @@ const showSuperAdminLink = computed(() => authStore.isSuperAdmin())
 const showBillingLink = computed(() => authStore.isProjectAdmin())
 const showProvidersLink = computed(() => authStore.isProjectAdmin() || authStore.isSuperAdmin())
 const showAgentsLink = computed(() => authStore.hasAnyPermission(['AGENT_READ']))
+const showComputeNodesLink = computed(() => authStore.isProjectAdmin() || authStore.isSuperAdmin())
+const showCspViolationsLink = computed(() => authStore.isProjectAdmin() || authStore.isSuperAdmin())
 
 const handleLogout = () => {
   authStore.logout()
