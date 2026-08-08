@@ -42,7 +42,7 @@ public class TicketProcessor {
         return currentStep;
     }
 
-    public TicketProcessor(AgentConfig config, ApiService apiService, AiProvider aiProvider, GitHubService gitHubService) {
+    public TicketProcessor(AgentConfig config, ApiService apiService, AiProvider aiProvider, GitHubService gitHubService, String githubToken) {
         this.config = config;
         this.apiService = apiService;
         this.aiProvider = aiProvider;
@@ -50,7 +50,8 @@ public class TicketProcessor {
         this.workspaceManager = new WorkspaceManager(
             config.getRepoCloneDir(),
             config.getRepoName(),
-            config.isDryRun()
+            config.isDryRun(),
+            githubToken
         );
         this.objectMapper = new ObjectMapper();
     }
@@ -265,7 +266,7 @@ public class TicketProcessor {
         return generatedContent;
     }
 
-    private String inferPlanningStage(List<String> planningDocs) {
+    static String inferPlanningStage(List<String> planningDocs) {
         boolean hasImplementation = planningDocs.stream()
             .anyMatch(d -> d.contains("03_ARCHITECT_IMPLEMENTATION") || d.contains("03_TECHNICAL_IMPLEMENTATION") || d.contains("03_SIMPLE_TASKS"));
         boolean hasDesign = planningDocs.stream()
@@ -279,7 +280,7 @@ public class TicketProcessor {
         return "requirement_extraction";
     }
 
-    private List<String> extractFileKeys(List<String> planningDocs) {
+    static List<String> extractFileKeys(List<String> planningDocs) {
         List<String> keys = new ArrayList<>();
         for (String doc : planningDocs) {
             if (doc.startsWith("=== ")) {

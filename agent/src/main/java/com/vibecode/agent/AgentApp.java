@@ -41,13 +41,40 @@ public class AgentApp {
     private final GitHubService gitHubService;
     private final TicketProcessor ticketProcessor;
     private ScheduledExecutorService heartbeatScheduler;
+    private String githubAccessToken;
 
     public AgentApp(AgentConfig config) {
         this.config = config;
         this.apiService = new ApiService(config);
         this.aiProvider = createAiProvider();
-        this.gitHubService = new GitHubService(config.getAgentApiKey(), config.getRepoOwner(), config.getRepoName());
-        this.ticketProcessor = new TicketProcessor(config, apiService, aiProvider, gitHubService);
+        this.githubAccessToken = fetchGitHubToken();
+        this.gitHubService = new GitHubService(githubAccessToken, config.getRepoOwner(), config.getRepoName());
+        this.ticketProcessor = new TicketProcessor(config, apiService, aiProvider, gitHubService, githubAccessToken);
+    }
+
+    private String fetchGitHubToken() {
+        // Priority 1: Backend API (decrypted PAT from project_repos)
+        try {
+            Map<String, Object> repoConfig = apiService.getRepoConfig(config.getProjectId());
+            Object accessToken = repoConfig.get("accessToken");
+            if (accessToken != null && !(accessToken instanceof String) ? false : !((String) accessToken).isBlank()) {
+                log.info("Fetched GitHub PAT from backend");
+                return (String) accessToken;
+            }
+        } catch (Exception e) {
+            log.debug("Could not fetch GitHub PAT from backend: {}", e.getMessage());
+        }
+
+        // Priority 2: GITHUB_TOKEN env var
+        String envToken = config.getGitHubToken();
+        if (envToken != null && !envToken.isBlank()) {
+            log.info("Using GitHub token from GITHUB_TOKEN env var");
+            return envToken;
+        }
+
+        // Priority 3: Fallback to agent API key (will fail for GitHub, but preserves existing behavior)
+        log.warn("No GitHub PAT available — agent GitHub operations will fail for private repos");
+        return config.getAgentApiKey();
     }
 
     private AiProvider createAiProvider() {
@@ -200,6 +227,10 @@ public class AgentApp {
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    public String getGitHubAccessToken() {
+        return githubAccessToken;
     }
 
     public static void main(String[] args) {

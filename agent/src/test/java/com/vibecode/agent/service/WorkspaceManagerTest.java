@@ -26,19 +26,19 @@ class WorkspaceManagerTest {
 
     @Test
     void testConstructorWithBooleanDryRun() {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", true);
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", true, null);
         assertNotNull(wm);
     }
 
     @Test
     void testConstructorWithFalseDryRun() {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false);
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         assertNotNull(wm);
     }
 
     @Test
     void testRepoDirSanitization() throws Exception {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "my-repo_name!@#", false);
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "my-repo_name!@#", false, null);
         Path expectedRepoDir = tempDir.resolve("my-repo_name___");
         Field repoDirField = wm.getClass().getDeclaredField("repoDir");
         repoDirField.setAccessible(true);
@@ -48,7 +48,7 @@ class WorkspaceManagerTest {
 
     @Test
     void testWriteFilesCreatesDirectoryStructure() throws Exception {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false);
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         Path repoDir = tempDir.resolve("test-repo");
         Files.createDirectories(repoDir);
         setRepoDir(wm, repoDir);
@@ -66,19 +66,19 @@ class WorkspaceManagerTest {
 
     @Test
     void testWriteFilesEmptyList() throws Exception {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false);
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         wm.writeFiles(List.of());
     }
 
     @Test
     void testWriteFilesNullList() throws Exception {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false);
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         wm.writeFiles(null);
     }
 
     @Test
     void testWriteFilesDryRun() throws Exception {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", true);
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", true, null);
         FileOperation fileOp = new FileOperation("src/main/java/com/example/App.java", 
             "package com.example;\n\npublic class App {}\n", 
             FileOperation.Action.CREATE);
@@ -88,7 +88,7 @@ class WorkspaceManagerTest {
 
     @Test
     void testWriteFileDelete() throws Exception {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false);
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         Path repoDir = tempDir.resolve("test-repo");
         Files.createDirectories(repoDir);
         setRepoDir(wm, repoDir);
@@ -106,7 +106,7 @@ class WorkspaceManagerTest {
 
     @Test
     void testWriteFileModify() throws Exception {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false);
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         Path repoDir = tempDir.resolve("test-repo");
         Files.createDirectories(repoDir);
         setRepoDir(wm, repoDir);
@@ -123,13 +123,13 @@ class WorkspaceManagerTest {
 
     @Test
     void testCloneRepoDryRun() throws Exception {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", true);
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", true, null);
         assertDoesNotThrow(() -> wm.cloneRepo("https://github.com/nonexistent/repo.git", "feature-branch"));
     }
 
     @Test
     void testCloneRepoAlreadyExists() throws Exception {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false);
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         Path repoDir = tempDir.resolve("test-repo");
         Files.createDirectories(repoDir);
         Files.createDirectories(repoDir.resolve(".git"));
@@ -140,14 +140,14 @@ class WorkspaceManagerTest {
 
     @Test
     void testCommitShaDryRun() throws Exception {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", true);
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", true, null);
         String sha = wm.getCommitSha();
         assertEquals("dry-run-sha", sha);
     }
 
     @Test
     void testCommitAndPushDryRun() throws Exception {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", true);
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", true, null);
         String sha = wm.commitAndPush("test commit", "feature-branch");
         assertEquals("dry-run-sha", sha);
     }

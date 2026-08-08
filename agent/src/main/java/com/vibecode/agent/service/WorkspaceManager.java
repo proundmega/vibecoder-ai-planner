@@ -24,11 +24,13 @@ public class WorkspaceManager {
     private final Path repoDir;
     private final String gitBinary;
     private final boolean dryRun;
+    private final String githubToken;
 
-    public WorkspaceManager(String repoCloneDir, String repoName, boolean dryRun) {
+    public WorkspaceManager(String repoCloneDir, String repoName, boolean dryRun, String githubToken) {
         this.repoDir = Paths.get(repoCloneDir, sanitizePath(repoName));
         this.gitBinary = "git";
         this.dryRun = dryRun;
+        this.githubToken = githubToken;
     }
 
     /**
@@ -46,11 +48,17 @@ public class WorkspaceManager {
             return;
         }
 
+        // Embed token in URL for private repos: https://x-access-token:{token}@github.com/...
+        String cloneUrl = repoUrl;
+        if (githubToken != null && !githubToken.isBlank() && repoUrl.startsWith("https://github.com/")) {
+            cloneUrl = repoUrl.replace("https://github.com/", "https://x-access-token:" + githubToken + "@github.com/");
+        }
+
         // Create parent directory if needed
         Files.createDirectories(repoDir.getParent());
 
         // git clone default branch
-        ProcessBuilder pb = new ProcessBuilder(gitBinary, "clone", repoUrl, repoDir.toString());
+        ProcessBuilder pb = new ProcessBuilder(gitBinary, "clone", cloneUrl, repoDir.toString());
         pb.redirectErrorStream(true);
         Process process = pb.start();
         

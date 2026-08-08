@@ -233,6 +233,20 @@ public class ApiService {
     }
 
     /**
+     * Get repository connection config (including GitHub PAT) for the project.
+     */
+    public Map<String, Object> getRepoConfig(String projectId) throws IOException {
+        String url = baseUrl + "/v1/github/" + projectId + "/repo";
+        ApiResponse<Map<String, Object>> response = executeGet(url, new TypeReference<ApiResponse<Map<String, Object>>>() {});
+        
+        if (response.hasError()) {
+            throw new IOException("Failed to get repo config: " + response.getError());
+        }
+        
+        return response.getData();
+    }
+
+    /**
      * Return the underlying OkHttpClient for reuse (e.g., in TicketProcessor).
      */
     public OkHttpClient getHttpClient() {
