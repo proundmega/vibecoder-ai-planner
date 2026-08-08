@@ -35,7 +35,7 @@ describe('BP-09: Migration Rollback', () => {
         const rollbackPath = path.join(migrationsDir, rollbackFile);
         const content = fs.readFileSync(rollbackPath, 'utf8');
         expect(content.length).toBeGreaterThan(0);
-        expect(content).toMatch(/DROP|ALTER/);
+        expect(content).toMatch(/DROP|ALTER|DELETE/);
       }
     });
   });

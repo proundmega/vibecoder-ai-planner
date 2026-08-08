@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const AgentService = require('../services/AgentService');
+const ProviderService = require('../services/ProviderService');
 const { verifyTokenOrAgent } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
@@ -339,6 +340,55 @@ router.get('/:agentId/provider-config', async (req, res, next) => {
       return res.status(404).json({ error: errorMessages[error.message] });
     }
     logger.error('GET /api/agents/:agentId/provider-config', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /agents/{agentId}/provider-config/changed:
+ *   get:
+ *     tags: [Agents]
+ *     summary: Check if provider config has changed
+ *     parameters:
+ *       - in: path
+ *         name: agentId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: since
+ *         schema: { type: string, format: date-time }
+ *     security:
+ *       - apiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Config change status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     changed: { type: boolean }
+ *                     lastUpdated: { type: string, format: date-time }
+ */
+router.get('/:agentId/provider-config/changed', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const agentId = req.params.agentId;
+    const since = req.query.since;
+    
+    const apiKey = req.agent?.api_key || (req.user ? null : null);
+    const result = await ProviderService.getProviderConfigChange(agentId, since);
+    
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    logger.error('GET /api/agents/:agentId/provider-config/changed', error);
     next(error);
   }
 });

@@ -15,6 +15,14 @@ jest.mock('jsonwebtoken', () => ({
   sign: jest.fn().mockReturnValue('mock-token'),
 }));
 
+jest.mock('../services/PermissionService', () => ({
+  hasAnyPermission: jest.fn(async (role, permissions) => {
+    if (role === 'super_admin') return true;
+    if (role === 'project_admin') return permissions.some(p => ['CSP_READ', 'CSP_DELETE', 'PROJECT_UPDATE'].includes(p));
+    return false;
+  }),
+}));
+
 describe('CSP Violations API', () => {
   beforeEach(() => {
     jest.clearAllMocks();
