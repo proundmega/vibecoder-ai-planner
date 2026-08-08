@@ -132,31 +132,32 @@ describe('TicketService', () => {
       expect(capturedQuery[5]).toBeNull(); // assigneeId should be null, not undefined
     });
 
-    test('should not include undefined fields in the dynamic SET', async () => {
+    test('should pass undefined for fields not in body (not include in SQL SET)', async () => {
       const mockTicket = { id: 't1', status: 'in_progress', priority: 'high', assigneeId: 5, ownerId: 100, projectId: 1 };
       Ticket.findById.mockResolvedValueOnce(mockTicket);
       User.find.mockResolvedValueOnce({ role: 'project_admin' });
       PermissionService.hasPermission.mockResolvedValueOnce(true);
 
-      let capturedQuery;
+      let capturedArgs;
       Ticket.update.mockImplementation((...args) => {
-        capturedQuery = args;
+        capturedArgs = args;
         return mockTicket;
       });
 
+      // Update only status - title, description, priority, assigneeId should all be undefined
       await TicketService.update('t1', { status: 'review' }, 100);
 
-      // Only status should be non-null; title, description, priority, assigneeId should all be null
-      expect(capturedQuery[1]).toBeNull();   // title
-      expect(capturedQuery[2]).toBeNull();   // description
-      expect(capturedQuery[3]).toBe('review'); // status
-      expect(capturedQuery[4]).toBeNull();   // priority
-      expect(capturedQuery[5]).toBeNull();   // assigneeId
+      // Only status should be non-null; title, description, priority, assigneeId should all be undefined
+      expect(capturedArgs[1]).toBeUndefined();   // title
+      expect(capturedArgs[2]).toBeUndefined();   // description
+      expect(capturedArgs[3]).toBe('review');    // status
+      expect(capturedArgs[4]).toBeUndefined();   // priority
+      expect(capturedArgs[5]).toBeUndefined();   // assigneeId
     });
   });
 
   describe('BP-51-06: undefined field handling in update', () => {
-    test('should pass null for undefined title (not overwrite existing)', async () => {
+    test('should pass undefined for fields not in body (not overwrite existing)', async () => {
       const mockTicket = { id: 't1', status: 'in_progress', priority: 'high', assigneeId: 5, ownerId: 100, projectId: 1 };
       Ticket.findById.mockResolvedValueOnce(mockTicket);
       User.find.mockResolvedValueOnce({ role: 'project_admin' });
@@ -169,18 +170,18 @@ describe('TicketService', () => {
         return mockTicket;
       });
 
-      // Only update status - title, description, priority, assigneeId should all be null
+      // Only update status - title, description, priority, assigneeId should all be undefined
       await TicketService.update('t1', { status: 'in_progress' }, 100);
 
-      expect(capturedArgs[1]).toBeNull();   // title
-      expect(capturedArgs[2]).toBeNull();   // description
+      expect(capturedArgs[1]).toBeUndefined();   // title
+      expect(capturedArgs[2]).toBeUndefined();   // description
       expect(capturedArgs[3]).toBe('in_progress'); // status
-      expect(capturedArgs[4]).toBeNull();   // priority
-      expect(capturedArgs[5]).toBeNull();   // assigneeId
+      expect(capturedArgs[4]).toBeUndefined();   // priority
+      expect(capturedArgs[5]).toBeUndefined();   // assigneeId
       expect(capturedArgs[6]).toBe(100);    // userId
     });
 
-    test('should pass provided values and null for undefined fields', async () => {
+    test('should pass provided values and undefined for fields not in body', async () => {
       const mockTicket = { id: 't1', status: 'backlog', priority: 'medium', assigneeId: null, ownerId: 100, projectId: 1 };
       Ticket.findById.mockResolvedValueOnce(mockTicket);
       User.find.mockResolvedValueOnce({ role: 'project_admin' });
@@ -196,14 +197,14 @@ describe('TicketService', () => {
       await TicketService.update('t1', { title: 'New Title', priority: 'critical' }, 100);
 
       expect(capturedArgs[1]).toBe('New Title');  // title
-      expect(capturedArgs[2]).toBeNull();          // description (not provided)
-      expect(capturedArgs[3]).toBeNull();          // status (not provided)
+      expect(capturedArgs[2]).toBeUndefined();     // description (not provided)
+      expect(capturedArgs[3]).toBeUndefined();     // status (not provided)
       expect(capturedArgs[4]).toBe('critical');    // priority
-      expect(capturedArgs[5]).toBeNull();          // assigneeId (not provided)
+      expect(capturedArgs[5]).toBeUndefined();     // assigneeId (not provided)
       expect(capturedArgs[6]).toBe(100);           // userId
     });
 
-    test('should not pass undefined values to Ticket.update', async () => {
+    test('should pass undefined when body contains explicit undefined', async () => {
       const mockTicket = { id: 't1', status: 'backlog', priority: 'medium', assigneeId: null, ownerId: 100, projectId: 1 };
       Ticket.findById.mockResolvedValueOnce(mockTicket);
       User.find.mockResolvedValueOnce({ role: 'project_admin' });
@@ -217,9 +218,9 @@ describe('TicketService', () => {
 
       await TicketService.update('t1', { title: undefined }, 100);
 
-      // Should pass null for undefined, not undefined itself
-      expect(capturedArgs[1]).toBeNull();
-      expect(capturedArgs[1]).not.toBe(undefined);
+      // Should pass undefined for undefined, so Ticket.update() excludes it from SQL SET
+      expect(capturedArgs[1]).toBeUndefined();
+      expect(capturedArgs[1]).not.toBe(null);
     });
 
     test('should pass all defined fields correctly', async () => {
@@ -242,7 +243,7 @@ describe('TicketService', () => {
         priority: 'high',
       }, 100);
 
-      expect(capturedArgs).toEqual(['t1', 'Updated', 'New desc', 'in_progress', 'high', null, 100]);
+      expect(capturedArgs).toEqual(['t1', 'Updated', 'New desc', 'in_progress', 'high', undefined, 100]);
     });
   });
 
