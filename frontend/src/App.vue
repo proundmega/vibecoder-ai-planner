@@ -67,8 +67,8 @@ const showSuperAdminLink = computed(() => authStore.isSuperAdmin())
 const showBillingLink = computed(() => authStore.isProjectAdmin())
 const showProvidersLink = computed(() => authStore.isProjectAdmin() || authStore.isSuperAdmin())
 const showAgentsLink = computed(() => authStore.hasAnyPermission(['AGENT_READ']))
-const showComputeNodesLink = computed(() => authStore.isProjectAdmin() || authStore.isSuperAdmin())
-const showCspViolationsLink = computed(() => authStore.isProjectAdmin() || authStore.isSuperAdmin())
+const showComputeNodesLink = computed(() => authStore.hasAnyPermission(['PROJECT_UPDATE']))
+const showCspViolationsLink = computed(() => authStore.hasAnyPermission(['CSP_READ']))
 
 const handleLogout = () => {
   authStore.logout()
