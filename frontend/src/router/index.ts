@@ -145,12 +145,38 @@ const routes = [
         component: () => import('../views/CodeReview.vue'),
         meta: { requiresAuth: true },
       },
+      {
+        path: 'milestones',
+        name: 'ProjectMilestones',
+        component: () => import('../views/ProjectMilestones.vue'),
+        meta: { requiresAuth: true },
+      },
     ],
   },
 
   {
+    path: '/compute-nodes',
+    name: 'ComputeNodes',
+    component: () => import('../views/ComputeNodes.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/terminal/:id',
+    name: 'TerminalView',
+    component: () => import('../views/TerminalView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/csp-violations',
+    name: 'CspViolations',
+    component: () => import('../views/CspViolations.vue'),
+    meta: { requiresAuth: true },
+  },
+
+  {
     path: '/:pathMatch(.*)*',
-    redirect: '/projects',
+    name: 'NotFound',
+    component: () => import('../views/ErrorPage.vue'),
   },
 ];
 
