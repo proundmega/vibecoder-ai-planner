@@ -204,7 +204,7 @@ describe('TicketService', () => {
       expect(capturedArgs[6]).toBe(100);           // userId
     });
 
-    test('should pass undefined for explicitly undefined field', async () => {
+    test('should pass undefined when body contains explicit undefined', async () => {
       const mockTicket = { id: 't1', status: 'backlog', priority: 'medium', assigneeId: null, ownerId: 100, projectId: 1 };
       Ticket.findById.mockResolvedValueOnce(mockTicket);
       User.find.mockResolvedValueOnce({ role: 'project_admin' });
