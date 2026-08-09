@@ -12,6 +12,17 @@ function deterministicApiKeyPrefix(apiKey) {
 }
 
 class AgentService {
+  async findById(agentId) {
+    const result = await pool.query(
+      `SELECT a.*, p.name as provider_name, p.provider_type as provider_type
+       FROM agents a
+       LEFT JOIN providers p ON a.provider_id = p.id
+       WHERE a.id = $1`,
+      [agentId]
+    );
+    return result.rows[0] || null;
+  }
+
   async create(name, apiKey, userId, { providerId = null, rateLimit = 100, maxActionsPerDay = 1000, keyExpiryDays = 30 } = {}) {
     if (providerId) {
       const providerCheck = await pool.query('SELECT id FROM providers WHERE id = $1', [providerId]);
