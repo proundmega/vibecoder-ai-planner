@@ -207,6 +207,7 @@ pipeline {
             }
             steps {
                 dir('agent') {
+                    sh 'mvn test -q'
                     sh 'mvn package -q -DskipTests'
                 }
             }
