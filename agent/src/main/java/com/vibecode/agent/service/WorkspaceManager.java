@@ -48,31 +48,50 @@ public class WorkspaceManager {
             return;
         }
 
-        // Embed token in URL for private repos: https://x-access-token:{token}@github.com/...
-        String cloneUrl = repoUrl;
-        if (githubToken != null && !githubToken.isBlank() && repoUrl.startsWith("https://github.com/")) {
-            cloneUrl = repoUrl.replace("https://github.com/", "https://x-access-token:" + githubToken + "@github.com/");
-        }
-
         // Create parent directory if needed
         Files.createDirectories(repoDir.getParent());
 
-        // git clone default branch
-        ProcessBuilder pb = new ProcessBuilder(gitBinary, "clone", cloneUrl, repoDir.toString());
-        pb.redirectErrorStream(true);
-        Process process = pb.start();
-        
-        String output = readProcessOutput(process);
-        int exitCode;
-        try {
-            exitCode = process.waitFor();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Clone interrupted: " + e.getMessage());
-        }
-        
-        if (exitCode != 0) {
-            throw new IOException("Git clone failed: " + output);
+        // Use credential helper to avoid PAT leak in .git/config
+        // The credential helper provides the token via stdin, never storing it on disk
+        String cloneUrl = repoUrl;
+        if (githubToken != null && !githubToken.isBlank() && repoUrl.startsWith("https://github.com/")) {
+            ProcessBuilder pb = new ProcessBuilder(
+                gitBinary, "-c",
+                "credential.helper=!f() { echo \"username=oauth2\"; echo \"password=" + githubToken + "\"; }; f",
+                "clone", repoUrl, repoDir.toString()
+            );
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            
+            String output = readProcessOutput(process);
+            int exitCode;
+            try {
+                exitCode = process.waitFor();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Clone interrupted: " + e.getMessage());
+            }
+            
+            if (exitCode != 0) {
+                throw new IOException("Git clone failed: " + output);
+            }
+        } else {
+            ProcessBuilder pb = new ProcessBuilder(gitBinary, "clone", repoUrl, repoDir.toString());
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            
+            String output = readProcessOutput(process);
+            int exitCode;
+            try {
+                exitCode = process.waitFor();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Clone interrupted: " + e.getMessage());
+            }
+            
+            if (exitCode != 0) {
+                throw new IOException("Git clone failed: " + output);
+            }
         }
 
         // Create and checkout the target branch

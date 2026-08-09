@@ -57,9 +57,12 @@ public class AgentApp {
         try {
             Map<String, Object> repoConfig = apiService.getRepoConfig(config.getProjectId());
             Object accessToken = repoConfig.get("accessToken");
-            if (accessToken != null && !(accessToken instanceof String) ? false : !((String) accessToken).isBlank()) {
-                log.info("Fetched GitHub PAT from backend");
-                return (String) accessToken;
+            if (accessToken instanceof String) {
+                String token = (String) accessToken;
+                if (token != null && !token.isBlank()) {
+                    log.info("Fetched GitHub PAT from backend");
+                    return token;
+                }
             }
         } catch (Exception e) {
             log.debug("Could not fetch GitHub PAT from backend: {}", e.getMessage());

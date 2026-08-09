@@ -380,7 +380,17 @@ router.get('/:agentId/provider-config/changed', verifyTokenOrAgent, async (req, 
     const agentId = req.params.agentId;
     const since = req.query.since;
     
-    const apiKey = req.agent?.api_key || (req.user ? null : null);
+    // Ownership check: agent can only poll its own config-change status
+    if (req.agent) {
+      const agent = await AgentService.findById(agentId);
+      if (!agent || String(agent.id) !== String(req.agent.id)) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Invalid API key for this agent' }
+        });
+      }
+    }
+    
     const result = await ProviderService.getProviderConfigChange(agentId, since);
     
     res.json({

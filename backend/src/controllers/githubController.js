@@ -114,14 +114,14 @@ async function listPRs(req, res, next) {
 async function getRepoForAgent(req, res, next) {
   try {
     const projectId = req.params.projectId;
-    const repo = await GitHubService.getProjectRepo(projectId);
+    const repo = await GitHubService.getProjectRepoForAgent(projectId);
     
     if (!repo) {
       res.json({ success: true, data: null });
       return;
     }
     
-    res.json({ success: true, data: { repoUrl: repo.repo_url, accessToken: repo.access_token } });
+    res.json({ success: true, data: { repoUrl: repo.repoUrl, accessToken: repo.accessToken } });
   } catch (error) {
     next(error);
   }

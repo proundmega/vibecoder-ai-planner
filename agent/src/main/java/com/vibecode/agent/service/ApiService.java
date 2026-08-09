@@ -236,7 +236,7 @@ public class ApiService {
      * Get repository connection config (including GitHub PAT) for the project.
      */
     public Map<String, Object> getRepoConfig(String projectId) throws IOException {
-        String url = baseUrl + "/v1/github/" + projectId + "/repo";
+        String url = baseUrl + "/v1/github/" + projectId + "/repo/agent";
         ApiResponse<Map<String, Object>> response = executeGet(url, new TypeReference<ApiResponse<Map<String, Object>>>() {});
         
         if (response.hasError()) {
