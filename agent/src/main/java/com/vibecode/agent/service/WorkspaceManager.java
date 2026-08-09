@@ -57,9 +57,7 @@ public class WorkspaceManager {
         // or with credential helper configured for private repos
         if (githubToken != null && !githubToken.isBlank() && repoUrl.startsWith("https://github.com/")) {
             // Create credential helper script in the repo's .git directory
-            Path helperScript = repoDir.resolve(".git/credential-helper.sh");
-            String scriptContent = "#!/bin/sh\necho \"username=oauth2\"\necho \"password=" + githubToken + "\"";
-            Files.writeString(helperScript, scriptContent);
+            Path helperScript = createCredentialHelper(repoDir, githubToken);
             // Restrict permissions to owner only (0600 equivalent)
             Files.setPosixFilePermissions(helperScript, 
                 java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
@@ -267,5 +265,20 @@ public class WorkspaceManager {
 
     private String sanitizePath(String path) {
         return path.replaceAll("[^a-zA-Z0-9._-]", "_");
+    }
+
+    /**
+     * Create a git credential helper script that returns the OAuth2 token.
+     * Written to .git/credential-helper.sh with 0600 permissions.
+     */
+    Path createCredentialHelper(Path repoDir, String token) throws IOException {
+        Path gitDir = repoDir.resolve(".git");
+        Files.createDirectories(gitDir);
+        Path helperScript = gitDir.resolve("credential-helper.sh");
+        String scriptContent = "#!/bin/sh\necho \"username=oauth2\"\necho \"password=" + token + "\"";
+        Files.writeString(helperScript, scriptContent);
+        Files.setPosixFilePermissions(helperScript,
+            java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+        return helperScript;
     }
 }

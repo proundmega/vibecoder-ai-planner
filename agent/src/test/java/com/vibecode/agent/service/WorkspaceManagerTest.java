@@ -182,4 +182,33 @@ class WorkspaceManagerTest {
         op.setSearch("old pattern");
         assertEquals("old pattern", op.getSearch());
     }
+
+    @Test
+    void testCreateCredentialHelperCreatesFileWithToken() throws Exception {
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, "ghp_testtoken123");
+        Path helperScript = wm.createCredentialHelper(tempDir.resolve("test-repo"), "ghp_testtoken123");
+
+        assertTrue(Files.exists(helperScript));
+        String content = Files.readString(helperScript);
+        assertTrue(content.contains("ghp_testtoken123"));
+        assertTrue(content.contains("username=oauth2"));
+        assertTrue(content.contains("password=ghp_testtoken123"));
+    }
+
+    @Test
+    void testCreateCredentialHelperHasRestrictedPermissions() throws Exception {
+        Path targetDir = tempDir.resolve("perms-test");
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        Path helperScript = wm.createCredentialHelper(targetDir, "secret-token");
+
+        var perms = Files.getPosixFilePermissions(helperScript);
+        // 0600 = owner read + write only, no group/other permissions
+        assertTrue(perms.contains(java.nio.file.attribute.PosixFilePermission.OWNER_READ));
+        assertTrue(perms.contains(java.nio.file.attribute.PosixFilePermission.OWNER_WRITE));
+        assertFalse(perms.contains(java.nio.file.attribute.PosixFilePermission.GROUP_READ));
+        assertFalse(perms.contains(java.nio.file.attribute.PosixFilePermission.GROUP_WRITE));
+        assertFalse(perms.contains(java.nio.file.attribute.PosixFilePermission.GROUP_READ));
+        assertFalse(perms.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_READ));
+        assertFalse(perms.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_WRITE));
+    }
 }
