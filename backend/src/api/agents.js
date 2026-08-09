@@ -283,7 +283,8 @@ router.get('/:agentId/history', verifyTokenOrAgent, requireAnyPermission('AGENT_
  */
 router.get('/:agentId/key', verifyTokenOrAgent, async (req, res) => {
   try {
-    const agents = await AgentService.list(req.user.userId);
+    const userId = req.agent ? req.agent.owner_id : req.user.userId;
+    const agents = await AgentService.list(userId);
     const agent = agents.find(a => String(a.id) === String(req.params.agentId));
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
