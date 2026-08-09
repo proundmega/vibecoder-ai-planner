@@ -25,12 +25,14 @@ public class WorkspaceManager {
     private final String gitBinary;
     private final boolean dryRun;
     private final String githubToken;
+    private final Path credentialHelperScript;
 
     public WorkspaceManager(String repoCloneDir, String repoName, boolean dryRun, String githubToken) {
         this.repoDir = Paths.get(repoCloneDir, sanitizePath(repoName));
         this.gitBinary = "git";
         this.dryRun = dryRun;
         this.githubToken = githubToken;
+        this.credentialHelperScript = null;
     }
 
     /**
@@ -51,13 +53,20 @@ public class WorkspaceManager {
         // Create parent directory if needed
         Files.createDirectories(repoDir.getParent());
 
-        // Use credential helper to avoid PAT leak in .git/config
-        // The credential helper provides the token via stdin, never storing it on disk
-        String cloneUrl = repoUrl;
+        // Clone without authentication first (works for public repos)
+        // or with credential helper configured for private repos
         if (githubToken != null && !githubToken.isBlank() && repoUrl.startsWith("https://github.com/")) {
+            // Create credential helper script in the repo's .git directory
+            Path helperScript = repoDir.resolve(".git/credential-helper.sh");
+            String scriptContent = "#!/bin/sh\necho \"username=oauth2\"\necho \"password=" + githubToken + "\"";
+            Files.writeString(helperScript, scriptContent);
+            // Restrict permissions to owner only (0600 equivalent)
+            Files.setPosixFilePermissions(helperScript, 
+                java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+            
+            // Clone with credential helper configured
             ProcessBuilder pb = new ProcessBuilder(
-                gitBinary, "-c",
-                "credential.helper=!f() { echo \"username=oauth2\"; echo \"password=" + githubToken + "\"; }; f",
+                gitBinary, "-c", "credential.helper=!f() { source \"" + helperScript + "\"; }; f",
                 "clone", repoUrl, repoDir.toString()
             );
             pb.redirectErrorStream(true);
@@ -75,6 +84,9 @@ public class WorkspaceManager {
             if (exitCode != 0) {
                 throw new IOException("Git clone failed: " + output);
             }
+            
+            // Configure git to use credential helper for all future operations
+            runGit("config", "credential.helper", "!f() { source \"" + helperScript + "\"; }; f");
         } else {
             ProcessBuilder pb = new ProcessBuilder(gitBinary, "clone", repoUrl, repoDir.toString());
             pb.redirectErrorStream(true);

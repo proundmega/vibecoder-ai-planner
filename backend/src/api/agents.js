@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const router = express.Router();
 const AgentService = require('../services/AgentService');
 const ProviderService = require('../services/ProviderService');
+const PermissionService = require('../services/PermissionService');
 const { verifyTokenOrAgent } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
@@ -387,6 +388,15 @@ router.get('/:agentId/provider-config/changed', verifyTokenOrAgent, async (req, 
         return res.status(403).json({
           success: false,
           error: { code: 'FORBIDDEN', message: 'Invalid API key for this agent' }
+        });
+      }
+    } else if (req.user) {
+      // JWT-authenticated users need AGENT_READ permission
+      const hasPermission = await PermissionService.hasPermission(req.user.role, 'AGENT_READ');
+      if (!hasPermission) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Insufficient permissions' }
         });
       }
     }
