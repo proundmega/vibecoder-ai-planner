@@ -20,6 +20,7 @@ import java.time.Duration;
  *   AI_API_KEY          - AI provider API key (falls back to env if not in DB)
  *   AI_ENDPOINT_URL     - OpenAI-compatible endpoint URL (e.g., http://localhost:11434/v1)
  *   AI_MAX_TOKENS       - Max tokens for AI responses (default: 4096)
+ *   GITHUB_TOKEN        - GitHub Personal Access Token (falls back to backend API)
  *   DRY_RUN             - If "true", don't create branches/PRs (default: false)
  *   MAX_TICKETS         - Max tickets to process per cycle (default: 1)
  *   REPO_CLONE_DIR      - Directory to clone repos into (default: /repos)
@@ -42,6 +43,7 @@ public class AgentConfig {
     private final boolean dryRun;
     private final int maxTicketsPerCycle;
     private final String repoCloneDir;
+    private final String githubToken;
 
     public AgentConfig() {
         this.agentApiKey = requireEnv("AGENT_API_KEY");
@@ -57,6 +59,7 @@ public class AgentConfig {
         this.aiApiKey = getEnv("AI_API_KEY", null);
         this.aiEndpointUrl = getEnv("AI_ENDPOINT_URL", "");
         this.aiMaxTokens = getIntEnv("AI_MAX_TOKENS", 4096);
+        this.githubToken = getEnv("GITHUB_TOKEN", null);
         this.dryRun = "true".equalsIgnoreCase(getEnv("DRY_RUN", "false"));
         this.maxTicketsPerCycle = getIntEnv("MAX_TICKETS", 1);
         this.repoCloneDir = getEnv("REPO_CLONE_DIR", "/repos");
@@ -78,6 +81,7 @@ public class AgentConfig {
     public boolean isDryRun() { return dryRun; }
     public int getMaxTicketsPerCycle() { return maxTicketsPerCycle; }
     public String getRepoCloneDir() { return repoCloneDir; }
+    public String getGitHubToken() { return githubToken; }
 
     public String getApiUrl() {
         return backendUrl.endsWith("/") ? backendUrl + "api" : backendUrl + "/api";

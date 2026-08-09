@@ -6,7 +6,7 @@ import { fetchTicket, updateTicket, addComment, fetchComments, deleteTicket } fr
 import { getTicketApprovals, createApproval } from '@/api/approvals'
 import { fetchAttachments, uploadAttachment, deleteAttachment } from '@/api/ticketAttachments'
 import { listPlanningFiles, getPlanningFile, upsertPlanningFile, applyTemplate, updatePlanningStatus } from '@/api/ticketPlanning'
-import { getTicketPlanningUsage } from '@/api/client'
+import { getTicketPlanningUsage, getPlanningFileUsage } from '@/api/client'
 import { listTemplates } from '@/api/templates'
 import TicketEditModal from '@/components/TicketEditModal.vue'
 
@@ -48,6 +48,12 @@ const customTemplates = ref([])
 const planningUsage = ref(null)
 const planningUsageLoading = ref(false)
 const planningUsageError = ref(null)
+
+// Per-file usage state
+const expandedFiles = ref({})
+const fileUsageData = ref({})
+const fileUsageLoading = ref({})
+const fileUsageError = ref({})
 
 const validTransitions = {
   backlog: ['in_progress'],
@@ -321,6 +327,31 @@ async function loadPlanningUsage() {
   }
 }
 
+async function loadFileUsage(fileKey) {
+  if (fileUsageData.value[fileKey]) return
+  
+  fileUsageLoading.value[fileKey] = true
+  fileUsageError.value[fileKey] = null
+  
+  try {
+    fileUsageData.value[fileKey] = await getPlanningFileUsage(ticketId, fileKey)
+  } catch (err) {
+    console.error('Failed to load file usage for', fileKey, ':', err)
+    fileUsageError.value[fileKey] = err.message || 'Failed to load usage data'
+  } finally {
+    fileUsageLoading.value[fileKey] = false
+  }
+}
+
+function toggleFileUsage(fileKey) {
+  if (expandedFiles.value[fileKey]) {
+    expandedFiles.value[fileKey] = false
+  } else {
+    expandedFiles.value[fileKey] = true
+    loadFileUsage(fileKey)
+  }
+}
+
 async function handleShowTemplateSelect() {
   try {
     customTemplates.value = await listTemplates(ticket.value.project_id)
@@ -487,6 +518,51 @@ async function handleShowTemplateSelect() {
                   </tr>
                 </tbody>
               </table>
+
+              <div v-if="planningUsage.byFile && planningUsage.byFile.length > 0" class="file-usage-section">
+                <h5>Planning Files</h5>
+                <div v-for="file in planningUsage.byFile" :key="file.fileKey" class="file-usage-item">
+                  <button @click="toggleFileUsage(file.fileKey)" class="file-usage-toggle">
+                    <span class="file-name">{{ file.fileKey }}</span>
+                    <span class="file-stats">
+                      ${{ file.costUsd.toFixed(4) }} · {{ file.tokensIn.toLocaleString() }} in / {{ file.tokensOut.toLocaleString() }} out
+                    </span>
+                    <span class="file-arrow">{{ expandedFiles[file.fileKey] ? '▼' : '▶' }}</span>
+                  </button>
+                  <div v-if="expandedFiles[file.fileKey] && fileUsageLoading[file.fileKey]" class="file-usage-loading">
+                    Loading history...
+                  </div>
+                  <div v-else-if="expandedFiles[file.fileKey] && fileUsageError[file.fileKey]" class="file-usage-error">
+                    {{ fileUsageError[file.fileKey] }}
+                  </div>
+                  <div v-else-if="expandedFiles[file.fileKey] && fileUsageData[file.fileKey]" class="file-usage-history">
+                    <table class="usage-table">
+                      <thead>
+                        <tr>
+                          <th>Time</th>
+                          <th>Provider</th>
+                          <th>Model</th>
+                          <th>Stage</th>
+                          <th>Tokens In</th>
+                          <th>Tokens Out</th>
+                          <th>Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="entry in fileUsageData[file.fileKey].history" :key="entry.at">
+                          <td>{{ new Date(entry.at).toLocaleString() }}</td>
+                          <td>{{ entry.providerType || 'N/A' }}</td>
+                          <td>{{ entry.model || 'N/A' }}</td>
+                          <td>{{ entry.planningStage || 'N/A' }}</td>
+                          <td>{{ entry.tokensIn?.toLocaleString() || '0' }}</td>
+                          <td>{{ entry.tokensOut?.toLocaleString() || '0' }}</td>
+                          <td>${{ (entry.costUsd || 0).toFixed(4) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1141,6 +1217,83 @@ h1 {
 
 .usage-table tbody tr:hover {
   background: #e0f2fe;
+}
+
+.file-usage-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.file-usage-section h5 {
+  margin: 0 0 12px 0;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.file-usage-item {
+  margin-bottom: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.file-usage-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #f9fafb;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  transition: background 0.2s;
+}
+
+.file-usage-toggle:hover {
+  background: #f3f4f6;
+}
+
+.file-name {
+  flex: 1;
+  font-family: monospace;
+  color: #1f2937;
+  font-weight: 500;
+}
+
+.file-stats {
+  color: #6b7280;
+  font-size: 12px;
+  font-family: monospace;
+}
+
+.file-arrow {
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.file-usage-loading,
+.file-usage-error {
+  padding: 12px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.file-usage-error {
+  color: #dc2626;
+}
+
+.file-usage-history {
+  padding: 0;
+  background: #fff;
+}
+
+.file-usage-history .usage-table {
+  margin: 0;
+  border: none;
 }
 
 .planning-editor {

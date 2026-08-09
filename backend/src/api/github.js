@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { verifyToken } = require('../middleware/auth');
+const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
 const githubController = require('../controllers/githubController');
@@ -22,6 +22,25 @@ const { connectRepoSchema, createBranchSchema, createPRSchema } = require('../va
  *         description: Repository status
  */
 router.get('/:projectId/repo', verifyToken, githubController.getRepoStatus);
+
+/**
+ * @openapi
+ * /github/{projectId}/repo/agent:
+ *   get:
+ *     tags: [GitHub]
+ *     summary: Get repository connection for agent (with decrypted PAT)
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     security:
+ *       - apiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Repository config with decrypted access token
+ */
+router.get('/:projectId/repo/agent', verifyTokenOrAgent, githubController.getRepoForAgent);
 
 /**
  * @openapi
