@@ -158,7 +158,7 @@ const routes = [
     path: '/compute-nodes',
     name: 'ComputeNodes',
     component: () => import('../views/ComputeNodes.vue'),
-    meta: { requiresAuth: true, requiredPermission: 'PROJECT_UPDATE' },
+    meta: { requiresAuth: true },
   },
   {
     path: '/terminal/:id',
@@ -170,7 +170,7 @@ const routes = [
     path: '/csp-violations',
     name: 'CspViolations',
     component: () => import('../views/CspViolations.vue'),
-    meta: { requiresAuth: true, requiredPermission: 'CSP_READ' },
+    meta: { requiresAuth: true },
   },
 
   {
