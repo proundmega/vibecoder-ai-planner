@@ -96,7 +96,16 @@ public class TicketProcessor {
             List<String> planningDocs = fetchPlanningDocs(pickedUp.getId());
             log.info("Fetched {} planning documents", planningDocs.size());
 
-            // Step 3: Generate code/plan using AI (skip in dry run)
+            // Step 3: Clone repo first (needed for file context)
+            String branchName = config.getGitHubBranchName(pickedUp.getId(), pickedUp.getTitle());
+            if (!config.isDryRun()) {
+                workspaceManager.cloneRepo(
+                    "https://github.com/" + config.getRepoOwner() + "/" + config.getRepoName() + ".git",
+                    branchName
+                );
+            }
+
+            // Step 4: Generate code/plan using AI (with workspace context)
             String generatedContent = null;
             if (!config.isDryRun()) {
                 generatedContent = generateContent(pickedUp, planningDocs);
@@ -105,26 +114,24 @@ public class TicketProcessor {
                 log.info("[DRY RUN] Would generate content for ticket {}", ticket.getId());
             }
 
-            // Step 4: Parse AI output into file operations
-            ParsedResult parsedResult = parseFileOperationsWithStatus(generatedContent);
-            List<FileOperation> fileOperations = parsedResult.operations;
-            boolean parseFailed = parsedResult.failed;
+            // Step 5: Parse AI output into file operations
+            List<FileOperation> fileOperations = new ArrayList<>();
+            boolean parseFailed = false;
 
-            if (parseFailed) {
-                apiService.postMessage(pickedUp.getId(), "update",
-                    "Error: AI response could not be parsed as valid JSON with file operations. AI output may be malformed.");
-                throw new IOException("AI response parse failed - could not extract file operations");
-            }
+            if (config.isDryRun()) {
+                log.info("[DRY RUN] Skipping file operation parsing");
+            } else {
+                ParsedResult parsedResult = parseFileOperationsWithStatus(generatedContent);
+                fileOperations = parsedResult.operations;
+                parseFailed = parsedResult.failed;
 
-            log.info("Parsed {} file operations from AI output", fileOperations.size());
+                if (parseFailed) {
+                    apiService.postMessage(pickedUp.getId(), "update",
+                        "Error: AI response could not be parsed as valid JSON with file operations. AI output may be malformed.");
+                    throw new IOException("AI response parse failed - could not extract file operations");
+                }
 
-            // Step 5: Clone repo if needed
-            String branchName = config.getGitHubBranchName(pickedUp.getId(), pickedUp.getTitle());
-            if (!config.isDryRun()) {
-                workspaceManager.cloneRepo(
-                    "https://github.com/" + config.getRepoOwner() + "/" + config.getRepoName() + ".git",
-                    branchName
-                );
+                log.info("Parsed {} file operations from AI output", fileOperations.size());
             }
 
             // Step 6: Write files to workspace
@@ -168,21 +175,24 @@ public class TicketProcessor {
             currentStep = null;
 
         } catch (Exception e) {
-            log.error("Error processing ticket {}: {}", ticket.getId(), e.getMessage(), e);
+            log.error("Error processing ticket {}: {}", pickedUp.getId(), e.getMessage(), e);
             // Post error message
             try {
-                apiService.postMessage(ticket.getId(), "update",
+                apiService.postMessage(pickedUp.getId(), "update",
                     "Error processing ticket: " + e.getMessage());
             } catch (IOException ioException) {
                 log.error("Failed to post error message", ioException);
             }
             // Release the ticket so another agent can try
             try {
-                apiService.releaseTicket(ticket.getId());
-                log.info("Released ticket {} after error", ticket.getId());
+                Ticket released = apiService.releaseTicket(pickedUp.getId());
+                log.info("Released ticket {} after error, status: {}", pickedUp.getId(), released != null ? released.getStatus() : "null");
             } catch (IOException releaseException) {
-                log.error("Failed to release ticket {}", ticket.getId(), releaseException);
+                log.error("Failed to release ticket {}, ticket may remain in in_progress state", pickedUp.getId(), releaseException);
             }
+        } finally {
+            // Always cleanup workspace
+            workspaceManager.cleanup();
         }
     }
 
@@ -198,7 +208,7 @@ public class TicketProcessor {
     private List<String> fetchPlanningDocs(Long ticketId) throws IOException {
         List<String> docs = new ArrayList<>();
         try {
-            String url = config.getApiUrl() + "/v1/tickets/" + ticketId + "/planning";
+            String url = config.getApiUrl() + "/tickets/" + ticketId + "/planning";
             Request request = new Request.Builder()
                 .url(url)
                 .header("X-API-Key", config.getAgentApiKey())

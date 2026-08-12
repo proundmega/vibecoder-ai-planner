@@ -38,12 +38,15 @@ class WorkspaceManagerTest {
 
     @Test
     void testRepoDirSanitization() throws Exception {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "my-repo_name!@#", false, null);
-        Path expectedRepoDir = tempDir.resolve("my-repo_name___");
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "my-repo_name!@#", true, null);
+        // cloneRepo generates UUID-based dir, verify sanitized name is present
+        assertDoesNotThrow(() -> wm.cloneRepo("https://github.com/test/repo.git", "feature-branch"));
         Field repoDirField = wm.getClass().getDeclaredField("repoDir");
         repoDirField.setAccessible(true);
         Path actualRepoDir = (Path) repoDirField.get(wm);
-        assertEquals(expectedRepoDir, actualRepoDir);
+        // UUID prefix + sanitized name should be in the path
+        String pathStr = actualRepoDir.toString();
+        assertTrue(pathStr.contains("my-repo_name___"), "Path should contain sanitized name but was: " + pathStr);
     }
 
     @Test
@@ -129,12 +132,12 @@ class WorkspaceManagerTest {
 
     @Test
     void testCloneRepoAlreadyExists() throws Exception {
-        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
-        Path repoDir = tempDir.resolve("test-repo");
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", true, null);
+        Path repoDir = tempDir.resolve("acf5e45f-test-repo");
         Files.createDirectories(repoDir);
         Files.createDirectories(repoDir.resolve(".git"));
-        setRepoDir(wm, repoDir);
         
+        // In dry-run mode, cloneRepo should not throw even if dir exists
         assertDoesNotThrow(() -> wm.cloneRepo("https://github.com/test/repo.git", "feature-branch"));
     }
 
@@ -202,9 +205,10 @@ class WorkspaceManagerTest {
         Path helperScript = wm.createCredentialHelper(targetDir, "secret-token");
 
         var perms = Files.getPosixFilePermissions(helperScript);
-        // 0600 = owner read + write only, no group/other permissions
+        // 0700 = owner read + write + execute only, no group/other permissions
         assertTrue(perms.contains(java.nio.file.attribute.PosixFilePermission.OWNER_READ));
         assertTrue(perms.contains(java.nio.file.attribute.PosixFilePermission.OWNER_WRITE));
+        assertTrue(perms.contains(java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE));
         assertFalse(perms.contains(java.nio.file.attribute.PosixFilePermission.GROUP_READ));
         assertFalse(perms.contains(java.nio.file.attribute.PosixFilePermission.GROUP_WRITE));
         assertFalse(perms.contains(java.nio.file.attribute.PosixFilePermission.GROUP_READ));

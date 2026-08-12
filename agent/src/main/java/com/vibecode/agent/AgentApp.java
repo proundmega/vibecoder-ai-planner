@@ -42,6 +42,7 @@ public class AgentApp {
     private final TicketProcessor ticketProcessor;
     private ScheduledExecutorService heartbeatScheduler;
     private String githubAccessToken;
+    private volatile boolean shuttingDown = false;
 
     public AgentApp(AgentConfig config) {
         this.config = config;
@@ -150,6 +151,25 @@ public class AgentApp {
         log.info("Dry run: {}", config.isDryRun() ? "YES (no branches/PRs will be created)" : "NO");
 
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown, "shutdown-hook"));
+
+        try {
+            Class<?> signalClass = Class.forName("sun.misc.Signal");
+            Object signal = signalClass.getMethod("lookup", String.class).invoke(null, "INT");
+            signalClass.getMethod("handle", signalClass, 
+                Class.forName("sun.misc.SignalHandler")).invoke(null, signal,
+                new sun.misc.SignalHandler() {
+                    @Override
+                    public void handle(sun.misc.Signal signal) {
+                        log.info("Received SIGINT (Ctrl-C), initiating graceful shutdown...");
+                        shuttingDown = true;
+                        shutdown();
+                        System.exit(0);
+                    }
+                });
+            log.info("SIGINT handler registered for graceful shutdown");
+        } catch (Exception e) {
+            log.warn("Could not register SIGINT handler: {}", e.getMessage());
+        }
 
         heartbeatScheduler = Executors.newScheduledThreadPool(1);
         heartbeatScheduler.scheduleAtFixedRate(() -> {

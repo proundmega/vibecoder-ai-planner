@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -21,33 +22,66 @@ public class WorkspaceManager {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceManager.class);
 
-    private final Path repoDir;
+    private Path repoDir;
     private final String gitBinary;
     private final boolean dryRun;
     private final String githubToken;
     private final Path credentialHelperScript;
+    private final String repoCloneDir;
+    private final String repoName;
 
     public WorkspaceManager(String repoCloneDir, String repoName, boolean dryRun, String githubToken) {
-        this.repoDir = Paths.get(repoCloneDir, sanitizePath(repoName));
+        this.repoCloneDir = repoCloneDir;
+        this.repoName = repoName;
         this.gitBinary = "git";
         this.dryRun = dryRun;
         this.githubToken = githubToken;
         this.credentialHelperScript = null;
+        this.repoDir = null;
+    }
+
+    private Path generateRepoDir() {
+        String uniqueName = UUID.randomUUID().toString().substring(0, 8) + "-" + sanitizePath(repoName);
+        return Paths.get(repoCloneDir, uniqueName);
+    }
+
+    public Path getRepoDir() {
+        return repoDir;
     }
 
     /**
-     * Clone a repository if it doesn't exist locally.
+     * Clone a repository to a unique workspace directory.
      */
     public void cloneRepo(String repoUrl, String branchName) throws IOException {
-        if (Files.exists(repoDir.resolve(".git"))) {
-            log.info("Repo already cloned at {}", repoDir);
-            return;
-        }
-
+        this.repoDir = generateRepoDir();
         log.info("Cloning repo from {} to {}", repoUrl, repoDir);
         if (dryRun) {
             log.info("[DRY RUN] Would clone {} to {}", repoUrl, repoDir);
             return;
+        }
+
+        // Remove existing directory if present (from failed previous attempt)
+        if (Files.exists(repoDir)) {
+            log.info("Removing existing directory: {}", repoDir);
+            try {
+                deletePath(repoDir);
+            } catch (IOException e) {
+                log.warn("Java delete failed, trying shell rm -rf: {}", e.getMessage());
+                try {
+                    ProcessBuilder rmPb = new ProcessBuilder("rm", "-rf", repoDir.toString());
+                    rmPb.redirectErrorStream(true);
+                    Process rmProcess = rmPb.start();
+                    rmProcess.waitFor();
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    log.error("rm -rf interrupted while deleting: {}", repoDir);
+                    throw new IOException("Delete interrupted: " + repoDir, ie);
+                }
+            }
+            if (Files.exists(repoDir)) {
+                log.error("Directory still exists after delete, aborting clone");
+                throw new IOException("Failed to remove existing directory: " + repoDir);
+            }
         }
 
         // Create parent directory if needed
@@ -56,16 +90,10 @@ public class WorkspaceManager {
         // Clone without authentication first (works for public repos)
         // or with credential helper configured for private repos
         if (githubToken != null && !githubToken.isBlank() && repoUrl.startsWith("https://github.com/")) {
-            // Create credential helper script in the repo's .git directory
-            Path helperScript = createCredentialHelper(repoDir, githubToken);
-            // Restrict permissions to owner only (0600 equivalent)
-            Files.setPosixFilePermissions(helperScript, 
-                java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
-            
-            // Clone with credential helper configured
+            // Clone with token embedded in URL for authentication
+            String authenticatedUrl = repoUrl.replace("https://github.com/", "https://oauth2:" + githubToken + "@github.com/");
             ProcessBuilder pb = new ProcessBuilder(
-                gitBinary, "-c", "credential.helper=!f() { source \"" + helperScript + "\"; }; f",
-                "clone", repoUrl, repoDir.toString()
+                gitBinary, "clone", authenticatedUrl, repoDir.toString()
             );
             pb.redirectErrorStream(true);
             Process process = pb.start();
@@ -83,8 +111,8 @@ public class WorkspaceManager {
                 throw new IOException("Git clone failed: " + output);
             }
             
-            // Configure git to use credential helper for all future operations
-            runGit("config", "credential.helper", "!f() { source \"" + helperScript + "\"; }; f");
+            // Configure remote to use token for future push/pull operations
+            runGit("remote", "set-url", "origin", authenticatedUrl);
         } else {
             ProcessBuilder pb = new ProcessBuilder(gitBinary, "clone", repoUrl, repoDir.toString());
             pb.redirectErrorStream(true);
@@ -267,10 +295,20 @@ public class WorkspaceManager {
         return path.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
+    private void deletePath(Path path) throws IOException {
+        if (Files.isDirectory(path)) {
+            java.util.List<Path> children = java.nio.file.Files.list(path).toList();
+            for (Path child : children) {
+                deletePath(child);
+            }
+        }
+        Files.delete(path);
+    }
+
     /**
-     * Create a git credential helper script that returns the OAuth2 token.
-     * Written to .git/credential-helper.sh with 0600 permissions.
+     * @deprecated Use token-in-URL auth in cloneRepo() instead. Kept for tests.
      */
+    @Deprecated
     Path createCredentialHelper(Path repoDir, String token) throws IOException {
         Path gitDir = repoDir.resolve(".git");
         Files.createDirectories(gitDir);
@@ -278,7 +316,30 @@ public class WorkspaceManager {
         String scriptContent = "#!/bin/sh\necho \"username=oauth2\"\necho \"password=" + token + "\"";
         Files.writeString(helperScript, scriptContent);
         Files.setPosixFilePermissions(helperScript,
-            java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+            java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
         return helperScript;
+    }
+
+    /**
+     * Delete the workspace directory and all its contents.
+     */
+    public void cleanup() {
+        if (Files.exists(repoDir)) {
+            try {
+                deletePath(repoDir);
+                log.info("Cleaned up workspace: {}", repoDir);
+            } catch (IOException e) {
+                log.warn("Java delete failed, trying shell rm -rf: {}", e.getMessage());
+                try {
+                    ProcessBuilder rmPb = new ProcessBuilder("rm", "-rf", repoDir.toString());
+                    rmPb.redirectErrorStream(true);
+                    Process rmProcess = rmPb.start();
+                    rmProcess.waitFor();
+                    log.info("Cleaned up workspace via rm -rf: {}", repoDir);
+                } catch (IOException | InterruptedException ex) {
+                    log.error("Failed to cleanup workspace {}: {}", repoDir, ex.getMessage());
+                }
+            }
+        }
     }
 }

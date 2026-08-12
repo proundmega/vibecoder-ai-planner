@@ -28,7 +28,8 @@ async function updateTicket(req, res, next) {
     const ticket = await TicketService.getOne(req.params.ticketId, req.user.userId);
     const user = await User.find(req.user.userId);
     
-    const canUpdate = await PermissionService.hasPermission(user.role, 'TICKET_UPDATE');
+    const userRole = user?.role || req.user.role || 'member';
+    const canUpdate = await PermissionService.hasPermission(userRole, 'TICKET_UPDATE');
     if (!canUpdate && ticket.owner_id !== req.user.userId) {
       return res.status(403).json({ 
         success: false,
@@ -47,7 +48,7 @@ async function updateTicket(req, res, next) {
       }
     }
     
-    await TicketService.update(req.params.ticketId, filteredUpdates, req.user.userId);
+    await TicketService.update(req.params.ticketId, filteredUpdates, req.user.userId, userRole);
     res.json({ success: true, data: { message: 'Ticket updated' } });
   } catch (error) {
     next(error);
@@ -56,7 +57,7 @@ async function updateTicket(req, res, next) {
 
 async function deleteTicket(req, res, next) {
   try {
-    await TicketService.delete(req.params.ticketId, req.user.userId);
+    await TicketService.delete(req.params.ticketId, req.user.userId, req.user.role);
     res.json({ success: true, data: { message: 'Ticket deleted' } });
   } catch (error) {
     next(error);
@@ -102,8 +103,9 @@ async function changeStatus(req, res, next) {
     const ticket = await TicketService.getOne(req.params.ticketId, req.user.userId);
     const user = await User.find(req.user.userId);
     
-    const canChangeStatus = await PermissionService.hasPermission(user.role, 'TICKET_STATUS_CHANGE');
-    if (user.role === 'user' && status === 'done' && canChangeStatus) {
+    const userRole = user?.role || req.user.role || 'member';
+    const canChangeStatus = await PermissionService.hasPermission(userRole, 'TICKET_STATUS_CHANGE');
+    if (userRole === 'user' && status === 'done' && canChangeStatus) {
       if (ticket.status !== 'review') {
         return res.status(400).json({
           success: false,
