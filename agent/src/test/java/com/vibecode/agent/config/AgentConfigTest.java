@@ -38,6 +38,6 @@ class AgentConfigTest {
     void testGetApiUrl() {
         AgentConfig config = new AgentConfig();
         String apiUrl = config.getApiUrl();
-        assertTrue(apiUrl.endsWith("/api"));
+        assertTrue(apiUrl.endsWith("/api/v1"));
     }
 }

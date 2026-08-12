@@ -1,0 +1,20 @@
+#!/bin/bash
+# Agent runtime configuration template
+# Copy to run-agent.sh and fill in your values
+# NEVER commit run-agent.sh with real secrets
+
+export AGENT_API_KEY="your-agent-api-key-here"
+export AGENT_ID="2"
+export BACKEND_URL="http://192.168.3.50:3001/"
+export PROJECT_ID="1"
+export REPO_OWNER="your-github-username"
+export REPO_NAME="your-repo-name"
+export AI_PROVIDER="openai"
+export AI_ENDPOINT_URL="http://your-llm-server:5000/v1"
+export AI_MODEL="/path/to/your/model.gguf"
+export AI_API_KEY="your-ai-provider-api-key"
+export GITHUB_TOKEN="github_pat_your_token_here"
+export DRY_RUN="false"
+export MAX_TICKETS="1"
+
+java -jar agent/target/agent-1.0.0.jar

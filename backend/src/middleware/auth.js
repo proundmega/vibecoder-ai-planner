@@ -206,8 +206,8 @@ async function authenticateAgentByApiKey(apiKey) {
   // Mock validation for test keys
   if (apiKey.startsWith('test-') || apiKey === 'mock-agent-key') {
     return {
-      id: 'mock-agent-1',
-      name: 'GitHub PR Bot',
+      id: 1,
+      name: 'Test Agent',
       rateLimitCount: 0,
       _mock: true,
     };
@@ -300,6 +300,10 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
       email: agent.email || 'agent@vibecode.local',
       role: agent.role || 'member',
     };
+    // Ensure role always has a value (agents table has no role column)
+    if (!req.user.role) {
+      req.user.role = 'member';
+    }
     next();
   } catch {
     return res.status(401).json({ error: 'Invalid agent credentials' });

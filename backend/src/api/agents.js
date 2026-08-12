@@ -328,18 +328,18 @@ router.get('/:agentId/provider-config', async (req, res, next) => {
   try {
     const apiKey = req.headers['x-api-key'];
     if (!apiKey) {
-      return res.status(401).json({ error: 'X-API-Key header required' });
+      return res.status(401).json({ success: false, error: { code: 'MISSING_API_KEY', message: 'X-API-Key header required' } });
     }
     const config = await AgentService.getProviderConfig(req.params.agentId, apiKey);
-    res.json(config);
+    res.json({ success: true, data: config });
   } catch (error) {
     const errorMessages = {
-      AGENT_NOT_FOUND: 'Agent not found',
-      NO_PROVIDER: 'Agent has no provider configured',
-      PROVIDER_NOT_FOUND: 'Provider configuration not found',
+      AGENT_NOT_FOUND: { code: 'AGENT_NOT_FOUND', message: 'Agent not found' },
+      NO_PROVIDER: { code: 'NO_PROVIDER', message: 'Agent has no provider configured' },
+      PROVIDER_NOT_FOUND: { code: 'PROVIDER_NOT_FOUND', message: 'Provider configuration not found' },
     };
     if (error.message in errorMessages) {
-      return res.status(404).json({ error: errorMessages[error.message] });
+      return res.status(404).json({ success: false, error: errorMessages[error.message] });
     }
     logger.error('GET /api/agents/:agentId/provider-config', error);
     next(error);
