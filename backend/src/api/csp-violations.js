@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
 const { verifyToken } = require('../middleware/auth');
+const { requireAnyPermission } = require('../middleware/permissions');
 
 /**
  * @openapi
@@ -40,7 +41,7 @@ const { verifyToken } = require('../middleware/auth');
  *                     limit: { type: integer }
  *                     offset: { type: integer }
  */
-router.get('/', verifyToken, async (req, res, next) => {
+router.get('/', verifyToken, requireAnyPermission('CSP_READ'), async (req, res, next) => {
   try {
     const limit = parseInt(req.query.limit) || 20;
     const offset = parseInt(req.query.offset) || 0;
@@ -105,7 +106,7 @@ router.get('/', verifyToken, async (req, res, next) => {
  *                   properties:
  *                     deletedCount: { type: integer }
  */
-router.delete('/', verifyToken, async (req, res, next) => {
+router.delete('/', verifyToken, requireAnyPermission('CSP_DELETE'), async (req, res, next) => {
   try {
     const result = await pool.query('DELETE FROM csp_violations');
     res.json({

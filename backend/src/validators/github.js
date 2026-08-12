@@ -1,14 +1,11 @@
 const Joi = require('joi');
 
 const connectRepoSchema = Joi.object({
-  projectId: Joi.string().uuid().required().messages({
-    'string.guid': 'projectId must be a valid UUID',
-    'any.required': 'projectId is required',
+  repoUrl: Joi.string().uri().required().messages({
+    'string.uri': 'repoUrl must be a valid URI',
+    'any.required': 'repoUrl is required',
   }),
-  url: Joi.string().uri().required().messages({
-    'string.uri': 'url must be a valid URI',
-    'any.required': 'url is required',
-  }),
+  accessToken: Joi.string().min(1).optional(),
   branch: Joi.string().min(1).max(100).optional(),
 });
 

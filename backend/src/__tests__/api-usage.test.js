@@ -38,7 +38,7 @@ describe('Usage API', () => {
   describe('POST /api/v1/usage/agents/:agentId/usage', () => {
     it('should store usage and return 200 with valid agent key', async () => {
       const res = await request(app)
-        .post('/api/v1/usage/agents/mock-agent-1/usage')
+        .post('/api/v1/usage/agents/1/usage')
         .set('X-API-Key', 'test-agent-key')
         .send({
           provider_type: 'claude',
@@ -54,7 +54,7 @@ describe('Usage API', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.data.recorded).toBe(true);
       expect(UsageLogger.reportUsage).toHaveBeenCalledWith(
-        'mock-agent-1',
+        '1',
         expect.objectContaining({
           provider_type: 'claude',
           model: 'claude-sonnet-4-20250514',
@@ -66,7 +66,7 @@ describe('Usage API', () => {
 
     it('should return 400 for missing required fields', async () => {
       const res = await request(app)
-        .post('/api/v1/usage/agents/mock-agent-1/usage')
+        .post('/api/v1/usage/agents/1/usage')
         .set('X-API-Key', 'test-agent-key')
         .send({
           provider_type: 'claude',
@@ -83,7 +83,7 @@ describe('Usage API', () => {
 
     it('should return 401 without API key', async () => {
       const res = await request(app)
-        .post('/api/v1/usage/agents/mock-agent-1/usage')
+        .post('/api/v1/usage/agents/1/usage')
         .send({
           provider_type: 'claude',
           model: 'claude-sonnet-4-20250514',
@@ -115,7 +115,7 @@ describe('Usage API', () => {
     });
 
     it('should return 403 when agent ID does not match authenticated agent', async () => {
-      // test- prefixed keys resolve to 'mock-agent-1'
+      // test- prefixed keys resolve to id 1
       const res = await request(app)
         .post('/api/v1/usage/agents/999/usage')
         .set('X-API-Key', 'test-agent-key')
@@ -158,7 +158,7 @@ describe('Usage API', () => {
 
     it('should accept mock-agent-key', async () => {
       const res = await request(app)
-        .post('/api/v1/usage/agents/mock-agent-1/usage')
+        .post('/api/v1/usage/agents/1/usage')
         .set('X-API-Key', 'mock-agent-key')
         .send({
           provider_type: 'openai',
@@ -174,7 +174,7 @@ describe('Usage API', () => {
 
     it('should accept planning_stage and file_keys in request body', async () => {
       const res = await request(app)
-        .post('/api/v1/usage/agents/mock-agent-1/usage')
+        .post('/api/v1/usage/agents/1/usage')
         .set('X-API-Key', 'test-agent-key')
         .send({
           provider_type: 'claude',
@@ -190,7 +190,7 @@ describe('Usage API', () => {
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
       expect(UsageLogger.reportUsage).toHaveBeenCalledWith(
-        'mock-agent-1',
+        '1',
         expect.objectContaining({
           planning_stage: 'plan_generation',
           file_keys: ['01_ARCHITECT_REQUIREMENT.md', '02_ARCHITECT_DESIGN.md'],

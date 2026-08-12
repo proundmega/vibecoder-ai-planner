@@ -944,9 +944,13 @@ describe('TicketService.delete()', () => {
 });
 
 describe('ApprovalRequest model', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    pool.query.mockReset().mockResolvedValue({ rows: [] });
+  });
+
   describe('create()', () => {
     it('should insert approval request', async () => {
-      jest.clearAllMocks();
       const ApprovalRequest = require('../models/approval');
       pool.query.mockResolvedValue({
         rows: [{ id: 1, ticket_id: 1, requested_by: 1, status: 'pending' }],

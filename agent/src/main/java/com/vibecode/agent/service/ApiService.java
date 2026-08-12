@@ -222,11 +222,25 @@ public class ApiService {
      * Get decrypted provider config for this agent from the backend.
      */
     public Map<String, Object> getProviderConfig(String agentId) throws IOException {
-        String url = baseUrl + "/v1/agents/" + agentId + "/provider-config";
+        String url = baseUrl + "/agents/" + agentId + "/provider-config";
         ApiResponse<Map<String, Object>> response = executeGet(url, new TypeReference<ApiResponse<Map<String, Object>>>() {});
         
         if (response.hasError()) {
             throw new IOException("Failed to get provider config: " + response.getError());
+        }
+        
+        return response.getData();
+    }
+
+    /**
+     * Get repository connection config (including GitHub PAT) for the project.
+     */
+    public Map<String, Object> getRepoConfig(String projectId) throws IOException {
+        String url = baseUrl + "/github/" + projectId + "/repo/agent";
+        ApiResponse<Map<String, Object>> response = executeGet(url, new TypeReference<ApiResponse<Map<String, Object>>>() {});
+        
+        if (response.hasError()) {
+            throw new IOException("Failed to get repo config: " + response.getError());
         }
         
         return response.getData();

@@ -58,3 +58,8 @@ pgbouncer/certs/
 # Test artifacts
 cypress/screenshots/
 cypress/videos/
+
+# Agent runtime scripts (contain secrets)
+run-agent.sh
+agent/run-agent.sh
+!agent/run-agent.sh.example

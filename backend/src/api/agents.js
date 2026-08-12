@@ -2,6 +2,8 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const AgentService = require('../services/AgentService');
+const ProviderService = require('../services/ProviderService');
+const PermissionService = require('../services/PermissionService');
 const { verifyTokenOrAgent } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
@@ -281,7 +283,8 @@ router.get('/:agentId/history', verifyTokenOrAgent, requireAnyPermission('AGENT_
  */
 router.get('/:agentId/key', verifyTokenOrAgent, async (req, res) => {
   try {
-    const agents = await AgentService.list(req.user.userId);
+    const userId = req.agent ? req.agent.owner_id : req.user.userId;
+    const agents = await AgentService.list(userId);
     const agent = agents.find(a => String(a.id) === String(req.params.agentId));
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -325,20 +328,88 @@ router.get('/:agentId/provider-config', async (req, res, next) => {
   try {
     const apiKey = req.headers['x-api-key'];
     if (!apiKey) {
-      return res.status(401).json({ error: 'X-API-Key header required' });
+      return res.status(401).json({ success: false, error: { code: 'MISSING_API_KEY', message: 'X-API-Key header required' } });
     }
     const config = await AgentService.getProviderConfig(req.params.agentId, apiKey);
-    res.json(config);
+    res.json({ success: true, data: config });
   } catch (error) {
     const errorMessages = {
-      AGENT_NOT_FOUND: 'Agent not found',
-      NO_PROVIDER: 'Agent has no provider configured',
-      PROVIDER_NOT_FOUND: 'Provider configuration not found',
+      AGENT_NOT_FOUND: { code: 'AGENT_NOT_FOUND', message: 'Agent not found' },
+      NO_PROVIDER: { code: 'NO_PROVIDER', message: 'Agent has no provider configured' },
+      PROVIDER_NOT_FOUND: { code: 'PROVIDER_NOT_FOUND', message: 'Provider configuration not found' },
     };
     if (error.message in errorMessages) {
-      return res.status(404).json({ error: errorMessages[error.message] });
+      return res.status(404).json({ success: false, error: errorMessages[error.message] });
     }
     logger.error('GET /api/agents/:agentId/provider-config', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /agents/{agentId}/provider-config/changed:
+ *   get:
+ *     tags: [Agents]
+ *     summary: Check if provider config has changed
+ *     parameters:
+ *       - in: path
+ *         name: agentId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: since
+ *         schema: { type: string, format: date-time }
+ *     security:
+ *       - apiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Config change status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     changed: { type: boolean }
+ *                     lastUpdated: { type: string, format: date-time }
+ */
+router.get('/:agentId/provider-config/changed', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const agentId = req.params.agentId;
+    const since = req.query.since;
+    
+    // Ownership check: agent can only poll its own config-change status
+    if (req.agent) {
+      const agent = await AgentService.findById(agentId);
+      if (!agent || String(agent.id) !== String(req.agent.id)) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Invalid API key for this agent' }
+        });
+      }
+    } else if (req.user) {
+      // JWT-authenticated users need AGENT_READ permission
+      const hasPermission = await PermissionService.hasPermission(req.user.role, 'AGENT_READ');
+      if (!hasPermission) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Insufficient permissions' }
+        });
+      }
+    }
+    
+    const result = await ProviderService.getProviderConfigChange(agentId, since);
+    
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    logger.error('GET /api/agents/:agentId/provider-config/changed', error);
     next(error);
   }
 });

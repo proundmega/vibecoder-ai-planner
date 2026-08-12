@@ -1,5 +1,9 @@
 package com.vibecode.agent.config;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 
 /**
@@ -20,9 +24,10 @@ import java.time.Duration;
  *   AI_API_KEY          - AI provider API key (falls back to env if not in DB)
  *   AI_ENDPOINT_URL     - OpenAI-compatible endpoint URL (e.g., http://localhost:11434/v1)
  *   AI_MAX_TOKENS       - Max tokens for AI responses (default: 4096)
+ *   GITHUB_TOKEN        - GitHub Personal Access Token (falls back to backend API)
  *   DRY_RUN             - If "true", don't create branches/PRs (default: false)
  *   MAX_TICKETS         - Max tickets to process per cycle (default: 1)
- *   REPO_CLONE_DIR      - Directory to clone repos into (default: /repos)
+ *   REPO_CLONE_DIR      - Directory to clone repos into (default: /tmp/repos)
  */
 public class AgentConfig {
 
@@ -42,6 +47,7 @@ public class AgentConfig {
     private final boolean dryRun;
     private final int maxTicketsPerCycle;
     private final String repoCloneDir;
+    private final String githubToken;
 
     public AgentConfig() {
         this.agentApiKey = requireEnv("AGENT_API_KEY");
@@ -57,9 +63,32 @@ public class AgentConfig {
         this.aiApiKey = getEnv("AI_API_KEY", null);
         this.aiEndpointUrl = getEnv("AI_ENDPOINT_URL", "");
         this.aiMaxTokens = getIntEnv("AI_MAX_TOKENS", 4096);
+        this.githubToken = getEnv("GITHUB_TOKEN", null);
         this.dryRun = "true".equalsIgnoreCase(getEnv("DRY_RUN", "false"));
         this.maxTicketsPerCycle = getIntEnv("MAX_TICKETS", 1);
-        this.repoCloneDir = getEnv("REPO_CLONE_DIR", "/repos");
+        this.repoCloneDir = getEnv("REPO_CLONE_DIR", "/tmp/repos");
+        validateCloneDir(this.repoCloneDir);
+    }
+
+    private static void validateCloneDir(String dir) {
+        Path path = Paths.get(dir);
+        if (!Files.exists(path)) {
+            try {
+                Files.createDirectories(path);
+            } catch (IOException e) {
+                throw new IllegalStateException("Cannot create REPO_CLONE_DIR: " + dir + " - " + e.getMessage());
+            }
+        }
+        if (!Files.isDirectory(path) || !Files.isWritable(path)) {
+            throw new IllegalStateException("REPO_CLONE_DIR is not writable: " + dir);
+        }
+        try {
+            Path testFile = path.resolve(".write-test");
+            Files.writeString(testFile, "ok");
+            Files.delete(testFile);
+        } catch (IOException e) {
+            throw new IllegalStateException("Cannot write to REPO_CLONE_DIR: " + dir + " - " + e.getMessage());
+        }
     }
 
     public String getAgentApiKey() { return agentApiKey; }
@@ -78,9 +107,10 @@ public class AgentConfig {
     public boolean isDryRun() { return dryRun; }
     public int getMaxTicketsPerCycle() { return maxTicketsPerCycle; }
     public String getRepoCloneDir() { return repoCloneDir; }
+    public String getGitHubToken() { return githubToken; }
 
     public String getApiUrl() {
-        return backendUrl.endsWith("/") ? backendUrl + "api" : backendUrl + "/api";
+        return backendUrl.endsWith("/") ? backendUrl + "api/v1" : backendUrl + "/api/v1";
     }
 
     public String getGitHubBranchName(Long ticketId, String ticketTitle) {

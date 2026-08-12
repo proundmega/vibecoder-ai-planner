@@ -281,4 +281,64 @@ describe('TicketService', () => {
         .toThrow(ForbiddenError);
     });
   });
+
+  describe('Agent-initiated operations with userRole', () => {
+    const mockTicket = {
+      id: 't1',
+      title: 'Test ticket',
+      description: 'Test',
+      status: 'backlog',
+      priority: 'medium',
+      ownerId: 100,
+      projectId: 1,
+      assignedAgentId: null,
+      phase: 'draft',
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      Ticket.findById.mockResolvedValue(mockTicket);
+      PermissionService.hasPermission.mockResolvedValue(true);
+    });
+
+    test('update should trust userRole from controller, not re-query User', async () => {
+      await TicketService.update('t1', { title: 'Updated' }, 100, 'member');
+      
+      // User.find should NOT be called since userRole is passed
+      expect(User.find).not.toHaveBeenCalled();
+      expect(PermissionService.hasPermission).toHaveBeenCalledWith('member', 'TICKET_UPDATE');
+    });
+
+    test('delete should trust userRole from controller, not re-query User', async () => {
+      await TicketService.delete('t1', 100, 'member');
+      
+      // User.find should NOT be called since userRole is passed
+      expect(User.find).not.toHaveBeenCalled();
+      expect(PermissionService.hasPermission).toHaveBeenCalledWith('member', 'TICKET_DELETE');
+    });
+
+    test('update with agent role should use agent role for permissions', async () => {
+      await TicketService.update('t1', { title: 'Updated' }, 100, 'agent');
+      
+      expect(PermissionService.hasPermission).toHaveBeenCalledWith('agent', 'TICKET_UPDATE');
+    });
+
+    test('delete with agent role should use agent role for permissions', async () => {
+      await TicketService.delete('t1', 100, 'agent');
+      
+      expect(PermissionService.hasPermission).toHaveBeenCalledWith('agent', 'TICKET_DELETE');
+    });
+
+    test('update without userRole falls back to member', async () => {
+      await TicketService.update('t1', { title: 'Updated' }, 100, undefined);
+      
+      expect(PermissionService.hasPermission).toHaveBeenCalledWith('member', 'TICKET_UPDATE');
+    });
+
+    test('delete without userRole falls back to member', async () => {
+      await TicketService.delete('t1', 100, undefined);
+      
+      expect(PermissionService.hasPermission).toHaveBeenCalledWith('member', 'TICKET_DELETE');
+    });
+  });
 });
