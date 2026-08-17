@@ -376,7 +376,7 @@ router.get('/:agentId/provider-config', async (req, res, next) => {
  *                   properties:
  *                     changed: { type: boolean }
  *                     lastUpdated: { type: string, format: date-time }
- * */
+ */
 router.get('/:agentId/provider-config/changed', verifyTokenOrAgent, async (req, res, next) => {
   try {
     const agentId = req.params.agentId;
