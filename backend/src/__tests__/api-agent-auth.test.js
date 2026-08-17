@@ -26,7 +26,7 @@ describe('GET /api/v1/tickets/:id/planning — agent auth', () => {
     jest.clearAllMocks();
   });
 
-  it('should return 200 with X-API-Key header (regression: was 401 Missing authentication token)', async () => {
+  it('should return 401 with X-API-Key header (planning routes require user auth only)', async () => {
     pool.query.mockImplementation((sql) => {
       if (sql.includes('SELECT t.id, t.project_id')) {
         return Promise.resolve({
@@ -40,8 +40,8 @@ describe('GET /api/v1/tickets/:id/planning — agent auth', () => {
       .get('/api/v1/tickets/t1/planning')
       .set('X-API-Key', 'test-agent-key');
 
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
+    expect(res.statusCode).toBe(401);
+    expect(res.body.error).toBe('Missing authentication token');
   });
 
   it('should return 200 with Bearer JWT token', async () => {
