@@ -4,8 +4,6 @@ const { requireAnyPermission } = require('../middleware/permissions');
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema } = require('../validators/tickets');
-const { statusFilterSchema } = require('../validators/statusFilter');
-const { paginationSchema } = require('../validators/pagination');
 const ticketController = require('../controllers/ticketController');
 const phaseService = require('../services/PhaseService');
 const GitHubService = require('../services/GitHubService');
@@ -52,7 +50,7 @@ router.post('/', verifyTokenOrAgent, requireAnyPermission('TICKET_CREATE'), vali
  *       200:
  *         description: List of tickets
  */
-router.get('/project/:projectId', verifyTokenOrAgent, validate({ query: statusFilterSchema }), ticketController.getProjectTickets);
+router.get('/project/:projectId', verifyTokenOrAgent, ticketController.getProjectTickets);
 
 /**
  * @openapi
@@ -235,7 +233,7 @@ router.post('/:ticketId/comments', verifyToken, requireAnyPermission('TICKET_COM
  *       200:
  *         description: List of messages
  */
-router.get('/:ticketId/messages', verifyTokenOrAgent, validate({ query: paginationSchema }), ticketController.getMessages);
+router.get('/:ticketId/messages', verifyTokenOrAgent, ticketController.getMessages);
 
 /**
  * @openapi
