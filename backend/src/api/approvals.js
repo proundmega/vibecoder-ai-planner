@@ -5,6 +5,13 @@ const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
 const ApprovalService = require('../services/ApprovalService');
 const { createApprovalSchema } = require('../validators/approvals');
+const Joi = require('joi');
+
+const approvalQuerySchema = Joi.object({
+  status: Joi.string().valid('pending', 'approved', 'rejected').optional(),
+  page: Joi.number().integer().min(1).default(1),
+  perPage: Joi.number().integer().min(1).max(100).default(20),
+});
 const logger = require('../utils/logger');
 
 /**
@@ -59,7 +66,7 @@ router.post('/', verifyToken, validate(createApprovalSchema), async (req, res) =
  *       403:
  *         description: Forbidden - super admin only
  */
-router.get('/', verifyToken, requireAnyPermission('APPROVAL_VIEW'), async (req, res) => {
+router.get('/', verifyToken, requireAnyPermission('APPROVAL_VIEW'), validate({ query: approvalQuerySchema }), async (req, res) => {
   try {
     const { status, page = 1, perPage = 20 } = req.query;
     const result = await ApprovalService.getAll({ status, page, perPage });
