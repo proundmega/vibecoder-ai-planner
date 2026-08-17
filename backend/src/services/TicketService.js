@@ -47,14 +47,14 @@ class TicketService {
     };
   }
 
-  async update(id, data, userId) {
+  async update(id, data, userId, userRole) {
     const ticket = await Ticket.findById(id);
     if (!ticket) throw new NotFoundError('Ticket not found');
 
-    const user = await User.find(userId);
+    const role = userRole || 'member';
     
     // Permission check: roles with TICKET_UPDATE can edit, users can only edit their own
-    const canUpdate = await PermissionService.hasPermission(user.role, 'TICKET_UPDATE');
+    const canUpdate = await PermissionService.hasPermission(role, 'TICKET_UPDATE');
     if (!canUpdate && ticket.ownerId !== userId) {
       throw new ForbiddenError('Unauthorized to edit this ticket');
     }
@@ -111,11 +111,11 @@ class TicketService {
 
     return await Ticket.update(
       id,
-      data.title !== undefined ? data.title : null,
-      data.description !== undefined ? data.description : null,
-      data.status !== undefined ? data.status : null,
-      data.priority !== undefined ? data.priority : null,
-      data.assigneeId !== undefined ? data.assigneeId : null,
+      data.title,
+      data.description,
+      data.status,
+      data.priority,
+      data.assigneeId,
       userId
     );
   }
@@ -181,12 +181,12 @@ class TicketService {
     return result.rows[0];
   }
 
-  async delete(id, userId) {
+  async delete(id, userId, userRole) {
     const ticket = await Ticket.findById(id);
     if (!ticket) throw new NotFoundError('Ticket not found');
 
-    const user = await User.find(userId);
-    const canDelete = await PermissionService.hasPermission(user.role, 'TICKET_DELETE');
+    const role = userRole || 'member';
+    const canDelete = await PermissionService.hasPermission(role, 'TICKET_DELETE');
     if (!canDelete && ticket.ownerId !== userId) {
       throw new ForbiddenError('Forbidden');
     }

@@ -11,6 +11,7 @@ describe('ProviderService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     decrypt.mockReturnValue('decrypted-mock-key');
+    ProviderService.invalidateProviderCache();
   });
 
   describe('getProjectProviders', () => {

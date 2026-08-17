@@ -46,7 +46,7 @@ router.post('/:id/heartbeat', async (req, res, next) => {
       return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'X-API-Key header required' } });
     }
     const agent = await AgentService.getAgentByApiKey(apiKey);
-    if (!agent || agent.id !== Number(req.params.id)) {
+    if (!agent || String(agent.id) !== String(req.params.id)) {
       return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Invalid API key for this agent' } });
     }
     const { current_ticket_id, current_step, memory_usage, cpu_usage } = req.body;

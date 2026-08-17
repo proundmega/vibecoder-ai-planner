@@ -5,7 +5,6 @@ vi.mock('../api/client', () => ({
   get: vi.fn(),
   post: vi.fn(),
   del: vi.fn(),
-  postWithHeaders: vi.fn(),
 }))
 
 describe('agents API', () => {

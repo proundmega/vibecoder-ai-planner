@@ -4,15 +4,20 @@
 
 ## Ticket: bp-111 — FE↔BE Response-Shape & Payload Fixes
 
-**Status**: planned
+**Status**: completed
 **Priority**: P1
 **Effort**: Small
 **Author**: AI Assistant
 **Date created**: 2026-08-06
-**Date completed**:
-**PR**:
-**Branch**:
+**Date completed**: 2026-08-06
+**PR**: (merged to master)
+**Branch**: master
 **Scope**: Frontend
+
+**Follow-up (2026-08-06)**: 3 deferred items from 04_SPECIFICATION.md completed in same session:
+- PR form cleanup: Removed prTitle/prBranchName inputs from GitHubConnections.vue (backend derives from ticket)
+- Dead code: Removed postWithHeaders from client.ts (never used in production)
+- Route-mount audit: Created scripts/route-mount-audit.js (detects drift between router files and v1/index.js mounts)
 
 **Dependencies**: none (independent of fg-13; backend untouched)
 

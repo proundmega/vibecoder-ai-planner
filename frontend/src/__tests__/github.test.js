@@ -127,18 +127,26 @@ describe('github API', () => {
   })
 
   describe('createPR', () => {
-    it('sends POST request with title, body, and branchName', async () => {
+    it('sends POST request with description and projectId', async () => {
       const { post } = await import('../api/client')
       post.mockResolvedValue({ id: 'pr-1', url: 'https://github.com/pr/1' })
 
-      const result = await github.createPR('ticket-1', 'Fix bug', 'Fixed the bug', 'feature/fix-bug')
+      const result = await github.createPR('ticket-1', 'my description')
 
       expect(post).toHaveBeenCalledWith('/api/v1/github/ticket-1/pr', {
-        title: 'Fix bug',
-        body: 'Fixed the bug',
-        branchName: 'feature/fix-bug',
+        description: 'my description',
+        projectId: undefined,
       })
       expect(result).toEqual({ id: 'pr-1', url: 'https://github.com/pr/1' })
+    })
+
+    it('[R3] createPR posts { description } (not { title, body, branchName })', async () => {
+      const { post } = await import('../api/client')
+      post.mockResolvedValue({ id: 1 })
+
+      await github.createPR('t1', 'my description')
+
+      expect(post).toHaveBeenCalledWith('/api/v1/github/t1/pr', { description: 'my description', projectId: undefined })
     })
   })
 })

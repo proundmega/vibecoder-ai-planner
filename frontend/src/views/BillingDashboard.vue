@@ -11,7 +11,7 @@ const billingError = ref(null)
 const billingData = ref([])
 
 const totalCost = computed(() => {
-  return billingData.value.reduce((sum, b) => sum + (parseFloat(b.total_cost_usd) || 0), 0).toFixed(4)
+  return billingData.value.reduce((sum, b) => sum + (parseFloat(b.total_cost) || 0), 0).toFixed(4)
 })
 
 const totalCalls = computed(() => {
@@ -19,11 +19,11 @@ const totalCalls = computed(() => {
 })
 
 const totalTokensIn = computed(() => {
-  return billingData.value.reduce((sum, b) => sum + (parseInt(b.total_tokens_in) || 0), 0).toLocaleString()
+  return billingData.value.reduce((sum, b) => sum + (parseInt(b.total_in) || 0), 0).toLocaleString()
 })
 
 const totalTokensOut = computed(() => {
-  return billingData.value.reduce((sum, b) => sum + (parseInt(b.total_tokens_out) || 0), 0).toLocaleString()
+  return billingData.value.reduce((sum, b) => sum + (parseInt(b.total_out) || 0), 0).toLocaleString()
 })
 
 const billingPeriods = computed(() => {
@@ -111,11 +111,11 @@ onMounted(async () => {
               </thead>
               <tbody>
                 <tr v-for="row in billingData" :key="`${row.project_id}-${row.billing_month}`">
-                  <td>{{ row.project_name }}</td>
+                  <td>{{ row.project_name || row.project_id }}</td>
                   <td>{{ row.billing_month }}</td>
                   <td>{{ parseInt(row.total_calls || 0).toLocaleString() }}</td>
-                  <td>{{ parseInt(row.total_tokens_in || 0).toLocaleString() }}</td>
-                  <td>{{ parseInt(row.total_tokens_out || 0).toLocaleString() }}</td>
+                  <td>{{ parseInt(row.total_in || 0).toLocaleString() }}</td>
+                  <td>{{ parseInt(row.total_out || 0).toLocaleString() }}</td>
                   <td>${{ (parseFloat(row.total_cost) || 0).toFixed(4) }}</td>
                 </tr>
               </tbody>

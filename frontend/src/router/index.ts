@@ -145,6 +145,12 @@ const routes = [
         component: () => import('../views/CodeReview.vue'),
         meta: { requiresAuth: true },
       },
+      {
+        path: 'milestones',
+        name: 'ProjectMilestones',
+        component: () => import('../views/ProjectMilestones.vue'),
+        meta: { requiresAuth: true },
+      },
     ],
   },
 
@@ -169,7 +175,8 @@ const routes = [
 
   {
     path: '/:pathMatch(.*)*',
-    redirect: '/projects',
+    name: 'NotFound',
+    component: () => import('../views/ErrorPage.vue'),
   },
 ];
 

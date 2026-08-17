@@ -54,12 +54,12 @@ describe('useUsage', () => {
     const usage = useUsage(1)
     const mockBilling = {
       project_id: '1',
-      total_cost_usd: 0.25,
+      total_cost: 0.25,
       total_calls: 50,
-      total_tokens_in: 1000,
-      total_tokens_out: 500,
+      total_in: 1000,
+      total_out: 500,
     }
-    mockGetProjectBilling.mockResolvedValue(mockBilling)
+    mockGetProjectBilling.mockResolvedValue([mockBilling])
 
     await usage.loadBilling()
     expect(usage.billingLoading.value).toBe(false)
@@ -74,5 +74,23 @@ describe('useUsage', () => {
     await usage.loadBilling()
     expect(usage.billingLoading.value).toBe(false)
     expect(usage.billingError.value).toBe('Failed to load billing data')
+  })
+
+  it('[R2] loadBilling stores a flat array (no nested [result])', async () => {
+    const usage = useUsage(1)
+    mockGetProjectBilling.mockResolvedValue([{ provider_type: 'openai', model: 'gpt-4', total_cost: 1.5 }])
+
+    await usage.loadBilling()
+
+    expect(usage.billing.value).toEqual([{ provider_type: 'openai', model: 'gpt-4', total_cost: 1.5 }])
+  })
+
+  it('[R2] loadBilling sets [] when result is null', async () => {
+    const usage = useUsage(1)
+    mockGetProjectBilling.mockResolvedValue(null)
+
+    await usage.loadBilling()
+
+    expect(usage.billing.value).toEqual([])
   })
 })

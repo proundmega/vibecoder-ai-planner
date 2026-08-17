@@ -82,6 +82,6 @@ describe('Agent Key Rotation - Middleware', () => {
     await auth.agentAuth(mockReq, mockRes, nextFn);
 
     expect(nextFn).toHaveBeenCalled();
-    expect(mockReq.agent.id).toBe('mock-agent-1');
+    expect(mockReq.agent.id).toBe(1);
   });
 });

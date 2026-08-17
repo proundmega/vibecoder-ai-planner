@@ -1,4 +1,5 @@
 const ProviderRouter = require('../services/ProviderRouter');
+const ProviderService = require('../services/ProviderService');
 const { encrypt, decrypt, maskToken } = require('../utils/crypto');
 const { NotFoundError } = require('../errors/HttpError');
 const { pool } = require('../db');
@@ -69,6 +70,8 @@ async function addProvider(req, res, next) {
         updatedAt: row.updated_at,
       },
     });
+    
+    ProviderService.invalidateProviderCache();
   } catch (error) {
     next(error);
   }
@@ -249,6 +252,8 @@ async function updateProvider(req, res, next) {
         },
       });
     }
+    
+    ProviderService.invalidateProviderCache();
   } catch (error) {
     next(error);
   }
@@ -268,6 +273,8 @@ async function deleteProvider(req, res, next) {
     }
 
     res.json({ success: true, data: { message: 'Provider deleted' } });
+    
+    ProviderService.invalidateProviderCache();
   } catch (error) {
     next(error);
   }

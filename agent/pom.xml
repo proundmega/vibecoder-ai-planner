@@ -120,6 +120,16 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
+                <configuration>
+                    <environmentVariables>
+                        <AGENT_API_KEY>test-key</AGENT_API_KEY>
+                        <AGENT_ID>test-id</AGENT_ID>
+                        <BACKEND_URL>http://localhost:3001</BACKEND_URL>
+                        <PROJECT_ID>1</PROJECT_ID>
+                        <REPO_OWNER>test-owner</REPO_OWNER>
+                        <REPO_NAME>test-repo</REPO_NAME>
+                    </environmentVariables>
+                </configuration>
             </plugin>
         </plugins>
     </build>

@@ -3,6 +3,8 @@ package com.vibecode.agent.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -15,6 +17,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class GitHubService {
 
+    private static final Logger log = LoggerFactory.getLogger(GitHubService.class);
     private static final String API_BASE = "https://api.github.com";
 
     private final String authToken;
@@ -110,11 +113,24 @@ public class GitHubService {
      * Create a pull request.
      */
     public String createPullRequest(String title, String body, String headBranch, String baseBranch) throws IOException {
+        // Auto-detect default branch if baseBranch is not found
+        String actualBase = baseBranch;
+        try {
+            getBranchSha(baseBranch);
+        } catch (IOException e) {
+            log.warn("Base branch '{}' not found, trying to detect default branch", baseBranch);
+            String detected = detectDefaultBranch();
+            if (detected != null) {
+                actualBase = detected;
+                log.info("Detected default branch: {}", actualBase);
+            }
+        }
+        
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("title", title);
         requestBody.put("body", body);
         requestBody.put("head", headBranch);
-        requestBody.put("base", baseBranch);
+        requestBody.put("base", actualBase);
         requestBody.put("draft", false);
 
         String bodyJson = objectMapper.writeValueAsString(requestBody);
@@ -136,6 +152,28 @@ public class GitHubService {
             JsonNode root = objectMapper.readTree(response.body().string());
             return root.path("html_url").asText();
         }
+    }
+
+    private String detectDefaultBranch() throws IOException {
+        Request request = new Request.Builder()
+            .url(API_BASE + "/repos/" + owner + "/" + repo)
+            .header("Authorization", "token " + authToken)
+            .header("Accept", "application/vnd.github+json")
+            .get()
+            .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (response.isSuccessful()) {
+                JsonNode root = objectMapper.readTree(response.body().string());
+                String defaultBranch = root.path("default_branch").asText();
+                if (defaultBranch != null && !defaultBranch.isEmpty()) {
+                    return defaultBranch;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to detect default branch: {}", e.getMessage());
+        }
+        return null;
     }
 
     private String getBranchSha(String branchName) throws IOException {

@@ -1,5 +1,6 @@
 const ProjectService = require('../services/ProjectService');
 const TicketService = require('../services/TicketService');
+const User = require('../models/user');
 const { pool } = require('../db');
 
 async function listProjects(req, res, next) {
@@ -119,7 +120,8 @@ async function createProjectTicket(req, res, next) {
 async function updateProjectTicket(req, res, next) {
   try {
     const { title, description, status, priority, assigneeId } = req.body;
-    await TicketService.update(req.params.ticketId, { title, description, status, priority, assigneeId }, req.user.userId);
+    const user = await User.find(req.user.userId);
+    await TicketService.update(req.params.ticketId, { title, description, status, priority, assigneeId }, req.user.userId, user?.role);
     res.json({ success: true, data: { message: 'Ticket updated', status: req.body.status } });
   } catch (error) {
     next(error);
@@ -128,7 +130,7 @@ async function updateProjectTicket(req, res, next) {
 
 async function deleteProjectTicket(req, res, next) {
   try {
-    await TicketService.delete(req.params.ticketId, req.user.userId);
+    await TicketService.delete(req.params.ticketId, req.user.userId, req.user.role);
     res.json({ success: true, data: { message: 'Ticket deleted' } });
   } catch (error) {
     next(error);

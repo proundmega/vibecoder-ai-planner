@@ -89,14 +89,14 @@ describe('auth middleware', () => {
     test('should accept test- prefixed API keys', async () => {
       mockReq.headers['x-api-key'] = 'test-key-123';
       await auth.agentAuth(mockReq, mockRes, nextFn);
-      expect(mockReq.agent.id).toBe('mock-agent-1');
+      expect(mockReq.agent.id).toBe(1);
       expect(nextFn).toHaveBeenCalled();
     });
 
     test('should accept mock-agent-key', async () => {
       mockReq.headers['x-api-key'] = 'mock-agent-key';
       await auth.agentAuth(mockReq, mockRes, nextFn);
-      expect(mockReq.agent.id).toBe('mock-agent-1');
+      expect(mockReq.agent.id).toBe(1);
       expect(nextFn).toHaveBeenCalled();
     });
 
@@ -162,8 +162,8 @@ describe('auth middleware', () => {
 
       await auth.verifyTokenOrAgent(mockReq, mockRes, nextFn);
 
-      expect(mockReq.agent.id).toBe('mock-agent-1');
-      expect(mockReq.user.userId).toBe('mock-agent-1');
+      expect(mockReq.agent.id).toBe(1);
+      expect(mockReq.user.userId).toBe(1);
       expect(nextFn).toHaveBeenCalled();
     });
 

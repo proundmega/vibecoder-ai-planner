@@ -191,27 +191,6 @@ describe('client API', () => {
     })
   })
 
-  describe('postWithHeaders', () => {
-    it('sends POST with extra headers merged with defaults', async () => {
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ data: { id: 1 } }),
-      })
-
-      await client.postWithHeaders('/api/test', { name: 'test' }, { 'X-API-Key': 'agent-key' })
-
-      expect(global.fetch).toHaveBeenCalledWith('/api/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer test-token',
-          'X-API-Key': 'agent-key',
-        },
-        body: JSON.stringify({ name: 'test' }),
-      })
-    })
-  })
-
   describe('401 handling', () => {
     it('calls logout and redirects on 401', async () => {
       global.fetch.mockResolvedValue({
@@ -324,18 +303,6 @@ describe('client API', () => {
       await client.del('/api/test/1', { validate: mockValidator })
 
       expect(mockValidator).toHaveBeenCalledWith({ success: true, data: { deleted: true } })
-    })
-
-    it('validator is called with extracted data for postWithHeaders', async () => {
-      const mockValidator = vi.fn()
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ success: true, data: { id: 1 } }),
-      })
-
-      await client.postWithHeaders('/api/test', { name: 'test' }, { 'X-API-Key': 'key' }, { validate: mockValidator })
-
-      expect(mockValidator).toHaveBeenCalledWith({ success: true, data: { id: 1 } })
     })
 
     it('validator is called with extracted data for postMultipart', async () => {

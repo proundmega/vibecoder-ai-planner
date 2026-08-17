@@ -28,7 +28,7 @@ export function useUsage(projectId: string | number) {
     billingError.value = null
     try {
       const result = await getProjectBilling(String(projectId))
-      billing.value = result ? [result] : []
+      billing.value = result ?? []
     } catch (_err) {
       billingError.value = 'Failed to load billing data'
     } finally {

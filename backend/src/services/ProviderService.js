@@ -2,14 +2,63 @@ const { pool } = require('../db');
 const { decrypt } = require('../utils/crypto');
 
 class ProviderService {
+  constructor() {
+    this.cache = new Map();
+    this.cacheTtl = 300000; // 5 minutes
+  }
+
   async getProjectProviders(projectId) {
+    const cacheKey = `provider:${projectId || 'global'}`;
+    const cached = this.cache.get(cacheKey);
+    
+    if (cached && (Date.now() - cached.timestamp < this.cacheTtl)) {
+      return cached.providers;
+    }
+
     const result = await pool.query(
       `SELECT * FROM providers
        WHERE (project_id = $1 OR project_id IS NULL) AND is_active = true
        ORDER BY project_id IS NULL ASC`,
       [projectId]
     );
+    
+    this.cache.set(cacheKey, { providers: result.rows, timestamp: Date.now() });
     return result.rows;
+  }
+
+  invalidateProviderCache(projectId = null) {
+    if (projectId) {
+      this.cache.delete(`provider:${projectId}`);
+    } else {
+      this.cache.clear();
+    }
+  }
+
+  async getProviderConfigChange(agentId, sinceTimestamp) {
+    const AgentService = require('./AgentService');
+    const agent = await AgentService.findById(agentId);
+    
+    if (!agent || !agent.provider_id) {
+      return { changed: false, lastUpdated: null };
+    }
+
+    const result = await pool.query(
+      `SELECT updated_at FROM providers WHERE id = $1`,
+      [agent.provider_id]
+    );
+
+    if (!result.rows[0] || !result.rows[0].updated_at) {
+      return { changed: false, lastUpdated: null };
+    }
+
+    const updatedAt = new Date(result.rows[0].updated_at);
+    const since = sinceTimestamp ? new Date(sinceTimestamp) : new Date(0);
+    const changed = updatedAt > since;
+
+    return {
+      changed,
+      lastUpdated: updatedAt.toISOString(),
+    };
   }
 
   async resolveProvider(ticketInfo, projectId = null) {

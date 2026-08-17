@@ -69,6 +69,21 @@ class GitHubService {
     return this._formatRepoResult(result.rows[0]);
   }
 
+  async getProjectRepoForAgent(projectId) {
+    const result = await pool.query(
+      'SELECT * FROM project_repos WHERE project_id = $1 AND is_active = TRUE',
+      [projectId]
+    );
+
+    if (result.rows.length === 0) return null;
+
+    const row = result.rows[0];
+    return {
+      repoUrl: row.repo_url,
+      accessToken: decrypt(row.access_token_encrypted),
+    };
+  }
+
   async getProjectRepos(projectId) {
     
     const result = await pool.query(
