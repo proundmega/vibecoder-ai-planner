@@ -48,7 +48,7 @@ describe('PUT /api/v1/tickets/:id — status-only body', () => {
     });
 
     const res = await request(app)
-      .put('/api/v1/tickets/t1')
+      .put('/api/v1/tickets/1')
       .set('Authorization', 'Bearer mock-token')
       .send({ status: 'in_progress' });
 
@@ -56,7 +56,7 @@ describe('PUT /api/v1/tickets/:id — status-only body', () => {
     expect(res.body.success).toBe(true);
 
     // Verify TicketService.update received only the provided field (not null for others)
-    expect(capturedArgs[0]).toBe('t1');
+    expect(capturedArgs[0]).toBe('1');
     expect(capturedArgs[1]).toEqual({ status: 'in_progress' });
     expect(capturedArgs[1].title).toBeUndefined();
     expect(capturedArgs[1].description).toBeUndefined();
@@ -82,7 +82,7 @@ describe('PUT /api/v1/tickets/:id — status-only body', () => {
     });
 
     const res = await request(app)
-      .put('/api/v1/tickets/t1')
+      .put('/api/v1/tickets/1')
       .set('Authorization', 'Bearer mock-token')
       .send({ title: 'Updated Title', status: 'backlog' });
 
@@ -112,7 +112,7 @@ describe('PUT /api/v1/tickets/:id — status-only body', () => {
     });
 
     const res = await request(app)
-      .put('/api/v1/tickets/t1')
+      .put('/api/v1/tickets/1')
       .set('Authorization', 'Bearer mock-token')
       .send({ status: 'in_progress' });
 
@@ -127,7 +127,7 @@ describe('PUT /api/v1/tickets/:id — status-only body', () => {
 
   it('should return 400 with invalid status value', async () => {
     const res = await request(app)
-      .put('/api/v1/tickets/t1')
+      .put('/api/v1/tickets/1')
       .set('Authorization', 'Bearer mock-token')
       .send({ status: 'invalid_status' });
 

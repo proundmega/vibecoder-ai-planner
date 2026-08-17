@@ -2,9 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
-const { validate } = require('../middleware/validate');
+const { validate, validatePathParams } = require('../middleware/validate');
 const ApprovalService = require('../services/ApprovalService');
 const { createApprovalSchema } = require('../validators/approvals');
+const { pathParams } = require('../validators/pathParams');
 const Joi = require('joi');
 
 const approvalQuerySchema = Joi.object({
@@ -12,6 +13,11 @@ const approvalQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   perPage: Joi.number().integer().min(1).max(100).default(20),
 });
+
+const jsonContentTypeSchema = Joi.object({
+  'content-type': Joi.string().valid('application/json').required(),
+}).options({ allowUnknown: true, stripUnknown: false });
+
 const logger = require('../utils/logger');
 
 /**
@@ -33,7 +39,7 @@ const logger = require('../utils/logger');
  *       400:
  *         description: Validation error
  */
-router.post('/', verifyToken, validate(createApprovalSchema), async (req, res) => {
+router.post('/', verifyToken, validate({ headers: jsonContentTypeSchema, body: createApprovalSchema }), async (req, res) => {
   try {
     const { ticketId } = req.body;
     const approval = await ApprovalService.create(ticketId, req.user.userId);
@@ -112,7 +118,7 @@ router.get('/pending', verifyToken, async (req, res) => {
  *       200:
  *         description: List of approvals for ticket
  */
-router.get('/ticket/:ticketId', verifyToken, async (req, res) => {
+router.get('/ticket/:ticketId', verifyToken, validatePathParams({ ticketId: pathParams.ticketId }), async (req, res) => {
   try {
     const approvals = await ApprovalService.getByTicketId(req.params.ticketId);
     res.json({ success: true, data: approvals });
@@ -139,7 +145,7 @@ router.get('/ticket/:ticketId', verifyToken, async (req, res) => {
  *       400:
  *         description: Approval failed
  */
-router.post('/:approvalId/approve', verifyToken, requireAnyPermission('APPROVAL_APPROVE'), async (req, res) => {
+router.post('/:approvalId/approve', verifyToken, requireAnyPermission('APPROVAL_APPROVE'), validatePathParams({ approvalId: pathParams.approvalId }), async (req, res) => {
   try {
     const approval = await ApprovalService.approve(req.params.approvalId, req.user.userId);
     res.json({ success: true, data: approval, message: 'Approval request approved' });
@@ -166,7 +172,7 @@ router.post('/:approvalId/approve', verifyToken, requireAnyPermission('APPROVAL_
  *       400:
  *         description: Rejection failed
  */
-router.post('/:approvalId/reject', verifyToken, requireAnyPermission('APPROVAL_REJECT'), async (req, res) => {
+router.post('/:approvalId/reject', verifyToken, requireAnyPermission('APPROVAL_REJECT'), validatePathParams({ approvalId: pathParams.approvalId }), async (req, res) => {
   try {
     const approval = await ApprovalService.reject(req.params.approvalId, req.user.userId);
     res.json({ success: true, data: approval, message: 'Approval request rejected' });

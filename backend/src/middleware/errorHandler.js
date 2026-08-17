@@ -2,8 +2,6 @@ const Joi = require('joi');
 const { AppError } = require('../errors/HttpError');
 const logger = require('../utils/logger');
 
-const enableResponseValidation = process.env.RESPONSE_VALIDATION === 'true';
-
 const errorResponseSchema = Joi.object({
   success: Joi.boolean().valid(false).required(),
   error: Joi.object({
@@ -23,7 +21,7 @@ function validateResponse(response) {
 }
 
 function sendErrorResponse(res, statusCode, body) {
-  if (enableResponseValidation) {
+  if (process.env.RESPONSE_VALIDATION === 'true') {
     if (!validateResponse(body)) {
       logger.warn('Sending sanitized error response due to validation failure');
       body = {
@@ -102,4 +100,4 @@ function errorHandler(err, req, res, _next) {
   sendErrorResponse(res, statusCode, body);
 }
 
-module.exports = { errorHandler, sendErrorResponse, enableResponseValidation };
+module.exports = { errorHandler };

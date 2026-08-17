@@ -4,6 +4,10 @@ const { paginationSchema } = require('../validators/pagination');
 const { statusFilterSchema } = require('../validators/statusFilter');
 const { pathParams } = require('../validators/pathParams');
 
+const jsonContentTypeSchema = Joi.object({
+  'content-type': Joi.string().valid('application/json').required(),
+}).options({ allowUnknown: true, stripUnknown: false });
+
 describe('validate middleware', () => {
   describe('body validation (existing behavior)', () => {
     it('should pass valid body', () => {
@@ -177,10 +181,7 @@ describe('validate middleware', () => {
 
   describe('header validation (Q3)', () => {
     it('should accept valid Content-Type header', () => {
-      const headerSchema = Joi.object({
-        'content-type': Joi.string().valid('application/json').required(),
-      }).options({ allowUnknown: true, stripUnknown: false });
-      const middleware = validate({ headers: headerSchema, body: Joi.object({ name: Joi.string() }) });
+      const middleware = validate({ headers: jsonContentTypeSchema, body: Joi.object({ name: Joi.string() }) });
       const req = { body: { name: 'test' }, query: {}, params: {}, headers: { 'content-type': 'application/json' } };
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const next = jest.fn();
@@ -191,10 +192,7 @@ describe('validate middleware', () => {
     });
 
     it('should reject missing Content-Type on POST', () => {
-      const headerSchema = Joi.object({
-        'content-type': Joi.string().valid('application/json').required(),
-      }).options({ allowUnknown: true, stripUnknown: false });
-      const middleware = validate({ headers: headerSchema, body: Joi.object({ name: Joi.string() }) });
+      const middleware = validate({ headers: jsonContentTypeSchema, body: Joi.object({ name: Joi.string() }) });
       const req = { body: { name: 'test' }, query: {}, params: {}, headers: {} };
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const next = jest.fn();
@@ -211,10 +209,7 @@ describe('validate middleware', () => {
     });
 
     it('should reject wrong Content-Type', () => {
-      const headerSchema = Joi.object({
-        'content-type': Joi.string().valid('application/json').required(),
-      }).options({ allowUnknown: true, stripUnknown: false });
-      const middleware = validate({ headers: headerSchema, body: Joi.object({ name: Joi.string() }) });
+      const middleware = validate({ headers: jsonContentTypeSchema, body: Joi.object({ name: Joi.string() }) });
       const req = { body: { name: 'test' }, query: {}, params: {}, headers: { 'content-type': 'text/plain' } };
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const next = jest.fn();
@@ -255,6 +250,23 @@ describe('validate middleware', () => {
         body: Joi.object({ name: Joi.string().required() }),
       });
       const req = { body: { name: 'test' }, query: { page: 'abc' }, params: {} };
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      const next = jest.fn();
+
+      middleware(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(next).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('combined header + body validation', () => {
+    it('should validate headers first before body', () => {
+      const middleware = validate({
+        headers: jsonContentTypeSchema,
+        body: Joi.object({ name: Joi.string().required() }),
+      });
+      const req = { body: { name: 'test' }, query: {}, params: {}, headers: { 'content-type': 'text/plain' } };
       const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
       const next = jest.fn();
 

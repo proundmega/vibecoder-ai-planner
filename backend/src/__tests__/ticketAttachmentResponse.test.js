@@ -71,7 +71,7 @@ describe('stored_path absent from ticket attachment responses (BP-61)', () => {
     });
 
     const res = await request(app)
-      .get('/api/v1/tickets/t1')
+      .get('/api/v1/tickets/1')
       .set('Authorization', 'Bearer mock-token');
 
     expect(res.status).toBe(200);
@@ -120,7 +120,7 @@ describe('stored_path absent from ticket attachment responses (BP-61)', () => {
     });
 
     const res = await request(app)
-      .get('/api/v1/tickets/t1')
+      .get('/api/v1/tickets/1')
       .set('Authorization', 'Bearer mock-token');
 
     expect(res.status).toBe(200);
