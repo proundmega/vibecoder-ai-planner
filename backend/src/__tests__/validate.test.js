@@ -2,11 +2,8 @@ const { validate, validatePathParams } = require('../middleware/validate');
 const Joi = require('joi');
 const { paginationSchema } = require('../validators/pagination');
 const { statusFilterSchema } = require('../validators/statusFilter');
+const { jsonContentTypeSchema } = require('../validators/contentType');
 const { pathParams } = require('../validators/pathParams');
-
-const jsonContentTypeSchema = Joi.object({
-  'content-type': Joi.string().valid('application/json').required(),
-}).options({ allowUnknown: true, stripUnknown: false });
 
 describe('validate middleware', () => {
   describe('body validation (existing behavior)', () => {

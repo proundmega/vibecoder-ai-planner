@@ -5,6 +5,7 @@ const { requireAnyPermission } = require('../middleware/permissions');
 const { validate, validatePathParams } = require('../middleware/validate');
 const ApprovalService = require('../services/ApprovalService');
 const { createApprovalSchema } = require('../validators/approvals');
+const { jsonContentTypeSchema } = require('../validators/contentType');
 const { pathParams } = require('../validators/pathParams');
 const Joi = require('joi');
 
@@ -13,10 +14,6 @@ const approvalQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   perPage: Joi.number().integer().min(1).max(100).default(20),
 });
-
-const jsonContentTypeSchema = Joi.object({
-  'content-type': Joi.string().valid('application/json').required(),
-}).options({ allowUnknown: true, stripUnknown: false });
 
 const logger = require('../utils/logger');
 
@@ -145,6 +142,7 @@ router.get('/ticket/:ticketId', verifyToken, validatePathParams({ ticketId: path
  *       400:
  *         description: Approval failed
  */
+// Bodyless route - approval action determined by route path (/approve or /reject)
 router.post('/:approvalId/approve', verifyToken, requireAnyPermission('APPROVAL_APPROVE'), validatePathParams({ approvalId: pathParams.approvalId }), async (req, res) => {
   try {
     const approval = await ApprovalService.approve(req.params.approvalId, req.user.userId);
@@ -172,6 +170,7 @@ router.post('/:approvalId/approve', verifyToken, requireAnyPermission('APPROVAL_
  *       400:
  *         description: Rejection failed
  */
+// Bodyless route - approval action determined by route path (/approve or /reject)
 router.post('/:approvalId/reject', verifyToken, requireAnyPermission('APPROVAL_REJECT'), validatePathParams({ approvalId: pathParams.approvalId }), async (req, res) => {
   try {
     const approval = await ApprovalService.reject(req.params.approvalId, req.user.userId);

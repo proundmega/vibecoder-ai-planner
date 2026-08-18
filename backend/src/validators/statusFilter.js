@@ -10,4 +10,4 @@ const statusFilterSchema = Joi.object({
   search: Joi.string().max(500).optional(),
 });
 
-module.exports = { statusFilterSchema, TICKET_STATUSES, PRIORITIES };
+module.exports = { statusFilterSchema };

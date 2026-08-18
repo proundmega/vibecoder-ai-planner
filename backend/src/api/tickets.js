@@ -3,18 +3,14 @@ const router = express.Router();
 const { requireAnyPermission } = require('../middleware/permissions');
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { validate, validatePathParams } = require('../middleware/validate');
-const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema } = require('../validators/tickets');
+const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema, postMessageSchema } = require('../validators/tickets');
 const { statusFilterSchema } = require('../validators/statusFilter');
 const { paginationSchema } = require('../validators/pagination');
+const { jsonContentTypeSchema } = require('../validators/contentType');
 const { pathParams } = require('../validators/pathParams');
-const Joi = require('joi');
 const ticketController = require('../controllers/ticketController');
 const phaseService = require('../services/PhaseService');
 const GitHubService = require('../services/GitHubService');
-
-const jsonContentTypeSchema = Joi.object({
-  'content-type': Joi.string().valid('application/json').required(),
-}).options({ allowUnknown: true, stripUnknown: false });
 
 /**
  * @openapi
@@ -163,6 +159,7 @@ router.post('/:ticketId/status', verifyTokenOrAgent, requireAnyPermission('TICKE
  *       200:
  *         description: Ticket picked up
  */
+// Bodyless route - agent picks up ticket without request body
 router.post('/:ticketId/pickup', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), ticketController.pickUpTicket);
 
 /**
@@ -180,6 +177,7 @@ router.post('/:ticketId/pickup', verifyTokenOrAgent, validatePathParams({ ticket
  *       200:
  *         description: Ticket released
  */
+// Bodyless route - agent releases ticket without request body
 router.post('/:ticketId/release', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), ticketController.releaseTicket);
 
 /**
@@ -267,7 +265,7 @@ router.get('/:ticketId/messages', verifyTokenOrAgent, validatePathParams({ ticke
  *       201:
  *         description: Message posted
  */
-router.post('/:ticketId/messages', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema }), ticketController.postMessage);
+router.post('/:ticketId/messages', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: postMessageSchema }), ticketController.postMessage);
 
 /**
  * @openapi
