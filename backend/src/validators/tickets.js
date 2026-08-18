@@ -56,4 +56,20 @@ const phaseTransitionSchema = Joi.object({
   metadata: Joi.object().optional(),
 });
 
-module.exports = { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema };
+const postMessageSchema = Joi.object({
+  messageType: Joi.string().min(1).max(100).required().messages({
+    'string.empty': 'Message type is required',
+    'string.min': 'Message type must be at least 1 character',
+    'string.max': 'Message type must not exceed 100 characters',
+    'any.required': 'Message type is required',
+  }),
+  content: Joi.string().min(1).max(50000).required().messages({
+    'string.empty': 'Message content is required',
+    'string.min': 'Message content must be at least 1 character',
+    'string.max': 'Message content must not exceed 50000 characters',
+    'any.required': 'Message content is required',
+  }),
+  metadata: Joi.object().optional(),
+});
+
+module.exports = { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema, postMessageSchema };

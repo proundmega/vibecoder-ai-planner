@@ -2,8 +2,12 @@ const express = require('express');
 const router = express.Router();
 const { requireAnyPermission } = require('../middleware/permissions');
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
-const { validate } = require('../middleware/validate');
-const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema } = require('../validators/tickets');
+const { validate, validatePathParams } = require('../middleware/validate');
+const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema, postMessageSchema } = require('../validators/tickets');
+const { statusFilterSchema } = require('../validators/statusFilter');
+const { paginationSchema } = require('../validators/pagination');
+const { jsonContentTypeSchema } = require('../validators/contentType');
+const { pathParams } = require('../validators/pathParams');
 const ticketController = require('../controllers/ticketController');
 const phaseService = require('../services/PhaseService');
 const GitHubService = require('../services/GitHubService');
@@ -30,7 +34,7 @@ const GitHubService = require('../services/GitHubService');
  *       201:
  *         description: Ticket created
  */
-router.post('/', verifyTokenOrAgent, requireAnyPermission('TICKET_CREATE'), validate(createTicketSchema), ticketController.createTicket);
+router.post('/', verifyTokenOrAgent, requireAnyPermission('TICKET_CREATE'), validate({ body: createTicketSchema }), ticketController.createTicket);
 
 /**
  * @openapi
@@ -50,7 +54,7 @@ router.post('/', verifyTokenOrAgent, requireAnyPermission('TICKET_CREATE'), vali
  *       200:
  *         description: List of tickets
  */
-router.get('/project/:projectId', verifyTokenOrAgent, ticketController.getProjectTickets);
+router.get('/project/:projectId', verifyTokenOrAgent, validatePathParams({ projectId: pathParams.projectId }), validate({ query: statusFilterSchema }), ticketController.getProjectTickets);
 
 /**
  * @openapi
@@ -69,7 +73,7 @@ router.get('/project/:projectId', verifyTokenOrAgent, ticketController.getProjec
  *       404:
  *         description: Ticket not found
  */
-router.get('/:ticketId', verifyTokenOrAgent, ticketController.getTicket);
+router.get('/:ticketId', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), ticketController.getTicket);
 
 /**
  * @openapi
@@ -97,7 +101,7 @@ router.get('/:ticketId', verifyTokenOrAgent, ticketController.getTicket);
  *       200:
  *         description: Ticket updated
  */
-router.put('/:ticketId', verifyTokenOrAgent, requireAnyPermission('TICKET_UPDATE'), validate(updateTicketSchema), ticketController.updateTicket);
+router.put('/:ticketId', verifyTokenOrAgent, requireAnyPermission('TICKET_UPDATE'), validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: updateTicketSchema }), ticketController.updateTicket);
 
 /**
  * @openapi
@@ -114,7 +118,7 @@ router.put('/:ticketId', verifyTokenOrAgent, requireAnyPermission('TICKET_UPDATE
  *       200:
  *         description: Ticket deleted
  */
-router.delete('/:ticketId', verifyToken, ticketController.deleteTicket);
+router.delete('/:ticketId', verifyToken, validatePathParams({ ticketId: pathParams.ticketId }), ticketController.deleteTicket);
 
 /**
  * @openapi
@@ -138,7 +142,7 @@ router.delete('/:ticketId', verifyToken, ticketController.deleteTicket);
  *       200:
  *         description: Status updated
  */
-router.post('/:ticketId/status', verifyTokenOrAgent, requireAnyPermission('TICKET_STATUS_CHANGE'), validate(statusTransitionSchema), ticketController.changeStatus);
+router.post('/:ticketId/status', verifyTokenOrAgent, requireAnyPermission('TICKET_STATUS_CHANGE'), validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: statusTransitionSchema }), ticketController.changeStatus);
 
 /**
  * @openapi
@@ -155,7 +159,8 @@ router.post('/:ticketId/status', verifyTokenOrAgent, requireAnyPermission('TICKE
  *       200:
  *         description: Ticket picked up
  */
-router.post('/:ticketId/pickup', verifyTokenOrAgent, ticketController.pickUpTicket);
+// Bodyless route - agent picks up ticket without request body
+router.post('/:ticketId/pickup', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), ticketController.pickUpTicket);
 
 /**
  * @openapi
@@ -172,7 +177,8 @@ router.post('/:ticketId/pickup', verifyTokenOrAgent, ticketController.pickUpTick
  *       200:
  *         description: Ticket released
  */
-router.post('/:ticketId/release', verifyTokenOrAgent, ticketController.releaseTicket);
+// Bodyless route - agent releases ticket without request body
+router.post('/:ticketId/release', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), ticketController.releaseTicket);
 
 /**
  * @openapi
@@ -189,7 +195,7 @@ router.post('/:ticketId/release', verifyTokenOrAgent, ticketController.releaseTi
  *       200:
  *         description: List of comments
  */
-router.get('/:ticketId/comments', verifyToken, ticketController.getTicketComments);
+router.get('/:ticketId/comments', verifyToken, validatePathParams({ ticketId: pathParams.ticketId }), ticketController.getTicketComments);
 
 /**
  * @openapi
@@ -213,7 +219,7 @@ router.get('/:ticketId/comments', verifyToken, ticketController.getTicketComment
  *       201:
  *         description: Comment added
  */
-router.post('/:ticketId/comments', verifyToken, requireAnyPermission('TICKET_COMMENT'), validate(commentSchema), ticketController.addComment);
+router.post('/:ticketId/comments', verifyToken, requireAnyPermission('TICKET_COMMENT'), validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: commentSchema }), ticketController.addComment);
 
 /**
  * @openapi
@@ -233,7 +239,7 @@ router.post('/:ticketId/comments', verifyToken, requireAnyPermission('TICKET_COM
  *       200:
  *         description: List of messages
  */
-router.get('/:ticketId/messages', verifyTokenOrAgent, ticketController.getMessages);
+router.get('/:ticketId/messages', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), validate({ query: paginationSchema }), ticketController.getMessages);
 
 /**
  * @openapi
@@ -259,7 +265,7 @@ router.get('/:ticketId/messages', verifyTokenOrAgent, ticketController.getMessag
  *       201:
  *         description: Message posted
  */
-router.post('/:ticketId/messages', verifyTokenOrAgent, ticketController.postMessage);
+router.post('/:ticketId/messages', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: postMessageSchema }), ticketController.postMessage);
 
 /**
  * @openapi
@@ -276,7 +282,7 @@ router.post('/:ticketId/messages', verifyTokenOrAgent, ticketController.postMess
  *       200:
  *         description: Phase history
  */
-router.get('/:ticketId/phases', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/:ticketId/phases', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), async (req, res, next) => {
   try {
     const history = await phaseService.getPhaseHistory(req.params.ticketId);
     res.json({ success: true, data: history });
@@ -300,7 +306,7 @@ router.get('/:ticketId/phases', verifyTokenOrAgent, async (req, res, next) => {
  *       200:
  *         description: Current phase
  */
-router.get('/:ticketId/phases/current', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/:ticketId/phases/current', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), async (req, res, next) => {
   try {
     const currentPhase = await phaseService.getCurrentPhase(req.params.ticketId);
     res.json({ success: true, data: { phase: currentPhase } });
@@ -324,7 +330,7 @@ router.get('/:ticketId/phases/current', verifyTokenOrAgent, async (req, res, nex
  *       200:
  *         description: Allowed next phases
  */
-router.get('/:ticketId/phases/allowed', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/:ticketId/phases/allowed', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), async (req, res, next) => {
   try {
     const allowed = await phaseService.getAllowedNextPhases(req.params.ticketId);
     res.json({ success: true, data: { allowed: allowed } });
@@ -358,7 +364,7 @@ router.get('/:ticketId/phases/allowed', verifyTokenOrAgent, async (req, res, nex
  *       200:
  *         description: Phase transitioned
  */
-router.post('/:ticketId/phases/transition', verifyTokenOrAgent, validate(phaseTransitionSchema), async (req, res, next) => {
+router.post('/:ticketId/phases/transition', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: phaseTransitionSchema }), async (req, res, next) => {
   try {
     const { toPhase, actorType, metadata } = req.body;
     const actorId = req.user ? req.user.id : (req.agent ? req.agent.id : null);
@@ -394,7 +400,7 @@ router.post('/:ticketId/phases/transition', verifyTokenOrAgent, validate(phaseTr
  *       404:
  *         description: Ticket not found
  */
-router.get('/:ticketId/review/diff', verifyToken, async (req, res, next) => {
+router.get('/:ticketId/review/diff', verifyToken, validatePathParams({ ticketId: pathParams.ticketId }), async (req, res, next) => {
   try {
     const diff = await GitHubService.getPRDiff(req.params.ticketId);
     res.json({ success: true, data: diff });

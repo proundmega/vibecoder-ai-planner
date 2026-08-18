@@ -93,7 +93,7 @@ describe('PUT /tickets/:ticketId validation', () => {
 
   it('should return 400 for invalid status value', async () => {
     const res = await request(app)
-      .put('/api/v1/tickets/t1')
+      .put('/api/v1/tickets/1')
       .set('Authorization', 'Bearer mock-token')
       .send({ status: 'invalid_status' });
 
@@ -104,7 +104,7 @@ describe('PUT /tickets/:ticketId validation', () => {
 
   it('should return 400 for missing title when title is provided as empty string', async () => {
     const res = await request(app)
-      .put('/api/v1/tickets/t1')
+      .put('/api/v1/tickets/1')
       .set('Authorization', 'Bearer mock-token')
       .send({ title: '' });
 
@@ -115,7 +115,7 @@ describe('PUT /tickets/:ticketId validation', () => {
 
   it('should return 400 for invalid priority value', async () => {
     const res = await request(app)
-      .put('/api/v1/tickets/t1')
+      .put('/api/v1/tickets/1')
       .set('Authorization', 'Bearer mock-token')
       .send({ priority: 'invalid_priority' });
 
@@ -126,7 +126,7 @@ describe('PUT /tickets/:ticketId validation', () => {
 
   it('should accept valid status transition', async () => {
     const res = await request(app)
-      .put('/api/v1/tickets/t1')
+      .put('/api/v1/tickets/1')
       .set('Authorization', 'Bearer mock-token')
       .send({ status: 'in_progress' });
 
@@ -136,7 +136,7 @@ describe('PUT /tickets/:ticketId validation', () => {
 
   it('should accept valid priority values', async () => {
     const res = await request(app)
-      .put('/api/v1/tickets/t1')
+      .put('/api/v1/tickets/1')
       .set('Authorization', 'Bearer mock-token')
       .send({ priority: 'high' });
 
@@ -146,7 +146,7 @@ describe('PUT /tickets/:ticketId validation', () => {
 
   it('should accept null assigneeId to unassign', async () => {
     const res = await request(app)
-      .put('/api/v1/tickets/t1')
+      .put('/api/v1/tickets/1')
       .set('Authorization', 'Bearer mock-token')
       .send({ assigneeId: null });
 
