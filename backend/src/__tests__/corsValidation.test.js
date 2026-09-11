@@ -107,6 +107,45 @@ describe('CORS Middleware', () => {
   });
 });
 
+describe('CORS with 127.0.0.1 origins', () => {
+  let app;
+
+  beforeEach(() => {
+    app = require('express')();
+    app.use(cors(['http://localhost:3000', 'http://127.0.0.1:3000', 'http://127.0.0.1:3002']));
+    app.get('/test', (req, res) => {
+      res.json({ success: true, data: { message: 'ok' } });
+    });
+  });
+
+  it('should allow requests from http://127.0.0.1:3000', async () => {
+    const res = await request(app)
+      .get('/test')
+      .set('Origin', 'http://127.0.0.1:3000');
+    
+    expect(res.status).toBe(200);
+    expect(res.headers['access-control-allow-origin']).toBe('http://127.0.0.1:3000');
+  });
+
+  it('should allow requests from http://127.0.0.1:3002', async () => {
+    const res = await request(app)
+      .get('/test')
+      .set('Origin', 'http://127.0.0.1:3002');
+    
+    expect(res.status).toBe(200);
+    expect(res.headers['access-control-allow-origin']).toBe('http://127.0.0.1:3002');
+  });
+
+  it('should still block non-allowed origins like 192.168.x.x', async () => {
+    const res = await request(app)
+      .get('/test')
+      .set('Origin', 'http://192.168.3.50:3000');
+    
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('CORS_ERROR');
+  });
+});
+
 describe('CORS with empty origins', () => {
   let app;
 
