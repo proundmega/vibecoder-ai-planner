@@ -156,13 +156,13 @@ class AgentService {
     if (result.rows.length === 0) throw new Error('PROVIDER_NOT_FOUND');
     const provider = result.rows[0];
     const decryptedKey = provider.api_key_encrypted ? enc.decrypt(provider.api_key_encrypted) : null;
-    return { success: true, data: {
+    return {
       provider_type: provider.provider_type,
       api_key: decryptedKey,
       base_url: provider.base_url,
       model: provider.model,
       max_tokens: provider.max_tokens,
-    }};
+    };
   }
 
   async getAgentByApiKey(apiKey) {

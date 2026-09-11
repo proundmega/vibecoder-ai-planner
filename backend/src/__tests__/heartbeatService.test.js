@@ -218,6 +218,35 @@ describe('HeartbeatService', () => {
       const result = await heartbeatService.getAllAgents();
       expect(result).toEqual([]);
     });
+
+    test('should return agents without heartbeat rows with status offline', async () => {
+      const mockAgents = [
+        {
+          agent_id: 99,
+          name: 'New Agent No Heartbeat',
+          status: null,
+          current_ticket_id: null,
+          current_ticket_title: null,
+          last_seen: null,
+          current_step: null,
+          actions_today: 0,
+          cost_today: 0,
+        },
+      ];
+      mockPool.query.mockResolvedValueOnce({ rows: mockAgents });
+
+      const result = await heartbeatService.getAllAgents();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].agent_id).toBe(99);
+      expect(result[0].name).toBe('New Agent No Heartbeat');
+      expect(result[0].status).toBeNull();
+      expect(result[0].last_seen).toBeNull();
+
+      const sql = mockPool.query.mock.calls[0][0];
+      expect(sql).toContain('FROM agents a');
+      expect(sql).toContain('LEFT JOIN agent_heartbeats ah');
+    });
   });
 
   describe('cleanupStaleAgents', () => {

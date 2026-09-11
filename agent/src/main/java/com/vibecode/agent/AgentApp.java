@@ -84,9 +84,27 @@ public class AgentApp {
     private AiProvider createAiProvider() {
         Map<String, Object> providerConfig = null;
         try {
-            providerConfig = apiService.getProviderConfig(config.getAgentId());
+            Map<String, Object> rawConfig = apiService.getProviderConfig(config.getAgentId());
+            // Defensive: handle double-wrapped responses from buggy backend versions
+            if (rawConfig != null && rawConfig.containsKey("success") && rawConfig.containsKey("data")
+                && rawConfig.get("data") instanceof Map) {
+                Map<String, Object> inner = (Map<String, Object>) rawConfig.get("data");
+                if (inner.containsKey("provider_type")) {
+                    // Already flat — good (backend fixed)
+                    providerConfig = inner;
+                } else if (inner.containsKey("success") && inner.containsKey("data")
+                    && inner.get("data") instanceof Map) {
+                    // Double-wrapped — unwrap once (buggy backend)
+                    providerConfig = (Map<String, Object>) inner.get("data");
+                } else {
+                    providerConfig = inner;
+                }
+            } else {
+                providerConfig = rawConfig;
+            }
             log.info("Fetched provider config from backend: type={}, model={}",
-                providerConfig.get("provider_type"), providerConfig.get("model"));
+                providerConfig != null ? providerConfig.get("provider_type") : "null",
+                providerConfig != null ? providerConfig.get("model") : "null");
         } catch (Exception e) {
             log.warn("Failed to fetch provider config from backend, falling back to env vars: {}", e.getMessage());
         }

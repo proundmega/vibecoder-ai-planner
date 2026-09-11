@@ -46,7 +46,7 @@ class HeartbeatService {
   async getAllAgents() {
     const result = await pool.query(
       `SELECT
-        ah.agent_id,
+        a.id as agent_id,
         a.name,
         ah.status,
         ah.current_ticket_id,
@@ -55,11 +55,11 @@ class HeartbeatService {
         ah.current_step,
         COALESCE(COUNT(aa.id), 0) as actions_today,
         COALESCE(SUM(aa.cost_incurred), 0) as cost_today
-      FROM agent_heartbeats ah
-      LEFT JOIN agents a ON a.id = ah.agent_id
+      FROM agents a
+      LEFT JOIN agent_heartbeats ah ON ah.agent_id = a.id
       LEFT JOIN tickets t ON t.id = ah.current_ticket_id
-      LEFT JOIN agent_actions aa ON aa.agent_id = ah.agent_id AND aa.created_at >= CURRENT_DATE
-      GROUP BY ah.agent_id, a.name, ah.status, ah.current_ticket_id, t.title, ah.last_seen, ah.current_step
+      LEFT JOIN agent_actions aa ON aa.agent_id = a.id AND aa.created_at >= CURRENT_DATE
+      GROUP BY a.id, a.name, ah.status, ah.current_ticket_id, t.title, ah.last_seen, ah.current_step
       ORDER BY ah.last_seen DESC NULLS LAST`
     );
     return result.rows;

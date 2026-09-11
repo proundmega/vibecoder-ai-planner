@@ -42,7 +42,7 @@ describe('Agent Edit & Provider Config — Route Level', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     updateNameSpy = jest.spyOn(AgentService, 'updateName').mockResolvedValue({ id: 'a1', name: 'New Name', updated_at: new Date() })
-    getProviderConfigSpy = jest.spyOn(AgentService, 'getProviderConfig').mockResolvedValue({ success: true, data: { provider_type: 'claude', api_key: 'decrypted-key', base_url: null, model: 'claude-sonnet-4-20250514', max_tokens: 4096 } })
+    getProviderConfigSpy = jest.spyOn(AgentService, 'getProviderConfig').mockResolvedValue({ provider_type: 'claude', api_key: 'decrypted-key', base_url: null, model: 'claude-sonnet-4-20250514', max_tokens: 4096 })
   })
 
   describe('PUT /api/v1/agents/:agentId', () => {
@@ -149,9 +149,8 @@ describe('Agent Edit & Provider Config — Service Level', () => {
 
       const result = await AgentService.getProviderConfig('a1', 'test-key')
 
-      expect(result.success).toBe(true)
-      expect(result.data.provider_type).toBe('claude')
-      expect(result.data.model).toBe('claude-sonnet-4-20250514')
+      expect(result.provider_type).toBe('claude')
+      expect(result.model).toBe('claude-sonnet-4-20250514')
     })
 
     it('throws AGENT_NOT_FOUND when agent not found by API key', async () => {
