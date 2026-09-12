@@ -224,7 +224,7 @@ describe('HeartbeatService', () => {
         {
           agent_id: 99,
           name: 'New Agent No Heartbeat',
-          status: null,
+          status: 'offline',
           current_ticket_id: null,
           current_ticket_title: null,
           last_seen: null,
@@ -240,12 +240,13 @@ describe('HeartbeatService', () => {
       expect(result).toHaveLength(1);
       expect(result[0].agent_id).toBe(99);
       expect(result[0].name).toBe('New Agent No Heartbeat');
-      expect(result[0].status).toBeNull();
+      expect(result[0].status).toBe('offline');
       expect(result[0].last_seen).toBeNull();
 
       const sql = mockPool.query.mock.calls[0][0];
       expect(sql).toContain('FROM agents a');
       expect(sql).toContain('LEFT JOIN agent_heartbeats ah');
+      expect(sql).toContain("COALESCE(ah.status, 'offline') as status");
     });
   });
 

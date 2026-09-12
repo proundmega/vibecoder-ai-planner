@@ -85,23 +85,7 @@ public class AgentApp {
         Map<String, Object> providerConfig = null;
         try {
             Map<String, Object> rawConfig = apiService.getProviderConfig(config.getAgentId());
-            // Defensive: handle double-wrapped responses from buggy backend versions
-            if (rawConfig != null && rawConfig.containsKey("success") && rawConfig.containsKey("data")
-                && rawConfig.get("data") instanceof Map) {
-                Map<String, Object> inner = (Map<String, Object>) rawConfig.get("data");
-                if (inner.containsKey("provider_type")) {
-                    // Already flat — good (backend fixed)
-                    providerConfig = inner;
-                } else if (inner.containsKey("success") && inner.containsKey("data")
-                    && inner.get("data") instanceof Map) {
-                    // Double-wrapped — unwrap once (buggy backend)
-                    providerConfig = (Map<String, Object>) inner.get("data");
-                } else {
-                    providerConfig = inner;
-                }
-            } else {
-                providerConfig = rawConfig;
-            }
+            providerConfig = unwrapProviderConfig(rawConfig);
             log.info("Fetched provider config from backend: type={}, model={}",
                 providerConfig != null ? providerConfig.get("provider_type") : "null",
                 providerConfig != null ? providerConfig.get("model") : "null");
@@ -158,6 +142,24 @@ public class AgentApp {
                 log.info("Using Claude provider from env, model: {}", model);
                 return new ClaudeProvider(apiKey, model);
         }
+    }
+
+    /**
+     * Defensive unwrap for provider config responses.
+     * Handles both flat (fixed backend) and double-wrapped (buggy backend) response formats.
+     */
+    private static Map<String, Object> unwrapProviderConfig(Map<String, Object> raw) {
+        if (raw == null) return null;
+        if (raw.containsKey("success") && raw.containsKey("data") && raw.get("data") instanceof Map) {
+            Map<String, Object> inner = (Map<String, Object>) raw.get("data");
+            if (inner.containsKey("success") && inner.containsKey("data") && inner.get("data") instanceof Map) {
+                // Double-wrapped — unwrap once (buggy backend)
+                return (Map<String, Object>) inner.get("data");
+            }
+            // Already flat — good (backend fixed)
+            return inner;
+        }
+        return raw;
     }
 
     /**
