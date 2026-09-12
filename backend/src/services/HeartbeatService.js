@@ -48,7 +48,7 @@ class HeartbeatService {
       `SELECT
         a.id as agent_id,
         a.name,
-        ah.status,
+        COALESCE(ah.status, 'offline') as status,
         ah.current_ticket_id,
         t.title as current_ticket_title,
         ah.last_seen,
