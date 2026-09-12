@@ -295,7 +295,7 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
 
     req.agent = agent;
     req.user = {
-      userId: agent.id,
+      userId: agent.owner_id,
       id: agent.id,
       email: agent.email || 'agent@vibecode.local',
       role: agent.role || 'member',
