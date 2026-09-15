@@ -187,18 +187,18 @@ exports.requireRole = (...allowedRoles) => {
 
 exports.requireActiveUser = async (req, res, next) => {
   if (!req.user || !req.user.userId) {
-    return res.status(403).json({ error: 'Account deactivated' });
+    return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Account deactivated' } });
   }
   
   try {
     const result = await pool.query('SELECT is_active FROM users WHERE id = $1', [req.user.userId]);
     if (result.rows.length === 0 || !result.rows[0].is_active) {
-      return res.status(403).json({ error: 'Account deactivated' });
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Account deactivated' } });
     }
     next();
   } catch (err) {
     console.error('requireActiveUser DB error:', err.message);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'Internal server error' } });
   }
 };
 

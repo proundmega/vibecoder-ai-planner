@@ -26,7 +26,6 @@ class GitHubService {
       throw new ValidationError(`Cannot access repository: ${validation.error}`);
     }
 
-    logger.debug('connectProject: accessToken is', typeof accessToken, accessToken);
     const encryptedToken = accessToken ? encrypt(accessToken) : null;
 
     

@@ -404,7 +404,6 @@ router.post('/:ticketId/phases/transition', verifyTokenOrAgent, validatePathPara
 router.get('/:ticketId/review/diff', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), async (req, res, next) => {
   try {
     const ticket = await pool.query('SELECT project_id, pr_url FROM tickets WHERE id = $1', [req.params.ticketId]);
-    console.log('DEBUG review/diff:', req.params.ticketId, 'rows:', ticket.rows.length, 'pr_url:', ticket.rows[0]?.pr_url);
     if (ticket.rows.length === 0) {
       return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Ticket not found' } });
     }
@@ -414,7 +413,6 @@ router.get('/:ticketId/review/diff', verifyTokenOrAgent, validatePathParams({ ti
     const diff = await GitHubService.getPRDiff(ticket.rows[0].project_id, req.params.ticketId);
     res.json({ success: true, data: diff });
   } catch (error) {
-    console.error('DEBUG review/diff error:', error.message);
     next(error);
   }
 });

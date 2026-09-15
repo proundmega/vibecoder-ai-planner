@@ -240,6 +240,7 @@ public class AgentApp {
     private void processCycle() throws IOException {
         // Check if this is a review agent (no REPO_OWNER/REPO_NAME means review mode)
         if (config.getRepoOwner() == null || config.getRepoOwner().isBlank()) {
+            log.warn("REPO_OWNER is not set — running in review mode only. Ticket processing is disabled. Set REPO_OWNER and REPO_NAME to enable build mode.");
             reviewProcessor.processReviewCycle();
             return;
         }

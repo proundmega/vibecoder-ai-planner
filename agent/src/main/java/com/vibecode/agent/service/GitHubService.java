@@ -147,7 +147,12 @@ public class GitHubService {
             if (!response.isSuccessful()) {
                 String errorBody = response.body() != null ? response.body().string() : "";
                 if (response.code() == 422 && errorBody.contains("A pull request already exists")) {
-                    log.info("PR already exists, attempting to delete and recreate");
+                    log.info("PR already exists for branch {}, fetching existing PR URL", headBranch);
+                    String existingUrl = getExistingPRUrl(headBranch, actualBase);
+                    if (existingUrl != null) {
+                        return existingUrl;
+                    }
+                    log.warn("Could not fetch existing PR URL, falling back to delete and recreate");
                     deleteExistingPR(headBranch, actualBase);
                     return createPullRequestRetry(title, body, headBranch, actualBase);
                 }
@@ -177,6 +182,30 @@ public class GitHubService {
             }
         } catch (Exception e) {
             log.warn("Failed to detect default branch: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private String getExistingPRUrl(String headBranch, String baseBranch) throws IOException {
+        Request request = new Request.Builder()
+            .url(API_BASE + "/repos/" + owner + "/" + repo + "/pulls?head=" + owner + ":" + headBranch + "&base=" + baseBranch + "&state=all")
+            .header("Authorization", "token " + authToken)
+            .header("Accept", "application/vnd.github+json")
+            .get()
+            .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (response.isSuccessful()) {
+                JsonNode pulls = objectMapper.readTree(response.body().string());
+                if (pulls.isArray() && pulls.size() > 0) {
+                    JsonNode existingPR = pulls.get(0);
+                    String htmlUrl = existingPR.path("html_url").asText();
+                    log.info("Found existing PR #{}: {}", existingPR.path("number").asInt(), htmlUrl);
+                    return htmlUrl;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to get existing PR URL: {}", e.getMessage());
         }
         return null;
     }

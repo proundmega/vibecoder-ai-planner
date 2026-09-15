@@ -127,6 +127,7 @@ public class ReviewProcessor {
         // Update ticket status based on review
         boolean approved = isApproved(reviewJson);
         if (approved) {
+            log.warn("AI review approved ticket {} — marking as done. Per AGENTS.md, 'done' has no outgoing transitions. Consider requiring human confirmation.", ticket.getId());
             apiService.updateTicketStatus(ticket.getId(), "done");
             apiService.postMessage(ticket.getId(), "status",
                 "Review passed - ticket marked as done");
