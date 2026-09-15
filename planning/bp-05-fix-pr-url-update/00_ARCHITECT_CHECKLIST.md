@@ -1,8 +1,8 @@
 # 00_ARCHITECT_CHECKLIST.md — Pre-Implementation Checklist
 
-**Status**: pending
+**Status**: completed
 **Date started**: 2026-09-15
-**Date completed**: {{DATE}}
+**Date completed**: 2026-09-15
 **Author**: AI Assistant
 **Feature scope**: Backend (API + Agent)
 
@@ -64,6 +64,8 @@ This is a **BACKEND-ONLY** fix. The existing `PUT /tickets/:id` endpoint already
 - [x] Agent compiles (`mvn package -DskipTests -B`)
 - [x] All action items in `03_ARCHITECT_IMPLEMENTATION.md` are completed
 - [x] `03_ARCHITECT_IMPLEMENTATION.md` updated with PR URL and branch
+  - PR: https://github.com/proundmega/vibecoder-ai-planner/pull/97
+  - Branch: bp-05-fix-pr-url-update
 
 ---
 

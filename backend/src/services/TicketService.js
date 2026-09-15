@@ -109,27 +109,18 @@ class TicketService {
       }
     }
 
-    const result = await Ticket.update(
+    // Handle prUrl as a parameter to Ticket.update() (single SQL round-trip)
+    const prUrl = data.prUrl;
+    return await Ticket.update(
       id,
       data.title,
       data.description,
       data.status,
       data.priority,
       data.assigneeId,
-      userId
+      userId,
+      prUrl
     );
-
-    // Handle prUrl separately (not part of Ticket.update signature)
-    // Run after Ticket.update() so it doesn't persist if the main update fails
-    const prUrl = data.prUrl;
-    if (prUrl !== undefined) {
-      await pool.query(
-        'UPDATE tickets SET pr_url = $1, updated_at = NOW() WHERE id = $2',
-        [prUrl, id]
-      );
-    }
-
-    return result;
   }
 
   async updateMilestoneFields(id, { milestone_id, estimate, depends_on }, userId) {

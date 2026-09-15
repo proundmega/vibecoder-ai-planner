@@ -359,45 +359,43 @@ describe('TicketService', () => {
       PermissionService.hasPermission.mockResolvedValue(true);
     });
 
-    test('should execute raw SQL UPDATE for prUrl', async () => {
-      const mockPool = require('../db').pool;
-      mockPool.query.mockResolvedValueOnce({ rows: [] });
+    test('should pass prUrl to Ticket.update()', async () => {
+      let capturedArgs;
+      Ticket.update.mockImplementation((...args) => {
+        capturedArgs = args;
+        return mockTicket;
+      });
 
       await TicketService.update('t1', { prUrl: 'https://github.com/test/repo/pull/1' }, 100);
 
-      const queryCall = mockPool.query.mock.calls[0];
-      expect(queryCall[0]).toContain('UPDATE tickets SET pr_url = $1');
-      expect(queryCall[1]).toContain('https://github.com/test/repo/pull/1');
-      expect(queryCall[1]).toContain('t1');
+      expect(capturedArgs[7]).toBe('https://github.com/test/repo/pull/1');
     });
 
-    test('should not execute prUrl UPDATE when prUrl is not provided', async () => {
-      const mockPool = require('../db').pool;
-      mockPool.query.mockResolvedValueOnce({ rows: [] });
+    test('should pass undefined for prUrl when not provided', async () => {
+      let capturedArgs;
+      Ticket.update.mockImplementation((...args) => {
+        capturedArgs = args;
+        return mockTicket;
+      });
 
       await TicketService.update('t1', { status: 'review' }, 100);
 
-      // When prUrl is not provided, no additional pool.query call should be made
-      // The only query call is from Ticket.findById in the permission check
-      const prUrlCalls = mockPool.query.mock.calls.filter(call => call[0].includes('pr_url'));
-      expect(prUrlCalls).toHaveLength(0);
+      expect(capturedArgs[7]).toBeUndefined();
     });
 
-    test('should allow null prUrl', async () => {
-      const mockPool = require('../db').pool;
-      mockPool.query.mockResolvedValueOnce({ rows: [] });
+    test('should pass null for prUrl when explicitly null', async () => {
+      let capturedArgs;
+      Ticket.update.mockImplementation((...args) => {
+        capturedArgs = args;
+        return mockTicket;
+      });
 
       await TicketService.update('t1', { prUrl: null }, 100);
 
-      const queryCall = mockPool.query.mock.calls[0];
-      expect(queryCall[0]).toContain('UPDATE tickets SET pr_url = $1');
-      expect(queryCall[1][0]).toBeNull();
+      expect(capturedArgs[7]).toBeNull();
     });
 
     test('should handle prUrl alongside other fields', async () => {
-      const mockPool = require('../db').pool;
-      mockPool.query.mockResolvedValueOnce({ rows: [] });
-
       let capturedArgs;
       Ticket.update.mockImplementation((...args) => {
         capturedArgs = args;
@@ -406,9 +404,8 @@ describe('TicketService', () => {
 
       await TicketService.update('t1', { status: 'review', prUrl: 'https://github.com/test/repo/pull/5' }, 100);
 
-      const queryCall = mockPool.query.mock.calls[0];
-      expect(queryCall[0]).toContain('pr_url');
-      expect(queryCall[1][0]).toBe('https://github.com/test/repo/pull/5');
+      expect(capturedArgs[3]).toBe('review');
+      expect(capturedArgs[7]).toBe('https://github.com/test/repo/pull/5');
     });
   });
 });

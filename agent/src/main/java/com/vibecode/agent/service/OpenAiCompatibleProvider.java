@@ -108,18 +108,14 @@ public class OpenAiCompatibleProvider implements AiProvider {
             if ((content == null || content.isBlank()) && choices.isArray() && choices.size() > 0) {
                 JsonNode reasoning = choices.get(0).path("reasoning_content");
                 if (reasoning.isTextual() && !reasoning.asText().isBlank()) {
-                    content = reasoning.asText();
-                }
-            }
-            
-            // If content is still blank, try to extract JSON from reasoning_content
-            if ((content == null || content.isBlank()) && choices.isArray() && choices.size() > 0) {
-                JsonNode reasoning = choices.get(0).path("reasoning_content");
-                if (reasoning.isTextual() && !reasoning.asText().isBlank()) {
                     String reasoningText = reasoning.asText();
+                    // Try to extract JSON object from reasoning text (for models that output code blocks)
                     int jsonStart = reasoningText.indexOf('{');
                     if (jsonStart >= 0) {
                         content = reasoningText.substring(jsonStart);
+                    } else {
+                        // No JSON found, use full reasoning text as content
+                        content = reasoningText;
                     }
                 }
             }

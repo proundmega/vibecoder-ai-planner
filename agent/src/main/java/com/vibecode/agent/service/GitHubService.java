@@ -152,9 +152,7 @@ public class GitHubService {
                     if (existingUrl != null) {
                         return existingUrl;
                     }
-                    log.warn("Could not fetch existing PR URL, falling back to delete and recreate");
-                    deleteExistingPR(headBranch, actualBase);
-                    return createPullRequestRetry(title, body, headBranch, actualBase);
+                    throw new IOException("PR already exists for branch " + headBranch + " but could not fetch its URL");
                 }
                 throw new IOException("Failed to create PR: " + errorBody);
             }
@@ -223,42 +221,6 @@ public class GitHubService {
                 throw new IOException("Failed to get branch " + branchName + ": " + response.code());
             }
             return objectMapper.readTree(response.body().string()).path("commit").path("sha").asText();
-        }
-    }
-
-    private void deleteExistingPR(String headBranch, String baseBranch) throws IOException {
-        Request request = new Request.Builder()
-            .url(API_BASE + "/repos/" + owner + "/" + repo + "/pulls?head=" + owner + ":" + headBranch + "&base=" + baseBranch + "&state=all")
-            .header("Authorization", "token " + authToken)
-            .header("Accept", "application/vnd.github+json")
-            .get()
-            .build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (response.isSuccessful()) {
-                JsonNode pulls = objectMapper.readTree(response.body().string());
-                if (pulls.isArray() && pulls.size() > 0) {
-                    JsonNode existingPR = pulls.get(0);
-                    int prNumber = existingPR.path("number").asInt();
-                    log.info("Deleting existing PR #{}", prNumber);
-                    
-                    // Close the PR first
-                    Request closeRequest = new Request.Builder()
-                        .url(API_BASE + "/repos/" + owner + "/" + repo + "/pulls/" + prNumber)
-                        .header("Authorization", "token " + authToken)
-                        .header("Accept", "application/vnd.github+json")
-                        .patch(RequestBody.create("{\"state\": \"closed\"}", MediaType.get("application/json")))
-                        .build();
-                    
-                    try (Response closeResponse = httpClient.newCall(closeRequest).execute()) {
-                        if (closeResponse.isSuccessful()) {
-                            log.info("Closed PR #{}", prNumber);
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Failed to delete existing PR: {}", e.getMessage());
         }
     }
 

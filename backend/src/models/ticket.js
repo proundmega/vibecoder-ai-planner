@@ -84,7 +84,7 @@ class Ticket {
     });
   }
 
-  static async update(id, title, description, status, priority, assigneeId, _userId) {
+  static async update(id, title, description, status, priority, assigneeId, _userId, prUrl) {
     // Fetch current ticket to validate transitions
     const current = await Ticket.findById(id);
     if (current && status) {
@@ -123,6 +123,11 @@ class Ticket {
     if (assigneeId !== undefined) {
       sets.push(`assignee_id = $${idx}`);
       vals.push(assigneeId);
+      idx++;
+    }
+    if (prUrl !== undefined) {
+      sets.push(`pr_url = $${idx}`);
+      vals.push(prUrl);
       idx++;
     }
 

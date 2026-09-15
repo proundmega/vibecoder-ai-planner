@@ -6,14 +6,14 @@
 
 ## Ticket: bp-05 — Fix PR URL Auto-Update After PR Creation
 
-**Status**: planned
+**Status**: completed
 **Priority**: P1
 **Effort**: Small
 **Author**: AI Assistant
 **Date created**: 2026-09-15
-**Date completed**: {{DATE}}
-**PR**: {{link}}
-**Branch**: {{branch-name}}
+**Date completed**: 2026-09-15
+**PR**: https://github.com/proundmega/vibecoder-ai-planner/pull/97
+**Branch**: bp-05-fix-pr-url-update
 **Scope**: Backend
 **Dependencies**: None
 
