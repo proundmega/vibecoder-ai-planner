@@ -95,6 +95,19 @@ public class ApiService {
     }
 
     /**
+     * Update ticket PR URL (called after PR creation).
+     */
+    public void updateTicketPrUrl(Long ticketId, String prUrl) throws IOException {
+        String url = baseUrl + "/tickets/" + ticketId;
+        Map<String, String> body = Map.of("prUrl", prUrl);
+        ApiResponse<Ticket> response = executePut(url, body, new TypeReference<ApiResponse<Ticket>>() {});
+        
+        if (response.hasError()) {
+            throw new IOException("Failed to update ticket pr_url: " + response.getError());
+        }
+    }
+
+    /**
      * Post a message on a ticket.
      */
     public TicketMessage postMessage(Long ticketId, String messageType, String content) throws IOException {
@@ -265,8 +278,8 @@ public class ApiService {
      * Report usage to the backend for billing/monitoring with planning context.
      */
     public void reportUsage(String agentId, String providerType, String model,
-                             int tokensIn, int tokensOut, long durationMs, Long ticketId,
-                             String planningStage, List<String> fileKeys) throws IOException {
+                              int tokensIn, int tokensOut, long durationMs, Long ticketId,
+                              String planningStage, List<String> fileKeys) throws IOException {
         String url = baseUrl + "/usage/agents/" + agentId + "/usage";
         
         Map<String, Object> body = new java.util.HashMap<>();
@@ -280,5 +293,33 @@ public class ApiService {
         if (fileKeys != null && !fileKeys.isEmpty()) body.put("file_keys", fileKeys);
         
         executePost(url, body, new TypeReference<ApiResponse<Object>>() {});
+    }
+
+    /**
+     * List tickets in review status for the project.
+     */
+    public List<Ticket> listReviewTickets() throws IOException {
+        String url = baseUrl + "/tickets/project/" + config.getProjectId() + "?status=review";
+        ApiResponse<List<Ticket>> response = executeGet(url, new TypeReference<ApiResponse<List<Ticket>>>() {});
+        
+        if (response.hasError()) {
+            throw new IOException("Failed to list review tickets: " + response.getError());
+        }
+        
+        return response.getData() != null ? response.getData() : Collections.emptyList();
+    }
+
+    /**
+     * Get PR diff for a ticket.
+     */
+    public Map<String, Object> getPRDiff(Long ticketId) throws IOException {
+        String url = baseUrl + "/tickets/" + ticketId + "/review/diff";
+        ApiResponse<Map<String, Object>> response = executeGet(url, new TypeReference<ApiResponse<Map<String, Object>>>() {});
+        
+        if (response.hasError()) {
+            throw new IOException("Failed to get PR diff: " + response.getError());
+        }
+        
+        return response.getData() != null ? response.getData() : Collections.emptyMap();
     }
 }

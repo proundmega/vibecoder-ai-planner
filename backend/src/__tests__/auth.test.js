@@ -27,7 +27,7 @@ describe('auth middleware', () => {
       mockReq.user = {};
       await auth.requireActiveUser(mockReq, mockRes, nextFn);
       expect(mockRes.status).toHaveBeenCalledWith(403);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Account deactivated' });
+      expect(mockRes.json).toHaveBeenCalledWith({ success: false, error: { code: 'FORBIDDEN', message: 'Account deactivated' } });
       expect(nextFn).not.toHaveBeenCalled();
     });
 
@@ -51,7 +51,7 @@ describe('auth middleware', () => {
       await auth.requireActiveUser(mockReq, mockRes, nextFn);
 
       expect(mockRes.status).toHaveBeenCalledWith(403);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Account deactivated' });
+      expect(mockRes.json).toHaveBeenCalledWith({ success: false, error: { code: 'FORBIDDEN', message: 'Account deactivated' } });
       expect(nextFn).not.toHaveBeenCalled();
     });
 
@@ -62,7 +62,7 @@ describe('auth middleware', () => {
       await auth.requireActiveUser(mockReq, mockRes, nextFn);
 
       expect(mockRes.status).toHaveBeenCalledWith(403);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Account deactivated' });
+      expect(mockRes.json).toHaveBeenCalledWith({ success: false, error: { code: 'FORBIDDEN', message: 'Account deactivated' } });
       expect(nextFn).not.toHaveBeenCalled();
     });
 
@@ -73,7 +73,7 @@ describe('auth middleware', () => {
       await auth.requireActiveUser(mockReq, mockRes, nextFn);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Internal server error' });
+      expect(mockRes.json).toHaveBeenCalledWith({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'Internal server error' } });
       expect(nextFn).not.toHaveBeenCalled();
     });
   });
@@ -82,7 +82,7 @@ describe('auth middleware', () => {
     test('should return 401 when no API key', async () => {
       await auth.agentAuth(mockReq, mockRes, nextFn);
       expect(mockRes.status).toHaveBeenCalledWith(401);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Missing API key' });
+      expect(mockRes.json).toHaveBeenCalledWith({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing API key' } });
       expect(nextFn).not.toHaveBeenCalled();
     });
 
@@ -119,7 +119,7 @@ describe('auth middleware', () => {
       await auth.agentAuth(mockReq, mockRes, nextFn);
 
       expect(mockRes.status).toHaveBeenCalledWith(401);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Invalid API key' });
+      expect(mockRes.json).toHaveBeenCalledWith({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid API key' } });
       expect(nextFn).not.toHaveBeenCalled();
     });
 
@@ -130,7 +130,7 @@ describe('auth middleware', () => {
       await auth.agentAuth(mockReq, mockRes, nextFn);
 
       expect(mockRes.status).toHaveBeenCalledWith(401);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Invalid agent credentials' });
+      expect(mockRes.json).toHaveBeenCalledWith({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid agent credentials' } });
       expect(nextFn).not.toHaveBeenCalled();
     });
   });
@@ -171,7 +171,7 @@ describe('auth middleware', () => {
       await auth.verifyTokenOrAgent(mockReq, mockRes, nextFn);
 
       expect(mockRes.status).toHaveBeenCalledWith(401);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Missing authentication token' });
+      expect(mockRes.json).toHaveBeenCalledWith({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing authentication token' } });
       expect(nextFn).not.toHaveBeenCalled();
     });
 
@@ -196,7 +196,7 @@ describe('auth middleware', () => {
       await auth.verifyTokenOrAgent(mockReq, mockRes, nextFn);
 
       expect(mockRes.status).toHaveBeenCalledWith(401);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Invalid API key' });
+      expect(mockRes.json).toHaveBeenCalledWith({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid API key' } });
       expect(nextFn).not.toHaveBeenCalled();
     });
 
@@ -207,7 +207,7 @@ describe('auth middleware', () => {
       await auth.verifyTokenOrAgent(mockReq, mockRes, nextFn);
 
       expect(mockRes.status).toHaveBeenCalledWith(401);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Invalid agent credentials' });
+      expect(mockRes.json).toHaveBeenCalledWith({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid agent credentials' } });
       expect(nextFn).not.toHaveBeenCalled();
     });
   });

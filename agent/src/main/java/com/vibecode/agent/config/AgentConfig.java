@@ -54,8 +54,8 @@ public class AgentConfig {
         this.agentId = requireEnv("AGENT_ID");
         this.backendUrl = requireEnv("BACKEND_URL");
         this.projectId = requireEnv("PROJECT_ID");
-        this.repoOwner = requireEnv("REPO_OWNER");
-        this.repoName = requireEnv("REPO_NAME");
+        this.repoOwner = getEnv("REPO_OWNER", null);
+        this.repoName = getEnv("REPO_NAME", null);
         this.pollInterval = Duration.ofMillis(getLongEnv("POLL_INTERVAL_MS", 30000));
         this.staleTimeout = Duration.ofMillis(getLongEnv("STALE_TIMEOUT_MS", 3600000));
         this.aiProvider = getEnv("AI_PROVIDER", "claude");
@@ -67,7 +67,9 @@ public class AgentConfig {
         this.dryRun = "true".equalsIgnoreCase(getEnv("DRY_RUN", "false"));
         this.maxTicketsPerCycle = getIntEnv("MAX_TICKETS", 1);
         this.repoCloneDir = getEnv("REPO_CLONE_DIR", "/tmp/repos");
-        validateCloneDir(this.repoCloneDir);
+        if (this.repoOwner != null && !this.repoOwner.isBlank()) {
+            validateCloneDir(this.repoCloneDir);
+        }
     }
 
     private static void validateCloneDir(String dir) {

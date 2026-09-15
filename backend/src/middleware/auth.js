@@ -187,18 +187,18 @@ exports.requireRole = (...allowedRoles) => {
 
 exports.requireActiveUser = async (req, res, next) => {
   if (!req.user || !req.user.userId) {
-    return res.status(403).json({ error: 'Account deactivated' });
+    return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Account deactivated' } });
   }
   
   try {
     const result = await pool.query('SELECT is_active FROM users WHERE id = $1', [req.user.userId]);
     if (result.rows.length === 0 || !result.rows[0].is_active) {
-      return res.status(403).json({ error: 'Account deactivated' });
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Account deactivated' } });
     }
     next();
   } catch (err) {
     console.error('requireActiveUser DB error:', err.message);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: 'Internal server error' } });
   }
 };
 
@@ -238,16 +238,17 @@ exports.agentAuth = async (req, res, next) => {
     const apiKey = req.headers['x-api-key'];
     
     if (!apiKey) {
-      return res.status(401).json({ error: 'Missing API key' });
+      return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing API key' } });
     }
 
     const agent = await authenticateAgentByApiKey(apiKey);
     if (!agent) {
-      return res.status(401).json({ error: 'Invalid API key' });
+      return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid API key' } });
     }
 
     if (agent._expired) {
       return res.status(401).json({
+        success: false,
         error: {
           code: 'KEY_EXPIRED',
           message: `API key expired on ${new Date(agent.api_key_expires_at).toISOString()}`,
@@ -261,7 +262,7 @@ exports.agentAuth = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('agentAuth:', error);
-    return res.status(401).json({ error: 'Invalid agent credentials' });
+    return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid agent credentials' } });
   }
 };
 
@@ -275,17 +276,18 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
   // Fall back to agent API key
   const apiKey = req.headers['x-api-key'];
   if (!apiKey) {
-    return res.status(401).json({ error: 'Missing authentication token' });
+    return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing authentication token' } });
   }
 
   try {
     const agent = await authenticateAgentByApiKey(apiKey);
     if (!agent) {
-      return res.status(401).json({ error: 'Invalid API key' });
+      return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid API key' } });
     }
 
     if (agent._expired) {
       return res.status(401).json({
+        success: false,
         error: {
           code: 'KEY_EXPIRED',
           message: `API key expired on ${new Date(agent.api_key_expires_at).toISOString()}`,
@@ -307,7 +309,7 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
     }
     next();
   } catch {
-    return res.status(401).json({ error: 'Invalid agent credentials' });
+    return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid agent credentials' } });
   }
 };
 

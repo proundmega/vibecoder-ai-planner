@@ -146,6 +146,14 @@ public class GitHubService {
         try (Response response = httpClient.newCall(httpRequest).execute()) {
             if (!response.isSuccessful()) {
                 String errorBody = response.body() != null ? response.body().string() : "";
+                if (response.code() == 422 && errorBody.contains("A pull request already exists")) {
+                    log.info("PR already exists for branch {}, fetching existing PR URL", headBranch);
+                    String existingUrl = getExistingPRUrl(headBranch, actualBase);
+                    if (existingUrl != null) {
+                        return existingUrl;
+                    }
+                    throw new IOException("PR already exists for branch " + headBranch + " but could not fetch its URL");
+                }
                 throw new IOException("Failed to create PR: " + errorBody);
             }
 
@@ -176,6 +184,30 @@ public class GitHubService {
         return null;
     }
 
+    private String getExistingPRUrl(String headBranch, String baseBranch) throws IOException {
+        Request request = new Request.Builder()
+            .url(API_BASE + "/repos/" + owner + "/" + repo + "/pulls?head=" + owner + ":" + headBranch + "&base=" + baseBranch + "&state=all")
+            .header("Authorization", "token " + authToken)
+            .header("Accept", "application/vnd.github+json")
+            .get()
+            .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (response.isSuccessful()) {
+                JsonNode pulls = objectMapper.readTree(response.body().string());
+                if (pulls.isArray() && pulls.size() > 0) {
+                    JsonNode existingPR = pulls.get(0);
+                    String htmlUrl = existingPR.path("html_url").asText();
+                    log.info("Found existing PR #{}: {}", existingPR.path("number").asInt(), htmlUrl);
+                    return htmlUrl;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to get existing PR URL: {}", e.getMessage());
+        }
+        return null;
+    }
+
     private String getBranchSha(String branchName) throws IOException {
         Request request = new Request.Builder()
             .url(API_BASE + "/repos/" + owner + "/" + repo + "/branches/" + branchName)
@@ -189,6 +221,35 @@ public class GitHubService {
                 throw new IOException("Failed to get branch " + branchName + ": " + response.code());
             }
             return objectMapper.readTree(response.body().string()).path("commit").path("sha").asText();
+        }
+    }
+
+    private String createPullRequestRetry(String title, String body, String headBranch, String baseBranch) throws IOException {
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("title", title);
+        requestBody.put("body", body);
+        requestBody.put("head", headBranch);
+        requestBody.put("base", baseBranch);
+        requestBody.put("draft", false);
+
+        String bodyJson = objectMapper.writeValueAsString(requestBody);
+        RequestBody request = RequestBody.create(bodyJson, MediaType.get("application/json"));
+
+        Request httpRequest = new Request.Builder()
+            .url(API_BASE + "/repos/" + owner + "/" + repo + "/pulls")
+            .header("Authorization", "token " + authToken)
+            .header("Accept", "application/vnd.github+json")
+            .post(request)
+            .build();
+
+        try (Response response = httpClient.newCall(httpRequest).execute()) {
+            if (!response.isSuccessful()) {
+                String errorBody = response.body() != null ? response.body().string() : "";
+                throw new IOException("Failed to create PR on retry: " + errorBody);
+            }
+
+            JsonNode root = objectMapper.readTree(response.body().string());
+            return root.path("html_url").asText();
         }
     }
 

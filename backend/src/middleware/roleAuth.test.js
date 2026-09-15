@@ -99,6 +99,6 @@ describe('requireActiveUser middleware', () => {
     const middleware = requireActiveUser;
     middleware(req, res, next);
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Account deactivated' });
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: { code: 'FORBIDDEN', message: 'Account deactivated' } });
   });
 });

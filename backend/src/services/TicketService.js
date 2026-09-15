@@ -109,6 +109,8 @@ class TicketService {
       }
     }
 
+    // Handle prUrl as a parameter to Ticket.update() (single SQL round-trip)
+    const prUrl = data.prUrl;
     return await Ticket.update(
       id,
       data.title,
@@ -116,7 +118,8 @@ class TicketService {
       data.status,
       data.priority,
       data.assigneeId,
-      userId
+      userId,
+      prUrl
     );
   }
 

@@ -40,6 +40,7 @@ public class AgentApp {
     private final AiProvider aiProvider;
     private final GitHubService gitHubService;
     private final TicketProcessor ticketProcessor;
+    private final ReviewProcessor reviewProcessor;
     private ScheduledExecutorService heartbeatScheduler;
     private String githubAccessToken;
     private volatile boolean shuttingDown = false;
@@ -51,6 +52,7 @@ public class AgentApp {
         this.githubAccessToken = fetchGitHubToken();
         this.gitHubService = new GitHubService(githubAccessToken, config.getRepoOwner(), config.getRepoName());
         this.ticketProcessor = new TicketProcessor(config, apiService, aiProvider, gitHubService, githubAccessToken);
+        this.reviewProcessor = new ReviewProcessor(apiService, aiProvider, config.getAgentId());
     }
 
     private String fetchGitHubToken() {
@@ -235,8 +237,14 @@ public class AgentApp {
 
         log.info("Agent stopped");
     }
-
     private void processCycle() throws IOException {
+        // Check if this is a review agent (no REPO_OWNER/REPO_NAME means review mode)
+        if (config.getRepoOwner() == null || config.getRepoOwner().isBlank()) {
+            log.warn("REPO_OWNER is not set — running in review mode only. Ticket processing is disabled. Set REPO_OWNER and REPO_NAME to enable build mode.");
+            reviewProcessor.processReviewCycle();
+            return;
+        }
+        
         log.info("Fetching available tickets...");
         List<Ticket> backlogTickets = apiService.listBacklogTickets();
         log.info("Found {} backlog tickets", backlogTickets.size());
@@ -247,6 +255,7 @@ public class AgentApp {
                 log.info("Reached max tickets per cycle ({}), stopping", config.getMaxTicketsPerCycle());
                 break;
             }
+
             if (ticket.isAvailable()) {
                 ticketProcessor.processTicket(ticket);
                 processed++;
@@ -284,7 +293,9 @@ public class AgentApp {
         } catch (IllegalStateException e) {
             log.error("Configuration error: {}", e.getMessage());
             System.err.println("Error: " + e.getMessage());
-            System.err.println("Required env vars: AGENT_API_KEY, BACKEND_URL, PROJECT_ID, REPO_OWNER, REPO_NAME");
+            System.err.println("Required env vars: AGENT_API_KEY, BACKEND_URL, PROJECT_ID");
+            System.err.println("For ticket processing: also set REPO_OWNER, REPO_NAME");
+            System.err.println("For review mode: omit REPO_OWNER/REPO_NAME");
             System.exit(1);
         } catch (Exception e) {
             log.error("Fatal error", e);
