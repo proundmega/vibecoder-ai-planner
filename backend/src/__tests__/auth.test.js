@@ -177,14 +177,14 @@ describe('auth middleware', () => {
 
     test('should look up real agent from database', async () => {
       mockReq.headers['x-api-key'] = 'real-agent-key';
-      const mockAgent = { id: 'agent-2', name: 'Agent Two', email: 'two@test.com', role: 'admin' };
+      const mockAgent = { id: 'agent-2', owner_id: 'user-1', name: 'Agent Two', email: 'two@test.com', role: 'admin' };
       AgentService.getAgentByApiKey.mockResolvedValueOnce(mockAgent);
 
       await auth.verifyTokenOrAgent(mockReq, mockRes, nextFn);
 
       expect(AgentService.getAgentByApiKey).toHaveBeenCalledWith('real-agent-key');
       expect(mockReq.agent).toEqual(mockAgent);
-      expect(mockReq.user.userId).toBe('agent-2');
+      expect(mockReq.user.userId).toBe('user-1');
       expect(mockReq.user.role).toBe('admin');
       expect(nextFn).toHaveBeenCalled();
     });

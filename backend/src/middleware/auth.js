@@ -207,6 +207,7 @@ async function authenticateAgentByApiKey(apiKey) {
   if (apiKey.startsWith('test-') || apiKey === 'mock-agent-key') {
     return {
       id: 1,
+      owner_id: 1,
       name: 'Test Agent',
       rateLimitCount: 0,
       _mock: true,
