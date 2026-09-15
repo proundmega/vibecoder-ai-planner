@@ -26,7 +26,8 @@ class GitHubService {
       throw new ValidationError(`Cannot access repository: ${validation.error}`);
     }
 
-    const encryptedToken = encrypt(accessToken);
+    logger.debug('connectProject: accessToken is', typeof accessToken, accessToken);
+    const encryptedToken = accessToken ? encrypt(accessToken) : null;
 
     
     const result = await pool.query(
@@ -208,6 +209,7 @@ class GitHubService {
       projectId: row.project_id,
       provider: row.provider,
       repoUrl: row.repo_url,
+      accessTokenEncrypted: row.access_token_encrypted,
       defaultBranch: row.default_branch,
       isActive: row.is_active,
       createdAt: row.created_at,

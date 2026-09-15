@@ -91,7 +91,7 @@ public class WorkspaceManager {
         // or with credential helper configured for private repos
         if (githubToken != null && !githubToken.isBlank() && repoUrl.startsWith("https://github.com/")) {
             // Clone with token embedded in URL for authentication
-            String authenticatedUrl = repoUrl.replace("https://github.com/", "https://oauth2:" + githubToken + "@github.com/");
+            String authenticatedUrl = repoUrl.replace("https://github.com/", "https://" + githubToken + "@github.com/");
             ProcessBuilder pb = new ProcessBuilder(
                 gitBinary, "clone", authenticatedUrl, repoDir.toString()
             );
@@ -187,14 +187,18 @@ public class WorkspaceManager {
             return "dry-run-sha";
         }
 
+        // Configure git identity if not already set
+        runGit("config", "user.email", "agent@vibecode.ai");
+        runGit("config", "user.name", "Vibecode Agent");
+
         // git add -A
         runGit("add", "-A");
 
         // git commit
         runGit("commit", "-m", message);
 
-        // git push origin HEAD:branchName
-        runGit("push", "origin", "HEAD:" + branchName);
+        // git push origin HEAD:branchName --force-with-lease
+        runGit("push", "origin", "HEAD:" + branchName, "--force-with-lease");
 
         // git rev-parse HEAD
         return getCommitSha();

@@ -3,6 +3,8 @@ package com.vibecode.agent.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -17,6 +19,8 @@ import java.util.concurrent.TimeUnit;
  * Ollama, vLLM, llama.cpp, LocalAI, LM Studio, etc.
  */
 public class OpenAiCompatibleProvider implements AiProvider {
+
+    private static final Logger log = LoggerFactory.getLogger(OpenAiCompatibleProvider.class);
 
     private final String endpointUrl;
     private final String model;
@@ -34,7 +38,7 @@ public class OpenAiCompatibleProvider implements AiProvider {
         this.maxTokens = maxTokens;
         this.httpClient = new OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)
+            .readTimeout(300, TimeUnit.SECONDS)
             .build();
         this.objectMapper = new ObjectMapper();
     }
@@ -83,23 +87,44 @@ public class OpenAiCompatibleProvider implements AiProvider {
             JsonNode root = objectMapper.readTree(responseBody);
             
             JsonNode choices = root.path("choices");
+            log.debug("AI response choices: {}", choices);
+            log.debug("AI response usage: {}", root.path("usage"));
             String content = null;
             
             if (choices.isArray() && choices.size() > 0) {
                 JsonNode contentNode = choices.get(0).path("message").path("content");
-                if (contentNode.isTextual()) {
+                if (contentNode.isTextual() && !contentNode.asText().isBlank()) {
                     content = contentNode.asText();
                 }
             }
             
-            if (content == null && choices.isArray() && choices.size() > 0) {
+            if ((content == null || content.isBlank()) && choices.isArray() && choices.size() > 0) {
                 JsonNode text = choices.get(0).path("text");
-                if (text.isTextual()) {
+                if (text.isTextual() && !text.asText().isBlank()) {
                     content = text.asText();
                 }
             }
             
-            if (content == null) {
+            if ((content == null || content.isBlank()) && choices.isArray() && choices.size() > 0) {
+                JsonNode reasoning = choices.get(0).path("reasoning_content");
+                if (reasoning.isTextual() && !reasoning.asText().isBlank()) {
+                    content = reasoning.asText();
+                }
+            }
+            
+            // If content is still blank, try to extract JSON from reasoning_content
+            if ((content == null || content.isBlank()) && choices.isArray() && choices.size() > 0) {
+                JsonNode reasoning = choices.get(0).path("reasoning_content");
+                if (reasoning.isTextual() && !reasoning.asText().isBlank()) {
+                    String reasoningText = reasoning.asText();
+                    int jsonStart = reasoningText.indexOf('{');
+                    if (jsonStart >= 0) {
+                        content = reasoningText.substring(jsonStart);
+                    }
+                }
+            }
+            
+            if (content == null || content.isBlank()) {
                 throw new IOException("Could not parse AI response - no content found in choices");
             }
             

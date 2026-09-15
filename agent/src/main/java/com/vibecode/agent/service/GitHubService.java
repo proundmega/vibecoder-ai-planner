@@ -146,6 +146,11 @@ public class GitHubService {
         try (Response response = httpClient.newCall(httpRequest).execute()) {
             if (!response.isSuccessful()) {
                 String errorBody = response.body() != null ? response.body().string() : "";
+                if (response.code() == 422 && errorBody.contains("A pull request already exists")) {
+                    log.info("PR already exists, attempting to delete and recreate");
+                    deleteExistingPR(headBranch, actualBase);
+                    return createPullRequestRetry(title, body, headBranch, actualBase);
+                }
                 throw new IOException("Failed to create PR: " + errorBody);
             }
 
@@ -189,6 +194,71 @@ public class GitHubService {
                 throw new IOException("Failed to get branch " + branchName + ": " + response.code());
             }
             return objectMapper.readTree(response.body().string()).path("commit").path("sha").asText();
+        }
+    }
+
+    private void deleteExistingPR(String headBranch, String baseBranch) throws IOException {
+        Request request = new Request.Builder()
+            .url(API_BASE + "/repos/" + owner + "/" + repo + "/pulls?head=" + owner + ":" + headBranch + "&base=" + baseBranch + "&state=all")
+            .header("Authorization", "token " + authToken)
+            .header("Accept", "application/vnd.github+json")
+            .get()
+            .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (response.isSuccessful()) {
+                JsonNode pulls = objectMapper.readTree(response.body().string());
+                if (pulls.isArray() && pulls.size() > 0) {
+                    JsonNode existingPR = pulls.get(0);
+                    int prNumber = existingPR.path("number").asInt();
+                    log.info("Deleting existing PR #{}", prNumber);
+                    
+                    // Close the PR first
+                    Request closeRequest = new Request.Builder()
+                        .url(API_BASE + "/repos/" + owner + "/" + repo + "/pulls/" + prNumber)
+                        .header("Authorization", "token " + authToken)
+                        .header("Accept", "application/vnd.github+json")
+                        .patch(RequestBody.create("{\"state\": \"closed\"}", MediaType.get("application/json")))
+                        .build();
+                    
+                    try (Response closeResponse = httpClient.newCall(closeRequest).execute()) {
+                        if (closeResponse.isSuccessful()) {
+                            log.info("Closed PR #{}", prNumber);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to delete existing PR: {}", e.getMessage());
+        }
+    }
+
+    private String createPullRequestRetry(String title, String body, String headBranch, String baseBranch) throws IOException {
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("title", title);
+        requestBody.put("body", body);
+        requestBody.put("head", headBranch);
+        requestBody.put("base", baseBranch);
+        requestBody.put("draft", false);
+
+        String bodyJson = objectMapper.writeValueAsString(requestBody);
+        RequestBody request = RequestBody.create(bodyJson, MediaType.get("application/json"));
+
+        Request httpRequest = new Request.Builder()
+            .url(API_BASE + "/repos/" + owner + "/" + repo + "/pulls")
+            .header("Authorization", "token " + authToken)
+            .header("Accept", "application/vnd.github+json")
+            .post(request)
+            .build();
+
+        try (Response response = httpClient.newCall(httpRequest).execute()) {
+            if (!response.isSuccessful()) {
+                String errorBody = response.body() != null ? response.body().string() : "";
+                throw new IOException("Failed to create PR on retry: " + errorBody);
+            }
+
+            JsonNode root = objectMapper.readTree(response.body().string());
+            return root.path("html_url").asText();
         }
     }
 

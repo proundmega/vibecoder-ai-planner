@@ -109,6 +109,15 @@ class TicketService {
       }
     }
 
+    // Handle prUrl separately (not part of Ticket.update signature)
+    const prUrl = data.prUrl;
+    if (prUrl !== undefined) {
+      await pool.query(
+        'UPDATE tickets SET pr_url = $1, updated_at = NOW() WHERE id = $2',
+        [prUrl, id]
+      );
+    }
+
     return await Ticket.update(
       id,
       data.title,

@@ -9,6 +9,8 @@ RUN mvn package -DskipTests -B
 
 FROM eclipse-temurin:17-jre-alpine
 
+RUN apk add --no-cache git
+
 WORKDIR /app
 
 # Copy the shaded JAR from the build stage (maven-shade-plugin creates artifactId-version.jar)

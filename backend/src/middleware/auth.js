@@ -238,16 +238,17 @@ exports.agentAuth = async (req, res, next) => {
     const apiKey = req.headers['x-api-key'];
     
     if (!apiKey) {
-      return res.status(401).json({ error: 'Missing API key' });
+      return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing API key' } });
     }
 
     const agent = await authenticateAgentByApiKey(apiKey);
     if (!agent) {
-      return res.status(401).json({ error: 'Invalid API key' });
+      return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid API key' } });
     }
 
     if (agent._expired) {
       return res.status(401).json({
+        success: false,
         error: {
           code: 'KEY_EXPIRED',
           message: `API key expired on ${new Date(agent.api_key_expires_at).toISOString()}`,
@@ -261,7 +262,7 @@ exports.agentAuth = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('agentAuth:', error);
-    return res.status(401).json({ error: 'Invalid agent credentials' });
+    return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid agent credentials' } });
   }
 };
 
@@ -275,17 +276,18 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
   // Fall back to agent API key
   const apiKey = req.headers['x-api-key'];
   if (!apiKey) {
-    return res.status(401).json({ error: 'Missing authentication token' });
+    return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing authentication token' } });
   }
 
   try {
     const agent = await authenticateAgentByApiKey(apiKey);
     if (!agent) {
-      return res.status(401).json({ error: 'Invalid API key' });
+      return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid API key' } });
     }
 
     if (agent._expired) {
       return res.status(401).json({
+        success: false,
         error: {
           code: 'KEY_EXPIRED',
           message: `API key expired on ${new Date(agent.api_key_expires_at).toISOString()}`,
@@ -307,7 +309,7 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
     }
     next();
   } catch {
-    return res.status(401).json({ error: 'Invalid agent credentials' });
+    return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid agent credentials' } });
   }
 };
 

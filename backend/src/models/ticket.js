@@ -21,6 +21,7 @@ class Ticket {
     this.planningStatus = data.planning_status || 'not_started';
     this.templateSchema = data.template_schema || null;
     this.phase = data.phase || 'draft';
+    this.prUrl = data.pr_url || null;
     this.createdAt = data.createdAt;
     this.updatedAt = data.updatedAt;
   }
@@ -77,6 +78,7 @@ class Ticket {
       planning_status: row.planning_status,
       template_schema: row.template_schema,
       phase: row.phase,
+      pr_url: row.pr_url,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });
