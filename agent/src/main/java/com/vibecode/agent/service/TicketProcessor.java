@@ -156,6 +156,12 @@ public class TicketProcessor {
                 String prBody = buildPrBody(pickedUp, branchName, commitSha, fileOperations);
                 prUrl = gitHubService.createPullRequest(prTitle, prBody, branchName, "main");
                 log.info("Created PR: {}", prUrl);
+                
+                // Update ticket with PR URL so review agent can find it
+                if (prUrl != null) {
+                    apiService.updateTicketPrUrl(pickedUp.getId(), prUrl);
+                    log.info("Updated ticket {} pr_url to {}", pickedUp.getId(), prUrl);
+                }
             } else {
                 log.info("[DRY RUN] Would create PR for branch: {}", branchName);
             }
@@ -376,7 +382,7 @@ public class TicketProcessor {
         }
 
         try {
-            // Extract JSON from response (handle markdown code blocks)
+            // Extract JSON from response (handle markdown code blocks and surrounding text)
             String jsonContent = aiResponse.trim();
             
             // Remove markdown code blocks if present
@@ -387,6 +393,15 @@ public class TicketProcessor {
                 }
                 if (jsonContent.endsWith("```")) {
                     jsonContent = jsonContent.substring(0, jsonContent.length() - 3).trim();
+                }
+            }
+            
+            // Try to find JSON object in the response
+            int jsonStart = jsonContent.indexOf('{');
+            if (jsonStart >= 0) {
+                int jsonEnd = jsonContent.lastIndexOf('}');
+                if (jsonEnd > jsonStart) {
+                    jsonContent = jsonContent.substring(jsonStart, jsonEnd + 1);
                 }
             }
             

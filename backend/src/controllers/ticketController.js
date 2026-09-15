@@ -40,7 +40,7 @@ async function updateTicket(req, res, next) {
       });
     }
     
-    const allowedFields = ['title', 'description', 'status', 'priority', 'assigneeId'];
+    const allowedFields = ['title', 'description', 'status', 'priority', 'assigneeId', 'prUrl'];
     const filteredUpdates = {};
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
@@ -199,9 +199,10 @@ async function postMessage(req, res, next) {
       });
     }
 
+    const userId = req.agent?.owner_id || req.user?.userId;
     const message = await MessageService.postMessage(
       ticketId,
-      req.user.userId,
+      userId,
       messageType,
       content,
       req.body.metadata || {}

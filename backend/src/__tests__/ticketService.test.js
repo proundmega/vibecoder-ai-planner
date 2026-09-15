@@ -341,4 +341,71 @@ describe('TicketService', () => {
       expect(PermissionService.hasPermission).toHaveBeenCalledWith('member', 'TICKET_DELETE');
     });
   });
+
+  describe('BP-05: prUrl handling in update', () => {
+    const mockTicket = {
+      id: 't1',
+      title: 'Test ticket',
+      description: 'Test',
+      status: 'in_progress',
+      priority: 'medium',
+      ownerId: 100,
+      projectId: 1,
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      Ticket.findById.mockResolvedValue(mockTicket);
+      PermissionService.hasPermission.mockResolvedValue(true);
+    });
+
+    test('should pass prUrl to Ticket.update()', async () => {
+      let capturedArgs;
+      Ticket.update.mockImplementation((...args) => {
+        capturedArgs = args;
+        return mockTicket;
+      });
+
+      await TicketService.update('t1', { prUrl: 'https://github.com/test/repo/pull/1' }, 100);
+
+      expect(capturedArgs[7]).toBe('https://github.com/test/repo/pull/1');
+    });
+
+    test('should pass undefined for prUrl when not provided', async () => {
+      let capturedArgs;
+      Ticket.update.mockImplementation((...args) => {
+        capturedArgs = args;
+        return mockTicket;
+      });
+
+      await TicketService.update('t1', { status: 'review' }, 100);
+
+      expect(capturedArgs[7]).toBeUndefined();
+    });
+
+    test('should pass null for prUrl when explicitly null', async () => {
+      let capturedArgs;
+      Ticket.update.mockImplementation((...args) => {
+        capturedArgs = args;
+        return mockTicket;
+      });
+
+      await TicketService.update('t1', { prUrl: null }, 100);
+
+      expect(capturedArgs[7]).toBeNull();
+    });
+
+    test('should handle prUrl alongside other fields', async () => {
+      let capturedArgs;
+      Ticket.update.mockImplementation((...args) => {
+        capturedArgs = args;
+        return mockTicket;
+      });
+
+      await TicketService.update('t1', { status: 'review', prUrl: 'https://github.com/test/repo/pull/5' }, 100);
+
+      expect(capturedArgs[3]).toBe('review');
+      expect(capturedArgs[7]).toBe('https://github.com/test/repo/pull/5');
+    });
+  });
 });

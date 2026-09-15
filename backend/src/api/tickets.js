@@ -8,6 +8,7 @@ const { statusFilterSchema } = require('../validators/statusFilter');
 const { paginationSchema } = require('../validators/pagination');
 const { jsonContentTypeSchema } = require('../validators/contentType');
 const { pathParams } = require('../validators/pathParams');
+const { pool } = require('../db');
 const ticketController = require('../controllers/ticketController');
 const phaseService = require('../services/PhaseService');
 const GitHubService = require('../services/GitHubService');
@@ -400,9 +401,21 @@ router.post('/:ticketId/phases/transition', verifyTokenOrAgent, validatePathPara
  *       404:
  *         description: Ticket not found
  */
-router.get('/:ticketId/review/diff', verifyToken, validatePathParams({ ticketId: pathParams.ticketId }), async (req, res, next) => {
+router.get('/:ticketId/review/diff', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), async (req, res, next) => {
   try {
-    const diff = await GitHubService.getPRDiff(req.params.ticketId);
+    const ticket = await pool.query('SELECT project_id, pr_url FROM tickets WHERE id = $1', [req.params.ticketId]);
+    if (ticket.rows.length === 0) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Ticket not found' } });
+    }
+    if (!ticket.rows[0].pr_url) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'No PR linked to this ticket' } });
+    }
+    // Validate project exists before attempting PR diff
+    const project = await pool.query('SELECT id FROM projects WHERE id = $1', [ticket.rows[0].project_id]);
+    if (project.rows.length === 0) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Project not found for this ticket' } });
+    }
+    const diff = await GitHubService.getPRDiff(ticket.rows[0].project_id, req.params.ticketId);
     res.json({ success: true, data: diff });
   } catch (error) {
     next(error);

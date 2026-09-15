@@ -3,8 +3,6 @@ package com.vibecode.agent.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-import java.time.LocalDateTime;
-
 /**
  * Represents a ticket from the backend API.
  */
@@ -20,9 +18,9 @@ public class Ticket {
     @JsonProperty("assigned_agent_id")
     private Long assignedAgentId;
     @JsonProperty("locked_at")
-    private LocalDateTime lockedAt;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private String lockedAt;
+    private String createdAt;
+    private String updatedAt;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -48,14 +46,14 @@ public class Ticket {
     public Long getAssignedAgentId() { return assignedAgentId; }
     public void setAssignedAgentId(Long assignedAgentId) { this.assignedAgentId = assignedAgentId; }
 
-    public LocalDateTime getLockedAt() { return lockedAt; }
-    public void setLockedAt(LocalDateTime lockedAt) { this.lockedAt = lockedAt; }
+    public String getLockedAt() { return lockedAt; }
+    public void setLockedAt(String lockedAt) { this.lockedAt = lockedAt; }
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public String getCreatedAt() { return createdAt; }
+    public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
 
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+    public String getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(String updatedAt) { this.updatedAt = updatedAt; }
 
     public boolean isAvailable() {
         return "backlog".equals(status) && assignedAgentId == null;

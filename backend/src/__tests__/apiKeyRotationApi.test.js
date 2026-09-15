@@ -43,6 +43,7 @@ describe('Agent Key Rotation - Middleware', () => {
 
     expect(mockRes.status).toHaveBeenCalledWith(401);
     expect(mockRes.json).toHaveBeenCalledWith({
+      success: false,
       error: {
         code: 'KEY_EXPIRED',
         message: expect.stringContaining('expired'),
@@ -73,7 +74,7 @@ describe('Agent Key Rotation - Middleware', () => {
     await auth.agentAuth(mockReq, mockRes, nextFn);
 
     expect(mockRes.status).toHaveBeenCalledWith(401);
-    expect(mockRes.json).toHaveBeenCalledWith({ error: 'Missing API key' });
+    expect(mockRes.json).toHaveBeenCalledWith({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing API key' } });
     expect(nextFn).not.toHaveBeenCalled();
   });
 
