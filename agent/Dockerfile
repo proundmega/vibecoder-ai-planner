@@ -9,7 +9,7 @@ RUN mvn package -DskipTests -B
 
 FROM eclipse-temurin:17-jre-alpine
 
-RUN apk add --no-cache git
+RUN apk add --no-cache git=2.42.3-r0
 
 WORKDIR /app
 
