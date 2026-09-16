@@ -199,7 +199,7 @@ class TicketService {
     const existingTicket = await Ticket.findById(ticketId);
     if (!existingTicket) throw new NotFoundError('Ticket not found');
 
-    await Ticket.update(ticketId, null, null, null, null, userId, userId);
+    await Ticket.update(ticketId, { assigneeId: userId });
     return existingTicket;
   }
 
@@ -207,7 +207,7 @@ class TicketService {
     const ticket = await Ticket.findById(ticketId);
     if (!ticket) throw new NotFoundError('Ticket not found');
 
-    await Ticket.update(ticketId, null, null, null, null, assigneeId, userId);
+    await Ticket.update(ticketId, { assigneeId });
     return ticket;
   }
 
