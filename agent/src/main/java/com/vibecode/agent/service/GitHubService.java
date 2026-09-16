@@ -224,35 +224,6 @@ public class GitHubService {
         }
     }
 
-    private String createPullRequestRetry(String title, String body, String headBranch, String baseBranch) throws IOException {
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("title", title);
-        requestBody.put("body", body);
-        requestBody.put("head", headBranch);
-        requestBody.put("base", baseBranch);
-        requestBody.put("draft", false);
-
-        String bodyJson = objectMapper.writeValueAsString(requestBody);
-        RequestBody request = RequestBody.create(bodyJson, MediaType.get("application/json"));
-
-        Request httpRequest = new Request.Builder()
-            .url(API_BASE + "/repos/" + owner + "/" + repo + "/pulls")
-            .header("Authorization", "token " + authToken)
-            .header("Accept", "application/vnd.github+json")
-            .post(request)
-            .build();
-
-        try (Response response = httpClient.newCall(httpRequest).execute()) {
-            if (!response.isSuccessful()) {
-                String errorBody = response.body() != null ? response.body().string() : "";
-                throw new IOException("Failed to create PR on retry: " + errorBody);
-            }
-
-            JsonNode root = objectMapper.readTree(response.body().string());
-            return root.path("html_url").asText();
-        }
-    }
-
     private String createTree(String filePath, String content) throws IOException {
         // Simplified: in a real implementation, you'd need to get the base tree SHA
         // and create a proper tree with all files

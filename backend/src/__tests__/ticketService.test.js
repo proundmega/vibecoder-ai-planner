@@ -118,9 +118,9 @@ describe('TicketService', () => {
       PermissionService.hasPermission.mockResolvedValueOnce(true);
 
       // Capture the SQL query and params passed to Ticket.update (model)
-      let capturedQuery;
+      let capturedArgs;
       Ticket.update.mockImplementation((...args) => {
-        capturedQuery = args;
+        capturedArgs = args;
         return mockTicket;
       });
 
@@ -129,7 +129,7 @@ describe('TicketService', () => {
 
       // The service should pass null for assigneeId to the model
       // The model should NOT use COALESCE for null — it should include it in SET
-      expect(capturedQuery[5]).toBeNull(); // assigneeId should be null, not undefined
+      expect(capturedArgs[1].assigneeId).toBeNull(); // assigneeId should be null, not undefined
     });
 
     test('should pass undefined for fields not in body (not include in SQL SET)', async () => {
@@ -148,11 +148,11 @@ describe('TicketService', () => {
       await TicketService.update('t1', { status: 'review' }, 100);
 
       // Only status should be non-null; title, description, priority, assigneeId should all be undefined
-      expect(capturedArgs[1]).toBeUndefined();   // title
-      expect(capturedArgs[2]).toBeUndefined();   // description
-      expect(capturedArgs[3]).toBe('review');    // status
-      expect(capturedArgs[4]).toBeUndefined();   // priority
-      expect(capturedArgs[5]).toBeUndefined();   // assigneeId
+      expect(capturedArgs[1].title).toBeUndefined();   // title
+      expect(capturedArgs[1].description).toBeUndefined();   // description
+      expect(capturedArgs[1].status).toBe('review');    // status
+      expect(capturedArgs[1].priority).toBeUndefined();   // priority
+      expect(capturedArgs[1].assigneeId).toBeUndefined();   // assigneeId
     });
   });
 
@@ -173,12 +173,11 @@ describe('TicketService', () => {
       // Only update status - title, description, priority, assigneeId should all be undefined
       await TicketService.update('t1', { status: 'in_progress' }, 100);
 
-      expect(capturedArgs[1]).toBeUndefined();   // title
-      expect(capturedArgs[2]).toBeUndefined();   // description
-      expect(capturedArgs[3]).toBe('in_progress'); // status
-      expect(capturedArgs[4]).toBeUndefined();   // priority
-      expect(capturedArgs[5]).toBeUndefined();   // assigneeId
-      expect(capturedArgs[6]).toBe(100);    // userId
+      expect(capturedArgs[1].title).toBeUndefined();   // title
+      expect(capturedArgs[1].description).toBeUndefined();   // description
+      expect(capturedArgs[1].status).toBe('in_progress'); // status
+      expect(capturedArgs[1].priority).toBeUndefined();   // priority
+      expect(capturedArgs[1].assigneeId).toBeUndefined();   // assigneeId
     });
 
     test('should pass provided values and undefined for fields not in body', async () => {
@@ -196,12 +195,11 @@ describe('TicketService', () => {
       // Update only title and priority
       await TicketService.update('t1', { title: 'New Title', priority: 'critical' }, 100);
 
-      expect(capturedArgs[1]).toBe('New Title');  // title
-      expect(capturedArgs[2]).toBeUndefined();     // description (not provided)
-      expect(capturedArgs[3]).toBeUndefined();     // status (not provided)
-      expect(capturedArgs[4]).toBe('critical');    // priority
-      expect(capturedArgs[5]).toBeUndefined();     // assigneeId (not provided)
-      expect(capturedArgs[6]).toBe(100);           // userId
+      expect(capturedArgs[1].title).toBe('New Title');  // title
+      expect(capturedArgs[1].description).toBeUndefined();     // description (not provided)
+      expect(capturedArgs[1].status).toBeUndefined();     // status (not provided)
+      expect(capturedArgs[1].priority).toBe('critical');    // priority
+      expect(capturedArgs[1].assigneeId).toBeUndefined();     // assigneeId (not provided)
     });
 
     test('should pass undefined when body contains explicit undefined', async () => {
@@ -219,8 +217,8 @@ describe('TicketService', () => {
       await TicketService.update('t1', { title: undefined }, 100);
 
       // Should pass undefined for undefined, so Ticket.update() excludes it from SQL SET
-      expect(capturedArgs[1]).toBeUndefined();
-      expect(capturedArgs[1]).not.toBe(null);
+      expect(capturedArgs[1].title).toBeUndefined();
+      expect(capturedArgs[1].title).not.toBe(null);
     });
 
     test('should pass all defined fields correctly', async () => {
@@ -243,7 +241,15 @@ describe('TicketService', () => {
         priority: 'high',
       }, 100);
 
-      expect(capturedArgs).toEqual(['t1', 'Updated', 'New desc', 'in_progress', 'high', undefined, 100]);
+      expect(capturedArgs[0]).toBe('t1');
+      expect(capturedArgs[1]).toEqual({
+        title: 'Updated',
+        description: 'New desc',
+        status: 'in_progress',
+        priority: 'high',
+        assigneeId: undefined,
+        prUrl: undefined,
+      });
     });
   });
 
@@ -368,7 +374,7 @@ describe('TicketService', () => {
 
       await TicketService.update('t1', { prUrl: 'https://github.com/test/repo/pull/1' }, 100);
 
-      expect(capturedArgs[7]).toBe('https://github.com/test/repo/pull/1');
+      expect(capturedArgs[1].prUrl).toBe('https://github.com/test/repo/pull/1');
     });
 
     test('should pass undefined for prUrl when not provided', async () => {
@@ -380,7 +386,7 @@ describe('TicketService', () => {
 
       await TicketService.update('t1', { status: 'review' }, 100);
 
-      expect(capturedArgs[7]).toBeUndefined();
+      expect(capturedArgs[1].prUrl).toBeUndefined();
     });
 
     test('should pass null for prUrl when explicitly null', async () => {
@@ -392,7 +398,7 @@ describe('TicketService', () => {
 
       await TicketService.update('t1', { prUrl: null }, 100);
 
-      expect(capturedArgs[7]).toBeNull();
+      expect(capturedArgs[1].prUrl).toBeNull();
     });
 
     test('should handle prUrl alongside other fields', async () => {
@@ -404,8 +410,8 @@ describe('TicketService', () => {
 
       await TicketService.update('t1', { status: 'review', prUrl: 'https://github.com/test/repo/pull/5' }, 100);
 
-      expect(capturedArgs[3]).toBe('review');
-      expect(capturedArgs[7]).toBe('https://github.com/test/repo/pull/5');
+      expect(capturedArgs[1].status).toBe('review');
+      expect(capturedArgs[1].prUrl).toBe('https://github.com/test/repo/pull/5');
     });
   });
 });
