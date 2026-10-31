@@ -69,14 +69,14 @@ const hasPendingApproval = computed(() => {
 const canUpdate = () => {
   if (!authStore.user.value) return false
   if (authStore.canUpdateTicket()) return true
-  if (authStore.hasRole('user') && ticket.value?.owner_id === authStore.user.value.id) return true
+  if (authStore.hasRole('user') && ticket.value?.ownerId === authStore.user.value.id) return true
   return false
 }
 
 const canDelete = () => {
   if (!authStore.user.value) return false
   if (authStore.canDeleteTicket()) return true
-  if (authStore.hasRole('user') && ticket.value?.owner_id === authStore.user.value.id) return true
+  if (authStore.hasRole('user') && ticket.value?.ownerId === authStore.user.value.id) return true
   return false
 }
 
@@ -354,7 +354,7 @@ function toggleFileUsage(fileKey) {
 
 async function handleShowTemplateSelect() {
   try {
-    customTemplates.value = await listTemplates(ticket.value.project_id)
+    customTemplates.value = await listTemplates(ticket.value.projectId)
   } catch (err) {
     console.error('Failed to load custom templates:', err)
     customTemplates.value = []

@@ -46,6 +46,7 @@ const SQL_FILES = [
     path.join(__dirname, './041_add_project_id_to_providers.sql'),
     path.join(__dirname, './042_csp_permissions.sql'),
     path.join(__dirname, './043_make_access_token_nullable.sql'),
+    path.join(__dirname, './044_allow_critical_priority.sql'),
 ];
 
 const DATA_MIGRATIONS = [
@@ -172,7 +173,7 @@ function splitSQLStatements(sql) {
   return statements;
 }
 
-async function runMigration(file) {
+async function runMigration(file, dryRun = false) {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     family: 4,
@@ -186,13 +187,37 @@ async function runMigration(file) {
 
     console.log(`\n--- ${path.basename(file)} (${statements.length} statements) ---`);
 
-    for (let i = 0; i < statements.length; i++) {
-      const stmt = statements[i];
-      try {
-        await pool.query(stmt);
-        console.log(`  ✓ Statement ${i + 1} executed`);
-      } catch (err) {
-        console.log(`  ! Statement ${i + 1} (may already exist): ${err.message}`);
+    if (dryRun) {
+      // DRY-RUN MODE: classify and report without executing anything
+      const summary = {};
+
+      for (let i = 0; i < statements.length; i++) {
+        const stmt = statements[i];
+        const trimmed = stmt.trim();
+
+        if (!trimmed) continue;
+
+        const type = classifyStatement(stmt);
+        summary[type] = (summary[type] || 0) + 1;
+
+        const preview = trimmed.length > 100 ? trimmed.substring(0, 100) + '...' : trimmed;
+        console.log(`  [${type}] ${preview}`);
+      }
+
+      console.log('\nSummary:');
+      for (const [type, count] of Object.entries(summary).sort()) {
+        console.log(`  ${type}: ${count}`);
+      }
+      console.log(`\nTotal: ${Object.values(summary).reduce((a, b) => a + b, 0)} statements would be executed.`);
+    } else {
+      for (let i = 0; i < statements.length; i++) {
+        const stmt = statements[i];
+        try {
+          await pool.query(stmt);
+          console.log(`  ✓ Statement ${i + 1} executed`);
+        } catch (err) {
+          console.log(`  ! Statement ${i + 1} (may already exist): ${err.message}`);
+        }
       }
     }
   } catch (error) {
@@ -219,20 +244,35 @@ function runDataMigration(file) {
   });
 }
 
-async function migrate() {
+async function migrate(dryRun = false) {
   for (const sqlFile of SQL_FILES) {
-    await runMigration(sqlFile);
+    await runMigration(sqlFile, dryRun);
   }
 
   for (const dataMigration of DATA_MIGRATIONS) {
-    await runDataMigration(dataMigration);
+    if (dryRun) {
+      console.log(`\n[DRY-RUN] Would run data migration: ${path.basename(dataMigration)}`);
+    } else {
+      await runDataMigration(dataMigration);
+    }
   }
 
-  console.log('\n\n✓ Migrations completed successfully!');
+  if (dryRun) {
+    console.log('\n\n=== DRY-RUN COMPLETE: no changes were applied ===');
+  } else {
+    console.log('\n\n✓ Migrations completed successfully!');
+  }
 }
 
 if (require.main === module) {
-  migrate();
+  const args = process.argv.slice(2);
+  const dryRun = args.includes('--dry-run');
+
+  if (dryRun) {
+    console.log('=== DRY-RUN MODE: No changes will be applied ===\n');
+  }
+
+  migrate(dryRun);
 }
 
-module.exports = { classifyStatement, splitSQLStatements };
+module.exports = { classifyStatement, splitSQLStatements, runMigration, migrate };

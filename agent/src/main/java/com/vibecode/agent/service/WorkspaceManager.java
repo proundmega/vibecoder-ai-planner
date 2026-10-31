@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -319,8 +320,12 @@ public class WorkspaceManager {
         Path helperScript = gitDir.resolve("credential-helper.sh");
         String scriptContent = "#!/bin/sh\necho \"username=oauth2\"\necho \"password=" + token + "\"";
         Files.writeString(helperScript, scriptContent);
-        Files.setPosixFilePermissions(helperScript,
-            java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
+        // POSIX permission APIs are unavailable on Windows. The agent ships in a
+        // Linux container, but local development on Windows must still work.
+        if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            Files.setPosixFilePermissions(helperScript,
+                java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
+        }
         return helperScript;
     }
 

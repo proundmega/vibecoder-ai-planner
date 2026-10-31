@@ -25,7 +25,7 @@ const error = ref(null)
 const canEdit = computed(() => {
   if (!authStore.user.value) return false
   if (authStore.canUpdateTicket()) return true
-  if (authStore.hasRole('user') && props.ticket?.owner_id === authStore.user.value.id) return true
+  if (authStore.hasRole('user') && props.ticket?.ownerId === authStore.user.value.id) return true
   return false
 })
 
@@ -33,7 +33,7 @@ onMounted(async () => {
   title.value = props.ticket.title || ''
   description.value = props.ticket.description || ''
   priority.value = props.ticket.priority || 'medium'
-  assigneeId.value = props.ticket.assignee_id || null
+  assigneeId.value = props.ticket.assigneeId || null
   
   try {
     const response = await fetchProjectUsers(props.projectId)

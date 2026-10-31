@@ -33,8 +33,13 @@ class TicketService {
     const planning = await TicketPlanningService.getPlanningForTicket(ticket, userId);
     const attachments = await TicketAttachmentService.list(ticket.id, userId);
 
+    // findById() selects the tickets row only, so resolve the assignee's
+    // display name here for the ticket detail view.
+    const assignee = ticket.assigneeId ? await User.find(ticket.assigneeId) : null;
+
     return {
       ...ticket,
+      assigneeName: assignee?.name || null,
       planning,
       attachments: attachments.map(a => ({
         id: a.id,
@@ -74,7 +79,7 @@ class TicketService {
       
       
       const projectMember = await pool.query(
-        'SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2',
+        'SELECT 1 FROM project_memberships WHERE project_id = $1 AND user_id = $2',
         [ticket.projectId, data.assigneeId]
       );
       if (projectMember.rows.length === 0) {
