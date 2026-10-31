@@ -14,6 +14,15 @@ jest.mock('../services/PermissionService', () => ({
   hasPermission: jest.fn().mockResolvedValue(true),
 }));
 
+const MUTABLE_COLUMNS = ['title', 'description', 'status', 'priority', 'assignee_id', 'pr_url'];
+
+function expectOnlyColumnUpdated(sql, expectedColumn) {
+  expect(sql).toContain(`${expectedColumn} =`);
+  for (const column of MUTABLE_COLUMNS.filter(column => column !== expectedColumn)) {
+    expect(sql).not.toContain(`${column} =`);
+  }
+}
+
 describe('Ticket.update() null field support (BP-61)', () => {
   let pool;
 
@@ -47,6 +56,7 @@ describe('Ticket.update() null field support (BP-61)', () => {
     expect(updateCall).toBeDefined();
     // The first value should be null (title)
     expect(updateCall[1][0]).toBeNull();
+    expectOnlyColumnUpdated(updateCall[0], 'title');
   });
 
   it('can set description to null', async () => {
@@ -69,6 +79,7 @@ describe('Ticket.update() null field support (BP-61)', () => {
     const updateCall = pool.query.mock.calls.find(call => call[0].includes('UPDATE tickets SET'));
     expect(updateCall).toBeDefined();
     expect(updateCall[1][0]).toBeNull();
+    expectOnlyColumnUpdated(updateCall[0], 'description');
   });
 
   it('can set status to null', async () => {
@@ -91,6 +102,7 @@ describe('Ticket.update() null field support (BP-61)', () => {
     const updateCall = pool.query.mock.calls.find(call => call[0].includes('UPDATE tickets SET'));
     expect(updateCall).toBeDefined();
     expect(updateCall[1][0]).toBeNull();
+    expectOnlyColumnUpdated(updateCall[0], 'status');
   });
 
   it('can set priority to null', async () => {
@@ -113,6 +125,7 @@ describe('Ticket.update() null field support (BP-61)', () => {
     const updateCall = pool.query.mock.calls.find(call => call[0].includes('UPDATE tickets SET'));
     expect(updateCall).toBeDefined();
     expect(updateCall[1][0]).toBeNull();
+    expectOnlyColumnUpdated(updateCall[0], 'priority');
   });
 
   it('can set assigneeId to null (clear assignment)', async () => {
@@ -135,6 +148,7 @@ describe('Ticket.update() null field support (BP-61)', () => {
     const updateCall = pool.query.mock.calls.find(call => call[0].includes('UPDATE tickets SET'));
     expect(updateCall).toBeDefined();
     expect(updateCall[1][0]).toBeNull();
+    expectOnlyColumnUpdated(updateCall[0], 'assignee_id');
   });
 
   it('does not include undefined fields in UPDATE', async () => {
@@ -156,8 +170,12 @@ describe('Ticket.update() null field support (BP-61)', () => {
 
     const updateCall = pool.query.mock.calls.find(call => call[0].includes('UPDATE tickets SET'));
     expect(updateCall).toBeDefined();
-    // SET clause should be empty or contain only the WHERE condition
+    // SET clause should contain only the timestamp, never a mutable column
+    expect(updateCall[0]).toContain('updated_at = NOW()');
     expect(updateCall[0]).toContain('WHERE id');
+    for (const column of MUTABLE_COLUMNS) {
+      expect(updateCall[0]).not.toContain(`${column} =`);
+    }
   });
 
   it('updates only specified non-null fields', async () => {
