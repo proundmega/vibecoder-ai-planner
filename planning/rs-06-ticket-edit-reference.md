@@ -1,7 +1,8 @@
 # RS-6: Ticket Edit Modal — Reference Document
 
-**Status**: planned
+**Status**: implemented (fixes in PR #100)
 **Priority**: P2
+**Follow-up**: `EditTicketModal.cy.ts`, real `TicketDetail.cy.ts` coverage and refreshed E2E assignment tests are tracked in `bp-124` (O3).
 **Effort**: Medium
 **Dependencies**: RS-3 (Auth middleware — role checks)
 
@@ -377,7 +378,7 @@ async update(id, data, userId) {
     if (!assignee) throw new Error('Assignee not found')
     // Check if assignee is in same project
     const projectMember = await db.query(
-      'SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2',
+      'SELECT 1 FROM project_memberships WHERE project_id = $1 AND user_id = $2',
       [ticket.projectId, data.assigneeId]
     )
     if (projectMember.rows.length === 0) {

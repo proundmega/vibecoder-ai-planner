@@ -6,7 +6,7 @@
 
 ## Ticket: bp-122 — Code Cleanup (Dead Code, Verbose Signature, Unpinned Dependency)
 
-**Status**: planned
+**Status**: implemented (PR #99)
 **Priority**: P3
 **Effort**: Small
 **Author**: AI Assistant

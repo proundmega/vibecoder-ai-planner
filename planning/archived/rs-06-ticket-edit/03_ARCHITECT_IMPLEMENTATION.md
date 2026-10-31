@@ -1,6 +1,6 @@
 # RS-6: Ticket Edit Modal
 
-**Status**: planned
+**Status**: implemented (fixes in PR #100)
 **Priority**: P2
 **Effort**: Medium
 **Dependencies**: RS-3 (Auth middleware — role checks)
@@ -18,7 +18,7 @@ Add edit functionality to ticket detail view. Users can edit title, description,
    - Create edit modal with fields:
      - Title (text input)
      - Description (textarea)
-     - Priority (dropdown: low, medium, high, urgent)
+     - Priority (dropdown: low, medium, high, critical, urgent)
      - Assignee (dropdown: users in same project)
    - Save button triggers `updateTicket(ticket.id, updates)`
    - Cancel button closes modal without saving

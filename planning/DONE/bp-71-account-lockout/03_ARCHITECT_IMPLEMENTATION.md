@@ -1,6 +1,6 @@
 # 03_ARCHITECT_IMPLEMENTATION.md — Account Lockout Implementation Plan
 
-**Status**: Working draft
+**Status**: implemented (PR #52)
 **Author**: AI Assistant
 **Scope**: Backend + Frontend
 **Related**: `01_ARCHITECT_REQUIREMENT.md`, `02_ARCHITECT_DESIGN.md`, `04_SPECIFICATION.md`

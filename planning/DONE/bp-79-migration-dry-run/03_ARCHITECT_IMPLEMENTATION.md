@@ -1,6 +1,6 @@
 # 03_ARCHITECT_IMPLEMENTATION.md — Migration Dry-Run Implementation Plan
 
-**Status**: Working draft
+**Status**: implemented (PR #100)
 **Author**: AI Assistant
 **Scope**: Backend
 **Related**: `01_ARCHITECT_REQUIREMENT.md`, `02_ARCHITECT_DESIGN.md`, `04_SPECIFICATION.md`
@@ -38,18 +38,15 @@ function classifyStatement(sql) {
 #### MODIFY: `backend/src/migrations/apply.js`
 
 **Modify runMigration function** (add dry-run parameter):
+
+> **Implementation note (PR #100):** dry-run now reads and classifies the file
+> before any `Pool` is created. No database connection is attempted. The snippet
+> below is the original plan; `backend/src/migrations/apply.js` is authoritative.
+
 ```javascript
-async function runMigration(file, dryRun = false) {
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    family: 4,
-  });
-
-  try {
-    await pool.query('SELECT NOW()');
-
-    const sql = fs.readFileSync(file, 'utf8');
-    const statements = splitSQLStatements(sql);
+async function runMigration(file, dryRun = false, pool = null) {
+  const sql = fs.readFileSync(file, 'utf8');
+  const statements = splitSQLStatements(sql);
 
     console.log(`\n--- ${path.basename(file)} (${statements.length} statements) ---`);
 

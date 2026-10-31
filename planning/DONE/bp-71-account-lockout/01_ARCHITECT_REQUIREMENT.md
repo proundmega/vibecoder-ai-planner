@@ -1,6 +1,6 @@
 # 01_ARCHITECT_REQUIREMENT.md — Account Lockout After Failed Login Attempts
 
-**Status**: planned
+**Status**: implemented (PR #52)
 **Date created**: 2025-07-12
 **Date completed**: 
 **Author**: AI Assistant

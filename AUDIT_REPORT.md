@@ -1,7 +1,7 @@
 # Full Test Audit — Vibecode AI Planner
 
 **Date:** 2026-10-31
-**Baseline commit:** `3e3fe1e` (`master`, clean working tree at start)
+**Baseline commit:** `cc334a1` (`master` after PR #99, clean working tree at rebase)
 **Environment:** Windows, Node 24.22.2 / npm 11.19.1, Java 21 (Temurin), no Docker, no system PostgreSQL, no Chrome.
 
 This audit ran every test layer that could be executed, unblocked the database-backed
@@ -135,7 +135,7 @@ error (HTTP 500).
 automatically by the integration setup.
 
 **L3. Documented migration dry-run did not exist**
-`PENDING.txt` marks **bp-79** done, and `planning/bp-79-migration-dry-run/04_SPECIFICATION.md`
+`PENDING.txt` marks **bp-79** done, and `planning/DONE/bp-79-migration-dry-run/04_SPECIFICATION.md`
 specifies a CLI, but `apply.js` only exported the classifier and `package.json` had no
 `db:migrate:dry-run` script.
 *Fix:* implemented `--dry-run` per the spec (classification summary, data-migration
@@ -171,6 +171,9 @@ TicketDetail 1, UserManagement 10, UserModal 7).
 
 ## 4. Open defects and risks (not changed)
 
+Tracked in `planning/bp-124-audit-open-defects/`. The fixes in this report are
+recorded in `planning/bp-123-test-audit-corrections/`.
+
 | # | Severity | Finding |
 |---|---|---|
 | O1 | Medium | **Milestone fields cannot be set.** `TicketService.update()` validates `milestone_id`, `estimate` and `depends_on` but never persists them, and `TicketService.updateMilestoneFields()` has no callers. `ProjectMilestones.vue` displays values that no API can write. |
@@ -179,7 +182,7 @@ TicketDetail 1, UserManagement 10, UserModal 7).
 | O4 | Medium | **Agent identity is ambiguous.** `assigned_agent_id` references `users(id)`, and `pickUpTicket` stores `req.user.userId` (the owner user), not the agent id. Two agents owned by the same user are indistinguishable, and pickup/release traces cannot identify the worker. |
 | O5 | Low | **Frontend validator schemas use snake_case.** `api/validator.ts` declares `owner_id`/`project_id`/`user_id` for Project/Ticket/Agent while the backend returns camelCase. Only the `User` schema is used in production today, so no runtime impact yet. |
 | O6 | Low | **`PUT /tickets/:id` response type drift.** The endpoint returns `{ message: 'Ticket updated' }` but `api/tickets.ts` types it as `Ticket`. Callers that consume the result get an object without ticket fields. |
-| O7 | Low | **Docs drift.** README says "GitHub Actions" but CI is Jenkins; `AGENTS.md` says 40 migrations (now 44); `PENDING.txt` claimed bp-79 was done while the code was missing. |
+| O7 | Low | **Docs drift.** README says "GitHub Actions" but CI is Jenkins; `AGENTS.md` now records 44 migrations; `PENDING.txt` claimed bp-79 was done while the code was missing (fixed in this PR). |
 | O8 | Low | **Integration setup hides migration errors.** `src/__tests__/integration/setup.js` only warns on unexpected errors, so a broken migration does not fail the run. This is how the missing `agent_memory` objects went unnoticed locally. |
 
 ---
