@@ -111,16 +111,14 @@ class TicketService {
 
     // Handle prUrl as a parameter to Ticket.update() (single SQL round-trip)
     const prUrl = data.prUrl;
-    return await Ticket.update(
-      id,
-      data.title,
-      data.description,
-      data.status,
-      data.priority,
-      data.assigneeId,
-      userId,
-      prUrl
-    );
+    return await Ticket.update(id, {
+      title: data.title,
+      description: data.description,
+      status: data.status,
+      priority: data.priority,
+      assigneeId: data.assigneeId,
+      prUrl,
+    });
   }
 
   async updateMilestoneFields(id, { milestone_id, estimate, depends_on }, userId) {
@@ -195,22 +193,6 @@ class TicketService {
     }
 
     await Ticket.delete(id);
-  }
-
-  async claim(ticketId, userId) {
-    const existingTicket = await Ticket.findById(ticketId);
-    if (!existingTicket) throw new NotFoundError('Ticket not found');
-
-    await Ticket.update(ticketId, null, null, null, null, userId, userId);
-    return existingTicket;
-  }
-
-  async assign(ticketId, assigneeId, userId) {
-    const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new NotFoundError('Ticket not found');
-
-    await Ticket.update(ticketId, null, null, null, null, assigneeId, userId);
-    return ticket;
   }
 
   async updateStatus(ticketId, status, userId) {

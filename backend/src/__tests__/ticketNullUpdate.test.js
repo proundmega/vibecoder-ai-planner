@@ -14,6 +14,15 @@ jest.mock('../services/PermissionService', () => ({
   hasPermission: jest.fn().mockResolvedValue(true),
 }));
 
+const MUTABLE_COLUMNS = ['title', 'description', 'status', 'priority', 'assignee_id', 'pr_url'];
+
+function expectOnlyColumnUpdated(sql, expectedColumn) {
+  expect(sql).toContain(`${expectedColumn} =`);
+  for (const column of MUTABLE_COLUMNS.filter(column => column !== expectedColumn)) {
+    expect(sql).not.toContain(`${column} =`);
+  }
+}
+
 describe('Ticket.update() null field support (BP-61)', () => {
   let pool;
 
@@ -40,13 +49,14 @@ describe('Ticket.update() null field support (BP-61)', () => {
       return Promise.resolve({ rows: [] });
     });
 
-    await Ticket.update('t1', null, null, null, null, null, 'user-1');
+    await Ticket.update('t1', { title: null, description: undefined, status: undefined, priority: undefined, assigneeId: undefined, prUrl: undefined });
 
     expect(pool.query).toHaveBeenCalled();
     const updateCall = pool.query.mock.calls.find(call => call[0].includes('UPDATE tickets SET'));
     expect(updateCall).toBeDefined();
     // The first value should be null (title)
     expect(updateCall[1][0]).toBeNull();
+    expectOnlyColumnUpdated(updateCall[0], 'title');
   });
 
   it('can set description to null', async () => {
@@ -57,18 +67,19 @@ describe('Ticket.update() null field support (BP-61)', () => {
         return Promise.resolve({ rows: [mockTicket] });
       }
       if (sql.includes('UPDATE tickets SET')) {
-        // description is the second parameter
-        expect(params[1]).toBeNull();
+        // Only description is set, so params[0] is the description value
+        expect(params[0]).toBeNull();
         return Promise.resolve({ rows: [{ ...mockTicket, description: null }] });
       }
       return Promise.resolve({ rows: [] });
     });
 
-    await Ticket.update('t1', null, null, null, null, null, 'user-1');
+    await Ticket.update('t1', { title: undefined, description: null, status: undefined, priority: undefined, assigneeId: undefined, prUrl: undefined });
 
     const updateCall = pool.query.mock.calls.find(call => call[0].includes('UPDATE tickets SET'));
     expect(updateCall).toBeDefined();
-    expect(updateCall[1][1]).toBeNull();
+    expect(updateCall[1][0]).toBeNull();
+    expectOnlyColumnUpdated(updateCall[0], 'description');
   });
 
   it('can set status to null', async () => {
@@ -79,17 +90,19 @@ describe('Ticket.update() null field support (BP-61)', () => {
         return Promise.resolve({ rows: [mockTicket] });
       }
       if (sql.includes('UPDATE tickets SET')) {
-        expect(params[2]).toBeNull();
+        // Only status is set, so params[0] is the status value
+        expect(params[0]).toBeNull();
         return Promise.resolve({ rows: [{ ...mockTicket, status: null }] });
       }
       return Promise.resolve({ rows: [] });
     });
 
-    await Ticket.update('t1', null, null, null, null, null, 'user-1');
+    await Ticket.update('t1', { title: undefined, description: undefined, status: null, priority: undefined, assigneeId: undefined, prUrl: undefined });
 
     const updateCall = pool.query.mock.calls.find(call => call[0].includes('UPDATE tickets SET'));
     expect(updateCall).toBeDefined();
-    expect(updateCall[1][2]).toBeNull();
+    expect(updateCall[1][0]).toBeNull();
+    expectOnlyColumnUpdated(updateCall[0], 'status');
   });
 
   it('can set priority to null', async () => {
@@ -100,17 +113,19 @@ describe('Ticket.update() null field support (BP-61)', () => {
         return Promise.resolve({ rows: [mockTicket] });
       }
       if (sql.includes('UPDATE tickets SET')) {
-        expect(params[3]).toBeNull();
+        // Only priority is set, so params[0] is the priority value
+        expect(params[0]).toBeNull();
         return Promise.resolve({ rows: [{ ...mockTicket, priority: null }] });
       }
       return Promise.resolve({ rows: [] });
     });
 
-    await Ticket.update('t1', null, null, null, null, null, 'user-1');
+    await Ticket.update('t1', { title: undefined, description: undefined, status: undefined, priority: null, assigneeId: undefined, prUrl: undefined });
 
     const updateCall = pool.query.mock.calls.find(call => call[0].includes('UPDATE tickets SET'));
     expect(updateCall).toBeDefined();
-    expect(updateCall[1][3]).toBeNull();
+    expect(updateCall[1][0]).toBeNull();
+    expectOnlyColumnUpdated(updateCall[0], 'priority');
   });
 
   it('can set assigneeId to null (clear assignment)', async () => {
@@ -121,17 +136,19 @@ describe('Ticket.update() null field support (BP-61)', () => {
         return Promise.resolve({ rows: [mockTicket] });
       }
       if (sql.includes('UPDATE tickets SET')) {
-        expect(params[4]).toBeNull();
+        // Only assigneeId is set, so params[0] is the assigneeId value
+        expect(params[0]).toBeNull();
         return Promise.resolve({ rows: [{ ...mockTicket, assigneeId: null }] });
       }
       return Promise.resolve({ rows: [] });
     });
 
-    await Ticket.update('t1', null, null, null, null, null, 'user-1');
+    await Ticket.update('t1', { title: undefined, description: undefined, status: undefined, priority: undefined, assigneeId: null, prUrl: undefined });
 
     const updateCall = pool.query.mock.calls.find(call => call[0].includes('UPDATE tickets SET'));
     expect(updateCall).toBeDefined();
-    expect(updateCall[1][4]).toBeNull();
+    expect(updateCall[1][0]).toBeNull();
+    expectOnlyColumnUpdated(updateCall[0], 'assignee_id');
   });
 
   it('does not include undefined fields in UPDATE', async () => {
@@ -149,12 +166,16 @@ describe('Ticket.update() null field support (BP-61)', () => {
       return Promise.resolve({ rows: [] });
     });
 
-    await Ticket.update('t1', undefined, undefined, undefined, undefined, undefined, 'user-1');
+    await Ticket.update('t1', { title: undefined, description: undefined, status: undefined, priority: undefined, assigneeId: undefined, prUrl: undefined });
 
     const updateCall = pool.query.mock.calls.find(call => call[0].includes('UPDATE tickets SET'));
     expect(updateCall).toBeDefined();
-    // SET clause should be empty or contain only the WHERE condition
+    // SET clause should contain only the timestamp, never a mutable column
+    expect(updateCall[0]).toContain('updated_at = NOW()');
     expect(updateCall[0]).toContain('WHERE id');
+    for (const column of MUTABLE_COLUMNS) {
+      expect(updateCall[0]).not.toContain(`${column} =`);
+    }
   });
 
   it('updates only specified non-null fields', async () => {
@@ -165,7 +186,7 @@ describe('Ticket.update() null field support (BP-61)', () => {
         return Promise.resolve({ rows: [mockTicket] });
       }
       if (sql.includes('UPDATE tickets SET')) {
-        // Dynamic SET: only title and assigneeId are non-undefined
+        // Dynamic SET: only title and assigneeId are defined
         // params should be: ['New Title', 'user-2', 't1']
         expect(params[0]).toBe('New Title');
         expect(params[1]).toBe('user-2');
@@ -175,7 +196,7 @@ describe('Ticket.update() null field support (BP-61)', () => {
       return Promise.resolve({ rows: [] });
     });
 
-    await Ticket.update('t1', 'New Title', undefined, undefined, undefined, 'user-2', 'user-1');
+    await Ticket.update('t1', { title: 'New Title', description: undefined, status: undefined, priority: undefined, assigneeId: 'user-2', prUrl: undefined });
 
     const updateCall = pool.query.mock.calls.find(call => call[0].includes('UPDATE tickets SET'));
     expect(updateCall).toBeDefined();
