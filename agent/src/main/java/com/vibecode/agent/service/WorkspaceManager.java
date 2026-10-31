@@ -1,14 +1,19 @@
 package com.vibecode.agent.service;
 
+import com.vibecode.agent.harness.DiffSummary;
 import com.vibecode.agent.model.FileOperation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,6 +34,7 @@ public class WorkspaceManager {
     private final Path credentialHelperScript;
     private final String repoCloneDir;
     private final String repoName;
+    private String authenticatedRemoteUrl;
 
     public WorkspaceManager(String repoCloneDir, String repoName, boolean dryRun, String githubToken) {
         this.repoCloneDir = repoCloneDir;
@@ -108,12 +114,16 @@ public class WorkspaceManager {
             }
             
             if (exitCode != 0) {
-                throw new IOException("Git clone failed: " + output);
+                throw new IOException("Git clone failed: " + redact(output));
             }
             
-            // Configure remote to use token for future push/pull operations
-            runGit("remote", "set-url", "origin", authenticatedUrl);
+            // Keep the token out of .git/config: the harness runs in this
+            // workspace and must never be able to read the GitHub credential.
+            // The supervisor reuses authenticatedUrl only for its own push.
+            this.authenticatedRemoteUrl = authenticatedUrl;
+            runGit("remote", "set-url", "origin", stripCredentials(authenticatedUrl));
         } else {
+            this.authenticatedRemoteUrl = null;
             ProcessBuilder pb = new ProcessBuilder(gitBinary, "clone", repoUrl, repoDir.toString());
             pb.redirectErrorStream(true);
             Process process = pb.start();
@@ -197,8 +207,12 @@ public class WorkspaceManager {
         // git commit
         runGit("commit", "-m", message);
 
-        // git push origin HEAD:branchName --force-with-lease
-        runGit("push", "origin", "HEAD:" + branchName, "--force-with-lease");
+        // Push with the authenticated URL in memory instead of persisting the
+        // token in the workspace remote.
+        String pushTarget = authenticatedRemoteUrl != null && !authenticatedRemoteUrl.isBlank()
+            ? authenticatedRemoteUrl
+            : "origin";
+        runGit("push", pushTarget, "HEAD:" + branchName, "--force-with-lease");
 
         // git rev-parse HEAD
         return getCommitSha();
@@ -278,10 +292,13 @@ public class WorkspaceManager {
         }
         
         if (exitCode != 0) {
-            throw new IOException("git " + String.join(" ", args) + " failed: " + output);
+            throw new IOException("git " + redact(String.join(" ", args))
+                + " failed: " + redact(output));
         }
         
-        return output.trim();
+        // Strip only trailing whitespace: `git status --porcelain` encodes the
+        // staged/worktree state in the first two columns, which must be kept.
+        return output.stripTrailing();
     }
 
     private String readProcessOutput(Process process) throws IOException {
@@ -297,6 +314,27 @@ public class WorkspaceManager {
 
     private String sanitizePath(String path) {
         return path.replaceAll("[^a-zA-Z0-9._-]", "_");
+    }
+
+    /**
+     * Removes an embedded credential from a GitHub HTTPS URL so it is safe to
+     * persist in {@code .git/config}.
+     */
+    static String stripCredentials(String url) {
+        if (url == null) {
+            return null;
+        }
+        return url.replaceFirst("https://[^/@]+@github\\.com/", "https://github.com/");
+    }
+
+    private String redact(String value) {
+        if (value == null) {
+            return "";
+        }
+        if (githubToken != null && !githubToken.isBlank()) {
+            return value.replace(githubToken, "[REDACTED]");
+        }
+        return value;
     }
 
     private void deletePath(Path path) throws IOException {
@@ -319,15 +357,120 @@ public class WorkspaceManager {
         Path helperScript = gitDir.resolve("credential-helper.sh");
         String scriptContent = "#!/bin/sh\necho \"username=oauth2\"\necho \"password=" + token + "\"";
         Files.writeString(helperScript, scriptContent);
-        Files.setPosixFilePermissions(helperScript,
-            java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
+        // POSIX permission APIs are unavailable on Windows. The agent ships in a
+        // Linux container, but local development on Windows must still work.
+        if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            Files.setPosixFilePermissions(helperScript,
+                java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
+        }
         return helperScript;
+    }
+
+    /**
+     * Collect the workspace changes as a summary the supervisor can inspect
+     * before committing. The harness is never trusted to report its own diff.
+     */
+    public DiffSummary collectDiff() throws IOException {
+        if (repoDir == null || !Files.exists(repoDir)) {
+            return DiffSummary.empty();
+        }
+
+        String porcelain = runGitCommand("status", "--porcelain");
+        List<DiffSummary.ChangedFile> files = new ArrayList<>();
+        Set<String> untracked = new HashSet<>();
+
+        for (String line : porcelain.split("\\R")) {
+            if (line == null || line.length() < 3) {
+                continue;
+            }
+            String code = line.substring(0, 2);
+            String path = line.substring(3).trim();
+            int arrow = path.indexOf(" -> ");
+            if (arrow >= 0) {
+                path = path.substring(arrow + 4);
+            }
+            if (path.isBlank()) {
+                continue;
+            }
+
+            String status;
+            if (code.contains("?")) {
+                status = "added";
+                untracked.add(path);
+            } else if (code.contains("A")) {
+                status = "added";
+            } else if (code.contains("D")) {
+                status = "deleted";
+            } else if (code.contains("R")) {
+                status = "renamed";
+            } else {
+                status = "modified";
+            }
+            files.add(new DiffSummary.ChangedFile(path, status));
+        }
+
+        int additions = 0;
+        int deletions = 0;
+        int[] staged = parseNumstat(runGitCommandAllowFailure("diff", "--numstat", "--cached"));
+        int[] unstaged = parseNumstat(runGitCommandAllowFailure("diff", "--numstat"));
+        additions += staged[0] + unstaged[0];
+        deletions += staged[1] + unstaged[1];
+
+        for (String path : untracked) {
+            additions += countLines(repoDir.resolve(path));
+        }
+
+        return new DiffSummary(files, additions, deletions);
+    }
+
+    private int[] parseNumstat(String output) {
+        int additions = 0;
+        int deletions = 0;
+        if (output == null || output.isBlank()) {
+            return new int[]{0, 0};
+        }
+        for (String line : output.split("\\R")) {
+            String[] parts = line.split("\\t");
+            if (parts.length < 3) {
+                continue;
+            }
+            try {
+                additions += Integer.parseInt(parts[0]);
+                deletions += Integer.parseInt(parts[1]);
+            } catch (NumberFormatException ignored) {
+                // Binary files report "-" for both counts.
+            }
+        }
+        return new int[]{additions, deletions};
+    }
+
+    private String runGitCommandAllowFailure(String... args) {
+        try {
+            return runGitCommand(args);
+        } catch (IOException e) {
+            log.debug("git {} unavailable: {}", String.join(" ", args), e.getMessage());
+            return "";
+        }
+    }
+
+    private int countLines(Path file) {
+        if (file == null || !Files.isRegularFile(file)) {
+            return 0;
+        }
+        try (var lines = Files.lines(file)) {
+            return (int) Math.min(Integer.MAX_VALUE, lines.count());
+        } catch (IOException e) {
+            return 0;
+        }
     }
 
     /**
      * Delete the workspace directory and all its contents.
      */
     public void cleanup() {
+        if (repoDir == null) {
+            return;
+        }
         if (Files.exists(repoDir)) {
             try {
                 deletePath(repoDir);

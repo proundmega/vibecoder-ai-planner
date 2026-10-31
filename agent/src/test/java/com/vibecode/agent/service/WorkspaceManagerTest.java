@@ -1,13 +1,18 @@
 package com.vibecode.agent.service;
 
+import com.vibecode.agent.harness.DiffSummary;
 import com.vibecode.agent.model.FileOperation;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -200,6 +205,9 @@ class WorkspaceManagerTest {
 
     @Test
     void testCreateCredentialHelperHasRestrictedPermissions() throws Exception {
+        Assumptions.assumeTrue(
+            FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+            "POSIX permissions are not supported on this platform");
         Path targetDir = tempDir.resolve("perms-test");
         WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         Path helperScript = wm.createCredentialHelper(targetDir, "secret-token");
@@ -214,5 +222,62 @@ class WorkspaceManagerTest {
         assertFalse(perms.contains(java.nio.file.attribute.PosixFilePermission.GROUP_READ));
         assertFalse(perms.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_READ));
         assertFalse(perms.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_WRITE));
+    }
+
+    @Test
+    void testCollectDiffReportsModifiedAndUntrackedFiles() throws Exception {
+        Path repoDir = tempDir.resolve("diff-repo");
+        Files.createDirectories(repoDir);
+        runGit(repoDir, "init");
+        runGit(repoDir, "config", "user.email", "test@example.com");
+        runGit(repoDir, "config", "user.name", "Test User");
+        Files.writeString(repoDir.resolve("tracked.txt"), "one\n");
+        runGit(repoDir, "add", ".");
+        runGit(repoDir, "commit", "-m", "initial");
+
+        Files.writeString(repoDir.resolve("tracked.txt"), "one\ntwo\n");
+        Files.writeString(repoDir.resolve("new.txt"), "a\nb\n");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff = wm.collectDiff();
+
+        assertTrue(diff.files().stream().anyMatch(
+            file -> file.path().equals("tracked.txt") && file.status().equals("modified")));
+        assertTrue(diff.files().stream().anyMatch(
+            file -> file.path().equals("new.txt") && file.status().equals("added")));
+        assertEquals(3, diff.additions());
+        assertEquals(0, diff.deletions());
+    }
+
+    @Test
+    void testStripCredentialsRemovesGitHubToken() {
+        assertEquals(
+            "https://github.com/owner/repo.git",
+            WorkspaceManager.stripCredentials("https://ghp_secret@github.com/owner/repo.git"));
+        assertEquals(
+            "https://github.com/owner/repo.git",
+            WorkspaceManager.stripCredentials("https://github.com/owner/repo.git"));
+    }
+
+    @Test
+    void testCollectDiffWithoutWorkspaceIsEmpty() throws Exception {
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+
+        assertTrue(wm.collectDiff().isEmpty());
+    }
+
+    private static void runGit(Path directory, String... args) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add("git");
+        command.addAll(List.of(args));
+        Process process = new ProcessBuilder(command)
+            .directory(directory.toFile())
+            .redirectErrorStream(true)
+            .start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        int exit = process.waitFor();
+        assertEquals(0, exit, "git " + String.join(" ", args) + " failed: " + output);
     }
 }

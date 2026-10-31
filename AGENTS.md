@@ -41,7 +41,7 @@ frontend/src/
   api/generated/        → TS types via openapi-typescript-codegen
   router/index.ts       → reads vibecode_token directly from localStorage
 
-agent/                  → Java 17 Maven, shaded JAR, eclipse-temurin Docker
+agent/                  → Java 17 Maven, shaded JAR; `harness/` = OpenCode supervisor (fg-30)
 ai/CODING.md            → IPEE methodology (mandatory for all code changes)
 architecture/           → system-design.md
 planning/               → 00-04 templates + bp-XX/, bt-XX/, fg-XX/ suites
@@ -132,6 +132,24 @@ When a `04_SPECIFICATION.md` is created for a ticket, it includes a **Test-First
 3. Fill in test stubs with actual assertions
 
 This prevents models from skipping tests. The test stubs are listed as the first file operations in `04_SPECIFICATION.md`.
+
+## Agent harness (fg-30)
+
+The Java agent has two ticket-execution modes, selected by `HARNESS_MODE`:
+
+- `legacy` (default) — one-shot provider call that returns JSON file operations.
+- `opencode` — supervisor starts `opencode serve` in an isolated temp HOME and
+  cloned workspace, sends a prompt, then verifies, commits, pushes and opens the
+  PR. The harness cannot commit/push/merge (config + denied bash rules); the
+  supervisor owns publishing and refuses protected paths (`.env*`,
+  `.github/workflows/**`, `**/secrets/**`) or oversized diffs.
+
+Harness env: `HARNESS_BIN`, `HARNESS_STARTUP_TIMEOUT_MS`,
+`HARNESS_IDLE_TIMEOUT_MS`, `HARNESS_MAX_DURATION_MINUTES`,
+`HARNESS_VERIFY_COMMANDS` (semicolon-separated; empty = autodetect),
+`HARNESS_PROTECTED_PATHS`, `HARNESS_MODEL`. Phase 1 is blocking prompt mode and
+denies the `question` tool; autonomy and the human question loop are later phases.
+See `planning/fg-30-autonomous-coding-harness/`.
 
 ## API
 

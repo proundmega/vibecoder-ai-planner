@@ -3,10 +3,10 @@ package com.vibecode.agent.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vibecode.agent.config.AgentConfig;
+import com.vibecode.agent.harness.PlanningDocFetcher;
 import com.vibecode.agent.model.FileOperation;
 import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
-import okhttp3.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit;
  * Core ticket processing logic.
  * Orchestrates: pick up ticket -> fetch planning -> generate code -> clone repo -> write files -> commit -> create PR -> update status.
  */
-public class TicketProcessor {
+public class TicketProcessor implements TicketWorker {
 
     private static final Logger log = LoggerFactory.getLogger(TicketProcessor.class);
 
@@ -29,15 +29,18 @@ public class TicketProcessor {
     private final GitHubService gitHubService;
     private final WorkspaceManager workspaceManager;
     private final ObjectMapper objectMapper;
+    private final PlanningDocFetcher planningDocFetcher;
 
     // Tracking variables for heartbeat reporting
     private String currentTicketId = null;
     private String currentStep = null;
 
+    @Override
     public String getCurrentTicketId() {
         return currentTicketId;
     }
 
+    @Override
     public String getCurrentStep() {
         return currentStep;
     }
@@ -54,6 +57,7 @@ public class TicketProcessor {
             githubToken
         );
         this.objectMapper = new ObjectMapper();
+        this.planningDocFetcher = new PlanningDocFetcher(apiService, config);
     }
 
     /**
@@ -68,6 +72,7 @@ public class TicketProcessor {
      * 8. Create PR (if not dry run)
      * 9. Update ticket status to 'review'
      */
+    @Override
     public void processTicket(Ticket ticket) {
         log.info("Processing ticket: {} - {}", ticket.getId(), ticket.getTitle());
 
@@ -212,38 +217,7 @@ public class TicketProcessor {
     }
 
     private List<String> fetchPlanningDocs(Long ticketId) throws IOException {
-        List<String> docs = new ArrayList<>();
-        try {
-            String url = config.getApiUrl() + "/tickets/" + ticketId + "/planning";
-            Request request = new Request.Builder()
-                .url(url)
-                .header("X-API-Key", config.getAgentApiKey())
-                .header("Accept", "application/json")
-                .get()
-                .build();
-
-            try (Response response = apiService.getHttpClient().newCall(request).execute()) {
-                
-                if (!response.isSuccessful()) {
-                    log.warn("Failed to fetch planning docs for ticket {}: {}", ticketId, response.code());
-                    return docs;
-                }
-                
-                JsonNode root = objectMapper.readTree(response.body().string());
-                JsonNode files = root.path("data");
-                
-                if (files.isArray()) {
-                    for (JsonNode file : files) {
-                        String fileKey = file.path("file_key").asText("");
-                        String content = file.path("content").asText("");
-                        docs.add("=== " + fileKey + " ===\n" + content);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Error fetching planning docs for ticket {}: {}", ticketId, e.getMessage());
-        }
-        return docs;
+        return planningDocFetcher.fetch(ticketId);
     }
 
     private String generateContent(Ticket ticket, List<String> planningDocs) throws IOException {

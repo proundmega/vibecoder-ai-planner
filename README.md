@@ -122,6 +122,20 @@ Required for `docker compose up`:
 | `STALE_TIMEOUT_MS` | Agent stale timeout | `3600000` |
 | `DRY_RUN` | Dry run mode | `false` |
 | `MAX_TICKETS` | Max tickets per cycle | `1` |
+| `HARNESS_MODE` | Execution harness: `legacy` or `opencode` | `legacy` |
+| `HARNESS_BIN` | OpenCode executable | `opencode` |
+| `HARNESS_STARTUP_TIMEOUT_MS` | OpenCode server health timeout | `30000` |
+| `HARNESS_IDLE_TIMEOUT_MS` | Max time without harness events | `300000` |
+| `HARNESS_MAX_DURATION_MINUTES` | Hard wall-clock cap per ticket | `45` |
+| `HARNESS_VERIFY_COMMANDS` | Semicolon-separated verification commands (empty = autodetect) | _(autodetect)_ |
+| `HARNESS_PROTECTED_PATHS` | Semicolon-separated globs that must never be published | `.env*;.github/workflows/**;**/secrets/**` |
+| `HARNESS_MODEL` | Optional harness model override | _(provider default)_ |
+
+With `HARNESS_MODE=opencode`, the agent starts an isolated OpenCode server session
+(`opencode serve`), lets it read/edit/test the cloned workspace, then verifies and
+publishes the diff itself. The harness never commits, pushes or opens pull
+requests; the Java supervisor owns those steps. The legacy one-shot path remains
+the default and is unchanged.
 
 ### Runtime Flags
 
