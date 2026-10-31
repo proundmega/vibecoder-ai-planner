@@ -28,9 +28,9 @@ Implementation is split into four phases. Each phase must be merged and function
 | Phase | Ticket | Outcome |
 |---|---|---|
 | 1 | fg-30 | Harness executes a real ticket; verification; PR; feature flag |
-| 2 | fg-31 | Questions, permissions, notifications, UI, resume |
-| 3 | fg-32 | Policies, budgets, plan gate, multi-agent loop |
-| 4 | fg-33 | Sandbox hardening, observability, retention |
+| 2 | TBD | Questions, permissions, notifications, UI, resume |
+| 3 | TBD | Policies, budgets, plan gate, multi-agent loop |
+| 4 | TBD | Sandbox hardening, observability, retention |
 
 ---
 
@@ -211,7 +211,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 ---
 
-## Phase 2 — Human-in-the-loop (fg-31) — 1–2 weeks
+## Phase 2 - Human-in-the-loop - 1-2 weeks
 
 **Goal**: questions, permissions, notifications and resume.
 
@@ -262,7 +262,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 ---
 
-## Phase 3 — Autonomy, budgets, plan gate, multi-agent (fg-32) — 2–3 weeks
+## Phase 3 - Autonomy, budgets, plan gate, multi-agent - 2-3 weeks
 
 1. **Policy engine** in Java + backend:
    - risk classifier (paths, commands, diff size, migrations/auth/secrets),
@@ -280,7 +280,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 ---
 
-## Phase 4 — Hardening and observability (fg-33) — 1 week
+## Phase 4 - Hardening and observability - 1 week
 
 1. Egress allowlist/proxy; read-only rootfs; pids/CPU limits; workspace quota.
 2. Event retention/cleanup job (30 days), transcript truncation, secret redaction audit.
