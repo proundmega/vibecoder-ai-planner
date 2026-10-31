@@ -39,57 +39,27 @@ function classifyStatement(sql) {
 
 **Modify runMigration function** (add dry-run parameter):
 
-> **Implementation note (PR #100):** dry-run now reads and classifies the file
-> before any `Pool` is created. No database connection is attempted. The snippet
-> below is the original plan; `backend/src/migrations/apply.js` is authoritative.
+> **Implementation note (PR #100):** dry-run reads and classifies the file before
+> any `Pool` is created. No database connection is attempted. The snippet below
+> is the final shape; `backend/src/migrations/apply.js` is authoritative.
 
 ```javascript
 async function runMigration(file, dryRun = false, pool = null) {
   const sql = fs.readFileSync(file, 'utf8');
   const statements = splitSQLStatements(sql);
+  console.log(`\n--- ${path.basename(file)} (${statements.length} statements) ---`);
 
-    console.log(`\n--- ${path.basename(file)} (${statements.length} statements) ---`);
-
-    if (dryRun) {
-      // DRY-RUN MODE: Don't execute, just classify and report
-      const summary = {};
-      
-      for (let i = 0; i < statements.length; i++) {
-        const stmt = statements[i];
-        const trimmed = stmt.trim();
-        
-        if (!trimmed) continue; // Skip empty statements
-        
-        const type = classifyStatement(stmt);
-        summary[type] = (summary[type] || 0) + 1;
-        
-        // Show first 100 chars of statement (truncated)
-        const preview = trimmed.length > 100 ? trimmed.substring(0, 100) + '...' : trimmed;
-        console.log(`  [${type}] ${preview}`);
-      }
-      
-      console.log('\nSummary:');
-      for (const [type, count] of Object.entries(summary).sort()) {
-        console.log(`  ${type}: ${count}`);
-      }
-      console.log(`\nTotal: ${Object.values(summary).reduce((a, b) => a + b, 0)} statements would be executed.`);
-    } else {
-      // NORMAL MODE: Execute statements
-      for (let i = 0; i < statements.length; i++) {
-        const stmt = statements[i];
-        try {
-          await pool.query(stmt);
-          console.log(`  ✓ Statement ${i + 1} executed`);
-        } catch (err) {
-          console.log(`  ! Statement ${i + 1} (may already exist): ${err.message}`);
-        }
-      }
-    }
-  } catch (error) {
-    console.error(`Error in ${path.basename(file)}:`, error.message);
-  } finally {
-    await pool.end();
+  if (dryRun) {
+    // Classify, structurally validate and print the summary here.
+    // No database connection is attempted in dry-run mode.
+    return true;
   }
+
+  if (!pool) throw new Error(`A database pool is required to run ${path.basename(file)}`);
+  for (let i = 0; i < statements.length; i++) {
+    await pool.query(statements[i]);
+  }
+  return true;
 }
 ```
 
