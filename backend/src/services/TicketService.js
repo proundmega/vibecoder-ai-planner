@@ -195,22 +195,6 @@ class TicketService {
     await Ticket.delete(id);
   }
 
-  async claim(ticketId, userId) {
-    const existingTicket = await Ticket.findById(ticketId);
-    if (!existingTicket) throw new NotFoundError('Ticket not found');
-
-    await Ticket.update(ticketId, null, null, null, null, userId, userId);
-    return existingTicket;
-  }
-
-  async assign(ticketId, assigneeId, userId) {
-    const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new NotFoundError('Ticket not found');
-
-    await Ticket.update(ticketId, null, null, null, null, assigneeId, userId);
-    return ticket;
-  }
-
   async updateStatus(ticketId, status, userId) {
     await Ticket.updateStatus(ticketId, status, userId);
   }
