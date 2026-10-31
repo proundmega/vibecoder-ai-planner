@@ -5,8 +5,8 @@ const { recordFailedAttempt, clearFailedAttempts } = require('../middleware/auth
 describe('POST /api/auth/login lockout response', () => {
   const candidateIps = ['::ffff:127.0.0.1', '127.0.0.1', '::1'];
 
-  afterEach(() => {
-    candidateIps.forEach(ip => clearFailedAttempts(ip));
+  afterEach(async () => {
+    await Promise.all(candidateIps.map(ip => clearFailedAttempts(ip)));
   });
 
   it('returns a numeric Retry-After header when the IP is locked out', async () => {

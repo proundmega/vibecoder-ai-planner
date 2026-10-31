@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createTicketSchema, updateTicketSchema } = require('../validators/tickets');
+const { editTicketSchema } = require('../validators/agents');
 
 const MIGRATIONS_DIR = path.join(__dirname, '../migrations');
 
@@ -13,6 +14,23 @@ describe('priority enum consistency', () => {
     }).error).toBeUndefined();
 
     expect(updateTicketSchema.validate({ priority: 'critical' }).error).toBeUndefined();
+    expect(editTicketSchema.validate({ priority: 'critical' }).error).toBeUndefined();
+  });
+
+  it('documents "critical" in OpenAPI and frontend contracts', () => {
+    const repoRoot = path.join(__dirname, '../../..');
+    const files = [
+      path.join(__dirname, '../api/openapi-spec.js'),
+      path.join(repoRoot, 'frontend/src/api/validator.ts'),
+      path.join(repoRoot, 'frontend/src/api/generated/models/Ticket.ts'),
+      path.join(repoRoot, 'frontend/src/api/generated/services/TicketsService.ts'),
+      path.join(repoRoot, 'frontend/src/api/generated/services/ProjectsService.ts'),
+    ];
+
+    for (const file of files) {
+      const source = fs.readFileSync(file, 'utf8');
+      expect(source).toContain('critical');
+    }
   });
 
   it('registers the migration that adds "critical" to the DB constraint', () => {
@@ -33,5 +51,9 @@ describe('priority enum consistency', () => {
     expect(forward).toContain("'critical'");
     expect(rollback).toMatch(/CHECK \(priority IN \('low', 'medium', 'high', 'urgent'\)\)/);
     expect(rollback).toContain('valid_priorities');
+
+    const bootstrap = fs.readFileSync(path.join(MIGRATIONS_DIR, 'migrate.sql'), 'utf8');
+    expect(bootstrap).toContain("'critical'");
+    expect(bootstrap).toMatch(/CHECK \(priority IN \('low', 'medium', 'high', 'critical', 'urgent'\)\)/);
   });
 });

@@ -173,58 +173,211 @@ function splitSQLStatements(sql) {
   return statements;
 }
 
-async function runMigration(file, dryRun = false) {
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    family: 4,
-  });
+function stripComments(sql) {
+  let result = '';
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inDollarQuote = false;
+  let dollarTag = '';
 
-  try {
-    await pool.query('SELECT NOW()');
+  for (let i = 0; i < sql.length; i++) {
+    const rest = sql.slice(i);
 
-    const sql = fs.readFileSync(file, 'utf8');
-    const statements = splitSQLStatements(sql);
-
-    console.log(`\n--- ${path.basename(file)} (${statements.length} statements) ---`);
-
-    if (dryRun) {
-      // DRY-RUN MODE: classify and report without executing anything
-      const summary = {};
-
-      for (let i = 0; i < statements.length; i++) {
-        const stmt = statements[i];
-        const trimmed = stmt.trim();
-
-        if (!trimmed) continue;
-
-        const type = classifyStatement(stmt);
-        summary[type] = (summary[type] || 0) + 1;
-
-        const preview = trimmed.length > 100 ? trimmed.substring(0, 100) + '...' : trimmed;
-        console.log(`  [${type}] ${preview}`);
+    if (inDollarQuote) {
+      if (rest.startsWith(dollarTag)) {
+        result += dollarTag;
+        i += dollarTag.length - 1;
+        inDollarQuote = false;
+        dollarTag = '';
+      } else {
+        result += sql[i];
       }
-
-      console.log('\nSummary:');
-      for (const [type, count] of Object.entries(summary).sort()) {
-        console.log(`  ${type}: ${count}`);
-      }
-      console.log(`\nTotal: ${Object.values(summary).reduce((a, b) => a + b, 0)} statements would be executed.`);
-    } else {
-      for (let i = 0; i < statements.length; i++) {
-        const stmt = statements[i];
-        try {
-          await pool.query(stmt);
-          console.log(`  ✓ Statement ${i + 1} executed`);
-        } catch (err) {
-          console.log(`  ! Statement ${i + 1} (may already exist): ${err.message}`);
-        }
-      }
+      continue;
     }
-  } catch (error) {
-    console.error(`Error in ${path.basename(file)}:`, error.message);
-  } finally {
-    await pool.end();
+
+    if (inSingleQuote) {
+      result += sql[i];
+      if (sql[i] === "'" && sql[i - 1] !== '\\') inSingleQuote = false;
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      result += sql[i];
+      if (sql[i] === '"' && sql[i - 1] !== '\\') inDoubleQuote = false;
+      continue;
+    }
+
+    if (rest.startsWith('--')) {
+      const newline = rest.indexOf('\n');
+      if (newline === -1) break;
+      i += newline;
+      result += '\n';
+      continue;
+    }
+
+    if (rest.startsWith('/*')) {
+      const end = rest.indexOf('*/');
+      if (end === -1) break;
+      i += end + 1;
+      continue;
+    }
+
+    if (rest.startsWith('$$')) {
+      inDollarQuote = true;
+      dollarTag = '$$';
+      result += '$$';
+      i += 1;
+      continue;
+    }
+
+    const dollarMatch = rest.match(/^\$[a-zA-Z_]\w*\$/);
+    if (dollarMatch) {
+      inDollarQuote = true;
+      dollarTag = dollarMatch[0];
+      result += dollarTag;
+      i += dollarTag.length - 1;
+      continue;
+    }
+
+    if (sql[i] === "'") inSingleQuote = true;
+    if (sql[i] === '"') inDoubleQuote = true;
+    result += sql[i];
   }
+
+  return result;
+}
+
+/**
+ * Structural validation for dry-run: catches empty statements, unbalanced
+ * parentheses and unterminated quotes without connecting to a database.
+ * This is not a full SQL grammar parser.
+ */
+function validateStatementStructure(statement) {
+  const cleaned = stripComments(statement).trim();
+  if (!cleaned) {
+    // Comment-only chunks are harmless; splitSQLStatements may keep them
+    // between real statements.
+    return null;
+  }
+
+  let depth = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inDollarQuote = false;
+  let dollarTag = '';
+
+  for (let i = 0; i < cleaned.length; i++) {
+    const rest = cleaned.slice(i);
+
+    if (inDollarQuote) {
+      if (rest.startsWith(dollarTag)) {
+        i += dollarTag.length - 1;
+        inDollarQuote = false;
+        dollarTag = '';
+      }
+      continue;
+    }
+
+    if (inSingleQuote) {
+      if (cleaned[i] === "'" && cleaned[i - 1] !== '\\') inSingleQuote = false;
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      if (cleaned[i] === '"' && cleaned[i - 1] !== '\\') inDoubleQuote = false;
+      continue;
+    }
+
+    if (rest.startsWith('$$')) {
+      inDollarQuote = true;
+      dollarTag = '$$';
+      i += 1;
+      continue;
+    }
+
+    const dollarMatch = rest.match(/^\$[a-zA-Z_]\w*\$/);
+    if (dollarMatch) {
+      inDollarQuote = true;
+      dollarTag = dollarMatch[0];
+      i += dollarTag.length - 1;
+      continue;
+    }
+
+    if (cleaned[i] === "'") {
+      inSingleQuote = true;
+    } else if (cleaned[i] === '"') {
+      inDoubleQuote = true;
+    } else if (cleaned[i] === '(') {
+      depth++;
+    } else if (cleaned[i] === ')') {
+      depth--;
+      if (depth < 0) return 'unbalanced parentheses';
+    }
+  }
+
+  if (inSingleQuote || inDoubleQuote || inDollarQuote) {
+    return 'unterminated quoted string';
+  }
+  if (depth !== 0) {
+    return 'unbalanced parentheses';
+  }
+  return null;
+}
+
+async function runMigration(file, dryRun = false, pool = null) {
+  // Read and classify before any database connection. Dry-run must work with
+  // no DATABASE_URL at all.
+  const sql = fs.readFileSync(file, 'utf8');
+  const statements = splitSQLStatements(sql);
+
+  console.log(`\n--- ${path.basename(file)} (${statements.length} statements) ---`);
+
+  if (dryRun) {
+    const summary = {};
+    let valid = true;
+
+    for (let i = 0; i < statements.length; i++) {
+      const stmt = statements[i];
+      const trimmed = stmt.trim();
+
+      if (!trimmed) continue;
+
+      const structureError = validateStatementStructure(stmt);
+      if (structureError) {
+        valid = false;
+        console.log(`  [INVALID] ${path.basename(file)} statement ${i + 1}: ${structureError}`);
+        continue;
+      }
+
+      const type = classifyStatement(stmt);
+      summary[type] = (summary[type] || 0) + 1;
+
+      const preview = trimmed.length > 100 ? trimmed.substring(0, 100) + '...' : trimmed;
+      console.log(`  [${type}] ${preview}`);
+    }
+
+    console.log('\nSummary:');
+    for (const [type, count] of Object.entries(summary).sort()) {
+      console.log(`  ${type}: ${count}`);
+    }
+    console.log(`\nTotal: ${Object.values(summary).reduce((a, b) => a + b, 0)} statements would be executed.`);
+    return valid;
+  }
+
+  if (!pool) {
+    throw new Error(`A database pool is required to run ${path.basename(file)}`);
+  }
+
+  for (let i = 0; i < statements.length; i++) {
+    const stmt = statements[i];
+    try {
+      await pool.query(stmt);
+      console.log(`  ✓ Statement ${i + 1} executed`);
+    } catch (err) {
+      console.log(`  ! Statement ${i + 1} (may already exist): ${err.message}`);
+    }
+  }
+  return true;
 }
 
 function runDataMigration(file) {
@@ -245,22 +398,48 @@ function runDataMigration(file) {
 }
 
 async function migrate(dryRun = false) {
-  for (const sqlFile of SQL_FILES) {
-    await runMigration(sqlFile, dryRun);
+  if (dryRun) {
+    let valid = true;
+    for (const sqlFile of SQL_FILES) {
+      const fileValid = await runMigration(sqlFile, true);
+      valid = valid && fileValid;
+    }
+
+    for (const dataMigration of DATA_MIGRATIONS) {
+      console.log(`\n[DRY-RUN] Would run data migration: ${path.basename(dataMigration)}`);
+    }
+
+    console.log('\n\n=== DRY-RUN COMPLETE: no changes were applied ===');
+    if (!valid) {
+      process.exitCode = 1;
+    }
+    return;
   }
 
-  for (const dataMigration of DATA_MIGRATIONS) {
-    if (dryRun) {
-      console.log(`\n[DRY-RUN] Would run data migration: ${path.basename(dataMigration)}`);
-    } else {
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    family: 4,
+  });
+
+  try {
+    // Verify the database once, before running any migration file. A failure
+    // here is fatal; do not print one connection error per file and exit 0.
+    await pool.query('SELECT NOW()');
+
+    for (const sqlFile of SQL_FILES) {
+      await runMigration(sqlFile, false, pool);
+    }
+
+    for (const dataMigration of DATA_MIGRATIONS) {
       await runDataMigration(dataMigration);
     }
-  }
 
-  if (dryRun) {
-    console.log('\n\n=== DRY-RUN COMPLETE: no changes were applied ===');
-  } else {
     console.log('\n\n✓ Migrations completed successfully!');
+  } catch (error) {
+    console.error('Migration failed:', error.message);
+    process.exitCode = 1;
+  } finally {
+    await pool.end();
   }
 }
 
@@ -275,4 +454,10 @@ if (require.main === module) {
   migrate(dryRun);
 }
 
-module.exports = { classifyStatement, splitSQLStatements, runMigration, migrate };
+module.exports = {
+  classifyStatement,
+  splitSQLStatements,
+  validateStatementStructure,
+  runMigration,
+  migrate,
+};

@@ -36,4 +36,26 @@ describe('TicketService.update() assignee validation', () => {
     expect(sqlStatements.some(sql => /FROM project_memberships/.test(sql))).toBe(true);
     expect(sqlStatements.some(sql => /FROM project_members\b/.test(sql))).toBe(false);
   });
+
+  it('allows the project owner without a membership row', async () => {
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 6 });
+    pool.query.mockResolvedValue({ rows: [] });
+
+    await expect(
+      TicketService.update(1, { assigneeId: 6 }, 100, 'project_admin')
+    ).resolves.toBeUndefined();
+
+    expect(Ticket.update).toHaveBeenCalledWith(1, expect.objectContaining({ assigneeId: 6 }));
+  });
+
+  it('rejects a user who is not a project member', async () => {
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 100 });
+    pool.query.mockResolvedValue({ rows: [] });
+
+    await expect(
+      TicketService.update(1, { assigneeId: 6 }, 100, 'project_admin')
+    ).rejects.toThrow('Assignee is not a member of this project');
+
+    expect(Ticket.update).not.toHaveBeenCalled();
+  });
 });

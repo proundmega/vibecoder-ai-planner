@@ -41,7 +41,7 @@ const schemas: Record<string, SchemaDefinition> = {
       title: { type: 'string' },
       description: { type: 'string' },
       status: { type: 'string', enum: ['backlog', 'in_progress', 'review', 'done'] },
-      priority: { type: 'string', enum: ['low', 'medium', 'high', 'urgent'] },
+      priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical', 'urgent'] },
       owner_id: { type: 'string', format: 'uuid' },
       project_id: { type: 'string', format: 'uuid' },
       created_at: { type: 'string', format: 'date-time' },

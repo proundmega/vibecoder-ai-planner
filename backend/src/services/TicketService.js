@@ -78,12 +78,16 @@ class TicketService {
       if (!project) throw new NotFoundError('Project not found');
       
       
-      const projectMember = await pool.query(
-        'SELECT 1 FROM project_memberships WHERE project_id = $1 AND user_id = $2',
-        [ticket.projectId, data.assigneeId]
-      );
-      if (projectMember.rows.length === 0) {
-        throw new ValidationError('Assignee is not a member of this project');
+      // The project owner is implicitly assignable even without a membership row.
+      const isProjectOwner = String(project.ownerId) === String(data.assigneeId);
+      if (!isProjectOwner) {
+        const projectMember = await pool.query(
+          'SELECT 1 FROM project_memberships WHERE project_id = $1 AND user_id = $2',
+          [ticket.projectId, data.assigneeId]
+        );
+        if (projectMember.rows.length === 0) {
+          throw new ValidationError('Assignee is not a member of this project');
+        }
       }
     }
 

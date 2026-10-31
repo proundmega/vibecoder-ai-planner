@@ -77,10 +77,14 @@ describe('Ticket model regression tests', () => {
         .mockResolvedValueOnce({ rows: [] });
 
       await expect(
-        Ticket.update(1, 'New title', undefined, 'backlog', undefined, undefined, 7)
+        Ticket.update(1, { title: 'New title', status: 'backlog' })
       ).resolves.toBeUndefined();
 
       expect(pool.query).toHaveBeenCalledTimes(2);
+      const [sql, params] = pool.query.mock.calls[1];
+      expect(sql).toContain('title =');
+      expect(sql).toContain('status =');
+      expect(params).toEqual(['New title', 'backlog', 1]);
     });
 
     it('still rejects an invalid status transition', async () => {
@@ -95,8 +99,10 @@ describe('Ticket model regression tests', () => {
       });
 
       await expect(
-        Ticket.update(1, undefined, undefined, 'done', undefined, undefined, 7)
+        Ticket.update(1, { status: 'done' })
       ).rejects.toThrow('Invalid status transition from backlog to done');
+
+      expect(pool.query).toHaveBeenCalledTimes(1);
     });
   });
 });

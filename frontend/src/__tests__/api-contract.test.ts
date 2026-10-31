@@ -112,6 +112,18 @@ describe('API Response Contract Tests', () => {
       expect(errors).toHaveLength(0);
     });
 
+    it('should accept the critical priority', () => {
+      const validTicket = {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        title: 'Test Ticket',
+        status: 'backlog',
+        priority: 'critical',
+        owner_id: '123e4567-e89b-12d3-a456-426614174001',
+        project_id: '123e4567-e89b-12d3-a456-426614174002',
+      };
+      expect(validateTicket(validTicket)).toHaveLength(0);
+    });
+
     it('should reject ticket with invalid status', () => {
       const invalidTicket = {
         id: '123e4567-e89b-12d3-a456-426614174000',
@@ -122,6 +134,18 @@ describe('API Response Contract Tests', () => {
       };
       const errors = validateTicket(invalidTicket);
       expect(errors.length).toBeGreaterThan(0);
+    });
+
+    it('should reject an unknown priority', () => {
+      const invalidTicket = {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        title: 'Test Ticket',
+        status: 'backlog',
+        priority: 'blocker',
+        owner_id: '123e4567-e89b-12d3-a456-426614174001',
+        project_id: '123e4567-e89b-12d3-a456-426614174002',
+      };
+      expect(validateTicket(invalidTicket).length).toBeGreaterThan(0);
     });
   });
 
