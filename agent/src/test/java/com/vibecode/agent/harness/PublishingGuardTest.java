@@ -58,6 +58,32 @@ class PublishingGuardTest {
     }
 
     @Test
+    void rejectsProtectedPathWhenOnlyTheOldPathRemains() {
+        DiffSummary renamed = new DiffSummary(
+            List.of(
+                new DiffSummary.ChangedFile("Jenkinsfile", "deleted"),
+                new DiffSummary.ChangedFile("docs/old-jenkins.txt", "added")
+            ), 1, 1);
+
+        assertThrows(IllegalStateException.class, () -> guard.assertPublishable(renamed));
+    }
+
+    @Test
+    void rejectsControlCharactersInPaths() {
+        DiffSummary newline = new DiffSummary(
+            List.of(new DiffSummary.ChangedFile(".github/workflows/evil\n.yml", "added")),
+            1, 0);
+
+        assertThrows(IllegalStateException.class, () -> guard.assertPublishable(newline));
+    }
+
+    @Test
+    void allowsEnvExampleFiles() {
+        assertDoesNotThrow(() -> guard.assertPublishable(diff(
+            ".env.example", "backend/.env.example", "frontend/.env.example")));
+    }
+
+    @Test
     void rejectsTooManyFiles() {
         String[] paths = new String[51];
         for (int i = 0; i < paths.length; i++) {

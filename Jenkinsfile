@@ -210,8 +210,24 @@ pipeline {
                     sh 'mvn test -q'
                     sh 'mvn package -q -DskipTests'
                     // The harness adds Node/OpenCode to the runtime image; a JAR
-                    // build alone does not validate that stage.
-                    sh 'docker build -t vibecode-agent:ci .'
+                    // build alone does not validate that stage. Resolve
+                    // DOCKER_HOST in the same shell as the build (the
+                    // Integration stage's export does not persist across sh
+                    // steps).
+                    sh '''
+                        if echo "$DOCKER_HOST" | grep -q "^tcp://"; then
+                            HOSTNAME=$(echo "$DOCKER_HOST" | sed "s|tcp://||; s|:.*||")
+                            PORT=$(echo "$DOCKER_HOST" | sed "s|.*:||")
+                            IP=$(getent hosts "$HOSTNAME" 2>/dev/null | awk '{print $1}')
+                            if [ -n "$IP" ]; then
+                                export DOCKER_HOST="tcp://$IP:$PORT"
+                            elif [ -n "$DOCKER_HOST_FALLBACK" ]; then
+                                export DOCKER_HOST="$DOCKER_HOST_FALLBACK"
+                            fi
+                        fi
+                        echo "Agent image build DOCKER_HOST=$DOCKER_HOST"
+                        docker build -t vibecode-agent:ci .
+                    '''
                 }
             }
         }

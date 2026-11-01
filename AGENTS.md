@@ -149,7 +149,7 @@ The Java agent has two ticket-execution modes, selected by `HARNESS_MODE`:
   oversized diffs.
 
 Harness env: `HARNESS_BIN`, `HARNESS_STARTUP_TIMEOUT_MS`,
-`HARNESS_IDLE_TIMEOUT_MS`, `HARNESS_MAX_DURATION_MINUTES`,
+`HARNESS_MAX_DURATION_MINUTES`,
 `HARNESS_VERIFY_COMMANDS` (semicolon-separated; empty = autodetect, then fail
 closed), `HARNESS_PROTECTED_PATHS`, `HARNESS_MODEL`, `HARNESS_MAX_FILES`,
 `HARNESS_MAX_LINES`, `HARNESS_MAX_BYTES`, `HARNESS_MAX_ATTEMPTS`,

@@ -129,7 +129,7 @@ class VerificationRunnerTest {
 
         assertEquals(List.of(
             "cd backend && npm ci --no-audit --no-fund",
-            "cd frontend && npm install --no-audit --no-fund"
+            "cd frontend && npm install --no-package-lock --no-audit --no-fund"
         ), commands);
     }
 
@@ -144,6 +144,24 @@ class VerificationRunnerTest {
 
         assertEquals(List.of(), runner.resolveInstallCommands(tempDir));
         assertEquals(List.of("make verify"), runner.resolveCommands(tempDir));
+    }
+
+    @Test
+    void killsBackgroundDescendantsAfterASuccessfulCommand() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            ProcessGroup.isGroupIsolationAvailable(),
+            "Process-group isolation (setsid) is unavailable on this platform");
+        java.nio.file.Path marker = tempDir.resolve("background-marker");
+
+        String command = windows()
+            ? "start /b cmd /c \"ping -n 3 127.0.0.1 >nul & echo ran > background-marker\""
+            : "(sleep 2; touch '" + marker + "') &";
+        List<VerificationResult> results = new VerificationRunner()
+            .run(tempDir, List.of(command), Duration.ofSeconds(20));
+
+        assertEquals(1, results.size());
+        Thread.sleep(3_000);
+        assertFalse(Files.exists(marker), "background child survived the verification command");
     }
 
     @Test

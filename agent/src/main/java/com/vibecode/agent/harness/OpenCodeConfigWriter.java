@@ -24,7 +24,7 @@ import java.util.Set;
 public final class OpenCodeConfigWriter {
 
     private static final Set<String> KNOWN_PROVIDER_IDS = Set.of(
-        "opencode", "opencode-go", "anthropic", "openai"
+        "opencode", "opencode-go", "anthropic", "openai", "vibecode", "claude"
     );
 
     private OpenCodeConfigWriter() {
@@ -107,7 +107,7 @@ public final class OpenCodeConfigWriter {
         if (slash > 0 && slash < raw.length() - 1) {
             String prefix = raw.substring(0, slash);
             if (KNOWN_PROVIDER_IDS.contains(prefix)) {
-                qualifiedProvider = prefix;
+                qualifiedProvider = canonicalProviderId(prefix);
                 model = raw.substring(slash + 1);
             }
         }
@@ -130,6 +130,10 @@ public final class OpenCodeConfigWriter {
             case "openai" -> "openai";
             default -> "vibecode";
         };
+    }
+
+    private static String canonicalProviderId(String id) {
+        return "claude".equals(id) ? "anthropic" : id;
     }
 
     private static ProviderMapping mapProvider(
@@ -176,6 +180,7 @@ public final class OpenCodeConfigWriter {
         for (String denied : List.of(
             ".git/**", "**/.git/**",
             "opencode.json", "**/opencode.json",
+            "opencode.jsonc", "**/opencode.jsonc",
             ".opencode/**", "**/.opencode/**"
         )) {
             edit.put(denied, "deny");

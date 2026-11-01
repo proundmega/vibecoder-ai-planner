@@ -125,15 +125,14 @@ Required for `docker compose up`:
 | `HARNESS_MODE` | Execution harness: `legacy` or `opencode` | `legacy` |
 | `HARNESS_BIN` | OpenCode executable | `opencode` |
 | `HARNESS_STARTUP_TIMEOUT_MS` | OpenCode server health timeout | `30000` |
-| `HARNESS_IDLE_TIMEOUT_MS` | Max time without harness events (event-stream watchdog) | `300000` |
-| `HARNESS_MAX_DURATION_MINUTES` | Per-ticket wall-clock budget (prompt + verify + publish) | `45` |
+| `HARNESS_MAX_DURATION_MINUTES` | Per-ticket wall-clock budget, enforced per install/verify command and before publish | `45` |
 | `HARNESS_VERIFY_COMMANDS` | Semicolon-separated verification commands (empty = autodetect, then fail closed) | _(autodetect)_ |
 | `HARNESS_PROTECTED_PATHS` | Semicolon-separated globs that must never be published | `.env*;**/.env*;Jenkinsfile;**/Jenkinsfile;.github/**;**/.github/**;**/secrets/**` |
 | `HARNESS_MODEL` | Optional harness model override (must match the configured provider) | _(provider default)_ |
 | `HARNESS_MAX_FILES` | Maximum changed files the guard will publish | `50` |
 | `HARNESS_MAX_LINES` | Maximum changed lines the guard will publish | `2000` |
 | `HARNESS_MAX_BYTES` | Maximum total changed bytes the guard will publish | `5242880` |
-| `HARNESS_MAX_ATTEMPTS` | Failures before the retry backoff is pinned at its maximum | `3` |
+| `HARNESS_MAX_ATTEMPTS` | Failures before retry backoff pins at the maximum (retries continue at that interval) | `3` |
 | `HARNESS_RETRY_BASE_DELAY_MS` | Base exponential retry delay | `60000` |
 | `HARNESS_RETRY_MAX_DELAY_MS` | Maximum retry delay | `3600000` |
 

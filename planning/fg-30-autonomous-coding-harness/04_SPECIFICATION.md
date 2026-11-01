@@ -44,11 +44,19 @@ The security fixes below were implemented with regression tests. Test classes:
 
 ### Publishing
 
-- The harness is closed immediately after the blocking prompt returns.
-- The processor stages, collects the diff, guards it, then commits the staged
-  index (`commitAndPushStaged`).
+- The harness is closed immediately after the blocking prompt returns, and its
+  process group plus every verification process group is killed.
+- The processor builds a fresh supervisor index (`GIT_INDEX_FILE` +
+  `read-tree HEAD` + `add -A`), guards index blobs, then writes the tree and
+  commits it with `commit-tree`. Index-only blobs, `assume-unchanged` and
+  `skip-worktree` cannot affect the published tree.
+- `.gitattributes: * -diff` cannot hide line counts; the guard falls back to raw
+  blob lines/bytes.
+- Renames are reported with `--no-renames`, so a protected old path is visible.
 - Git runs with hooks/fsmonitor disabled and a trusted `.git/config` restored
   from clone time.
+- GitHub credentials use a transient `GIT_ASKPASS` script, never argv or
+  `.git/config`.
 - Pushing to an existing branch MUST succeed using an explicit
   `--force-with-lease=refs/heads/<branch>:<sha>`.
 - Post-publish `updateTicketPrUrl`/`updateTicketStatus` failures MUST NOT release

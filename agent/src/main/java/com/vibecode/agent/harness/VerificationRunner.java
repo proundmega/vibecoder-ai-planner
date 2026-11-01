@@ -83,7 +83,11 @@ public class VerificationRunner {
     private void addNodeInstall(List<String> commands, Path packageDir, String relative) {
         boolean hasLock = Files.isRegularFile(packageDir.resolve("package-lock.json"))
             || Files.isRegularFile(packageDir.resolve("npm-shrinkwrap.json"));
-        String install = hasLock ? "npm ci --no-audit --no-fund" : "npm install --no-audit --no-fund";
+        // Without a lockfile, npm install would create/modify package-lock.json
+        // and the supervisor would publish it. Keep installs out of the diff.
+        String install = hasLock
+            ? "npm ci --no-audit --no-fund"
+            : "npm install --no-package-lock --no-audit --no-fund";
         commands.add(relative == null ? install : "cd " + relative + " && " + install);
     }
 
@@ -167,20 +171,29 @@ public class VerificationRunner {
         if (commands == null || workspace == null) {
             return results;
         }
+        long budgetMs = timeout == null ? 600_000L : Math.max(1, timeout.toMillis());
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(budgetMs);
         for (String command : commands) {
             if (command == null || command.isBlank()) {
                 continue;
             }
-            results.add(runOne(workspace, command.trim(), timeout));
+            long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+            if (remainingMs <= 0) {
+                results.add(new VerificationResult(
+                    command.trim(), -1, "verification budget exhausted", true));
+                continue;
+            }
+            results.add(runOne(workspace, command.trim(), Duration.ofMillis(remainingMs)));
         }
         return results;
     }
 
     private VerificationResult runOne(Path workspace, String command, Duration timeout) {
         boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
-        ProcessBuilder builder = windows
-            ? new ProcessBuilder("cmd.exe", "/c", command)
-            : new ProcessBuilder("sh", "-c", command);
+        List<String> processCommand = windows
+            ? List.of("cmd.exe", "/c", command)
+            : List.of("sh", "-c", command);
+        ProcessBuilder builder = new ProcessBuilder(ProcessGroup.wrap(processCommand));
         builder.directory(workspace.toFile());
         builder.redirectErrorStream(true);
         sanitizeEnvironment(builder.environment());
@@ -202,10 +215,12 @@ public class VerificationRunner {
 
             long timeoutMs = timeout == null ? 600_000L : Math.max(1, timeout.toMillis());
             boolean finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
-            if (!finished) {
-                killProcessTree(process);
-                process.waitFor(5, TimeUnit.SECONDS);
-            }
+            int exitCode = finished ? process.exitValue() : -1;
+
+            // Even a normally-exiting command can leave background children
+            // behind. Kill the whole group before joining the reader: a
+            // background child may hold the output pipe open for its lifetime.
+            ProcessGroup.kill(process);
             reader.join(5_000);
 
             String text = output.text();
@@ -214,7 +229,7 @@ public class VerificationRunner {
             }
             return new VerificationResult(
                 command,
-                finished ? process.exitValue() : -1,
+                exitCode,
                 text,
                 !finished
             );
@@ -223,7 +238,7 @@ public class VerificationRunner {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             if (process != null) {
-                killProcessTree(process);
+                ProcessGroup.kill(process);
             }
             return new VerificationResult(command, -1, "interrupted", false);
         }
@@ -243,21 +258,6 @@ public class VerificationRunner {
 
     private static String devNull() {
         return System.getProperty("os.name", "").toLowerCase().contains("win") ? "NUL" : "/dev/null";
-    }
-
-    private static void killProcessTree(Process process) {
-        try {
-            process.descendants().forEach(handle -> {
-                try {
-                    handle.destroyForcibly();
-                } catch (RuntimeException ignored) {
-                    // Process already exited.
-                }
-            });
-        } catch (RuntimeException ignored) {
-            // Descendant enumeration is best effort.
-        }
-        process.destroyForcibly();
     }
 
     /**

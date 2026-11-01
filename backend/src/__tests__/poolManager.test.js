@@ -64,16 +64,69 @@ describe('PoolManager', () => {
   });
 
   describe('requestAgent', () => {
-    it('reuses idle agent when available', () => {
-      pm.pool.set('agent-1', { state: 'idle', containerId: 'c1' });
+    it('reuses idle agent when project and repo match', () => {
+      pm.pool.set('agent-1', {
+        state: 'idle',
+        containerId: 'c1',
+        projectId: 'proj-1',
+        repoKey: 'acme/widgets',
+        providerKey: 'auto',
+      });
 
-      return pm.requestAgent('proj-1').then((res) => {
+      return pm.requestAgent('proj-1', 'https://github.com/acme/widgets').then((res) => {
         expect(res.reused).toBe(true);
         expect(res.agentId).toBe('agent-1');
         const entry = pm.pool.get('agent-1');
         expect(entry.state).toBe('busy');
         expect(entry.projectId).toBe('proj-1');
       });
+    });
+
+    it('does not reuse an idle agent from another project', async () => {
+      const mockContainer = { id: 'new-container-2', start: jest.fn().mockResolvedValue(undefined) };
+      pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
+      pm.pool.set('agent-1', {
+        state: 'idle',
+        containerId: 'c1',
+        projectId: 'proj-1',
+        repoKey: 'acme/widgets',
+        providerKey: 'auto',
+      });
+
+      const { pool } = require('../db');
+      pool.query.mockReset();
+      pool.query.mockResolvedValueOnce({
+        rows: [{ provider_type: 'claude', api_key_encrypted: 'enc1', base_url: null, model: 'claude', max_tokens: 4096 }],
+      });
+
+      const result = await pm.requestAgent('proj-2', 'https://github.com/acme/widgets');
+
+      expect(result.reused).toBe(false);
+      expect(result.containerId).toBe('new-container-2');
+      expect(pm.docker.createContainer).toHaveBeenCalled();
+    });
+
+    it('does not reuse an idle agent for a different repository', async () => {
+      const mockContainer = { id: 'new-container-3', start: jest.fn().mockResolvedValue(undefined) };
+      pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
+      pm.pool.set('agent-1', {
+        state: 'idle',
+        containerId: 'c1',
+        projectId: 'proj-1',
+        repoKey: 'acme/widgets',
+        providerKey: 'auto',
+      });
+
+      const { pool } = require('../db');
+      pool.query.mockReset();
+      pool.query.mockResolvedValueOnce({
+        rows: [{ provider_type: 'claude', api_key_encrypted: 'enc1', base_url: null, model: 'claude', max_tokens: 4096 }],
+      });
+
+      const result = await pm.requestAgent('proj-1', 'https://github.com/acme/other');
+
+      expect(result.reused).toBe(false);
+      expect(result.containerId).toBe('new-container-3');
     });
 
     it('creates new container when no idle agents', async () => {
@@ -164,11 +217,18 @@ describe('PoolManager', () => {
       expect(createOpts.Env).toContain('PROJECT_ID=proj-1');
     });
 
+    it('parses repository URLs with trailing slash and .git suffix', () => {
+      expect(pm._parseRepo('https://github.com/acme/widgets.git/'))
+        .toEqual({ owner: 'acme', name: 'widgets' });
+      expect(pm._parseRepo('acme/widgets.git'))
+        .toEqual({ owner: 'acme', name: 'widgets' });
+    });
+
     it('passes PROJECT_ID and repository coordinates to pool agents', async () => {
       const mockContainer = { id: 'new-container-1', start: jest.fn().mockResolvedValue(undefined) };
       pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
 
-      await pm.requestAgent('proj-42', 'https://github.com/acme/widgets.git', {
+      await pm.requestAgent('proj-42', 'https://github.com/acme/widgets.git/', {
         endpoint: 'https://api.custom.com',
         apiKey: 'custom-key',
         model: 'gpt-4',

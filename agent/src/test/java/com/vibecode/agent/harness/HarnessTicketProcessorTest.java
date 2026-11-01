@@ -81,7 +81,7 @@ class HarnessTicketProcessorTest {
 
         workspace = mock(WorkspaceManager.class);
         when(workspace.getRepoDir()).thenReturn(tempDir);
-        when(workspace.collectDiff()).thenReturn(new DiffSummary(
+        when(workspace.stageFreshDiff()).thenReturn(new DiffSummary(
             List.of(new DiffSummary.ChangedFile("src/App.java", "modified")), 12, 3));
         when(workspace.commitAndPushStaged(anyString(), anyString())).thenReturn("abc1234");
 
@@ -123,8 +123,9 @@ class HarnessTicketProcessorTest {
         verify(harness).start(tempDir);
         verify(harness).sendPrompt(eq("ses_test"), contains("Add filtering"));
         verify(verificationRunner).run(eq(tempDir), eq(List.of("npm test")), any());
-        verify(workspace).stageAll();
+        verify(workspace).stageFreshDiff();
         verify(workspace).commitAndPushStaged("feat: Add filtering", "vibecode/ticket-1-add-filtering");
+        verify(workspace).discardStaged();
         verify(gitHubService).createPullRequest(
             eq("feat: Add filtering"), anyString(),
             eq("vibecode/ticket-1-add-filtering"), eq("main"));
@@ -141,8 +142,7 @@ class HarnessTicketProcessorTest {
         org.mockito.InOrder order = org.mockito.Mockito.inOrder(harness, workspace);
         order.verify(harness).sendPrompt(eq("ses_test"), anyString());
         order.verify(harness).close();
-        order.verify(workspace).stageAll();
-        order.verify(workspace).collectDiff();
+        order.verify(workspace).stageFreshDiff();
         order.verify(workspace).commitAndPushStaged(
             "feat: Add filtering", "vibecode/ticket-1-add-filtering");
     }
@@ -220,8 +220,23 @@ class HarnessTicketProcessorTest {
     }
 
     @Test
+    void verificationFailureOutputIsRedactedBeforePosting() throws Exception {
+        when(verificationRunner.run(any(), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult(
+                "npm test", 1, "leak secret-key and ghp_token and test-key", false)));
+
+        processor.processTicket(ticket());
+
+        for (String message : postedMessages()) {
+            assertFalse(message.contains("secret-key"), "Leaked provider key in: " + message);
+            assertFalse(message.contains("ghp_token"), "Leaked GitHub token in: " + message);
+            assertFalse(message.contains("test-key"), "Leaked agent API key in: " + message);
+        }
+    }
+
+    @Test
     void protectedPathBlocksPublishingAndReleases() throws Exception {
-        when(workspace.collectDiff()).thenReturn(new DiffSummary(
+        when(workspace.stageFreshDiff()).thenReturn(new DiffSummary(
             List.of(new DiffSummary.ChangedFile(".env", "modified")), 1, 0));
 
         processor.processTicket(ticket());

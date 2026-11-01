@@ -40,7 +40,14 @@ public final class EnvironmentSanitizer {
         "HOSTNAME",
         "JAVA_HOME",
         "MAVEN_HOME",
-        "MAVEN_OPTS"
+        "MAVEN_OPTS",
+        // Non-secret network configuration needed by enterprise agents.
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "NODE_EXTRA_CA_CERTS",
+        "NPM_CONFIG_REGISTRY"
     );
 
     /**

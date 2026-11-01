@@ -61,6 +61,12 @@ public final class PublishingGuard {
 
         for (DiffSummary.ChangedFile file : diff.files()) {
             String path = normalizePath(file.path());
+            if (path.indexOf('\n') >= 0 || path.indexOf('\r') >= 0 || path.indexOf('\u0000') >= 0) {
+                throw new IllegalStateException("Refusing to publish a path with control characters");
+            }
+            if (isAllowedEnvExample(path)) {
+                continue;
+            }
             for (Pattern pattern : protectedPatterns) {
                 if (pattern.matcher(path).matches()) {
                     throw new IllegalStateException("Refusing to publish protected path: " + path);
@@ -75,6 +81,19 @@ public final class PublishingGuard {
             value = value.substring(2);
         }
         return value;
+    }
+
+    /**
+     * Example files contain placeholders, not live credentials. The read
+     * permission explicitly allows them; the guard should not contradict it.
+     */
+    private static boolean isAllowedEnvExample(String path) {
+        String name = path;
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) {
+            name = name.substring(slash + 1);
+        }
+        return name.equals(".env.example") || name.endsWith(".env.example");
     }
 
     static Pattern globToRegex(String glob) {
@@ -107,7 +126,9 @@ public final class PublishingGuard {
             }
         }
         regex.append('$');
-        return Pattern.compile(regex.toString(), Pattern.CASE_INSENSITIVE);
+        // DOTALL: a newline is a legal path character in Git, so `.*` for **
+        // must not stop at a line break (which would bypass .github/**).
+        return Pattern.compile(regex.toString(), Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
     }
 
     private static int intEnv(String name, int fallback) {

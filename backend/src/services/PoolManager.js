@@ -35,7 +35,9 @@ class PoolManager {
     if (!repoUrl || typeof repoUrl !== 'string') {
       return { owner: null, name: null };
     }
-    let value = repoUrl.trim().replace(/\.git$/, '').replace(/\/+$/, '');
+    // Strip trailing slashes and .git in either order, so
+    // https://github.com/acme/widgets.git/ becomes acme/widgets.
+    let value = repoUrl.trim().replace(/\/+$/, '').replace(/\.git$/i, '');
     const match = value.match(/github\.com[/:]([^/]+)\/([^/]+)$/i);
     if (match) {
       return { owner: match[1], name: match[2] };
@@ -45,6 +47,25 @@ class PoolManager {
       return { owner: parts[0], name: parts[1] };
     }
     return { owner: null, name: null };
+  }
+
+  _repoKey(repoUrl) {
+    const repo = this._parseRepo(repoUrl);
+    return repo.owner && repo.name ? `${repo.owner}/${repo.name}`.toLowerCase() : '';
+  }
+
+  _providerKey(options) {
+    if (options.providerId) {
+      return `id:${options.providerId}`;
+    }
+    if (options.legacyProviderConfig) {
+      const legacy = options.legacyProviderConfig;
+      const keyHash = legacy.apiKey
+        ? crypto.createHash('sha256').update(legacy.apiKey).digest('hex')
+        : '';
+      return `legacy:${legacy.endpoint || ''}|${legacy.model || ''}|${keyHash}`;
+    }
+    return 'auto';
   }
 
   _generateApiKey() {
@@ -122,8 +143,17 @@ class PoolManager {
       }
     }
 
+    const requestedRepo = this._repoKey(repoUrl);
+    const requestedProvider = this._providerKey(resolvedOptions);
+
     for (const [id, entry] of this.pool) {
-      if (entry.state === 'idle') {
+      // A container's environment is fixed at creation time. Reusing a
+      // container from another project/repo/provider would make it keep
+      // polling the old project with the old credentials.
+      if (entry.state === 'idle'
+        && entry.projectId === projectId
+        && entry.repoKey === requestedRepo
+        && entry.providerKey === requestedProvider) {
         entry.state = 'busy';
         entry.projectId = projectId;
         entry.lastActiveAt = Date.now();
@@ -198,7 +228,7 @@ class PoolManager {
     // agents can run the OpenCode harness exactly like manually started ones.
     for (const name of [
       'HARNESS_MODE', 'HARNESS_BIN', 'HARNESS_STARTUP_TIMEOUT_MS',
-      'HARNESS_IDLE_TIMEOUT_MS', 'HARNESS_MAX_DURATION_MINUTES',
+      'HARNESS_MAX_DURATION_MINUTES',
       'HARNESS_VERIFY_COMMANDS', 'HARNESS_PROTECTED_PATHS', 'HARNESS_MODEL',
       'HARNESS_MAX_FILES', 'HARNESS_MAX_LINES', 'HARNESS_MAX_BYTES',
       'HARNESS_MAX_ATTEMPTS', 'HARNESS_RETRY_BASE_DELAY_MS',
@@ -235,6 +265,8 @@ class PoolManager {
         container,
         state: 'starting',
         projectId,
+        repoKey: requestedRepo,
+        providerKey: requestedProvider,
         ticketId: null,
         startedAt: Date.now(),
         lastActiveAt: Date.now(),

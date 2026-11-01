@@ -45,12 +45,20 @@ to their real files. Line counting is byte-oriented and bounded; binary files do
 not throw. `DiffSummary` also carries a byte total so the guard can reject huge
 binary payloads.
 
-### 2. Stage before guard
+### 2. Stage before guard (supervisor-owned index)
 
-The processor closes the harness immediately after the blocking prompt, then
-`stageAll()`, then `collectDiff()`, then the guard. Publishing uses
-`commitAndPushStaged()` so a leftover background process cannot inject files
-between the guard and the commit.
+The processor closes the harness and every verification process group
+immediately after the blocking prompt, then builds a **fresh index** with
+`GIT_INDEX_FILE` + `git read-tree HEAD` + `git add -A`. The agent-controlled
+`.git/index` is never trusted: `assume-unchanged`, `skip-worktree` and
+index-only cache entries are discarded.
+
+Guard data is read from index blobs (`git diff --cached --name-status -z`,
+`git ls-files -s -z`, `git cat-file`), not from `.gitattributes`-sensitive
+`git diff --numstat`. Publishing writes the guarded tree with `git write-tree`,
+creates the commit with `git commit-tree`, and pushes that commit SHA, so the
+worktree cannot change between guard and publish. Renames are reported with
+`--no-renames` so a protected old path is always visible.
 
 ### 3. Hostile git repository
 
@@ -76,6 +84,21 @@ authoritative with `OPENCODE_DISABLE_PROJECT_CONFIG=true`. Permissions deny
 project config edits, `.git/**`, `.opencode/**`, web tools and `doom_loop`.
 Provider/model normalization strips a leading `provider/` prefix and rejects an
 override for a provider that is not defined in the temporary config.
+
+### 4b. Process groups and credentials
+
+OpenCode and every verification command run as a POSIX process-group leader
+(`setsid`). The supervisor kills the whole group after the prompt and after each
+command, including commands that exit normally, so background children cannot
+touch the index/config during publishing. GitHub credentials use a short-lived
+`GIT_ASKPASS` script rather than a token in argv or `.git/config`; the script is
+deleted immediately after clone/push. Debug logging redacts token-bearing args.
+
+### 4c. Pool reuse
+
+A pooled container's environment is fixed at creation. `PoolManager` records
+project, normalized repository and provider signature on each entry and only
+reuses an idle container when all three match.
 
 ### 5. Environments
 

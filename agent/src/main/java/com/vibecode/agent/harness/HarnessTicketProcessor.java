@@ -243,45 +243,50 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
 
             currentStep = "publishing";
-            // Stage first, then guard exactly the tree that will be committed.
-            workspace.stageAll();
-            DiffSummary diff = workspace.collectDiff();
+            // Stage into a supervisor-owned index, guard index blobs, then
+            // publish exactly the guarded tree. The agent-controlled index and
+            // worktree are never trusted.
             try {
-                publishingGuard.assertPublishable(diff);
-            } catch (IllegalStateException e) {
-                failAndRelease(pickedUp.getId(), "Publishing blocked: " + e.getMessage());
-                return;
-            }
-            ensureWithinDeadline(deadline);
-
-            String commitSha = workspace.commitAndPushStaged(
-                "feat: " + pickedUp.getTitle(), branchName);
-            String prUrl = gitHubService.createPullRequest(
-                "feat: " + pickedUp.getTitle(),
-                buildPrBody(pickedUp, branchName, commitSha, diff, verification),
-                branchName,
-                "main"
-            );
-
-            // Post-publish bookkeeping must never discard a successful push/PR.
-            if (prUrl != null && !prUrl.isBlank()) {
+                DiffSummary diff = workspace.stageFreshDiff();
                 try {
-                    apiService.updateTicketPrUrl(pickedUp.getId(), prUrl);
+                    publishingGuard.assertPublishable(diff);
+                } catch (IllegalStateException e) {
+                    failAndRelease(pickedUp.getId(), "Publishing blocked: " + e.getMessage());
+                    return;
+                }
+                ensureWithinDeadline(deadline);
+                String commitSha = workspace.commitAndPushStaged(
+                    "feat: " + pickedUp.getTitle(), branchName);
+                String prUrl = gitHubService.createPullRequest(
+                    "feat: " + pickedUp.getTitle(),
+                    buildPrBody(pickedUp, branchName, commitSha, diff, verification),
+                    branchName,
+                    "main"
+                );
+
+                // Post-publish bookkeeping must never discard a successful push/PR.
+                if (prUrl != null && !prUrl.isBlank()) {
+                    try {
+                        apiService.updateTicketPrUrl(pickedUp.getId(), prUrl);
+                    } catch (IOException | RuntimeException e) {
+                        log.warn("Push/PR succeeded but updating ticket {} PR URL failed: {}",
+                            pickedUp.getId(), e.getMessage());
+                    }
+                }
+
+                postMessage(pickedUp.getId(), "status",
+                    completionSummary(diff, verification, prUrl));
+                try {
+                    apiService.updateTicketStatus(pickedUp.getId(), "review");
                 } catch (IOException | RuntimeException e) {
-                    log.warn("Push/PR succeeded but updating ticket {} PR URL failed: {}",
+                    log.warn("Push/PR succeeded but updating ticket {} status failed: {}",
                         pickedUp.getId(), e.getMessage());
                 }
+                this.failures.remove(pickedUp.getId());
+                log.info("Ticket {} completed; PR: {}", pickedUp.getId(), prUrl);
+            } finally {
+                workspace.discardStaged();
             }
-
-            postMessage(pickedUp.getId(), "status", completionSummary(diff, verification, prUrl));
-            try {
-                apiService.updateTicketStatus(pickedUp.getId(), "review");
-            } catch (IOException | RuntimeException e) {
-                log.warn("Push/PR succeeded but updating ticket {} status failed: {}",
-                    pickedUp.getId(), e.getMessage());
-            }
-            this.failures.remove(pickedUp.getId());
-            log.info("Ticket {} completed; PR: {}", pickedUp.getId(), prUrl);
         } catch (ThreadDeath death) {
             throw death;
         } catch (Throwable failure) {
@@ -381,8 +386,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private void failAndRelease(Long ticketId, String message) {
         FailureState state = failures.computeIfAbsent(ticketId, ignored -> new FailureState());
         int attempt = state.recordFailure(maxAttempts, retryBaseDelayMs, retryMaxDelayMs);
-        String note = " (attempt " + attempt + "/" + maxAttempts + ", retry after "
+        String note = " (attempt " + Math.min(attempt, maxAttempts) + "/" + maxAttempts
+            + ", retry after "
             + Math.max(0, (state.nextAttemptAt - System.currentTimeMillis()) / 1000) + "s)";
+        if (attempt > maxAttempts) {
+            note += " — maximum retries reached; manual intervention recommended";
+        }
         postMessage(ticketId, "update", message + note);
         release(ticketId);
     }
@@ -450,7 +459,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             if (ignored == null) {
                 log.debug("Ticket message returned no body for ticket {}", ticketId);
             }
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             log.warn("Failed to post {} message on ticket {}: {}", type, ticketId, e.getMessage());
         }
     }
@@ -473,7 +482,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         String details = failures.stream()
             .map(result -> "$ " + result.command() + "\n" + result.output())
             .collect(Collectors.joining("\n\n"));
-        return "```\n" + truncate(details) + "\n```";
+        return "```\n" + truncate(redactWithProvider(details)) + "\n```";
     }
 
     private String completionSummary(
@@ -538,6 +547,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
         String github = System.getenv("GITHUB_TOKEN");
         if (github != null && !github.isBlank()) {
             redacted = redacted.replace(github, "[REDACTED]");
+        }
+        String agentKey = System.getenv("AGENT_API_KEY");
+        if (agentKey != null && !agentKey.isBlank()) {
+            redacted = redacted.replace(agentKey, "[REDACTED]");
         }
         return redacted;
     }

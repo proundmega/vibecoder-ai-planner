@@ -27,9 +27,17 @@ public record ProviderSettings(
         return "ProviderSettings["
             + "type=" + type
             + ", apiKey=" + (hasApiKey() ? "[REDACTED]" : "null")
-            + ", baseUrl=" + baseUrl
+            + ", baseUrl=" + redactUrl(baseUrl)
             + ", model=" + model
             + ", maxTokens=" + maxTokens
             + ']';
+    }
+
+    private static String redactUrl(String value) {
+        if (value == null) {
+            return null;
+        }
+        // Strip userinfo from URLs such as https://user:pass@host/v1.
+        return value.replaceFirst("^(https?://)[^/@]+@", "$1[REDACTED]@");
     }
 }

@@ -97,6 +97,27 @@ class OpenCodeConfigWriterTest {
     }
 
     @Test
+    void stripsVibecodeAndClaudeProviderPrefixes() throws Exception {
+        Path generic = OpenCodeConfigWriter.write(
+            tempDir.resolve("generic-prefix"),
+            new ProviderSettings("generic", "key", "http://localhost/v1", "vibecode/qwen", 4096),
+            config(null),
+            tempDir);
+        assertEquals("vibecode/qwen",
+            mapper.readTree(generic.toFile()).path("model").asText());
+
+        Path claude = OpenCodeConfigWriter.write(
+            tempDir.resolve("claude-prefix"),
+            new ProviderSettings("claude", "key", null, "claude/claude-sonnet-4", 4096),
+            config(null),
+            tempDir);
+        assertEquals("anthropic/claude-sonnet-4",
+            mapper.readTree(claude.toFile()).path("model").asText());
+        assertTrue(mapper.readTree(claude.toFile()).path("provider")
+            .path("anthropic").path("models").has("claude-sonnet-4"));
+    }
+
+    @Test
     void rejectsModelOverrideForADifferentProvider() {
         ProviderSettings provider = new ProviderSettings(
             "opencode-go", "oc_sk_secret", null, "beam-free", 4096);

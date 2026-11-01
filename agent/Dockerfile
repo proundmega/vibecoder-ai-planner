@@ -15,7 +15,7 @@ FROM eclipse-temurin:17-jre-alpine
 
 ARG OPENCODE_VERSION=1.19.5
 
-RUN apk add --no-cache git ripgrep bash curl jq python3 make libstdc++
+RUN apk add --no-cache git ripgrep bash curl jq python3 make libstdc++ util-linux
 
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules

@@ -159,11 +159,11 @@ public final class OpenCodeClient implements HarnessClient {
         this.httpClient = buildControlHttpClient();
         this.promptHttpClient = buildPromptHttpClient();
 
-        ProcessBuilder builder = new ProcessBuilder(
+        ProcessBuilder builder = new ProcessBuilder(ProcessGroup.wrap(List.of(
             config.binary(), "serve",
             "--hostname", "127.0.0.1",
             "--port", String.valueOf(candidatePort)
-        );
+        )));
         builder.directory(workspace.toFile());
         builder.redirectErrorStream(true);
 
@@ -322,12 +322,14 @@ public final class OpenCodeClient implements HarnessClient {
             eventSource = null;
         }
 
+        // Stop the process group first: a hung server must not delay cleanup,
+        // and any background child it spawned must die with it.
+        stopProcess();
+
         if (lastSessionId != null) {
             deleteSession(lastSessionId);
             lastSessionId = null;
         }
-
-        stopProcess();
 
         if (!externalServer && tempDir != null) {
             deleteRecursively(tempDir);
@@ -606,13 +608,15 @@ public final class OpenCodeClient implements HarnessClient {
         running.destroy();
         try {
             if (!running.waitFor(5, TimeUnit.SECONDS)) {
-                running.destroyForcibly();
-                running.waitFor(2, TimeUnit.SECONDS);
+                ProcessGroup.kill(running);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            running.destroyForcibly();
+            ProcessGroup.kill(running);
         }
+        // Always reap the group: the leader may have exited while a background
+        // child (for example a shell started by the agent) is still alive.
+        ProcessGroup.kill(running);
     }
 
     private static void deleteRecursively(Path path) {

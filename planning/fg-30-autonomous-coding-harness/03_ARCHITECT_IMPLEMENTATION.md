@@ -14,9 +14,14 @@
 2. `WorkspaceManager`
    - `git status --porcelain -z -uall`, NUL parsing, rename handling.
    - Binary-safe, bounded line counting and byte totals.
-   - `stageAll()` and `commitAndPushStaged()`.
+   - `stageFreshDiff()` with a supervisor-owned `GIT_INDEX_FILE`;
+     `stageAll()` also resets the index from HEAD.
+   - Guard data from index blobs (`ls-files`/`cat-file`), `--no-renames`.
+   - `write-tree` + `commit-tree` + push of the guarded SHA.
    - Trusted `.git/config` snapshot/restore, hooks/fsmonitor disabled.
-   - `ls-remote` + explicit `--force-with-lease` for URL pushes.
+   - `ls-remote` + explicit `--force-with-lease`.
+   - Transient `GIT_ASKPASS` helper instead of token-in-argv.
+   - Symlink-safe legacy file writes.
    - Symlink-safe cleanup bounded by `REPO_CLONE_DIR`.
    - Path-traversal check when writing legacy file operations.
 3. `PublishingGuard` — nested `.env`, `Jenkinsfile`, `.github/**`, byte limit,

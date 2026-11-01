@@ -45,8 +45,13 @@
 - [x] Regression tests for environment sanitization
 - [x] Regression tests for project-config disabling, model normalization and key redaction
 - [x] Regression tests for fail-closed verification, install failure and retry backoff
-- [x] `mvn test` (105 tests) and `mvn package -DskipTests` pass
-- [x] Backend Jest suite passes (1344 tests)
+- [x] Regression tests for supervisor index blobs, assume-unchanged,
+      skip-worktree, `.gitattributes -diff`, protected renames and post-guard
+      worktree changes
+- [x] Regression tests for background descendants, credential redaction and
+      pool reuse mismatches
+- [x] `mvn test` (119 tests) and `mvn package -DskipTests` pass
+- [x] Backend Jest suite passes (1347 tests)
 
 ## Deployment
 

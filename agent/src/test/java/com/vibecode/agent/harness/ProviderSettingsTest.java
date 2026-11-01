@@ -18,4 +18,15 @@ class ProviderSettingsTest {
         assertTrue(text.contains("[REDACTED]"));
         assertTrue(text.contains("beam-free"));
     }
+
+    @Test
+    void toStringRedactsUrlUserInfo() {
+        ProviderSettings settings = new ProviderSettings(
+            "generic", "key", "https://user:password@example.test/v1", "qwen", 4096);
+
+        String text = settings.toString();
+
+        assertFalse(text.contains("user:password"));
+        assertTrue(text.contains("[REDACTED]@example.test"));
+    }
 }

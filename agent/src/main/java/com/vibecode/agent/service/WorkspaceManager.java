@@ -17,10 +17,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -59,8 +60,10 @@ public class WorkspaceManager {
     private final String repoCloneDir;
     private final Path cloneRoot;
     private final String repoName;
-    private String authenticatedRemoteUrl;
     private String trustedGitConfig;
+    private Path supervisorIndex;
+    private Path askPassDirectory;
+    private Path askPassScript;
 
     public WorkspaceManager(String repoCloneDir, String repoName, boolean dryRun, String githubToken) {
         this.repoCloneDir = repoCloneDir;
@@ -112,21 +115,20 @@ public class WorkspaceManager {
         // Create parent directory if needed
         Files.createDirectories(repoDir.getParent());
 
-        // Clone without authentication first (works for public repos)
-        // or with a token configured for private repos. The token is removed
-        // from .git/config immediately after cloning.
-        if (githubToken != null && !githubToken.isBlank() && repoUrl.startsWith("https://github.com/")) {
-            String authenticatedUrl = repoUrl.replace("https://github.com/", "https://" + githubToken + "@github.com/");
-            try {
-                runGitAt(repoDir.getParent(), "clone", authenticatedUrl, repoDir.toString());
-            } catch (IOException e) {
-                throw new IOException("Git clone failed: " + redact(e.getMessage()), e);
-            }
-            this.authenticatedRemoteUrl = authenticatedUrl;
-            runGit("remote", "set-url", "origin", stripCredentials(authenticatedUrl));
-        } else {
-            this.authenticatedRemoteUrl = null;
-            runGitAt(repoDir.getParent(), "clone", repoUrl, repoDir.toString());
+        // Clone without authentication first (works for public repos) or with
+        // a transient askpass helper for private repos. The token never appears
+        // in a command line or in .git/config.
+        boolean authenticate = githubToken != null && !githubToken.isBlank()
+            && repoUrl.startsWith("https://github.com/");
+        if (authenticate) {
+            ensureAskPass();
+        }
+        try {
+            runGitAt(repoDir.getParent(), Map.of(), "clone", repoUrl, repoDir.toString());
+        } catch (IOException e) {
+            throw new IOException("Git clone failed: " + redact(e.getMessage()), e);
+        } finally {
+            cleanupAskPass();
         }
 
         // Create and checkout the target branch
@@ -172,27 +174,45 @@ public class WorkspaceManager {
         runGit("config", "user.email", "agent@vibecode.ai");
         runGit("config", "user.name", "Vibecode Agent");
 
-        if (stageFirst) {
-            stageAll();
+        String commitSha;
+        if (supervisorIndex != null) {
+            // Publish the exact tree that was guarded. commit-tree does not
+            // consult or mutate the agent-controlled index/worktree.
+            String tree = runGitWithIndex("write-tree");
+            commitSha = runGitWithIndex(
+                "commit-tree", tree, "-p", "HEAD", "-m", message).strip();
+        } else {
+            if (stageFirst) {
+                stageAll();
+            }
+            // --no-verify is redundant with core.hooksPath=/dev/null, but keeps
+            // the invariant obvious if an option is ever removed.
+            runGit("commit", "--no-verify", "-m", message);
+            commitSha = getCommitSha();
         }
 
-        // --no-verify is redundant with core.hooksPath=/dev/null, but keeps the
-        // invariant obvious if an option is ever removed.
-        runGit("commit", "--no-verify", "-m", message);
+        pushCommit(commitSha, branchName);
+        return commitSha;
+    }
 
-        // Pushing to an authenticated URL means git has no remote-tracking ref,
-        // so plain --force-with-lease is always rejected ("stale info") for an
-        // existing branch. Resolve the remote SHA explicitly and pass it as the
-        // lease expectation. A retry may overwrite a branch that has not moved.
-        String pushTarget = authenticatedRemoteUrl != null && !authenticatedRemoteUrl.isBlank()
-            ? authenticatedRemoteUrl
-            : "origin";
+    private void pushCommit(String commitSha, String branchName) throws IOException {
+        // Pushing to origin (with a transient askpass helper) gives git a
+        // remote-tracking ref, but an explicit lease is still used so a retry
+        // can overwrite a branch only if the remote has not moved.
+        String pushTarget = "origin";
         String remoteSha = remoteBranchSha(pushTarget, branchName);
         String lease = "--force-with-lease=refs/heads/" + branchName + ":"
             + (remoteSha == null ? "" : remoteSha);
-        runGit("push", "--no-verify", pushTarget, "HEAD:refs/heads/" + branchName, lease);
-
-        return getCommitSha();
+        boolean authenticate = githubToken != null && !githubToken.isBlank();
+        if (authenticate) {
+            ensureAskPass();
+        }
+        try {
+            runGit("push", "--no-verify", pushTarget,
+                commitSha + ":refs/heads/" + branchName, lease);
+        } finally {
+            cleanupAskPass();
+        }
     }
 
     /**
@@ -204,7 +224,46 @@ public class WorkspaceManager {
             return;
         }
         hardenGitRepository();
+        // Reset the agent-controlled index to HEAD before staging. This drops
+        // index-only cache entries and clears assume-unchanged/skip-worktree
+        // flags so `git add -A` sees the real worktree.
+        runGit("read-tree", "HEAD");
         runGit("add", "-A");
+    }
+
+    /**
+     * Build a supervisor-owned index from HEAD, apply the worktree on top of
+     * it, and return a diff computed from index blobs.
+     *
+     * <p>This deliberately ignores the agent-controlled {@code .git/index}:
+     * {@code assume-unchanged}, {@code skip-worktree} and index-only cache
+     * entries cannot influence what is guarded or published.</p>
+     */
+    public DiffSummary stageFreshDiff() throws IOException {
+        if (dryRun) {
+            return DiffSummary.empty();
+        }
+        hardenGitRepository();
+        discardStaged();
+        Path index = Files.createTempFile("vibecode-harness-index-", ".idx");
+        Files.deleteIfExists(index);
+        this.supervisorIndex = index;
+
+        runGitWithIndex("read-tree", "HEAD");
+        runGitWithIndex("add", "-A");
+        return diffFromIndex();
+    }
+
+    public void discardStaged() {
+        Path index = supervisorIndex;
+        supervisorIndex = null;
+        if (index != null) {
+            try {
+                Files.deleteIfExists(index);
+            } catch (IOException e) {
+                log.debug("Could not remove supervisor index {}: {}", index, e.getMessage());
+            }
+        }
     }
 
     /**
@@ -261,18 +320,26 @@ public class WorkspaceManager {
     }
 
     private void writeSingleFile(FileOperation fileOp) throws IOException {
-        Path root = repoDir.toAbsolutePath().normalize();
+        Path root = repoDir.toRealPath();
         Path targetPath = root.resolve(fileOp.getPath()).normalize();
         if (!targetPath.startsWith(root)) {
             throw new IOException("Refusing to write outside the workspace: " + fileOp.getPath());
         }
 
-        // Create parent directories if needed
-        Files.createDirectories(targetPath.getParent());
+        Path parent = targetPath.getParent();
+        assertExistingAncestorInsideWorkspace(parent, root);
 
         switch (fileOp.getAction()) {
             case CREATE:
             case MODIFY:
+                if (Files.isSymbolicLink(targetPath)) {
+                    throw new IOException("Refusing to write through symlink: " + fileOp.getPath());
+                }
+                Files.createDirectories(parent);
+                Path realParent = parent.toRealPath();
+                if (!realParent.startsWith(root)) {
+                    throw new IOException("Refusing to write outside the workspace: " + fileOp.getPath());
+                }
                 // Write or update file content
                 String content = fileOp.getContent();
                 if (content != null) {
@@ -290,6 +357,25 @@ public class WorkspaceManager {
         }
     }
 
+    /**
+     * Walk up to the nearest existing ancestor and resolve it. A cloned repo
+     * may contain a symlinked directory; creating files below it must not
+     * escape the workspace.
+     */
+    private static void assertExistingAncestorInsideWorkspace(Path parent, Path root) throws IOException {
+        Path current = parent;
+        while (current != null && !Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
+            current = current.getParent();
+        }
+        if (current == null) {
+            throw new IOException("Cannot resolve workspace parent: " + parent);
+        }
+        Path real = current.toRealPath();
+        if (!real.startsWith(root)) {
+            throw new IOException("Refusing to write outside the workspace: " + parent);
+        }
+    }
+
     private void runGit(String... args) throws IOException {
         runGitCommand(args);
     }
@@ -298,21 +384,22 @@ public class WorkspaceManager {
         if (repoDir == null) {
             throw new IOException("Workspace has not been cloned");
         }
-        return runGitAt(repoDir, args);
+        return runGitAt(repoDir, Map.of(), args);
     }
 
-    private String runGitAt(Path directory, String... args) throws IOException {
-        List<String> command = new ArrayList<>();
-        command.add(gitBinary);
-        command.addAll(SAFE_GIT_OPTIONS);
-        command.addAll(List.of(args));
+    private String runGitWithIndex(String... args) throws IOException {
+        if (supervisorIndex == null) {
+            throw new IOException("No supervisor index is active");
+        }
+        return runGitAt(repoDir, Map.of("GIT_INDEX_FILE", supervisorIndex.toString()), args);
+    }
 
-        ProcessBuilder pb = new ProcessBuilder(command);
-        pb.directory(directory.toFile());
-        pb.redirectErrorStream(true);
-        applyGitEnvironment(pb.environment());
-
-        Process process = pb.start();
+    private String runGitAt(
+        Path directory,
+        Map<String, String> extraEnvironment,
+        String... args
+    ) throws IOException {
+        Process process = startGit(directory, extraEnvironment, args);
         String output = readProcessOutput(process);
         int exitCode;
         try {
@@ -332,18 +419,94 @@ public class WorkspaceManager {
         return output.stripTrailing();
     }
 
-    private void applyGitEnvironment(java.util.Map<String, String> environment) {
+    private Process startGit(
+        Path directory,
+        Map<String, String> extraEnvironment,
+        String... args
+    ) throws IOException {
+        List<String> command = new ArrayList<>();
+        command.add(gitBinary);
+        command.addAll(SAFE_GIT_OPTIONS);
+        command.addAll(List.of(args));
+
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.directory(directory.toFile());
+        pb.redirectErrorStream(true);
+        applyGitEnvironment(pb.environment(), extraEnvironment);
+        return pb.start();
+    }
+
+    private void applyGitEnvironment(
+        Map<String, String> environment,
+        Map<String, String> extraEnvironment
+    ) {
         EnvironmentSanitizer.sanitize(environment);
         // Ignore supervisor ~/.gitconfig and /etc/gitconfig. This removes global
         // credential helpers, URL rewriting (url.*.insteadOf) and filters.
         environment.put("GIT_CONFIG_NOSYSTEM", "1");
         environment.put("GIT_CONFIG_GLOBAL", devNull());
         environment.put("GIT_TERMINAL_PROMPT", "0");
-        environment.put("GIT_ASKPASS", devNull());
+        environment.put("GIT_ASKPASS",
+            askPassScript != null ? askPassScript.toString() : devNull());
+        if (extraEnvironment != null) {
+            environment.putAll(extraEnvironment);
+        }
     }
 
     private static String devNull() {
         return System.getProperty("os.name", "").toLowerCase().contains("win") ? "NUL" : "/dev/null";
+    }
+
+    /**
+     * Create a short-lived GIT_ASKPASS helper. The token is kept out of argv
+     * (visible in {@code ps}) and out of .git/config; the script is deleted as
+     * soon as the clone/push finishes.
+     */
+    private void ensureAskPass() throws IOException {
+        if (askPassScript != null && Files.isRegularFile(askPassScript)) {
+            return;
+        }
+        cleanupAskPass();
+        askPassDirectory = Files.createTempDirectory("vibecode-askpass-");
+        askPassScript = askPassDirectory.resolve("askpass.sh");
+        String token = shellSingleQuote(githubToken == null ? "" : githubToken);
+        String script = "#!/bin/sh\n"
+            + "case \"$1\" in\n"
+            + "  *Username*) printf '%s\\n' 'oauth2' ;;\n"
+            + "  *) printf '%s\\n' " + token + " ;;\n"
+            + "esac\n";
+        Files.writeString(askPassScript, script, StandardCharsets.UTF_8);
+        if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            Files.setPosixFilePermissions(
+                askPassDirectory, PosixFilePermissions.fromString("rwx------"));
+            Files.setPosixFilePermissions(
+                askPassScript, PosixFilePermissions.fromString("rwx------"));
+        }
+    }
+
+    private void cleanupAskPass() {
+        Path script = askPassScript;
+        Path directory = askPassDirectory;
+        askPassScript = null;
+        askPassDirectory = null;
+        if (script != null) {
+            try {
+                Files.deleteIfExists(script);
+            } catch (IOException ignored) {
+                // Best effort.
+            }
+        }
+        if (directory != null) {
+            try {
+                Files.deleteIfExists(directory);
+            } catch (IOException ignored) {
+                // Best effort.
+            }
+        }
+    }
+
+    private static String shellSingleQuote(String value) {
+        return "'" + value.replace("'", "'\\''") + "'";
     }
 
     private String readProcessOutput(Process process) throws IOException {
@@ -491,14 +654,25 @@ public class WorkspaceManager {
             return DiffSummary.empty();
         }
 
-        String porcelain = runGitCommand("status", "--porcelain", "-z", "-uall");
+        // --no-renames is essential: with rename detection a protected old path
+        // (Jenkinsfile, .env, .github/...) disappears from the changed-file list
+        // and only the new, unprotected path remains.
+        String porcelain = runGitCommand(
+            "status", "--porcelain", "-z", "-uall", "--no-renames");
+        Map<String, String> indexBlobs = indexBlobs();
+        Map<String, String> headBlobs = headBlobs();
+        Map<String, int[]> stagedStats = parseNumstat(
+            runGitCommandAllowFailure("diff", "--cached", "--numstat", "-z", "--no-renames"));
+        Map<String, int[]> unstagedStats = parseNumstat(
+            runGitCommandAllowFailure("diff", "--numstat", "-z", "--no-renames"));
         List<DiffSummary.ChangedFile> files = new ArrayList<>();
-        Set<String> untracked = new HashSet<>();
+
+        int additions = 0;
+        int deletions = 0;
+        long bytes = 0;
 
         String[] entries = porcelain.split("\u0000", -1);
-        int index = 0;
-        while (index < entries.length) {
-            String entry = entries[index++];
+        for (String entry : entries) {
             if (entry == null || entry.length() < 4) {
                 continue;
             }
@@ -508,85 +682,244 @@ public class WorkspaceManager {
                 continue;
             }
 
-            // In -z mode a rename/copy is followed by a second NUL-separated
-            // field containing the original path.
-            if ((code.contains("R") || code.contains("C")) && index < entries.length) {
-                index++;
-            }
-
             String status;
             if (code.contains("?")) {
                 status = "added";
-                untracked.add(path);
             } else if (code.contains("A")) {
                 status = "added";
             } else if (code.contains("D")) {
                 status = "deleted";
-            } else if (code.contains("R")) {
-                status = "renamed";
             } else {
                 status = "modified";
             }
             files.add(new DiffSummary.ChangedFile(path, status));
-        }
 
-        int additions = 0;
-        int deletions = 0;
-        int[] staged = parseNumstat(runGitCommandAllowFailure("diff", "--numstat", "--cached"));
-        int[] unstaged = parseNumstat(runGitCommandAllowFailure("diff", "--numstat"));
-        additions += staged[0] + unstaged[0];
-        deletions += staged[1] + unstaged[1];
+            boolean staged = code.charAt(0) != ' ' && code.charAt(0) != '?';
+            Map<String, int[]> stats = staged ? stagedStats : unstagedStats;
+            int[] stat = stats.get(path);
 
-        for (String path : untracked) {
-            additions += countLines(repoDir.resolve(path));
-        }
-
-        long bytes = 0;
-        for (DiffSummary.ChangedFile file : files) {
-            if ("deleted".equals(file.status())) {
+            if ("deleted".equals(status)) {
+                if (stat != null && stat[1] >= 0) {
+                    deletions += stat[1];
+                } else {
+                    deletions += countBlobLines(headBlobs.get(path));
+                }
                 continue;
             }
-            try {
-                Path changed = repoDir.resolve(file.path());
-                BasicFileAttributes attrs = Files.readAttributes(
-                    changed, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-                if (attrs.isRegularFile()) {
-                    bytes += attrs.size();
-                }
-            } catch (IOException ignored) {
-                // Missing/broken path: the file count still guards the diff.
+
+            if (stat != null && stat[0] >= 0 && stat[1] >= 0) {
+                additions += stat[0];
+                deletions += stat[1];
+            } else if (staged && indexBlobs.containsKey(path)) {
+                additions += countBlobLines(indexBlobs.get(path));
+            } else {
+                additions += countLines(repoDir.resolve(path));
+            }
+
+            if (staged && indexBlobs.containsKey(path)) {
+                bytes += blobSize(indexBlobs.get(path));
+            } else {
+                bytes += fileSize(repoDir.resolve(path));
             }
         }
 
         return new DiffSummary(files, additions, deletions, bytes);
     }
 
-    private int[] parseNumstat(String output) {
+    private DiffSummary diffFromIndex() throws IOException {
+        String changed = runGitWithIndex(
+            "diff", "--cached", "--name-status", "-z", "--no-renames");
+        Map<String, int[]> stats = parseNumstat(
+            runGitWithIndex("diff", "--cached", "--numstat", "-z", "--no-renames"));
+        Map<String, String> indexBlobs = indexBlobs();
+        Map<String, String> headBlobs = headBlobs();
+        List<DiffSummary.ChangedFile> files = new ArrayList<>();
         int additions = 0;
         int deletions = 0;
-        if (output == null || output.isBlank()) {
-            return new int[]{0, 0};
+        long bytes = 0;
+
+        String[] tokens = changed.split("\u0000", -1);
+        for (int i = 0; i + 1 < tokens.length; i += 2) {
+            String code = tokens[i];
+            String path = tokens[i + 1];
+            if (code.isBlank() || path.isBlank()) {
+                continue;
+            }
+            String status;
+            if (code.startsWith("A")) {
+                status = "added";
+            } else if (code.startsWith("D")) {
+                status = "deleted";
+            } else {
+                status = "modified";
+            }
+            files.add(new DiffSummary.ChangedFile(path, status));
+
+            int[] stat = stats.get(path);
+            if (stat != null && stat[0] >= 0 && stat[1] >= 0) {
+                additions += stat[0];
+                deletions += stat[1];
+            } else if ("deleted".equals(status)) {
+                deletions += countBlobLines(headBlobs.get(path));
+            } else {
+                // Binary or `-diff` attribute: fall back to the raw blob so a
+                // hostile .gitattributes cannot hide a large text file.
+                additions += countBlobLines(indexBlobs.get(path));
+            }
+            if (!"deleted".equals(status)) {
+                bytes += blobSize(indexBlobs.get(path));
+            }
         }
-        for (String line : output.split("\\R")) {
-            String[] parts = line.split("\\t");
+
+        return new DiffSummary(files, additions, deletions, bytes);
+    }
+
+    private Map<String, String> indexBlobs() throws IOException {
+        return parseLsFiles(runGitWithIndexOrWorking("ls-files", "-s", "-z"));
+    }
+
+    private Map<String, String> headBlobs() throws IOException {
+        return parseLsFiles(runGitCommand("ls-tree", "-z", "-r", "HEAD"));
+    }
+
+    private String runGitWithIndexOrWorking(String... args) throws IOException {
+        return supervisorIndex != null ? runGitWithIndex(args) : runGitCommand(args);
+    }
+
+    private static Map<String, String> parseLsFiles(String output) {
+        Map<String, String> blobs = new HashMap<>();
+        if (output == null || output.isBlank()) {
+            return blobs;
+        }
+        for (String entry : output.split("\u0000", -1)) {
+            int tab = entry.indexOf('\t');
+            if (tab <= 0) {
+                continue;
+            }
+            String metadata = entry.substring(0, tab);
+            String path = entry.substring(tab + 1);
+            String[] parts = metadata.trim().split("\\s+");
+            // ls-files -s:   <mode> <sha> <stage>
+            // ls-tree -z -r: <mode> <type> <sha>
+            String sha = null;
+            for (int i = 1; i < parts.length; i++) {
+                if (isObjectId(parts[i])) {
+                    sha = parts[i];
+                    break;
+                }
+            }
+            if (sha != null) {
+                blobs.put(path, sha);
+            }
+        }
+        return blobs;
+    }
+
+    private static Map<String, int[]> parseNumstat(String output) {
+        Map<String, int[]> stats = new HashMap<>();
+        if (output == null || output.isBlank()) {
+            return stats;
+        }
+        for (String entry : output.split("\u0000", -1)) {
+            if (entry.isBlank()) {
+                continue;
+            }
+            String[] parts = entry.split("\\t");
             if (parts.length < 3) {
                 continue;
             }
+            String path = parts[2];
             try {
-                additions += Integer.parseInt(parts[0]);
-                deletions += Integer.parseInt(parts[1]);
-            } catch (NumberFormatException ignored) {
-                // Binary files report "-" for both counts.
+                stats.put(path, new int[]{
+                    Integer.parseInt(parts[0]), Integer.parseInt(parts[1])});
+            } catch (NumberFormatException e) {
+                // "-" means binary: force the blob fallback.
+                stats.put(path, new int[]{-1, -1});
             }
         }
-        return new int[]{additions, deletions};
+        return stats;
+    }
+
+    private static boolean isObjectId(String value) {
+        if (value == null || (value.length() != 40 && value.length() != 64)) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private long blobSize(String sha) throws IOException {
+        if (sha == null || sha.isBlank()) {
+            return 0;
+        }
+        try {
+            return Long.parseLong(runGitWithIndexOrWorking("cat-file", "-s", sha).trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private int countBlobLines(String sha) throws IOException {
+        if (sha == null || sha.isBlank()) {
+            return 0;
+        }
+        Process process = startGit(
+            repoDir,
+            supervisorIndex == null ? Map.of() : Map.of("GIT_INDEX_FILE", supervisorIndex.toString()),
+            "cat-file", "blob", sha);
+        int newlines = 0;
+        try (InputStream input = process.getInputStream()) {
+            byte[] buffer = new byte[8_192];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                for (int i = 0; i < read; i++) {
+                    if (buffer[i] == '\n') {
+                        newlines++;
+                        if (newlines > MAX_COUNTED_LINES) {
+                            return MAX_COUNTED_LINES + 1;
+                        }
+                    }
+                }
+            }
+        }
+        int exit = waitFor(process);
+        if (exit != 0) {
+            throw new IOException("git cat-file failed for blob " + sha);
+        }
+        return newlines;
+    }
+
+    private static int waitFor(Process process) throws IOException {
+        try {
+            return process.waitFor();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("git command interrupted", e);
+        }
+    }
+
+    private long fileSize(Path file) {
+        if (file == null || Files.isSymbolicLink(file)
+            || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
+            return 0;
+        }
+        try {
+            return Files.size(file);
+        } catch (IOException e) {
+            return 0;
+        }
     }
 
     private String runGitCommandAllowFailure(String... args) {
         try {
             return runGitCommand(args);
         } catch (IOException e) {
-            log.debug("git {} unavailable: {}", String.join(" ", args), e.getMessage());
+            log.debug("git {} unavailable: {}", redact(String.join(" ", args)), e.getMessage());
             return "";
         }
     }
@@ -625,6 +958,8 @@ public class WorkspaceManager {
      * Delete the workspace directory and all its contents.
      */
     public void cleanup() {
+        discardStaged();
+        cleanupAskPass();
         if (repoDir == null) {
             return;
         }
