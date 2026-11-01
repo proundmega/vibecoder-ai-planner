@@ -50,7 +50,7 @@
       worktree changes
 - [x] Regression tests for background descendants, credential redaction and
       pool reuse mismatches
-- [x] `mvn test` (119 tests) and `mvn package -DskipTests` pass
+- [x] `mvn test` (124 tests) and `mvn package -DskipTests` pass
 - [x] Backend Jest suite passes (1347 tests)
 
 ## Deployment

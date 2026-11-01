@@ -47,9 +47,11 @@ The security fixes below were implemented with regression tests. Test classes:
 - The harness is closed immediately after the blocking prompt returns, and its
   process group plus every verification process group is killed.
 - The processor builds a fresh supervisor index (`GIT_INDEX_FILE` +
-  `read-tree HEAD` + `add -A`), guards index blobs, then writes the tree and
-  commits it with `commit-tree`. Index-only blobs, `assume-unchanged` and
-  `skip-worktree` cannot affect the published tree.
+  `read-tree <baseCommit>` + `add -A`), pins the resulting tree SHA, guards that
+  exact tree, then commits it with `commit-tree -p <baseCommit>`. Index-only
+  blobs, `assume-unchanged`, `skip-worktree`, local HEAD/ref tampering and
+  replacement objects cannot affect the published tree. `baseCommit` is
+  captured at clone time and `GIT_NO_REPLACE_OBJECTS=1` is set for git.
 - `.gitattributes: * -diff` cannot hide line counts; the guard falls back to raw
   blob lines/bytes.
 - Renames are reported with `--no-renames`, so a protected old path is visible.

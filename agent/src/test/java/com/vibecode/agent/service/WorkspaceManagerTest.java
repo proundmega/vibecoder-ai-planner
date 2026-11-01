@@ -42,6 +42,12 @@ class WorkspaceManagerTest {
         field.set(target, value);
     }
 
+    private static Object getField(Object target, String name) throws Exception {
+        Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(target);
+    }
+
     private Path initRepo(String name) throws Exception {
         Path repo = tempDir.resolve(name);
         Files.createDirectories(repo);
@@ -491,6 +497,110 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void maliciousLocalHeadCannotHideProtectedFilesFromTheGuard() throws Exception {
+        Path repoDir = initRepo("malicious-head");
+        String base = gitOutput(repoDir, "rev-parse", "HEAD");
+
+        // Agent-authored commit containing a protected file, then HEAD points
+        // at it while the worktree matches.
+        Files.writeString(repoDir.resolve("Jenkinsfile"), "evil = true\n");
+        runGit(repoDir, "add", "Jenkinsfile");
+        runGit(repoDir, "commit", "-m", "malicious base");
+        Files.writeString(repoDir.resolve("README.md"), "initial\nnormal edit\n");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+        setField(wm, "baseCommit", base);
+
+        DiffSummary diff = wm.stageFreshDiff();
+        try {
+            assertTrue(diff.files().stream().anyMatch(
+                file -> file.path().equals("Jenkinsfile") && file.status().equals("added")),
+                "protected file from malicious HEAD was not surfaced: " + diff.files());
+            PublishingGuard guard = new PublishingGuard(
+                List.of(".env*", "**/.env*", "Jenkinsfile", ".github/**"));
+            assertThrows(IllegalStateException.class, () -> guard.assertPublishable(diff));
+        } finally {
+            wm.discardStaged();
+        }
+    }
+
+    @Test
+    void mutatingTheTempIndexAfterGuardCannotChangeThePublishedTree() throws Exception {
+        Path repoDir = initRepo("temp-index-mutation");
+        Path bare = initBare("temp-index-mutation.git");
+        runGit(repoDir, "remote", "add", "origin", bare.toString());
+        String trustedConfig = Files.readString(repoDir.resolve(".git/config"));
+        String base = gitOutput(repoDir, "rev-parse", "HEAD");
+
+        Files.writeString(repoDir.resolve("feature.txt"), "guarded\n");
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+        setField(wm, "trustedGitConfig", trustedConfig);
+        setField(wm, "baseCommit", base);
+
+        DiffSummary diff = wm.stageFreshDiff();
+        new PublishingGuard(List.of()).assertPublishable(diff);
+
+        Path index = (Path) getField(wm, "supervisorIndex");
+        String evilSha = gitOutputWithInput(repoDir, "evil\n", "hash-object", "-w", "--stdin");
+        runGitWithIndex(repoDir, index, "update-index", "--add",
+            "--cacheinfo", "100644," + evilSha + ",.github/workflows/evil.yml");
+
+        wm.commitAndPushStaged("feat: guarded tree", "feature");
+        wm.discardStaged();
+
+        String tree = gitOutput(bare, "ls-tree", "-r", "--name-only", "refs/heads/feature");
+        assertFalse(tree.contains(".github/workflows/evil.yml"),
+            "temp-index mutation leaked into the published tree: " + tree);
+        assertEquals("guarded", gitOutput(bare, "show", "refs/heads/feature:feature.txt"));
+    }
+
+    @Test
+    void submodulePointersDoNotBreakDiffCollection() throws Exception {
+        Path repoDir = initRepo("submodule");
+        Path nested = repoDir.resolve("sub");
+        Files.createDirectories(nested);
+        runGit(nested, "init");
+        runGit(nested, "config", "user.email", "test@example.com");
+        runGit(nested, "config", "user.name", "Test User");
+        Files.writeString(nested.resolve("file.txt"), "nested\n");
+        runGit(nested, "add", ".");
+        runGit(nested, "commit", "-m", "nested");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff = assertDoesNotThrow(wm::stageFreshDiff);
+        try {
+            assertTrue(diff.files().stream().anyMatch(file -> file.path().equals("sub")));
+        } finally {
+            wm.discardStaged();
+        }
+    }
+
+    @Test
+    void legacyWriteFilesRejectGitAndCiControlPaths() throws Exception {
+        Path repoDir = initRepo("legacy-protected");
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        for (String path : List.of(
+            ".git/HEAD", ".git/config", ".git/hooks/pre-commit",
+            "Jenkinsfile", ".github/workflows/ci.yml", "backend/.env"
+        )) {
+            FileOperation op = new FileOperation(path, "evil", FileOperation.Action.CREATE);
+            assertThrows(IOException.class, () -> wm.writeFiles(List.of(op)),
+                "Expected " + path + " to be rejected");
+        }
+
+        FileOperation example = new FileOperation(
+            "backend/.env.example", "SAFE=example", FileOperation.Action.CREATE);
+        assertDoesNotThrow(() -> wm.writeFiles(List.of(example)));
+        assertTrue(Files.exists(repoDir.resolve("backend/.env.example")));
+    }
+
+    @Test
     void stageFreshDiffDoesNotMissSkipWorktreeModifications() throws Exception {
         Path repoDir = initRepo("skip-worktree");
         runGit(repoDir, "update-index", "--skip-worktree", "README.md");
@@ -625,6 +735,20 @@ class WorkspaceManagerTest {
         int exit = process.waitFor();
         assertEquals(0, exit, "git " + String.join(" ", args) + " failed: " + output);
         return output.strip();
+    }
+
+    private static void runGitWithIndex(Path directory, Path index, String... args) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add("git");
+        command.addAll(List.of(args));
+        ProcessBuilder builder = new ProcessBuilder(command)
+            .directory(directory.toFile())
+            .redirectErrorStream(true);
+        builder.environment().put("GIT_INDEX_FILE", index.toString());
+        Process process = builder.start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        int exit = process.waitFor();
+        assertEquals(0, exit, "git " + String.join(" ", args) + " failed: " + output);
     }
 
     private static String gitOutputWithInput(Path directory, String input, String... args) throws Exception {

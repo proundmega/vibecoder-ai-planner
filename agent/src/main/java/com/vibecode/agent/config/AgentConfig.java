@@ -119,6 +119,7 @@ public class AgentConfig {
     public String getHarnessMode() { return harnessConfig.mode(); }
     public String getHarnessBin() { return harnessConfig.binary(); }
     public long getHarnessStartupTimeoutMs() { return harnessConfig.startupTimeout().toMillis(); }
+    /** Reserved for Phase 2 event streaming; not used in blocking prompt mode. */
     public long getHarnessIdleTimeoutMs() { return harnessConfig.idleTimeout().toMillis(); }
     public long getHarnessMaxDurationMinutes() { return harnessConfig.maxDuration().toMinutes(); }
     public java.util.List<String> getHarnessVerifyCommands() { return harnessConfig.verificationCommands(); }

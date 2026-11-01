@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -189,6 +190,14 @@ class HarnessTicketProcessorTest {
         verify(apiService, never()).releaseTicket(1L);
         assertTrue(postedMessages().stream().anyMatch(message ->
             message.contains("Harness completed")));
+    }
+
+    @Test
+    void retryDelayPinsAtTheMaximumAfterConfiguredAttempts() {
+        assertEquals(1_000, HarnessTicketProcessor.retryDelayMillis(1, 3, 1_000, 10_000));
+        assertEquals(2_000, HarnessTicketProcessor.retryDelayMillis(2, 3, 1_000, 10_000));
+        assertEquals(10_000, HarnessTicketProcessor.retryDelayMillis(3, 3, 1_000, 10_000));
+        assertEquals(10_000, HarnessTicketProcessor.retryDelayMillis(4, 3, 1_000, 10_000));
     }
 
     @Test

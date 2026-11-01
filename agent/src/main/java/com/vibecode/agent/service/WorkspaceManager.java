@@ -61,6 +61,8 @@ public class WorkspaceManager {
     private final Path cloneRoot;
     private final String repoName;
     private String trustedGitConfig;
+    private String baseCommit;
+    private String guardedTree;
     private Path supervisorIndex;
     private Path askPassDirectory;
     private Path askPassScript;
@@ -134,6 +136,11 @@ public class WorkspaceManager {
         // Create and checkout the target branch
         runGit("checkout", "-b", branchName);
 
+        // Pin the clone-time base commit before the harness starts. Every
+        // subsequent read-tree/diff/tree/commit must use this SHA explicitly;
+        // local HEAD, refs and replacement refs are agent-writable.
+        this.baseCommit = runGitCommand("rev-parse", "HEAD");
+
         // Snapshot the supervisor-owned git config. The harness can modify
         // .git/config with bash, so publishing restores this snapshot first.
         captureTrustedGitConfig();
@@ -174,25 +181,35 @@ public class WorkspaceManager {
         runGit("config", "user.email", "agent@vibecode.ai");
         runGit("config", "user.name", "Vibecode Agent");
 
-        String commitSha;
-        if (supervisorIndex != null) {
-            // Publish the exact tree that was guarded. commit-tree does not
-            // consult or mutate the agent-controlled index/worktree.
-            String tree = runGitWithIndex("write-tree");
-            commitSha = runGitWithIndex(
-                "commit-tree", tree, "-p", "HEAD", "-m", message).strip();
-        } else {
-            if (stageFirst) {
-                stageAll();
+        boolean stagedHere = false;
+        try {
+            if (guardedTree == null && stageFirst) {
+                // Legacy path: still use a pinned base + exact tree rather than
+                // trusting local HEAD or the agent-controlled index.
+                stageFreshDiff();
+                stagedHere = true;
             }
-            // --no-verify is redundant with core.hooksPath=/dev/null, but keeps
-            // the invariant obvious if an option is ever removed.
-            runGit("commit", "--no-verify", "-m", message);
-            commitSha = getCommitSha();
-        }
+            String commitSha;
+            if (guardedTree != null) {
+                // Publish the exact tree that was guarded. It is pinned at
+                // staging time, so a mutated index or worktree cannot change
+                // the commit.
+                commitSha = runGitWithIndex(
+                    "commit-tree", guardedTree, "-p", baseCommitOrHead(), "-m", message).strip();
+            } else {
+                // --no-verify is redundant with core.hooksPath=/dev/null, but
+                // keeps the invariant obvious if an option is ever removed.
+                runGit("commit", "--no-verify", "-m", message);
+                commitSha = getCommitSha();
+            }
 
-        pushCommit(commitSha, branchName);
-        return commitSha;
+            pushCommit(commitSha, branchName);
+            return commitSha;
+        } finally {
+            if (stagedHere) {
+                discardStaged();
+            }
+        }
     }
 
     private void pushCommit(String commitSha, String branchName) throws IOException {
@@ -224,10 +241,11 @@ public class WorkspaceManager {
             return;
         }
         hardenGitRepository();
-        // Reset the agent-controlled index to HEAD before staging. This drops
-        // index-only cache entries and clears assume-unchanged/skip-worktree
-        // flags so `git add -A` sees the real worktree.
-        runGit("read-tree", "HEAD");
+        // Reset the agent-controlled index to the pinned base before staging.
+        // This drops index-only cache entries and clears
+        // assume-unchanged/skip-worktree flags so `git add -A` sees the real
+        // worktree.
+        runGit("read-tree", baseCommitOrHead());
         runGit("add", "-A");
     }
 
@@ -245,18 +263,28 @@ public class WorkspaceManager {
         }
         hardenGitRepository();
         discardStaged();
+        String base = baseCommitOrHead();
+
+        // The object store is agent-writable. Verify integrity and ignore
+        // replacement refs before reading the base tree.
+        runGit("fsck", "--strict", "--no-progress", "--no-reflogs");
         Path index = Files.createTempFile("vibecode-harness-index-", ".idx");
         Files.deleteIfExists(index);
         this.supervisorIndex = index;
 
-        runGitWithIndex("read-tree", "HEAD");
+        runGitWithIndex("read-tree", base);
         runGitWithIndex("add", "-A");
-        return diffFromIndex();
+
+        // Bind the guard to this exact tree. Publishing must use this SHA, not
+        // a second write-tree that a surviving process could influence.
+        this.guardedTree = runGitWithIndex("write-tree");
+        return diffFromTree(base, guardedTree);
     }
 
     public void discardStaged() {
         Path index = supervisorIndex;
         supervisorIndex = null;
+        guardedTree = null;
         if (index != null) {
             try {
                 Files.deleteIfExists(index);
@@ -320,6 +348,10 @@ public class WorkspaceManager {
     }
 
     private void writeSingleFile(FileOperation fileOp) throws IOException {
+        String requested = fileOp.getPath() == null ? "" : fileOp.getPath().replace('\\', '/');
+        if (isLegacyProtectedPath(requested)) {
+            throw new IOException("Refusing to write protected path: " + fileOp.getPath());
+        }
         Path root = repoDir.toRealPath();
         Path targetPath = root.resolve(fileOp.getPath()).normalize();
         if (!targetPath.startsWith(root)) {
@@ -355,6 +387,38 @@ public class WorkspaceManager {
                 }
                 break;
         }
+    }
+
+    /**
+     * The legacy AI path must not be able to rewrite git metadata or CI
+     * configuration. The harness path is additionally guarded before publish.
+     */
+    private static boolean isLegacyProtectedPath(String path) {
+        String value = path.trim().replace('\\', '/');
+        while (value.startsWith("./")) {
+            value = value.substring(2);
+        }
+        if (value.isEmpty() || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) {
+            return true;
+        }
+        String lower = value.toLowerCase();
+        if (lower.equals(".git") || lower.startsWith(".git/") || lower.contains("/.git/")) {
+            return true;
+        }
+        if (lower.startsWith(".github/") || lower.contains("/.github/")
+            || lower.equals(".gitlab-ci.yml") || lower.startsWith(".circleci/")
+            || lower.equals("azure-pipelines.yml") || lower.equals("jenkinsfile")
+            || lower.endsWith("/jenkinsfile")) {
+            return true;
+        }
+        if (lower.startsWith("secrets/") || lower.contains("/secrets/")) {
+            return true;
+        }
+        String name = lower.substring(lower.lastIndexOf('/') + 1);
+        if (name.equals(".env") || (name.startsWith(".env.") && !name.endsWith(".env.example"))) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -446,6 +510,7 @@ public class WorkspaceManager {
         environment.put("GIT_CONFIG_NOSYSTEM", "1");
         environment.put("GIT_CONFIG_GLOBAL", devNull());
         environment.put("GIT_TERMINAL_PROMPT", "0");
+        environment.put("GIT_NO_REPLACE_OBJECTS", "1");
         environment.put("GIT_ASKPASS",
             askPassScript != null ? askPassScript.toString() : devNull());
         if (extraEnvironment != null) {
@@ -572,6 +637,15 @@ public class WorkspaceManager {
             }
             Files.writeString(config, trustedGitConfig, StandardCharsets.UTF_8);
         }
+        // Legacy graft files can rewrite history even with replace refs off.
+        Files.deleteIfExists(gitDir.resolve("info/grafts"));
+    }
+
+    private String baseCommitOrHead() throws IOException {
+        if (baseCommit != null && !baseCommit.isBlank()) {
+            return baseCommit;
+        }
+        return runGitCommand("rev-parse", "HEAD");
     }
 
     private String remoteBranchSha(String remote, String branchName) throws IOException {
@@ -648,6 +722,10 @@ public class WorkspaceManager {
      * <p>{@code -uall -z} is essential: without it git collapses untracked
      * directories into a single entry such as {@code ?? .github/}, which would
      * let the real files bypass every protected-path and size check.</p>
+     *
+     * <p>This method is a non-publishing convenience view. Harness publishing
+     * must use {@link #stageFreshDiff()} so the base commit and guarded tree are
+     * pinned.</p>
      */
     public DiffSummary collectDiff() throws IOException {
         if (repoDir == null || !Files.exists(repoDir)) {
@@ -726,13 +804,13 @@ public class WorkspaceManager {
         return new DiffSummary(files, additions, deletions, bytes);
     }
 
-    private DiffSummary diffFromIndex() throws IOException {
-        String changed = runGitWithIndex(
-            "diff", "--cached", "--name-status", "-z", "--no-renames");
-        Map<String, int[]> stats = parseNumstat(
-            runGitWithIndex("diff", "--cached", "--numstat", "-z", "--no-renames"));
-        Map<String, String> indexBlobs = indexBlobs();
-        Map<String, String> headBlobs = headBlobs();
+    private DiffSummary diffFromTree(String base, String tree) throws IOException {
+        String changed = runGitCommand(
+            "diff-tree", "-r", "-z", "--no-renames", "--name-status", base, tree);
+        Map<String, int[]> stats = parseNumstat(runGitCommand(
+            "diff-tree", "-r", "-z", "--no-renames", "--numstat", base, tree));
+        Map<String, String> newBlobs = treeBlobs(tree);
+        Map<String, String> oldBlobs = treeBlobs(base);
         List<DiffSummary.ChangedFile> files = new ArrayList<>();
         int additions = 0;
         int deletions = 0;
@@ -760,14 +838,14 @@ public class WorkspaceManager {
                 additions += stat[0];
                 deletions += stat[1];
             } else if ("deleted".equals(status)) {
-                deletions += countBlobLines(headBlobs.get(path));
+                deletions += countBlobLines(oldBlobs.get(path));
             } else {
                 // Binary or `-diff` attribute: fall back to the raw blob so a
                 // hostile .gitattributes cannot hide a large text file.
-                additions += countBlobLines(indexBlobs.get(path));
+                additions += countBlobLines(newBlobs.get(path));
             }
             if (!"deleted".equals(status)) {
-                bytes += blobSize(indexBlobs.get(path));
+                bytes += blobSize(newBlobs.get(path));
             }
         }
 
@@ -779,7 +857,11 @@ public class WorkspaceManager {
     }
 
     private Map<String, String> headBlobs() throws IOException {
-        return parseLsFiles(runGitCommand("ls-tree", "-z", "-r", "HEAD"));
+        return parseLsFiles(runGitCommand("ls-tree", "-z", "-r", baseCommitOrHead()));
+    }
+
+    private Map<String, String> treeBlobs(String treeish) throws IOException {
+        return parseLsFiles(runGitCommand("ls-tree", "-z", "-r", treeish));
     }
 
     private String runGitWithIndexOrWorking(String... args) throws IOException {
@@ -854,7 +936,7 @@ public class WorkspaceManager {
     }
 
     private long blobSize(String sha) throws IOException {
-        if (sha == null || sha.isBlank()) {
+        if (sha == null || sha.isBlank() || !isBlob(sha)) {
             return 0;
         }
         try {
@@ -864,8 +946,17 @@ public class WorkspaceManager {
         }
     }
 
+    private boolean isBlob(String sha) throws IOException {
+        try {
+            return "blob".equals(runGitWithIndexOrWorking("cat-file", "-t", sha).trim());
+        } catch (IOException e) {
+            log.debug("Could not inspect object {}: {}", sha, e.getMessage());
+            return false;
+        }
+    }
+
     private int countBlobLines(String sha) throws IOException {
-        if (sha == null || sha.isBlank()) {
+        if (sha == null || sha.isBlank() || !isBlob(sha)) {
             return 0;
         }
         Process process = startGit(

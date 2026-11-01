@@ -15,6 +15,10 @@ public record HarnessConfig(
     String mode,
     String binary,
     Duration startupTimeout,
+    /**
+     * Reserved for a Phase 2 event-stream watchdog. Blocking prompt mode uses
+     * {@link #maxDuration()} and does not call {@code awaitIdle()}.
+     */
     Duration idleTimeout,
     Duration maxDuration,
     List<String> verificationCommands,

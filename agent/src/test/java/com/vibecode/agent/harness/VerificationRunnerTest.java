@@ -172,6 +172,9 @@ class VerificationRunnerTest {
         environment.put("GITHUB_TOKEN", "ghp_secret");
         environment.put("AGENT_API_KEY", "agent_secret");
         environment.put("DATABASE_URL", "postgres://user:pw@db/app");
+        environment.put("HTTPS_PROXY", "http://proxy-user:proxy-pass@proxy:8080");
+        environment.put("NPM_CONFIG_REGISTRY", "https://user:token@registry.test/");
+        environment.put("MAVEN_OPTS", "-Dhttp.proxyPassword=secret");
 
         VerificationRunner.sanitizeEnvironment(environment);
 
@@ -180,6 +183,10 @@ class VerificationRunnerTest {
         assertFalse(environment.containsKey("GITHUB_TOKEN"));
         assertFalse(environment.containsKey("AGENT_API_KEY"));
         assertFalse(environment.containsKey("DATABASE_URL"));
+        assertFalse(environment.containsKey("MAVEN_OPTS"));
+        assertFalse(environment.get("HTTPS_PROXY").contains("proxy-user"));
+        assertFalse(environment.get("HTTPS_PROXY").contains("proxy-pass"));
+        assertFalse(environment.get("NPM_CONFIG_REGISTRY").contains("token"));
         assertEquals("1", environment.get("CI"));
     }
 

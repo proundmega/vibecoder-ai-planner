@@ -387,7 +387,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             + ", retry after "
             + Math.max(0, (state.nextAttemptAt - System.currentTimeMillis()) / 1000) + "s)";
         if (attempt > maxAttempts) {
-            note += " — maximum retries reached; manual intervention recommended";
+            note += " — retry backoff pinned at the maximum interval; manual intervention recommended if this persists";
         }
         postMessage(ticketId, "update", message + note);
         release(ticketId);
@@ -470,14 +470,21 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         private synchronized int recordFailure(int maxAttempts, long baseDelayMs, long maxDelayMs) {
             attempts++;
-            long exponent = Math.min(attempts - 1, 10);
-            long delay = Math.min(maxDelayMs, baseDelayMs * (1L << exponent));
-            if (attempts >= maxAttempts) {
-                delay = maxDelayMs;
-            }
-            nextAttemptAt = System.currentTimeMillis() + Math.max(0, delay);
+            nextAttemptAt = System.currentTimeMillis()
+                + retryDelayMillis(attempts, maxAttempts, baseDelayMs, maxDelayMs);
             return attempts;
         }
+    }
+
+    static long retryDelayMillis(
+        int attempt,
+        int maxAttempts,
+        long baseDelayMs,
+        long maxDelayMs
+    ) {
+        long exponent = Math.min(Math.max(0, attempt - 1), 10);
+        long delay = Math.min(maxDelayMs, baseDelayMs * (1L << exponent));
+        return attempt >= maxAttempts ? maxDelayMs : Math.max(0, delay);
     }
 
     private void postMessage(Long ticketId, String type, String content) {

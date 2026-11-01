@@ -240,6 +240,10 @@ public final class OpenCodeClient implements HarnessClient {
         }
     }
 
+    /**
+     * Reserved for Phase 2 event streaming. Blocking prompt mode relies on the
+     * prompt HTTP call and the processor's wall-clock budget instead.
+     */
     public void awaitIdle(Duration timeout) throws IOException {
         Duration effective = timeout == null || timeout.isNegative() || timeout.isZero()
             ? Duration.ofMinutes(45)

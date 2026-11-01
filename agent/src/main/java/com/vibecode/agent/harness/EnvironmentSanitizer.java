@@ -40,8 +40,8 @@ public final class EnvironmentSanitizer {
         "HOSTNAME",
         "JAVA_HOME",
         "MAVEN_HOME",
-        "MAVEN_OPTS",
         // Non-secret network configuration needed by enterprise agents.
+        // Proxies/registries are scrubbed of userinfo before being inherited.
         "HTTP_PROXY",
         "HTTPS_PROXY",
         "ALL_PROXY",
@@ -87,12 +87,28 @@ public final class EnvironmentSanitizer {
         environment.clear();
         for (Map.Entry<String, String> entry : copy.entrySet()) {
             if (isAllowed(entry.getKey())) {
-                environment.put(entry.getKey(), entry.getValue());
+                environment.put(entry.getKey(), sanitizeValue(entry.getKey(), entry.getValue()));
             }
         }
         if (!environment.containsKey("PATH")) {
             environment.put("PATH", defaultPath());
         }
+    }
+
+    /**
+     * Proxy and registry URLs can carry credentials. Remove userinfo rather
+     * than propagating supervisor credentials into hostile verification code.
+     */
+    private static String sanitizeValue(String name, String value) {
+        if (value == null) {
+            return null;
+        }
+        String upper = name.toUpperCase(Locale.ROOT);
+        boolean urlLike = upper.endsWith("_PROXY") || upper.equals("NPM_CONFIG_REGISTRY");
+        if (urlLike) {
+            return value.replaceFirst("(?i)^([a-z][a-z0-9+.-]*://)[^/@]+@", "$1");
+        }
+        return value;
     }
 
     static boolean isAllowed(String name) {

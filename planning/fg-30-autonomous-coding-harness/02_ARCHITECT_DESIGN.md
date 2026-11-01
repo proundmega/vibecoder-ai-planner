@@ -49,16 +49,20 @@ binary payloads.
 
 The processor closes the harness and every verification process group
 immediately after the blocking prompt, then builds a **fresh index** with
-`GIT_INDEX_FILE` + `git read-tree HEAD` + `git add -A`. The agent-controlled
-`.git/index` is never trusted: `assume-unchanged`, `skip-worktree` and
-index-only cache entries are discarded.
+`GIT_INDEX_FILE` + `git read-tree <baseCommit>` + `git add -A`. `baseCommit` is
+pinned at clone time, before the harness starts; local `HEAD`, refs and
+replacement refs are agent-writable and are never used for publishing. The
+agent-controlled `.git/index` is likewise untrusted: `assume-unchanged`,
+`skip-worktree` and index-only cache entries are discarded.
 
-Guard data is read from index blobs (`git diff --cached --name-status -z`,
-`git ls-files -s -z`, `git cat-file`), not from `.gitattributes`-sensitive
-`git diff --numstat`. Publishing writes the guarded tree with `git write-tree`,
-creates the commit with `git commit-tree`, and pushes that commit SHA, so the
-worktree cannot change between guard and publish. Renames are reported with
-`--no-renames` so a protected old path is always visible.
+Guard data is read from the exact tree (`git diff-tree <base> <tree>`,
+`git ls-tree`, `git cat-file`), not from `.gitattributes`-sensitive numstat.
+`git fsck --strict` runs before staging, and `GIT_NO_REPLACE_OBJECTS=1` plus
+graft removal prevent replacement-object/history tricks. The tree SHA is pinned
+at staging time; publishing uses `commit-tree <tree> -p <base>` and pushes that
+commit, so neither a mutated index nor a changed worktree can alter the guarded
+tree. Renames are reported with `--no-renames` so a protected old path is always
+visible.
 
 ### 3. Hostile git repository
 
@@ -135,7 +139,9 @@ always closed.
 ## Risks
 
 - Verification scripts still execute hostile code; the mitigation is environment
-  isolation, not a sandbox. A container/VM boundary is still required.
+  isolation, not a sandbox. A process that calls `setsid`/double-forks can leave
+  the killed process group, read same-uid state, or inspect
+  `/proc/<supervisor>/environ`. A container/cgroup boundary is still required.
 - A malicious `.gitattributes` can make git fail; this is fail-closed.
 - OpenCode 2.x may change the server API; the Docker image pins 1.x.
 
