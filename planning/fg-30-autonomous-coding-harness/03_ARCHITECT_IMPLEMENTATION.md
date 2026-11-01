@@ -175,11 +175,13 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 ### Step 3a: Secure workspace — `WorkspaceSanitizer.java`, `WorkspaceManager` changes
 
-- Clone with `git -c http.extraHeader="Authorization: Basic <base64(x-access-token:PAT)>"`; never embed
-  the token in the URL and never `git remote set-url origin <authenticatedUrl>`.
+- Clone with `--depth 1 --single-branch` and
+  `git -c http.extraHeader="Authorization: Basic <base64(x-access-token:PAT)>"`; never embed the token
+  in the URL and never `git remote set-url origin <authenticatedUrl>`.
 - After clone and before server start: remove `origin` (or reset it to the unauthenticated URL), delete
   `.env`, `.env.*` (keep `.env.example`), `**/secrets/**`, `**/*.pem`, `**/*.key`, `**/id_rsa*`, and any
-  token-bearing config; verify `.git/config` has no `http.extraheader`/token.
+  token-bearing config; do not restore removed tracked files (their deletion is protected and blocks
+  publishing); verify `.git/config` has no `http.extraheader`/token.
 - Supervisor `commitAndPush` uses the same one-shot header; no token is persisted.
 - After sanitising, the supervisor runs a bounded dependency bootstrap (`npm ci` with a lockfile,
   `pip install -r requirements.txt`, or `mvn -q -DskipTests dependency:go-offline`). The agent's bash
