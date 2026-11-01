@@ -374,7 +374,7 @@ Behavior:
 - Health: `GET /global/health` until `{"healthy":true}` or startup timeout; kill on failure.
 - HTTP uses OkHttp with basic auth (`opencode:<password>`); never log headers.
 - **Paths are derived from the pinned OpenAPI fixture**, not hardcoded from this document. For the
-  pinned 1.19.5 baseline they are:
+  pinned V2 baseline they are:
   - `createSession`: `POST /api/session` `{ "title": "ticket-<id>" }` → `id`.
   - `subscribe`: `GET /api/event` SSE via `okhttp-sse`; filter events for the session id.
   - `sendPromptAsync`: `POST /api/session/<id>/prompt` with the prompt body.
