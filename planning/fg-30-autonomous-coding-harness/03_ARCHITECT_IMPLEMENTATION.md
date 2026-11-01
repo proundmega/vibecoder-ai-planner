@@ -180,8 +180,9 @@ interaction. Questions are disabled in this phase (the model must make assumptio
   in the URL and never `git remote set-url origin <authenticatedUrl>`.
 - After clone and before server start: remove `origin` (or reset it to the unauthenticated URL), delete
   `.env`, `.env.*` (keep `.env.example`), `**/secrets/**`, `**/*.pem`, `**/*.key`, `**/id_rsa*`, and any
-  token-bearing config; do not restore removed tracked files (their deletion is protected and blocks
-  publishing); verify `.git/config` has no `http.extraheader`/token.
+  token-bearing config; keep the removed-path list and pass it to `PublishingGuard`, which blocks any
+  diff touching those paths even if they are outside the protected globs; verify `.git/config` has no
+  `http.extraheader`/token.
 - Supervisor `commitAndPush` uses the same one-shot header; no token is persisted.
 - After sanitising, the supervisor runs a bounded dependency bootstrap (`npm ci` with a lockfile,
   `pip install -r requirements.txt`, or `mvn -q -DskipTests dependency:go-offline`). The agent's bash
@@ -192,9 +193,10 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 ### Step 3b: Provider proxy and redaction — `ProviderProxy.java`, `SecretRedactor.java`
 
 - `ProviderProxy` binds to `127.0.0.1:0`, requires a per-run `X-Vibecode-Proxy-Token` (or
-  `Authorization: Bearer <proxyToken>` fallback), rejects non-loopback peers, strips client auth, and
-  injects provider-specific headers: `Authorization` for OpenAI/Go, `x-opencode-session` for Go, and
-  `x-api-key` + `anthropic-version` for Claude. The real key exists only in the supervisor's memory.
+  `Authorization: Bearer <proxyToken>`, or for Claude `x-api-key: <proxyToken>`, as fallbacks),
+  rejects non-loopback peers, strips client auth, and injects provider-specific headers:
+  `Authorization` for OpenAI/Go, `x-opencode-session` for Go, and `x-api-key` + `anthropic-version`
+  for Claude. The real key exists only in the supervisor's memory.
 - `SecretRedactor` removes known secret values and token-shaped patterns from messages, events, logs
   and exceptions. Apply it in `ApiService` posting paths and `OpenCodeClient` error handling.
 - Tests: dummy key works, real key never appears in harness config; fake output with `ghp_...`,
@@ -278,7 +280,8 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 ### Step 8a: Backend lifecycle sync — `TicketLifecycleService.js`, `PhaseService.js`, `TicketService.js`, `models/ticket.js`
 
-- Add `backlog` as an explicit phase (`ALLOWED_TRANSITIONS` + `PHASE_TO_STATUS`).
+- Add `backlog` as an explicit phase (`ALLOWED_TRANSITIONS` + `PHASE_TO_STATUS` +
+  `BACKLOG_COMPATIBLE_PHASES`).
 - `TicketLifecycleService.pickUp` accepts legacy `draft`, `planning`, `plan_approved` and `assigned`
   phases as well as `backlog`, and normalises them to `in_progress` in one transaction. This keeps
   pre-existing tickets working even before the backfill runs.
@@ -291,8 +294,8 @@ interaction. Questions are disabled in this phase (the model must make assumptio
   assignment, `phase`, `status` and `ticket_phases` in one transaction.
 - `TicketService.pickUpTicket/releaseTicket` delegate to it; the harness never calls status-only
   updates.
-- Tests cover pickup/release/review/block, a **pre-existing `phase='draft'` ticket**, and assert
-  `status` and `phase` never diverge.
+- Tests cover pickup/release/review/block, a **pre-existing `phase='draft'` ticket**,
+  `BACKLOG_COMPATIBLE_PHASES` including `backlog`, and assert `status` and `phase` never diverge.
 - *Depends on*: Step 5.
 
 ### Step 9: Agent image — `agent/Dockerfile`
@@ -451,8 +454,9 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 - Bounded output; environment sanitized.
 
 #### `agent/src/main/java/com/vibecode/agent/harness/PublishingGuard.java` (CREATE)
-- `assertPublishable(DiffSummary diff, List<String> protectedGlobs)`.
-- Rejects empty diff, protected paths, oversized diff (policy later).
+- `PublishingGuard(List<String> protectedGlobs, List<String> sanitizerRemovals)`.
+- `assertPublishable(DiffSummary diff)` rejects empty diff, protected paths, **any sanitizer-removed
+  path present in the diff** (even outside protected globs), and oversized diff (policy later).
 
 #### `agent/src/main/java/com/vibecode/agent/AgentApp.java` (MODIFY)
 - Choose processor based on `HARNESS_MODE`.
@@ -547,7 +551,8 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 #### Agent tests
 - [ ] `PromptBuilderTest` — ticket/planning/AGENTS/definition-of-done; secret redaction; truncation.
 - [ ] `VerificationRunnerTest` — success/failure/timeout/output cap; Jest vs Vitest detection.
-- [ ] `PublishingGuardTest` — empty/protected (incl. auth/migrations/pem/key/id_rsa/.git)/oversize diff.
+- [ ] `PublishingGuardTest` — empty/protected (incl. auth/migrations/pem/key/id_rsa/.git),
+  sanitizer-removal paths, and oversize diff.
 - [ ] `OpenCodeClientTest` — health, session, async prompt, subscribe-before-prompt timing, SSE parse,
       permission reply/auto-reject, diff, shutdown.
 - [ ] `PermissionPolicyTest` — no `ask` values, safe bash allowlist, deny list, auto-reject.

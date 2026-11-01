@@ -200,7 +200,8 @@ Rules:
 - Delete `.env`, `.env.*` except `.env.example`, `**/secrets/**`, `**/*.pem`, `**/*.key`,
   `**/id_rsa*`, and any file the token scanner identifies as containing the PAT/provider key.
 - If a removed file was tracked, **do not restore it**. Its deletion stays in the diff and
-  `PublishingGuard` blocks publishing (the path is protected). This is fail-closed.
+  `PublishingGuard` blocks publishing because every sanitizer-removed path is publish-blocking,
+  whether or not it also matches a protected glob. This is fail-closed.
 - Remove the `origin` remote or reset it to the unauthenticated URL; ensure `.git/config` has no
   `http.extraheader` or token.
 - `assertClean` re-scans and throws with paths (never contents) if a secret remains.
@@ -222,7 +223,8 @@ Rules:
 - Bind `127.0.0.1:0`; reject requests whose peer is not loopback.
 - Require `X-Vibecode-Proxy-Token: <proxyToken>` on every request; otherwise 401. If the pinned
   provider schema cannot set custom headers, accept `Authorization: Bearer <proxyToken>` as the
-  fallback; the config still writes both.
+  fallback, and for Claude also accept `x-api-key: <proxyToken>`. The config still writes the header
+  and the dummy `apiKey`/`x-api-key` as appropriate.
 - Strip any client-supplied `Authorization`, `x-api-key`, `anthropic-version` and
   `x-opencode-session`, then inject provider-specific auth:
   - `openai`/`generic`: `Authorization: Bearer <real key>`;
@@ -341,7 +343,10 @@ public final class VerificationRunner {
 
 ```java
 public final class PublishingGuard {
-    public PublishingGuard(java.util.List<String> protectedGlobs);
+    public PublishingGuard(
+        java.util.List<String> protectedGlobs,
+        java.util.List<String> sanitizerRemovals
+    );
     public void assertPublishable(DiffSummary diff);
 }
 ```
@@ -352,6 +357,9 @@ Throws `IllegalStateException` when:
 - any changed path matches a protected glob (case-insensitive, `**` supported), including
   `.env*`, `.github/workflows/**`, `**/secrets/**`, `**/*.pem`, `**/*.key`, `**/id_rsa*`, `.git/**`,
   auth and migrations,
+- any changed path is in the `sanitizerRemovals` list, even if the path is not covered by a protected
+  glob (the sanitizer removed a token-bearing file, so publishing its deletion/modification is
+  fail-closed),
 - more than 50 files or 2,000 changed lines (Phase 1 hard safety cap).
 
 ### CREATE: `agent/src/main/java/com/vibecode/agent/harness/OpenCodeClient.java`
@@ -411,8 +419,9 @@ Flow:
 2. Post "Started working" (redacted).
 3. Fetch planning docs via `PlanningDocFetcher`.
 4. Clone repo + branch via `WorkspaceManager` (tokenless).
-5. `step="sanitizing"`; `WorkspaceSanitizer.sanitize` + `assertClean`; run the bounded supervisor
-   dependency bootstrap (`npm ci` with a lockfile, `pip install -r`, or `mvn dependency:go-offline`).
+5. `step="sanitizing"`; `WorkspaceSanitizer.sanitize` (keep the returned removed-path list) +
+   `assertClean`; run the bounded supervisor dependency bootstrap (`npm ci` with a lockfile,
+   `pip install -r`, or `mvn dependency:go-offline`).
 6. `step="starting-harness"`; start `ProviderProxy`, obtain `ProxySettings`, then start
    `OpenCodeClient` with `ProxySettings`; create session.
 7. `step="implementing"`; **subscribe first**, wait for `awaitSubscribed`, then `sendPromptAsync`;
@@ -420,8 +429,8 @@ Flow:
 8. `step="verifying"`; resolve + run verification commands; post a redacted pass/fail summary.
 9. If verification fails: post redacted last 8KB output; **release to `backlog`** in Phase 1 (no human
    loop yet); stop (no commit/push). Phase 2 changes this to `blocked` + notification.
-10. `step="publishing"`; collect diff; `PublishingGuard`; commit/push with one-shot auth; create PR;
-    update `pr_url`.
+10. `step="publishing"`; collect diff; `PublishingGuard(protectedPaths, sanitizerRemovals)`;
+    commit/push with one-shot auth; create PR; update `pr_url`.
 11. Post redacted summary (files, commands, PR); transition to `review` (phase+status atomically).
 12. Always: close client/proxy, cleanup workspace, reset step.
 
@@ -464,8 +473,9 @@ public void commitAndPush(String message, String branch); // exists; secure it
 
 Phase 1 minimal lifecycle sync (no schema changes):
 
-- Add `backlog` to `PhaseService.ALLOWED_TRANSITIONS` and `PHASE_TO_STATUS`; allow legacy
-  `draft`/`planning`/`plan_approved`/`assigned` as pickup sources to `in_progress`.
+- Add `backlog` to `PhaseService.ALLOWED_TRANSITIONS`, `PHASE_TO_STATUS` and
+  `BACKLOG_COMPATIBLE_PHASES`; allow legacy `draft`/`planning`/`plan_approved`/`assigned` as pickup
+  sources to `in_progress`.
 - Add `045_backfill_backlog_phase.sql` (and rollback) to move existing `status='backlog'`/`phase='draft'`
   rows to `phase='backlog'`; register it in `apply.js`.
 - Change `Ticket.create()` to insert `phase='backlog'` (and keep `fromRow` backward compatible).
@@ -562,6 +572,7 @@ Add:
 ✓ [happy] allows a normal diff
 ✓ [error] rejects an empty diff
 ✓ [error] rejects .env, .github/workflows/**, **/secrets/**, *.pem, *.key, id_rsa*, .git/**, auth and migrations
+✓ [error] rejects any sanitizer-removed path that appears in the diff, even if not in a protected glob
 ✓ [error] rejects > 50 files or > 2000 lines
 ```
 
@@ -597,7 +608,7 @@ Add:
 ✓ [happy] removes secrets/*.pem/*.key/id_rsa
 ✓ [happy] strips token-bearing .git/config and origin
 ✓ [history] shallow clone has no reachable prior commits
-✓ [tracked] a removed tracked secret is not restored and its deletion is publish-blocked
+✓ [tracked] any sanitizer-removed path in the diff is publish-blocked (even outside protected globs)
 ✓ [error] assertClean throws (paths only) if a secret remains
 ```
 
@@ -607,7 +618,8 @@ Add:
 ✓ [happy] forwards an OpenAI-compatible request and injects Authorization
 ✓ [happy] injects x-opencode-session for Go/Console
 ✓ [happy] injects x-api-key + anthropic-version for Claude and removes Authorization
-✓ [security] rejects non-loopback peers and missing X-Vibecode-Proxy-Token
+✓ [security] rejects non-loopback peers and missing proxy token
+✓ [security] accepts x-api-key: <proxyToken> as the Claude fallback
 ✓ [security] strips client Authorization/x-api-key before injecting
 ✓ [security] never logs or returns the real key
 ```
@@ -646,6 +658,7 @@ Add:
 ```
 ✓ [pickup] sets status=in_progress and phase=in_progress atomically with assignment
 ✓ [pickup] accepts a pre-existing phase='draft' ticket and normalises it
+✓ [compat] BACKLOG_COMPATIBLE_PHASES includes backlog/draft/planning/plan_approved/assigned
 ✓ [backfill] 045 moves status=backlog/phase=draft to phase=backlog
 ✓ [release] sets status=backlog and phase=backlog and clears assignment/lock
 ✓ [review] sets status=review and phase=review
@@ -673,8 +686,8 @@ Add:
 13. **Token in git remote** - `WorkspaceSanitizer` removes it and `PublishingGuard` blocks if it appears.
 14. **Secret in git history** - shallow clone, no `git log`/`git show`/`git diff` in the shell
     allowlist, and the supervisor supplies diffs; the agent cannot reach history content.
-15. **Tracked secret deleted by the sanitizer** - not restored; the deletion is protected, so
-    publishing is blocked (fail-closed).
+15. **Tracked secret deleted by the sanitizer** - not restored; the removal list is passed to
+    `PublishingGuard`, so any sanitizer deletion in the diff blocks publishing (fail-closed).
 16. **No safe verification command** - fail clearly; do not publish unverified code.
 
 ---

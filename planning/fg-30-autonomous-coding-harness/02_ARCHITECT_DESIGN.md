@@ -312,7 +312,8 @@ Phase 1 hardens the existing per-agent container:
 - **Provider-key isolation.** The real key never enters the harness config or process. The supervisor
   starts a loopback `ProviderProxy` that holds the key, injects provider-specific auth (`Authorization`
   for OpenAI/Go, `x-api-key` + `anthropic-version` for Claude, `x-opencode-session` for Go/Console),
-  and only accepts requests carrying a per-run proxy token. OpenCode is pointed at
+  and only accepts requests carrying a per-run proxy token (`X-Vibecode-Proxy-Token`, with
+  `Authorization: Bearer <token>` or Claude `x-api-key: <token>` fallbacks). OpenCode is pointed at
   `http://127.0.0.1:<proxy-port>/v1` with a dummy key. If the pinned build supports overriding the
   built-in provider `baseURL`, use it; otherwise use the custom OpenAI-compatible provider and let the
   proxy add the session header. The proxy is bound to 127.0.0.1, rejects non-loopback peers, and is
@@ -324,10 +325,11 @@ Phase 1 hardens the existing per-agent container:
 - **Protected paths.** Phase 1 blocks publishing if the diff touches `.env*`, `.github/workflows/**`,
   `**/secrets/**`, `**/*.pem`, `**/*.key`, `**/id_rsa*`, `.git/**`,
   `backend/src/migrations/**`, `backend/src/middleware/auth*`,
-  `backend/src/services/UserService.js`, or `backend/src/validators/auth*`. If the sanitizer removed a
-  tracked secret file, its deletion appears in the diff and the guard blocks the publish; removed
-  files are never restored. Phase 1 has no human gate, so these changes fail and the ticket is
-  released; Phase 3 replaces the hard block with plan/action approval.
+  `backend/src/services/UserService.js`, or `backend/src/validators/auth*`. The sanitizer also passes
+  its full removed-path list to `PublishingGuard`; any diff touching a removed path is blocked even if
+  that path is outside the protected globs. Removed files are never restored. Phase 1 has no human
+  gate, so these changes fail and the ticket is released; Phase 3 replaces the hard block with
+  plan/action approval.
 - Secrets scrubbed from event payloads before persistence; log redaction.
 
 Phase 3 may add a nested per-ticket container if stronger isolation is required.
@@ -596,6 +598,8 @@ and `ticket_phases` in one transaction.
 `blocked: ['in_progress','backlog']`, `review: [...,'backlog']`, and `PHASE_TO_STATUS.backlog = 'backlog'`.
 It also accepts the legacy phases as pickup sources: `draft`, `planning`, `plan_approved` and
 `assigned` can transition to `in_progress` (the lifecycle normalises them).
+`BACKLOG_COMPATIBLE_PHASES` must include `backlog` alongside `draft`, `planning`, `plan_approved` and
+`assigned`, so `isBacklogCompatible()` agrees with the new lifecycle.
 `TicketService.pickUpTicket/releaseTicket` delegate to `TicketLifecycleService`; direct status-only
 updates are no longer used by the harness. Add `planning → blocked` and `blocked → plan_approved` for
 the optional plan gate in Phase 2.

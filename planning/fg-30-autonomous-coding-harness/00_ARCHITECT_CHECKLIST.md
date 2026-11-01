@@ -57,11 +57,16 @@
 
 ### Database & Migration
 
+- [x] Phase 1 data-only migration: `045_backfill_backlog_phase.sql` (+ rollback) moves
+      `status='backlog'`/`phase='draft'` rows to `phase='backlog'`; registered in `apply.js`
+- [x] Phase 1 also updates `Ticket.create()` to insert `phase='backlog'` and lets
+      `TicketLifecycleService.pickUp()` accept legacy `draft`/`planning`/`plan_approved`/`assigned`
 - [x] Migration plan for Phase 2: `agent_sessions`, `agent_events`, `ticket_questions`,
-      `notifications`, `agent_policies`, `ticket_messages.agent_session_id`
-- [x] Migration added to `apply.js` in correct array order (planned)
-- [x] Rollback file planned
-- [x] No destructive changes to existing tables
+      `notifications`, `agent_policies`, `ticket_messages.agent_session_id`,
+      `agent_heartbeats` session/tool/token/cost columns
+- [x] Phase 2 migration added to `apply.js` in correct array order (planned)
+- [x] Rollback file planned for both 045 and the Phase 2 migration
+- [x] No destructive changes to existing tables; 045 is idempotent and data-only
 
 ### Testing Strategy
 
