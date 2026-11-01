@@ -158,6 +158,10 @@ CREATE TABLE ticket_review_findings (
 - The head re-check and review dedupe happen immediately before `POST /repos/{owner}/{repo}/pulls/{number}/reviews`. This contract must be carried unchanged into `03`/`04`.
 - No review starts when `pr_url` is missing.
 
+### Handoff to fg-32
+
+After posting a `request_changes` COMMENT review and completing the attempt, the reviewer calls fg-32's `POST /tickets/:id/review/request-changes` with the attempt id. fg-32 creates the fix request idempotently; it does not poll attempts. This one-line call is the only fg-31 → fg-32 integration point.
+
 ## Phase and status mapping
 
 **Prerequisite:** the current build path does not sync phase. `HarnessTicketProcessor.markReview()` calls `updateTicketStatus(ticketId, "review")`, which updates only `status`; tickets start at `phase='draft'`. `PhaseService` allows only `review -> human_approval`, so approval fails unless the phase is reconciled.
