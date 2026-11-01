@@ -14,6 +14,8 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-32 | `fg-32-review-feedback-loop` | Merged (#104) | Reviewer -> fixer loop, same branch, rounds, escalation | fg-31 |
 | fg-33 | `fg-33-durable-harness-execution` | Planned | Run/checkpoint/lease model, crash recovery, idempotent publish | fg-30 Phase 1 |
 | fg-34 | `fg-34-harness-sandbox` | Planned | Sandbox isolation, limits, egress, secretless execution | fg-30 Phase 1 |
+| fg-43 | `fg-43-agent-docker-deployment` | Planned | One-command Docker agent host sizing, role pools, per-container limits | fg-33 (fg-34 recommended) |
+| fg-44 | `fg-44-agent-storage-lifecycle` | Planned | Per-agent workspaces, cleanup, idle refresh, disk/inode watermarks | fg-43, fg-33 |
 | fg-35 | `fg-35-github-app-credentials` | Planned | GitHub App installation tokens, least privilege | fg-30 Phase 1 |
 | fg-36 | `fg-36-merge-lifecycle` | Planned | Base branch, conflicts, CI gate, merge queue, rollback | fg-31, fg-32 |
 | fg-37 | `fg-37-agent-evaluation-harness` | Planned | Golden corpus, grading, metrics, A/B, reviewer calibration | fg-30/31/32 |
@@ -30,23 +32,25 @@ fg-30 Phases 2-4 (human loop, autonomy, hardening) remain part of the fg-30 impl
 ### Phase A - Reliability and security foundations
 1. **fg-33** durable execution and recovery
 2. **fg-34** sandbox and supply-chain security
-3. **fg-35** GitHub App credentials
+3. **fg-43** Docker agent host sizing and deployment
+4. **fg-44** agent storage lifecycle and idle refresh
+5. **fg-35** GitHub App credentials
 
 ### Phase B - Review loop
-4. **fg-31** reviewer harness (merged in #103)
-5. **fg-32** review feedback loop (merged in #104)
-6. **fg-36** merge lifecycle and conflict handling
+6. **fg-31** reviewer harness (merged in #103)
+7. **fg-32** review feedback loop (merged in #104)
+8. **fg-36** merge lifecycle and conflict handling
 
 ### Phase C - Quality and operations
-7. **fg-37** evaluation harness
-8. **fg-38** budgets and routing
-9. **fg-39** repo environment profiles
-10. **fg-41** observability, replay and audit
-11. **fg-42** privacy and redaction (after fg-41, because event/artifact retention depends on it)
+9. **fg-37** evaluation harness
+10. **fg-38** budgets and routing
+11. **fg-39** repo environment profiles
+12. **fg-41** observability, replay and audit
+13. **fg-42** privacy and redaction (after fg-41, because event/artifact retention depends on it)
 
 ### Phase D - Scale
-12. **fg-40** multi-agent orchestration
-13. fg-30 Phase 3 autonomy policies / plan gate / auto-merge (write 03/04 when scheduled)
+14. **fg-40** multi-agent orchestration
+15. fg-30 Phase 3 autonomy policies / plan gate / auto-merge (write 03/04 when scheduled)
 
 ## How to use these suites
 

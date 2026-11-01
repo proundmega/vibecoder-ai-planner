@@ -113,6 +113,15 @@ Cross-cutting plans for the autonomous coding harness. See `planning/HARNESS_ROA
 | **fg-41** | `fg-41-harness-observability` | P1 | fg-33 | Structured events, trace correlation, replay, dashboards, alerts, immutable publish/review/merge audit. |
 | **fg-42** | `fg-42-harness-privacy` | P1 | fg-34, fg-41 | Data classification, secret/PII redaction, provider policy, tenant isolation, retention/deletion, local model option. |
 
+## Agent Deployment (fg-43..fg-44)
+
+Docker-native agent host deployment and storage lifecycle. These are also indexed in `planning/HARNESS_ROADMAP.md` (after fg-34); see the suites for formulas, limits and cleanup policies.
+
+| ID | Directory | Priority | Depends on | Description |
+|----|-----------|----------|------------|-------------|
+| **fg-43** | `fg-43-agent-docker-deployment` | P1 | fg-33 (fg-34 recommended) | One-command Docker host deployment with a CPU/RAM/disk sizing heuristic, role profiles, per-container limits and validation. |
+| **fg-44** | `fg-44-agent-storage-lifecycle` | P1 | fg-43, fg-33 | Per-agent workspaces, ticket cleanup, 2h idle refresh, disk/inode watermarks, log rotation, orphan/image reaping and recovery. |
+
 ## Other (pa-*)
 
 | ID | Directory | Description |
