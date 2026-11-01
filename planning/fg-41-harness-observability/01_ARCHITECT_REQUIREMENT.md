@@ -36,7 +36,7 @@ There is no structured timeline of what the agent did, which tools it called, wh
 
 ## Functional requirements
 
-- **FR1 - Event schema:** `event_id`, `run_id`, `ticket_id`, `agent_id`, `session_id`, `type`, `timestamp`, `payload`, `version`.
+- **FR1 - Event schema:** `event_id` (UUID), `trace_id` (UUID), `run_id` (UUID), `ticket_id`/`project_id`/`agent_id` (BIGINT), `session_id`, `type`, `timestamp`, `payload`, `version`.
 - **FR2 - Event types:** run.started, step.changed, prompt.sent, tool.called, file.edited, verification.result, diff.collected, publish.started, pr.opened, review.result, fix.requested, budget.warning, run.failed, run.succeeded.
 - **FR3 - Correlation:** trace id shared by all events in a run; commit SHA and PR number on publish events.
 - **FR4 - Redaction:** keys, tokens, passwords, `.env` values and long file contents are redacted at emission.

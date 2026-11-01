@@ -24,11 +24,12 @@ Replay: events + artifacts -> timeline view / verification re-run
 ```json
 {
   "version": 1,
-  "event_id": "uuid",
-  "trace_id": "run-id",
-  "run_id": "uuid",
-  "ticket_id": "uuid",
-  "agent_id": "uuid",
+  "event_id": "5f0c2a1e-8d4b-4c6f-9a7e-2b1d3c4e5f60",
+  "trace_id": "9a3b7c2d-1e4f-4a6b-8c0d-5e2f1a3b4c6d",
+  "run_id": "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+  "ticket_id": 123,
+  "project_id": 7,
+  "agent_id": 42,
   "session_id": "ses_...",
   "type": "tool.called",
   "timestamp": "2026-10-31T12:00:00Z",
