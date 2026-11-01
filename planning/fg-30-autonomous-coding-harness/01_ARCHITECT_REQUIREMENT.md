@@ -224,6 +224,8 @@ Same list; follow-up directories to be created when the harness foundation is me
 9. [ ] Verification autodetection distinguishes Jest from Vitest (and falls back to explicit commands).
 10. [ ] `HARNESS_MODE=legacy` still uses the existing processor; the new path is opt-in.
 11. [ ] Deterministic tests use a fake harness server; CI does not call a real model.
+12. [ ] Existing `status=backlog`/`phase=draft` tickets still pick up correctly, and 045 backfills them.
+13. [ ] Shell access cannot read git history (`git log`/`git show`/`git diff` denied; shallow clone).
 
 ### Human-in-the-loop (Phase 2)
 

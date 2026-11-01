@@ -210,7 +210,7 @@ The session prompt tells the harness agent:
 | permission request (Phase 2) | policy engine: allow → reply `once/always`; deny → reply `reject`; ask → question (kind=permission) |
 | usage update | accumulate tokens/cost into session + usage logs |
 | `session.idle` | run verification; publish or fail |
-| session error | post redacted failure message; phase → `blocked`; release/retry per policy (Phase 2 adds notification) |
+| session error | post redacted failure message; Phase 1 releases to `backlog`; Phase 2 uses `blocked` + notification |
 | session diff | collect changed files; protected-path check; diff stats |
 
 Exact event names and payloads are pinned by the fake-server contract tests and verified against the
@@ -251,8 +251,8 @@ request is auto-rejected. The supervised/standard/autonomous matrix arrives with
 |---|---|---|
 | read/glob/edit inside workspace | allow, except protected/secret paths | policy modes |
 | `grep` | allow (secret files are removed from the workspace before start) | policy modes |
-| run tests/lint/typecheck | allow via safe bash prefixes (`npm test*`, `npm run lint*`, `npm run typecheck*`, `mvn test*`, `pytest*`, `make test*`) | allow/ask per autonomy |
-| other safe read commands | allow (`git status*`, `git diff*`, `git log*`, `ls*`, `rg*`, `find*`) | allow/ask |
+| run tests/lint/typecheck | allow via safe `shell` prefixes (`npm test *`, `npm run lint *`, `npm run typecheck *`, `mvn test *`, `pytest *`, `make test *`) | allow/ask per autonomy |
+| other safe read commands | allow only `git status *`, `git branch --show-current`, `ls *`, `rg *`, `find *`; **deny `git log`/`git show`/`git diff`** (history/content) | allow/ask |
 | arbitrary shell, installs, deletes | deny | ask/allow per autonomy |
 | network fetch / web search / subagents | deny | ask/allow |
 | DB migrations / auth / `.github/` / secrets | deny edit; publishing blocked | ask + approval |
@@ -260,11 +260,11 @@ request is auto-rejected. The supervised/standard/autonomous matrix arrives with
 | read `.env*`, outside workspace | deny; secret files physically absent | deny |
 | docker / sudo / kubectl / cloud CLIs | deny | deny |
 | `question` tool | deny | allow when a bridge exists |
-| `doom_loop` | deny (stop, don't ask) | ask |
 
 `allow` decisions are still subject to the deny list. Deny lists and protected paths are policy config,
-not prompt instructions. `OpenCodeConfigWriter` validates the generated config and refuses to start if
-it finds any `ask` value in Phase 1.
+not prompt instructions. `OpenCodeConfigWriter` writes the **V2 `permissions` array** (the same
+generation as the `/api/session` endpoints), validates that no rule has `effect:"ask"`, and refuses to
+start if the V1 `permission` object shape is present.
 
 ### Plan approval gate (risk-based)
 
@@ -290,12 +290,16 @@ Phase 1 hardens the existing per-agent container:
 - Memory/CPU/pids limits; ephemeral `/tmp`; read-only root where possible.
 - Egress allowlist: AI provider proxy, GitHub API (supervisor only), package registries; deny everything
   else by default.
-- **Tokenless clone.** `WorkspaceManager` clones with a one-shot
-  `git -c http.extraHeader="Authorization: Basic <base64(x-access-token:PAT)>"` and never embeds the
-  token in the URL. It does not run `git remote set-url origin <authenticatedUrl>`. Before the harness
-  starts, `origin` is removed (or reset to the unauthenticated URL) and `WorkspaceSanitizer` verifies
-  `.git/config` contains no credential. Supervisor pushes use the same one-shot header. Tests assert
-  the token is absent from `.git/config`, `git remote -v`, workspace files, logs and messages.
+- **Tokenless, shallow clone.** `WorkspaceManager` clones with `--depth 1 --single-branch` and a
+  one-shot `git -c http.extraHeader="Authorization: Basic <base64(x-access-token:PAT)>"`; it never
+  embeds the token in the URL and does not run `git remote set-url origin <authenticatedUrl>`. Before
+  the harness starts, `origin` is removed (or reset to the unauthenticated URL) and
+  `WorkspaceSanitizer` verifies `.git/config` contains no credential. Supervisor pushes use the same
+  one-shot header. Tests assert the token is absent from `.git/config`, `git remote -v`, workspace
+  files, logs and messages.
+- **No git history access.** Shallow history plus a shell allowlist that excludes `git log`,
+  `git show`, `git diff` and any other history/content command. The supervisor supplies diff facts;
+  the agent cannot read a secret from `git show HEAD:.env` or `git log -p`.
 - **Workspace sanitiser.** After clone and before server start, remove `.env`, `.env.*` (keep
   `.env.example`), `**/secrets/**`, `**/*.pem`, `**/*.key`, `**/id_rsa*`, and any credential files
   created by tooling. Because the files are physically absent, `read`/`grep`/`cat` cannot leak them.
@@ -306,8 +310,9 @@ Phase 1 hardens the existing per-agent container:
   allowlist and makes verification runnable on a fresh clone. Installs use the package-registry egress
   allowlist and a timeout; failures are reported before any model call.
 - **Provider-key isolation.** The real key never enters the harness config or process. The supervisor
-  starts a loopback `ProviderProxy` that holds the key, injects `Authorization` and (for Go/Console)
-  `x-opencode-session`, and only accepts requests carrying a per-run proxy token. OpenCode is pointed at
+  starts a loopback `ProviderProxy` that holds the key, injects provider-specific auth (`Authorization`
+  for OpenAI/Go, `x-api-key` + `anthropic-version` for Claude, `x-opencode-session` for Go/Console),
+  and only accepts requests carrying a per-run proxy token. OpenCode is pointed at
   `http://127.0.0.1:<proxy-port>/v1` with a dummy key. If the pinned build supports overriding the
   built-in provider `baseURL`, use it; otherwise use the custom OpenAI-compatible provider and let the
   proxy add the session header. The proxy is bound to 127.0.0.1, rejects non-loopback peers, and is
@@ -317,22 +322,24 @@ Phase 1 hardens the existing per-agent container:
   from every posted message, event payload, log line and exception. A fake output test proves a token
   is redacted before posting.
 - **Protected paths.** Phase 1 blocks publishing if the diff touches `.env*`, `.github/workflows/**`,
-  `**/secrets/**`, `backend/src/migrations/**`, `backend/src/middleware/auth*`,
-  `backend/src/services/UserService.js`, or `backend/src/validators/auth*`. Phase 1 has no human gate,
-  so these changes fail and the
-  ticket is released; Phase 3 replaces the hard block with plan/action approval.
+  `**/secrets/**`, `**/*.pem`, `**/*.key`, `**/id_rsa*`, `.git/**`,
+  `backend/src/migrations/**`, `backend/src/middleware/auth*`,
+  `backend/src/services/UserService.js`, or `backend/src/validators/auth*`. If the sanitizer removed a
+  tracked secret file, its deletion appears in the diff and the guard blocks the publish; removed
+  files are never restored. Phase 1 has no human gate, so these changes fail and the ticket is
+  released; Phase 3 replaces the hard block with plan/action approval.
 - Secrets scrubbed from event payloads before persistence; log redaction.
 
 Phase 3 may add a nested per-ticket container if stronger isolation is required.
 
 ### Provider mapping
 
-| Planner provider | OpenCode config |
+| Planner provider | OpenCode config (all via `ProviderProxy`) |
 |---|---|
-| `opencode` (Console/Go key) | built-in `opencode` provider, model `opencode/<model-id>` |
-| `claude` | Anthropic provider with key |
-| `openai` | OpenAI provider with key |
-| `generic` | custom OpenAI-compatible provider (`baseURL`, `apiKey`, `model`) |
+| `opencode` (Console/Go key) | built-in `opencode` provider with overridden `baseURL`, model `opencode/<model-id>`; proxy adds `x-opencode-session` |
+| `claude` | native Anthropic provider with `baseURL` = proxy; proxy injects `x-api-key` + `anthropic-version` |
+| `openai` | custom/OpenAI provider with `baseURL` = proxy; proxy injects `Authorization` |
+| `generic` | custom OpenAI-compatible provider with `baseURL` = proxy; proxy injects `Authorization` |
 
 For `oc_sk_...` Console/Go keys, **always use the built-in `opencode` provider**. This is what makes
 OpenCode-only free-tier models available and what sends the `x-opencode-session` header automatically.
@@ -393,8 +400,9 @@ key. Before doing that:
 - **Paid Go models are still the default for production work.** Free nodes are best for experimentation,
   documentation, low-risk chores and load tests.
 
-The provider key is decrypted in the supervisor, written to a temporary config outside the workspace,
-and never logged. The model is configurable per project and per policy.
+The provider key is decrypted in the supervisor, held only by `ProviderProxy`, and never written to a
+config or logged. The harness receives a per-run proxy token. The model is configurable per project
+and per policy.
 
 ### Multi-agent evolution (Phase 3)
 
@@ -586,9 +594,21 @@ and `ticket_phases` in one transaction.
 
 `PhaseService.ALLOWED_TRANSITIONS` gets `backlog: ['in_progress']`, `in_progress: [..., 'backlog']`,
 `blocked: ['in_progress','backlog']`, `review: [...,'backlog']`, and `PHASE_TO_STATUS.backlog = 'backlog'`.
+It also accepts the legacy phases as pickup sources: `draft`, `planning`, `plan_approved` and
+`assigned` can transition to `in_progress` (the lifecycle normalises them).
 `TicketService.pickUpTicket/releaseTicket` delegate to `TicketLifecycleService`; direct status-only
 updates are no longer used by the harness. Add `planning → blocked` and `blocked → plan_approved` for
 the optional plan gate in Phase 2.
+
+**Backlog compatibility.** Migration 018 maps every `status='backlog'` to `phase='draft'`, and
+`Ticket.create()` currently inserts `'draft'`. Phase 1 therefore does all three:
+1. `045_backfill_backlog_phase.sql` sets `phase='backlog'` for existing backlog/draft rows (data-only,
+   idempotent, with rollback);
+2. `Ticket.create()` inserts `phase='backlog'` for new backlog tickets;
+3. `TicketLifecycleService.pickUp()` explicitly accepts `draft`/`planning`/`plan_approved`/`assigned`
+   as legacy sources so an un-backfilled ticket still works.
+
+A regression test covers a pre-existing `phase='draft'` ticket.
 
 ---
 

@@ -57,12 +57,17 @@ sync described in Step 8a; it adds no DB tables and no frontend. Phases 2–4 ha
    - *Depends on*: nothing.
 
 2. **Pin the harness version**
-   - Choose an OpenCode version (baseline `1.19.5`), pin it in `agent/Dockerfile` and add a
-     `HARNESS_VERSION` build arg; install that exact version.
+   - Choose an OpenCode version, pin it in `agent/Dockerfile` and add a `HARNESS_VERSION` build arg;
+     install that exact version. The pinned version must expose the **V2** HTTP surface
+     (`/api/session`, `/api/event`) and the V2 `permissions` array. The earlier `1.19.5` smoke
+     validated provider mapping, not the config schema; Phase 0 re-verifies and pins the exact V2
+     build. Do not mix V1 `permission` object rules with V2 endpoints.
    - Capture its OpenAPI JSON as a test fixture: fetch `/doc`, follow the OpenAPI JSON link it advertises
      (current versions expose `/v2/openapi.json`), and save it as
      `agent/src/test/resources/opencode-openapi-<version>.json`. `/doc` itself is an HTML page, not raw
      JSON, so the extraction script (`agent/scripts/fetch-opencode-spec.ps1`/`.sh`) must parse the link.
+   - Also capture the resolved config schema (`opencode debug config` or the pinned JSON schema) and
+     assert it uses `permissions` (V2), not the V1 `permission` object.
    - Contract tests assert the paths the client uses exist in the fixture:
      `POST /api/session`, `POST /api/session/{sessionID}/prompt`, `GET /api/event`,
      `GET /api/session/{sessionID}/diff`,
@@ -96,20 +101,24 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 ### Step 1: Harness config and interface — `agent/src/main/java/com/vibecode/agent/harness/`
 
-- Create `HarnessConfig.java`:
+- Create `HarnessConfig.java` (04 is canonical):
   - mode (`legacy`/`opencode`), binary, startup timeout, idle timeout, max duration,
     verification commands, protected paths, bash allowlist, permission mode (`unattended`),
-    workspace root.
-  - Read from env with defaults; validate (including rejecting `ask`).
-- Create `HarnessClient.java` interface:
-  - `StartResult start(Path workspace, HarnessConfig config)`
-  - `String createSession(...)`
+    model override.
+  - Read from env with defaults; validate (including rejecting `ask`). The workspace is passed to
+    `HarnessClient.start(Path)`, not stored in `HarnessConfig`.
+- Create `HarnessClient.java` interface, exactly matching 04:
+  - `void start(Path workspace)`
+  - `String createSession(String title)`
   - `void subscribe(sessionId, Consumer<HarnessEvent> listener)` (call **before** the prompt)
-  - `void promptAsync(sessionId, prompt)` (`POST /api/session/:id/prompt`)
-  - `void replyPermission(sessionId, requestId, reply)` (used for the Phase 1 auto-reject safety path
-    and the Phase 2 bridge)
-  - `Diff diff(sessionId)`
-  - `void stop()`
+  - `void awaitSubscribed(Duration timeout)` (wait for SSE to be live)
+  - `void sendPromptAsync(sessionId, prompt)` (`POST /api/session/:id/prompt`)
+  - `void replyPermission(sessionId, permissionId, reply)` (used for the Phase 1 auto-reject safety
+    path and the Phase 2 bridge)
+  - `DiffSummary getDiff(sessionId)`
+  - `boolean isHealthy()`
+  - `void close()`
+  - `StartResult`/`Diff` are **not** separate types; use `void` and `DiffSummary` as in 04.
 - Create `HarnessEvent.java` (sealed/record types for tool, message, idle, error).
 - *Depends on*: Phase 0.
 
@@ -136,26 +145,30 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 ### Step 3: Temporary OpenCode config — `HarnessConfigWriter.java`
 
-- Render `opencode.json` with:
-  - provider/model mapping pointed at `http://127.0.0.1:<proxy-port>/v1` with a per-run dummy key,
-  - Phase 1 `permission` rules with **no `ask`**:
-    - `read`: allow `*`; deny `**/.env`, `**/.env.*`, `**/secrets/**`, `**/*.pem`, `**/*.key`,
-      `**/id_rsa*`, `**/.git/config`;
-    - `edit`: allow `*`; deny the same plus `**/.github/workflows/**`,
-      `backend/src/migrations/**`, `backend/src/middleware/auth*`,
-      `backend/src/services/UserService.js`, `backend/src/validators/auth*`;
-    - `glob`: allow `*`;
-    - `grep`: allow `*` (secret files are physically removed by `WorkspaceSanitizer`);
-    - `bash`: `"*": "deny"` then allow safe prefixes only:
-      `git status*`, `git diff*`, `git log*`, `git show*`, `ls*`, `pwd*`, `rg*`, `find*`,
-      `npm test*`, `npm run lint*`, `npm run typecheck*`, `npm run build*`, `npx vitest run*`,
-      `npx jest*`, `mvn test*`, `./mvnw test*`, `pytest*`, `python -m pytest*`, `make test*`,
-      `go test*`, `cargo test*`; deny `rm *`, `sudo*`, `docker*`, `kubectl*`, `git push*`,
-      `git commit*`, `git merge*`, `git reset --hard*`, `cat *.env*`, `curl*`/`wget*`;
-    - `webfetch`, `websearch`, `task`, `question`, `external_directory`, `doom_loop`: deny;
+- Render `opencode.json` with the **V2 config schema only** (the same generation as the
+  `/api/session` endpoints):
+  - provider/model mapping pointed at `http://127.0.0.1:<proxy-port>/v1` with a per-run
+    `ProxySettings` (dummy proxy token, no real key); set
+    `options.headers["X-Vibecode-Proxy-Token"]` and also pass the same token as `apiKey` so the proxy
+    can accept `Authorization: Bearer <proxyToken>` if custom headers are unsupported,
+  - `permissions` array, ordered so the last match wins and **no rule resolves to `ask`**:
+    - `{action:"*", resource:"*", effect:"deny"}` first (unknown tools denied),
+    - `read` allow `*`, then deny `*.env`, `*.env.*`, `**/secrets/**`, `**/*.pem`, `**/*.key`,
+      `**/id_rsa*`, `.git/**`; keep `*.env.example` allow after the deny,
+    - `edit` allow `*`, then deny the same plus `.github/workflows/**`, `backend/src/migrations/**`,
+      `backend/src/middleware/auth*`, `backend/src/services/UserService.js`,
+      `backend/src/validators/auth*`,
+    - `glob` allow `*`; `grep` allow `*` (secret files are physically removed),
+    - `shell` deny `*`, then allow only `git status *`, `git branch --show-current`,
+      `ls *`, `pwd`, `rg *`, `find *`, `npm test *`, `npm run lint *`, `npm run typecheck *`,
+      `npm run build *`, `npx vitest run *`, `npx jest *`, `mvn test *`, `./mvnw test *`,
+      `pytest *`, `python -m pytest *`, `make test *`, `go test *`, `cargo test *`.
+      **Do not allow `git log`, `git show`, `git diff`, or any history/content command.**
+    - `question`, `webfetch`, `websearch`, `subagent`, `external_directory`, `execute`: deny.
   - instructions/AGENTS.md references,
   - optional formatter/LSP settings.
-- `validateUnattended()` scans the rendered JSON and throws if any `ask` value is present.
+- `validateUnattended()` parses the `permissions` array and throws if any `effect` is `ask`; it also
+  throws if the V1 `permission` object shape is detected.
 - Write outside the workspace (temp dir), mode 0600, delete after run.
 - Never log the API key; redact errors.
 - *Depends on*: Step 2.
@@ -176,9 +189,10 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 ### Step 3b: Provider proxy and redaction — `ProviderProxy.java`, `SecretRedactor.java`
 
-- `ProviderProxy` binds to `127.0.0.1:0`, requires a per-run `X-Vibecode-Proxy-Token`, rejects
-  non-loopback peers, injects the real `Authorization` and (for Go) `x-opencode-session`, and forwards
-  OpenAI-compatible requests. The real key exists only in the supervisor's memory.
+- `ProviderProxy` binds to `127.0.0.1:0`, requires a per-run `X-Vibecode-Proxy-Token` (or
+  `Authorization: Bearer <proxyToken>` fallback), rejects non-loopback peers, strips client auth, and
+  injects provider-specific headers: `Authorization` for OpenAI/Go, `x-opencode-session` for Go, and
+  `x-api-key` + `anthropic-version` for Claude. The real key exists only in the supervisor's memory.
 - `SecretRedactor` removes known secret values and token-shaped patterns from messages, events, logs
   and exceptions. Apply it in `ApiService` posting paths and `OpenCodeClient` error handling.
 - Tests: dummy key works, real key never appears in harness config; fake output with `ghp_...`,
@@ -238,13 +252,15 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 ### Step 7: Publishing — extend `WorkspaceManager` + reuse `GitHubService`
 
 - `collectDiff()` → list of changed/added/deleted files + line stats (`git status --porcelain`, `git diff`).
-- Protected-path check (Phase 1 hardcoded: `.env*`, `**/secrets/**`, `.github/workflows/**`,
-  `backend/src/migrations/**`, `backend/src/middleware/auth*`, `backend/src/services/UserService.js`,
+- Protected-path check (Phase 1 hardcoded: `.env*`, `**/secrets/**`, `**/*.pem`, `**/*.key`,
+  `**/id_rsa*`, `.git/**`, `.github/workflows/**`, `backend/src/migrations/**`,
+  `backend/src/middleware/auth*`, `backend/src/services/UserService.js`,
   `backend/src/validators/auth*`).
 - Commit message `feat: <ticket title> (<ticket id>)`; push branch with a one-shot auth header.
 - PR body: ticket summary, files changed, verification evidence, risks; all text redacted.
 - Never push when: diff empty, protected path changed, verification failed, or budget exceeded.
-- On block, transition to `blocked` via `TicketLifecycleService` (no status-only update).
+- On failure, **release to `backlog`** in Phase 1 via `TicketLifecycleService` (no status-only
+  update). `blocked` is reserved for the Phase 2 human-question loop.
 - *Depends on*: Step 5.
 
 ### Step 8: Agent wiring + feature flag — `AgentApp.java`, `AgentConfig.java`
@@ -254,17 +270,27 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 - New env vars (documented in `AGENTS.md` / README):
   `HARNESS_BIN`, `HARNESS_STARTUP_TIMEOUT_MS`, `HARNESS_IDLE_TIMEOUT_MS`,
   `HARNESS_MAX_DURATION_MINUTES`, `HARNESS_VERIFY_COMMANDS`,
-  `HARNESS_PROTECTED_PATHS`, `OPENCODE_CONFIG`, `HARNESS_MODEL`.
+  `HARNESS_PROTECTED_PATHS`, `HARNESS_BASH_ALLOWLIST`, `HARNESS_PERMISSION_MODE`,
+  `HARNESS_PROXY_TOKEN`, `OPENCODE_CONFIG`, `HARNESS_MODEL`.
 - *Depends on*: Step 5.
 
-### Step 8a: Backend lifecycle sync — `TicketLifecycleService.js`, `PhaseService.js`, `TicketService.js`
+### Step 8a: Backend lifecycle sync — `TicketLifecycleService.js`, `PhaseService.js`, `TicketService.js`, `models/ticket.js`
 
 - Add `backlog` as an explicit phase (`ALLOWED_TRANSITIONS` + `PHASE_TO_STATUS`).
+- `TicketLifecycleService.pickUp` accepts legacy `draft`, `planning`, `plan_approved` and `assigned`
+  phases as well as `backlog`, and normalises them to `in_progress` in one transaction. This keeps
+  pre-existing tickets working even before the backfill runs.
+- Add an idempotent data migration `045_backfill_backlog_phase.sql`:
+  `UPDATE tickets SET phase='backlog' WHERE status='backlog' AND phase='draft';` plus rollback, and
+  register it in `apply.js`. This is data-only; no schema change.
+- Change `Ticket.create()` to insert `phase='backlog'` for new backlog tickets (and keep `fromRow`
+  backward compatible).
 - `TicketLifecycleService` methods (`pickUp`, `release`, `markReview`, `block`, `resume`) update
   assignment, `phase`, `status` and `ticket_phases` in one transaction.
 - `TicketService.pickUpTicket/releaseTicket` delegate to it; the harness never calls status-only
   updates.
-- Tests cover pickup/release/review/block and assert `status` and `phase` never diverge.
+- Tests cover pickup/release/review/block, a **pre-existing `phase='draft'` ticket**, and assert
+  `status` and `phase` never diverge.
 - *Depends on*: Step 5.
 
 ### Step 9: Agent image — `agent/Dockerfile`
@@ -291,7 +317,10 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 - Test classes: `PromptBuilderTest`, `VerificationRunnerTest`, `OpenCodeClientTest`,
   `HarnessTicketProcessorTest`, `PublishingGuardTest`, `PermissionPolicyTest`,
   `WorkspaceSanitizerTest`, `ProviderProxyTest`, `SecretRedactorTest`.
-- Backend: `TicketLifecycleSyncTest`, plus lifecycle tests in the existing ticket/phase suites.
+  Include V2 config-shape, Claude `x-api-key`, shallow-history, and
+  `X-Vibecode-Proxy-Token` assertions.
+- Backend: `TicketLifecycleSyncTest` (including a pre-existing `phase='draft'` ticket), backfill test,
+  and lifecycle tests in the existing ticket/phase suites.
 - No live model in CI.
 - *Depends on*: Steps 2–8.
 
@@ -299,7 +328,8 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 - One real ticket on a scratch repo produces a PR with **no permission prompt**.
 - Tests green; no pushes on failure/protected paths; no PAT/key in workspace/logs/messages.
-- Phase and status stay synchronised on pickup, failure, release and review.
+- Phase and status stay synchronised on pickup, failure, release and review. Phase 1 never leaves a
+  ticket in `blocked` (that state belongs to the Phase 2 question loop).
 - Feature flag defaults to legacy; documentation updated.
 
 ---
@@ -419,7 +449,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 - Bounded output; environment sanitized.
 
 #### `agent/src/main/java/com/vibecode/agent/harness/PublishingGuard.java` (CREATE)
-- `assertPublishable(Diff diff, List<String> protectedGlobs)`.
+- `assertPublishable(DiffSummary diff, List<String> protectedGlobs)`.
 - Rejects empty diff, protected paths, oversized diff (policy later).
 
 #### `agent/src/main/java/com/vibecode/agent/AgentApp.java` (MODIFY)
@@ -498,7 +528,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 - **Question deadlock** → expiry + notifications + reconciliation.
 - **Duplicate sessions after crash** → reconcile by ticket/session status; pickup is atomic.
 - **Secrets in logs** → redaction + tests.
-- **Protected path edits** → guard blocks publishing; ask human (Phase 2).
+- **Protected path edits** → guard blocks publishing and releases (Phase 1); ask human in Phase 2/3.
 - **Flaky tests** → record output; retry once; human override with reason.
 - **Windows dev machines** → harness tests use the fake server, no binary requirement.
 - **Budget exhaustion** → pause + question, never silently continue.
@@ -515,7 +545,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 #### Agent tests
 - [ ] `PromptBuilderTest` — ticket/planning/AGENTS/definition-of-done; secret redaction; truncation.
 - [ ] `VerificationRunnerTest` — success/failure/timeout/output cap; Jest vs Vitest detection.
-- [ ] `PublishingGuardTest` — empty/protected (incl. auth/migrations)/oversize diff.
+- [ ] `PublishingGuardTest` — empty/protected (incl. auth/migrations/pem/key/id_rsa/.git)/oversize diff.
 - [ ] `OpenCodeClientTest` — health, session, async prompt, subscribe-before-prompt timing, SSE parse,
       permission reply/auto-reject, diff, shutdown.
 - [ ] `PermissionPolicyTest` — no `ask` values, safe bash allowlist, deny list, auto-reject.
@@ -547,6 +577,9 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 ### g) Migration Notes
 
+Phase 1 adds only the data backfill `045_backfill_backlog_phase.sql` (+ rollback), registered in
+`apply.js`; it is idempotent and safe to re-run.
+
 Phase 2 migration (tables/columns in 02). Add to `backend/src/migrations/apply.js` in array order,
 with `_rollback.sql`. Verify on a fresh database and against an existing one.
 
@@ -571,9 +604,12 @@ agent/src/main/java/com/vibecode/agent/service/OpenAiCompatibleProvider.java →
 
 **Backend**
 ```
-backend/src/migrations/NNN_agent_harness.sql          → CREATE
-backend/src/migrations/NNN_agent_harness_rollback.sql → CREATE
-backend/src/migrations/apply.js                       → MODIFY
+backend/src/migrations/045_backfill_backlog_phase.sql → CREATE (Phase 1 data backfill)
+backend/src/migrations/045_backfill_backlog_phase_rollback.sql → CREATE
+backend/src/migrations/NNN_agent_harness.sql          → CREATE (Phase 2)
+backend/src/migrations/NNN_agent_harness_rollback.sql → CREATE (Phase 2)
+backend/src/migrations/apply.js                       → MODIFY (register 045 + Phase 2)
+backend/src/models/ticket.js                          → MODIFY (Phase 1: create phase backlog)
 backend/src/services/TicketLifecycleService.js        → CREATE (Phase 1)
 backend/src/services/PhaseService.js                  → MODIFY (Phase 1: backlog phase)
 backend/src/services/TicketService.js                 → MODIFY (Phase 1: delegate pickup/release)
@@ -631,8 +667,11 @@ See 01. Present all ten items before approval.
 - [ ] Harness cannot push/merge; supervisor publishes with a one-shot auth header.
 - [ ] No PAT in `.git/config`; no provider key readable by the harness; no secrets in config, events,
       logs, messages or workspace.
-- [ ] Phase 1 config has no `ask`; safe bash allowlist and deny list; unexpected permission auto-rejected.
+- [ ] Phase 1 uses the V2 `permissions` array only; no `ask`; safe shell allowlist and deny list;
+      unexpected permission auto-rejected.
 - [ ] Subscribe happens before the async prompt; fast-event test proves no events are missed.
+- [ ] Clone is shallow/tokenless; `git log`/`git show`/`git diff` are denied; removed tracked secrets
+      cannot be published.
 - [ ] Protected paths/commands enforced outside the model (auth, migrations, workflows, secrets).
 - [ ] Session/questions/notifications scoped to project; session list finds the active session.
 - [ ] Phase transitions valid, atomic with status, and idempotent (unique external IDs).

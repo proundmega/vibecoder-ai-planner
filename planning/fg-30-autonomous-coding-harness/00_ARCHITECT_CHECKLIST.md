@@ -88,6 +88,9 @@
 - [x] Credential isolation designed: tokenless clone, provider proxy, workspace sanitizer, output redaction (see `02`/`04`)
 - [x] Phase 1 vs Phase 0 scope reconciled; backend lifecycle sync is explicit (see `03`/`04`)
 - [x] Session list, heartbeat metadata, phase/status sync and idempotency have concrete designs (see `02`)
+- [x] Backlog-phase backfill/create/legacy-pickup path is defined (see `02`/`03`/`04`)
+- [x] V2 config schema (`permissions` array) and provider-proxy header contract are pinned (see `03`/`04`)
+- [x] Git-history leak closed (shallow clone, no history commands) and protected globs aligned
 
 ---
 

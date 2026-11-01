@@ -30,8 +30,8 @@ permission bridge.
 **Scope of code changes in Phase 1:**
 - Agent: harness, secure workspace, provider proxy, redaction, Dockerfile.
 - Backend: **minimal lifecycle synchronisation only** (`TicketLifecycleService`, `PhaseService`
-  `backlog` phase, `TicketService` delegation) so `status` and `phase` cannot drift. No DB schema
-  changes and no new tables.
+  `backlog` phase, `TicketService` delegation, `models/ticket.js` create phase, and the data-only
+  `045_backfill_backlog_phase.sql`). No schema changes and no new tables.
 - Frontend: none.
 - Phase 0 (provider session header, version pin, spec fixture, smoke test) is a prerequisite sub-phase
   and is not part of this 04 file.
@@ -48,7 +48,7 @@ permission bridge.
 | `HARNESS_IDLE_TIMEOUT_MS` | `300000` | Max time without events |
 | `HARNESS_MAX_DURATION_MINUTES` | `45` | Hard wall-clock cap |
 | `HARNESS_VERIFY_COMMANDS` | `` | Semicolon-separated commands; empty = autodetect |
-| `HARNESS_PROTECTED_PATHS` | `.env*;.github/workflows/**;**/secrets/**;backend/src/migrations/**;backend/src/middleware/auth*;backend/src/services/UserService.js;backend/src/validators/auth*` | Semicolon-separated publish-blocking globs |
+| `HARNESS_PROTECTED_PATHS` | `.env*;.github/workflows/**;**/secrets/**;**/*.pem;**/*.key;**/id_rsa*;.git/**;backend/src/migrations/**;backend/src/middleware/auth*;backend/src/services/UserService.js;backend/src/validators/auth*` | Semicolon-separated publish-blocking globs |
 | `HARNESS_BASH_ALLOWLIST` | safe prefixes (see config writer) | Semicolon-separated command prefixes allowed in Phase 1 |
 | `HARNESS_PERMISSION_MODE` | `unattended` | Phase 1 must be `unattended`; `ask` is rejected at startup |
 | `HARNESS_MODEL` | `` | Optional model override |
@@ -103,6 +103,7 @@ public interface HarnessClient extends AutoCloseable {
     void start(java.nio.file.Path workspace) throws java.io.IOException;
     String createSession(String title) throws java.io.IOException;
     void subscribe(String sessionId, java.util.function.Consumer<HarnessEvent> listener) throws java.io.IOException;
+    void awaitSubscribed(java.time.Duration timeout) throws java.io.IOException;
     void sendPromptAsync(String sessionId, String prompt) throws java.io.IOException;
     void replyPermission(String sessionId, String permissionId, String reply) throws java.io.IOException;
     DiffSummary getDiff(String sessionId) throws java.io.IOException;
@@ -120,10 +121,16 @@ used. `replyPermission` is used by the Phase 1 auto-reject safety path and by th
 public record ProviderSettings(
     String type, String apiKey, String baseUrl, String model, int maxTokens
 ) {}
+
+public record ProxySettings(
+    String type, String model, String baseUrl, String proxyUrl, String proxyToken
+) {}
 ```
 
-`AgentApp` resolves this once from the backend/env. The legacy path uses it directly; the harness path
-passes it to `ProviderProxy` only. The OpenCode config receives a per-run dummy key, never `apiKey`.
+`ProviderSettings` is supervisor-only: `AgentApp` resolves it once, the legacy path uses it directly,
+and `ProviderProxy` holds it. `ProxySettings` contains **no real secret**; it is the only provider
+object passed to `OpenCodeConfigWriter` and `OpenCodeClient`. The harness gets `proxyToken` (also the
+dummy `apiKey`) and never sees `ProviderSettings.apiKey`.
 
 ### CREATE: `agent/src/main/java/com/vibecode/agent/harness/OpenCodeConfigWriter.java`
 
@@ -131,7 +138,7 @@ passes it to `ProviderProxy` only. The OpenCode config receives a per-run dummy 
 public final class OpenCodeConfigWriter {
     public static java.nio.file.Path write(
         java.nio.file.Path tempDir,
-        ProviderSettings provider,
+        ProxySettings provider,
         HarnessConfig config,
         java.nio.file.Path workspace
     ) throws java.io.IOException;
@@ -141,28 +148,40 @@ public final class OpenCodeConfigWriter {
 Rules:
 
 - Write `opencode.json` in `tempDir` (outside `workspace`), POSIX mode `600` when supported.
+- **Use the V2 config schema only** (`permissions` array), because the client uses the V2
+  `/api/session` endpoints. Do not emit the V1 `permission` object.
 - Provider mapping (all through `ProviderProxy` at `http://127.0.0.1:<port>/v1`):
-  - use a custom `vibecode` provider (`@ai-sdk/openai-compatible`) with the dummy per-run proxy key and
-    model `vibecode/<model>`; the proxy forwards to the real upstream and injects `Authorization` and,
-    for Go/Console, `x-opencode-session`.
-  - if the pinned build supports overriding the built-in `opencode` provider `baseURL`, use it for
-    Go/Console keys instead; either way the real key stays in the proxy.
-  - `claude`/`openai`/`generic` map to the same proxy with their upstream path.
-- Permissions (Phase 1 — **no `ask` anywhere**):
-  - `read`: `"*": "allow"`, then deny `**/.env`, `**/.env.*`, `**/secrets/**`, `**/*.pem`,
-    `**/*.key`, `**/id_rsa*`, `**/.git/config`.
-  - `edit`: `"*": "allow"`, then deny the same paths plus `**/.github/workflows/**`,
-    `backend/src/migrations/**`, `backend/src/middleware/auth*`,
-    `backend/src/services/UserService.js`, `backend/src/validators/auth*`.
-  - `glob`: `allow`. `grep`: `allow` (secret files are physically removed before start).
-  - `bash`: `"*": "deny"`, then allow only: `git status*`, `git diff*`, `git log*`, `git show*`,
-    `ls*`, `pwd*`, `rg*`, `find*`, `npm test*`, `npm run lint*`, `npm run typecheck*`,
-    `npm run build*`, `npx vitest run*`, `npx jest*`, `mvn test*`, `./mvnw test*`, `pytest*`,
-    `python -m pytest*`, `make test*`, `go test*`, `cargo test*`. Explicitly deny `rm *`, `sudo*`,
-    `docker*`, `kubectl*`, `git push*`, `git commit*`, `git merge*`, `git reset --hard*`,
-    `cat *.env*`, `curl*`, `wget*`.
-  - `webfetch`, `websearch`, `task`, `question`, `external_directory`, `doom_loop`: `deny`.
-- `validateUnattended()` parses the rendered JSON and throws if any value is `ask`.
+  - `provider.vibecode.options.baseURL = proxyUrl`,
+    `provider.vibecode.options.apiKey = proxyToken`, and
+    `provider.vibecode.options.headers["X-Vibecode-Proxy-Token"] = proxyToken`.
+    The dummy `apiKey` is also accepted by the proxy as
+    `Authorization: Bearer <proxyToken>`, so the scheme works even if custom headers are unsupported.
+  - For `opencode` (Go/Console), prefer the built-in provider with an overridden `baseURL` and the
+    same proxy header; otherwise use the custom `vibecode` provider. The proxy adds
+    `x-opencode-session`.
+  - For `claude`, use the native `anthropic` provider with `baseURL` = proxy and the same
+    `apiKey`/header set to `proxyToken`; the proxy injects `x-api-key` and `anthropic-version`. Do not
+    send an Anthropic key as `Authorization`.
+  - For `openai`/`generic`, use the custom provider; the proxy injects `Authorization`.
+  - In every case, the provider block gets `baseURL = proxyUrl`, `apiKey = proxyToken`, and
+    `headers["X-Vibecode-Proxy-Token"] = proxyToken`; no real key is written.
+- `permissions` (V2 array, **no `effect:"ask"` anywhere**, last match wins):
+  - `{ action:"*", resource:"*", effect:"deny" }` first (unknown actions denied);
+  - `read`: allow `*`, then deny `*.env`, `*.env.*`, `**/secrets/**`, `**/*.pem`, `**/*.key`,
+    `**/id_rsa*`, `.git/**`; then allow `*.env.example`;
+  - `edit`: allow `*`, then deny the same plus `.github/workflows/**`, `backend/src/migrations/**`,
+    `backend/src/middleware/auth*`, `backend/src/services/UserService.js`,
+    `backend/src/validators/auth*`;
+  - `glob`: allow `*`; `grep`: allow `*` (secret files are physically removed);
+  - `shell`: deny `*`, then allow only `git status *`, `git branch --show-current`, `ls *`, `pwd`,
+    `rg *`, `find *`, `npm test *`, `npm run lint *`, `npm run typecheck *`, `npm run build *`,
+    `npx vitest run *`, `npx jest *`, `mvn test *`, `./mvnw test *`, `pytest *`,
+    `python -m pytest *`, `make test *`, `go test *`, `cargo test *`.
+    **No `git log`, `git show`, `git diff`, `cat`, `curl`, `wget`, `rm`, `sudo`, `docker`, `kubectl`,
+    `git push`, `git commit`, `git merge`, or `git reset --hard`.**
+  - `question`, `webfetch`, `websearch`, `subagent`, `external_directory`, `execute`: deny.
+- `validateUnattended()` parses `permissions` and throws if any `effect` is `ask`; it also throws if
+  the V1 `permission` key is present.
 - Add `"$schema": "https://opencode.ai/config.json"`, `"autoupdate": false`, `"share": "disabled"`.
 - Never log the API key; redact on error.
 
@@ -177,8 +196,11 @@ public final class WorkspaceSanitizer {
 
 Rules:
 
+- The clone is **shallow** (`--depth 1 --single-branch`), so there is no reachable history to inspect.
 - Delete `.env`, `.env.*` except `.env.example`, `**/secrets/**`, `**/*.pem`, `**/*.key`,
   `**/id_rsa*`, and any file the token scanner identifies as containing the PAT/provider key.
+- If a removed file was tracked, **do not restore it**. Its deletion stays in the diff and
+  `PublishingGuard` blocks publishing (the path is protected). This is fail-closed.
 - Remove the `origin` remote or reset it to the unauthenticated URL; ensure `.git/config` has no
   `http.extraheader` or token.
 - `assertClean` re-scans and throws with paths (never contents) if a secret remains.
@@ -190,8 +212,7 @@ Rules:
 public final class ProviderProxy implements AutoCloseable {
     public ProviderProxy(ProviderSettings settings, java.util.function.Supplier<String> sessionIdSupplier);
     public void start() throws java.io.IOException;
-    public String baseUrl();           // http://127.0.0.1:<port>/v1
-    public String dummyApiKey();       // per-run token, not the real key
+    public ProxySettings proxySettings();  // proxyUrl + per-run proxyToken, no real key
     @Override public void close();
 }
 ```
@@ -199,9 +220,14 @@ public final class ProviderProxy implements AutoCloseable {
 Rules:
 
 - Bind `127.0.0.1:0`; reject requests whose peer is not loopback.
-- Require `X-Vibecode-Proxy-Token: <dummyApiKey>` on every request; otherwise 401.
-- Strip any client-supplied `Authorization`/`x-opencode-session`, then inject the real provider
-  `Authorization` and (for Go/Console) `x-opencode-session`.
+- Require `X-Vibecode-Proxy-Token: <proxyToken>` on every request; otherwise 401. If the pinned
+  provider schema cannot set custom headers, accept `Authorization: Bearer <proxyToken>` as the
+  fallback; the config still writes both.
+- Strip any client-supplied `Authorization`, `x-api-key`, `anthropic-version` and
+  `x-opencode-session`, then inject provider-specific auth:
+  - `openai`/`generic`: `Authorization: Bearer <real key>`;
+  - `anthropic`/`claude`: `x-api-key: <real key>` and `anthropic-version: 2023-06-01`;
+  - `opencode` (Go/Console): `Authorization: Bearer <real key>` + `x-opencode-session`.
 - Never log headers or the real key; redact errors.
 - Forward method, path, query, body and streaming response; support SSE/chunked responses.
 
@@ -299,10 +325,15 @@ public final class VerificationRunner {
 ```
 
 - `resolveCommands`: if configured list non-empty, return it. Otherwise detect:
-  - `package.json` + `scripts.test` → `npm test -- --run` (or `npm test` when no `--run` script),
-  - `scripts.lint`, `scripts.typecheck` if present,
-  - `pom.xml` → `mvn test -q`,
+  - `package.json`: inspect `scripts.test` and devDependencies/config.
+    - Jest (`jest`, `jest.config.*`) → `npm test` (optionally `npm test -- --runInBand`); **never**
+      append `--run`, which is Vitest-only and breaks this backend.
+    - Vitest (`vitest`, `vitest.config.*`) → `npm test -- --run`.
+    - Unknown test runner → run the script verbatim and record it; do not guess a flag.
+  - `scripts.lint` → `npm run lint`; `scripts.typecheck` → `npm run typecheck` (only if present).
+  - `pom.xml` → `mvn test -q`; `./mvnw` → `./mvnw test -q`.
   - `Makefile` with a `test` target → `make test`.
+  - No detectable command and no explicit config → fail clearly; never publish unverified.
 - Execute with `ProcessBuilder`, working directory = workspace, merged stdout/stderr, capture last
   8,192 chars, kill on timeout.
 
@@ -318,14 +349,16 @@ public final class PublishingGuard {
 Throws `IllegalStateException` when:
 
 - diff is empty,
-- any changed path matches a protected glob (case-insensitive, `**` supported),
+- any changed path matches a protected glob (case-insensitive, `**` supported), including
+  `.env*`, `.github/workflows/**`, `**/secrets/**`, `**/*.pem`, `**/*.key`, `**/id_rsa*`, `.git/**`,
+  auth and migrations,
 - more than 50 files or 2,000 changed lines (Phase 1 hard safety cap).
 
 ### CREATE: `agent/src/main/java/com/vibecode/agent/harness/OpenCodeClient.java`
 
 ```java
 public final class OpenCodeClient implements HarnessClient {
-    public OpenCodeClient(HarnessConfig config, ProviderSettings provider, java.nio.file.Path tempDir);
+    public OpenCodeClient(HarnessConfig config, ProxySettings provider, java.nio.file.Path tempDir);
     // interface methods
     public void awaitIdle(java.time.Duration timeout) throws java.io.IOException;
     public int getPort();
@@ -362,7 +395,7 @@ public final class HarnessTicketProcessor {
     public HarnessTicketProcessor(
         AgentConfig config,
         ApiService apiService,
-        ProviderSettings provider,
+        ProviderSettings provider,   // supervisor-only, passed to ProviderProxy
         GitHubService gitHubService,
         String githubToken
     );
@@ -380,7 +413,8 @@ Flow:
 4. Clone repo + branch via `WorkspaceManager` (tokenless).
 5. `step="sanitizing"`; `WorkspaceSanitizer.sanitize` + `assertClean`; run the bounded supervisor
    dependency bootstrap (`npm ci` with a lockfile, `pip install -r`, or `mvn dependency:go-offline`).
-6. `step="starting-harness"`; start `ProviderProxy`, then `OpenCodeClient`; create session.
+6. `step="starting-harness"`; start `ProviderProxy`, obtain `ProxySettings`, then start
+   `OpenCodeClient` with `ProxySettings`; create session.
 7. `step="implementing"`; **subscribe first**, wait for `awaitSubscribed`, then `sendPromptAsync`;
    await idle with `maxDuration`. Auto-reject any unexpected permission event.
 8. `step="verifying"`; resolve + run verification commands; post a redacted pass/fail summary.
@@ -402,7 +436,8 @@ table. Existing required vars unchanged.
 
 ### MODIFY: `agent/src/main/java/com/vibecode/agent/AgentApp.java`
 
-- Resolve `ProviderSettings` once (refactor `createAiProvider` to use it).
+- Resolve `ProviderSettings` once (refactor `createAiProvider` to use it); the harness path hands it to
+  `ProviderProxy` and only uses `ProxySettings` afterward.
 - Read `HarnessConfig.fromEnvironment()`.
 - If `config.isEnabled()`, construct `HarnessTicketProcessor`; else legacy `TicketProcessor`.
 - Heartbeat `currentStep` remains sourced from the selected processor.
@@ -418,9 +453,9 @@ public DiffSummary collectDiff();
 public void commitAndPush(String message, String branch); // exists; secure it
 ```
 
-- **Tokenless clone:** use `git -c http.extraHeader="Authorization: Basic <base64>"`; never put the
-  token in the URL; never `git remote set-url origin <authenticatedUrl>`. Remove/reset `origin` before
-  the harness starts.
+- **Tokenless, shallow clone:** `git clone --depth 1 --single-branch` with
+  `git -c http.extraHeader="Authorization: Basic <base64>"`; never put the token in the URL; never
+  `git remote set-url origin <authenticatedUrl>`. Remove/reset `origin` before the harness starts.
 - **Tokenless push:** `commitAndPush` uses the same one-shot header; the token is not persisted.
 - `collectDiff` runs `git status --porcelain` and `git diff --numstat` in the repo dir and returns
   `DiffSummary`; include untracked files as `status="added"`.
@@ -429,11 +464,17 @@ public void commitAndPush(String message, String branch); // exists; secure it
 
 Phase 1 minimal lifecycle sync (no schema changes):
 
-- Add `backlog` to `PhaseService.ALLOWED_TRANSITIONS` and `PHASE_TO_STATUS`.
+- Add `backlog` to `PhaseService.ALLOWED_TRANSITIONS` and `PHASE_TO_STATUS`; allow legacy
+  `draft`/`planning`/`plan_approved`/`assigned` as pickup sources to `in_progress`.
+- Add `045_backfill_backlog_phase.sql` (and rollback) to move existing `status='backlog'`/`phase='draft'`
+  rows to `phase='backlog'`; register it in `apply.js`.
+- Change `Ticket.create()` to insert `phase='backlog'` (and keep `fromRow` backward compatible).
 - `TicketLifecycleService.pickUp/release/markReview/block/resume` performs assignment + phase + status +
-  `ticket_phases` in one transaction.
+  `ticket_phases` in one transaction. `pickUp` explicitly accepts the legacy phases so un-backfilled
+  tickets still work.
 - `TicketService.pickUpTicket/releaseTicket` delegate; the harness never uses status-only updates.
-- Tests assert `status` and `phase` remain consistent on every path.
+- Tests assert `status` and `phase` remain consistent on every path, including a pre-existing
+  `phase='draft'` ticket and the 045 backfill.
 
 ### MODIFY: `agent/pom.xml`
 
@@ -520,7 +561,7 @@ Add:
 ```
 ✓ [happy] allows a normal diff
 ✓ [error] rejects an empty diff
-✓ [error] rejects .env, .github/workflows/**, **/secrets/**, auth and migrations
+✓ [error] rejects .env, .github/workflows/**, **/secrets/**, *.pem, *.key, id_rsa*, .git/**, auth and migrations
 ✓ [error] rejects > 50 files or > 2000 lines
 ```
 
@@ -542,9 +583,10 @@ Add:
 ```
 ✓ [config] generated Phase 1 config contains no "ask" value
 ✓ [config] validateUnattended rejects an injected ask
-✓ [bash] safe test/lint/typecheck/git-read commands are allowed
-✓ [bash] rm/sudo/docker/git push/git commit/curl/wget are denied
-✓ [paths] .env/secrets/auth/migrations are denied for read and edit
+✓ [config] V2 permissions array is used; V1 `permission` object is rejected
+✓ [shell] safe test/lint/typecheck/status commands are allowed
+✓ [shell] git log/show/diff, rm/sudo/docker/git push/git commit/curl/wget are denied
+✓ [paths] .env/secrets/pem/key/id_rsa/auth/migrations/.git are denied for read and edit
 ✓ [safety] unexpected permission request is auto-rejected, not parked
 ```
 
@@ -554,15 +596,19 @@ Add:
 ✓ [happy] removes .env and .env.local, keeps .env.example
 ✓ [happy] removes secrets/*.pem/*.key/id_rsa
 ✓ [happy] strips token-bearing .git/config and origin
+✓ [history] shallow clone has no reachable prior commits
+✓ [tracked] a removed tracked secret is not restored and its deletion is publish-blocked
 ✓ [error] assertClean throws (paths only) if a secret remains
 ```
 
 ### `ProviderProxyTest`
 
 ```
-✓ [happy] forwards an OpenAI-compatible request and injects real auth
+✓ [happy] forwards an OpenAI-compatible request and injects Authorization
 ✓ [happy] injects x-opencode-session for Go/Console
-✓ [security] rejects non-loopback peers and missing proxy token
+✓ [happy] injects x-api-key + anthropic-version for Claude and removes Authorization
+✓ [security] rejects non-loopback peers and missing X-Vibecode-Proxy-Token
+✓ [security] strips client Authorization/x-api-key before injecting
 ✓ [security] never logs or returns the real key
 ```
 
@@ -579,11 +625,12 @@ Add:
 ```
 ✓ [happy] picks up, prompts, verifies, commits, pushes, opens PR, sets review
 ✓ [happy] subscribes before prompting (fake server asserts call order)
-✓ [error] verification failure posts redacted output, blocks ticket, never pushes
+✓ [error] verification failure posts redacted output, releases to backlog, never pushes
 ✓ [error] protected path blocks publishing and releases ticket
 ✓ [error] harness startup failure releases ticket and cleans up
 ✓ [security] no PAT, provider key or token shape appears in posted messages/errors
-✓ [lifecycle] status and phase match after pickup, block, release and review
+✓ [lifecycle] status and phase match after pickup, release and review
+✓ [legacy] a pre-existing phase='draft' backlog ticket can still be picked up
 ```
 
 ### `AgentConfigTest` additions
@@ -598,9 +645,11 @@ Add:
 
 ```
 ✓ [pickup] sets status=in_progress and phase=in_progress atomically with assignment
+✓ [pickup] accepts a pre-existing phase='draft' ticket and normalises it
+✓ [backfill] 045 moves status=backlog/phase=draft to phase=backlog
 ✓ [release] sets status=backlog and phase=backlog and clears assignment/lock
 ✓ [review] sets status=review and phase=review
-✓ [block] sets phase=blocked and keeps status=in_progress (no drift)
+✓ [block] sets phase=blocked and keeps status=in_progress (no drift; Phase 2 only)
 ✓ [error] a failed transition rolls back assignment and phase history
 ```
 
@@ -612,7 +661,8 @@ Add:
 2. **Server exits early** — detect process death, capture last 8KB of logs, throw with a redacted message.
 3. **No events** — idle timeout triggers abort; release ticket; no push.
 4. **Empty diff** — no commit/PR; post "no changes" and release.
-5. **Protected path changed** — block publishing; post the paths; release; auth/migrations included.
+5. **Protected path changed** - block publishing; post the paths; release; auth, migrations, `.git/**`,
+   `*.pem`, `*.key` and `id_rsa*` included.
 6. **Verification flake** — Phase 1: fail once, report; no automatic retry (Phase 3 adds retry policy).
 7. **Agent process interrupted** — destroy server/proxy, cleanup workspace, release ticket in `finally`.
 8. **Planning docs missing** — proceed with ticket only; note it in the prompt.
@@ -620,8 +670,12 @@ Add:
 10. **Windows dev** — no OpenCode binary: tests use the fake server; `HARNESS_MODE=legacy` remains usable.
 11. **Unexpected permission request** — auto-reject, log a redacted warning, continue; never stall.
 12. **Secret-shaped output** — `SecretRedactor` redacts before posting; never post raw output.
-13. **Token in git remote** — `WorkspaceSanitizer` removes it and `PublishingGuard` blocks if it appears.
-14. **No safe verification command** — fail clearly; do not publish unverified code.
+13. **Token in git remote** - `WorkspaceSanitizer` removes it and `PublishingGuard` blocks if it appears.
+14. **Secret in git history** - shallow clone, no `git log`/`git show`/`git diff` in the shell
+    allowlist, and the supervisor supplies diffs; the agent cannot reach history content.
+15. **Tracked secret deleted by the sanitizer** - not restored; the deletion is protected, so
+    publishing is blocked (fail-closed).
+16. **No safe verification command** - fail clearly; do not publish unverified code.
 
 ---
 
@@ -640,8 +694,9 @@ Add:
 ## Files NOT to Change (Phase 1)
 
 - `backend/src/**` — **except** the Phase 1 lifecycle sync files listed above
-  (`TicketLifecycleService.js`, `PhaseService.js`, `TicketService.js`). No other backend API/DB changes.
-- `backend/src/migrations/**` — Phase 2 (no schema changes in Phase 1).
+  (`TicketLifecycleService.js`, `PhaseService.js`, `TicketService.js`, `models/ticket.js`) and the
+  data-only `045_backfill_backlog_phase.sql`. No other backend API/schema changes.
+- `backend/src/migrations/**` — Phase 2, except the Phase 1 data backfill `045` (no schema change).
 - `frontend/src/**` — no UI changes in Phase 1.
 - `agent/src/main/java/com/vibecode/agent/service/TicketProcessor.java` — legacy behavior preserved
   (only extract `fetchPlanningDocs` if desired, with identical behavior).
