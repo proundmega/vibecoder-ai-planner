@@ -1,6 +1,6 @@
 # 02_ARCHITECT_DESIGN.md — Autonomous Coding Harness
 
-**Status**: Working draft
+**Status**: planned
 **Author**: AI Assistant
 **Scope**: Both (agent, backend, frontend, infrastructure)
 **Related**: `01_ARCHITECT_REQUIREMENT.md`, `03_ARCHITECT_IMPLEMENTATION.md`, `04_SPECIFICATION.md`
@@ -163,17 +163,20 @@ Implement tool calling, file edits, command execution, context compaction and pe
 
 1. **Pickup** — agent picks a backlog ticket (existing endpoint).
 2. **Workspace** — clone repo, create branch `vibecode/ticket-<id>-<slug>`; clean previous workspace.
-3. **Config** — render a temporary OpenCode config:
-   - provider/model from the planner provider config,
-   - permission rules (see policy matrix),
+3. **Config** — sanitise the workspace, then render a temporary OpenCode config:
+   - provider/model from the planner provider config, pointed at the supervisor's localhost
+     `ProviderProxy` with a per-run dummy key,
+   - permission rules (see policy matrix) with **no `ask` value** in Phase 1,
    - instructions/system prompt,
-   - `question` tool enabled,
+   - `question` tool denied in Phase 1 (enabled in Phase 2),
    - MCP server (optional) for planner reporting,
    - no secrets in the workspace; config lives outside the repo and is deleted after the run.
 4. **Server** — start `opencode serve --hostname 127.0.0.1 --port <random>` with the workspace as cwd;
    health-check `/global/health`; enable basic auth with a per-run random password.
-5. **Session** — create a session; send the prompt; subscribe to `/event`.
-6. **Loop** — map events; enforce budgets; handle forms/permissions; update heartbeat.
+5. **Session** — create a session, **subscribe to `/api/event` first**, then send the prompt
+   asynchronously (`POST /api/session/:id/prompt`). Never send the prompt before the subscription
+   exists; the blocking `/message` endpoint is not used.
+6. **Loop** — map events; enforce budgets; auto-reject unexpected permission requests; update heartbeat.
 7. **Verification** — run the repo's configured verification commands in the workspace
    (`npm test`, `npm run lint`, `npm run typecheck`, `mvn test`, ...) regardless of what the agent ran.
 8. **Publish** — if verification passes and the diff is allowed: commit, push branch, open PR via
@@ -189,8 +192,8 @@ The session prompt tells the harness agent:
 - To inspect code before editing; use search/read tools.
 - To make the smallest coherent change; no unrelated refactors.
 - To follow test-first when the repo requires it; run tests/lint/typecheck.
-- To ask a question with the `question` tool only when a decision is genuinely blocked; otherwise make
-  a reasonable, documented assumption.
+- Phase 1: the `question` tool is disabled; make a reasonable, documented assumption. Phase 2: ask with
+  the `question` tool only when a decision is genuinely blocked.
 - To never run `git push`, `git commit`, merge, or access credentials; the supervisor publishes.
 - To produce a final summary: files changed, tests run, risks, follow-ups.
 
@@ -201,12 +204,13 @@ The session prompt tells the harness agent:
 | `session.created` / server connected | create `agent_sessions` row, heartbeat `starting` |
 | message/tool part update (read/grep/edit) | heartbeat `current_step`; append compact `agent_events`; optional progress message every N tools |
 | `bash` tool start/end | heartbeat; record command + exit code; post message only on failure or long-running commands |
-| form/question created | create `ticket_questions` (kind=question); phase → `blocked`; notification; park |
-| form answered | mark question answered; phase → `in_progress`; reply to OpenCode form endpoint |
-| permission request | policy engine: allow → reply `once/always`; deny → reply `reject`; ask → question (kind=permission) |
+| form/question created (Phase 2) | create `ticket_questions` (kind=question); phase → `blocked`; notification; park |
+| form answered (Phase 2) | mark question answered; phase → `in_progress`; reply to OpenCode form endpoint |
+| permission request (Phase 1) | **never expected** because no `ask` rule exists. If it still arrives, reply `reject` immediately, log a redacted warning, and continue; never block. |
+| permission request (Phase 2) | policy engine: allow → reply `once/always`; deny → reply `reject`; ask → question (kind=permission) |
 | usage update | accumulate tokens/cost into session + usage logs |
 | `session.idle` | run verification; publish or fail |
-| session error | post failure message; phase → `blocked`; notify human; release/retry per policy |
+| session error | post redacted failure message; phase → `blocked`; release/retry per policy (Phase 2 adds notification) |
 | session diff | collect changed files; protected-path check; diff stats |
 
 Exact event names and payloads are pinned by the fake-server contract tests and verified against the
@@ -239,21 +243,28 @@ Agent needs a decision
 
 ### Permission / risk policy
 
-| Operation | Supervised | Standard (default) | Autonomous |
-|---|---|---|---|
-| read/grep/glob/edit inside workspace | allow | allow | allow |
-| run tests/lint/build | ask | allow | allow |
-| run arbitrary shell | ask | ask | allow (deny list still applies) |
-| install dependencies | ask | ask | allow (budgeted) |
-| network fetch / web search | deny | ask | allow |
-| delete files / `rm -rf` | ask | ask | ask |
-| DB migrations / auth / secrets / `.github/` | ask | ask | ask |
-| git push / commit / merge / force-push | deny | deny | deny |
-| read `.env*`, outside workspace | deny | deny | deny |
-| docker / sudo / kubectl / cloud CLIs | deny | deny | deny |
+**Phase 1 is unattended.** Every rule must resolve to `allow` or `deny`; an `ask` rule is a startup
+error. Safe commands are allowlisted, everything else is denied, and any unexpected permission
+request is auto-rejected. The supervised/standard/autonomous matrix arrives with the Phase 2 bridge.
+
+| Operation | Phase 1 (unattended) | Phase 2+ |
+|---|---|---|
+| read/glob/edit inside workspace | allow, except protected/secret paths | policy modes |
+| `grep` | allow (secret files are removed from the workspace before start) | policy modes |
+| run tests/lint/typecheck | allow via safe bash prefixes (`npm test*`, `npm run lint*`, `npm run typecheck*`, `mvn test*`, `pytest*`, `make test*`) | allow/ask per autonomy |
+| other safe read commands | allow (`git status*`, `git diff*`, `git log*`, `ls*`, `rg*`, `find*`) | allow/ask |
+| arbitrary shell, installs, deletes | deny | ask/allow per autonomy |
+| network fetch / web search / subagents | deny | ask/allow |
+| DB migrations / auth / `.github/` / secrets | deny edit; publishing blocked | ask + approval |
+| git push / commit / merge / force-push | deny (supervisor publishes) | deny |
+| read `.env*`, outside workspace | deny; secret files physically absent | deny |
+| docker / sudo / kubectl / cloud CLIs | deny | deny |
+| `question` tool | deny | allow when a bridge exists |
+| `doom_loop` | deny (stop, don't ask) | ask |
 
 `allow` decisions are still subject to the deny list. Deny lists and protected paths are policy config,
-not prompt instructions.
+not prompt instructions. `OpenCodeConfigWriter` validates the generated config and refuses to start if
+it finds any `ask` value in Phase 1.
 
 ### Plan approval gate (risk-based)
 
@@ -266,7 +277,8 @@ not prompt instructions.
 - `max_duration_minutes` (default 45), `max_tokens` (1.5M), `max_cost_usd` ($5),
   `max_tool_calls` (100), `max_files_changed` (20), `max_diff_lines` (800).
 - At 80% of any budget, post a progress message/notification.
-- At 100%, stop the session, mark the ticket `blocked`, ask the human whether to continue.
+- At 100%, stop the session and mark the ticket `blocked`. Phase 1 releases it with a message; Phase 2
+  asks the human whether to continue.
 - Verification commands are configured per project (defaults detected from the repo: `package.json`
   scripts, `pom.xml`, `Makefile`).
 
@@ -276,10 +288,39 @@ Phase 1 hardens the existing per-agent container:
 
 - Non-root user; workspace volume only; no Docker socket.
 - Memory/CPU/pids limits; ephemeral `/tmp`; read-only root where possible.
-- Egress allowlist: AI provider, GitHub API, package registries; deny everything else by default.
-- No GitHub token inside the harness: the supervisor performs clone/push/PR. Provider key only in the
-  temporary server config (mode 0600, deleted after the run).
-- OpenCode permission rules deny `.env`, external directories, `git push`, merges and destructive commands.
+- Egress allowlist: AI provider proxy, GitHub API (supervisor only), package registries; deny everything
+  else by default.
+- **Tokenless clone.** `WorkspaceManager` clones with a one-shot
+  `git -c http.extraHeader="Authorization: Basic <base64(x-access-token:PAT)>"` and never embeds the
+  token in the URL. It does not run `git remote set-url origin <authenticatedUrl>`. Before the harness
+  starts, `origin` is removed (or reset to the unauthenticated URL) and `WorkspaceSanitizer` verifies
+  `.git/config` contains no credential. Supervisor pushes use the same one-shot header. Tests assert
+  the token is absent from `.git/config`, `git remote -v`, workspace files, logs and messages.
+- **Workspace sanitiser.** After clone and before server start, remove `.env`, `.env.*` (keep
+  `.env.example`), `**/secrets/**`, `**/*.pem`, `**/*.key`, `**/id_rsa*`, and any credential files
+  created by tooling. Because the files are physically absent, `read`/`grep`/`cat` cannot leak them.
+  `read`/`edit` rules also deny those globs as defence in depth.
+- **Dependency bootstrap by the supervisor.** The supervisor runs a bounded install (`npm ci` when a
+  lockfile exists, `pip install -r requirements.txt`, or `mvn -q -DskipTests dependency:go-offline`)
+  after sanitising and before the harness starts. This keeps installs out of the agent's bash
+  allowlist and makes verification runnable on a fresh clone. Installs use the package-registry egress
+  allowlist and a timeout; failures are reported before any model call.
+- **Provider-key isolation.** The real key never enters the harness config or process. The supervisor
+  starts a loopback `ProviderProxy` that holds the key, injects `Authorization` and (for Go/Console)
+  `x-opencode-session`, and only accepts requests carrying a per-run proxy token. OpenCode is pointed at
+  `http://127.0.0.1:<proxy-port>/v1` with a dummy key. If the pinned build supports overriding the
+  built-in provider `baseURL`, use it; otherwise use the custom OpenAI-compatible provider and let the
+  proxy add the session header. The proxy is bound to 127.0.0.1, rejects non-loopback peers, and is
+  stopped after the run.
+- **Output redaction.** `SecretRedactor` removes known secret values (PAT, provider key, server
+  password, proxy token) and token-shaped patterns (`ghp_`, `github_pat_`, `oc_sk_`, `sk-`, `Bearer`)
+  from every posted message, event payload, log line and exception. A fake output test proves a token
+  is redacted before posting.
+- **Protected paths.** Phase 1 blocks publishing if the diff touches `.env*`, `.github/workflows/**`,
+  `**/secrets/**`, `backend/src/migrations/**`, `backend/src/middleware/auth*`,
+  `backend/src/services/UserService.js`, or `backend/src/validators/auth*`. Phase 1 has no human gate,
+  so these changes fail and the
+  ticket is released; Phase 3 replaces the hard block with plan/action approval.
 - Secrets scrubbed from event payloads before persistence; log redaction.
 
 Phase 3 may add a nested per-ticket container if stronger isolation is required.
@@ -391,10 +432,16 @@ CREATE TABLE agent_sessions (
   tokens_out BIGINT NOT NULL DEFAULT 0,
   cost_usd NUMERIC(12,6) NOT NULL DEFAULT 0,
   tool_calls INTEGER NOT NULL DEFAULT 0,
+  resumed_from_session_id BIGINT REFERENCES agent_sessions(id) ON DELETE SET NULL,
+  resume_mode VARCHAR(16) CHECK (resume_mode IN ('continue','fresh')),
   metadata JSONB NOT NULL DEFAULT '{}'
 );
 CREATE INDEX idx_agent_sessions_ticket ON agent_sessions(ticket_id, started_at DESC);
 CREATE INDEX idx_agent_sessions_status ON agent_sessions(status);
+-- Idempotency: replayed event batches cannot create a second row for the same harness session.
+CREATE UNIQUE INDEX uq_agent_sessions_external
+  ON agent_sessions(ticket_id, external_session_id)
+  WHERE external_session_id IS NOT NULL;
 
 CREATE TABLE agent_events (
   id BIGSERIAL PRIMARY KEY,
@@ -426,6 +473,10 @@ CREATE TABLE ticket_questions (
 );
 CREATE INDEX idx_ticket_questions_ticket ON ticket_questions(ticket_id, asked_at DESC);
 CREATE INDEX idx_ticket_questions_pending ON ticket_questions(status) WHERE status = 'pending';
+-- Idempotency: the same OpenCode form/permission cannot be inserted twice by event replay.
+CREATE UNIQUE INDEX uq_ticket_questions_external
+  ON ticket_questions(session_id, external_id)
+  WHERE external_id IS NOT NULL;
 
 CREATE TABLE notifications (
   id BIGSERIAL PRIMARY KEY,
@@ -468,7 +519,20 @@ CREATE TABLE agent_policies (
 ALTER TABLE ticket_messages ADD COLUMN IF NOT EXISTS agent_session_id BIGINT
   REFERENCES agent_sessions(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_ticket_messages_session ON ticket_messages(agent_session_id);
+
+-- Heartbeat metadata so the UI can find the active session without an extra lookup.
+ALTER TABLE agent_heartbeats ADD COLUMN IF NOT EXISTS agent_session_id BIGINT
+  REFERENCES agent_sessions(id) ON DELETE SET NULL;
+ALTER TABLE agent_heartbeats ADD COLUMN IF NOT EXISTS current_tool VARCHAR(80);
+ALTER TABLE agent_heartbeats ADD COLUMN IF NOT EXISTS tokens_in BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE agent_heartbeats ADD COLUMN IF NOT EXISTS tokens_out BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE agent_heartbeats ADD COLUMN IF NOT EXISTS cost_usd NUMERIC(12,6) NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_agent_heartbeats_session ON agent_heartbeats(agent_session_id);
 ```
+
+`POST /agents-status/:id/heartbeat` accepts the new optional fields. `PATCH /agent-sessions/:id`
+updates the same heartbeat row, so the session is the source of truth and the heartbeat is a
+projection. Existing agents that send only the old fields remain compatible.
 
 ---
 
@@ -481,6 +545,7 @@ CREATE INDEX IF NOT EXISTS idx_ticket_messages_session ON ticket_messages(agent_
 | POST | `/api/v1/agent-sessions` | Create a session for a ticket |
 | PATCH | `/api/v1/agent-sessions/:id` | Status/heartbeat/usage updates |
 | POST | `/api/v1/agent-sessions/:id/events` | Append event batch (max 50) |
+| POST | `/api/v1/agents-status/:id/heartbeat` | Heartbeat; accepts optional session/tool/token/cost fields |
 | POST | `/api/v1/tickets/:ticketId/questions` | Ask a question / request permission |
 | GET | `/api/v1/tickets/:ticketId/questions/:questionId` | Poll for answer/timeout |
 | POST | `/api/v1/tickets/:ticketId/questions/:questionId/cancel` | Cancel a question |
@@ -491,6 +556,8 @@ CREATE INDEX IF NOT EXISTS idx_ticket_messages_session ON ticket_messages(agent_
 |---|---|---|
 | GET | `/api/v1/tickets/:ticketId/questions` | List questions for a ticket |
 | POST | `/api/v1/tickets/:ticketId/questions/:questionId/answer` | Answer a pending question |
+| GET | `/api/v1/agent-sessions?ticketId=&status=&limit=` | List sessions for a ticket/agent (UI discovery) |
+| GET | `/api/v1/tickets/:ticketId/agent-sessions` | Convenience alias for the ticket Agent tab |
 | GET | `/api/v1/agent-sessions/:id` | Session summary |
 | GET | `/api/v1/agent-sessions/:id/events?after=` | Paginated transcript |
 | GET | `/api/v1/notifications?unread=true` | Notification list |
@@ -502,16 +569,26 @@ Response envelopes remain `{ success, data }` / `{ success:false, error }`.
 
 ### Phase side effects
 
-| Action | Phase transition |
-|---|---|
-| Agent asks question / permission / plan approval | `in_progress → blocked` (or `planning → blocked` for plan approval) |
-| Human answers | `blocked → in_progress` (`blocked → plan_approved` for plan approval) |
-| Verification passes + PR created | `in_progress → review` |
-| Failure after retries | `in_progress → blocked` + question/notification |
-| Human cancels | `blocked → backlog` via release |
+**Decision: `phase` is the source of truth; `status` is derived and updated in the same transaction.**
+`PhaseService.transition` already writes both. Phase 1 adds `backlog` as an explicit phase and routes
+every lifecycle change through `TicketLifecycleService`, which updates assignment, `phase`, `status`
+and `ticket_phases` in one transaction.
 
-`PhaseService.ALLOWED_TRANSITIONS` already supports `in_progress → blocked` and `blocked → in_progress`.
-Add `planning → blocked` and `blocked → plan_approved` for the optional plan gate.
+| Action | Phase | Status | Notes |
+|---|---|---|---|
+| Pickup | `backlog → in_progress` | `in_progress` | assignment set in the same transaction |
+| Agent asks question / permission / plan approval (Phase 2) | `in_progress → blocked` (or `planning → blocked` for plan approval) | `in_progress` | status stays `in_progress` while blocked |
+| Human answers (Phase 2) | `blocked → in_progress` (`blocked → plan_approved` for plan approval) | `in_progress` | |
+| Verification passes + PR created | `in_progress → review` | `review` | no drift |
+| Failure after retries (Phase 2) | `in_progress → blocked` | `in_progress` | + question/notification |
+| Failure in Phase 1 (no human loop) | `in_progress → backlog` | `backlog` | redacted message; release |
+| Release / cancel | `backlog` | `backlog` | clears assignment and lock atomically |
+
+`PhaseService.ALLOWED_TRANSITIONS` gets `backlog: ['in_progress']`, `in_progress: [..., 'backlog']`,
+`blocked: ['in_progress','backlog']`, `review: [...,'backlog']`, and `PHASE_TO_STATUS.backlog = 'backlog'`.
+`TicketService.pickUpTicket/releaseTicket` delegate to `TicketLifecycleService`; direct status-only
+updates are no longer used by the harness. Add `planning → blocked` and `blocked → plan_approved` for
+the optional plan gate in Phase 2.
 
 ---
 
@@ -520,7 +597,9 @@ Add `planning → blocked` and `blocked → plan_approved` for the optional plan
 - **Notification bell** in `App.vue` / global nav: unread count, dropdown, mark read, deep links.
 - **Agent Questions** page (`/agent-questions`) with pending questions across projects.
 - **TicketDetail**:
-  - new **Agent** tab: session status, current step, elapsed time, tokens/cost, timeline, diff summary.
+  - new **Agent** tab: current/recent session from `GET /tickets/:ticketId/agent-sessions`
+    (fallback `GET /agent-sessions?ticketId=`), status, current step/tool, elapsed time, tokens/cost,
+    timeline, diff summary.
   - question card when pending: prompt, options, custom answer, answer button, expiry.
   - live polling every 5s while pending; stop when idle.
 - **PhaseBlocked** view: embed the same question card.
@@ -534,9 +613,16 @@ Add `planning → blocked` and `blocked → plan_approved` for the optional plan
 
 - Agent endpoints are API-key authenticated and scoped to the agent's project.
 - Human endpoints use JWT + project permissions; question answers are validated.
-- Provider/GitHub secrets never enter ticket messages, events, logs, or the workspace.
+- **GitHub token:** never written to `.git/config` or the workspace; clone/push use a one-shot
+  `http.extraHeader` from the supervisor. `WorkspaceSanitizer` verifies the workspace is clean.
+- **Provider key:** only in the supervisor's `ProviderProxy`; the harness holds a dummy per-run key.
+- **Workspace:** `.env*` (except `.env.example`), `**/secrets/**`, `*.pem`, `*.key`, `id_rsa*` are
+  removed before the harness starts. `read`/`edit` permission rules deny them as defence in depth.
+- **Output:** `SecretRedactor` runs before anything is posted or logged; tests use fake tokens.
 - `.env*`, external directories and secret paths are denied by permission rules and the supervisor.
 - Publishing is supervisor-only; branch names validated; no main commits, no force pushes.
+- Phase 1 has no `ask`: safe bash allowlist + deny list, no deadlock, unexpected permission → reject.
+- Protected paths (auth, migrations, workflows, secrets) block publishing in Phase 1.
 - Prompt injection from repository content is treated as untrusted; system prompt and policies both enforce.
 - Event payloads are truncated and redacted; retention 30 days.
 - Rate limits on answer/notification endpoints.
@@ -566,8 +652,10 @@ CI must never call a real model. The fake harness server replays scripted event 
 
 - **OpenCode API drift** → pin version; contract tests; adapter layer.
 - **Cost runaway** → budgets, 80% warnings, hard stop, human resume.
-- **Prompt injection / malicious repo** → sandbox + deny lists + human gate for risky ops.
-- **Secrets leakage** → supervisor-only publishing; no tokens in workspace; redaction.
+- **Prompt injection / malicious repo** → sandbox + deny lists + protected-path publishing block
+  (human approval in Phase 3).
+- **Secrets leakage** → tokenless clone, workspace sanitizer, provider proxy, output redaction;
+  tests assert no PAT/key in `.git/config`, workspace, logs, events or messages.
 - **Question starvation** → notifications, expiry, escalation, unread bell.
 - **Long-running sessions** → heartbeat, wall-clock cap, park/resume.
 - **Agent crash** → orphan reconciliation; unanswered questions remain; retry policy.
@@ -580,10 +668,19 @@ CI must never call a real model. The fake harness server replays scripted event 
 - Human answers just as the question expires → answer endpoint wins if the row is still pending; otherwise 409.
 - Agent asks a question then crashes → question remains pending; next agent run reconciles and can resume or cancel.
 - Two agents pick the same ticket → existing pickup is atomic; supervisor must tolerate failure and skip.
-- Diff is empty → no PR; post "no changes" message and ask/fail.
-- Protected file changed → block publishing, ask human, do not push.
+- Diff is empty → no PR; post "no changes" and release (Phase 1); ask in Phase 2.
+- Protected file changed → block publishing and release (Phase 1); ask/approve in Phase 3.
+  Never push.
 - Verification fails after max retries → no push; ticket blocked with logs.
-- Answer arrives while agent is offline → stored; when a new session starts it reads pending answers.
+- Answer arrives while agent is offline → stored and marked consumed only when a new session starts.
+  **Resume is a fresh session in the same workspace**, not an assumption that the old process is alive:
+  `agent_sessions.resume_mode='fresh'`, `resumed_from_session_id` points at the prior session, and the
+  resume prompt contains the ticket, the answered question, the current diff/status and a summary of
+  the prior session. If the pinned server still exposes the original session and it is alive, the
+  supervisor may use `resume_mode='continue'`; otherwise it always starts fresh.
+  The workspace is kept until the question is answered or a TTL expires; if it was cleaned, the
+  supervisor re-clones the ticket branch and re-applies the saved patch artifact before starting the
+  fresh session. The resume therefore never depends on process state.
 - Provider 401/429 → retry with backoff, then block with a human notification.
 - Server fails to start → fail fast, release ticket, no PR.
 - Workspace path collisions → include agent id + ticket id + random suffix.
@@ -611,8 +708,8 @@ CI must never call a real model. The fake harness server replays scripted event 
 
 ## Pending Scope Items to Present to User
 
-See `01_ARCHITECT_REQUIREMENT.md` — the same ten items apply. They will be presented in the response
-accompanying this plan.
+See `01_ARCHITECT_REQUIREMENT.md` — the same ten items apply. They are presented in the PR #101
+description and in a dedicated PR comment; the `User Notified` column is updated to `Yes (PR #101)`.
 
 ---
 

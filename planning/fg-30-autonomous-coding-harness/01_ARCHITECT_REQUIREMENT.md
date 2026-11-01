@@ -134,19 +134,20 @@ A scan of previous tickets' "Out of Scope" sections found these relevant deferre
 
 | # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
 |---|---|---|---|---|---|
-| 1 | bp-120 | Agent connectivity fixes (double-wrapped provider config, heartbeat listing, Java defensive parsing) — prerequisite for reliable harness provider config | Agent | `bp-120-agent-connectivity-fixes` | ☐ |
-| 2 | bp-121 | Agent IP/CORS/whitelist support for non-localhost agents — needed for remote harness nodes | Agent / Security | `bp-121-agent-connectivity-ip` | ☐ |
-| 3 | bp-71 | Email notification on account lockout — reuse the notification channel for agent questions | Security / UX | `bp-71-email-notifications` | ☐ |
-| 4 | bp-74 | API key rotation/expiry — extend to harness session credentials | Security | `bp-74-session-credentials` | ☐ |
-| 5 | bp-14 | S3 storage for planning artifacts — harness needs planning docs from a stable store | Infrastructure | `bp-14-s3-planning-storage` | ☐ |
-| 6 | bp-53 | Distributed state/cache — active harness sessions across replicas | Infrastructure | `bp-53-harness-session-state` | ☐ |
-| 7 | bp-106 | Log aggregation — ship harness event streams to the aggregation pipeline | Observability | `bp-106-harness-event-shipping` | ☐ |
-| 8 | bp-04 | Usage/billing — per-ticket budget alerts and real-time cost dashboard for harness runs | Observability / Billing | `bp-04-harness-budgets` | ☐ |
-| 9 | fg-13 | FE↔BE contract inconsistencies — new question/notification/session APIs must update `validator.ts` and the contract test | Testing | `fg-13-contract-followup` | ☐ |
-| 10 | bp-99 | Cypress E2E suite is stale and not in Jenkins — new question/notification flows need E2E coverage | Testing | `bp-99-e2e-harness-ui` | ☐ |
+| 1 | bp-120 | Agent connectivity fixes (double-wrapped provider config, heartbeat listing, Java defensive parsing) — prerequisite for reliable harness provider config | Agent | `bp-120-agent-connectivity-fixes` | Yes (PR #101) |
+| 2 | bp-121 | Agent IP/CORS/whitelist support for non-localhost agents — needed for remote harness nodes | Agent / Security | `bp-121-agent-connectivity-ip` | Yes (PR #101) |
+| 3 | bp-71 | Email notification on account lockout — reuse the notification channel for agent questions | Security / UX | `bp-71-email-notifications` | Yes (PR #101) |
+| 4 | bp-74 | API key rotation/expiry — extend to harness session credentials | Security | `bp-74-session-credentials` | Yes (PR #101) |
+| 5 | bp-14 | S3 storage for planning artifacts — harness needs planning docs from a stable store | Infrastructure | `bp-14-s3-planning-storage` | Yes (PR #101) |
+| 6 | bp-53 | Distributed state/cache — active harness sessions across replicas | Infrastructure | `bp-53-harness-session-state` | Yes (PR #101) |
+| 7 | bp-106 | Log aggregation — ship harness event streams to the aggregation pipeline | Observability | `bp-106-harness-event-shipping` | Yes (PR #101) |
+| 8 | bp-04 | Usage/billing — per-ticket budget alerts and real-time cost dashboard for harness runs | Observability / Billing | `bp-04-harness-budgets` | Yes (PR #101) |
+| 9 | fg-13 | FE↔BE contract inconsistencies — new question/notification/session APIs must update `validator.ts` and the contract test | Testing | `fg-13-contract-followup` | Yes (PR #101) |
+| 10 | bp-99 | Cypress E2E suite is stale and not in Jenkins — new question/notification flows need E2E coverage | Testing | `bp-99-e2e-harness-ui` | Yes (PR #101) |
 
 **All items above must be presented to the user before ticket approval.** They are presented in the
-response accompanying this plan.
+PR #101 description and in a dedicated PR comment so the user can accept or defer each one. The
+`User Notified` column is updated to `Yes (PR #101)` after that comment is posted.
 
 ### Deferred Improvements Found (Internal Tracking)
 
@@ -175,7 +176,9 @@ Same list; follow-up directories to be created when the harness foundation is me
 1. **OpenCode server/API stability across versions.** Pin the OpenCode version in the agent image and
    cover the adapter with contract-style tests against a pinned fake server.
 2. **Question/form API shape in the deployed OpenCode version.** The v2 API exposes session forms and
-   permission replies; verify against the pinned OpenAPI spec at `http://<server>/doc` during implementation.
+   permission replies. Pin the version, extract the OpenAPI JSON linked from `/doc` (current versions
+   expose `/v2/openapi.json`) into a checked-in fixture, and assert the exact paths the client uses.
+   Do not rely on the deprecated `/session/:id/permissions/:permissionID` endpoint.
 3. **Provider compatibility.** Not every OpenAI-compatible model handles long tool loops well. Start with
    a verified coding model and keep the model configurable per project.
 4. **Toolchain coverage.** The agent image must include runtimes used by target repos. Start with Node 24,
@@ -197,6 +200,12 @@ Same list; follow-up directories to be created when the harness foundation is me
    per-ticket sandbox containers (stronger, more work).
 7. **Default budgets** — 45 min, 1.5M tokens, $5/ticket, 100 tool calls (recommended; configurable).
 8. **Feature rollout** — `HARNESS_MODE=legacy|opencode` with legacy fallback (recommended).
+9. **Phase 1 permission model** — unattended, no `ask`: safe bash allowlist + deny list + auto-reject
+   fallback (recommended). The alternative, a minimal permission bridge, is Phase 2 because it needs
+   the question/notification loop.
+10. **Credential isolation** — tokenless clone (no PAT in `.git/config`), supervisor-side push auth,
+    localhost provider proxy holding the real key, workspace sanitizer and output redaction
+    (recommended). Putting the key in a temporary config readable by the harness is rejected.
 
 ---
 
@@ -204,39 +213,45 @@ Same list; follow-up directories to be created when the harness foundation is me
 
 ### Harness core (Phase 1)
 
-1. [ ] A backlog ticket can be processed end-to-end by the harness with no human intervention.
-2. [ ] The harness reads repository files, searches code, edits/creates files, runs tests/lint/typecheck and iterates.
+1. [ ] A backlog ticket can be processed end-to-end by the harness with no human intervention and **no permission prompt** (there are no `ask` rules, and any unexpected permission request is auto-rejected).
+2. [ ] The harness reads repository files, searches code, edits/creates files, runs safe test/lint/typecheck commands and iterates.
 3. [ ] A test failure causes the agent to inspect output and retry up to the configured limit.
 4. [ ] The supervisor opens exactly one PR from `vibecode/ticket-<id>-<slug>` and never merges or pushes to main.
-5. [ ] The ticket moves to `review` only after the configured verification commands pass (or a human overrides).
-6. [ ] Heartbeats expose session id, current tool/step, elapsed time, tokens and cost.
-7. [ ] `HARNESS_MODE=legacy` still uses the existing processor; the new path is opt-in.
-8. [ ] Deterministic tests use a fake harness server; CI does not call a real model.
+5. [ ] The ticket moves to `review` only after the configured verification commands pass; `status` and `phase` change atomically.
+6. [ ] The clone and workspace contain no GitHub token; pushes authenticate in the supervisor only.
+7. [ ] The harness cannot read the provider key, `.env*` or secret files; provider calls go through a localhost proxy.
+8. [ ] All posted output, events and logs are redacted; a fake output containing a token is proven redacted.
+9. [ ] Verification autodetection distinguishes Jest from Vitest (and falls back to explicit commands).
+10. [ ] `HARNESS_MODE=legacy` still uses the existing processor; the new path is opt-in.
+11. [ ] Deterministic tests use a fake harness server; CI does not call a real model.
 
 ### Human-in-the-loop (Phase 2)
 
-9. [ ] When the agent asks a question, a `ticket_question` is created, the ticket enters `blocked`, and a notification is produced.
-10. [ ] The human sees the question within one polling interval (≤10s) in the notification bell and ticket view.
-11. [ ] Answering the question persists the answer, transitions the ticket to `in_progress`, and resumes the harness within one polling interval.
-12. [ ] Permission requests follow policy: safe operations auto-approved, dangerous denied, ambiguous asked.
-13. [ ] Questions expire after a configurable timeout and surface an escalation notification.
-14. [ ] All questions/answers are auditable and scoped to the owning project/user.
+12. [ ] When the agent asks a question, a `ticket_question` is created, the ticket enters `blocked`, and a notification is produced.
+13. [ ] The human sees the question within one polling interval (≤10s) in the notification bell and ticket view.
+14. [ ] Answering the question persists the answer, transitions the ticket to `in_progress`, and resumes the harness within one polling interval.
+15. [ ] Heartbeats expose session id, current tool/step, elapsed time, tokens and cost; a ticket/session list endpoint lets the UI find the active session.
+16. [ ] Event replay cannot create duplicate sessions or questions (idempotency keys are enforced by unique indexes).
+17. [ ] Resume is explicit: a new session reads the answered question, the workspace diff and a prior-session summary; it never assumes the old process is alive.
+18. [ ] Permission requests follow policy: safe operations auto-approved, dangerous denied, ambiguous asked (the bridge exists only in Phase 2; Phase 1 has no `ask`).
+19. [ ] Questions expire after a configurable timeout and surface an escalation notification.
+20. [ ] All questions/answers are auditable and scoped to the owning project/user.
 
 ### Autonomy and safety (Phase 3)
 
-15. [ ] Policies enforce max duration, tokens, cost, tool calls, files changed and diff size.
-16. [ ] Changes touching protected paths (auth, migrations, `.github/`, secrets) require human plan/action approval.
-17. [ ] The agent cannot read `.env` files, access outside the workspace, push, merge, or run denied commands.
-18. [ ] A risk-based plan gate exists and can be configured per project.
-19. [ ] Multi-agent mode (architect → builder → reviewer) can be enabled per project without changing the ticket workflow.
+21. [ ] Policies enforce max duration, tokens, cost, tool calls, files changed and diff size.
+22. [ ] Changes touching protected paths (auth, migrations, `.github/`, secrets) require human plan/action approval.
+23. [ ] The agent cannot read `.env` files, access outside the workspace, push, merge, or run denied commands.
+24. [ ] A risk-based plan gate exists and can be configured per project.
+25. [ ] Multi-agent mode (architect → builder → reviewer) can be enabled per project without changing the ticket workflow.
 
 ### Cross-cutting
 
-20. [ ] Backend unit + integration + bash suites pass; frontend unit/component/E2E/contract suites pass.
-21. [ ] Coverage remains ≥60% on both layers.
-22. [ ] OpenAPI spec and generated types are updated.
-23. [ ] Documentation, env examples and Jenkins/CI are updated.
-24. [ ] No secrets appear in logs, events or ticket messages.
+26. [ ] Backend unit + integration + bash suites pass; frontend unit/component/E2E/contract suites pass.
+27. [ ] Coverage remains ≥60% on both layers.
+28. [ ] OpenAPI spec and generated types are updated.
+29. [ ] Documentation, env examples and Jenkins/CI are updated.
+30. [ ] No secrets appear in logs, events or ticket messages.
 
 ---
 
@@ -266,9 +281,19 @@ Same list; follow-up directories to be created when the harness foundation is me
 - [x] Authorization: project-scoped; questions/notifications only visible to project members.
 - [x] Input validation: Joi schemas for answers, policies, session events.
 - [x] Rate limiting: question answers and notification polling.
-- [x] Sensitive data: provider keys and GitHub tokens never logged or stored in events; `.env` denied.
-- [x] Sandbox: non-root, workspace-only, network allowlist, no Docker socket, resource limits.
-- [x] Publishing: branch + PR only; no merge; protected paths gated.
+- [x] Sensitive data: the provider key lives only in the supervisor's provider proxy; the harness gets a
+  per-run dummy token. GitHub auth is held by the supervisor (tokenless clone + one-shot push header).
+  Current `WorkspaceManager.cloneRepo()` embeds the PAT in the clone URL and persists it with
+  `git remote set-url`; Phase 1 replaces that behavior rather than preserving it.
+- [x] Workspace sanitisation: `.env*` (except `.env.example`), secret files and token-bearing
+  `.git/config` entries are removed before the harness starts.
+- [x] Redaction: messages, events, logs and errors pass through `SecretRedactor`; tested with fake
+  output containing PAT/API-key shapes.
+- [x] Sandbox: non-root, workspace-only, `external_directory: deny`, no Docker socket, resource limits.
+- [x] Publishing: branch + PR only; no merge; protected paths (auth, migrations, workflows, secrets)
+  block publishing in Phase 1 and require approval in Phase 3.
+- [x] Phase 1 never uses `ask`: safe bash allowlist + deny list, and any unexpected permission request
+  is auto-rejected rather than blocking the run.
 
 ---
 
@@ -281,8 +306,9 @@ Same list; follow-up directories to be created when the harness foundation is me
 
 ### Backend Tests
 
-- [ ] `backend/src/__tests__/agentSessions.test.js` — create/update session, ownership, auth.
-- [ ] `backend/src/__tests__/questions.test.js` — ask/answer/expire, phase transitions, isolation.
+- [ ] `backend/src/__tests__/agentSessions.test.js` — create/update session, list by ticket, ownership, auth, idempotent external session id.
+- [ ] `backend/src/__tests__/questions.test.js` — ask/answer/expire, phase transitions, isolation, duplicate external id replay.
+- [ ] `backend/src/__tests__/agentHeartbeat.test.js` — optional session/tool/token/cost fields and session-as-heartbeat source.
 - [ ] `backend/src/__tests__/notifications.test.js` — create/list/read, unread count, isolation.
 - [ ] `backend/src/__tests__/agentPolicies.test.js` — CRUD, defaults, validation.
 - [ ] `backend/src/__tests__/integration/agentHarness.test.js` — full ask→answer→resume flow.
@@ -290,12 +316,18 @@ Same list; follow-up directories to be created when the harness foundation is me
 
 ### Agent Tests (Java)
 
-- [ ] `OpenCodeClientTest` — health, session create, prompt, event parsing, permission reply.
+- [ ] `OpenCodeClientTest` — health, session create, async prompt, subscribe-before-prompt timing,
+  event parsing, permission reply and auto-reject fallback.
 - [ ] `EventMapperTest` — tool events → heartbeat/messages/usage.
-- [ ] `PermissionPolicyTest` — allow/ask/deny matrix, protected paths, commands.
+- [ ] `PermissionPolicyTest` — Phase 1 allow/deny matrix, safe bash allowlist, no `ask` values,
+  protected paths, auto-reject.
 - [ ] `PromptBuilderTest` — includes ticket, planning docs, AGENTS.md, definition of done.
 - [ ] `HarnessSessionTest` — fake server produces question → maps to ticket question, resume after answer.
-- [ ] `WorkspaceDiffTest` — collects diff, rejects protected paths, commit/push metadata.
+- [ ] `WorkspaceDiffTest` — collects diff, rejects protected paths, tokenless clone/push metadata.
+- [ ] `SecretRedactorTest` — PAT/API-key/bearer shapes removed from messages, events and errors.
+- [ ] `ProviderProxyTest` — real key never leaves the proxy; harness dummy token works; session header forwarded.
+- [ ] `WorkspaceSanitizerTest` — `.env*`, secrets and `.git/config` credentials removed before start.
+- [ ] `TicketLifecycleSyncTest` (backend) — pickup/release/review/block update status and phase atomically.
 
 ### Frontend Tests
 
@@ -322,6 +354,8 @@ Same list; follow-up directories to be created when the harness foundation is me
 - ❌ Letting the model return whole-file JSON for modifications (destroys unread code).
 - ❌ Letting the agent push/merge directly; publishing belongs to the supervisor.
 - ❌ Storing provider keys, GitHub tokens or `.env` contents in event logs.
+- ❌ Using `ask` permissions in an unattended Phase 1 run (it deadlocks without a bridge).
+- ❌ Persisting a PAT in `.git/config`, or putting the real provider key anywhere the harness can read.
 - ❌ Blocking a poll loop while waiting for a human; use a parked session + polling.
 - ❌ Auto-approving dangerous commands because the model asked nicely.
 - ❌ Creating a second approval system; extend phases/questions/approvals instead.

@@ -19,7 +19,7 @@
 - [x] Assumptions identified and documented in `01` ("Known Unknowns")
 - [x] IN scope / OUT of scope documented
 - [x] Design decisions requiring user input listed in `01` ("Important Design Decisions")
-- [x] Pending scope items from previous tickets listed and presented
+- [x] Pending scope items from previous tickets listed and presented (PR #101 comment, 10 items)
 
 ### Existing Infrastructure Audit
 
@@ -82,8 +82,12 @@
 - [x] Existing patterns to follow documented
 - [x] Testing approach documented
 - [x] Branch identified: `feature/fg-30-autonomous-coding-harness`
-- [ ] Provider key validated (Go key works with `x-opencode-session`; verified 2026-10-31)
-- [ ] GitHub PAT validated (push + admin on `proundmega/gtd`; verified 2026-10-31)
+- [x] Provider key validated (Go key works with `x-opencode-session`; verified 2026-10-31)
+- [x] GitHub PAT validated (push + admin on `proundmega/gtd`; verified 2026-10-31)
+- [x] Phase 1 permission model is genuinely unattended: no `ask` rules, safe bash allowlist, deny list, auto-reject fallback (see `04`)
+- [x] Credential isolation designed: tokenless clone, provider proxy, workspace sanitizer, output redaction (see `02`/`04`)
+- [x] Phase 1 vs Phase 0 scope reconciled; backend lifecycle sync is explicit (see `03`/`04`)
+- [x] Session list, heartbeat metadata, phase/status sync and idempotency have concrete designs (see `02`)
 
 ---
 
@@ -97,7 +101,11 @@
 - [ ] Frontend lint/typecheck/tests/coverage/build pass
 - [ ] Feature flag legacy path verified
 - [ ] Harness path verified on a scratch ticket (PR opened, no merge)
-- [ ] Human question → notification → answer → resume verified
+- [ ] Phase 1 unattended run completes with no permission prompt (safe bash only; denied commands blocked)
+- [ ] Tokenless clone verified: no PAT in `.git/config`, workspace, logs or messages
+- [ ] Provider key never readable by the harness (proxy-only) and output redaction verified
+- [ ] Phase/status stay synchronised on pickup, release, failure, block and review
+- [ ] Human question → notification → answer → resume verified (Phase 2)
 - [ ] Protected paths and denied commands block publishing
 - [ ] No secrets in logs/events/messages
 - [ ] OpenAPI spec and generated types regenerated

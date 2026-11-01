@@ -27,10 +27,15 @@ Implementation is split into four phases. Each phase must be merged and function
 
 | Phase | Ticket | Outcome |
 |---|---|---|
-| 1 | fg-30 | Harness executes a real ticket; verification; PR; feature flag |
-| 2 | TBD | Questions, permissions, notifications, UI, resume |
+| 0 | fg-30 (prerequisite sub-phase) | Provider session header, pinned harness version/spec fixture, smoke test |
+| 1 | fg-30 | Harness executes a real ticket unattended; verification; PR; feature flag |
+| 2 | TBD | Questions, permissions, notifications, UI, resume, sessions/transcripts |
 | 3 | TBD | Policies, budgets, plan gate, multi-agent loop |
 | 4 | TBD | Sandbox hardening, observability, retention |
+
+Phase 0 is a prerequisite **sub-phase of fg-30**, not part of the Phase 1 spec. It is the only place
+where backend provider code (`GenericProvider`) changes. Phase 1 adds the minimal backend lifecycle
+sync described in Step 8a; it adds no DB tables and no frontend. Phases 2–4 have no ticket IDs yet.
 
 ---
 
@@ -52,8 +57,19 @@ Implementation is split into four phases. Each phase must be merged and function
    - *Depends on*: nothing.
 
 2. **Pin the harness version**
-   - Choose an OpenCode version, pin it in `agent/Dockerfile` and add a `HARNESS_VERSION` build arg.
-   - Capture its OpenAPI document (`/doc`) as a test fixture.
+   - Choose an OpenCode version (baseline `1.19.5`), pin it in `agent/Dockerfile` and add a
+     `HARNESS_VERSION` build arg; install that exact version.
+   - Capture its OpenAPI JSON as a test fixture: fetch `/doc`, follow the OpenAPI JSON link it advertises
+     (current versions expose `/v2/openapi.json`), and save it as
+     `agent/src/test/resources/opencode-openapi-<version>.json`. `/doc` itself is an HTML page, not raw
+     JSON, so the extraction script (`agent/scripts/fetch-opencode-spec.ps1`/`.sh`) must parse the link.
+   - Contract tests assert the paths the client uses exist in the fixture:
+     `POST /api/session`, `POST /api/session/{sessionID}/prompt`, `GET /api/event`,
+     `GET /api/session/{sessionID}/diff`,
+     `POST /api/session/{sessionID}/permission/{requestID}/reply`,
+     `POST /api/session/{sessionID}/form/{formID}/reply`.
+   - Do **not** use the deprecated `POST /session/:id/permissions/:permissionID`. If the pinned version
+     lacks a v2 path, stop and update the pin and fixture before writing the client.
    - *Depends on*: nothing.
 
 3. **Provider smoke test**
@@ -64,11 +80,11 @@ Implementation is split into four phases. Each phase must be merged and function
 4. **OpenCode Go session header (prerequisite for legacy provider paths)**
    - OpenCode Go requires `x-opencode-session` on every request; direct calls return
      `400 MissingSessionID` without it.
-   - The harness (OpenCode server) sends this automatically, but the planner's `GenericProvider`
-     and the Java `OpenAiCompatibleProvider` do not.
+   - The harness (OpenCode server or the Phase 1 `ProviderProxy`) sends this automatically, but the
+     planner's `GenericProvider` and the Java `OpenAiCompatibleProvider` do not.
    - Add an optional session-header setting to both providers (or detect the
      `opencode.ai/inference/go` base URL) so the existing provider test and legacy agent can use
-     the same key.
+     the same key. This is the **only backend provider change**, and it belongs to Phase 0.
    - *Depends on*: Step 3.
 
 ---
@@ -82,13 +98,16 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 - Create `HarnessConfig.java`:
   - mode (`legacy`/`opencode`), binary, startup timeout, idle timeout, max duration,
-    verification commands, protected paths, workspace root.
-  - Read from env with defaults; validate.
+    verification commands, protected paths, bash allowlist, permission mode (`unattended`),
+    workspace root.
+  - Read from env with defaults; validate (including rejecting `ask`).
 - Create `HarnessClient.java` interface:
   - `StartResult start(Path workspace, HarnessConfig config)`
   - `String createSession(...)`
-  - `void prompt(sessionId, prompt)`
-  - `Stream<HarnessEvent> events(sessionId)`
+  - `void subscribe(sessionId, Consumer<HarnessEvent> listener)` (call **before** the prompt)
+  - `void promptAsync(sessionId, prompt)` (`POST /api/session/:id/prompt`)
+  - `void replyPermission(sessionId, requestId, reply)` (used for the Phase 1 auto-reject safety path
+    and the Phase 2 bridge)
   - `Diff diff(sessionId)`
   - `void stop()`
 - Create `HarnessEvent.java` (sealed/record types for tool, message, idle, error).
@@ -100,26 +119,70 @@ interaction. Questions are disabled in this phase (the model must make assumptio
   - random free port, `--hostname 127.0.0.1`,
   - `OPENCODE_SERVER_PASSWORD` random per run,
   - `OPENCODE_CONFIG` pointing to a temp config outside the workspace,
-  - `HOME` pointing to a per-run temp directory.
+  - `HOME` pointing to a per-run temp directory,
+  - no provider key in the environment or config; the config points at `ProviderProxy`.
 - Health poll `/global/health` with timeout/backoff.
-- Create session: `POST /session`.
-- Prompt: `POST /session/:id/message` (v2 `/api/session/:id/prompt` if pinned version requires).
-- Events: `GET /event` SSE parsed with OkHttp SSE.
-- Diff: `GET /session/:id/diff` or `git diff` fallback.
-- Stop: delete session, terminate process, delete temp config/home.
+- Create session: `POST /api/session`.
+- **Subscribe before prompting**: open `GET /api/event` (SSE) and wait for the subscription to be
+  established, then call `POST /api/session/:id/prompt` (async). Never use the blocking
+  `/api/session/:id/message` path.
+- Permission events: Phase 1 replies `reject` automatically (no `ask` expected); Phase 2 uses the
+  policy bridge. Use `POST /api/session/:id/permission/:requestID/reply`.
+- Diff: `GET /api/session/:id/diff` or `git diff` fallback.
+- Stop: delete session, terminate process, stop `ProviderProxy`, delete temp config/home.
 - *Depends on*: Step 1.
-- *Tests*: fake HTTP/SSE server.
+- *Tests*: fake HTTP/SSE server, including a timing test that emits tool/idle events immediately after
+  `prompt` and proves the client already subscribed.
 
 ### Step 3: Temporary OpenCode config — `HarnessConfigWriter.java`
 
 - Render `opencode.json` with:
-  - provider/model mapping from the planner provider config,
-  - `permission` rules: deny `git push*`, `git commit*`, `.env*`, `external_directory`; deny `question`
-    in Phase 1; allow read/search/edit/tests; ask for network/installs/deletes,
+  - provider/model mapping pointed at `http://127.0.0.1:<proxy-port>/v1` with a per-run dummy key,
+  - Phase 1 `permission` rules with **no `ask`**:
+    - `read`: allow `*`; deny `**/.env`, `**/.env.*`, `**/secrets/**`, `**/*.pem`, `**/*.key`,
+      `**/id_rsa*`, `**/.git/config`;
+    - `edit`: allow `*`; deny the same plus `**/.github/workflows/**`,
+      `backend/src/migrations/**`, `backend/src/middleware/auth*`,
+      `backend/src/services/UserService.js`, `backend/src/validators/auth*`;
+    - `glob`: allow `*`;
+    - `grep`: allow `*` (secret files are physically removed by `WorkspaceSanitizer`);
+    - `bash`: `"*": "deny"` then allow safe prefixes only:
+      `git status*`, `git diff*`, `git log*`, `git show*`, `ls*`, `pwd*`, `rg*`, `find*`,
+      `npm test*`, `npm run lint*`, `npm run typecheck*`, `npm run build*`, `npx vitest run*`,
+      `npx jest*`, `mvn test*`, `./mvnw test*`, `pytest*`, `python -m pytest*`, `make test*`,
+      `go test*`, `cargo test*`; deny `rm *`, `sudo*`, `docker*`, `kubectl*`, `git push*`,
+      `git commit*`, `git merge*`, `git reset --hard*`, `cat *.env*`, `curl*`/`wget*`;
+    - `webfetch`, `websearch`, `task`, `question`, `external_directory`, `doom_loop`: deny;
   - instructions/AGENTS.md references,
   - optional formatter/LSP settings.
+- `validateUnattended()` scans the rendered JSON and throws if any `ask` value is present.
 - Write outside the workspace (temp dir), mode 0600, delete after run.
 - Never log the API key; redact errors.
+- *Depends on*: Step 2.
+
+### Step 3a: Secure workspace — `WorkspaceSanitizer.java`, `WorkspaceManager` changes
+
+- Clone with `git -c http.extraHeader="Authorization: Basic <base64(x-access-token:PAT)>"`; never embed
+  the token in the URL and never `git remote set-url origin <authenticatedUrl>`.
+- After clone and before server start: remove `origin` (or reset it to the unauthenticated URL), delete
+  `.env`, `.env.*` (keep `.env.example`), `**/secrets/**`, `**/*.pem`, `**/*.key`, `**/id_rsa*`, and any
+  token-bearing config; verify `.git/config` has no `http.extraheader`/token.
+- Supervisor `commitAndPush` uses the same one-shot header; no token is persisted.
+- After sanitising, the supervisor runs a bounded dependency bootstrap (`npm ci` with a lockfile,
+  `pip install -r requirements.txt`, or `mvn -q -DskipTests dependency:go-offline`). The agent's bash
+  allowlist does not include installs; bootstrap failures are reported before the model starts.
+- Add `WorkspaceSanitizerTest` and a test that `git remote -v`/`.git/config` contains no PAT.
+- *Depends on*: Step 2.
+
+### Step 3b: Provider proxy and redaction — `ProviderProxy.java`, `SecretRedactor.java`
+
+- `ProviderProxy` binds to `127.0.0.1:0`, requires a per-run `X-Vibecode-Proxy-Token`, rejects
+  non-loopback peers, injects the real `Authorization` and (for Go) `x-opencode-session`, and forwards
+  OpenAI-compatible requests. The real key exists only in the supervisor's memory.
+- `SecretRedactor` removes known secret values and token-shaped patterns from messages, events, logs
+  and exceptions. Apply it in `ApiService` posting paths and `OpenCodeClient` error handling.
+- Tests: dummy key works, real key never appears in harness config; fake output with `ghp_...`,
+  `github_pat_...`, `oc_sk_...`, `sk-...`, `Bearer ...` is redacted.
 - *Depends on*: Step 2.
 
 ### Step 4: Prompt builder — `PromptBuilder.java`
@@ -140,17 +203,17 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 - Same contract as `TicketProcessor` (`processTicket(Ticket)`), selected by `HARNESS_MODE`.
 - Flow:
-  1. pick up ticket,
-  2. clone repo + branch,
-  3. start server + session,
-  4. send prompt,
-  5. consume events → heartbeat `current_step`, log progress,
+  1. pick up ticket (via `TicketLifecycleService`, atomic phase+status),
+  2. clone repo + branch (tokenless),
+  3. sanitise workspace; start `ProviderProxy`; start server + session,
+  4. **subscribe to events first**, then send the async prompt,
+  5. consume events → heartbeat `current_step`, log progress; auto-reject unexpected permissions,
   6. wait for idle/error with wall-clock timeout,
-  7. run verification commands,
-  8. collect diff; reject protected paths,
-  9. commit/push + PR (reuse `WorkspaceManager`/`GitHubService`),
-  10. update `pr_url`, post summary message, status `review`,
-  11. cleanup (always).
+  7. run verification commands (Jest/Vitest-aware detection),
+  8. collect diff; reject protected paths; redact output,
+  9. commit/push + PR (reuse `WorkspaceManager`/`GitHubService`, one-shot auth header),
+  10. update `pr_url`, post redacted summary, transition to `review` (phase+status atomically),
+  11. cleanup (always: proxy, server, workspace, temp config).
 - On failure: post message with stage + error; release ticket; never push a failed diff.
 - *Depends on*: Steps 2–4.
 
@@ -159,19 +222,29 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 - Execute configured commands sequentially in the workspace with a timeout.
 - Capture exit code + bounded output (last 8KB).
 - Default detection when unset:
-  - `package.json` → `npm test`, `npm run lint`, `npm run typecheck` (if scripts exist),
-  - `pom.xml` → `mvn test`,
-  - `Makefile` → `make test`.
+  - `package.json`: inspect `scripts.test` and devDependencies/config.
+    - Jest (`jest`, `jest.config.*`) → `npm test` (optionally `npm test -- --runInBand`); **never**
+      append `--run`, which is Vitest-only and would break this backend.
+    - Vitest (`vitest`, `vitest.config.*`) → `npm test -- --run`.
+    - If neither is detectable, use the script verbatim and record it; do not guess a flag.
+  - `scripts.lint` → `npm run lint`; `scripts.typecheck` → `npm run typecheck` (only if present).
+  - `pom.xml` → `mvn test -q`; `./mvnw` → `./mvnw test -q`.
+  - `Makefile` with a `test` target → `make test`.
+  - Unknown stack and no `HARNESS_VERIFY_COMMANDS` → fail with a clear "no verification commands"
+    error rather than publishing unverified code.
 - *Depends on*: Step 1.
 - *Tests*: pass/fail/timeout/output truncation/no-command case.
 
 ### Step 7: Publishing — extend `WorkspaceManager` + reuse `GitHubService`
 
 - `collectDiff()` → list of changed/added/deleted files + line stats (`git status --porcelain`, `git diff`).
-- Protected-path check (Phase 1 hardcoded: `.env*`, `**/secrets/**`, `.github/workflows/**`).
-- Commit message `feat: <ticket title> (<ticket id>)`; push branch.
-- PR body: ticket summary, files changed, verification evidence, risks.
+- Protected-path check (Phase 1 hardcoded: `.env*`, `**/secrets/**`, `.github/workflows/**`,
+  `backend/src/migrations/**`, `backend/src/middleware/auth*`, `backend/src/services/UserService.js`,
+  `backend/src/validators/auth*`).
+- Commit message `feat: <ticket title> (<ticket id>)`; push branch with a one-shot auth header.
+- PR body: ticket summary, files changed, verification evidence, risks; all text redacted.
 - Never push when: diff empty, protected path changed, verification failed, or budget exceeded.
+- On block, transition to `blocked` via `TicketLifecycleService` (no status-only update).
 - *Depends on*: Step 5.
 
 ### Step 8: Agent wiring + feature flag — `AgentApp.java`, `AgentConfig.java`
@@ -184,29 +257,49 @@ interaction. Questions are disabled in this phase (the model must make assumptio
   `HARNESS_PROTECTED_PATHS`, `OPENCODE_CONFIG`, `HARNESS_MODEL`.
 - *Depends on*: Step 5.
 
+### Step 8a: Backend lifecycle sync — `TicketLifecycleService.js`, `PhaseService.js`, `TicketService.js`
+
+- Add `backlog` as an explicit phase (`ALLOWED_TRANSITIONS` + `PHASE_TO_STATUS`).
+- `TicketLifecycleService` methods (`pickUp`, `release`, `markReview`, `block`, `resume`) update
+  assignment, `phase`, `status` and `ticket_phases` in one transaction.
+- `TicketService.pickUpTicket/releaseTicket` delegate to it; the harness never calls status-only
+  updates.
+- Tests cover pickup/release/review/block and assert `status` and `phase` never diverge.
+- *Depends on*: Step 5.
+
 ### Step 9: Agent image — `agent/Dockerfile`
 
-- Base: `eclipse-temurin:17-jre-alpine` (keep) + Node 24 (`nodejs`, `npm`) + `git`, `ripgrep`, `bash`,
-  `curl`, `jq`, `python3`, `make`.
-- Install pinned `opencode-ai` globally (`npm i -g opencode-ai@<version>`).
+- Base: **`eclipse-temurin:17-jre-jammy` (glibc)**, not Alpine. OpenCode ships a glibc Linux binary;
+  musl compatibility is not guaranteed. Copy Node 24 from `node:24-bookworm-slim` (binary + lib) or
+  install NodeSource; add `git`, `ripgrep`, `bash`, `curl`, `jq`, `python3`, `make`.
+- `ARG HARNESS_VERSION` and install exactly `npm i -g opencode-ai@${HARNESS_VERSION}`; assert
+  `opencode --version` matches at build time and `ldd $(which opencode)` resolves on glibc.
 - Keep non-root `agent` user; create writable `/repos`, `/tmp/opencode`.
 - Healthcheck unchanged.
+- If the pinned binary turns out to be musl-only, switch the base to Alpine and document it; do not mix
+  a musl binary with a glibc base.
 - *Depends on*: Step 2.
 
 ### Step 10: Tests — fake harness server
 
 - `agent/src/test/java/.../harness/FakeOpenCodeServer.java` using `com.sun.net.httpserver` or
   MockWebServer:
-  - `/global/health`, `/session`, `/session/:id/message`, `/event` (scripted SSE), `/session/:id/diff`.
+  - `/global/health`, `/api/session`, `/api/session/:id/prompt`, `/api/event` (scripted SSE),
+    `/api/session/:id/diff`, `/api/session/:id/permission/:requestID/reply`.
+  - A "fast events" mode that emits tool/idle immediately after prompt, to prove the client subscribed
+    first.
 - Test classes: `PromptBuilderTest`, `VerificationRunnerTest`, `OpenCodeClientTest`,
-  `HarnessTicketProcessorTest`, `PublishingGuardTest`.
+  `HarnessTicketProcessorTest`, `PublishingGuardTest`, `PermissionPolicyTest`,
+  `WorkspaceSanitizerTest`, `ProviderProxyTest`, `SecretRedactorTest`.
+- Backend: `TicketLifecycleSyncTest`, plus lifecycle tests in the existing ticket/phase suites.
 - No live model in CI.
 - *Depends on*: Steps 2–8.
 
 ### Phase 1 exit criteria
 
-- One real ticket on a scratch repo produces a PR.
-- Tests green; no pushes on failure/protected paths.
+- One real ticket on a scratch repo produces a PR with **no permission prompt**.
+- Tests green; no pushes on failure/protected paths; no PAT/key in workspace/logs/messages.
+- Phase and status stay synchronised on pickup, failure, release and review.
 - Feature flag defaults to legacy; documentation updated.
 
 ---
@@ -219,18 +312,23 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 1. Migration `NNN_agent_harness.sql` (+ rollback):
    - `agent_sessions`, `agent_events`, `ticket_questions`, `notifications`, `agent_policies`,
-     `ticket_messages.agent_session_id`.
+     `ticket_messages.agent_session_id`;
+   - `agent_heartbeats.agent_session_id/current_tool/tokens_in/tokens_out/cost_usd`;
+   - `agent_sessions.resumed_from_session_id/resume_mode`;
+   - unique indexes `uq_agent_sessions_external` and `uq_ticket_questions_external`.
 2. Services:
-   - `AgentSessionService` (create/update/heartbeat/events/orphan reconciliation),
-   - `QuestionService` (ask/answer/expire/cancel + phase transitions + notifications),
+   - `AgentSessionService` (create/update/heartbeat/events/orphan reconciliation, list by ticket),
+   - `QuestionService` (ask/answer/expire/cancel + phase transitions + notifications, idempotent ask),
    - `NotificationService` (create/list/mark read),
    - `AgentPolicyService` (Phase 3-ready defaults).
 3. Routes + validators + OpenAPI JSDoc:
    - agent endpoints under `/api/v1` with `verifyTokenOrAgent`,
    - human endpoints with JWT + `requireAnyPermission`,
+   - `GET /agent-sessions?ticketId=` and `GET /tickets/:ticketId/agent-sessions`,
+   - extend `POST /agents-status/:id/heartbeat` with the new optional fields,
    - answer/notification rate limits.
 4. `PhaseService`: allow `planning → blocked`, `blocked → plan_approved`.
-5. Tests: unit, integration (ask→answer→phase), bash suite.
+5. Tests: unit, integration (ask→answer→phase), idempotency/replay, bash suite.
 
 ### Agent
 
@@ -239,9 +337,13 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 2. `PermissionBridge`: map permission requests → policy engine or question; reply once/always/reject.
 3. `SessionReporter`: create/update session, batch events (500ms/20 events), usage.
 4. Enable the `question` tool and policy permissions.
-5. Resume flow: on startup, find `waiting_human` sessions with answered questions, continue session;
-   orphaned sessions → failed.
-6. Heartbeat includes session id/current tool/tokens.
+5. Resume flow: on startup, find `waiting_human` sessions with answered questions. If the original
+   OpenCode session is still alive, use `resume_mode='continue'`; otherwise start a **fresh session in
+   the same workspace** with `resume_mode='fresh'`, `resumed_from_session_id`, the answer, the current
+   diff/status and a summary of the prior session. Orphaned sessions → failed; unanswered questions
+   stay pending.
+6. Heartbeat includes session id/current tool/tokens/cost; `PATCH /agent-sessions/:id` is the source of
+   truth and also updates the heartbeat row.
 
 ### Frontend
 
@@ -258,7 +360,11 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 - Agent asks a question; ticket becomes blocked; bell shows unread; answer resumes the session;
   ticket returns to in_progress; answer is auditable.
 - Permission requests respect policy and are answerable.
-- No duplicate questions; expiry produces an escalation.
+- No duplicate questions or sessions on event replay (unique indexes + upserts).
+- The Agent tab finds the active session through the ticket/session list endpoint; heartbeat shows
+  session id, tool, tokens and cost.
+- A restart resumes with an explicit `continue` or `fresh` mode and the answer in the prompt.
+- Expiry produces an escalation.
 
 ---
 
@@ -299,7 +405,8 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 #### `agent/src/main/java/com/vibecode/agent/harness/OpenCodeClient.java` (CREATE)
 - OkHttp + SSE.
-- Methods: `health`, `createSession`, `sendPrompt`, `subscribe`, `getDiff`, `deleteSession`, `close`.
+- Methods: `health`, `createSession`, `subscribe`, `awaitSubscribed`, `sendPromptAsync`,
+  `replyPermission`, `getDiff`, `deleteSession`, `close`.
 - Redacts `Authorization`/keys from exceptions.
 
 #### `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java` (CREATE)
@@ -324,7 +431,27 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 #### `agent/src/main/java/com/vibecode/agent/service/WorkspaceManager.java` (MODIFY)
 - Add `getRepoDir()`, `collectDiff()`, `runCommand()` helper (or keep commands in VerificationRunner).
-- Preserve clone/write/commit/push.
+- **Replace token-in-URL clone** with a one-shot `http.extraHeader`; do not persist the PAT in
+  `.git/config`; remove/reset `origin` before the harness starts; push with the same header.
+- Add `WorkspaceSanitizer` invocation before the harness starts.
+
+#### `agent/src/main/java/com/vibecode/agent/harness/WorkspaceSanitizer.java` (CREATE)
+- Remove `.env*` (except `.env.example`), secrets, key files and token-bearing git config; verify.
+
+#### `agent/src/main/java/com/vibecode/agent/harness/ProviderProxy.java` (CREATE)
+- Loopback-only, per-run token, injects the real provider auth/session header; the harness gets a dummy key.
+
+#### `agent/src/main/java/com/vibecode/agent/harness/SecretRedactor.java` (CREATE)
+- Redact known values and token-shaped patterns from messages, events, logs and errors.
+
+#### `backend/src/services/TicketLifecycleService.js` (CREATE, Phase 1)
+- Atomic pickup/release/review/block/resume: assignment + phase + status + phase history.
+
+#### `backend/src/services/PhaseService.js`, `backend/src/services/TicketService.js` (MODIFY, Phase 1)
+- Add `backlog` phase; delegate lifecycle changes to `TicketLifecycleService`; no status-only drift.
+
+#### `backend/src/api/v1/agentHeartbeat.js`, `backend/src/services/HeartbeatService.js` (MODIFY, Phase 2)
+- Optional session/tool/token/cost fields; session updates project into the heartbeat row.
 
 #### `backend/src/migrations/NNN_agent_harness.sql` (CREATE)
 - Tables/columns from 02; rollback file.
@@ -387,10 +514,16 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 #### Agent tests
 - [ ] `PromptBuilderTest` — ticket/planning/AGENTS/definition-of-done; secret redaction; truncation.
-- [ ] `VerificationRunnerTest` — success/failure/timeout/output cap.
-- [ ] `PublishingGuardTest` — empty/protected/oversize diff.
-- [ ] `OpenCodeClientTest` — health, session, prompt, SSE parse, diff, shutdown.
-- [ ] `HarnessTicketProcessorTest` — happy path + failure cleanup + no PR on failure.
+- [ ] `VerificationRunnerTest` — success/failure/timeout/output cap; Jest vs Vitest detection.
+- [ ] `PublishingGuardTest` — empty/protected (incl. auth/migrations)/oversize diff.
+- [ ] `OpenCodeClientTest` — health, session, async prompt, subscribe-before-prompt timing, SSE parse,
+      permission reply/auto-reject, diff, shutdown.
+- [ ] `PermissionPolicyTest` — no `ask` values, safe bash allowlist, deny list, auto-reject.
+- [ ] `WorkspaceSanitizerTest` — `.env*`/secrets/git credentials removed; `.env.example` kept.
+- [ ] `ProviderProxyTest` — loopback-only, dummy token, real key isolated, session header forwarded.
+- [ ] `SecretRedactorTest` — PAT/key/bearer shapes removed from messages/events/errors.
+- [ ] `HarnessTicketProcessorTest` — happy path + failure cleanup + no PR on failure + redacted output.
+- [ ] Backend `TicketLifecycleSyncTest` — status/phase atomic on pickup/release/review/block.
 
 #### Backend tests (Phase 2)
 - [ ] `questions.test.js` — ask/answer/expire/cancel, phases, 404/403/409, ownership.
@@ -427,9 +560,13 @@ agent/Dockerfile                                      → MODIFY (Node/OpenCode/
 agent/pom.xml                                         → MODIFY (okhttp-sse, test deps)
 agent/src/main/java/com/vibecode/agent/AgentApp.java  → MODIFY
 agent/src/main/java/com/vibecode/agent/config/AgentConfig.java → MODIFY
-agent/src/main/java/com/vibecode/agent/harness/*      → CREATE
-agent/src/main/java/com/vibecode/agent/service/WorkspaceManager.java → MODIFY
+agent/src/main/java/com/vibecode/agent/harness/*      → CREATE (incl. ProviderProxy, SecretRedactor, WorkspaceSanitizer)
+agent/src/main/java/com/vibecode/agent/service/WorkspaceManager.java → MODIFY (tokenless clone/push)
 agent/src/test/java/com/vibecode/agent/harness/*      → CREATE
+agent/scripts/fetch-opencode-spec.sh|ps1               → CREATE (fixture extraction)
+agent/src/test/resources/opencode-openapi-<version>.json → CREATE (pinned spec)
+agent/Dockerfile                                      → MODIFY (glibc + HARNESS_VERSION)
+agent/src/main/java/com/vibecode/agent/service/OpenAiCompatibleProvider.java → MODIFY (Phase 0 session header)
 ```
 
 **Backend**
@@ -437,17 +574,22 @@ agent/src/test/java/com/vibecode/agent/harness/*      → CREATE
 backend/src/migrations/NNN_agent_harness.sql          → CREATE
 backend/src/migrations/NNN_agent_harness_rollback.sql → CREATE
 backend/src/migrations/apply.js                       → MODIFY
-backend/src/services/AgentSessionService.js           → CREATE
-backend/src/services/QuestionService.js               → CREATE
-backend/src/services/NotificationService.js           → CREATE
-backend/src/services/AgentPolicyService.js            → CREATE
-backend/src/services/PhaseService.js                  → MODIFY
-backend/src/api/agentSessions.js                      → CREATE
-backend/src/api/notifications.js                      → CREATE
-backend/src/api/agentPolicies.js                      → CREATE
+backend/src/services/TicketLifecycleService.js        → CREATE (Phase 1)
+backend/src/services/PhaseService.js                  → MODIFY (Phase 1: backlog phase)
+backend/src/services/TicketService.js                 → MODIFY (Phase 1: delegate pickup/release)
+backend/src/services/AgentSessionService.js           → CREATE (Phase 2)
+backend/src/services/QuestionService.js               → CREATE (Phase 2)
+backend/src/services/NotificationService.js           → CREATE (Phase 2)
+backend/src/services/AgentPolicyService.js            → CREATE (Phase 2)
+backend/src/services/HeartbeatService.js              → MODIFY (Phase 2: session/tool/tokens)
+backend/src/api/agentSessions.js                      → CREATE (Phase 2, incl. list by ticket)
+backend/src/api/notifications.js                      → CREATE (Phase 2)
+backend/src/api/agentPolicies.js                      → CREATE (Phase 2)
+backend/src/api/v1/agentHeartbeat.js                  → MODIFY (Phase 2 schema)
 backend/src/api/v1/index.js                           → MODIFY
 backend/src/validators/agentHarness.js                → CREATE
 backend/src/api/openapi-spec.js                       → MODIFY (discovery)
+backend/src/providers/generic/index.js                → MODIFY (Phase 0 session header)
 ```
 
 **Frontend**
@@ -486,11 +628,14 @@ See 01. Present all ten items before approval.
 
 ### i) Code Review Checklist
 
-- [ ] Harness cannot push/merge; supervisor publishes.
-- [ ] No secrets in config, events, logs, messages, or workspace.
-- [ ] Protected paths/commands enforced outside the model.
-- [ ] Session/questions/notifications scoped to project.
-- [ ] Phase transitions valid and idempotent.
+- [ ] Harness cannot push/merge; supervisor publishes with a one-shot auth header.
+- [ ] No PAT in `.git/config`; no provider key readable by the harness; no secrets in config, events,
+      logs, messages or workspace.
+- [ ] Phase 1 config has no `ask`; safe bash allowlist and deny list; unexpected permission auto-rejected.
+- [ ] Subscribe happens before the async prompt; fast-event test proves no events are missed.
+- [ ] Protected paths/commands enforced outside the model (auth, migrations, workflows, secrets).
+- [ ] Session/questions/notifications scoped to project; session list finds the active session.
+- [ ] Phase transitions valid, atomic with status, and idempotent (unique external IDs).
 - [ ] Question answer race handled (answered vs expired).
 - [ ] Cleanup on every path (server, workspace, temp config).
 - [ ] Feature flag and legacy path preserved.
@@ -502,11 +647,12 @@ See 01. Present all ten items before approval.
 ### j) Post-Deploy Verification
 
 1. [ ] `HARNESS_MODE=legacy` still processes a ticket.
-2. [ ] `HARNESS_MODE=opencode` processes a scratch ticket and opens a PR.
+2. [ ] `HARNESS_MODE=opencode` processes a scratch ticket unattended and opens a PR (no permission prompt).
 3. [ ] Verification failure blocks publishing.
-4. [ ] Protected path change blocks publishing.
-5. [ ] Agent asks a question; bell/question card appears; answer resumes; ticket returns to in_progress.
-6. [ ] Question expiry escalates and aborts the session.
-7. [ ] Budget threshold pauses with a question.
-8. [ ] No secrets in logs/events.
-9. [ ] All suites (backend, agent, frontend, bash, E2E) pass.
+4. [ ] Protected path change blocks publishing; no token in `.git/config` or logs.
+5. [ ] Phase/status match after pickup, failure, release and review.
+6. [ ] Agent asks a question; bell/question card appears; answer resumes; ticket returns to in_progress.
+7. [ ] Question expiry escalates and aborts the session.
+8. [ ] Budget threshold pauses with a question.
+9. [ ] No secrets in logs/events; no PAT in `.git/config`.
+10. [ ] All suites (backend, agent, frontend, bash, E2E) pass.
