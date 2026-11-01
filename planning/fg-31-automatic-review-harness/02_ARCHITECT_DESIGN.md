@@ -144,6 +144,7 @@ CREATE TABLE ticket_review_findings (
   line INT,
   message TEXT NOT NULL,
   suggestion TEXT,
+  resolved_at TIMESTAMPTZ, -- set by fg-32 when the finding is consumed/fixed
   UNIQUE (attempt_id, finding_key)
 );
 ```
