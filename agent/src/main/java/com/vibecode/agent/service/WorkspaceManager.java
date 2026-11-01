@@ -1,31 +1,55 @@
 package com.vibecode.agent.service;
 
 import com.vibecode.agent.harness.DiffSummary;
+import com.vibecode.agent.harness.EnvironmentSanitizer;
 import com.vibecode.agent.model.FileOperation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
  * Manages the local git workspace for the agent.
  * Handles cloning repos, writing files, git operations, and commit/push.
+ *
+ * <p>The cloned repository is treated as hostile. Git is always invoked with
+ * hooks, fsmonitor and the user/system config disabled, the local
+ * {@code .git/config} is restored from a supervisor-owned snapshot before any
+ * publish operation, and subprocesses only receive an allowlisted environment.</p>
  */
 public class WorkspaceManager {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceManager.class);
+
+    /**
+     * Options applied to every supervisor git invocation. {@code --no-verify}
+     * is also passed to commit/push; together they prevent agent-authored hooks
+     * from running in the supervisor's environment.
+     */
+    private static final List<String> SAFE_GIT_OPTIONS = List.of(
+        "-c", "core.hooksPath=/dev/null",
+        "-c", "core.fsmonitor=false",
+        "-c", "core.pager=cat",
+        "-c", "advice.detachedHead=false"
+    );
+
+    private static final int MAX_COUNTED_LINES = 1_000_000;
 
     private Path repoDir;
     private final String gitBinary;
@@ -33,11 +57,14 @@ public class WorkspaceManager {
     private final String githubToken;
     private final Path credentialHelperScript;
     private final String repoCloneDir;
+    private final Path cloneRoot;
     private final String repoName;
     private String authenticatedRemoteUrl;
+    private String trustedGitConfig;
 
     public WorkspaceManager(String repoCloneDir, String repoName, boolean dryRun, String githubToken) {
         this.repoCloneDir = repoCloneDir;
+        this.cloneRoot = Paths.get(repoCloneDir).toAbsolutePath().normalize();
         this.repoName = repoName;
         this.gitBinary = "git";
         this.dryRun = dryRun;
@@ -48,7 +75,7 @@ public class WorkspaceManager {
 
     private Path generateRepoDir() {
         String uniqueName = UUID.randomUUID().toString().substring(0, 8) + "-" + sanitizePath(repoName);
-        return Paths.get(repoCloneDir, uniqueName);
+        return Paths.get(repoCloneDir, uniqueName).toAbsolutePath().normalize();
     }
 
     public Path getRepoDir() {
@@ -65,26 +92,18 @@ public class WorkspaceManager {
             log.info("[DRY RUN] Would clone {} to {}", repoUrl, repoDir);
             return;
         }
+        assertSafeToDelete(repoDir);
 
         // Remove existing directory if present (from failed previous attempt)
-        if (Files.exists(repoDir)) {
+        if (Files.exists(repoDir, LinkOption.NOFOLLOW_LINKS)) {
             log.info("Removing existing directory: {}", repoDir);
             try {
                 deletePath(repoDir);
             } catch (IOException e) {
                 log.warn("Java delete failed, trying shell rm -rf: {}", e.getMessage());
-                try {
-                    ProcessBuilder rmPb = new ProcessBuilder("rm", "-rf", repoDir.toString());
-                    rmPb.redirectErrorStream(true);
-                    Process rmProcess = rmPb.start();
-                    rmProcess.waitFor();
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    log.error("rm -rf interrupted while deleting: {}", repoDir);
-                    throw new IOException("Delete interrupted: " + repoDir, ie);
-                }
+                runDeleteFallback();
             }
-            if (Files.exists(repoDir)) {
+            if (Files.exists(repoDir, LinkOption.NOFOLLOW_LINKS)) {
                 log.error("Directory still exists after delete, aborting clone");
                 throw new IOException("Failed to remove existing directory: " + repoDir);
             }
@@ -94,78 +113,131 @@ public class WorkspaceManager {
         Files.createDirectories(repoDir.getParent());
 
         // Clone without authentication first (works for public repos)
-        // or with credential helper configured for private repos
+        // or with a token configured for private repos. The token is removed
+        // from .git/config immediately after cloning.
         if (githubToken != null && !githubToken.isBlank() && repoUrl.startsWith("https://github.com/")) {
-            // Clone with token embedded in URL for authentication
             String authenticatedUrl = repoUrl.replace("https://github.com/", "https://" + githubToken + "@github.com/");
-            ProcessBuilder pb = new ProcessBuilder(
-                gitBinary, "clone", authenticatedUrl, repoDir.toString()
-            );
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-            
-            String output = readProcessOutput(process);
-            int exitCode;
             try {
-                exitCode = process.waitFor();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IOException("Clone interrupted: " + e.getMessage());
+                runGitAt(repoDir.getParent(), "clone", authenticatedUrl, repoDir.toString());
+            } catch (IOException e) {
+                throw new IOException("Git clone failed: " + redact(e.getMessage()), e);
             }
-            
-            if (exitCode != 0) {
-                throw new IOException("Git clone failed: " + redact(output));
-            }
-            
-            // Keep the token out of .git/config: the harness runs in this
-            // workspace and must never be able to read the GitHub credential.
-            // The supervisor reuses authenticatedUrl only for its own push.
             this.authenticatedRemoteUrl = authenticatedUrl;
             runGit("remote", "set-url", "origin", stripCredentials(authenticatedUrl));
         } else {
             this.authenticatedRemoteUrl = null;
-            ProcessBuilder pb = new ProcessBuilder(gitBinary, "clone", repoUrl, repoDir.toString());
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-            
-            String output = readProcessOutput(process);
-            int exitCode;
-            try {
-                exitCode = process.waitFor();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IOException("Clone interrupted: " + e.getMessage());
-            }
-            
-            if (exitCode != 0) {
-                throw new IOException("Git clone failed: " + output);
-            }
+            runGitAt(repoDir.getParent(), "clone", repoUrl, repoDir.toString());
         }
 
         // Create and checkout the target branch
-        ProcessBuilder checkoutPb = new ProcessBuilder(gitBinary, "checkout", "-b", branchName);
-        checkoutPb.directory(repoDir.toFile());
-        checkoutPb.redirectErrorStream(true);
-        Process checkoutProcess = checkoutPb.start();
-        
-        String checkoutOutput = readProcessOutput(checkoutProcess);
-        int checkoutExitCode;
-        try {
-            checkoutExitCode = checkoutProcess.waitFor();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Checkout interrupted: " + e.getMessage());
-        }
-        
-        if (checkoutExitCode != 0) {
-            throw new IOException("Git checkout failed: " + checkoutOutput);
-        }
-        
+        runGit("checkout", "-b", branchName);
+
+        // Snapshot the supervisor-owned git config. The harness can modify
+        // .git/config with bash, so publishing restores this snapshot first.
+        captureTrustedGitConfig();
+
         log.info("Successfully cloned repo to {} and created branch {}", repoDir, branchName);
     }
 
     /**
-     * Write multiple files to the workspace.
+     * Stage every change, commit and push. Publishing always restores the
+     * trusted git config and runs git with hooks disabled.
+     */
+    public String commitAndPush(String message, String branchName) throws IOException {
+        return commitAndPushInternal(message, branchName, true);
+    }
+
+    /**
+     * Publish a tree the supervisor already staged (after the publishing guard
+     * ran). Re-staging here would allow a leftover background process to inject
+     * files between the guard and the commit.
+     */
+    public String commitAndPushStaged(String message, String branchName) throws IOException {
+        return commitAndPushInternal(message, branchName, false);
+    }
+
+    private String commitAndPushInternal(
+        String message,
+        String branchName,
+        boolean stageFirst
+    ) throws IOException {
+        if (dryRun) {
+            log.info("[DRY RUN] Would commit and push: {}", message);
+            return "dry-run-sha";
+        }
+
+        hardenGitRepository();
+
+        // Configure git identity if not already set (after restoring config).
+        runGit("config", "user.email", "agent@vibecode.ai");
+        runGit("config", "user.name", "Vibecode Agent");
+
+        if (stageFirst) {
+            stageAll();
+        }
+
+        // --no-verify is redundant with core.hooksPath=/dev/null, but keeps the
+        // invariant obvious if an option is ever removed.
+        runGit("commit", "--no-verify", "-m", message);
+
+        // Pushing to an authenticated URL means git has no remote-tracking ref,
+        // so plain --force-with-lease is always rejected ("stale info") for an
+        // existing branch. Resolve the remote SHA explicitly and pass it as the
+        // lease expectation. A retry may overwrite a branch that has not moved.
+        String pushTarget = authenticatedRemoteUrl != null && !authenticatedRemoteUrl.isBlank()
+            ? authenticatedRemoteUrl
+            : "origin";
+        String remoteSha = remoteBranchSha(pushTarget, branchName);
+        String lease = "--force-with-lease=refs/heads/" + branchName + ":"
+            + (remoteSha == null ? "" : remoteSha);
+        runGit("push", "--no-verify", pushTarget, "HEAD:refs/heads/" + branchName, lease);
+
+        return getCommitSha();
+    }
+
+    /**
+     * Stage everything so the guard inspects the exact tree that will be
+     * committed. Callers should close the harness before invoking this.
+     */
+    public void stageAll() throws IOException {
+        if (dryRun) {
+            return;
+        }
+        hardenGitRepository();
+        runGit("add", "-A");
+    }
+
+    /**
+     * Get the current commit SHA.
+     */
+    public String getCommitSha() throws IOException {
+        if (dryRun) {
+            return "dry-run-sha";
+        }
+        return runGitCommand("rev-parse", "HEAD");
+    }
+
+    /**
+     * Get the list of files in the repo (for AI context).
+     */
+    public List<String> getRepoFileList() throws IOException {
+        if (repoDir == null || !Files.exists(repoDir)) {
+            return List.of();
+        }
+
+        try (var stream = Files.walk(repoDir)) {
+            return stream
+                .filter(path -> !Files.isSymbolicLink(path))
+                .filter(Files::isRegularFile)
+                .filter(path -> !path.toString().contains("/.git/"))
+                .map(path -> repoDir.relativize(path).toString())
+                .collect(Collectors.toList());
+        }
+    }
+
+    /**
+     * Write multiple files to the workspace. Used by the legacy one-shot path
+     * only; the harness edits the workspace directly.
      */
     public void writeFiles(List<FileOperation> files) throws IOException {
         if (files == null || files.isEmpty()) {
@@ -184,68 +256,17 @@ public class WorkspaceManager {
         for (FileOperation fileOp : files) {
             writeSingleFile(fileOp);
         }
-        
+
         log.info("Wrote {} files to workspace", files.size());
     }
 
-    /**
-     * Stage all changes, commit, and push to remote.
-     */
-    public String commitAndPush(String message, String branchName) throws IOException {
-        if (dryRun) {
-            log.info("[DRY RUN] Would commit and push: {}", message);
-            return "dry-run-sha";
-        }
-
-        // Configure git identity if not already set
-        runGit("config", "user.email", "agent@vibecode.ai");
-        runGit("config", "user.name", "Vibecode Agent");
-
-        // git add -A
-        runGit("add", "-A");
-
-        // git commit
-        runGit("commit", "-m", message);
-
-        // Push with the authenticated URL in memory instead of persisting the
-        // token in the workspace remote.
-        String pushTarget = authenticatedRemoteUrl != null && !authenticatedRemoteUrl.isBlank()
-            ? authenticatedRemoteUrl
-            : "origin";
-        runGit("push", pushTarget, "HEAD:" + branchName, "--force-with-lease");
-
-        // git rev-parse HEAD
-        return getCommitSha();
-    }
-
-    /**
-     * Get the current commit SHA.
-     */
-    public String getCommitSha() throws IOException {
-        if (dryRun) {
-            return "dry-run-sha";
-        }
-        return runGitCommand("rev-parse", "HEAD");
-    }
-
-    /**
-     * Get the list of files in the repo (for AI context).
-     */
-    public List<String> getRepoFileList() throws IOException {
-        if (!Files.exists(repoDir)) {
-            return List.of();
-        }
-        
-        return Files.walk(repoDir)
-            .filter(Files::isRegularFile)
-            .filter(p -> !p.toString().contains("/.git/"))
-            .map(p -> repoDir.relativize(p).toString())
-            .collect(Collectors.toList());
-    }
-
     private void writeSingleFile(FileOperation fileOp) throws IOException {
-        Path targetPath = repoDir.resolve(fileOp.getPath());
-        
+        Path root = repoDir.toAbsolutePath().normalize();
+        Path targetPath = root.resolve(fileOp.getPath()).normalize();
+        if (!targetPath.startsWith(root)) {
+            throw new IOException("Refusing to write outside the workspace: " + fileOp.getPath());
+        }
+
         // Create parent directories if needed
         Files.createDirectories(targetPath.getParent());
 
@@ -259,9 +280,9 @@ public class WorkspaceManager {
                     log.info("Wrote file: {}", fileOp.getPath());
                 }
                 break;
-                
+
             case DELETE:
-                if (Files.exists(targetPath)) {
+                if (Files.exists(targetPath, LinkOption.NOFOLLOW_LINKS)) {
                     Files.delete(targetPath);
                     log.info("Deleted file: {}", fileOp.getPath());
                 }
@@ -274,13 +295,23 @@ public class WorkspaceManager {
     }
 
     private String runGitCommand(String... args) throws IOException {
-        String[] fullArgs = new String[args.length + 1];
-        fullArgs[0] = gitBinary;
-        System.arraycopy(args, 0, fullArgs, 1, args.length);
-        ProcessBuilder pb = new ProcessBuilder(fullArgs);
-        pb.directory(repoDir.toFile());
+        if (repoDir == null) {
+            throw new IOException("Workspace has not been cloned");
+        }
+        return runGitAt(repoDir, args);
+    }
+
+    private String runGitAt(Path directory, String... args) throws IOException {
+        List<String> command = new ArrayList<>();
+        command.add(gitBinary);
+        command.addAll(SAFE_GIT_OPTIONS);
+        command.addAll(List.of(args));
+
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.directory(directory.toFile());
         pb.redirectErrorStream(true);
-        
+        applyGitEnvironment(pb.environment());
+
         Process process = pb.start();
         String output = readProcessOutput(process);
         int exitCode;
@@ -290,26 +321,41 @@ public class WorkspaceManager {
             Thread.currentThread().interrupt();
             throw new IOException("Git command interrupted: " + e.getMessage());
         }
-        
+
         if (exitCode != 0) {
             throw new IOException("git " + redact(String.join(" ", args))
                 + " failed: " + redact(output));
         }
-        
+
         // Strip only trailing whitespace: `git status --porcelain` encodes the
         // staged/worktree state in the first two columns, which must be kept.
         return output.stripTrailing();
     }
 
+    private void applyGitEnvironment(java.util.Map<String, String> environment) {
+        EnvironmentSanitizer.sanitize(environment);
+        // Ignore supervisor ~/.gitconfig and /etc/gitconfig. This removes global
+        // credential helpers, URL rewriting (url.*.insteadOf) and filters.
+        environment.put("GIT_CONFIG_NOSYSTEM", "1");
+        environment.put("GIT_CONFIG_GLOBAL", devNull());
+        environment.put("GIT_TERMINAL_PROMPT", "0");
+        environment.put("GIT_ASKPASS", devNull());
+    }
+
+    private static String devNull() {
+        return System.getProperty("os.name", "").toLowerCase().contains("win") ? "NUL" : "/dev/null";
+    }
+
     private String readProcessOutput(Process process) throws IOException {
         byte[] buffer = new byte[4096];
-        java.io.InputStream is = process.getInputStream();
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-        int bytesRead;
-        while ((bytesRead = is.read(buffer)) != -1) {
-            baos.write(buffer, 0, bytesRead);
+        try (InputStream is = process.getInputStream()) {
+            int bytesRead;
+            while ((bytesRead = is.read(buffer)) != -1) {
+                baos.write(buffer, 0, bytesRead);
+            }
         }
-        return baos.toString(java.nio.charset.StandardCharsets.UTF_8);
+        return baos.toString(StandardCharsets.UTF_8);
     }
 
     private String sanitizePath(String path) {
@@ -337,14 +383,80 @@ public class WorkspaceManager {
         return value;
     }
 
-    private void deletePath(Path path) throws IOException {
-        if (Files.isDirectory(path)) {
-            java.util.List<Path> children = java.nio.file.Files.list(path).toList();
-            for (Path child : children) {
-                deletePath(child);
+    private void captureTrustedGitConfig() throws IOException {
+        Path config = repoDir.resolve(".git/config");
+        if (!Files.isRegularFile(config, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Cloned repository has no .git/config: " + repoDir);
+        }
+        this.trustedGitConfig = Files.readString(config, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Restore the git config captured at clone time. The harness may have
+     * written filters, hooks, credential helpers or url.*.insteadOf rules into
+     * the workspace; none of them may influence the supervisor's push.
+     */
+    private void hardenGitRepository() throws IOException {
+        Path gitDir = repoDir.resolve(".git");
+        if (Files.isSymbolicLink(gitDir)
+            || !Files.isDirectory(gitDir, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Refusing to publish: .git is not a real directory");
+        }
+        Path config = gitDir.resolve("config");
+        if (trustedGitConfig != null) {
+            if (Files.isSymbolicLink(config)) {
+                Files.deleteIfExists(config);
+            }
+            Files.writeString(config, trustedGitConfig, StandardCharsets.UTF_8);
+        }
+    }
+
+    private String remoteBranchSha(String remote, String branchName) throws IOException {
+        String output = runGitCommandAllowFailure(
+            "ls-remote", "--heads", remote, "refs/heads/" + branchName);
+        if (output == null || output.isBlank()) {
+            return null;
+        }
+        for (String line : output.split("\\R")) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            String[] parts = trimmed.split("\\s+");
+            if (parts.length >= 2 && parts[1].equals("refs/heads/" + branchName)) {
+                return parts[0];
             }
         }
-        Files.delete(path);
+        return null;
+    }
+
+    private void deletePath(Path path) throws IOException {
+        // Delete symlinks themselves, never their targets. walkFileTree is not
+        // used with FOLLOW_LINKS, so directory symlinks cannot escape the repo.
+        if (Files.isSymbolicLink(path)) {
+            Files.deleteIfExists(path);
+            return;
+        }
+        if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+            Files.walkFileTree(path, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                    Files.deleteIfExists(file);
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                    if (exc != null) {
+                        throw exc;
+                    }
+                    Files.deleteIfExists(dir);
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+            return;
+        }
+        Files.deleteIfExists(path);
     }
 
     /**
@@ -369,28 +481,37 @@ public class WorkspaceManager {
     /**
      * Collect the workspace changes as a summary the supervisor can inspect
      * before committing. The harness is never trusted to report its own diff.
+     *
+     * <p>{@code -uall -z} is essential: without it git collapses untracked
+     * directories into a single entry such as {@code ?? .github/}, which would
+     * let the real files bypass every protected-path and size check.</p>
      */
     public DiffSummary collectDiff() throws IOException {
         if (repoDir == null || !Files.exists(repoDir)) {
             return DiffSummary.empty();
         }
 
-        String porcelain = runGitCommand("status", "--porcelain");
+        String porcelain = runGitCommand("status", "--porcelain", "-z", "-uall");
         List<DiffSummary.ChangedFile> files = new ArrayList<>();
         Set<String> untracked = new HashSet<>();
 
-        for (String line : porcelain.split("\\R")) {
-            if (line == null || line.length() < 3) {
+        String[] entries = porcelain.split("\u0000", -1);
+        int index = 0;
+        while (index < entries.length) {
+            String entry = entries[index++];
+            if (entry == null || entry.length() < 4) {
                 continue;
             }
-            String code = line.substring(0, 2);
-            String path = line.substring(3).trim();
-            int arrow = path.indexOf(" -> ");
-            if (arrow >= 0) {
-                path = path.substring(arrow + 4);
-            }
+            String code = entry.substring(0, 2);
+            String path = entry.substring(3);
             if (path.isBlank()) {
                 continue;
+            }
+
+            // In -z mode a rename/copy is followed by a second NUL-separated
+            // field containing the original path.
+            if ((code.contains("R") || code.contains("C")) && index < entries.length) {
+                index++;
             }
 
             String status;
@@ -420,7 +541,24 @@ public class WorkspaceManager {
             additions += countLines(repoDir.resolve(path));
         }
 
-        return new DiffSummary(files, additions, deletions);
+        long bytes = 0;
+        for (DiffSummary.ChangedFile file : files) {
+            if ("deleted".equals(file.status())) {
+                continue;
+            }
+            try {
+                Path changed = repoDir.resolve(file.path());
+                BasicFileAttributes attrs = Files.readAttributes(
+                    changed, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                if (attrs.isRegularFile()) {
+                    bytes += attrs.size();
+                }
+            } catch (IOException ignored) {
+                // Missing/broken path: the file count still guards the diff.
+            }
+        }
+
+        return new DiffSummary(files, additions, deletions, bytes);
     }
 
     private int[] parseNumstat(String output) {
@@ -453,13 +591,32 @@ public class WorkspaceManager {
         }
     }
 
+    /**
+     * Count newlines without assuming UTF-8 and without loading the file into
+     * memory. Binary files and huge files are bounded; an {@link IOException}
+     * must never abort a publish because of an untracked fixture.
+     */
     private int countLines(Path file) {
-        if (file == null || !Files.isRegularFile(file)) {
+        if (file == null || Files.isSymbolicLink(file) || !Files.isRegularFile(file)) {
             return 0;
         }
-        try (var lines = Files.lines(file)) {
-            return (int) Math.min(Integer.MAX_VALUE, lines.count());
-        } catch (IOException e) {
+        try (InputStream input = Files.newInputStream(file)) {
+            byte[] buffer = new byte[8_192];
+            int newlines = 0;
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                for (int i = 0; i < read; i++) {
+                    if (buffer[i] == '\n') {
+                        newlines++;
+                        if (newlines > MAX_COUNTED_LINES) {
+                            return MAX_COUNTED_LINES + 1;
+                        }
+                    }
+                }
+            }
+            return newlines;
+        } catch (IOException | RuntimeException e) {
+            log.debug("Could not count lines in {}: {}", file, e.getMessage());
             return 0;
         }
     }
@@ -471,22 +628,47 @@ public class WorkspaceManager {
         if (repoDir == null) {
             return;
         }
-        if (Files.exists(repoDir)) {
+        try {
+            assertSafeToDelete(repoDir);
+        } catch (IOException e) {
+            log.error("Refusing to clean up workspace outside {}: {}", cloneRoot, e.getMessage());
+            return;
+        }
+        if (Files.exists(repoDir, LinkOption.NOFOLLOW_LINKS)) {
             try {
                 deletePath(repoDir);
                 log.info("Cleaned up workspace: {}", repoDir);
             } catch (IOException e) {
                 log.warn("Java delete failed, trying shell rm -rf: {}", e.getMessage());
-                try {
-                    ProcessBuilder rmPb = new ProcessBuilder("rm", "-rf", repoDir.toString());
-                    rmPb.redirectErrorStream(true);
-                    Process rmProcess = rmPb.start();
-                    rmProcess.waitFor();
-                    log.info("Cleaned up workspace via rm -rf: {}", repoDir);
-                } catch (IOException | InterruptedException ex) {
-                    log.error("Failed to cleanup workspace {}: {}", repoDir, ex.getMessage());
-                }
+                runDeleteFallback();
             }
+        }
+    }
+
+    private void runDeleteFallback() {
+        try {
+            ProcessBuilder rmPb = new ProcessBuilder("rm", "-rf", "--", repoDir.toString());
+            rmPb.redirectErrorStream(true);
+            Process rmProcess = rmPb.start();
+            rmProcess.waitFor();
+            log.info("Cleaned up workspace via rm -rf: {}", repoDir);
+        } catch (IOException | InterruptedException ex) {
+            if (ex instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            log.error("Failed to cleanup workspace {}: {}", repoDir, ex.getMessage());
+        }
+    }
+
+    /**
+     * Refuse to delete anything outside REPO_CLONE_DIR (or the clone root
+     * itself). This bounds a compromised workspace path or a symlinked
+     * repository directory.
+     */
+    private void assertSafeToDelete(Path path) throws IOException {
+        Path normalized = path.toAbsolutePath().normalize();
+        if (!normalized.startsWith(cloneRoot) || normalized.equals(cloneRoot)) {
+            throw new IOException("Path is outside the clone root: " + normalized);
         }
     }
 }

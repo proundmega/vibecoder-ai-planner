@@ -64,12 +64,31 @@ class PromptBuilderTest {
     }
 
     @Test
-    void promptContainsNoProviderKeyOrGithubToken() {
+    void promptDoesNotInjectSupervisorEnvironment() {
         String prompt = new PromptBuilder().build(ticket(), List.of("doc"), List.of("npm test"));
 
-        assertFalse(prompt.contains("sk-secret-provider-key"));
-        assertFalse(prompt.contains("ghp_secret_github_token"));
+        for (String name : List.of("GITHUB_TOKEN", "AI_API_KEY", "AGENT_API_KEY")) {
+            String value = System.getenv(name);
+            if (value != null && !value.isBlank()) {
+                assertFalse(prompt.contains(value), "prompt leaked " + name);
+            }
+        }
         assertFalse(prompt.contains("OPENCODE_SERVER_PASSWORD"));
         assertEquals(-1, prompt.indexOf("provider.key"));
+    }
+
+    @Test
+    void capsTheTotalPlanningDocumentBudget() {
+        List<String> docs = List.of(
+            "a".repeat(40_000),
+            "b".repeat(40_000),
+            "c".repeat(40_000),
+            "d".repeat(40_000)
+        );
+
+        String prompt = new PromptBuilder().build(ticket(), docs, List.of("npm test"));
+
+        assertTrue(prompt.contains("prompt budget exhausted"));
+        assertTrue(prompt.length() < 150_000);
     }
 }

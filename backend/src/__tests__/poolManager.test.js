@@ -161,6 +161,23 @@ describe('PoolManager', () => {
       expect(createOpts.Env).toContain('AI_MODEL=gpt-4');
       expect(createOpts.Env).toContain('AI_PROVIDER=generic');
       expect(createOpts.Env).toContain('AI_MAX_TOKENS=4096');
+      expect(createOpts.Env).toContain('PROJECT_ID=proj-1');
+    });
+
+    it('passes PROJECT_ID and repository coordinates to pool agents', async () => {
+      const mockContainer = { id: 'new-container-1', start: jest.fn().mockResolvedValue(undefined) };
+      pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
+
+      await pm.requestAgent('proj-42', 'https://github.com/acme/widgets.git', {
+        endpoint: 'https://api.custom.com',
+        apiKey: 'custom-key',
+        model: 'gpt-4',
+      });
+
+      const createOpts = pm.docker.createContainer.mock.calls[0][0];
+      expect(createOpts.Env).toContain('PROJECT_ID=proj-42');
+      expect(createOpts.Env).toContain('REPO_OWNER=acme');
+      expect(createOpts.Env).toContain('REPO_NAME=widgets');
     });
 
     it('throws helpful error for missing image', async () => {

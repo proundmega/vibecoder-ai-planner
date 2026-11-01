@@ -5,7 +5,7 @@ import java.nio.file.Path;
 import java.util.function.Consumer;
 
 /**
- * Execution harness abstraction. Phase 1 is implemented by {@link OpenCodeHarness}.
+ * Execution harness abstraction. Phase 1 is implemented by {@link OpenCodeClient}.
  */
 public interface HarnessClient extends AutoCloseable {
     void start(Path workspace) throws IOException;

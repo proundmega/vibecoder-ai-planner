@@ -63,9 +63,9 @@ public final class OpenCodeClient implements HarnessClient {
     private volatile String password = "";
     private volatile String baseUrl;
     private volatile OkHttpClient httpClient;
+    private volatile OkHttpClient promptHttpClient;
     private volatile EventSource eventSource;
     private volatile String lastSessionId;
-    private volatile boolean promptCompleted;
     private volatile boolean idleSeen;
     private volatile boolean errorSeen;
     private volatile long lastEventAt = System.currentTimeMillis();
@@ -107,7 +107,8 @@ public final class OpenCodeClient implements HarnessClient {
         if (externalServer) {
             this.baseUrl = normalizeBaseUrl(externalBaseUrl);
             this.password = externalPassword;
-            this.httpClient = buildHttpClient();
+            this.httpClient = buildControlHttpClient();
+            this.promptHttpClient = buildPromptHttpClient();
             waitForHealth(startupTimeout());
             return;
         }
@@ -155,7 +156,8 @@ public final class OpenCodeClient implements HarnessClient {
         this.port = candidatePort;
         this.password = randomHex(32);
         this.baseUrl = "http://127.0.0.1:" + candidatePort;
-        this.httpClient = buildHttpClient();
+        this.httpClient = buildControlHttpClient();
+        this.promptHttpClient = buildPromptHttpClient();
 
         ProcessBuilder builder = new ProcessBuilder(
             config.binary(), "serve",
@@ -165,17 +167,7 @@ public final class OpenCodeClient implements HarnessClient {
         builder.directory(workspace.toFile());
         builder.redirectErrorStream(true);
 
-        Map<String, String> environment = builder.environment();
-        // The harness must not inherit planner credentials. The provider key is
-        // injected through the temporary config instead.
-        sanitizeEnvironment(environment);
-        environment.put("HOME", home.toString());
-        environment.put("XDG_CONFIG_HOME", home.resolve(".config").toString());
-        environment.put("XDG_DATA_HOME", home.resolve(".local/share").toString());
-        environment.put("XDG_CACHE_HOME", home.resolve(".cache").toString());
-        environment.put("OPENCODE_CONFIG", configFile.toString());
-        environment.put("OPENCODE_SERVER_PASSWORD", password);
-        environment.put("OPENCODE_DISABLE_AUTOUPDATE", "true");
+        configureChildEnvironment(builder.environment(), home, configFile, password);
 
         Process started = builder.start();
         this.process = started;
@@ -198,7 +190,6 @@ public final class OpenCodeClient implements HarnessClient {
             throw new IOException("OpenCode did not return a session id");
         }
         this.lastSessionId = id;
-        this.promptCompleted = false;
         this.idleSeen = false;
         this.errorSeen = false;
         return id;
@@ -209,8 +200,9 @@ public final class OpenCodeClient implements HarnessClient {
         Map<String, Object> body = Map.of(
             "parts", List.of(Map.of("type", "text", "text", prompt))
         );
-        postJson("/session/" + sessionId + "/message", body);
-        this.promptCompleted = true;
+        // This single POST blocks for the whole agent run. Use the long-lived
+        // client only here; all control-plane calls have a short timeout.
+        postJson("/session/" + sessionId + "/message", body, true);
         this.lastEventAt = System.currentTimeMillis();
     }
 
@@ -258,7 +250,9 @@ public final class OpenCodeClient implements HarnessClient {
             if (errorSeen) {
                 throw new IOException("OpenCode session reported an error");
             }
-            if (idleSeen || promptCompleted) {
+            // Do not treat a returned prompt POST as idle: the server can
+            // finish the request before the session emits session.idle.
+            if (idleSeen) {
                 return;
             }
             if (process != null && !process.isAlive()) {
@@ -281,7 +275,7 @@ public final class OpenCodeClient implements HarnessClient {
         if (url == null) {
             return false;
         }
-        try (Response response = http().newCall(
+        try (Response response = controlCall(
             requestBuilder("/global/health").get().build()
         ).execute()) {
             return response.isSuccessful();
@@ -306,7 +300,7 @@ public final class OpenCodeClient implements HarnessClient {
         if (sessionId == null || sessionId.isBlank() || baseUrl == null) {
             return;
         }
-        try (Response ignored = http().newCall(
+        try (Response ignored = controlCall(
             requestBuilder("/session/" + sessionId).delete().build()
         ).execute()) {
             // Best effort.
@@ -477,12 +471,20 @@ public final class OpenCodeClient implements HarnessClient {
     }
 
     private JsonNode postJson(String path, Object body) throws IOException {
+        return postJson(path, body, false);
+    }
+
+    private JsonNode postJson(String path, Object body, boolean longRunning) throws IOException {
         String json = objectMapper.writeValueAsString(body);
         Request request = requestBuilder(path)
             .post(RequestBody.create(json, JSON))
             .build();
-        Call call = http().newCall(request);
-        applyPromptTimeout(call);
+        Call call = longRunning
+            ? promptHttp().newCall(request)
+            : controlCall(request);
+        if (longRunning) {
+            applyPromptTimeout(call);
+        }
         try (Response response = call.execute()) {
             String text = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
@@ -496,7 +498,7 @@ public final class OpenCodeClient implements HarnessClient {
 
     private JsonNode getJson(String path) throws IOException {
         Request request = requestBuilder(path).get().build();
-        try (Response response = http().newCall(request).execute()) {
+        try (Response response = controlCall(request).execute()) {
             String text = response.body() == null ? "" : response.body().string();
             if (!response.isSuccessful()) {
                 throw new IOException(
@@ -531,12 +533,35 @@ public final class OpenCodeClient implements HarnessClient {
 
     private OkHttpClient http() {
         if (httpClient == null) {
-            httpClient = buildHttpClient();
+            httpClient = buildControlHttpClient();
         }
         return httpClient;
     }
 
-    private OkHttpClient buildHttpClient() {
+    private OkHttpClient promptHttp() {
+        if (promptHttpClient == null) {
+            promptHttpClient = buildPromptHttpClient();
+        }
+        return promptHttpClient;
+    }
+
+    private Call controlCall(Request request) {
+        Call call = http().newCall(request);
+        // A hung control-plane call must not defeat startupTimeout or block
+        // cleanup forever.
+        call.timeout().timeout(10, TimeUnit.SECONDS);
+        return call;
+    }
+
+    private OkHttpClient buildControlHttpClient() {
+        return new OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .build();
+    }
+
+    private OkHttpClient buildPromptHttpClient() {
         return new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS)
@@ -608,24 +633,38 @@ public final class OpenCodeClient implements HarnessClient {
     }
 
     /**
-     * Drops secret-bearing variables inherited from the supervisor process.
-     * Package-visible for tests.
+     * Replaces the inherited environment with the shared allowlist used by
+     * verification and git children. Package-visible for tests.
      */
     static void sanitizeEnvironment(Map<String, String> environment) {
-        environment.keySet().removeIf(OpenCodeClient::isSecretName);
+        EnvironmentSanitizer.sanitize(environment);
     }
 
-    private static boolean isSecretName(String name) {
-        if (name == null) {
-            return false;
-        }
-        String upper = name.toUpperCase();
-        return upper.contains("TOKEN")
-            || upper.contains("SECRET")
-            || upper.contains("PASSWORD")
-            || upper.endsWith("_KEY")
-            || upper.equals("AI_API_KEY")
-            || upper.equals("OPENCODE_API_KEY");
+    /**
+     * Package-visible for tests: the exact environment handed to
+     * {@code opencode serve}.
+     */
+    static void configureChildEnvironment(
+        Map<String, String> environment,
+        Path home,
+        Path configFile,
+        String password
+    ) {
+        // The harness must not inherit planner credentials. The provider key is
+        // injected through the temporary config instead.
+        sanitizeEnvironment(environment);
+        environment.put("HOME", home.toString());
+        environment.put("XDG_CONFIG_HOME", home.resolve(".config").toString());
+        environment.put("XDG_DATA_HOME", home.resolve(".local/share").toString());
+        environment.put("XDG_CACHE_HOME", home.resolve(".cache").toString());
+        environment.put("OPENCODE_CONFIG", configFile.toString());
+        environment.put("OPENCODE_SERVER_PASSWORD", password);
+        environment.put("OPENCODE_DISABLE_AUTOUPDATE", "true");
+        // OpenCode v1 merges project opencode.json/.opencode after
+        // OPENCODE_CONFIG. A cloned repository could otherwise re-enable bash,
+        // add plugins/MCP servers, or change the model. The temporary config
+        // generated outside the workspace must be authoritative.
+        environment.put("OPENCODE_DISABLE_PROJECT_CONFIG", "true");
     }
 
     private static int findFreePort() throws IOException {

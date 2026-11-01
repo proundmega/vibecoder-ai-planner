@@ -26,7 +26,8 @@ class HarnessConfigTest {
         assertEquals(Duration.ofMinutes(45), config.maxDuration());
         assertEquals(List.of(), config.verificationCommands());
         assertEquals(
-            List.of(".env*", ".github/workflows/**", "**/secrets/**"),
+            List.of(".env*", "**/.env*", "Jenkinsfile", "**/Jenkinsfile",
+                ".github/**", "**/.github/**", "**/secrets/**"),
             config.protectedPaths());
         assertNull(config.modelOverride());
     }

@@ -12,6 +12,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Writes a temporary OpenCode config and provider key outside the repository.
@@ -22,21 +23,35 @@ import java.util.Map;
  */
 public final class OpenCodeConfigWriter {
 
+    private static final Set<String> KNOWN_PROVIDER_IDS = Set.of(
+        "opencode", "opencode-go", "anthropic", "openai"
+    );
+
     private OpenCodeConfigWriter() {
     }
 
+    /**
+     * @deprecated The workspace is not needed to write the config; use
+     * {@link #write(Path, ProviderSettings, HarnessConfig)}.
+     */
+    @Deprecated
     public static Path write(
         Path tempDir,
         ProviderSettings provider,
         HarnessConfig config,
         Path workspace
     ) throws IOException {
+        return write(tempDir, provider, config);
+    }
+
+    public static Path write(
+        Path tempDir,
+        ProviderSettings provider,
+        HarnessConfig config
+    ) throws IOException {
         Files.createDirectories(tempDir);
 
-        String rawModel = selectModel(provider, config);
-        if (rawModel == null || rawModel.isBlank()) {
-            throw new IOException("No model configured for the harness provider");
-        }
+        ModelSelection selection = selectModel(provider, config);
 
         Path keyFile = tempDir.resolve("provider.key");
         if (provider.hasApiKey()) {
@@ -45,8 +60,10 @@ public final class OpenCodeConfigWriter {
         }
 
         ProviderMapping mapping = mapProvider(
-            provider.normalizedType(), rawModel, provider.baseUrl(), provider.hasApiKey());
-        String modelId = mapping.modelId();
+            provider.normalizedType(),
+            selection.model(),
+            provider.baseUrl(),
+            provider.hasApiKey());
 
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("$schema", "https://opencode.ai/config.json");
@@ -55,16 +72,11 @@ public final class OpenCodeConfigWriter {
         root.put("snapshot", false);
         root.put("permission", permissions());
 
-        String override = config == null ? null : config.modelOverride();
-        if (override != null && !override.isBlank()) {
-            modelId = override.contains("/") ? override : mapping.providerId + "/" + override;
-        }
-
         Map<String, Object> providers = new LinkedHashMap<>();
         providers.put(mapping.providerId, providerEntry(mapping));
         root.put("provider", providers);
-        root.put("model", modelId);
-        root.put("small_model", modelId);
+        root.put("model", selection.modelId());
+        root.put("small_model", selection.modelId());
 
         Path configFile = tempDir.resolve("opencode.json");
         ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
@@ -73,13 +85,51 @@ public final class OpenCodeConfigWriter {
         return configFile;
     }
 
-    private static String selectModel(ProviderSettings provider, HarnessConfig config) {
-        if (config != null && config.modelOverride() != null && !config.modelOverride().isBlank()) {
-            String override = config.modelOverride().trim();
-            int slash = override.indexOf('/');
-            return slash >= 0 ? override.substring(slash + 1) : override;
+    /**
+     * Normalize the configured model and reject an override that names a
+     * provider different from the temporary config's only provider. An
+     * {@code HARNESS_MODEL=anthropic/...} override on an opencode-go agent
+     * would otherwise point at a provider that does not exist.
+     */
+    private static ModelSelection selectModel(ProviderSettings provider, HarnessConfig config) throws IOException {
+        String providerId = providerIdFor(provider.normalizedType());
+        String raw = config != null && config.modelOverride() != null
+            && !config.modelOverride().isBlank()
+            ? config.modelOverride().trim()
+            : provider.model();
+        if (raw == null || raw.isBlank()) {
+            throw new IOException("No model configured for the harness provider");
         }
-        return provider.model();
+
+        String qualifiedProvider = null;
+        String model = raw;
+        int slash = raw.indexOf('/');
+        if (slash > 0 && slash < raw.length() - 1) {
+            String prefix = raw.substring(0, slash);
+            if (KNOWN_PROVIDER_IDS.contains(prefix)) {
+                qualifiedProvider = prefix;
+                model = raw.substring(slash + 1);
+            }
+        }
+        if (qualifiedProvider != null && !qualifiedProvider.equals(providerId)) {
+            throw new IOException("HARNESS_MODEL provider '" + qualifiedProvider
+                + "' does not match the configured provider '" + providerId + "'");
+        }
+        if (model.isBlank()) {
+            throw new IOException("No model configured for the harness provider");
+        }
+        return new ModelSelection(providerId + "/" + model, model);
+    }
+
+    private static String providerIdFor(String type) {
+        String normalized = type == null ? "generic" : type.replace('_', '-');
+        return switch (normalized) {
+            case "opencode-go", "opencodego" -> "opencode-go";
+            case "opencode", "opencode-console" -> "opencode";
+            case "claude", "anthropic" -> "anthropic";
+            case "openai" -> "openai";
+            default -> "vibecode";
+        };
     }
 
     private static ProviderMapping mapProvider(
@@ -88,22 +138,9 @@ public final class OpenCodeConfigWriter {
         String baseUrl,
         boolean hasApiKey
     ) {
-        String normalized = type == null ? "generic" : type.replace('_', '-');
-        switch (normalized) {
-            case "opencode-go":
-            case "opencodego":
-                return new ProviderMapping("opencode-go", model, null, false, hasApiKey);
-            case "opencode":
-            case "opencode-console":
-                return new ProviderMapping("opencode", model, null, false, hasApiKey);
-            case "claude":
-            case "anthropic":
-                return new ProviderMapping("anthropic", model, null, false, hasApiKey);
-            case "openai":
-                return new ProviderMapping("openai", model, null, false, hasApiKey);
-            default:
-                return new ProviderMapping("vibecode", model, baseUrl, true, hasApiKey);
-        }
+        String providerId = providerIdFor(type);
+        boolean custom = "vibecode".equals(providerId);
+        return new ProviderMapping(providerId, model, baseUrl, custom, hasApiKey);
     }
 
     private static Map<String, Object> providerEntry(ProviderMapping mapping) {
@@ -114,7 +151,10 @@ public final class OpenCodeConfigWriter {
         }
 
         Map<String, Object> options = new LinkedHashMap<>();
-        if (mapping.custom && mapping.baseUrl != null && !mapping.baseUrl.isBlank()) {
+        // Preserve a custom base URL for every provider type. The legacy path
+        // supports it for opencode/opencode-go too; dropping it silently sent
+        // those agents to the public endpoint.
+        if (mapping.baseUrl != null && !mapping.baseUrl.isBlank()) {
             options.put("baseURL", mapping.baseUrl);
         }
         if (mapping.hasApiKey) {
@@ -131,13 +171,25 @@ public final class OpenCodeConfigWriter {
 
     private static Map<String, Object> permissions() {
         Map<String, Object> permission = new LinkedHashMap<>();
-        for (String tool : List.of("edit", "grep", "glob", "todowrite", "lsp")) {
+        Map<String, Object> edit = new LinkedHashMap<>();
+        edit.put("*", "allow");
+        for (String denied : List.of(
+            ".git/**", "**/.git/**",
+            "opencode.json", "**/opencode.json",
+            ".opencode/**", "**/.opencode/**"
+        )) {
+            edit.put(denied, "deny");
+        }
+        permission.put("edit", edit);
+
+        for (String tool : List.of("grep", "glob", "todowrite", "lsp")) {
             permission.put(tool, "allow");
         }
         permission.put("webfetch", "deny");
         permission.put("websearch", "deny");
         permission.put("task", "deny");
         permission.put("question", "deny");
+        permission.put("doom_loop", "deny");
         permission.put("external_directory", "deny");
 
         Map<String, Object> read = new LinkedHashMap<>();
@@ -146,14 +198,20 @@ public final class OpenCodeConfigWriter {
         read.put("*.env.*", "deny");
         read.put(".env*", "deny");
         read.put("**/.env*", "deny");
+        // Allow configuration examples after the deny rules.
+        read.put("*.env.example", "allow");
+        read.put("**/.env.example", "allow");
+        read.put("**/*.env.example", "allow");
         permission.put("read", read);
 
         Map<String, Object> bash = new LinkedHashMap<>();
         bash.put("*", "allow");
         for (String denied : List.of(
             "git push*", "git commit*", "git merge*", "git reset --hard*",
-            "git clean*", "rm -rf*", "sudo*", "docker*", "kubectl*",
-            "curl*|*sh*", "wget*|*sh*"
+            "git clean*", "git -C * push*", "git -c * push*",
+            "bash -c *git*push*", "sh -c *git*push*", "env *git*push*",
+            "rm -rf*", "sudo*", "docker*", "kubectl*",
+            "curl*|*sh*", "wget*|*sh*", "*| sh*", "*| bash*", "*|sh*", "*|bash*"
         )) {
             bash.put(denied, "deny");
         }
@@ -170,6 +228,9 @@ public final class OpenCodeConfigWriter {
         } catch (Exception ignored) {
             // Windows and other non-POSIX filesystems are handled by OS ACLs.
         }
+    }
+
+    private record ModelSelection(String modelId, String model) {
     }
 
     private static final class ProviderMapping {
@@ -191,10 +252,6 @@ public final class OpenCodeConfigWriter {
             this.baseUrl = baseUrl;
             this.custom = custom;
             this.hasApiKey = hasApiKey;
-        }
-
-        private String modelId() {
-            return providerId + "/" + model;
         }
     }
 }

@@ -31,6 +31,22 @@ class PoolManager {
     return crypto.randomBytes(8).toString('hex');
   }
 
+  _parseRepo(repoUrl) {
+    if (!repoUrl || typeof repoUrl !== 'string') {
+      return { owner: null, name: null };
+    }
+    let value = repoUrl.trim().replace(/\.git$/, '').replace(/\/+$/, '');
+    const match = value.match(/github\.com[/:]([^/]+)\/([^/]+)$/i);
+    if (match) {
+      return { owner: match[1], name: match[2] };
+    }
+    const parts = value.split('/').filter(Boolean);
+    if (parts.length === 2) {
+      return { owner: parts[0], name: parts[1] };
+    }
+    return { owner: null, name: null };
+  }
+
   _generateApiKey() {
     return 'pool-' + crypto.randomBytes(24).toString('hex');
   }
@@ -152,6 +168,7 @@ class PoolManager {
       `BACKEND_URL=${BACKEND_URL}`,
       `AGENT_API_KEY=${apiKey}`,
       `AGENT_ID=${dbAgent.id}`,
+      `PROJECT_ID=${projectId}`,
       `REPO_CLONE_DIR=/repos`,
       `AI_PROVIDER=${providerConfig.provider_type}`,
       `AI_MAX_TOKENS=${providerConfig.max_tokens}`,
@@ -165,6 +182,31 @@ class PoolManager {
     }
     if (providerConfig.base_url) {
       env.push(`AI_ENDPOINT_URL=${providerConfig.base_url}`);
+    }
+
+    // Pool agents need the repository to enter build mode. Accept either a
+    // full URL (https://github.com/owner/repo) or owner/name.
+    const repo = this._parseRepo(repoUrl);
+    if (repo.owner) {
+      env.push(`REPO_OWNER=${repo.owner}`);
+    }
+    if (repo.name) {
+      env.push(`REPO_NAME=${repo.name}`);
+    }
+
+    // Harness configuration is operator-controlled. Pass it through so pool
+    // agents can run the OpenCode harness exactly like manually started ones.
+    for (const name of [
+      'HARNESS_MODE', 'HARNESS_BIN', 'HARNESS_STARTUP_TIMEOUT_MS',
+      'HARNESS_IDLE_TIMEOUT_MS', 'HARNESS_MAX_DURATION_MINUTES',
+      'HARNESS_VERIFY_COMMANDS', 'HARNESS_PROTECTED_PATHS', 'HARNESS_MODEL',
+      'HARNESS_MAX_FILES', 'HARNESS_MAX_LINES', 'HARNESS_MAX_BYTES',
+      'HARNESS_MAX_ATTEMPTS', 'HARNESS_RETRY_BASE_DELAY_MS',
+      'HARNESS_RETRY_MAX_DELAY_MS',
+    ]) {
+      if (process.env[name]) {
+        env.push(`${name}=${process.env[name]}`);
+      }
     }
 
     try {

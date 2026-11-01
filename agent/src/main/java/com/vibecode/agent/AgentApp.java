@@ -73,7 +73,19 @@ public class AgentApp {
             log.info("Harness mode: legacy");
         }
 
-        this.reviewProcessor = new ReviewProcessor(apiService, aiProvider, config.getAgentId());
+        if (supportsLegacyProvider(providerSettings)) {
+            this.reviewProcessor = new ReviewProcessor(apiService, aiProvider, config.getAgentId());
+        } else {
+            this.reviewProcessor = null;
+            log.warn("Review processing disabled: provider '{}' is only supported by the OpenCode harness",
+                providerSettings.normalizedType());
+        }
+    }
+
+    private static boolean supportsLegacyProvider(ProviderSettings settings) {
+        String type = settings.normalizedType();
+        boolean openCode = type.equals("opencode") || type.equals("opencode-go");
+        return !openCode || (settings.baseUrl() != null && !settings.baseUrl().isBlank());
     }
 
     private String fetchGitHubToken() {
@@ -281,6 +293,10 @@ public class AgentApp {
         // Check if this is a review agent (no REPO_OWNER/REPO_NAME means review mode)
         if (config.getRepoOwner() == null || config.getRepoOwner().isBlank()) {
             log.warn("REPO_OWNER is not set — running in review mode only. Ticket processing is disabled. Set REPO_OWNER and REPO_NAME to enable build mode.");
+            if (reviewProcessor == null) {
+                log.warn("Review cycle skipped: the configured provider is not usable by the legacy review path");
+                return;
+            }
             reviewProcessor.processReviewCycle();
             return;
         }

@@ -27,6 +27,7 @@ final class FakeOpenCodeServer implements AutoCloseable {
     private final AtomicInteger createSessionCalls = new AtomicInteger();
     private final AtomicInteger deletedSessions = new AtomicInteger();
     private final AtomicReference<String> lastPrompt = new AtomicReference<>("");
+    private final AtomicReference<String> lastAuthorization = new AtomicReference<>();
     private final AtomicReference<List<String>> events = new AtomicReference<>(List.of());
     private volatile boolean closed;
 
@@ -70,6 +71,10 @@ final class FakeOpenCodeServer implements AutoCloseable {
         return lastPrompt.get();
     }
 
+    String lastAuthorization() {
+        return lastAuthorization.get();
+    }
+
     int createSessionCalls() {
         return createSessionCalls.get();
     }
@@ -82,6 +87,10 @@ final class FakeOpenCodeServer implements AutoCloseable {
         try {
             String path = exchange.getRequestURI().getPath();
             String method = exchange.getRequestMethod();
+            String authorization = exchange.getRequestHeaders().getFirst("Authorization");
+            if (authorization != null) {
+                lastAuthorization.set(authorization);
+            }
 
             if ("/global/health".equals(path)) {
                 if (healthy.get()) {

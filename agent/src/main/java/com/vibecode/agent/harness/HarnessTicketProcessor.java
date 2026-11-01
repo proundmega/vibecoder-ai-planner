@@ -14,8 +14,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -31,6 +35,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private static final Logger log = LoggerFactory.getLogger(HarnessTicketProcessor.class);
     private static final int MAX_MESSAGE_CHARS = 8_192;
     private static final Duration VERIFICATION_TIMEOUT = Duration.ofMinutes(10);
+    private static final Duration INSTALL_TIMEOUT = Duration.ofMinutes(10);
+    private static final int DEFAULT_MAX_ATTEMPTS = 3;
+    private static final long DEFAULT_RETRY_BASE_DELAY_MS = 60_000L;
+    private static final long DEFAULT_RETRY_MAX_DELAY_MS = 60L * 60_000L;
 
     private final AgentConfig config;
     private final ApiService apiService;
@@ -44,6 +52,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private final VerificationRunner verificationRunner;
     private final PublishingGuard publishingGuard;
     private final PromptBuilder promptBuilder = new PromptBuilder();
+    private final Map<Long, FailureState> failures = new ConcurrentHashMap<>();
+    private final int maxAttempts = intEnv("HARNESS_MAX_ATTEMPTS", DEFAULT_MAX_ATTEMPTS);
+    private final long retryBaseDelayMs = longEnv("HARNESS_RETRY_BASE_DELAY_MS", DEFAULT_RETRY_BASE_DELAY_MS);
+    private final long retryMaxDelayMs = longEnv("HARNESS_RETRY_MAX_DELAY_MS", DEFAULT_RETRY_MAX_DELAY_MS);
 
     private volatile String currentTicketId;
     private volatile String currentStep;
@@ -120,6 +132,14 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
     @Override
     public void processTicket(Ticket ticket) {
+        if (ticket == null || ticket.getId() == null) {
+            return;
+        }
+        if (isBackingOff(ticket.getId())) {
+            log.info("Ticket {} is in failure backoff; skipping this poll", ticket.getId());
+            return;
+        }
+
         log.info("Harness processing ticket: {} - {}", ticket.getId(), ticket.getTitle());
 
         Ticket pickedUp = pickUpTicket(ticket.getId());
@@ -130,6 +150,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         currentTicketId = String.valueOf(pickedUp.getId());
         currentStep = "processing";
+        Instant deadline = Instant.now().plus(maxDuration());
 
         postMessage(pickedUp.getId(), "update", "Started working on: " + pickedUp.getTitle());
 
@@ -139,6 +160,9 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         try {
             List<String> planningDocs = planningDocFetcher.fetch(pickedUp.getId());
+            if (planningDocs == null) {
+                planningDocs = List.of();
+            }
             log.info("Fetched {} planning documents", planningDocs.size());
 
             String branchName = config.getGitHubBranchName(pickedUp.getId(), pickedUp.getTitle());
@@ -155,6 +179,14 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 + config.getRepoName() + ".git";
             workspace.cloneRepo(repoUrl, branchName);
 
+            List<String> commands = safeResolveCommands(workspace);
+            if (commands.isEmpty()) {
+                failAndRelease(pickedUp.getId(),
+                    "No verification commands were detected and HARNESS_VERIFY_COMMANDS is empty. "
+                        + "Refusing to publish unverified changes.");
+                return;
+            }
+
             tempDir = Files.createTempDirectory("opencode-harness-");
             harness = harnessFactory.apply(tempDir);
 
@@ -163,62 +195,92 @@ public final class HarnessTicketProcessor implements TicketWorker {
             String sessionId = harness.createSession("ticket-" + pickedUp.getId());
 
             currentStep = "implementing";
-            List<String> commands = safeResolveCommands(workspace);
             String prompt = promptBuilder.build(pickedUp, planningDocs, commands);
             harness.subscribe(sessionId, event -> {
                 if (event.isToolEvent()) {
                     currentStep = "implementing";
                 }
             });
-            harness.sendPrompt(sessionId, prompt);
-            if (harness instanceof OpenCodeClient client) {
-                client.awaitIdle(harnessConfig.maxDuration());
+            try {
+                harness.sendPrompt(sessionId, prompt);
+            } finally {
+                // The prompt is blocking. Close the harness before verification
+                // and publishing so no background process can keep editing the
+                // workspace while the supervisor stages and guards the tree.
+                closeQuietly(harness);
+                harness = null;
+            }
+
+            currentStep = "installing";
+            List<VerificationResult> verification = new ArrayList<>();
+            List<String> installCommands = safeResolveInstallCommands(workspace);
+            if (!installCommands.isEmpty()) {
+                List<VerificationResult> installResults = verificationRunner.run(
+                    workspace.getRepoDir(), installCommands, remaining(deadline, INSTALL_TIMEOUT));
+                verification.addAll(installResults);
+                List<VerificationResult> installFailures = failures(installResults);
+                if (!installFailures.isEmpty()) {
+                    failAndRelease(pickedUp.getId(),
+                        "Dependency installation failed; not publishing.\n\n"
+                            + failureDetails(installFailures));
+                    return;
+                }
             }
 
             currentStep = "verifying";
-            List<VerificationResult> verification = verificationRunner.run(
-                workspace.getRepoDir(), commands, VERIFICATION_TIMEOUT);
-
+            List<VerificationResult> verifyResults = verificationRunner.run(
+                workspace.getRepoDir(), commands, remaining(deadline, VERIFICATION_TIMEOUT));
+            verification.addAll(verifyResults);
             if (!verification.isEmpty()) {
                 postMessage(pickedUp.getId(), "update", verificationSummary(verification));
-            } else {
-                postMessage(pickedUp.getId(), "update",
-                    "No verification commands detected; skipping test execution.");
             }
 
-            List<VerificationResult> failures = verification.stream()
-                .filter(result -> !result.passed())
-                .toList();
-            if (!failures.isEmpty()) {
-                postMessage(pickedUp.getId(), "update",
-                    "Verification failed; not publishing.\n\n" + failureDetails(failures));
-                release(pickedUp.getId());
+            List<VerificationResult> verifyFailures = failures(verifyResults);
+            if (!verifyFailures.isEmpty()) {
+                failAndRelease(pickedUp.getId(),
+                    "Verification failed; not publishing.\n\n" + failureDetails(verifyFailures));
                 return;
             }
 
             currentStep = "publishing";
+            // Stage first, then guard exactly the tree that will be committed.
+            workspace.stageAll();
             DiffSummary diff = workspace.collectDiff();
             try {
                 publishingGuard.assertPublishable(diff);
             } catch (IllegalStateException e) {
-                postMessage(pickedUp.getId(), "update", "Publishing blocked: " + e.getMessage());
-                release(pickedUp.getId());
+                failAndRelease(pickedUp.getId(), "Publishing blocked: " + e.getMessage());
                 return;
             }
+            ensureWithinDeadline(deadline);
 
-            String commitSha = workspace.commitAndPush("feat: " + pickedUp.getTitle(), branchName);
+            String commitSha = workspace.commitAndPushStaged(
+                "feat: " + pickedUp.getTitle(), branchName);
             String prUrl = gitHubService.createPullRequest(
                 "feat: " + pickedUp.getTitle(),
                 buildPrBody(pickedUp, branchName, commitSha, diff, verification),
                 branchName,
                 "main"
             );
+
+            // Post-publish bookkeeping must never discard a successful push/PR.
             if (prUrl != null && !prUrl.isBlank()) {
-                apiService.updateTicketPrUrl(pickedUp.getId(), prUrl);
+                try {
+                    apiService.updateTicketPrUrl(pickedUp.getId(), prUrl);
+                } catch (IOException | RuntimeException e) {
+                    log.warn("Push/PR succeeded but updating ticket {} PR URL failed: {}",
+                        pickedUp.getId(), e.getMessage());
+                }
             }
 
             postMessage(pickedUp.getId(), "status", completionSummary(diff, verification, prUrl));
-            apiService.updateTicketStatus(pickedUp.getId(), "review");
+            try {
+                apiService.updateTicketStatus(pickedUp.getId(), "review");
+            } catch (IOException | RuntimeException e) {
+                log.warn("Push/PR succeeded but updating ticket {} status failed: {}",
+                    pickedUp.getId(), e.getMessage());
+            }
+            this.failures.remove(pickedUp.getId());
             log.info("Ticket {} completed; PR: {}", pickedUp.getId(), prUrl);
         } catch (ThreadDeath death) {
             throw death;
@@ -253,10 +315,53 @@ public final class HarnessTicketProcessor implements TicketWorker {
             if (repoDir == null) {
                 return List.of();
             }
-            return verificationRunner.resolveCommands(repoDir);
+            List<String> resolved = verificationRunner.resolveCommands(repoDir);
+            return resolved == null ? List.of() : resolved;
         } catch (IOException e) {
             log.warn("Could not resolve verification commands: {}", e.getMessage());
             return List.of();
+        }
+    }
+
+    private List<String> safeResolveInstallCommands(WorkspaceManager workspace) {
+        try {
+            Path repoDir = workspace.getRepoDir();
+            if (repoDir == null) {
+                return List.of();
+            }
+            List<String> resolved = verificationRunner.resolveInstallCommands(repoDir);
+            return resolved == null ? List.of() : resolved;
+        } catch (IOException e) {
+            log.warn("Could not resolve install commands: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private static List<VerificationResult> failures(List<VerificationResult> results) {
+        if (results == null || results.isEmpty()) {
+            return List.of();
+        }
+        return results.stream().filter(result -> !result.passed()).toList();
+    }
+
+    private Duration maxDuration() {
+        return harnessConfig == null || harnessConfig.maxDuration() == null
+            ? Duration.ofMinutes(45)
+            : harnessConfig.maxDuration();
+    }
+
+    private Duration remaining(Instant deadline, Duration cap) throws IOException {
+        long remainingMs = Duration.between(Instant.now(), deadline).toMillis();
+        if (remainingMs <= 0) {
+            throw new IOException("Ticket wall-clock budget exhausted before verification/publish");
+        }
+        long capMs = cap == null ? remainingMs : cap.toMillis();
+        return Duration.ofMillis(Math.max(1, Math.min(remainingMs, capMs)));
+    }
+
+    private void ensureWithinDeadline(Instant deadline) throws IOException {
+        if (Instant.now().isAfter(deadline)) {
+            throw new IOException("Ticket wall-clock budget exhausted; refusing to publish");
         }
     }
 
@@ -265,8 +370,26 @@ public final class HarnessTicketProcessor implements TicketWorker {
             ? failure.getClass().getSimpleName()
             : failure.getMessage());
         log.error("Harness failed for ticket {}: {}", ticketId, message, failure);
-        postMessage(ticketId, "update", "Harness failed: " + truncate(message));
+        failAndRelease(ticketId, "Harness failed: " + message);
+    }
+
+    /**
+     * Post a failure and release the ticket with exponential backoff. Without
+     * this, the poll loop re-picks the same ticket every 30 seconds and runs
+     * another multi-minute harness.
+     */
+    private void failAndRelease(Long ticketId, String message) {
+        FailureState state = failures.computeIfAbsent(ticketId, ignored -> new FailureState());
+        int attempt = state.recordFailure(maxAttempts, retryBaseDelayMs, retryMaxDelayMs);
+        String note = " (attempt " + attempt + "/" + maxAttempts + ", retry after "
+            + Math.max(0, (state.nextAttemptAt - System.currentTimeMillis()) / 1000) + "s)";
+        postMessage(ticketId, "update", message + note);
         release(ticketId);
+    }
+
+    private boolean isBackingOff(Long ticketId) {
+        FailureState state = failures.get(ticketId);
+        return state != null && System.currentTimeMillis() < state.nextAttemptAt;
     }
 
     private void release(Long ticketId) {
@@ -276,6 +399,48 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 released != null ? released.getStatus() : "null");
         } catch (IOException e) {
             log.error("Failed to release ticket {}: {}", ticketId, e.getMessage());
+        }
+    }
+
+    private static int intEnv(String name, int fallback) {
+        try {
+            String value = System.getenv(name);
+            if (value == null || value.isBlank()) {
+                return fallback;
+            }
+            int parsed = Integer.parseInt(value.trim());
+            return parsed > 0 ? parsed : fallback;
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    private static long longEnv(String name, long fallback) {
+        try {
+            String value = System.getenv(name);
+            if (value == null || value.isBlank()) {
+                return fallback;
+            }
+            long parsed = Long.parseLong(value.trim());
+            return parsed >= 0 ? parsed : fallback;
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    private static final class FailureState {
+        private int attempts;
+        private long nextAttemptAt;
+
+        private synchronized int recordFailure(int maxAttempts, long baseDelayMs, long maxDelayMs) {
+            attempts++;
+            long exponent = Math.min(attempts - 1, 10);
+            long delay = Math.min(maxDelayMs, baseDelayMs * (1L << exponent));
+            if (attempts >= maxAttempts) {
+                delay = maxDelayMs;
+            }
+            nextAttemptAt = System.currentTimeMillis() + Math.max(0, delay);
+            return attempts;
         }
     }
 

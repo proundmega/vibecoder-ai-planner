@@ -17,4 +17,15 @@ export GITHUB_TOKEN="github_pat_your_token_here"
 export DRY_RUN="false"
 export MAX_TICKETS="1"
 
+# Optional OpenCode harness (requires OpenCode 1.x on PATH)
+# export HARNESS_MODE="opencode"
+# export HARNESS_BIN="opencode"
+# export HARNESS_MAX_DURATION_MINUTES="45"
+# export HARNESS_VERIFY_COMMANDS=""
+# export HARNESS_MODEL="opencode-go/beam-free"
+# export HARNESS_MAX_FILES="50"
+# export HARNESS_MAX_LINES="2000"
+# export HARNESS_MAX_BYTES="5242880"
+# export HARNESS_MAX_ATTEMPTS="3"
+
 java -jar agent/target/agent-1.0.0.jar

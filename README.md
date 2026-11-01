@@ -125,17 +125,30 @@ Required for `docker compose up`:
 | `HARNESS_MODE` | Execution harness: `legacy` or `opencode` | `legacy` |
 | `HARNESS_BIN` | OpenCode executable | `opencode` |
 | `HARNESS_STARTUP_TIMEOUT_MS` | OpenCode server health timeout | `30000` |
-| `HARNESS_IDLE_TIMEOUT_MS` | Max time without harness events | `300000` |
-| `HARNESS_MAX_DURATION_MINUTES` | Hard wall-clock cap per ticket | `45` |
-| `HARNESS_VERIFY_COMMANDS` | Semicolon-separated verification commands (empty = autodetect) | _(autodetect)_ |
-| `HARNESS_PROTECTED_PATHS` | Semicolon-separated globs that must never be published | `.env*;.github/workflows/**;**/secrets/**` |
-| `HARNESS_MODEL` | Optional harness model override | _(provider default)_ |
+| `HARNESS_IDLE_TIMEOUT_MS` | Max time without harness events (event-stream watchdog) | `300000` |
+| `HARNESS_MAX_DURATION_MINUTES` | Per-ticket wall-clock budget (prompt + verify + publish) | `45` |
+| `HARNESS_VERIFY_COMMANDS` | Semicolon-separated verification commands (empty = autodetect, then fail closed) | _(autodetect)_ |
+| `HARNESS_PROTECTED_PATHS` | Semicolon-separated globs that must never be published | `.env*;**/.env*;Jenkinsfile;**/Jenkinsfile;.github/**;**/.github/**;**/secrets/**` |
+| `HARNESS_MODEL` | Optional harness model override (must match the configured provider) | _(provider default)_ |
+| `HARNESS_MAX_FILES` | Maximum changed files the guard will publish | `50` |
+| `HARNESS_MAX_LINES` | Maximum changed lines the guard will publish | `2000` |
+| `HARNESS_MAX_BYTES` | Maximum total changed bytes the guard will publish | `5242880` |
+| `HARNESS_MAX_ATTEMPTS` | Failures before the retry backoff is pinned at its maximum | `3` |
+| `HARNESS_RETRY_BASE_DELAY_MS` | Base exponential retry delay | `60000` |
+| `HARNESS_RETRY_MAX_DELAY_MS` | Maximum retry delay | `3600000` |
 
 With `HARNESS_MODE=opencode`, the agent starts an isolated OpenCode server session
 (`opencode serve`), lets it read/edit/test the cloned workspace, then verifies and
-publishes the diff itself. The harness never commits, pushes or opens pull
-requests; the Java supervisor owns those steps. The legacy one-shot path remains
-the default and is unchanged.
+publishes the diff itself. The harness is *denied* commit/push/merge by policy
+and the supervisor owns publishing, but bash rules are defense-in-depth rather
+than a security boundary: the supervisor also sanitizes child environments,
+disables project config (`OPENCODE_DISABLE_PROJECT_CONFIG`), restores a trusted
+`.git/config` before publishing, disables hooks, and parses `git status -uall -z`
+so untracked directories cannot hide protected files. The legacy one-shot path
+remains the default and is unchanged.
+
+The harness requires OpenCode 1.x (the Docker image pins `1.19.5`). A local
+`opencode` from `PATH` must speak the v1 server API.
 
 ### Runtime Flags
 

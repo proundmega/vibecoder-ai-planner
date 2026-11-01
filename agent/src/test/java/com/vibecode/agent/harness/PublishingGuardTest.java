@@ -11,7 +11,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PublishingGuardTest {
 
     private final PublishingGuard guard = new PublishingGuard(
-        List.of(".env*", ".github/workflows/**", "**/secrets/**"));
+        List.of(".env*", "**/.env*", "Jenkinsfile", "**/Jenkinsfile",
+            ".github/**", "**/.github/**", "**/secrets/**"));
 
     private DiffSummary diff(String... paths) {
         return new DiffSummary(
@@ -39,7 +40,11 @@ class PublishingGuardTest {
         for (String path : List.of(
             ".env",
             ".env.local",
+            "backend/.env",
+            "backend/.env.local",
+            "Jenkinsfile",
             ".github/workflows/ci.yml",
+            ".github/actions/build/action.yml",
             "backend/secrets/token.txt",
             "secrets/nested/key"
         )) {
@@ -71,5 +76,27 @@ class PublishingGuardTest {
         );
 
         assertThrows(IllegalStateException.class, () -> guard.assertPublishable(huge));
+    }
+
+    @Test
+    void rejectsOversizedBinaryDiffByBytes() {
+        PublishingGuard byteGuard = new PublishingGuard(
+            List.of(), 50, 2_000, 10);
+        DiffSummary binary = new DiffSummary(
+            List.of(new DiffSummary.ChangedFile("fixture.bin", "added")),
+            0, 0, 11);
+
+        assertThrows(IllegalStateException.class, () -> byteGuard.assertPublishable(binary));
+    }
+
+    @Test
+    void configurableLimitsAllowLegitimateLargeDiffs() {
+        PublishingGuard larger = new PublishingGuard(List.of(), 100, 5_000, 1_000_000);
+        String[] paths = new String[80];
+        for (int i = 0; i < paths.length; i++) {
+            paths[i] = "src/File" + i + ".java";
+        }
+
+        assertDoesNotThrow(() -> larger.assertPublishable(diff(paths)));
     }
 }

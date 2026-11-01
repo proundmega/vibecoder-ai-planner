@@ -5,24 +5,35 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
  * Runs project verification commands and captures bounded output.
+ *
+ * <p>Verification commands come from the cloned (hostile) repository, or from
+ * the supervisor's {@code HARNESS_VERIFY_COMMANDS}. Children therefore receive
+ * only the allowlisted {@link EnvironmentSanitizer} environment and never the
+ * supervisor's GitHub/provider/cloud credentials.</p>
  */
 public class VerificationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(VerificationRunner.class);
     private static final int MAX_OUTPUT_CHARS = 8_192;
+    /**
+     * Capture a little more than the advertised tail so cutting in the middle
+     * of a UTF-8 sequence cannot shorten the visible output.
+     */
+    private static final int MAX_CAPTURE_BYTES = MAX_OUTPUT_CHARS * 4;
 
     private final HarnessConfig config;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -33,6 +44,47 @@ public class VerificationRunner {
 
     public VerificationRunner() {
         this(null);
+    }
+
+    /**
+     * Resolve the dependency-install commands that must run before verification.
+     * A fresh clone has no node_modules, so running {@code npm test} directly
+     * fails for reasons unrelated to the ticket.
+     *
+     * <p>When the operator supplied explicit {@code HARNESS_VERIFY_COMMANDS},
+     * they own the full sequence (including any installs).</p>
+     */
+    public List<String> resolveInstallCommands(Path workspace) throws IOException {
+        if (config != null && config.verificationCommands() != null
+            && !config.verificationCommands().isEmpty()) {
+            return List.of();
+        }
+        if (workspace == null) {
+            return List.of();
+        }
+
+        List<String> commands = new ArrayList<>();
+        Path rootPackage = workspace.resolve("package.json");
+        if (Files.isRegularFile(rootPackage)) {
+            addNodeInstall(commands, workspace, null);
+        } else {
+            Path backend = workspace.resolve("backend/package.json");
+            if (Files.isRegularFile(backend)) {
+                addNodeInstall(commands, workspace.resolve("backend"), "backend");
+            }
+            Path frontend = workspace.resolve("frontend/package.json");
+            if (Files.isRegularFile(frontend)) {
+                addNodeInstall(commands, workspace.resolve("frontend"), "frontend");
+            }
+        }
+        return commands;
+    }
+
+    private void addNodeInstall(List<String> commands, Path packageDir, String relative) {
+        boolean hasLock = Files.isRegularFile(packageDir.resolve("package-lock.json"))
+            || Files.isRegularFile(packageDir.resolve("npm-shrinkwrap.json"));
+        String install = hasLock ? "npm ci --no-audit --no-fund" : "npm install --no-audit --no-fund";
+        commands.add(relative == null ? install : "cd " + relative + " && " + install);
     }
 
     public List<String> resolveCommands(Path workspace) throws IOException {
@@ -131,11 +183,12 @@ public class VerificationRunner {
             : new ProcessBuilder("sh", "-c", command);
         builder.directory(workspace.toFile());
         builder.redirectErrorStream(true);
+        sanitizeEnvironment(builder.environment());
 
         Process process = null;
         try {
             process = builder.start();
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            TailBuffer output = new TailBuffer(MAX_CAPTURE_BYTES);
             Process finalProcess = process;
             Thread reader = new Thread(() -> {
                 try (InputStream input = finalProcess.getInputStream()) {
@@ -147,7 +200,7 @@ public class VerificationRunner {
             reader.setDaemon(true);
             reader.start();
 
-            long timeoutMs = timeout == null ? 600_000L : timeout.toMillis();
+            long timeoutMs = timeout == null ? 600_000L : Math.max(1, timeout.toMillis());
             boolean finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
             if (!finished) {
                 killProcessTree(process);
@@ -155,7 +208,7 @@ public class VerificationRunner {
             }
             reader.join(5_000);
 
-            String text = output.toString(StandardCharsets.UTF_8);
+            String text = output.text();
             if (text.length() > MAX_OUTPUT_CHARS) {
                 text = text.substring(text.length() - MAX_OUTPUT_CHARS);
             }
@@ -176,6 +229,22 @@ public class VerificationRunner {
         }
     }
 
+    /**
+     * Package-visible for tests: the environment seen by verification children.
+     */
+    static void sanitizeEnvironment(Map<String, String> environment) {
+        EnvironmentSanitizer.sanitize(environment);
+        environment.putIfAbsent("CI", "1");
+        environment.put("GIT_CONFIG_NOSYSTEM", "1");
+        environment.put("GIT_CONFIG_GLOBAL", devNull());
+        environment.put("GIT_TERMINAL_PROMPT", "0");
+        environment.put("HARNESS_VERIFICATION", "1");
+    }
+
+    private static String devNull() {
+        return System.getProperty("os.name", "").toLowerCase().contains("win") ? "NUL" : "/dev/null";
+    }
+
     private static void killProcessTree(Process process) {
         try {
             process.descendants().forEach(handle -> {
@@ -189,5 +258,44 @@ public class VerificationRunner {
             // Descendant enumeration is best effort.
         }
         process.destroyForcibly();
+    }
+
+    /**
+     * Fixed-size ring buffer: a noisy or hostile test cannot grow the
+     * supervisor's heap without bound.
+     */
+    private static final class TailBuffer extends OutputStream {
+        private final byte[] buffer;
+        private int size;
+        private int writePosition;
+
+        private TailBuffer(int capacity) {
+            this.buffer = new byte[Math.max(1, capacity)];
+        }
+
+        @Override
+        public synchronized void write(int value) {
+            buffer[writePosition] = (byte) value;
+            writePosition = (writePosition + 1) % buffer.length;
+            if (size < buffer.length) {
+                size++;
+            }
+        }
+
+        @Override
+        public synchronized void write(byte[] bytes, int offset, int length) {
+            for (int i = 0; i < length; i++) {
+                write(bytes[offset + i]);
+            }
+        }
+
+        private synchronized String text() {
+            byte[] ordered = new byte[size];
+            int start = (writePosition - size + buffer.length) % buffer.length;
+            for (int i = 0; i < size; i++) {
+                ordered[i] = buffer[(start + i) % buffer.length];
+            }
+            return new String(ordered, StandardCharsets.UTF_8);
+        }
     }
 }

@@ -83,7 +83,7 @@ class HarnessTicketProcessorTest {
         when(workspace.getRepoDir()).thenReturn(tempDir);
         when(workspace.collectDiff()).thenReturn(new DiffSummary(
             List.of(new DiffSummary.ChangedFile("src/App.java", "modified")), 12, 3));
-        when(workspace.commitAndPush(anyString(), anyString())).thenReturn("abc1234");
+        when(workspace.commitAndPushStaged(anyString(), anyString())).thenReturn("abc1234");
 
         harness = mock(HarnessClient.class);
         when(harness.createSession(anyString())).thenReturn("ses_test");
@@ -93,6 +93,7 @@ class HarnessTicketProcessorTest {
 
         verificationRunner = mock(VerificationRunner.class);
         when(verificationRunner.resolveCommands(any())).thenReturn(List.of("npm test"));
+        when(verificationRunner.resolveInstallCommands(any())).thenReturn(List.of());
         when(verificationRunner.run(any(), anyList(), any()))
             .thenReturn(List.of(new VerificationResult("npm test", 0, "ok", false)));
 
@@ -122,7 +123,8 @@ class HarnessTicketProcessorTest {
         verify(harness).start(tempDir);
         verify(harness).sendPrompt(eq("ses_test"), contains("Add filtering"));
         verify(verificationRunner).run(eq(tempDir), eq(List.of("npm test")), any());
-        verify(workspace).commitAndPush("feat: Add filtering", "vibecode/ticket-1-add-filtering");
+        verify(workspace).stageAll();
+        verify(workspace).commitAndPushStaged("feat: Add filtering", "vibecode/ticket-1-add-filtering");
         verify(gitHubService).createPullRequest(
             eq("feat: Add filtering"), anyString(),
             eq("vibecode/ticket-1-add-filtering"), eq("main"));
@@ -130,6 +132,74 @@ class HarnessTicketProcessorTest {
         verify(apiService).updateTicketStatus(1L, "review");
         verify(harness).close();
         verify(workspace).cleanup();
+    }
+
+    @Test
+    void closesHarnessAndStagesBeforePublishing() throws Exception {
+        processor.processTicket(ticket());
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(harness, workspace);
+        order.verify(harness).sendPrompt(eq("ses_test"), anyString());
+        order.verify(harness).close();
+        order.verify(workspace).stageAll();
+        order.verify(workspace).collectDiff();
+        order.verify(workspace).commitAndPushStaged(
+            "feat: Add filtering", "vibecode/ticket-1-add-filtering");
+    }
+
+    @Test
+    void refusesToPublishWhenNoVerificationCommandsExist() throws Exception {
+        when(verificationRunner.resolveCommands(any())).thenReturn(List.of());
+
+        processor.processTicket(ticket());
+
+        verify(harness, never()).start(any());
+        verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
+        verify(apiService).releaseTicket(1L);
+        assertTrue(postedMessages().stream().anyMatch(message ->
+            message.contains("No verification commands")));
+    }
+
+    @Test
+    void dependencyInstallFailureStopsBeforeVerification() throws Exception {
+        when(verificationRunner.resolveInstallCommands(any())).thenReturn(List.of("npm ci"));
+        when(verificationRunner.run(any(), eq(List.of("npm ci")), any()))
+            .thenReturn(List.of(new VerificationResult("npm ci", 1, "install exploded", false)));
+
+        processor.processTicket(ticket());
+
+        verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
+        verify(apiService).releaseTicket(1L);
+        assertTrue(postedMessages().stream().anyMatch(message ->
+            message.contains("Dependency installation failed")
+                && message.contains("install exploded")));
+    }
+
+    @Test
+    void postPublishBookkeepingFailureDoesNotDiscardThePush() throws Exception {
+        doThrow(new IOException("ticket API down"))
+            .when(apiService).updateTicketPrUrl(1L, "https://github.com/owner/repo/pull/7");
+        doThrow(new IOException("ticket API down"))
+            .when(apiService).updateTicketStatus(1L, "review");
+
+        processor.processTicket(ticket());
+
+        verify(workspace).commitAndPushStaged(
+            "feat: Add filtering", "vibecode/ticket-1-add-filtering");
+        verify(apiService, never()).releaseTicket(1L);
+        assertTrue(postedMessages().stream().anyMatch(message ->
+            message.contains("Harness completed")));
+    }
+
+    @Test
+    void failedTicketIsBackedOffInsteadOfRetriedOnTheNextPoll() throws Exception {
+        when(verificationRunner.run(any(), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult("npm test", 1, "failed", false)));
+
+        processor.processTicket(ticket());
+        processor.processTicket(ticket());
+
+        verify(apiService, org.mockito.Mockito.times(1)).pickUpTicket(1L);
     }
 
     @Test

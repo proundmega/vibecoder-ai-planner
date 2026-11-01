@@ -17,4 +17,19 @@ public record ProviderSettings(
     public boolean hasApiKey() {
         return apiKey != null && !apiKey.isBlank();
     }
+
+    /**
+     * Records would otherwise print the API key. Keep diagnostics useful while
+     * making an accidental log line safe.
+     */
+    @Override
+    public String toString() {
+        return "ProviderSettings["
+            + "type=" + type
+            + ", apiKey=" + (hasApiKey() ? "[REDACTED]" : "null")
+            + ", baseUrl=" + baseUrl
+            + ", model=" + model
+            + ", maxTokens=" + maxTokens
+            + ']';
+    }
 }

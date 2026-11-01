@@ -25,7 +25,7 @@ public record HarnessConfig(
     public static final String DEFAULT_MODE = "legacy";
     public static final String DEFAULT_BINARY = "opencode";
     public static final String DEFAULT_PROTECTED_PATHS =
-        ".env*;.github/workflows/**;**/secrets/**";
+        ".env*;**/.env*;Jenkinsfile;**/Jenkinsfile;.github/**;**/.github/**;**/secrets/**";
 
     public static HarnessConfig fromEnvironment() {
         return from(System::getenv);

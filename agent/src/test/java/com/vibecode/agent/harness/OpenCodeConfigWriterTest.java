@@ -13,6 +13,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OpenCodeConfigWriterTest {
@@ -47,7 +48,9 @@ class OpenCodeConfigWriterTest {
         assertEquals("disabled", root.path("share").asText());
         assertFalse(root.path("autoupdate").asBoolean());
         assertEquals("deny", root.path("permission").path("question").asText());
+        assertEquals("deny", root.path("permission").path("doom_loop").asText());
         assertEquals("deny", root.path("permission").path("bash").path("git push*").asText());
+        assertEquals("deny", root.path("permission").path("edit").path(".git/**").asText());
         assertTrue(root.path("provider").has("opencode-go"));
 
         String configText = Files.readString(configFile);
@@ -79,6 +82,40 @@ class OpenCodeConfigWriterTest {
 
         assertEquals("opencode-go/paid-model", root.path("model").asText());
         assertNotEquals("opencode-go/opencode-go/paid-model", root.path("model").asText());
+    }
+
+    @Test
+    void stripsProviderPrefixStoredInProviderModel() throws Exception {
+        ProviderSettings provider = new ProviderSettings(
+            "opencode-go", "oc_sk_secret", null, "opencode-go/beam-free", 4096);
+
+        Path configFile = OpenCodeConfigWriter.write(tempDir, provider, config(null), tempDir);
+        JsonNode root = mapper.readTree(configFile.toFile());
+
+        assertEquals("opencode-go/beam-free", root.path("model").asText());
+        assertTrue(root.path("provider").path("opencode-go").path("models").has("beam-free"));
+    }
+
+    @Test
+    void rejectsModelOverrideForADifferentProvider() {
+        ProviderSettings provider = new ProviderSettings(
+            "opencode-go", "oc_sk_secret", null, "beam-free", 4096);
+
+        assertThrows(java.io.IOException.class,
+            () -> OpenCodeConfigWriter.write(
+                tempDir, provider, config("anthropic/claude-sonnet-4"), tempDir));
+    }
+
+    @Test
+    void preservesCustomBaseUrlForOpenCodeProviders() throws Exception {
+        ProviderSettings provider = new ProviderSettings(
+            "opencode-go", "oc_sk_secret", "http://localhost:9999/v1", "beam-free", 4096);
+
+        Path configFile = OpenCodeConfigWriter.write(tempDir, provider, config(null), tempDir);
+        JsonNode root = mapper.readTree(configFile.toFile());
+
+        assertEquals("http://localhost:9999/v1",
+            root.path("provider").path("opencode-go").path("options").path("baseURL").asText());
     }
 
     @Test

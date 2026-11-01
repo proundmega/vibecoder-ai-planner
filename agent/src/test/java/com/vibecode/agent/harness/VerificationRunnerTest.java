@@ -118,6 +118,67 @@ class VerificationRunnerTest {
     }
 
     @Test
+    void resolvesNpmCiInstallCommandsForNodePackages() throws IOException {
+        Files.createDirectories(tempDir.resolve("backend"));
+        Files.createDirectories(tempDir.resolve("frontend"));
+        Files.writeString(tempDir.resolve("backend/package.json"), "{\"scripts\":{\"test\":\"jest\"}}");
+        Files.writeString(tempDir.resolve("backend/package-lock.json"), "{}");
+        Files.writeString(tempDir.resolve("frontend/package.json"), "{\"scripts\":{\"test\":\"vitest\"}}");
+
+        List<String> commands = new VerificationRunner().resolveInstallCommands(tempDir);
+
+        assertEquals(List.of(
+            "cd backend && npm ci --no-audit --no-fund",
+            "cd frontend && npm install --no-audit --no-fund"
+        ), commands);
+    }
+
+    @Test
+    void explicitVerificationCommandsDisableAutomaticInstall() throws IOException {
+        Files.writeString(tempDir.resolve("package.json"), "{\"scripts\":{\"test\":\"jest\"}}");
+        HarnessConfig config = new HarnessConfig(
+            "opencode", "opencode", Duration.ofSeconds(30), Duration.ofSeconds(30),
+            Duration.ofMinutes(45), List.of("make verify"), List.of(".env*"), null);
+
+        VerificationRunner runner = new VerificationRunner(config);
+
+        assertEquals(List.of(), runner.resolveInstallCommands(tempDir));
+        assertEquals(List.of("make verify"), runner.resolveCommands(tempDir));
+    }
+
+    @Test
+    void verificationEnvironmentIsAllowlisted() {
+        java.util.Map<String, String> environment = new java.util.HashMap<>();
+        environment.put("PATH", "/usr/bin");
+        environment.put("HOME", "/home/agent");
+        environment.put("GITHUB_TOKEN", "ghp_secret");
+        environment.put("AGENT_API_KEY", "agent_secret");
+        environment.put("DATABASE_URL", "postgres://user:pw@db/app");
+
+        VerificationRunner.sanitizeEnvironment(environment);
+
+        assertEquals("/usr/bin", environment.get("PATH"));
+        assertEquals("/home/agent", environment.get("HOME"));
+        assertFalse(environment.containsKey("GITHUB_TOKEN"));
+        assertFalse(environment.containsKey("AGENT_API_KEY"));
+        assertFalse(environment.containsKey("DATABASE_URL"));
+        assertEquals("1", environment.get("CI"));
+    }
+
+    @Test
+    void verificationChildCannotReadSupervisorSecrets() {
+        String command = windows()
+            ? "echo %GITHUB_TOKEN% %AGENT_API_KEY%"
+            : "printf '%s %s' \"$GITHUB_TOKEN\" \"$AGENT_API_KEY\"";
+
+        List<VerificationResult> results = new VerificationRunner()
+            .run(tempDir, List.of(command), Duration.ofSeconds(20));
+
+        assertEquals(1, results.size());
+        assertEquals(" ", results.get(0).output());
+    }
+
+    @Test
     void configuredCommandsOverrideDetection() throws IOException {
         Files.writeString(tempDir.resolve("pom.xml"), "<project/>");
         HarnessConfig config = new HarnessConfig(

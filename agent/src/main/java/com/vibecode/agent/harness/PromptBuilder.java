@@ -10,6 +10,7 @@ import java.util.List;
 public final class PromptBuilder {
 
     private static final int MAX_DOC_CHARS = 40_000;
+    private static final int MAX_TOTAL_DOC_CHARS = 120_000;
 
     public String build(Ticket ticket, List<String> planningDocs, List<String> verificationCommands) {
         StringBuilder prompt = new StringBuilder();
@@ -24,12 +25,20 @@ public final class PromptBuilder {
 
         if (planningDocs != null && !planningDocs.isEmpty()) {
             prompt.append("## Planning documents\n\n");
+            int totalChars = 0;
             for (String doc : planningDocs) {
                 if (doc == null) continue;
-                String value = doc.length() > MAX_DOC_CHARS
-                    ? doc.substring(0, MAX_DOC_CHARS) + "\n[truncated]"
+                if (totalChars >= MAX_TOTAL_DOC_CHARS) {
+                    prompt.append("[remaining planning documents omitted: prompt budget exhausted]\n\n");
+                    break;
+                }
+                int remainingBudget = MAX_TOTAL_DOC_CHARS - totalChars;
+                int perDocBudget = Math.min(MAX_DOC_CHARS, remainingBudget);
+                String value = doc.length() > perDocBudget
+                    ? doc.substring(0, perDocBudget) + "\n[truncated]"
                     : doc;
                 prompt.append(value).append("\n\n");
+                totalChars += value.length();
             }
         }
 

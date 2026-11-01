@@ -49,6 +49,9 @@ class OpenCodeClientTest {
 
             client.sendPrompt(session, "implement the ticket");
             assertTrue(server.lastPrompt().contains("implement the ticket"));
+            assertTrue(server.lastAuthorization() != null
+                    && server.lastAuthorization().startsWith("Basic "),
+                "Harness requests must send the per-run basic-auth password");
 
             client.close();
             assertEquals(1, server.deletedSessions());
@@ -121,18 +124,39 @@ class OpenCodeClientTest {
         environment.put("OPENCODE_API_KEY", "oc_xxx");
         environment.put("JWT_SECRET", "jwt");
         environment.put("POSTGRES_PASSWORD", "pw");
-        environment.put("NORMAL", "kept");
+        environment.put("DATABASE_URL", "postgres://user:pw@db/app");
+        environment.put("AWS_ACCESS_KEY_ID", "AKIA");
+        environment.put("NORMAL", "removed-by-allowlist");
 
         OpenCodeClient.sanitizeEnvironment(environment);
 
         assertEquals("/usr/bin", environment.get("PATH"));
         assertEquals("/home/agent", environment.get("HOME"));
-        assertEquals("kept", environment.get("NORMAL"));
+        assertFalse(environment.containsKey("NORMAL"));
         assertFalse(environment.containsKey("GITHUB_TOKEN"));
         assertFalse(environment.containsKey("AI_API_KEY"));
         assertFalse(environment.containsKey("OPENCODE_API_KEY"));
         assertFalse(environment.containsKey("JWT_SECRET"));
         assertFalse(environment.containsKey("POSTGRES_PASSWORD"));
+        assertFalse(environment.containsKey("DATABASE_URL"));
+        assertFalse(environment.containsKey("AWS_ACCESS_KEY_ID"));
+    }
+
+    @Test
+    void childEnvironmentDisablesProjectConfigAndDropsSecrets() {
+        java.util.Map<String, String> environment = new java.util.HashMap<>();
+        environment.put("PATH", "/usr/bin");
+        environment.put("GITHUB_TOKEN", "ghp_xxx");
+        environment.put("DATABASE_URL", "postgres://user:pw@db/app");
+
+        OpenCodeClient.configureChildEnvironment(
+            environment, tempDir, tempDir.resolve("opencode.json"), "server-password");
+
+        assertEquals("true", environment.get("OPENCODE_DISABLE_PROJECT_CONFIG"));
+        assertEquals(tempDir.toString(), environment.get("HOME"));
+        assertEquals("server-password", environment.get("OPENCODE_SERVER_PASSWORD"));
+        assertFalse(environment.containsKey("GITHUB_TOKEN"));
+        assertFalse(environment.containsKey("DATABASE_URL"));
     }
 
     @Test

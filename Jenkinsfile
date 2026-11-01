@@ -209,6 +209,9 @@ pipeline {
                 dir('agent') {
                     sh 'mvn test -q'
                     sh 'mvn package -q -DskipTests'
+                    // The harness adds Node/OpenCode to the runtime image; a JAR
+                    // build alone does not validate that stage.
+                    sh 'docker build -t vibecode-agent:ci .'
                 }
             }
         }
