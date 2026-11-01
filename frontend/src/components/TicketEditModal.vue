@@ -59,9 +59,11 @@ async function handleSave() {
       priority: priority.value
     }
     
-    if (assigneeId.value) {
-      updates.assigneeId = assigneeId.value
-    }
+    // VInput's select emits an empty string for the "Unassigned" option.
+    // Send null explicitly so the backend clears the assignment.
+    updates.assigneeId = assigneeId.value === '' || assigneeId.value == null
+      ? null
+      : assigneeId.value
     
     await updateTicket(props.ticket.id, updates)
     emit('saved', updates)
@@ -77,9 +79,9 @@ async function handleSave() {
 <template>
   <VModal :modelValue="true" title="Edit Ticket" size="large" @close="emit('close')">
     <form @submit.prevent="handleSave">
-      <VInput v-model="title" label="Title" placeholder="Ticket title" :error="error" required />
+      <VInput v-model="title" label="Title" placeholder="Ticket title" :error="error" maxlength="200" required />
       
-      <VInput v-model="description" label="Description" placeholder="Ticket description" type="textarea" />
+      <VInput v-model="description" label="Description" placeholder="Ticket description" type="textarea" maxlength="5000" />
       
       <VInput v-model="priority" label="Priority" type="select">
         <option value="low">Low</option>

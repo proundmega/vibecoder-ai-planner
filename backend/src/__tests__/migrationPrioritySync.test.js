@@ -21,6 +21,7 @@ describe('priority enum consistency', () => {
     const repoRoot = path.join(__dirname, '../../..');
     const files = [
       path.join(__dirname, '../api/openapi-spec.js'),
+      path.join(__dirname, '../api/openapi-generated.json'),
       path.join(repoRoot, 'frontend/src/api/validator.ts'),
       path.join(repoRoot, 'frontend/src/api/generated/models/Ticket.ts'),
       path.join(repoRoot, 'frontend/src/api/generated/services/TicketsService.ts'),
