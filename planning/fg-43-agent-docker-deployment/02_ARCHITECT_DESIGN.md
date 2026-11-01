@@ -45,13 +45,16 @@ Usage: ./host-init.sh [--role build|review|fixer|light] [--dry-run] [--yes]
 6. With --dry-run: exit 0 without writing.
 7. Write .env.agent-host atomically (umask 077).
 8. Validate image/volume/network. If the backend is already reachable, validate /health.
-9. With --yes, start compose (or print the command) with POOL_PAUSED=true.
-10. Wait for /health with a bounded timeout, then call the pool config endpoint
-    (`{ "paused": false, "maxPoolSize": <computed> }`) to enable the pool.
-    On timeout or a failed call, leave the pool paused and exit non-zero.
+9. With --yes, start compose (or print the command) with the persisted
+   POOL_PAUSED=false and computed MAX_POOL_SIZE. The backend startup gate keeps
+   assignments off until /health is green.
+10. Wait for /health with a bounded timeout and exit 0 once healthy. No unpause
+    call is required; runtime changes use POST /api/v1/pool/config with
+    X-Pool-Admin-Token. On timeout, leave the stack up with assignments gated
+    and exit non-zero.
 ```
 
-If the backend is already running (upgrade path), skip the compose start and only validate health before enabling the pool. The backend must never spawn agents before its own `/health` is green.
+If the backend is already running (upgrade path), skip the compose start, validate health, and use the token-authenticated config endpoint only if the pool size/pause state needs to change. The backend must never spawn agents before its own `/health` is green, even when `POOL_PAUSED=false`.
 
 The script must be idempotent, never print secrets, and fail closed. It should support `.env` overrides but never overwrite an existing file without `--force`.
 
@@ -69,12 +72,14 @@ reserve_disk  = max(100, disk_gb * 0.10)
 max_cpu  = max(0, floor((threads * utilization - reserve_cpu) / cpu_per_agent))
 max_ram  = max(0, floor((ram_gb - reserve_ram) / ram_per_agent))
 max_disk = max(0, floor((disk_gb * 0.80 - reserve_disk) / disk_per_agent))
-pool     = max(0, min(max_cpu, max_ram, max_disk, AGENT_MAX_POOL_SIZE))
+computed = max(0, min(max_cpu, max_ram, max_disk, AGENT_MAX_POOL_SIZE))
 if AGENT_POOL_SIZE is set:
-  pool = min(AGENT_POOL_SIZE, AGENT_MAX_POOL_SIZE)
+  pool = min(AGENT_POOL_SIZE, computed)   # can only lower the safe pool
+else:
+  pool = computed
 ```
 
-`0` is a valid result and means "no agent fits": write `MAX_POOL_SIZE=0`, keep `POOL_PAUSED=true`, and report the binding constraint. `AGENT_MAX_POOL_SIZE` is the formula hard cap; `AGENT_POOL_SIZE` is an explicit override; `MAX_POOL_SIZE` is the runtime value `PoolManager` reads.
+`0` is a valid result and means "no agent fits": write `MAX_POOL_SIZE=0`, keep `POOL_PAUSED=true`, and report the binding constraint. `AGENT_MAX_POOL_SIZE` is the formula hard cap; `AGENT_POOL_SIZE` is a capped override that can only lower the pool; `MAX_POOL_SIZE` is the runtime value `PoolManager` reads.
 
 Notes:
 
@@ -98,7 +103,8 @@ Phase 1 runs **one pool per role**: each `PoolManager`/controller process has a 
 
 - Read `AGENT_CPU_LIMIT`, `AGENT_MEMORY_LIMIT`, `AGENT_PIDS_LIMIT`, `AGENT_LOG_MAX_SIZE`, `AGENT_LOG_MAX_FILE`.
 - Parse `MAX_POOL_SIZE` as a non-negative integer; do not use `parseInt(...) || 50` (0 would become 50). `0` means paused.
-- Add `POOL_PAUSED` and a pool config admin endpoint (`POST /api/v1/pool/config` with `{ paused, maxPoolSize }`) used by host-init and fg-44 recovery. `requestAgent` rejects with a clear error when paused or full. Env values are startup defaults; the endpoint sets the runtime values until restart.
+- Add `POOL_PAUSED` and a token-authenticated pool config endpoint (`POST /api/v1/pool/config` with `{ paused, maxPoolSize }` and `X-Pool-Admin-Token` from the `POOL_ADMIN_TOKEN` env). Host-init generates the token with mode `0600`; fg-44 recovery uses the same token. `requestAgent` rejects with a clear error when paused or full.
+- Startup health gate: assignments stay disabled until DB/Redis health is green and `/health` is served, then apply `MAX_POOL_SIZE`/`POOL_PAUSED`. A restart with `POOL_PAUSED=false` resumes automatically. Env values are startup defaults; the endpoint sets runtime values until restart.
 - `AGENT_ROLE` is process-wide; Phase 1 runs one pool per role (see Profiles).
 - Set `HostConfig.NanoCpus = cpu * 1e9`, `Memory = bytes`, `MemorySwap = Memory`, `PidsLimit`.
 - Set `LogConfig` with `max-size`/`max-file`.
@@ -128,7 +134,7 @@ HostConfig: {
 
 Two options:
 
-1. **Same-host planner (Phase 1):** use the existing planner compose, add `.env.agent-host`, and ensure the backend container has the Docker socket. `host-init.sh` writes the computed `MAX_POOL_SIZE` and `POOL_PAUSED=true`, starts Compose, waits for `/health`, then calls `POST /api/v1/pool/config` to unpause with the computed size. If the backend is already running, it validates health first and only calls the config endpoint.
+1. **Same-host planner (Phase 1):** use the existing planner compose, add `.env.agent-host`, and ensure the backend container has the Docker socket. `host-init.sh` writes the computed `MAX_POOL_SIZE` and `POOL_PAUSED=false`, starts Compose, and waits for `/health`; the backend startup gate holds assignments until health is green, so no unpause call is needed. Runtime changes use the `POOL_ADMIN_TOKEN` config endpoint, including when the backend was already running.
 2. **Dedicated agent host (follow-up):** run a small pool controller on the agent host that talks to the backend API and the local Docker socket. Do not expose the Docker socket over TCP without TLS/mTLS.
 
 `agent/docker-compose.host.yml` can be a thin override that:
@@ -142,7 +148,7 @@ Two options:
 - `docker info` succeeds.
 - `vibecode-agent` image exists (or build it).
 - repo volume exists and is writable; `AGENT_REPO_DIR` resolves to its mountpoint for `df`.
-- backend health: if the backend is already running, check `/health` first; otherwise start Compose and wait for `/health` before enabling the pool.
+- backend health: if the backend is already running, check `/health` first; otherwise start Compose and wait for `/health`. Assignments are health-gated until then; no unpause call is required.
 - at least one slot is available, **or** the computed value is 0/`POOL_PAUSED=true` and the script reports the paused state without starting an agent.
 - on failure: exit non-zero, leave the pool paused, do not start a partial pool.
 

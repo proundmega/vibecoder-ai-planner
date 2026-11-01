@@ -15,8 +15,9 @@ The current deployment is a single `agent` Compose service plus a `PoolManager` 
 - [ ] Write the sizing formula and examples for build/review/light agents
 - [ ] Allow a computed pool of 0 and fail closed; add `POOL_PAUSED`
 - [ ] Fix the `MAX_POOL_SIZE` parser so 0 is not coerced to 50
-- [ ] Add a runtime pool pause/resume config endpoint (`{ paused, maxPoolSize }`)
-- [ ] Map `AGENT_MAX_POOL_SIZE` (hard cap), `AGENT_POOL_SIZE` (override) and `MAX_POOL_SIZE` (runtime)
+- [ ] Add a runtime pool pause/resume config endpoint (`{ paused, maxPoolSize }`) guarded by `POOL_ADMIN_TOKEN`
+- [ ] Generate `POOL_ADMIN_TOKEN` with mode `0600` in `.env.agent-host` for host-init/recovery
+- [ ] Map `AGENT_MAX_POOL_SIZE` (hard cap), `AGENT_POOL_SIZE` (capped override, can only lower) and `MAX_POOL_SIZE` (runtime)
 - [ ] Resolve `AGENT_REPO_DIR` from the repo volume mountpoint for `df`/`du`
 - [ ] Create `agent/host-init.sh` with `--dry-run` and `--yes`
 - [ ] Generate a `.env.agent-host` consumed by Compose/PoolManager
@@ -24,7 +25,7 @@ The current deployment is a single `agent` Compose service plus a `PoolManager` 
 - [ ] Define role profiles (build, review, fixer, light poller) with one pool per role in Phase 1
 - [ ] Decide the single-host topology (backend + PoolManager + agents on one Docker host)
 - [ ] Add compose deployment file and health checks
-- [ ] Start Compose, wait for `/health`, then enable the pool; keep it paused on failure
+- [ ] Persist `POOL_PAUSED=false`, add a backend startup health gate, and wait for `/health`; a restart resumes automatically
 - [ ] Add validation, logging and override behavior
 - [ ] Document multi-host/remote-Docker as a follow-up
 - [ ] Keep Kubernetes out of scope for this ticket
