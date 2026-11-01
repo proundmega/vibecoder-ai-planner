@@ -7,6 +7,12 @@ validated.
 **Target model**: implementation agent with architecture context (not a 7B model)
 **Date**: 2026-10-31
 
+> **Phase 1 implementation note**: the shipped guard uses the pinned
+> `baseCommit`, a supervisor-owned temporary index and the exact staged tree SHA
+> (`diff-tree`/`ls-tree`/`cat-file`), never local `HEAD`/refs. Publication uses
+> `commit-tree -p <baseCommit>` and pushes that SHA. `GIT_NO_REPLACE_OBJECTS=1`,
+> graft removal and `git fsck --strict` are part of the flow.
+
 ---
 
 ## Test-First Requirement

@@ -41,7 +41,7 @@ frontend/src/
   api/generated/        → TS types via openapi-typescript-codegen
   router/index.ts       → reads vibecode_token directly from localStorage
 
-agent/                  → Java 17 Maven, shaded JAR, eclipse-temurin Docker
+agent/                  → Java 17 Maven, shaded JAR; `harness/` = OpenCode supervisor (fg-30)
 ai/CODING.md            → IPEE methodology (mandatory for all code changes)
 architecture/           → system-design.md
 planning/               → 00-04 templates + bp-XX/, bt-XX/, fg-XX/ suites
@@ -132,6 +132,32 @@ When a `04_SPECIFICATION.md` is created for a ticket, it includes a **Test-First
 3. Fill in test stubs with actual assertions
 
 This prevents models from skipping tests. The test stubs are listed as the first file operations in `04_SPECIFICATION.md`.
+
+## Agent harness (fg-30)
+
+The Java agent has two ticket-execution modes, selected by `HARNESS_MODE`:
+
+- `legacy` (default) — one-shot provider call that returns JSON file operations.
+- `opencode` — supervisor starts `opencode serve` in an isolated temp HOME and
+  cloned workspace, sends a prompt, then verifies, commits, pushes and opens the
+  PR. Commit/push/merge are denied by policy (config + denied bash rules), but
+  that is defense-in-depth, not a hard security boundary: the workspace is
+  hostile. The supervisor owns publishing, runs git with hooks/fsmonitor
+  disabled, restores a trusted `.git/config`, sanitizes child environments,
+  disables OpenCode project config, and refuses protected paths
+  (`.env*`/`**/.env*`, `Jenkinsfile`, `.github/**`, `**/secrets/**`) or
+  oversized diffs.
+
+Harness env: `HARNESS_BIN`, `HARNESS_STARTUP_TIMEOUT_MS`,
+`HARNESS_MAX_DURATION_MINUTES`,
+`HARNESS_VERIFY_COMMANDS` (semicolon-separated; empty = autodetect, then fail
+closed), `HARNESS_PROTECTED_PATHS`, `HARNESS_MODEL`, `HARNESS_MAX_FILES`,
+`HARNESS_MAX_LINES`, `HARNESS_MAX_BYTES`, `HARNESS_FSCK`,
+`HARNESS_RETRY_PIN_ATTEMPTS`,
+`HARNESS_RETRY_BASE_DELAY_MS`, `HARNESS_RETRY_MAX_DELAY_MS`. Phase 1 is blocking
+prompt mode and denies the `question` and `doom_loop` tools; autonomy and the
+human question loop are later phases.
+See `planning/fg-30-autonomous-coding-harness/`.
 
 ## API
 

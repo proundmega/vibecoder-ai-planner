@@ -1,5 +1,7 @@
 package com.vibecode.agent.config;
 
+import com.vibecode.agent.harness.HarnessConfig;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -48,6 +50,7 @@ public class AgentConfig {
     private final int maxTicketsPerCycle;
     private final String repoCloneDir;
     private final String githubToken;
+    private final HarnessConfig harnessConfig;
 
     public AgentConfig() {
         this.agentApiKey = requireEnv("AGENT_API_KEY");
@@ -67,6 +70,7 @@ public class AgentConfig {
         this.dryRun = "true".equalsIgnoreCase(getEnv("DRY_RUN", "false"));
         this.maxTicketsPerCycle = getIntEnv("MAX_TICKETS", 1);
         this.repoCloneDir = getEnv("REPO_CLONE_DIR", "/tmp/repos");
+        this.harnessConfig = HarnessConfig.fromEnvironment();
         if (this.repoOwner != null && !this.repoOwner.isBlank()) {
             validateCloneDir(this.repoCloneDir);
         }
@@ -110,6 +114,17 @@ public class AgentConfig {
     public int getMaxTicketsPerCycle() { return maxTicketsPerCycle; }
     public String getRepoCloneDir() { return repoCloneDir; }
     public String getGitHubToken() { return githubToken; }
+
+    public HarnessConfig getHarnessConfig() { return harnessConfig; }
+    public String getHarnessMode() { return harnessConfig.mode(); }
+    public String getHarnessBin() { return harnessConfig.binary(); }
+    public long getHarnessStartupTimeoutMs() { return harnessConfig.startupTimeout().toMillis(); }
+    /** Reserved for Phase 2 event streaming; not used in blocking prompt mode. */
+    public long getHarnessIdleTimeoutMs() { return harnessConfig.idleTimeout().toMillis(); }
+    public long getHarnessMaxDurationMinutes() { return harnessConfig.maxDuration().toMinutes(); }
+    public java.util.List<String> getHarnessVerifyCommands() { return harnessConfig.verificationCommands(); }
+    public java.util.List<String> getHarnessProtectedPaths() { return harnessConfig.protectedPaths(); }
+    public String getHarnessModel() { return harnessConfig.modelOverride(); }
 
     public String getApiUrl() {
         return backendUrl.endsWith("/") ? backendUrl + "api/v1" : backendUrl + "/api/v1";
@@ -170,6 +185,7 @@ public class AgentConfig {
             ", dryRun=" + dryRun +
             ", maxTicketsPerCycle=" + maxTicketsPerCycle +
             ", repoCloneDir='" + repoCloneDir + '\'' +
+            ", harnessMode='" + harnessConfig.mode() + '\'' +
             '}';
     }
 }

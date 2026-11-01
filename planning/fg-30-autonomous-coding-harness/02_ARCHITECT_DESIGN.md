@@ -5,6 +5,14 @@
 **Scope**: Both (agent, backend, frontend, infrastructure)
 **Related**: `01_ARCHITECT_REQUIREMENT.md`, `03_ARCHITECT_IMPLEMENTATION.md`, `04_SPECIFICATION.md`
 
+> **Phase 1 implementation update (2026-11-01)**: publishing pins the clone-time
+> `baseCommit`, stages into a supervisor-owned `GIT_INDEX_FILE`, guards the exact
+> tree SHA, and commits with `commit-tree -p <baseCommit>`. Git runs with
+> `GIT_NO_REPLACE_OBJECTS=1`, grafts removed and `git fsck --strict` before
+> staging. Process groups are killed after the prompt and after every
+> verification command; this is isolation, not a sandbox (detached children and
+> same-uid `/proc` access require a container/cgroup boundary).
+
 ---
 
 ## Problem Statement

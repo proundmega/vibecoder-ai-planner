@@ -1,6 +1,9 @@
 package com.vibecode.agent;
 
 import com.vibecode.agent.config.AgentConfig;
+import com.vibecode.agent.harness.HarnessConfig;
+import com.vibecode.agent.harness.HarnessTicketProcessor;
+import com.vibecode.agent.harness.ProviderSettings;
 import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.service.*;
 import org.slf4j.Logger;
@@ -37,9 +40,9 @@ public class AgentApp {
 
     private final AgentConfig config;
     private final ApiService apiService;
-    private final AiProvider aiProvider;
+    private final ProviderSettings providerSettings;
     private final GitHubService gitHubService;
-    private final TicketProcessor ticketProcessor;
+    private final TicketWorker ticketWorker;
     private final ReviewProcessor reviewProcessor;
     private ScheduledExecutorService heartbeatScheduler;
     private String githubAccessToken;
@@ -48,11 +51,41 @@ public class AgentApp {
     public AgentApp(AgentConfig config) {
         this.config = config;
         this.apiService = new ApiService(config);
-        this.aiProvider = createAiProvider();
+        this.providerSettings = resolveProviderSettings();
+        AiProvider aiProvider = createAiProvider(providerSettings);
         this.githubAccessToken = fetchGitHubToken();
         this.gitHubService = new GitHubService(githubAccessToken, config.getRepoOwner(), config.getRepoName());
-        this.ticketProcessor = new TicketProcessor(config, apiService, aiProvider, gitHubService, githubAccessToken);
-        this.reviewProcessor = new ReviewProcessor(apiService, aiProvider, config.getAgentId());
+
+        HarnessConfig harnessConfig = config.getHarnessConfig();
+        if (harnessConfig.isEnabled()) {
+            harnessConfig.validate();
+            this.ticketWorker = new HarnessTicketProcessor(
+                config, apiService, providerSettings, gitHubService,
+                githubAccessToken, harnessConfig);
+            log.info("Harness mode: opencode (binary={}, model={})",
+                harnessConfig.binary(),
+                harnessConfig.modelOverride() != null
+                    ? harnessConfig.modelOverride()
+                    : providerSettings.model());
+        } else {
+            this.ticketWorker = new TicketProcessor(
+                config, apiService, aiProvider, gitHubService, githubAccessToken);
+            log.info("Harness mode: legacy");
+        }
+
+        if (supportsLegacyProvider(providerSettings)) {
+            this.reviewProcessor = new ReviewProcessor(apiService, aiProvider, config.getAgentId());
+        } else {
+            this.reviewProcessor = null;
+            log.warn("Review processing disabled: provider '{}' is only supported by the OpenCode harness",
+                providerSettings.normalizedType());
+        }
+    }
+
+    private static boolean supportsLegacyProvider(ProviderSettings settings) {
+        String type = settings.normalizedType();
+        boolean openCode = type.equals("opencode") || type.equals("opencode-go");
+        return !openCode || (settings.baseUrl() != null && !settings.baseUrl().isBlank());
     }
 
     private String fetchGitHubToken() {
@@ -83,7 +116,11 @@ public class AgentApp {
         return config.getAgentApiKey();
     }
 
-    private AiProvider createAiProvider() {
+    /**
+     * Resolves provider settings once so the legacy path and the harness share
+     * the same credentials, model and endpoint.
+     */
+    private ProviderSettings resolveProviderSettings() {
         Map<String, Object> providerConfig = null;
         try {
             Map<String, Object> rawConfig = apiService.getProviderConfig(config.getAgentId());
@@ -100,24 +137,18 @@ public class AgentApp {
             String baseUrl = (String) providerConfig.get("base_url");
             String model = (String) providerConfig.get("model");
             String providerType = (String) providerConfig.get("provider_type");
-            Integer maxTokens = providerConfig.get("max_tokens") != null ?
-                (Integer) providerConfig.get("max_tokens") : config.getAiMaxTokens();
+            Object maxTokensRaw = providerConfig.get("max_tokens");
+            int maxTokens = maxTokensRaw instanceof Number number
+                ? number.intValue()
+                : config.getAiMaxTokens();
 
-            if (baseUrl != null && !baseUrl.isBlank()) {
-                log.info("Using OpenAI-compatible provider from backend config: {}, model: {}", baseUrl, model);
-                return new OpenAiCompatibleProvider(baseUrl, model, apiKey, maxTokens);
+            String type = providerType == null ? "claude" : providerType;
+            String normalized = type.toLowerCase().replace('_', '-');
+            boolean openCode = normalized.equals("opencode") || normalized.equals("opencode-go");
+            if (baseUrl != null && !baseUrl.isBlank() && !openCode) {
+                normalized = "generic";
             }
-
-            String type = providerType != null ? providerType.toLowerCase() : "claude";
-            switch (type) {
-                case "openai":
-                    log.info("Using OpenAI provider from backend config, model: {}", model);
-                    return new OpenAiProvider(apiKey, model);
-                case "claude":
-                default:
-                    log.info("Using Claude provider from backend config, model: {}", model);
-                    return new ClaudeProvider(apiKey, model);
-            }
+            return new ProviderSettings(normalized, apiKey, baseUrl, model, maxTokens);
         }
 
         // Fall back to env vars
@@ -129,20 +160,41 @@ public class AgentApp {
             log.warn("No AI_API_KEY set (from env or backend), agent may not function");
         }
 
-        if (endpointUrl != null && !endpointUrl.isBlank()) {
-            log.info("Using OpenAI-compatible provider with env endpoint: {}, model: {}", endpointUrl, model);
-            return new OpenAiCompatibleProvider(endpointUrl, model, apiKey, config.getAiMaxTokens());
-        }
+        String type = endpointUrl != null && !endpointUrl.isBlank()
+            ? "generic"
+            : config.getAiProvider().toLowerCase();
+        return new ProviderSettings(type, apiKey, endpointUrl, model, config.getAiMaxTokens());
+    }
 
-        String provider = config.getAiProvider().toLowerCase();
-        switch (provider) {
+    private AiProvider createAiProvider(ProviderSettings settings) {
+        String type = settings.normalizedType();
+        int maxTokens = settings.maxTokens() > 0 ? settings.maxTokens() : config.getAiMaxTokens();
+
+        switch (type) {
             case "openai":
-                log.info("Using OpenAI provider from env, model: {}", model);
-                return new OpenAiProvider(apiKey, model);
+                log.info("Using OpenAI provider, model: {}", settings.model());
+                return new OpenAiProvider(settings.apiKey(), settings.model());
+            case "generic":
+                log.info("Using OpenAI-compatible provider: {}, model: {}",
+                    settings.baseUrl(), settings.model());
+                return new OpenAiCompatibleProvider(
+                    settings.baseUrl(), settings.model(), settings.apiKey(), maxTokens);
+            case "opencode":
+            case "opencode-go":
+                if (settings.baseUrl() != null && !settings.baseUrl().isBlank()) {
+                    log.info("Using OpenAI-compatible OpenCode endpoint: {}, model: {}",
+                        settings.baseUrl(), settings.model());
+                    return new OpenAiCompatibleProvider(
+                        settings.baseUrl(), settings.model(), settings.apiKey(), maxTokens);
+                }
+                log.warn("Provider '{}' is supported by the OpenCode harness; legacy provider disabled",
+                    type);
+                return new ClaudeProvider(settings.apiKey(), settings.model());
             case "claude":
+            case "anthropic":
             default:
-                log.info("Using Claude provider from env, model: {}", model);
-                return new ClaudeProvider(apiKey, model);
+                log.info("Using Claude provider, model: {}", settings.model());
+                return new ClaudeProvider(settings.apiKey(), settings.model());
         }
     }
 
@@ -206,8 +258,8 @@ public class AgentApp {
 
                 apiService.sendHeartbeat(
                     config.getAgentId(),
-                    ticketProcessor.getCurrentTicketId(),
-                    ticketProcessor.getCurrentStep(),
+                    ticketWorker.getCurrentTicketId(),
+                    ticketWorker.getCurrentStep(),
                     mem,
                     cpu
                 );
@@ -241,6 +293,10 @@ public class AgentApp {
         // Check if this is a review agent (no REPO_OWNER/REPO_NAME means review mode)
         if (config.getRepoOwner() == null || config.getRepoOwner().isBlank()) {
             log.warn("REPO_OWNER is not set — running in review mode only. Ticket processing is disabled. Set REPO_OWNER and REPO_NAME to enable build mode.");
+            if (reviewProcessor == null) {
+                log.warn("Review cycle skipped: the configured provider is not usable by the legacy review path");
+                return;
+            }
             reviewProcessor.processReviewCycle();
             return;
         }
@@ -257,7 +313,7 @@ public class AgentApp {
             }
 
             if (ticket.isAvailable()) {
-                ticketProcessor.processTicket(ticket);
+                ticketWorker.processTicket(ticket);
                 processed++;
             }
         }

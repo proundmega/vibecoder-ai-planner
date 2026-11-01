@@ -122,6 +122,39 @@ Required for `docker compose up`:
 | `STALE_TIMEOUT_MS` | Agent stale timeout | `3600000` |
 | `DRY_RUN` | Dry run mode | `false` |
 | `MAX_TICKETS` | Max tickets per cycle | `1` |
+| `HARNESS_MODE` | Execution harness: `legacy` or `opencode` | `legacy` |
+| `HARNESS_BIN` | OpenCode executable | `opencode` |
+| `HARNESS_STARTUP_TIMEOUT_MS` | OpenCode server health timeout | `30000` |
+| `HARNESS_MAX_DURATION_MINUTES` | Per-ticket wall-clock budget, enforced per install/verify command and before publish | `45` |
+| `HARNESS_VERIFY_COMMANDS` | Semicolon-separated verification commands (empty = autodetect, then fail closed) | _(autodetect)_ |
+| `HARNESS_PROTECTED_PATHS` | Semicolon-separated globs that must never be published | `.env*;**/.env*;Jenkinsfile;**/Jenkinsfile;.github/**;**/.github/**;**/secrets/**` |
+| `HARNESS_MODEL` | Optional harness model override (must match the configured provider) | _(provider default)_ |
+| `HARNESS_MAX_FILES` | Maximum changed files the guard will publish | `50` |
+| `HARNESS_MAX_LINES` | Maximum changed lines the guard will publish | `2000` |
+| `HARNESS_MAX_BYTES` | Maximum total changed bytes the guard will publish | `5242880` |
+| `HARNESS_FSCK` | Run `git fsck --strict` before staging (`false` skips it for very large repos) | `true` |
+| `HARNESS_RETRY_PIN_ATTEMPTS` | Failures before retry backoff pins at the maximum (retries continue at that interval; `HARNESS_MAX_ATTEMPTS` is accepted as a legacy alias) | `3` |
+| `HARNESS_RETRY_BASE_DELAY_MS` | Base exponential retry delay | `60000` |
+| `HARNESS_RETRY_MAX_DELAY_MS` | Maximum retry delay | `3600000` |
+
+With `HARNESS_MODE=opencode`, the agent starts an isolated OpenCode server session
+(`opencode serve`), lets it read/edit/test the cloned workspace, then verifies and
+publishes the diff itself. The harness is *denied* commit/push/merge by policy
+and the supervisor owns publishing, but bash rules are defense-in-depth rather
+than a security boundary: the supervisor also sanitizes child environments,
+disables project config (`OPENCODE_DISABLE_PROJECT_CONFIG`), restores a trusted
+`.git/config` before publishing, disables hooks, and parses `git status -uall -z`
+so untracked directories cannot hide protected files. The legacy one-shot path
+remains the default, but now shares the pinned base/tree, `git fsck` and
+protected-path write checks; it still does not run `PublishingGuard`.
+
+The harness requires OpenCode 1.x (the Docker image pins `1.19.5`). A local
+`opencode` from `PATH` must speak the v1 server API.
+
+Verification and harness children receive proxy/registry variables only after
+URL userinfo is stripped, and `MAVEN_OPTS` is not inherited. Authenticated
+enterprise proxies must therefore be configured at the network/container layer
+rather than through supervisor credentials.
 
 ### Runtime Flags
 

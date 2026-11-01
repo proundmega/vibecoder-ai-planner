@@ -15,6 +15,21 @@ services:
       - POLL_INTERVAL_MS=${POLL_INTERVAL_MS:-30000}
       - DRY_RUN=${DRY_RUN:-false}
       - MAX_TICKETS=${MAX_TICKETS:-1}
+      # OpenCode harness (legacy remains the safe default)
+      - HARNESS_MODE=${HARNESS_MODE:-legacy}
+      - HARNESS_BIN=${HARNESS_BIN:-opencode}
+      - HARNESS_STARTUP_TIMEOUT_MS=${HARNESS_STARTUP_TIMEOUT_MS:-30000}
+      - HARNESS_MAX_DURATION_MINUTES=${HARNESS_MAX_DURATION_MINUTES:-45}
+      - HARNESS_VERIFY_COMMANDS=${HARNESS_VERIFY_COMMANDS:-}
+      - HARNESS_PROTECTED_PATHS=${HARNESS_PROTECTED_PATHS:-.env*;**/.env*;Jenkinsfile;**/Jenkinsfile;.github/**;**/.github/**;**/secrets/**}
+      - HARNESS_MODEL=${HARNESS_MODEL:-}
+      - HARNESS_MAX_FILES=${HARNESS_MAX_FILES:-50}
+      - HARNESS_MAX_LINES=${HARNESS_MAX_LINES:-2000}
+      - HARNESS_MAX_BYTES=${HARNESS_MAX_BYTES:-5242880}
+      - HARNESS_FSCK=${HARNESS_FSCK:-true}
+      - HARNESS_RETRY_PIN_ATTEMPTS=${HARNESS_RETRY_PIN_ATTEMPTS:-3}
+      - HARNESS_RETRY_BASE_DELAY_MS=${HARNESS_RETRY_BASE_DELAY_MS:-60000}
+      - HARNESS_RETRY_MAX_DELAY_MS=${HARNESS_RETRY_MAX_DELAY_MS:-3600000}
     depends_on:
       api:
         condition: service_healthy
@@ -24,8 +39,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
-          cpus: '1.0'
+          # JVM + Node + npm install + Vitest need more than 512M.
+          memory: 2G
+          cpus: '2.0'
 
   api:
     external: true
