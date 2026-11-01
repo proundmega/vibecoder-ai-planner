@@ -63,25 +63,45 @@ async function runMigration(file, dryRun = false, pool = null) {
 }
 ```
 
-**Modify migrate function** (add dry-run parameter):
+**Modify migrate function** (no DB in dry-run, connect once otherwise):
 ```javascript
 async function migrate(dryRun = false) {
-  for (const sqlFile of SQL_FILES) {
-    await runMigration(sqlFile, dryRun);
+  if (dryRun) {
+    let valid = true;
+    for (const sqlFile of SQL_FILES) {
+      const fileValid = await runMigration(sqlFile, true);
+      valid = valid && fileValid;
+    }
+    for (const dataMigration of DATA_MIGRATIONS) {
+      console.log(`\n[DRY-RUN] Would run data migration: ${path.basename(dataMigration)}`);
+    }
+    console.log('\n\n=== DRY-RUN COMPLETE: no changes were applied ===');
+    if (!valid) process.exitCode = 1;
+    return;
   }
 
-  for (const dataMigration of DATA_MIGRATIONS) {
-    if (dryRun) {
-      console.log(`\n[DRY-RUN] Would run data migration: ${path.basename(dataMigration)}`);
-    } else {
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    family: 4,
+  });
+
+  try {
+    await pool.query('SELECT NOW()');
+    for (const sqlFile of SQL_FILES) {
+      await runMigration(sqlFile, false, pool);
+    }
+    for (const dataMigration of DATA_MIGRATIONS) {
       await runDataMigration(dataMigration);
     }
+    console.log('\n\n✓ Migrations completed successfully!');
+  } catch (error) {
+    console.error('Migration failed:', error.message);
+    process.exitCode = 1;
+  } finally {
+    await pool.end();
   }
-
-  console.log('\n\n✓ Migrations completed successfully!');
 }
 ```
-
 **Modify CLI argument parsing** (at bottom of file):
 ```javascript
 // Parse CLI arguments

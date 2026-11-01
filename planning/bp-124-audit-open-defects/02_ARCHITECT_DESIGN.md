@@ -27,7 +27,7 @@ This is an umbrella ticket. Each defect gets its own implementation slice (and, 
 - Use versioned `/api/v1` paths.
 - Fix `.error` assertions to match the current UI.
 - Add a Jenkins stage with a seeded backend/frontend stack.
-- Keep component tests separate.
+- Component tests are tracked separately as **O9**, not folded into the E2E rewrite.
 
 ## O4 - Agent identity
 
@@ -61,6 +61,21 @@ This is an umbrella ticket. Each defect gets its own implementation slice (and, 
 - Allow an explicit ignore list for known idempotent "already exists" errors.
 - Add a test that a broken migration fails the setup.
 
+## O9 - Component tests
+
+- Add `EditTicketModal.cy.ts` covering title/description limits, priority options, assignee selection/clearing and save payload.
+- Replace the `TicketDetail.cy.ts` placeholder with real coverage for the detail/edit flow.
+- Refresh `07-ticket-assignment.cy.ts` for the current DOM (do not use a generic `.modal select`).
+- Verify the "Unassigned" path sends `assigneeId: null` and actually clears the assignment.
+- Keep these component tests separate from the E2E suite (O3).
+
+## O10 - Dry-run grammar validation
+
+- Current dry-run does structural validation (balanced quotes/parentheses, non-empty statements).
+- Decide: add a real SQL parser dependency, or keep structural validation and document the limitation.
+- If a parser is added, cover PostgreSQL-specific syntax and dollar-quoted bodies.
+- Do not reintroduce a database connection in dry-run.
+
 ## Rollout
 
 1. O1/O2 (data correctness, low risk).
@@ -81,6 +96,6 @@ This is an umbrella ticket. Each defect gets its own implementation slice (and, 
 
 | # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
 |---|---|---|---|---|---|
-| 1 | bp-123 | O1-O8 umbrella | Multiple | `bp-124-audit-open-defects` | No |
-| 2 | bp-79 | Full SQL grammar validation | Backend | `bp-124-audit-open-defects` | No |
+| 1 | bp-123 | O1-O10 umbrella | Multiple | `bp-124-audit-open-defects` | No |
+| 2 | bp-79 | Full SQL grammar validation (O10) | Backend | `bp-124-audit-open-defects` | No |
 | 3 | fg-30 | Harness roadmap | Agent | `fg-33`+ | No |

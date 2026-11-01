@@ -32,7 +32,7 @@ A full audit of the planner's backend, frontend and Java agent found defects tha
 ## Non-goals
 
 - Rewriting the ticket phase system.
-- Fixing every audit open defect (O1-O8) in this ticket; see `bp-124`.
+- Fixing every audit open defect (O1-O10) in this ticket; see `bp-124`.
 - Adding Cypress E2E coverage to Jenkins.
 - Reworking the frontend validator schema from snake_case to camelCase.
 
@@ -68,7 +68,7 @@ A full audit of the planner's backend, frontend and Java agent found defects tha
 7. `npm run db:migrate:dry-run` succeeds with an invalid `DATABASE_URL`, prints classification summaries, and does not print connection errors.
 8. The Java agent tests pass on Windows (POSIX-only tests skip).
 9. The backend and frontend suites pass; Cypress component specs are refreshed.
-10. Remaining O1-O8 defects are tracked in `bp-124`.
+10. Remaining O1-O10 defects are tracked in `bp-124`.
 
 ## Out of scope
 
@@ -93,3 +93,5 @@ A full audit of the planner's backend, frontend and Java agent found defects tha
 | 6 | audit | Fix `PUT /tickets/:id` response type | Backend | `bp-124-audit-open-defects` | No |
 | 7 | audit | Remaining docs drift | Docs | `bp-124-audit-open-defects` | No |
 | 8 | audit | Integration setup should fail on migration errors | Testing | `bp-124-audit-open-defects` | No |
+| 9 | audit | Component tests for edit modal/detail and assignment E2E | Testing | `bp-124-audit-open-defects` (O9) | No |
+| 10 | bp-79 | Full SQL grammar validation in dry-run | Backend | `bp-124-audit-open-defects` (O10) | No |

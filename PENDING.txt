@@ -70,7 +70,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | **bp-121** | `bp-121-agent-connectivity-ip` | P2 | **Planned (2026-09-11)** — Java agents on non-localhost hosts fail due to CORS blocking, double-wrapped provider config, and missing IP whitelist support. Three bugs: CORS rejects non-localhost origins, provider config response double-wrapped, no IP whitelist for agent auth. |
 | **bp-122** | `bp-122-code-cleanup` | P3 | ~~**Planned (2026-09-15)** — Three code quality issues from PR #97: (1) Dead `createPullRequestRetry()` method in agent GitHubService, (2) Verbose 8-parameter `Ticket.update()` signature, (3) Unpinned git version in Agent Dockerfile. All independent cleanups, no cross-dependencies.~~ ✅ Done (PR #99) |
 | **bp-123** | `bp-123-test-audit-corrections` | P0 | **In review (PR #100)** — Full test/quality audit corrections: assignee validation against `project_memberships`, password-hash serialization, lockout `Retry-After`, ticket field mapping, no-op status updates, `critical` priority end-to-end, no-DB migration dry-run, Windows POSIX guard, refreshed Cypress specs. |
-| **bp-124** | `bp-124-audit-open-defects` | P1 | **Planned (2026-10-31)** — Audit open defects O1-O8: milestone persistence, dead SQL/tables, stale E2E/CI, agent identity, frontend validator snake_case, PUT response drift, docs drift, integration setup error handling. |
+| **bp-124** | `bp-124-audit-open-defects` | P1 | **Planned (2026-10-31)** — Audit open defects O1-O10: milestone persistence, dead SQL/tables, stale E2E/CI, agent identity, frontend validator snake_case, PUT response drift, docs drift, integration setup error handling, component-test backfill, dry-run grammar validation. |
 
 ## Test Backfills (bt-*)
 

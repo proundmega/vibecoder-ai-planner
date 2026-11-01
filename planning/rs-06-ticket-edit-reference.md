@@ -2,7 +2,7 @@
 
 **Status**: implemented (fixes in PR #100)
 **Priority**: P2
-**Follow-up**: `EditTicketModal.cy.ts`, real `TicketDetail.cy.ts` coverage and refreshed E2E assignment tests are tracked in `bp-124` (O3).
+**Follow-up**: `EditTicketModal.cy.ts`, real `TicketDetail.cy.ts` coverage and refreshed assignment E2E are tracked in `bp-124` (O9).
 **Effort**: Medium
 **Dependencies**: RS-3 (Auth middleware — role checks)
 
@@ -60,7 +60,7 @@ Valid transitions:
 2. Create edit modal with fields:
    - Title (text input)
    - Description (textarea)
-   - Priority (dropdown: low, medium, high, critical)
+   - Priority (dropdown: low, medium, high, critical, urgent - `urgent` is retained for backward compatibility)
    - Assignee (dropdown: users in same project)
 3. Save button triggers `updateTicket(ticket.id, updates)`
 4. Cancel button closes modal without saving
@@ -427,7 +427,7 @@ router.put('/:id', verifyToken, asyncHandler(async (req, res) => {
 - [ ] Renders title, description, priority, assignee fields
 - [ ] Title field is required (maxlength 200)
 - [ ] Description field is optional (maxlength 5000)
-- [ ] Priority dropdown has 4 options: low, medium, high, critical
+- [ ] Priority dropdown has 5 options: low, medium, high, critical, urgent (urgent retained for backward compatibility)
 - [ ] Assignee dropdown shows project users + "Unassigned"
 - [ ] Pre-fills with existing ticket data
 - [ ] Submit sends correct payload to API

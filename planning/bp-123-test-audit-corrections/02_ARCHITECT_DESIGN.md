@@ -98,6 +98,6 @@ The audit fixes are intentionally small and localized. Each fix has a regression
 
 | # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
 |---|---|---|---|---|---|
-| 1 | audit | O1-O8 open defects | Multiple | `bp-124-audit-open-defects` | No |
+| 1 | audit | O1-O10 open defects | Multiple | `bp-124-audit-open-defects` | No |
 | 2 | audit | Move completed suites to `planning/DONE/` | Docs | `bp-124-audit-open-defects` | No |
-| 3 | bp-79 | Full SQL grammar validation | Backend | `bp-124-audit-open-defects` | No |
+| 3 | bp-79 | Full SQL grammar validation (O10) | Backend | `bp-124-audit-open-defects` | No |

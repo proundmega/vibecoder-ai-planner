@@ -2,7 +2,7 @@
 
 **Status**: implemented (PR #100)
 **Date created**: 2025-07-12
-**Date completed**: 
+**Date completed**: 2026-10-31 (PR #100)
 **Author**: AI Assistant
 **Scope**: Backend
 **Priority**: P2 (Developer Experience)
@@ -28,9 +28,9 @@ Add a dry-run mode to the migration runner that previews what changes would be m
 
 The migration runner already parses SQL into statements. Adding dry-run requires:
 1. Add `--dry-run` flag to apply.js
-2. In dry-run mode, explain/analyze each statement instead of executing
-3. For DDL statements (CREATE, ALTER, DROP), use `EXPLAIN` or parse statement type
-4. For DML statements (INSERT, UPDATE, DELETE), use `EXPLAIN` to show affected rows
+2. In dry-run mode, classify each statement instead of executing it
+3. Perform structural validation (balanced quotes/parentheses, non-empty statement)
+4. Do not create a database pool or connect; dry-run is text-only
 5. Report summary: X statements would be executed, Y CREATE, Z ALTER, etc.
 
 ---
@@ -130,7 +130,7 @@ The migration runner already parses SQL into statements. Adding dry-run requires
 ## Performance Considerations
 
 - Expected load: Minimal — dry-run runs once per deployment
-- EXPLAIN plans are cheap for DDL statements
+- Dry-run is text-only: no database connection or EXPLAIN plans
 - No blocking I/O in dry-run
 
 ---

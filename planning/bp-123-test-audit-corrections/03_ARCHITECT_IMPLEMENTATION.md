@@ -68,7 +68,7 @@
 ## Verification results
 
 - Backend: 108 suites, 1,359/1,360 tests after rebasing on #99; the remaining failure was the stale positional `Ticket.update()` test, fixed in this revision.
-- Frontend: 59 files / 547 tests, typecheck clean (per review).
+- Frontend: 60 files / 551 tests, typecheck clean; Cypress component 63/63 verified by the reviewer.
 - Backend/frontend lint: 0 errors.
 - Java agent: package build succeeds; POSIX-only test skips on Windows.
 - Dry-run: no DB connection, classification summaries printed, exit 0.

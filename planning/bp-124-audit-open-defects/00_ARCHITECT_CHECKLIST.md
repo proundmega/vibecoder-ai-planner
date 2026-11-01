@@ -21,4 +21,6 @@ PR #100 fixed the audited defects that were in scope. The audit also found eight
 - [ ] Fix `PUT /tickets/:id` response type (O6)
 - [ ] Finish docs drift cleanup (O7)
 - [ ] Make integration setup fail on migration errors (O8)
+- [ ] Add EditTicketModal/TicketDetail component tests and refresh assignment E2E (O9)
+- [ ] Decide on full SQL grammar validation for dry-run (O10)
 - [ ] Move completed planning suites to `planning/DONE/`

@@ -23,5 +23,5 @@ A full test/quality audit found real backend and frontend defects that were not 
 - [x] Implement `db:migrate:dry-run` without a database
 - [x] Guard POSIX permissions for Windows local development
 - [x] Refresh stale Cypress component specs
-- [ ] Move completed planning suites to `planning/DONE/`
-- [ ] Resolve audit open defects O1-O8 (`bp-124`)
+- [x] Move completed planning suites to `planning/DONE/`
+- [ ] Resolve audit open defects O1-O10 (`bp-124`)

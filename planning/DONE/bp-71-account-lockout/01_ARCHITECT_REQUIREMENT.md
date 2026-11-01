@@ -2,7 +2,7 @@
 
 **Status**: implemented (PR #52)
 **Date created**: 2025-07-12
-**Date completed**: 
+**Date completed**: 2026-10-31 (recorded during audit cleanup; implemented in PR #52)
 **Author**: AI Assistant
 **Scope**: Backend + Frontend
 **Priority**: P1 (Security)

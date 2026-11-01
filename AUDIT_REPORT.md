@@ -14,11 +14,11 @@ defects it found. Every fix has a regression test.
 
 | Layer | Command | Result |
 |---|---|---|
-| Backend unit (Jest) | `npm test` | **109 suites / 1360 tests passed** |
+| Backend unit (Jest) | `npm test` | **110 suites / 1368 tests passed** |
 | Backend coverage | `npm run test:coverage` | **72.09% stmts · 65.02% branch · 69.49% funcs · 73.36% lines** (threshold 60%) |
 | Backend lint | `npm run lint` | **0 errors**, 31 warnings |
 | Backend integration (real Postgres) | `npm run test:integration` | **3 suites / 85 tests passed** |
-| Frontend unit (Vitest) | `npm test -- --run` | **59 files / 547 tests passed** |
+| Frontend unit (Vitest) | `npm test -- --run` | **60 files / 551 tests passed** |
 | Frontend coverage | `npm test -- --run --coverage` | **85.51% stmts · 83.45% branch · 71.27% funcs · 85.51% lines** (threshold 60%) |
 | Frontend lint | `npm run lint` | **0 errors**, 6 warnings |
 | Frontend typecheck | `npm run typecheck` | **clean** |

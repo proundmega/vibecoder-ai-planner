@@ -21,6 +21,8 @@
 | O6 | Low | `PUT /tickets/:id` response type drift | Callers expect a Ticket but receive `{ message }` |
 | O7 | Low | Remaining docs drift | Misleading setup/maintenance |
 | O8 | Low | Integration setup hides migration errors | Broken migrations can pass locally |
+| O9 | Medium | Missing component tests (`EditTicketModal`, real `TicketDetail`) and stale assignment E2E | Deferred UI regressions and unverified edit behavior |
+| O10 | Low | Dry-run has structural validation only, not full SQL grammar parsing | Malformed SQL can pass dry-run; explicitly deferred |
 
 ## Goals
 
@@ -48,7 +50,9 @@
 - **FR6 - O6:** `PUT /tickets/:id` returns a Ticket or the client type is corrected.
 - **FR7 - O7:** docs match the implementation (CI, migration count, statuses).
 - **FR8 - O8:** integration setup fails the run on unexpected migration errors.
-- **FR9 - Hygiene:** completed planning suites move to `planning/DONE/` with filled placeholders.
+- **FR9 - O9:** add `EditTicketModal.cy.ts`, real `TicketDetail.cy.ts` coverage, and refresh the assignment E2E; verify title/description limits and clearing the assignee.
+- **FR10 - O10:** decide whether to add a real SQL parser to dry-run; document the decision and add tests if implemented.
+- **FR11 - Hygiene:** completed planning suites move to `planning/DONE/` with filled placeholders.
 
 ## Safety requirements
 
@@ -65,8 +69,10 @@
 3. E2E runs in CI and is not stale.
 4. Validator and response types match backend contracts.
 5. Integration setup fails on migration errors.
-6. Docs and planning statuses are current; completed suites are in `DONE/`.
-7. The audit report links to this ticket and each fix.
+6. Component tests cover the edit modal and ticket detail; the assignment E2E is refreshed.
+7. Dry-run grammar validation is either implemented or explicitly documented as structural-only.
+8. Docs and planning statuses are current; completed suites are in `DONE/`.
+9. The audit report links to this ticket and each fix.
 
 ## Out of scope
 
