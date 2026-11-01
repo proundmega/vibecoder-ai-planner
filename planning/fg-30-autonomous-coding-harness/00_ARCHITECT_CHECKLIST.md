@@ -1,6 +1,6 @@
 # 00_ARCHITECT_CHECKLIST.md — Pre-Implementation Checklist
 
-**Status**: pending
+**Status**: planned (awaiting approval)
 **Date started**: 2026-10-31
 **Date completed**: —
 **Author**: AI Assistant
