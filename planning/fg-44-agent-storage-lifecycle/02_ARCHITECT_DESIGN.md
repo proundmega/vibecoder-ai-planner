@@ -141,7 +141,7 @@ Docker log config per container:
 
 Document:
 
-1. stop new assignments via `POST /api/v1/pool/config { "paused": true }`, `POOL_PAUSED=true`, or `MAX_POOL_SIZE=0`;
+1. stop new assignments via `POST /api/v1/pool/config { "paused": true }`, `POOL_PAUSED=true`, or `MAX_POOL_SIZE=0`; this runs on the host/control plane and never passes `POOL_ADMIN_TOKEN` to agents;
 2. `docker ps` and stop idle agents;
 3. run the reaper/cleanup script in dry-run, then apply;
 4. `docker system df` and prune only safe objects;

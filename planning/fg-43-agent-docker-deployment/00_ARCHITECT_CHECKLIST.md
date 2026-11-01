@@ -17,6 +17,7 @@ The current deployment is a single `agent` Compose service plus a `PoolManager` 
 - [ ] Fix the `MAX_POOL_SIZE` parser so 0 is not coerced to 50
 - [ ] Add a runtime pool pause/resume config endpoint (`{ paused, maxPoolSize }`) guarded by `POOL_ADMIN_TOKEN`
 - [ ] Generate `POOL_ADMIN_TOKEN` with mode `0600` in `.env.agent-host` for host-init/recovery
+- [ ] Keep `POOL_ADMIN_TOKEN` backend-only; filter it from `agent/docker-compose.host.yml` and the PoolManager agent env allowlist
 - [ ] Map `AGENT_MAX_POOL_SIZE` (hard cap), `AGENT_POOL_SIZE` (capped override, can only lower) and `MAX_POOL_SIZE` (runtime)
 - [ ] Resolve `AGENT_REPO_DIR` from the repo volume mountpoint for `df`/`du`
 - [ ] Create `agent/host-init.sh` with `--dry-run` and `--yes`

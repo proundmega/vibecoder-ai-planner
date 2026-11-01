@@ -104,6 +104,7 @@ Phase 1 runs **one pool per role**: each `PoolManager`/controller process has a 
 - Read `AGENT_CPU_LIMIT`, `AGENT_MEMORY_LIMIT`, `AGENT_PIDS_LIMIT`, `AGENT_LOG_MAX_SIZE`, `AGENT_LOG_MAX_FILE`.
 - Parse `MAX_POOL_SIZE` as a non-negative integer; do not use `parseInt(...) || 50` (0 would become 50). `0` means paused.
 - Add `POOL_PAUSED` and a token-authenticated pool config endpoint (`POST /api/v1/pool/config` with `{ paused, maxPoolSize }` and `X-Pool-Admin-Token` from the `POOL_ADMIN_TOKEN` env). Host-init generates the token with mode `0600`; fg-44 recovery uses the same token. `requestAgent` rejects with a clear error when paused or full.
+- **Control-plane secret scoping:** `POOL_ADMIN_TOKEN` is injected only into the backend/PoolManager container. If `agent/docker-compose.host.yml` loads `.env.agent-host`, filter this variable out or use a separate backend-only env file. The PoolManager agent-container env allowlist must exclude `POOL_ADMIN_TOKEN`. Never mount it into the workspace or pass it to OpenCode, `WorkspaceManager`, fixes/reviews, or prompts.
 - Startup health gate: assignments stay disabled until DB/Redis health is green and `/health` is served, then apply `MAX_POOL_SIZE`/`POOL_PAUSED`. A restart with `POOL_PAUSED=false` resumes automatically. Env values are startup defaults; the endpoint sets runtime values until restart.
 - `AGENT_ROLE` is process-wide; Phase 1 runs one pool per role (see Profiles).
 - Set `HostConfig.NanoCpus = cpu * 1e9`, `Memory = bytes`, `MemorySwap = Memory`, `PidsLimit`.

@@ -51,7 +51,7 @@ On a 2 TB SSD this is manageable at first, but long-running swarms will eventual
 - **FR9 - Orphans:** a reaper removes `/repos` dirs not owned by an active pool entry or DB agent.
 - **FR10 - Active safety:** never delete a workspace or stop a container with an unexpired ticket lease or active process.
 - **FR11 - Metrics:** expose per-agent workspace bytes, host free bytes/inodes, log size, pool size and refresh counts.
-- **FR12 - Recovery:** a documented command/script to stop the pool, free space, and restart safely.
+- **FR12 - Recovery:** a documented command/script to stop the pool, free space, and restart safely. It runs on the host/control plane and never exposes `POOL_ADMIN_TOKEN` to agents.
 - **FR13 - Budget enforcement:** a periodic workspace meter (`du -sb` + inodes) fails the ticket at the profile budget, with a test for the breach path.
 
 ## Storage budget
