@@ -200,14 +200,14 @@ public class WorkspaceManager {
         // remote-tracking ref, but an explicit lease is still used so a retry
         // can overwrite a branch only if the remote has not moved.
         String pushTarget = "origin";
-        String remoteSha = remoteBranchSha(pushTarget, branchName);
-        String lease = "--force-with-lease=refs/heads/" + branchName + ":"
-            + (remoteSha == null ? "" : remoteSha);
         boolean authenticate = githubToken != null && !githubToken.isBlank();
         if (authenticate) {
             ensureAskPass();
         }
         try {
+            String remoteSha = remoteBranchSha(pushTarget, branchName);
+            String lease = "--force-with-lease=refs/heads/" + branchName + ":"
+                + (remoteSha == null ? "" : remoteSha);
             runGit("push", "--no-verify", pushTarget,
                 commitSha + ":refs/heads/" + branchName, lease);
         } finally {

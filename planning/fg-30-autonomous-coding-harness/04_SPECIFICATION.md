@@ -78,7 +78,8 @@ The security fixes below were implemented with regression tests. Test classes:
 
 - Failures release the ticket and apply exponential backoff:
   `min(HARNESS_RETRY_BASE_DELAY_MS * 2^(attempt-1), HARNESS_RETRY_MAX_DELAY_MS)`.
-- After `HARNESS_MAX_ATTEMPTS`, the delay is pinned at the maximum.
+- After `HARNESS_RETRY_PIN_ATTEMPTS` (legacy `HARNESS_MAX_ATTEMPTS`), the delay
+  is pinned at the maximum.
 - Successful publishing clears the failure state.
 
 ### Cleanup
@@ -96,7 +97,7 @@ The security fixes below were implemented with regression tests. Test classes:
 | `HARNESS_MAX_FILES` | `50` |
 | `HARNESS_MAX_LINES` | `2000` |
 | `HARNESS_MAX_BYTES` | `5242880` |
-| `HARNESS_MAX_ATTEMPTS` | `3` |
+| `HARNESS_RETRY_PIN_ATTEMPTS` | `3` (`HARNESS_MAX_ATTEMPTS` legacy alias) |
 | `HARNESS_RETRY_BASE_DELAY_MS` | `60000` |
 | `HARNESS_RETRY_MAX_DELAY_MS` | `3600000` |
 

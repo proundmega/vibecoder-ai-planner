@@ -53,7 +53,9 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private final PublishingGuard publishingGuard;
     private final PromptBuilder promptBuilder = new PromptBuilder();
     private final Map<Long, FailureState> failures = new ConcurrentHashMap<>();
-    private final int maxAttempts = intEnv("HARNESS_MAX_ATTEMPTS", DEFAULT_MAX_ATTEMPTS);
+    private final int maxAttempts = intEnv(
+        "HARNESS_RETRY_PIN_ATTEMPTS",
+        intEnv("HARNESS_MAX_ATTEMPTS", DEFAULT_MAX_ATTEMPTS));
     private final long retryBaseDelayMs = longEnv("HARNESS_RETRY_BASE_DELAY_MS", DEFAULT_RETRY_BASE_DELAY_MS);
     private final long retryMaxDelayMs = longEnv("HARNESS_RETRY_MAX_DELAY_MS", DEFAULT_RETRY_MAX_DELAY_MS);
 
@@ -276,12 +278,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
                 postMessage(pickedUp.getId(), "status",
                     completionSummary(diff, verification, prUrl));
-                try {
-                    apiService.updateTicketStatus(pickedUp.getId(), "review");
-                } catch (IOException | RuntimeException e) {
-                    log.warn("Push/PR succeeded but updating ticket {} status failed: {}",
-                        pickedUp.getId(), e.getMessage());
-                }
+                markReview(pickedUp.getId());
                 this.failures.remove(pickedUp.getId());
                 log.info("Ticket {} completed; PR: {}", pickedUp.getId(), prUrl);
             } finally {
@@ -399,6 +396,36 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private boolean isBackingOff(Long ticketId) {
         FailureState state = failures.get(ticketId);
         return state != null && System.currentTimeMillis() < state.nextAttemptAt;
+    }
+
+    /**
+     * Retry the final status update a few times: a successful push/PR must not
+     * leave the ticket in_progress merely because the API blipped.
+     */
+    private void markReview(Long ticketId) {
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                apiService.updateTicketStatus(ticketId, "review");
+                return;
+            } catch (IOException | RuntimeException e) {
+                if (attempt == 3) {
+                    log.warn("Push/PR succeeded but updating ticket {} status failed after {} attempts: {}",
+                        ticketId, attempt, e.getMessage());
+                    postMessage(ticketId, "update",
+                        "Push/PR succeeded, but could not set status to review. Manual status update required.");
+                } else {
+                    sleepQuietly(250);
+                }
+            }
+        }
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private void release(Long ticketId) {

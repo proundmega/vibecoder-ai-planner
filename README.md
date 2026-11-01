@@ -132,7 +132,7 @@ Required for `docker compose up`:
 | `HARNESS_MAX_FILES` | Maximum changed files the guard will publish | `50` |
 | `HARNESS_MAX_LINES` | Maximum changed lines the guard will publish | `2000` |
 | `HARNESS_MAX_BYTES` | Maximum total changed bytes the guard will publish | `5242880` |
-| `HARNESS_MAX_ATTEMPTS` | Failures before retry backoff pins at the maximum (retries continue at that interval) | `3` |
+| `HARNESS_RETRY_PIN_ATTEMPTS` | Failures before retry backoff pins at the maximum (retries continue at that interval; `HARNESS_MAX_ATTEMPTS` is accepted as a legacy alias) | `3` |
 | `HARNESS_RETRY_BASE_DELAY_MS` | Base exponential retry delay | `60000` |
 | `HARNESS_RETRY_MAX_DELAY_MS` | Maximum retry delay | `3600000` |
 
