@@ -16,6 +16,8 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-34 | `fg-34-harness-sandbox` | Planned | Sandbox isolation, limits, egress, secretless execution | fg-30 Phase 1 |
 | fg-43 | `fg-43-agent-docker-deployment` | Planned | One-command Docker agent host sizing, role pools, per-container limits | fg-33 (fg-34 recommended) |
 | fg-44 | `fg-44-agent-storage-lifecycle` | Planned | Per-agent workspaces, cleanup, idle refresh, disk/inode watermarks | fg-43, fg-33 |
+| fg-45 | `fg-45-ticket-quality-gates` | Planned | Definition of Ready, acceptance criteria, readiness gates on every execution path | fg-30, fg-31/32 |
+| fg-46 | `fg-46-flow-observability` | Planned - deferred | Flow stages, queue age, harness/provider/review metrics, `run_id` correlation | fg-30, fg-31/32, fg-33, fg-36, fg-41, fg-44 (fg-45 optional) |
 | fg-35 | `fg-35-github-app-credentials` | Planned | GitHub App installation tokens, least privilege | fg-30 Phase 1 |
 | fg-36 | `fg-36-merge-lifecycle` | Planned | Base branch, conflicts, CI gate, merge queue, rollback | fg-31, fg-32 |
 | fg-37 | `fg-37-agent-evaluation-harness` | Planned | Golden corpus, grading, metrics, A/B, reviewer calibration | fg-30/31/32 |
@@ -42,15 +44,17 @@ fg-30 Phases 2-4 (human loop, autonomy, hardening) remain part of the fg-30 impl
 8. **fg-36** merge lifecycle and conflict handling
 
 ### Phase C - Quality and operations
-9. **fg-37** evaluation harness
-10. **fg-38** budgets and routing
-11. **fg-39** repo environment profiles
-12. **fg-41** observability, replay and audit
-13. **fg-42** privacy and redaction (after fg-41, because event/artifact retention depends on it)
+9. **fg-45** ticket quality gates and Definition of Ready
+10. **fg-37** evaluation harness
+11. **fg-38** budgets and routing
+12. **fg-39** repo environment profiles
+13. **fg-41** observability, replay and audit
+14. **fg-42** privacy and redaction (after fg-41, because event/artifact retention depends on it)
+15. **fg-46** flow observability (deferred until a full build -> review -> fix -> merge cycle completes)
 
 ### Phase D - Scale
-14. **fg-40** multi-agent orchestration
-15. fg-30 Phase 3 autonomy policies / plan gate / auto-merge (write 03/04 when scheduled)
+16. **fg-40** multi-agent orchestration
+17. fg-30 Phase 3 autonomy policies / plan gate / auto-merge (write 03/04 when scheduled)
 
 ## How to use these suites
 
@@ -62,6 +66,6 @@ Each directory follows the planning template:
 
 `03_ARCHITECT_IMPLEMENTATION.md` and `04_SPECIFICATION.md` are written when a ticket is scheduled for implementation.
 
-These are **roadmap-level** suites: `00`/`01`/`02` cover scope, requirements and design, but the `01` files intentionally omit Impact Analysis, Known Unknowns, Important Design Decisions and the full Testing Checklist. `03`/`04` add those sections and the test plan when the ticket is scheduled.
+These are **roadmap-level** suites. `00` records decisions and the testing checklist, `01` includes Impact Analysis, Known Unknowns and Important Design Decisions, and `02` covers architecture, data model, flow and rollout. `03`/`04` add the implementation steps, the full test plan and the file-level specification when the ticket is scheduled. Older suites written before this convention may still omit those sections.
 
 Schema convention: new harness tables use UUID primary keys, but foreign keys to existing tables (`tickets.id`, `projects.id`, `users.id`, `agents.id`) are `BIGINT` with real `REFERENCES`. Keep this in every new suite.

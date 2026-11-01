@@ -96,9 +96,9 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | **fg-31** | `fg-31-automatic-review-harness` | **Merged (#103)** — Legacy `ReviewProcessor` only sees the PR patch, posts ticket messages, marks tickets `done` without `human_approval`, has no reviewed-SHA dedupe, and its status-only queue bypasses the human gate. Build an OpenCode review harness: editable-denied session in a disposable writable workspace, supervisor-owned verification, structured findings, CHANGE-request handoff to fg-32, COMMENT-only GitHub review in Phase 1 (no self-approval), phase reconciliation before `approve` -> `human_approval` (never `done`), attempt-status idempotency, `REVIEW_HARNESS_MODE=legacy\|opencode`. Depends on fg-30 Phase 1 (PR #102) + Phase 2 (human loop) and fg-32 (#104) for fix dispatch/rounds. |
 | **fg-32** | `fg-32-review-feedback-loop` | **Merged (#104)** — Reviewer `request_changes` findings never reach a Java agent: build agents poll only `backlog`, `ReviewProcessor` leaves tickets in `review`, `getMessages()` is unused, and there is no fixer, round counter or same-branch update. Add a structured fix request, agent fix queue with atomic lease, same-branch fixer harness, re-review of the new SHA, max 2 rounds, no-progress escalation to `human_approval`, and `FIX_LOOP_MODE=off\|manual\|auto`. Depends on fg-31. |
 
-## Harness Roadmap (fg-33..fg-42)
+## Harness Roadmap (fg-33..fg-46)
 
-Cross-cutting plans for the autonomous coding harness. See `planning/HARNESS_ROADMAP.md` for dependencies and implementation order. This table is the canonical index for the roadmap suites fg-33..fg-42; the main fg-* table above tracks scheduled/active tickets.
+Cross-cutting plans for the autonomous coding harness. See `planning/HARNESS_ROADMAP.md` for dependencies and implementation order. This table is the canonical index for the roadmap suites fg-33..fg-46; the main fg-* table above tracks scheduled/active tickets.
 
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|
@@ -124,10 +124,12 @@ Docker-native agent host deployment and storage lifecycle. These are also indexe
 
 ## Quality and Observability (fg-45..fg-46)
 
+Also indexed in `planning/HARNESS_ROADMAP.md` (fg-45 in Phase C, fg-46 deferred at the end of Phase C).
+
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|
-| **fg-45** | `fg-45-ticket-quality-gates` | P1 | fg-30, fg-31/32 | Definition of Ready: enforce planning templates/small-fix exemptions, acceptance criteria, placeholders, readiness API, pickup/phase gates and audited overrides. |
-| **fg-46** | `fg-46-flow-observability` | P2 - deferred | fg-30, fg-31, fg-32, fg-33, fg-41 | Flow and harness observability. **Wanted, but deferred until the project completes a full build -> review -> fix -> merge cycle.** Start with a cheap SQL-backed flow endpoint and Vue view; add Prometheus/Grafana later. |
+| **fg-45** | `fg-45-ticket-quality-gates` | P1 | fg-30, fg-31/32 | Definition of Ready: permissive drafts, acceptance criteria, template sections, readiness gates on pickup/status/PUT/phase paths, service-owned planning completion, scoped audited overrides, both agent modes. |
+| **fg-46** | `fg-46-flow-observability` | P2 - deferred | fg-30, fg-31, fg-32, fg-33, fg-36, fg-41, fg-44 (fg-45 optional) | Flow and harness observability. **Wanted, but deferred until the project completes a full build -> review -> fix -> merge cycle.** Canonical `deriveStage`, SQL-backed flow endpoint with JWT + membership auth, reuses the fg-33 `run_id`; add Prometheus/Grafana later. |
 
 ## Other (pa-*)
 
