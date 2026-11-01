@@ -56,14 +56,14 @@ The result is an automatic review that is hard to trust, easy to re-run accident
 
 ## Functional requirements
 
-- **FR1 - Trigger:** review a ticket when it is in `status=review` with `phase=review`, has a `pr_url`, and the current head SHA has no completed review. If the phase is not `review`, reconcile it first (FR6).
+- **FR1 - Trigger:** review a ticket when it is in `status=review`, has a `pr_url`, and the current head SHA has no completed review. Phase is not part of the trigger: agent-built tickets normally arrive as `status=review` with `phase=draft|in_progress`, so FR6 reconciles the phase before the review starts.
 - **FR2 - Context:** include ticket description, planning docs, repository instructions, PR metadata, changed files, and the diff.
 - **FR3 - Verification (supervisor-owned):** the supervisor runs configured verification commands in the checked-out PR head and captures pass/fail plus bounded output. If no commands are configured or autodetected, verification fails closed (no approval).
 - **FR4 - Structured output:** validate model JSON against a schema; reject malformed output instead of posting free text. The schema has no verification field; if the model emits one, it is ignored.
 - **FR5 - GitHub review:** Phase 1 creates a PR review with `event=COMMENT` and a body summary, including a `commit_id` for the reviewed SHA. Inline comments only when the file/line is part of the diff. `APPROVE`/`REQUEST_CHANGES` are Phase 2, gated on a non-author identity.
-- **FR6 - Phase reconciliation and routing:** before approval, ensure `phase=review`. If the phase is not `review`, call a reconcile endpoint (new) or rely on fg-30 lifecycle sync; if reconciliation fails, post a COMMENT review and escalate to a human. On success, `review -> human_approval`; `request_changes`/`comment` stay in `review`; never write `done`.
+- **FR6 - Phase reconciliation and routing:** reconcile before the review runs (the trigger is status-based). If `phase` is not `review`, call a reconcile endpoint (new) or rely on fg-30 lifecycle sync; if reconciliation fails, still post the COMMENT review but escalate to a human and do not attempt approval. Re-check `phase=review` immediately before approval. On success, `review -> human_approval`; `request_changes`/`comment` stay in `review`; never write `done`.
 - **FR7 - Idempotency and retries:** store `reviewed_sha`, attempt status, `round`, `verdict`, and timestamps. Only `completed` attempts block a re-review of the same SHA; `failed` or stale `started` attempts may be retried. Re-check the PR head before posting and skip if it moved.
-- **FR8 - Findings handoff:** persist `ticket_review_attempts` and `ticket_review_findings` in the schema owned by fg-32, and expose the findings for fg-32's fixer dispatch. fg-31 does not implement the fixer.
+- **FR8 - Findings handoff:** fg-31 defines and writes `ticket_review_attempts` and `ticket_review_findings`; fg-32 consumes them and owns fix dispatch, rounds and findings consumption. fg-31 does not implement the fixer.
 - **FR9 - Fallback:** if the harness, provider, GitHub API, or verification is unavailable, post a clear failure, leave the ticket in `review`, and never approve.
 - **FR10 - Rollout:** `REVIEW_HARNESS_MODE` defaults to `legacy`; `opencode` enables the new path. Before the bake, legacy must run in shadow mode or be disabled.
 
@@ -80,13 +80,13 @@ The result is an automatic review that is hard to trust, easy to re-run accident
 
 ## Acceptance criteria
 
-1. A ticket in `review` with a PR and `phase=review` is reviewed by the harness and receives a GitHub **COMMENT** review plus a planner summary.
+1. A ticket with `status=review` and a PR is reconciled to `phase=review`, reviewed by the harness, and receives a GitHub **COMMENT** review plus a planner summary.
 2. The review includes the supervisor's verification commands and results; model-supplied verification is ignored.
 3. Approval moves the ticket to `human_approval` only after phase reconciliation, never to `done`.
 4. Re-running the reviewer for a completed SHA produces no duplicate review or additional provider spend; a failed attempt can be retried for the same SHA.
 5. A moving PR head aborts or restarts the review instead of posting against the wrong SHA.
 6. A ticket in `human_approval` is not returned to the legacy reviewer.
-7. The legacy reviewer remains selectable and unchanged when the flag is `legacy`.
+7. The legacy reviewer remains selectable when the flag is `legacy`, honors the `phase=review` filter, and its shadow mode suppresses status writes during the bake.
 8. Unit/contract tests use a fake OpenCode server and a fake GitHub review API; no real network calls.
 9. Secrets never appear in review output or error messages.
 

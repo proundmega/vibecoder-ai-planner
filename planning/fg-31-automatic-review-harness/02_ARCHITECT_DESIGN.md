@@ -7,7 +7,7 @@
 
 ## Design summary
 
-The reviewer is a **read-only sibling of the build harness**. It checks out the PR head into an isolated, **writable but disposable** workspace, the supervisor runs verification, the model reads the ticket and planning docs and returns structured findings, and the Java supervisor publishes a **COMMENT-only** GitHub review and routes the ticket to `human_approval` after phase reconciliation. The model never edits code, commits, pushes, merges, or changes ticket state directly.
+The reviewer is a **read-only sibling of the build harness**. It checks out the PR head into an isolated, **writable but disposable** workspace, the supervisor runs verification, the model reads the ticket and planning docs and returns structured findings, and the Java supervisor publishes a **COMMENT-only** GitHub review. Because the trigger is status-based, the supervisor reconciles the phase before the review and re-checks it before approval. The model never edits code, commits, pushes, merges, or changes ticket state directly.
 
 ```
 ticket status=review + pr_url
@@ -39,7 +39,7 @@ fg-32 consumes findings, dispatches fixer, owns rounds
 | `ReviewTicketProcessor` | Supervises checkout, prompt, verification, parsing, publishing |
 | `ReviewPromptBuilder` | Ticket, planning docs, repo rules, diff, checklist, output schema |
 | `ReviewResultParser` | Strict JSON/schema validation and fail-closed behavior; drops model verification |
-| `ReviewPhaseReconciler` | Ensures `phase=review` before approval; fails closed to COMMENT + human escalation |
+| `ReviewPhaseReconciler` | Ensures `phase=review` before the review and re-checks it before approval; fails closed to COMMENT + human escalation |
 | `GitHubReviewService` | `POST /repos/{owner}/{repo}/pulls/{number}/reviews` with `event=COMMENT` and `commit_id` |
 | `ReviewAttemptStore` | `ticket_review_attempts` status, SHA, round, verdict, usage, timestamps |
 | `ReviewFindingStore` | `ticket_review_findings` rows consumed by fg-32 |
@@ -54,12 +54,12 @@ fg-32 consumes findings, dispatches fixer, owns rounds
 
 ### Workspace: writable, disposable, never published
 
-A strictly read-only mount cannot run verification: fg-30's `VerificationRunner` and dependency bootstrap execute `npm ci` / `npm install` / `mvn dependency:go-offline`, which write `node_modules/` and `target/`. The reviewer therefore uses a **writable throwaway workspace**:
+A strictly read-only mount cannot run verification: fg-30's `resolveInstallCommands()` bootstraps npm installs (`npm ci` when a lockfile exists, otherwise `npm install --no-package-lock`), and autodetected verification may run `mvn test -q`; both write `node_modules/` and `target/`. The reviewer therefore uses a **writable throwaway workspace**:
 
 - clone the PR head into a per-run directory (same tokenless, shallow clone as fg-30);
 - allow installs/builds only inside that directory;
 - after the run, discard the tree; the supervisor never commits, pushes, merges or opens a PR from it;
-- run with fg-30's workspace limits (timeouts, output caps, pids/CPU/memory) and no host credentials.
+- run with the controls fg-30 actually provides: `HARNESS_STARTUP_TIMEOUT_MS`, `HARNESS_IDLE_TIMEOUT_MS`, `HARNESS_MAX_DURATION_MINUTES`, bounded `VerificationRunner` output capture, and process-group kill. CPU/memory limits currently come from `agent/docker-compose.yml`; there is no pids limit. Add real pids/memory limits in the sandbox follow-up and never pass host credentials.
 
 Verification executes arbitrary PR code. A dedicated sandbox/egress-hardening ticket is required before enabling this on untrusted contributions; no `fg-34` ticket exists in this repository yet, so track it as a new follow-up and cross-reference the fg-30 hardening phase.
 
@@ -110,7 +110,7 @@ The parser rejects unknown verdicts, missing required fields, and findings whose
 
 ## Idempotency and retries
 
-Tables are aligned with fg-32 (#104), which owns fix dispatch, rounds and findings consumption.
+fg-31 defines and writes these tables; fg-32 (#104) consumes them and owns fix dispatch, rounds and findings consumption.
 
 ```sql
 CREATE TABLE ticket_review_attempts (
@@ -120,6 +120,7 @@ CREATE TABLE ticket_review_attempts (
   status TEXT NOT NULL CHECK (status IN ('started', 'completed', 'failed')),
   round INT NOT NULL DEFAULT 0,
   verdict TEXT CHECK (verdict IN ('approve', 'request_changes', 'comment')),
+  verification JSONB, -- supervisor-captured results; never model-supplied
   provider TEXT,
   model TEXT,
   tokens_in INT,
@@ -156,7 +157,7 @@ CREATE TABLE ticket_review_findings (
 
 **Prerequisite:** the current build path does not sync phase. `HarnessTicketProcessor.markReview()` calls `updateTicketStatus(ticketId, "review")`, which updates only `status`; tickets start at `phase='draft'`. `PhaseService` allows only `review -> human_approval`, so approval fails unless the phase is reconciled.
 
-`ReviewPhaseReconciler` runs before any approval transition:
+`ReviewPhaseReconciler` runs before checkout/review, and the phase is re-checked immediately before any approval transition:
 
 1. Read the ticket phase.
 2. If `phase=review`, continue.
