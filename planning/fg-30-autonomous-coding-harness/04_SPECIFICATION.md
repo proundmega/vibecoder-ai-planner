@@ -99,6 +99,7 @@ The security fixes below were implemented with regression tests. Test classes:
 | `HARNESS_MAX_FILES` | `50` |
 | `HARNESS_MAX_LINES` | `2000` |
 | `HARNESS_MAX_BYTES` | `5242880` |
+| `HARNESS_FSCK` | `true` |
 | `HARNESS_RETRY_PIN_ATTEMPTS` | `3` (`HARNESS_MAX_ATTEMPTS` legacy alias) |
 | `HARNESS_RETRY_BASE_DELAY_MS` | `60000` |
 | `HARNESS_RETRY_MAX_DELAY_MS` | `3600000` |

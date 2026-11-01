@@ -479,6 +479,22 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void hugeBlobLineCountingIsBoundedByBytes() throws Exception {
+        Path repoDir = initRepo("huge-blob");
+        String huge = "\u0000" + "x".repeat(11 * 1024 * 1024);
+        String sha = gitOutputWithInput(repoDir, huge, "hash-object", "-w", "--stdin");
+        runGit(repoDir, "update-index", "--add", "--cacheinfo", "100644," + sha + ",huge.bin");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff = wm.collectDiff();
+
+        assertTrue(diff.changedBytes() >= 11L * 1024 * 1024);
+        assertEquals(0, diff.additions());
+    }
+
+    @Test
     void collectDiffCountsIndexOnlyBlobBytes() throws Exception {
         Path repoDir = initRepo("index-only-bytes");
         String big = "x".repeat(20_000);
@@ -557,6 +573,18 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void failedStagingClearsSupervisorState() throws Exception {
+        Path repoDir = initRepo("staging-failure");
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+        setField(wm, "baseCommit", "0000000000000000000000000000000000000000");
+
+        assertThrows(IOException.class, () -> wm.commitAndPush("test", "feature"));
+        assertNull(getField(wm, "supervisorIndex"));
+        assertNull(getField(wm, "guardedTree"));
+    }
+
+    @Test
     void submodulePointersDoNotBreakDiffCollection() throws Exception {
         Path repoDir = initRepo("submodule");
         Path nested = repoDir.resolve("sub");
@@ -598,6 +626,37 @@ class WorkspaceManagerTest {
             "backend/.env.example", "SAFE=example", FileOperation.Action.CREATE);
         assertDoesNotThrow(() -> wm.writeFiles(List.of(example)));
         assertTrue(Files.exists(repoDir.resolve("backend/.env.example")));
+    }
+
+    @Test
+    void legacyWriteFilesRejectsSymlinksThatPointAtProtectedDirectories() throws Exception {
+        assumePosix();
+        Path repoDir = initRepo("legacy-protected-symlinks");
+        Files.createDirectories(repoDir.resolve(".github/workflows"));
+        Path secrets = Files.createDirectories(repoDir.resolve("secrets"));
+        Files.writeString(secrets.resolve("key"), "secret");
+        Files.createSymbolicLink(repoDir.resolve("gitlink"), repoDir.resolve(".git"));
+        Files.createSymbolicLink(repoDir.resolve("cilink"), repoDir.resolve(".github"));
+        Files.createSymbolicLink(repoDir.resolve("secretlink"), repoDir.resolve("secrets"));
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        for (String path : List.of(
+            "gitlink/HEAD",
+            "cilink/workflows/ci.yml",
+            "secretlink/key"
+        )) {
+            FileOperation op = new FileOperation(path, "evil", FileOperation.Action.MODIFY);
+            assertThrows(IOException.class, () -> wm.writeFiles(List.of(op)),
+                "Expected symlinked protected path to be rejected: " + path);
+        }
+
+        FileOperation delete = new FileOperation(
+            "secretlink/key", null, FileOperation.Action.DELETE);
+        assertThrows(IOException.class, () -> wm.writeFiles(List.of(delete)));
+        assertTrue(Files.exists(secrets.resolve("key")));
+        assertEquals("secret", Files.readString(secrets.resolve("key")));
     }
 
     @Test

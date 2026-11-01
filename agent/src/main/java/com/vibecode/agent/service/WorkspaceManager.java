@@ -51,6 +51,7 @@ public class WorkspaceManager {
     );
 
     private static final int MAX_COUNTED_LINES = 1_000_000;
+    private static final long MAX_COUNTED_BYTES = 10L * 1024 * 1024;
 
     private Path repoDir;
     private final String gitBinary;
@@ -185,9 +186,10 @@ public class WorkspaceManager {
         try {
             if (guardedTree == null && stageFirst) {
                 // Legacy path: still use a pinned base + exact tree rather than
-                // trusting local HEAD or the agent-controlled index.
-                stageFreshDiff();
+                // trusting local HEAD or the agent-controlled index. Mark the
+                // staged state first so a partial failure still cleans up.
                 stagedHere = true;
+                stageFreshDiff();
             }
             String commitSha;
             if (guardedTree != null) {
@@ -266,8 +268,12 @@ public class WorkspaceManager {
         String base = baseCommitOrHead();
 
         // The object store is agent-writable. Verify integrity and ignore
-        // replacement refs before reading the base tree.
-        runGit("fsck", "--strict", "--no-progress", "--no-reflogs");
+        // replacement refs before reading the base tree. HARNESS_FSCK=false is
+        // available for very large repositories where the full scan is too
+        // expensive; it trades integrity checking for throughput.
+        if (fsckEnabled()) {
+            runGit("fsck", "--strict", "--no-progress", "--no-reflogs");
+        }
         Path index = Files.createTempFile("vibecode-harness-index-", ".idx");
         Files.deleteIfExists(index);
         this.supervisorIndex = index;
@@ -359,7 +365,14 @@ public class WorkspaceManager {
         }
 
         Path parent = targetPath.getParent();
-        assertExistingAncestorInsideWorkspace(parent, root);
+        Path realParent = resolveRealParent(parent, root);
+        Path realTarget = Files.exists(targetPath, LinkOption.NOFOLLOW_LINKS)
+            ? targetPath.toRealPath()
+            : realParent.resolve(targetPath.getFileName()).normalize();
+        if (!realTarget.startsWith(root)
+            || isLegacyProtectedPath(root.relativize(realTarget).toString())) {
+            throw new IOException("Refusing to write protected path: " + fileOp.getPath());
+        }
 
         switch (fileOp.getAction()) {
             case CREATE:
@@ -368,8 +381,8 @@ public class WorkspaceManager {
                     throw new IOException("Refusing to write through symlink: " + fileOp.getPath());
                 }
                 Files.createDirectories(parent);
-                Path realParent = parent.toRealPath();
-                if (!realParent.startsWith(root)) {
+                Path realParentAfter = parent.toRealPath();
+                if (!realParentAfter.startsWith(root)) {
                     throw new IOException("Refusing to write outside the workspace: " + fileOp.getPath());
                 }
                 // Write or update file content
@@ -422,13 +435,19 @@ public class WorkspaceManager {
     }
 
     /**
-     * Walk up to the nearest existing ancestor and resolve it. A cloned repo
-     * may contain a symlinked directory; creating files below it must not
-     * escape the workspace.
+     * Resolve the nearest existing ancestor and append the non-existent
+     * remainder. A cloned repo may contain a symlinked directory; the returned
+     * path reflects where a write would actually land, without creating any
+     * directories yet.
      */
-    private static void assertExistingAncestorInsideWorkspace(Path parent, Path root) throws IOException {
+    private static Path resolveRealParent(Path parent, Path root) throws IOException {
         Path current = parent;
+        Path suffix = Path.of("");
         while (current != null && !Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
+            Path name = current.getFileName();
+            if (name != null) {
+                suffix = name.resolve(suffix);
+            }
             current = current.getParent();
         }
         if (current == null) {
@@ -438,6 +457,7 @@ public class WorkspaceManager {
         if (!real.startsWith(root)) {
             throw new IOException("Refusing to write outside the workspace: " + parent);
         }
+        return real.resolve(suffix).normalize();
     }
 
     private void runGit(String... args) throws IOException {
@@ -516,6 +536,12 @@ public class WorkspaceManager {
         if (extraEnvironment != null) {
             environment.putAll(extraEnvironment);
         }
+    }
+
+    private static boolean fsckEnabled() {
+        String value = System.getenv("HARNESS_FSCK");
+        return value == null || value.isBlank()
+            || !("false".equalsIgnoreCase(value.trim()) || "0".equals(value.trim()));
     }
 
     private static String devNull() {
@@ -723,10 +749,13 @@ public class WorkspaceManager {
      * directories into a single entry such as {@code ?? .github/}, which would
      * let the real files bypass every protected-path and size check.</p>
      *
-     * <p>This method is a non-publishing convenience view. Harness publishing
-     * must use {@link #stageFreshDiff()} so the base commit and guarded tree are
-     * pinned.</p>
+     * <p>This method is a non-publishing, test-only convenience view and still
+     * reflects the current index/HEAD. Harness publishing must use
+     * {@link #stageFreshDiff()} so the base commit and guarded tree are pinned.</p>
+     *
+     * @deprecated use {@link #stageFreshDiff()} for any publishing decision
      */
+    @Deprecated
     public DiffSummary collectDiff() throws IOException {
         if (repoDir == null || !Files.exists(repoDir)) {
             return DiffSummary.empty();
@@ -959,24 +988,46 @@ public class WorkspaceManager {
         if (sha == null || sha.isBlank() || !isBlob(sha)) {
             return 0;
         }
+        // The byte guard rejects oversized blobs; do not scan them line by line.
+        if (blobSize(sha) > MAX_COUNTED_BYTES) {
+            log.debug("Skipping line count for oversized blob {}", sha);
+            return 0;
+        }
         Process process = startGit(
             repoDir,
             supervisorIndex == null ? Map.of() : Map.of("GIT_INDEX_FILE", supervisorIndex.toString()),
             "cat-file", "blob", sha);
         int newlines = 0;
+        long seenBytes = 0;
+        boolean byteOverflow = false;
+        boolean lineOverflow = false;
         try (InputStream input = process.getInputStream()) {
             byte[] buffer = new byte[8_192];
             int read;
             while ((read = input.read(buffer)) != -1) {
+                seenBytes += read;
+                if (seenBytes > MAX_COUNTED_BYTES) {
+                    byteOverflow = true;
+                    break;
+                }
                 for (int i = 0; i < read; i++) {
                     if (buffer[i] == '\n') {
                         newlines++;
                         if (newlines > MAX_COUNTED_LINES) {
-                            return MAX_COUNTED_LINES + 1;
+                            lineOverflow = true;
+                            break;
                         }
                     }
                 }
+                if (lineOverflow) {
+                    break;
+                }
             }
+        }
+        if (byteOverflow || lineOverflow) {
+            process.destroyForcibly();
+            waitFor(process);
+            return byteOverflow ? 0 : MAX_COUNTED_LINES + 1;
         }
         int exit = waitFor(process);
         if (exit != 0) {

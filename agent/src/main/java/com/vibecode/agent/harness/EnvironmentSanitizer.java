@@ -106,7 +106,11 @@ public final class EnvironmentSanitizer {
         String upper = name.toUpperCase(Locale.ROOT);
         boolean urlLike = upper.endsWith("_PROXY") || upper.equals("NPM_CONFIG_REGISTRY");
         if (urlLike) {
-            return value.replaceFirst("(?i)^([a-z][a-z0-9+.-]*://)[^/@]+@", "$1");
+            // Handles both scheme and no-scheme forms:
+            //   https://user:pass@host  -> https://host
+            //   user:pass@host          -> host
+            //   //user:token@registry  -> //registry
+            return value.replaceFirst("(?i)^((?:[a-z][a-z0-9+.-]*:)?//)?[^/@]+@", "$1");
         }
         return value;
     }

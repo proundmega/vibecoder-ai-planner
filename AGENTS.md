@@ -152,7 +152,8 @@ Harness env: `HARNESS_BIN`, `HARNESS_STARTUP_TIMEOUT_MS`,
 `HARNESS_MAX_DURATION_MINUTES`,
 `HARNESS_VERIFY_COMMANDS` (semicolon-separated; empty = autodetect, then fail
 closed), `HARNESS_PROTECTED_PATHS`, `HARNESS_MODEL`, `HARNESS_MAX_FILES`,
-`HARNESS_MAX_LINES`, `HARNESS_MAX_BYTES`, `HARNESS_RETRY_PIN_ATTEMPTS`,
+`HARNESS_MAX_LINES`, `HARNESS_MAX_BYTES`, `HARNESS_FSCK`,
+`HARNESS_RETRY_PIN_ATTEMPTS`,
 `HARNESS_RETRY_BASE_DELAY_MS`, `HARNESS_RETRY_MAX_DELAY_MS`. Phase 1 is blocking
 prompt mode and denies the `question` and `doom_loop` tools; autonomy and the
 human question loop are later phases.
