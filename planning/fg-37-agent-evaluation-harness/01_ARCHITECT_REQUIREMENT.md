@@ -80,7 +80,9 @@ Without measurement, "autonomy" is guesswork and model swaps are risky.
 
 | # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
 |---|---|---|---|---|---|
-| 1 | fg-38 | Budget-aware evaluation runs | Billing | `fg-38-harness-budgets-routing` | No |
-| 2 | fg-34 | Sandboxed evaluation repos | Security | `fg-34-harness-sandbox` | No |
-| 3 | fg-41 | Eval result dashboards | Observability | `fg-41-harness-observability` | No |
-| 4 | bp-99 | E2E UI for eval reports | Testing | `bp-99` follow-up | No |
+| 1 | fg-38 | Budget-aware evaluation runs | Billing | TBD (new follow-up) | No |
+| 2 | fg-34 | Sandboxed evaluation repos | Security | TBD (new follow-up) | No |
+| 3 | fg-41 | Eval result dashboards | Observability | TBD (new follow-up) | No |
+| 4 | bp-99-frontend-testing | E2E UI for eval reports | Testing | TBD (new follow-up) | No |
+
+`From Ticket` records where the deferred improvement was found; `TBD` means no follow-up ticket exists yet, so this table does not imply one is already tracked.

@@ -9,14 +9,16 @@
 Introduce a `SandboxRunner` abstraction between the supervisor and the harness process. The supervisor never runs repo code directly; it asks the runner for a disposable sandbox, mounts the workspace, and receives artifacts on completion.
 
 ```
-HarnessTicketProcessor
+HarnessTicketProcessor (supervisor, outside sandbox)
   -> SandboxRunner.create(SandboxSpec)
        -> container: read-only rootfs, workspace mount, limits, no host socket
        -> network: egress proxy allowlist
        -> secrets: none; provider access via proxy/token broker
-  -> OpenCodeClient runs inside sandbox
+  -> OpenCodeClient runs in the supervisor
+       -> tool/file calls over the control channel
+       -> SandboxRunner.exec / putFile / getFile / stream
   -> artifacts: diff, test output, logs, exit status
-  -> SandboxRunner.destroy()
+  -> SandboxRunner.stop() / destroy()
 ```
 
 ## SandboxSpec
@@ -36,6 +38,25 @@ record SandboxSpec(
 ) {}
 ```
 
+## SandboxRunner control channel
+
+`SandboxRunner` is more than create/destroy. It exposes:
+
+```java
+SandboxHandle create(SandboxSpec spec);
+ExecResult exec(SandboxHandle h, ExecRequest req);      // command, cwd, timeout, output cap
+void stream(SandboxHandle h, ExecRequest req, Consumer<Chunk> sink);
+void putFile(SandboxHandle h, Path local, String remote);
+void getFile(SandboxHandle h, String remote, Path local);
+void stop(SandboxHandle h);                             // kill process tree
+void destroy(SandboxHandle h);
+```
+
+- OpenCode stays in the supervisor so it can call the model/provider proxy and receive events; it never runs repo code directly.
+- The model's bash/edit/read tools are translated into `exec`/`putFile`/`getFile` calls. Prompts and event streaming stay on the supervisor side; the untrusted code runs in the sandbox.
+- The channel is a per-run Unix socket (or a loopback port bound to 127.0.0.1) with a random per-run token, request ids and idempotent exec. Repo processes cannot reach it and the sandbox exposes no inbound port.
+- If a future OpenCode build must run inside the sandbox, add an explicit `attach/exec/port` contract and authenticated loopback channel; do not run it without one.
+
 ## Runtime
 
 Start with Docker/Podman sibling containers, not Docker-in-Docker:
@@ -53,11 +74,10 @@ MicroVM (Firecracker/Kata) is a future option if containers are not a strong eno
 
 Default deny. Allow only:
 
-- the configured model/provider host(s);
 - the package registry hosts required by the repo profile (`npm`, PyPI, Maven Central, etc.);
 - an internal artifact cache, if used.
 
-Implement with an egress proxy or network namespace rules, log every denied request, and make the allowlist part of the repo profile rather than the prompt.
+Provider/model calls originate in the supervisor (OpenCode runs outside the sandbox), so no provider host needs to be reachable from repo code. Implement with an egress proxy or network namespace rules, log every denied request, and make the allowlist part of the repo profile rather than the prompt.
 
 ## Secrets
 

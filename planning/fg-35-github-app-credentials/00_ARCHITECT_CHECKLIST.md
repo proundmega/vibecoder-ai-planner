@@ -7,7 +7,7 @@
 
 ## Why this ticket exists
 
-Publishing currently uses a long-lived GitHub PAT. We removed it from `.git/config`, but it still lives in memory/process arguments and grants broad access across every repo the user can see. A production coding agent should use a GitHub App installation token scoped to one repository and a short TTL.
+Publishing currently uses a long-lived GitHub PAT. We removed it from `.git/config` and process arguments (askpass/header handling), but it still lives in memory/environment with broad access across every repo the user can see. A production coding agent should use a GitHub App installation token scoped to one repository and a short TTL.
 
 ## Checklist
 

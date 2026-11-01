@@ -12,7 +12,7 @@ The agent authenticates to GitHub with a Personal Access Token:
 - the token is long-lived and manually rotated;
 - it is typically scoped to the user, not a single repository;
 - it can read/write every repo the user can access;
-- it appears in process arguments and potentially logs;
+- it lives in memory/environment with broad user scope; fg-30's askpass/header handling keeps it out of process args, but a long-lived token still has a large blast radius if leaked;
 - it is used for clone, push and PR creation by the same identity.
 
 Scrubbing `.git/config` (fg-30) was necessary but not sufficient. A compromised harness, a malicious test, or a log leak still exposes a powerful credential.
@@ -36,7 +36,7 @@ Scrubbing `.git/config` (fg-30) was necessary but not sufficient. A compromised 
 ## Functional requirements
 
 - **FR1 - App registration:** document required permissions: `contents:write`, `pull_requests:write`, `checks:read`, `metadata:read`; no admin.
-- **FR2 - Installation mapping:** each project/repo maps to a GitHub App installation id and a repo allowlist.
+- **FR2 - Installation mapping:** each project/repo maps to a GitHub App installation id and a repo allowlist in `project_github_installations`; `GITHUB_APP_INSTALLATION_ID` is a single-tenant/dev fallback only.
 - **FR3 - Token minting:** backend mints `POST /app/installations/{id}/access_tokens` with `repositories` and `permissions`, caches by installation+repo until near expiry.
 - **FR4 - Delivery:** the agent receives a token or a short-lived proxy credential; it must not write it to disk or expose it to the sandbox.
 - **FR5 - Git usage:** clone/push uses an ephemeral auth mechanism (credential helper, `http.extraHeader`, or a local proxy), never a persisted remote URL.
@@ -69,7 +69,7 @@ Scrubbing `.git/config` (fg-30) was necessary but not sufficient. A compromised 
 - GitHub Enterprise Server implementation.
 - OAuth user login flows.
 - Fine-grained PAT migration tooling.
-- Review approval identity (fg-31 uses the publishing identity in Phase 1).
+- Review approval identity: fg-31 Phase 1 posts COMMENT-only reviews, and the publishing identity cannot approve its own PR. `APPROVE`/`REQUEST_CHANGES` require a separate reviewer App/identity in Phase 2.
 
 ## Pending Scope Items to Present to User
 

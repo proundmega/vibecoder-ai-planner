@@ -7,7 +7,7 @@
 
 ## Why this ticket exists
 
-Today one process is a builder, a reviewer, or a fixer. There is no task decomposition, parallel work ownership, worktree isolation or handoff contract. fg-30 sketches a reviewer/fixer chain, but multi-agent coordination is undefined.
+Today one process is a builder or a reviewer; there is no fixer yet (fg-32 plans it). There is no task decomposition, parallel work ownership, worktree isolation or handoff contract. fg-30 sketches a reviewer/fixer chain, but multi-agent coordination is undefined.
 
 ## Checklist
 

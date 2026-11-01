@@ -12,7 +12,7 @@ Add a `MergeCoordinator` that owns base-branch synchronization, CI gating, merge
 PR created
   -> mergeability check
        -> clean: review
-       -> dirty: update/rebase -> verify -> review
+       -> dirty: merge base -> verify -> review
        -> conflict: conflict worker -> verify -> review
   -> approval + checks
   -> merge queue (per repo)
@@ -37,15 +37,16 @@ PR created
 
 ## Base branch resolution
 
-1. project setting `base_branch` if present;
-2. repository default branch from GitHub;
-3. fallback `main`, then `master`; log the resolution.
-Use this for PR creation, rebase and post-merge checks. Do not hardcode `main`.
+1. active repo profile `base_branch` (fg-39) if present;
+2. project setting `base_branch`;
+3. repository default branch from GitHub;
+4. fallback `main`, then `master`; log the resolution.
+Use one shared `BaseBranchResolver` for PR creation, branch updates and post-merge checks; fg-39 stores the profile value but must call the same resolver. Do not hardcode `main`.
 
 ## Mergeability and update
 
 - Before review/fix, call GitHub for `mergeable`, `mergeable_state`, `base.sha`, `head.sha`.
-- `dirty`/`behind`: fetch base, rebase the ticket branch onto `origin/<base>`, resolve only trivial conflicts, push with `--force-with-lease`, re-run verification.
+- `dirty`/`behind`: fetch base and update the ticket branch with a merge commit from `origin/<base>` (`git merge --no-ff`), preserving published history; resolve only trivial conflicts and re-run verification. Rebase is allowed only on an agent-owned branch with the head SHA pinned and an explicit lease; never force-push a human-owned or shared branch. fg-32's fast-forward-only publish remains the default.
 - `blocked`: report missing checks/approvals; do not spend a review round.
 - `unknown`: wait/retry with backoff; GitHub computes mergeability asynchronously.
 
@@ -76,24 +77,33 @@ Use this for PR creation, rebase and post-merge checks. Do not hardcode `main`.
 ```sql
 CREATE TABLE merge_queue (
   id UUID PRIMARY KEY,
-  project_id UUID NOT NULL,
-  ticket_id UUID NOT NULL,
+  project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  ticket_id BIGINT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
   pr_number INT NOT NULL,
   head_sha TEXT NOT NULL,
   base_sha TEXT NOT NULL,
+  merge_commit_sha TEXT, -- set after a successful merge; required for rollback
   priority INT NOT NULL DEFAULT 0,
   status TEXT NOT NULL, -- queued, merging, merged, failed, reverted
   enqueued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   merged_at TIMESTAMPTZ,
   error TEXT
 );
+
+-- One active merge per PR and per ticket; terminal rows are history.
+CREATE UNIQUE INDEX uq_merge_queue_active_pr
+  ON merge_queue (project_id, pr_number)
+  WHERE status IN ('queued', 'merging');
+CREATE UNIQUE INDEX uq_merge_queue_active_ticket
+  ON merge_queue (ticket_id)
+  WHERE status IN ('queued', 'merging');
 ```
 
 ## Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `REPO_BASE_BRANCH` | auto | Project override |
+| `REPO_BASE_BRANCH` | auto | Default project setting; an active repo profile overrides it |
 | `MERGE_METHOD` | `squash` | squash/merge/rebase |
 | `MERGE_REQUIRE_CHECKS` | `true` | Require green checks |
 | `MERGE_QUEUE_ENABLED` | `false` | Enable queue |

@@ -55,16 +55,17 @@ Event types are versioned; unknown types are stored but not interpreted.
 
 - Start with Postgres `harness_events` partitioned by day; move to ClickHouse/OpenSearch if volume grows.
 - Artifacts in object storage with a retention policy and signed access.
-- Indexes: run_id, ticket_id, type, timestamp.
+- Indexes: project_id, run_id, ticket_id, type, timestamp (lead with project_id for tenant-scoped queries).
 - Retention default 30 days for events, 7 days for artifacts; audit events retained longer.
 
 ```sql
 CREATE TABLE harness_events (
   event_id UUID PRIMARY KEY,
   trace_id UUID NOT NULL,
-  run_id UUID,
-  ticket_id UUID,
-  agent_id UUID,
+  run_id UUID REFERENCES harness_runs(id) ON DELETE SET NULL,
+  ticket_id BIGINT REFERENCES tickets(id) ON DELETE SET NULL,
+  agent_id BIGINT REFERENCES agents(id) ON DELETE SET NULL,
+  project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   session_id TEXT,
   type TEXT NOT NULL,
   payload JSONB NOT NULL,

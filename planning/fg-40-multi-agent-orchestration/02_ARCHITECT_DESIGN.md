@@ -101,7 +101,7 @@ Handoffs are persisted, schema-validated and included in the next role's prompt.
 ```sql
 CREATE TABLE work_plans (
   id UUID PRIMARY KEY,
-  ticket_id UUID NOT NULL,
+  ticket_id BIGINT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
   version INT NOT NULL,
   graph JSONB NOT NULL,
   status TEXT NOT NULL,
@@ -110,7 +110,7 @@ CREATE TABLE work_plans (
 
 CREATE TABLE work_tasks (
   id UUID PRIMARY KEY,
-  plan_id UUID REFERENCES work_plans(id),
+  plan_id UUID REFERENCES work_plans(id) ON DELETE CASCADE,
   role TEXT NOT NULL,
   title TEXT NOT NULL,
   branch TEXT,

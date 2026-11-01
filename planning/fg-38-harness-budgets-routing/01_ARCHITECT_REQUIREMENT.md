@@ -45,7 +45,7 @@ fg-30 has defaults, but they are configuration values, not enforcement. There is
 - **FR5 - Quotas:** per-ticket, per-project/day, per-agent concurrency and spend.
 - **FR6 - Routing:** choose a model from a policy (task complexity, repo size, budget remaining, provider health).
 - **FR7 - Fallback:** free -> paid only when allowed; circuit-break a failing provider; never silently exceed budget.
-- **FR8 - Attribution:** store usage with ticket, run, project, agent, model and prompt version.
+- **FR8 - Attribution:** store usage with ticket, run, project, agent, model, prompt version and routing config hash.
 - **FR9 - Retry policy:** a retry consumes the same budget; cap retries.
 - **FR10 - Kill switch:** a project/global switch stops new runs and can terminate active ones.
 

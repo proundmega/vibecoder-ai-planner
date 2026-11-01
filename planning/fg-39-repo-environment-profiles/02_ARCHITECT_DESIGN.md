@@ -95,15 +95,17 @@ This is an admin operation, not model-driven.
 ```sql
 CREATE TABLE repo_profiles (
   id UUID PRIMARY KEY,
-  project_id UUID NOT NULL,
+  project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   version INT NOT NULL,
   profile JSONB NOT NULL,
   status TEXT NOT NULL, -- draft, active, inactive
-  created_by UUID,
+  created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (project_id, version)
 );
 ```
+
+`profile.base_branch` is the most specific source. fg-36's `BaseBranchResolver` uses: active profile > project setting > GitHub repo default > `main`, then `master`. Do not duplicate this order elsewhere.
 
 ## Tests
 

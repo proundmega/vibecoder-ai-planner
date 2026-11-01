@@ -21,8 +21,8 @@ Each state transition writes a checkpoint. Steps that touch Git or GitHub carry 
 ```sql
 CREATE TABLE harness_runs (
   id UUID PRIMARY KEY,
-  ticket_id UUID NOT NULL,
-  agent_id UUID NOT NULL,
+  ticket_id BIGINT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  agent_id BIGINT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
   branch TEXT NOT NULL,
   base_sha TEXT,
   head_sha TEXT,
@@ -31,7 +31,7 @@ CREATE TABLE harness_runs (
   provider TEXT,
   model TEXT,
   step TEXT NOT NULL,
-  status TEXT NOT NULL, -- running, succeeded, failed, dead_letter
+  status TEXT NOT NULL, -- running, succeeded, failed, dead_letter, budget_exceeded
   attempt INT NOT NULL DEFAULT 1,
   started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -48,9 +48,9 @@ CREATE TABLE harness_checkpoints (
 );
 
 CREATE TABLE harness_leases (
-  ticket_id UUID PRIMARY KEY,
-  run_id UUID NOT NULL,
-  agent_id UUID NOT NULL,
+  ticket_id BIGINT PRIMARY KEY REFERENCES tickets(id) ON DELETE CASCADE,
+  run_id UUID NOT NULL REFERENCES harness_runs(id) ON DELETE CASCADE,
+  agent_id BIGINT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
   expires_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

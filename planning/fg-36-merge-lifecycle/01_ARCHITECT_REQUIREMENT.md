@@ -45,9 +45,9 @@ Current gaps:
 
 ## Functional requirements
 
-- **FR1 - Base branch:** resolve the repo default branch; allow a project override; use it for PR creation and rebase.
+- **FR1 - Base branch:** resolve with the shared `BaseBranchResolver` (active repo profile > project setting > repo default > `main`/`master`); use it for PR creation and branch updates.
 - **FR2 - Mergeability check:** query GitHub mergeable state before review, before fix rounds and before merge.
-- **FR3 - Update branch:** rebase or merge the base into the ticket branch, then re-run verification.
+- **FR3 - Update branch:** merge the base into the ticket branch with a merge commit (no force); rebase only an agent-owned branch with the head SHA pinned and an explicit lease. Re-run verification after the update.
 - **FR4 - Conflict handling:** classify conflicts; auto-resolve trivial ones; send complex ones to a fixer/integrator with the conflicting files and both sides.
 - **FR5 - CI gate:** require configured checks (tests, lint, security) to pass before merge.
 - **FR6 - Merge queue:** serialize merges per repo; re-check the head SHA immediately before merge.
@@ -58,7 +58,7 @@ Current gaps:
 
 ## Safety requirements
 
-- Never force-push a shared branch.
+- Never force-push a shared or human-owned branch. Prefer a merge commit for base updates; an agent-owned branch may be rebased only with a pinned head SHA and explicit lease.
 - Never merge without a valid approval and passing required checks.
 - Re-run verification after every rebase/update.
 - A conflict resolution must not silently drop either side.

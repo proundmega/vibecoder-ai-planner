@@ -100,11 +100,13 @@ Fallback:
 ```sql
 CREATE TABLE harness_usage (
   id UUID PRIMARY KEY,
-  run_id UUID,
-  ticket_id UUID,
-  project_id UUID,
-  agent_id UUID,
+  run_id UUID REFERENCES harness_runs(id) ON DELETE SET NULL,
+  ticket_id BIGINT REFERENCES tickets(id) ON DELETE SET NULL,
+  project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL,
+  agent_id BIGINT REFERENCES agents(id) ON DELETE SET NULL,
   model TEXT NOT NULL,
+  prompt_version TEXT,
+  config_hash TEXT,
   input_tokens BIGINT NOT NULL DEFAULT 0,
   output_tokens BIGINT NOT NULL DEFAULT 0,
   cached_tokens BIGINT NOT NULL DEFAULT 0,

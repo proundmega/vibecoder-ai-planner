@@ -42,7 +42,7 @@ Without profiles, agents spend their budget debugging the environment or fail ve
 
 ## Functional requirements
 
-- **FR1 - Profile schema:** repo URL, languages, image/toolchain versions, setup commands, verify commands, services, env (non-secret), cache paths, timeouts, flaky tests.
+- **FR1 - Profile schema:** repo URL, base branch, languages, image/toolchain versions, setup commands, verify commands, services, env (non-secret), cache paths, timeouts, flaky tests. `base_branch` is the first source in fg-36's shared resolver.
 - **FR2 - Onboarding:** detect stack from manifests; propose a profile; let an admin edit/approve.
 - **FR3 - Images:** per-stack sandbox images or a devcontainer; pinned versions; pre-installed tools.
 - **FR4 - Caches:** dependency caches (npm, Maven, pip, Go) persisted across runs and scoped per repo.

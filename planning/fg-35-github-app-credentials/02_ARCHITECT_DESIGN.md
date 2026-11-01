@@ -26,9 +26,23 @@ Agent                    Backend                         GitHub
 | `GITHUB_AUTH_MODE` | `app` | `app` or `pat` |
 | `GITHUB_APP_ID` | - | App id |
 | `GITHUB_APP_PRIVATE_KEY` | - | Secret-store reference |
-| `GITHUB_APP_INSTALLATION_ID` | - | Per-project installation |
+| `GITHUB_APP_INSTALLATION_ID` | - | Single-tenant/dev fallback; production uses per-project mappings |
 | `GITHUB_TOKEN_TTL_SECONDS` | `3600` | Requested token lifetime |
 | `ALLOW_PAT` | `false` | Dev-only PAT fallback |
+
+`GITHUB_APP_INSTALLATION_ID` is a single-tenant/dev fallback only. Production resolves the installation per project (FR2):
+
+```sql
+CREATE TABLE project_github_installations (
+  project_id BIGINT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  installation_id BIGINT NOT NULL,
+  repo_allowlist TEXT[] NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+The token service looks up `project_github_installations` first and falls back to the env var only when exactly one installation is configured.
 
 ## Token service
 
@@ -85,7 +99,7 @@ Agent                    Backend                         GitHub
 1. Do we need one app per tenant or one app with per-project installations?
 2. Should the agent talk to GitHub directly or always through a backend proxy?
 3. How do we support GitHub Enterprise Server?
-4. Should reviews use the same app identity or a separate reviewer app?
+4. Phase 1 reviews are COMMENT-only; Phase 2 needs a separate reviewer App/identity. Confirm whether that is one app with two installations or a distinct app.
 5. What is the minimum permission set for checks and merge queue later?
 
 ## Pending Scope Items to Present to User
