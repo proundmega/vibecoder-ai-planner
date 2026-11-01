@@ -21,7 +21,6 @@ describe('priority enum consistency', () => {
     const repoRoot = path.join(__dirname, '../../..');
     const files = [
       path.join(__dirname, '../api/openapi-spec.js'),
-      path.join(__dirname, '../api/openapi-generated.json'),
       path.join(repoRoot, 'frontend/src/api/validator.ts'),
       path.join(repoRoot, 'frontend/src/api/generated/models/Ticket.ts'),
       path.join(repoRoot, 'frontend/src/api/generated/services/TicketsService.ts'),
@@ -31,6 +30,28 @@ describe('priority enum consistency', () => {
     for (const file of files) {
       const source = fs.readFileSync(file, 'utf8');
       expect(source).toContain('critical');
+    }
+
+    // The checked-in generated spec is the input to `generate:api`; every
+    // priority enum there must include critical, not just contain the word.
+    const generated = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '../api/openapi-generated.json'), 'utf8')
+    );
+    const priorityEnums = [];
+    (function collect(node) {
+      if (Array.isArray(node)) {
+        if (node.includes('low') && node.includes('urgent')) {
+          priorityEnums.push(node);
+        }
+        node.forEach(collect);
+      } else if (node && typeof node === 'object') {
+        Object.values(node).forEach(collect);
+      }
+    })(generated);
+
+    expect(priorityEnums.length).toBeGreaterThanOrEqual(3);
+    for (const priorityEnum of priorityEnums) {
+      expect(priorityEnum).toContain('critical');
     }
   });
 
