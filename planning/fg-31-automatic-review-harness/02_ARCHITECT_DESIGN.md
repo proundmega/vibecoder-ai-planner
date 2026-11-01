@@ -121,6 +121,7 @@ CREATE TABLE ticket_review_attempts (
   round INT NOT NULL DEFAULT 0,
   verdict TEXT CHECK (verdict IN ('approve', 'request_changes', 'comment')),
   verification JSONB, -- supervisor-captured results; never model-supplied
+  github_review_id BIGINT, -- nullable; set after a successful GitHub POST
   provider TEXT,
   model TEXT,
   tokens_in INT,
@@ -149,11 +150,11 @@ CREATE TABLE ticket_review_findings (
 );
 ```
 
-- Insert a `started` attempt before doing work; mark `completed` only after verification, parsing and publishing succeed; mark `failed` with a reason otherwise. Persist the GitHub review id on the attempt when it is available.
-- A stale `started` attempt is reclaimable after a timeout.
+- Insert a `started` attempt before doing work; mark `completed` only after verification, parsing and publishing succeed; mark `failed` with a reason otherwise. Persist `github_review_id` when the POST succeeds.
+- A stale `started` attempt is reclaimable after a timeout. The retry **reuses the same attempt id** so the body marker still matches after a crash; if the id is unknown, it searches existing reviews for the `<!-- fg-31-review:` prefix plus the reviewed SHA before posting.
 - Only a `completed` row blocks the same SHA; transient harness/verification failures can be retried.
-- **Partial-publish recovery:** a successful GitHub post followed by a failed attempt-completion write must not post twice. Before posting (and after the head re-check), list existing PR reviews and look for this reviewer's review with `commit_id == reviewed_sha` and a deterministic body marker (for example `<!-- fg-31-review:<attempt_id> -->`). If found, adopt its review id, mark the attempt `completed`, and skip the POST.
-- A retry that already has a persisted review id never posts again; it only retries the DB completion.
+- **Partial-publish recovery:** a successful GitHub post followed by a failed attempt-completion write must not post twice. Before posting (and after the head re-check), list existing PR reviews and look for this reviewer's review with `commit_id == reviewed_sha` and a deterministic body marker (for example `<!-- fg-31-review:<attempt_id> -->`). If found, adopt its review id into `github_review_id`, mark the attempt `completed`, and skip the POST.
+- A retry that already has a persisted `github_review_id` never posts again; it only retries the DB completion.
 - The head re-check and review dedupe happen immediately before `POST /repos/{owner}/{repo}/pulls/{number}/reviews`. This contract must be carried unchanged into `03`/`04`.
 - No review starts when `pr_url` is missing.
 
