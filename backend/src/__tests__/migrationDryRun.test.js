@@ -1,4 +1,8 @@
-const { classifyStatement, splitSQLStatements } = require('../migrations/apply');
+const {
+  classifyStatement,
+  splitSQLStatements,
+  validateStatementStructure,
+} = require('../migrations/apply');
 
 describe('classifyStatement', () => {
   it('classifies CREATE statements', () => {
@@ -94,6 +98,28 @@ describe('classifyStatement', () => {
   it('handles mixed comments and whitespace', () => {
     expect(classifyStatement('  -- comment\n  CREATE TABLE users (id SERIAL)')).toBe('CREATE');
     expect(classifyStatement('/* header */\n-- note\nALTER TABLE x ADD COLUMN y INT')).toBe('ALTER');
+  });
+});
+
+describe('validateStatementStructure', () => {
+  it('accepts normal DDL', () => {
+    expect(validateStatementStructure('CREATE TABLE users (id SERIAL)')).toBeNull();
+    expect(validateStatementStructure("ALTER TABLE users ADD CONSTRAINT c CHECK (priority IN ('low', 'high'))")).toBeNull();
+  });
+
+  it('accepts dollar-quoted function bodies', () => {
+    const fn = `CREATE FUNCTION f() RETURNS void AS $$
+      BEGIN
+        PERFORM 1;
+      END;
+    $$ LANGUAGE plpgsql`;
+    expect(validateStatementStructure(fn)).toBeNull();
+  });
+
+  it('treats comment-only chunks as valid but rejects broken statements', () => {
+    expect(validateStatementStructure('-- only a comment')).toBeNull();
+    expect(validateStatementStructure('CREATE TABLE users (id SERIAL')).toBe('unbalanced parentheses');
+    expect(validateStatementStructure("INSERT INTO users (name) VALUES ('oops)")).toBe('unterminated quoted string');
   });
 });
 

@@ -1,11 +1,13 @@
 package com.vibecode.agent.service;
 
 import com.vibecode.agent.model.FileOperation;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -200,6 +202,9 @@ class WorkspaceManagerTest {
 
     @Test
     void testCreateCredentialHelperHasRestrictedPermissions() throws Exception {
+        Assumptions.assumeTrue(
+            FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+            "POSIX permissions are not supported on this platform");
         Path targetDir = tempDir.resolve("perms-test");
         WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         Path helperScript = wm.createCredentialHelper(targetDir, "secret-token");

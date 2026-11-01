@@ -139,7 +139,7 @@ export class ProjectsService {
         requestBody: {
             title: string;
             description?: string;
-            priority?: 'low' | 'medium' | 'high' | 'urgent';
+            priority?: 'low' | 'medium' | 'high' | 'critical' | 'urgent';
         },
     ): CancelablePromise<any> {
         return __request(OpenAPI, {

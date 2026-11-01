@@ -94,11 +94,18 @@ async function getProjectUsers(req, res, next) {
     await ProjectService.getOne(req.params.id, req.user.userId);
     
     const result = await pool.query(
-      `SELECT u.id, u.name, u.email, u.role 
-       FROM users u 
-       WHERE u.id != $1 
+      `SELECT u.id, u.name, u.email, u.role
+       FROM users u
+       WHERE u.id != $1
+         AND (
+           u.id = (SELECT owner_id FROM projects WHERE id = $2)
+           OR EXISTS (
+             SELECT 1 FROM project_memberships pm
+             WHERE pm.project_id = $2 AND pm.user_id = u.id
+           )
+         )
        ORDER BY u.name NULLS FIRST, u.email`,
-      [req.user.userId]
+      [req.user.userId, req.params.id]
     );
     
     res.json({ success: true, data: result.rows });

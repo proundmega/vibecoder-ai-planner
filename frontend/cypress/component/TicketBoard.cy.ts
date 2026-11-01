@@ -15,11 +15,11 @@ const resetAuthStore = () => {
 describe('TicketBoard.vue', () => {
   beforeEach(() => {
     resetAuthStore();
-    cy.intercept('GET', '/api/projects', [
+    cy.intercept('GET', '/api/v1/projects', [
       { id: 'proj-1', name: 'Test Project', description: 'A test project', created_at: '2024-01-01T00:00:00Z' }
     ]).as('fetchProjects');
 
-    cy.intercept('GET', '/api/projects/proj-1/tickets', [
+    cy.intercept('GET', '/api/v1/projects/proj-1/tickets', [
       {
         id: 't-1',
         title: 'Ticket 1',
@@ -107,7 +107,7 @@ describe('TicketBoard.vue', () => {
   });
 
   it('should show empty state when no tickets', () => {
-    cy.intercept('GET', '/api/projects/proj-1/tickets', []).as('fetchEmptyTickets');
+    cy.intercept('GET', '/api/v1/projects/proj-1/tickets', []).as('fetchEmptyTickets');
 
     cy.mount(TicketBoard);
     cy.wait('@fetchProjects');

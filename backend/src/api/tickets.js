@@ -30,7 +30,7 @@ const GitHubService = require('../services/GitHubService');
  *               projectId: { type: string, format: uuid }
  *               title: { type: string }
  *               description: { type: string }
- *               priority: { type: string, enum: [low, medium, high, urgent] }
+ *               priority: { type: string, enum: [low, medium, high, critical, urgent] }
  *     responses:
  *       201:
  *         description: Ticket created

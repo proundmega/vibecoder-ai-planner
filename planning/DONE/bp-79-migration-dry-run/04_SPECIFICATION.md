@@ -48,9 +48,44 @@ function classifyStatement(sql) {
 }
 ```
 
-**Modify runMigration function** (add dryRun parameter):
+**Modify runMigration function** (no DB in dry-run):
 ```javascript
-async function runMigration(file, dryRun = false) {
+async function runMigration(file, dryRun = false, pool = null) {
+  const sql = fs.readFileSync(file, 'utf8');
+  const statements = splitSQLStatements(sql);
+  console.log(`\n--- ${path.basename(file)} (${statements.length} statements) ---`);
+
+  if (dryRun) {
+    // Classify, structurally validate and print the summary.
+    // Do not create a Pool and do not connect.
+    return true;
+  }
+
+  if (!pool) throw new Error(`A database pool is required to run ${path.basename(file)}`);
+  for (let i = 0; i < statements.length; i++) {
+    await pool.query(statements[i]);
+  }
+  return true;
+}
+```
+
+**Modify migrate function** (dry-run reads files, normal mode connects once):
+```javascript
+async function migrate(dryRun = false) {
+  if (dryRun) {
+    let valid = true;
+    for (const sqlFile of SQL_FILES) {
+      const fileValid = await runMigration(sqlFile, true);
+      valid = valid && fileValid;
+    }
+    for (const dataMigration of DATA_MIGRATIONS) {
+      console.log(`\n[DRY-RUN] Would run data migration: ${path.basename(dataMigration)}`);
+    }
+    console.log('\n\n=== DRY-RUN COMPLETE: no changes were applied ===');
+    if (!valid) process.exitCode = 1;
+    return;
+  }
+
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     family: 4,
@@ -58,74 +93,21 @@ async function runMigration(file, dryRun = false) {
 
   try {
     await pool.query('SELECT NOW()');
-
-    const sql = fs.readFileSync(file, 'utf8');
-    const statements = splitSQLStatements(sql);
-
-    console.log(`\n--- ${path.basename(file)} (${statements.length} statements) ---`);
-
-    if (dryRun) {
-      // DRY-RUN MODE: Don't execute, just classify and report
-      const summary = {};
-      
-      for (let i = 0; i < statements.length; i++) {
-        const stmt = statements[i];
-        const trimmed = stmt.trim();
-        
-        if (!trimmed) continue; // Skip empty statements
-        
-        const type = classifyStatement(stmt);
-        summary[type] = (summary[type] || 0) + 1;
-        
-        // Show first 100 chars of statement (truncated)
-        const preview = trimmed.length > 100 ? trimmed.substring(0, 100) + '...' : trimmed;
-        console.log(`  [${type}] ${preview}`);
-      }
-      
-      console.log('\nSummary:');
-      for (const [type, count] of Object.entries(summary).sort()) {
-        console.log(`  ${type}: ${count}`);
-      }
-      console.log(`\nTotal: ${Object.values(summary).reduce((a, b) => a + b, 0)} statements would be executed.`);
-    } else {
-      // NORMAL MODE: Execute statements (unchanged)
-      for (let i = 0; i < statements.length; i++) {
-        const stmt = statements[i];
-        try {
-          await pool.query(stmt);
-          console.log(`  ✓ Statement ${i + 1} executed`);
-        } catch (err) {
-          console.log(`  ! Statement ${i + 1} (may already exist): ${err.message}`);
-        }
-      }
+    for (const sqlFile of SQL_FILES) {
+      await runMigration(sqlFile, false, pool);
     }
+    for (const dataMigration of DATA_MIGRATIONS) {
+      await runDataMigration(dataMigration);
+    }
+    console.log('\n\n✓ Migrations completed successfully!');
   } catch (error) {
-    console.error(`Error in ${path.basename(file)}:`, error.message);
+    console.error('Migration failed:', error.message);
+    process.exitCode = 1;
   } finally {
     await pool.end();
   }
 }
 ```
-
-**Modify migrate function** (add dryRun parameter):
-```javascript
-async function migrate(dryRun = false) {
-  for (const sqlFile of SQL_FILES) {
-    await runMigration(sqlFile, dryRun);
-  }
-
-  for (const dataMigration of DATA_MIGRATIONS) {
-    if (dryRun) {
-      console.log(`\n[DRY-RUN] Would run data migration: ${path.basename(dataMigration)}`);
-    } else {
-      await runDataMigration(dataMigration);
-    }
-  }
-
-  console.log('\n\n✓ Migrations completed successfully!');
-}
-```
-
 **Add CLI argument parsing** (at bottom of file, before migrate() call):
 ```javascript
 // Parse CLI arguments

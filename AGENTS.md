@@ -30,7 +30,7 @@ backend/src/
   services/         → ~28 services
   controllers/      → ~12 controllers
   models/           → approval, project, ticket, user
-  migrations/       → 40 .sql files + 2 data migrations; apply.js runs in array order (not numeric)
+  migrations/       → 44 .sql files + 2 data migrations; apply.js runs in array order (not numeric)
   middleware/       → ~15 files (auth, permissions, validate (Joi), cors, rate limiter, CSP, requestId, error handler, timeout, apiVersion, multer)
   validators/       → 15 Joi schemas
   db.js             → pg Pool (DATABASE_URL env)

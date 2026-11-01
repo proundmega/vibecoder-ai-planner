@@ -44,7 +44,7 @@ describe('UserModal.vue', () => {
     resetAuthStore('project_admin');
     cy.mount(UserModal);
     cy.get('form').submit();
-    cy.get('.v-input__error').should('contain', 'Name and email are required');
+    cy.get('.error').should('contain', 'Name and email are required');
   });
 
   it('should show password validation error for short password', () => {
@@ -54,7 +54,7 @@ describe('UserModal.vue', () => {
     cy.get('input[placeholder="user@example.com"]').type('test@example.com');
     cy.get('input[type="password"]').type('short');
     cy.get('button[type="submit"]').click();
-    cy.get('.v-input__error').should('contain', 'at least 6 characters');
+    cy.get('.error').should('contain', 'at least 6 characters');
   });
 
   it('should emit submit event with correct data', () => {

@@ -230,7 +230,7 @@ describe('Account Lockout', () => {
     }
     expect(await auth.checkAccountLockout('10.0.1.7')).toBe(true);
     
-    auth.clearFailedAttempts('10.0.1.7');
+    await auth.clearFailedAttempts('10.0.1.7');
     expect(await auth.checkAccountLockout('10.0.1.7')).toBe(false);
   });
 

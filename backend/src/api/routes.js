@@ -233,7 +233,7 @@ router.post('/auth/login', rateLimiter(5, 60000), validate(loginSchema), async (
     const locked = await checkAccountLockout(clientIp);
     
     if (locked) {
-      const remainingMs = getLockoutRemainingMs(clientIp);
+      const remainingMs = await getLockoutRemainingMs(clientIp);
       const retryAfter = Math.ceil(remainingMs / 1000);
       res.set('Retry-After', String(retryAfter));
       return res.status(429).json({ 
@@ -244,7 +244,7 @@ router.post('/auth/login', rateLimiter(5, 60000), validate(loginSchema), async (
     
     const { email, password } = req.body;
     const result = await loginUserBound(email, password);
-    clearFailedAttempts(clientIp);
+    await clearFailedAttempts(clientIp);
     await UserService.resetFailedAttempts(result.user.id);
     res.json({ message: 'Login successful', ...result });
   } catch (error) {
@@ -262,7 +262,7 @@ router.post('/auth/login', rateLimiter(5, 60000), validate(loginSchema), async (
     }
     
     const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
-    recordFailedAttempt(clientIp);
+    await recordFailedAttempt(clientIp);
     
     try {
       const user = await User.findByEmail(req.body.email);

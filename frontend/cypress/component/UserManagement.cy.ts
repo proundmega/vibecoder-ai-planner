@@ -14,11 +14,11 @@ const resetAuthStore = () => {
 describe('UserManagement.vue', () => {
   beforeEach(() => {
     resetAuthStore();
-    cy.intercept('GET', '/api/users*', {
+    cy.intercept('GET', '/api/v1/users*', {
       users: [
-        { id: '1', name: 'Alice Admin', email: 'alice@example.com', role: 'member', is_active: true },
-        { id: '2', name: 'Bob User', email: 'bob@example.com', role: 'user', is_active: true },
-        { id: '3', name: 'Charlie User', email: 'charlie@example.com', role: 'user', is_active: false }
+        { id: '1', name: 'Alice Admin', email: 'alice@example.com', role: 'member', isActive: true },
+        { id: '2', name: 'Bob User', email: 'bob@example.com', role: 'user', isActive: true },
+        { id: '3', name: 'Charlie User', email: 'charlie@example.com', role: 'user', isActive: false }
       ]
     }).as('fetchUsers');
 
@@ -88,10 +88,10 @@ describe('UserManagement.vue', () => {
 
   it('should hide toggle button for current user', () => {
     resetAuthStore();
-    cy.intercept('GET', '/api/users*', {
+    cy.intercept('GET', '/api/v1/users*', {
       users: [
-        { id: 'admin-1', name: 'Admin', email: 'admin@test.com', role: 'project_admin', is_active: true },
-        { id: '2', name: 'Bob User', email: 'bob@example.com', role: 'user', is_active: true },
+        { id: 'admin-1', name: 'Admin', email: 'admin@test.com', role: 'project_admin', isActive: true },
+        { id: '2', name: 'Bob User', email: 'bob@example.com', role: 'user', isActive: true },
       ]
     }).as('fetchUsers');
 

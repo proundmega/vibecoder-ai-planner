@@ -131,11 +131,11 @@ async function recordFailedAttempt(ip) {
   }
 }
 
-function clearFailedAttempts(ip) {
+async function clearFailedAttempts(ip) {
   // Try Redis first
   if (isRedisAvailable()) {
     try {
-      del(`lockout:${ip}`);
+      await del(`lockout:${ip}`);
     } catch (err) {
       // Fall through to in-memory
     }

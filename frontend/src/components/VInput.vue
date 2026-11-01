@@ -17,6 +17,7 @@
         :disabled="disabled"
         :required="required"
         :rows="rows || 4"
+        :maxlength="maxlength"
         class="v-input__field"
         data-type="textarea"
         @input="$emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
@@ -44,6 +45,7 @@
         :placeholder="placeholder"
         :disabled="disabled"
         :required="required"
+        :maxlength="maxlength"
         class="v-input__field"
         @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"
         @change="$emit('change', $event)"
@@ -71,6 +73,7 @@ withDefaults(defineProps<{
   required?: boolean
   size?: 'small' | 'medium' | 'large'
   rows?: number
+  maxlength?: number | string
 }>(), {
   modelValue: '',
   label: '',
@@ -81,7 +84,8 @@ withDefaults(defineProps<{
   disabled: false,
   required: false,
   size: 'medium',
-  rows: 4
+  rows: 4,
+  maxlength: undefined
 })
 
 const emit = defineEmits<{
