@@ -12,13 +12,16 @@ Make storage a first-class lifecycle: per-agent workspace roots, ticket-scoped c
 PoolManager
   -> creates /repos/agents/<agentId>
   -> WorkspaceManager clones /repos/agents/<agentId>/<ticketId>
-  -> ticket end: WorkspaceManager.cleanup(ticket)
+  -> ticket end (terminal run + lease release):
+       WorkspaceManager.cleanup(ticketId)   # new ticket-scoped API
   -> idle 2h: PoolManager.refresh(agentId)
        -> stop container
        -> remove workspace + caches
        -> start fresh container (same identity/key or rotate)
   -> reaper: orphan dirs, old logs, dangling images
 ```
+
+`WorkspaceManager` currently exposes a no-arg `cleanup()`; this ticket adds a ticket-scoped `cleanup(ticketId)` (or `cleanupWorkspace(ticketId)`). The no-arg method remains for full workspace shutdown.
 
 ## Workspace layout
 
@@ -36,8 +39,8 @@ PoolManager
 
 - `REPO_CLONE_DIR=/repos/agents/<agentId>` passed to the agent.
 - `WorkspaceManager` must use that root and never delete outside it.
-- On ticket end, remove `<ticketId>` entirely.
-- On container stop, remove the agent root unless the agent is being refreshed for debugging.
+- On ticket end after a terminal run and lease release, remove `<ticketId>` entirely; on an unclean exit, leave it for the reaper.
+- On a clean container stop with no active run/lease, remove the agent root. On a crash or unclean JVM exit, preserve it until the fg-33 reaper marks the run terminal and the lease expires; never delete an active workspace.
 
 ## Idle refresh
 
@@ -109,6 +112,13 @@ Docker log config per container:
 - Do not persist `node_modules` across tickets unless the repo/profile explicitly opts in.
 - Clear `~/.npm`, `~/.m2`, OpenCode temp and `/tmp` on refresh.
 
+## Workspace budget enforcement
+
+- Each profile has a disk budget (fg-43). A periodic meter runs `du -sb` (and counts inodes) per agent/ticket.
+- On breach: stop the agent's workspace child processes, mark the ticket `storage_budget_exceeded`, quarantine the workspace under `orphans/`, emit a metric and alert.
+- Docker `storage-opt size` is used only for the container writable layer where the driver/filesystem supports it; the shared repo volume is enforced by the meter.
+- Test with a fixture that writes past the budget and asserts the ticket fails before the host fills.
+
 ## Active-ticket safety
 
 - The refresh/reaper checks the DB lease and the in-memory pool entry.
@@ -131,7 +141,7 @@ Docker log config per container:
 
 Document:
 
-1. stop new assignments (`MAX_POOL_SIZE=0` or pause flag);
+1. stop new assignments via `POST /api/v1/pool/config { "paused": true }`, `POOL_PAUSED=true`, or `MAX_POOL_SIZE=0`;
 2. `docker ps` and stop idle agents;
 3. run the reaper/cleanup script in dry-run, then apply;
 4. `docker system df` and prune only safe objects;
@@ -141,6 +151,8 @@ Document:
 ## Tests
 
 - ticket cleanup on success/failure;
+- unclean exit preserves the workspace until lease expiry, then the reaper cleans it;
+- workspace budget breach fails the ticket with `storage_budget_exceeded`;
 - idle 2h refresh, including identity/key handling;
 - active ticket is never refreshed/cleaned;
 - 80%/85%/90% watermark behavior;
@@ -164,7 +176,7 @@ Document:
 1. Per-agent volume vs shared volume with subdirectories?
 2. Keep the same DB agent identity across refresh or rotate the key?
 3. Is 2h idle refresh too aggressive for long test runs? (Only idle, never active.)
-4. Can we use Docker storage quotas for workspace size, or only cleanup?
+4. Resolved: use Docker `storage-opt size` for the container writable layer where supported, and a periodic `du`/inode meter for the shared repo volume.
 5. Do we need a read-only shared cache for node_modules/Maven?
 6. Where should the reaper run: backend, host cron, or a sidecar?
 

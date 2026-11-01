@@ -13,11 +13,13 @@ Agent containers are long-running and share a `vibecode_repos` volume. Repo clon
 
 - [ ] Measure current disk/inode growth per agent and per ticket
 - [ ] Define per-agent workspace layout and TTL
-- [ ] Add cleanup on ticket end, container stop and idle
+- [ ] Add cleanup on ticket end, clean container stop and idle, only after a terminal run and lease release
+- [ ] Preserve workspaces on unclean exit/active lease until the fg-33 reaper expires the lease
+- [ ] Add a periodic `du`/inode budget meter that fails the ticket at the profile budget
 - [ ] Define the 2-hour idle refresh policy and identity handling
 - [ ] Add disk watermarks (warn/stop-spawn/cleanup/emergency)
 - [ ] Add Docker log rotation and image cleanup
 - [ ] Protect active tickets/leases from cleanup
 - [ ] Add orphan workspace reaper and metrics
 - [ ] Add tests for cleanup, refresh, watermarks and active-ticket safety
-- [ ] Document manual recovery when the disk is full
+- [ ] Document manual recovery when the disk is full, using the pool pause endpoint and reaper

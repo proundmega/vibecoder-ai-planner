@@ -22,7 +22,7 @@ On a 2 TB SSD this is manageable at first, but long-running swarms will eventual
 ## Goals
 
 1. Bound the storage each agent can consume.
-2. Clean workspaces deterministically on ticket completion, container stop and idle.
+2. Clean workspaces deterministically on ticket completion, clean container stop and idle, only after the run is terminal and the lease is released.
 3. Refresh idle containers after a configurable period (proposed: 2 hours) to release accumulated state.
 4. Detect disk/inode pressure early and stop spawning before the host is unusable.
 5. Protect active tickets and leases from cleanup.
@@ -41,7 +41,7 @@ On a 2 TB SSD this is manageable at first, but long-running swarms will eventual
 ## Functional requirements
 
 - **FR1 - Workspace layout:** each agent gets `/repos/agents/<agentId>/` and each ticket a subdirectory; no agent writes into another agent's root.
-- **FR2 - Ticket cleanup:** remove the ticket workspace after publish/release/failure, even if the JVM exits uncleanly.
+- **FR2 - Ticket cleanup:** remove the ticket workspace only after the run reaches a terminal state and the lease is released (success, failure or explicit release). If the JVM exits uncleanly, preserve the workspace until the fg-33 reaper expires the lease and marks the run terminal; never delete an active workspace.
 - **FR3 - Idle refresh:** if an agent has no active ticket/lease for `AGENT_IDLE_REFRESH_MS` (default 2h), stop the container, remove its workspace/caches, and start a fresh container with the same DB agent identity (or a rotated key).
 - **FR4 - Max lifetime:** recycle a container after `AGENT_MAX_LIFETIME_HOURS` even if busy, but only between tickets (never mid-ticket).
 - **FR5 - Disk watermarks:** at 70% warn, 80% stop spawning new agents, 85% clean idle workspaces, 90% emergency recycle oldest idle agents and alert.
@@ -52,6 +52,7 @@ On a 2 TB SSD this is manageable at first, but long-running swarms will eventual
 - **FR10 - Active safety:** never delete a workspace or stop a container with an unexpired ticket lease or active process.
 - **FR11 - Metrics:** expose per-agent workspace bytes, host free bytes/inodes, log size, pool size and refresh counts.
 - **FR12 - Recovery:** a documented command/script to stop the pool, free space, and restart safely.
+- **FR13 - Budget enforcement:** a periodic workspace meter (`du -sb` + inodes) fails the ticket at the profile budget, with a test for the breach path.
 
 ## Storage budget
 
@@ -64,7 +65,7 @@ Use fg-43's per-agent disk budget:
 | review | 10 GB | read-only checkout |
 | light | 5 GB | small repos/pollers |
 
-If a workspace exceeds its budget, fail the ticket with a storage error instead of filling the host.
+Enforce the budget with a periodic `du -sb` (plus inode count) per agent/ticket. On breach, stop the workspace processes, fail the ticket with `storage_budget_exceeded`, quarantine the workspace for inspection, and alert. Optionally use Docker `storage-opt size` for the container writable layer where the driver supports it; the shared repo volume relies on the periodic meter.
 
 ## Idle refresh policy
 
@@ -78,7 +79,7 @@ Proposed:
 
 ## Acceptance criteria
 
-1. Ticket workspaces are removed after success, failure and release.
+1. Ticket workspaces are removed after a terminal run and lease release; an unclean JVM exit preserves the workspace until the fg-33 reaper expires the lease.
 2. An idle agent (2h) is recycled and its workspace/cache removed.
 3. An active ticket is never refreshed or cleaned.
 4. Disk at 80% stops new agent creation with a clear error.
@@ -87,7 +88,8 @@ Proposed:
 7. Orphan workspaces are reaped after TTL.
 8. Storage metrics are visible in status/logs.
 9. A full-disk simulation can be recovered with the documented procedure.
-10. Tests cover cleanup, refresh, watermarks, orphans and active-ticket safety.
+10. Tests cover cleanup, refresh, watermarks, orphans, active-ticket safety and workspace-budget breach.
+11. A workspace over its profile budget fails the ticket with `storage_budget_exceeded` before the host fills.
 
 ## Out of scope
 

@@ -2,7 +2,7 @@
 
 **Status:** planned
 **Date:** 2026-10-31
-**Depends on:** fg-33, fg-34 (recommended)
+**Depends on:** fg-33; fg-34 recommended
 **Related code:** `agent/docker-compose.yml`, `backend/src/services/PoolManager.js`
 
 ## Design summary
@@ -31,7 +31,9 @@ Usage: ./host-init.sh [--role build|review|fixer|light] [--dry-run] [--yes]
 2. Detect:
    - CPU threads (nproc or /proc/cpuinfo)
    - MemTotal (/proc/meminfo)
-   - disk free on $AGENT_REPO_DIR (df -B1)
+   - disk free on the repo volume: resolve AGENT_REPO_DIR, defaulting to
+     `docker volume inspect -f '{{.Mountpoint}}' ${REPO_VOLUME:-vibecode_repos}`,
+     then run df -B1 on it
    - existing agent containers and image presence
 3. Load profile defaults and env overrides.
 4. Compute reservations and pool size (see formula).
@@ -42,9 +44,14 @@ Usage: ./host-init.sh [--role build|review|fixer|light] [--dry-run] [--yes]
    Pool: 15 (CPU-bound)
 6. With --dry-run: exit 0 without writing.
 7. Write .env.agent-host atomically (umask 077).
-8. Validate image/volume/network/backend health.
-9. Start compose or print the command with --yes.
+8. Validate image/volume/network. If the backend is already reachable, validate /health.
+9. With --yes, start compose (or print the command) with POOL_PAUSED=true.
+10. Wait for /health with a bounded timeout, then call the pool config endpoint
+    (`{ "paused": false, "maxPoolSize": <computed> }`) to enable the pool.
+    On timeout or a failed call, leave the pool paused and exit non-zero.
 ```
+
+If the backend is already running (upgrade path), skip the compose start and only validate health before enabling the pool. The backend must never spawn agents before its own `/health` is green.
 
 The script must be idempotent, never print secrets, and fail closed. It should support `.env` overrides but never overwrite an existing file without `--force`.
 
@@ -59,11 +66,15 @@ reserve_cpu   = max(2, threads * 0.15)
 reserve_ram   = max(8, ram_gb * 0.10)
 reserve_disk  = max(100, disk_gb * 0.10)
 
-max_cpu  = floor((threads * utilization - reserve_cpu) / cpu_per_agent)
-max_ram  = floor((ram_gb - reserve_ram) / ram_per_agent)
-max_disk = floor((disk_gb * 0.80 - reserve_disk) / disk_per_agent)
-pool     = clamp(min(max_cpu, max_ram, max_disk, AGENT_MAX_POOL_SIZE), 1, AGENT_MAX_POOL_SIZE)
+max_cpu  = max(0, floor((threads * utilization - reserve_cpu) / cpu_per_agent))
+max_ram  = max(0, floor((ram_gb - reserve_ram) / ram_per_agent))
+max_disk = max(0, floor((disk_gb * 0.80 - reserve_disk) / disk_per_agent))
+pool     = max(0, min(max_cpu, max_ram, max_disk, AGENT_MAX_POOL_SIZE))
+if AGENT_POOL_SIZE is set:
+  pool = min(AGENT_POOL_SIZE, AGENT_MAX_POOL_SIZE)
 ```
+
+`0` is a valid result and means "no agent fits": write `MAX_POOL_SIZE=0`, keep `POOL_PAUSED=true`, and report the binding constraint. `AGENT_MAX_POOL_SIZE` is the formula hard cap; `AGENT_POOL_SIZE` is an explicit override; `MAX_POOL_SIZE` is the runtime value `PoolManager` reads.
 
 Notes:
 
@@ -81,11 +92,14 @@ Notes:
 | `review` | 1.0 | 2 GB | 10 GB | Read-only review |
 | `light` | 0.5 | 1 GB | 5 GB | Pollers/small repos |
 
-Roles are selected with `AGENT_ROLE`; `PoolManager` applies the matching limits unless overridden.
+Phase 1 runs **one pool per role**: each `PoolManager`/controller process has a single `AGENT_ROLE` and is sized with that profile. A mixed build/review/fixer pool is deferred because it would require per-request role and limits. A shared host partitions the computed capacity across the role pools (for example a build pool and a review pool with separate `MAX_POOL_SIZE`/profile values).
 
 ## PoolManager changes
 
 - Read `AGENT_CPU_LIMIT`, `AGENT_MEMORY_LIMIT`, `AGENT_PIDS_LIMIT`, `AGENT_LOG_MAX_SIZE`, `AGENT_LOG_MAX_FILE`.
+- Parse `MAX_POOL_SIZE` as a non-negative integer; do not use `parseInt(...) || 50` (0 would become 50). `0` means paused.
+- Add `POOL_PAUSED` and a pool config admin endpoint (`POST /api/v1/pool/config` with `{ paused, maxPoolSize }`) used by host-init and fg-44 recovery. `requestAgent` rejects with a clear error when paused or full. Env values are startup defaults; the endpoint sets the runtime values until restart.
+- `AGENT_ROLE` is process-wide; Phase 1 runs one pool per role (see Profiles).
 - Set `HostConfig.NanoCpus = cpu * 1e9`, `Memory = bytes`, `MemorySwap = Memory`, `PidsLimit`.
 - Set `LogConfig` with `max-size`/`max-file`.
 - Add labels: `vibecode.role`, `vibecode.pool`, `vibecode.host`.
@@ -114,7 +128,7 @@ HostConfig: {
 
 Two options:
 
-1. **Same-host planner (Phase 1):** use the existing planner compose, add `.env.agent-host`, and ensure the backend container has the Docker socket. `host-init.sh` sets `MAX_POOL_SIZE` and limits before `docker compose up -d`.
+1. **Same-host planner (Phase 1):** use the existing planner compose, add `.env.agent-host`, and ensure the backend container has the Docker socket. `host-init.sh` writes the computed `MAX_POOL_SIZE` and `POOL_PAUSED=true`, starts Compose, waits for `/health`, then calls `POST /api/v1/pool/config` to unpause with the computed size. If the backend is already running, it validates health first and only calls the config endpoint.
 2. **Dedicated agent host (follow-up):** run a small pool controller on the agent host that talks to the backend API and the local Docker socket. Do not expose the Docker socket over TCP without TLS/mTLS.
 
 `agent/docker-compose.host.yml` can be a thin override that:
@@ -127,10 +141,10 @@ Two options:
 
 - `docker info` succeeds.
 - `vibecode-agent` image exists (or build it).
-- repo volume exists and is writable.
-- backend health endpoint responds.
-- at least one slot is available.
-- on failure: exit non-zero, do not start a partial pool.
+- repo volume exists and is writable; `AGENT_REPO_DIR` resolves to its mountpoint for `df`.
+- backend health: if the backend is already running, check `/health` first; otherwise start Compose and wait for `/health` before enabling the pool.
+- at least one slot is available, **or** the computed value is 0/`POOL_PAUSED=true` and the script reports the paused state without starting an agent.
+- on failure: exit non-zero, leave the pool paused, do not start a partial pool.
 
 ## Observability
 
@@ -150,7 +164,7 @@ Two options:
 ## Open questions
 
 1. Should the pool controller run inside the backend or as a dedicated service on the agent host?
-2. Do we need a per-role pool (separate build/review/fixer) or one mixed pool?
+2. Resolved for Phase 1: one pool per role; a mixed build/review/fixer pool is deferred until per-request limits exist.
 3. Should CPU be overcommitted for bursty agents (`utilization > 1.0`)?
 4. How do we handle Docker Desktop vs Linux Docker differences?
 5. Do we want a generated systemd unit in addition to Compose?
