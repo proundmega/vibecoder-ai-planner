@@ -1,8 +1,8 @@
 # 00_ARCHITECT_CHECKLIST.md — Pre-Implementation Checklist
 
-**Status**: planned (awaiting approval)
+**Status**: Phase 1 implemented (review hardening in progress)
 **Date started**: 2026-10-31
-**Date completed**: —
+**Date completed**: 2026-11-01 (Phase 1)
 **Author**: AI Assistant
 **Feature scope**: Both (Agent + Backend + Frontend + Infrastructure)
 
