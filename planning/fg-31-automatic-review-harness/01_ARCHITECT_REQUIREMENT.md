@@ -62,7 +62,7 @@ The result is an automatic review that is hard to trust, easy to re-run accident
 - **FR4 - Structured output:** validate model JSON against a schema; reject malformed output instead of posting free text. The schema has no verification field; if the model emits one, it is ignored.
 - **FR5 - GitHub review:** Phase 1 creates a PR review with `event=COMMENT` and a body summary, including a `commit_id` for the reviewed SHA. Inline comments only when the file/line is part of the diff. `APPROVE`/`REQUEST_CHANGES` are Phase 2, gated on a non-author identity.
 - **FR6 - Phase reconciliation and routing:** reconcile before the review runs (the trigger is status-based). If `phase` is not `review`, call a reconcile endpoint (new) or rely on fg-30 lifecycle sync; if reconciliation fails, still post the COMMENT review but escalate to a human and do not attempt approval. Re-check `phase=review` immediately before approval. On success, `review -> human_approval`; `request_changes`/`comment` stay in `review`; never write `done`.
-- **FR7 - Idempotency and retries:** store `reviewed_sha`, attempt status, `round`, `verdict`, and timestamps. Only `completed` attempts block a re-review of the same SHA; `failed` or stale `started` attempts may be retried. Re-check the PR head before posting and skip if it moved.
+- **FR7 - Idempotency and retries:** store `reviewed_sha`, attempt status, `round`, `verdict`, timestamps and the GitHub review id. Only `completed` attempts block a re-review of the same SHA; `failed` or stale `started` attempts may be retried. Re-check the PR head before posting. Before posting, adopt an existing reviewer review for the same `commit_id` (covering a post-success/DB-failure retry) instead of posting a duplicate.
 - **FR8 - Findings handoff:** fg-31 defines and writes `ticket_review_attempts` and `ticket_review_findings`; fg-32 consumes them and owns fix dispatch, rounds and findings consumption. fg-31 does not implement the fixer.
 - **FR9 - Fallback:** if the harness, provider, GitHub API, or verification is unavailable, post a clear failure, leave the ticket in `review`, and never approve.
 - **FR10 - Rollout:** `REVIEW_HARNESS_MODE` defaults to `legacy`; `opencode` enables the new path. Before the bake, legacy must run in shadow mode or be disabled.
@@ -83,7 +83,7 @@ The result is an automatic review that is hard to trust, easy to re-run accident
 1. A ticket with `status=review` and a PR is reconciled to `phase=review`, reviewed by the harness, and receives a GitHub **COMMENT** review plus a planner summary.
 2. The review includes the supervisor's verification commands and results; model-supplied verification is ignored.
 3. Approval moves the ticket to `human_approval` only after phase reconciliation, never to `done`.
-4. Re-running the reviewer for a completed SHA produces no duplicate review or additional provider spend; a failed attempt can be retried for the same SHA.
+4. Re-running the reviewer for a completed SHA produces no duplicate review or additional provider spend; a failed attempt can be retried for the same SHA, including when the GitHub review posted but the attempt-completion write failed.
 5. A moving PR head aborts or restarts the review instead of posting against the wrong SHA.
 6. A ticket in `human_approval` is not returned to the legacy reviewer.
 7. The legacy reviewer remains selectable when the flag is `legacy`, honors the `phase=review` filter, and its shadow mode suppresses status writes during the bake.
@@ -106,7 +106,9 @@ The result is an automatic review that is hard to trust, easy to re-run accident
 |---|---|---|---|---|---|
 | 1 | fg-30 | Human question loop (reviewer questions/fix decisions) | Agent / UX | `fg-30` Phase 2 | No |
 | 2 | new | Email notifications for review results (no existing email-notification ticket; bp-71 is account lockout) | UX | TBD | No |
-| 3 | bp-106 | Ship review events to log aggregation | Observability | `bp-106-log-aggregation` | No |
-| 4 | bp-04 | Review cost/budget dashboard | Observability / Billing | `bp-04-usage-billing` | No |
-| 5 | fg-13 | Contract updates for new review endpoints | Testing | `fg-13-fe-be-inconsistencies` | No |
-| 6 | bp-99-frontend-testing | E2E coverage for review UI | Testing | `bp-99-frontend-testing` | No |
+| 3 | bp-106 | Ship review events to log aggregation | Observability | TBD (new follow-up) | No |
+| 4 | bp-04 | Review cost/budget dashboard | Observability / Billing | TBD (new follow-up) | No |
+| 5 | fg-13 | Contract updates for new review endpoints | Testing | TBD (new follow-up) | No |
+| 6 | bp-99-frontend-testing | E2E coverage for review UI | Testing | TBD (new follow-up) | No |
+
+`From Ticket` records where the deferred improvement was found; `TBD` means no follow-up ticket exists yet, so this table does not imply one is already tracked.

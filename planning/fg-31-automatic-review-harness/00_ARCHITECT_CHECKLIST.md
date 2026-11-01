@@ -44,6 +44,7 @@ This ticket records the missing reviewer harness. It is **not** part of fg-30 Ph
 - [ ] Define the disposable writable workspace and confirm the supervisor never publishes it
 - [ ] Align review tables with fg-32: `ticket_review_attempts` + `ticket_review_findings`
 - [ ] Add attempt status and a partial unique index for completed reviews
+- [ ] Define partial-publish recovery (persisted review id + `commit_id`/marker dedupe before posting)
 - [ ] Decide rollout flag (`REVIEW_HARNESS_MODE=legacy|opencode`)
 - [ ] Write `03_ARCHITECT_IMPLEMENTATION.md`
 - [ ] Write `04_SPECIFICATION.md` for reviewer Phase 1

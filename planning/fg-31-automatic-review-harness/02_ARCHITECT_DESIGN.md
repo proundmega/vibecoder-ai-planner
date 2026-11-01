@@ -149,9 +149,12 @@ CREATE TABLE ticket_review_findings (
 );
 ```
 
-- Insert a `started` attempt before doing work; mark `completed` only after verification, parsing and publishing succeed; mark `failed` with a reason otherwise.
+- Insert a `started` attempt before doing work; mark `completed` only after verification, parsing and publishing succeed; mark `failed` with a reason otherwise. Persist the GitHub review id on the attempt when it is available.
 - A stale `started` attempt is reclaimable after a timeout.
 - Only a `completed` row blocks the same SHA; transient harness/verification failures can be retried.
+- **Partial-publish recovery:** a successful GitHub post followed by a failed attempt-completion write must not post twice. Before posting (and after the head re-check), list existing PR reviews and look for this reviewer's review with `commit_id == reviewed_sha` and a deterministic body marker (for example `<!-- fg-31-review:<attempt_id> -->`). If found, adopt its review id, mark the attempt `completed`, and skip the POST.
+- A retry that already has a persisted review id never posts again; it only retries the DB completion.
+- The head re-check and review dedupe happen immediately before `POST /repos/{owner}/{repo}/pulls/{number}/reviews`. This contract must be carried unchanged into `03`/`04`.
 - No review starts when `pr_url` is missing.
 
 ## Phase and status mapping
@@ -224,7 +227,9 @@ Before the harness is enabled with phase-gated approval:
 |---|---|---|---|---|---|
 | 1 | fg-30 | Human question loop for review uncertainty | Agent / UX | `fg-30` Phase 2 | No |
 | 2 | new | Email notifications for review results (no existing email-notification ticket; bp-71 is account lockout) | UX | TBD | No |
-| 3 | bp-106 | Ship review events to log aggregation | Observability | `bp-106-log-aggregation` | No |
-| 4 | bp-04 | Review cost/budget dashboard | Observability / Billing | `bp-04-usage-billing` | No |
-| 5 | fg-13 | Contract updates for review endpoints | Testing | `fg-13-fe-be-inconsistencies` | No |
-| 6 | bp-99-frontend-testing | E2E coverage for review UI | Testing | `bp-99-frontend-testing` | No |
+| 3 | bp-106 | Ship review events to log aggregation | Observability | TBD (new follow-up) | No |
+| 4 | bp-04 | Review cost/budget dashboard | Observability / Billing | TBD (new follow-up) | No |
+| 5 | fg-13 | Contract updates for review endpoints | Testing | TBD (new follow-up) | No |
+| 6 | bp-99-frontend-testing | E2E coverage for review UI | Testing | TBD (new follow-up) | No |
+
+`From Ticket` records where the deferred improvement was found; `TBD` means no follow-up ticket exists yet, so this table does not imply one is already tracked.
