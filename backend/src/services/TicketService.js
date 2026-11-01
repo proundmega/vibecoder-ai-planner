@@ -33,8 +33,13 @@ class TicketService {
     const planning = await TicketPlanningService.getPlanningForTicket(ticket, userId);
     const attachments = await TicketAttachmentService.list(ticket.id, userId);
 
+    // findById() selects the tickets row only, so resolve the assignee's
+    // display name here for the ticket detail view.
+    const assignee = ticket.assigneeId ? await User.find(ticket.assigneeId) : null;
+
     return {
       ...ticket,
+      assigneeName: assignee?.name || null,
       planning,
       attachments: attachments.map(a => ({
         id: a.id,
@@ -73,12 +78,16 @@ class TicketService {
       if (!project) throw new NotFoundError('Project not found');
       
       
-      const projectMember = await pool.query(
-        'SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2',
-        [ticket.projectId, data.assigneeId]
-      );
-      if (projectMember.rows.length === 0) {
-        throw new ValidationError('Assignee is not a member of this project');
+      // The project owner is implicitly assignable even without a membership row.
+      const isProjectOwner = String(project.ownerId) === String(data.assigneeId);
+      if (!isProjectOwner) {
+        const projectMember = await pool.query(
+          'SELECT 1 FROM project_memberships WHERE project_id = $1 AND user_id = $2',
+          [ticket.projectId, data.assigneeId]
+        );
+        if (projectMember.rows.length === 0) {
+          throw new ValidationError('Assignee is not a member of this project');
+        }
       }
     }
 
@@ -111,16 +120,14 @@ class TicketService {
 
     // Handle prUrl as a parameter to Ticket.update() (single SQL round-trip)
     const prUrl = data.prUrl;
-    return await Ticket.update(
-      id,
-      data.title,
-      data.description,
-      data.status,
-      data.priority,
-      data.assigneeId,
-      userId,
-      prUrl
-    );
+    return await Ticket.update(id, {
+      title: data.title,
+      description: data.description,
+      status: data.status,
+      priority: data.priority,
+      assigneeId: data.assigneeId,
+      prUrl,
+    });
   }
 
   async updateMilestoneFields(id, { milestone_id, estimate, depends_on }, userId) {
@@ -195,22 +202,6 @@ class TicketService {
     }
 
     await Ticket.delete(id);
-  }
-
-  async claim(ticketId, userId) {
-    const existingTicket = await Ticket.findById(ticketId);
-    if (!existingTicket) throw new NotFoundError('Ticket not found');
-
-    await Ticket.update(ticketId, null, null, null, null, userId, userId);
-    return existingTicket;
-  }
-
-  async assign(ticketId, assigneeId, userId) {
-    const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new NotFoundError('Ticket not found');
-
-    await Ticket.update(ticketId, null, null, null, null, assigneeId, userId);
-    return ticket;
   }
 
   async updateStatus(ticketId, status, userId) {

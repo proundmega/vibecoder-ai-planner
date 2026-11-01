@@ -19,7 +19,7 @@ const editTicketSchema = Joi.object({
   title: Joi.string().min(1).max(200).optional(),
   description: Joi.string().max(10000).allow('').optional(),
   status: Joi.string().valid('backlog', 'in_progress', 'review', 'done').optional(),
-  priority: Joi.string().valid('low', 'medium', 'high', 'urgent').optional(),
+  priority: Joi.string().valid('low', 'medium', 'high', 'critical', 'urgent').optional(),
   tags: Joi.array().items(Joi.string()).max(10).optional(),
 });
 

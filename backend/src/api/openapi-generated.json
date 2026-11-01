@@ -121,6 +121,8 @@
               "low",
               "medium",
               "high",
+              "critical",
+
               "urgent"
             ]
           },
@@ -691,6 +693,8 @@
                       "low",
                       "medium",
                       "high",
+                      "critical",
+
                       "urgent"
                     ]
                   }
@@ -2258,6 +2262,8 @@
                       "low",
                       "medium",
                       "high",
+                      "critical",
+
                       "urgent"
                     ]
                   }

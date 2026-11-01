@@ -1,6 +1,6 @@
 # 02_ARCHITECT_DESIGN.md — Migration Dry-Run Design
 
-**Status**: Working draft
+**Status**: implemented (PR #100)
 **Author**: AI Assistant
 **Scope**: Backend
 **Related**: `01_ARCHITECT_REQUIREMENT.md`, `03_ARCHITECT_IMPLEMENTATION.md`, `04_SPECIFICATION.md`
@@ -52,7 +52,7 @@ apply.js changes:
 ### Option C: Dry-Run with Text Parsing Only
 - No DB connection needed
 - Only classifies statements by keyword (CREATE, ALTER, etc.)
-- Cannot validate SQL syntax
+- Cannot validate full SQL grammar; structural checks only
 - Less reliable but safer (no DB access needed)
 
 **Decision**: Option A — dry-run with statement classification. Simple, no DB connection needed for basic preview, can add EXPLAIN later if needed.
@@ -138,7 +138,7 @@ Total: 15 statements would be executed.
 
 ### Alternative 2: Dry-Run with Text Parsing Only
 - **Pros**: No DB connection needed
-- **Cons**: Cannot validate SQL syntax, less reliable
+- **Cons**: Cannot validate full SQL grammar; structural checks only; less reliable than a parser
 - **Decision**: Option A is a good balance (no DB needed for basic preview)
 
 ---

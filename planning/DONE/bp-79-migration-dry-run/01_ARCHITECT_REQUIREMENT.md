@@ -1,8 +1,8 @@
 # 01_ARCHITECT_REQUIREMENT.md — Migration Dry-Run Mode
 
-**Status**: planned
+**Status**: implemented (PR #100)
 **Date created**: 2025-07-12
-**Date completed**: 
+**Date completed**: 2026-10-31 (PR #100)
 **Author**: AI Assistant
 **Scope**: Backend
 **Priority**: P2 (Developer Experience)
@@ -28,9 +28,9 @@ Add a dry-run mode to the migration runner that previews what changes would be m
 
 The migration runner already parses SQL into statements. Adding dry-run requires:
 1. Add `--dry-run` flag to apply.js
-2. In dry-run mode, explain/analyze each statement instead of executing
-3. For DDL statements (CREATE, ALTER, DROP), use `EXPLAIN` or parse statement type
-4. For DML statements (INSERT, UPDATE, DELETE), use `EXPLAIN` to show affected rows
+2. In dry-run mode, classify each statement instead of executing it
+3. Perform structural validation (balanced quotes/parentheses, non-empty statement)
+4. Do not create a database pool or connect; dry-run is text-only
 5. Report summary: X statements would be executed, Y CREATE, Z ALTER, etc.
 
 ---
@@ -42,7 +42,7 @@ The migration runner already parses SQL into statements. Adding dry-run requires
 - In dry-run mode: parse SQL, classify statements (CREATE/ALTER/DROP/INSERT/UPDATE/DELETE/OTHER)
 - In dry-run mode: show what would happen without executing
 - In dry-run mode: report summary of changes
-- In dry-run mode: still validate SQL syntax (catch errors before applying)
+- In dry-run mode: perform structural validation (non-empty statement, balanced parentheses/quotes)
 - Tests: unit tests for dry-run mode
 
 ### Out of Scope
@@ -90,8 +90,8 @@ The migration runner already parses SQL into statements. Adding dry-run requires
 
 ## Known Unknowns
 
-1. **How to validate SQL without executing?** — Assumed: Use `EXPLAIN` for DML, parse statement type for DDL. Some statements (CREATE INDEX CONCURRENTLY) may not work with EXPLAIN.
-2. **Should dry-run connect to DB?** — Assumed YES (to validate SQL syntax and get EXPLAIN plans). Without DB connection, we can only do text parsing.
+1. **How to validate SQL without executing?** — Decision: structural validation only (balanced quotes/parentheses, non-empty statements). A full grammar check would need a parser or a live DB.
+2. **Should dry-run connect to DB?** — Decision: NO. Dry-run is text-only (bp-79 Design Option A) and must work with an invalid or missing `DATABASE_URL`.
 
 ---
 
@@ -99,8 +99,8 @@ The migration runner already parses SQL into statements. Adding dry-run requires
 
 **DECISION POINTS** — Items that need user confirmation.
 
-1. **Dry-run requires DB connection?** — YES (to validate SQL) — or NO (text-only parsing)? — {{YES / NO}}
-2. **Dry-run for data migrations?** — NO (deferred) — or YES (preview JS execution)? — {{NO / YES}}
+1. **Dry-run requires DB connection?** — NO (text-only structural validation). No `DATABASE_URL` is read or required.
+2. **Dry-run for data migrations?** — NO (deferred). The CLI only reports what would run.
 
 **If no decisions need user input, write: "No design decisions require user input. All choices follow existing patterns."**
 
@@ -108,13 +108,13 @@ The migration runner already parses SQL into statements. Adding dry-run requires
 
 ## Acceptance Criteria
 
-1. [ ] [Backend] `npm run db:migrate -- --dry-run` runs in dry-run mode
-2. [ ] [Backend] Dry-run shows what statements would be executed
-3. [ ] [Backend] Dry-run reports summary (X CREATE, Y ALTER, Z DROP, etc.)
-4. [ ] [Backend] Dry-run validates SQL syntax (catches errors)
-5. [ ] [Backend] Dry-run does NOT modify database
-6. [ ] [Tests] Unit tests for dry-run mode
-7. [ ] [Coverage] `npm run test:coverage` passes (60% min threshold)
+1. [x] [Backend] `npm run db:migrate -- --dry-run` runs in dry-run mode
+2. [x] [Backend] Dry-run shows what statements would be executed
+3. [x] [Backend] Dry-run reports summary (X CREATE, Y ALTER, Z DROP, etc.)
+4. [x] [Backend] Dry-run performs structural validation (balanced quotes/parentheses, non-empty statements)
+5. [x] [Backend] Dry-run does NOT connect to or modify the database
+6. [x] [Tests] Unit tests for dry-run mode
+7. [x] [Coverage] `npm run test:coverage` passes (60% min threshold)
 
 ---
 
@@ -130,16 +130,16 @@ The migration runner already parses SQL into statements. Adding dry-run requires
 ## Performance Considerations
 
 - Expected load: Minimal — dry-run runs once per deployment
-- EXPLAIN plans are cheap for DDL statements
+- Dry-run is text-only: no database connection or EXPLAIN plans
 - No blocking I/O in dry-run
 
 ---
 
 ## Security Considerations
 
-- [ ] Dry-run does not modify any data
-- [ ] Dry-run still requires DATABASE_URL (reads from .env)
-- [ ] No sensitive data exposed in output
+- [x] Dry-run does not modify any data
+- [x] Dry-run does not require `DATABASE_URL`; it works offline
+- [x] No sensitive data exposed in output
 
 ---
 

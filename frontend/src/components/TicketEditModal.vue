@@ -25,7 +25,7 @@ const error = ref(null)
 const canEdit = computed(() => {
   if (!authStore.user.value) return false
   if (authStore.canUpdateTicket()) return true
-  if (authStore.hasRole('user') && props.ticket?.owner_id === authStore.user.value.id) return true
+  if (authStore.hasRole('user') && props.ticket?.ownerId === authStore.user.value.id) return true
   return false
 })
 
@@ -33,7 +33,7 @@ onMounted(async () => {
   title.value = props.ticket.title || ''
   description.value = props.ticket.description || ''
   priority.value = props.ticket.priority || 'medium'
-  assigneeId.value = props.ticket.assignee_id || null
+  assigneeId.value = props.ticket.assigneeId || null
   
   try {
     const response = await fetchProjectUsers(props.projectId)
@@ -59,9 +59,11 @@ async function handleSave() {
       priority: priority.value
     }
     
-    if (assigneeId.value) {
-      updates.assigneeId = assigneeId.value
-    }
+    // VInput's select emits an empty string for the "Unassigned" option.
+    // Send null explicitly so the backend clears the assignment.
+    updates.assigneeId = assigneeId.value === '' || assigneeId.value == null
+      ? null
+      : assigneeId.value
     
     await updateTicket(props.ticket.id, updates)
     emit('saved', updates)
@@ -77,14 +79,15 @@ async function handleSave() {
 <template>
   <VModal :modelValue="true" title="Edit Ticket" size="large" @close="emit('close')">
     <form @submit.prevent="handleSave">
-      <VInput v-model="title" label="Title" placeholder="Ticket title" :error="error" required />
+      <VInput v-model="title" label="Title" placeholder="Ticket title" :error="error" maxlength="200" required />
       
-      <VInput v-model="description" label="Description" placeholder="Ticket description" type="textarea" />
+      <VInput v-model="description" label="Description" placeholder="Ticket description" type="textarea" maxlength="5000" />
       
       <VInput v-model="priority" label="Priority" type="select">
         <option value="low">Low</option>
         <option value="medium">Medium</option>
         <option value="high">High</option>
+        <option value="critical">Critical</option>
         <option value="urgent">Urgent</option>
       </VInput>
       

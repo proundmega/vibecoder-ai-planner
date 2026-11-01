@@ -61,7 +61,7 @@ describe('Login.vue', () => {
     cy.get('input[type="password"]').type('wrongpassword');
     cy.get('button[type="submit"]').click();
     cy.wait('@loginRequest');
-    cy.get('.error').should('contain', 'Invalid credentials');
+    cy.get('.login__error').should('contain', 'Invalid credentials');
   });
 
   it('should be disabled while loading', () => {

@@ -16,6 +16,25 @@ class User {
     this.loginAttempts = data.login_attempts || 0;
   }
 
+  /**
+   * Never serialize the password hash. Model instances are returned directly
+   * from several controllers, and res.json() calls toJSON().
+   */
+  toJSON() {
+    return {
+      id: this.id,
+      email: this.email,
+      name: this.name,
+      role: this.role,
+      currentPlan: this.currentPlan,
+      isActive: this.isActive,
+      userCreatedBy: this.userCreatedBy,
+      createdAt: this.createdAt,
+      lockedUntil: this.lockedUntil,
+      loginAttempts: this.loginAttempts,
+    };
+  }
+
   static async create(name, email, password, role = 'project_admin', userCreatedBy = null) {
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = await pool.query(

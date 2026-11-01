@@ -24,6 +24,7 @@ export namespace Ticket {
         LOW = 'low',
         MEDIUM = 'medium',
         HIGH = 'high',
+        CRITICAL = 'critical',
         URGENT = 'urgent',
     }
 }

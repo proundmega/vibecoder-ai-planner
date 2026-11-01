@@ -33,9 +33,9 @@ function roleLabel(role) {
 }
 
 function createdByLabel(user) {
-  if (!user.user_created_by) return 'Self-registered'
-  // We'd need to fetch creator name, for now show ID
-  return `User #${user.user_created_by}`
+  const createdBy = user.userCreatedBy ?? user.user_created_by
+  if (!createdBy) return 'Self-registered'
+  return `User #${createdBy}`
 }
 
 async function loadUsers() {
@@ -177,7 +177,7 @@ onMounted(loadUsers)
             <td class="actions">
               <button @click="openEditModal(user)" class="btn-edit" title="Edit">Edit</button>
                <button
-                  v-if="canToggleActive && user.id !== authStore.user?.id"
+                  v-if="canToggleActive && user.id !== authStore.user.value?.id"
                   @click="handleToggleActive(user)"
                   :class="['btn-toggle', user.isActive ? 'btn-deactivate' : 'btn-activate']"
                   :title="user.isActive ? 'Deactivate' : 'Activate'"

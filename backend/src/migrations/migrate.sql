@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS tickets (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     CHECK (status IN ('backlog', 'in_progress', 'review', 'done')),
-    CHECK (priority IN ('low', 'medium', 'high', 'urgent'))
+    CHECK (priority IN ('low', 'medium', 'high', 'critical', 'urgent'))
 );
 
 -- Ticket Comments

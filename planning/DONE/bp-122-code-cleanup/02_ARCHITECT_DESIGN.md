@@ -1,6 +1,6 @@
 # 02_ARCHITECT_DESIGN.md — Feature Design Specification
 
-**Status**: Working draft
+**Status**: implemented (PR #99)
 **Author**: AI Assistant
 **Scope**: Backend + Agent
 **Related**: `01_ARCHITECT_REQUIREMENT.md`, `03_ARCHITECT_IMPLEMENTATION.md`

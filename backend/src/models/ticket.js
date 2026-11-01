@@ -17,7 +17,9 @@ class Ticket {
     this.status = data.status || 'backlog';
     this.priority = data.priority || 'medium';
     this.assigneeId = data.assigneeId;
+    this.assigneeName = data.assigneeName || data.assignee_name || null;
     this.ownerId = data.ownerId;
+    this.projectName = data.projectName || data.project_name || null;
     this.planningStatus = data.planning_status || 'not_started';
     this.templateSchema = data.template_schema || null;
     this.phase = data.phase || 'draft';
@@ -34,7 +36,7 @@ class Ticket {
        RETURNING *`,
       [projectId, title, description, priority || 'medium', ownerId]
     );
-    return new Ticket(result.rows[0]);
+    return this.fromRow(result.rows[0]);
   }
 
   static async findByProject(projectId, _uid) {
@@ -84,10 +86,10 @@ class Ticket {
     });
   }
 
-  static async update(id, title, description, status, priority, assigneeId, _userId, prUrl) {
+  static async update(id, { title, description, status, priority, assigneeId, prUrl }) {
     // Fetch current ticket to validate transitions
     const current = await Ticket.findById(id);
-    if (current && status) {
+    if (current && status && status !== current.status) {
       const allowed = VALID_TRANSITIONS[current.status] || [];
       if (!allowed.includes(status)) {
         throw new ValidationError(`Invalid status transition from ${current.status} to ${status}`);
