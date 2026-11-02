@@ -123,6 +123,12 @@ main() {
   echo "  $(date '+%Y-%m-%d %H:%M:%S')"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+  # ── Helper unit tests (no stack required; skips inside the CI container) ──────
+  if ! bash "$ROOT/integration-test/helpers_unit.test.sh"; then
+    echo "FAILED: helper unit tests"
+    exit 1
+  fi
+
   # Source and run each test suite (suites have inline code, not function-wrapped)
   for suite_file in "$SUITES_DIR"/*.test.sh; do
     base=$(basename "$suite_file" .test.sh)
