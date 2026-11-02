@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -278,6 +279,86 @@ class HarnessTicketProcessorTest {
             assertFalse(message.contains("secret-key"), "Leaked provider key in: " + message);
             assertFalse(message.contains("ghp_token"), "Leaked GitHub token in: " + message);
         }
+    }
+
+    @Test
+    void persistsRunClaimsLeaseAndRecordsCheckpoints() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free"))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+
+        processor.processTicket(ticket());
+
+        verify(apiService).claimHarnessLease(1L, "run-1", 600);
+        verify(apiService).checkpointHarnessRun(
+            "run-1", "cloned", java.util.Map.of("workspacePath", tempDir.toString()));
+        verify(apiService).checkpointHarnessRun(
+            "run-1", "session_ready", java.util.Map.of("sessionId", "ses_test"));
+        verify(apiService).checkpointHarnessRun("run-1", "prompting", java.util.Map.of());
+        verify(apiService).checkpointHarnessRun("run-1", "verifying", java.util.Map.of());
+        verify(apiService).checkpointHarnessRun("run-1", "publishing", java.util.Map.of());
+        verify(apiService).checkpointHarnessRun(
+            "run-1", "done",
+            java.util.Map.of(
+                "headSha", "abc1234",
+                "prUrl", "https://github.com/owner/repo/pull/7"));
+        verify(apiService).finishHarnessRun(
+            "run-1", "succeeded", null, "abc1234",
+            "https://github.com/owner/repo/pull/7");
+    }
+
+    @Test
+    void leaseConflictSkipsCloningAndLeavesTheTicketForRecovery() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free"))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(false);
+
+        processor.processTicket(ticket());
+
+        verify(workspace, never()).cloneRepo(anyString(), anyString());
+        verify(apiService).finishHarnessRun(
+            eq("run-1"), eq("failed"), contains("leased by another"), isNull(), isNull());
+        verify(apiService, never()).releaseTicket(1L);
+    }
+
+    @Test
+    void verificationFailureFinishesThePersistedRun() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free"))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(verificationRunner.run(any(), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult("npm test", 1, "failed", false)));
+
+        processor.processTicket(ticket());
+
+        verify(apiService).finishHarnessRun(
+            eq("run-1"), eq("failed"), contains("Verification failed"), isNull(), isNull());
+        verify(apiService).releaseTicket(1L);
+    }
+
+    @Test
+    void checkpointFailureDoesNotAbortTheRun() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free"))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        doThrow(new IOException("checkpoint API down"))
+            .when(apiService).checkpointHarnessRun(anyString(), anyString(), any());
+
+        processor.processTicket(ticket());
+
+        verify(apiService).finishHarnessRun(
+            "run-1", "succeeded", null, "abc1234",
+            "https://github.com/owner/repo/pull/7");
+        verify(workspace).commitAndPushStaged(
+            "feat: Add filtering", "vibecode/ticket-1-add-filtering");
     }
 
     private List<String> postedMessages() throws Exception {

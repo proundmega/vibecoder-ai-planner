@@ -1,9 +1,9 @@
 # 00_ARCHITECT_CHECKLIST.md - Durable Harness Execution (fg-33)
 
-**Status:** Planned - not implemented
+**Status:** In progress — slice 1 (persistence, checkpoints, leases) implemented
 **Date:** 2026-10-31
 **Depends on:** fg-30 Phase 1 (OpenCode harness supervisor)
-**Related code:** `HarnessTicketProcessor`, `WorkspaceManager`, `AgentApp`, `OpenCodeClient`
+**Related code:** `HarnessTicketProcessor`, `WorkspaceManager`, `AgentApp`, `OpenCodeClient`, `HarnessRunService`, `api/harnessRuns.js`
 
 ## Why this ticket exists
 
@@ -11,8 +11,8 @@ Phase 1 keeps the whole run in memory: clone, OpenCode session, prompt, verifica
 
 ## Checklist
 
-- [ ] Define the persisted harness run/checkpoint model
-- [ ] Define the lease/heartbeat model and stale-run reaper
+- [x] Define the persisted harness run/checkpoint model
+- [x] Define the lease/heartbeat model and stale-run reaper
 - [ ] Decide resume policy per step (resume vs restart cleanly)
 - [ ] Make publish idempotent (branch/PR detection, no duplicate PRs)
 - [ ] Add workspace registry and orphan cleanup

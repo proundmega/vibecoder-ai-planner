@@ -12,7 +12,7 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-30 | `fg-30-autonomous-coding-harness` | Phase 1 merged (#102); Phases 2-4 planned | OpenCode build harness, human loop, autonomy, hardening | bp-120/bp-121 |
 | fg-31 | `fg-31-automatic-review-harness` | Merged (#103) | Read-only reviewer harness, structured findings, GitHub reviews | fg-30 Phase 1 |
 | fg-32 | `fg-32-review-feedback-loop` | Merged (#104) | Reviewer -> fixer loop, same branch, rounds, escalation | fg-31 |
-| fg-33 | `fg-33-durable-harness-execution` | Planned | Run/checkpoint/lease model, crash recovery, idempotent publish | fg-30 Phase 1 |
+| fg-33 | `fg-33-durable-harness-execution` | In progress (slice 1: runs/checkpoints/leases) | Run/checkpoint/lease model, crash recovery, idempotent publish | fg-30 Phase 1 |
 | fg-34 | `fg-34-harness-sandbox` | Planned | Sandbox isolation, limits, egress, secretless execution | fg-30 Phase 1 |
 | fg-43 | `fg-43-agent-docker-deployment` | Planned | One-command Docker agent host sizing, role pools, per-container limits | fg-33 (fg-34 recommended) |
 | fg-44 | `fg-44-agent-storage-lifecycle` | Planned | Per-agent workspaces, cleanup, idle refresh, disk/inode watermarks | fg-43, fg-33 |

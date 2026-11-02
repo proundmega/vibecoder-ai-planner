@@ -11,6 +11,7 @@ import okhttp3.*;
 
 import java.io.IOException;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -108,10 +109,146 @@ public class ApiService {
     }
 
     /**
+     * Persist a durable harness run before starting side effects (fg-33).
+     */
+    public Map<String, Object> startHarnessRun(
+        Long ticketId,
+        String branch,
+        String workspacePath,
+        String provider,
+        String model
+    ) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        body.put("ticketId", ticketId);
+        body.put("branch", branch);
+        if (workspacePath != null && !workspacePath.isBlank()) {
+            body.put("workspacePath", workspacePath);
+        }
+        if (provider != null && !provider.isBlank()) {
+            body.put("provider", provider);
+        }
+        if (model != null && !model.isBlank()) {
+            body.put("model", model);
+        }
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to start harness run: " + response.getError());
+        }
+        return response.getData();
+    }
+
+    public void checkpointHarnessRun(
+        String runId,
+        String step,
+        Map<String, Object> payload
+    ) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        body.put("step", step);
+        body.put("payload", payload == null ? Map.of() : payload);
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/checkpoints",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to record harness checkpoint: " + response.getError());
+        }
+    }
+
+    public void heartbeatHarnessRun(String runId, String step) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        if (step != null && !step.isBlank()) {
+            body.put("step", step);
+        }
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/heartbeat",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to heartbeat harness run: " + response.getError());
+        }
+    }
+
+    public void finishHarnessRun(
+        String runId,
+        String status,
+        String error,
+        String headSha,
+        String prUrl
+    ) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", status);
+        if (error != null && !error.isBlank()) {
+            body.put("error", error);
+        }
+        if (headSha != null && !headSha.isBlank()) {
+            body.put("headSha", headSha);
+        }
+        if (prUrl != null && !prUrl.isBlank()) {
+            body.put("prUrl", prUrl);
+        }
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/finish",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to finish harness run: " + response.getError());
+        }
+    }
+
+    /**
+     * Claim the ticket lease. False means another unexpired run owns it.
+     */
+    public boolean claimHarnessLease(Long ticketId, String runId, int ttlSeconds) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        body.put("ticketId", ticketId);
+        body.put("runId", runId);
+        body.put("ttlSeconds", ttlSeconds);
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/leases",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        return !response.hasError() && response.getData() != null;
+    }
+
+    /**
+     * Renew an already-held lease. False means the lease was lost.
+     */
+    public boolean renewHarnessLease(Long ticketId, String runId, int ttlSeconds) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        body.put("runId", runId);
+        body.put("ttlSeconds", ttlSeconds);
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/leases/" + ticketId + "/renew",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        return !response.hasError() && response.getData() != null;
+    }
+
+    /**
      * Post a message on a ticket.
      */
-    public TicketMessage postMessage(Long ticketId, String messageType, String content) throws IOException {
-        String url = baseUrl + "/tickets/" + ticketId + "/messages";
+    public TicketMessage postMessage(Long ticketId, String messageType, String content) throws IOException {        String url = baseUrl + "/tickets/" + ticketId + "/messages";
         Map<String, Object> body = Map.of(
             "messageType", messageType,
             "content", content

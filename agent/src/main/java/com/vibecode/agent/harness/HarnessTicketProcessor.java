@@ -20,6 +20,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -58,9 +61,13 @@ public final class HarnessTicketProcessor implements TicketWorker {
         intEnv("HARNESS_MAX_ATTEMPTS", DEFAULT_MAX_ATTEMPTS));
     private final long retryBaseDelayMs = longEnv("HARNESS_RETRY_BASE_DELAY_MS", DEFAULT_RETRY_BASE_DELAY_MS);
     private final long retryMaxDelayMs = longEnv("HARNESS_RETRY_MAX_DELAY_MS", DEFAULT_RETRY_MAX_DELAY_MS);
+    private final int leaseTtlSeconds = intEnv("HARNESS_LEASE_SECONDS", 600);
+    private final long heartbeatSeconds = longEnv("HARNESS_HEARTBEAT_SECONDS", 30);
 
     private volatile String currentTicketId;
     private volatile String currentStep;
+    private volatile String currentRunId;
+    private volatile ScheduledExecutorService heartbeatExecutor;
 
     public HarnessTicketProcessor(
         AgentConfig config,
@@ -156,6 +163,17 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         postMessage(pickedUp.getId(), "update", "Started working on: " + pickedUp.getTitle());
 
+        String branchName = config.getGitHubBranchName(pickedUp.getId(), pickedUp.getTitle());
+        if (!startDurableRun(pickedUp, branchName)) {
+            // A live lease means another run still owns this ticket. Releasing it
+            // here would allow concurrent publishes, so leave recovery to the
+            // reaper/operator instead.
+            postMessage(pickedUp.getId(), "update",
+                "Another harness run still holds the lease for this ticket; "
+                    + "leaving it for recovery instead of publishing concurrently.");
+            return;
+        }
+
         WorkspaceManager workspace = null;
         HarnessClient harness = null;
         Path tempDir = null;
@@ -167,7 +185,6 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
             log.info("Fetched {} planning documents", planningDocs.size());
 
-            String branchName = config.getGitHubBranchName(pickedUp.getId(), pickedUp.getTitle());
             workspace = workspaceFactory.apply(config.getRepoName());
 
             if (config.isDryRun()) {
@@ -180,6 +197,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             String repoUrl = "https://github.com/" + config.getRepoOwner() + "/"
                 + config.getRepoName() + ".git";
             workspace.cloneRepo(repoUrl, branchName);
+            recordCheckpoint("cloned", Map.of(
+                "workspacePath", String.valueOf(workspace.getRepoDir())));
 
             List<String> commands = safeResolveCommands(workspace);
             if (commands.isEmpty()) {
@@ -195,6 +214,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             currentStep = "starting-harness";
             harness.start(workspace.getRepoDir());
             String sessionId = harness.createSession("ticket-" + pickedUp.getId());
+            recordCheckpoint("session_ready", Map.of("sessionId", sessionId));
 
             currentStep = "implementing";
             String prompt = promptBuilder.build(pickedUp, planningDocs, commands);
@@ -212,6 +232,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 closeQuietly(harness);
                 harness = null;
             }
+            recordCheckpoint("prompting", Map.of());
 
             currentStep = "installing";
             List<VerificationResult> verification = new ArrayList<>();
@@ -233,6 +254,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             List<VerificationResult> verifyResults = verificationRunner.run(
                 workspace.getRepoDir(), commands, remaining(deadline, VERIFICATION_TIMEOUT));
             verification.addAll(verifyResults);
+            recordCheckpoint("verifying", Map.of());
             if (!verification.isEmpty()) {
                 postMessage(pickedUp.getId(), "update", verificationSummary(verification));
             }
@@ -245,6 +267,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
 
             currentStep = "publishing";
+            recordCheckpoint("publishing", Map.of());
             // Stage into a supervisor-owned index, guard index blobs, then
             // publish exactly the guarded tree. The agent-controlled index and
             // worktree are never trusted.
@@ -279,6 +302,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 postMessage(pickedUp.getId(), "status",
                     completionSummary(diff, verification, prUrl));
                 markReview(pickedUp.getId());
+                recordCheckpoint("done", Map.of(
+                    "headSha", commitSha,
+                    "prUrl", prUrl == null ? "" : prUrl));
+                finishDurableRun("succeeded", null, commitSha, prUrl);
                 this.failures.remove(pickedUp.getId());
                 log.info("Ticket {} completed; PR: {}", pickedUp.getId(), prUrl);
             } finally {
@@ -292,6 +319,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
             handleFailure(pickedUp.getId(), failure);
         } finally {
+            stopHeartbeat();
+            finishDurableRun("failed", "Harness run ended without a terminal checkpoint", null, null);
             closeQuietly(harness);
             deleteQuietly(tempDir);
             if (workspace != null) {
@@ -376,11 +405,122 @@ public final class HarnessTicketProcessor implements TicketWorker {
     }
 
     /**
+     * Persist the run and claim its lease. Durability is best-effort during
+     * rollout: if the backend is unavailable the harness still runs, but it
+     * cannot be recovered after a crash.
+     */
+    private boolean startDurableRun(Ticket ticket, String branchName) {
+        if (config.isDryRun()) {
+            return true;
+        }
+        try {
+            Map<String, Object> run = apiService.startHarnessRun(
+                ticket.getId(),
+                branchName,
+                null,
+                provider == null ? null : provider.type(),
+                provider == null ? null : provider.model()
+            );
+            if (run == null || run.get("id") == null) {
+                log.debug("Harness run persistence unavailable for ticket {}", ticket.getId());
+                return true;
+            }
+
+            currentRunId = String.valueOf(run.get("id"));
+            boolean leased = apiService.claimHarnessLease(
+                ticket.getId(), currentRunId, leaseTtlSeconds);
+            if (!leased) {
+                log.warn("Ticket {} is leased by another active harness run", ticket.getId());
+                finishDurableRun("failed",
+                    "Ticket is leased by another active harness run", null, null);
+                return false;
+            }
+
+            startHeartbeat(ticket.getId());
+            return true;
+        } catch (IOException | RuntimeException e) {
+            log.warn("Durable harness run unavailable for ticket {}: {}",
+                ticket.getId(), e.getMessage());
+            finishDurableRun("failed",
+                "Durable harness run setup failed: " + e.getMessage(), null, null);
+            return true;
+        }
+    }
+
+    private void recordCheckpoint(String step, Map<String, Object> payload) {
+        String runId = currentRunId;
+        if (runId == null) {
+            return;
+        }
+        try {
+            apiService.checkpointHarnessRun(runId, step, payload);
+        } catch (IOException | RuntimeException e) {
+            log.warn("Failed to record harness checkpoint '{}' for run {}: {}",
+                step, runId, e.getMessage());
+        }
+    }
+
+    private void finishDurableRun(String status, String error, String headSha, String prUrl) {
+        String runId = currentRunId;
+        currentRunId = null;
+        stopHeartbeat();
+        if (runId == null) {
+            return;
+        }
+        try {
+            apiService.finishHarnessRun(
+                runId,
+                status,
+                error == null ? null : redactWithProvider(error),
+                headSha,
+                prUrl
+            );
+        } catch (IOException | RuntimeException e) {
+            log.warn("Failed to finish harness run {}: {}", runId, e.getMessage());
+        }
+    }
+
+    private void startHeartbeat(Long ticketId) {
+        String runId = currentRunId;
+        if (runId == null) {
+            return;
+        }
+        long intervalSeconds = Math.max(1, heartbeatSeconds);
+        heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "harness-heartbeat-" + ticketId);
+            thread.setDaemon(true);
+            return thread;
+        });
+        heartbeatExecutor.scheduleAtFixedRate(() -> {
+            try {
+                if (!apiService.renewHarnessLease(ticketId, runId, leaseTtlSeconds)) {
+                    log.warn("Harness lease for ticket {} is no longer held; stopping heartbeats",
+                        ticketId);
+                    stopHeartbeat();
+                    return;
+                }
+                apiService.heartbeatHarnessRun(runId, currentStep);
+            } catch (IOException | RuntimeException e) {
+                log.debug("Harness heartbeat failed for ticket {}: {}", ticketId, e.getMessage());
+            }
+        }, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
+    }
+
+    private void stopHeartbeat() {
+        ScheduledExecutorService executor = heartbeatExecutor;
+        heartbeatExecutor = null;
+        if (executor != null) {
+            executor.shutdown();
+        }
+    }
+
+    /**
      * Post a failure and release the ticket with exponential backoff. Without
      * this, the poll loop re-picks the same ticket every 30 seconds and runs
      * another multi-minute harness.
      */
     private void failAndRelease(Long ticketId, String message) {
+        finishDurableRun("failed", message, null, null);
         FailureState state = failures.computeIfAbsent(ticketId, ignored -> new FailureState());
         int attempt = state.recordFailure(maxAttempts, retryBaseDelayMs, retryMaxDelayMs);
         String note = " (attempt " + Math.min(attempt, maxAttempts) + "/" + maxAttempts
