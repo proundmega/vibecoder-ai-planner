@@ -121,6 +121,52 @@ CREATE TABLE IF NOT EXISTS user_stats (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Durable harness execution (fg-33). This legacy bootstrap uses UUID ids for
+-- the existing tables; production migrations in 045_harness_runs.sql use the
+-- BIGINT ids from the incremental schema.
+CREATE TABLE IF NOT EXISTS harness_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    agent_id UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    branch TEXT NOT NULL,
+    base_sha TEXT,
+    head_sha TEXT,
+    pr_url TEXT,
+    workspace_path TEXT,
+    session_id TEXT,
+    provider TEXT,
+    model TEXT,
+    step TEXT NOT NULL DEFAULT 'created',
+    agent_step TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    attempt INTEGER NOT NULL DEFAULT 1,
+    started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    heartbeat_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    finished_at TIMESTAMP WITH TIME ZONE,
+    error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS harness_checkpoints (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id UUID NOT NULL REFERENCES harness_runs(id) ON DELETE CASCADE,
+    step TEXT NOT NULL,
+    payload JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS harness_leases (
+    ticket_id UUID PRIMARY KEY REFERENCES tickets(id) ON DELETE CASCADE,
+    run_id UUID NOT NULL REFERENCES harness_runs(id) ON DELETE CASCADE,
+    agent_id UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_harness_runs_active_ticket
+    ON harness_runs(ticket_id) WHERE status = 'running';
+CREATE INDEX IF NOT EXISTS idx_harness_leases_run_id ON harness_leases(run_id);
+CREATE INDEX IF NOT EXISTS idx_harness_leases_expires_at ON harness_leases(expires_at);
+
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_tickets_project ON tickets(project_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);

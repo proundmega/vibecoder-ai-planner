@@ -62,9 +62,32 @@ describe('HarnessRunService', () => {
         HarnessRunService.startRun({ ticketId: 1, agentId: 7, branch: 'b', attempt: 0 })
       ).rejects.toThrow('attempt must be a positive integer');
     });
+
+    it('requires the ticket to be assigned to the agent owner', async () => {
+      await expect(
+        HarnessRunService.startRun({ ticketId: 42, agentId: 7, branch: 'b' })
+      ).rejects.toThrow('Ticket is not assigned to this agent');
+      expect(pool.query.mock.calls[0][0]).toContain('t.assigned_agent_id = a.owner_id');
+    });
+
+    it('maps the active-run unique index to a conflict', async () => {
+      const error = new Error('duplicate key');
+      error.code = '23505';
+      pool.query.mockRejectedValueOnce(error);
+
+      await expect(
+        HarnessRunService.startRun({ ticketId: 42, agentId: 7, branch: 'b' })
+      ).rejects.toThrow('Ticket already has an active harness run');
+    });
   });
 
   describe('getRun and queries', () => {
+    it('rejects a malformed run id before querying', async () => {
+      await expect(HarnessRunService.getRun('not-a-uuid')).rejects.toThrow(
+        'runId must be a UUID'
+      );
+      expect(pool.query).not.toHaveBeenCalled();
+    });
     it('returns a run by id', async () => {
       const row = { id: RUN_ID };
       pool.query.mockResolvedValueOnce({ rows: [row] });
@@ -115,7 +138,13 @@ describe('HarnessRunService', () => {
       expect(sql).toContain('UPDATE harness_runs');
       expect(sql).toContain('INSERT INTO harness_checkpoints');
       expect(sql).toContain("status = 'running'");
-      expect(params).toEqual([RUN_ID, 'prompting', '{"files":["a.js"]}']);
+      expect(sql).toContain('array_position');
+      expect(params).toEqual([
+        RUN_ID,
+        'prompting',
+        '{"files":["a.js"]}',
+        HarnessRunService.HARNESS_STEPS,
+      ]);
     });
 
     it('defaults the payload to an empty object', async () => {
@@ -133,9 +162,30 @@ describe('HarnessRunService', () => {
     });
 
     it('throws when the run is no longer active', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: RUN_ID, status: 'failed' }] });
+
       await expect(
         HarnessRunService.recordCheckpoint(RUN_ID, 'cloned')
       ).rejects.toThrow('Active harness run not found');
+    });
+
+    it('rejects a backwards transition', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: RUN_ID, status: 'running', step: 'verifying' }] });
+
+      await expect(
+        HarnessRunService.recordCheckpoint(RUN_ID, 'prompting')
+      ).rejects.toThrow('would move the run backwards');
+    });
+
+    it('rejects an unknown step', async () => {
+      await expect(
+        HarnessRunService.recordCheckpoint(RUN_ID, 'reaped')
+      ).rejects.toThrow('step must be one of');
+      expect(pool.query).not.toHaveBeenCalled();
     });
   });
 
@@ -150,6 +200,8 @@ describe('HarnessRunService', () => {
 
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('heartbeat_at = NOW()');
+      expect(sql).toContain('agent_step = COALESCE');
+      expect(sql).not.toContain('step = COALESCE($3, step)');
       expect(sql).toContain('agent_id = $2');
       expect(params).toEqual([RUN_ID, 7, 'verifying']);
     });
@@ -239,6 +291,7 @@ describe('HarnessRunService', () => {
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('ON CONFLICT (ticket_id) DO UPDATE');
       expect(sql).toContain('EXISTS');
+      expect(sql).toContain('t.assigned_agent_id = a.owner_id');
       expect(params).toEqual([42, RUN_ID, 7, 120]);
     });
 
@@ -292,7 +345,8 @@ describe('HarnessRunService', () => {
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('FOR UPDATE SKIP LOCKED');
       expect(sql).toContain("status = 'failed'");
-      expect(params).toEqual([10]);
+      expect(sql).toContain('run has no lease and heartbeat is stale');
+      expect(params).toEqual([10, 900]);
     });
 
     it('rejects an out-of-range reaper limit', async () => {

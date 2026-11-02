@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS harness_runs (
   provider TEXT,
   model TEXT,
   step TEXT NOT NULL DEFAULT 'created',
+  agent_step TEXT,
   status TEXT NOT NULL DEFAULT 'running',
   attempt INTEGER NOT NULL DEFAULT 1,
   started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -29,6 +30,11 @@ CREATE TABLE IF NOT EXISTS harness_runs (
 CREATE INDEX IF NOT EXISTS idx_harness_runs_ticket_id ON harness_runs(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_harness_runs_agent_status ON harness_runs(agent_id, status);
 CREATE INDEX IF NOT EXISTS idx_harness_runs_status_heartbeat ON harness_runs(status, heartbeat_at);
+
+-- At most one active run per ticket. This is the database backstop behind the
+-- lease: a crashed startRun/claimLease pair cannot create a second live run.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_harness_runs_active_ticket
+  ON harness_runs(ticket_id) WHERE status = 'running';
 
 CREATE TABLE IF NOT EXISTS harness_checkpoints (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -50,3 +56,4 @@ CREATE TABLE IF NOT EXISTS harness_leases (
 
 CREATE INDEX IF NOT EXISTS idx_harness_leases_expires_at ON harness_leases(expires_at);
 CREATE INDEX IF NOT EXISTS idx_harness_leases_agent_id ON harness_leases(agent_id);
+CREATE INDEX IF NOT EXISTS idx_harness_leases_run_id ON harness_leases(run_id);

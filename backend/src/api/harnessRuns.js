@@ -1,16 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const HarnessRunService = require('../services/HarnessRunService');
+const PermissionService = require('../services/PermissionService');
+const { pool } = require('../db');
 const { verifyTokenOrAgent } = require('../middleware/auth');
-const { ForbiddenError } = require('../errors/HttpError');
+const { ForbiddenError, NotFoundError } = require('../errors/HttpError');
 const logger = require('../utils/logger');
 
 /**
  * Agent-facing durable harness run API (fg-33).
  *
  * Agents persist the run before starting side effects and record a checkpoint
- * after each step. Operators can read run state with a normal JWT; mutations
- * that change run state require the owning agent's API key.
+ * after each step. Operators can read run state with a normal JWT, scoped to
+ * the ticket's project.
  */
 
 function requireAgent(req) {
@@ -20,9 +22,42 @@ function requireAgent(req) {
   return req.agent.id;
 }
 
-function assertAgentOwnsRun(req, run) {
-  if (req.agent && String(run.agent_id) !== String(req.agent.id)) {
-    throw new ForbiddenError('Harness run belongs to another agent');
+async function assertCanReadRun(req, run) {
+  if (req.agent) {
+    if (String(run.agent_id) !== String(req.agent.id)) {
+      throw new ForbiddenError('Harness run belongs to another agent');
+    }
+    return;
+  }
+
+  const role = req.user?.role;
+  const userId = req.user?.userId || req.user?.id;
+  if (!role || !userId || !(await PermissionService.hasPermission(role, 'AGENT_READ'))) {
+    throw new ForbiddenError('Operator permission required');
+  }
+  if (role === 'super_admin') {
+    return;
+  }
+
+  const access = await pool.query(
+    `SELECT p.owner_id,
+            EXISTS (
+              SELECT 1 FROM project_memberships pm
+              WHERE pm.project_id = p.id AND pm.user_id = $2
+            ) AS is_member
+     FROM tickets t
+     JOIN projects p ON p.id = t.project_id
+     WHERE t.id = $1`,
+    [run.ticket_id, userId]
+  );
+
+  if (access.rows.length === 0) {
+    throw new NotFoundError('Ticket not found');
+  }
+
+  const { owner_id: ownerId, is_member: isMember } = access.rows[0];
+  if (String(ownerId) !== String(userId) && !isMember) {
+    throw new ForbiddenError('Not a member of this ticket\u2019s project');
   }
 }
 
@@ -62,7 +97,7 @@ router.post('/runs', verifyTokenOrAgent, async (req, res, next) => {
 router.get('/runs/:runId', verifyTokenOrAgent, async (req, res, next) => {
   try {
     const run = await HarnessRunService.getRun(req.params.runId);
-    assertAgentOwnsRun(req, run);
+    await assertCanReadRun(req, run);
     res.json({ success: true, data: run });
   } catch (error) {
     logger.error('GET /harness/runs/:runId failed:', error);
@@ -73,7 +108,7 @@ router.get('/runs/:runId', verifyTokenOrAgent, async (req, res, next) => {
 router.get('/runs/:runId/checkpoints', verifyTokenOrAgent, async (req, res, next) => {
   try {
     const run = await HarnessRunService.getRun(req.params.runId);
-    assertAgentOwnsRun(req, run);
+    await assertCanReadRun(req, run);
     const checkpoints = await HarnessRunService.getCheckpoints(req.params.runId);
     res.json({ success: true, data: checkpoints });
   } catch (error) {
@@ -86,7 +121,7 @@ router.post('/runs/:runId/checkpoints', verifyTokenOrAgent, async (req, res, nex
   try {
     requireAgent(req);
     const run = await HarnessRunService.getRun(req.params.runId);
-    assertAgentOwnsRun(req, run);
+    await assertCanReadRun(req, run);
 
     const checkpoint = await HarnessRunService.recordCheckpoint(
       req.params.runId,
@@ -120,7 +155,7 @@ router.post('/runs/:runId/finish', verifyTokenOrAgent, async (req, res, next) =>
   try {
     requireAgent(req);
     const run = await HarnessRunService.getRun(req.params.runId);
-    assertAgentOwnsRun(req, run);
+    await assertCanReadRun(req, run);
 
     const finished = await HarnessRunService.finishRun(req.params.runId, {
       status: req.body?.status,
@@ -145,7 +180,7 @@ router.get('/tickets/:ticketId/run', verifyTokenOrAgent, async (req, res, next) 
         error: { code: 'NOT_FOUND', message: 'No harness run for this ticket' },
       });
     }
-    assertAgentOwnsRun(req, run);
+    await assertCanReadRun(req, run);
     res.json({ success: true, data: run });
   } catch (error) {
     logger.error('GET /harness/tickets/:ticketId/run failed:', error);
@@ -206,7 +241,7 @@ router.delete('/leases/:ticketId', verifyTokenOrAgent, async (req, res, next) =>
     requireAgent(req);
     const runId = req.body?.runId || req.query.runId;
     const run = await HarnessRunService.getRun(runId);
-    assertAgentOwnsRun(req, run);
+    await assertCanReadRun(req, run);
 
     const released = await HarnessRunService.releaseLease(req.params.ticketId, runId);
     if (!released) {

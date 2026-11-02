@@ -116,11 +116,13 @@ public class ApiService {
         String branch,
         String workspacePath,
         String provider,
-        String model
+        String model,
+        int attempt
     ) throws IOException {
         Map<String, Object> body = new HashMap<>();
         body.put("ticketId", ticketId);
         body.put("branch", branch);
+        body.put("attempt", attempt);
         if (workspacePath != null && !workspacePath.isBlank()) {
             body.put("workspacePath", workspacePath);
         }
@@ -159,6 +161,10 @@ public class ApiService {
         );
 
         if (response.hasError()) {
+            if (isErrorCode(response, "NOT_FOUND") || isErrorCode(response, "CONFLICT")) {
+                throw new RunGoneException(
+                    "Harness run is no longer active: " + response.getError());
+            }
             throw new IOException("Failed to record harness checkpoint: " + response.getError());
         }
     }
@@ -180,7 +186,11 @@ public class ApiService {
         }
     }
 
-    public void finishHarnessRun(
+    /**
+     * Finish a run and return its terminal status. The backend finish is
+     * idempotent, so retrying after a lost response is safe.
+     */
+    public String finishHarnessRun(
         String runId,
         String status,
         String error,
@@ -208,10 +218,15 @@ public class ApiService {
         if (response.hasError()) {
             throw new IOException("Failed to finish harness run: " + response.getError());
         }
+        Object terminalStatus = response.getData() == null
+            ? null
+            : response.getData().get("status");
+        return terminalStatus == null ? status : String.valueOf(terminalStatus);
     }
 
     /**
-     * Claim the ticket lease. False means another unexpired run owns it.
+     * Claim the ticket lease. False means another unexpired run owns it;
+     * transient errors throw so the caller can fail closed.
      */
     public boolean claimHarnessLease(Long ticketId, String runId, int ttlSeconds) throws IOException {
         Map<String, Object> body = new HashMap<>();
@@ -225,11 +240,18 @@ public class ApiService {
             new TypeReference<ApiResponse<Map<String, Object>>>() {}
         );
 
-        return !response.hasError() && response.getData() != null;
+        if (response.hasError()) {
+            if (isErrorCode(response, "CONFLICT")) {
+                return false;
+            }
+            throw new IOException("Failed to claim harness lease: " + response.getError());
+        }
+        return response.getData() != null;
     }
 
     /**
-     * Renew an already-held lease. False means the lease was lost.
+     * Renew an already-held lease. False means the lease was lost; transient
+     * errors throw so the heartbeat can retry on the next tick.
      */
     public boolean renewHarnessLease(Long ticketId, String runId, int ttlSeconds) throws IOException {
         Map<String, Object> body = new HashMap<>();
@@ -242,7 +264,24 @@ public class ApiService {
             new TypeReference<ApiResponse<Map<String, Object>>>() {}
         );
 
-        return !response.hasError() && response.getData() != null;
+        if (response.hasError()) {
+            if (isErrorCode(response, "CONFLICT")) {
+                return false;
+            }
+            throw new IOException("Failed to renew harness lease: " + response.getError());
+        }
+        return response.getData() != null;
+    }
+
+    private static boolean isErrorCode(ApiResponse<?> response, String code) {
+        return response.getError() != null && code.equals(response.getError().getCode());
+    }
+
+    /** The run was reaped or finished while this agent was still working. */
+    public static class RunGoneException extends IOException {
+        public RunGoneException(String message) {
+            super(message);
+        }
     }
 
     /**

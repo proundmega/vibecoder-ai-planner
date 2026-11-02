@@ -18,6 +18,10 @@ jest.mock('../services/AgentService', () => ({
   getAgentByApiKey: jest.fn().mockResolvedValue({ id: 7, owner_id: 1 }),
 }));
 
+jest.mock('../services/PermissionService', () => ({
+  hasPermission: jest.fn().mockResolvedValue(true),
+}));
+
 jest.mock('../services/HarnessRunService', () => ({
   startRun: jest.fn(),
   getRun: jest.fn(),
@@ -32,12 +36,16 @@ jest.mock('../services/HarnessRunService', () => ({
 }));
 
 const HarnessRunService = require('../services/HarnessRunService');
+const PermissionService = require('../services/PermissionService');
+const { pool } = require('../db');
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
 
 describe('Harness run API', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    PermissionService.hasPermission.mockResolvedValue(true);
+    pool.query.mockResolvedValue({ rows: [] });
   });
 
   describe('POST /api/v1/harness/runs', () => {
@@ -103,14 +111,47 @@ describe('Harness run API', () => {
       expect(res.statusCode).toBe(403);
     });
 
-    it('allows an operator JWT to read any run', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 8 });
+    it('allows an operator JWT to read a run in their project', async () => {
+      HarnessRunService.getRun.mockResolvedValue({
+        id: RUN_ID, agent_id: 8, ticket_id: 42,
+      });
+      pool.query.mockResolvedValueOnce({
+        rows: [{ owner_id: 'user-1', is_member: false }],
+      });
 
       const res = await request(app)
         .get(`/api/v1/harness/runs/${RUN_ID}`)
         .set('Authorization', 'Bearer mock-token');
 
       expect(res.statusCode).toBe(200);
+    });
+
+    it('denies a JWT without the operator permission', async () => {
+      HarnessRunService.getRun.mockResolvedValue({
+        id: RUN_ID, agent_id: 8, ticket_id: 42,
+      });
+      PermissionService.hasPermission.mockResolvedValue(false);
+
+      const res = await request(app)
+        .get(`/api/v1/harness/runs/${RUN_ID}`)
+        .set('Authorization', 'Bearer mock-token');
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('denies a JWT outside the ticket project', async () => {
+      HarnessRunService.getRun.mockResolvedValue({
+        id: RUN_ID, agent_id: 8, ticket_id: 42,
+      });
+      pool.query.mockResolvedValueOnce({
+        rows: [{ owner_id: 'other-user', is_member: false }],
+      });
+
+      const res = await request(app)
+        .get(`/api/v1/harness/runs/${RUN_ID}`)
+        .set('Authorization', 'Bearer mock-token');
+
+      expect(res.statusCode).toBe(403);
     });
   });
 
@@ -143,8 +184,13 @@ describe('Harness run API', () => {
     });
 
     it('lists checkpoints for operators', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 8 });
+      HarnessRunService.getRun.mockResolvedValue({
+        id: RUN_ID, agent_id: 8, ticket_id: 42,
+      });
       HarnessRunService.getCheckpoints.mockResolvedValue([{ step: 'created' }]);
+      pool.query.mockResolvedValueOnce({
+        rows: [{ owner_id: 'user-1', is_member: false }],
+      });
 
       const res = await request(app)
         .get(`/api/v1/harness/runs/${RUN_ID}/checkpoints`)

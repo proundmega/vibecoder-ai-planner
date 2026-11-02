@@ -1,6 +1,6 @@
 # 02_ARCHITECT_DESIGN.md - Durable Harness Execution (fg-33)
 
-**Status:** Planned - not implemented
+**Status:** In progress — slice 1 implemented (persistence, leases, reaper)
 **Date:** 2026-10-31
 **Depends on:** fg-30 Phase 1 (OpenCode harness supervisor)
 

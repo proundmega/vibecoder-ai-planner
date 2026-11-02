@@ -88,6 +88,11 @@ public class WorkspaceManager {
         return repoDir;
     }
 
+    /** Base commit the run was cloned at, used for durable checkpoints. */
+    public String getBaseCommit() {
+        return baseCommit;
+    }
+
     /**
      * Clone a repository to a unique workspace directory.
      */

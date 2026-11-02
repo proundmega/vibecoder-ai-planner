@@ -61,12 +61,17 @@ public final class HarnessTicketProcessor implements TicketWorker {
         intEnv("HARNESS_MAX_ATTEMPTS", DEFAULT_MAX_ATTEMPTS));
     private final long retryBaseDelayMs = longEnv("HARNESS_RETRY_BASE_DELAY_MS", DEFAULT_RETRY_BASE_DELAY_MS);
     private final long retryMaxDelayMs = longEnv("HARNESS_RETRY_MAX_DELAY_MS", DEFAULT_RETRY_MAX_DELAY_MS);
-    private final int leaseTtlSeconds = intEnv("HARNESS_LEASE_SECONDS", 600);
-    private final long heartbeatSeconds = longEnv("HARNESS_HEARTBEAT_SECONDS", 30);
+    private final int leaseTtlSeconds = Math.min(
+        86_400, Math.max(60, intEnv("HARNESS_LEASE_SECONDS", 600)));
+    private final long heartbeatSeconds = Math.max(
+        1, Math.min(leaseTtlSeconds / 2, longEnv("HARNESS_HEARTBEAT_SECONDS", 30)));
+    private final boolean durabilityRequired =
+        booleanEnv("HARNESS_DURABILITY_REQUIRED", false);
 
     private volatile String currentTicketId;
     private volatile String currentStep;
     private volatile String currentRunId;
+    private volatile boolean leaseLost;
     private volatile ScheduledExecutorService heartbeatExecutor;
 
     public HarnessTicketProcessor(
@@ -169,8 +174,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
             // here would allow concurrent publishes, so leave recovery to the
             // reaper/operator instead.
             postMessage(pickedUp.getId(), "update",
-                "Another harness run still holds the lease for this ticket; "
+                "Could not start a durable harness run or acquire the ticket lease; "
                     + "leaving it for recovery instead of publishing concurrently.");
+            currentTicketId = null;
+            currentStep = null;
             return;
         }
 
@@ -197,8 +204,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
             String repoUrl = "https://github.com/" + config.getRepoOwner() + "/"
                 + config.getRepoName() + ".git";
             workspace.cloneRepo(repoUrl, branchName);
-            recordCheckpoint("cloned", Map.of(
-                "workspacePath", String.valueOf(workspace.getRepoDir())));
+            java.util.Map<String, Object> cloned = new java.util.HashMap<>();
+            cloned.put("workspacePath", String.valueOf(workspace.getRepoDir()));
+            if (workspace.getBaseCommit() != null) {
+                cloned.put("baseSha", workspace.getBaseCommit());
+            }
+            recordCheckpoint("cloned", cloned);
 
             List<String> commands = safeResolveCommands(workspace);
             if (commands.isEmpty()) {
@@ -266,6 +277,9 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 return;
             }
 
+            if (!assertLeaseHeld(pickedUp.getId())) {
+                return;
+            }
             currentStep = "publishing";
             recordCheckpoint("publishing", Map.of());
             // Stage into a supervisor-owned index, guard index blobs, then
@@ -280,8 +294,14 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     return;
                 }
                 ensureWithinDeadline(deadline);
+                if (!assertLeaseHeld(pickedUp.getId())) {
+                    return;
+                }
                 String commitSha = workspace.commitAndPushStaged(
                     "feat: " + pickedUp.getTitle(), branchName);
+                if (!assertLeaseHeld(pickedUp.getId())) {
+                    return;
+                }
                 String prUrl = gitHubService.createPullRequest(
                     "feat: " + pickedUp.getTitle(),
                     buildPrBody(pickedUp, branchName, commitSha, diff, verification),
@@ -405,46 +425,75 @@ public final class HarnessTicketProcessor implements TicketWorker {
     }
 
     /**
-     * Persist the run and claim its lease. Durability is best-effort during
-     * rollout: if the backend is unavailable the harness still runs, but it
-     * cannot be recovered after a crash.
+     * Persist the run and claim its lease.
+     *
+     * Only the initial startRun failure is best-effort during rollout (unless
+     * HARNESS_DURABILITY_REQUIRED=true). Once a run exists, every lease/auth
+     * failure fails closed: the harness must not publish without the lease.
      */
     private boolean startDurableRun(Ticket ticket, String branchName) {
+        leaseLost = false;
         if (config.isDryRun()) {
             return true;
         }
+
+        FailureState state = failures.get(ticket.getId());
+        int attempt = state == null ? 1 : Math.min(state.attempts + 1, maxAttempts);
+
+        Map<String, Object> run;
         try {
-            Map<String, Object> run = apiService.startHarnessRun(
+            run = apiService.startHarnessRun(
                 ticket.getId(),
                 branchName,
                 null,
                 provider == null ? null : provider.type(),
-                provider == null ? null : provider.model()
+                provider == null ? null : provider.model(),
+                attempt
             );
-            if (run == null || run.get("id") == null) {
-                log.debug("Harness run persistence unavailable for ticket {}", ticket.getId());
-                return true;
+        } catch (IOException | RuntimeException e) {
+            if (durabilityRequired) {
+                log.error("Harness run persistence is required but failed for ticket {}: {}",
+                    ticket.getId(), e.getMessage());
+                return false;
             }
+            log.warn("Harness run persistence unavailable for ticket {}: {}",
+                ticket.getId(), e.getMessage());
+            return true;
+        }
 
-            currentRunId = String.valueOf(run.get("id"));
+        if (run == null || run.get("id") == null) {
+            if (durabilityRequired) {
+                log.error("Harness run persistence is required but returned no run for ticket {}",
+                    ticket.getId());
+                return false;
+            }
+            log.debug("Harness run persistence unavailable for ticket {}", ticket.getId());
+            return true;
+        }
+
+        currentRunId = String.valueOf(run.get("id"));
+
+        try {
             boolean leased = apiService.claimHarnessLease(
                 ticket.getId(), currentRunId, leaseTtlSeconds);
             if (!leased) {
                 log.warn("Ticket {} is leased by another active harness run", ticket.getId());
                 finishDurableRun("failed",
                     "Ticket is leased by another active harness run", null, null);
+                currentRunId = null;
                 return false;
             }
-
-            startHeartbeat(ticket.getId());
-            return true;
         } catch (IOException | RuntimeException e) {
-            log.warn("Durable harness run unavailable for ticket {}: {}",
+            log.warn("Could not claim the harness lease for ticket {}: {}",
                 ticket.getId(), e.getMessage());
             finishDurableRun("failed",
-                "Durable harness run setup failed: " + e.getMessage(), null, null);
-            return true;
+                "Harness lease claim failed: " + e.getMessage(), null, null);
+            currentRunId = null;
+            return false;
         }
+
+        startHeartbeat(ticket.getId());
+        return true;
     }
 
     private void recordCheckpoint(String step, Map<String, Object> payload) {
@@ -454,30 +503,67 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
         try {
             apiService.checkpointHarnessRun(runId, step, payload);
+        } catch (ApiService.RunGoneException e) {
+            // The run was reaped or finished elsewhere: stop before publishing.
+            leaseLost = true;
+            stopHeartbeat();
+            log.warn("Harness run {} is gone; aborting before publish: {}", runId, e.getMessage());
         } catch (IOException | RuntimeException e) {
             log.warn("Failed to record harness checkpoint '{}' for run {}: {}",
                 step, runId, e.getMessage());
         }
     }
 
-    private void finishDurableRun(String status, String error, String headSha, String prUrl) {
+    /**
+     * Retry finish so a successful publish is not lost to a transient API
+     * failure. The run id is cleared only after the backend confirms, and the
+     * backend finish is idempotent.
+     */
+    private boolean finishDurableRun(String status, String error, String headSha, String prUrl) {
         String runId = currentRunId;
-        currentRunId = null;
-        stopHeartbeat();
         if (runId == null) {
-            return;
+            return true;
         }
-        try {
-            apiService.finishHarnessRun(
-                runId,
-                status,
-                error == null ? null : redactWithProvider(error),
-                headSha,
-                prUrl
-            );
-        } catch (IOException | RuntimeException e) {
-            log.warn("Failed to finish harness run {}: {}", runId, e.getMessage());
+        stopHeartbeat();
+
+        Exception lastFailure = null;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                String terminal = apiService.finishHarnessRun(
+                    runId,
+                    status,
+                    error == null ? null : redactWithProvider(error),
+                    headSha,
+                    prUrl
+                );
+                if (terminal != null && !terminal.equals(status)) {
+                    log.warn("Harness run {} was already terminal as '{}' when finishing as '{}'",
+                        runId, terminal, status);
+                }
+                currentRunId = null;
+                return true;
+            } catch (IOException | RuntimeException e) {
+                lastFailure = e;
+                if (attempt < 3) {
+                    sleepQuietly(250L * attempt);
+                }
+            }
         }
+
+        log.warn("Could not finish harness run {}: {}", runId,
+            lastFailure == null ? "unknown error" : lastFailure.getMessage());
+        return false;
+    }
+
+    private boolean assertLeaseHeld(Long ticketId) {
+        if (!leaseLost) {
+            return true;
+        }
+        postMessage(ticketId, "update",
+            "Harness lease was lost before publish; refusing to push or open a PR. "
+                + "The ticket is left for recovery.");
+        finishDurableRun("failed", "Harness lease lost before publish", null, null);
+        return false;
     }
 
     private void startHeartbeat(Long ticketId) {
@@ -492,18 +578,32 @@ public final class HarnessTicketProcessor implements TicketWorker {
             return thread;
         });
         heartbeatExecutor.scheduleAtFixedRate(() -> {
-            try {
-                if (!apiService.renewHarnessLease(ticketId, runId, leaseTtlSeconds)) {
-                    log.warn("Harness lease for ticket {} is no longer held; stopping heartbeats",
-                        ticketId);
-                    stopHeartbeat();
-                    return;
-                }
-                apiService.heartbeatHarnessRun(runId, currentStep);
-            } catch (IOException | RuntimeException e) {
-                log.debug("Harness heartbeat failed for ticket {}: {}", ticketId, e.getMessage());
+            if (!heartbeatOnce(ticketId, runId)) {
+                stopHeartbeat();
             }
         }, intervalSeconds, intervalSeconds, TimeUnit.SECONDS);
+    }
+
+    /**
+     * One heartbeat tick. Transient errors keep the loop alive; an explicit
+     * lease loss flips leaseLost so publishing fails closed.
+     */
+    boolean heartbeatOnce(Long ticketId, String runId) {
+        try {
+            if (!apiService.renewHarnessLease(ticketId, runId, leaseTtlSeconds)) {
+                leaseLost = true;
+                log.warn("Harness lease for ticket {} is no longer held; stopping heartbeats",
+                    ticketId);
+                return false;
+            }
+            apiService.heartbeatHarnessRun(runId, currentStep);
+            return true;
+        } catch (IOException | RuntimeException e) {
+            // Transient: leave the lease alone and retry on the next tick.
+            log.debug("Harness heartbeat failed for ticket {}; will retry: {}",
+                ticketId, e.getMessage());
+            return true;
+        }
     }
 
     private void stopHeartbeat() {
@@ -602,6 +702,14 @@ public final class HarnessTicketProcessor implements TicketWorker {
         } catch (NumberFormatException e) {
             return fallback;
         }
+    }
+
+    private static boolean booleanEnv(String name, boolean fallback) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return "true".equalsIgnoreCase(value.trim()) || "1".equals(value.trim());
     }
 
     private static final class FailureState {

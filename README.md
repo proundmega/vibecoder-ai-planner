@@ -133,6 +133,9 @@ Required for `docker compose up`:
 | `HARNESS_MAX_LINES` | Maximum changed lines the guard will publish | `2000` |
 | `HARNESS_MAX_BYTES` | Maximum total changed bytes the guard will publish | `5242880` |
 | `HARNESS_FSCK` | Run `git fsck --strict` before staging (`false` skips it for very large repos) | `true` |
+| `HARNESS_LEASE_SECONDS` | Ticket lease TTL for durable runs (clamped 60–86400) | `600` |
+| `HARNESS_HEARTBEAT_SECONDS` | Lease renewal and heartbeat interval (clamped to ≤ lease/2) | `30` |
+| `HARNESS_DURABILITY_REQUIRED` | Fail closed if the initial harness run cannot be persisted | `false` |
 | `HARNESS_RETRY_PIN_ATTEMPTS` | Failures before retry backoff pins at the maximum (retries continue at that interval; `HARNESS_MAX_ATTEMPTS` is accepted as a legacy alias) | `3` |
 | `HARNESS_RETRY_BASE_DELAY_MS` | Base exponential retry delay | `60000` |
 | `HARNESS_RETRY_MAX_DELAY_MS` | Maximum retry delay | `3600000` |
