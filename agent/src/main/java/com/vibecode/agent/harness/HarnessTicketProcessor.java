@@ -340,7 +340,14 @@ public final class HarnessTicketProcessor implements TicketWorker {
             handleFailure(pickedUp.getId(), failure);
         } finally {
             stopHeartbeat();
-            finishDurableRun("failed", "Harness run ended without a terminal checkpoint", null, null);
+            String lingeringRun = currentRunId;
+            boolean finishedLingering = finishDurableRun(
+                "failed", "Harness run ended without a terminal checkpoint", null, null);
+            if (lingeringRun != null && finishedLingering && pickedUp.getId() != null) {
+                // We only reach this when a previous finish failed. Now that the
+                // run is terminal, returning the ticket is safe.
+                release(pickedUp.getId());
+            }
             closeQuietly(harness);
             deleteQuietly(tempDir);
             if (workspace != null) {
@@ -450,6 +457,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 provider == null ? null : provider.model(),
                 attempt
             );
+        } catch (ApiService.FatalRunException e) {
+            // The backend explicitly refused the run (another active run,
+            // unauthorized ticket, invalid payload). Never publish anyway.
+            log.error("Harness run rejected for ticket {}: {}",
+                ticket.getId(), e.getMessage());
+            return false;
         } catch (IOException | RuntimeException e) {
             if (durabilityRequired) {
                 log.error("Harness run persistence is required but failed for ticket {}: {}",
@@ -556,6 +569,20 @@ public final class HarnessTicketProcessor implements TicketWorker {
     }
 
     private boolean assertLeaseHeld(Long ticketId) {
+        if (!leaseLost && currentRunId != null) {
+            try {
+                if (!apiService.renewHarnessLease(ticketId, currentRunId, leaseTtlSeconds)) {
+                    leaseLost = true;
+                }
+            } catch (IOException | RuntimeException e) {
+                // An expired/partitioned lease is indistinguishable from a
+                // transient error here; fail closed rather than publish.
+                leaseLost = true;
+                log.warn("Could not verify the harness lease before publish for ticket {}: {}",
+                    ticketId, e.getMessage());
+            }
+        }
+
         if (!leaseLost) {
             return true;
         }
@@ -598,6 +625,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
             apiService.heartbeatHarnessRun(runId, currentStep);
             return true;
+        } catch (ApiService.RunGoneException e) {
+            leaseLost = true;
+            log.warn("Harness run {} is gone; stopping heartbeats: {}", runId, e.getMessage());
+            return false;
         } catch (IOException | RuntimeException e) {
             // Transient: leave the lease alone and retry on the next tick.
             log.debug("Harness heartbeat failed for ticket {}; will retry: {}",
@@ -620,7 +651,17 @@ public final class HarnessTicketProcessor implements TicketWorker {
      * another multi-minute harness.
      */
     private void failAndRelease(Long ticketId, String message) {
-        finishDurableRun("failed", message, null, null);
+        boolean finished = finishDurableRun("failed", message, null, null);
+        if (!finished) {
+            // The run/lease may still be live. Returning the ticket to backlog
+            // here would let another agent race it, so leave it assigned for
+            // the reaper/operator instead.
+            postMessage(ticketId, "update",
+                message + "\n\nCould not confirm the harness run finished; "
+                    + "leaving the ticket assigned for recovery instead of retrying it.");
+            return;
+        }
+
         FailureState state = failures.computeIfAbsent(ticketId, ignored -> new FailureState());
         int attempt = state.recordFailure(maxAttempts, retryBaseDelayMs, retryMaxDelayMs);
         String note = " (attempt " + Math.min(attempt, maxAttempts) + "/" + maxAttempts

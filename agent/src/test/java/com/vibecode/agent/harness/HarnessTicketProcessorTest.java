@@ -288,6 +288,7 @@ class HarnessTicketProcessorTest {
             1L, branch, null, "opencode-go", "beam-free", 1))
             .thenReturn(java.util.Map.of("id", "run-1"));
         when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
 
         processor.processTicket(ticket());
 
@@ -349,6 +350,7 @@ class HarnessTicketProcessorTest {
             1L, branch, null, "opencode-go", "beam-free", 1))
             .thenReturn(java.util.Map.of("id", "run-1"));
         when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
         doThrow(new IOException("checkpoint API down"))
             .when(apiService).checkpointHarnessRun(anyString(), anyString(), any());
 
@@ -408,6 +410,11 @@ class HarnessTicketProcessorTest {
 
         assertTrue(processor.heartbeatOnce(1L, "run-1"));
         assertFalse(processor.heartbeatOnce(1L, "run-1"));
+
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        doThrow(new ApiService.RunGoneException("reaped"))
+            .when(apiService).heartbeatHarnessRun("run-1", null);
+        assertFalse(processor.heartbeatOnce(1L, "run-1"));
     }
 
     @Test
@@ -417,6 +424,7 @@ class HarnessTicketProcessorTest {
             1L, branch, null, "opencode-go", "beam-free", 1))
             .thenReturn(java.util.Map.of("id", "run-1"));
         when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
         when(apiService.finishHarnessRun(
             "run-1", "succeeded", null, "abc1234",
             "https://github.com/owner/repo/pull/7"))
@@ -431,6 +439,62 @@ class HarnessTicketProcessorTest {
         verify(apiService, org.mockito.Mockito.times(3)).finishHarnessRun(
             "run-1", "succeeded", null, "abc1234",
             "https://github.com/owner/repo/pull/7");
+    }
+
+    @Test
+    void fatalStartErrorSkipsCloningAndLeavesTheTicketForRecovery() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1))
+            .thenThrow(new ApiService.FatalRunException("CONFLICT: active run"));
+
+        processor.processTicket(ticket());
+
+        verify(workspace, never()).cloneRepo(anyString(), anyString());
+        verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
+        verify(apiService, never()).claimHarnessLease(any(), anyString(), org.mockito.ArgumentMatchers.anyInt());
+        verify(apiService, never()).releaseTicket(1L);
+        assertTrue(postedMessages().stream().anyMatch(message ->
+            message.contains("Could not start a durable harness run")));
+    }
+
+    @Test
+    void leaseExpiryBeforePublishStopsThePush() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(false);
+
+        processor.processTicket(ticket());
+
+        verify(workspace, never()).stageFreshDiff();
+        verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
+        verify(gitHubService, never()).createPullRequest(
+            anyString(), anyString(), anyString(), anyString());
+        verify(apiService).finishHarnessRun(
+            eq("run-1"), eq("failed"), contains("lease lost"), isNull(), isNull());
+    }
+
+    @Test
+    void finishFailureDoesNotReleaseTheTicket() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(verificationRunner.run(any(), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult("npm test", 1, "failed", false)));
+        when(apiService.finishHarnessRun(
+            eq("run-1"), eq("failed"), anyString(), isNull(), isNull()))
+            .thenThrow(new IOException("finish API down"));
+
+        processor.processTicket(ticket());
+
+        verify(apiService, never()).releaseTicket(1L);
+        assertTrue(postedMessages().stream().anyMatch(message ->
+            message.contains("leaving the ticket assigned for recovery")));
     }
 
     private List<String> postedMessages() throws Exception {

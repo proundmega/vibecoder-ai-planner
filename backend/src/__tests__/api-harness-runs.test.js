@@ -126,7 +126,7 @@ describe('Harness run API', () => {
       expect(res.statusCode).toBe(200);
     });
 
-    it('denies a JWT without the operator permission', async () => {
+    it('denies a JWT without AGENT_READ', async () => {
       HarnessRunService.getRun.mockResolvedValue({
         id: RUN_ID, agent_id: 8, ticket_id: 42,
       });

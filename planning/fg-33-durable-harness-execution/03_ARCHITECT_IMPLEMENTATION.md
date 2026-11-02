@@ -37,21 +37,30 @@ Delivered:
     only release tickets whose run this call actually failed.
 - `api/harnessRuns.js` exposes the agent-facing API under `/api/v1/harness`.
   Mutating routes require the owning agent's API key. JWT reads require the
-  `AGENT_READ` permission and are scoped to the ticket's project (owner or
-  project member); `super_admin` may read all.
+  `AGENT_READ` permission (granted to member/project_admin; the `user` role is
+  denied) and are scoped to the ticket's project (project owner or member);
+  `super_admin` may read all.
 - `HarnessTicketProcessor` starts a run after pickup, claims the lease, records
   each checkpoint, renews the lease from a heartbeat thread and finishes the
   run on success or failure.
+  - Start 4xx decisions (`CONFLICT`, `FORBIDDEN`, `VALIDATION_ERROR`) are
+    fatal even without `HARNESS_DURABILITY_REQUIRED`; only network/5xx/404
+    failures stay best-effort during rollout.
   - After a run exists, lease/auth failures fail closed: the heartbeat sets
-    `leaseLost`, checkpoints that return `NOT_FOUND`/`CONFLICT` set it too, and
-    publishing checks it immediately before staging and again before
-    commit/push/PR. Lost leases leave the ticket for the reaper instead of
-    releasing it and risking a concurrent publish.
+    `leaseLost`, checkpoints/heartbeats that return `NOT_FOUND`/`CONFLICT` set
+    it too, and publishing performs a synchronous lease renewal immediately
+    before staging, commit/push and the PR. Lost leases leave the ticket for
+    the reaper instead of releasing it and risking a concurrent publish.
+    When the initial start was best-effort and no run/lease exists, this check
+    cannot run and publishing is explicitly best-effort.
   - Transient heartbeat errors keep retrying; only an explicit lease loss
     stops publishing.
   - `finishDurableRun` retries with bounded backoff, clears the run id only
     after the backend confirms, and logs a mismatch if the run was already
-    terminal with a different status.
+    terminal with a different status. `failAndRelease` only returns the ticket
+    to backlog after finish succeeds; otherwise it leaves the ticket assigned
+    and posts a recovery message. The finally block retries the finish and
+    releases only if that retry makes the run terminal.
   - `HARNESS_DURABILITY_REQUIRED=true` makes the initial run creation fail
     closed too. It defaults to `false` for rollout.
 
@@ -69,8 +78,11 @@ Delivered:
 - **Resume is not enabled yet.** `HARNESS_RESUME_MODE` remains unimplemented;
   the reaper fails stale runs and the ticket is returned for a clean retry once
   the reaper caller releases it.
-- **One active run per ticket is enforced end to end** by the partial unique
-  index plus the lease; orphaned runs are reaped by heartbeat age.
+- **One active run per ticket is enforced** by the partial unique index plus
+  the lease, and orphaned runs are reaped by heartbeat age.
+- **Liveness dependency:** the reaper is implemented but not scheduled yet.
+  Until slice 2 wires it, a stuck run/unique-index conflict needs the reaper
+  endpoint/manual recovery before the ticket can run again.
 
 ## Configuration
 
@@ -90,9 +102,10 @@ Delivered:
   ownership, JWT permission/project scoping, checkpoints, heartbeats, finish
   and lease conflicts.
 - `backend/src/__tests__/integration/harnessRuns.test.js` executes against
-  PostgreSQL: assignment authorization, one-active-run race, unexpired lease
-  blocking, expired-lease reaping, orphan reaping, idempotent finish + lease
-  release, checkpoint ordering/context and wrong-agent lease claims.
+  PostgreSQL (11 tests): assignment authorization, sequential and concurrent
+  one-active-run races, unexpired lease blocking, expired-lease reaping, orphan
+  reaping, idempotent finish + lease release, checkpoint ordering/context,
+  wrong-agent lease claims and renewal after release/terminal runs.
 - `HarnessTicketProcessorTest` verifies run persistence, lease claim failure,
   lease-loss publishing refusal, transient heartbeat retry, finish retry and
   all checkpoints.

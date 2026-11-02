@@ -346,14 +346,21 @@ class HarnessRunService {
     const ttl = leaseSeconds(ttlSeconds);
 
     const result = await pool.query(
-      `UPDATE harness_leases
+      `UPDATE harness_leases l
        SET expires_at = NOW() + ($4::int * INTERVAL '1 second'),
            updated_at = NOW()
-       WHERE ticket_id = $1
-         AND run_id = $2
-         AND agent_id = $3
-         AND expires_at > NOW()
-       RETURNING *`,
+       FROM harness_runs r
+       JOIN tickets t ON t.id = r.ticket_id
+       JOIN agents a ON a.id = r.agent_id
+       WHERE l.ticket_id = $1
+         AND l.run_id = $2
+         AND l.agent_id = $3
+         AND l.expires_at > NOW()
+         AND r.id = l.run_id
+         AND r.status = 'running'
+         AND t.status = 'in_progress'
+         AND t.assigned_agent_id = a.owner_id
+       RETURNING l.*`,
       [normalisedTicketId, normalisedRunId, normalisedAgentId, ttl]
     );
 

@@ -76,6 +76,10 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     await pool.query('DELETE FROM harness_runs WHERE ticket_id = ANY($1)', [
       [ticketId, otherTicketId],
     ]);
+    await pool.query(
+      "UPDATE tickets SET status = 'in_progress', assigned_agent_id = $2 WHERE id = $1",
+      [ticketId, ownerId]
+    );
   });
 
   const start = (overrides = {}) => HarnessRunService.startRun({
@@ -96,6 +100,20 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
     await expect(start({ branch: 'harness/second' }))
       .rejects.toThrow('Ticket already has an active harness run');
+  });
+
+  test('concurrent starts for the same ticket produce exactly one winner', async () => {
+    const results = await Promise.allSettled([
+      start({ branch: 'harness/race-a' }),
+      start({ branch: 'harness/race-b' }),
+    ]);
+
+    const fulfilled = results.filter((result) => result.status === 'fulfilled');
+    const rejected = results.filter((result) => result.status === 'rejected');
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason.message).toContain('active harness run');
   });
 
   test('an unexpired lease blocks a different run', async () => {
@@ -127,7 +145,10 @@ describe('HarnessRunService — PostgreSQL integration', () => {
       ticketId, runId: run.id, agentId, ttlSeconds: 1,
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await pool.query(
+      "UPDATE harness_leases SET expires_at = NOW() - INTERVAL '1 second' WHERE ticket_id = $1",
+      [ticketId]
+    );
 
     const reaped = await HarnessRunService.reapExpiredLeases(50, 900);
     const row = reaped.find((item) => item.run_id === run.id);
@@ -223,6 +244,30 @@ describe('HarnessRunService — PostgreSQL integration', () => {
       HarnessRunService.claimLease({
         ticketId, runId: run.id, agentId: otherAgentId, ttlSeconds: 60,
       })
+    ).resolves.toBeNull();
+  });
+
+  test('renewal fails after the ticket is released or the run becomes terminal', async () => {
+    const run = await start({ branch: 'harness/renew' });
+    await HarnessRunService.claimLease({
+      ticketId, runId: run.id, agentId, ttlSeconds: 60,
+    });
+
+    await pool.query(
+      "UPDATE tickets SET status = 'backlog', assigned_agent_id = NULL WHERE id = $1",
+      [ticketId]
+    );
+    await expect(
+      HarnessRunService.renewLease({ ticketId, runId: run.id, agentId, ttlSeconds: 60 })
+    ).resolves.toBeNull();
+
+    await pool.query(
+      "UPDATE tickets SET status = 'in_progress', assigned_agent_id = $2 WHERE id = $1",
+      [ticketId, ownerId]
+    );
+    await pool.query("UPDATE harness_runs SET status = 'failed' WHERE id = $1", [run.id]);
+    await expect(
+      HarnessRunService.renewLease({ ticketId, runId: run.id, agentId, ttlSeconds: 60 })
     ).resolves.toBeNull();
   });
 });

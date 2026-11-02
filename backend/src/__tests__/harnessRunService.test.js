@@ -319,7 +319,10 @@ describe('HarnessRunService', () => {
       await expect(
         HarnessRunService.renewLease({ ticketId: 42, runId: RUN_ID, agentId: 7 })
       ).resolves.toEqual(lease);
-      expect(pool.query.mock.calls[0][0]).toContain('expires_at > NOW()');
+      const sql = pool.query.mock.calls[0][0];
+      expect(sql).toContain('expires_at > NOW()');
+      expect(sql).toContain("r.status = 'running'");
+      expect(sql).toContain('t.assigned_agent_id = a.owner_id');
     });
 
     it('returns null when renewing a lost lease', async () => {

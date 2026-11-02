@@ -140,6 +140,10 @@ public class ApiService {
         );
 
         if (response.hasError()) {
+            if (isFatalRunError(response)) {
+                throw new FatalRunException(
+                    "Harness run rejected: " + response.getError());
+            }
             throw new IOException("Failed to start harness run: " + response.getError());
         }
         return response.getData();
@@ -182,6 +186,10 @@ public class ApiService {
         );
 
         if (response.hasError()) {
+            if (isErrorCode(response, "NOT_FOUND") || isErrorCode(response, "CONFLICT")) {
+                throw new RunGoneException(
+                    "Harness run is no longer active: " + response.getError());
+            }
             throw new IOException("Failed to heartbeat harness run: " + response.getError());
         }
     }
@@ -277,9 +285,23 @@ public class ApiService {
         return response.getError() != null && code.equals(response.getError().getCode());
     }
 
+    /** A backend decision (409/403/400) that must stop the run immediately. */
+    private static boolean isFatalRunError(ApiResponse<?> response) {
+        return isErrorCode(response, "CONFLICT")
+            || isErrorCode(response, "FORBIDDEN")
+            || isErrorCode(response, "VALIDATION_ERROR");
+    }
+
     /** The run was reaped or finished while this agent was still working. */
     public static class RunGoneException extends IOException {
         public RunGoneException(String message) {
+            super(message);
+        }
+    }
+
+    /** The backend refused the run for an authorization/conflict reason. */
+    public static class FatalRunException extends IOException {
+        public FatalRunException(String message) {
             super(message);
         }
     }
