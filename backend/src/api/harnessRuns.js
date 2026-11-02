@@ -112,6 +112,55 @@ router.get('/runs/:runId', verifyTokenOrAgent, async (req, res, next) => {
   }
 });
 
+router.get('/agents/:agentId/runs', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const agentId = requireAgent(req);
+    if (String(agentId) !== String(req.params.agentId)) {
+      throw new ForbiddenError('Cannot list runs for another agent');
+    }
+
+    const runs = await HarnessRunService.listActiveRunsForAgent(agentId);
+    res.json({ success: true, data: runs });
+  } catch (error) {
+    logger.error('GET /harness/agents/:agentId/runs failed:', error);
+    next(error);
+  }
+});
+
+router.post('/runs/:runId/publish', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const agentId = requireAgent(req);
+    const run = await HarnessRunService.getRun(req.params.runId);
+    await assertCanReadRun(req, run);
+
+    const updated = await HarnessRunService.recordPublish(
+      req.params.runId,
+      agentId,
+      { headSha: req.body?.headSha, prUrl: req.body?.prUrl }
+    );
+
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    logger.error('POST /harness/runs/:runId/publish failed:', error);
+    next(error);
+  }
+});
+
+router.post('/runs/:runId/release-ticket', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const agentId = requireAgent(req);
+    const released = await HarnessRunService.releaseTicketForRun(
+      req.params.runId,
+      { agentId }
+    );
+
+    res.json({ success: true, data: { released: Boolean(released) } });
+  } catch (error) {
+    logger.error('POST /harness/runs/:runId/release-ticket failed:', error);
+    next(error);
+  }
+});
+
 router.get('/runs/:runId/checkpoints', verifyTokenOrAgent, async (req, res, next) => {
   try {
     const run = await HarnessRunService.getRun(req.params.runId);

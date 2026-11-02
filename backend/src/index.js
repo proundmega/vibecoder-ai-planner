@@ -139,7 +139,7 @@ if (process.env.NODE_ENV !== 'test') {
         ws.user = user;
         wss.emit('connection', ws, request);
       });
-    } catch (err) {
+    } catch {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
     }
@@ -154,7 +154,37 @@ if (process.env.NODE_ENV !== 'test') {
     });
   }, 300000);
 
-  gracefulShutdown(server, pool, [() => clearInterval(cleanupInterval)]);
+  // Reap expired harness leases and safely return their tickets to backlog.
+  // HARNESS_REAPER_INTERVAL_SECONDS=0 disables it (e.g. during rollout).
+  const HarnessReaper = require('./services/HarnessReaper');
+  const configuredReaperSeconds = Number(process.env.HARNESS_REAPER_INTERVAL_SECONDS ?? 60);
+  const reaperSeconds = Number.isFinite(configuredReaperSeconds)
+    ? configuredReaperSeconds
+    : 60;
+  const reaperIntervalMs = reaperSeconds > 0
+    ? Math.max(5, reaperSeconds) * 1000
+    : null;
+  const reapTick = () => {
+    HarnessReaper.runOnce().catch(err => {
+      logger.error('Harness reaper sweep failed:', err.message);
+    });
+  };
+  const reaperInterval = reaperIntervalMs
+    ? setInterval(reapTick, reaperIntervalMs)
+    : null;
+  if (reaperInterval) {
+    reaperInterval.unref();
+    reapTick();
+  } else {
+    logger.info('Harness reaper disabled (HARNESS_REAPER_INTERVAL_SECONDS=0)');
+  }
+
+  gracefulShutdown(server, pool, [
+    () => clearInterval(cleanupInterval),
+    () => {
+      if (reaperInterval) clearInterval(reaperInterval);
+    },
+  ]);
 }
 
 // Global unhandled exceptions and rejections

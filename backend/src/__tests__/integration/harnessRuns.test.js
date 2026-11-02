@@ -77,7 +77,9 @@ describe('HarnessRunService — PostgreSQL integration', () => {
       [ticketId, otherTicketId],
     ]);
     await pool.query(
-      "UPDATE tickets SET status = 'in_progress', assigned_agent_id = $2 WHERE id = $1",
+      `UPDATE tickets
+       SET status = 'in_progress', assigned_agent_id = $2, pr_url = NULL
+       WHERE id = $1`,
       [ticketId, ownerId]
     );
   });
@@ -245,6 +247,90 @@ describe('HarnessRunService — PostgreSQL integration', () => {
         ticketId, runId: run.id, agentId: otherAgentId, ttlSeconds: 60,
       })
     ).resolves.toBeNull();
+  });
+
+  test('publish evidence is stored while a run is active', async () => {
+    const run = await start({ branch: 'harness/publish-evidence' });
+
+    const updated = await HarnessRunService.recordPublish(run.id, agentId, {
+      headSha: 'abc123',
+    });
+    expect(updated.head_sha).toBe('abc123');
+
+    await HarnessRunService.recordPublish(run.id, agentId, {
+      prUrl: 'https://github.com/o/r/pull/9',
+    });
+    const stored = await HarnessRunService.getRun(run.id);
+    expect(stored.head_sha).toBe('abc123');
+    expect(stored.pr_url).toBe('https://github.com/o/r/pull/9');
+
+    await HarnessRunService.finishRun(run.id, { status: 'succeeded' });
+    await expect(
+      HarnessRunService.recordPublish(run.id, agentId, { headSha: 'later' })
+    ).rejects.toThrow('Active harness run not found');
+  });
+
+  test('startup recovery sees the latest checkpoint payload', async () => {
+    const run = await start({ branch: 'harness/recovery-list' });
+    await HarnessRunService.recordCheckpoint(run.id, 'publishing', {
+      headSha: 'abc123',
+    });
+
+    const runs = await HarnessRunService.listActiveRunsForAgent(agentId);
+    const active = runs.find((item) => item.id === run.id);
+    expect(active.last_checkpoint_step).toBe('publishing');
+    expect(active.last_checkpoint_payload).toEqual({ headSha: 'abc123' });
+    expect(active.ticket_status).toBe('in_progress');
+    expect(active.ticket_pr_url).toBeNull();
+  });
+
+  test('a reaped run releases an in-progress ticket with no PR', async () => {
+    const run = await start({ branch: 'harness/reap-release' });
+    await HarnessRunService.claimLease({
+      ticketId, runId: run.id, agentId, ttlSeconds: 1,
+    });
+    await pool.query(
+      "UPDATE harness_leases SET expires_at = NOW() - INTERVAL '1 second' WHERE ticket_id = $1",
+      [ticketId]
+    );
+    await HarnessRunService.reapExpiredLeases(50, 900);
+
+    const released = await HarnessRunService.releaseTicketForRun(run.id);
+    expect(released).not.toBeNull();
+    expect(released.status).toBe('backlog');
+    expect(released.assigned_agent_id).toBeNull();
+  });
+
+  test('a reaped run never resets a reviewed ticket with a PR', async () => {
+    const run = await start({ branch: 'harness/reap-review' });
+    await pool.query(
+      `UPDATE tickets
+       SET status = 'review', pr_url = 'https://github.com/o/r/pull/9'
+       WHERE id = $1`,
+      [ticketId]
+    );
+    await HarnessRunService.finishRun(run.id, { status: 'failed' });
+
+    await expect(
+      HarnessRunService.releaseTicketForRun(run.id)
+    ).resolves.toBeNull();
+
+    const stored = await pool.query('SELECT status, pr_url FROM tickets WHERE id = $1', [ticketId]);
+    expect(stored.rows[0].status).toBe('review');
+    expect(stored.rows[0].pr_url).toBe('https://github.com/o/r/pull/9');
+  });
+
+  test('an old failed run cannot release a ticket owned by a newer active run', async () => {
+    const first = await start({ branch: 'harness/old-run' });
+    await HarnessRunService.finishRun(first.id, { status: 'failed' });
+    await start({ branch: 'harness/new-run' });
+
+    await expect(
+      HarnessRunService.releaseTicketForRun(first.id)
+    ).resolves.toBeNull();
+
+    const stored = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
+    expect(stored.rows[0].status).toBe('in_progress');
   });
 
   test('renewal fails after the ticket is released or the run becomes terminal', async () => {

@@ -23,11 +23,14 @@ public record HarnessConfig(
     Duration maxDuration,
     List<String> verificationCommands,
     List<String> protectedPaths,
-    String modelOverride
+    String modelOverride,
+    String resumeMode
 ) {
 
     public static final String DEFAULT_MODE = "legacy";
     public static final String DEFAULT_BINARY = "opencode";
+    public static final String RESUME_MODE_RESTART = "restart";
+    public static final String RESUME_MODE_RESUME = "resume";
     public static final String DEFAULT_PROTECTED_PATHS =
         ".env*;**/.env*;Jenkinsfile;**/Jenkinsfile;.github/**;**/.github/**;**/secrets/**";
 
@@ -47,6 +50,8 @@ public record HarnessConfig(
         long maxMinutes = longValue(env, "HARNESS_MAX_DURATION_MINUTES", 45L);
 
         String model = value(env, "HARNESS_MODEL", "");
+        String resumeMode = value(env, "HARNESS_RESUME_MODE", RESUME_MODE_RESTART)
+            .toLowerCase();
 
         return new HarnessConfig(
             mode,
@@ -56,7 +61,8 @@ public record HarnessConfig(
             Duration.ofMinutes(maxMinutes),
             split(value(env, "HARNESS_VERIFY_COMMANDS", "")),
             split(value(env, "HARNESS_PROTECTED_PATHS", DEFAULT_PROTECTED_PATHS)),
-            model.isBlank() ? null : model
+            model.isBlank() ? null : model,
+            resumeMode
         );
     }
 
@@ -67,6 +73,10 @@ public record HarnessConfig(
     public void validate() {
         if (binary == null || binary.isBlank()) {
             throw new IllegalStateException("HARNESS_BIN must not be blank");
+        }
+        if (!RESUME_MODE_RESTART.equals(resumeMode) && !RESUME_MODE_RESUME.equals(resumeMode)) {
+            throw new IllegalStateException(
+                "HARNESS_RESUME_MODE must be one of: restart, resume");
         }
         requirePositive(startupTimeout, "HARNESS_STARTUP_TIMEOUT_MS");
         requirePositive(idleTimeout, "HARNESS_IDLE_TIMEOUT_MS");

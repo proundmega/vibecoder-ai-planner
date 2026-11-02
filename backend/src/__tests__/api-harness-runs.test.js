@@ -33,6 +33,9 @@ jest.mock('../services/HarnessRunService', () => ({
   claimLease: jest.fn(),
   renewLease: jest.fn(),
   releaseLease: jest.fn(),
+  listActiveRunsForAgent: jest.fn(),
+  recordPublish: jest.fn(),
+  releaseTicketForRun: jest.fn(),
 }));
 
 const HarnessRunService = require('../services/HarnessRunService');
@@ -345,6 +348,71 @@ describe('Harness run API', () => {
         .send({ runId: RUN_ID });
 
       expect(res.statusCode).toBe(404);
+    });
+  });
+
+  describe('startup recovery endpoints', () => {
+    it('lists active runs for the authenticated agent only', async () => {
+      HarnessRunService.listActiveRunsForAgent.mockResolvedValue([
+        { id: RUN_ID, status: 'running' },
+      ]);
+
+      const res = await request(app)
+        .get('/api/v1/harness/agents/7/runs')
+        .set('X-API-Key', 'agent-key');
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data).toEqual([{ id: RUN_ID, status: 'running' }]);
+      expect(HarnessRunService.listActiveRunsForAgent).toHaveBeenCalledWith(7);
+    });
+
+    it('refuses to list another agent\u2019s runs', async () => {
+      const res = await request(app)
+        .get('/api/v1/harness/agents/8/runs')
+        .set('X-API-Key', 'agent-key');
+
+      expect(res.statusCode).toBe(403);
+      expect(HarnessRunService.listActiveRunsForAgent).not.toHaveBeenCalled();
+    });
+
+    it('records publish evidence for the owning agent', async () => {
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7 });
+      HarnessRunService.recordPublish.mockResolvedValue({ id: RUN_ID, head_sha: 'abc123' });
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/publish`)
+        .set('X-API-Key', 'agent-key')
+        .send({ headSha: 'abc123' });
+
+      expect(res.statusCode).toBe(200);
+      expect(HarnessRunService.recordPublish).toHaveBeenCalledWith(
+        RUN_ID, 7, { headSha: 'abc123', prUrl: undefined }
+      );
+    });
+
+    it('releases a ticket through the guarded run-bound path', async () => {
+      HarnessRunService.releaseTicketForRun.mockResolvedValue({ id: 42 });
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/release-ticket`)
+        .set('X-API-Key', 'agent-key');
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data).toEqual({ released: true });
+      expect(HarnessRunService.releaseTicketForRun).toHaveBeenCalledWith(
+        RUN_ID, { agentId: 7 }
+      );
+    });
+
+    it('reports released=false when the guard refuses', async () => {
+      HarnessRunService.releaseTicketForRun.mockResolvedValue(null);
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/release-ticket`)
+        .set('X-API-Key', 'agent-key');
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data).toEqual({ released: false });
     });
   });
 

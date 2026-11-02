@@ -30,7 +30,8 @@ class OpenCodeClientTest {
             Duration.ofMinutes(45),
             List.of(),
             List.of(".env*"),
-            null
+            null,
+            "restart"
         );
     }
 
@@ -167,7 +168,7 @@ class OpenCodeClientTest {
         ).toString();
         HarnessConfig processConfig = new HarnessConfig(
             "opencode", javaBinary, Duration.ofSeconds(10), Duration.ofSeconds(5),
-            Duration.ofMinutes(5), List.of(), List.of(".env*"), null);
+            Duration.ofMinutes(5), List.of(), List.of(".env*"), null, "restart");
         ProviderSettings provider = new ProviderSettings(
             "opencode-go", "key", null, "beam-free", 4096);
         OpenCodeClient client = new OpenCodeClient(processConfig, provider, tempDir.resolve("proc"));

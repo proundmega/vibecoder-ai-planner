@@ -188,4 +188,44 @@ class ApiServiceHarnessTest {
         respond("/api/v1/harness/leases/42/renew", 500, error("INTERNAL_ERROR"));
         assertThrows(IOException.class, () -> api.renewHarnessLease(42L, "run-1", 60));
     }
+
+    @Test
+    void recoveryListsRunsThroughTheAgentScopedPath() throws Exception {
+        respond("/api/v1/harness/agents/7/runs", 200,
+            ok("[{\"id\":\"run-1\",\"status\":\"running\"}]"));
+
+        List<Map<String, Object>> runs = api.listActiveHarnessRuns(7L);
+
+        assertEquals(1, runs.size());
+        assertEquals("run-1", runs.get(0).get("id"));
+        RecordedRequest request = lastRequest();
+        assertEquals("GET", request.method());
+        assertEquals("/api/v1/harness/agents/7/runs", request.path());
+        assertEquals("test-agent-key", request.apiKey());
+    }
+
+    @Test
+    void publishEvidenceUsesTheRunPublishEndpoint() throws Exception {
+        respond("/api/v1/harness/runs/run-1/publish", 200, ok("{}"));
+
+        api.recordHarnessPublish("run-1", "abc123", null);
+
+        RecordedRequest request = lastRequest();
+        assertEquals("/api/v1/harness/runs/run-1/publish", request.path());
+        assertTrue(request.body().contains("\"headSha\":\"abc123\""));
+        assertFalse(request.body().contains("prUrl"));
+    }
+
+    @Test
+    void guardedTicketReleaseReturnsTheBackendBoolean() throws Exception {
+        respond("/api/v1/harness/runs/run-1/release-ticket", 200,
+            ok("{\"released\":true}"));
+        assertTrue(api.releaseHarnessTicket("run-1"));
+        assertEquals(
+            "/api/v1/harness/runs/run-1/release-ticket", lastRequest().path());
+
+        respond("/api/v1/harness/runs/run-1/release-ticket", 200,
+            ok("{\"released\":false}"));
+        assertFalse(api.releaseHarnessTicket("run-1"));
+    }
 }

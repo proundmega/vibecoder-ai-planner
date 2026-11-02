@@ -281,6 +281,68 @@ public class ApiService {
         return response.getData() != null;
     }
 
+    /**
+     * Active runs owned by this agent, used for startup recovery.
+     */
+    public List<Map<String, Object>> listActiveHarnessRuns(long agentId) throws IOException {
+        ApiResponse<List<Map<String, Object>>> response = executeGet(
+            baseUrl + "/harness/agents/" + agentId + "/runs",
+            new TypeReference<ApiResponse<List<Map<String, Object>>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to list active harness runs: " + response.getError());
+        }
+        return response.getData() != null ? response.getData() : Collections.emptyList();
+    }
+
+    /**
+     * Persist publish evidence before the terminal finish so recovery can adopt
+     * a run whose finish response was lost.
+     */
+    public void recordHarnessPublish(String runId, String headSha, String prUrl) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        if (headSha != null && !headSha.isBlank()) {
+            body.put("headSha", headSha);
+        }
+        if (prUrl != null && !prUrl.isBlank()) {
+            body.put("prUrl", prUrl);
+        }
+        if (body.isEmpty()) {
+            return;
+        }
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/publish",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to record harness publish: " + response.getError());
+        }
+    }
+
+    /**
+     * Return the ticket to backlog after recovery failed its run. The backend
+     * only releases when the ticket is still in_progress with no PR.
+     */
+    public boolean releaseHarnessTicket(String runId) throws IOException {
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/release-ticket",
+            Map.of(),
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to release harness ticket: " + response.getError());
+        }
+        Object released = response.getData() == null
+            ? null
+            : response.getData().get("released");
+        return Boolean.TRUE.equals(released) || "true".equals(String.valueOf(released));
+    }
+
     private static boolean isErrorCode(ApiResponse<?> response, String code) {
         return response.getError() != null && code.equals(response.getError().getCode());
     }

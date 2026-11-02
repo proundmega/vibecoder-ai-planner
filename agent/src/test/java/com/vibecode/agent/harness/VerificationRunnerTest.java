@@ -138,7 +138,7 @@ class VerificationRunnerTest {
         Files.writeString(tempDir.resolve("package.json"), "{\"scripts\":{\"test\":\"jest\"}}");
         HarnessConfig config = new HarnessConfig(
             "opencode", "opencode", Duration.ofSeconds(30), Duration.ofSeconds(30),
-            Duration.ofMinutes(45), List.of("make verify"), List.of(".env*"), null);
+            Duration.ofMinutes(45), List.of("make verify"), List.of(".env*"), null, "restart");
 
         VerificationRunner runner = new VerificationRunner(config);
 
@@ -213,7 +213,7 @@ class VerificationRunnerTest {
         Files.writeString(tempDir.resolve("pom.xml"), "<project/>");
         HarnessConfig config = new HarnessConfig(
             "opencode", "opencode", Duration.ofSeconds(30), Duration.ofSeconds(30),
-            Duration.ofMinutes(45), List.of("make verify"), List.of(".env*"), null);
+            Duration.ofMinutes(45), List.of("make verify"), List.of(".env*"), null, "restart");
 
         List<String> commands = new VerificationRunner(config).resolveCommands(tempDir);
 

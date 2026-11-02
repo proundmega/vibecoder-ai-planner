@@ -149,6 +149,217 @@ public final class HarnessTicketProcessor implements TicketWorker {
         return currentStep;
     }
 
+    /**
+     * Reconcile runs left active by a previous agent process.
+     *
+     * <p>A run with durable publish evidence (a PR URL, or a head sha plus an
+     * existing PR) is adopted as succeeded so the reviewed ticket is preserved.
+     * Everything else is failed and its ticket is released through the guarded
+     * backend path, which refuses reviewed tickets and tickets with a PR.</p>
+     *
+     * @return the number of runs reconciled
+     */
+    public int recoverActiveRuns() {
+        if (config.isDryRun()) {
+            return 0;
+        }
+        Long agentId = longValue(config.getAgentId());
+        if (agentId == null) {
+            log.warn("Cannot recover harness runs: AGENT_ID is not numeric");
+            return 0;
+        }
+
+        List<Map<String, Object>> runs;
+        try {
+            runs = apiService.listActiveHarnessRuns(agentId);
+        } catch (IOException | RuntimeException e) {
+            log.warn("Could not list active harness runs for startup recovery: {}", e.getMessage());
+            return 0;
+        }
+
+        int recovered = 0;
+        for (Map<String, Object> run : runs) {
+            try {
+                if (recoverRun(run)) {
+                    recovered++;
+                }
+            } catch (RuntimeException e) {
+                log.warn("Could not recover harness run {}: {}",
+                    run.get("id"), e.getMessage());
+            }
+        }
+        if (recovered > 0) {
+            log.info("Recovered {} active harness run(s) at startup", recovered);
+        }
+        return recovered;
+    }
+
+    private boolean recoverRun(Map<String, Object> run) {
+        String runId = textValue(run.get("id"));
+        Long ticketId = longValue(run.get("ticket_id"));
+        String branch = textValue(run.get("branch"));
+        String step = textValue(run.get("step"));
+        Map<String, Object> payload = mapValue(run.get("last_checkpoint_payload"));
+
+        String ticketStatus = textValue(run.get("ticket_status"));
+        String headSha = textValue(run.get("head_sha"));
+        if (headSha == null) {
+            headSha = textValue(payload.get("headSha"));
+        }
+        String prUrl = textValue(run.get("pr_url"));
+        if (prUrl == null) {
+            prUrl = textValue(payload.get("prUrl"));
+        }
+        if (prUrl == null) {
+            prUrl = textValue(run.get("ticket_pr_url"));
+        }
+
+        if (prUrl == null && isResumeMode() && headSha != null && branch != null
+            && ("publishing".equals(step) || "done".equals(step))) {
+            try {
+                prUrl = gitHubService.findPullRequestUrl(branch);
+            } catch (IOException | RuntimeException e) {
+                log.warn("Could not look up the PR for recovered run {}: {}",
+                    runId, e.getMessage());
+            }
+        }
+
+        if (prUrl != null) {
+            if (!finishRecoveredRun(runId, "succeeded", null, headSha, prUrl)) {
+                return false;
+            }
+            // Never move a done ticket back to review. A review ticket already
+            // has the right status; an in_progress ticket still needs adoption.
+            if (!"done".equals(ticketStatus)) {
+                updateTicketPrUrl(ticketId, prUrl);
+                if (!"review".equals(ticketStatus) && "in_progress".equals(ticketStatus)) {
+                    markReview(ticketId);
+                }
+            }
+            if (ticketId != null) {
+                postMessage(ticketId, "update",
+                    "Recovered a published harness run after an agent restart; PR: " + prUrl);
+            }
+            log.info("Adopted published harness run {} (PR {})", runId, prUrl);
+            return true;
+        }
+
+        boolean finished = finishRecoveredRun(
+            runId,
+            "failed",
+            "Agent restarted before the run finished; restarting cleanly",
+            null,
+            null
+        );
+        if (!finished) {
+            // Leave the run for the reaper; never release an unconfirmed run.
+            return false;
+        }
+
+        boolean released = releaseRecoveredTicket(runId);
+        if (ticketId != null) {
+            postMessage(ticketId, "update", released
+                ? "The previous harness run was interrupted by an agent restart; "
+                    + "the ticket was returned for a clean retry."
+                : "The previous harness run was interrupted by an agent restart; "
+                    + "leaving the ticket for operator recovery because it could not "
+                    + "be released safely.");
+        }
+        return true;
+    }
+
+    private boolean finishRecoveredRun(
+        String runId,
+        String status,
+        String error,
+        String headSha,
+        String prUrl
+    ) {
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                String terminal = apiService.finishHarnessRun(
+                    runId, status, error, headSha, prUrl);
+                if (terminal != null && !terminal.equals(status)) {
+                    log.warn("Recovered run {} was already terminal as '{}' (wanted '{}')",
+                        runId, terminal, status);
+                }
+                return true;
+            } catch (IOException | RuntimeException e) {
+                if (attempt == 3) {
+                    log.warn("Could not reconcile harness run {} during recovery: {}",
+                        runId, e.getMessage());
+                    return false;
+                }
+                sleepQuietly(250L * attempt);
+            }
+        }
+        return false;
+    }
+
+    private boolean releaseRecoveredTicket(String runId) {
+        try {
+            return apiService.releaseHarnessTicket(runId);
+        } catch (IOException | RuntimeException e) {
+            log.warn("Could not release the ticket for recovered run {}: {}",
+                runId, e.getMessage());
+            return false;
+        }
+    }
+
+    private void recordPublishSafely(String headSha, String prUrl) {
+        String runId = currentRunId;
+        if (runId == null) {
+            return;
+        }
+        try {
+            apiService.recordHarnessPublish(runId, headSha, prUrl);
+        } catch (IOException | RuntimeException e) {
+            log.warn("Could not persist publish evidence for run {}: {}",
+                runId, e.getMessage());
+        }
+    }
+
+    private boolean isResumeMode() {
+        return harnessConfig != null
+            && HarnessConfig.RESUME_MODE_RESUME.equals(harnessConfig.resumeMode());
+    }
+
+    private void updateTicketPrUrl(Long ticketId, String prUrl) {
+        if (ticketId == null || prUrl == null) {
+            return;
+        }
+        try {
+            apiService.updateTicketPrUrl(ticketId, prUrl);
+        } catch (IOException | RuntimeException e) {
+            log.warn("Could not restore PR URL on ticket {}: {}", ticketId, e.getMessage());
+        }
+    }
+
+    private static String textValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() || "null".equals(text) ? null : text;
+    }
+
+    private static Long longValue(Object value) {
+        String text = textValue(value);
+        if (text == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(text);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> mapValue(Object value) {
+        return value instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+    }
+
     @Override
     public void processTicket(Ticket ticket) {
         if (ticket == null || ticket.getId() == null) {
@@ -304,6 +515,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 }
                 String commitSha = workspace.commitAndPushStaged(
                     "feat: " + pickedUp.getTitle(), branchName);
+                recordPublishSafely(commitSha, null);
                 if (!assertLeaseHeld(pickedUp.getId())) {
                     return;
                 }
@@ -313,6 +525,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     branchName,
                     "main"
                 );
+                recordPublishSafely(null, prUrl);
 
                 // Post-publish bookkeeping must never discard a successful push/PR.
                 if (prUrl != null && !prUrl.isBlank()) {

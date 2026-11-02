@@ -156,7 +156,8 @@ closed), `HARNESS_PROTECTED_PATHS`, `HARNESS_MODEL`, `HARNESS_MAX_FILES`,
 `HARNESS_RETRY_PIN_ATTEMPTS`,
 `HARNESS_RETRY_BASE_DELAY_MS`, `HARNESS_RETRY_MAX_DELAY_MS`,
 `HARNESS_LEASE_SECONDS`, `HARNESS_HEARTBEAT_SECONDS`,
-`HARNESS_DURABILITY_REQUIRED`. Phase 1 is blocking
+`HARNESS_DURABILITY_REQUIRED`, `HARNESS_RESUME_MODE`,
+`HARNESS_REAPER_INTERVAL_SECONDS`. Phase 1 is blocking
 prompt mode and denies the `question` and `doom_loop` tools; autonomy and the
 human question loop are later phases.
 See `planning/fg-30-autonomous-coding-harness/`.

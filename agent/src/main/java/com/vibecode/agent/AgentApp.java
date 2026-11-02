@@ -245,6 +245,18 @@ public class AgentApp {
             log.warn("Could not register SIGINT handler: {}", e.getMessage());
         }
 
+        // Reconcile runs left active by a previous process before polling. A
+        // published run keeps its reviewed ticket; anything else is failed and
+        // returned only through the backend's guarded release path.
+        if (ticketWorker instanceof HarnessTicketProcessor harnessWorker) {
+            try {
+                int recovered = harnessWorker.recoverActiveRuns();
+                log.info("Harness startup recovery reconciled {} run(s)", recovered);
+            } catch (RuntimeException e) {
+                log.warn("Harness startup recovery failed: {}", e.getMessage());
+            }
+        }
+
         heartbeatScheduler = Executors.newScheduledThreadPool(1);
         heartbeatScheduler.scheduleAtFixedRate(() -> {
             try {

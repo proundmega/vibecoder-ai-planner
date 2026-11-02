@@ -1,6 +1,6 @@
 # 03_ARCHITECT_IMPLEMENTATION.md - Durable Harness Execution (fg-33)
 
-**Status:** Slice 1 implemented
+**Status:** Slice 2 implemented (stacked on slice 1)
 **Date:** 2026-11-02
 **Depends on:** fg-30 Phase 1
 
@@ -70,6 +70,37 @@ Delivered:
   - `HARNESS_DURABILITY_REQUIRED=true` makes the initial run creation fail
     closed too. It defaults to `false` for rollout.
 
+## Slice 2 scope
+
+Recovery and safe reaping on top of the slice 1 lifecycle:
+
+- **Scheduled reaper.** `HarnessReaper` runs from the API process every
+  `HARNESS_REAPER_INTERVAL_SECONDS` (default 60, `0` disables). Each sweep calls
+  `reapExpiredLeases` and then releases eligible tickets.
+- **Guarded ticket release.** `HarnessRunService.releaseTicketForRun` is the only
+  recovery path that returns a ticket to backlog. It requires a terminal
+  (`failed`/`dead_letter`) run, the ticket still `in_progress`, `pr_url IS NULL`,
+  and no newer active run for that ticket. A lost success-finish therefore never
+  resets a reviewed ticket.
+- **Agent startup recovery.** `HarnessTicketProcessor.recoverActiveRuns()` lists
+  this agent's active runs at startup (with the latest checkpoint payload). It
+  adopts a run that has durable publish evidence (PR URL, or head sha plus an
+  existing PR) as `succeeded`, restores the ticket PR URL/review state, and
+  never releases it. Other runs are failed and released through the guarded
+  path; if the finish cannot be confirmed the run is left for the reaper.
+- **Durable publish evidence.** `POST /harness/runs/:runId/publish` stores
+  `head_sha` immediately after the push and `pr_url` immediately after PR
+  creation, before the terminal finish. Recovery can therefore distinguish
+  "pushed/PR exists" from "crashed before publish".
+- **Resume policy.** `HARNESS_RESUME_MODE=restart` (default) always fails and
+  requeues interrupted runs. `resume` additionally tries to adopt a run whose
+  last checkpoint is `publishing`/`done` and whose head sha has an existing PR.
+  In-memory OpenCode sessions are still restarted from a clean clone; resume
+  preserves published work, not a live prompt session.
+- New agent-scoped routes: `GET /harness/agents/:agentId/runs`,
+  `POST /harness/runs/:runId/publish`,
+  `POST /harness/runs/:runId/release-ticket`.
+
 ## Decisions
 
 - **Leases live in Postgres** (open question 1). They share the run audit trail;
@@ -81,14 +112,17 @@ Delivered:
   and `verifying` are written after those steps complete; `publishing` is
   written immediately before the publish attempt and `done` after the PR.
   Steps cannot move backwards, and heartbeats carry only `agent_step`.
-- **Resume is not enabled yet.** `HARNESS_RESUME_MODE` remains unimplemented;
-  the reaper fails stale runs and the ticket is returned for a clean retry once
-  the reaper caller releases it.
+- **Resume preserves published work only.** `HARNESS_RESUME_MODE=resume`
+  adopts a run once a head sha/PR exists; OpenCode sessions and uncommitted
+  workspaces cannot be resumed across a process restart, so every other run
+  restarts from a clean clone. `restart` is the default because it has no
+  adoption ambiguity.
 - **One active run per ticket is enforced** by the partial unique index plus
   the lease, and orphaned runs are reaped by heartbeat age.
-- **Liveness dependency:** the reaper is implemented but not scheduled yet.
-  Until slice 2 wires it, a stuck run/unique-index conflict needs the reaper
-  endpoint/manual recovery before the ticket can run again.
+- **The reaper is scheduled by the API process.** It is safe to run from
+  multiple instances: `FOR UPDATE SKIP LOCKED` elects one sweeper per row and
+  release is guarded and idempotent. Set the interval to `0` only when
+  operating with a separate external cron.
 
 ## Configuration
 
@@ -98,6 +132,8 @@ Delivered:
 | `HARNESS_HEARTBEAT_SECONDS` | `30` | Heartbeat + lease renewal interval (≤ lease/2) |
 | `HARNESS_DURABILITY_REQUIRED` | `false` | Fail closed when the initial run cannot be persisted |
 | `HARNESS_MAX_ATTEMPTS` | `3` | Existing retry backoff (attempt persisted on the run) |
+| `HARNESS_RESUME_MODE` | `restart` | Startup recovery: `restart` or `resume` (adopt published evidence) |
+| `HARNESS_REAPER_INTERVAL_SECONDS` | `60` | Scheduled reaper sweep interval; `0` disables it |
 
 ## Tests
 
@@ -115,19 +151,22 @@ Delivered:
 - `HarnessTicketProcessorTest` verifies run persistence, lease claim failure,
   lease-loss publishing refusal, transient heartbeat retry, finish retry and
   all checkpoints.
+- `harnessReaper.test.js` covers guarded release, `run_failed=false` skips,
+  release refusals and per-row failure isolation.
+- `HarnessTicketProcessorTest` also covers startup recovery: interrupted runs
+  fail and release, published runs are adopted without release, `resume` finds
+  an existing PR from publish evidence, and an unconfirmed finish leaves the run
+  for the reaper.
 - `ApiServiceHarnessTest` exercises the real HTTP client against a local
-  `HttpServer`: start/checkpoint/heartbeat/finish/lease paths, auth header,
-  request bodies, 401 fatal classification and 409-vs-transient lease errors.
+  `HttpServer`: start/checkpoint/heartbeat/finish/lease/publish/recovery paths,
+  auth header, request bodies, 401 fatal classification and 409-vs-transient
+  lease errors.
+- The Postgres integration suite also verifies publish evidence, the latest
+  checkpoint join, guarded reaping (in-progress vs reviewed/PR tickets) and that
+  an old failed run cannot release a ticket owned by a newer active run.
 
 ## Remaining for fg-33
 
-1. Agent startup recovery (`AgentApp`) using `listActiveRunsForAgent`.
-2. Resume/restart policy per checkpoint (`HARNESS_RESUME_MODE`).
-3. Scheduled reaper wiring + ticket release. Release only when
-   `run_failed=true` **and** the ticket is still `in_progress` with no
-   `pr_url`; a lost success-finish can leave a failed run behind a reviewed
-   ticket with a real PR, which must not be returned to backlog.
-4. Idempotent publish: branch/PR detection and `head_sha`/`pr_url` storage.
-5. Workspace registry/retention cleanup.
-6. Crash-injection tests, metrics, alerts and manual recovery runbook.
-7. Dead-letter/adoption flow for operators.
+1. Workspace registry/retention cleanup.
+2. Crash-injection tests, metrics, alerts and manual recovery runbook.
+3. Dead-letter/adoption flow for operators.

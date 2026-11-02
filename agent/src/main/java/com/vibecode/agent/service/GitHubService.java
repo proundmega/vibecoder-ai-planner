@@ -184,9 +184,23 @@ public class GitHubService {
         return null;
     }
 
+    /**
+     * Find an existing PR for a branch. Used by startup recovery to adopt a
+     * publish whose finish call was lost.
+     */
+    public String findPullRequestUrl(String headBranch) throws IOException {
+        return getExistingPRUrl(headBranch, null);
+    }
+
     private String getExistingPRUrl(String headBranch, String baseBranch) throws IOException {
+        String url = API_BASE + "/repos/" + owner + "/" + repo
+            + "/pulls?head=" + owner + ":" + headBranch + "&state=all";
+        if (baseBranch != null && !baseBranch.isBlank()) {
+            url += "&base=" + baseBranch;
+        }
+
         Request request = new Request.Builder()
-            .url(API_BASE + "/repos/" + owner + "/" + repo + "/pulls?head=" + owner + ":" + headBranch + "&base=" + baseBranch + "&state=all")
+            .url(url)
             .header("Authorization", "token " + authToken)
             .header("Accept", "application/vnd.github+json")
             .get()

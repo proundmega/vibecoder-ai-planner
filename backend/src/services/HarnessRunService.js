@@ -172,12 +172,29 @@ class HarnessRunService {
     return result.rows[0] || null;
   }
 
+  /**
+   * Active runs owned by an agent, including the latest checkpoint payload so
+   * startup recovery can see durable publish evidence (head sha / PR URL).
+   */
   async listActiveRunsForAgent(agentId) {
     const id = positiveInteger(agentId, 'agentId');
     const result = await pool.query(
-      `SELECT * FROM harness_runs
-       WHERE agent_id = $1 AND status = 'running'
-       ORDER BY started_at ASC`,
+      `SELECT r.*,
+              t.status AS ticket_status,
+              t.pr_url AS ticket_pr_url,
+              c.step AS last_checkpoint_step,
+              c.payload AS last_checkpoint_payload
+       FROM harness_runs r
+       JOIN tickets t ON t.id = r.ticket_id
+       LEFT JOIN LATERAL (
+         SELECT step, payload
+         FROM harness_checkpoints
+         WHERE run_id = r.id
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1
+       ) c ON TRUE
+       WHERE r.agent_id = $1 AND r.status = 'running'
+       ORDER BY r.started_at ASC`,
       [id]
     );
     return result.rows;
@@ -298,6 +315,80 @@ class HarnessRunService {
       return existing;
     }
     throw new ConflictError('Harness run is not active');
+  }
+
+  /**
+   * Persist publish evidence while the run is still active. Writing the head
+   * sha immediately after the push and the PR URL immediately after creation
+   * lets startup recovery adopt a publish whose finish call was lost.
+   */
+  async recordPublish(runId, agentId, { headSha = null, prUrl = null } = {}) {
+    const id = requiredUuid(runId, 'runId');
+    const normalisedAgentId = positiveInteger(agentId, 'agentId');
+    const normalisedHeadSha = headSha === null || headSha === undefined
+      ? null
+      : requiredString(headSha, 'headSha');
+    const normalisedPrUrl = prUrl === null || prUrl === undefined
+      ? null
+      : requiredString(prUrl, 'prUrl');
+
+    if (normalisedHeadSha === null && normalisedPrUrl === null) {
+      throw new ValidationError('headSha or prUrl is required');
+    }
+
+    const result = await pool.query(
+      `UPDATE harness_runs
+       SET head_sha = COALESCE($3, head_sha),
+           pr_url = COALESCE($4, pr_url),
+           heartbeat_at = NOW()
+       WHERE id = $1 AND agent_id = $2 AND status = 'running'
+       RETURNING *`,
+      [id, normalisedAgentId, normalisedHeadSha, normalisedPrUrl]
+    );
+
+    if (result.rows.length === 0) {
+      throw new NotFoundError('Active harness run not found');
+    }
+    return result.rows[0];
+  }
+
+  /**
+   * Return a ticket to backlog after its run failed, but only when it is safe:
+   * the run is terminal, no newer run is active, the ticket is still
+   * in_progress and it has no PR. This is the reaper/recovery guard that stops
+   * a lost success-finish from resetting a reviewed ticket.
+   */
+  async releaseTicketForRun(runId, { agentId = null } = {}) {
+    const id = requiredUuid(runId, 'runId');
+    const normalisedAgentId = agentId === null || agentId === undefined
+      ? null
+      : positiveInteger(agentId, 'agentId');
+
+    const result = await pool.query(
+      `WITH run AS (
+         SELECT r.id, r.ticket_id
+         FROM harness_runs r
+         WHERE r.id = $1
+           AND r.status IN ('failed', 'dead_letter')
+           AND ($2::bigint IS NULL OR r.agent_id = $2)
+       )
+       UPDATE tickets t
+       SET assigned_agent_id = NULL,
+           locked_at = NULL,
+           status = 'backlog'
+       FROM run
+       WHERE t.id = run.ticket_id
+         AND t.status = 'in_progress'
+         AND t.pr_url IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM harness_runs other
+           WHERE other.ticket_id = run.ticket_id AND other.status = 'running'
+         )
+       RETURNING t.*`,
+      [id, normalisedAgentId]
+    );
+
+    return result.rows[0] || null;
   }
 
   /**

@@ -102,7 +102,7 @@ Cross-cutting plans for the autonomous coding harness. See `planning/HARNESS_ROA
 
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|
-| **fg-33** | `fg-33-durable-harness-execution` | P0 | fg-30 Phase 1 | **Slice 1 in review (PR #110)** — persist runs/checkpoints/leases; crash recovery, stale-run reaper, idempotent publish, workspace cleanup. |
+| **fg-33** | `fg-33-durable-harness-execution` | P0 | fg-30 Phase 1 | **Slice 2 in review** — slice 1 persisted runs/checkpoints/leases; slice 2 adds scheduled guarded reaping, startup recovery, `HARNESS_RESUME_MODE` and durable publish evidence. Remaining: workspace retention, metrics/runbook, dead-letter adoption. |
 | **fg-34** | `fg-34-harness-sandbox` | P0 | fg-30 Phase 1 | Isolate repo code: limits, read-only rootfs, no host socket, egress allowlist, secretless execution, supply-chain checks. |
 | **fg-35** | `fg-35-github-app-credentials` | P0 | fg-30 Phase 1 | Replace long-lived PATs with repo-scoped GitHub App installation tokens, short TTL, rotation and audit. |
 | **fg-36** | `fg-36-merge-lifecycle` | P1 | fg-31, fg-32 | Default/base branch detection, mergeability, update/rebase, conflict worker, CI gate, merge queue, post-merge rollback. |

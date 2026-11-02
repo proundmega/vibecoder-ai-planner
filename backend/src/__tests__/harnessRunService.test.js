@@ -112,7 +112,11 @@ describe('HarnessRunService', () => {
       pool.query.mockResolvedValueOnce({ rows });
 
       await expect(HarnessRunService.listActiveRunsForAgent(7)).resolves.toEqual(rows);
-      expect(pool.query.mock.calls[0][0]).toContain("status = 'running'");
+      const sql = pool.query.mock.calls[0][0];
+      expect(sql).toContain("status = 'running'");
+      expect(sql).toContain('last_checkpoint_payload');
+      expect(sql).toContain('ticket_status');
+      expect(sql).toContain('LEFT JOIN LATERAL');
     });
 
     it('lists checkpoints in creation order', async () => {
@@ -358,6 +362,64 @@ describe('HarnessRunService', () => {
       await expect(HarnessRunService.reapExpiredLeases(0)).rejects.toThrow(
         'limit must be an integer between 1 and 1000'
       );
+    });
+
+    it('releases a reaped ticket only through the guarded update', async () => {
+      const ticket = { id: 42, status: 'backlog', assigned_agent_id: null };
+      pool.query.mockResolvedValueOnce({ rows: [ticket] });
+
+      await expect(
+        HarnessRunService.releaseTicketForRun(RUN_ID)
+      ).resolves.toEqual(ticket);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain("r.status IN ('failed', 'dead_letter')");
+      expect(sql).toContain("t.status = 'in_progress'");
+      expect(sql).toContain('t.pr_url IS NULL');
+      expect(sql).toContain('NOT EXISTS');
+      expect(params).toEqual([RUN_ID, null]);
+    });
+
+    it('scopes an agent-initiated release to its own run', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      await expect(
+        HarnessRunService.releaseTicketForRun(RUN_ID, { agentId: 7 })
+      ).resolves.toBeNull();
+      expect(pool.query.mock.calls[0][1]).toEqual([RUN_ID, 7]);
+    });
+  });
+
+  describe('recordPublish', () => {
+    it('stores head sha and PR URL while the run is active', async () => {
+      const row = { id: RUN_ID, head_sha: 'abc123', status: 'running' };
+      pool.query.mockResolvedValueOnce({ rows: [row] });
+
+      await expect(
+        HarnessRunService.recordPublish(RUN_ID, 7, { headSha: ' abc123 ' })
+      ).resolves.toEqual(row);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain('head_sha = COALESCE');
+      expect(sql).toContain('pr_url = COALESCE');
+      expect(sql).toContain("status = 'running'");
+      expect(sql).toContain('agent_id = $2');
+      expect(params).toEqual([RUN_ID, 7, 'abc123', null]);
+    });
+
+    it('requires head sha or PR URL', async () => {
+      await expect(
+        HarnessRunService.recordPublish(RUN_ID, 7, {})
+      ).rejects.toThrow('headSha or prUrl is required');
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+
+    it('rejects a publish update for a non-active run', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      await expect(
+        HarnessRunService.recordPublish(RUN_ID, 7, { prUrl: 'https://example/pull/1' })
+      ).rejects.toThrow('Active harness run not found');
     });
   });
 });

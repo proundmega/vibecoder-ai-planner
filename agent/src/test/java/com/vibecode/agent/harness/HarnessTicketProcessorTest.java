@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -53,7 +54,7 @@ class HarnessTicketProcessorTest {
     private final HarnessConfig harnessConfig = new HarnessConfig(
         "opencode", "opencode", Duration.ofSeconds(30), Duration.ofSeconds(30),
         Duration.ofMinutes(45), List.of("npm test"),
-        List.of(".env*", ".github/workflows/**", "**/secrets/**"), null);
+        List.of(".env*", ".github/workflows/**", "**/secrets/**"), null, "restart");
 
     @BeforeEach
     void setUp() throws Exception {
@@ -109,6 +110,147 @@ class HarnessTicketProcessorTest {
             verificationRunner,
             new PublishingGuard(harnessConfig.protectedPaths())
         );
+    }
+
+    private HarnessTicketProcessor processorWithResumeMode() {
+        HarnessConfig resumeConfig = new HarnessConfig(
+            "opencode", "opencode", Duration.ofSeconds(30), Duration.ofSeconds(30),
+            Duration.ofMinutes(45), List.of("npm test"),
+            List.of(".env*", ".github/workflows/**", "**/secrets/**"), null, "resume");
+        return new HarnessTicketProcessor(
+            config, apiService, provider, gitHubService, "ghp_token",
+            resumeConfig,
+            repoName -> workspace,
+            ignored -> harness,
+            planningDocFetcher,
+            verificationRunner,
+            new PublishingGuard(resumeConfig.protectedPaths())
+        );
+    }
+
+    @Test
+    void startupRecoveryFailsInterruptedRunsAndReleasesThroughTheGuard() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-old",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "step", "prompting",
+            "last_checkpoint_payload", Map.of()
+        )));
+        when(apiService.finishHarnessRun(
+            eq("run-old"), eq("failed"), anyString(), isNull(), isNull()))
+            .thenReturn("failed");
+        when(apiService.releaseHarnessTicket("run-old")).thenReturn(true);
+
+        assertEquals(1, processor.recoverActiveRuns());
+
+        verify(apiService).finishHarnessRun(
+            eq("run-old"), eq("failed"), anyString(), isNull(), isNull());
+        verify(apiService).releaseHarnessTicket("run-old");
+        verify(apiService, never()).finishHarnessRun(
+            eq("run-old"), eq("succeeded"), any(), any(), any());
+    }
+
+    @Test
+    void startupRecoveryAdoptsAPublishedRunAndKeepsTheTicketInReview() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-old",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "step", "done",
+            "ticket_status", "in_progress",
+            "head_sha", "abc1234",
+            "pr_url", "https://github.com/owner/repo/pull/7"
+        )));
+        when(apiService.finishHarnessRun(
+            "run-old", "succeeded", null, "abc1234",
+            "https://github.com/owner/repo/pull/7"))
+            .thenReturn("succeeded");
+
+        assertEquals(1, processor.recoverActiveRuns());
+
+        verify(apiService).updateTicketPrUrl(
+            1L, "https://github.com/owner/repo/pull/7");
+        verify(apiService).updateTicketStatus(1L, "review");
+        verify(apiService, never()).releaseHarnessTicket("run-old");
+        verify(apiService, never()).releaseTicket(1L);
+        verify(apiService, never()).finishHarnessRun(
+            eq("run-old"), eq("failed"), any(), any(), any());
+    }
+
+    @Test
+    void resumeModeFindsTheExistingPrForAPublishingRun() throws Exception {
+        HarnessTicketProcessor resumeProcessor = processorWithResumeMode();
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-old",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "step", "publishing",
+            "ticket_status", "in_progress",
+            "head_sha", "abc1234",
+            "last_checkpoint_payload", Map.of()
+        )));
+        when(gitHubService.findPullRequestUrl("vibecode/ticket-1-add-filtering"))
+            .thenReturn("https://github.com/owner/repo/pull/7");
+        when(apiService.finishHarnessRun(
+            "run-old", "succeeded", null, "abc1234",
+            "https://github.com/owner/repo/pull/7"))
+            .thenReturn("succeeded");
+
+        assertEquals(1, resumeProcessor.recoverActiveRuns());
+
+        verify(gitHubService).findPullRequestUrl("vibecode/ticket-1-add-filtering");
+        verify(apiService).finishHarnessRun(
+            "run-old", "succeeded", null, "abc1234",
+            "https://github.com/owner/repo/pull/7");
+        verify(apiService, never()).releaseHarnessTicket("run-old");
+    }
+
+    @Test
+    void startupRecoveryNeverRegressesADoneTicket() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-old",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "step", "done",
+            "ticket_status", "done",
+            "pr_url", "https://github.com/owner/repo/pull/7"
+        )));
+        when(apiService.finishHarnessRun(
+            "run-old", "succeeded", null, null,
+            "https://github.com/owner/repo/pull/7"))
+            .thenReturn("succeeded");
+
+        assertEquals(1, processor.recoverActiveRuns());
+
+        verify(apiService, never()).updateTicketStatus(any(), anyString());
+        verify(apiService, never()).updateTicketPrUrl(any(), anyString());
+        verify(apiService, never()).releaseHarnessTicket("run-old");
+    }
+
+    @Test
+    void startupRecoveryLeavesTheRunWhenFinishCannotBeConfirmed() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-old",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "step", "prompting"
+        )));
+        when(apiService.finishHarnessRun(
+            eq("run-old"), eq("failed"), anyString(), isNull(), isNull()))
+            .thenThrow(new IOException("backend down"))
+            .thenThrow(new IOException("backend down"))
+            .thenThrow(new IOException("backend down"));
+
+        assertEquals(0, processor.recoverActiveRuns());
+
+        verify(apiService, never()).releaseHarnessTicket("run-old");
+        verify(apiService, never()).releaseTicket(1L);
     }
 
     private Ticket ticket() {
