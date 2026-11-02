@@ -1,15 +1,21 @@
 const HarnessRunService = require('./HarnessRunService');
 const logger = require('../utils/logger');
 
+const DEFAULT_RECONCILE_LIMIT = 50;
+
 /**
  * Scheduled reaper for durable harness runs (fg-33 slice 2).
  *
- * Expiring a lease is not enough: the ticket must also become runnable again.
- * Releasing it is guarded (see HarnessRunService.releaseTicketForRun) so a run
- * that actually published is never reset to backlog:
- *   - only a run this sweep failed (`run_failed=true`) can trigger release;
- *   - the ticket must still be `in_progress` with no `pr_url`;
- *   - no newer run may be active for the ticket.
+ * Reaping a lease and reconciling the ticket are separate statements. If the
+ * process dies in between, the run is terminal with no lease, so the next sweep
+ * would never see it. Every sweep therefore does both:
+ *   1. expire stale leases / orphaned runs;
+ *   2. reconcile the affected runs and any other terminal run whose
+ *      `reconciled_at` marker is still unset.
+ *
+ * Reconciliation itself is guarded: a run with a stored PR URL is adopted into
+ * the ticket, and only a failed run with no PR, an in-progress ticket, no
+ * ticket PR and no newer active run may be returned to backlog.
  */
 class HarnessReaper {
   async runOnce({ limit, orphanAfterSeconds } = {}) {
@@ -17,39 +23,54 @@ class HarnessReaper {
     const summary = {
       reaped: reaped.length,
       released: 0,
+      adopted: 0,
+      reconciled: 0,
       skipped: [],
     };
 
-    for (const row of reaped) {
-      if (!row.run_failed) {
-        summary.skipped.push({ ticketId: row.ticket_id, runId: row.run_id, reason: 'run_not_failed' });
-        continue;
+    const seen = new Set();
+    const reconcile = async (runId, ticketId) => {
+      if (!runId || seen.has(runId)) {
+        return;
       }
+      seen.add(runId);
 
       try {
-        const released = await HarnessRunService.releaseTicketForRun(row.run_id);
-        if (released) {
-          summary.released += 1;
-        } else {
-          summary.skipped.push({
-            ticketId: row.ticket_id,
-            runId: row.run_id,
-            reason: 'ticket_not_releasable',
-          });
+        const result = await HarnessRunService.reconcileRun(runId);
+        if (!result) {
+          summary.skipped.push({ ticketId, runId, reason: 'run_not_terminal' });
+          return;
         }
+        if (result.released) summary.released += 1;
+        if (result.adopted) summary.adopted += 1;
+        if (result.marked) summary.reconciled += 1;
       } catch (error) {
-        summary.skipped.push({
-          ticketId: row.ticket_id,
-          runId: row.run_id,
-          reason: 'release_failed',
-        });
-        logger.error(`Harness reaper release failed for ticket ${row.ticket_id}: ${error.message}`);
+        summary.skipped.push({ ticketId, runId, reason: 'reconcile_failed' });
+        logger.error(`Harness reaper reconcile failed for run ${runId}: ${error.message}`);
       }
+    };
+
+    for (const row of reaped) {
+      await reconcile(row.run_id, row.ticket_id);
     }
 
-    if (summary.reaped > 0) {
+    let pending = [];
+    try {
+      pending = await HarnessRunService.listTerminalRunsForReconcile(
+        limit === undefined ? DEFAULT_RECONCILE_LIMIT : limit
+      );
+    } catch (error) {
+      logger.error(`Harness reaper could not list pending terminal runs: ${error.message}`);
+    }
+    for (const runId of pending) {
+      await reconcile(runId, null);
+    }
+
+    if (summary.reaped > 0 || summary.reconciled > 0) {
       logger.info(
-        `Harness reaper: reaped=${summary.reaped} released=${summary.released} skipped=${summary.skipped.length}`
+        `Harness reaper: reaped=${summary.reaped} reconciled=${summary.reconciled}`
+          + ` released=${summary.released} adopted=${summary.adopted}`
+          + ` skipped=${summary.skipped.length}`
       );
     }
     return summary;
@@ -58,3 +79,4 @@ class HarnessReaper {
 
 module.exports = new HarnessReaper();
 module.exports.HarnessReaper = HarnessReaper;
+module.exports.DEFAULT_RECONCILE_LIMIT = DEFAULT_RECONCILE_LIMIT;

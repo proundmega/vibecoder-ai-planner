@@ -76,18 +76,28 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
 
 - **Scheduled reaper.** `HarnessReaper` runs from the API process every
   `HARNESS_REAPER_INTERVAL_SECONDS` (default 60, `0` disables). Each sweep calls
-  `reapExpiredLeases` and then releases eligible tickets.
+  `reapExpiredLeases`, then reconciles every reaped run plus any terminal run
+  whose `reconciled_at` marker is still unset.
 - **Guarded ticket release.** `HarnessRunService.releaseTicketForRun` is the only
   recovery path that returns a ticket to backlog. It requires a terminal
-  (`failed`/`dead_letter`) run, the ticket still `in_progress`, `pr_url IS NULL`,
-  and no newer active run for that ticket. A lost success-finish therefore never
-  resets a reviewed ticket.
+  (`failed`/`dead_letter`) run **with no run-level PR**, the ticket still
+  `in_progress`, `pr_url IS NULL`, and no newer active run for that ticket.
+- **Terminal-run reconciliation.** `046_harness_run_reconciliation.sql` adds a
+  `reconciled_at` marker and a partial index for pending terminal runs.
+  `reconcileRun` adopts a run with a stored
+  PR URL into the ticket (in_progress -> review, never done -> review) or
+  releases a failed run, then sets `reconciled_at`. `reapExpiredLeases` marks a
+  run `succeeded` when it already has a PR URL, and a sweep of terminal runs
+  with `reconciled_at IS NULL` recovers the crash gap between reaping and
+  releasing. A lost success-finish therefore never resets a reviewed ticket and
+  cannot strand an in-progress one.
 - **Agent startup recovery.** `HarnessTicketProcessor.recoverActiveRuns()` lists
   this agent's active runs at startup (with the latest checkpoint payload). It
   adopts a run that has durable publish evidence (PR URL, or head sha plus an
   existing PR) as `succeeded`, restores the ticket PR URL/review state, and
   never releases it. Other runs are failed and released through the guarded
-  path; if the finish cannot be confirmed the run is left for the reaper.
+  path; if the finish cannot be confirmed the run is left for terminal-run
+  reconciliation.
 - **Durable publish evidence.** `POST /harness/runs/:runId/publish` stores
   `head_sha` immediately after the push and `pr_url` immediately after PR
   creation, before the terminal finish. Recovery can therefore distinguish
@@ -144,10 +154,12 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   ownership, JWT permission/project scoping, checkpoints, heartbeats, finish
   and lease conflicts.
 - `backend/src/__tests__/integration/harnessRuns.test.js` executes against
-  PostgreSQL (11 tests): assignment authorization, sequential and concurrent
+  PostgreSQL (23 tests): assignment authorization, sequential and concurrent
   one-active-run races, unexpired lease blocking, expired-lease reaping, orphan
   reaping, idempotent finish + lease release, checkpoint ordering/context,
-  wrong-agent lease claims and renewal after release/terminal runs.
+  publish evidence, guarded reaping/reconciliation (including reaped published
+  runs and interrupted releases), wrong-agent lease claims and renewal after
+  release/terminal runs.
 - `HarnessTicketProcessorTest` verifies run persistence, lease claim failure,
   lease-loss publishing refusal, transient heartbeat retry, finish retry and
   all checkpoints.
@@ -162,8 +174,9 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   auth header, request bodies, 401 fatal classification and 409-vs-transient
   lease errors.
 - The Postgres integration suite also verifies publish evidence, the latest
-  checkpoint join, guarded reaping (in-progress vs reviewed/PR tickets) and that
-  an old failed run cannot release a ticket owned by a newer active run.
+  checkpoint join, run-level PR release guards, reaped-published adoption,
+  terminal-run reconciliation by the reaper, and that an old failed run cannot
+  release a ticket owned by a newer active run.
 
 ## Remaining for fg-33
 

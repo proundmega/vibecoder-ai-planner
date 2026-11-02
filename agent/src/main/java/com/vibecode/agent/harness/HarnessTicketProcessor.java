@@ -72,6 +72,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private volatile String currentStep;
     private volatile String currentRunId;
     private volatile boolean leaseLost;
+    private volatile boolean published;
     private volatile ScheduledExecutorService heartbeatExecutor;
     private volatile String pendingTerminalStatus;
     private volatile String pendingTerminalMessage;
@@ -174,7 +175,9 @@ public final class HarnessTicketProcessor implements TicketWorker {
             runs = apiService.listActiveHarnessRuns(agentId);
         } catch (IOException | RuntimeException e) {
             log.warn("Could not list active harness runs for startup recovery: {}", e.getMessage());
-            return 0;
+            // Retry from the next poll cycle; the backend reaper still owns
+            // terminal-run reconciliation, so nothing is released unsafely.
+            return -1;
         }
 
         int recovered = 0;
@@ -210,10 +213,6 @@ public final class HarnessTicketProcessor implements TicketWorker {
         if (prUrl == null) {
             prUrl = textValue(payload.get("prUrl"));
         }
-        if (prUrl == null) {
-            prUrl = textValue(run.get("ticket_pr_url"));
-        }
-
         if (prUrl == null && isResumeMode() && headSha != null && branch != null
             && ("publishing".equals(step) || "done".equals(step))) {
             try {
@@ -225,16 +224,28 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
 
         if (prUrl != null) {
-            if (!finishRecoveredRun(runId, "succeeded", null, headSha, prUrl)) {
+            // Persist the run-level evidence too, so a later reaper agrees
+            // with the ticket even if this process dies before finish.
+            persistPublishEvidence(runId, headSha, prUrl);
+            // Restore the ticket before finishing the run. If we crash after
+            // this point, the run is still active and the next recovery attempt
+            // repeats the idempotent adoption instead of leaving a stranded
+            // in_progress ticket.
+            if (!"done".equals(ticketStatus)
+                && !restorePublishedTicket(ticketId, ticketStatus, prUrl)) {
+                log.warn("Could not restore ticket {} for published run {}; "
+                        + "leaving the run active for retry",
+                    ticketId, runId);
                 return false;
             }
-            // Never move a done ticket back to review. A review ticket already
-            // has the right status; an in_progress ticket still needs adoption.
-            if (!"done".equals(ticketStatus)) {
-                updateTicketPrUrl(ticketId, prUrl);
-                if (!"review".equals(ticketStatus) && "in_progress".equals(ticketStatus)) {
-                    markReview(ticketId);
-                }
+
+            String terminal = finishRecoveredRun(
+                runId, "succeeded", null, headSha, prUrl);
+            if (!"succeeded".equals(terminal)) {
+                log.warn("Published run {} finished as '{}' despite publish evidence; "
+                        + "leaving reconciliation to the backend",
+                    runId, terminal);
+                return false;
             }
             if (ticketId != null) {
                 postMessage(ticketId, "update",
@@ -244,15 +255,16 @@ public final class HarnessTicketProcessor implements TicketWorker {
             return true;
         }
 
-        boolean finished = finishRecoveredRun(
+        String terminal = finishRecoveredRun(
             runId,
             "failed",
             "Agent restarted before the run finished; restarting cleanly",
             null,
             null
         );
-        if (!finished) {
-            // Leave the run for the reaper; never release an unconfirmed run.
+        if (!"failed".equals(terminal)) {
+            // Leave the run for the reaper; never release an unconfirmed run
+            // or one that another reconciler already published.
             return false;
         }
 
@@ -268,7 +280,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
         return true;
     }
 
-    private boolean finishRecoveredRun(
+    /**
+     * Finish a recovered run and return the terminal status the backend
+     * actually stored, or null when it could not be confirmed. Callers must
+     * branch on that status instead of assuming the requested one was applied.
+     */
+    private String finishRecoveredRun(
         String runId,
         String status,
         String error,
@@ -283,17 +300,36 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     log.warn("Recovered run {} was already terminal as '{}' (wanted '{}')",
                         runId, terminal, status);
                 }
-                return true;
+                return terminal == null ? status : terminal;
             } catch (IOException | RuntimeException e) {
                 if (attempt == 3) {
                     log.warn("Could not reconcile harness run {} during recovery: {}",
                         runId, e.getMessage());
-                    return false;
+                    return null;
                 }
                 sleepQuietly(250L * attempt);
             }
         }
-        return false;
+        return null;
+    }
+
+    private boolean restorePublishedTicket(
+        Long ticketId,
+        String ticketStatus,
+        String prUrl
+    ) {
+        if (ticketId == null) {
+            return true;
+        }
+        if (!updateTicketPrUrl(ticketId, prUrl)) {
+            return false;
+        }
+        if ("in_progress".equals(ticketStatus)) {
+            return markReview(ticketId);
+        }
+        // review already has the right status; done/backlog/unknown are not
+        // advanced here, but the PR URL is still recorded.
+        return true;
     }
 
     private boolean releaseRecoveredTicket(String runId) {
@@ -303,6 +339,15 @@ public final class HarnessTicketProcessor implements TicketWorker {
             log.warn("Could not release the ticket for recovered run {}: {}",
                 runId, e.getMessage());
             return false;
+        }
+    }
+
+    private void persistPublishEvidence(String runId, String headSha, String prUrl) {
+        try {
+            apiService.recordHarnessPublish(runId, headSha, prUrl);
+        } catch (IOException | RuntimeException e) {
+            log.warn("Could not persist recovered publish evidence for run {}: {}",
+                runId, e.getMessage());
         }
     }
 
@@ -324,14 +369,16 @@ public final class HarnessTicketProcessor implements TicketWorker {
             && HarnessConfig.RESUME_MODE_RESUME.equals(harnessConfig.resumeMode());
     }
 
-    private void updateTicketPrUrl(Long ticketId, String prUrl) {
+    private boolean updateTicketPrUrl(Long ticketId, String prUrl) {
         if (ticketId == null || prUrl == null) {
-            return;
+            return true;
         }
         try {
             apiService.updateTicketPrUrl(ticketId, prUrl);
+            return true;
         } catch (IOException | RuntimeException e) {
             log.warn("Could not restore PR URL on ticket {}: {}", ticketId, e.getMessage());
+            return false;
         }
     }
 
@@ -515,6 +562,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 }
                 String commitSha = workspace.commitAndPushStaged(
                     "feat: " + pickedUp.getTitle(), branchName);
+                published = true;
                 recordPublishSafely(commitSha, null);
                 if (!assertLeaseHeld(pickedUp.getId())) {
                     return;
@@ -569,10 +617,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 if (message == null && "failed".equals(status)) {
                     message = "Harness run ended without a terminal checkpoint";
                 }
+                String finishingRunId = currentRunId;
                 boolean finished = finishDurableRun(
                     status, message, pendingHeadSha, pendingPrUrl);
                 if (finished && releaseAfterTerminalFinish && pickedUp.getId() != null) {
-                    applyFailureRelease(pickedUp.getId(), message);
+                    applyFailureRelease(pickedUp.getId(), message, finishingRunId);
                 } else if (!finished && releaseAfterTerminalFinish && pickedUp.getId() != null) {
                     postMessage(pickedUp.getId(), "update",
                         message + "\n\nCould not confirm the harness run finished; "
@@ -676,6 +725,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
      */
     private boolean startDurableRun(Ticket ticket, String branchName) {
         leaseLost = false;
+        published = false;
         pendingTerminalStatus = null;
         pendingTerminalMessage = null;
         pendingHeadSha = null;
@@ -903,6 +953,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         pendingPrUrl = null;
         releaseAfterTerminalFinish = true;
 
+        String runId = currentRunId;
         boolean finished = finishDurableRun("failed", message, null, null);
         if (!finished) {
             // The run/lease may still be live. The finally block retries the
@@ -912,10 +963,22 @@ public final class HarnessTicketProcessor implements TicketWorker {
             return;
         }
 
-        applyFailureRelease(ticketId, message);
+        applyFailureRelease(ticketId, message, runId);
     }
 
-    private void applyFailureRelease(Long ticketId, String message) {
+    private void applyFailureRelease(Long ticketId, String message, String runId) {
+        if (published) {
+            // The branch was already pushed (and possibly a PR created). Never
+            // return a published ticket to backlog just because a later step
+            // failed; the guarded/reconcile paths own the final state.
+            log.warn("Refusing to release ticket {} after publish; leaving it for "
+                + "operator or reconciliation", ticketId);
+            postMessage(ticketId, "update",
+                message + "\n\nThe branch was already published, so the ticket was "
+                    + "left for operator review instead of being returned to backlog.");
+            return;
+        }
+
         FailureState state = failures.computeIfAbsent(ticketId, ignored -> new FailureState());
         int attempt = state.recordFailure(maxAttempts, retryBaseDelayMs, retryMaxDelayMs);
         String note = " (attempt " + Math.min(attempt, maxAttempts) + "/" + maxAttempts
@@ -925,6 +988,20 @@ public final class HarnessTicketProcessor implements TicketWorker {
             note += " — retry backoff pinned at the maximum interval; manual intervention recommended if this persists";
         }
         postMessage(ticketId, "update", message + note);
+
+        // Route every run-bound release through the backend guard. It refuses
+        // reviewed tickets, tickets with a PR and runs with publish evidence.
+        if (runId != null) {
+            boolean released = releaseRecoveredTicket(runId);
+            if (!released) {
+                log.warn("Ticket {} was not released by the guarded path; "
+                    + "the reaper will reconcile the terminal run", ticketId);
+            }
+            return;
+        }
+
+        // No durable run exists (dry run / best-effort persistence): use the
+        // legacy ticket release, which cannot have published work behind it.
         release(ticketId);
     }
 
@@ -937,22 +1014,23 @@ public final class HarnessTicketProcessor implements TicketWorker {
      * Retry the final status update a few times: a successful push/PR must not
      * leave the ticket in_progress merely because the API blipped.
      */
-    private void markReview(Long ticketId) {
+    private boolean markReview(Long ticketId) {
         for (int attempt = 1; attempt <= 3; attempt++) {
             try {
                 apiService.updateTicketStatus(ticketId, "review");
-                return;
+                return true;
             } catch (IOException | RuntimeException e) {
                 if (attempt == 3) {
                     log.warn("Push/PR succeeded but updating ticket {} status failed after {} attempts: {}",
                         ticketId, attempt, e.getMessage());
                     postMessage(ticketId, "update",
                         "Push/PR succeeded, but could not set status to review. Manual status update required.");
-                } else {
-                    sleepQuietly(250);
+                    return false;
                 }
+                sleepQuietly(250);
             }
         }
+        return false;
     }
 
     private static void sleepQuietly(long millis) {

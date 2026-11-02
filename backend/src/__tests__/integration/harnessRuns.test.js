@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 const HarnessRunService = require('../../services/HarnessRunService');
+const HarnessReaper = require('../../services/HarnessReaper');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -318,6 +319,162 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     const stored = await pool.query('SELECT status, pr_url FROM tickets WHERE id = $1', [ticketId]);
     expect(stored.rows[0].status).toBe('review');
     expect(stored.rows[0].pr_url).toBe('https://github.com/o/r/pull/9');
+  });
+
+  test('a reaped run with a stored PR is succeeded and adopted, never released', async () => {
+    const run = await start({ branch: 'harness/reap-published' });
+    await HarnessRunService.claimLease({
+      ticketId, runId: run.id, agentId, ttlSeconds: 1,
+    });
+    await HarnessRunService.recordPublish(run.id, agentId, {
+      headSha: 'abc123',
+      prUrl: 'https://github.com/o/r/pull/9',
+    });
+    await pool.query(
+      "UPDATE harness_leases SET expires_at = NOW() - INTERVAL '1 second' WHERE ticket_id = $1",
+      [ticketId]
+    );
+
+    const reaped = await HarnessRunService.reapExpiredLeases(50, 900);
+    const row = reaped.find((item) => item.run_id === run.id);
+    expect(row).toBeDefined();
+    expect(row.run_failed).toBe(false);
+    expect((await HarnessRunService.getRun(run.id)).status).toBe('succeeded');
+
+    // The ticket still had no PR, but the run did: release must refuse.
+    await expect(
+      HarnessRunService.releaseTicketForRun(run.id)
+    ).resolves.toBeNull();
+
+    const reconciled = await HarnessRunService.reconcileRun(run.id);
+    expect(reconciled.adopted).toBe(true);
+    expect(reconciled.released).toBe(false);
+
+    const stored = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(stored.rows[0].status).toBe('review');
+    expect(stored.rows[0].pr_url).toBe('https://github.com/o/r/pull/9');
+  });
+
+  test('release refuses a failed run that recorded a PR', async () => {
+    const run = await start({ branch: 'harness/failed-with-pr' });
+    await HarnessRunService.recordPublish(run.id, agentId, {
+      prUrl: 'https://github.com/o/r/pull/9',
+    });
+    await HarnessRunService.finishRun(run.id, { status: 'failed' });
+
+    await expect(
+      HarnessRunService.releaseTicketForRun(run.id)
+    ).resolves.toBeNull();
+
+    const stored = await pool.query('SELECT status, pr_url FROM tickets WHERE id = $1', [ticketId]);
+    expect(stored.rows[0].status).toBe('in_progress');
+    expect(stored.rows[0].pr_url).toBeNull();
+  });
+
+  test('terminal-run reconciliation releases a ticket whose release was interrupted', async () => {
+    const run = await start({ branch: 'harness/stranded-failed' });
+    await HarnessRunService.finishRun(run.id, { status: 'failed' });
+
+    // Simulate the reaper dying between failing the run and releasing it.
+    const pending = await HarnessRunService.listTerminalRunsForReconcile(50);
+    expect(pending).toContain(run.id);
+
+    const reconciled = await HarnessRunService.reconcileRun(run.id);
+    expect(reconciled.released).toBe(true);
+    expect(reconciled.marked).toBe(true);
+
+    const ticket = await pool.query(
+      'SELECT status, assigned_agent_id FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('backlog');
+    expect(ticket.rows[0].assigned_agent_id).toBeNull();
+
+    const after = await HarnessRunService.listTerminalRunsForReconcile(50);
+    expect(after).not.toContain(run.id);
+  });
+
+  test('terminal-run reconciliation adopts a published run into review', async () => {
+    const run = await start({ branch: 'harness/stranded-published' });
+    await HarnessRunService.recordPublish(run.id, agentId, {
+      headSha: 'abc123',
+      prUrl: 'https://github.com/o/r/pull/9',
+    });
+    await HarnessRunService.finishRun(run.id, {
+      status: 'succeeded',
+      prUrl: 'https://github.com/o/r/pull/9',
+    });
+
+    const reconciled = await HarnessRunService.reconcileRun(run.id);
+    expect(reconciled.adopted).toBe(true);
+    expect(reconciled.released).toBe(false);
+
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('review');
+    expect(ticket.rows[0].pr_url).toBe('https://github.com/o/r/pull/9');
+  });
+
+  test('terminal-run reconciliation never moves a done ticket back to review', async () => {
+    const run = await start({ branch: 'harness/done-ticket' });
+    await HarnessRunService.recordPublish(run.id, agentId, {
+      prUrl: 'https://github.com/o/r/pull/9',
+    });
+    await HarnessRunService.finishRun(run.id, {
+      status: 'succeeded',
+      prUrl: 'https://github.com/o/r/pull/9',
+    });
+    await pool.query(
+      `UPDATE tickets
+       SET status = 'done', pr_url = 'https://github.com/o/r/pull/9'
+       WHERE id = $1`,
+      [ticketId]
+    );
+
+    await HarnessRunService.reconcileRun(run.id);
+
+    const ticket = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
+    expect(ticket.rows[0].status).toBe('done');
+  });
+
+  test('reaper reconciles a terminal run stranded by an earlier sweep', async () => {
+    const run = await start({ branch: 'harness/reaper-stranded' });
+    await HarnessRunService.finishRun(run.id, { status: 'failed' });
+
+    const summary = await HarnessReaper.runOnce();
+
+    expect(summary.released).toBeGreaterThanOrEqual(1);
+    const ticket = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
+    expect(ticket.rows[0].status).toBe('backlog');
+
+    const stored = await HarnessRunService.getRun(run.id);
+    expect(stored.reconciled_at).not.toBeNull();
+  });
+
+  test('reaper adopts a published terminal run into review', async () => {
+    const run = await start({ branch: 'harness/reaper-published' });
+    await HarnessRunService.recordPublish(run.id, agentId, {
+      prUrl: 'https://github.com/o/r/pull/9',
+    });
+    await HarnessRunService.finishRun(run.id, {
+      status: 'succeeded',
+      prUrl: 'https://github.com/o/r/pull/9',
+    });
+
+    const summary = await HarnessReaper.runOnce();
+
+    expect(summary.adopted).toBeGreaterThanOrEqual(1);
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('review');
+    expect(ticket.rows[0].pr_url).toBe('https://github.com/o/r/pull/9');
   });
 
   test('an old failed run cannot release a ticket owned by a newer active run', async () => {

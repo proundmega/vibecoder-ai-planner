@@ -1,6 +1,7 @@
 jest.mock('../services/HarnessRunService', () => ({
   reapExpiredLeases: jest.fn(),
-  releaseTicketForRun: jest.fn(),
+  listTerminalRunsForReconcile: jest.fn(),
+  reconcileRun: jest.fn(),
 }));
 
 const HarnessReaper = require('../services/HarnessReaper');
@@ -13,62 +14,110 @@ describe('HarnessReaper', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     HarnessRunService.reapExpiredLeases.mockResolvedValue([]);
-    HarnessRunService.releaseTicketForRun.mockResolvedValue(null);
-  });
-
-  it('releases only tickets whose run this sweep failed', async () => {
-    HarnessRunService.reapExpiredLeases.mockResolvedValue([
-      { ticket_id: 1, run_id: RUN_A, agent_id: 7, run_failed: true },
-      { ticket_id: 2, run_id: RUN_B, agent_id: 7, run_failed: false },
-    ]);
-    HarnessRunService.releaseTicketForRun.mockResolvedValue({ id: 1 });
-
-    const summary = await HarnessReaper.runOnce();
-
-    expect(HarnessRunService.releaseTicketForRun).toHaveBeenCalledTimes(1);
-    expect(HarnessRunService.releaseTicketForRun).toHaveBeenCalledWith(RUN_A);
-    expect(summary).toEqual({
-      reaped: 2,
-      released: 1,
-      skipped: [{ ticketId: 2, runId: RUN_B, reason: 'run_not_failed' }],
+    HarnessRunService.listTerminalRunsForReconcile.mockResolvedValue([]);
+    HarnessRunService.reconcileRun.mockResolvedValue({
+      run_id: RUN_A, ticket_id: 1, adopted: false, released: false, marked: true,
     });
   });
 
-  it('records a skipped ticket when the guarded release refuses', async () => {
+  it('reconciles reaped runs and pending terminal runs', async () => {
     HarnessRunService.reapExpiredLeases.mockResolvedValue([
       { ticket_id: 1, run_id: RUN_A, agent_id: 7, run_failed: true },
     ]);
+    HarnessRunService.listTerminalRunsForReconcile.mockResolvedValue([RUN_B]);
+    HarnessRunService.reconcileRun
+      .mockResolvedValueOnce({
+        run_id: RUN_A, ticket_id: 1, adopted: false, released: true, marked: true,
+      })
+      .mockResolvedValueOnce({
+        run_id: RUN_B, ticket_id: 2, adopted: true, released: false, marked: true,
+      });
 
     const summary = await HarnessReaper.runOnce({ limit: 10, orphanAfterSeconds: 60 });
 
     expect(HarnessRunService.reapExpiredLeases).toHaveBeenCalledWith(10, 60);
-    expect(summary.released).toBe(0);
-    expect(summary.skipped).toEqual([
-      { ticketId: 1, runId: RUN_A, reason: 'ticket_not_releasable' },
-    ]);
+    expect(HarnessRunService.listTerminalRunsForReconcile).toHaveBeenCalledWith(10);
+    expect(HarnessRunService.reconcileRun).toHaveBeenCalledTimes(2);
+    expect(summary).toEqual({
+      reaped: 1,
+      released: 1,
+      adopted: 1,
+      reconciled: 2,
+      skipped: [],
+    });
   });
 
-  it('keeps sweeping when one release throws', async () => {
+  it('adopts a published run instead of releasing its ticket', async () => {
+    HarnessRunService.reapExpiredLeases.mockResolvedValue([
+      { ticket_id: 1, run_id: RUN_A, agent_id: 7, run_failed: false },
+    ]);
+    HarnessRunService.reconcileRun.mockResolvedValue({
+      run_id: RUN_A, ticket_id: 1, adopted: true, released: false, marked: true,
+    });
+
+    const summary = await HarnessReaper.runOnce();
+
+    expect(summary.released).toBe(0);
+    expect(summary.adopted).toBe(1);
+    expect(HarnessRunService.reconcileRun).toHaveBeenCalledWith(RUN_A);
+  });
+
+  it('does not process the same run twice in one sweep', async () => {
     HarnessRunService.reapExpiredLeases.mockResolvedValue([
       { ticket_id: 1, run_id: RUN_A, agent_id: 7, run_failed: true },
-      { ticket_id: 2, run_id: RUN_B, agent_id: 7, run_failed: true },
     ]);
-    HarnessRunService.releaseTicketForRun
+    HarnessRunService.listTerminalRunsForReconcile.mockResolvedValue([RUN_A]);
+
+    await HarnessReaper.runOnce();
+
+    expect(HarnessRunService.reconcileRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a failed reconcile for the next sweep', async () => {
+    HarnessRunService.reapExpiredLeases.mockResolvedValue([
+      { ticket_id: 1, run_id: RUN_A, agent_id: 7, run_failed: true },
+    ]);
+    HarnessRunService.reconcileRun
       .mockRejectedValueOnce(new Error('db blip'))
-      .mockResolvedValueOnce({ id: 2 });
+      .mockResolvedValueOnce({
+        run_id: RUN_A, ticket_id: 1, adopted: false, released: true, marked: true,
+      });
+
+    const first = await HarnessReaper.runOnce();
+    expect(first.released).toBe(0);
+    expect(first.skipped).toEqual([
+      { ticketId: 1, runId: RUN_A, reason: 'reconcile_failed' },
+    ]);
+
+    HarnessRunService.reapExpiredLeases.mockResolvedValue([]);
+    HarnessRunService.listTerminalRunsForReconcile.mockResolvedValue([RUN_A]);
+
+    const second = await HarnessReaper.runOnce();
+    expect(second.released).toBe(1);
+    expect(second.skipped).toEqual([]);
+  });
+
+  it('keeps sweeping when pending terminal runs cannot be listed', async () => {
+    HarnessRunService.reapExpiredLeases.mockResolvedValue([
+      { ticket_id: 1, run_id: RUN_A, agent_id: 7, run_failed: true },
+    ]);
+    HarnessRunService.reconcileRun.mockResolvedValue({
+      run_id: RUN_A, ticket_id: 1, adopted: false, released: true, marked: true,
+    });
+    HarnessRunService.listTerminalRunsForReconcile.mockRejectedValue(new Error('db blip'));
 
     const summary = await HarnessReaper.runOnce();
 
     expect(summary.released).toBe(1);
-    expect(summary.skipped).toEqual([
-      { ticketId: 1, runId: RUN_A, reason: 'release_failed' },
-    ]);
+    expect(summary.reconciled).toBe(1);
   });
 
   it('returns an empty summary when nothing is stale', async () => {
     await expect(HarnessReaper.runOnce()).resolves.toEqual({
       reaped: 0,
       released: 0,
+      adopted: 0,
+      reconciled: 0,
       skipped: [],
     });
   });

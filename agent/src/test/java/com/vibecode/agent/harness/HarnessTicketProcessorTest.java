@@ -233,6 +233,59 @@ class HarnessTicketProcessorTest {
     }
 
     @Test
+    void startupRecoveryDoesNotAdoptAStaleTicketPrWithoutRunEvidence() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-old",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "step", "prompting",
+            "ticket_status", "review",
+            "ticket_pr_url", "https://github.com/owner/repo/pull/4"
+        )));
+        when(apiService.finishHarnessRun(
+            eq("run-old"), eq("failed"), anyString(), isNull(), isNull()))
+            .thenReturn("failed");
+        when(apiService.releaseHarnessTicket("run-old")).thenReturn(false);
+
+        assertEquals(1, processor.recoverActiveRuns());
+
+        verify(apiService, never()).updateTicketPrUrl(any(), anyString());
+        verify(apiService, never()).updateTicketStatus(any(), anyString());
+        verify(apiService, never()).finishHarnessRun(
+            eq("run-old"), eq("succeeded"), any(), any(), any());
+    }
+
+    @Test
+    void startupRecoveryDoesNotReleaseWhenAFinishReturnsTheWrongTerminalStatus() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-old",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "step", "prompting",
+            "ticket_status", "in_progress"
+        )));
+        when(apiService.finishHarnessRun(
+            eq("run-old"), eq("failed"), anyString(), isNull(), isNull()))
+            .thenReturn("succeeded");
+
+        assertEquals(0, processor.recoverActiveRuns());
+
+        verify(apiService, never()).releaseHarnessTicket("run-old");
+        verify(apiService, never()).releaseTicket(1L);
+    }
+
+    @Test
+    void startupRecoveryReportsListFailureSoTheAppCanRetry() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L))
+            .thenThrow(new IOException("backend down"));
+
+        assertEquals(-1, processor.recoverActiveRuns());
+    }
+
+    @Test
     void startupRecoveryLeavesTheRunWhenFinishCannotBeConfirmed() throws Exception {
         when(config.getAgentId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
@@ -334,6 +387,23 @@ class HarnessTicketProcessorTest {
         verify(apiService, never()).releaseTicket(1L);
         assertTrue(postedMessages().stream().anyMatch(message ->
             message.contains("Harness completed")));
+    }
+
+    @Test
+    void postPublishFailureWithoutADurableRunNeverReleasesTheTicket() throws Exception {
+        doThrow(new IOException("github down"))
+            .when(gitHubService).createPullRequest(
+                anyString(), anyString(), anyString(), anyString());
+
+        processor.processTicket(ticket());
+
+        verify(workspace).commitAndPushStaged(
+            "feat: Add filtering", "vibecode/ticket-1-add-filtering");
+        verify(apiService, never()).releaseTicket(1L);
+        verify(apiService, never()).releaseHarnessTicket(anyString());
+        assertTrue(postedMessages().stream().anyMatch(message ->
+            message.contains("already published")
+                && message.contains("operator review")));
     }
 
     @Test
@@ -448,6 +518,9 @@ class HarnessTicketProcessorTest {
             java.util.Map.of(
                 "headSha", "abc1234",
                 "prUrl", "https://github.com/owner/repo/pull/7"));
+        verify(apiService).recordHarnessPublish("run-1", "abc1234", null);
+        verify(apiService).recordHarnessPublish(
+            "run-1", null, "https://github.com/owner/repo/pull/7");
         verify(apiService).finishHarnessRun(
             "run-1", "succeeded", null, "abc1234",
             "https://github.com/owner/repo/pull/7");
@@ -483,7 +556,8 @@ class HarnessTicketProcessorTest {
 
         verify(apiService).finishHarnessRun(
             eq("run-1"), eq("failed"), contains("Verification failed"), isNull(), isNull());
-        verify(apiService).releaseTicket(1L);
+        verify(apiService).releaseHarnessTicket("run-1");
+        verify(apiService, never()).releaseTicket(1L);
     }
 
     @Test
@@ -707,7 +781,8 @@ class HarnessTicketProcessorTest {
 
         processor.processTicket(ticket());
 
-        verify(apiService).releaseTicket(1L);
+        verify(apiService).releaseHarnessTicket("run-1");
+        verify(apiService, never()).releaseTicket(1L);
         assertTrue(postedMessages().stream().anyMatch(message ->
             message.contains("Verification failed") && message.contains("attempt 1/3")));
     }

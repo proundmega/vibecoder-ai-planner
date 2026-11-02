@@ -354,9 +354,9 @@ class HarnessRunService {
 
   /**
    * Return a ticket to backlog after its run failed, but only when it is safe:
-   * the run is terminal, no newer run is active, the ticket is still
-   * in_progress and it has no PR. This is the reaper/recovery guard that stops
-   * a lost success-finish from resetting a reviewed ticket.
+   * the run is terminal **and recorded no PR URL**, no newer run is active, the
+   * ticket is still in_progress and it has no PR. This is the reaper/recovery
+   * guard that stops a published run from resetting a reviewed ticket.
    */
   async releaseTicketForRun(runId, { agentId = null } = {}) {
     const id = requiredUuid(runId, 'runId');
@@ -370,6 +370,7 @@ class HarnessRunService {
          FROM harness_runs r
          WHERE r.id = $1
            AND r.status IN ('failed', 'dead_letter')
+           AND r.pr_url IS NULL
            AND ($2::bigint IS NULL OR r.agent_id = $2)
        )
        UPDATE tickets t
@@ -389,6 +390,101 @@ class HarnessRunService {
     );
 
     return result.rows[0] || null;
+  }
+
+  /**
+   * Reconcile one terminal run with its ticket and mark it done.
+   *
+   * Adopting a published run and releasing a failed run are deliberately
+   * separate from finishing the run: the reaper may die between those steps.
+   * This statement is idempotent and is retried until `reconciled_at` is set.
+   *
+   * - A run with a stored PR URL is adopted: the ticket keeps (or gains) the
+   *   PR and moves from in_progress to review. Done tickets are never changed.
+   * - A failed/dead-letter run with no PR evidence releases the ticket only
+   *   when it is in_progress with no PR and no newer run is active.
+   */
+  async reconcileRun(runId) {
+    const id = requiredUuid(runId, 'runId');
+
+    const result = await pool.query(
+      `WITH run AS (
+         SELECT r.id, r.ticket_id, r.status, r.pr_url
+         FROM harness_runs r
+         WHERE r.id = $1 AND r.status <> 'running'
+       ),
+       adopted AS (
+         UPDATE tickets t
+         SET pr_url = run.pr_url,
+             status = CASE
+               WHEN t.status = 'in_progress' THEN 'review'
+               ELSE t.status
+             END
+         FROM run
+         WHERE run.pr_url IS NOT NULL
+           AND t.id = run.ticket_id
+           AND t.status <> 'done'
+         RETURNING t.id
+       ),
+       released AS (
+         UPDATE tickets t
+         SET assigned_agent_id = NULL,
+             locked_at = NULL,
+             status = 'backlog'
+         FROM run
+         WHERE run.status IN ('failed', 'dead_letter')
+           AND run.pr_url IS NULL
+           AND t.id = run.ticket_id
+           AND t.status = 'in_progress'
+           AND t.pr_url IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM harness_runs other
+             WHERE other.ticket_id = run.ticket_id AND other.status = 'running'
+           )
+         RETURNING t.id
+       ),
+       marked AS (
+         UPDATE harness_runs
+         SET reconciled_at = NOW()
+         WHERE id = $1 AND status <> 'running'
+         RETURNING id
+       )
+       SELECT run.id AS run_id,
+              run.ticket_id,
+              (adopted.id IS NOT NULL) AS adopted,
+              (released.id IS NOT NULL) AS released,
+              (marked.id IS NOT NULL) AS marked
+       FROM run
+       LEFT JOIN adopted ON TRUE
+       LEFT JOIN released ON TRUE
+       LEFT JOIN marked ON TRUE`,
+      [id]
+    );
+
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Terminal runs whose ticket was never reconciled, including the gap between
+   * reaping a lease and releasing its ticket. Sweeping this list makes the
+   * reaper crash-safe: `reconciled_at` is only set after the ticket update.
+   */
+  async listTerminalRunsForReconcile(limit = 50) {
+    const parsedLimit = Number(limit);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 1000) {
+      throw new ValidationError('limit must be an integer between 1 and 1000');
+    }
+
+    const result = await pool.query(
+      `SELECT id
+       FROM harness_runs
+       WHERE status <> 'running' AND reconciled_at IS NULL
+       ORDER BY COALESCE(finished_at, started_at)
+       LIMIT $1
+       FOR UPDATE SKIP LOCKED`,
+      [parsedLimit]
+    );
+    return result.rows.map((row) => row.id);
   }
 
   /**
@@ -482,10 +578,10 @@ class HarnessRunService {
    * lease stolen after expiry) are reaped once their heartbeat is stale. The
    * partial unique index prevents a second live run for the same ticket.
    *
-   * Returns every reaped ticket, including whether this call failed the run.
-   * Callers must only release a ticket when run_failed is true AND the ticket
-   * is still in_progress with no pr_url: a lost success-finish can leave a
-   * failed run behind a reviewed ticket that already has a PR.
+   * Runs with a stored PR URL are marked `succeeded`, not failed, so reaping
+   * never disagrees with publish evidence. Returns every reaped row, including
+   * whether this call failed the run. Ticket changes belong in `reconcileRun`,
+   * which re-checks the run/ticket/PR guards after this statement.
    */
   async reapExpiredLeases(limit = 50, orphanAfterSeconds = DEFAULT_ORPHAN_AFTER_SECONDS) {
     const parsedLimit = Number(limit);
@@ -520,12 +616,15 @@ class HarnessRunService {
        ),
        failed AS (
          UPDATE harness_runs r
-         SET status = 'failed',
+         SET status = CASE WHEN r.pr_url IS NOT NULL THEN 'succeeded' ELSE 'failed' END,
              finished_at = NOW(),
-             error = COALESCE(r.error, 'lease expired without heartbeat')
+             error = CASE
+               WHEN r.pr_url IS NOT NULL THEN r.error
+               ELSE COALESCE(r.error, 'lease expired without heartbeat')
+             END
          FROM deleted d
          WHERE r.id = d.run_id AND r.status = 'running'
-         RETURNING r.id, r.ticket_id, r.agent_id
+         RETURNING r.id, r.ticket_id, r.agent_id, r.status
        ),
        orphaned AS (
          SELECT r.id, r.ticket_id, r.agent_id
@@ -540,24 +639,27 @@ class HarnessRunService {
        ),
        orphan_failed AS (
          UPDATE harness_runs r
-         SET status = 'failed',
+         SET status = CASE WHEN r.pr_url IS NOT NULL THEN 'succeeded' ELSE 'failed' END,
              finished_at = NOW(),
-             error = COALESCE(r.error, 'run has no lease and heartbeat is stale')
+             error = CASE
+               WHEN r.pr_url IS NOT NULL THEN r.error
+               ELSE COALESCE(r.error, 'run has no lease and heartbeat is stale')
+             END
          FROM orphaned o
          WHERE r.id = o.id
-         RETURNING r.id, r.ticket_id, r.agent_id
+         RETURNING r.id, r.ticket_id, r.agent_id, r.status
        )
        SELECT d.ticket_id,
               d.run_id,
               d.agent_id,
-              (f.id IS NOT NULL) AS run_failed
+              COALESCE(f.status = 'failed', FALSE) AS run_failed
        FROM deleted d
        LEFT JOIN failed f ON f.id = d.run_id
        UNION ALL
        SELECT o.ticket_id,
               o.id AS run_id,
               o.agent_id,
-              TRUE AS run_failed
+              (o.status = 'failed') AS run_failed
        FROM orphan_failed o`,
       [parsedLimit, parsedOrphanAfter]
     );

@@ -353,9 +353,48 @@ describe('HarnessRunService', () => {
 
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('FOR UPDATE SKIP LOCKED');
+      expect(sql).toContain("r.pr_url IS NOT NULL THEN 'succeeded'");
       expect(sql).toContain("status = 'failed'");
       expect(sql).toContain('run has no lease and heartbeat is stale');
       expect(params).toEqual([10, 900]);
+    });
+
+    it('reconciles a terminal run atomically and marks it', async () => {
+      const row = {
+        run_id: RUN_ID, ticket_id: 42, adopted: false, released: true, marked: true,
+      };
+      pool.query.mockResolvedValueOnce({ rows: [row] });
+
+      await expect(HarnessRunService.reconcileRun(RUN_ID)).resolves.toEqual(row);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain('adopted AS');
+      expect(sql).toContain('released AS');
+      expect(sql).toContain('marked AS');
+      expect(sql).toContain('reconciled_at = NOW()');
+      expect(sql).toContain('run.pr_url IS NULL');
+      expect(sql).toContain("t.status <> 'done'");
+      expect(params).toEqual([RUN_ID]);
+    });
+
+    it('lists terminal runs that still need reconciliation', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [{ id: RUN_ID }] });
+
+      await expect(
+        HarnessRunService.listTerminalRunsForReconcile(25)
+      ).resolves.toEqual([RUN_ID]);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain("status <> 'running'");
+      expect(sql).toContain('reconciled_at IS NULL');
+      expect(sql).toContain('FOR UPDATE SKIP LOCKED');
+      expect(params).toEqual([25]);
+    });
+
+    it('rejects an out-of-range reconcile limit', async () => {
+      await expect(
+        HarnessRunService.listTerminalRunsForReconcile(0)
+      ).rejects.toThrow('limit must be an integer between 1 and 1000');
     });
 
     it('rejects an out-of-range reaper limit', async () => {
@@ -374,6 +413,7 @@ describe('HarnessRunService', () => {
 
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain("r.status IN ('failed', 'dead_letter')");
+      expect(sql).toContain('r.pr_url IS NULL');
       expect(sql).toContain("t.status = 'in_progress'");
       expect(sql).toContain('t.pr_url IS NULL');
       expect(sql).toContain('NOT EXISTS');
