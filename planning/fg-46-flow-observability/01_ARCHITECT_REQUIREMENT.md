@@ -78,7 +78,7 @@ What is missing:
 - **FR8 - Storage:** disk/inode usage, workspace bytes, idle refreshes from fg-44.
 - **FR9 - Alerts:** stuck ticket, queue age, provider error spike, disk > 80%, repeated failed runs.
 - **FR10 - Trace ID:** reuse `harness_runs.id` (fg-33) as `run_id`; propagate to agent logs, harness events (fg-41), ticket message metadata and the PR body marker. Do not generate a second ID; legacy runs without a run row get `run_id=null`.
-- **FR11 - Minimal path:** a SQL-backed JSON endpoint + Vue view that works without Prometheus/Grafana.
+- **FR11 - Minimal path:** a read-only JSON endpoint (SQL queries, in-process stage derivation) + Vue view that works without Prometheus/Grafana.
 - **FR12 - Retention:** bounded retention for metrics/events; no unbounded growth.
 - **FR13 - Auth contract:** the flow endpoint is authorized with a **user JWT** + `DASHBOARD_READ` + the shared `assertProjectMember` helper from fg-45 (owner, `project_memberships`, agent owner; explicit `super_admin` bypass for the global view). `METRICS_TOKEN` stays scoped to the Prometheus `/metrics` scrape and is never sent to the browser.
 
@@ -88,7 +88,7 @@ What is missing:
 |---|---|---|
 | `tickets_by_stage{stage}` | Current ticket count per `deriveStage` stage | `tickets`, `approval_requests` |
 | `ticket_age_seconds{stage}` | p50/p95 time in stage | `ticket_phases` when present, else `updated_at` (approximate, flagged) |
-| `tickets_done_total` | Tickets reaching `done` per period | `tickets.updated_at` (merge date after fg-36) |
+| `tickets_done_total` | Tickets reaching `done` per period. Uses the fg-36 merge timestamp when present; otherwise `tickets.updated_at` (approximate — an edit to a done ticket moves it) | `tickets` / fg-36 |
 | `wip` | Tickets in planning/ready/assigned/in_progress/review/human_approval | `deriveStage` |
 | `agent_pool{state}` | busy/idle/starting | `agent_heartbeats` + `PoolManager.getStatus()` |
 | `agent_queue_wait_seconds` | Time waiting for an agent | **not measured** until a real queue exists (`requestAgent` throws at capacity today) |
@@ -115,7 +115,7 @@ What is missing:
 
 ## Acceptance criteria
 
-1. A Flow view shows counts and p50/p95 age per stage from `deriveStage`, and the stage counts add up to the project ticket total.
+1. A Flow view shows exact counts and p50/p95 age per stage from `deriveStage`; stage counts add up to the project ticket total. Projects above `FLOW_MAX_SCAN_TICKETS` return `truncated: true` with `sampleSize`/`truncatedAt` instead of silently wrong totals.
 2. `plan_approved_at` without `ready_at`, `planning_status='review'`, and an expired waiver all classify as `planning`/not-ready rather than `ready`.
 3. The view identifies the current bottleneck stage in one glance.
 4. Agent pool metrics are visible with busy/idle/starting only.

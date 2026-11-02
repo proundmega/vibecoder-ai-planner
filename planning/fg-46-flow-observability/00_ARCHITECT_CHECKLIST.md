@@ -24,6 +24,7 @@ The system has infrastructure metrics and agent heartbeats, but no way to answer
 - [ ] Reuse the fg-33 `run_id` (no new identifier)
 - [ ] Use fg-45 `ready_at`/`plan_approved_at` (fg-45 required, not optional)
 - [ ] Implement one `deriveStage` in JS; no parallel SQL `CASE`
+- [ ] Paginate all project tickets for exact counts; flag truncation past `FLOW_MAX_SCAN_TICKETS`
 - [ ] Call `assertProjectMember` for project-scoped flow views
 - [ ] Add `null`/“not instrumented” handling for merge, queue wait and provider latency
 - [ ] Add Prometheus counters/histograms (later)

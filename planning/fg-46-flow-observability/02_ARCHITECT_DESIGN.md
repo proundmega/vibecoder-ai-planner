@@ -7,14 +7,14 @@
 
 ## Design summary
 
-Start with a read-only SQL-backed flow endpoint and a Vue view. Add Prometheus/Grafana only after the end-to-end loop is stable.
+Start with a read-only flow endpoint backed by project-scoped SQL queries with in-process stage derivation, plus a Vue view. Add Prometheus/Grafana only after the end-to-end loop is stable.
 
 ```
 tickets + approval_requests + ticket_phases + ticket_review_* + ticket_fix_requests
         + agent_heartbeats + usage_logs + harness_runs/harness_events + fg-44 host metrics
         |
         v
-FlowMetricsService.deriveStage(ticket) + SQL aggregation
+FlowMetricsService.deriveStage(ticket) + in-process aggregation
         |
         +--> GET /api/v1/metrics/flow  (JSON, JWT + project membership)
         +--> Prometheus gauges/counters  (later)
@@ -39,7 +39,7 @@ FlowMetricsService.deriveStage(ticket) + SQL aggregation
 | 6 | `status='backlog'` and `assigned_agent_id IS NOT NULL` | `assigned` |
 | 7 | `status='backlog'` and `ready_at IS NOT NULL` and (`readiness_override_expires_at IS NULL OR readiness_override_expires_at > NOW()`) | `ready` |
 | 8 | `status='backlog'` and `plan_approved_at IS NOT NULL` | `planning` (substate `approval_recorded`, not ready) |
-| 9 | `status='backlog'` and `planning_status IN ('template_selected','in_progress','review')` or `phase IN ('planning','plan_approved')` | `planning` |
+| 9 | `status='backlog'` and (`planning_status IN ('template_selected','in_progress','review')` or `phase IN ('planning','plan_approved')`) | `planning` |
 | 10 | otherwise | `backlog` |
 
 Notes:
@@ -62,7 +62,7 @@ For each: count, p50 age, p95 age, oldest ticket, WIP.
 
 | Source | Status | Use |
 |---|---|---|
-| `tickets` | exists | status, phase, planning_status, ready_at, pr fields, created_at/updated_at, priority, project |
+| `tickets` | exists | status, phase, planning_status, `plan_approved_at`, `ready_at`, `readiness_override_expires_at`, pr fields, created_at/updated_at, priority, project |
 | `approval_requests` | exists (`003_role_system.sql`) | human approval presence/timing |
 | `ticket_phases` | exists | historical transitions, approximate time-in-stage |
 | `agent_heartbeats` | exists | agent status/current step/last seen |
@@ -90,6 +90,8 @@ Phase 0 returns `null` for these and the UI shows “not instrumented” instead
 {
   "generatedAt": "2026-11-02T10:00:00Z",
   "window": "7d",
+  "truncated": false,
+  "sampleSize": 57,
   "stages": [
     { "stage": "backlog", "count": 42, "p50AgeSeconds": 86400, "p95AgeSeconds": 604800, "oldest": "..." }
   ],
@@ -119,10 +121,11 @@ Phase 0 returns `null` for these and the UI shows “not instrumented” instead
 
 ### Query shape (Phase 0: JavaScript, not SQL)
 
-- Fetch a bounded, project-scoped ticket set (`status != 'done'`, plus a window of done tickets) with `LIMIT` (for example 5000), and call the single `FlowMetricsService.deriveStage` in JavaScript.
+- Fetch **all** tickets for the project with keyset pagination (`WHERE project_id = $1 AND id > $cursor ORDER BY id LIMIT 2000`), looping until exhausted, and call `FlowMetricsService.deriveStage` in JavaScript. Stage counts are exact and add up to the project total; p50/p95 ages use the same set, so counts and ages cannot disagree.
+- `window` only scopes time-series rows (e.g. done-per-day); it must not shrink the stage counts.
+- Hard safety cap `FLOW_MAX_SCAN_TICKETS` (default 50 000). If a project exceeds it, stop paginating, set `"truncated": true, "truncatedAt": <ticketId>, "sampleSize": n` in the payload, and surface a warning in the view. The API never silently returns partial totals without the flag.
 - **Do not** write a parallel `CASE`/`GROUP BY` stage expression. The only stage implementation is `deriveStage`; a SQL view/function may replace it later only with a contract test that asserts SQL and JS produce identical stages for a fixture set.
 - Cache the computed payload per project for 30-60 seconds.
-- Aggregate counts/ages in JS over the bounded set; for p50/p95 use the same values the view displays, not a second approximation.
 - Bound the result with a project filter; no full-table scans without `project_id`.
 
 ## Prometheus metrics (Phase 2)
@@ -175,7 +178,7 @@ The first version should be read-only and refresh every 30–60 seconds.
 ## Rollout
 
 ### Phase 0 - after end-to-end works
-- `deriveStage` + SQL flow endpoint (JWT + membership).
+- `deriveStage` + read-only flow endpoint (JWT + membership).
 - Vue Flow view.
 - Stage counts/ages, agent pool, tokens/cost, review/fix from fg-31/32.
 - `null` for merge/queue/provider-latency; no external stack.
@@ -193,8 +196,10 @@ The first version should be read-only and refresh every 30–60 seconds.
 
 ## Tests
 
-- Table-driven `deriveStage` tests covering: done, fix loop, pending approval, review, in_progress, assigned, ready, `plan_approved_at` without `ready_at`, `planning_status='review'`, waived-then-expired, and plain backlog.
+- Table-driven `deriveStage` tests covering: done, fix loop, pending approval, review, in_progress, assigned, ready, `plan_approved_at` without `ready_at`, `planning_status='review'`, waived-then-expired, plain backlog, and `status='review'` with a stale `phase='planning'` (status must win).
 - Stage counts reconcile with the ticket list for a fixture project.
+- Large project: more tickets than one pagination page still returns exact counts; beyond `FLOW_MAX_SCAN_TICKETS` the payload sets `truncated: true` with `sampleSize`/`truncatedAt` and the view warns.
+- `window` does not change stage counts (only the time series).
 - Flow endpoint auth: project owner/member 200, non-member 403, agent owner 200, `super_admin` global 200, `METRICS_TOKEN` alone 401.
 - Missing optional tables return `null`, not errors.
 - `run_id` equals `harness_runs.id` and appears in all four propagation targets.
