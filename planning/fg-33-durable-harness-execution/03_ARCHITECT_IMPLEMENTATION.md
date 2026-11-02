@@ -1,6 +1,6 @@
 # 03_ARCHITECT_IMPLEMENTATION.md - Durable Harness Execution (fg-33)
 
-**Status:** Slice 2 implemented (stacked on slice 1)
+**Status:** Slice 2 implemented (PR #112, stacked on slice 1 / PR #110)
 **Date:** 2026-11-02
 **Depends on:** fg-30 Phase 1
 
