@@ -260,7 +260,8 @@ class HarnessRunService {
    * Record a completed step and update the run's current step in one statement.
    * Steps may only move forward; a late worker cannot resurrect a finished run
    * or move the state machine backwards. Checkpoints for cloned/session_ready
-   * also fill the run's workspace/session/base columns.
+   * also fill the run's workspace/session/base columns; publishing/done
+   * checkpoints persist head sha and PR URL as run-level evidence.
    */
   async recordCheckpoint(runId, step, payload = {}) {
     const id = requiredUuid(runId, 'runId');
@@ -274,7 +275,11 @@ class HarnessRunService {
              heartbeat_at = NOW(),
              workspace_path = COALESCE(($3::jsonb)->>'workspacePath', workspace_path),
              session_id = COALESCE(($3::jsonb)->>'sessionId', session_id),
-             base_sha = COALESCE(($3::jsonb)->>'baseSha', base_sha)
+             base_sha = COALESCE(($3::jsonb)->>'baseSha', base_sha),
+             head_sha = COALESCE(
+               NULLIF(BTRIM(($3::jsonb)->>'headSha'), ''), head_sha),
+             pr_url = COALESCE(
+               NULLIF(BTRIM(($3::jsonb)->>'prUrl'), ''), pr_url)
          WHERE id = $1
            AND status = 'running'
            AND COALESCE(array_position($4::text[], step), 0)
@@ -721,6 +726,11 @@ class HarnessRunService {
     const runPrUrl = run.pr_url && String(run.pr_url).trim() !== ''
       ? String(run.pr_url).trim()
       : null;
+    if (operatorPrUrl && runPrUrl && operatorPrUrl !== runPrUrl) {
+      throw new ConflictError(
+        'Run already has a different PR URL; refusing to overwrite it');
+    }
+
     const evidence = operatorPrUrl || runPrUrl;
 
     if (!evidence) {

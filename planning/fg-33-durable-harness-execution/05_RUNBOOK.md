@@ -68,9 +68,9 @@ curl -X POST "$API/api/v1/harness/runs/$RUN_ID/adopt" \
 ```
 
 If the PR URL was lost after the PR was created, pass the operator-verified URL;
-the backend persists it as run evidence and re-runs reconciliation. The normal
-guards still prevent overwriting an existing different ticket PR and never
-regress `done`:
+the backend fills the missing run PR and re-runs reconciliation. It refuses to
+overwrite a different existing run PR. The normal guards also prevent
+overwriting an existing different ticket PR and never regress `done`:
 
 ```bash
 curl -X POST "$API/api/v1/harness/runs/$RUN_ID/adopt" \
@@ -79,8 +79,9 @@ curl -X POST "$API/api/v1/harness/runs/$RUN_ID/adopt" \
   -d '{"prUrl":"https://github.com/owner/repo/pull/123"}'
 ```
 
-A succeeded run **without** a PR/head is intentionally not adoptable. Dead-letter
-it instead; reconciliation then returns the ticket through the release guard.
+A succeeded run **without** a PR/head is not adoptable unless an operator
+supplies the verified `prUrl`; without one, dead-letter it and let
+reconciliation return the ticket through the release guard.
 
 ## Dead-letter a stuck run
 
@@ -125,6 +126,14 @@ If that list cannot be fetched, pruning is skipped. Symlinks, non-directories,
 fresh directories and the current workspace are preserved. The same sweep also
 removes crash-left `opencode-harness-*` and `vibecode-askpass-*` temp dirs,
 which may contain provider keys or the GitHub token.
+
+Deployment assumptions:
+
+- Run **one agent identity per clone root and temp namespace**. Protected paths
+  are agent-scoped, while temp cleanup is global; do not share `REPO_CLONE_DIR`
+  or `java.io.tmpdir` between different agents.
+- Cleanup currently runs at startup after successful recovery. A long-lived
+  agent will not prune again until restart; scheduled pruning is a follow-up.
 
 ## Crash scenarios
 

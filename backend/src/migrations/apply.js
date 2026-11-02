@@ -49,6 +49,7 @@ const SQL_FILES = [
     path.join(__dirname, './044_allow_critical_priority.sql'),
     path.join(__dirname, './045_harness_runs.sql'),
   path.join(__dirname, './046_harness_run_reconciliation.sql'),
+  path.join(__dirname, './047_harness_checkpoint_publish_evidence.sql'),
 ];
 
 const DATA_MIGRATIONS = [

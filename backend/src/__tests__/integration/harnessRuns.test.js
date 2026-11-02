@@ -711,6 +711,47 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     expect(ticket.rows[0].status).toBe('backlog');
   });
 
+  test('done-checkpoint evidence is adopted instead of released after a failed finish', async () => {
+    const run = await start({ branch: 'harness/checkpoint-evidence' });
+    await HarnessRunService.recordCheckpoint(run.id, 'done', {
+      headSha: 'abc123',
+      prUrl: 'https://github.com/o/r/pull/checkpoint',
+    });
+    await HarnessRunService.finishRun(run.id, { status: 'failed' });
+
+    const stored = await HarnessRunService.getRun(run.id);
+    expect(stored.head_sha).toBe('abc123');
+    expect(stored.pr_url).toBe('https://github.com/o/r/pull/checkpoint');
+
+    await expect(
+      HarnessRunService.releaseTicketForRun(run.id)
+    ).resolves.toBeNull();
+
+    const reconciled = await HarnessRunService.reconcileRun(run.id);
+    expect(reconciled.adopted).toBe(true);
+    expect(reconciled.released).toBe(false);
+
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('review');
+    expect(ticket.rows[0].pr_url).toBe('https://github.com/o/r/pull/checkpoint');
+  });
+
+  test('done-checkpoint evidence refuses dead-lettering a succeeded run', async () => {
+    const run = await start({ branch: 'harness/checkpoint-succeeded' });
+    await HarnessRunService.recordCheckpoint(run.id, 'done', {
+      headSha: 'abc123',
+      prUrl: 'https://github.com/o/r/pull/checkpoint',
+    });
+    await HarnessRunService.finishRun(run.id, { status: 'succeeded' });
+
+    await expect(
+      HarnessRunService.deadLetterRun(run.id)
+    ).rejects.toThrow('Cannot dead-letter a succeeded harness run with publish evidence');
+  });
+
   test('dead-lettering a succeeded run without evidence releases the ticket', async () => {
     const run = await start({ branch: 'harness/succeeded-no-evidence' });
     await HarnessRunService.finishRun(run.id, { status: 'succeeded' });

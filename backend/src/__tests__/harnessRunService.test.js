@@ -143,6 +143,8 @@ describe('HarnessRunService', () => {
       expect(sql).toContain('INSERT INTO harness_checkpoints');
       expect(sql).toContain("status = 'running'");
       expect(sql).toContain('array_position');
+      expect(sql).toContain('head_sha = COALESCE');
+      expect(sql).toContain('pr_url = COALESCE');
       expect(params).toEqual([
         RUN_ID,
         'prompting',
@@ -511,6 +513,23 @@ describe('HarnessRunService', () => {
 
       expect(pool.query.mock.calls[1][0]).toContain('SET pr_url = COALESCE($2, pr_url)');
       expect(pool.query.mock.calls[1][1]).toEqual([RUN_ID, 'https://example/pull/9']);
+    });
+
+    it('refuses to overwrite an existing run PR with a different operator URL', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: RUN_ID,
+          status: 'failed',
+          pr_url: 'https://example/pull/old',
+          head_sha: 'abc',
+        }],
+      });
+
+      await expect(
+        HarnessRunService.adoptPublishedRun(RUN_ID, {
+          prUrl: 'https://example/pull/new',
+        })
+      ).rejects.toThrow('refusing to overwrite');
     });
 
     it('requires an operator PR URL for a head-only run', async () => {

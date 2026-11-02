@@ -61,8 +61,9 @@ Make an interrupted run self-healing without ever undoing published work.
 - A run whose finish cannot be confirmed after retries is left for the
   terminal-run reconciliation sweep. Release only happens there after the run
   is terminal and the ticket/PR/run guards pass.
-- Publish evidence is written before `finish`, so a lost finish response is
-  recoverable.
+- Publish evidence is written before `finish` and copied from `done`
+  checkpoints, so a lost publish call or finish response is recoverable;
+  migration 047 backfills existing checkpoint-only evidence.
 - An operator can adopt a published terminal run or dead-letter a stuck run;
   agent keys cannot call either action.
 - Dead-lettering clears the lease and reconciliation marker; the next sweep
@@ -71,8 +72,9 @@ Make an interrupted run self-healing without ever undoing published work.
   after recovery succeeds, never touching paths protected by a running run or
   unexpired lease, the current workspace, symlinks or foreign names.
 - A run with a head sha but no PR can be adopted with an operator-verified PR
-  URL; a succeeded run with no evidence can be dead-lettered so reconciliation
-  releases the ticket.
+  URL only when the run has no PR yet; a different existing run PR is never
+  overwritten. A succeeded run with no evidence can be dead-lettered so
+  reconciliation releases the ticket.
 
 ## Test matrix
 
@@ -83,7 +85,7 @@ Make an interrupted run self-healing without ever undoing published work.
 | Reaper schedule unit | `backend/src/__tests__/harnessReaperSchedule.test.js` | default/zero/invalid/clamped intervals |
 | Route unit | `backend/src/__tests__/api-harness-runs.test.js` | agent-scoped list, publish, reconcile, release-ticket auth |
 | GitHub unit | `agent/src/test/java/.../GitHubServiceTest.java` | recovery PR lookup uses `state=open` |
-| Postgres integration | `backend/src/__tests__/integration/harnessRuns.test.js` | publish evidence, checkpoint join, run-level PR/head-sha release guards, reaped-published adoption, interrupted release, multi-run ordering, existing ticket PR, backlog adoption, one-time reconciliation, newer-run guard |
+| Postgres integration | `backend/src/__tests__/integration/harnessRuns.test.js` | publish evidence, checkpoint-only evidence adoption/dead-letter refusal, checkpoint join, run-level PR/head-sha release guards, reaped-published adoption, interrupted release, multi-run ordering, existing ticket PR, backlog adoption, one-time reconciliation, newer-run guard |
 | Agent processor | `agent/src/test/java/.../HarnessTicketProcessorTest.java` | restart release, publish adoption, synchronous reconcile, stale-ticket PR rejection, terminal mismatch, unconfirmed finish, post-publish no-release |
 | Agent ticket model | `agent/src/test/java/.../TicketTest.java` | backlog ticket with a PR is not pollable |
 | Agent HTTP | `agent/src/test/java/.../ApiServiceHarnessTest.java` | recovery list path, publish body, guarded release boolean |
@@ -96,6 +98,8 @@ Make an interrupted run self-healing without ever undoing published work.
 
 - A CI process-kill/e2e matrix (current crash coverage is service/processor
   level).
+- Scheduled workspace pruning during long-lived agent runs; cleanup currently
+  runs after startup recovery.
 - Resuming a live OpenCode session (only published work is adopted).
 - fg-41 dashboards beyond the counters in `05_RUNBOOK.md`.
 

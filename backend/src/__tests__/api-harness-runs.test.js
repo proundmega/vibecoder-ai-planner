@@ -504,6 +504,23 @@ describe('Harness run API', () => {
       expect(res.body.data.adopted).toBe(true);
     });
 
+    it('passes an operator-verified prUrl through to adoption', async () => {
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.adoptPublishedRun.mockResolvedValue({
+        run_id: RUN_ID, adopted: true, released: false, marked: true,
+      });
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/adopt`)
+        .set('Authorization', 'Bearer mock-token')
+        .send({ prUrl: 'https://github.com/o/r/pull/verified' });
+
+      expect(res.statusCode).toBe(200);
+      expect(HarnessRunService.adoptPublishedRun).toHaveBeenCalledWith(
+        RUN_ID, { prUrl: 'https://github.com/o/r/pull/verified' }
+      );
+    });
+
     it('allows a project member with TICKET_UPDATE inside the project', async () => {
       jwt.verify.mockReturnValue({
         userId: 'user-1', id: 'user-1', email: 'member@test.com', role: 'member',

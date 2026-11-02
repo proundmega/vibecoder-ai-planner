@@ -109,8 +109,11 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   finish cannot be confirmed the run is left for terminal-run reconciliation.
 - **Durable publish evidence.** `POST /harness/runs/:runId/publish` stores
   `head_sha` immediately after the push and `pr_url` immediately after PR
-  creation, before the terminal finish. Recovery can therefore distinguish
-  "pushed/PR exists" from "crashed before publish".
+  creation, before the terminal finish. `recordCheckpoint` also copies
+  `headSha`/`prUrl` from checkpoint payloads, so a lost publish call followed by
+  a `done` checkpoint still leaves run-level evidence. `047` backfills existing
+  checkpoint-only evidence and clears `reconciled_at` so the sweep re-evaluates
+  it.
 - **Resume policy.** `HARNESS_RESUME_MODE=restart` (default) always fails and
   requeues interrupted runs. `resume` additionally tries to adopt a run whose
   last checkpoint is `publishing`/`done` and whose head sha has an existing PR.
@@ -129,9 +132,11 @@ Operator recovery, cleanup and observability:
   deletes its lease, clears `reconciled_at` and hands the ticket to the normal
   reconciliation guards. A succeeded run without PR/head evidence can be
   dead-lettered; one with evidence is refused. `POST /harness/runs/:runId/adopt`
-  accepts an operator-verified `prUrl` for head-only runs and re-runs the
-  latest-run/ticket guards. Both require an operator JWT with `TICKET_UPDATE`
-  and project access; agent keys and the `user` role are refused.
+  accepts an operator-verified `prUrl` only when the run has no PR URL; a
+  different existing run PR is never overwritten. It re-runs the latest-run/
+  ticket guards and can re-adopt a run marked reconciled without adopting. Both
+  require an operator JWT with `TICKET_UPDATE` and project access; agent keys
+  and the `user` role are refused.
 - **Workspace retention.** `HARNESS_WORKSPACE_RETENTION_HOURS` (default 24, `0`
   disables) prunes stale clone directories only after startup recovery lists
   active runs successfully. It fetches protected paths from
@@ -140,6 +145,9 @@ Operator recovery, cleanup and observability:
   are considered; symlinks, non-directories, fresh directories and the current
   workspace are skipped. Crash-left `opencode-harness-*` and
   `vibecode-askpass-*` temp dirs are pruned with the same retention.
+  Deployment assumption: one agent identity per clone root and temp namespace;
+  protected paths are agent-scoped while temp cleanup is global. Cleanup is
+  startup-only today; scheduled pruning remains a fg-44/fg-33 follow-up.
 - **Metrics.** `HarnessMetrics` exports reaped/reconciled/released/adopted/
   needs-operator counters, `harness_reaper_sweep_failures_total`, and
   `harness_reaper_last_success_timestamp_seconds`. The success timestamp only
@@ -191,7 +199,7 @@ Operator recovery, cleanup and observability:
   ownership, JWT permission/project scoping, checkpoints, heartbeats, finish
   and lease conflicts.
 - `backend/src/__tests__/integration/harnessRuns.test.js` executes against
-  PostgreSQL (41 tests): assignment authorization, sequential and concurrent
+  PostgreSQL (43 tests): assignment authorization, sequential and concurrent
   one-active-run races, unexpired lease blocking, expired-lease reaping, orphan
   reaping, idempotent finish + lease release, checkpoint ordering/context,
   publish evidence, guarded reaping/reconciliation (reaped published runs,
@@ -211,10 +219,11 @@ Operator recovery, cleanup and observability:
   `HttpServer`: start/checkpoint/heartbeat/finish/lease/publish/recovery paths,
   auth header, request bodies, 401 fatal classification and 409-vs-transient
   lease errors.
-- The Postgres integration suite also verifies publish evidence, the latest
-  checkpoint join, run-level PR release guards, reaped-published adoption,
-  terminal-run reconciliation by the reaper, operator dead-letter/adoption, and
-  that an old failed run cannot release a ticket owned by a newer active run.
+- The Postgres integration suite also verifies publish evidence (including
+  checkpoint-only evidence), the latest checkpoint join, run-level PR release
+  guards, reaped-published adoption, terminal-run reconciliation by the reaper,
+  operator dead-letter/adoption, and that an old failed run cannot release a
+  ticket owned by a newer active run.
 - `WorkspaceManagerTest` covers stale/fresh dirs, foreign names, protected and
   current workspaces, symlinks, unreadable protected paths, zero retention and
   crash-left temp dirs.
