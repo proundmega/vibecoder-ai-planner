@@ -47,6 +47,7 @@ const SQL_FILES = [
     path.join(__dirname, './042_csp_permissions.sql'),
     path.join(__dirname, './043_make_access_token_nullable.sql'),
     path.join(__dirname, './044_allow_critical_priority.sql'),
+    path.join(__dirname, './045_harness_runs.sql'),
 ];
 
 const DATA_MIGRATIONS = [
