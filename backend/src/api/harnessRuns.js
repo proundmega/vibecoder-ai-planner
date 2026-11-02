@@ -4,7 +4,7 @@ const HarnessRunService = require('../services/HarnessRunService');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
 const { verifyTokenOrAgent } = require('../middleware/auth');
-const { ForbiddenError, NotFoundError } = require('../errors/HttpError');
+const { ForbiddenError, NotFoundError, ConflictError } = require('../errors/HttpError');
 const logger = require('../utils/logger');
 
 /**
@@ -23,6 +23,29 @@ function requireAgent(req) {
 }
 
 const OPERATOR_ROLES = new Set(['super_admin', 'project_admin', 'member']);
+
+async function assertProjectAccess(run, userId) {
+  const access = await pool.query(
+    `SELECT p.owner_id,
+            EXISTS (
+              SELECT 1 FROM project_memberships pm
+              WHERE pm.project_id = p.id AND pm.user_id = $2
+            ) AS is_member
+     FROM tickets t
+     JOIN projects p ON p.id = t.project_id
+     WHERE t.id = $1`,
+    [run.ticket_id, userId]
+  );
+
+  if (access.rows.length === 0) {
+    throw new NotFoundError('Ticket not found');
+  }
+
+  const { owner_id: ownerId, is_member: isMember } = access.rows[0];
+  if (String(ownerId) !== String(userId) && !isMember) {
+    throw new ForbiddenError('Not a member of this ticket’s project');
+  }
+}
 
 async function assertCanReadRun(req, run) {
   if (req.agent) {
@@ -46,26 +69,7 @@ async function assertCanReadRun(req, run) {
     return;
   }
 
-  const access = await pool.query(
-    `SELECT p.owner_id,
-            EXISTS (
-              SELECT 1 FROM project_memberships pm
-              WHERE pm.project_id = p.id AND pm.user_id = $2
-            ) AS is_member
-     FROM tickets t
-     JOIN projects p ON p.id = t.project_id
-     WHERE t.id = $1`,
-    [run.ticket_id, userId]
-  );
-
-  if (access.rows.length === 0) {
-    throw new NotFoundError('Ticket not found');
-  }
-
-  const { owner_id: ownerId, is_member: isMember } = access.rows[0];
-  if (String(ownerId) !== String(userId) && !isMember) {
-    throw new ForbiddenError('Not a member of this ticket\u2019s project');
-  }
+  await assertProjectAccess(run, userId);
 }
 
 router.post('/runs', verifyTokenOrAgent, async (req, res, next) => {
@@ -108,6 +112,140 @@ router.get('/runs/:runId', verifyTokenOrAgent, async (req, res, next) => {
     res.json({ success: true, data: run });
   } catch (error) {
     logger.error('GET /harness/runs/:runId failed:', error);
+    next(error);
+  }
+});
+
+router.get('/agents/:agentId/runs', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const agentId = requireAgent(req);
+    if (String(agentId) !== String(req.params.agentId)) {
+      throw new ForbiddenError('Cannot list runs for another agent');
+    }
+
+    const runs = await HarnessRunService.listActiveRunsForAgent(agentId);
+    res.json({ success: true, data: runs });
+  } catch (error) {
+    logger.error('GET /harness/agents/:agentId/runs failed:', error);
+    next(error);
+  }
+});
+
+router.get('/agents/:agentId/workspaces', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const agentId = requireAgent(req);
+    if (String(agentId) !== String(req.params.agentId)) {
+      throw new ForbiddenError('Cannot list workspaces for another agent');
+    }
+
+    const paths = await HarnessRunService.listActiveWorkspacePaths(agentId);
+    res.json({ success: true, data: paths });
+  } catch (error) {
+    logger.error('GET /harness/agents/:agentId/workspaces failed:', error);
+    next(error);
+  }
+});
+
+router.post('/runs/:runId/publish', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const agentId = requireAgent(req);
+    const run = await HarnessRunService.getRun(req.params.runId);
+    await assertCanReadRun(req, run);
+
+    const updated = await HarnessRunService.recordPublish(
+      req.params.runId,
+      agentId,
+      { headSha: req.body?.headSha, prUrl: req.body?.prUrl }
+    );
+
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    logger.error('POST /harness/runs/:runId/publish failed:', error);
+    next(error);
+  }
+});
+
+router.post('/runs/:runId/reconcile', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    requireAgent(req);
+    const run = await HarnessRunService.getRun(req.params.runId);
+    await assertCanReadRun(req, run);
+
+    const reconciled = await HarnessRunService.reconcileRun(req.params.runId);
+    if (!reconciled) {
+      throw new ConflictError('Harness run is not terminal');
+    }
+
+    res.json({ success: true, data: reconciled });
+  } catch (error) {
+    logger.error('POST /harness/runs/:runId/reconcile failed:', error);
+    next(error);
+  }
+});
+
+async function assertOperatorCanAccess(req, run) {
+  if (req.agent) {
+    throw new ForbiddenError('Operator JWT required');
+  }
+
+  const role = req.user?.role;
+  const userId = req.user?.userId || req.user?.id;
+  if (
+    !role ||
+    !userId ||
+    !OPERATOR_ROLES.has(role) ||
+    !(await PermissionService.hasPermission(role, 'TICKET_UPDATE'))
+  ) {
+    throw new ForbiddenError('Operator ticket permission required');
+  }
+  if (role === 'super_admin') {
+    return;
+  }
+
+  await assertProjectAccess(run, userId);
+}
+
+router.post('/runs/:runId/dead-letter', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const run = await HarnessRunService.getRun(req.params.runId);
+    await assertOperatorCanAccess(req, run);
+
+    const dead = await HarnessRunService.deadLetterRun(req.params.runId, {
+      error: req.body?.error,
+    });
+    res.json({ success: true, data: dead });
+  } catch (error) {
+    logger.error('POST /harness/runs/:runId/dead-letter failed:', error);
+    next(error);
+  }
+});
+
+router.post('/runs/:runId/adopt', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const run = await HarnessRunService.getRun(req.params.runId);
+    await assertOperatorCanAccess(req, run);
+
+    const adopted = await HarnessRunService.adoptPublishedRun(req.params.runId, {
+      prUrl: req.body?.prUrl,
+    });
+    res.json({ success: true, data: adopted });
+  } catch (error) {
+    logger.error('POST /harness/runs/:runId/adopt failed:', error);
+    next(error);
+  }
+});
+
+router.post('/runs/:runId/release-ticket', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const agentId = requireAgent(req);
+    const released = await HarnessRunService.releaseTicketForRun(
+      req.params.runId,
+      { agentId }
+    );
+
+    res.json({ success: true, data: { released: Boolean(released) } });
+  } catch (error) {
+    logger.error('POST /harness/runs/:runId/release-ticket failed:', error);
     next(error);
   }
 });

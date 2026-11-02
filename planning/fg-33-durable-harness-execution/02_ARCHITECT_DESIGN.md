@@ -71,14 +71,19 @@ On `AgentApp` startup:
 
 1. find `harness_runs` where `agent_id = me` and `status = running`;
 2. if the heartbeat is fresh, assume another instance is alive and skip;
-3. otherwise resume based on the last checkpoint:
-   - `CLONED` -> reuse workspace if valid, else restart clone;
-   - `SESSION_READY`/`PROMPTING` -> recreate the OpenCode session and resend a bounded prompt (or restart cleanly if the provider cannot resume);
-   - `VERIFYING` -> rerun verification;
-   - `PUBLISHING` -> check for the branch/PR and finish idempotently;
-4. after `HARNESS_MAX_ATTEMPTS`, mark `dead_letter` and release the ticket for a human.
+3. otherwise reconcile based on the last checkpoint:
+   - `PUBLISHING`/`DONE` with a stored head sha or PR -> look up an **open**
+     PR and adopt the run as succeeded (`HARNESS_RESUME_MODE=resume`); a run
+     that already recorded `pr_url` is adopted in either mode;
+   - every other checkpoint -> fail the run and return the ticket only through
+     the guarded release path, because the OpenCode session and uncommitted
+     workspace are process-local and cannot be resumed;
+4. if the run cannot be finished, leave it for the terminal-run reconciliation
+   sweep; never release on an unconfirmed state.
 
-Resume is only allowed if the workspace, branch and ticket still match the run record. Otherwise restart cleanly and record why.
+`HARNESS_RESUME_MODE=restart` is the default and only adopts runs with a
+recorded PR URL. `resume` additionally looks up an open PR from a stored head
+sha. The workspace, branch and ticket must still match the run record.
 
 ## Idempotent publishing
 
@@ -105,7 +110,7 @@ Track workspace paths in `harness_runs.workspace_path` plus a periodic inventory
 | `HARNESS_HEARTBEAT_SECONDS` | `30` | Lease renewal interval |
 | `HARNESS_MAX_ATTEMPTS` | `3` | Retries before dead letter |
 | `HARNESS_WORKSPACE_RETENTION_HOURS` | `24` | Orphan cleanup age |
-| `HARNESS_RESUME_MODE` | `safe` | `safe`, `restart`, `off` |
+| `HARNESS_RESUME_MODE` | `restart` | `restart`, `resume` |
 
 ## Failure handling
 
@@ -125,11 +130,11 @@ Track workspace paths in `harness_runs.workspace_path` plus a periodic inventory
 
 ## Rollout
 
-1. Ship persistence and lease with recovery disabled (`HARNESS_RESUME_MODE=off`) in development.
-2. Enable safe resume for one project.
-3. Enable the reaper and workspace retention.
+1. Ship persistence, leases and `HARNESS_RESUME_MODE=restart` in development.
+2. Enable `resume` published-work adoption for one project.
+3. Enable the scheduled reaper (on by default) and workspace retention.
 4. Add alerts for stuck runs and dead letters.
-5. Make safe resume the default after a bake period.
+5. Keep `restart` as the default; revisit only if live-session resume becomes possible.
 
 ## Open questions
 

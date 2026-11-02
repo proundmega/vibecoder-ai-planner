@@ -30,6 +30,7 @@ class HarnessConfigTest {
                 ".github/**", "**/.github/**", "**/secrets/**"),
             config.protectedPaths());
         assertNull(config.modelOverride());
+        assertEquals("restart", config.resumeMode());
     }
 
     @Test
@@ -42,7 +43,8 @@ class HarnessConfigTest {
             "HARNESS_MAX_DURATION_MINUTES", "20",
             "HARNESS_VERIFY_COMMANDS", "npm test -- --run; npm run lint ",
             "HARNESS_PROTECTED_PATHS", ".env*;infra/secrets/**",
-            "HARNESS_MODEL", "opencode-go/beam-free"
+            "HARNESS_MODEL", "opencode-go/beam-free",
+            "HARNESS_RESUME_MODE", "RESUME"
         );
 
         HarnessConfig config = HarnessConfig.from(env::get);
@@ -55,6 +57,7 @@ class HarnessConfigTest {
         assertEquals(List.of("npm test -- --run", "npm run lint"), config.verificationCommands());
         assertEquals(List.of(".env*", "infra/secrets/**"), config.protectedPaths());
         assertEquals("opencode-go/beam-free", config.modelOverride());
+        assertEquals("resume", config.resumeMode());
     }
 
     @Test
@@ -76,12 +79,17 @@ class HarnessConfigTest {
     void validateRejectsBlankBinaryAndNonPositiveDurations() {
         HarnessConfig blankBinary = new HarnessConfig(
             "opencode", " ", Duration.ofSeconds(1), Duration.ofSeconds(1),
-            Duration.ofMinutes(1), List.of(), List.of(), null);
+            Duration.ofMinutes(1), List.of(), List.of(), null, "restart");
         HarnessConfig zeroTimeout = new HarnessConfig(
             "opencode", "opencode", Duration.ZERO, Duration.ofSeconds(1),
-            Duration.ofMinutes(1), List.of(), List.of(), null);
+            Duration.ofMinutes(1), List.of(), List.of(), null, "restart");
 
         assertThrows(IllegalStateException.class, blankBinary::validate);
         assertThrows(IllegalStateException.class, zeroTimeout::validate);
+
+        HarnessConfig badResume = new HarnessConfig(
+            "opencode", "opencode", Duration.ofSeconds(1), Duration.ofSeconds(1),
+            Duration.ofMinutes(1), List.of(), List.of(), null, "replay");
+        assertThrows(IllegalStateException.class, badResume::validate);
     }
 }

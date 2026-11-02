@@ -47,6 +47,7 @@ public class AgentApp {
     private ScheduledExecutorService heartbeatScheduler;
     private String githubAccessToken;
     private volatile boolean shuttingDown = false;
+    private volatile boolean startupRecoveryComplete = false;
 
     public AgentApp(AgentConfig config) {
         this.config = config;
@@ -245,6 +246,11 @@ public class AgentApp {
             log.warn("Could not register SIGINT handler: {}", e.getMessage());
         }
 
+        // Reconcile runs left active by a previous process before polling. A
+        // published run keeps its reviewed ticket; anything else is failed and
+        // returned only through the backend's guarded release path.
+        recoverStartupOnce();
+
         heartbeatScheduler = Executors.newScheduledThreadPool(1);
         heartbeatScheduler.scheduleAtFixedRate(() -> {
             try {
@@ -289,7 +295,39 @@ public class AgentApp {
 
         log.info("Agent stopped");
     }
+    /**
+     * Retry startup recovery on each poll until the active-run listing
+     * succeeds. The backend reaper still reconciles terminal runs, so a failed
+     * listing delays recovery rather than losing it.
+     */
+    private void recoverStartupOnce() {
+        if (startupRecoveryComplete) {
+            return;
+        }
+        if (!(ticketWorker instanceof HarnessTicketProcessor harnessWorker)) {
+            startupRecoveryComplete = true;
+            return;
+        }
+        try {
+            int recovered = harnessWorker.recoverActiveRuns();
+            if (recovered < 0) {
+                log.warn("Harness startup recovery could not list active runs; "
+                    + "will retry on the next cycle");
+                return;
+            }
+            startupRecoveryComplete = true;
+            log.info("Harness startup recovery reconciled {} run(s)", recovered);
+            // Cleanup is only safe after the active-run listing succeeded; the
+            // processor also fails closed if it cannot fetch protected paths.
+            harnessWorker.pruneStaleWorkspaces();
+        } catch (RuntimeException e) {
+            log.warn("Harness startup recovery failed; will retry: {}", e.getMessage());
+        }
+    }
+
     private void processCycle() throws IOException {
+        recoverStartupOnce();
+
         // Check if this is a review agent (no REPO_OWNER/REPO_NAME means review mode)
         if (config.getRepoOwner() == null || config.getRepoOwner().isBlank()) {
             log.warn("REPO_OWNER is not set — running in review mode only. Ticket processing is disabled. Set REPO_OWNER and REPO_NAME to enable build mode.");

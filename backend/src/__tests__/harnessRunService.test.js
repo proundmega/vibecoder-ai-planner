@@ -112,7 +112,11 @@ describe('HarnessRunService', () => {
       pool.query.mockResolvedValueOnce({ rows });
 
       await expect(HarnessRunService.listActiveRunsForAgent(7)).resolves.toEqual(rows);
-      expect(pool.query.mock.calls[0][0]).toContain("status = 'running'");
+      const sql = pool.query.mock.calls[0][0];
+      expect(sql).toContain("status = 'running'");
+      expect(sql).toContain('last_checkpoint_payload');
+      expect(sql).toContain('ticket_status');
+      expect(sql).toContain('LEFT JOIN LATERAL');
     });
 
     it('lists checkpoints in creation order', async () => {
@@ -139,6 +143,8 @@ describe('HarnessRunService', () => {
       expect(sql).toContain('INSERT INTO harness_checkpoints');
       expect(sql).toContain("status = 'running'");
       expect(sql).toContain('array_position');
+      expect(sql).toContain('head_sha = COALESCE');
+      expect(sql).toContain('pr_url = COALESCE');
       expect(params).toEqual([
         RUN_ID,
         'prompting',
@@ -256,6 +262,20 @@ describe('HarnessRunService', () => {
       ).resolves.toEqual(existing);
     });
 
+    it('normalises blank head sha and PR URL to NULL', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [{ id: RUN_ID, status: 'failed' }] });
+
+      await HarnessRunService.finishRun(RUN_ID, {
+        status: 'failed',
+        headSha: '   ',
+        prUrl: '',
+      });
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).toContain("NULLIF(BTRIM($4), '')");
+      expect(sql).toContain("NULLIF(BTRIM($5), '')");
+    });
+
     it('rejects an unknown terminal status', async () => {
       await expect(
         HarnessRunService.finishRun(RUN_ID, { status: 'done' })
@@ -349,15 +369,226 @@ describe('HarnessRunService', () => {
 
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('FOR UPDATE SKIP LOCKED');
+      expect(sql).toContain("NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN 'succeeded'");
       expect(sql).toContain("status = 'failed'");
       expect(sql).toContain('run has no lease and heartbeat is stale');
       expect(params).toEqual([10, 900]);
+    });
+
+    it('reconciles a terminal run atomically and marks it', async () => {
+      const row = {
+        run_id: RUN_ID, ticket_id: 42, adopted: false, released: true, marked: true,
+      };
+      pool.query.mockResolvedValueOnce({ rows: [row] });
+
+      await expect(HarnessRunService.reconcileRun(RUN_ID)).resolves.toEqual(row);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain('adopted AS');
+      expect(sql).toContain('released AS');
+      expect(sql).toContain('marked AS');
+      expect(sql).toContain('superseded AS');
+      expect(sql).toContain('reconciled_at = NOW()');
+      expect(sql).toContain('reconciled_at IS NULL');
+      expect(sql).toContain('is_latest');
+      expect(sql).toContain('run.pr_url IS NULL');
+      expect(sql).toContain('run.head_sha IS NULL');
+      expect(sql).toContain("t.status IN ('in_progress', 'backlog')");
+      expect(sql).toContain("t.status <> 'done'");
+      expect(params).toEqual([RUN_ID]);
+    });
+
+    it('lists terminal runs that still need reconciliation', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [{ id: RUN_ID }] });
+
+      await expect(
+        HarnessRunService.listTerminalRunsForReconcile(25)
+      ).resolves.toEqual([RUN_ID]);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain("status <> 'running'");
+      expect(sql).toContain('reconciled_at IS NULL');
+      expect(sql).toContain('DISTINCT ON (ticket_id)');
+      expect(sql).toContain('ORDER BY ticket_id, started_at DESC');
+      expect(params).toEqual([25]);
+    });
+
+    it('rejects an out-of-range reconcile limit', async () => {
+      await expect(
+        HarnessRunService.listTerminalRunsForReconcile(0)
+      ).rejects.toThrow('limit must be an integer between 1 and 1000');
     });
 
     it('rejects an out-of-range reaper limit', async () => {
       await expect(HarnessRunService.reapExpiredLeases(0)).rejects.toThrow(
         'limit must be an integer between 1 and 1000'
       );
+    });
+
+    it('releases a reaped ticket only through the guarded update', async () => {
+      const ticket = { id: 42, status: 'backlog', assigned_agent_id: null };
+      pool.query.mockResolvedValueOnce({ rows: [ticket] });
+
+      await expect(
+        HarnessRunService.releaseTicketForRun(RUN_ID)
+      ).resolves.toEqual(ticket);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain("r.status IN ('failed', 'dead_letter')");
+      expect(sql).toContain("NULLIF(BTRIM(r.pr_url), '') IS NULL");
+      expect(sql).toContain("NULLIF(BTRIM(r.head_sha), '') IS NULL");
+      expect(sql).toContain("t.status = 'in_progress'");
+      expect(sql).toContain("NULLIF(BTRIM(t.pr_url), '') IS NULL");
+      expect(sql).toContain('NOT EXISTS');
+      expect(params).toEqual([RUN_ID, null]);
+    });
+
+    it('scopes an agent-initiated release to its own run', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      await expect(
+        HarnessRunService.releaseTicketForRun(RUN_ID, { agentId: 7 })
+      ).resolves.toBeNull();
+      expect(pool.query.mock.calls[0][1]).toEqual([RUN_ID, 7]);
+    });
+  });
+
+  describe('operator recovery', () => {
+    it('dead-letters a run, clears its reconciliation marker and lease', async () => {
+      const row = { id: RUN_ID, status: 'dead_letter' };
+      pool.query.mockResolvedValueOnce({ rows: [row] });
+
+      await expect(
+        HarnessRunService.deadLetterRun(RUN_ID, { error: 'stuck' })
+      ).resolves.toEqual(row);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain("status = 'dead_letter'");
+      expect(sql).toContain('reconciled_at = NULL');
+      expect(sql).toContain('DELETE FROM harness_leases');
+      expect(params).toEqual([RUN_ID, 'stuck']);
+    });
+
+    it('refuses to dead-letter a succeeded run', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: RUN_ID, status: 'succeeded' }] });
+
+      await expect(
+        HarnessRunService.deadLetterRun(RUN_ID)
+      ).rejects.toThrow('Cannot dead-letter a succeeded harness run with publish evidence');
+    });
+
+    it('allows dead-lettering a succeeded run with no publish evidence', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: RUN_ID, status: 'dead_letter' }],
+      });
+
+      await expect(HarnessRunService.deadLetterRun(RUN_ID)).resolves.toEqual({
+        id: RUN_ID, status: 'dead_letter',
+      });
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).toContain("status <> 'succeeded'");
+      expect(sql).toContain('NULLIF(BTRIM(pr_url), \'\') IS NULL');
+    });
+
+    it('adopts a head-only run with an operator-verified PR URL', async () => {
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{
+            id: RUN_ID, status: 'failed', pr_url: null, head_sha: 'abc123',
+          }],
+        })
+        .mockResolvedValueOnce({ rows: [{ id: RUN_ID, pr_url: 'https://example/pull/9' }] })
+        .mockResolvedValueOnce({
+          rows: [{ run_id: RUN_ID, ticket_id: 42, adopted: true, released: false, marked: true }],
+        });
+
+      await expect(
+        HarnessRunService.adoptPublishedRun(RUN_ID, {
+          prUrl: 'https://example/pull/9',
+        })
+      ).resolves.toMatchObject({ adopted: true });
+
+      expect(pool.query.mock.calls[1][0]).toContain('SET pr_url = COALESCE($2, pr_url)');
+      expect(pool.query.mock.calls[1][1]).toEqual([RUN_ID, 'https://example/pull/9']);
+    });
+
+    it('refuses to overwrite an existing run PR with a different operator URL', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: RUN_ID,
+          status: 'failed',
+          pr_url: 'https://example/pull/old',
+          head_sha: 'abc',
+        }],
+      });
+
+      await expect(
+        HarnessRunService.adoptPublishedRun(RUN_ID, {
+          prUrl: 'https://example/pull/new',
+        })
+      ).rejects.toThrow('refusing to overwrite');
+    });
+
+    it('requires an operator PR URL for a head-only run', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: RUN_ID, status: 'failed', pr_url: null, head_sha: 'abc123' }],
+      });
+
+      await expect(
+        HarnessRunService.adoptPublishedRun(RUN_ID)
+      ).rejects.toThrow('provide the operator-verified prUrl');
+    });
+
+    it('adopts only a terminal run with publish evidence', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: RUN_ID, status: 'failed', pr_url: null }],
+      });
+      await expect(
+        HarnessRunService.adoptPublishedRun(RUN_ID)
+      ).rejects.toThrow('no publish evidence');
+
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: RUN_ID, status: 'running', pr_url: 'https://example/pull/1' }],
+      });
+      await expect(
+        HarnessRunService.adoptPublishedRun(RUN_ID)
+      ).rejects.toThrow('still active');
+    });
+  });
+
+  describe('recordPublish', () => {
+    it('stores head sha and PR URL while the run is active', async () => {
+      const row = { id: RUN_ID, head_sha: 'abc123', status: 'running' };
+      pool.query.mockResolvedValueOnce({ rows: [row] });
+
+      await expect(
+        HarnessRunService.recordPublish(RUN_ID, 7, { headSha: ' abc123 ' })
+      ).resolves.toEqual(row);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain('head_sha = COALESCE');
+      expect(sql).toContain('pr_url = COALESCE');
+      expect(sql).toContain("status = 'running'");
+      expect(sql).toContain('agent_id = $2');
+      expect(params).toEqual([RUN_ID, 7, 'abc123', null]);
+    });
+
+    it('requires head sha or PR URL', async () => {
+      await expect(
+        HarnessRunService.recordPublish(RUN_ID, 7, {})
+      ).rejects.toThrow('headSha or prUrl is required');
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+
+    it('rejects a publish update for a non-active run', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      await expect(
+        HarnessRunService.recordPublish(RUN_ID, 7, { prUrl: 'https://example/pull/1' })
+      ).rejects.toThrow('Active harness run not found');
     });
   });
 });

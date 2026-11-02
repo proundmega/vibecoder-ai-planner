@@ -32,7 +32,8 @@ class OpenCodeConfigWriterTest {
             Duration.ofMinutes(45),
             List.of(),
             List.of(".env*", ".github/workflows/**", "**/secrets/**"),
-            modelOverride
+            modelOverride,
+            "restart"
         );
     }
 

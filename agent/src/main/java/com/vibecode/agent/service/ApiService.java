@@ -281,6 +281,102 @@ public class ApiService {
         return response.getData() != null;
     }
 
+    /**
+     * Active runs owned by this agent, used for startup recovery.
+     */
+    public List<Map<String, Object>> listActiveHarnessRuns(long agentId) throws IOException {
+        ApiResponse<List<Map<String, Object>>> response = executeGet(
+            baseUrl + "/harness/agents/" + agentId + "/runs",
+            new TypeReference<ApiResponse<List<Map<String, Object>>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to list active harness runs: " + response.getError());
+        }
+        return response.getData() != null ? response.getData() : Collections.emptyList();
+    }
+
+    /**
+     * Workspace paths protected by a running run or an unexpired lease.
+     * Workspace cleanup must fail closed when this call fails.
+     */
+    public List<String> listActiveWorkspacePaths(long agentId) throws IOException {
+        ApiResponse<List<String>> response = executeGet(
+            baseUrl + "/harness/agents/" + agentId + "/workspaces",
+            new TypeReference<ApiResponse<List<String>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to list active harness workspaces: " + response.getError());
+        }
+        return response.getData() != null ? response.getData() : Collections.emptyList();
+    }
+
+    /**
+     * Persist publish evidence before the terminal finish so recovery can adopt
+     * a run whose finish response was lost.
+     */
+    public void recordHarnessPublish(String runId, String headSha, String prUrl) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        if (headSha != null && !headSha.isBlank()) {
+            body.put("headSha", headSha);
+        }
+        if (prUrl != null && !prUrl.isBlank()) {
+            body.put("prUrl", prUrl);
+        }
+        if (body.isEmpty()) {
+            return;
+        }
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/publish",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to record harness publish: " + response.getError());
+        }
+    }
+
+    /**
+     * Ask the backend to reconcile a terminal run immediately. This closes the
+     * window where recovery has finished a published run but the ticket is
+     * still in backlog until the next reaper sweep.
+     */
+    public Map<String, Object> reconcileHarnessRun(String runId) throws IOException {
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/reconcile",
+            Map.of(),
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to reconcile harness run: " + response.getError());
+        }
+        return response.getData();
+    }
+
+    /**
+     * Return the ticket to backlog after recovery failed its run. The backend
+     * only releases when the ticket is still in_progress with no PR.
+     */
+    public boolean releaseHarnessTicket(String runId) throws IOException {
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/release-ticket",
+            Map.of(),
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to release harness ticket: " + response.getError());
+        }
+        Object released = response.getData() == null
+            ? null
+            : response.getData().get("released");
+        return Boolean.TRUE.equals(released) || "true".equals(String.valueOf(released));
+    }
+
     private static boolean isErrorCode(ApiResponse<?> response, String code) {
         return response.getError() != null && code.equals(response.getError().getCode());
     }
