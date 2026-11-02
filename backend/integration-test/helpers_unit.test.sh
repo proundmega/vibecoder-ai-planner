@@ -54,34 +54,48 @@ check() { # label expected actual
     FAILURES=$((FAILURES + 1))
   fi
 }
-check_contains() { # label needle haystack
-  case "$3" in
-    *"$2"*) echo "ok - $1" ;;
-    *)
-      echo "not ok - $1: [$3] does not contain [$2]"
-      FAILURES=$((FAILURES + 1))
-      ;;
-  esac
+check_line() { # label exact logged invocation
+  if grep -Fxq -- "$2" "$DOCKER_CALLS"; then
+    echo "ok - $1"
+  else
+    echo "not ok - $1: no logged line [$2]"
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+check_no_match() { # label regex that must not appear in the log
+  if grep -Eq -- "$2" "$DOCKER_CALLS"; then
+    echo "not ok - $1: log unexpectedly matched [$2]"
+    FAILURES=$((FAILURES + 1))
+  else
+    echo "ok - $1"
+  fi
 }
 
 COMPOSE_EXEC="compose -f $REPO/docker-compose.yml exec -T postgres psql -c select 1"
 
-# Local branch: plain `docker compose -f <repo>/docker-compose.yml exec` is used.
+# Local branch: plain `docker compose -f <repo>/docker-compose.yml exec` is used,
+# and neither sudo nor the legacy container fallback is reached on success.
 : > "$DOCKER_CALLS"
 out=$(docker_exec_out vibecode-postgres psql -c "select 1" 2>&1)
 check "local compose exec returns captured output" "stub-output" "$out"
-check_contains "docker_exec_out uses the repo compose file" "docker $COMPOSE_EXEC" "$(cat "$DOCKER_CALLS")"
+check_line "docker_exec_out uses the repo compose file" "docker $COMPOSE_EXEC"
+check_no_match "no sudo retry after compose success" '^sudo '
+check_no_match "no legacy docker exec after compose success" '^docker exec '
 
-# Sudo fallback: plain docker fails, sudo docker succeeds.
+# Sudo fallback: plain docker fails, sudo docker succeeds, legacy name untouched.
 : > "$DOCKER_CALLS"
 STUB_DOCKER_FAIL=1 docker_exec vibecode-postgres psql -c "select 1"
 check "docker_exec falls back to sudo compose" "0" "$?"
-check_contains "docker_exec retries the compose file via sudo" "sudo docker $COMPOSE_EXEC" "$(cat "$DOCKER_CALLS")"
+check_line "docker_exec attempts plain compose first" "docker $COMPOSE_EXEC"
+check_line "docker_exec retries the compose file via sudo" "sudo docker $COMPOSE_EXEC"
+check_no_match "docker_exec skips the legacy container" '^docker exec '
 
 : > "$DOCKER_CALLS"
 out=$(STUB_DOCKER_FAIL=1 docker_exec_out vibecode-postgres psql -c "select 1" 2>&1)
 check "docker_exec_out falls back to sudo compose" "stub-output" "$out"
-check_contains "docker_exec_out retries the compose file via sudo" "sudo docker $COMPOSE_EXEC" "$(cat "$DOCKER_CALLS")"
+check_line "docker_exec_out attempts plain compose first" "docker $COMPOSE_EXEC"
+check_line "docker_exec_out retries the compose file via sudo" "sudo docker $COMPOSE_EXEC"
+check_no_match "docker_exec_out skips the legacy container" '^docker exec '
 
 if [ "$FAILURES" -gt 0 ]; then
   echo "FAILED: $FAILURES helper unit test(s) failed"
