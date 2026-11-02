@@ -260,6 +260,20 @@ describe('HarnessRunService', () => {
       ).resolves.toEqual(existing);
     });
 
+    it('normalises blank head sha and PR URL to NULL', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [{ id: RUN_ID, status: 'failed' }] });
+
+      await HarnessRunService.finishRun(RUN_ID, {
+        status: 'failed',
+        headSha: '   ',
+        prUrl: '',
+      });
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).toContain("NULLIF(BTRIM($4), '')");
+      expect(sql).toContain("NULLIF(BTRIM($5), '')");
+    });
+
     it('rejects an unknown terminal status', async () => {
       await expect(
         HarnessRunService.finishRun(RUN_ID, { status: 'done' })
@@ -353,7 +367,7 @@ describe('HarnessRunService', () => {
 
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('FOR UPDATE SKIP LOCKED');
-      expect(sql).toContain("r.pr_url IS NOT NULL THEN 'succeeded'");
+      expect(sql).toContain("NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN 'succeeded'");
       expect(sql).toContain("status = 'failed'");
       expect(sql).toContain('run has no lease and heartbeat is stale');
       expect(params).toEqual([10, 900]);
@@ -371,8 +385,13 @@ describe('HarnessRunService', () => {
       expect(sql).toContain('adopted AS');
       expect(sql).toContain('released AS');
       expect(sql).toContain('marked AS');
+      expect(sql).toContain('superseded AS');
       expect(sql).toContain('reconciled_at = NOW()');
+      expect(sql).toContain('reconciled_at IS NULL');
+      expect(sql).toContain('is_latest');
       expect(sql).toContain('run.pr_url IS NULL');
+      expect(sql).toContain('run.head_sha IS NULL');
+      expect(sql).toContain("t.status IN ('in_progress', 'backlog')");
       expect(sql).toContain("t.status <> 'done'");
       expect(params).toEqual([RUN_ID]);
     });
@@ -387,7 +406,8 @@ describe('HarnessRunService', () => {
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain("status <> 'running'");
       expect(sql).toContain('reconciled_at IS NULL');
-      expect(sql).toContain('FOR UPDATE SKIP LOCKED');
+      expect(sql).toContain('DISTINCT ON (ticket_id)');
+      expect(sql).toContain('ORDER BY ticket_id, started_at DESC');
       expect(params).toEqual([25]);
     });
 
@@ -413,7 +433,8 @@ describe('HarnessRunService', () => {
 
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain("r.status IN ('failed', 'dead_letter')");
-      expect(sql).toContain('r.pr_url IS NULL');
+      expect(sql).toContain("NULLIF(BTRIM(r.pr_url), '') IS NULL");
+      expect(sql).toContain("NULLIF(BTRIM(r.head_sha), '') IS NULL");
       expect(sql).toContain("t.status = 'in_progress'");
       expect(sql).toContain('t.pr_url IS NULL');
       expect(sql).toContain('NOT EXISTS');

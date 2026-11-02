@@ -442,6 +442,206 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     expect(ticket.rows[0].status).toBe('done');
   });
 
+  test('an old failed run cannot release a ticket for a newer published run', async () => {
+    const oldRun = await start({ branch: 'harness/old-failed' });
+    await pool.query(
+      "UPDATE harness_runs SET started_at = NOW() - INTERVAL '2 minutes' WHERE id = $1",
+      [oldRun.id]
+    );
+    await HarnessRunService.finishRun(oldRun.id, { status: 'failed' });
+
+    const newRun = await start({ branch: 'harness/new-published' });
+    await HarnessRunService.recordPublish(newRun.id, agentId, {
+      prUrl: 'https://github.com/o/r/pull/new',
+    });
+    await HarnessRunService.finishRun(newRun.id, {
+      status: 'succeeded',
+      prUrl: 'https://github.com/o/r/pull/new',
+    });
+
+    // Ticket update was lost: it is still in_progress.
+    const before = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
+    expect(before.rows[0].status).toBe('in_progress');
+
+    const oldReconciled = await HarnessRunService.reconcileRun(oldRun.id);
+    expect(oldReconciled.released).toBe(false);
+    expect(oldReconciled.adopted).toBe(false);
+    expect(oldReconciled.marked).toBe(true);
+
+    const afterOld = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(afterOld.rows[0].status).toBe('in_progress');
+    expect(afterOld.rows[0].pr_url).toBeNull();
+
+    const newReconciled = await HarnessRunService.reconcileRun(newRun.id);
+    expect(newReconciled.adopted).toBe(true);
+    expect(newReconciled.released).toBe(false);
+
+    const afterNew = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(afterNew.rows[0].status).toBe('review');
+    expect(afterNew.rows[0].pr_url).toBe('https://github.com/o/r/pull/new');
+  });
+
+  test('an old published run does not overwrite a newer ticket PR', async () => {
+    const run = await start({ branch: 'harness/old-published' });
+    await HarnessRunService.recordPublish(run.id, agentId, {
+      prUrl: 'https://github.com/o/r/pull/old',
+    });
+    await HarnessRunService.finishRun(run.id, {
+      status: 'failed',
+      prUrl: 'https://github.com/o/r/pull/old',
+    });
+    await pool.query(
+      `UPDATE tickets
+       SET status = 'review', pr_url = 'https://github.com/o/r/pull/new'
+       WHERE id = $1`,
+      [ticketId]
+    );
+
+    const reconciled = await HarnessRunService.reconcileRun(run.id);
+    expect(reconciled.adopted).toBe(true);
+
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('review');
+    expect(ticket.rows[0].pr_url).toBe('https://github.com/o/r/pull/new');
+
+    // The run evidence still wins its own status: a failed run with a PR is
+    // promoted to succeeded during reconciliation.
+    const stored = await HarnessRunService.getRun(run.id);
+    expect(stored.status).toBe('succeeded');
+  });
+
+  test('a newer failed run does not release over an older published run', async () => {
+    const oldRun = await start({ branch: 'harness/older-published' });
+    await pool.query(
+      "UPDATE harness_runs SET started_at = NOW() - INTERVAL '2 minutes' WHERE id = $1",
+      [oldRun.id]
+    );
+    await HarnessRunService.recordPublish(oldRun.id, agentId, {
+      prUrl: 'https://github.com/o/r/pull/old',
+    });
+    await HarnessRunService.finishRun(oldRun.id, {
+      status: 'failed',
+      prUrl: 'https://github.com/o/r/pull/old',
+    });
+
+    const newRun = await start({ branch: 'harness/newer-failed' });
+    await HarnessRunService.finishRun(newRun.id, { status: 'failed' });
+
+    const oldReconciled = await HarnessRunService.reconcileRun(oldRun.id);
+    expect(oldReconciled.adopted).toBe(false);
+    expect(oldReconciled.released).toBe(false);
+
+    const newReconciled = await HarnessRunService.reconcileRun(newRun.id);
+    expect(newReconciled.released).toBe(false);
+
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('in_progress');
+    expect(ticket.rows[0].pr_url).toBeNull();
+  });
+
+  test('an old published run does not adopt while a newer run is active', async () => {
+    const oldRun = await start({ branch: 'harness/old-published-active' });
+    await pool.query(
+      "UPDATE harness_runs SET started_at = NOW() - INTERVAL '2 minutes' WHERE id = $1",
+      [oldRun.id]
+    );
+    await HarnessRunService.recordPublish(oldRun.id, agentId, {
+      prUrl: 'https://github.com/o/r/pull/old',
+    });
+    await HarnessRunService.finishRun(oldRun.id, { status: 'failed' });
+
+    const active = await start({ branch: 'harness/new-active' });
+
+    const reconciled = await HarnessRunService.reconcileRun(oldRun.id);
+    expect(reconciled.adopted).toBe(false);
+    expect(reconciled.released).toBe(false);
+
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('in_progress');
+    expect(ticket.rows[0].pr_url).toBeNull();
+
+    await HarnessRunService.finishRun(active.id, { status: 'failed' });
+  });
+
+  test('reconciliation is a one-time ticket update', async () => {
+    const run = await start({ branch: 'harness/reconcile-once' });
+    await HarnessRunService.recordPublish(run.id, agentId, {
+      prUrl: 'https://github.com/o/r/pull/first',
+    });
+    await HarnessRunService.finishRun(run.id, {
+      status: 'succeeded',
+      prUrl: 'https://github.com/o/r/pull/first',
+    });
+
+    const first = await HarnessRunService.reconcileRun(run.id);
+    expect(first.adopted).toBe(true);
+
+    await pool.query(
+      "UPDATE tickets SET pr_url = 'https://github.com/o/r/pull/newer' WHERE id = $1",
+      [ticketId]
+    );
+
+    const second = await HarnessRunService.reconcileRun(run.id);
+    expect(second.marked).toBe(false);
+    expect(second.adopted).toBe(false);
+    expect(second.released).toBe(false);
+
+    const ticket = await pool.query('SELECT pr_url FROM tickets WHERE id = $1', [ticketId]);
+    expect(ticket.rows[0].pr_url).toBe('https://github.com/o/r/pull/newer');
+  });
+
+  test('adopting published work moves a backlog ticket to review', async () => {
+    const run = await start({ branch: 'harness/backlog-published' });
+    await HarnessRunService.recordPublish(run.id, agentId, {
+      prUrl: 'https://github.com/o/r/pull/9',
+    });
+    await HarnessRunService.finishRun(run.id, {
+      status: 'succeeded',
+      prUrl: 'https://github.com/o/r/pull/9',
+    });
+    await pool.query(
+      "UPDATE tickets SET status = 'backlog' WHERE id = $1",
+      [ticketId]
+    );
+
+    await HarnessRunService.reconcileRun(run.id);
+
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('review');
+    expect(ticket.rows[0].pr_url).toBe('https://github.com/o/r/pull/9');
+  });
+
+  test('release refuses a failed run that recorded a head sha without a PR', async () => {
+    const run = await start({ branch: 'harness/head-only' });
+    await HarnessRunService.recordPublish(run.id, agentId, { headSha: 'abc123' });
+    await HarnessRunService.finishRun(run.id, { status: 'failed' });
+
+    await expect(
+      HarnessRunService.releaseTicketForRun(run.id)
+    ).resolves.toBeNull();
+
+    const ticket = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
+    expect(ticket.rows[0].status).toBe('in_progress');
+  });
+
   test('reaper reconciles a terminal run stranded by an earlier sweep', async () => {
     const run = await start({ branch: 'harness/reaper-stranded' });
     await HarnessRunService.finishRun(run.id, { status: 'failed' });

@@ -17,8 +17,9 @@ Make an interrupted run self-healing without ever undoing published work.
 3. Agent startup recovery for that agent's active runs.
 4. `HARNESS_RESUME_MODE=restart|resume` with published-work adoption.
 5. Durable publish evidence before the terminal finish.
-6. A `reconciled_at` marker and terminal-run sweep so a crash between reaping
-   and releasing cannot strand a ticket.
+6. A `reconciled_at` marker, one-time backfill and latest-run terminal sweep so
+   a crash between reaping and releasing cannot strand a ticket and old runs
+   cannot regress newer work.
 7. Automated coverage for every new path, including restart and lost-finish
    sequences.
 
@@ -31,7 +32,15 @@ Make an interrupted run self-healing without ever undoing published work.
   recovery or reaping.
 - At startup, an agent lists only its own active runs and reconciles each one.
 - A run with a stored PR URL finishes `succeeded`; the ticket keeps its PR and
-  review status.
+  review status. An existing, different ticket PR is never overwritten.
+- Only the latest run per ticket can change the ticket; older runs are marked
+  superseded without releasing or adopting.
+- Reconciliation runs once per run (`reconciled_at` gate), so repeated or
+  concurrent sweeps cannot re-apply old state.
+- A published run moves an in_progress or backlog ticket to review; done is
+  never regressed.
+- A failed run with a PR is promoted to `succeeded`, and a failed run with a
+  head sha but no PR is not released.
 - With `HARNESS_RESUME_MODE=resume`, a `publishing`/`done` run with a stored
   head sha is adopted when the branch already has a PR.
 - A run whose finish cannot be confirmed after retries is left for the
@@ -44,12 +53,12 @@ Make an interrupted run self-healing without ever undoing published work.
 
 | Layer | File | Coverage |
 |---|---|---|
-| Service unit | `backend/src/__tests__/harnessRunService.test.js` | recovery query, publish evidence, guarded release SQL |
+| Service unit | `backend/src/__tests__/harnessRunService.test.js` | recovery query, publish evidence, guarded release SQL, empty-string normalisation |
 | Reaper unit | `backend/src/__tests__/harnessReaper.test.js` | terminal sweep, adoption vs release, dedupe, per-row retry |
 | Reaper schedule unit | `backend/src/__tests__/harnessReaperSchedule.test.js` | default/zero/invalid/clamped intervals |
 | Route unit | `backend/src/__tests__/api-harness-runs.test.js` | agent-scoped list, publish, release-ticket auth |
 | GitHub unit | `agent/src/test/java/.../GitHubServiceTest.java` | recovery PR lookup uses `state=open` |
-| Postgres integration | `backend/src/__tests__/integration/harnessRuns.test.js` | publish evidence, checkpoint join, run-level PR release guard, reaped-published adoption, interrupted-release reconciliation by the reaper, newer-run guard |
+| Postgres integration | `backend/src/__tests__/integration/harnessRuns.test.js` | publish evidence, checkpoint join, run-level PR/head-sha release guards, reaped-published adoption, interrupted release, multi-run ordering, existing ticket PR, backlog adoption, one-time reconciliation, newer-run guard |
 | Agent processor | `agent/src/test/java/.../HarnessTicketProcessorTest.java` | restart release, publish adoption, stale-ticket PR rejection, terminal mismatch, unconfirmed finish, post-publish no-release |
 | Agent HTTP | `agent/src/test/java/.../ApiServiceHarnessTest.java` | recovery list path, publish body, guarded release boolean |
 | Config | `agent/src/test/java/.../HarnessConfigTest.java` | `HARNESS_RESUME_MODE` parsing/validation |

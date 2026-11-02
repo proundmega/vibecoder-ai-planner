@@ -73,6 +73,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private volatile String currentRunId;
     private volatile boolean leaseLost;
     private volatile boolean published;
+    private volatile String publishedHeadSha;
+    private volatile String publishedPrUrl;
     private volatile ScheduledExecutorService heartbeatExecutor;
     private volatile String pendingTerminalStatus;
     private volatile String pendingTerminalMessage;
@@ -205,6 +207,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         Map<String, Object> payload = mapValue(run.get("last_checkpoint_payload"));
 
         String ticketStatus = textValue(run.get("ticket_status"));
+        String ticketPrUrl = textValue(run.get("ticket_pr_url"));
         String headSha = textValue(run.get("head_sha"));
         if (headSha == null) {
             headSha = textValue(payload.get("headSha"));
@@ -232,7 +235,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             // repeats the idempotent adoption instead of leaving a stranded
             // in_progress ticket.
             if (!"done".equals(ticketStatus)
-                && !restorePublishedTicket(ticketId, ticketStatus, prUrl)) {
+                && !restorePublishedTicket(ticketId, ticketStatus, ticketPrUrl, prUrl)) {
                 log.warn("Could not restore ticket {} for published run {}; "
                         + "leaving the run active for retry",
                     ticketId, runId);
@@ -316,19 +319,30 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private boolean restorePublishedTicket(
         Long ticketId,
         String ticketStatus,
+        String ticketPrUrl,
         String prUrl
     ) {
         if (ticketId == null) {
             return true;
         }
-        if (!updateTicketPrUrl(ticketId, prUrl)) {
-            return false;
+        if (ticketPrUrl == null) {
+            if (!updateTicketPrUrl(ticketId, prUrl)) {
+                return false;
+            }
+        } else if (!ticketPrUrl.equals(prUrl)) {
+            // An older run must not overwrite a newer ticket PR. Keep the
+            // ticket's current PR and let the backend reconciliation report
+            // the mismatch.
+            log.warn("Ticket {} already has PR {}; keeping it instead of {}",
+                ticketId, ticketPrUrl, prUrl);
         }
+
         if ("in_progress".equals(ticketStatus)) {
             return markReview(ticketId);
         }
-        // review already has the right status; done/backlog/unknown are not
-        // advanced here, but the PR URL is still recorded.
+        // review already has the right status; done is never regressed. The
+        // backlog -> review transition is owned by backend reconciliation
+        // because the ticket state machine does not allow it through the API.
         return true;
     }
 
@@ -563,6 +577,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 String commitSha = workspace.commitAndPushStaged(
                     "feat: " + pickedUp.getTitle(), branchName);
                 published = true;
+                publishedHeadSha = commitSha;
                 recordPublishSafely(commitSha, null);
                 if (!assertLeaseHeld(pickedUp.getId())) {
                     return;
@@ -726,6 +741,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private boolean startDurableRun(Ticket ticket, String branchName) {
         leaseLost = false;
         published = false;
+        publishedHeadSha = null;
+        publishedPrUrl = null;
         pendingTerminalStatus = null;
         pendingTerminalMessage = null;
         pendingHeadSha = null;
@@ -881,11 +898,13 @@ public final class HarnessTicketProcessor implements TicketWorker {
             "Harness lease was lost before publish; refusing to push or open a PR. "
                 + "The ticket is left for recovery.");
         pendingTerminalStatus = "failed";
-        pendingTerminalMessage = "Harness lease lost before publish";
-        pendingHeadSha = null;
-        pendingPrUrl = null;
+        pendingTerminalMessage = "Harness lease lost during publish";
+        pendingHeadSha = publishedHeadSha;
+        pendingPrUrl = publishedPrUrl;
         releaseAfterTerminalFinish = false;
-        finishDurableRun("failed", "Harness lease lost before publish", null, null);
+        finishDurableRun(
+            "failed", "Harness lease lost during publish",
+            publishedHeadSha, publishedPrUrl);
         return false;
     }
 
@@ -949,12 +968,15 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private void failAndRelease(Long ticketId, String message) {
         pendingTerminalStatus = "failed";
         pendingTerminalMessage = message;
-        pendingHeadSha = null;
-        pendingPrUrl = null;
+        // Preserve publish evidence on the failed finish so the backend guard
+        // refuses to return a pushed branch to backlog.
+        pendingHeadSha = publishedHeadSha;
+        pendingPrUrl = publishedPrUrl;
         releaseAfterTerminalFinish = true;
 
         String runId = currentRunId;
-        boolean finished = finishDurableRun("failed", message, null, null);
+        boolean finished = finishDurableRun(
+            "failed", message, publishedHeadSha, publishedPrUrl);
         if (!finished) {
             // The run/lease may still be live. The finally block retries the
             // finish and applies the backoff + release only if it succeeds.

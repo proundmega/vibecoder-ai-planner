@@ -292,8 +292,8 @@ class HarnessRunService {
          UPDATE harness_runs
          SET status = $2,
              error = $3,
-             head_sha = COALESCE($4, head_sha),
-             pr_url = COALESCE($5, pr_url),
+             head_sha = COALESCE(NULLIF(BTRIM($4), ''), head_sha),
+             pr_url = COALESCE(NULLIF(BTRIM($5), ''), pr_url),
              heartbeat_at = NOW(),
              finished_at = NOW()
          WHERE id = $1 AND status = 'running'
@@ -370,8 +370,18 @@ class HarnessRunService {
          FROM harness_runs r
          WHERE r.id = $1
            AND r.status IN ('failed', 'dead_letter')
-           AND r.pr_url IS NULL
+           AND NULLIF(BTRIM(r.pr_url), '') IS NULL
+           AND NULLIF(BTRIM(r.head_sha), '') IS NULL
            AND ($2::bigint IS NULL OR r.agent_id = $2)
+           AND NOT EXISTS (
+             SELECT 1 FROM harness_runs other
+             WHERE other.ticket_id = r.ticket_id
+               AND other.id <> r.id
+               AND (
+                 NULLIF(BTRIM(other.pr_url), '') IS NOT NULL
+                 OR NULLIF(BTRIM(other.head_sha), '') IS NOT NULL
+               )
+           )
        )
        UPDATE tickets t
        SET assigned_agent_id = NULL,
@@ -393,35 +403,104 @@ class HarnessRunService {
   }
 
   /**
-   * Reconcile one terminal run with its ticket and mark it done.
+   * Reconcile one terminal run with its ticket.
    *
    * Adopting a published run and releasing a failed run are deliberately
    * separate from finishing the run: the reaper may die between those steps.
-   * This statement is idempotent and is retried until `reconciled_at` is set.
+   * Only a run whose `reconciled_at` is still NULL can change a ticket, so
+   * repeated or concurrent calls cannot re-apply an old state. The `marked`
+   * CTE is the concurrency gate: ticket CTEs depend on it, and only the
+   * statement that flips the marker can proceed.
    *
-   * - A run with a stored PR URL is adopted: the ticket keeps (or gains) the
-   *   PR and moves from in_progress to review. Done tickets are never changed.
-   * - A failed/dead-letter run with no PR evidence releases the ticket only
-   *   when it is in_progress with no PR and no newer run is active.
+   * Only the latest run for a ticket may touch it. Older runs are marked
+   * reconciled (and promoted to succeeded when they recorded a PR) but never
+   * release a ticket for a newer run or overwrite a newer ticket PR.
+   *
+   * - A run with a stored PR URL is adopted: a missing ticket PR is filled,
+   *   an existing different PR is kept, and in_progress/backlog tickets move
+   *   to review. Done tickets are never changed.
+   * - A failed/dead-letter run with no PR or head evidence releases the ticket
+   *   only when it is in_progress with no PR and no newer run exists.
    */
   async reconcileRun(runId) {
     const id = requiredUuid(runId, 'runId');
 
     const result = await pool.query(
       `WITH run AS (
-         SELECT r.id, r.ticket_id, r.status, r.pr_url
+         SELECT r.id,
+                r.ticket_id,
+                r.started_at,
+                r.status,
+                NULLIF(BTRIM(r.pr_url), '') AS pr_url,
+                NULLIF(BTRIM(r.head_sha), '') AS head_sha,
+                NOT EXISTS (
+                  SELECT 1
+                  FROM harness_runs newer
+                  WHERE newer.ticket_id = r.ticket_id
+                    AND newer.id <> r.id
+                    AND (newer.started_at, newer.id) > (r.started_at, r.id)
+                ) AS is_latest
          FROM harness_runs r
          WHERE r.id = $1 AND r.status <> 'running'
        ),
+       marked AS (
+         UPDATE harness_runs
+         SET reconciled_at = NOW(),
+             status = CASE
+               WHEN status IN ('failed', 'dead_letter')
+                 AND NULLIF(BTRIM(pr_url), '') IS NOT NULL
+               THEN 'succeeded'
+               ELSE status
+             END,
+             finished_at = CASE
+               WHEN status IN ('failed', 'dead_letter')
+                 AND NULLIF(BTRIM(pr_url), '') IS NOT NULL
+               THEN COALESCE(finished_at, NOW())
+               ELSE finished_at
+             END
+         WHERE id = $1
+           AND status <> 'running'
+           AND reconciled_at IS NULL
+         RETURNING id
+       ),
+       superseded AS (
+         UPDATE harness_runs old
+         SET reconciled_at = NOW(),
+             status = CASE
+               WHEN old.status IN ('failed', 'dead_letter')
+                 AND NULLIF(BTRIM(old.pr_url), '') IS NOT NULL
+               THEN 'succeeded'
+               ELSE old.status
+             END,
+             finished_at = CASE
+               WHEN old.status IN ('failed', 'dead_letter')
+                 AND NULLIF(BTRIM(old.pr_url), '') IS NOT NULL
+               THEN COALESCE(old.finished_at, NOW())
+               ELSE old.finished_at
+             END
+         FROM run, marked
+         WHERE marked.id = run.id
+           AND old.ticket_id = run.ticket_id
+           AND old.id <> run.id
+           AND old.status <> 'running'
+           AND old.reconciled_at IS NULL
+           AND (old.started_at, old.id) < (run.started_at, run.id)
+         RETURNING old.id
+       ),
        adopted AS (
          UPDATE tickets t
-         SET pr_url = run.pr_url,
+         SET pr_url = CASE
+               WHEN t.pr_url IS NULL THEN run.pr_url
+               ELSE t.pr_url
+             END,
              status = CASE
-               WHEN t.status = 'in_progress' THEN 'review'
+               WHEN t.status IN ('in_progress', 'backlog') THEN 'review'
                ELSE t.status
              END
-         FROM run
-         WHERE run.pr_url IS NOT NULL
+         FROM run, marked
+         WHERE marked.id = run.id
+           AND run.is_latest
+           AND run.pr_url IS NOT NULL
            AND t.id = run.ticket_id
            AND t.status <> 'done'
          RETURNING t.id
@@ -431,33 +510,40 @@ class HarnessRunService {
          SET assigned_agent_id = NULL,
              locked_at = NULL,
              status = 'backlog'
-         FROM run
-         WHERE run.status IN ('failed', 'dead_letter')
+         FROM run, marked
+         WHERE marked.id = run.id
+           AND run.is_latest
+           AND run.status IN ('failed', 'dead_letter')
            AND run.pr_url IS NULL
+           AND run.head_sha IS NULL
            AND t.id = run.ticket_id
            AND t.status = 'in_progress'
            AND t.pr_url IS NULL
            AND NOT EXISTS (
              SELECT 1 FROM harness_runs other
-             WHERE other.ticket_id = run.ticket_id AND other.status = 'running'
+             WHERE other.ticket_id = run.ticket_id
+               AND other.id <> run.id
+               AND (
+                 NULLIF(BTRIM(other.pr_url), '') IS NOT NULL
+                 OR NULLIF(BTRIM(other.head_sha), '') IS NOT NULL
+               )
            )
          RETURNING t.id
-       ),
-       marked AS (
-         UPDATE harness_runs
-         SET reconciled_at = NOW()
-         WHERE id = $1 AND status <> 'running'
-         RETURNING id
        )
        SELECT run.id AS run_id,
               run.ticket_id,
+              (marked.id IS NOT NULL) AS marked,
+              (
+                marked.id IS NOT NULL
+                AND run.pr_url IS NOT NULL
+                AND run.status IN ('failed', 'dead_letter')
+              ) AS promoted,
               (adopted.id IS NOT NULL) AS adopted,
-              (released.id IS NOT NULL) AS released,
-              (marked.id IS NOT NULL) AS marked
+              (released.id IS NOT NULL) AS released
        FROM run
+       LEFT JOIN marked ON TRUE
        LEFT JOIN adopted ON TRUE
-       LEFT JOIN released ON TRUE
-       LEFT JOIN marked ON TRUE`,
+       LEFT JOIN released ON TRUE`,
       [id]
     );
 
@@ -465,9 +551,11 @@ class HarnessRunService {
   }
 
   /**
-   * Terminal runs whose ticket was never reconciled, including the gap between
-   * reaping a lease and releasing its ticket. Sweeping this list makes the
-   * reaper crash-safe: `reconciled_at` is only set after the ticket update.
+   * The newest pending terminal run per ticket. Sweeping this list makes the
+   * reaper crash-safe: `reconciled_at` is only set after the ticket update, and
+   * older runs are marked as superseded when the newest one is reconciled.
+   * Reconciliation itself performs the concurrency check, so this query does
+   * not rely on row locks that would end with the autocommit statement.
    */
   async listTerminalRunsForReconcile(limit = 50) {
     const parsedLimit = Number(limit);
@@ -476,12 +564,11 @@ class HarnessRunService {
     }
 
     const result = await pool.query(
-      `SELECT id
+      `SELECT DISTINCT ON (ticket_id) id
        FROM harness_runs
        WHERE status <> 'running' AND reconciled_at IS NULL
-       ORDER BY COALESCE(finished_at, started_at)
-       LIMIT $1
-       FOR UPDATE SKIP LOCKED`,
+       ORDER BY ticket_id, started_at DESC, id DESC
+       LIMIT $1`,
       [parsedLimit]
     );
     return result.rows.map((row) => row.id);
@@ -616,10 +703,13 @@ class HarnessRunService {
        ),
        failed AS (
          UPDATE harness_runs r
-         SET status = CASE WHEN r.pr_url IS NOT NULL THEN 'succeeded' ELSE 'failed' END,
+         SET status = CASE
+               WHEN NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN 'succeeded'
+               ELSE 'failed'
+             END,
              finished_at = NOW(),
              error = CASE
-               WHEN r.pr_url IS NOT NULL THEN r.error
+               WHEN NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN r.error
                ELSE COALESCE(r.error, 'lease expired without heartbeat')
              END
          FROM deleted d
@@ -639,10 +729,13 @@ class HarnessRunService {
        ),
        orphan_failed AS (
          UPDATE harness_runs r
-         SET status = CASE WHEN r.pr_url IS NOT NULL THEN 'succeeded' ELSE 'failed' END,
+         SET status = CASE
+               WHEN NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN 'succeeded'
+               ELSE 'failed'
+             END,
              finished_at = NOW(),
              error = CASE
-               WHEN r.pr_url IS NOT NULL THEN r.error
+               WHEN NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN r.error
                ELSE COALESCE(r.error, 'run has no lease and heartbeat is stale')
              END
          FROM orphaned o

@@ -181,6 +181,56 @@ class HarnessTicketProcessorTest {
     }
 
     @Test
+    void startupRecoveryKeepsANewerTicketPrInsteadOfOverwritingIt() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-old",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "step", "done",
+            "ticket_status", "review",
+            "ticket_pr_url", "https://github.com/owner/repo/pull/new",
+            "pr_url", "https://github.com/owner/repo/pull/old"
+        )));
+        when(apiService.finishHarnessRun(
+            "run-old", "succeeded", null, null,
+            "https://github.com/owner/repo/pull/old"))
+            .thenReturn("succeeded");
+
+        assertEquals(1, processor.recoverActiveRuns());
+
+        verify(apiService, never()).updateTicketPrUrl(any(), anyString());
+        verify(apiService, never()).updateTicketStatus(any(), anyString());
+        verify(apiService, never()).releaseHarnessTicket("run-old");
+    }
+
+    @Test
+    void startupRecoveryLeavesABacklogStatusForBackendReconciliation() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-old",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "step", "done",
+            "ticket_status", "backlog",
+            "pr_url", "https://github.com/owner/repo/pull/9"
+        )));
+        when(apiService.finishHarnessRun(
+            "run-old", "succeeded", null, null,
+            "https://github.com/owner/repo/pull/9"))
+            .thenReturn("succeeded");
+
+        assertEquals(1, processor.recoverActiveRuns());
+
+        verify(apiService).updateTicketPrUrl(
+            1L, "https://github.com/owner/repo/pull/9");
+        // backlog -> review is not a valid API transition; the backend
+        // reconciliation sweep owns it.
+        verify(apiService, never()).updateTicketStatus(any(), anyString());
+        verify(apiService, never()).releaseHarnessTicket("run-old");
+    }
+
+    @Test
     void resumeModeFindsTheExistingPrForAPublishingRun() throws Exception {
         HarnessTicketProcessor resumeProcessor = processorWithResumeMode();
         when(config.getAgentId()).thenReturn("7");
@@ -404,6 +454,26 @@ class HarnessTicketProcessorTest {
         assertTrue(postedMessages().stream().anyMatch(message ->
             message.contains("already published")
                 && message.contains("operator review")));
+    }
+
+    @Test
+    void postPublishFailureWithADurableRunPersistsHeadShaAndNeverReleases() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        doThrow(new IOException("github down"))
+            .when(gitHubService).createPullRequest(
+                anyString(), anyString(), anyString(), anyString());
+
+        processor.processTicket(ticket());
+
+        verify(apiService).finishHarnessRun(
+            eq("run-1"), eq("failed"), anyString(), eq("abc1234"), isNull());
+        verify(apiService, never()).releaseHarnessTicket("run-1");
+        verify(apiService, never()).releaseTicket(1L);
     }
 
     @Test

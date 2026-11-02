@@ -80,17 +80,22 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   whose `reconciled_at` marker is still unset.
 - **Guarded ticket release.** `HarnessRunService.releaseTicketForRun` is the only
   recovery path that returns a ticket to backlog. It requires a terminal
-  (`failed`/`dead_letter`) run **with no run-level PR**, the ticket still
-  `in_progress`, `pr_url IS NULL`, and no newer active run for that ticket.
+  (`failed`/`dead_letter`) run **with no run-level PR or head sha**, the ticket
+  still `in_progress`, `pr_url IS NULL`, and no newer run for that ticket.
+  A pushed branch (`head_sha` without a PR) is treated as publish evidence and
+  left for operator/reconciliation instead of being silently re-run.
 - **Terminal-run reconciliation.** `046_harness_run_reconciliation.sql` adds a
-  `reconciled_at` marker and a partial index for pending terminal runs.
-  `reconcileRun` adopts a run with a stored
-  PR URL into the ticket (in_progress -> review, never done -> review) or
-  releases a failed run, then sets `reconciled_at`. `reapExpiredLeases` marks a
-  run `succeeded` when it already has a PR URL, and a sweep of terminal runs
-  with `reconciled_at IS NULL` recovers the crash gap between reaping and
-  releasing. A lost success-finish therefore never resets a reviewed ticket and
-  cannot strand an in-progress one.
+  `reconciled_at` marker, a partial index for pending terminal runs, a one-time
+  backfill for historical terminal runs and empty-string normalisation.
+  `reconcileRun` only changes the ticket when it flips `reconciled_at` from
+  NULL, so repeated/concurrent calls cannot re-apply old state. It reconciles
+  the **latest run per ticket**: older runs are marked superseded and promoted
+  to succeeded if they recorded a PR, but never release a ticket for a newer
+  run or overwrite a newer ticket PR. A published run fills a missing ticket
+  PR (never overwrites a different one) and moves `in_progress`/`backlog` to
+  `review`; done tickets are never changed. `reapExpiredLeases` marks a run
+  `succeeded` when it already has a PR URL, and a sweep of the newest pending
+  terminal run per ticket recovers the crash gap between reaping and releasing.
 - **Agent startup recovery.** `HarnessTicketProcessor.recoverActiveRuns()` lists
   this agent's active runs at startup (with the latest checkpoint payload). It
   adopts a run that has durable publish evidence (PR URL, or head sha plus an
@@ -154,12 +159,13 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   ownership, JWT permission/project scoping, checkpoints, heartbeats, finish
   and lease conflicts.
 - `backend/src/__tests__/integration/harnessRuns.test.js` executes against
-  PostgreSQL (23 tests): assignment authorization, sequential and concurrent
+  PostgreSQL (30 tests): assignment authorization, sequential and concurrent
   one-active-run races, unexpired lease blocking, expired-lease reaping, orphan
   reaping, idempotent finish + lease release, checkpoint ordering/context,
-  publish evidence, guarded reaping/reconciliation (including reaped published
-  runs and interrupted releases), wrong-agent lease claims and renewal after
-  release/terminal runs.
+  publish evidence, guarded reaping/reconciliation (reaped published runs,
+  interrupted releases, old-vs-new multi-run ordering, existing ticket PRs,
+  backlog adoption, one-time reconciliation), wrong-agent lease claims and
+  renewal after release/terminal runs.
 - `HarnessTicketProcessorTest` verifies run persistence, lease claim failure,
   lease-loss publishing refusal, transient heartbeat retry, finish retry and
   all checkpoints.
