@@ -6,6 +6,10 @@ PASS=0
 FAIL=0
 TESTS=()
 
+# Repository root, resolved once from this file's location (used for the local
+# checkout compose path below).
+INTEGRATION_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
 pass() { PASS=$((PASS + 1)); TESTS+=("✓ $1"); }
 fail() { FAIL=$((FAIL + 1)); TESTS+=("✗ $1 — $2"); }
 
@@ -29,6 +33,18 @@ docker_exec() {
     if docker compose $compose_args exec -T "$service" "$@" >/dev/null 2>&1; then
       return 0
     fi
+  else
+    # Local checkout: use compose exec so the container naming scheme
+    # (Compose v1 "project_service_1" vs v2 "project-service-1") doesn't matter.
+    # Mirror docker_compose(): retry via sudo where Docker requires it.
+    if [ -f "$INTEGRATION_REPO_ROOT/docker-compose.yml" ]; then
+      if docker compose -f "$INTEGRATION_REPO_ROOT/docker-compose.yml" exec -T "$service" "$@" >/dev/null 2>&1; then
+        return 0
+      elif command -v sudo >/dev/null 2>&1 && \
+           sudo docker compose -f "$INTEGRATION_REPO_ROOT/docker-compose.yml" exec -T "$service" "$@" >/dev/null 2>&1; then
+        return 0
+      fi
+    fi
   fi
   # Fallback: derive container name from COMPOSE_PROJECT_NAME
   local project="${COMPOSE_PROJECT_NAME:-vibecode}"
@@ -38,7 +54,7 @@ docker_exec() {
   elif command -v sudo >/dev/null 2>&1 && sudo docker exec "$container_name" "$@" >/dev/null 2>&1; then
     return 0
   else
-    echo "docker_exec: failed to execute on container '$container_name': $*" >&2
+    echo "docker_exec: failed to execute '$*' via compose service '$service' or legacy container '$container_name'" >&2
     return 1
   fi
 }
@@ -62,6 +78,15 @@ docker_exec_out() {
     local compose_args="-f /app/compose/docker-compose.yml"
     [ -f /app/compose/docker-compose.test.yml ] && compose_args="$compose_args -f /app/compose/docker-compose.test.yml"
     output=$(docker compose $compose_args exec -T "$service" "$@" 2>/dev/null) && { echo "$output"; return 0; }
+  else
+    # Local checkout: use compose exec so the container naming scheme doesn't matter.
+    # Mirror docker_compose(): retry via sudo where Docker requires it.
+    if [ -f "$INTEGRATION_REPO_ROOT/docker-compose.yml" ]; then
+      output=$(docker compose -f "$INTEGRATION_REPO_ROOT/docker-compose.yml" exec -T "$service" "$@" 2>/dev/null) && { echo "$output"; return 0; }
+      if command -v sudo >/dev/null 2>&1; then
+        output=$(sudo docker compose -f "$INTEGRATION_REPO_ROOT/docker-compose.yml" exec -T "$service" "$@" 2>/dev/null) && { echo "$output"; return 0; }
+      fi
+    fi
   fi
   # Fallback: derive container name from COMPOSE_PROJECT_NAME
   local project="${COMPOSE_PROJECT_NAME:-vibecode}"
@@ -70,7 +95,7 @@ docker_exec_out() {
   if command -v sudo >/dev/null 2>&1; then
     output=$(sudo docker exec "$container_name" "$@" 2>/dev/null) && { echo "$output"; return 0; }
   fi
-  echo "docker_exec_out: failed to execute on container '$container_name': $*" >&2
+  echo "docker_exec_out: failed to execute '$*' via compose service '$service' or legacy container '$container_name'" >&2
   return 1
 }
 

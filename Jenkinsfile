@@ -103,6 +103,13 @@ pipeline {
                         }
                     }
                 }
+                stage('Backend Helper Unit Tests') {
+                    steps {
+                        dir('backend') {
+                            sh 'bash integration-test/helpers_unit.test.sh'
+                        }
+                    }
+                }
                 stage('Backend Unit Tests') {
                     steps {
                         nodejs('Node') {
