@@ -163,9 +163,33 @@ public final class HarnessTicketProcessor implements TicketWorker {
         if (config.isDryRun() || workspaceRetentionHours <= 0) {
             return 0;
         }
+        Long agentId = longValue(config.getAgentId());
+        if (agentId == null) {
+            log.warn("Skipping workspace prune: AGENT_ID is not numeric");
+            return 0;
+        }
+
+        List<String> protectedPaths;
+        try {
+            protectedPaths = apiService.listActiveWorkspacePaths(agentId);
+        } catch (IOException | RuntimeException e) {
+            // Fail closed: without the active-run/lease list we cannot prove a
+            // directory is safe to delete.
+            log.warn("Skipping workspace prune: active workspaces unavailable: {}",
+                e.getMessage());
+            return 0;
+        }
+        if (protectedPaths == null) {
+            return 0;
+        }
+
         try {
             WorkspaceManager manager = workspaceFactory.apply(config.getRepoName());
-            return manager.pruneStaleWorkspaces(Duration.ofHours(workspaceRetentionHours));
+            int removed = manager.pruneStaleWorkspaces(
+                Duration.ofHours(workspaceRetentionHours), protectedPaths);
+            removed += manager.pruneStaleTempDirectories(
+                Duration.ofHours(workspaceRetentionHours));
+            return removed;
         } catch (IOException | RuntimeException e) {
             log.warn("Could not prune stale workspaces: {}", e.getMessage());
             return 0;

@@ -20,7 +20,13 @@ const DEFAULT_RECONCILE_LIMIT = 50;
  */
 class HarnessReaper {
   async runOnce({ limit, orphanAfterSeconds } = {}) {
-    const reaped = await HarnessRunService.reapExpiredLeases(limit, orphanAfterSeconds);
+    let reaped;
+    try {
+      reaped = await HarnessRunService.reapExpiredLeases(limit, orphanAfterSeconds);
+    } catch (error) {
+      HarnessMetrics.recordSweepFailure();
+      throw error;
+    }
     const summary = {
       reaped: reaped.length,
       released: 0,
@@ -30,6 +36,7 @@ class HarnessReaper {
       skipped: [],
     };
 
+    let complete = true;
     const seen = new Set();
     const reconcile = async (runId, ticketId) => {
       if (!runId || seen.has(runId)) {
@@ -48,6 +55,7 @@ class HarnessReaper {
         if (result.marked) summary.reconciled += 1;
         if (result.needs_operator) summary.needsOperator += 1;
       } catch (error) {
+        complete = false;
         summary.skipped.push({ ticketId, runId, reason: 'reconcile_failed' });
         logger.error(`Harness reaper reconcile failed for run ${runId}: ${error.message}`);
       }
@@ -63,13 +71,14 @@ class HarnessReaper {
         limit === undefined ? DEFAULT_RECONCILE_LIMIT : limit
       );
     } catch (error) {
+      complete = false;
       logger.error(`Harness reaper could not list pending terminal runs: ${error.message}`);
     }
     for (const runId of pending) {
       await reconcile(runId, null);
     }
 
-    HarnessMetrics.recordSweep(summary);
+    HarnessMetrics.recordSweep(summary, { complete });
 
     if (summary.reaped > 0 || summary.reconciled > 0) {
       logger.info(

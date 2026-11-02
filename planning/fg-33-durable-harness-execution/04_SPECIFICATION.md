@@ -22,9 +22,13 @@ Make an interrupted run self-healing without ever undoing published work.
    cannot regress newer work.
 7. Automated coverage for every new path, including restart and lost-finish
    sequences.
-8. Operator dead-letter/adoption actions with project-scoped JWT auth.
-9. Agent-side stale workspace retention at startup.
-10. Prometheus counters for recovery outcomes and an operations runbook.
+8. Operator dead-letter/adoption actions with project-scoped JWT auth and
+   `TICKET_UPDATE`; adoption accepts an operator-verified PR URL for head-only
+   runs, and succeeded runs without evidence can be dead-lettered.
+9. Lease-aware agent-side stale workspace/temp retention after successful
+   startup recovery.
+10. Prometheus counters for recovery outcomes plus a failure counter, and an
+    operations runbook.
 
 ## Acceptance criteria
 
@@ -63,8 +67,12 @@ Make an interrupted run self-healing without ever undoing published work.
   agent keys cannot call either action.
 - Dead-lettering clears the lease and reconciliation marker; the next sweep
   applies the normal PR/head/ticket guards.
-- Stale clone directories older than the retention window are removed at agent
-  startup without touching the current workspace or symlinks.
+- Stale clone/temp directories older than the retention window are removed only
+  after recovery succeeds, never touching paths protected by a running run or
+  unexpired lease, the current workspace, symlinks or foreign names.
+- A run with a head sha but no PR can be adopted with an operator-verified PR
+  URL; a succeeded run with no evidence can be dead-lettered so reconciliation
+  releases the ticket.
 
 ## Test matrix
 
@@ -81,8 +89,8 @@ Make an interrupted run self-healing without ever undoing published work.
 | Agent HTTP | `agent/src/test/java/.../ApiServiceHarnessTest.java` | recovery list path, publish body, guarded release boolean |
 | Config | `agent/src/test/java/.../HarnessConfigTest.java` | `HARNESS_RESUME_MODE` parsing/validation |
 | Operator routes | `backend/src/__tests__/api-harness-runs.test.js` | dead-letter/adopt auth and responses |
-| Workspace retention | `agent/src/test/java/.../WorkspaceManagerTest.java` | stale vs fresh dirs, non-directories preserved |
-| Metrics | `backend/src/services/HarnessMetrics.js` | reaper outcome counters and last-sweep gauge |
+| Workspace retention | `agent/src/test/java/.../WorkspaceManagerTest.java` | stale/fresh/foreign dirs, protected/current paths, symlinks, zero retention, temp dirs |
+| Metrics | `backend/src/__tests__/harnessMetrics.test.js` | counters, failure counter and complete-only success timestamp |
 
 ## Out of scope
 

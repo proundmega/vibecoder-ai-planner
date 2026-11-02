@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
@@ -881,6 +882,29 @@ class HarnessTicketProcessorTest {
         verify(apiService, never()).releaseTicket(1L);
         assertTrue(postedMessages().stream().anyMatch(message ->
             message.contains("Verification failed") && message.contains("attempt 1/3")));
+    }
+
+    @Test
+    void workspacePruneSkipsWhenProtectedPathsAreUnavailable() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveWorkspacePaths(7L))
+            .thenThrow(new IOException("backend down"));
+
+        assertEquals(0, processor.pruneStaleWorkspaces());
+        verify(workspace, never()).pruneStaleWorkspaces(any(), anyCollection());
+    }
+
+    @Test
+    void workspacePruneUsesProtectedPathsFromTheBackend() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveWorkspacePaths(7L))
+            .thenReturn(List.of("/tmp/protected-workspace"));
+        when(workspace.pruneStaleWorkspaces(any(), anyCollection())).thenReturn(2);
+        when(workspace.pruneStaleTempDirectories(any())).thenReturn(1);
+
+        assertEquals(3, processor.pruneStaleWorkspaces());
+        verify(workspace).pruneStaleWorkspaces(
+            any(), eq(List.of("/tmp/protected-workspace")));
     }
 
     private List<String> postedMessages() throws Exception {

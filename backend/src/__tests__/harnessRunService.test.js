@@ -474,7 +474,53 @@ describe('HarnessRunService', () => {
 
       await expect(
         HarnessRunService.deadLetterRun(RUN_ID)
-      ).rejects.toThrow('Cannot dead-letter a succeeded harness run');
+      ).rejects.toThrow('Cannot dead-letter a succeeded harness run with publish evidence');
+    });
+
+    it('allows dead-lettering a succeeded run with no publish evidence', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: RUN_ID, status: 'dead_letter' }],
+      });
+
+      await expect(HarnessRunService.deadLetterRun(RUN_ID)).resolves.toEqual({
+        id: RUN_ID, status: 'dead_letter',
+      });
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).toContain("status <> 'succeeded'");
+      expect(sql).toContain('NULLIF(BTRIM(pr_url), \'\') IS NULL');
+    });
+
+    it('adopts a head-only run with an operator-verified PR URL', async () => {
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{
+            id: RUN_ID, status: 'failed', pr_url: null, head_sha: 'abc123',
+          }],
+        })
+        .mockResolvedValueOnce({ rows: [{ id: RUN_ID, pr_url: 'https://example/pull/9' }] })
+        .mockResolvedValueOnce({
+          rows: [{ run_id: RUN_ID, ticket_id: 42, adopted: true, released: false, marked: true }],
+        });
+
+      await expect(
+        HarnessRunService.adoptPublishedRun(RUN_ID, {
+          prUrl: 'https://example/pull/9',
+        })
+      ).resolves.toMatchObject({ adopted: true });
+
+      expect(pool.query.mock.calls[1][0]).toContain('SET pr_url = COALESCE($2, pr_url)');
+      expect(pool.query.mock.calls[1][1]).toEqual([RUN_ID, 'https://example/pull/9']);
+    });
+
+    it('requires an operator PR URL for a head-only run', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: RUN_ID, status: 'failed', pr_url: null, head_sha: 'abc123' }],
+      });
+
+      await expect(
+        HarnessRunService.adoptPublishedRun(RUN_ID)
+      ).rejects.toThrow('provide the operator-verified prUrl');
     });
 
     it('adopts only a terminal run with publish evidence', async () => {

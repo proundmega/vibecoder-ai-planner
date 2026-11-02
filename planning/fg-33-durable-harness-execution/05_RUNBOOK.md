@@ -15,12 +15,15 @@ without an operator decision.
 | `harness_runs_released_total` | Tickets returned to backlog after failure |
 | `harness_runs_adopted_total` | Published runs adopted into review |
 | `harness_runs_needs_operator_total` | Runs left for operator handling |
-| `harness_reaper_last_success_timestamp_seconds` | Last successful sweep |
+| `harness_reaper_sweep_failures_total` | Incomplete sweeps (listing/reconcile errors) |
+| `harness_reaper_last_success_timestamp_seconds` | Last **complete** sweep |
 
 Suggested alerts:
 
 - `time() - harness_reaper_last_success_timestamp_seconds > 180` — reaper is not
   completing sweeps.
+- `increase(harness_reaper_sweep_failures_total[15m]) > 0` — a sweep could not
+  list or reconcile a run; check backend logs.
 - `increase(harness_runs_needs_operator_total[15m]) > 0` — a run needs a human.
 - `increase(harness_runs_released_total[15m])` — repeated failures on tickets.
 
@@ -55,16 +58,29 @@ WHERE t.pr_url IS NOT NULL
 
 ## Recover a published run
 
-Use adoption rather than releasing the ticket:
+Operator actions require a JWT with `TICKET_UPDATE` and project access; agent
+keys and the `user` role are refused. Use adoption rather than releasing the
+ticket:
 
 ```bash
 curl -X POST "$API/api/v1/harness/runs/$RUN_ID/adopt" \
   -H "Authorization: Bearer $OPERATOR_JWT"
 ```
 
-The backend adopts only a terminal run with a PR, never overwrites an existing
-different ticket PR, keeps `done` tickets done, and moves `in_progress`/`backlog`
-to `review`.
+If the PR URL was lost after the PR was created, pass the operator-verified URL;
+the backend persists it as run evidence and re-runs reconciliation. The normal
+guards still prevent overwriting an existing different ticket PR and never
+regress `done`:
+
+```bash
+curl -X POST "$API/api/v1/harness/runs/$RUN_ID/adopt" \
+  -H "Authorization: Bearer $OPERATOR_JWT" \
+  -H 'Content-Type: application/json' \
+  -d '{"prUrl":"https://github.com/owner/repo/pull/123"}'
+```
+
+A succeeded run **without** a PR/head is intentionally not adoptable. Dead-letter
+it instead; reconciliation then returns the ticket through the release guard.
 
 ## Dead-letter a stuck run
 
@@ -77,23 +93,38 @@ curl -X POST "$API/api/v1/harness/runs/$RUN_ID/dead-letter" \
 
 This deletes the lease, sets `dead_letter`, clears `reconciled_at`, and lets the
 next sweep either adopt publish evidence or release the ticket through the
-normal guards. A succeeded run cannot be dead-lettered.
+normal guards. A succeeded run with published evidence cannot be dead-lettered;
+a succeeded run with no PR/head can, which is the recovery path for that
+`needs_operator` state.
 
 ## Manual sweep
 
 The reaper runs every `HARNESS_REAPER_INTERVAL_SECONDS` (default 60). With the
-interval disabled, run a sweep from a one-off process:
+interval disabled, run a sweep from the backend directory so `.env` and
+`DATABASE_URL` load, and close the pool so the command exits:
 
 ```bash
-node -e "require('./backend/src/services/HarnessReaper').runOnce().then(console.log)"
+cd backend
+node -r dotenv/config -e "
+  const Reaper = require('./src/services/HarnessReaper');
+  const { pool } = require('./src/db');
+  Reaper.runOnce()
+    .then(summary => console.log(JSON.stringify(summary, null, 2)))
+    .catch(error => { console.error(error); process.exitCode = 1; })
+    .finally(() => pool.end());
+"
 ```
 
 ## Workspace retention
 
 `HARNESS_WORKSPACE_RETENTION_HOURS` (agent, default `24`, `0` disables) prunes
-clone directories older than the window at startup. The agent never deletes its
-current workspace. Active runs in another process sharing the clone root are
-protected by the modification-time check; use one clone root per agent identity.
+clone directories older than the window after startup recovery succeeds. Only
+generated workspace names are touched, and the agent skips any path reported by
+`GET /harness/agents/:agentId/workspaces` (running runs and unexpired leases).
+If that list cannot be fetched, pruning is skipped. Symlinks, non-directories,
+fresh directories and the current workspace are preserved. The same sweep also
+removes crash-left `opencode-harness-*` and `vibecode-askpass-*` temp dirs,
+which may contain provider keys or the GitHub token.
 
 ## Crash scenarios
 

@@ -127,15 +127,23 @@ Operator recovery, cleanup and observability:
 
 - **Operator actions.** `POST /harness/runs/:runId/dead-letter` stops a stuck run,
   deletes its lease, clears `reconciled_at` and hands the ticket to the normal
-  reconciliation guards. `POST /harness/runs/:runId/adopt` adopts a terminal
-  run with a PR. Both require an operator JWT, `AGENT_READ` and project access;
-  agent keys are refused.
+  reconciliation guards. A succeeded run without PR/head evidence can be
+  dead-lettered; one with evidence is refused. `POST /harness/runs/:runId/adopt`
+  accepts an operator-verified `prUrl` for head-only runs and re-runs the
+  latest-run/ticket guards. Both require an operator JWT with `TICKET_UPDATE`
+  and project access; agent keys and the `user` role are refused.
 - **Workspace retention.** `HARNESS_WORKSPACE_RETENTION_HOURS` (default 24, `0`
-  disables) prunes stale clone directories at agent startup. Symlinks and
-  non-directories are skipped, paths are re-checked against the clone root, and
-  the current workspace is preserved.
+  disables) prunes stale clone directories only after startup recovery lists
+  active runs successfully. It fetches protected paths from
+  `GET /harness/agents/:agentId/workspaces` (running runs or unexpired leases)
+  and fails closed if that list is unavailable. Only generated workspace names
+  are considered; symlinks, non-directories, fresh directories and the current
+  workspace are skipped. Crash-left `opencode-harness-*` and
+  `vibecode-askpass-*` temp dirs are pruned with the same retention.
 - **Metrics.** `HarnessMetrics` exports reaped/reconciled/released/adopted/
-  needs-operator counters and `harness_reaper_last_success_timestamp_seconds`.
+  needs-operator counters, `harness_reaper_sweep_failures_total`, and
+  `harness_reaper_last_success_timestamp_seconds`. The success timestamp only
+  advances for a complete sweep; listing/reconcile failures keep it stale.
 - **Runbook.** `05_RUNBOOK.md` documents inspection SQL, adoption, dead-letter,
   manual sweeps, retention and crash scenarios.
 
@@ -183,7 +191,7 @@ Operator recovery, cleanup and observability:
   ownership, JWT permission/project scoping, checkpoints, heartbeats, finish
   and lease conflicts.
 - `backend/src/__tests__/integration/harnessRuns.test.js` executes against
-  PostgreSQL (34 tests): assignment authorization, sequential and concurrent
+  PostgreSQL (41 tests): assignment authorization, sequential and concurrent
   one-active-run races, unexpired lease blocking, expired-lease reaping, orphan
   reaping, idempotent finish + lease release, checkpoint ordering/context,
   publish evidence, guarded reaping/reconciliation (reaped published runs,
@@ -207,8 +215,9 @@ Operator recovery, cleanup and observability:
   checkpoint join, run-level PR release guards, reaped-published adoption,
   terminal-run reconciliation by the reaper, operator dead-letter/adoption, and
   that an old failed run cannot release a ticket owned by a newer active run.
-- `WorkspaceManagerTest` covers stale-directory pruning while preserving fresh
-  directories and non-directories.
+- `WorkspaceManagerTest` covers stale/fresh dirs, foreign names, protected and
+  current workspaces, symlinks, unreadable protected paths, zero retention and
+  crash-left temp dirs.
 
 ## Remaining for fg-33
 

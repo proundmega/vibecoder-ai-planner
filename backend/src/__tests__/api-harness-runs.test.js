@@ -39,6 +39,7 @@ jest.mock('../services/HarnessRunService', () => ({
   reconcileRun: jest.fn(),
   deadLetterRun: jest.fn(),
   adoptPublishedRun: jest.fn(),
+  listActiveWorkspacePaths: jest.fn(),
 }));
 
 const HarnessRunService = require('../services/HarnessRunService');
@@ -378,6 +379,25 @@ describe('Harness run API', () => {
       expect(HarnessRunService.listActiveRunsForAgent).not.toHaveBeenCalled();
     });
 
+    it('lists protected workspace paths for the owning agent', async () => {
+      HarnessRunService.listActiveWorkspacePaths.mockResolvedValue(['/tmp/ws']);
+
+      const res = await request(app)
+        .get('/api/v1/harness/agents/7/workspaces')
+        .set('X-API-Key', 'agent-key');
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data).toEqual(['/tmp/ws']);
+    });
+
+    it('refuses to list workspaces for another agent', async () => {
+      const res = await request(app)
+        .get('/api/v1/harness/agents/8/workspaces')
+        .set('X-API-Key', 'agent-key');
+
+      expect(res.statusCode).toBe(403);
+    });
+
     it('records publish evidence for the owning agent', async () => {
       HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7 });
       HarnessRunService.recordPublish.mockResolvedValue({ id: RUN_ID, head_sha: 'abc123' });
@@ -482,6 +502,75 @@ describe('Harness run API', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body.data.adopted).toBe(true);
+    });
+
+    it('allows a project member with TICKET_UPDATE inside the project', async () => {
+      jwt.verify.mockReturnValue({
+        userId: 'user-1', id: 'user-1', email: 'member@test.com', role: 'member',
+      });
+      PermissionService.hasPermission.mockResolvedValue(true);
+      pool.query.mockResolvedValueOnce({
+        rows: [{ owner_id: 'owner-1', is_member: true }],
+      });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.deadLetterRun.mockResolvedValue({ id: RUN_ID, status: 'dead_letter' });
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/dead-letter`)
+        .set('Authorization', 'Bearer mock-token')
+        .send({ error: 'stuck' });
+
+      expect(res.statusCode).toBe(200);
+      expect(PermissionService.hasPermission).toHaveBeenCalledWith('member', 'TICKET_UPDATE');
+    });
+
+    it('denies a member outside the ticket project', async () => {
+      jwt.verify.mockReturnValue({
+        userId: 'user-1', id: 'user-1', email: 'member@test.com', role: 'member',
+      });
+      PermissionService.hasPermission.mockResolvedValue(true);
+      pool.query.mockResolvedValueOnce({
+        rows: [{ owner_id: 'owner-1', is_member: false }],
+      });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/dead-letter`)
+        .set('Authorization', 'Bearer mock-token')
+        .send({ error: 'stuck' });
+
+      expect(res.statusCode).toBe(403);
+      expect(HarnessRunService.deadLetterRun).not.toHaveBeenCalled();
+    });
+
+    it('denies a user role even with ticket permissions', async () => {
+      jwt.verify.mockReturnValue({
+        userId: 'user-1', id: 'user-1', email: 'user@test.com', role: 'user',
+      });
+      PermissionService.hasPermission.mockResolvedValue(true);
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/dead-letter`)
+        .set('Authorization', 'Bearer mock-token')
+        .send({ error: 'stuck' });
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('denies a member without TICKET_UPDATE', async () => {
+      jwt.verify.mockReturnValue({
+        userId: 'user-1', id: 'user-1', email: 'member@test.com', role: 'member',
+      });
+      PermissionService.hasPermission.mockResolvedValue(false);
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/dead-letter`)
+        .set('Authorization', 'Bearer mock-token')
+        .send({ error: 'stuck' });
+
+      expect(res.statusCode).toBe(403);
     });
 
     it('refuses operator actions from an agent key', async () => {

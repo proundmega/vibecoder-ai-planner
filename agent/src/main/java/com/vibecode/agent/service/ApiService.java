@@ -297,6 +297,22 @@ public class ApiService {
     }
 
     /**
+     * Workspace paths protected by a running run or an unexpired lease.
+     * Workspace cleanup must fail closed when this call fails.
+     */
+    public List<String> listActiveWorkspacePaths(long agentId) throws IOException {
+        ApiResponse<List<String>> response = executeGet(
+            baseUrl + "/harness/agents/" + agentId + "/workspaces",
+            new TypeReference<ApiResponse<List<String>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to list active harness workspaces: " + response.getError());
+        }
+        return response.getData() != null ? response.getData() : Collections.emptyList();
+    }
+
+    /**
      * Persist publish evidence before the terminal finish so recovery can adopt
      * a run whose finish response was lost.
      */

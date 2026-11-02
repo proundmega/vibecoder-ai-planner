@@ -250,9 +250,6 @@ public class AgentApp {
         // published run keeps its reviewed ticket; anything else is failed and
         // returned only through the backend's guarded release path.
         recoverStartupOnce();
-        if (ticketWorker instanceof HarnessTicketProcessor harnessWorker) {
-            harnessWorker.pruneStaleWorkspaces();
-        }
 
         heartbeatScheduler = Executors.newScheduledThreadPool(1);
         heartbeatScheduler.scheduleAtFixedRate(() -> {
@@ -320,6 +317,9 @@ public class AgentApp {
             }
             startupRecoveryComplete = true;
             log.info("Harness startup recovery reconciled {} run(s)", recovered);
+            // Cleanup is only safe after the active-run listing succeeded; the
+            // processor also fails closed if it cannot fetch protected paths.
+            harnessWorker.pruneStaleWorkspaces();
         } catch (RuntimeException e) {
             log.warn("Harness startup recovery failed; will retry: {}", e.getMessage());
         }

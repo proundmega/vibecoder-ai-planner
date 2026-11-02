@@ -616,6 +616,26 @@ class HarnessRunService {
   }
 
   /**
+   * Workspace paths that cleanup must not touch: running runs and any run with
+   * an unexpired lease. The agent uses this before pruning local clone dirs.
+   */
+  async listActiveWorkspacePaths(agentId) {
+    const id = positiveInteger(agentId, 'agentId');
+    const result = await pool.query(
+      `SELECT DISTINCT r.workspace_path
+       FROM harness_runs r
+       LEFT JOIN harness_leases l
+         ON l.run_id = r.id AND l.expires_at > NOW()
+       WHERE r.agent_id = $1
+         AND NULLIF(BTRIM(r.workspace_path), '') IS NOT NULL
+         AND (r.status = 'running' OR l.run_id IS NOT NULL)
+       ORDER BY r.workspace_path`,
+      [id]
+    );
+    return result.rows.map((row) => row.workspace_path);
+  }
+
+  /**
    * The newest pending terminal run per ticket. Sweeping this list makes the
    * reaper crash-safe: `reconciled_at` is only set after the ticket update, and
    * older runs are marked as superseded when the newest one is reconciled.
@@ -657,7 +677,14 @@ class HarnessRunService {
              error = $2,
              finished_at = COALESCE(finished_at, NOW()),
              reconciled_at = NULL
-         WHERE id = $1 AND status <> 'succeeded'
+         WHERE id = $1
+           AND (
+             status <> 'succeeded'
+             OR (
+               NULLIF(BTRIM(pr_url), '') IS NULL
+               AND NULLIF(BTRIM(head_sha), '') IS NULL
+             )
+           )
          RETURNING *
        ),
        deleted AS (
@@ -670,7 +697,8 @@ class HarnessRunService {
     if (result.rows.length === 0) {
       const existing = await this.getRun(id);
       if (existing.status === 'succeeded') {
-        throw new ConflictError('Cannot dead-letter a succeeded harness run');
+        throw new ConflictError(
+          'Cannot dead-letter a succeeded harness run with publish evidence');
       }
       return existing;
     }
@@ -681,17 +709,38 @@ class HarnessRunService {
    * Operator action: explicitly adopt a terminal run that recorded a PR.
    * Reuses the same latest-run/ticket guards as the reaper.
    */
-  async adoptPublishedRun(runId) {
+  async adoptPublishedRun(runId, { prUrl = null } = {}) {
     const run = await this.getRun(runId);
     if (run.status === 'running') {
       throw new ConflictError('Harness run is still active');
     }
-    if (run.reconciled_at) {
-      throw new ConflictError('Harness run is already reconciled');
-    }
-    if (!run.pr_url || String(run.pr_url).trim() === '') {
+
+    const operatorPrUrl = prUrl === null || prUrl === undefined
+      ? null
+      : requiredString(prUrl, 'prUrl');
+    const runPrUrl = run.pr_url && String(run.pr_url).trim() !== ''
+      ? String(run.pr_url).trim()
+      : null;
+    const evidence = operatorPrUrl || runPrUrl;
+
+    if (!evidence) {
+      if (run.head_sha && String(run.head_sha).trim() !== '') {
+        throw new ValidationError(
+          'Run has a head sha but no PR URL; provide the operator-verified prUrl');
+      }
       throw new ValidationError('Harness run has no publish evidence to adopt');
     }
+
+    // Persist/confirm the evidence and make the run reconcilable again. An
+    // operator may be recovering a run that a sweep marked reconciled without
+    // adopting. The normal latest-run/ticket-PR guards still prevent regressions.
+    await pool.query(
+      `UPDATE harness_runs
+       SET pr_url = COALESCE($2, pr_url), reconciled_at = NULL
+       WHERE id = $1 AND status <> 'running'`,
+      [runId, evidence]
+    );
+
     return this.reconcileRun(runId);
   }
 

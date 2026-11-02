@@ -711,6 +711,80 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     expect(ticket.rows[0].status).toBe('backlog');
   });
 
+  test('dead-lettering a succeeded run without evidence releases the ticket', async () => {
+    const run = await start({ branch: 'harness/succeeded-no-evidence' });
+    await HarnessRunService.finishRun(run.id, { status: 'succeeded' });
+
+    await HarnessRunService.deadLetterRun(run.id, { error: 'no PR produced' });
+    const reconciled = await HarnessRunService.reconcileRun(run.id);
+    expect(reconciled.released).toBe(true);
+
+    const ticket = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
+    expect(ticket.rows[0].status).toBe('backlog');
+  });
+
+  test('operator adoption accepts a verified PR URL for a head-only run', async () => {
+    const run = await start({ branch: 'harness/head-only-adopt' });
+    await HarnessRunService.recordPublish(run.id, agentId, { headSha: 'abc123' });
+    await HarnessRunService.finishRun(run.id, { status: 'failed' });
+
+    const adopted = await HarnessRunService.adoptPublishedRun(run.id, {
+      prUrl: 'https://github.com/o/r/pull/verified',
+    });
+    expect(adopted.adopted).toBe(true);
+
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('review');
+    expect(ticket.rows[0].pr_url).toBe('https://github.com/o/r/pull/verified');
+
+    const stored = await HarnessRunService.getRun(run.id);
+    expect(stored.status).toBe('succeeded');
+    expect(stored.pr_url).toBe('https://github.com/o/r/pull/verified');
+  });
+
+  test('active workspace paths include running runs and unexpired leases', async () => {
+    const run = await start({ branch: 'harness/workspace-paths' });
+    await HarnessRunService.recordCheckpoint(run.id, 'cloned', {
+      workspacePath: '/tmp/harness-workspace',
+    });
+
+    await expect(
+      HarnessRunService.listActiveWorkspacePaths(agentId)
+    ).resolves.toContain('/tmp/harness-workspace');
+
+    await HarnessRunService.finishRun(run.id, { status: 'failed' });
+    await expect(
+      HarnessRunService.listActiveWorkspacePaths(agentId)
+    ).resolves.not.toContain('/tmp/harness-workspace');
+  });
+
+  test('operator adoption can re-adopt a run a sweep marked reconciled', async () => {
+    const run = await start({ branch: 'harness/re-adopt' });
+    await HarnessRunService.recordPublish(run.id, agentId, {
+      prUrl: 'https://github.com/o/r/pull/9',
+    });
+    await HarnessRunService.finishRun(run.id, { status: 'succeeded' });
+    await HarnessRunService.reconcileRun(run.id);
+
+    await pool.query(
+      "UPDATE tickets SET status = 'backlog', pr_url = NULL WHERE id = $1",
+      [ticketId]
+    );
+
+    const adopted = await HarnessRunService.adoptPublishedRun(run.id);
+    expect(adopted.adopted).toBe(true);
+
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('review');
+    expect(ticket.rows[0].pr_url).toBe('https://github.com/o/r/pull/9');
+  });
+
   test('operator adoption moves a published failed run into review', async () => {
     const run = await start({ branch: 'harness/operator-adopt' });
     await HarnessRunService.recordPublish(run.id, agentId, {
@@ -730,13 +804,16 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     expect((await HarnessRunService.getRun(run.id)).status).toBe('succeeded');
   });
 
-  test('dead-letter refuses a succeeded run', async () => {
+  test('dead-letter refuses a succeeded run with publish evidence', async () => {
     const run = await start({ branch: 'harness/dead-letter-succeeded' });
+    await HarnessRunService.recordPublish(run.id, agentId, {
+      prUrl: 'https://github.com/o/r/pull/9',
+    });
     await HarnessRunService.finishRun(run.id, { status: 'succeeded' });
 
     await expect(
       HarnessRunService.deadLetterRun(run.id)
-    ).rejects.toThrow('Cannot dead-letter a succeeded harness run');
+    ).rejects.toThrow('Cannot dead-letter a succeeded harness run with publish evidence');
   });
 
   test('reaper reconciles a terminal run stranded by an earlier sweep', async () => {

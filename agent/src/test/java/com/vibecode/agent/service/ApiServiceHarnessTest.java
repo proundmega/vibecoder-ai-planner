@@ -205,6 +205,17 @@ class ApiServiceHarnessTest {
     }
 
     @Test
+    void workspaceRecoveryUsesTheAgentScopedPath() throws Exception {
+        respond("/api/v1/harness/agents/7/workspaces", 200,
+            ok("[\"/tmp/ws\"]"));
+
+        List<String> paths = api.listActiveWorkspacePaths(7L);
+
+        assertEquals(List.of("/tmp/ws"), paths);
+        assertEquals("/api/v1/harness/agents/7/workspaces", lastRequest().path());
+    }
+
+    @Test
     void publishEvidenceUsesTheRunPublishEndpoint() throws Exception {
         respond("/api/v1/harness/runs/run-1/publish", 200, ok("{}"));
 
