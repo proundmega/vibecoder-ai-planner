@@ -46,6 +46,8 @@ async assertReadyForExecution(ticketId, { toStatus, toPhase, source, actor, atte
 
   const blocked = {
     ...result,
+    ticketId,                              // required by the event row
+    toStatus, toPhase,                     // what was attempted
     mode,
     blocked: true,
     attemptId: attemptId ?? randomUUID(),   // generated once, carried to the event
@@ -94,27 +96,32 @@ Rules:
 `ready_at` is a cache of the evaluator, not an independent truth. It is refreshed by `refreshReadyState(ticketId, actor)`:
 
 ```
-evaluate -> ready ? set ready_at=NOW(), ready_by=actor : set ready_at=NULL
+evaluate ->
+  ready  ? keep plan_approved_*, set ready_at=NOW(), ready_by=actor
+         : if plan_approved_at is set -> clear plan_approved_*/ready_*,
+             planning_status=in_progress, write approval_invalidated
+           else -> clear ready_at only
 ```
 
-Called from every readiness-relevant write:
+`refreshReadyState` is called from every readiness-relevant write:
 
 | Write | Effect |
 |---|---|
-| `PUT /tickets/:id` title/description change | clear + re-evaluate |
-| planning file upsert/delete (`PUT/DELETE /planning/:fileKey`) | clear + re-evaluate |
-| `apply-template` | clear + re-evaluate |
-| acceptance-criteria create/update/delete | clear + re-evaluate |
-| small-fix created | clear + re-evaluate |
-| override granted/revoked | clear + re-evaluate |
-| `approve-plan` | validate, then set `plan_approved_at` and re-evaluate |
+| `PUT /tickets/:id` title/description change | re-evaluate; may invalidate approval |
+| planning file upsert/delete (`PUT/DELETE /planning/:fileKey`) | re-evaluate; may invalidate approval |
+| `apply-template` | re-evaluate; may invalidate approval |
+| acceptance-criteria create/update/delete | re-evaluate; may invalidate approval |
+| small-fix created | re-evaluate |
+| override granted/revoked | re-evaluate |
+| `approve-plan` | validate, then set `plan_approved_at`/`ready_at` |
+| `replan` | clear `plan_approved_*`/`ready_*`, set `in_progress` |
 
 Waiver expiry is handled by two mechanisms:
 
 1. `assertReadyForExecution` always re-evaluates, so an expired waiver can never allow execution even if `ready_at` is stale.
 2. An hourly `READINESS_SWEEP_INTERVAL_MINUTES` sweep selects `ready_at IS NOT NULL AND readiness_override_expires_at <= NOW()`, calls `refreshReadyState`, and writes one `override_expired` event per expiring waiver.
 
-`GET /readiness` is read-only and never persists; it returns the computed state. The sweep bounds how long `ready_at` can disagree with the evaluator (one interval), and `deriveStage` trusts `ready_at` only because of that contract. A content edit that leaves the ticket ready re-sets `ready_at` in the same request, so the flow view and the gate do not diverge.
+`GET /readiness` is read-only and never persists; it returns the computed state. The sweep bounds how long `ready_at` can disagree with the evaluator (one interval), and `deriveStage` trusts `ready_at` only because of that contract. A content edit that still passes re-sets `ready_at` in the same request; an edit that fails invalidates the approval in the same request, so the flow view and the gate do not diverge.
 
 ## Data model
 
@@ -145,7 +152,7 @@ CREATE TABLE ticket_acceptance_criteria (
 CREATE TABLE ticket_readiness_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   ticket_id BIGINT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-  action VARCHAR(32) NOT NULL,          -- approved|replan_started|small_fix|override_granted|override_revoked|override_expired|blocked
+  action VARCHAR(32) NOT NULL,          -- approved|approval_invalidated|replan_started|small_fix|override_granted|override_revoked|override_expired|blocked
   attempt_id UUID UNIQUE,               -- set for blocked rows; dedupes retries
   actor_type VARCHAR(16) NOT NULL CHECK (actor_type IN ('user','agent','system')),
   actor_user_id BIGINT REFERENCES users(id),   -- user actor, or the agent's owner
@@ -182,17 +189,23 @@ planning_status: not_started -> template_selected -> in_progress
                                                    |
                                      ready_at/by (only if clean)
                                                    |
+        content edit fails checks -> approval_invalidated (audited)
+                            clears plan_approved_at/by + ready_at/by
+                            planning_status=in_progress
+                                                   |
                           replan (explicit, audited) v
-                            clears plan_approved_at + ready_at
+                            clears plan_approved_at/by + ready_at/by
                             planning_status=in_progress
 ```
 
 - `plan_approved_at` is the approval fact; `planning_status` mirrors it for existing UI reads and for the legacy `PhaseService.getGateStatus()`.
 - The evaluator checks `plan_approved_at IS NOT NULL` (condition 8), **not** `planning_status`.
 - `ready_at` is set atomically by the approval endpoint, or by a later re-evaluation after edits.
-- **`completed` is sticky.** Planning-file upsert and `apply-template` must not regress it to `in_progress`/`template_selected` while `plan_approved_at` is set. Those two writes keep `planning_status='completed'` and only refresh `ready_at`. `PATCH /planning/status` is different: it rejects any transition out of `completed` (see below).
-- To author a new plan, call `POST /tickets/:id/readiness/replan`. It clears `plan_approved_at` and `ready_at`, sets `planning_status='in_progress'`, and writes a `replan_started` audit event. `PATCH /planning/status` rejects any transition out of `completed` with 409 `REPLAN_REQUIRED`.
-- Any content edit after approval clears `ready_at` (but keeps `plan_approved_at`), then `refreshReadyState` immediately re-evaluates and re-sets `ready_at` if the ticket is still clean. Re-approval is required only when content checks fail.
+- **`completed` is sticky** except through two explicit, audited paths (`approval_invalidated` and `replan`). Planning-file upsert and `apply-template` must not silently regress it to `in_progress`/`template_selected`.
+- To author a new plan, call `POST /tickets/:id/readiness/replan`. It clears `plan_approved_at/by`, `ready_at/by`, sets `planning_status='in_progress'`, and writes a `replan_started` audit event. `PATCH /planning/status` rejects any transition out of `completed` with 409 `REPLAN_REQUIRED`.
+- **Approval is content-bound.** After approval, any content edit clears `ready_at` and `refreshReadyState` re-evaluates immediately:
+  - checks pass → approval stays, `ready_at` is re-set, `planning_status` stays `completed`;
+  - checks fail → `plan_approved_at/by` and `ready_at/by` are cleared, `planning_status` returns to `in_progress`, and an `approval_invalidated` event is written. Fixing the content does **not** restore readiness; a human must call `approve-plan` again.
 - Waiver expiry never leaves `ready_at` truthy for long: the expiry sweep clears it, and `assertReadyForExecution` re-evaluates regardless.
 - There is no endpoint that sets `ready_at` without validating; overrides create a waiver, not a fake ready.
 
@@ -324,7 +337,7 @@ async assertProjectMember(userId, projectId, { role, allowSuperAdmin = true } = 
 }
 ```
 
-- New `ReadinessError extends AppError` with `statusCode = 409`, `code = 'READINESS_FAILED'`, `details.issues`, and a `result` property carrying `{ issues, waivedCodes, mode, attemptId, source, actor }`. `result` is what `emitBlocked` persists after rollback; it is also what the HTTP handler serializes (minus actor/attempt internals).
+- New `ReadinessError extends AppError` with `statusCode = 409`, `code = 'READINESS_FAILED'`, `details.issues`, and a `result` property carrying `{ ticketId, toStatus, toPhase, issues, waivedCodes, mode, attemptId, source, actor }`. `result` is what `emitBlocked` persists after rollback (it contains `ticketId` for the FK); the HTTP handler serializes `details.issues` only (minus actor/attempt internals).
 - `ValidationError` stays 400/`VALIDATION_ERROR`; readiness must not reuse it.
 - Java: `ApiResponse.Error` gains `details` (map/JsonNode); add `ReadinessIssue`. `ApiService` throws `ReadinessException` carrying the issues instead of a generic `IOException`.
 - `ReadinessException` is handled in **both** `TicketProcessor.processTicket` (`TicketProcessor.java:80`) and `HarnessTicketProcessor.processTicket` (`HarnessTicketProcessor.java:147`): post a `status` message with the codes, call `releaseTicket`, return without cloning or starting the harness, and log `readiness_blocked`.
@@ -380,7 +393,7 @@ Rollback: delete the readiness routes and set `READINESS_GATE_MODE=off`; the col
 - `apply-template` and planning-file upsert after approval keep `planning_status='completed'` and refresh `ready_at`;
 - `POST /readiness/replan` clears `plan_approved_at`/`ready_at`, sets `in_progress`, and writes `replan_started`;
 - `approve-plan` on an incomplete ticket sets neither `completed` nor `ready_at`;
-- approve → edit → readiness false again; edit → still-ready → `ready_at` re-set in the same request;
+- approve → edit (still passes) → `ready_at` re-set, approval kept; approve → edit (fails) → approval invalidated + `approval_invalidated` event; fix the content → still not ready until `approve-plan` is called again;
 - waiver expiry: assertion re-blocks immediately, the sweep clears `ready_at` and writes `override_expired`;
 - override is permission-checked, project-scoped, code-scoped, expiring; expired waiver re-blocks; unlisted codes still block; revocation writes `override_revoked`;
 - `assertProjectMember`: owner passes, `project_memberships` passes, non-member 403, `super_admin` bypasses, agent actors use the owner ID; enforced on approve-plan, small-fix, replan and override;

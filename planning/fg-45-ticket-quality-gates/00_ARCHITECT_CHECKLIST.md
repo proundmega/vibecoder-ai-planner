@@ -53,9 +53,9 @@ Planning templates exist, but nothing enforces them. A ticket can be created wit
 - [ ] Evaluator unit tests for all issue codes.
 - [ ] Gate tests for pickup, `POST /status`, `PUT /tickets/:id`, phase transitions, planning status.
 - [ ] All three gate modes (`off`/`warn`/`enforce`).
-- [ ] `ready_at` lifecycle: edits, criteria, template, revocation, expiry sweep.
+- [ ] `ready_at` lifecycle: passing/failing edits, criteria, template, revocation, expiry sweep, content-bound re-approval
 - [ ] `approve-plan` transactional tests (no partial completion).
-- [ ] `completed -> in_progress` / `apply-template` / post-approval upsert tests; `replan` clears approval/ready.
+- [ ] `completed -> in_progress` / `apply-template` / post-approval upsert tests; failing edit invalidates approval; `replan` clears approval/ready and actors.
 - [ ] Override permission/scope/expiry tests; project-membership tests for approve, small-fix, replan and override.
 - [ ] Audit actor types (user/agent/system); blocked rows emitted after COMMIT/ROLLBACK, exactly once (no FK lock, no duplicate).
 - [ ] Java processor tests for both legacy and harness modes.
