@@ -69,8 +69,10 @@ curl -X POST "$API/api/v1/harness/runs/$RUN_ID/adopt" \
 
 If the PR URL was lost after the PR was created, pass the operator-verified URL;
 the backend fills the missing run PR and re-runs reconciliation. It refuses to
-overwrite a different existing run PR. The normal guards also prevent
-overwriting an existing different ticket PR and never regress `done`:
+overwrite a different existing run PR. A genuinely wrong stored run PR needs an
+audited manual correction or a future explicit correction action. The normal
+guards also prevent overwriting an existing different ticket PR and never
+regress `done`:
 
 ```bash
 curl -X POST "$API/api/v1/harness/runs/$RUN_ID/adopt" \
@@ -122,7 +124,8 @@ node -r dotenv/config -e "
 clone directories older than the window after startup recovery succeeds. Only
 generated workspace names are touched, and the agent skips any path reported by
 `GET /harness/agents/:agentId/workspaces` (running runs and unexpired leases).
-If that list cannot be fetched, pruning is skipped. Symlinks, non-directories,
+If that list cannot be fetched, or an active run has no recorded workspace path,
+pruning is skipped. Symlinks, non-directories,
 fresh directories and the current workspace are preserved. The same sweep also
 removes crash-left `opencode-harness-*` and `vibecode-askpass-*` temp dirs,
 which may contain provider keys or the GitHub token.

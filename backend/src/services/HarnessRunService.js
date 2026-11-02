@@ -626,6 +626,25 @@ class HarnessRunService {
    */
   async listActiveWorkspacePaths(agentId) {
     const id = positiveInteger(agentId, 'agentId');
+
+    // Fail closed: a running/leased run without a recorded path may have a
+    // workspace we cannot protect, so cleanup must skip entirely.
+    const incomplete = await pool.query(
+      `SELECT 1
+       FROM harness_runs r
+       LEFT JOIN harness_leases l
+         ON l.run_id = r.id AND l.expires_at > NOW()
+       WHERE r.agent_id = $1
+         AND (r.status = 'running' OR l.run_id IS NOT NULL)
+         AND NULLIF(BTRIM(r.workspace_path), '') IS NULL
+       LIMIT 1`,
+      [id]
+    );
+    if (incomplete.rows.length > 0) {
+      throw new ConflictError(
+        'Active harness run has no recorded workspace path; refusing cleanup');
+    }
+
     const result = await pool.query(
       `SELECT DISTINCT r.workspace_path
        FROM harness_runs r

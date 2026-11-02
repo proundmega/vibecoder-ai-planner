@@ -11,14 +11,21 @@ SET pr_url = NULL
 WHERE pr_url IS NOT NULL AND BTRIM(pr_url) = '';
 
 WITH evidence AS (
-  SELECT DISTINCT ON (run_id)
-         run_id,
-         NULLIF(BTRIM(payload->>'headSha'), '') AS head_sha,
-         NULLIF(BTRIM(payload->>'prUrl'), '') AS pr_url
+  SELECT run_id,
+         (array_agg(
+            NULLIF(BTRIM(payload->>'headSha'), '')
+            ORDER BY created_at DESC, id DESC
+          ) FILTER (
+            WHERE NULLIF(BTRIM(payload->>'headSha'), '') IS NOT NULL
+          ))[1] AS head_sha,
+         (array_agg(
+            NULLIF(BTRIM(payload->>'prUrl'), '')
+            ORDER BY created_at DESC, id DESC
+          ) FILTER (
+            WHERE NULLIF(BTRIM(payload->>'prUrl'), '') IS NOT NULL
+          ))[1] AS pr_url
   FROM harness_checkpoints
-  WHERE NULLIF(BTRIM(payload->>'headSha'), '') IS NOT NULL
-     OR NULLIF(BTRIM(payload->>'prUrl'), '') IS NOT NULL
-  ORDER BY run_id, created_at DESC, id DESC
+  GROUP BY run_id
 )
 UPDATE harness_runs r
 SET head_sha = COALESCE(r.head_sha, e.head_sha),

@@ -112,7 +112,8 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   creation, before the terminal finish. `recordCheckpoint` also copies
   `headSha`/`prUrl` from checkpoint payloads, so a lost publish call followed by
   a `done` checkpoint still leaves run-level evidence. `047` backfills existing
-  checkpoint-only evidence and clears `reconciled_at` so the sweep re-evaluates
+  checkpoint-only evidence per field (head sha and PR URL may come from
+  different checkpoints) and clears `reconciled_at` so the sweep re-evaluates
   it.
 - **Resume policy.** `HARNESS_RESUME_MODE=restart` (default) always fails and
   requeues interrupted runs. `resume` additionally tries to adopt a run whose
@@ -141,7 +142,8 @@ Operator recovery, cleanup and observability:
   disables) prunes stale clone directories only after startup recovery lists
   active runs successfully. It fetches protected paths from
   `GET /harness/agents/:agentId/workspaces` (running runs or unexpired leases)
-  and fails closed if that list is unavailable. Only generated workspace names
+  and fails closed if that list is unavailable or if an active run has no
+  recorded workspace path. Only generated workspace names
   are considered; symlinks, non-directories, fresh directories and the current
   workspace are skipped. Crash-left `opencode-harness-*` and
   `vibecode-askpass-*` temp dirs are pruned with the same retention.
@@ -199,7 +201,7 @@ Operator recovery, cleanup and observability:
   ownership, JWT permission/project scoping, checkpoints, heartbeats, finish
   and lease conflicts.
 - `backend/src/__tests__/integration/harnessRuns.test.js` executes against
-  PostgreSQL (43 tests): assignment authorization, sequential and concurrent
+  PostgreSQL (45 tests): assignment authorization, sequential and concurrent
   one-active-run races, unexpired lease blocking, expired-lease reaping, orphan
   reaping, idempotent finish + lease release, checkpoint ordering/context,
   publish evidence, guarded reaping/reconciliation (reaped published runs,

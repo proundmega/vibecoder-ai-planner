@@ -70,7 +70,8 @@ Make an interrupted run self-healing without ever undoing published work.
   applies the normal PR/head/ticket guards.
 - Stale clone/temp directories older than the retention window are removed only
   after recovery succeeds, never touching paths protected by a running run or
-  unexpired lease, the current workspace, symlinks or foreign names.
+  unexpired lease, the current workspace, symlinks or foreign names. Cleanup
+  fails closed if an active run has no recorded workspace path.
 - A run with a head sha but no PR can be adopted with an operator-verified PR
   URL only when the run has no PR yet; a different existing run PR is never
   overwritten. A succeeded run with no evidence can be dead-lettered so

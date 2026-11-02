@@ -786,6 +786,39 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     expect(stored.pr_url).toBe('https://github.com/o/r/pull/verified');
   });
 
+  test('workspace cleanup fails closed without a recorded active path', async () => {
+    const run = await start({ branch: 'harness/no-workspace-yet' });
+    await HarnessRunService.claimLease({
+      ticketId, runId: run.id, agentId, ttlSeconds: 60,
+    });
+
+    await expect(
+      HarnessRunService.listActiveWorkspacePaths(agentId)
+    ).rejects.toThrow('no recorded workspace path');
+
+    await HarnessRunService.recordCheckpoint(run.id, 'cloned', {
+      workspacePath: '/tmp/now-recorded',
+    });
+    await expect(
+      HarnessRunService.listActiveWorkspacePaths(agentId)
+    ).resolves.toContain('/tmp/now-recorded');
+  });
+
+  test('checkpoint evidence is merged per field', async () => {
+    const run = await start({ branch: 'harness/split-evidence' });
+
+    await HarnessRunService.recordCheckpoint(run.id, 'publishing', {
+      headSha: 'abc123',
+    });
+    await HarnessRunService.recordCheckpoint(run.id, 'done', {
+      prUrl: 'https://github.com/o/r/pull/split',
+    });
+
+    const stored = await HarnessRunService.getRun(run.id);
+    expect(stored.head_sha).toBe('abc123');
+    expect(stored.pr_url).toBe('https://github.com/o/r/pull/split');
+  });
+
   test('active workspace paths include running runs and unexpired leases', async () => {
     const run = await start({ branch: 'harness/workspace-paths' });
     await HarnessRunService.recordCheckpoint(run.id, 'cloned', {
