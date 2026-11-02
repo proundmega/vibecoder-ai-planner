@@ -240,6 +240,19 @@ Route ordering: mount the `review` sub-router before the generic `/tickets/:tick
 - `FIX_LOOP_MODE=off|manual|auto` controls **dispatch** (who may create requests), not the worker mode. A deployment that wants build + fix in one container runs `AGENT_MODE=build` and a second process/container with `AGENT_MODE=fix`; they must not share the same `AGENT_API_KEY` identity.
 - The fix worker reuses the project's `REPO_OWNER`/`REPO_NAME` and provider config; it does not clone a different repository.
 
+### fg-33 publish-evidence guard compatibility
+
+fg-33 slice 2 refuses a normal `HarnessRunService.startRun` when the ticket has a PR, or when any prior run for that ticket recorded `pr_url`/`head_sha`. The fixer intentionally needs the opposite: a new run on an `in_progress` ticket with an existing reviewed PR.
+
+Add a fixer-only allowance; do not add a global bypass:
+
+- Extend the run-start contract with `purpose=fix` plus a `fix_request_id` (or a dedicated `startFixRun` endpoint with the same checks).
+- The backend verifies the request is claimed by this agent, belongs to the ticket, and its branch/`reviewed_sha` match the current PR head.
+- The ticket must still be `in_progress`, and one active fix run/request per ticket is enforced by the existing lease.
+- A normal build start (`purpose=build`, the default) keeps the fg-33 guard unchanged.
+- Revalidate the claim and remote head immediately before fast-forward publish; a stale claim aborts with `remote_head_moved`/`fix_lease_lost`.
+- Contract tests cover: authorized fix run allowed with an existing PR; normal build refused; missing/unclaimed/stale/cross-ticket fix request refused.
+
 ### Configuration propagation
 
 Add these to `AgentConfig` and to the existing `backend/src/services/PoolManager.js` env allowlist (it already forwards `HARNESS_*`):
@@ -402,5 +415,6 @@ Resolved: the fix state is `in_progress` + `review_state` (no dedicated `fixing`
 | 4 | bp-106 | Ship fix/review events to log aggregation | Observability | TBD (new follow-up) | No |
 | 5 | bp-04 | Fix/review cost dashboard | Observability / Billing | TBD (new follow-up) | No |
 | 6 | bp-99-frontend-testing | E2E coverage for the fix loop UI | Testing | TBD (new follow-up) | No |
+| 7 | fg-33 | fg-33's publish-evidence `startRun` guard blocks fixer runs on an existing PR; add an explicit fixer-only allow path validated against the claimed fix request, branch and `reviewed_sha` | Reliability / Integration | fg-32 (this ticket) | No |
 
 `From Ticket` records where the deferred improvement was found; `TBD` means no follow-up ticket exists yet, so this table does not imply one is already tracked.

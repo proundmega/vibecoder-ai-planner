@@ -65,6 +65,20 @@ Current behavior:
 - Phase 1 enforces `FIX_MAX_DURATION_MINUTES` and fg-30 diff caps as hard stops. Token/cost budgets are not enforced until fg-30 Phase 3 lands.
 - Human approval remains the final gate.
 
+## Integration constraint: fg-33 publish-evidence guard
+
+fg-33 slice 2 makes `HarnessRunService.startRun` refuse a new run when the ticket has a `pr_url`, or when any earlier harness run for that ticket recorded `pr_url` or `head_sha`. This is correct for build/recovery duplicate prevention, but fg-32's fixer must intentionally start a new run for an `in_progress` ticket that already has a reviewed PR and `reviewed_sha`.
+
+Do not weaken the normal build guard. Add an explicit fixer-only allow path:
+
+- the request carries a claimed fix request id (or equivalent fixer authorization) for this ticket;
+- the branch and `reviewed_sha` match the claimed request and the current PR head;
+- the fixer identity owns the active fix lease;
+- at most one fix run is active per ticket/request;
+- a missing, stale, unclaimed or cross-ticket fix request remains refused.
+
+The normal build `startRun` continues to refuse tickets and prior runs with PR/head evidence.
+
 ## Acceptance criteria
 
 1. A `request_changes` verdict creates exactly one structured fix request keyed by `attempt_id`, visible to agents and humans.
@@ -79,6 +93,7 @@ Current behavior:
 10. Unit/contract tests cover claim race, same-branch checkout, fast-forward-only publish, moved-head abort, findings parsing, failed->queued retry, phase-aware escalation and round limits.
 11. No secrets appear in logs, prompts, findings or PR text.
 12. The `review_state` cache is `changes_requested` while a request is queued, `fixing` while claimed, and `fix_failed`/`escalated` on termination.
+13. The fixer can start exactly one authorized fix run for an `in_progress` ticket with an existing PR, while a normal build start for the same ticket remains refused; missing, unclaimed, stale or cross-ticket fix requests are refused.
 
 ## Out of scope
 
@@ -100,5 +115,6 @@ Current behavior:
 | 4 | bp-106 | Ship fix/review events to log aggregation | Observability | TBD (new follow-up) | No |
 | 5 | bp-04 | Fix/review cost dashboard | Observability / Billing | TBD (new follow-up) | No |
 | 6 | bp-99-frontend-testing | E2E coverage for the fix loop UI | Testing | TBD (new follow-up) | No |
+| 7 | fg-33 | fg-33's publish-evidence `startRun` guard blocks fixer runs on an existing PR; add an explicit fixer-only allow path validated against the claimed fix request, branch and `reviewed_sha` | Reliability / Integration | fg-32 (this ticket) | No |
 
 `From Ticket` records where the deferred improvement was found; `TBD` means no follow-up ticket exists yet, so this table does not imply one is already tracked.

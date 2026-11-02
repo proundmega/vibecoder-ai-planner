@@ -21,6 +21,7 @@ fg-31 defines and now implements the reviewer, its attempt/finding store and the
 - Worker mode is `AGENT_MODE=fix`; `FIX_LOOP_MODE` only controls dispatch.
 - Fix requests live in `ticket_fix_requests`; review attempts/findings stay in the fg-31 schema.
 - Per-project enablement is `projects.fix_loop_mode`, defaulting to off; the global `FIX_LOOP_MODE` is the default.
+- fg-33 slice 2's publish-evidence guard refuses a new harness run when the ticket has a PR or a prior run recorded `pr_url`/`head_sha`. The fixer must use an explicit fixer-only allow path (claimed fix request + matching branch/reviewed SHA); the normal build guard must not be weakened.
 
 ## Checklist
 
@@ -32,6 +33,7 @@ fg-31 defines and now implements the reviewer, its attempt/finding store and the
 - [ ] Define the structured findings contract and version it
 - [ ] Define the fix queue/claim API with atomic locking, lease TTL and `POST /tickets/:id/fix/renew`
 - [ ] Enforce one active fix request per ticket and `UNIQUE(attempt_id)`
+- [ ] Add an explicit fixer-only allow path for fg-33's publish-evidence `startRun` guard; require a claimed fix request, matching branch and `reviewed_sha`, and keep the normal build start refused
 - [ ] Implement `FIX_LOOP_MODE=off|manual|auto` and `projects.fix_loop_mode` (decided)
 - [ ] Add the human JWT path (`TICKET_STATUS_CHANGE`) and normalize `metadata.reason` / `metadata.feedback`
 - [ ] Set max rounds (2 fix rounds after round 0), `FIX_MAX_ATTEMPTS` (default 3) and the no-progress rule
