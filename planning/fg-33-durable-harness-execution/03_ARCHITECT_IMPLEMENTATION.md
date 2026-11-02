@@ -121,6 +121,24 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   `POST /harness/runs/:runId/reconcile`,
   `POST /harness/runs/:runId/release-ticket`.
 
+## Slice 3 scope
+
+Operator recovery, cleanup and observability:
+
+- **Operator actions.** `POST /harness/runs/:runId/dead-letter` stops a stuck run,
+  deletes its lease, clears `reconciled_at` and hands the ticket to the normal
+  reconciliation guards. `POST /harness/runs/:runId/adopt` adopts a terminal
+  run with a PR. Both require an operator JWT, `AGENT_READ` and project access;
+  agent keys are refused.
+- **Workspace retention.** `HARNESS_WORKSPACE_RETENTION_HOURS` (default 24, `0`
+  disables) prunes stale clone directories at agent startup. Symlinks and
+  non-directories are skipped, paths are re-checked against the clone root, and
+  the current workspace is preserved.
+- **Metrics.** `HarnessMetrics` exports reaped/reconciled/released/adopted/
+  needs-operator counters and `harness_reaper_last_success_timestamp_seconds`.
+- **Runbook.** `05_RUNBOOK.md` documents inspection SQL, adoption, dead-letter,
+  manual sweeps, retention and crash scenarios.
+
 ## Decisions
 
 - **Leases live in Postgres** (open question 1). They share the run audit trail;
@@ -154,6 +172,7 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
 | `HARNESS_MAX_ATTEMPTS` | `3` | Existing retry backoff (attempt persisted on the run) |
 | `HARNESS_RESUME_MODE` | `restart` | Startup recovery: `restart` or `resume` (adopt published evidence) |
 | `HARNESS_REAPER_INTERVAL_SECONDS` | `60` | Scheduled reaper sweep interval; `0` disables it |
+| `HARNESS_WORKSPACE_RETENTION_HOURS` | `24` | Agent startup cleanup of stale clone dirs; `0` disables |
 
 ## Tests
 
@@ -186,11 +205,13 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   lease errors.
 - The Postgres integration suite also verifies publish evidence, the latest
   checkpoint join, run-level PR release guards, reaped-published adoption,
-  terminal-run reconciliation by the reaper, and that an old failed run cannot
-  release a ticket owned by a newer active run.
+  terminal-run reconciliation by the reaper, operator dead-letter/adoption, and
+  that an old failed run cannot release a ticket owned by a newer active run.
+- `WorkspaceManagerTest` covers stale-directory pruning while preserving fresh
+  directories and non-directories.
 
 ## Remaining for fg-33
 
-1. Workspace registry/retention cleanup.
-2. Crash-injection tests, metrics, alerts and manual recovery runbook.
-3. Dead-letter/adoption flow for operators.
+1. A CI process-kill/e2e matrix (the current tests simulate crash gaps at the
+   service/processor level).
+2. Live OpenCode session resume; only published work is adopted today.

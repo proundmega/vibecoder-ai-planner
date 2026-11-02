@@ -451,6 +451,49 @@ describe('HarnessRunService', () => {
     });
   });
 
+  describe('operator recovery', () => {
+    it('dead-letters a run, clears its reconciliation marker and lease', async () => {
+      const row = { id: RUN_ID, status: 'dead_letter' };
+      pool.query.mockResolvedValueOnce({ rows: [row] });
+
+      await expect(
+        HarnessRunService.deadLetterRun(RUN_ID, { error: 'stuck' })
+      ).resolves.toEqual(row);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain("status = 'dead_letter'");
+      expect(sql).toContain('reconciled_at = NULL');
+      expect(sql).toContain('DELETE FROM harness_leases');
+      expect(params).toEqual([RUN_ID, 'stuck']);
+    });
+
+    it('refuses to dead-letter a succeeded run', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: RUN_ID, status: 'succeeded' }] });
+
+      await expect(
+        HarnessRunService.deadLetterRun(RUN_ID)
+      ).rejects.toThrow('Cannot dead-letter a succeeded harness run');
+    });
+
+    it('adopts only a terminal run with publish evidence', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: RUN_ID, status: 'failed', pr_url: null }],
+      });
+      await expect(
+        HarnessRunService.adoptPublishedRun(RUN_ID)
+      ).rejects.toThrow('no publish evidence');
+
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: RUN_ID, status: 'running', pr_url: 'https://example/pull/1' }],
+      });
+      await expect(
+        HarnessRunService.adoptPublishedRun(RUN_ID)
+      ).rejects.toThrow('still active');
+    });
+  });
+
   describe('recordPublish', () => {
     it('stores head sha and PR URL while the run is active', async () => {
       const row = { id: RUN_ID, head_sha: 'abc123', status: 'running' };

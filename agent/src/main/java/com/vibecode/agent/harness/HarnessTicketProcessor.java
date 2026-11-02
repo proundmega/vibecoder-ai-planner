@@ -67,6 +67,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
         1, Math.min(leaseTtlSeconds / 2, longEnv("HARNESS_HEARTBEAT_SECONDS", 30)));
     private final boolean durabilityRequired =
         booleanEnv("HARNESS_DURABILITY_REQUIRED", false);
+    private final long workspaceRetentionHours =
+        longEnv("HARNESS_WORKSPACE_RETENTION_HOURS", 24);
 
     private volatile String currentTicketId;
     private volatile String currentStep;
@@ -151,6 +153,23 @@ public final class HarnessTicketProcessor implements TicketWorker {
     @Override
     public String getCurrentStep() {
         return currentStep;
+    }
+
+    /**
+     * Best-effort cleanup of clone directories older than the retention window.
+     * Disabled by HARNESS_WORKSPACE_RETENTION_HOURS=0.
+     */
+    public int pruneStaleWorkspaces() {
+        if (config.isDryRun() || workspaceRetentionHours <= 0) {
+            return 0;
+        }
+        try {
+            WorkspaceManager manager = workspaceFactory.apply(config.getRepoName());
+            return manager.pruneStaleWorkspaces(Duration.ofHours(workspaceRetentionHours));
+        } catch (IOException | RuntimeException e) {
+            log.warn("Could not prune stale workspaces: {}", e.getMessage());
+            return 0;
+        }
     }
 
     /**

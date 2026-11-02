@@ -17,13 +17,17 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Manages the local git workspace for the agent.
@@ -1104,6 +1108,49 @@ public class WorkspaceManager {
     /**
      * Delete the workspace directory and all its contents.
      */
+    /**
+     * Delete clone directories older than the retention window. Symlinks are
+     * skipped and every path is re-checked against the clone root. The manager's
+     * current workspace, if any, is preserved.
+     */
+    public int pruneStaleWorkspaces(Duration retention) throws IOException {
+        if (dryRun || retention == null || retention.isZero() || retention.isNegative()) {
+            return 0;
+        }
+        if (!Files.isDirectory(cloneRoot, LinkOption.NOFOLLOW_LINKS)) {
+            return 0;
+        }
+
+        Instant cutoff = Instant.now().minus(retention);
+        int removed = 0;
+        try (Stream<Path> entries = Files.list(cloneRoot)) {
+            for (Path entry : entries.toList()) {
+                if (!Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS)) {
+                    continue;
+                }
+                Path normalized = entry.toAbsolutePath().normalize();
+                if (repoDir != null && normalized.equals(repoDir.toAbsolutePath().normalize())) {
+                    continue;
+                }
+                FileTime modified = Files.getLastModifiedTime(entry, LinkOption.NOFOLLOW_LINKS);
+                if (!modified.toInstant().isBefore(cutoff)) {
+                    continue;
+                }
+                assertSafeToDelete(normalized);
+                try {
+                    deletePath(normalized);
+                    removed++;
+                } catch (IOException e) {
+                    log.warn("Could not prune stale workspace {}: {}", normalized, e.getMessage());
+                }
+            }
+        }
+        if (removed > 0) {
+            log.info("Pruned {} stale workspace(s) older than {}", removed, retention);
+        }
+        return removed;
+    }
+
     public void cleanup() {
         discardStaged();
         cleanupAskPass();

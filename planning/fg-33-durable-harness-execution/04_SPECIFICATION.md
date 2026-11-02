@@ -1,8 +1,8 @@
-# 04_SPECIFICATION.md - Durable Harness Execution, slice 2 (fg-33)
+# 04_SPECIFICATION.md - Durable Harness Execution, slices 2-3 (fg-33)
 
 **Status:** Implemented
 **Date:** 2026-11-02
-**Branch:** `feat/fg-33-slice-2-recovery-and-reaper` (stacked on slice 1)
+**Branch:** `feat/fg-33-slice-2-recovery-and-reaper` (PR #112, stacked on slice 1)
 **Depends on:** slice 1 (`045_harness_runs.sql`, `HarnessRunService`,
 `HarnessTicketProcessor`)
 
@@ -22,6 +22,9 @@ Make an interrupted run self-healing without ever undoing published work.
    cannot regress newer work.
 7. Automated coverage for every new path, including restart and lost-finish
    sequences.
+8. Operator dead-letter/adoption actions with project-scoped JWT auth.
+9. Agent-side stale workspace retention at startup.
+10. Prometheus counters for recovery outcomes and an operations runbook.
 
 ## Acceptance criteria
 
@@ -56,6 +59,12 @@ Make an interrupted run self-healing without ever undoing published work.
   is terminal and the ticket/PR/run guards pass.
 - Publish evidence is written before `finish`, so a lost finish response is
   recoverable.
+- An operator can adopt a published terminal run or dead-letter a stuck run;
+  agent keys cannot call either action.
+- Dead-lettering clears the lease and reconciliation marker; the next sweep
+  applies the normal PR/head/ticket guards.
+- Stale clone directories older than the retention window are removed at agent
+  startup without touching the current workspace or symlinks.
 
 ## Test matrix
 
@@ -71,16 +80,19 @@ Make an interrupted run self-healing without ever undoing published work.
 | Agent ticket model | `agent/src/test/java/.../TicketTest.java` | backlog ticket with a PR is not pollable |
 | Agent HTTP | `agent/src/test/java/.../ApiServiceHarnessTest.java` | recovery list path, publish body, guarded release boolean |
 | Config | `agent/src/test/java/.../HarnessConfigTest.java` | `HARNESS_RESUME_MODE` parsing/validation |
+| Operator routes | `backend/src/__tests__/api-harness-runs.test.js` | dead-letter/adopt auth and responses |
+| Workspace retention | `agent/src/test/java/.../WorkspaceManagerTest.java` | stale vs fresh dirs, non-directories preserved |
+| Metrics | `backend/src/services/HarnessMetrics.js` | reaper outcome counters and last-sweep gauge |
 
-## Out of scope (next milestone)
+## Out of scope
 
-- Workspace registry, retention and orphan cleanup.
-- Crash-injection process-kill tests in CI, metrics and alerts.
-- Dead-letter/adoption operator flow.
+- A CI process-kill/e2e matrix (current crash coverage is service/processor
+  level).
 - Resuming a live OpenCode session (only published work is adopted).
+- fg-41 dashboards beyond the counters in `05_RUNBOOK.md`.
 
 ## Pending Scope Items to Present to User
 
-- Slice 3: workspace retention plus operator dead-letter/adoption flow.
-- fg-41: structured harness events, metrics and dashboards for stuck runs.
+- CI process-kill matrix and live-session resume (fg-33 remainder).
+- fg-41: structured harness events and dashboards beyond the current counters.
 - fg-44: storage lifecycle (idle refresh, disk/inode watermarks).

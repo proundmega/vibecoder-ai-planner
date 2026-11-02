@@ -640,6 +640,62 @@ class HarnessRunService {
   }
 
   /**
+   * Operator action: stop a run and hand its ticket to reconciliation.
+   * A running run loses its lease immediately; the next sweep either adopts
+   * publish evidence or releases the ticket through the normal guard.
+   */
+  async deadLetterRun(runId, { error = null } = {}) {
+    const id = requiredUuid(runId, 'runId');
+    const reason = error === null || error === undefined
+      ? 'dead-lettered by operator'
+      : requiredString(error, 'error');
+
+    const result = await pool.query(
+      `WITH updated AS (
+         UPDATE harness_runs
+         SET status = 'dead_letter',
+             error = $2,
+             finished_at = COALESCE(finished_at, NOW()),
+             reconciled_at = NULL
+         WHERE id = $1 AND status <> 'succeeded'
+         RETURNING *
+       ),
+       deleted AS (
+         DELETE FROM harness_leases WHERE run_id = $1
+       )
+       SELECT * FROM updated`,
+      [id, reason]
+    );
+
+    if (result.rows.length === 0) {
+      const existing = await this.getRun(id);
+      if (existing.status === 'succeeded') {
+        throw new ConflictError('Cannot dead-letter a succeeded harness run');
+      }
+      return existing;
+    }
+    return result.rows[0];
+  }
+
+  /**
+   * Operator action: explicitly adopt a terminal run that recorded a PR.
+   * Reuses the same latest-run/ticket guards as the reaper.
+   */
+  async adoptPublishedRun(runId) {
+    const run = await this.getRun(runId);
+    if (run.status === 'running') {
+      throw new ConflictError('Harness run is still active');
+    }
+    if (run.reconciled_at) {
+      throw new ConflictError('Harness run is already reconciled');
+    }
+    if (!run.pr_url || String(run.pr_url).trim() === '') {
+      throw new ValidationError('Harness run has no publish evidence to adopt');
+    }
+    return this.reconcileRun(runId);
+  }
+
+  /**
    * Claim or renew a ticket lease. Returns null when another run holds an
    * unexpired lease. A run may always re-claim its own lease.
    */

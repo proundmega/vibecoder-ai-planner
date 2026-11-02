@@ -164,6 +164,41 @@ router.post('/runs/:runId/reconcile', verifyTokenOrAgent, async (req, res, next)
   }
 });
 
+async function assertOperatorCanAccess(req, run) {
+  if (req.agent) {
+    throw new ForbiddenError('Operator JWT required');
+  }
+  await assertCanReadRun(req, run);
+}
+
+router.post('/runs/:runId/dead-letter', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const run = await HarnessRunService.getRun(req.params.runId);
+    await assertOperatorCanAccess(req, run);
+
+    const dead = await HarnessRunService.deadLetterRun(req.params.runId, {
+      error: req.body?.error,
+    });
+    res.json({ success: true, data: dead });
+  } catch (error) {
+    logger.error('POST /harness/runs/:runId/dead-letter failed:', error);
+    next(error);
+  }
+});
+
+router.post('/runs/:runId/adopt', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const run = await HarnessRunService.getRun(req.params.runId);
+    await assertOperatorCanAccess(req, run);
+
+    const adopted = await HarnessRunService.adoptPublishedRun(req.params.runId);
+    res.json({ success: true, data: adopted });
+  } catch (error) {
+    logger.error('POST /harness/runs/:runId/adopt failed:', error);
+    next(error);
+  }
+});
+
 router.post('/runs/:runId/release-ticket', verifyTokenOrAgent, async (req, res, next) => {
   try {
     const agentId = requireAgent(req);

@@ -37,6 +37,8 @@ jest.mock('../services/HarnessRunService', () => ({
   recordPublish: jest.fn(),
   releaseTicketForRun: jest.fn(),
   reconcileRun: jest.fn(),
+  deadLetterRun: jest.fn(),
+  adoptPublishedRun: jest.fn(),
 }));
 
 const HarnessRunService = require('../services/HarnessRunService');
@@ -440,6 +442,58 @@ describe('Harness run API', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body.data).toEqual({ released: false });
+    });
+  });
+
+  describe('operator recovery actions', () => {
+    beforeEach(() => {
+      jwt.verify.mockReturnValue({
+        userId: 'user-1', id: 'user-1', email: 'user@test.com', role: 'super_admin',
+      });
+    });
+
+    it('dead-letters a run for an operator JWT', async () => {
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.deadLetterRun.mockResolvedValue({
+        id: RUN_ID, status: 'dead_letter',
+      });
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/dead-letter`)
+        .set('Authorization', 'Bearer mock-token')
+        .send({ error: 'stuck in publish' });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data.status).toBe('dead_letter');
+      expect(HarnessRunService.deadLetterRun).toHaveBeenCalledWith(
+        RUN_ID, { error: 'stuck in publish' }
+      );
+    });
+
+    it('adopts a published run for an operator JWT', async () => {
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.adoptPublishedRun.mockResolvedValue({
+        run_id: RUN_ID, adopted: true, released: false, marked: true,
+      });
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/adopt`)
+        .set('Authorization', 'Bearer mock-token');
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data.adopted).toBe(true);
+    });
+
+    it('refuses operator actions from an agent key', async () => {
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/dead-letter`)
+        .set('X-API-Key', 'agent-key')
+        .send({ error: 'stuck' });
+
+      expect(res.statusCode).toBe(403);
+      expect(HarnessRunService.deadLetterRun).not.toHaveBeenCalled();
     });
   });
 

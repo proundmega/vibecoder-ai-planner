@@ -1,4 +1,5 @@
 const HarnessRunService = require('./HarnessRunService');
+const HarnessMetrics = require('./HarnessMetrics');
 const logger = require('../utils/logger');
 
 const DEFAULT_RECONCILE_LIMIT = 50;
@@ -67,6 +68,8 @@ class HarnessReaper {
     for (const runId of pending) {
       await reconcile(runId, null);
     }
+
+    HarnessMetrics.recordSweep(summary);
 
     if (summary.reaped > 0 || summary.reconciled > 0) {
       logger.info(

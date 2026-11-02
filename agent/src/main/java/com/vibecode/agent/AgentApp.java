@@ -250,6 +250,9 @@ public class AgentApp {
         // published run keeps its reviewed ticket; anything else is failed and
         // returned only through the backend's guarded release path.
         recoverStartupOnce();
+        if (ticketWorker instanceof HarnessTicketProcessor harnessWorker) {
+            harnessWorker.pruneStaleWorkspaces();
+        }
 
         heartbeatScheduler = Executors.newScheduledThreadPool(1);
         heartbeatScheduler.scheduleAtFixedRate(() -> {
