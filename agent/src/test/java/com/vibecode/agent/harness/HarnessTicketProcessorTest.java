@@ -497,6 +497,74 @@ class HarnessTicketProcessorTest {
             message.contains("leaving the ticket assigned for recovery")));
     }
 
+    @Test
+    void successFinishFailureNeverResetsAReviewedTicket() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.finishHarnessRun(
+            "run-1", "succeeded", null, "abc1234",
+            "https://github.com/owner/repo/pull/7"))
+            .thenThrow(new IOException("finish API down"));
+
+        processor.processTicket(ticket());
+
+        verify(apiService).updateTicketStatus(1L, "review");
+        verify(apiService, never()).releaseTicket(1L);
+        verify(apiService, never()).finishHarnessRun(
+            eq("run-1"), eq("failed"), anyString(), any(), any());
+        verify(apiService, atLeastOnce()).finishHarnessRun(
+            "run-1", "succeeded", null, "abc1234",
+            "https://github.com/owner/repo/pull/7");
+    }
+
+    @Test
+    void leaseLossFinishRetryNeverReleasesTheTicket() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        doThrow(new ApiService.RunGoneException("run was reaped"))
+            .when(apiService).checkpointHarnessRun("run-1", "verifying", java.util.Map.of());
+        when(apiService.finishHarnessRun(
+            eq("run-1"), eq("failed"), contains("lease lost"), isNull(), isNull()))
+            .thenThrow(new IOException("finish API down"))
+            .thenThrow(new IOException("finish API down"))
+            .thenThrow(new IOException("finish API down"))
+            .thenReturn("failed");
+
+        processor.processTicket(ticket());
+
+        verify(apiService, never()).releaseTicket(1L);
+    }
+
+    @Test
+    void normalFailureReleasesWithBackoffAfterFinallyFinishesTheRun() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(verificationRunner.run(any(), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult("npm test", 1, "failed", false)));
+        when(apiService.finishHarnessRun(
+            eq("run-1"), eq("failed"), anyString(), isNull(), isNull()))
+            .thenThrow(new IOException("finish API down"))
+            .thenThrow(new IOException("finish API down"))
+            .thenThrow(new IOException("finish API down"))
+            .thenReturn("failed");
+
+        processor.processTicket(ticket());
+
+        verify(apiService).releaseTicket(1L);
+        assertTrue(postedMessages().stream().anyMatch(message ->
+            message.contains("Verification failed") && message.contains("attempt 1/3")));
+    }
+
     private List<String> postedMessages() throws Exception {
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(apiService, atLeastOnce()).postMessage(any(), anyString(), captor.capture());

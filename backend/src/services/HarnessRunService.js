@@ -356,6 +356,8 @@ class HarnessRunService {
          AND l.run_id = $2
          AND l.agent_id = $3
          AND l.expires_at > NOW()
+         AND l.ticket_id = r.ticket_id
+         AND l.agent_id = r.agent_id
          AND r.id = l.run_id
          AND r.status = 'running'
          AND t.status = 'in_progress'

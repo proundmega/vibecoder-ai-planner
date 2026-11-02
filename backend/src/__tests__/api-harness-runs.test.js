@@ -38,12 +38,16 @@ jest.mock('../services/HarnessRunService', () => ({
 const HarnessRunService = require('../services/HarnessRunService');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
+const jwt = require('jsonwebtoken');
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
 
 describe('Harness run API', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jwt.verify.mockReturnValue({
+      userId: 'user-1', id: 'user-1', email: 'user@test.com', role: 'project_admin',
+    });
     PermissionService.hasPermission.mockResolvedValue(true);
     pool.query.mockResolvedValue({ rows: [] });
   });
@@ -131,6 +135,22 @@ describe('Harness run API', () => {
         id: RUN_ID, agent_id: 8, ticket_id: 42,
       });
       PermissionService.hasPermission.mockResolvedValue(false);
+
+      const res = await request(app)
+        .get(`/api/v1/harness/runs/${RUN_ID}`)
+        .set('Authorization', 'Bearer mock-token');
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('denies the user role even though the seed grants AGENT_READ', async () => {
+      HarnessRunService.getRun.mockResolvedValue({
+        id: RUN_ID, agent_id: 8, ticket_id: 42,
+      });
+      jwt.verify.mockReturnValue({
+        userId: 'user-1', email: 'agent-user@test.com', role: 'user',
+      });
+      PermissionService.hasPermission.mockResolvedValue(true);
 
       const res = await request(app)
         .get(`/api/v1/harness/runs/${RUN_ID}`)

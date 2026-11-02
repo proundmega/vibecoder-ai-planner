@@ -36,16 +36,18 @@ Delivered:
     (`orphanAfterSeconds`, default 900). It returns `run_failed` so callers
     only release tickets whose run this call actually failed.
 - `api/harnessRuns.js` exposes the agent-facing API under `/api/v1/harness`.
-  Mutating routes require the owning agent's API key. JWT reads require the
-  `AGENT_READ` permission (granted to member/project_admin; the `user` role is
-  denied) and are scoped to the ticket's project (project owner or member);
-  `super_admin` may read all.
+  Mutating routes require the owning agent's API key. JWT reads require an
+  operator role (`super_admin`, `project_admin`, `member`) **and**
+  `AGENT_READ`, and are scoped to the ticket's project (project owner or
+  member). The `user` role is denied explicitly even though the permission
+  seed grants it `AGENT_READ`.
 - `HarnessTicketProcessor` starts a run after pickup, claims the lease, records
   each checkpoint, renews the lease from a heartbeat thread and finishes the
   run on success or failure.
-  - Start 4xx decisions (`CONFLICT`, `FORBIDDEN`, `VALIDATION_ERROR`) are
-    fatal even without `HARNESS_DURABILITY_REQUIRED`; only network/5xx/404
-    failures stay best-effort during rollout.
+  - Start 4xx decisions (`CONFLICT`, `FORBIDDEN`, `VALIDATION_ERROR`,
+    `UNAUTHORIZED`, `KEY_EXPIRED`) are fatal even without
+    `HARNESS_DURABILITY_REQUIRED`; only network/5xx/404 failures stay
+    best-effort during rollout.
   - After a run exists, lease/auth failures fail closed: the heartbeat sets
     `leaseLost`, checkpoints/heartbeats that return `NOT_FOUND`/`CONFLICT` set
     it too, and publishing performs a synchronous lease renewal immediately
@@ -57,10 +59,14 @@ Delivered:
     stops publishing.
   - `finishDurableRun` retries with bounded backoff, clears the run id only
     after the backend confirms, and logs a mismatch if the run was already
-    terminal with a different status. `failAndRelease` only returns the ticket
-    to backlog after finish succeeds; otherwise it leaves the ticket assigned
-    and posts a recovery message. The finally block retries the finish and
-    releases only if that retry makes the run terminal.
+    terminal with a different status.
+  - The intended terminal status is recorded (`succeeded`, or `failed` with a
+    release flag). The finally block retries the *same* status. A successful
+    publish is never downgraded to failed and never releases a reviewed ticket;
+    a lease-loss failure is retried but never releases; an ordinary failure is
+    released with the existing backoff only after the retry confirms the run
+    terminal. If confirmation still fails, the ticket stays assigned for
+    recovery.
   - `HARNESS_DURABILITY_REQUIRED=true` makes the initial run creation fail
     closed too. It defaults to `false` for rollout.
 

@@ -322,6 +322,8 @@ describe('HarnessRunService', () => {
       const sql = pool.query.mock.calls[0][0];
       expect(sql).toContain('expires_at > NOW()');
       expect(sql).toContain("r.status = 'running'");
+      expect(sql).toContain('l.ticket_id = r.ticket_id');
+      expect(sql).toContain('l.agent_id = r.agent_id');
       expect(sql).toContain('t.assigned_agent_id = a.owner_id');
     });
 

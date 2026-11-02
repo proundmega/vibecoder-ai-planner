@@ -73,6 +73,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private volatile String currentRunId;
     private volatile boolean leaseLost;
     private volatile ScheduledExecutorService heartbeatExecutor;
+    private volatile String pendingTerminalStatus;
+    private volatile String pendingTerminalMessage;
+    private volatile String pendingHeadSha;
+    private volatile String pendingPrUrl;
+    private volatile boolean releaseAfterTerminalFinish;
 
     public HarnessTicketProcessor(
         AgentConfig config,
@@ -325,6 +330,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 recordCheckpoint("done", Map.of(
                     "headSha", commitSha,
                     "prUrl", prUrl == null ? "" : prUrl));
+                pendingTerminalStatus = "succeeded";
+                pendingTerminalMessage = null;
+                pendingHeadSha = commitSha;
+                pendingPrUrl = prUrl;
+                releaseAfterTerminalFinish = false;
                 finishDurableRun("succeeded", null, commitSha, prUrl);
                 this.failures.remove(pickedUp.getId());
                 log.info("Ticket {} completed; PR: {}", pickedUp.getId(), prUrl);
@@ -340,13 +350,20 @@ public final class HarnessTicketProcessor implements TicketWorker {
             handleFailure(pickedUp.getId(), failure);
         } finally {
             stopHeartbeat();
-            String lingeringRun = currentRunId;
-            boolean finishedLingering = finishDurableRun(
-                "failed", "Harness run ended without a terminal checkpoint", null, null);
-            if (lingeringRun != null && finishedLingering && pickedUp.getId() != null) {
-                // We only reach this when a previous finish failed. Now that the
-                // run is terminal, returning the ticket is safe.
-                release(pickedUp.getId());
+            if (currentRunId != null) {
+                String status = pendingTerminalStatus == null ? "failed" : pendingTerminalStatus;
+                String message = pendingTerminalMessage == null
+                    ? "Harness run ended without a terminal checkpoint"
+                    : pendingTerminalMessage;
+                boolean finished = finishDurableRun(
+                    status, message, pendingHeadSha, pendingPrUrl);
+                if (finished && releaseAfterTerminalFinish && pickedUp.getId() != null) {
+                    applyFailureRelease(pickedUp.getId(), message);
+                } else if (!finished && releaseAfterTerminalFinish && pickedUp.getId() != null) {
+                    postMessage(pickedUp.getId(), "update",
+                        message + "\n\nCould not confirm the harness run finished; "
+                            + "leaving the ticket assigned for recovery instead of retrying it.");
+                }
             }
             closeQuietly(harness);
             deleteQuietly(tempDir);
@@ -355,6 +372,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
             currentTicketId = null;
             currentStep = null;
+            pendingTerminalStatus = null;
+            pendingTerminalMessage = null;
+            pendingHeadSha = null;
+            pendingPrUrl = null;
+            releaseAfterTerminalFinish = false;
         }
     }
 
@@ -440,6 +462,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
      */
     private boolean startDurableRun(Ticket ticket, String branchName) {
         leaseLost = false;
+        pendingTerminalStatus = null;
+        pendingTerminalMessage = null;
+        pendingHeadSha = null;
+        pendingPrUrl = null;
+        releaseAfterTerminalFinish = false;
         if (config.isDryRun()) {
             return true;
         }
@@ -589,6 +616,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
         postMessage(ticketId, "update",
             "Harness lease was lost before publish; refusing to push or open a PR. "
                 + "The ticket is left for recovery.");
+        pendingTerminalStatus = "failed";
+        pendingTerminalMessage = "Harness lease lost before publish";
+        pendingHeadSha = null;
+        pendingPrUrl = null;
+        releaseAfterTerminalFinish = false;
         finishDurableRun("failed", "Harness lease lost before publish", null, null);
         return false;
     }
@@ -651,17 +683,25 @@ public final class HarnessTicketProcessor implements TicketWorker {
      * another multi-minute harness.
      */
     private void failAndRelease(Long ticketId, String message) {
+        pendingTerminalStatus = "failed";
+        pendingTerminalMessage = message;
+        pendingHeadSha = null;
+        pendingPrUrl = null;
+        releaseAfterTerminalFinish = true;
+
         boolean finished = finishDurableRun("failed", message, null, null);
         if (!finished) {
-            // The run/lease may still be live. Returning the ticket to backlog
-            // here would let another agent race it, so leave it assigned for
-            // the reaper/operator instead.
-            postMessage(ticketId, "update",
-                message + "\n\nCould not confirm the harness run finished; "
-                    + "leaving the ticket assigned for recovery instead of retrying it.");
+            // The run/lease may still be live. The finally block retries the
+            // finish and applies the backoff + release only if it succeeds.
+            log.warn("Could not confirm the harness run finished for ticket {}; "
+                + "deferring ticket release", ticketId);
             return;
         }
 
+        applyFailureRelease(ticketId, message);
+    }
+
+    private void applyFailureRelease(Long ticketId, String message) {
         FailureState state = failures.computeIfAbsent(ticketId, ignored -> new FailureState());
         int attempt = state.recordFailure(maxAttempts, retryBaseDelayMs, retryMaxDelayMs);
         String note = " (attempt " + Math.min(attempt, maxAttempts) + "/" + maxAttempts

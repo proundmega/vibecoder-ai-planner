@@ -285,11 +285,16 @@ public class ApiService {
         return response.getError() != null && code.equals(response.getError().getCode());
     }
 
-    /** A backend decision (409/403/400) that must stop the run immediately. */
-    private static boolean isFatalRunError(ApiResponse<?> response) {
+    /** A backend decision (401/403/409/400) that must stop the run immediately. */
+    static boolean isFatalRunError(ApiResponse<?> response) {
+        if (response == null) {
+            return false;
+        }
         return isErrorCode(response, "CONFLICT")
             || isErrorCode(response, "FORBIDDEN")
-            || isErrorCode(response, "VALIDATION_ERROR");
+            || isErrorCode(response, "VALIDATION_ERROR")
+            || isErrorCode(response, "UNAUTHORIZED")
+            || isErrorCode(response, "KEY_EXPIRED");
     }
 
     /** The run was reaped or finished while this agent was still working. */

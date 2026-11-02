@@ -22,6 +22,8 @@ function requireAgent(req) {
   return req.agent.id;
 }
 
+const OPERATOR_ROLES = new Set(['super_admin', 'project_admin', 'member']);
+
 async function assertCanReadRun(req, run) {
   if (req.agent) {
     if (String(run.agent_id) !== String(req.agent.id)) {
@@ -32,7 +34,12 @@ async function assertCanReadRun(req, run) {
 
   const role = req.user?.role;
   const userId = req.user?.userId || req.user?.id;
-  if (!role || !userId || !(await PermissionService.hasPermission(role, 'AGENT_READ'))) {
+  if (
+    !role ||
+    !userId ||
+    !OPERATOR_ROLES.has(role) ||
+    !(await PermissionService.hasPermission(role, 'AGENT_READ'))
+  ) {
     throw new ForbiddenError('Operator permission required');
   }
   if (role === 'super_admin') {
