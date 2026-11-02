@@ -3,7 +3,7 @@
 **Status:** planned - **deferred**
 **Priority:** P2 - after the project completes a full build -> review -> fix -> merge cycle
 **Date:** 2026-10-31
-**Depends on:** fg-30, fg-31, fg-32, fg-33, fg-36 (merge timestamps), fg-41, fg-44 (storage metrics); fg-45 optional for readiness metrics
+**Depends on:** fg-30, fg-31, fg-32, fg-33, fg-36 (merge timestamps), fg-41, fg-44 (storage metrics), **fg-45 (required: `ready_at`/planning columns)**
 **Related code:** `backend/src/metrics.js`, `middleware/slowRequest.js`, `HeartbeatService`, `PhaseService`, `TicketService`, `approval_requests`, `ticket_phases`, `usage_logs`, `Dashboard.vue`, `AgentList.vue`
 
 ## Priority and sequencing
@@ -68,7 +68,7 @@ What is missing:
 
 ## Functional requirements
 
-- **FR1 - Flow view:** counts and p50/p95 age per canonical stage (`backlog`, `planning`, `ready`, `assigned`, `in_progress`, `review`, `human_approval`, `done`), derived by `deriveStage(ticket)`.
+- **FR1 - Flow view:** counts and p50/p95 age per canonical stage (`backlog`, `planning`, `ready`, `assigned`, `in_progress`, `review`, `human_approval`, `done`), derived by `deriveStage(ticket)`. fg-45 is required because `ready_at`/`plan_approved_at` come from it; without those columns the query must not be deployed.
 - **FR2 - Throughput:** tickets done per day/week; WIP. Merge counts require fg-36.
 - **FR3 - Stage timing:** time in each stage and each harness step (claim, clone, prompt, verify, publish), using `harness_runs`/`harness_events` when present.
 - **FR4 - Agent pool:** busy, idle, starting, plus host capacity. `failed` is not emitted until `PoolManager.getStatus()` produces it.
@@ -80,7 +80,7 @@ What is missing:
 - **FR10 - Trace ID:** reuse `harness_runs.id` (fg-33) as `run_id`; propagate to agent logs, harness events (fg-41), ticket message metadata and the PR body marker. Do not generate a second ID; legacy runs without a run row get `run_id=null`.
 - **FR11 - Minimal path:** a SQL-backed JSON endpoint + Vue view that works without Prometheus/Grafana.
 - **FR12 - Retention:** bounded retention for metrics/events; no unbounded growth.
-- **FR13 - Auth contract:** the flow endpoint is authorized with a **user JWT** + project membership (or super_admin for the global view). `METRICS_TOKEN` stays scoped to the Prometheus `/metrics` scrape and is never sent to the browser.
+- **FR13 - Auth contract:** the flow endpoint is authorized with a **user JWT** + `DASHBOARD_READ` + the shared `assertProjectMember` helper from fg-45 (owner, `project_memberships`, agent owner; explicit `super_admin` bypass for the global view). `METRICS_TOKEN` stays scoped to the Prometheus `/metrics` scrape and is never sent to the browser.
 
 ## Metric definitions
 
@@ -116,15 +116,16 @@ What is missing:
 ## Acceptance criteria
 
 1. A Flow view shows counts and p50/p95 age per stage from `deriveStage`, and the stage counts add up to the project ticket total.
-2. The view identifies the current bottleneck stage in one glance.
-3. Agent pool metrics are visible with busy/idle/starting only.
-4. Review/fix metrics come from the fg-31/32 tables; missing tables degrade to `null`, not zero.
-5. Merge metrics are `null` until fg-36 is merged; once present, time/conflicts/stale PRs render.
-6. A ticket can be followed by the fg-33 `run_id` across agent logs, harness events, ticket messages and PR body.
-7. The minimal version works without Prometheus/Grafana.
-8. Promotion to Prometheus/Grafana requires no schema changes.
-9. The flow endpoint rejects a user without project membership and never accepts `METRICS_TOKEN` as a user credential.
-10. The feature is explicitly marked deferred until the end-to-end cycle works.
+2. `plan_approved_at` without `ready_at`, `planning_status='review'`, and an expired waiver all classify as `planning`/not-ready rather than `ready`.
+3. The view identifies the current bottleneck stage in one glance.
+4. Agent pool metrics are visible with busy/idle/starting only.
+5. Review/fix metrics come from the fg-31/32 tables; missing tables degrade to `null`, not zero.
+6. Merge metrics are `null` until fg-36 is merged; once present, time/conflicts/stale PRs render.
+7. A ticket can be followed by the fg-33 `run_id` across agent logs, harness events, ticket messages and PR body.
+8. The minimal version works without Prometheus/Grafana.
+9. Promotion to Prometheus/Grafana requires no schema changes.
+10. The flow endpoint rejects a user without project membership and never accepts `METRICS_TOKEN` as a user credential.
+11. The feature is explicitly marked deferred until the end-to-end cycle works.
 
 ## Impact analysis
 

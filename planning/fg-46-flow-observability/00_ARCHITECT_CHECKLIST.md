@@ -3,7 +3,7 @@
 **Status:** planned - **deferred**
 **Priority:** P2 - after the project completes a full build -> review -> fix -> merge cycle
 **Date:** 2026-10-31
-**Depends on:** fg-30, fg-31, fg-32, fg-33, fg-36, fg-41, fg-44; fg-45 optional
+**Depends on:** fg-30, fg-31, fg-32, fg-33, fg-36, fg-41, fg-44, fg-45 (required)
 **Related code:** `backend/src/metrics.js`, `middleware/slowRequest.js`, `HeartbeatService`, `PhaseService`, `approval_requests`, `ticket_phases`, `usage_logs`, `Dashboard.vue`, `AgentList.vue`
 
 ## Why this ticket exists
@@ -22,6 +22,9 @@ The system has infrastructure metrics and agent heartbeats, but no way to answer
 - [ ] Use fg-31/32 tables for review/fix metrics
 - [ ] Use `approval_requests` for human-approval timing
 - [ ] Reuse the fg-33 `run_id` (no new identifier)
+- [ ] Use fg-45 `ready_at`/`plan_approved_at` (fg-45 required, not optional)
+- [ ] Implement one `deriveStage` in JS; no parallel SQL `CASE`
+- [ ] Call `assertProjectMember` for project-scoped flow views
 - [ ] Add `null`/“not instrumented” handling for merge, queue wait and provider latency
 - [ ] Add Prometheus counters/histograms (later)
 - [ ] Add provider latency/error/token metrics (instrumentation required)
@@ -48,8 +51,8 @@ The system has infrastructure metrics and agent heartbeats, but no way to answer
 
 ## Testing checklist
 
-- [ ] Table-driven `deriveStage` tests (all status/phase/planning/review/approval combinations).
-- [ ] Auth: project member 200, outsider 403, super_admin global 200, token-only 401.
+- [ ] Table-driven `deriveStage` tests (all status/phase/planning/review/approval combinations, including plan_approved-without-ready).
+- [ ] Auth: project member 200, outsider 403, agent owner 200, super_admin global 200, token-only 401.
 - [ ] Stage counts reconcile with the ticket list.
 - [ ] Missing optional tables return `null`.
 - [ ] `run_id` propagation matches `harness_runs.id`.

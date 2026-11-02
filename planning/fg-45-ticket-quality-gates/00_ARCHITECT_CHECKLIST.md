@@ -19,9 +19,12 @@ Planning templates exist, but nothing enforces them. A ticket can be created wit
 - [ ] Add `ticket_acceptance_criteria` and per-template `requiredSections`
 - [ ] Add readiness columns (`plan_approved_*`, `ready_*`, `small_fix_*`, waiver fields, grandfathered)
 - [ ] Add issue codes and `ReadinessError` (409 `READINESS_FAILED` with `details.issues`)
+- [ ] Honor `READINESS_GATE_MODE=off|warn|enforce` (default `warn`) in the assertion
+- [ ] Refresh `ready_at` on every readiness-relevant write and on waiver expiry
 - [ ] Extend the Java error model and handle readiness in both processors
 - [ ] Add `TICKET_READINESS_APPROVE`/`TICKET_READINESS_OVERRIDE` permissions with project membership
-- [ ] Add `ticket_readiness_events` audit (do not depend on the missing `audit_log`)
+- [ ] Add `assertProjectMember` (owner, `project_memberships`, agent owner, `super_admin` bypass)
+- [ ] Add `ticket_readiness_events` audit with `actor_type`/agent IDs, out-of-band blocked rows, and revocation/expiry events (do not depend on the missing `audit_log`)
 - [ ] Scope overrides to waived codes + expiry; keep small-fix separate
 - [ ] Backfill/grandfather existing tickets (approval + ready + completed)
 - [ ] Propagate readiness errors in `frontend/src/api/tickets.ts`
@@ -49,8 +52,11 @@ Planning templates exist, but nothing enforces them. A ticket can be created wit
 
 - [ ] Evaluator unit tests for all issue codes.
 - [ ] Gate tests for pickup, `POST /status`, `PUT /tickets/:id`, phase transitions, planning status.
+- [ ] All three gate modes (`off`/`warn`/`enforce`).
+- [ ] `ready_at` lifecycle: edits, criteria, template, revocation, expiry sweep.
 - [ ] `approve-plan` transactional tests (no partial completion).
-- [ ] Override permission/scope/expiry tests.
+- [ ] Override permission/scope/expiry tests; project-membership tests.
+- [ ] Audit actor types (user/agent/system) and out-of-band blocked rows.
 - [ ] Java processor tests for both legacy and harness modes.
 - [ ] Backfill/grandfather migration test.
-- [ ] Frontend error propagation + readiness panel test.
+- [ ] Frontend error propagation (detail + board) and readiness panel test.

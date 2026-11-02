@@ -3,7 +3,7 @@
 **Status:** planned - **deferred**
 **Priority:** P2 - after the project completes a full build -> review -> fix -> merge cycle
 **Date:** 2026-10-31
-**Depends on:** fg-30, fg-31, fg-32, fg-33, fg-36 (merge timestamps), fg-41, fg-44 (storage metrics); fg-45 optional for readiness metrics
+**Depends on:** fg-30, fg-31, fg-32, fg-33, fg-36 (merge timestamps), fg-41, fg-44 (storage metrics), **fg-45 (required: `ready_at`/`plan_approved_at`)**
 
 ## Design summary
 
@@ -37,17 +37,22 @@ FlowMetricsService.deriveStage(ticket) + SQL aggregation
 | 4 | `status='review'` | `review` |
 | 5 | `status='in_progress'` | `in_progress` |
 | 6 | `status='backlog'` and `assigned_agent_id IS NOT NULL` | `assigned` |
-| 7 | `status='backlog'` and `ready_at IS NOT NULL` | `ready` |
-| 8 | `status='backlog'` and (`planning_status IN ('template_selected','in_progress')` or `phase IN ('planning','plan_approved')) | `planning` |
-| 9 | otherwise | `backlog` |
+| 7 | `status='backlog'` and `ready_at IS NOT NULL` and (`readiness_override_expires_at IS NULL OR readiness_override_expires_at > NOW()`) | `ready` |
+| 8 | `status='backlog'` and `plan_approved_at IS NOT NULL` | `planning` (substate `approval_recorded`, not ready) |
+| 9 | `status='backlog'` and `planning_status IN ('template_selected','in_progress','review')` or `phase IN ('planning','plan_approved')` | `planning` |
+| 10 | otherwise | `backlog` |
 
 Notes:
 
 - Rows 1-5 use status first because that is the only field every path writes.
+- Row 7 requires fg-45. fg-46 is not deployable without it; there is no “skip the Ready stage” fallback.
+- Row 7 also checks waiver expiry so the view self-corrects even if the fg-45 expiry sweep is behind. `ready_at` is a fg-45-maintained cache; fg-46 does not recompute readiness itself.
+- Row 8 covers the gap where the plan was approved but readiness is still outstanding (for example a missing acceptance criterion). It is **not** `ready`.
+- Row 9 includes `planning_status='review'`, which previously fell through to `backlog`.
 - `phase` is a tie-breaker for `backlog` tickets only; it never overrides an active status.
 - `review` and `human_approval` both map to `status=review`, so the approval lookup is what separates them.
 - `ticket_phases` is used only for **history** (time-in-stage, transition counts), never to compute the current stage.
-- If fg-45 lands, `status=backlog` + `ready_at IS NULL` + no planning template = `backlog`; readiness issues are surfaced separately.
+- If fg-45 is rolled back, the columns remain (additive migration), but `ready_at` is no longer refreshed. Run fg-46 only with fg-45 active.
 
 Collapse for the first dashboard: Backlog, Planning, Ready, In progress, Review, Human approval, Done. `assigned` folds into In progress for the summary, and `fix` is a badge on In progress.
 
@@ -105,16 +110,20 @@ Phase 0 returns `null` for these and the UI shows “not instrumented” instead
 ### Auth
 
 - Route lives under the existing `/api/v1` router with `verifyToken` + `requireAnyPermission('DASHBOARD_READ')`.
-- If `projectId` is given, also assert project membership (owner, member, or project agent) — same check used by ticket routes.
-- Global (no `projectId`) requires `super_admin`.
+- If `projectId` is given, also call `ProjectAccessService.assertProjectMember(req.user.userId, projectId, { role: req.user.role })` from fg-45. There is no existing project-membership check on project/ticket reads (`ProjectService.getOne` and `Ticket.findByProject` ignore `userId`), so this helper is a new, shared dependency — fg-46 must not assume “the same check used by ticket routes”.
+- Agents use `req.user.userId` (owner), not `req.user.id` (agent ID).
+- Global (no `projectId`) requires `super_admin` (explicit bypass only for this view).
 - The browser uses the existing `vibecode_token` from localStorage; `METRICS_TOKEN` is **not** used here.
 - The Prometheus `/metrics` endpoint (`backend/src/index.js:78-87`) keeps its optional `X-Metrics-Token` scrape auth, unchanged. The two channels do not share credentials.
 - Query params are validated with Joi (`projectId` optional, `window` one of `24h|7d|30d|90d`); no arbitrary SQL inputs.
 
-### Query shape
+### Query shape (Phase 0: JavaScript, not SQL)
 
-- Compute in SQL where possible (`GROUP BY deriveStage` equivalent via `CASE`), and keep `deriveStage` only in `FlowMetricsService` so tests and SQL cannot drift. Phase 0 may fetch a bounded window of tickets and derive in JS, then cache for 30-60s.
-- Bound the result with `LIMIT` and a project filter; no full-table scans without `project_id`.
+- Fetch a bounded, project-scoped ticket set (`status != 'done'`, plus a window of done tickets) with `LIMIT` (for example 5000), and call the single `FlowMetricsService.deriveStage` in JavaScript.
+- **Do not** write a parallel `CASE`/`GROUP BY` stage expression. The only stage implementation is `deriveStage`; a SQL view/function may replace it later only with a contract test that asserts SQL and JS produce identical stages for a fixture set.
+- Cache the computed payload per project for 30-60 seconds.
+- Aggregate counts/ages in JS over the bounded set; for p50/p95 use the same values the view displays, not a second approximation.
+- Bound the result with a project filter; no full-table scans without `project_id`.
 
 ## Prometheus metrics (Phase 2)
 
@@ -181,6 +190,15 @@ The first version should be read-only and refresh every 30–60 seconds.
 - `run_id` propagation through fg-41 events.
 - Provider/model breakdown and latency instrumentation.
 - Merge/conflict metrics once fg-36 lands.
+
+## Tests
+
+- Table-driven `deriveStage` tests covering: done, fix loop, pending approval, review, in_progress, assigned, ready, `plan_approved_at` without `ready_at`, `planning_status='review'`, waived-then-expired, and plain backlog.
+- Stage counts reconcile with the ticket list for a fixture project.
+- Flow endpoint auth: project owner/member 200, non-member 403, agent owner 200, `super_admin` global 200, `METRICS_TOKEN` alone 401.
+- Missing optional tables return `null`, not errors.
+- `run_id` equals `harness_runs.id` and appears in all four propagation targets.
+- A contract test fails if anyone adds a second stage implementation in SQL without matching `deriveStage`.
 
 ## Open questions
 

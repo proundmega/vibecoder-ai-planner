@@ -44,7 +44,7 @@ Phase transitions into `in_progress` come from `assigned`, `blocked`, `review` a
 2. Require a planning template (or an explicit small-fix exemption).
 3. Capture scope, acceptance criteria and a test plan before implementation.
 4. Make `planning_status=completed` trustworthy and service-owned.
-5. Gate **every** path into execution: pickup, `POST /status`, `PUT /tickets/:id` with a status change, and phase transitions whose target maps to `in_progress`.
+5. Gate **every** path into execution: pickup, `POST /status`, `PUT /tickets/:id` with a status change, and phase transitions whose target maps to `in_progress` (enforced in `enforce` mode; `warn` logs and allows).
 6. Let agents refuse unready tickets with a structured, machine-readable error.
 7. Provide a scoped human override with reason and audit.
 8. Measure readiness and blocked tickets.
@@ -92,7 +92,7 @@ These are **different mechanisms** and must not share state:
 
 | Mechanism | Effect | Scope | Expiry |
 |---|---|---|---|
-| Small-fix exemption | Waives the template and required-file/section checks only (conditions 5, 6, 9) | One ticket, recorded by `small_fix_by/at/reason` | Permanent for that ticket |
+| Small-fix exemption | Waives the template and required-file/section checks (conditions 5, 6). Condition 9 does not apply to small fixes. | One ticket, recorded by `small_fix_by/at/reason` | Permanent for that ticket |
 | Readiness override | Waives named issue codes with a reason | `readiness_waived_codes[]` on one ticket | Required `readiness_override_expires_at` (max 30 days) |
 
 An override never waives `PLAN_NOT_APPROVED` silently and never bypasses every check: it lists the codes it waives, and unlisted checks still run.
@@ -130,16 +130,17 @@ Required sections are declared per template file (`requiredSections` in `file_de
 - **FR2 - Acceptance criteria:** store criteria in a dedicated `ticket_acceptance_criteria` table (source of truth). A `## Acceptance Criteria` section in a planning file is parsed once at migration/apply-template time to seed the table, then the table wins. At least one non-empty criterion is required.
 - **FR3 - Readiness service:** `GET /tickets/:id/readiness` returns `ready`, `issues[]` (`code`, `message`, `field`), `template`, `planningStatus`, `waivedCodes[]` and `expiresAt`.
 - **FR4 - Pickup gate:** `pickUpTicket` throws `ReadinessError` → HTTP **409** `{ code: "READINESS_FAILED", details: { issues: [...] } }`. 409 (not 422) because the ticket state conflicts with the request; the issue list is machine-readable.
-- **FR5 - All execution paths gated:** one assertion, `assertReadyForExecution(ticket, target)`, called from `pickUpTicket`, `TicketService.updateStatus`, `TicketService.update` (only when `status` changes into `in_progress`), and `PhaseService.transition` whenever the target phase maps to `in_progress` (`assigned`, `in_progress`, `blocked`) or the new status is `in_progress`.
+- **FR5 - All execution paths gated:** one assertion, `assertReadyForExecution(ticket, target)`, called from `pickUpTicket`, `TicketService.updateStatus`, `TicketService.update` (only when `status` changes into `in_progress`), and `PhaseService.transition` whenever the target phase maps to `in_progress` (`assigned`, `in_progress`, `blocked`) or the new status is `in_progress`. The assertion honors `READINESS_GATE_MODE=off|warn|enforce`: `off` skips, `warn` records and allows, `enforce` throws. The default is `warn`; only `enforce` blocks.
 - **FR6 - Planning completion is service-owned:** `PATCH /tickets/:id/planning/status` keeps working for `not_started`, `template_selected` and `in_progress` (route gains `TICKET_UPDATE`), but rejects `completed` with 409 `PLANNING_STATUS_FORBIDDEN`. Only the readiness service writes `completed`, together with `plan_approved_at` and (when clean) `ready_at`.
 - **FR7 - Placeholder detection:** reject `{{...}}`, `TBD`, `TODO`, `FIXME` and empty required sections.
-- **FR8 - Override:** `POST /tickets/:id/readiness/override` requires `TICKET_READINESS_OVERRIDE`, project membership, a reason, explicit `waivedCodes[]` and an expiry; writes a `ticket_readiness_events` audit row.
-- **FR9 - Small-fix exemption:** `POST /tickets/:id/readiness/small-fix` requires the same permission, records a reason, and waives only the template and required-file/section checks. Title, description, scope, acceptance criteria and placeholder checks still apply.
+- **FR8 - Override:** `POST /tickets/:id/readiness/override` requires `TICKET_READINESS_OVERRIDE`, project membership, a reason, explicit `waivedCodes[]` and an expiry; writes a `ticket_readiness_events` audit row. `DELETE` writes a revocation row.
+- **FR9 - Small-fix exemption:** `POST /tickets/:id/readiness/small-fix` requires the same permission and project membership, records a reason, and waives only the template and required-file/section checks. Title, description, scope, acceptance criteria and placeholder checks still apply; dependencies/test/rollback do not apply to a small fix.
 - **FR10 - Agent behavior:** on `READINESS_FAILED`, both the legacy `TicketProcessor` and `HarnessTicketProcessor` post the issue list to the ticket, release it, and do not clone or start a harness.
-- **FR11 - UI:** creation wizard with template/small-fix selection; readiness panel with issues and actions; `frontend/src/api/tickets.ts` must **propagate** the error (no `.catch(() => null)`) so `TicketDetail` can render the readiness issues.
+- **FR11 - UI:** creation wizard with template/small-fix selection; readiness panel with issues and actions; both `TicketDetail` **and** the `TicketBoard` drag/drop path must surface readiness issues, and `frontend/src/api/tickets.ts` must propagate errors for `updateTicket` and `createTicket` (no `.catch(() => null)`).
 - **FR12 - Migration:** grandfather existing in-progress/review/done tickets; gate only new work.
 - **FR13 - Metrics:** readiness rate, blocked count, time-to-ready, waived-code frequency, agent pickups rejected.
-- **FR14 - Audit:** readiness approvals, small-fix exemptions and overrides are written to a real table (see design) because `audit_log` does not exist yet (bp-124 O2).
+- **FR14 - Audit:** readiness approvals, small-fix exemptions, override grants/revocations/expiries and blocked attempts are written to a real table (see design) because `audit_log` does not exist yet (bp-124 O2). Blocked attempts are written out-of-band so a rejected transaction cannot roll the audit row back.
+- **FR15 - Project scoping:** approval, small-fix and override require `assertProjectMember`; there is no existing membership check on project or ticket reads (`ProjectService.getOne` and `Ticket.findByProject` ignore `userId`), so this ticket adds a shared helper rather than assuming one exists.
 
 ## Safety requirements
 
@@ -153,18 +154,20 @@ Required sections are declared per template file (`requiredSections` in `file_de
 
 ## Acceptance criteria
 
-1. A title-only ticket is created as a draft (`status=backlog`, `phase=draft`) and cannot be picked up or moved to `in_progress`.
+1. A title-only ticket is created as a draft (`status=backlog`, `phase=draft`) and, in `enforce` mode, cannot be picked up or moved to `in_progress` (`warn` records the block and allows).
 2. A ticket with a template and valid required files is ready and claimable.
-3. A small-fix ticket with an approved exemption is claimable, and the audit row records only the template/file waivers.
+3. A small-fix ticket with an approved exemption is claimable, and the audit row records only the template/file waivers (dependencies/test/rollback are not applicable).
 4. Placeholders/empty required sections produce specific issue codes.
 5. `GET /tickets/:id/readiness` returns accurate results.
-6. Pickup, `POST /tickets/:id/status`, `PUT /tickets/:id` with `status=in_progress`, and phase transitions mapping to `in_progress` all return 409 `READINESS_FAILED`.
+6. Pickup, `POST /tickets/:id/status`, `PUT /tickets/:id` with `status=in_progress`, and phase transitions mapping to `in_progress` all return 409 `READINESS_FAILED` in `enforce` mode.
 7. `PATCH /tickets/:id/planning/status` rejects `completed`.
 8. Agents post the issues and release unready tickets; neither processor starts a harness.
-9. An authorized override requires a reason, an expiry, a permission and is audited; unlisted codes still block.
-10. Existing in-progress/review tickets are grandfathered during rollout.
-11. Metrics show readiness rate and blocked tickets.
-12. Tests cover schema, evaluator, all five write paths, planning-status guard, override, agent handling, backfill and UI.
+9. An authorized override requires a reason, an expiry, a permission, project membership, and is audited; unlisted codes still block; revocation is audited.
+10. `ready_at` tracks evaluation: content/criteria/template edits and override revocation clear it, approved-and-clean sets it, and waiver expiry clears it via the sweep.
+11. Existing in-progress/review tickets are grandfathered during rollout.
+12. Metrics show readiness rate and blocked tickets.
+13. `READINESS_GATE_MODE=off|warn|enforce` behaves as specified, with tests for all three.
+14. Tests cover schema, evaluator, all five write paths, planning-status guard, override, project scoping, agent handling, backfill and UI.
 
 ## Impact analysis
 

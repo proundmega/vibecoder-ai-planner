@@ -38,19 +38,54 @@ Create ticket (draft: status=backlog, phase=draft)
 ```js
 // services/TicketReadinessService.js
 async assertReadyForExecution(ticketId, { toStatus, toPhase, source, actor }) {
+  const mode = process.env.READINESS_GATE_MODE || 'warn';   // off | warn | enforce
+  if (mode === 'off') return { ready: true, skipped: true };
+
   const result = await this.evaluate(ticketId);
   if (result.ready) return result;
-  throw new ReadinessError(result);   // 409 READINESS_FAILED, details.issues
+
+  // Out-of-band: never insert this inside the status transaction (see audit).
+  this.emitBlocked(ticketId, result, source, actor);   // metric + structured log
+  if (mode === 'enforce') throw new ReadinessError(result);
+  return result;                                        // warn: allow
 }
 ```
 
 Rules:
 
+- Only `enforce` blocks. `warn` (the default) records the attempt and allows the transition, so rollout does not freeze the board. `off` skips evaluation entirely.
 - The assertion is skipped for grandfathered tickets (`readiness_grandfathered_at IS NOT NULL`).
 - It runs for humans and agents alike; permissions never imply readiness.
 - `PUT /tickets/:id` only gates status changes into `in_progress`; editing title/description/template is allowed while unready.
 - `PhaseService.transition` evaluates the **target**, not the source: `review -> in_progress` (fg-32 fix dispatch) and `done -> in_progress` (reopen) are gated too.
-- Postgres row locking: the assertion runs inside the same transaction as the status write (`SELECT ... FOR UPDATE`) so a concurrent edit cannot flip readiness between check and update.
+- Postgres row locking: the assertion runs inside the same transaction as the status write (`SELECT ... FOR UPDATE`) so a concurrent edit cannot flip readiness between check and update. The **blocked audit row is not** written in that transaction.
+
+## ready_at lifecycle
+
+`ready_at` is a cache of the evaluator, not an independent truth. It is refreshed by `refreshReadyState(ticketId, actor)`:
+
+```
+evaluate -> ready ? set ready_at=NOW(), ready_by=actor : set ready_at=NULL
+```
+
+Called from every readiness-relevant write:
+
+| Write | Effect |
+|---|---|
+| `PUT /tickets/:id` title/description change | clear + re-evaluate |
+| planning file upsert/delete (`PUT/DELETE /planning/:fileKey`) | clear + re-evaluate |
+| `apply-template` | clear + re-evaluate |
+| acceptance-criteria create/update/delete | clear + re-evaluate |
+| small-fix created | clear + re-evaluate |
+| override granted/revoked | clear + re-evaluate |
+| `approve-plan` | validate, then set `plan_approved_at` and re-evaluate |
+
+Waiver expiry is handled by two mechanisms:
+
+1. `assertReadyForExecution` always re-evaluates, so an expired waiver can never allow execution even if `ready_at` is stale.
+2. An hourly `READINESS_SWEEP_INTERVAL_MINUTES` sweep selects `ready_at IS NOT NULL AND readiness_override_expires_at <= NOW()`, calls `refreshReadyState`, and writes one `override_expired` event per expiring waiver.
+
+`GET /readiness` is read-only and never persists; it returns the computed state. The sweep bounds how long `ready_at` can disagree with the evaluator (one interval), and `deriveStage` trusts `ready_at` only because of that contract. A content edit that leaves the ticket ready re-sets `ready_at` in the same request, so the flow view and the gate do not diverge.
 
 ## Data model
 
@@ -70,7 +105,7 @@ ALTER TABLE tickets ADD COLUMN readiness_override_expires_at TIMESTAMPTZ;
 ALTER TABLE tickets ADD COLUMN readiness_grandfathered_at TIMESTAMPTZ;
 
 CREATE TABLE ticket_acceptance_criteria (
-  id BIGSERIAL PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   ticket_id BIGINT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
   position INT NOT NULL DEFAULT 0,
   text TEXT NOT NULL,
@@ -79,10 +114,12 @@ CREATE TABLE ticket_acceptance_criteria (
 );
 
 CREATE TABLE ticket_readiness_events (
-  id BIGSERIAL PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   ticket_id BIGINT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-  action VARCHAR(32) NOT NULL,          -- approved | small_fix | override | blocked
-  actor_id BIGINT REFERENCES users(id),
+  action VARCHAR(32) NOT NULL,          -- approved|small_fix|override_granted|override_revoked|override_expired|blocked
+  actor_type VARCHAR(16) NOT NULL CHECK (actor_type IN ('user','agent','system')),
+  actor_user_id BIGINT REFERENCES users(id),   -- user actor, or the agent's owner
+  actor_agent_id BIGINT REFERENCES agents(id), -- set when actor_type='agent'
   actor_role VARCHAR(32),
   reason TEXT,
   waived_codes TEXT[] NOT NULL DEFAULT '{}',
@@ -96,7 +133,14 @@ CREATE INDEX idx_readiness_events_ticket ON ticket_readiness_events(ticket_id, c
 CREATE INDEX idx_acceptance_ticket ON ticket_acceptance_criteria(ticket_id, position);
 ```
 
-Why not `audit_log`: it is referenced by dead code but was never created (bp-124 O2). This ticket ships a real table with a rollback; if bp-124 later adds a generic audit log, `ticket_readiness_events` can be projected into it.
+Why not `audit_log`: it is referenced by dead code but was never created (bp-124 O2). This ticket ships real tables with a rollback; if bp-124 later adds a generic audit log, `ticket_readiness_events` can be projected into it.
+
+### Actor identity and rollback safety
+
+- Agent auth sets `req.user.id = agent.id` (the `agents.id` row) and `req.user.userId = agent.owner_id` (`middleware/auth.js:300-305`). An agent ID is **not** a `users.id`, so the event table cannot use a single `actor_id` FK to `users`.
+- Write `actor_type='agent'`, `actor_agent_id=req.user.id`, `actor_user_id=req.user.userId`, `actor_role=req.user.role`. Human actions use `actor_type='user'` + `actor_user_id`. Scheduled work uses `actor_type='system'`.
+- `blocked` events are emitted **outside** the status transaction: the assertion writes a metric/structured log and the error handler persists the row on a separate pooled connection, best-effort. Otherwise the rejected transaction's rollback deletes the evidence.
+- `DELETE /readiness/override` writes `override_revoked`; the sweep writes `override_expired` once per waiver (guarded by `expires_at` + existing event check).
 
 ## State machine
 
@@ -112,7 +156,8 @@ planning_status: not_started -> template_selected -> in_progress
 - `plan_approved_at` is the approval fact; `planning_status` mirrors it for existing UI reads.
 - The evaluator checks `plan_approved_at IS NOT NULL` (condition 8), **not** `planning_status`.
 - `ready_at` is set atomically by the approval endpoint, or by a later re-evaluation after edits (a background/save hook may clear it).
-- Any content edit after approval clears `ready_at` (but keeps `plan_approved_at`); the next evaluation decides whether re-approval is needed. Re-approval is required only when content checks fail.
+- Any content edit after approval clears `ready_at` (but keeps `plan_approved_at`), then `refreshReadyState` immediately re-evaluates and re-sets `ready_at` if the ticket is still clean. Re-approval is required only when content checks fail.
+- Waiver expiry never leaves `ready_at` truthy for long: the expiry sweep clears it, and `assertReadyForExecution` re-evaluates regardless.
 - There is no endpoint that sets `ready_at` without validating; overrides create a waiver, not a fake ready.
 
 ## Readiness evaluator
@@ -189,7 +234,32 @@ Permissions are seeded in a migration:
 - `TICKET_READINESS_APPROVE` → `project_admin`, `super_admin`
 - `TICKET_READINESS_OVERRIDE` → `project_admin`, `super_admin`
 
-Both checks also require project membership (`req.user` owns or belongs to the project). `requireAnyPermission` matches **permission codes**, not role names; do not pass `'PROJECT_ADMIN'` (it is not a seeded permission).
+Both checks also require project membership via the shared helper below. `requireAnyPermission` matches **permission codes**, not role names; do not pass `'PROJECT_ADMIN'` (it is not a seeded permission).
+
+### Project membership helper
+
+There is no project-membership enforcement today: `ProjectService.getOne` ignores `_userId` (`ProjectService.js:11-15`), `Ticket.findByProject` ignores `_uid` (`models/ticket.js:42-52`), and the only ownership check is the assignee validation in `TicketService.js:84-89`. Without a helper, a global `project_admin` could approve or override any project.
+
+Add `backend/src/services/ProjectAccessService.js`:
+
+```js
+// Returns true when the user is the project owner or a project member.
+// Agent actors pass req.user.userId (the agent's owner), so no agent row is needed.
+async isProjectMember(userId, projectId) {
+  // 1) projects.owner_id = userId
+  // 2) project_memberships (project_id, user_id) = (projectId, userId)
+}
+
+async assertProjectMember(userId, projectId, { role, allowSuperAdmin = true } = {}) {
+  if (allowSuperAdmin && role === 'super_admin') return;
+  if (!await this.isProjectMember(userId, projectId)) throw new ForbiddenError('Not a project member');
+}
+```
+
+- Use `req.user.userId` (the agent owner), not `req.user.id`, when the actor is an agent.
+- Call `assertProjectMember` from `approve-plan`, `small-fix`, `override` (and `DELETE`) after resolving the ticket's `project_id`.
+- `super_admin` is the only explicit bypass; project admins must still be project members.
+- This ticket scopes the check to readiness routes. Retrofitting `ProjectService.getOne`/`Ticket.findByProject` is a follow-up (recorded in Pending Scope).
 
 `approve-plan` transaction:
 
@@ -230,19 +300,21 @@ Both checks also require project membership (`req.user` owns or belongs to the p
 2. Description with minimum length hint.
 3. Template selector (architecture/technical/simple/custom) or “Small fix” checkbox + reason.
 4. Acceptance criteria (repeatable rows → `ticket_acceptance_criteria`).
-5. “Create draft” or “Create + apply template”. Creation never fails for readiness.
+5. “Create draft” or “Create + apply template”. Creation never fails for readiness, but validation errors (bad project, title length) must be shown: `createTicket` currently does `.catch(() => null)`, which hides them. Return a result object or rethrow.
 
-### Ticket detail
+### Ticket detail and board
 
 - Readiness panel: badge, issues with links to the relevant planning file, `sectionsEnforced` note.
 - Actions: Apply template, Add criteria, “Approve plan”, “Small fix”, “Override…”.
 - Override dialog requires a reason, one or more codes, and an expiry date.
 - Planning status control cannot select `completed`; show “Completed is set by Approve plan”.
 - `frontend/src/api/tickets.ts` functions must surface errors (throw or return a result object); remove `.catch(() => null)` for `updateTicket` so the 409 reaches the view.
+- `TicketBoard.handleDrop` (`frontend/src/views/TicketBoard.vue:76-84`) currently logs and ignores the failure. On 409 `READINESS_FAILED` it must restore the card's previous column and show the issue list (toast/banner), not silently leave the optimistic state.
+- Both the detail view and the board render the same `ReadinessIssues` component, so codes/messages stay consistent.
 
 ## Rollout and backfill
 
-1. **Ship schema + evaluator + API with the gate off** (`READINESS_GATE_MODE=off|warn|enforce`, default `warn`).
+1. **Ship schema + evaluator + API** with `READINESS_GATE_MODE=warn` (the default; `off|warn|enforce`). Note that `warn` does **not** block, so acceptance #1 (“cannot be picked up”) holds only once `enforce` is enabled.
 2. **Grandfather backfill** (same migration):
    - existing `in_progress`, `review`, `done` tickets get `readiness_grandfathered_at = updated_at`, `ready_at = updated_at`, `plan_approved_at = updated_at`, and `planning_status='completed'` when null.
    - Because the evaluator checks `plan_approved_at` (not `planning_status`) and skips grandfathered rows, backfilled tickets stay claimable.
@@ -250,6 +322,7 @@ Both checks also require project membership (`req.user` owns or belongs to the p
 4. `enforce` for new tickets once the blocked rate is understood.
 5. Triage `backlog` tickets into drafts/templates via the readiness panel.
 6. Enable phase-transition gating (same assertion, already in the matrix).
+7. Start the expiry sweep (`READINESS_SWEEP_INTERVAL_MINUTES`, default 60) before enabling overrides.
 
 Rollback: delete the readiness routes and set `READINESS_GATE_MODE=off`; the columns are additive and the migration has a `_rollback.sql`.
 
@@ -264,15 +337,20 @@ Rollback: delete the readiness routes and set `READINESS_GATE_MODE=off`; the col
 ## Tests
 
 - evaluator returns each issue code, including `sectionsEnforced: false` for custom templates;
+- all three `READINESS_GATE_MODE` values: `off` skips, `warn` records + allows, `enforce` throws;
 - `assertReadyForExecution` is invoked by pickup, `updateStatus`, `update` (status changes only), and phase transitions to `assigned`/`in_progress`/`blocked`;
 - `PATCH /planning/status` returns 409 `PLANNING_STATUS_FORBIDDEN` for `completed` and 200 for the other states;
 - `approve-plan` on an incomplete ticket sets neither `completed` nor `ready_at`;
-- approve → edit → readiness false again;
-- override is permission-checked, project-scoped, code-scoped, expiring; expired waiver re-blocks; unlisted codes still block;
+- approve → edit → readiness false again; edit → still-ready → `ready_at` re-set in the same request;
+- waiver expiry: assertion re-blocks immediately, the sweep clears `ready_at` and writes `override_expired`;
+- override is permission-checked, project-scoped, code-scoped, expiring; expired waiver re-blocks; unlisted codes still block; revocation writes `override_revoked`;
+- `assertProjectMember`: owner passes, `project_memberships` passes, non-member 403, `super_admin` bypasses, agent actors use the owner ID;
 - small-fix exemption waives only template/file checks, not description/criteria;
+- blocked audit rows survive the rolled-back transaction (separate connection);
+- agent actors store `actor_agent_id` without an FK violation;
 - both Java processors post issues, release, and start no harness;
 - grandfathered backfill keeps tickets claimable;
-- frontend `updateTicket` propagates errors and the readiness panel renders.
+- frontend `updateTicket`/`createTicket` propagate errors; TicketDetail **and** TicketBoard render readiness issues.
 
 ## Open questions
 
@@ -289,3 +367,4 @@ Rollback: delete the readiness routes and set `READINESS_GATE_MODE=off`; the col
 | 2 | fg-46 | Readiness/blocked metrics | Observability | `fg-46-flow-observability` | No |
 | 3 | fg-37 | Readiness vs quality metrics | Evaluation | `fg-37-agent-evaluation-harness` | No |
 | 4 | fg-31 | Reviewer readiness checks | Review | `fg-31` follow-up | No |
+| 5 | fg-45 | Enforce project membership in `ProjectService.getOne`/`Ticket.findByProject` (they currently ignore `userId`) | Security | `bp-124` follow-up | No |
