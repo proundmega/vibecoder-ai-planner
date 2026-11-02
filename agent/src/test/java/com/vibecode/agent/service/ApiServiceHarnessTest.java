@@ -217,6 +217,17 @@ class ApiServiceHarnessTest {
     }
 
     @Test
+    void reconciliationUsesTheRunReconcileEndpoint() throws Exception {
+        respond("/api/v1/harness/runs/run-1/reconcile", 200,
+            ok("{\"adopted\":true,\"released\":false,\"marked\":true}"));
+
+        Map<String, Object> result = api.reconcileHarnessRun("run-1");
+
+        assertEquals(true, result.get("adopted"));
+        assertEquals("/api/v1/harness/runs/run-1/reconcile", lastRequest().path());
+    }
+
+    @Test
     void guardedTicketReleaseReturnsTheBackendBoolean() throws Exception {
         respond("/api/v1/harness/runs/run-1/release-ticket", 200,
             ok("{\"released\":true}"));

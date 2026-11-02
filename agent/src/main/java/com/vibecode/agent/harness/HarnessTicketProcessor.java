@@ -250,6 +250,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     runId, terminal);
                 return false;
             }
+            reconcileRecoveredRun(runId);
             if (ticketId != null) {
                 postMessage(ticketId, "update",
                     "Recovered a published harness run after an agent restart; PR: " + prUrl);
@@ -272,6 +273,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
 
         boolean released = releaseRecoveredTicket(runId);
+        reconcileRecoveredRun(runId);
         if (ticketId != null) {
             postMessage(ticketId, "update", released
                 ? "The previous harness run was interrupted by an agent restart; "
@@ -344,6 +346,17 @@ public final class HarnessTicketProcessor implements TicketWorker {
         // backlog -> review transition is owned by backend reconciliation
         // because the ticket state machine does not allow it through the API.
         return true;
+    }
+
+    private void reconcileRecoveredRun(String runId) {
+        try {
+            apiService.reconcileHarnessRun(runId);
+        } catch (IOException | RuntimeException e) {
+            // The ticket's PR URL and the backend start guard still prevent a
+            // duplicate run; the periodic reaper retries the status move.
+            log.warn("Could not reconcile recovered run {} immediately: {}",
+                runId, e.getMessage());
+        }
     }
 
     private boolean releaseRecoveredTicket(String runId) {
@@ -588,6 +601,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     branchName,
                     "main"
                 );
+                publishedPrUrl = prUrl;
                 recordPublishSafely(null, prUrl);
 
                 // Post-publish bookkeeping must never discard a successful push/PR.

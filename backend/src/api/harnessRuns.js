@@ -4,7 +4,7 @@ const HarnessRunService = require('../services/HarnessRunService');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
 const { verifyTokenOrAgent } = require('../middleware/auth');
-const { ForbiddenError, NotFoundError } = require('../errors/HttpError');
+const { ForbiddenError, NotFoundError, ConflictError } = require('../errors/HttpError');
 const logger = require('../utils/logger');
 
 /**
@@ -142,6 +142,24 @@ router.post('/runs/:runId/publish', verifyTokenOrAgent, async (req, res, next) =
     res.json({ success: true, data: updated });
   } catch (error) {
     logger.error('POST /harness/runs/:runId/publish failed:', error);
+    next(error);
+  }
+});
+
+router.post('/runs/:runId/reconcile', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    requireAgent(req);
+    const run = await HarnessRunService.getRun(req.params.runId);
+    await assertCanReadRun(req, run);
+
+    const reconciled = await HarnessRunService.reconcileRun(req.params.runId);
+    if (!reconciled) {
+      throw new ConflictError('Harness run is not terminal');
+    }
+
+    res.json({ success: true, data: reconciled });
+  } catch (error) {
+    logger.error('POST /harness/runs/:runId/reconcile failed:', error);
     next(error);
   }
 });

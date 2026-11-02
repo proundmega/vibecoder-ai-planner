@@ -324,6 +324,24 @@ public class ApiService {
     }
 
     /**
+     * Ask the backend to reconcile a terminal run immediately. This closes the
+     * window where recovery has finished a published run but the ticket is
+     * still in backlog until the next reaper sweep.
+     */
+    public Map<String, Object> reconcileHarnessRun(String runId) throws IOException {
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/reconcile",
+            Map.of(),
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to reconcile harness run: " + response.getError());
+        }
+        return response.getData();
+    }
+
+    /**
      * Return the ticket to backlog after recovery failed its run. The backend
      * only releases when the ticket is still in_progress with no PR.
      */

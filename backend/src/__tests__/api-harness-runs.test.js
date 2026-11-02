@@ -36,6 +36,7 @@ jest.mock('../services/HarnessRunService', () => ({
   listActiveRunsForAgent: jest.fn(),
   recordPublish: jest.fn(),
   releaseTicketForRun: jest.fn(),
+  reconcileRun: jest.fn(),
 }));
 
 const HarnessRunService = require('../services/HarnessRunService');
@@ -402,6 +403,32 @@ describe('Harness run API', () => {
       expect(HarnessRunService.releaseTicketForRun).toHaveBeenCalledWith(
         RUN_ID, { agentId: 7 }
       );
+    });
+
+    it('reconciles a terminal run through the agent-scoped route', async () => {
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7 });
+      HarnessRunService.reconcileRun.mockResolvedValue({
+        run_id: RUN_ID, ticket_id: 42, adopted: true, released: false, marked: true,
+      });
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/reconcile`)
+        .set('X-API-Key', 'agent-key');
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data.adopted).toBe(true);
+      expect(HarnessRunService.reconcileRun).toHaveBeenCalledWith(RUN_ID);
+    });
+
+    it('refuses reconcile when the run is still active', async () => {
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7 });
+      HarnessRunService.reconcileRun.mockResolvedValue(null);
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/reconcile`)
+        .set('X-API-Key', 'agent-key');
+
+      expect(res.statusCode).toBe(409);
     });
 
     it('reports released=false when the guard refuses', async () => {

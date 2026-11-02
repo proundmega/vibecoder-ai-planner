@@ -20,9 +20,11 @@ Delivered:
   - `agent_step` is separate from `step`; heartbeats never move the checkpoint
     state machine.
 - `HarnessRunService` owns all state transitions:
-  - `startRun` only inserts when the ticket is `in_progress` and
-    `assigned_agent_id` matches the agent owner; it maps the active-run unique
-    index to `409 Conflict`.
+  - `startRun` only inserts when the ticket is `in_progress`, has no `pr_url`,
+    has no prior run with PR/head-sha evidence, and `assigned_agent_id` matches
+    the agent owner; it maps the active-run unique index to `409 Conflict`.
+    These checks close the recovery window where a published backlog ticket
+    could otherwise be started again.
   - `recordCheckpoint` validates the step vocabulary (`created`, `cloned`,
     `session_ready`, `prompting`, `verifying`, `publishing`, `done`) and rejects
     backwards transitions in the same CTE. Cloned/session checkpoints also fill
@@ -100,9 +102,10 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   this agent's active runs at startup (with the latest checkpoint payload). It
   adopts a run that has durable publish evidence (PR URL, or head sha plus an
   existing PR) as `succeeded`, restores the ticket PR URL/review state, and
-  never releases it. Other runs are failed and released through the guarded
-  path; if the finish cannot be confirmed the run is left for terminal-run
-  reconciliation.
+  never releases it. It then calls the agent-scoped reconcile route so a
+  backlog ticket moves to review synchronously, before the poll loop can claim
+  it. Other runs are failed and released through the guarded path; if the
+  finish cannot be confirmed the run is left for terminal-run reconciliation.
 - **Durable publish evidence.** `POST /harness/runs/:runId/publish` stores
   `head_sha` immediately after the push and `pr_url` immediately after PR
   creation, before the terminal finish. Recovery can therefore distinguish
@@ -114,6 +117,7 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   preserves published work, not a live prompt session.
 - New agent-scoped routes: `GET /harness/agents/:agentId/runs`,
   `POST /harness/runs/:runId/publish`,
+  `POST /harness/runs/:runId/reconcile`,
   `POST /harness/runs/:runId/release-ticket`.
 
 ## Decisions
@@ -159,7 +163,7 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   ownership, JWT permission/project scoping, checkpoints, heartbeats, finish
   and lease conflicts.
 - `backend/src/__tests__/integration/harnessRuns.test.js` executes against
-  PostgreSQL (31 tests): assignment authorization, sequential and concurrent
+  PostgreSQL (34 tests): assignment authorization, sequential and concurrent
   one-active-run races, unexpired lease blocking, expired-lease reaping, orphan
   reaping, idempotent finish + lease release, checkpoint ordering/context,
   publish evidence, guarded reaping/reconciliation (reaped published runs,

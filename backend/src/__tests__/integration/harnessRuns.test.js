@@ -98,6 +98,36 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     ).rejects.toThrow('Ticket is not assigned to this agent');
   });
 
+  test('refuses a new run for a ticket that already has a PR', async () => {
+    await pool.query(
+      "UPDATE tickets SET pr_url = 'https://github.com/o/r/pull/9' WHERE id = $1",
+      [ticketId]
+    );
+
+    await expect(
+      start({ branch: 'harness/duplicate-published' })
+    ).rejects.toThrow('Ticket is not assigned to this agent');
+  });
+
+  test('refuses a new run when an earlier run recorded publish evidence', async () => {
+    const run = await start({ branch: 'harness/earlier-published' });
+    await HarnessRunService.recordPublish(run.id, agentId, {
+      headSha: 'abc123',
+    });
+    await HarnessRunService.finishRun(run.id, { status: 'failed' });
+
+    await pool.query(
+      `UPDATE tickets
+       SET status = 'in_progress', assigned_agent_id = $2, pr_url = NULL
+       WHERE id = $1`,
+      [ticketId, ownerId]
+    );
+
+    await expect(
+      start({ branch: 'harness/duplicate-evidence' })
+    ).rejects.toThrow('Ticket is not assigned to this agent');
+  });
+
   test('allows only one running run per ticket', async () => {
     await start({ branch: 'harness/first' });
 
@@ -525,16 +555,16 @@ describe('HarnessRunService — PostgreSQL integration', () => {
       "UPDATE harness_runs SET started_at = NOW() - INTERVAL '2 minutes' WHERE id = $1",
       [oldRun.id]
     );
-    await HarnessRunService.recordPublish(oldRun.id, agentId, {
-      prUrl: 'https://github.com/o/r/pull/old',
-    });
-    await HarnessRunService.finishRun(oldRun.id, {
-      status: 'failed',
-      prUrl: 'https://github.com/o/r/pull/old',
-    });
+    await HarnessRunService.finishRun(oldRun.id, { status: 'failed' });
 
     const newRun = await start({ branch: 'harness/newer-failed' });
     await HarnessRunService.finishRun(newRun.id, { status: 'failed' });
+    await pool.query(
+      `UPDATE harness_runs
+       SET pr_url = 'https://github.com/o/r/pull/old'
+       WHERE id = $1`,
+      [oldRun.id]
+    );
 
     const oldReconciled = await HarnessRunService.reconcileRun(oldRun.id);
     expect(oldReconciled.adopted).toBe(false);
@@ -557,12 +587,15 @@ describe('HarnessRunService — PostgreSQL integration', () => {
       "UPDATE harness_runs SET started_at = NOW() - INTERVAL '2 minutes' WHERE id = $1",
       [oldRun.id]
     );
-    await HarnessRunService.recordPublish(oldRun.id, agentId, {
-      prUrl: 'https://github.com/o/r/pull/old',
-    });
     await HarnessRunService.finishRun(oldRun.id, { status: 'failed' });
 
     const active = await start({ branch: 'harness/new-active' });
+    await pool.query(
+      `UPDATE harness_runs
+       SET pr_url = 'https://github.com/o/r/pull/old'
+       WHERE id = $1`,
+      [oldRun.id]
+    );
 
     const reconciled = await HarnessRunService.reconcileRun(oldRun.id);
     expect(reconciled.adopted).toBe(false);
@@ -627,6 +660,19 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     );
     expect(ticket.rows[0].status).toBe('review');
     expect(ticket.rows[0].pr_url).toBe('https://github.com/o/r/pull/9');
+  });
+
+  test('a succeeded run without a PR is left for operator handling', async () => {
+    const run = await start({ branch: 'harness/succeeded-no-pr' });
+    await HarnessRunService.finishRun(run.id, { status: 'succeeded' });
+
+    const reconciled = await HarnessRunService.reconcileRun(run.id);
+    expect(reconciled.adopted).toBe(false);
+    expect(reconciled.released).toBe(false);
+    expect(reconciled.needs_operator).toBe(true);
+
+    const ticket = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
+    expect(ticket.rows[0].status).toBe('in_progress');
   });
 
   test('release refuses a failed run that recorded a head sha without a PR', async () => {

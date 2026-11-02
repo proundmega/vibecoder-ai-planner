@@ -122,6 +122,15 @@ class HarnessRunService {
          WHERE t.id = $1
            AND t.status = 'in_progress'
            AND t.assigned_agent_id = a.owner_id
+           AND t.pr_url IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM harness_runs existing
+             WHERE existing.ticket_id = t.id
+               AND (
+                 NULLIF(BTRIM(existing.pr_url), '') IS NOT NULL
+                 OR NULLIF(BTRIM(existing.head_sha), '') IS NOT NULL
+               )
+           )
          RETURNING *`,
         [
           normalisedTicketId,
@@ -434,6 +443,7 @@ class HarnessRunService {
                 r.status,
                 NULLIF(BTRIM(r.pr_url), '') AS pr_url,
                 NULLIF(BTRIM(r.head_sha), '') AS head_sha,
+                t.status AS ticket_status,
                 NOT EXISTS (
                   SELECT 1
                   FROM harness_runs newer
@@ -442,6 +452,7 @@ class HarnessRunService {
                     AND (newer.started_at, newer.id) > (r.started_at, r.id)
                 ) AS is_latest
          FROM harness_runs r
+         JOIN tickets t ON t.id = r.ticket_id
          WHERE r.id = $1 AND r.status <> 'running'
        ),
        marked AS (
@@ -504,6 +515,11 @@ class HarnessRunService {
            AND run.pr_url IS NOT NULL
            AND t.id = run.ticket_id
            AND t.status <> 'done'
+           AND NOT EXISTS (
+             SELECT 1 FROM harness_runs other
+             WHERE other.ticket_id = run.ticket_id
+               AND other.status = 'running'
+           )
          RETURNING t.id
        ),
        released AS (
@@ -529,6 +545,11 @@ class HarnessRunService {
                  OR NULLIF(BTRIM(other.head_sha), '') IS NOT NULL
                )
            )
+           AND NOT EXISTS (
+             SELECT 1 FROM harness_runs other
+             WHERE other.ticket_id = run.ticket_id
+               AND other.status = 'running'
+           )
          RETURNING t.id
        )
        SELECT run.id AS run_id,
@@ -540,7 +561,14 @@ class HarnessRunService {
                 AND run.status IN ('failed', 'dead_letter')
               ) AS promoted,
               (adopted.id IS NOT NULL) AS adopted,
-              (released.id IS NOT NULL) AS released
+              (released.id IS NOT NULL) AS released,
+              (
+                marked.id IS NOT NULL
+                AND run.is_latest
+                AND run.ticket_status = 'in_progress'
+                AND adopted.id IS NULL
+                AND released.id IS NULL
+              ) AS needs_operator
        FROM run
        LEFT JOIN marked ON TRUE
        LEFT JOIN adopted ON TRUE

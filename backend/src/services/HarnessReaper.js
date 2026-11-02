@@ -25,6 +25,7 @@ class HarnessReaper {
       released: 0,
       adopted: 0,
       reconciled: 0,
+      needsOperator: 0,
       skipped: [],
     };
 
@@ -44,6 +45,7 @@ class HarnessReaper {
         if (result.released) summary.released += 1;
         if (result.adopted) summary.adopted += 1;
         if (result.marked) summary.reconciled += 1;
+        if (result.needs_operator) summary.needsOperator += 1;
       } catch (error) {
         summary.skipped.push({ ticketId, runId, reason: 'reconcile_failed' });
         logger.error(`Harness reaper reconcile failed for run ${runId}: ${error.message}`);
@@ -70,6 +72,7 @@ class HarnessReaper {
       logger.info(
         `Harness reaper: reaped=${summary.reaped} reconciled=${summary.reconciled}`
           + ` released=${summary.released} adopted=${summary.adopted}`
+          + ` needsOperator=${summary.needsOperator}`
           + ` skipped=${summary.skipped.length}`
       );
     }

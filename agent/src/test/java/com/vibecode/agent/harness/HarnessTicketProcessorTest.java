@@ -148,6 +148,7 @@ class HarnessTicketProcessorTest {
         verify(apiService).finishHarnessRun(
             eq("run-old"), eq("failed"), anyString(), isNull(), isNull());
         verify(apiService).releaseHarnessTicket("run-old");
+        verify(apiService).reconcileHarnessRun("run-old");
         verify(apiService, never()).finishHarnessRun(
             eq("run-old"), eq("succeeded"), any(), any(), any());
     }
@@ -174,6 +175,7 @@ class HarnessTicketProcessorTest {
         verify(apiService).updateTicketPrUrl(
             1L, "https://github.com/owner/repo/pull/7");
         verify(apiService).updateTicketStatus(1L, "review");
+        verify(apiService).reconcileHarnessRun("run-old");
         verify(apiService, never()).releaseHarnessTicket("run-old");
         verify(apiService, never()).releaseTicket(1L);
         verify(apiService, never()).finishHarnessRun(
@@ -224,9 +226,10 @@ class HarnessTicketProcessorTest {
 
         verify(apiService).updateTicketPrUrl(
             1L, "https://github.com/owner/repo/pull/9");
-        // backlog -> review is not a valid API transition; the backend
-        // reconciliation sweep owns it.
+        // backlog -> review is not a valid API transition; the synchronous
+        // reconcile call lets the backend own it.
         verify(apiService, never()).updateTicketStatus(any(), anyString());
+        verify(apiService).reconcileHarnessRun("run-old");
         verify(apiService, never()).releaseHarnessTicket("run-old");
     }
 
@@ -472,6 +475,27 @@ class HarnessTicketProcessorTest {
 
         verify(apiService).finishHarnessRun(
             eq("run-1"), eq("failed"), anyString(), eq("abc1234"), isNull());
+        verify(apiService, never()).releaseHarnessTicket("run-1");
+        verify(apiService, never()).releaseTicket(1L);
+    }
+
+    @Test
+    void postPublishFailureAfterASuccessfulPrSendsBothEvidenceFields() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        doThrow(new AssertionError("publish evidence store exploded"))
+            .when(apiService).recordHarnessPublish(
+                "run-1", null, "https://github.com/owner/repo/pull/7");
+
+        processor.processTicket(ticket());
+
+        verify(apiService).finishHarnessRun(
+            eq("run-1"), eq("failed"), anyString(), eq("abc1234"),
+            eq("https://github.com/owner/repo/pull/7"));
         verify(apiService, never()).releaseHarnessTicket("run-1");
         verify(apiService, never()).releaseTicket(1L);
     }

@@ -43,6 +43,7 @@ describe('HarnessReaper', () => {
       released: 1,
       adopted: 1,
       reconciled: 2,
+      needsOperator: 0,
       skipped: [],
     });
   });
@@ -112,12 +113,32 @@ describe('HarnessReaper', () => {
     expect(summary.reconciled).toBe(1);
   });
 
+  it('counts a latest run that still needs operator handling', async () => {
+    HarnessRunService.reapExpiredLeases.mockResolvedValue([
+      { ticket_id: 1, run_id: RUN_A, agent_id: 7, run_failed: true },
+    ]);
+    HarnessRunService.reconcileRun.mockResolvedValue({
+      run_id: RUN_A,
+      ticket_id: 1,
+      adopted: false,
+      released: false,
+      marked: true,
+      needs_operator: true,
+    });
+
+    const summary = await HarnessReaper.runOnce();
+
+    expect(summary.needsOperator).toBe(1);
+    expect(summary.released).toBe(0);
+  });
+
   it('returns an empty summary when nothing is stale', async () => {
     await expect(HarnessReaper.runOnce()).resolves.toEqual({
       reaped: 0,
       released: 0,
       adopted: 0,
       reconciled: 0,
+      needsOperator: 0,
       skipped: [],
     });
   });

@@ -1,5 +1,10 @@
 -- Migration: 046_harness_run_reconciliation.sql
 -- Track terminal harness runs that still need ticket reconciliation (fg-33).
+--
+-- If an earlier draft of this migration was applied to a staging database
+-- before the backfill below was added, the column already exists and the DO
+-- block will not run. Run the terminal-run UPDATE manually once on that
+-- database; fresh databases are backfilled here.
 
 DO $$
 BEGIN

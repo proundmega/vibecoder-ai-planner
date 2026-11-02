@@ -26,11 +26,17 @@ Make an interrupted run self-healing without ever undoing published work.
 ## Acceptance criteria
 
 - A sweep of an expired lease finishes the run and returns the ticket only when
-  the run recorded no PR, the ticket is `in_progress`, has no `pr_url`, and no
-  newer run is active. A run with a stored PR is marked `succeeded` and adopted.
+  the run recorded no PR or head sha, no other run for the ticket has publish
+  evidence, the ticket is `in_progress`, has no `pr_url`, and no newer run is
+  active. A run with a stored PR is marked `succeeded` and adopted.
 - A reviewed ticket or a ticket with a PR is never returned to backlog by
   recovery or reaping.
-- At startup, an agent lists only its own active runs and reconciles each one.
+- At startup, an agent lists only its own active runs, reconciles each one and
+  asks the backend to reconcile terminal runs synchronously, so a published
+  backlog ticket cannot be polled again.
+- A backlog ticket with a PR URL is not eligible for polling, and `startRun`
+  refuses it (or a ticket whose earlier run has PR/head evidence) even if it is
+  polled by an older agent.
 - A run with a stored PR URL finishes `succeeded`; the ticket keeps its PR and
   review status. An existing, different ticket PR is never overwritten.
 - Only the latest run per ticket can change the ticket; older runs are marked
@@ -56,10 +62,11 @@ Make an interrupted run self-healing without ever undoing published work.
 | Service unit | `backend/src/__tests__/harnessRunService.test.js` | recovery query, publish evidence, guarded release SQL, empty-string normalisation |
 | Reaper unit | `backend/src/__tests__/harnessReaper.test.js` | terminal sweep, adoption vs release, dedupe, per-row retry |
 | Reaper schedule unit | `backend/src/__tests__/harnessReaperSchedule.test.js` | default/zero/invalid/clamped intervals |
-| Route unit | `backend/src/__tests__/api-harness-runs.test.js` | agent-scoped list, publish, release-ticket auth |
+| Route unit | `backend/src/__tests__/api-harness-runs.test.js` | agent-scoped list, publish, reconcile, release-ticket auth |
 | GitHub unit | `agent/src/test/java/.../GitHubServiceTest.java` | recovery PR lookup uses `state=open` |
 | Postgres integration | `backend/src/__tests__/integration/harnessRuns.test.js` | publish evidence, checkpoint join, run-level PR/head-sha release guards, reaped-published adoption, interrupted release, multi-run ordering, existing ticket PR, backlog adoption, one-time reconciliation, newer-run guard |
-| Agent processor | `agent/src/test/java/.../HarnessTicketProcessorTest.java` | restart release, publish adoption, stale-ticket PR rejection, terminal mismatch, unconfirmed finish, post-publish no-release |
+| Agent processor | `agent/src/test/java/.../HarnessTicketProcessorTest.java` | restart release, publish adoption, synchronous reconcile, stale-ticket PR rejection, terminal mismatch, unconfirmed finish, post-publish no-release |
+| Agent ticket model | `agent/src/test/java/.../TicketTest.java` | backlog ticket with a PR is not pollable |
 | Agent HTTP | `agent/src/test/java/.../ApiServiceHarnessTest.java` | recovery list path, publish body, guarded release boolean |
 | Config | `agent/src/test/java/.../HarnessConfigTest.java` | `HARNESS_RESUME_MODE` parsing/validation |
 
