@@ -159,7 +159,7 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   ownership, JWT permission/project scoping, checkpoints, heartbeats, finish
   and lease conflicts.
 - `backend/src/__tests__/integration/harnessRuns.test.js` executes against
-  PostgreSQL (30 tests): assignment authorization, sequential and concurrent
+  PostgreSQL (31 tests): assignment authorization, sequential and concurrent
   one-active-run races, unexpired lease blocking, expired-lease reaping, orphan
   reaping, idempotent finish + lease release, checkpoint ordering/context,
   publish evidence, guarded reaping/reconciliation (reaped published runs,

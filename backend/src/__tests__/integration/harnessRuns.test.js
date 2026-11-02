@@ -656,6 +656,36 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     expect(stored.reconciled_at).not.toBeNull();
   });
 
+  test('reaper adopts the newest run when an older failed run is also pending', async () => {
+    const oldRun = await start({ branch: 'harness/reaper-old' });
+    await pool.query(
+      "UPDATE harness_runs SET started_at = NOW() - INTERVAL '2 minutes' WHERE id = $1",
+      [oldRun.id]
+    );
+    await HarnessRunService.finishRun(oldRun.id, { status: 'failed' });
+
+    const newRun = await start({ branch: 'harness/reaper-new' });
+    await HarnessRunService.recordPublish(newRun.id, agentId, {
+      prUrl: 'https://github.com/o/r/pull/new',
+    });
+    await HarnessRunService.finishRun(newRun.id, {
+      status: 'succeeded',
+      prUrl: 'https://github.com/o/r/pull/new',
+    });
+
+    await HarnessReaper.runOnce();
+
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('review');
+    expect(ticket.rows[0].pr_url).toBe('https://github.com/o/r/pull/new');
+
+    const oldStored = await HarnessRunService.getRun(oldRun.id);
+    expect(oldStored.reconciled_at).not.toBeNull();
+  });
+
   test('reaper adopts a published terminal run into review', async () => {
     const run = await start({ branch: 'harness/reaper-published' });
     await HarnessRunService.recordPublish(run.id, agentId, {

@@ -354,9 +354,10 @@ class HarnessRunService {
 
   /**
    * Return a ticket to backlog after its run failed, but only when it is safe:
-   * the run is terminal **and recorded no PR URL**, no newer run is active, the
-   * ticket is still in_progress and it has no PR. This is the reaper/recovery
-   * guard that stops a published run from resetting a reviewed ticket.
+   * the run is terminal **and recorded no PR URL or head sha**, no other run for
+   * the ticket has publish evidence, the ticket is still in_progress and it has
+   * no PR. This is the reaper/recovery guard that stops a published run from
+   * resetting a reviewed ticket.
    */
   async releaseTicketForRun(runId, { agentId = null } = {}) {
     const id = requiredUuid(runId, 'runId');
