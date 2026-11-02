@@ -106,7 +106,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
     await expect(
       start({ branch: 'harness/duplicate-published' })
-    ).rejects.toThrow('Ticket is not assigned to this agent');
+    ).rejects.toThrow('published work');
   });
 
   test('refuses a new run when an earlier run recorded publish evidence', async () => {
@@ -125,7 +125,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
     await expect(
       start({ branch: 'harness/duplicate-evidence' })
-    ).rejects.toThrow('Ticket is not assigned to this agent');
+    ).rejects.toThrow('published work');
   });
 
   test('allows only one running run per ticket', async () => {

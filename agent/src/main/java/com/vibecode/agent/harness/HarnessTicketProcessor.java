@@ -70,6 +70,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
     private volatile String currentTicketId;
     private volatile String currentStep;
+    private volatile String startFailureReason;
     private volatile String currentRunId;
     private volatile boolean leaseLost;
     private volatile boolean published;
@@ -460,12 +461,14 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         String branchName = config.getGitHubBranchName(pickedUp.getId(), pickedUp.getTitle());
         if (!startDurableRun(pickedUp, branchName)) {
-            // A live lease means another run still owns this ticket. Releasing it
-            // here would allow concurrent publishes, so leave recovery to the
-            // reaper/operator instead.
+            // A live lease or published evidence means this ticket must not be
+            // run again automatically. Leave recovery to the operator/reaper.
+            String detail = startFailureReason;
             postMessage(pickedUp.getId(), "update",
-                "Could not start a durable harness run or acquire the ticket lease; "
-                    + "leaving it for recovery instead of publishing concurrently.");
+                "Could not start a durable harness run"
+                    + (detail == null || detail.isBlank() ? "" : ": " + detail)
+                    + ". Leaving the ticket for operator recovery; no new run was started.");
+            startFailureReason = null;
             currentTicketId = null;
             currentStep = null;
             return;
@@ -754,6 +757,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
      */
     private boolean startDurableRun(Ticket ticket, String branchName) {
         leaseLost = false;
+        startFailureReason = null;
         published = false;
         publishedHeadSha = null;
         publishedPrUrl = null;
@@ -784,6 +788,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             // unauthorized ticket, invalid payload). Never publish anyway.
             log.error("Harness run rejected for ticket {}: {}",
                 ticket.getId(), e.getMessage());
+            startFailureReason = e.getMessage();
             return false;
         } catch (IOException | RuntimeException e) {
             if (durabilityRequired) {

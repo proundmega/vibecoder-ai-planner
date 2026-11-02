@@ -33,6 +33,10 @@ UPDATE harness_runs
 SET head_sha = NULL
 WHERE head_sha IS NOT NULL AND BTRIM(head_sha) = '';
 
+UPDATE tickets
+SET pr_url = NULL
+WHERE pr_url IS NOT NULL AND BTRIM(pr_url) = '';
+
 -- Only terminal runs are swept. The partial index keeps the reconciliation
 -- query cheap even when run history grows.
 CREATE INDEX IF NOT EXISTS idx_harness_runs_pending_reconcile

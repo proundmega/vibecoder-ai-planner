@@ -436,7 +436,7 @@ describe('HarnessRunService', () => {
       expect(sql).toContain("NULLIF(BTRIM(r.pr_url), '') IS NULL");
       expect(sql).toContain("NULLIF(BTRIM(r.head_sha), '') IS NULL");
       expect(sql).toContain("t.status = 'in_progress'");
-      expect(sql).toContain('t.pr_url IS NULL');
+      expect(sql).toContain("NULLIF(BTRIM(t.pr_url), '') IS NULL");
       expect(sql).toContain('NOT EXISTS');
       expect(params).toEqual([RUN_ID, null]);
     });

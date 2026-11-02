@@ -31,6 +31,8 @@ Make an interrupted run self-healing without ever undoing published work.
   active. A run with a stored PR is marked `succeeded` and adopted.
 - A reviewed ticket or a ticket with a PR is never returned to backlog by
   recovery or reaping.
+- A latest run with head-sha-only or no-PR success evidence leaves the ticket
+  in `in_progress` and is reported as `needs_operator` rather than released.
 - At startup, an agent lists only its own active runs, reconciles each one and
   asks the backend to reconcile terminal runs synchronously, so a published
   backlog ticket cannot be polled again.

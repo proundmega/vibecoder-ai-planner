@@ -83,9 +83,10 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
 - **Guarded ticket release.** `HarnessRunService.releaseTicketForRun` is the only
   recovery path that returns a ticket to backlog. It requires a terminal
   (`failed`/`dead_letter`) run **with no run-level PR or head sha**, the ticket
-  still `in_progress`, `pr_url IS NULL`, and no newer run for that ticket.
-  A pushed branch (`head_sha` without a PR) is treated as publish evidence and
-  left for operator/reconciliation instead of being silently re-run.
+  still `in_progress`, no ticket PR, no other run for the ticket with PR/head
+  evidence, and no newer active run. A pushed branch (`head_sha` without a PR)
+  is treated as publish evidence and reported as `needs_operator` instead of
+  being silently re-run.
 - **Terminal-run reconciliation.** `046_harness_run_reconciliation.sql` adds a
   `reconciled_at` marker, a partial index for pending terminal runs, a one-time
   backfill for historical terminal runs and empty-string normalisation.

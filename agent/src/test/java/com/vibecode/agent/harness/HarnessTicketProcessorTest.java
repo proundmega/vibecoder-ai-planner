@@ -766,7 +766,9 @@ class HarnessTicketProcessorTest {
         verify(apiService, never()).claimHarnessLease(any(), anyString(), org.mockito.ArgumentMatchers.anyInt());
         verify(apiService, never()).releaseTicket(1L);
         assertTrue(postedMessages().stream().anyMatch(message ->
-            message.contains("Could not start a durable harness run")));
+            message.contains("Could not start a durable harness run")
+                && message.contains("CONFLICT: active run")
+                && message.contains("no new run was started")));
     }
 
     @Test

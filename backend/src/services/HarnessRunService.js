@@ -122,7 +122,7 @@ class HarnessRunService {
          WHERE t.id = $1
            AND t.status = 'in_progress'
            AND t.assigned_agent_id = a.owner_id
-           AND t.pr_url IS NULL
+           AND NULLIF(BTRIM(t.pr_url), '') IS NULL
            AND NOT EXISTS (
              SELECT 1 FROM harness_runs existing
              WHERE existing.ticket_id = t.id
@@ -154,6 +154,42 @@ class HarnessRunService {
     }
 
     if (result.rows.length === 0) {
+      // Explain the refusal instead of always blaming assignment: a published
+      // ticket (or one whose earlier run has publish evidence) must be reset by
+      // an operator before it can be run again.
+      const context = await pool.query(
+        `SELECT t.status,
+                NULLIF(BTRIM(t.pr_url), '') AS pr_url,
+                t.assigned_agent_id,
+                a.owner_id,
+                EXISTS (
+                  SELECT 1 FROM harness_runs existing
+                  WHERE existing.ticket_id = t.id
+                    AND (
+                      NULLIF(BTRIM(existing.pr_url), '') IS NOT NULL
+                      OR NULLIF(BTRIM(existing.head_sha), '') IS NOT NULL
+                    )
+                ) AS has_publish_evidence
+         FROM tickets t
+         LEFT JOIN agents a ON a.id = $2
+         WHERE t.id = $1`,
+        [normalisedTicketId, normalisedAgentId]
+      );
+      const ticket = context.rows[0];
+      if (!ticket) {
+        throw new ForbiddenError('Ticket is not assigned to this agent');
+      }
+      if (ticket.pr_url || ticket.has_publish_evidence) {
+        throw new ConflictError(
+          'Ticket already has published work; an operator must reset the PR before a new run'
+        );
+      }
+      if (
+        ticket.status !== 'in_progress' ||
+        String(ticket.assigned_agent_id) !== String(ticket.owner_id)
+      ) {
+        throw new ForbiddenError('Ticket is not assigned to this agent or is not in progress');
+      }
       throw new ForbiddenError('Ticket is not assigned to this agent');
     }
 
@@ -400,7 +436,7 @@ class HarnessRunService {
        FROM run
        WHERE t.id = run.ticket_id
          AND t.status = 'in_progress'
-         AND t.pr_url IS NULL
+         AND NULLIF(BTRIM(t.pr_url), '') IS NULL
          AND NOT EXISTS (
            SELECT 1 FROM harness_runs other
            WHERE other.ticket_id = run.ticket_id AND other.status = 'running'
@@ -502,7 +538,7 @@ class HarnessRunService {
        adopted AS (
          UPDATE tickets t
          SET pr_url = CASE
-               WHEN t.pr_url IS NULL THEN run.pr_url
+               WHEN NULLIF(BTRIM(t.pr_url), '') IS NULL THEN run.pr_url
                ELSE t.pr_url
              END,
              status = CASE
@@ -535,7 +571,7 @@ class HarnessRunService {
            AND run.head_sha IS NULL
            AND t.id = run.ticket_id
            AND t.status = 'in_progress'
-           AND t.pr_url IS NULL
+           AND NULLIF(BTRIM(t.pr_url), '') IS NULL
            AND NOT EXISTS (
              SELECT 1 FROM harness_runs other
              WHERE other.ticket_id = run.ticket_id
