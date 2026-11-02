@@ -140,7 +140,7 @@ Required sections are declared per template file (`requiredSections` in `file_de
 - **FR12 - Migration:** grandfather existing in-progress/review/done tickets; gate only new work.
 - **FR13 - Metrics:** readiness rate, blocked count, time-to-ready, waived-code frequency, agent pickups rejected.
 - **FR14 - Audit:** readiness approvals, small-fix exemptions, override grants/revocations/expiries and blocked attempts are written to a real table (see design) because `audit_log` does not exist yet (bp-124 O2). Blocked attempts are written out-of-band in **both** `warn` and `enforce` mode, exactly once, so neither a rollback nor a successful warn-mode transition loses the evidence.
-- **FR15 - Project scoping:** approval, small-fix and override require `assertProjectMember`; there is no existing membership check on project or ticket reads (`ProjectService.getOne` and `Ticket.findByProject` ignore `userId`), so this ticket adds a shared helper rather than assuming one exists.
+- **FR15 - Project scoping:** approval, small-fix, replan and override require `assertProjectMember`; there is no existing membership check on project or ticket reads (`ProjectService.getOne` and `Ticket.findByProject` ignore `userId`), so this ticket adds a shared helper rather than assuming one exists.
 
 ## Safety requirements
 

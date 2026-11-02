@@ -62,7 +62,7 @@ For each: count, p50 age, p95 age, oldest ticket, WIP.
 
 | Source | Status | Use |
 |---|---|---|
-| `tickets` | exists | status, phase, planning_status, `plan_approved_at`, `ready_at`, `readiness_override_expires_at`, pr fields, created_at/updated_at, priority, project |
+| `tickets` (live, `deleted_at IS NULL`) | exists | status, phase, planning_status, `plan_approved_at`, `ready_at`, `readiness_override_expires_at`, pr fields, created_at/updated_at, priority, project |
 | `approval_requests` | exists (`003_role_system.sql`) | human approval presence/timing |
 | `ticket_phases` | exists | historical transitions, approximate time-in-stage |
 | `agent_heartbeats` | exists | agent status/current step/last seen |
@@ -121,7 +121,8 @@ Phase 0 returns `null` for these and the UI shows “not instrumented” instead
 
 ### Query shape (Phase 0: JavaScript, not SQL)
 
-- Fetch **all** tickets for the project with keyset pagination (`WHERE project_id = $1 AND id > $cursor ORDER BY id LIMIT 2000`), looping until exhausted, and call `FlowMetricsService.deriveStage` in JavaScript. Stage counts are exact and add up to the project total; p50/p95 ages use the same set, so counts and ages cannot disagree.
+- Fetch **all** live tickets for the project with keyset pagination (`WHERE project_id = $1 AND deleted_at IS NULL AND id > $cursor ORDER BY id LIMIT 2000`), looping until exhausted, and call `FlowMetricsService.deriveStage` in JavaScript. Stage counts are exact and add up to the project total; p50/p95 ages use the same set, so counts and ages cannot disagree.
+- Soft deletes must be filtered: `Ticket.delete` sets `deleted_at` **and** `status='done'` (`models/ticket.js:143-147`), so omitting `deleted_at IS NULL` would count every deleted ticket as Done and inflate `doneLast7d`/`tickets_done_total`. It also keeps the totals aligned with the board, whose reads filter `deleted_at IS NULL`.
 - `window` only scopes time-series rows (e.g. done-per-day); it must not shrink the stage counts.
 - Hard safety cap `FLOW_MAX_SCAN_TICKETS` (default 50 000). If a project exceeds it, stop paginating, set `"truncated": true, "truncatedAt": <ticketId>, "sampleSize": n` in the payload, and surface a warning in the view. The API never silently returns partial totals without the flag.
 - **Do not** write a parallel `CASE`/`GROUP BY` stage expression. The only stage implementation is `deriveStage`; a SQL view/function may replace it later only with a contract test that asserts SQL and JS produce identical stages for a fixture set.
@@ -199,6 +200,7 @@ The first version should be read-only and refresh every 30–60 seconds.
 - Table-driven `deriveStage` tests covering: done, fix loop, pending approval, review, in_progress, assigned, ready, `plan_approved_at` without `ready_at`, `planning_status='review'`, waived-then-expired, plain backlog, and `status='review'` with a stale `phase='planning'` (status must win).
 - Stage counts reconcile with the ticket list for a fixture project.
 - Large project: more tickets than one pagination page still returns exact counts; beyond `FLOW_MAX_SCAN_TICKETS` the payload sets `truncated: true` with `sampleSize`/`truncatedAt` and the view warns.
+- A soft-deleted ticket (`deleted_at` set, `status='done'`) is excluded from stage counts and done totals.
 - `window` does not change stage counts (only the time series).
 - Flow endpoint auth: project owner/member 200, non-member 403, agent owner 200, `super_admin` global 200, `METRICS_TOKEN` alone 401.
 - Missing optional tables return `null`, not errors.

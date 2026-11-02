@@ -115,7 +115,7 @@ What is missing:
 
 ## Acceptance criteria
 
-1. A Flow view shows exact counts and p50/p95 age per stage from `deriveStage`; stage counts add up to the project ticket total. Projects above `FLOW_MAX_SCAN_TICKETS` return `truncated: true` with `sampleSize`/`truncatedAt` instead of silently wrong totals.
+1. A Flow view shows exact counts and p50/p95 age per stage from `deriveStage`; stage counts add up to the project's live (non-deleted) ticket total. Projects above `FLOW_MAX_SCAN_TICKETS` return `truncated: true` with `sampleSize`/`truncatedAt` instead of silently wrong totals, and soft-deleted tickets are excluded.
 2. `plan_approved_at` without `ready_at`, `planning_status='review'`, and an expired waiver all classify as `planning`/not-ready rather than `ready`.
 3. The view identifies the current bottleneck stage in one glance.
 4. Agent pool metrics are visible with busy/idle/starting only.

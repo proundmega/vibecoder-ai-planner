@@ -33,27 +33,52 @@ Create ticket (draft: status=backlog, phase=draft)
 | Phase transition | `PhaseService.transition` | when the target phase maps to `in_progress`, i.e. `assigned`, `in_progress`, `blocked` (`PHASE_TO_STATUS`) |
 | Planning status | `TicketPlanningService.updateStatus` | rejects `completed` and any transition out of `completed` (409 `PLANNING_STATUS_FORBIDDEN` / `REPLAN_REQUIRED`); route gains `TICKET_UPDATE` |
 
-`assertReadyForExecution` is the only gate:
+`assertReadyForExecution` is the only gate. It **evaluates inside** the caller's transaction but **does not write** the audit row there:
 
 ```js
 // services/TicketReadinessService.js
-async assertReadyForExecution(ticketId, { toStatus, toPhase, source, actor }) {
+async assertReadyForExecution(ticketId, { toStatus, toPhase, source, actor, attemptId }) {
   const mode = process.env.READINESS_GATE_MODE || 'warn';   // off | warn | enforce
-  if (mode === 'off') return { ready: true, skipped: true };
+  if (mode === 'off') return { ready: true, skipped: true, mode };
 
   const result = await this.evaluate(ticketId);
-  if (result.ready) return result;
+  if (result.ready) return { ...result, mode };
 
-  // Out-of-band: never inside the status transaction (see audit).
-  // Writes the audit row itself in BOTH warn and enforce, so a rolled-back
-  // status transaction cannot delete it and warn-mode blocks are still recorded.
-  await this.emitBlocked(ticketId, result, source, actor);   // metric + log + event row
-  if (mode === 'enforce') throw new ReadinessError(result);
-  return result;                                        // warn: allow
+  const blocked = {
+    ...result,
+    mode,
+    blocked: true,
+    attemptId: attemptId ?? randomUUID(),   // generated once, carried to the event
+    source,
+    actor,
+  };
+  if (mode === 'enforce') throw new ReadinessError(blocked);
+  return blocked;                            // warn: caller proceeds and emits after COMMIT
 }
 ```
 
-`emitBlocked` uses a pooled connection acquired outside the caller's transaction and is idempotent per attempt (the caller passes a generated `attemptId` stored in the event payload). The HTTP error handler does **not** write a second row for `ReadinessError`.
+Persistence happens **after the transaction ends**, never inside it:
+
+```js
+// warn mode — allow the transition, then audit
+const readiness = await readinessService.assertReadyForExecution(...);
+await client.query('COMMIT');
+if (readiness.blocked) await readinessService.emitBlocked(readiness); // separate connection
+
+// enforce mode — roll back first, then audit
+try {
+  await readinessService.assertReadyForExecution(...);   // throws ReadinessError
+  await client.query('COMMIT');
+} catch (err) {
+  await client.query('ROLLBACK');
+  if (err instanceof ReadinessError) await readinessService.emitBlocked(err.result);
+  throw err;
+}
+```
+
+Why: `ticket_readiness_events.ticket_id REFERENCES tickets(id)` makes Postgres take `FOR KEY SHARE` on the parent ticket row for the insert. The caller already holds that row with `SELECT ... FOR UPDATE`, so an in-transaction insert blocks until the statement timeout (or deadlocks). Emitting after `COMMIT` (warn) or after `ROLLBACK` (enforce) also means the rejected transaction cannot delete the row. `emitBlocked` is idempotent on `attempt_id`, so a retried request cannot duplicate the event; the HTTP error handler does **not** write a second row.
+
+`emitBlocked` uses a pooled connection acquired outside the caller's transaction.
 
 Rules:
 
@@ -144,7 +169,7 @@ Why not `audit_log`: it is referenced by dead code but was never created (bp-124
 
 - Agent auth sets `req.user.id = agent.id` (the `agents.id` row) and `req.user.userId = agent.owner_id` (`middleware/auth.js:300-305`). An agent ID is **not** a `users.id`, so the event table cannot use a single `actor_id` FK to `users`.
 - Write `actor_type='agent'`, `actor_agent_id=req.user.id`, `actor_user_id=req.user.userId`, `actor_role=req.user.role`. Human actions use `actor_type='user'` + `actor_user_id`. Scheduled work uses `actor_type='system'`.
-- `blocked` events are emitted **outside** the status transaction by `emitBlocked`: a metric, a structured log, and one `ticket_readiness_events` row written on a separate pooled connection (best-effort, `attempt_id`-guarded) in **both** `warn` and `enforce`. The error handler does not write a second row, so enforce-mode blocks are not duplicated and warn-mode blocks are still audited even though the transition succeeds.
+- `blocked` events are emitted **after** the status transaction ends (after `COMMIT` in `warn`, after `ROLLBACK` in `enforce`) by `emitBlocked`: a metric, a structured log, and one `ticket_readiness_events` row on a separate pooled connection (best-effort, `attempt_id`-guarded). Writing earlier would take `FOR KEY SHARE` on the ticket row already locked `FOR UPDATE` by the caller, which blocks or deadlocks. The error handler does not write a second row, so enforce-mode blocks are not duplicated and warn-mode blocks are still audited even though the transition succeeds.
 - `DELETE /readiness/override` writes `override_revoked`; the sweep writes `override_expired` once per waiver (guarded by `expires_at` + existing event check).
 
 ## State machine
@@ -165,11 +190,9 @@ planning_status: not_started -> template_selected -> in_progress
 - `plan_approved_at` is the approval fact; `planning_status` mirrors it for existing UI reads and for the legacy `PhaseService.getGateStatus()`.
 - The evaluator checks `plan_approved_at IS NOT NULL` (condition 8), **not** `planning_status`.
 - `ready_at` is set atomically by the approval endpoint, or by a later re-evaluation after edits.
-- **`completed` is sticky.** Planning-file upsert, `apply-template`, and `PATCH /planning/status` must not regress it to `in_progress`/`template_selected` while `plan_approved_at` is set. Those writes only refresh `ready_at`; `planning_status` stays `completed` so the legacy gate and the readiness state agree.
+- **`completed` is sticky.** Planning-file upsert and `apply-template` must not regress it to `in_progress`/`template_selected` while `plan_approved_at` is set. Those two writes keep `planning_status='completed'` and only refresh `ready_at`. `PATCH /planning/status` is different: it rejects any transition out of `completed` (see below).
 - To author a new plan, call `POST /tickets/:id/readiness/replan`. It clears `plan_approved_at` and `ready_at`, sets `planning_status='in_progress'`, and writes a `replan_started` audit event. `PATCH /planning/status` rejects any transition out of `completed` with 409 `REPLAN_REQUIRED`.
 - Any content edit after approval clears `ready_at` (but keeps `plan_approved_at`), then `refreshReadyState` immediately re-evaluates and re-sets `ready_at` if the ticket is still clean. Re-approval is required only when content checks fail.
-- Waiver expiry never leaves `ready_at` truthy for long: the expiry sweep clears it, and `assertReadyForExecution` re-evaluates regardless.
-- There is no endpoint that sets `ready_at` without validating; overrides create a waiver, not a fake ready.
 - Waiver expiry never leaves `ready_at` truthy for long: the expiry sweep clears it, and `assertReadyForExecution` re-evaluates regardless.
 - There is no endpoint that sets `ready_at` without validating; overrides create a waiver, not a fake ready.
 
@@ -237,7 +260,7 @@ planning_status: not_started -> template_selected -> in_progress
 |---|---|---|---|
 | GET | `/tickets/:id/readiness` | Evaluate and return issues | `TICKET_READ` |
 | POST | `/tickets/:id/readiness/approve-plan` | Validate content, record approval, set `ready_at` when clean | `TICKET_READINESS_APPROVE` |
-| POST | `/tickets/:id/readiness/small-fix` | Record a template/file exemption | `TICKET_READINESS_OVERRIDE` |
+| POST | `/tickets/:id/readiness/small-fix` | Record a template/file/section exemption | `TICKET_READINESS_OVERRIDE` |
 | POST | `/tickets/:id/readiness/replan` | Clear approval/ready and reopen planning | `TICKET_READINESS_APPROVE` |
 | POST | `/tickets/:id/readiness/override` | Waive codes with reason + expiry | `TICKET_READINESS_OVERRIDE` |
 | DELETE | `/tickets/:id/readiness/override` | Revoke a waiver | `TICKET_READINESS_OVERRIDE` |
@@ -271,7 +294,7 @@ async assertProjectMember(userId, projectId, { role, allowSuperAdmin = true } = 
 ```
 
 - Use `req.user.userId` (the agent owner), not `req.user.id`, when the actor is an agent.
-- Call `assertProjectMember` from `approve-plan`, `small-fix`, `override` (and `DELETE`) after resolving the ticket's `project_id`.
+- Call `assertProjectMember` from `approve-plan`, `small-fix`, `replan`, `override` (and `DELETE`) after resolving the ticket's `project_id`.
 - `super_admin` is the only explicit bypass; project admins must still be project members.
 - This ticket scopes the check to readiness routes. Retrofitting `ProjectService.getOne`/`Ticket.findByProject` is a follow-up (recorded in Pending Scope).
 
@@ -301,7 +324,7 @@ async assertProjectMember(userId, projectId, { role, allowSuperAdmin = true } = 
 }
 ```
 
-- New `ReadinessError extends AppError` with `statusCode = 409`, `code = 'READINESS_FAILED'`, `details.issues`.
+- New `ReadinessError extends AppError` with `statusCode = 409`, `code = 'READINESS_FAILED'`, `details.issues`, and a `result` property carrying `{ issues, waivedCodes, mode, attemptId, source, actor }`. `result` is what `emitBlocked` persists after rollback; it is also what the HTTP handler serializes (minus actor/attempt internals).
 - `ValidationError` stays 400/`VALIDATION_ERROR`; readiness must not reuse it.
 - Java: `ApiResponse.Error` gains `details` (map/JsonNode); add `ReadinessIssue`. `ApiService` throws `ReadinessException` carrying the issues instead of a generic `IOException`.
 - `ReadinessException` is handled in **both** `TicketProcessor.processTicket` (`TicketProcessor.java:80`) and `HarnessTicketProcessor.processTicket` (`HarnessTicketProcessor.java:147`): post a `status` message with the codes, call `releaseTicket`, return without cloning or starting the harness, and log `readiness_blocked`.
@@ -360,9 +383,9 @@ Rollback: delete the readiness routes and set `READINESS_GATE_MODE=off`; the col
 - approve → edit → readiness false again; edit → still-ready → `ready_at` re-set in the same request;
 - waiver expiry: assertion re-blocks immediately, the sweep clears `ready_at` and writes `override_expired`;
 - override is permission-checked, project-scoped, code-scoped, expiring; expired waiver re-blocks; unlisted codes still block; revocation writes `override_revoked`;
-- `assertProjectMember`: owner passes, `project_memberships` passes, non-member 403, `super_admin` bypasses, agent actors use the owner ID;
+- `assertProjectMember`: owner passes, `project_memberships` passes, non-member 403, `super_admin` bypasses, agent actors use the owner ID; enforced on approve-plan, small-fix, replan and override;
 - small-fix exemption waives `MISSING_TEMPLATE`/`MISSING_REQUIRED_FILE`/`EMPTY_REQUIRED_FILE`/`MISSING_REQUIRED_SECTION`, still enforces title/description/scope/criteria/placeholders, and marks test/dependency/rollback codes not applicable;
-- blocked audit rows are written exactly once in both `warn` and `enforce`, survive the rolled-back transaction, and are not duplicated by the error handler;
+- blocked audit rows are emitted after `COMMIT` (warn) / `ROLLBACK` (enforce), exactly once, and do not hit the `FOR UPDATE` FK lock;
 - agent actors store `actor_agent_id` without an FK violation;
 - both Java processors post issues, release, and start no harness;
 - grandfathered backfill keeps tickets claimable;

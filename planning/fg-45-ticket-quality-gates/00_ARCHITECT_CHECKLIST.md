@@ -15,7 +15,7 @@ Planning templates exist, but nothing enforces them. A ticket can be created wit
 - [ ] Enumerate every path into `in_progress` (pickup, status route, PUT, phase transitions, planning status)
 - [ ] Centralize `assertReadyForExecution` and call it from all five paths
 - [ ] Keep ticket creation permissive: title-only tickets are drafts
-- [ ] Reject `planning_status=completed` outside the readiness service
+- [ ] Reject `planning_status=completed` outside the readiness service; reject transitions out of `completed` (`REPLAN_REQUIRED`) and add the audited `replan` path
 - [ ] Add `ticket_acceptance_criteria` and per-template `requiredSections`
 - [ ] Add readiness columns (`plan_approved_*`, `ready_*`, `small_fix_*`, waiver fields, grandfathered)
 - [ ] Add issue codes and `ReadinessError` (409 `READINESS_FAILED` with `details.issues`)
@@ -55,8 +55,9 @@ Planning templates exist, but nothing enforces them. A ticket can be created wit
 - [ ] All three gate modes (`off`/`warn`/`enforce`).
 - [ ] `ready_at` lifecycle: edits, criteria, template, revocation, expiry sweep.
 - [ ] `approve-plan` transactional tests (no partial completion).
-- [ ] Override permission/scope/expiry tests; project-membership tests.
-- [ ] Audit actor types (user/agent/system) and out-of-band blocked rows.
+- [ ] `completed -> in_progress` / `apply-template` / post-approval upsert tests; `replan` clears approval/ready.
+- [ ] Override permission/scope/expiry tests; project-membership tests for approve, small-fix, replan and override.
+- [ ] Audit actor types (user/agent/system); blocked rows emitted after COMMIT/ROLLBACK, exactly once (no FK lock, no duplicate).
 - [ ] Java processor tests for both legacy and harness modes.
 - [ ] Backfill/grandfather migration test.
 - [ ] Frontend error propagation (detail + board) and readiness panel test.
