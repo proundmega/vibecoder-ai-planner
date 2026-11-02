@@ -18,6 +18,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -516,9 +517,13 @@ class HarnessTicketProcessorTest {
         verify(apiService, never()).releaseTicket(1L);
         verify(apiService, never()).finishHarnessRun(
             eq("run-1"), eq("failed"), anyString(), any(), any());
+        ArgumentCaptor<String> errorCaptor = ArgumentCaptor.forClass(String.class);
         verify(apiService, atLeastOnce()).finishHarnessRun(
-            "run-1", "succeeded", null, "abc1234",
-            "https://github.com/owner/repo/pull/7");
+            eq("run-1"), eq("succeeded"), errorCaptor.capture(),
+            eq("abc1234"), eq("https://github.com/owner/repo/pull/7"));
+        for (String error : errorCaptor.getAllValues()) {
+            assertNull(error, "succeeded finish must not carry an error message");
+        }
     }
 
     @Test

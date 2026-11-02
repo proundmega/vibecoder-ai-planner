@@ -392,7 +392,9 @@ class HarnessRunService {
    * partial unique index prevents a second live run for the same ticket.
    *
    * Returns every reaped ticket, including whether this call failed the run.
-   * Callers must only release a ticket when run_failed is true.
+   * Callers must only release a ticket when run_failed is true AND the ticket
+   * is still in_progress with no pr_url: a lost success-finish can leave a
+   * failed run behind a reviewed ticket that already has a PR.
    */
   async reapExpiredLeases(limit = 50, orphanAfterSeconds = DEFAULT_ORPHAN_AFTER_SECONDS) {
     const parsedLimit = Number(limit);

@@ -352,9 +352,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
             stopHeartbeat();
             if (currentRunId != null) {
                 String status = pendingTerminalStatus == null ? "failed" : pendingTerminalStatus;
-                String message = pendingTerminalMessage == null
-                    ? "Harness run ended without a terminal checkpoint"
-                    : pendingTerminalMessage;
+                String message = pendingTerminalMessage;
+                if (message == null && "failed".equals(status)) {
+                    message = "Harness run ended without a terminal checkpoint";
+                }
                 boolean finished = finishDurableRun(
                     status, message, pendingHeadSha, pendingPrUrl);
                 if (finished && releaseAfterTerminalFinish && pickedUp.getId() != null) {

@@ -115,12 +115,18 @@ Delivered:
 - `HarnessTicketProcessorTest` verifies run persistence, lease claim failure,
   lease-loss publishing refusal, transient heartbeat retry, finish retry and
   all checkpoints.
+- `ApiServiceHarnessTest` exercises the real HTTP client against a local
+  `HttpServer`: start/checkpoint/heartbeat/finish/lease paths, auth header,
+  request bodies, 401 fatal classification and 409-vs-transient lease errors.
 
 ## Remaining for fg-33
 
 1. Agent startup recovery (`AgentApp`) using `listActiveRunsForAgent`.
 2. Resume/restart policy per checkpoint (`HARNESS_RESUME_MODE`).
-3. Scheduled reaper wiring + ticket release for rows where `run_failed=true`.
+3. Scheduled reaper wiring + ticket release. Release only when
+   `run_failed=true` **and** the ticket is still `in_progress` with no
+   `pr_url`; a lost success-finish can leave a failed run behind a reviewed
+   ticket with a real PR, which must not be returned to backlog.
 4. Idempotent publish: branch/PR detection and `head_sha`/`pr_url` storage.
 5. Workspace registry/retention cleanup.
 6. Crash-injection tests, metrics, alerts and manual recovery runbook.
