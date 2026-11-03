@@ -12,7 +12,11 @@ import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -46,6 +50,112 @@ class WorkspaceManagerTest {
         Field field = target.getClass().getDeclaredField(name);
         field.setAccessible(true);
         return field.get(target);
+    }
+
+    private static void makeStale(Path path) throws IOException {
+        Files.setLastModifiedTime(path, FileTime.from(
+            Instant.now().minus(Duration.ofHours(48))));
+    }
+
+    @Test
+    void pruneOnlyRemovesStaleGeneratedWorkspaceNames() throws Exception {
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "repo", false, null);
+        Path stale = Files.createDirectory(tempDir.resolve("aaaaaaaa-repo"));
+        Path fresh = Files.createDirectory(tempDir.resolve("bbbbbbbb-repo"));
+        Path foreign = Files.createDirectory(tempDir.resolve("not-a-workspace"));
+        Path file = Files.writeString(tempDir.resolve("keep.txt"), "x");
+        makeStale(stale);
+        makeStale(foreign);
+        makeStale(file);
+
+        int removed = manager.pruneStaleWorkspaces(Duration.ofHours(24));
+
+        assertEquals(1, removed);
+        assertFalse(Files.exists(stale));
+        assertTrue(Files.exists(fresh));
+        assertTrue(Files.exists(foreign));
+        assertTrue(Files.exists(file));
+    }
+
+    @Test
+    void pruneSkipsProtectedAndCurrentWorkspaces() throws Exception {
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "repo", false, null);
+        Path protectedDir = Files.createDirectory(tempDir.resolve("cccccccc-repo"));
+        Path current = Files.createDirectory(tempDir.resolve("dddddddd-repo"));
+        makeStale(protectedDir);
+        makeStale(current);
+        setRepoDir(manager, current);
+
+        int removed = manager.pruneStaleWorkspaces(
+            Duration.ofHours(24), List.of(protectedDir.toString()));
+
+        assertEquals(0, removed);
+        assertTrue(Files.exists(protectedDir));
+        assertTrue(Files.exists(current));
+    }
+
+    @Test
+    void pruneFailsClosedForAnUnreadableProtectedPath() throws Exception {
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "repo", false, null);
+        Path stale = Files.createDirectory(tempDir.resolve("eeeeeeee-repo"));
+        makeStale(stale);
+
+        int removed = manager.pruneStaleWorkspaces(
+            Duration.ofHours(24), List.of("\u0000bad-path"));
+
+        assertEquals(0, removed);
+        assertTrue(Files.exists(stale));
+    }
+
+    @Test
+    void pruneIsDisabledForZeroRetention() throws Exception {
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "repo", false, null);
+        Path stale = Files.createDirectory(tempDir.resolve("ffffffff-repo"));
+        makeStale(stale);
+
+        assertEquals(0, manager.pruneStaleWorkspaces(Duration.ZERO));
+        assertTrue(Files.exists(stale));
+    }
+
+    @Test
+    void pruneDoesNotFollowSymlinkedWorkspaces() throws Exception {
+        assumePosix();
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "repo", false, null);
+        Path target = Files.createDirectory(tempDir.resolve("symlink-target"));
+        Path link = tempDir.resolve("99999999-repo");
+        Files.createSymbolicLink(link, target);
+        makeStale(link);
+
+        assertEquals(0, manager.pruneStaleWorkspaces(Duration.ofHours(24)));
+        assertTrue(Files.exists(target, LinkOption.NOFOLLOW_LINKS));
+        assertTrue(Files.isSymbolicLink(link));
+    }
+
+    @Test
+    void pruneTempDirectoriesOnlyRemovesKnownStalePrefixes() throws Exception {
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "repo", false, null);
+        Path tempRoot = Files.createDirectory(tempDir.resolve("tmp-root"));
+        Path opencode = Files.createDirectory(tempRoot.resolve("opencode-harness-old"));
+        Path askpass = Files.createDirectory(tempRoot.resolve("vibecode-askpass-old"));
+        Path unrelated = Files.createDirectory(tempRoot.resolve("unrelated-old"));
+        Path fresh = Files.createDirectory(tempRoot.resolve("opencode-harness-fresh"));
+        makeStale(opencode);
+        makeStale(askpass);
+        makeStale(unrelated);
+
+        int removed = manager.pruneStaleTempDirectories(tempRoot, Duration.ofHours(24));
+
+        assertEquals(2, removed);
+        assertFalse(Files.exists(opencode));
+        assertFalse(Files.exists(askpass));
+        assertTrue(Files.exists(unrelated));
+        assertTrue(Files.exists(fresh));
     }
 
     private Path initRepo(String name) throws Exception {

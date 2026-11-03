@@ -18,18 +18,25 @@ import java.util.concurrent.TimeUnit;
 public class GitHubService {
 
     private static final Logger log = LoggerFactory.getLogger(GitHubService.class);
-    private static final String API_BASE = "https://api.github.com";
+    private static final String DEFAULT_API_BASE = "https://api.github.com";
 
     private final String authToken;
     private final String owner;
     private final String repo;
+    private final String apiBase;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
 
     public GitHubService(String authToken, String owner, String repo) {
+        this(authToken, owner, repo, DEFAULT_API_BASE);
+    }
+
+    /** Package-visible so contract tests can target a local HTTP server. */
+    GitHubService(String authToken, String owner, String repo, String apiBase) {
         this.authToken = authToken;
         this.owner = owner;
         this.repo = repo;
+        this.apiBase = apiBase;
         this.httpClient = new OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
@@ -53,7 +60,7 @@ public class GitHubService {
         RequestBody body = RequestBody.create(bodyJson, MediaType.get("application/json"));
 
         Request request = new Request.Builder()
-            .url(API_BASE + "/repos/" + owner + "/" + repo + "/git/refs")
+            .url(apiBase + "/repos/" + owner + "/" + repo + "/git/refs")
             .header("Authorization", "token " + authToken)
             .header("Accept", "application/vnd.github+json")
             .post(body)
@@ -94,7 +101,7 @@ public class GitHubService {
         RequestBody body = RequestBody.create(bodyJson, MediaType.get("application/json"));
 
         Request request = new Request.Builder()
-            .url(API_BASE + "/repos/" + owner + "/" + repo + "/git/commits")
+            .url(apiBase + "/repos/" + owner + "/" + repo + "/git/commits")
             .header("Authorization", "token " + authToken)
             .header("Accept", "application/vnd.github+json")
             .post(body)
@@ -137,7 +144,7 @@ public class GitHubService {
         RequestBody request = RequestBody.create(bodyJson, MediaType.get("application/json"));
 
         Request httpRequest = new Request.Builder()
-            .url(API_BASE + "/repos/" + owner + "/" + repo + "/pulls")
+            .url(apiBase + "/repos/" + owner + "/" + repo + "/pulls")
             .header("Authorization", "token " + authToken)
             .header("Accept", "application/vnd.github+json")
             .post(request)
@@ -148,7 +155,7 @@ public class GitHubService {
                 String errorBody = response.body() != null ? response.body().string() : "";
                 if (response.code() == 422 && errorBody.contains("A pull request already exists")) {
                     log.info("PR already exists for branch {}, fetching existing PR URL", headBranch);
-                    String existingUrl = getExistingPRUrl(headBranch, actualBase);
+                    String existingUrl = getExistingPRUrl(headBranch, actualBase, "all");
                     if (existingUrl != null) {
                         return existingUrl;
                     }
@@ -164,7 +171,7 @@ public class GitHubService {
 
     private String detectDefaultBranch() throws IOException {
         Request request = new Request.Builder()
-            .url(API_BASE + "/repos/" + owner + "/" + repo)
+            .url(apiBase + "/repos/" + owner + "/" + repo)
             .header("Authorization", "token " + authToken)
             .header("Accept", "application/vnd.github+json")
             .get()
@@ -184,9 +191,28 @@ public class GitHubService {
         return null;
     }
 
-    private String getExistingPRUrl(String headBranch, String baseBranch) throws IOException {
+    /**
+     * Find an existing PR for a branch. Used by startup recovery to adopt a
+     * publish whose finish call was lost.
+     */
+    public String findPullRequestUrl(String headBranch) throws IOException {
+        // Recovery must only adopt an open PR; a closed PR is not a publish.
+        return getExistingPRUrl(headBranch, null, "open");
+    }
+
+    private String getExistingPRUrl(
+        String headBranch,
+        String baseBranch,
+        String state
+    ) throws IOException {
+        String url = apiBase + "/repos/" + owner + "/" + repo
+            + "/pulls?head=" + owner + ":" + headBranch + "&state=" + state;
+        if (baseBranch != null && !baseBranch.isBlank()) {
+            url += "&base=" + baseBranch;
+        }
+
         Request request = new Request.Builder()
-            .url(API_BASE + "/repos/" + owner + "/" + repo + "/pulls?head=" + owner + ":" + headBranch + "&base=" + baseBranch + "&state=all")
+            .url(url)
             .header("Authorization", "token " + authToken)
             .header("Accept", "application/vnd.github+json")
             .get()
@@ -210,7 +236,7 @@ public class GitHubService {
 
     private String getBranchSha(String branchName) throws IOException {
         Request request = new Request.Builder()
-            .url(API_BASE + "/repos/" + owner + "/" + repo + "/branches/" + branchName)
+            .url(apiBase + "/repos/" + owner + "/" + repo + "/branches/" + branchName)
             .header("Authorization", "token " + authToken)
             .header("Accept", "application/vnd.github+json")
             .get()
@@ -240,7 +266,7 @@ public class GitHubService {
         RequestBody body = RequestBody.create(bodyJson, MediaType.get("application/json"));
 
         Request request = new Request.Builder()
-            .url(API_BASE + "/repos/" + owner + "/" + repo + "/git/trees")
+            .url(apiBase + "/repos/" + owner + "/" + repo + "/git/trees")
             .header("Authorization", "token " + authToken)
             .header("Accept", "application/vnd.github+json")
             .post(body)

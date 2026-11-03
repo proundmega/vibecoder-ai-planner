@@ -11,6 +11,7 @@ import okhttp3.*;
 
 import java.io.IOException;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -108,10 +109,308 @@ public class ApiService {
     }
 
     /**
+     * Persist a durable harness run before starting side effects (fg-33).
+     */
+    public Map<String, Object> startHarnessRun(
+        Long ticketId,
+        String branch,
+        String workspacePath,
+        String provider,
+        String model,
+        int attempt
+    ) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        body.put("ticketId", ticketId);
+        body.put("branch", branch);
+        body.put("attempt", attempt);
+        if (workspacePath != null && !workspacePath.isBlank()) {
+            body.put("workspacePath", workspacePath);
+        }
+        if (provider != null && !provider.isBlank()) {
+            body.put("provider", provider);
+        }
+        if (model != null && !model.isBlank()) {
+            body.put("model", model);
+        }
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            if (isFatalRunError(response)) {
+                throw new FatalRunException(
+                    "Harness run rejected: " + response.getError());
+            }
+            throw new IOException("Failed to start harness run: " + response.getError());
+        }
+        return response.getData();
+    }
+
+    public void checkpointHarnessRun(
+        String runId,
+        String step,
+        Map<String, Object> payload
+    ) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        body.put("step", step);
+        body.put("payload", payload == null ? Map.of() : payload);
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/checkpoints",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            if (isErrorCode(response, "NOT_FOUND") || isErrorCode(response, "CONFLICT")) {
+                throw new RunGoneException(
+                    "Harness run is no longer active: " + response.getError());
+            }
+            throw new IOException("Failed to record harness checkpoint: " + response.getError());
+        }
+    }
+
+    public void heartbeatHarnessRun(String runId, String step) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        if (step != null && !step.isBlank()) {
+            body.put("step", step);
+        }
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/heartbeat",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            if (isErrorCode(response, "NOT_FOUND") || isErrorCode(response, "CONFLICT")) {
+                throw new RunGoneException(
+                    "Harness run is no longer active: " + response.getError());
+            }
+            throw new IOException("Failed to heartbeat harness run: " + response.getError());
+        }
+    }
+
+    /**
+     * Finish a run and return its terminal status. The backend finish is
+     * idempotent, so retrying after a lost response is safe.
+     */
+    public String finishHarnessRun(
+        String runId,
+        String status,
+        String error,
+        String headSha,
+        String prUrl
+    ) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", status);
+        if (error != null && !error.isBlank()) {
+            body.put("error", error);
+        }
+        if (headSha != null && !headSha.isBlank()) {
+            body.put("headSha", headSha);
+        }
+        if (prUrl != null && !prUrl.isBlank()) {
+            body.put("prUrl", prUrl);
+        }
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/finish",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to finish harness run: " + response.getError());
+        }
+        Object terminalStatus = response.getData() == null
+            ? null
+            : response.getData().get("status");
+        return terminalStatus == null ? status : String.valueOf(terminalStatus);
+    }
+
+    /**
+     * Claim the ticket lease. False means another unexpired run owns it;
+     * transient errors throw so the caller can fail closed.
+     */
+    public boolean claimHarnessLease(Long ticketId, String runId, int ttlSeconds) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        body.put("ticketId", ticketId);
+        body.put("runId", runId);
+        body.put("ttlSeconds", ttlSeconds);
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/leases",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            if (isErrorCode(response, "CONFLICT")) {
+                return false;
+            }
+            throw new IOException("Failed to claim harness lease: " + response.getError());
+        }
+        return response.getData() != null;
+    }
+
+    /**
+     * Renew an already-held lease. False means the lease was lost; transient
+     * errors throw so the heartbeat can retry on the next tick.
+     */
+    public boolean renewHarnessLease(Long ticketId, String runId, int ttlSeconds) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        body.put("runId", runId);
+        body.put("ttlSeconds", ttlSeconds);
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/leases/" + ticketId + "/renew",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            if (isErrorCode(response, "CONFLICT")) {
+                return false;
+            }
+            throw new IOException("Failed to renew harness lease: " + response.getError());
+        }
+        return response.getData() != null;
+    }
+
+    /**
+     * Active runs owned by this agent, used for startup recovery.
+     */
+    public List<Map<String, Object>> listActiveHarnessRuns(long agentId) throws IOException {
+        ApiResponse<List<Map<String, Object>>> response = executeGet(
+            baseUrl + "/harness/agents/" + agentId + "/runs",
+            new TypeReference<ApiResponse<List<Map<String, Object>>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to list active harness runs: " + response.getError());
+        }
+        return response.getData() != null ? response.getData() : Collections.emptyList();
+    }
+
+    /**
+     * Workspace paths protected by a running run or an unexpired lease.
+     * Workspace cleanup must fail closed when this call fails.
+     */
+    public List<String> listActiveWorkspacePaths(long agentId) throws IOException {
+        ApiResponse<List<String>> response = executeGet(
+            baseUrl + "/harness/agents/" + agentId + "/workspaces",
+            new TypeReference<ApiResponse<List<String>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to list active harness workspaces: " + response.getError());
+        }
+        return response.getData() != null ? response.getData() : Collections.emptyList();
+    }
+
+    /**
+     * Persist publish evidence before the terminal finish so recovery can adopt
+     * a run whose finish response was lost.
+     */
+    public void recordHarnessPublish(String runId, String headSha, String prUrl) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        if (headSha != null && !headSha.isBlank()) {
+            body.put("headSha", headSha);
+        }
+        if (prUrl != null && !prUrl.isBlank()) {
+            body.put("prUrl", prUrl);
+        }
+        if (body.isEmpty()) {
+            return;
+        }
+
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/publish",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to record harness publish: " + response.getError());
+        }
+    }
+
+    /**
+     * Ask the backend to reconcile a terminal run immediately. This closes the
+     * window where recovery has finished a published run but the ticket is
+     * still in backlog until the next reaper sweep.
+     */
+    public Map<String, Object> reconcileHarnessRun(String runId) throws IOException {
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/reconcile",
+            Map.of(),
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to reconcile harness run: " + response.getError());
+        }
+        return response.getData();
+    }
+
+    /**
+     * Return the ticket to backlog after recovery failed its run. The backend
+     * only releases when the ticket is still in_progress with no PR.
+     */
+    public boolean releaseHarnessTicket(String runId) throws IOException {
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/release-ticket",
+            Map.of(),
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+
+        if (response.hasError()) {
+            throw new IOException("Failed to release harness ticket: " + response.getError());
+        }
+        Object released = response.getData() == null
+            ? null
+            : response.getData().get("released");
+        return Boolean.TRUE.equals(released) || "true".equals(String.valueOf(released));
+    }
+
+    private static boolean isErrorCode(ApiResponse<?> response, String code) {
+        return response.getError() != null && code.equals(response.getError().getCode());
+    }
+
+    /** A backend decision (401/403/409/400) that must stop the run immediately. */
+    static boolean isFatalRunError(ApiResponse<?> response) {
+        if (response == null) {
+            return false;
+        }
+        return isErrorCode(response, "CONFLICT")
+            || isErrorCode(response, "FORBIDDEN")
+            || isErrorCode(response, "VALIDATION_ERROR")
+            || isErrorCode(response, "UNAUTHORIZED")
+            || isErrorCode(response, "KEY_EXPIRED");
+    }
+
+    /** The run was reaped or finished while this agent was still working. */
+    public static class RunGoneException extends IOException {
+        public RunGoneException(String message) {
+            super(message);
+        }
+    }
+
+    /** The backend refused the run for an authorization/conflict reason. */
+    public static class FatalRunException extends IOException {
+        public FatalRunException(String message) {
+            super(message);
+        }
+    }
+
+    /**
      * Post a message on a ticket.
      */
-    public TicketMessage postMessage(Long ticketId, String messageType, String content) throws IOException {
-        String url = baseUrl + "/tickets/" + ticketId + "/messages";
+    public TicketMessage postMessage(Long ticketId, String messageType, String content) throws IOException {        String url = baseUrl + "/tickets/" + ticketId + "/messages";
         Map<String, Object> body = Map.of(
             "messageType", messageType,
             "content", content

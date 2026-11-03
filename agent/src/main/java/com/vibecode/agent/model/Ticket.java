@@ -19,6 +19,8 @@ public class Ticket {
     private Long assignedAgentId;
     @JsonProperty("locked_at")
     private String lockedAt;
+    @JsonProperty("pr_url")
+    private String prUrl;
     private String createdAt;
     private String updatedAt;
 
@@ -49,6 +51,9 @@ public class Ticket {
     public String getLockedAt() { return lockedAt; }
     public void setLockedAt(String lockedAt) { this.lockedAt = lockedAt; }
 
+    public String getPrUrl() { return prUrl; }
+    public void setPrUrl(String prUrl) { this.prUrl = prUrl; }
+
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
 
@@ -56,7 +61,9 @@ public class Ticket {
     public void setUpdatedAt(String updatedAt) { this.updatedAt = updatedAt; }
 
     public boolean isAvailable() {
-        return "backlog".equals(status) && assignedAgentId == null;
+        return "backlog".equals(status)
+            && assignedAgentId == null
+            && (prUrl == null || prUrl.isBlank());
     }
 
     public boolean isLocked() {

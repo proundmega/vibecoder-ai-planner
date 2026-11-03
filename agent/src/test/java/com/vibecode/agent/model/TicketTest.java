@@ -18,6 +18,16 @@ class TicketTest {
     }
 
     @Test
+    void testIsNotAvailableWhenPublishedPrExists() {
+        Ticket ticket = new Ticket();
+        ticket.setStatus("backlog");
+        ticket.setAssignedAgentId(null);
+        ticket.setPrUrl("https://github.com/owner/repo/pull/9");
+
+        assertFalse(ticket.isAvailable());
+    }
+
+    @Test
     void testIsAvailableInProgress() {
         Ticket ticket = new Ticket();
         ticket.setStatus("in_progress");

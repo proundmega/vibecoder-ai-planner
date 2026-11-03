@@ -24,6 +24,7 @@ const { verifyToken, verifyTokenOrAgent } = require('../../middleware/auth');
 const { requireAnyPermission } = require('../../middleware/permissions');
 const { pool } = require('../../db');
 const agentHeartbeatRouter = require('./agentHeartbeat');
+const harnessRunsRouter = require('../harnessRuns');
 const cspViolationsRouter = require('../csp-violations');
 const computeNodesRouter = require('../compute-nodes');
 const milestonesRouter = require('../milestones');
@@ -206,6 +207,7 @@ router.use('/billing', billingRouter);
 router.use('/memory', memoryRouter);
 router.use('/tickets', reviewRouter);
 router.use('/agents-status', agentHeartbeatRouter);
+router.use('/harness', harnessRunsRouter);
 router.use('/csp-violations', cspViolationsRouter);
 
 // IP Whitelist routes (super admin only)

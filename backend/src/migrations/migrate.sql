@@ -121,6 +121,10 @@ CREATE TABLE IF NOT EXISTS user_stats (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Durable harness execution (fg-33) lives in the incremental migration
+-- 045_harness_runs.sql. This legacy bootstrap uses UUID ids and an older
+-- tickets/agents shape, so it intentionally does not create those tables.
+
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_tickets_project ON tickets(project_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);

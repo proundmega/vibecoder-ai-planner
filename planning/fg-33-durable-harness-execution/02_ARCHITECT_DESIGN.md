@@ -1,6 +1,6 @@
 # 02_ARCHITECT_DESIGN.md - Durable Harness Execution (fg-33)
 
-**Status:** Planned - not implemented
+**Status:** Slices 1-3 implemented on the feature branch; disk inventory, automatic dead-letter, structured events and the force-clean-restart action are deferred.
 **Date:** 2026-10-31
 **Depends on:** fg-30 Phase 1 (OpenCode harness supervisor)
 
@@ -70,15 +70,21 @@ A Redis lease is acceptable if it is durable enough for the deployment; Postgres
 On `AgentApp` startup:
 
 1. find `harness_runs` where `agent_id = me` and `status = running`;
-2. if the heartbeat is fresh, assume another instance is alive and skip;
-3. otherwise resume based on the last checkpoint:
-   - `CLONED` -> reuse workspace if valid, else restart clone;
-   - `SESSION_READY`/`PROMPTING` -> recreate the OpenCode session and resend a bounded prompt (or restart cleanly if the provider cannot resume);
-   - `VERIFYING` -> rerun verification;
-   - `PUBLISHING` -> check for the branch/PR and finish idempotently;
-4. after `HARNESS_MAX_ATTEMPTS`, mark `dead_letter` and release the ticket for a human.
+2. if the heartbeat is fresh or its lease is unexpired, assume another
+   instance is alive and skip;
+3. otherwise reconcile based on the last checkpoint:
+   - `PUBLISHING`/`DONE` with a stored head sha or PR -> look up an **open**
+     PR and adopt the run as succeeded (`HARNESS_RESUME_MODE=resume`); a run
+     that already recorded `pr_url` is adopted in either mode;
+   - every other checkpoint -> fail the run and return the ticket only through
+     the guarded release path, because the OpenCode session and uncommitted
+     workspace are process-local and cannot be resumed;
+4. if the run cannot be finished, leave it for the terminal-run reconciliation
+   sweep; never release on an unconfirmed state.
 
-Resume is only allowed if the workspace, branch and ticket still match the run record. Otherwise restart cleanly and record why.
+`HARNESS_RESUME_MODE=restart` is the default and only adopts runs with a
+recorded PR URL. `resume` additionally looks up an open PR from a stored head
+sha. The workspace, branch and ticket must still match the run record.
 
 ## Idempotent publishing
 
@@ -90,12 +96,15 @@ Resume is only allowed if the workspace, branch and ticket still match the run r
 
 ## Workspace registry and cleanup
 
-Track workspace paths in `harness_runs.workspace_path` plus a periodic inventory:
+Track workspace paths in `harness_runs.workspace_path` and clean them at agent
+startup after recovery succeeds:
 
-- remove workspaces with no active lease and `updated_at < retention`;
-- never delete a workspace with an unexpired lease;
-- clean temporary OpenCode config/home with the workspace;
-- report disk usage and leftover count as metrics.
+- remove generated workspace names with no running run/unexpired lease and an
+  old mtime;
+- never delete a workspace with an active run or unexpired lease;
+- clean crash-left OpenCode/askpass temp dirs with the same retention;
+- a full size/age inventory, scheduled cleanup and disk-usage/leftover metrics
+  are deferred to fg-44.
 
 ## Configuration
 
@@ -103,18 +112,23 @@ Track workspace paths in `harness_runs.workspace_path` plus a periodic inventory
 |---|---|---|
 | `HARNESS_LEASE_SECONDS` | `600` | Ticket lease TTL |
 | `HARNESS_HEARTBEAT_SECONDS` | `30` | Lease renewal interval |
-| `HARNESS_MAX_ATTEMPTS` | `3` | Retries before dead letter |
+| `HARNESS_MAX_ATTEMPTS` | `3` | Retry backoff only; automatic dead-letter is deferred |
 | `HARNESS_WORKSPACE_RETENTION_HOURS` | `24` | Orphan cleanup age |
-| `HARNESS_RESUME_MODE` | `safe` | `safe`, `restart`, `off` |
+| `HARNESS_RESUME_MODE` | `restart` | `restart`, `resume` |
 
 ## Failure handling
 
-- Publish failure: keep the run in `PUBLISHING`, retry with backoff, then dead letter.
+- Publish failure: keep the run in `PUBLISHING`, retry with backoff, and leave
+  repeated failures for manual dead-letter/operator action. Automatic
+  dead-letter after N attempts is deferred.
 - Provider/session failure: recreate the session once; if it fails again, restart cleanly.
 - Disk full or clone failure: fail the run, release the ticket, alert.
 - Lease loss during a run: stop before publishing; never publish without a valid lease.
 
 ## Tests
+
+These process-kill cases are a deferred CI follow-up; the current suite covers
+the same transitions at the service/processor level.
 
 - kill the agent during prompt, verification and publish; assert resume/fail behavior;
 - kill during the push after the commit exists; assert no duplicate PR;
@@ -125,11 +139,11 @@ Track workspace paths in `harness_runs.workspace_path` plus a periodic inventory
 
 ## Rollout
 
-1. Ship persistence and lease with recovery disabled (`HARNESS_RESUME_MODE=off`) in development.
-2. Enable safe resume for one project.
-3. Enable the reaper and workspace retention.
+1. Ship persistence, leases and `HARNESS_RESUME_MODE=restart` in development.
+2. Enable `resume` published-work adoption for one project.
+3. Enable the scheduled reaper (on by default) and workspace retention.
 4. Add alerts for stuck runs and dead letters.
-5. Make safe resume the default after a bake period.
+5. Keep `restart` as the default; revisit only if live-session resume becomes possible.
 
 ## Open questions
 
