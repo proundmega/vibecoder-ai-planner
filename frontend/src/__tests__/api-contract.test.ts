@@ -83,7 +83,7 @@ describe('API Response Contract Tests', () => {
       const validProject = {
         id: '123e4567-e89b-12d3-a456-426614174000',
         name: 'Test Project',
-        owner_id: '123e4567-e89b-12d3-a456-426614174001',
+        ownerId: '123e4567-e89b-12d3-a456-426614174001',
       };
       const errors = validateProject(validProject);
       expect(errors).toHaveLength(0);
@@ -95,7 +95,16 @@ describe('API Response Contract Tests', () => {
       };
       const errors = validateProject(invalidProject);
       expect(errors).toContain('root.id: required field missing');
-      expect(errors).toContain('root.owner_id: required field missing');
+      expect(errors).toContain('root.ownerId: required field missing');
+    });
+
+    it('should reject the legacy snake_case owner_id (bp-124 O5)', () => {
+      const snakeCaseProject = {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        name: 'Test Project',
+        owner_id: '123e4567-e89b-12d3-a456-426614174001',
+      };
+      expect(validateProject(snakeCaseProject)).toContain('root.ownerId: required field missing');
     });
   });
 
@@ -105,8 +114,8 @@ describe('API Response Contract Tests', () => {
         id: '123e4567-e89b-12d3-a456-426614174000',
         title: 'Test Ticket',
         status: 'backlog',
-        owner_id: '123e4567-e89b-12d3-a456-426614174001',
-        project_id: '123e4567-e89b-12d3-a456-426614174002',
+        ownerId: '123e4567-e89b-12d3-a456-426614174001',
+        projectId: '123e4567-e89b-12d3-a456-426614174002',
       };
       const errors = validateTicket(validTicket);
       expect(errors).toHaveLength(0);
@@ -118,8 +127,8 @@ describe('API Response Contract Tests', () => {
         title: 'Test Ticket',
         status: 'backlog',
         priority: 'critical',
-        owner_id: '123e4567-e89b-12d3-a456-426614174001',
-        project_id: '123e4567-e89b-12d3-a456-426614174002',
+        ownerId: '123e4567-e89b-12d3-a456-426614174001',
+        projectId: '123e4567-e89b-12d3-a456-426614174002',
       };
       expect(validateTicket(validTicket)).toHaveLength(0);
     });
@@ -129,8 +138,8 @@ describe('API Response Contract Tests', () => {
         id: '123e4567-e89b-12d3-a456-426614174000',
         title: 'Test Ticket',
         status: 'invalid_status',
-        owner_id: '123e4567-e89b-12d3-a456-426614174001',
-        project_id: '123e4567-e89b-12d3-a456-426614174002',
+        ownerId: '123e4567-e89b-12d3-a456-426614174001',
+        projectId: '123e4567-e89b-12d3-a456-426614174002',
       };
       const errors = validateTicket(invalidTicket);
       expect(errors.length).toBeGreaterThan(0);
@@ -142,8 +151,8 @@ describe('API Response Contract Tests', () => {
         title: 'Test Ticket',
         status: 'backlog',
         priority: 'blocker',
-        owner_id: '123e4567-e89b-12d3-a456-426614174001',
-        project_id: '123e4567-e89b-12d3-a456-426614174002',
+        ownerId: '123e4567-e89b-12d3-a456-426614174001',
+        projectId: '123e4567-e89b-12d3-a456-426614174002',
       };
       expect(validateTicket(invalidTicket).length).toBeGreaterThan(0);
     });
@@ -154,7 +163,7 @@ describe('API Response Contract Tests', () => {
       const validAgent = {
         id: '123e4567-e89b-12d3-a456-426614174000',
         name: 'Test Agent',
-        user_id: '123e4567-e89b-12d3-a456-426614174001',
+        owner_id: 1,
       };
       const errors = validateAgent(validAgent);
       expect(errors).toHaveLength(0);
@@ -166,7 +175,7 @@ describe('API Response Contract Tests', () => {
       };
       const errors = validateAgent(invalidAgent);
       expect(errors).toContain('root.id: required field missing');
-      expect(errors).toContain('root.user_id: required field missing');
+      expect(errors).toContain('root.owner_id: required field missing');
     });
   });
 
@@ -225,8 +234,8 @@ describe('API Response Contract Tests', () => {
         id: '123e4567-e89b-12d3-a456-426614174000',
         title: 'Test',
         status: 'backlog',
-        owner_id: '123e4567-e89b-12d3-a456-426614174001',
-        project_id: '123e4567-e89b-12d3-a456-426614174002',
+        ownerId: '123e4567-e89b-12d3-a456-426614174001',
+        projectId: '123e4567-e89b-12d3-a456-426614174002',
       };
       expect(() => validate(validTicket)).not.toThrow();
     });

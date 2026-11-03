@@ -1,4 +1,4 @@
-const { pool, transaction } = require('../db');
+const { pool } = require('../db');
 const { ValidationError } = require('../errors/HttpError');
 
 const VALID_TRANSITIONS = {
@@ -24,6 +24,9 @@ class Ticket {
     this.templateSchema = data.template_schema || null;
     this.phase = data.phase || 'draft';
     this.prUrl = data.pr_url || null;
+    this.milestoneId = data.milestoneId ?? data.milestone_id ?? null;
+    this.estimate = data.estimate ?? null;
+    this.dependsOn = data.dependsOn ?? data.depends_on ?? [];
     this.createdAt = data.createdAt;
     this.updatedAt = data.updatedAt;
   }
@@ -81,12 +84,15 @@ class Ticket {
       template_schema: row.template_schema,
       phase: row.phase,
       pr_url: row.pr_url,
+      milestoneId: row.milestone_id,
+      estimate: row.estimate,
+      dependsOn: row.depends_on,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });
   }
 
-  static async update(id, { title, description, status, priority, assigneeId, prUrl }) {
+  static async update(id, { title, description, status, priority, assigneeId, prUrl, milestoneId, estimate, dependsOn }) {
     // Fetch current ticket to validate transitions
     const current = await Ticket.findById(id);
     if (current && status && status !== current.status) {
@@ -132,12 +138,28 @@ class Ticket {
       vals.push(prUrl);
       idx++;
     }
+    if (milestoneId !== undefined) {
+      sets.push(`milestone_id = $${idx}`);
+      vals.push(milestoneId);
+      idx++;
+    }
+    if (estimate !== undefined) {
+      sets.push(`estimate = $${idx}`);
+      vals.push(estimate);
+      idx++;
+    }
+    if (dependsOn !== undefined) {
+      sets.push(`depends_on = $${idx}`);
+      vals.push(dependsOn);
+      idx++;
+    }
 
     sets.push(`updated_at = NOW()`);
     vals.push(id);
 
-    const query = `UPDATE tickets SET ${sets.join(', ')} WHERE id = $${idx}`;
-    await pool.query(query, vals);
+    const query = `UPDATE tickets SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`;
+    const result = await pool.query(query, vals);
+    return result.rows.length > 0 ? this.fromRow(result.rows[0]) : null;
   }
 
   static async delete(id) {
@@ -145,25 +167,6 @@ class Ticket {
       'UPDATE tickets SET deleted_at = NOW(), status = \'done\' WHERE id = $1',
       [id]
     );
-  }
-
-  static async deleteWithAudit(id, userId, action) {
-    return transaction(async (client) => {
-      const current = await this.findById(id);
-      if (!current) {
-        throw new Error('Ticket not found');
-      }
-
-      await client.query(
-        'UPDATE tickets SET deleted_at = NOW(), status = \'done\' WHERE id = $1',
-        [id]
-      );
-
-      await client.query(
-        'INSERT INTO audit_log (user_id, action, entity_type, entity_id, created_at) VALUES ($1, $2, $3, $4, NOW())',
-        [userId, action, 'ticket', id]
-      );
-    });
   }
 
   static async updateStatus(id, status, _userId) {

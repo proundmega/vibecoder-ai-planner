@@ -13,6 +13,7 @@ This is an umbrella ticket. Each defect gets its own implementation slice (and, 
 
 ## O2 - Dead SQL / missing tables
 
+- **Decision (2026-11-03):** delete the unused methods. No product flow needs `project_agents` or `audit_log` today, and adding tables would create unused schema and retention obligations.
 - Decide per method: create `project_agents` / `audit_log` tables, or delete the unused methods.
 - Prefer deletion for truly dead code; if audit logging is required, add a migration, indexes and rollback.
 - Add a lint/test that prevents SQL against known-missing tables.
@@ -35,7 +36,8 @@ This is an umbrella ticket. Each defect gets its own implementation slice (and, 
 
 ## O5 - Validator camelCase
 
-- Change Project/Ticket/Agent schemas to camelCase (`ownerId`, `projectId`, `userId`).
+- Change Project/Ticket schemas to camelCase (`ownerId`, `projectId`).
+- **Agent is the exception:** `AgentService.list()` returns raw DB rows, so its contract stays snake_case (`owner_id`). The old schema used a non-existent `user_id`, which is corrected to `owner_id`.
 - Update callers/tests; keep backward-compatible aliases only if needed.
 - Add a contract test against real API response shapes.
 
@@ -68,8 +70,8 @@ This is an umbrella ticket. Each defect gets its own implementation slice (and, 
 ## O10 - Dry-run grammar validation
 
 - Current dry-run does structural validation (balanced quotes/parentheses, non-empty statements).
-- Decide: add a real SQL parser dependency, or keep structural validation and document the limitation.
-- If a parser is added, cover PostgreSQL-specific syntax and dollar-quoted bodies.
+- **Decision (2026-11-03):** keep structural validation and document the limitation. A real PostgreSQL parser is a new runtime dependency for a developer-only safeguard; the dry-run already refuses to open a database connection, so it cannot catch semantic errors regardless.
+- The limitation is now stated in the `apply.js` dry-run help text and this suite.
 - Do not reintroduce a database connection in dry-run.
 
 ## Rollout

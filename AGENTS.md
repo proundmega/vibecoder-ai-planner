@@ -30,7 +30,7 @@ backend/src/
   services/         → ~28 services
   controllers/      → ~12 controllers
   models/           → approval, project, ticket, user
-  migrations/       → 44 .sql files + 2 data migrations; apply.js runs in array order (not numeric)
+  migrations/       → 46 .sql files + 2 data migrations; apply.js runs in array order (not numeric)
   middleware/       → ~15 files (auth, permissions, validate (Joi), cors, rate limiter, CSP, requestId, error handler, timeout, apiVersion, multer)
   validators/       → 15 Joi schemas
   db.js             → pg Pool (DATABASE_URL env)
@@ -176,7 +176,7 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 
 **Ticket status transitions**: `backlog→in_progress`, `in_progress→review|backlog`, `review→done|backlog`. `done` has no outgoing transitions.
 
-**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 40 SQL files + 2 data migrations (`migrate_provider_api_keys.js`, `backfill_agent_key_hashes.js`). Notable non-numeric entries: 011/012 after 014; 020 after 018 (no 019); 031 has two files. The `029_data_migrate_provider_api_keys.sql` and `030` rollback files exist on disk but are **not** in the apply array. Each SQL has a `_rollback.sql` counterpart.
+**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 46 SQL files + 2 data migrations (`migrate_provider_api_keys.js`, `backfill_agent_key_hashes.js`). Notable non-numeric entries: 011/012 after 014; 020 after 018 (no 019); 031 has two files. The `029_data_migrate_provider_api_keys.sql` and `030` rollback files exist on disk but are **not** in the apply array. Each SQL has a `_rollback.sql` counterpart.
 
 **Frontend auth**: 3 localStorage keys — `vibecode_token`, `vibecode_user`, `vibecode_permissions`. Route guards read localStorage directly (no Pinia dependency).
 

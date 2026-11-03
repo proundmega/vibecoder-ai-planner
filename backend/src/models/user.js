@@ -1,5 +1,5 @@
 const bcrypt = require('bcryptjs');
-const { pool, transaction } = require('../db');
+const { pool } = require('../db');
 
 class User {
   constructor(data) {
@@ -128,25 +128,6 @@ class User {
       'UPDATE users SET deleted_at = NOW() WHERE id = $1',
       [id]
     );
-  }
-
-  static async deleteWithAudit(id, userId, action) {
-    return transaction(async (client) => {
-      const user = await this.find(id);
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      await client.query(
-        'UPDATE users SET deleted_at = NOW() WHERE id = $1',
-        [id]
-      );
-
-      await client.query(
-        'INSERT INTO audit_log (user_id, action, entity_type, entity_id, created_at) VALUES ($1, $2, $3, $4, NOW())',
-        [userId, action, 'user', id]
-      );
-    });
   }
 
   static async findByRole(role) {

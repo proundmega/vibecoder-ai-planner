@@ -79,15 +79,14 @@
           "description": {
             "type": "string"
           },
-          "owner_id": {
+          "ownerId": {
             "type": "string",
             "format": "uuid"
           },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
+          "ownerName": {
+            "type": "string"
           },
-          "updated_at": {
+          "createdAt": {
             "type": "string",
             "format": "date-time"
           }
@@ -122,23 +121,38 @@
               "medium",
               "high",
               "critical",
-
               "urgent"
             ]
           },
-          "owner_id": {
+          "ownerId": {
             "type": "string",
             "format": "uuid"
           },
-          "project_id": {
+          "projectId": {
             "type": "string",
             "format": "uuid"
           },
-          "created_at": {
+          "milestoneId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "estimate": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "createdAt": {
             "type": "string",
             "format": "date-time"
           },
-          "updated_at": {
+          "updatedAt": {
             "type": "string",
             "format": "date-time"
           }
@@ -154,17 +168,21 @@
           "name": {
             "type": "string"
           },
-          "user_id": {
+          "owner_id": {
             "type": "string",
             "format": "uuid"
           },
-          "api_key": {
-            "type": "string"
+          "rate_limit": {
+            "type": "integer"
           },
-          "is_active": {
-            "type": "boolean"
+          "max_actions_per_day": {
+            "type": "integer"
           },
           "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
             "type": "string",
             "format": "date-time"
           }
@@ -694,7 +712,6 @@
                       "medium",
                       "high",
                       "critical",
-
                       "urgent"
                     ]
                   }
@@ -810,6 +827,22 @@
                   "assigneeId": {
                     "type": "string",
                     "format": "uuid"
+                  },
+                  "milestoneId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "nullable": true
+                  },
+                  "estimate": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "nullable": true
+                  },
+                  "dependsOn": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
                   }
                 }
               }
@@ -818,7 +851,22 @@
         },
         "responses": {
           "200": {
-            "description": "Ticket updated"
+            "description": "Ticket updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Ticket"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -2263,7 +2311,6 @@
                       "medium",
                       "high",
                       "critical",
-
                       "urgent"
                     ]
                   }
@@ -2790,6 +2837,35 @@
         "responses": {
           "200": {
             "description": "Repository disconnected"
+          }
+        }
+      }
+    },
+    "/github/{projectId}/repo/agent": {
+      "get": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Get repository connection for agent (with decrypted PAT)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repository config with decrypted access token"
           }
         }
       }
@@ -3810,6 +3886,67 @@
           },
           "404": {
             "description": "Agent or provider not found"
+          }
+        }
+      }
+    },
+    "/agents/{agentId}/provider-config/changed": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Check if provider config has changed",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Config change status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "changed": {
+                          "type": "boolean"
+                        },
+                        "lastUpdated": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

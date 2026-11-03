@@ -10,7 +10,6 @@ jest.mock('../services/TicketService', () => {
     releaseTicket: jest.fn(),
     enforceOwnership: jest.fn(),
     recoverOrphanedTickets: jest.fn(),
-    getAgentTickets: jest.fn(),
   };
 });
 

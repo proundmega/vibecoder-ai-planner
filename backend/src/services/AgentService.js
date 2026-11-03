@@ -185,25 +185,6 @@ class AgentService {
     return null;
   }
 
-  async getAgentTickets(agentId, projectId) {
-    const result = await pool.query(
-      `SELECT t.*, u.name as assignee_name 
-       FROM tickets t 
-       LEFT JOIN users u ON t.assignee_id = u.id 
-       JOIN projects p ON t.project_id = p.id 
-       WHERE p.owner_id = ANY(
-         SELECT user_id FROM project_agents WHERE project_id = (
-           SELECT id FROM projects WHERE owner_id = (
-             SELECT id FROM agents WHERE id = $1
-           )
-         )
-       ) AND t.project_id = $2
-       ORDER BY t.created_at DESC`,
-      [agentId, projectId]
-    );
-    return result.rows;
-  }
-
   async incrementDailyUsage(agentId) {
     await pool.query(
       'UPDATE agents SET current_daily_usage = current_daily_usage + 1 WHERE id = $1',

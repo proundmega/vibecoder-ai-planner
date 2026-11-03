@@ -40,7 +40,10 @@ async function updateTicket(req, res, next) {
       });
     }
     
-    const allowedFields = ['title', 'description', 'status', 'priority', 'assigneeId', 'prUrl'];
+    const allowedFields = [
+      'title', 'description', 'status', 'priority', 'assigneeId', 'prUrl',
+      'milestoneId', 'estimate', 'dependsOn',
+    ];
     const filteredUpdates = {};
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
@@ -48,8 +51,10 @@ async function updateTicket(req, res, next) {
       }
     }
     
-    await TicketService.update(req.params.ticketId, filteredUpdates, req.user.userId, userRole);
-    res.json({ success: true, data: { message: 'Ticket updated' } });
+    const updatedTicket = await TicketService.update(
+      req.params.ticketId, filteredUpdates, req.user.userId, userRole
+    );
+    res.json({ success: true, data: updatedTicket });
   } catch (error) {
     next(error);
   }

@@ -23,6 +23,21 @@ const updateTicketSchema = Joi.object({
   status: Joi.string().valid('backlog', 'in_progress', 'review', 'done').optional(),
   priority: Joi.string().valid('low', 'medium', 'high', 'critical', 'urgent').optional(),
   assigneeId: Joi.string().uuid().allow(null).optional(),
+  milestoneId: Joi.string().uuid().allow(null).optional().messages({
+    'string.guid': 'Milestone ID must be a valid UUID',
+  }),
+  estimate: Joi.number().integer().positive().allow(null).optional().messages({
+    'number.positive': 'Estimate must be a positive integer',
+    'number.integer': 'Estimate must be a positive integer',
+  }),
+  dependsOn: Joi.array().items(
+    Joi.alternatives().try(
+      Joi.number().integer().positive(),
+      Joi.string().pattern(/^\d+$/)
+    )
+  ).allow(null).optional().messages({
+    'array.base': 'Dependencies must be an array of ticket IDs',
+  }),
 });
 
 const statusTransitionSchema = Joi.object({
