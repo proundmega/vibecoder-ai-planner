@@ -1,20 +1,7 @@
-# 02_ARCHITECT_DESIGN.md — Feature Design Specification
+# 02 — Design (bt-60)
 
-**Status**: Working draft
-**Author**: AI Assistant
-**Scope**: Backend + Agent (test-only)
-**Date**: 2026-11-02
-**Related**: `01_ARCHITECT_REQUIREMENT.md`, `03_ARCHITECT_IMPLEMENTATION.md`, fg-33, PR #110
-
----
-
-## Problem Statement
-
-fg-33 slice 1 has good split-layer coverage, but no test proves that the layers compose. The Java `ApiService` is tested against a stub server; the Express routes are tested with the service mocked; the service is tested against Postgres; the supervisor is tested with `ApiService` mocked. The real path — **agent HTTP client → real routes → real service → real Postgres → real OpenCode/Git/PR** — is untested. A wrong path/body/auth assumption, project-scope mistake, or finish-failure bug can pass all current tests.
-
-This ticket adds an automated backend HTTP/Postgres e2e and a disposable staging runbook for the full real-agent path. It does not add production features.
-
----
+> **Owns:** current-state audit, design, data flow, contracts, risks, rollout.
+> **Not here:** requirements (`01`), verification matrix (`03`), file operations (`04`), status and deferrals (`00`).
 
 ## Current State
 
@@ -139,35 +126,6 @@ A fully containerized real-agent e2e (compose + test repo + fake/real GitHub/pro
 
 ---
 
-## Test Matrix
-
-| ID | Scenario | Layer | Expected | Phase |
-|---|---|---|---|---|
-| E1 | Agent starts a run for its assigned `in_progress` ticket | Backend HTTP | 201; run `running/created`; attempt 1 | A |
-| E2 | Duplicate start while run active | Backend HTTP | 409 CONFLICT; one active run | A |
-| E3 | Wrong agent/owner or wrong ticket status | Backend HTTP | 403; no run | A |
-| E4 | JWT mutation | Backend HTTP | 403 | A |
-| E5 | Start with invalid/expired agent key | Client/processor + route | 401; fatal; no publish | A |
-| E6 | Claim lease and block another run | Backend HTTP | 201; second claim 409 | A |
-| E7 | Renew/release lease | Backend HTTP | 200/200; missing 404 | A |
-| E8 | Checkpoint sequence and context columns | Backend HTTP | 201 each; `workspace_path`/`session_id`/`base_sha` populated | A |
-| E9 | Backward/unknown checkpoint | Backend HTTP | 409/400 | A |
-| E10 | Checkpoint after finish | Backend HTTP | 404 | A |
-| E11 | Heartbeat updates `agent_step`/`heartbeat_at` | Backend HTTP | 200; wrong agent/after finish 404 | A |
-| E12 | Finish succeeded; lease deleted | Backend HTTP | 200; status/head/pr; no lease | A |
-| E13 | Idempotent finish | Backend HTTP | 200 existing terminal; no duplicate side effect | A |
-| E14 | Operator project scope/roles | Backend HTTP | owner/member 200; user/outside 403; super_admin 200 | A |
-| E15 | Manual real happy path | Manual staging | run/checkpoints/lease/ticket/PR as expected | A |
-| E16 | Finish endpoint unavailable after PR | Processor/manual | ticket stays `review`; no reset; run recoverable | A/B |
-| E17 | Key expired/revoked mid-run | Processor/manual | fatal; no push/PR | A |
-| E18 | Lease lost/expired before publish | Processor/manual | no push/PR; ticket left for recovery | A |
-| E19 | Crash/restart mid-prompt/verify/publish | Manual | slice 2 recovery; manual cleanup until then | B |
-| E20 | Reaper fails stale run and ticket release | Manual/backend | release only `in_progress`, no `pr_url`; not review/done | B |
-| E21 | Idempotent publish/duplicate PR | Manual | one branch/PR; no duplicate | B |
-| E22 | Full containerized CI e2e | CI Docker | deterministic happy path + failure cases | B/follow-up |
-
----
-
 ## Data Flow
 
 ```
@@ -190,21 +148,6 @@ Postgres: harness_runs / checkpoints / leases
 ```
 
 For the backend HTTP e2e, the test asserts the same DB state at each arrow. For the manual staging run, the test asserts the final DB/PR/ticket state plus the failure cases.
-
----
-
-## File-Level Impact Matrix
-
-| File | Action | Specific Changes |
-|---|---|---|
-| `backend/src/__tests__/integration/harnessE2EFixtures.js` | CREATE | Fixture creation/cleanup helpers |
-| `backend/src/__tests__/integration/harnessHttpE2E.test.js` | CREATE | Real app + real Postgres HTTP/DB e2e |
-| `agent/src/test/java/com/vibecode/agent/service/ApiServiceHarnessTest.java` | EXTEND only if gap | Client contract gap found during planning |
-| `agent/src/test/java/com/vibecode/agent/harness/HarnessTicketProcessorTest.java` | EXTEND only if gap | Processor gap found during planning |
-| `planning/bt-60-durable-harness-e2e-tests/03_ARCHITECT_IMPLEMENTATION.md` | MODIFY | Runbook/results as implementation proceeds |
-| `PENDING.txt` | MODIFY | Backlog row |
-| `planning/HARNESS_ROADMAP.md` | MODIFY | fg-33 validation index |
-| Production source/migrations | NONE | Test-only |
 
 ---
 
@@ -309,16 +252,6 @@ Fixture cleanup must remove test users/projects/agents/tickets and rely on `ON D
 
 ---
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-The relevant deferred items are listed in `01_ARCHITECT_REQUIREMENT.md` and repeated here for visibility: startup recovery, resume policy, scheduled reaper + guarded ticket release, idempotent publish, workspace retention, crash-injection/metrics, dead-letter/adoption, fg-34 sandbox, fg-41 observability and fg-42 privacy. Phase A can start after fg-33 slice 1; the full failure matrix waits for slice 2.
-
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|-------------|-------------|----------|----------------------|---------------|
-| 1 | fg-33 | Startup recovery / resume / scheduled reaper / ticket release / idempotent publish | Reliability | fg-33 slice 2 | ☐ |
-| 2 | fg-34 | Sandboxed staging agent | Security | fg-34 | ☐ |
-| 3 | bt-60 | Containerized CI e2e + automated fault injection | Testing | follow-up after slice 2 | ☐ |
-
----
-
-*This design document guides implementation.*
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

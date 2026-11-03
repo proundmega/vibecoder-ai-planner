@@ -1,29 +1,9 @@
-# 03_ARCHITECT_IMPLEMENTATION.md — Implementation Template
+# 03 — Implementation (bt-60)
 
-**Use this template for every ticket.** Copy this file into the ticket folder and fill in the sections.
+> **Owns:** work order, per-file changes, verification matrix, results.
+> **Not here:** design rationale (`02`), exact signatures (`04`), status (`00`).
 
----
-
-## Ticket: bt-60 — Durable Harness End-to-End Tests
-
-**Status**: planned
-**Priority**: P1
-**Effort**: Medium (Phase A) / Medium-Large with Phase B
-**Author**: AI Assistant
-**Date created**: 2026-11-02
-**Date completed**: —
-**PR**: [pending]
-**Branch**: [pending]
-**Scope**: Backend + Agent (test-only)
-
-**Dependencies**:
-- fg-33 slice 1 (PR #110) — runs/checkpoints/leases, routes, agent lifecycle
-- fg-33 slice 2 — startup recovery, resume, scheduled reaper + ticket release, idempotent publish (Phase B)
-- `ApiServiceHarnessTest`, `HarnessTicketProcessorTest`, `harnessRuns.test.js` (existing split-layer coverage)
-
----
-
-### a) Purpose
+## Purpose
 
 Prove the durable harness works as a composition, not only as isolated layers. The ticket adds:
 
@@ -35,7 +15,7 @@ This is a test-only ticket. Do not modify production behavior.
 
 ---
 
-### b) Actions
+## Plan
 
 **CRITICAL**: Check whether existing tests already cover a case before adding a new file. Do not duplicate `ApiServiceHarnessTest` or `harnessRuns.test.js` assertions.
 
@@ -131,7 +111,7 @@ Follow section (g). Use a dedicated test project/repository and a throwaway tick
 
 ---
 
-### c) Per-File Action Plan
+## Per-file changes
 
 #### `backend/src/__tests__/integration/harnessE2EFixtures.js` (CREATE)
 
@@ -180,7 +160,7 @@ Follow section (g). Use a dedicated test project/repository and a throwaway tick
 
 ---
 
-### d) Dependencies
+## Dependencies
 
 - fg-33 slice 1 implementation and migration.
 - Postgres from `docker compose`/integration config.
@@ -191,7 +171,7 @@ Follow section (g). Use a dedicated test project/repository and a throwaway tick
 
 ---
 
-### e) Risks/Edge Cases
+## Risks & edge cases
 
 1. **Slice 2 missing** — do not mark Phase B cases as passed; mark deferred with the exact reason.
 2. **Agent key fixture** — the real auth path requires the bcrypt hash columns; inspect `AgentService.getAgentByApiKey` and migration 033. Do not use a `test-` mock key for the real e2e unless the test explicitly wants the mock path.
@@ -204,22 +184,35 @@ Follow section (g). Use a dedicated test project/repository and a throwaway tick
 
 ---
 
-### f) Testing
+## Verification matrix
 
-#### Backend HTTP/Postgres E2E
+| ID | Scenario | Layer | Expected | Phase |
+|---|---|---|---|---|
+| E1 | Agent starts a run for its assigned `in_progress` ticket | Backend HTTP | 201; run `running/created`; attempt 1 | A |
+| E2 | Duplicate start while run active | Backend HTTP | 409 CONFLICT; one active run | A |
+| E3 | Wrong agent/owner or wrong ticket status | Backend HTTP | 403; no run | A |
+| E4 | JWT mutation | Backend HTTP | 403 | A |
+| E5 | Start with invalid/expired agent key | Client/processor + route | 401; fatal; no publish | A |
+| E6 | Claim lease and block another run | Backend HTTP | 201; second claim 409 | A |
+| E7 | Renew/release lease | Backend HTTP | 200/200; missing 404 | A |
+| E8 | Checkpoint sequence and context columns | Backend HTTP | 201 each; `workspace_path`/`session_id`/`base_sha` populated | A |
+| E9 | Backward/unknown checkpoint | Backend HTTP | 409/400 | A |
+| E10 | Checkpoint after finish | Backend HTTP | 404 | A |
+| E11 | Heartbeat updates `agent_step`/`heartbeat_at` | Backend HTTP | 200; wrong agent/after finish 404 | A |
+| E12 | Finish succeeded; lease deleted | Backend HTTP | 200; status/head/pr; no lease | A |
+| E13 | Idempotent finish | Backend HTTP | 200 existing terminal; no duplicate side effect | A |
+| E14 | Operator project scope/roles | Backend HTTP | owner/member 200; user/outside 403; super_admin 200 | A |
+| E15 | Manual real happy path | Manual staging | run/checkpoints/lease/ticket/PR as expected | A |
+| E16 | Finish endpoint unavailable after PR | Processor/manual | ticket stays `review`; no reset; run recoverable | A/B |
+| E17 | Key expired/revoked mid-run | Processor/manual | fatal; no push/PR | A |
+| E18 | Lease lost/expired before publish | Processor/manual | no push/PR; ticket left for recovery | A |
+| E19 | Crash/restart mid-prompt/verify/publish | Manual | slice 2 recovery; manual cleanup until then | B |
+| E20 | Reaper fails stale run and ticket release | Manual/backend | release only `in_progress`, no `pr_url`; not review/done | B |
+| E21 | Idempotent publish/duplicate PR | Manual | one branch/PR; no duplicate | B |
+| E22 | Full containerized CI e2e | CI Docker | deterministic happy path + failure cases | B/follow-up |
 
-```
-✓ [happy] start → claim → cloned/session_ready/prompting/verifying/publishing/done → heartbeat → finish succeeded
-✓ [db] harness_runs status/step/attempt/head_sha/pr_url/branch/base_sha
-✓ [db] harness_checkpoints order and workspace/session/base context
-✓ [db] harness_leases claimed/renewed/released; deleted after finish
-✓ [auth] missing/invalid agent key 401; JWT mutation 403
-✓ [authz] wrong owner/status 403; wrong agent 403; user role read 403; outside project 403; owner/member/super_admin 200
-✓ [conflict] duplicate start 409; unexpired lease 409; released/reassigned ticket renewal 409
-✓ [validation] unknown step 400; backward step 409; checkpoint after finish 404; wrong agent heartbeat/finish 404/403
-✓ [idempotency] second finish returns existing terminal; no duplicate lease
-✓ [cleanup] no test rows remain
-```
+---
+
 
 #### Existing Agent Tests
 
@@ -249,7 +242,7 @@ Manual staging: see section (g).
 
 ---
 
-### g) Manual Staging Runbook
+## Manual staging runbook
 
 Use a dedicated **test project/repository** and a **throwaway ticket**. Never use a product ticket.
 
@@ -309,19 +302,18 @@ DELETE FROM projects WHERE id = :project_id;
 
 ---
 
-### h) Pending Scope Items to Present to User
+## Deferred scope
 
-The full list and follow-ups are in `01_ARCHITECT_REQUIREMENT.md`/`02_ARCHITECT_DESIGN.md`. Critical deferrals:
-
-- fg-33 slice 2: startup recovery, resume, scheduled reaper + guarded ticket release, idempotent publish, workspace retention, crash-injection/metrics, dead-letter/adoption.
-- fg-34 sandbox for the real staging agent.
-- bt-60 Phase B: automated crash/reaper/idempotent-publish tests and optional containerized CI e2e.
-
-Do not claim Phase B coverage until slice 2 lands.
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.
 
 ---
 
-### i) Post-Implementation Status (fill in when done)
+## Results
+
+| Date | Commit | Suites | Outcome |
+|---|---|---|---|
+| — | — | — | Not run |
+
 
 - **Status**: planned
 - **Date completed**: —
