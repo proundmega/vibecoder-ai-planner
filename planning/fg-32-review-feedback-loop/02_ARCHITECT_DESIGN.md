@@ -1,6 +1,7 @@
 # 02_ARCHITECT_DESIGN.md - Review Feedback Loop / Fixer Agent (fg-32)
 
 **Revised:** 2026-11-02 (addresses PR #104 design review)
+**Revised:** 2026-11-03 (fg-33 fixer-run integration: run lifecycle, identity rule, API client)
 **Related code:** `ReviewProcessor`, `HarnessTicketProcessor`, `WorkspaceManager`, `PhaseService`, `CodeReview.vue`, `PhaseReview.vue`
 
 ## Review resolutions (PR #104)
@@ -136,7 +137,7 @@ The build agent polls `status=backlog` only, so fix work needs its own queue and
 
 ### Shared fg-31 tables
 
-fg-31 (merged, PR #103) defines and writes these; fg-32 consumes them and must not fork them.
+fg-31 (plan merged, PR #103) defines these; implementation is pending. fg-32 consumes them and must not fork them.
 
 ```sql
 CREATE TABLE ticket_review_attempts (
@@ -187,7 +188,7 @@ CREATE TABLE ticket_fix_requests (
   reviewed_sha TEXT NOT NULL,
   state TEXT NOT NULL CHECK (state IN ('queued', 'claimed', 'fixing', 'completed', 'failed', 'escalated')),
   feedback TEXT, -- normalized from metadata.reason/metadata.feedback
-  claimed_by TEXT,
+  claimed_by BIGINT REFERENCES agents(id),
   lease_expires_at TIMESTAMPTZ,
   attempts INT NOT NULL DEFAULT 0,
   next_attempt_at TIMESTAMPTZ, -- retry backoff; null = immediately claimable
@@ -206,6 +207,10 @@ CREATE UNIQUE INDEX uq_fix_request_active
 `queued`/`claimed`/`fixing` are active. `failed` is terminal and must be escalated immediately; it is not active. Retries reuse the same row by returning to `queued` with `next_attempt_at`, so `uq_fix_request_active` stays satisfied.
 
 Add `projects.fix_loop_mode TEXT NOT NULL DEFAULT 'off' CHECK (fix_loop_mode IN ('off','manual','auto'))` (or an equivalent project-settings row) and ship the migration with a rollback.
+
+`claimed_by` stores the numeric `agents.id` (BIGINT), matching
+`harness_runs.agent_id`; compare it with the authenticated agent id, not the
+agent name or API key.
 
 ## Backend API
 
@@ -226,18 +231,9 @@ All agent endpoints use `X-API-Key`, verify project ownership and enforce the le
 
 Route ordering: mount the `review` sub-router before the generic `/tickets/:ticketId` handlers, following the attachment/deployment precedent in `api/v1/index.js`. `GET /agents/fix-queue` lives in the existing `/agents` router and does not add a new prefix.
 
-## Java agent changes
+## fg-33 integration
 
-### Worker mode and wiring
-
-- Add `AGENT_MODE=build|review|fix`.
-  - Default when unset: `review` if `REPO_OWNER` is blank, otherwise `build` (backward compatible with `AgentApp.processCycle()`).
-  - `fix` requires `REPO_OWNER`, `REPO_NAME`, and a distinct `AGENT_API_KEY` identity.
-- `AgentApp` constructs `FixTicketProcessor implements TicketWorker` for `AGENT_MODE=fix` and polls `GET /agents/fix-queue` instead of backlog or review tickets.
-- `FIX_LOOP_MODE=off|manual|auto` controls **dispatch** (who may create requests), not the worker mode. A deployment that wants build + fix in one container runs `AGENT_MODE=build` and a second process/container with `AGENT_MODE=fix`; they must not share the same `AGENT_API_KEY` identity.
-- The fix worker reuses the project's `REPO_OWNER`/`REPO_NAME` and provider config; it does not clone a different repository.
-
-### fg-33 publish-evidence guard compatibility
+### Publish-evidence guard compatibility
 
 fg-33 slice 2 refuses a normal `HarnessRunService.startRun` when the ticket has a PR, or when any prior run for that ticket recorded `pr_url`/`head_sha`. The fixer intentionally needs the opposite: a new run on an `in_progress` ticket with an existing reviewed PR.
 
@@ -249,6 +245,39 @@ Add a fixer-only allowance; do not add a global bypass:
 - A normal build start (`purpose=build`, the default) keeps the fg-33 guard unchanged.
 - Revalidate the claim and remote head immediately before fast-forward publish; a stale claim aborts with `remote_head_moved`/`fix_lease_lost`.
 - Contract tests cover: authorized fix run allowed with an existing PR; normal build refused; missing/unclaimed/stale/cross-ticket fix request refused.
+
+### Fixer run lifecycle and identity
+
+The fixer starts, checkpoints, heartbeats and finishes a harness run exactly
+like a build run; the fixer-only allowance covers only the PR/head guard.
+
+1. `ApiService.startHarnessRun(..., purpose='fix', fixRequestId=<claimed
+   request>, baseSha=<reviewed_sha>)` sends the three new fields to
+   `POST /harness/runs`; `HarnessRunService.startRun` validates them.
+2. The fixer agent is provisioned with the same `owner_id` as the ticket's
+   assigned agent. The existing `t.assigned_agent_id = a.owner_id` check stays
+   in force; the fixer allowance does not bypass it. If a deployment cannot
+   share the owner, the fix path must use the claimed fix lease as the
+   authorization instead — a separate design change, not Phase 1.
+3. After start, the fixer records `created`, `cloned`, `session_ready`,
+   `prompting`, `verifying`, `publishing` and `done` checkpoints, sends
+   heartbeats, and calls `finishRun` with `succeeded` or `failed`.
+4. `startRun` still enforces `t.status='in_progress'`, the one-active-run lease
+   and the normal PR/head guard for `purpose=build`.
+5. `ticket_fix_requests.claimed_by` is the numeric `agents.id` (BIGINT),
+   matching `harness_runs.agent_id`; compare it with the authenticated agent
+   id, not the agent name or API key.
+
+## Java agent changes
+
+### Worker mode and wiring
+
+- Add `AGENT_MODE=build|review|fix`.
+  - Default when unset: `review` if `REPO_OWNER` is blank, otherwise `build` (backward compatible with `AgentApp.processCycle()`).
+  - `fix` requires `REPO_OWNER`, `REPO_NAME`, and a distinct `AGENT_API_KEY` identity.
+- `AgentApp` constructs `FixTicketProcessor implements TicketWorker` for `AGENT_MODE=fix` and polls `GET /agents/fix-queue` instead of backlog or review tickets.
+- `FIX_LOOP_MODE=off|manual|auto` controls **dispatch** (who may create requests), not the worker mode. A deployment that wants build + fix in one container runs `AGENT_MODE=build` and a second process/container with `AGENT_MODE=fix`; they must not share the same `AGENT_API_KEY` identity.
+- The fix worker reuses the project's `REPO_OWNER`/`REPO_NAME` and provider config; it does not clone a different repository.
 
 ### Configuration propagation
 
@@ -275,18 +304,24 @@ Add to `ApiService`:
 - `renewFix(ticketId)`
 - `completeFix(ticketId, headSha, summary)`
 - `failFix(ticketId, reason)`
+- `startHarnessRun(ticketId, branch, workspacePath, provider, model, attempt, purpose, fixRequestId, baseSha)` — extend the fg-33 method with the three new fields
+- `recordHarnessCheckpoint(runId, step, payload)`, `heartbeatHarnessRun(runId, step)` and `finishHarnessRun(runId, status, error, headSha, prUrl)` — already present from fg-33; reuse them
 
 ### Worker steps
 
 1. claim fix request (idempotent; 409 if another live lease owns it);
 2. fetch findings + ticket + planning docs;
-3. checkout the existing branch pinned to `reviewed_sha` (see below);
-4. start OpenCode with the fix prompt;
-5. run verification;
-6. collect diff, run `PublishingGuard`, commit from `reviewed_sha`;
-7. fast-forward-only publish (see below);
-8. call `completeFix`; never create a PR (the existing PR updates automatically);
-9. on failure call `fix/fail` and post the error.
+3. start the harness run with `purpose=fix`, `fixRequestId` and
+   `baseSha=reviewed_sha`;
+4. record `cloned`/`session_ready` and start heartbeats;
+5. checkout the existing branch pinned to `reviewed_sha` (see below);
+6. start OpenCode with the fix prompt; record `prompting`;
+7. run verification; record `verifying`;
+8. collect diff, run `PublishingGuard`, commit from `reviewed_sha`;
+9. fast-forward-only publish (see below); record `publishing` and `done`;
+10. `finishRun` succeeded; call `completeFix`; never create a PR (the existing
+    PR updates automatically);
+11. on failure `finishRun` failed, then call `fix/fail` and post the error.
 
 Heartbeat steps: `claiming-fix`, `checking-out`, `fixing`, `verifying`, `publishing-fix`; renew the lease before long steps.
 

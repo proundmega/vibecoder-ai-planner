@@ -3,9 +3,9 @@
 > **Owns:** work order, per-file changes, verification matrix, results.
 > **Not here:** design rationale (`02`), exact signatures (`04`), status (`00`).
 
-## Plan (original; implementation merged in #104)
+## Plan (original; plan merged in #104; implementation pending)
 
-> This is the work breakdown from the design phase. D6 in `00` remains open.
+> Implementation is pending. This is the work breakdown from the design phase; D6 in `00` remains open.
 
 - [ ] Implement the decided fix state: `review -> in_progress` + `review_state` (no new phase)
 - [ ] Use the fg-31 `ticket_review_attempts` + `ticket_review_findings` schema; do not fork it
@@ -15,7 +15,8 @@
 - [ ] Define the structured findings contract and version it
 - [ ] Define the fix queue/claim API with atomic locking, lease TTL and `POST /tickets/:id/fix/renew`
 - [ ] Enforce one active fix request per ticket and `UNIQUE(attempt_id)`
-- [ ] Add an explicit fixer-only allow path for fg-33's publish-evidence `startRun` guard; require a claimed fix request, matching branch and `reviewed_sha`, and keep the normal build start refused
+- [ ] Add an explicit fixer-only allow path for fg-33's publish-evidence `startRun` guard; require a claimed fix request, matching branch and `reviewed_sha`, and keep the normal build start refused (FR13)
+- [ ] Implement the fixer harness run lifecycle: `startRun` with `purpose=fix`/`fix_request_id`/`base_sha=reviewed_sha`, checkpoints, heartbeat, `finishRun`, and the same-owner identity rule (FR13)
 - [ ] Implement `FIX_LOOP_MODE=off|manual|auto` and `projects.fix_loop_mode` (decided)
 - [ ] Add the human JWT path (`TICKET_STATUS_CHANGE`) and normalize `metadata.reason` / `metadata.feedback`
 - [ ] Set max rounds (2 fix rounds after round 0), `FIX_MAX_ATTEMPTS` (default 3) and the no-progress rule
@@ -71,6 +72,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR10 | | | | |
 | FR11 | | | | |
 | FR12 | | | | |
+| FR13 | | | | |
 
 ## Review checklist
 
