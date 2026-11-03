@@ -1,9 +1,6 @@
 # 01_ARCHITECT_REQUIREMENT.md - Review Feedback Loop / Fixer Agent (fg-32)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
 **Revised:** 2026-11-02 (addresses PR #104 design review)
-**Depends on:** fg-31 Automatic Review Harness (merged, PR #103), fg-30 Phase 1 harness supervisor; fg-30 Phase 3 for token/cost budgets
 **Related code:** `ReviewProcessor`, `HarnessTicketProcessor`, `WorkspaceManager`, `PhaseService`, `CodeReview.vue`, `PhaseReview.vue`
 
 ## Problem
@@ -105,16 +102,6 @@ The normal build `startRun` continues to refuse tickets and prior runs with PR/h
 - Writing review attempts/findings (fg-31).
 - Token/cost budget enforcement until fg-30 Phase 3.
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-31 | Structured finding store and GitHub PR reviews | Agent / Review | TBD (delivered by fg-31 Phase 1) | No |
-| 2 | fg-30 | Human question loop for ambiguous findings | Agent / UX | `fg-30` Phase 2 | No |
-| 3 | new | Email notifications for fix requests and escalations (no existing email-notification ticket; bp-71 is account lockout) | UX | TBD | No |
-| 4 | bp-106 | Ship fix/review events to log aggregation | Observability | TBD (new follow-up) | No |
-| 5 | bp-04 | Fix/review cost dashboard | Observability / Billing | TBD (new follow-up) | No |
-| 6 | bp-99-frontend-testing | E2E coverage for the fix loop UI | Testing | TBD (new follow-up) | No |
-| 7 | fg-33 | fg-33's publish-evidence `startRun` guard blocks fixer runs on an existing PR; add an explicit fixer-only allow path validated against the claimed fix request, branch and `reviewed_sha` | Reliability / Integration | fg-32 (this ticket) | No |
-
-`From Ticket` records where the deferred improvement was found; `TBD` means no follow-up ticket exists yet, so this table does not imply one is already tracked.
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.
