@@ -1,231 +1,295 @@
 # 03 — Implementation (bt-60)
 
 > **Owns:** work order, per-file changes, verification matrix, results.
-> **Not here:** design rationale (`02`), exact signatures (`04`), status (`00`).
+> **Not here:** design rationale (`02`), exact signatures (`04`), status
+> (`00`), operational procedure (`05_RUNBOOK.md`).
 
 ## Purpose
 
-Prove the durable harness works as a composition, not only as isolated layers. The ticket adds:
+Prove the durable harness works as a composition, not only as isolated layers:
 
 1. A real Express app + real Postgres HTTP/DB e2e covering `/api/v1/harness`.
-2. A disposable staging runbook for the complete Java agent → real routes → Postgres → OpenCode → GitHub PR path.
-3. A failure matrix for finish failure, key expiry, lease loss and the slice 2 crash/reaper/idempotent-publish cases.
+2. A disposable staging run for the complete Java agent → real routes →
+   Postgres → OpenCode → GitHub PR path.
+3. A failure matrix for finish failure, key expiry, lease loss and the
+   crash/reaper/idempotent-publish cases.
 
 This is a test-only ticket. Do not modify production behavior.
 
----
-
 ## Plan
 
-**CRITICAL**: Check whether existing tests already cover a case before adding a new file. Do not duplicate `ApiServiceHarnessTest` or `harnessRuns.test.js` assertions.
-
-#### Implementation Order
+**CRITICAL**: Check whether existing tests already cover a case before adding a
+new file. Do not duplicate `ApiServiceHarnessTest` or `harnessRuns.test.js`
+assertions.
 
 1. **Fixture helper** — `backend/src/__tests__/integration/harnessE2EFixtures.js`
-   - Create disposable owner/project/agent/ticket(s) with unique suffix.
-   - Create a second owner/project/agent/ticket for cross-tenant tests.
-   - Expose cleanup; use the real `pool`.
+   - Create a disposable owner/project/agent/ticket with a unique suffix.
+   - Create the agent through `AgentService.create` so `api_key_hash`,
+     `api_key_hash_prefix` and expiry are all set.
+   - Create a member user + `project_memberships` row for the operator read
+     tests, a second tenant for cross-tenant tests, and an expired-key agent
+     for E5.
+   - Expose idempotent cleanup; use the real `pool`.
    - *Depends on*: nothing.
 
-2. **Backend HTTP/Postgres e2e** — `backend/src/__tests__/integration/harnessHttpE2E.test.js`
+2. **Backend HTTP/Postgres e2e** —
+   `backend/src/__tests__/integration/harnessHttpE2E.test.js`
    - Use `supertest(app)` against the real app; no service mocks.
    - Exercise start/claim/checkpoints/heartbeat/finish and DB assertions.
-   - Cover auth, ticket assignment, duplicate start, lease conflict, step ordering, finish idempotency and operator read scope.
+   - Cover auth, ticket assignment, duplicate start, lease conflict, step
+     ordering, finish idempotency and operator read scope.
+   - Phase B: cover `/publish`, `/reconcile`, `/dead-letter`, `/adopt` and
+     `/release-ticket` over HTTP where the route allows it.
    - Cleanup in `afterAll`.
    - *Depends on*: Step 1.
 
-3. **Agent gap check** — existing `ApiServiceHarnessTest` / `HarnessTicketProcessorTest`
-   - Verify start 401/403/409, finish failure, lease loss and checkpoint/heartbeat RunGone are covered.
-   - Extend only for a concrete missing case found while writing the HTTP e2e/runbook.
+3. **Agent gap check** — existing `ApiServiceHarnessTest` /
+   `HarnessTicketProcessorTest`
+   - Verify start 401/403/409, finish failure, lease loss and
+     checkpoint/heartbeat RunGone are covered.
+   - Mid-run key expiry is not directly tested: add a focused processor test,
+     or keep E17 manual-only and track it in `00` D7.
    - *Depends on*: Steps 1-2.
 
-4. **Manual staging runbook** — this document, section (g)
-   - Dedicated test project/repo/ticket/agent.
-   - Happy path + slice-1 failure cases + explicit slice 2 deferrals.
-   - Record results and cleanup.
-   - *Depends on*: Steps 1-3 for the automated checks; manual prerequisites (test repo/credentials).
+4. **Manual staging runbook** — `05_RUNBOOK.md`
+   - Dedicated test project/repo/ticket/agent, isolated host, scoped
+     credentials.
+   - Happy path + failure cases + cleanup.
+   - *Depends on*: Steps 1-3 for the automated checks; manual prerequisites
+     (test repo/credentials).
 
-5. **Backlog/roadmap updates** — `PENDING.txt`, `planning/HARNESS_ROADMAP.md`
-   - Add/keep the bt-60 row and dependency on fg-33; update status after implementation.
+5. **Backlog/roadmap updates** — `PENDING.txt`,
+   `planning/HARNESS_ROADMAP.md`
+   - Keep the bt-60 row and the satisfied fg-33 dependency; update status after
+     implementation.
    - *Depends on*: nothing.
 
-#### Phase 1: Backend Test Fixtures
+### Phase 1: Backend test fixtures
 
 Create `harnessE2EFixtures.js` following existing integration-test patterns:
 
-- Use `new Pool({ connectionString: process.env.DATABASE_URL })` or the shared pool from the integration setup; do not use the application singleton in a way that leaks connections.
+- Use `new Pool({ connectionString: process.env.DATABASE_URL })` or the shared
+  pool from the integration setup; do not leak connections.
 - Unique suffix: `${Date.now()}_${Math.floor(Math.random() * 1e6)}`.
 - Create:
   - owner user (`role='project_admin'`) and other owner;
   - project owned by each;
-  - agent for each owner with a real bcrypt-hashed API key (inspect `AgentService.getAgentByApiKey`, migration `033_add_api_key_expiry_to_agents.sql`, and the `agents` columns before implementing);
+  - agent for each owner via `AgentService.create(name, apiKey, ownerId, ...)`
+    (sets hash, prefix and expiry) or by setting both `api_key_hash` (bcrypt)
+    and `api_key_hash_prefix` (SHA-256, first 20 hex chars);
+  - an expired-key agent for E5;
+  - a member user plus `project_memberships` row for E14;
   - ticket assigned to the owner, `status='in_progress'` for the happy path;
   - optional `backlog`/review tickets for authorization tests.
 - Return IDs and the plaintext test API keys (never real keys).
 - Cleanup:
   - delete test users/projects/agents/tickets by IDs;
   - rely on `ON DELETE CASCADE` for harness runs/checkpoints/leases;
-  - if a failed test leaves rows, run the cleanup SQL in section (g).
+  - if a failed test leaves rows, run the cleanup SQL in `05_RUNBOOK.md`.
 - Never use existing product rows.
 
-#### Phase 2: Backend HTTP/Postgres E2E
+### Phase 2: Backend HTTP/Postgres e2e
 
-Create `harnessHttpE2E.test.js` using `supertest` and the real app. Do not mock `HarnessRunService`.
+Create `harnessHttpE2E.test.js` using `supertest` and the real app. Do not mock
+`HarnessRunService`.
 
-Required cases (details in section (f)):
+Required cases (details in the Verification matrix):
 
-- Start: happy 201; DB row; assigned ticket; duplicate 409; wrong owner/status 403; JWT 403; missing/invalid auth 401.
-- Lease: claim 201; second claim 409; renew/release; released/reassigned ticket renewal 409.
-- Checkpoints: forward sequence; context columns; backward 409; unknown 400; after finish 404.
-- Heartbeat: 200; `agent_step`; wrong agent/after finish 404.
-- Finish: 200; status/head/pr; lease deleted; idempotent second finish; wrong agent 403.
-- Reads: project owner/member JWT 200; user/outside 403; super_admin 200; agent own run 200, other agent 403.
+- Start: happy 201; DB row; assigned ticket; duplicate 409; wrong
+  owner/status 403; JWT 403; missing/invalid auth 401.
+- Lease: claim 201; second claim 409; renew 200 / missing-or-mismatched 409;
+  release 200 / missing 404; released/reassigned ticket renewal 409.
+- Checkpoints: forward sequence; context columns; backward 409; unknown 400;
+  after finish 404.
+- Heartbeat: 200; `agent_step`/`heartbeat_at`; wrong agent/after finish 404.
+- Finish: 200; status/`head_sha`/`pr_url`; lease deleted; idempotent second
+  finish; wrong agent 403.
+- Reads: project owner/member JWT 200; user/outside 403; super_admin 200; agent
+  own run 200, other agent 403.
+- Phase B: publish/reconcile/dead-letter/adopt/release-ticket guards and
+  idempotency.
 - Cleanup: no residual test rows.
 
-Use `jest.integration.config.js` and the existing `src/__tests__/integration/setup.js`; the test file is discovered by `**/integration/**/*.test.js`.
+Use `jest.integration.config.js` and the existing
+`src/__tests__/integration/setup.js`; the file is discovered by
+`**/integration/**/*.test.js`.
 
-#### Phase 3: Agent Gap Check
+### Phase 3: Agent gap check
 
 Do not duplicate existing coverage. Confirm:
 
-- `ApiServiceHarnessTest` covers real client paths/bodies/auth and 401/409/500 classification.
+- `ApiServiceHarnessTest` covers real client paths/bodies/auth and
+  401/409/500 classification.
 - `HarnessTicketProcessorTest` covers:
   - start 409/403 fatal → no clone;
   - lease claim error after run creation → fail closed;
   - checkpoint/heartbeat RunGone → no publish;
   - lease expiry before publish → no push/PR;
-  - finish failure after successful publish → no release/reset; succeeded finish error-free;
-  - normal failure finish failure → deferred release/backoff.
-- Add a test only if a concrete gap remains. If adding, keep it in the same test classes and use existing mocks.
+  - finish failure after successful publish → no release/reset; succeeded
+    finish error-free;
+  - normal failure finish failure → deferred release/backoff;
+  - startup recovery: fresh skip, stale fail/release, publish adoption,
+    unconfirmed finish.
+- Add a test only if a concrete gap remains. If adding, keep it in the same test
+  classes and use existing mocks.
 
-#### Phase 4: Manual Staging Runbook and Failure Matrix
+### Phase 4: Manual staging run and failure matrix
 
-Follow section (g). Use a dedicated test project/repository and a throwaway ticket. Phase A must execute the happy path and the slice-1 failure cases that can be reproduced without slice 2. Mark crash/reaper/idempotent-publish as Phase B/slice 2.
+Follow `05_RUNBOOK.md`. Use a dedicated test project/repository and a throwaway
+ticket. Phase A executes the happy path and slice-1 failure cases. Phase B adds
+crash/reaper/idempotent-publish cases now that fg-33 slices 1-3 are merged.
 
-#### Phase 5: Documentation
+### Phase 5: Documentation
 
-- Update `03_ARCHITECT_IMPLEMENTATION.md` with Date completed, PR, Branch, results, residual rows and manual run evidence.
+- Update `00_ARCHITECT_CHECKLIST.md` frontmatter (`status`, `pr`, `branch`).
+- Record results and manual evidence in the Results table in this document.
 - Update `PENDING.txt` status.
 - Update `planning/HARNESS_ROADMAP.md` status/validation line.
-- If a test-only seam or new env var is introduced (avoid), document it and get approval.
-
----
+- If a test-only seam or new env var is introduced (avoid), document it and get
+  approval.
 
 ## Per-file changes
 
-#### `backend/src/__tests__/integration/harnessE2EFixtures.js` (CREATE)
+### `backend/src/__tests__/integration/harnessE2EFixtures.js` (CREATE)
 
 - **Exports**:
-  - `createHarnessFixture()` → `{ ownerId, projectId, agentId, agentApiKey, ticketId, ticketIds, otherOwnerId, otherProjectId, otherAgentId, otherAgentApiKey, otherTicketId, cleanup }`
-  - `cleanupHarnessFixture(fixture)` → deletes users/projects/agents/tickets by ID; idempotent.
+  - `createHarnessFixture()` → `{ ownerId, projectId, agentId, agentApiKey,
+    memberUserId, ticketId, ticketIds, otherOwnerId, otherProjectId,
+    otherAgentId, otherAgentApiKey, otherTicketId, expiredAgentApiKey,
+    cleanup }`
+  - `cleanupHarnessFixture(fixture)` → deletes users/projects/agents/tickets by
+    ID; idempotent.
 - **Patterns**:
-  - Follow `backend/src/__tests__/integration/harnessRuns.test.js` fixture style.
-  - Use `bcrypt.hashSync` for the agent key; inspect `AgentService.getAgentByApiKey` first.
+  - Follow `backend/src/__tests__/integration/harnessRuns.test.js` fixture
+    style.
+  - Prefer `AgentService.create(name, apiKey, ownerId, ...)`; otherwise set
+    both `api_key_hash` (bcrypt) and `api_key_hash_prefix` (SHA-256 first 20
+    hex chars). A hash-only fixture returns 401.
   - Use `RETURNING id` and parameterized SQL.
 - **Do not** delete unrelated rows; filter by IDs/suffix.
-- **Cleanup** in `try/finally` or `afterAll`; log IDs on failure for manual cleanup.
+- **Cleanup** in `try/finally` or `afterAll`; log IDs on failure for manual
+  cleanup.
 
-#### `backend/src/__tests__/integration/harnessHttpE2E.test.js` (CREATE)
+### `backend/src/__tests__/integration/harnessHttpE2E.test.js` (CREATE)
 
 - **Imports**:
-  - `supertest`, `../index` (app), `jsonwebtoken`/`getSecret` if needed, fixtures helper.
+  - `supertest`, `../../index` (app), `jsonwebtoken`/`getSecret` if needed,
+    fixtures helper.
   - Real `pool` only for assertions/cleanup; not for service mocks.
 - **Tests**:
-  - `describe('harness HTTP e2e')` with `beforeAll` fixture and `afterAll` cleanup.
-  - Use `request(app).post('/api/v1/harness/runs').set('X-API-Key', fixture.agentApiKey)`.
-  - Assert `/harness/runs`, `/leases`, `/checkpoints`, `/heartbeat`, `/finish`.
+  - `describe('harness HTTP e2e')` with `beforeAll` fixture and `afterAll`
+    cleanup.
+  - Use `request(app).post('/api/v1/harness/runs').set('X-API-Key',
+    fixture.agentApiKey)`.
+  - Assert `/harness/runs`, `/leases`, `/checkpoints`, `/heartbeat`, `/finish`,
+    `/publish`, `/reconcile`, `/dead-letter`, `/adopt`, `/release-ticket`.
   - DB assertions via `pool.query('SELECT ... FROM harness_runs WHERE id=$1')`.
-  - JWT tokens signed with the test secret; roles `project_admin`, `member`, `user`, `super_admin`; project membership setup.
+  - JWT tokens signed with the test secret; roles `project_admin`, `member`,
+    `user`, `super_admin`; project membership setup.
 - **Patterns**:
   - Follow `api-harness-runs.test.js` for route names/status expectations.
   - Follow `harnessRuns.test.js` for DB setup/cleanup.
-  - Use `expect(res.statusCode)` and `expect(res.body.success)` consistent with existing tests.
+  - Use `expect(res.statusCode)` and `expect(res.body.success)` consistent with
+    existing tests.
 
-#### `agent/src/test/java/.../ApiServiceHarnessTest.java` / `HarnessTicketProcessorTest.java` (EXTEND only if gap)
+### `agent/src/test/java/.../ApiServiceHarnessTest.java` / `HarnessTicketProcessorTest.java` (EXTEND only if gap)
 
 - Do not duplicate existing cases.
 - If a gap is found, add a test with the existing `HttpServer`/Mockito patterns.
 - Keep tests in the same package/classes.
 
-#### `03_ARCHITECT_IMPLEMENTATION.md` (MODIFY)
+### `03_ARCHITECT_IMPLEMENTATION.md` (MODIFY)
 
-- Add run results, residual rows, PR/branch/status after implementation.
-- Keep the runbook in section (g); update exact config values used.
+- Record run results, residual rows and manual evidence in the Results table.
+- Do not add a status/date/PR/branch block; those belong to `00` frontmatter.
 
-#### `PENDING.txt` / `planning/HARNESS_ROADMAP.md` (MODIFY)
+### `00_ARCHITECT_CHECKLIST.md` (MODIFY)
 
-- Add/update bt-60 row.
-- Dependencies: fg-33 slice 1 (happy path) and slice 2 (failure matrix).
-- Status: planned → in_progress → completed.
+- Update `status`, `pr` and `branch` in the frontmatter when the ticket moves.
 
----
+### `PENDING.txt` / `planning/HARNESS_ROADMAP.md` (MODIFY)
+
+- Add/update the bt-60 row.
+- Dependency: fg-33 slices 1-3 are merged (#110).
+- Lifecycle states: `planned` → `in_progress` → `done`.
 
 ## Dependencies
 
-- fg-33 slice 1 implementation and migration.
+- fg-33 slices 1-3: runs/checkpoints/leases, recovery, reaper and operator
+  routes (merged, #110).
 - Postgres from `docker compose`/integration config.
 - Existing split-layer tests.
 - Test project/repo/agent and provider/GitHub credentials for the manual stage.
-- Slice 2 for Phase B cases.
 - No production code changes.
-
----
 
 ## Risks & edge cases
 
-1. **Slice 2 missing** — do not mark Phase B cases as passed; mark deferred with the exact reason.
-2. **Agent key fixture** — the real auth path requires the bcrypt hash columns; inspect `AgentService.getAgentByApiKey` and migration 033. Do not use a `test-` mock key for the real e2e unless the test explicitly wants the mock path.
-3. **JWT project scope** — the operator route requires `OPERATOR_ROLES` (super_admin/project_admin/member) plus `AGENT_READ` and project owner/member; the `user` role must be denied. Set up project membership accordingly.
-4. **Finish failure reproduction** — no production switch. Use the processor unit test for Phase A; use a proxy/controlled outage in the manual stage or add a test-only seam only with approval.
-5. **Test DB cleanup** — unique suffix; cleanup in `afterAll`; manual SQL if a failure leaves rows.
-6. **Real provider/OpenCode/GitHub** — flaky/credentialed; use a trivial ticket/change and a dedicated test repo; never production.
-7. **CI cost** — backend HTTP e2e is lightweight; full containerized e2e deferred.
-8. **Concurrent test execution** — integration config `maxWorkers:1`; still use unique suffixes.
-
----
+1. **Reaper timing** — the reaper is interval-based; tests must invoke the
+   sweep directly or poll/wait, and staging must allow the interval to elapse.
+2. **Agent key fixture** — the auth path looks up `api_key_hash_prefix` and
+   then bcrypt-compares `api_key_hash`. Use `AgentService.create`; a fixture
+   that sets only the hash returns 401.
+3. **JWT project scope** — the operator route requires `OPERATOR_ROLES`
+   (super_admin/project_admin/member) plus `AGENT_READ` and project
+   owner/member; the `user` role must be denied. Set up project membership
+   accordingly.
+4. **Finish failure reproduction** — no production switch. Use the processor
+   unit test for Phase A; use a proxy/controlled outage in the manual stage or
+   add a test-only seam only with approval.
+5. **Test DB cleanup** — unique suffix; cleanup in `afterAll`; verify
+   `DATABASE_URL` is a disposable test database before running cleanup SQL.
+6. **Real provider/OpenCode/GitHub** — flaky/credentialed; use a trivial
+   ticket/change, an isolated host, a repo-scoped GitHub token (revoked after),
+   a dedicated spend-capped provider key, and never production.
+7. **CI cost** — backend HTTP e2e is lightweight; full containerized e2e
+   deferred.
+8. **Concurrent test execution** — integration config `maxWorkers:1`; still use
+   unique suffixes.
 
 ## Verification matrix
 
-| ID | Scenario | Layer | Expected | Phase |
-|---|---|---|---|---|
-| E1 | Agent starts a run for its assigned `in_progress` ticket | Backend HTTP | 201; run `running/created`; attempt 1 | A |
-| E2 | Duplicate start while run active | Backend HTTP | 409 CONFLICT; one active run | A |
-| E3 | Wrong agent/owner or wrong ticket status | Backend HTTP | 403; no run | A |
-| E4 | JWT mutation | Backend HTTP | 403 | A |
-| E5 | Start with invalid/expired agent key | Client/processor + route | 401; fatal; no publish | A |
-| E6 | Claim lease and block another run | Backend HTTP | 201; second claim 409 | A |
-| E7 | Renew/release lease | Backend HTTP | 200/200; missing 404 | A |
-| E8 | Checkpoint sequence and context columns | Backend HTTP | 201 each; `workspace_path`/`session_id`/`base_sha` populated | A |
-| E9 | Backward/unknown checkpoint | Backend HTTP | 409/400 | A |
-| E10 | Checkpoint after finish | Backend HTTP | 404 | A |
-| E11 | Heartbeat updates `agent_step`/`heartbeat_at` | Backend HTTP | 200; wrong agent/after finish 404 | A |
-| E12 | Finish succeeded; lease deleted | Backend HTTP | 200; status/head/pr; no lease | A |
-| E13 | Idempotent finish | Backend HTTP | 200 existing terminal; no duplicate side effect | A |
-| E14 | Operator project scope/roles | Backend HTTP | owner/member 200; user/outside 403; super_admin 200 | A |
-| E15 | Manual real happy path | Manual staging | run/checkpoints/lease/ticket/PR as expected | A |
-| E16 | Finish endpoint unavailable after PR | Processor/manual | ticket stays `review`; no reset; run recoverable | A/B |
-| E17 | Key expired/revoked mid-run | Processor/manual | fatal; no push/PR | A |
-| E18 | Lease lost/expired before publish | Processor/manual | no push/PR; ticket left for recovery | A |
-| E19 | Crash/restart mid-prompt/verify/publish | Manual | slice 2 recovery; manual cleanup until then | B |
-| E20 | Reaper fails stale run and ticket release | Manual/backend | release only `in_progress`, no `pr_url`; not review/done | B |
-| E21 | Idempotent publish/duplicate PR | Manual | one branch/PR; no duplicate | B |
-| E22 | Full containerized CI e2e | CI Docker | deterministic happy path + failure cases | B/follow-up |
+One row per scenario, tagged with the requirement it proves. E1-E22 are the
+original scenarios; E23-E27 cover the non-scenario requirements so every
+`FR*`/`NFR*` in `01` has a row.
 
----
+| Req | ID | Scenario | Layer | Expected | Phase |
+|---|---|---|---|---|---|
+| FR1 | E23 | Fixture creation and cleanup | Backend HTTP | all test rows removed; cleanup runs after failure | A |
+| FR2 | E1 | Agent starts a run for its assigned `in_progress` ticket | Backend HTTP | 201; run `running/created`; attempt 1 | A |
+| FR5 | E2 | Duplicate start while run active | Backend HTTP | 409 CONFLICT; one active run | A |
+| FR4 | E3 | Wrong agent/owner or wrong ticket status | Backend HTTP | 403; no run | A |
+| FR4 | E4 | JWT mutation | Backend HTTP | 403 | A |
+| FR7 | E5 | Start with invalid/expired agent key | Client/processor + route | 401; fatal; no publish | A |
+| FR3 | E6 | Claim lease and block another run | Backend HTTP | 201; second claim 409 | A |
+| FR3 | E7 | Renew/release lease | Backend HTTP | renew 200; renew missing/mismatched 409; release 200; release missing 404 | A |
+| FR3/FR5 | E8 | Checkpoint sequence and context columns | Backend HTTP | 201 each; `workspace_path`/`session_id`/`base_sha` populated | A |
+| FR3/FR5 | E9 | Backward/unknown checkpoint | Backend HTTP | 409/400 | A |
+| FR3/FR5 | E10 | Checkpoint after finish | Backend HTTP | 404 | A |
+| FR3 | E11 | Heartbeat updates `agent_step`/`heartbeat_at` | Backend HTTP | 200; wrong agent/after finish 404 | A |
+| FR5 | E12 | Finish succeeded; lease deleted | Backend HTTP | 200; status/`head_sha`/`pr_url`; no lease | A |
+| FR5 | E13 | Idempotent finish | Backend HTTP | 200 existing terminal; no duplicate side effect | A |
+| FR4 | E14 | Operator project scope/roles | Backend HTTP | owner/member 200; user/outside 403; super_admin 200 | A |
+| FR6 | E15 | Manual real happy path | Manual staging | run/checkpoints/lease/ticket/PR as expected | A |
+| FR7 | E16 | Finish endpoint unavailable after PR | Processor/manual | ticket stays `review`; no reset; run recoverable; reaper reconciles | A/B |
+| FR7 | E17 | Key expired/revoked mid-run | Processor/manual | fatal; no push/PR; add a focused processor test or keep manual-only (D7) | A/manual |
+| FR7 | E18 | Lease lost/expired before publish | Processor/manual | no push/PR; ticket left for recovery | A |
+| FR8 | E19 | Crash/restart mid-prompt/verify/publish | Manual | startup recovery skips fresh runs, fails/releases stale runs without evidence, adopts published runs; reaper reconciles terminal runs; no duplicate PR | B |
+| FR8 | E20 | Reaper fails stale run and ticket release | Manual/backend | release only `in_progress`, no `pr_url`; not review/done | B |
+| FR8 | E21 | Idempotent publish/duplicate PR | Manual | one branch/PR; no duplicate | B |
+| FR8/NFR2 | E22 | Full containerized CI e2e | CI Docker | deterministic happy path + failure cases | B/follow-up |
+| FR9 | E24 | No production data used | Manual/review | dedicated test project/repo/ticket/agent; scoped credentials revoked; cleanup verified | A |
+| FR10 | E25 | Index updated | Docs | `PENDING.txt` and roadmap point to bt-60 and show the satisfied fg-33 dependency | A |
+| NFR1 | E26 | Test-only change | Review | no production source, migration or behavior change | A |
+| NFR2 | E27 | Suites and lint | CI | backend unit + integration, agent `mvn test`, lint pass | A/B |
+| NFR3 | E28 | Staging safety preconditions | Manual/review | isolated host; repo-scoped token revoked; spend-capped provider key; disposable `DATABASE_URL` verified before cleanup | A |
 
-
-#### Existing Agent Tests
+### Existing agent tests
 
 - `ApiServiceHarnessTest` — paths/body/auth/error classification.
-- `HarnessTicketProcessorTest` — run persistence, fatal start, lease loss, finish retry/failure, checkpoint/heartbeat RunGone.
+- `HarnessTicketProcessorTest` — run persistence, fatal start, lease loss,
+  finish retry/failure, checkpoint/heartbeat RunGone and startup recovery.
 
-#### Manual Staging
-
-- Happy path DB/PR/ticket assertions (section g).
-- Finish-down, key-expiry, lease-loss cases where supported.
-- Crash/reaper/idempotent-publish explicitly deferred to slice 2.
-
-#### Commands
+### Commands
 
 ```bash
 cd backend
@@ -238,75 +302,12 @@ cd ../agent
 mvn test
 ```
 
-Manual staging: see section (g).
-
----
-
-## Manual staging runbook
-
-Use a dedicated **test project/repository** and a **throwaway ticket**. Never use a product ticket.
-
-#### Prerequisites
-
-- Test project + test GitHub repo (or a local bare repo if supported by the test setup).
-- Test agent with provider/OpenCode/GitHub configuration.
-- Provider key and test GitHub token (not committed).
-- Postgres/backend running; agent can reach the backend.
-- `HARNESS_MODE=opencode`
-- `HARNESS_DURABILITY_REQUIRED=true`
-- `HARNESS_LEASE_SECONDS=60`
-- `HARNESS_HEARTBEAT_SECONDS=10`
-- `HARNESS_MAX_DURATION_MINUTES=5`
-- `HARNESS_VERIFY_COMMANDS=<fast, safe command>`
-- A trivial ticket change (one file/line) in the test repo.
-
-#### Happy path
-
-1. Create the test project/repo/ticket; record `project_id`, `ticket_id`, `agent_id`.
-2. Ensure the ticket is `backlog` and the agent is polling the test project.
-3. Start the agent; let it pick up the ticket.
-4. Observe `harness_runs`/`harness_checkpoints`/`harness_leases` and the ticket/PR.
-5. Assert:
-   - one run, `status=succeeded`, `step=done`, branch/base/head/pr populated;
-   - checkpoints `cloned → session_ready → prompting → verifying → publishing → done`;
-   - no lease row after finish;
-   - ticket `review` with `pr_url`; agent heartbeat cleared;
-   - exactly one test PR/branch.
-6. Record the evidence (run ID, PR URL) without secrets.
-
-#### Failure cases (Phase A where supported)
-
-- **Finish unavailable after PR**: use a proxy/controlled outage; assert the ticket stays `review`, the run is recoverable, and the processor does not release/reset the ticket. If this cannot be reproduced without production changes, rely on `successFinishFailureNeverResetsAReviewedTicket` and defer the staging reproduction.
-- **Key expired/revoked mid-run**: assert no push/PR; the start/failure is fatal; ticket left for recovery.
-- **Lease loss/expired before publish**: assert no push/PR; ticket left for recovery.
-- **Duplicate start/lease**: assert 409 and no clone.
-- **Crash/restart, scheduled reaper, ticket release, idempotent publish**: Phase B/slice 2; mark deferred with expected behavior.
-
-#### Cleanup
-
-- Close/delete the test PR and branch if safe.
-- Delete the test ticket/project/agent and harness rows; use IDs recorded above.
-- If cleanup is blocked, run:
-
-```sql
-DELETE FROM harness_checkpoints WHERE run_id IN
-  (SELECT id FROM harness_runs WHERE ticket_id = :ticket_id);
-DELETE FROM harness_leases WHERE ticket_id = :ticket_id;
-DELETE FROM harness_runs WHERE ticket_id = :ticket_id;
-DELETE FROM tickets WHERE id = :ticket_id;
-DELETE FROM agents WHERE id = :agent_id;
-DELETE FROM projects WHERE id = :project_id;
-```
-
-(Use the actual test IDs; never run against production.)
-
----
+Manual staging: see `05_RUNBOOK.md`.
 
 ## Deferred scope
 
-See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.
-
----
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not
+keep a copy.
 
 ## Results
 
@@ -314,15 +315,5 @@ See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not ke
 |---|---|---|---|
 | — | — | — | Not run |
 
-
-- **Status**: planned
-- **Date completed**: —
-- **PR**: —
-- **Branch**: —
-- **Residual rows**: none (verify)
-- **Manual staging evidence**: —
-- **Deferred cases**: Phase B/slice 2
-
----
-
-*This specification is the contract between planning and execution.*
+**Residual rows:** none (verify)
+**Manual staging evidence:** —

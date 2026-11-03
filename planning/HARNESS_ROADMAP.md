@@ -1,6 +1,6 @@
 # Harness Roadmap
 
-**Last updated:** 2026-11-02
+**Last updated:** 2026-11-03
 **Status:** planning index - no production code
 
 This index groups the autonomous coding harness work. It links the execution plans, the review loop, and the cross-cutting hardening tickets.

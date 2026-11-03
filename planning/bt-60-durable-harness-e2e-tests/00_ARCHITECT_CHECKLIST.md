@@ -21,6 +21,8 @@ depends_on: ["fg-33"]
 **Test-only ticket.** No production behavior change. Never use a production
 ticket, repository, PR or data.
 
+**Runbook:** `05_RUNBOOK.md`.
+
 ## Why this ticket exists
 
 fg-33 slice 1 added durable harness runs, checkpoints and leases, but the
@@ -48,7 +50,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D4 | Idempotent publish: branch/PR detection and duplicate-PR prevention | fg-33 | Reliability | fg-33 (#110) | done |
 | D5 | Dead-letter/adoption flow for operators | fg-33 | Operations | fg-33 (#110) | done |
 | D6 | Full workspace inventory, retention metrics and scheduled pruning | fg-33 | Storage | fg-44-agent-storage-lifecycle | open |
-| D7 | Automated fault injection for `/finish`, lease loss, key expiry, crash/restart | self | Testing | bt-60 Phase B | open |
+| D7 | Automated fault injection for `/finish`, lease loss, mid-run key expiry, crash/restart | self | Testing | bt-60 Phase B | open |
 | D8 | Fully containerized real-agent e2e in CI | self | Testing | follow-up | open |
 | D9 | Sandbox isolation for the real staging agent | fg-34 | Security | fg-34-harness-sandbox | open |
 | D10 | Run correlation, events and dashboards for e2e evidence | fg-41 | Observability | fg-41-harness-observability | open |

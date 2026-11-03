@@ -52,11 +52,11 @@ expected.
 |---|---|---|
 | FR1 | Disposable fixtures create an owner, project, agent, ticket and a second cross-tenant fixture with a unique suffix, then clean up every row. | After the suite, no test users/projects/agents/tickets/runs/leases/checkpoints remain; a failed run still cleans up in `afterAll`. |
 | FR2 | A backend HTTP/Postgres e2e uses the real Express app and real Postgres, with no mocked routes or service. | `harnessHttpE2E.test.js` drives start → claim → checkpoints → heartbeat → finish through `/api/v1/harness` with an agent API key. |
-| FR3 | The e2e asserts persisted state, not only HTTP status. | `harness_runs` status/step/attempt/head/pr, `harness_checkpoints` order/context, and `harness_leases` claim/renew/release are asserted. |
+| FR3 | The e2e asserts persisted state, not only HTTP status. | `harness_runs` status/step/attempt/head_sha/pr_url, `harness_checkpoints` order/context, and `harness_leases` claim/renew/release are asserted. |
 | FR4 | Auth, ownership and project scope are exercised through the routes. | Wrong agent/owner/status → 403; JWT mutation → 403; project owner/member read → 200; outside-project → 403; super_admin → 200. |
 | FR5 | Lifecycle guards hold over HTTP. | Duplicate start → 409 with one active run; backwards/unknown/after-finish checkpoints rejected; finish is idempotent and releases the lease. |
 | FR6 | A manual staging happy path runs against a disposable project, repo, ticket and agent. | Run/checkpoint/lease/ticket/PR state matches expectations and every artifact is cleaned up. |
-| FR7 | Phase A failure cases are exercised where slice 1 supports them. | Finish failure after publish leaves the ticket in `review` with no release/reset; key expiry/revoke and start 401 are covered at the client/processor layer; lease loss blocks publish. |
+| FR7 | Phase A failure cases are exercised where slice 1 supports them. | Finish failure after publish leaves the ticket in `review` with no release/reset; start 401/expiry classification is covered at the client/processor layer; mid-run expiry is manual-only or covered by a focused processor test (D7); lease loss blocks publish. |
 | FR8 | Phase B cases are explicitly marked, not silently claimed. | Crash/restart, reaper/ticket release and idempotent publish are listed as Phase B with their tests; a skipped case is recorded in `00` D7. |
 | FR9 | No production data is touched. | The runbook requires a dedicated test project/repo/ticket/agent; no production ticket, repo, PR or credentials appear in the suite or docs. |
 | FR10 | The ticket is indexed. | `PENDING.txt` and `planning/HARNESS_ROADMAP.md` point to this suite and show the satisfied fg-33 dependency. |
@@ -67,6 +67,7 @@ expected.
 |---|---|---|
 | NFR1 | Test-only change. | No production source, migration or behavior change; no test-only production kill switch. |
 | NFR2 | Verification stays green. | Backend unit, backend integration, agent `mvn test` and lint pass. |
+| NFR3 | Staging safety. | Isolated/disposable host, GitHub token scoped to the one test repo and revoked after, dedicated spend-capped provider key, and a verified disposable `DATABASE_URL` before cleanup SQL. |
 
 ## In scope
 
@@ -83,7 +84,7 @@ expected.
 Summarise only. The authoritative list with reasons, follow-ups and state is
 **`00` → Deferred register**.
 
-- Production changes and fg-33 slice 2 implementation — see `00` D1–D5 (done).
+- Production changes and re-implementing fg-33 recovery/reaper — see `00` D1–D5 (done).
 - Containerized CI e2e and automated fault injection — see `00` D7–D8.
 - fg-34 sandbox, fg-41 observability, fg-42 privacy — see `00` D9–D11.
 
