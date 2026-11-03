@@ -7,7 +7,6 @@ export interface Project {
   ownerId?: string
   ownerName?: string | null
   createdAt?: string
-  updatedAt?: string
 }
 
 export function fetchProjects(): Promise<Project[]> {

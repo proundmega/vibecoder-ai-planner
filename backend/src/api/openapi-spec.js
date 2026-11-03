@@ -70,6 +70,8 @@ const options = {
             priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical', 'urgent'] },
             ownerId: { $ref: '#/components/schemas/NumericId' },
             projectId: { $ref: '#/components/schemas/NumericId' },
+            assigneeId: { type: 'string', pattern: '^[0-9]+$', nullable: true },
+            assigneeName: { type: 'string', nullable: true },
             milestoneId: { type: 'string', format: 'uuid', nullable: true },
             estimate: { type: 'integer', minimum: 1, nullable: true },
             // tickets.depends_on is BIGINT[]; pg serializes int8 elements as strings.

@@ -89,4 +89,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-03 | `e43c2b1` + `8e27c2a` + `d49d723b` + `5c96e6d` (PR #116) | O1, O2, O5, O6, O8 (+ O7/O10 docs) | Backend 120 suites / 1518 tests pass; frontend 60 files / 559 tests pass; integration 5 suites / 131 tests pass (fresh + re-run); typecheck clean; lint 0 errors (31 pre-existing warnings); OpenAPI regenerated |
+| 2026-11-03 | `e43c2b1` + `8e27c2a` + `d49d723b` + `5c96e6d` + this commit (PR #116) | O1, O2, O5, O6, O8 (+ O7/O10 docs) | Backend 120 suites / 1519 tests pass; frontend 60 files / 562 tests pass; integration 5 suites / 131 tests pass (fresh + re-run); typecheck clean; lint 0 errors (31 pre-existing warnings); OpenAPI regenerated |

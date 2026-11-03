@@ -135,6 +135,15 @@
           "projectId": {
             "$ref": "#/components/schemas/NumericId"
           },
+          "assigneeId": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "nullable": true
+          },
+          "assigneeName": {
+            "type": "string",
+            "nullable": true
+          },
           "milestoneId": {
             "type": "string",
             "format": "uuid",

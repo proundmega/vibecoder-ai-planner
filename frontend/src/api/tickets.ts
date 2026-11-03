@@ -8,8 +8,8 @@ export interface Ticket {
   priority: string
   projectId: string
   ownerId?: string
-  assigneeId?: string
-  assigneeName?: string
+  assigneeId?: string | null
+  assigneeName?: string | null
   milestoneId?: string | null
   estimate?: number | null
   dependsOn?: string[]

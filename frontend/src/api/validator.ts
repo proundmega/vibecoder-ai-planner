@@ -1,12 +1,18 @@
 interface SchemaDefinition {
   type: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'null';
   format?: string;
+  pattern?: string;
   nullable?: boolean;
   enum?: string[];
   properties?: Record<string, SchemaDefinition>;
   items?: SchemaDefinition;
   required?: string[];
 }
+
+const FORMAT_PATTERNS: Record<string, RegExp> = {
+  int64: /^[0-9]+$/,
+  uuid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+};
 
 const schemas: Record<string, SchemaDefinition> = {
   User: {
@@ -45,6 +51,8 @@ const schemas: Record<string, SchemaDefinition> = {
       priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical', 'urgent'] },
       ownerId: { type: 'string', format: 'int64' },
       projectId: { type: 'string', format: 'int64' },
+      assigneeId: { type: 'string', format: 'int64', nullable: true },
+      assigneeName: { type: 'string', nullable: true },
       milestoneId: { type: 'string', format: 'uuid', nullable: true },
       estimate: { type: 'number', nullable: true },
       // BIGINT[] from pg: each element is a decimal string.
@@ -115,6 +123,12 @@ function validateValue(value: unknown, schema: SchemaDefinition, path: string = 
     }
     if (schema.enum && !schema.enum.includes(String(value))) {
       errors.push(`${path}: expected one of ${schema.enum.join(', ')}, got ${value}`);
+    }
+    const pattern = schema.pattern
+      ? new RegExp(schema.pattern)
+      : (schema.format ? FORMAT_PATTERNS[schema.format] : undefined);
+    if (pattern && typeof value === 'string' && !pattern.test(value)) {
+      errors.push(`${path}: does not match ${schema.pattern || schema.format}`);
     }
   }
 

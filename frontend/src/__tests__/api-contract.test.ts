@@ -227,6 +227,45 @@ describe('API Response Contract Tests', () => {
       };
       expect(validateTicket(ticket)).toContain('root.id: expected string, got number');
     });
+
+    it('should reject a non-numeric BIGSERIAL id because int64 format is enforced', () => {
+      const ticket = {
+        id: 'abc',
+        title: 'Test Ticket',
+        status: 'backlog',
+        ownerId: '2',
+        projectId: '3',
+      };
+      expect(validateTicket(ticket)).toContain('root.id: does not match int64');
+    });
+
+    it('should reject an invalid milestone uuid', () => {
+      const ticket = {
+        id: '1',
+        title: 'Test Ticket',
+        status: 'backlog',
+        ownerId: '2',
+        projectId: '3',
+        milestoneId: 'not-a-uuid',
+      };
+      expect(validateTicket(ticket)).toContain('root.milestoneId: does not match uuid');
+    });
+
+    it('should accept null or numeric-string assignee fields', () => {
+      const ticket = {
+        id: '1',
+        title: 'Test Ticket',
+        status: 'backlog',
+        ownerId: '2',
+        projectId: '3',
+        assigneeId: null,
+        assigneeName: null,
+      };
+      expect(validateTicket(ticket)).toHaveLength(0);
+
+      const assigned = { ...ticket, assigneeId: '46', assigneeName: 'Ada' };
+      expect(validateTicket(assigned)).toHaveLength(0);
+    });
   });
 
   describe('validateAgent', () => {

@@ -39,4 +39,11 @@ describe('OpenAPI ticket contract (bp-124)', () => {
     expect(milestoneId.type).toBe('string');
     expect(milestoneId.format).toBe('uuid');
   });
+
+  test('assignee fields are documented on the Ticket response', () => {
+    const { assigneeId, assigneeName } = specs.components.schemas.Ticket.properties;
+
+    expect(assigneeId).toEqual({ type: 'string', pattern: '^[0-9]+$', nullable: true });
+    expect(assigneeName).toEqual({ type: 'string', nullable: true });
+  });
 });
