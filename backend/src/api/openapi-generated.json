@@ -39,7 +39,8 @@
             "$ref": "#/components/schemas/NumericId"
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "email": {
             "type": "string",
@@ -80,13 +81,15 @@
             "type": "string"
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "ownerId": {
             "$ref": "#/components/schemas/NumericId"
           },
           "ownerName": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "createdAt": {
             "type": "string",
@@ -104,7 +107,8 @@
             "type": "string"
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "status": {
             "type": "string",

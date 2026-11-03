@@ -3,9 +3,11 @@ import { get, post, put, del } from './client'
 export interface Project {
   id: string
   name: string
-  description?: string
-  created_at?: string
-  updated_at?: string
+  description?: string | null
+  ownerId?: string
+  ownerName?: string | null
+  createdAt?: string
+  updatedAt?: string
 }
 
 export function fetchProjects(): Promise<Project[]> {

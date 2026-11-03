@@ -22,7 +22,10 @@ const updateTicketSchema = Joi.object({
   description: Joi.string().max(10000).allow('').optional(),
   status: Joi.string().valid('backlog', 'in_progress', 'review', 'done').optional(),
   priority: Joi.string().valid('low', 'medium', 'high', 'critical', 'urgent').optional(),
-  assigneeId: Joi.string().uuid().allow(null).optional(),
+  assigneeId: Joi.alternatives().try(
+    Joi.number().integer().positive(),
+    Joi.string().pattern(/^\d+$/)
+  ).allow(null).optional(),
   milestoneId: Joi.string().uuid().allow(null).optional().messages({
     'string.guid': 'Milestone ID must be a valid UUID',
   }),

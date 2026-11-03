@@ -26,13 +26,17 @@
 | `backend/src/models/ticket.js` | modify | Map `milestoneId`/`estimate`/`dependsOn`; persist them in `UPDATE`; `RETURNING *` and return the ticket; delete `deleteWithAudit` |
 | `backend/src/services/TicketService.js` | modify | Validate camelCase milestone fields (snake_case aliases kept), pass them to the model, return the ticket; delete `updateMilestoneFields` and `getAgentTickets`; fix `dependsOn` in dependency checks |
 | `backend/src/controllers/ticketController.js` | modify | Allow `milestoneId`/`estimate`/`dependsOn`; respond with the updated ticket |
-| `backend/src/validators/tickets.js` | modify | Joi rules for `milestoneId`, `estimate`, `dependsOn` |
+| `backend/src/api/openapi-spec.js` | modify | `dependsOn` string[]; `NumericId` for BIGSERIAL ids; nullable name/description/ownerName |
+| `backend/src/api/tickets.js` | modify | PUT body: numeric-string `assigneeId`, `dependsOn` integer-or-string |
+| `backend/src/validators/tickets.js` | modify | Joi rules for `milestoneId`, `estimate`, `dependsOn`; `assigneeId` accepts numeric string/number |
 | `backend/src/models/user.js`, `project.js` | modify | Delete `deleteWithAudit` (missing `audit_log`) |
 | `backend/src/services/AgentService.js` | modify | Delete `getAgentTickets` (missing `project_agents`) |
 | `backend/src/__tests__/integration/migrationSupport.js` | add | Extracted splitter/runner; unexpected errors throw |
 | `backend/src/__tests__/integration/setup.js` | modify | Use the shared runner so migrations fail the run |
-| `frontend/src/api/validator.ts` | modify | Project/Ticket → camelCase numeric-string ids; Agent matches snake_case DB rows; primitive type enforcement |
-| `frontend/src/api/tickets.ts` | modify | Add `milestoneId`/`estimate`/`dependsOn` to the `Ticket` type |
+| `frontend/src/api/validator.ts` | modify | Project/Ticket → camelCase numeric-string ids; Agent matches snake_case DB rows; primitive type enforcement + nullable fields |
+| `frontend/src/api/tickets.ts` | modify | Add `milestoneId`/`estimate`/`dependsOn`; `description` nullable |
+| `frontend/src/api/projects.ts` | modify | camelCase `createdAt`/`updatedAt`, add `ownerId`/`ownerName`, nullable `description` |
+| `frontend/src/views/Dashboard.vue`, `ProjectList.vue` | modify | Read `project.createdAt` instead of the never-populated `created_at` |
 | `frontend/src/__tests__/api-contract.test.ts` | modify | Fixtures use BIGSERIAL numeric strings; milestone fields + `dependsOn` string[] tests; snake_case rejection test |
 | `frontend/src/__tests__/tickets.test.js` | modify | UI contract: `updateTicket` forwards milestone fields |
 | `backend/src/__tests__/openapiTicketContract.test.js` | add | OpenAPI guard: `dependsOn` string[], BIGSERIAL ids are `NumericId` |
@@ -85,4 +89,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-03 | `e43c2b1` + `8e27c2a` (PR #116) | O1, O2, O5, O6, O8 (+ O7/O10 docs) | Backend 119 suites / 1505 tests pass; frontend 60 files / 552 tests pass; typecheck clean; lint 0 errors (31 pre-existing warnings); OpenAPI regenerated |
+| 2026-11-03 | `e43c2b1` + `8e27c2a` + `d49d723b` + this commit (PR #116) | O1, O2, O5, O6, O8 (+ O7/O10 docs) | Backend 120 suites / 1518 tests pass; frontend 60 files / 559 tests pass; integration 5 suites / 131 tests pass (fresh + re-run); typecheck clean; lint 0 errors (31 pre-existing warnings); OpenAPI regenerated |

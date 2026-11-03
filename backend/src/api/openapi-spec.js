@@ -40,7 +40,7 @@ const options = {
           type: 'object',
           properties: {
             id: { $ref: '#/components/schemas/NumericId' },
-            name: { type: 'string' },
+            name: { type: 'string', nullable: true },
             email: { type: 'string', format: 'email' },
             role: { type: 'string', enum: ['user', 'member', 'project_admin', 'super_admin'] },
             isActive: { type: 'boolean' },
@@ -54,9 +54,9 @@ const options = {
           properties: {
             id: { $ref: '#/components/schemas/NumericId' },
             name: { type: 'string' },
-            description: { type: 'string' },
+            description: { type: 'string', nullable: true },
             ownerId: { $ref: '#/components/schemas/NumericId' },
-            ownerName: { type: 'string' },
+            ownerName: { type: 'string', nullable: true },
             createdAt: { type: 'string', format: 'date-time' },
           },
         },
@@ -65,7 +65,7 @@ const options = {
           properties: {
             id: { $ref: '#/components/schemas/NumericId' },
             title: { type: 'string' },
-            description: { type: 'string' },
+            description: { type: 'string', nullable: true },
             status: { type: 'string', enum: ['backlog', 'in_progress', 'review', 'done'] },
             priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical', 'urgent'] },
             ownerId: { $ref: '#/components/schemas/NumericId' },

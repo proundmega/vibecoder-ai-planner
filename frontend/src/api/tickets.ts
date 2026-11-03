@@ -3,7 +3,7 @@ import { get, post, put, del } from './client'
 export interface Ticket {
   id: string
   title: string
-  description?: string
+  description?: string | null
   status: string
   priority: string
   projectId: string

@@ -157,7 +157,7 @@ watch(activeTab, (newTab) => {
               <p v-else class="no-desc">No description</p>
             </div>
             <div class="project-meta">
-              <span>{{ project.created_at ? new Date(project.created_at).toLocaleDateString() : '' }}</span>
+              <span>{{ project.createdAt ? new Date(project.createdAt).toLocaleDateString() : '' }}</span>
             </div>
           </div>
         </div>

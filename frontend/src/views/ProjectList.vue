@@ -145,7 +145,7 @@ async function handleDelete() {
              </div>
              <div class="project-meta">
                 <span>Owner: {{ project.ownerName || 'You' }}</span>
-               <span>{{ project.created_at ? new Date(project.created_at).toLocaleDateString() : '' }}</span>
+               <span>{{ project.createdAt ? new Date(project.createdAt).toLocaleDateString() : '' }}</span>
              </div>
            </router-link>
            <div class="card-actions">

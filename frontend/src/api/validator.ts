@@ -13,7 +13,7 @@ const schemas: Record<string, SchemaDefinition> = {
     type: 'object',
     properties: {
       id: { type: 'string', format: 'int64' },
-      name: { type: 'string' },
+      name: { type: 'string', nullable: true },
       email: { type: 'string', format: 'email' },
       role: { type: 'string', enum: ['user', 'member', 'project_admin', 'super_admin'] },
       isActive: { type: 'boolean' },
@@ -28,9 +28,9 @@ const schemas: Record<string, SchemaDefinition> = {
     properties: {
       id: { type: 'string', format: 'int64' },
       name: { type: 'string' },
-      description: { type: 'string' },
+      description: { type: 'string', nullable: true },
       ownerId: { type: 'string', format: 'int64' },
-      ownerName: { type: 'string' },
+      ownerName: { type: 'string', nullable: true },
       createdAt: { type: 'string', format: 'date-time' },
     },
     required: ['id', 'name', 'ownerId'],
@@ -40,7 +40,7 @@ const schemas: Record<string, SchemaDefinition> = {
     properties: {
       id: { type: 'string', format: 'int64' },
       title: { type: 'string' },
-      description: { type: 'string' },
+      description: { type: 'string', nullable: true },
       status: { type: 'string', enum: ['backlog', 'in_progress', 'review', 'done'] },
       priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical', 'urgent'] },
       ownerId: { type: 'string', format: 'int64' },

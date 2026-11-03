@@ -6,6 +6,7 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 describe('Ticket milestone contract (real DB)', () => {
   let token;
+  let adminId;
   let projectId;
 
   beforeAll(async () => {
@@ -19,6 +20,7 @@ describe('Ticket milestone contract (real DB)', () => {
       .send({ name: 'BP124 Admin', email, password: 'password123', role: 'project_admin' });
 
     token = registerRes.body.token;
+    adminId = registerRes.body.user.userId;
 
     const projectRes = await request(app)
       .post('/api/v1/projects')
@@ -57,27 +59,44 @@ describe('Ticket milestone contract (real DB)', () => {
     return res.body.data.id;
   }
 
-  test('PUT persists dependsOn/estimate and returns dependsOn as string[]', async () => {
+  test('PUT persists milestoneId/estimate/dependsOn/assigneeId and GET returns string ids', async () => {
     const dependencyId = await createTicket('Dependency');
     const ticketId = await createTicket('Dependent');
+
+    const milestoneRes = await request(app)
+      .post(`/api/v1/projects/${projectId}/milestones`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Milestone One' });
+
+    expect(milestoneRes.status).toBe(201);
+    const milestoneId = milestoneRes.body.data.id;
 
     const updateRes = await request(app)
       .put(`/api/v1/tickets/${ticketId}`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ milestoneId: null, estimate: 3, dependsOn: [dependencyId] });
+      .send({
+        milestoneId,
+        estimate: 3,
+        dependsOn: [dependencyId],
+        assigneeId: String(adminId),
+      });
 
     expect(updateRes.status).toBe(200);
+    expect(updateRes.body.data.milestoneId).toBe(milestoneId);
     expect(updateRes.body.data.estimate).toBe(3);
     expect(updateRes.body.data.dependsOn).toEqual([String(dependencyId)]);
     expect(typeof updateRes.body.data.dependsOn[0]).toBe('string');
+    expect(updateRes.body.data.assigneeId).toBe(String(adminId));
 
     const getRes = await request(app)
       .get(`/api/v1/tickets/${ticketId}`)
       .set('Authorization', `Bearer ${token}`);
 
     expect(getRes.status).toBe(200);
+    expect(getRes.body.data.milestoneId).toBe(milestoneId);
     expect(getRes.body.data.dependsOn).toEqual([String(dependencyId)]);
     expect(typeof getRes.body.data.dependsOn[0]).toBe('string');
+    expect(getRes.body.data.assigneeId).toBe(String(adminId));
     // BIGSERIAL ids come back from pg as decimal strings, not numbers.
     expect(typeof getRes.body.data.id).toBe('string');
   });

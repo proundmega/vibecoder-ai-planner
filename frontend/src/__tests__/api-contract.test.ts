@@ -65,6 +65,17 @@ describe('API Response Contract Tests', () => {
       expect(errors.length).toBeGreaterThan(0);
     });
 
+    it('should accept a null name because users.name is nullable', () => {
+      const user = {
+        id: '1',
+        name: null,
+        email: 'john@example.com',
+        role: 'user',
+        isActive: true,
+      };
+      expect(validateUser(user)).toHaveLength(0);
+    });
+
     it('should detect snake_case vs camelCase mismatch', () => {
       const snakeCaseUser = {
         id: '1',
@@ -105,6 +116,17 @@ describe('API Response Contract Tests', () => {
         owner_id: '2',
       };
       expect(validateProject(snakeCaseProject)).toContain('root.ownerId: required field missing');
+    });
+
+    it('should accept null description/ownerName because those columns are nullable', () => {
+      const project = {
+        id: '1',
+        name: 'Test Project',
+        description: null,
+        ownerId: '2',
+        ownerName: null,
+      };
+      expect(validateProject(project)).toHaveLength(0);
     });
   });
 
@@ -155,6 +177,18 @@ describe('API Response Contract Tests', () => {
         projectId: '3',
       };
       expect(validateTicket(invalidTicket).length).toBeGreaterThan(0);
+    });
+
+    it('should accept a null description because tickets.description is nullable', () => {
+      const ticket = {
+        id: '1',
+        title: 'Test Ticket',
+        description: null,
+        status: 'backlog',
+        ownerId: '2',
+        projectId: '3',
+      };
+      expect(validateTicket(ticket)).toHaveLength(0);
     });
 
     it('should accept milestone fields with string dependsOn (bp-124 O1)', () => {
