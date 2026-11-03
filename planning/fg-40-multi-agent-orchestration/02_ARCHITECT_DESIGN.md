@@ -1,9 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - Multi-Agent Orchestration (fg-40)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1, fg-31, fg-32, fg-33, fg-36
-
 ## Design summary
 
 Add an orchestrator that turns a ticket into a task graph, assigns roles, provisions isolated worktrees, runs tasks within dependency/parallelism limits, and hands artifacts between roles. The existing supervisor remains the execution unit; the orchestrator is the scheduler.
@@ -148,11 +144,6 @@ CREATE TABLE work_tasks (
 4. How do we handle cross-repo tasks?
 5. What is the maximum parallel fan-out per project?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-33 | Durable task/run state | Reliability | `fg-33-durable-harness-execution` | No |
-| 2 | fg-36 | Merge queue for integrator | Delivery | `fg-36-merge-lifecycle` | No |
-| 3 | fg-38 | Per-agent budgets | Billing | `fg-38-harness-budgets-routing` | No |
-| 4 | fg-41 | Task-graph observability | Observability | `fg-41-harness-observability` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

@@ -1,21 +1,37 @@
-# 00_ARCHITECT_CHECKLIST.md - GitHub App Credentials and Least Privilege (fg-35)
+---
+id: "fg-35"
+title: "GitHub App Credentials and Least Privilege"
+status: planned
+priority: "P0"
+effort: "Large"
+scope: "Both"
+created: "2026-10-31"
+updated: "2026-11-03"
+pr: null
+branch: null
+depends_on: ["fg-30"]
+---
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1 (harness publishing)
+# 00 — GitHub App Credentials and Least Privilege (fg-35)
+
+> **Owns:** status, ticket map, deferred scope, user decisions.
+> **Not here:** requirements (`01`), design (`02`), verification matrix (`03`), file operations (`04`).
+
 **Related code:** `WorkspaceManager`, `GitHubService`, backend `GitHubService`/providers, credential storage
 
 ## Why this ticket exists
 
 Publishing currently uses a long-lived GitHub PAT. We removed it from `.git/config` and process arguments (askpass/header handling), but it still lives in memory/environment with broad access across every repo the user can see. A production coding agent should use a GitHub App installation token scoped to one repository and a short TTL.
 
-## Checklist
+## Deferred register (canonical)
 
-- [ ] Create/register the GitHub App and define required permissions
-- [ ] Define installation-per-project mapping and repo allowlist
-- [ ] Implement token minting, caching and expiry handling
-- [ ] Use the token without persisting it in the workspace or process args
-- [ ] Add rotation/revocation and audit events
-- [ ] Add a dev-only PAT fallback behind a flag
-- [ ] Add tests for expiry, scope, leakage and multi-repo isolation
-- [ ] Document GitHub Enterprise support and migration from PATs
+Every deliberate omission and follow-up lives here exactly once. Status and
+deferred scope are owned by this document; `01`–`04` link here.
+
+| ID | Item | Source | Category | Follow-up | State |
+|---|---|---|---|---|---|
+| D1 | General agent key rotation follow-up | bp-74 | Security | bp-74 follow-up | open |
+| D2 | Tokenless sandbox with a provider proxy | fg-34 | Security | fg-34-harness-sandbox | open |
+| D3 | Merge queue permissions | fg-36 | Delivery | fg-36-merge-lifecycle | open |
+| D4 | Credential audit events | fg-41 | Observability | fg-41-harness-observability | open |
+| D5 | Secret scanning/redaction | fg-42 | Privacy | fg-42-harness-privacy | open |

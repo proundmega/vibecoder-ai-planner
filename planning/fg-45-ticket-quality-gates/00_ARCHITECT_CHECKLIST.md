@@ -1,36 +1,40 @@
-# 00_ARCHITECT_CHECKLIST.md - Ticket Quality Gates and Definition of Ready (fg-45)
+---
+id: "fg-45"
+title: "Ticket Quality Gates and Definition of Ready"
+status: planned
+priority: "P1"
+effort: "Large"
+scope: "Both"
+created: "2026-10-31"
+updated: "2026-11-03"
+pr: null
+branch: null
+depends_on: ["fg-30", "fg-31"]
+---
 
-**Status:** planned
-**Date:** 2026-10-31
-**Depends on:** fg-30 (agent execution), fg-31/32 (review loop)
+# 00 — Ticket Quality Gates and Definition of Ready (fg-45)
+
+> **Owns:** status, ticket map, deferred scope, user decisions.
+> **Not here:** requirements (`01`), design (`02`), verification matrix (`03`), file operations (`04`).
+
 **Related code:** `validators/tickets.js`, `TemplateService`, `TicketPlanningService`, `PhaseService`, `TicketService`, `models/ticket.js`, `middleware/permissions.js`, `agent/harness/HarnessTicketProcessor.java`, `agent/service/TicketProcessor.java`, `TicketBoard.vue`, `TicketDetail.vue`, `frontend/src/api/tickets.ts`
 
 ## Why this ticket exists
 
 Planning templates exist, but nothing enforces them. A ticket can be created with only a title, picked up by an agent, and implemented without scope, acceptance criteria, plan or tests. The existing planning gate (`PhaseService.getGateStatus`) is only used by tests. Five separate paths move a ticket into execution and none of them checks readiness.
 
-## Checklist
+## Deferred register (canonical)
 
-- [ ] Define the Definition of Ready (DoR) and the small-fix exemption
-- [ ] Enumerate every path into `in_progress` (pickup, status route, PUT, phase transitions, planning status)
-- [ ] Centralize `assertReadyForExecution` and call it from all five paths
-- [ ] Keep ticket creation permissive: title-only tickets are drafts
-- [ ] Reject `planning_status=completed` outside the readiness service; reject transitions out of `completed` (`REPLAN_REQUIRED`) and add the audited `replan` path
-- [ ] Add `ticket_acceptance_criteria` and per-template `requiredSections`
-- [ ] Add readiness columns (`plan_approved_*`, `ready_*`, `small_fix_*`, waiver fields, grandfathered)
-- [ ] Add issue codes and `ReadinessError` (409 `READINESS_FAILED` with `details.issues`)
-- [ ] Honor `READINESS_GATE_MODE=off|warn|enforce` (default `warn`) in the assertion
-- [ ] Refresh `ready_at` on every readiness-relevant write and on waiver expiry
-- [ ] Extend the Java error model and handle readiness in both processors
-- [ ] Add `TICKET_READINESS_APPROVE`/`TICKET_READINESS_OVERRIDE` permissions with project membership
-- [ ] Add `assertProjectMember` (owner, `project_memberships`, agent owner, `super_admin` bypass)
-- [ ] Add `ticket_readiness_events` audit with `actor_type`/agent IDs, out-of-band blocked rows, and revocation/expiry events (do not depend on the missing `audit_log`)
-- [ ] Scope overrides to waived codes + expiry; keep small-fix separate
-- [ ] Backfill/grandfather existing tickets (approval + ready + completed)
-- [ ] Propagate readiness errors in `frontend/src/api/tickets.ts`
-- [ ] Add the ticket creation wizard and readiness panel
-- [ ] Add readiness metrics and blocked-ticket messages
-- [ ] Add tests for every write path, both agent modes, override and UI
+Every deliberate omission and follow-up lives here exactly once. Status and
+deferred scope are owned by this document; `01`–`04` link here.
+
+| ID | Item | Source | Category | Follow-up | State |
+|---|---|---|---|---|---|
+| D1 | AI-assisted plan drafting | fg-30 | Agent / UX | fg-30 Phase 2 | open |
+| D2 | Reviewer checks readiness criteria | fg-31 | Review | fg-31 follow-up | open |
+| D3 | Measure quality vs readiness | fg-37 | Evaluation | fg-37-agent-evaluation-harness | open |
+| D4 | Enforce project membership in `ProjectService.getOne`/`Ticket.findByProject` (they currently ignore `userId`) | fg-45 | Security | bp-124 follow-up | open |
+| D5 | Readiness/blocked metrics | fg-46 | Observability | fg-46-flow-observability | open |
 
 ## Important design decisions
 

@@ -1,8 +1,5 @@
 # 01_ARCHITECT_REQUIREMENT.md - Ticket Quality Gates and Definition of Ready (fg-45)
 
-**Status:** planned
-**Date:** 2026-10-31
-**Depends on:** fg-30 (agent execution), fg-31/32 (review loop)
 **Related code:** `validators/tickets.js`, `TemplateService`, `TicketPlanningService`, `PhaseService`, `TicketService`, `models/ticket.js`, `TicketController`, `middleware/permissions.js`, `agent/harness/HarnessTicketProcessor.java`, `agent/service/TicketProcessor.java`, `TicketBoard.vue`, `TicketDetail.vue`, `frontend/src/api/tickets.ts`
 
 ## Problem
@@ -216,11 +213,6 @@ Required sections are declared per template file (`requiredSections` in `file_de
 - Cross-project template inheritance.
 - Replacing the planner’s human product process.
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-30 | AI-assisted plan drafting | Agent / UX | `fg-30` Phase 2 | No |
-| 2 | fg-31 | Reviewer checks readiness criteria | Review | `fg-31` follow-up | No |
-| 3 | fg-46 | Readiness/blocked metrics | Observability | `fg-46-flow-observability` | No |
-| 4 | fg-37 | Measure quality vs readiness | Evaluation | `fg-37-agent-evaluation-harness` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

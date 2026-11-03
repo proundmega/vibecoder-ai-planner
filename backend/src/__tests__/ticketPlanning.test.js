@@ -221,41 +221,41 @@ describe('TemplateService', () => {
     it('should return content for 00_ARCHITECT_CHECKLIST.md', () => {
       const content = TemplateService.getArchitectTemplateContent('00_ARCHITECT_CHECKLIST.md');
       expect(content).toContain('ARCHITECT_CHECKLIST');
-      expect(content).toContain('## Pre-Implementation Checklist');
-      expect(content).toContain('### Planning');
-      expect(content).toContain('### Existing Infrastructure Audit');
+      expect(content).toContain('## Why this ticket exists');
+      expect(content).toContain('## Readiness gate');
+      expect(content).toContain('## Deferred register');
     });
 
     it('should return content for 01_ARCHITECT_REQUIREMENT.md', () => {
       const content = TemplateService.getArchitectTemplateContent('01_ARCHITECT_REQUIREMENT.md');
       expect(content).toContain('ARCHITECT_REQUIREMENT');
-      expect(content).toContain('## Problem Statement');
-      expect(content).toContain('## Scope');
-      expect(content).toContain('## Acceptance Criteria');
+      expect(content).toContain('## Problem');
+      expect(content).toContain('## Functional requirements');
+      expect(content).toContain('## Non-functional / safety requirements');
     });
 
     it('should return content for 02_ARCHITECT_DESIGN.md', () => {
       const content = TemplateService.getArchitectTemplateContent('02_ARCHITECT_DESIGN.md');
       expect(content).toContain('ARCHITECT_DESIGN');
-      expect(content).toContain('## Current State');
-      expect(content).toContain('## Proposed Solution');
-      expect(content).toContain('### File-Level Impact');
+      expect(content).toContain('## Current state (the only infrastructure audit)');
+      expect(content).toContain('## Design summary');
+      expect(content).toContain('## Alternatives considered');
     });
 
     it('should return content for 03_ARCHITECT_IMPLEMENTATION.md', () => {
       const content = TemplateService.getArchitectTemplateContent('03_ARCHITECT_IMPLEMENTATION.md');
       expect(content).toContain('ARCHITECT_IMPLEMENTATION');
-      expect(content).toContain('## Purpose');
-      expect(content).toContain('## Implementation Order');
-      expect(content).toContain('## Per-File Action Plan');
+      expect(content).toContain('## Plan');
+      expect(content).toContain('## Per-file changes');
+      expect(content).toContain('## Verification matrix (canonical)');
     });
 
     it('should return content for 04_SPECIFICATION.md', () => {
       const content = TemplateService.getArchitectTemplateContent('04_SPECIFICATION.md');
       expect(content).toContain('04_SPECIFICATION');
-      expect(content).toContain('## File Operations');
-      expect(content).toContain('## Test Expectations');
-      expect(content).toContain('## Edge Cases to Handle');
+      expect(content).toContain('## File operations');
+      expect(content).toContain('## Test expectations');
+      expect(content).toContain('## Edge cases');
     });
 
     it('should return empty string for unknown file key', () => {
@@ -276,8 +276,8 @@ describe('TemplateService', () => {
     it('should return content for 04_SPECIFICATION.md', () => {
       const content = TemplateService.getSpecificationTemplateContent('04_SPECIFICATION.md');
       expect(content).toContain('04_SPECIFICATION');
-      expect(content).toContain('## File Operations');
-      expect(content).toContain('## Test Expectations');
+      expect(content).toContain('## File operations');
+      expect(content).toContain('## Test expectations');
     });
 
     it('should return same content as architect 04_SPECIFICATION.md', () => {

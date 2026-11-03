@@ -1,9 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - GitHub App Credentials and Least Privilege (fg-35)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1
-
 ## Design summary
 
 Move GitHub authentication to a backend `GitHubAppAuthService` that mints short-lived installation tokens per project/repo. The agent asks for a token per run, uses it ephemerally, and never persists it.
@@ -102,11 +98,6 @@ The token service looks up `project_github_installations` first and falls back t
 4. Phase 1 reviews are COMMENT-only; Phase 2 needs a separate reviewer App/identity. Confirm whether that is one app with two installations or a distinct app.
 5. What is the minimum permission set for checks and merge queue later?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-34 | Tokenless sandbox with provider proxy | Security | `fg-34-harness-sandbox` | No |
-| 2 | fg-41 | Credential audit events | Observability | `fg-41-harness-observability` | No |
-| 3 | fg-42 | Secret scanning/redaction | Privacy | `fg-42-harness-privacy` | No |
-| 4 | fg-36 | Merge queue permissions | Delivery | `fg-36-merge-lifecycle` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

@@ -1,9 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - Harness Sandbox and Supply-Chain Security (fg-34)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1
-
 ## Design summary
 
 Introduce a `SandboxRunner` abstraction between the supervisor and the harness process. The supervisor never runs repo code directly; it asks the runner for a disposable sandbox, mounts the workspace, and receives artifacts on completion.
@@ -142,11 +138,6 @@ Provider/model calls originate in the supervisor (OpenCode runs outside the sand
 4. How do we support repos that need Docker (e.g. testcontainers) without exposing the host socket?
 5. What is the disk quota per repo?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-35 | Short-lived GitHub App tokens | Security | `fg-35-github-app-credentials` | No |
-| 2 | fg-42 | Sensitive-data redaction | Privacy | `fg-42-harness-privacy` | No |
-| 3 | fg-39 | Repo-specific images and caches | Infrastructure | `fg-39-repo-environment-profiles` | No |
-| 4 | fg-33 | Run recovery with sandbox state | Reliability | `fg-33-durable-harness-execution` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

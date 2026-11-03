@@ -1,9 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - Repository Onboarding and Environment Profiles (fg-39)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1, fg-34
-
 ## Design summary
 
 A repo profile is a versioned, admin-approved description of how to prepare and verify a repository. The supervisor loads it before cloning/sandboxing and uses it to build the sandbox and run commands.
@@ -133,11 +129,6 @@ CREATE TABLE repo_profiles (
 4. How do we handle repos with multiple languages/services?
 5. What is the fallback when a service image is unavailable?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-34 | Sandbox images and supply chain | Security | `fg-34-harness-sandbox` | No |
-| 2 | fg-37 | Profile reliability metrics | Evaluation | `fg-37-agent-evaluation-harness` | No |
-| 3 | fg-38 | Cache-aware budgets | Billing | `fg-38-harness-budgets-routing` | No |
-| 4 | fg-41 | Setup/verify telemetry | Observability | `fg-41-harness-observability` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

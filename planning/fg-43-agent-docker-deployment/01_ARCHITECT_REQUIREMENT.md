@@ -1,8 +1,5 @@
 # 01_ARCHITECT_REQUIREMENT.md - Agent Docker Deployment and Host Sizing (fg-43)
 
-**Status:** planned
-**Date:** 2026-10-31
-**Depends on:** fg-33 durable execution; fg-34 sandbox recommended
 **Related code:** `agent/docker-compose.yml`, `backend/src/services/PoolManager.js`
 
 ## Problem
@@ -160,12 +157,6 @@ If the backend runs elsewhere, the pool controller must talk to the agent host t
 - Storage cleanup/idle refresh (fg-44).
 - Sandbox runtime (fg-34).
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-30 | Queue-based autoscaling | Infrastructure | `fg-38-harness-budgets-routing` follow-up | No |
-| 2 | fg-33 | Lease-aware pool controller | Reliability | `fg-33-durable-harness-execution` | No |
-| 3 | fg-34 | Sandboxed agent containers | Security | `fg-34-harness-sandbox` | No |
-| 4 | fg-44 | Storage lifecycle and idle refresh | Infrastructure | `fg-44-agent-storage-lifecycle` | No |
-| 5 | fg-40 | Multi-host/multi-agent orchestration | Agent | `fg-40-multi-agent-orchestration` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

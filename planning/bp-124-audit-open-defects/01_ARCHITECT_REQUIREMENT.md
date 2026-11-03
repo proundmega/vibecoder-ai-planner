@@ -1,9 +1,6 @@
 # 01_ARCHITECT_REQUIREMENT.md - Audit Open Defects (bp-124)
 
-**Status:** planned
-**Date:** 2026-10-31
 **Source:** `AUDIT_REPORT.md` O1-O8
-**Depends on:** bp-123
 
 ## Problem
 
@@ -81,15 +78,6 @@
 - Multi-tenant redesign.
 - The harness roadmap tickets (fg-30+).
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | audit | O1 milestone persistence | Backend | `bp-125-milestone-write-api` | No |
-| 2 | audit | O2 dead SQL/tables | Backend | `bp-126-dead-sql-cleanup` | No |
-| 3 | audit | O3 E2E rewrite + CI | Testing | `bp-127-cypress-e2e` | No |
-| 4 | audit | O4 agent identity | Agent / DB | `bp-128-agent-identity` | No |
-| 5 | audit | O5 validator camelCase | Frontend | `bp-129-validator-camelcase` | No |
-| 6 | audit | O6 PUT response type | Backend / Frontend | `bp-130-ticket-update-contract` | No |
-| 7 | audit | O7 docs drift | Docs | `bp-131-docs-sync` | No |
-| 8 | audit | O8 integration setup | Testing | `bp-132-integration-setup-errors` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

@@ -1,8 +1,5 @@
 # 01_ARCHITECT_REQUIREMENT.md - Agent Evaluation Harness (fg-37)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1, fg-31 reviewer, fg-32 fixer loop
 **Related code:** harness supervisor, OpenCode config, CI
 
 ## Problem
@@ -76,13 +73,6 @@ Without measurement, "autonomy" is guesswork and model swaps are risky.
 - Human preference labeling at scale.
 - Evaluating non-coding agents.
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-38 | Budget-aware evaluation runs | Billing | TBD (new follow-up) | No |
-| 2 | fg-34 | Sandboxed evaluation repos | Security | TBD (new follow-up) | No |
-| 3 | fg-41 | Eval result dashboards | Observability | TBD (new follow-up) | No |
-| 4 | bp-99-frontend-testing | E2E UI for eval reports | Testing | TBD (new follow-up) | No |
-
-`From Ticket` records where the deferred improvement was found; `TBD` means no follow-up ticket exists yet, so this table does not imply one is already tracked.
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

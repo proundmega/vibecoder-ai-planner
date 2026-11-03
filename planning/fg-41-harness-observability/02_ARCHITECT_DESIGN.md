@@ -1,9 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - Harness Observability, Replay and Audit (fg-41)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1, fg-33
-
 ## Design summary
 
 Emit structured events from the supervisor and OpenCode client into an append-only store. Keep large artifacts separate. Build replay and dashboards from the event stream.
@@ -132,11 +128,6 @@ Alerts:
 4. How long do audit events need to be retained?
 5. Should agents see their own past events for learning?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-33 | Durable run state | Reliability | `fg-33-durable-harness-execution` | No |
-| 2 | fg-38 | Budget dashboards | Billing | `fg-38-harness-budgets-routing` | No |
-| 3 | fg-42 | Retention/redaction policy | Privacy | `fg-42-harness-privacy` | No |
-| 4 | bp-106 | Log aggregation transport | Observability | `bp-106` follow-up | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

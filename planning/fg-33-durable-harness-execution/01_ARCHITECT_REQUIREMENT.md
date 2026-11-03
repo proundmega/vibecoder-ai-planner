@@ -1,8 +1,5 @@
 # 01_ARCHITECT_REQUIREMENT.md - Durable Harness Execution (fg-33)
 
-**Status:** Slices 1-3 implemented on the feature branch; FR5/FR7/FR8/FR9/FR10 are partial and explicitly deferred as noted below.
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1 (OpenCode harness supervisor)
 **Related code:** `HarnessTicketProcessor`, `WorkspaceManager`, `OpenCodeClient`, `AgentApp`
 
 ## Problem
@@ -75,11 +72,9 @@ If the JVM, container or host dies:
 - Multi-agent worktrees (fg-40).
 - Sandboxing (fg-34).
 
-## Pending Scope Items to Present to User
+The authoritative list with reasons, follow-ups and state is
+**`00` → Deferred register**.
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-30 | Structured harness event stream and replay | Observability | `fg-41-harness-observability` | No |
-| 2 | fg-34 | Run workspaces inside an isolated sandbox | Security | `fg-34-harness-sandbox` | No |
-| 3 | fg-40 | Parallel worktrees and multi-agent leases | Agent | `fg-40-multi-agent-orchestration` | No |
-| 4 | bp-106 | Ship run/lease events to log aggregation | Observability | `bp-106-log-aggregation` follow-up | No |
+## Deferred scope
+
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

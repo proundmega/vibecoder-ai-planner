@@ -1,7 +1,5 @@
 # 01_ARCHITECT_REQUIREMENT.md - Test Audit Corrections (bp-123)
 
-**Status:** implemented (PR #100, in review)
-**Date:** 2026-10-31
 **Baseline:** master `cc334a1` after PR #99
 **Report:** `AUDIT_REPORT.md`
 
@@ -81,17 +79,6 @@ A full audit of the planner's backend, frontend and Java agent found defects tha
 - O7 remaining docs drift.
 - O8 integration setup error handling.
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | audit | Persist milestone fields | Backend | `bp-124-audit-open-defects` | No |
-| 2 | audit | Remove dead SQL or add missing tables | Backend | `bp-124-audit-open-defects` | No |
-| 3 | audit | Rewrite Cypress E2E and wire into Jenkins | Testing | `bp-124-audit-open-defects` | No |
-| 4 | audit | Reconcile agent identity (`assigned_agent_id`) | Agent | `bp-124-audit-open-defects` | No |
-| 5 | audit | Migrate frontend validator to camelCase | Frontend | `bp-124-audit-open-defects` | No |
-| 6 | audit | Fix `PUT /tickets/:id` response type | Backend | `bp-124-audit-open-defects` | No |
-| 7 | audit | Remaining docs drift | Docs | `bp-124-audit-open-defects` | No |
-| 8 | audit | Integration setup should fail on migration errors | Testing | `bp-124-audit-open-defects` | No |
-| 9 | audit | Component tests for edit modal/detail and assignment E2E | Testing | `bp-124-audit-open-defects` (O9) | No |
-| 10 | bp-79 | Full SQL grammar validation in dry-run | Backend | `bp-124-audit-open-defects` (O10) | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

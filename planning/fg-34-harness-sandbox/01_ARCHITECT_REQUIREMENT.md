@@ -1,8 +1,5 @@
 # 01_ARCHITECT_REQUIREMENT.md - Harness Sandbox and Supply-Chain Security (fg-34)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1 (OpenCode harness supervisor)
 **Related code:** `OpenCodeClient`, `HarnessTicketProcessor`, `agent/Dockerfile`, OpenCode config permissions
 
 ## Problem
@@ -77,11 +74,6 @@ Phase 1 relies on OpenCode config denies (`git push`, `rm -rf`, `docker`, etc.) 
 - Malware analysis of the repo.
 - Windows containers in production.
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-35 | Short-lived GitHub App tokens instead of PATs | Security | `fg-35-github-app-credentials` | No |
-| 2 | fg-42 | Data redaction before model calls | Privacy | `fg-42-harness-privacy` | No |
-| 3 | fg-33 | Sandbox-aware run recovery | Reliability | `fg-33-durable-harness-execution` | No |
-| 4 | fg-39 | Repo-specific sandbox images | Infrastructure | `fg-39-repo-environment-profiles` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

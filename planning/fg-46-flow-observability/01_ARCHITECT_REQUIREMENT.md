@@ -1,9 +1,6 @@
 # 01_ARCHITECT_REQUIREMENT.md - Flow and Harness Observability (fg-46)
 
-**Status:** planned - **deferred**
 **Priority:** P2 - after the project completes a full build -> review -> fix -> merge cycle
-**Date:** 2026-10-31
-**Depends on:** fg-30, fg-31, fg-32, fg-33, fg-36 (merge timestamps), fg-41, fg-44 (storage metrics), **fg-45 (required: `ready_at`/planning columns)**
 **Related code:** `backend/src/metrics.js`, `middleware/slowRequest.js`, `HeartbeatService`, `PhaseService`, `TicketService`, `approval_requests`, `ticket_phases`, `usage_logs`, `Dashboard.vue`, `AgentList.vue`
 
 ## Priority and sequencing
@@ -168,11 +165,6 @@ What is missing:
 - Customer-facing analytics.
 - Long-term billing reconciliation.
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-41 | Structured harness events and replay | Observability | `fg-41-harness-observability` | No |
-| 2 | fg-45 | Readiness and blocked-ticket metrics | Quality | `fg-45-ticket-quality-gates` | No |
-| 3 | fg-37 | Quality metrics from evaluation | Evaluation | `fg-37-agent-evaluation-harness` | No |
-| 4 | fg-38 | Cost/budget metrics | Billing | `fg-38-harness-budgets-routing` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

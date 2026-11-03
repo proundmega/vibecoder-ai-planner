@@ -1,9 +1,5 @@
 # 03_ARCHITECT_IMPLEMENTATION.md - Durable Harness Execution (fg-33)
 
-**Status:** Slices 1-3 implemented (merged into the feature branch via PR #112; PR #110 carries the combined diff to master)
-**Date:** 2026-11-02
-**Depends on:** fg-30 Phase 1
-
 ## Slice 1 scope
 
 Persist the harness run lifecycle, enforce one active run per ticket and make
@@ -236,15 +232,7 @@ Operator recovery, cleanup and observability:
 
 ## Remaining for fg-33
 
-1. FR8: automatic dead-letter after N failed attempts. Manual operator
-   dead-letter exists; `HARNESS_MAX_ATTEMPTS` currently controls backoff only.
-2. FR7/FR5: full workspace inventory (sizes/ages/disk metrics) and scheduled
-   pruning. Startup cleanup and path tracking are implemented; the rest is
-   deferred to fg-44.
-3. FR9: structured event stream. Heartbeats, checkpoints and Prometheus counters
-   are implemented; fg-41 owns the event stream.
-4. FR10: an explicit force-clean-restart operator action. Dead-letter/adopt and
-   the runbook cover manual recovery today.
-5. A CI process-kill/e2e matrix (the current tests simulate crash gaps at the
-   service/processor level).
-6. Live OpenCode session resume; only published work is adopted today.
+All remaining and deferred work — FR8, FR5/FR7, FR9, FR10, the CI
+process-kill matrix and live-session resume — is tracked in
+`00_ARCHITECT_CHECKLIST.md` → Deferred register (D6–D11). This document does
+not keep a second list.

@@ -1,8 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - Agent Docker Deployment and Host Sizing (fg-43)
 
-**Status:** planned
-**Date:** 2026-10-31
-**Depends on:** fg-33; fg-34 recommended
 **Related code:** `agent/docker-compose.yml`, `backend/src/services/PoolManager.js`
 
 ## Design summary
@@ -176,11 +173,6 @@ Two options:
 4. How do we handle Docker Desktop vs Linux Docker differences?
 5. Do we want a generated systemd unit in addition to Compose?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-44 | Storage cleanup and idle refresh | Infrastructure | `fg-44-agent-storage-lifecycle` | No |
-| 2 | fg-33 | Durable leases across restarts | Reliability | `fg-33-durable-harness-execution` | No |
-| 3 | fg-34 | Sandboxed containers | Security | `fg-34-harness-sandbox` | No |
-| 4 | fg-40 | Multi-host scheduling | Agent | `fg-40-multi-agent-orchestration` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

@@ -1,9 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - Audit Open Defects (bp-124)
 
-**Status:** planned
-**Date:** 2026-10-31
-**Depends on:** bp-123
-
 ## Design summary
 
 This is an umbrella ticket. Each defect gets its own implementation slice (and, when scheduled, its own `03`/`04`). The order is chosen to fix data/identity correctness before test and docs cleanup.
@@ -92,10 +88,6 @@ This is an umbrella ticket. Each defect gets its own implementation slice (and, 
 4. Should `PUT /tickets/:id` return the ticket or a message?
 5. How much backward compatibility is needed for the validator?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | bp-123 | O1-O10 umbrella | Multiple | `bp-124-audit-open-defects` | No |
-| 2 | bp-79 | Full SQL grammar validation (O10) | Backend | `bp-124-audit-open-defects` | No |
-| 3 | fg-30 | Harness roadmap | Agent | `fg-33`+ | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

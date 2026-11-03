@@ -1,9 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - Ticket Quality Gates and Definition of Ready (fg-45)
 
-**Status:** planned
-**Date:** 2026-10-31
-**Depends on:** fg-30, fg-31/32
-
 ## Design summary
 
 Add one readiness assertion used by every execution path, a readiness evaluator, and a service-owned approval state. The UI guides users to readiness; the backend is the source of truth.
@@ -411,12 +407,6 @@ Rollback: delete the readiness routes and set `READINESS_GATE_MODE=off`; the col
 3. Do custom templates require `requiredSections`, or stay presence-only? Phase 1: presence-only with a visible warning.
 4. Should `ready_at` be cleared automatically on any planning-file edit, or on the next evaluation? Phase 1: clear on write, recompute on read.
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-30 | AI-assisted plan drafting | Agent / UX | `fg-30` Phase 2 | No |
-| 2 | fg-46 | Readiness/blocked metrics | Observability | `fg-46-flow-observability` | No |
-| 3 | fg-37 | Readiness vs quality metrics | Evaluation | `fg-37-agent-evaluation-harness` | No |
-| 4 | fg-31 | Reviewer readiness checks | Review | `fg-31` follow-up | No |
-| 5 | fg-45 | Enforce project membership in `ProjectService.getOne`/`Ticket.findByProject` (they currently ignore `userId`) | Security | `bp-124` follow-up | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

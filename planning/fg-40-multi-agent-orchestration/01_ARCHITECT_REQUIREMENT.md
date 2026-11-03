@@ -1,8 +1,5 @@
 # 01_ARCHITECT_REQUIREMENT.md - Multi-Agent Orchestration (fg-40)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1, fg-31, fg-32, fg-33, fg-36
 **Related code:** `AgentApp`, `TicketWorker`, `HarnessTicketProcessor`, `PhaseService`
 
 ## Problem
@@ -76,11 +73,6 @@ fg-30 Phase 3 mentions multi-agent at a high level, but there is no role model, 
 - Self-modifying agent roles.
 - Automatic org-level roadmap planning.
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-33 | Durable task/run state | Reliability | `fg-33-durable-harness-execution` | No |
-| 2 | fg-36 | Merge queue for integrator | Delivery | `fg-36-merge-lifecycle` | No |
-| 3 | fg-38 | Per-agent budgets | Billing | `fg-38-harness-budgets-routing` | No |
-| 4 | fg-41 | Task-graph observability | Observability | `fg-41-harness-observability` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

@@ -1,9 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - Durable Harness Execution (fg-33)
 
-**Status:** Slices 1-3 implemented on the feature branch; disk inventory, automatic dead-letter, structured events and the force-clean-restart action are deferred.
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1 (OpenCode harness supervisor)
-
 ## Design summary
 
 Persist the run as a state machine, make every side effect idempotent, and use a lease plus heartbeat to detect death. Recovery is a first-class agent startup path, not an afterthought.
@@ -153,11 +149,6 @@ the same transitions at the service/processor level.
 4. How long should workspaces be retained for debugging?
 5. Should a human be able to adopt a dead-lettered run?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-30 | Structured events and replay | Observability | `fg-41-harness-observability` | No |
-| 2 | fg-34 | Sandboxed workspaces | Security | `fg-34-harness-sandbox` | No |
-| 3 | fg-40 | Parallel worktree leases | Agent | `fg-40-multi-agent-orchestration` | No |
-| 4 | fg-38 | Budget-aware retry policy | Billing | `fg-38-harness-budgets-routing` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

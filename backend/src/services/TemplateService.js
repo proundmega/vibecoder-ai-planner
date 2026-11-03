@@ -29,283 +29,283 @@ class TemplateService {
 
   static getArchitectTemplateContent(fileKey) {
     const templates = {
-      '00_ARCHITECT_CHECKLIST.md': `# 00_ARCHITECT_CHECKLIST.md
+      '00_ARCHITECT_CHECKLIST.md': `# 00_ARCHITECT_CHECKLIST.md — {{Title}}
 
 **Status**: planned
 **Date created**: ${new Date().toISOString().split('T')[0]}
-**Feature scope**: Frontend | Backend | Both
+**Priority**: P0 | P1 | P2 | P3 | P4
+**Scope**: Frontend | Backend | Both | Agent | Infra
+**Depends on**:
 
-## Pre-Implementation Checklist
+> Owns: status, ticket map, deferred scope, user decisions.
+> Other documents link here; they do not copy these tables.
 
-### Planning
-- [ ] Acceptance criteria are specific and testable (not "it works")
-- [ ] Out-of-scope items explicitly documented
-- [ ] All design decisions have documented options (not just the chosen one)
-- [ ] "Unknown unknowns" identified — things that could change the approach
+## Why this ticket exists
+2-4 sentences: the failure or gap, who it affects, what changes.
 
-### Existing Infrastructure Audit
-- [ ] Backend API checked — does the route/controller/service already exist?
-- [ ] Frontend API client checked — does the API call already exist in \`frontend/src/api/\`?
-- [ ] Frontend UI checked — does the view/component already exist?
-- [ ] Router checked — does the route already exist in \`router/index.ts\`?
-- [ ] Database schema checked — do the tables/columns already exist?
-- [ ] Migration checked — does a migration need to be added?
-- [ ] Existing patterns identified — what style does surrounding code use?
+## Ticket map
+| Doc | Present |
+|---|---|
+| 01_ARCHITECT_REQUIREMENT.md | [ ] |
+| 02_ARCHITECT_DESIGN.md | [ ] |
+| 03_ARCHITECT_IMPLEMENTATION.md | [ ] |
+| 04_SPECIFICATION.md | [ ] optional |
+| 05_RUNBOOK.md | [ ] optional |
 
-### Dependency Analysis
-- [ ] All new dependencies listed (npm packages, system deps, external APIs)
-- [ ] All existing dependencies that will be affected listed
-- [ ] Breaking changes identified (API contract changes, DB migration)
+## Readiness gate
+- [ ] 01 has numbered FR/NFR, each with a testable acceptance statement
+- [ ] 02 records the current-state audit and the chosen design
+- [ ] 03 has a verification-matrix row for every FR/NFR
+- [ ] Deferred register below is complete
+- [ ] Open decisions are answered or accepted as assumptions
+- [ ] No fact is duplicated across documents
 
-### Configuration Audit
-- [ ] All new env vars documented with defaults and descriptions
-- [ ] All new config files documented
-- [ ] Feature flags considered (can this be toggled off?)
+## Deferred register (canonical)
+| ID | Item | Source | Category | Follow-up | State |
+|---|---|---|---|---|---|
+| D1 | {{item}} | {{self / fg-XX}} | {{Security / Observability / ...}} | {{fg-XX / none}} | open |
 
-### Testing Strategy
-- [ ] Unit test files identified per changed module
-- [ ] Integration test scope defined
-- [ ] Manual test scenarios enumerated
+States: open, scheduled, done, dropped. 01/02/03/04 link here.
 
-### Rollback Readiness
-- [ ] Database migration is reversible (has _rollback.sql)
-- [ ] API change is backward-compatible or versioned
-- [ ] Deploy order is documented (migration first, then code)
+## Decisions needed from the user
+| # | Decision | Options | Recommendation | Answer |
+|---|---|---|---|---|
+| 1 | {{question}} | {{A / B}} | {{A}} | |
 
-## When to Ask the User
-- Ambiguous acceptance criteria
-- Scope change discovered during audit
-- Conflicting requirements
-- UI placement decisions
-- Unclear error handling strategy
+## Completion gate
+- [ ] Every FR/NFR acceptance statement in 01 is met
+- [ ] Verification matrix in 03 is green and results recorded
+- [ ] Status is done and the PR is recorded
+- [ ] Deferred register reflects what was actually left out
 `,
-      '01_ARCHITECT_REQUIREMENT.md': `# 01_ARCHITECT_REQUIREMENT.md
+      '01_ARCHITECT_REQUIREMENT.md': `# 01_ARCHITECT_REQUIREMENT.md — {{Title}}
 
-**Status**: planned
-**Date created**: ${new Date().toISOString().split('T')[0]}
-**Feature scope**: Frontend | Backend | Both
+> Owns: problem, goals, numbered requirements, acceptance.
+> Not here: design (02), verification matrix (03), file operations (04),
+> deferred table (00).
 
-## Problem Statement
-Describe the problem in one paragraph. What user need does this address?
+## Problem
+What is broken or missing? Who is affected? What is the observable symptom?
+Include the failure sequence, not just the label.
 
-## Scope
-- **In scope**: List exactly what this ticket covers
-- **Out of scope**: List what this ticket explicitly does NOT cover
+## Goals
+1. {{...}}
 
-## Acceptance Criteria
-Each criterion must be testable (pass/fail, not subjective).
+## Non-goals
+- {{...}}
 
-- [ ] Criterion 1 — specific behavior, not implementation detail
-- [ ] Criterion 2 — edge case covered
+## Functional requirements
+| ID | Requirement | Acceptance (testable) |
+|---|---|---|
+| FR1 | {{what the system must do}} | {{observable pass/fail condition}} |
+| FR2 | {{...}} | {{...}} |
 
-## Known Unknowns
-Things that could change the approach if they turn out differently:
-- **Unknown 1**: What we don't know, and how to resolve it
-- **Unknown 2**: What we don't know, and how to resolve it
+Acceptance is a behaviour, not an implementation detail. 03 maps every ID to
+at least one test; a requirement with no test row is not done.
 
-## Decisions Required
-Each decision has options so the implementer doesn't have to guess.
+## Non-functional / safety requirements
+| ID | Requirement | Acceptance |
+|---|---|---|
+| NFR1 | {{security, performance, compatibility, operability}} | {{...}} |
 
-1. **Question**: How should we handle X?
-   - Option A: Description, tradeoffs
-   - Option B: Description, tradeoffs
-   - Recommendation: Option A (reason)
+## In scope
+- {{...}}
 
-## Impact Analysis
-| Component | Change Type | Details |
-|-----------|-------------|---------|
-| \`backend/src/services/Foo.js\` | MODIFY | Add bar() method |
-| \`database\` | NEW MIGRATION | Add \`baz\` column to \`tickets\` |
-| \`frontend/src/views/Bar.vue\` | CREATE | New page for baz management |
+## Out of scope
+Summarise only. The authoritative list with reasons and follow-ups is
+00 -> Deferred register.
+- {{item}} — see 00 D1
+
+## Open questions
+| # | Question | Assumption if unanswered |
+|---|---|---|
+| 1 | {{...}} | {{...}} |
 
 ## Dependencies
-- **This ticket depends on**: TICKET-123 (must be done first)
-- **Depends on this**: None
-
-## Performance Considerations
-- Expected QPS on new endpoint
-- Data size expectations
-- Caching strategy if any
+- Depends on: {{ticket IDs or merged PRs}}
+- Blocks: {{ticket IDs}}
 `,
-      '02_ARCHITECT_DESIGN.md': `# 02_ARCHITECT_DESIGN.md
+      '02_ARCHITECT_DESIGN.md': `# 02_ARCHITECT_DESIGN.md — {{Title}}
 
-**Status**: planned
-**Date created**: ${new Date().toISOString().split('T')[0]}
+> Owns: current-state audit, chosen design, data model, contracts, risks,
+> rollout.
+> Not here: requirements (01), verification matrix (03), exact file operations
+> (04), status and deferrals (00).
 
-## Current State
-What exists today. File paths, relevant code snippets, current behavior.
+## Current state (the only infrastructure audit)
+| Area | Exists? | Where | Gap |
+|---|---|---|---|
+| Backend route/controller/service | {{yes/no}} | backend/src/... | |
+| Database table/column | {{yes/no}} | backend/src/migrations/... | |
+| Frontend API client | {{yes/no}} | frontend/src/api/... | |
+| Frontend view/component/route | {{yes/no}} | frontend/src/... | |
+| Agent code | {{yes/no}} | agent/src/... | |
 
-## Proposed Solution
-### Approach
-Describe the approach in 2-3 paragraphs. Include code patterns, not just prose.
+**Key insight:** frontend-only / backend-first / extend both / new build.
 
-### Data Flow
-Describe the flow from trigger to completion:
-\`\`\`
-User clicks button → FE calls POST /api/v1/foo → service
-validates → DB insert → FE updates store → UI re-renders
-\`\`\`
+## Design summary
+2-4 paragraphs or a small diagram. Explain why this shape.
 
-### File-Level Impact
-| File | Action | What Changes |
-|------|--------|-------------|
-| \`backend/src/routes/foo.js\` | MODIFY | Add POST /foo endpoint |
-| \`backend/src/services/FooService.js\` | MODIFY | Add createFoo() method |
-| \`frontend/src/api/foo.js\` | MODIFY | Add createFoo() API call |
-| \`frontend/src/views/FooList.vue\` | MODIFY | Add create button + form |
+## Alternatives considered
+| Option | Pros | Cons | Decision |
+|---|---|---|---|
+| A | | | chosen |
+| B | | | rejected because ... |
 
-### Error Handling Strategy
-- What can go wrong at each layer
-- What the user sees for each error type
-- Retry vs. fail-fast decisions
+## Data model & migrations
+SQL for new tables, columns and indexes. Name the migration and its rollback,
+note any backfill, and state where it is added in
+backend/src/migrations/apply.js.
 
-### Alternatives Considered
-- **Alternative A**: Chosen because ___. Rejected because ___.
-- **Alternative B**: Considered but rejected because ___.
+## API contract
+| Method | Path | Auth | Request | Response | Errors |
+|---|---|---|---|---|---|
+| GET | /api/v1/... | JWT / agent key | ... | { success, data } | 400/403/404/409 |
 
-## Security Considerations
-- Authentication required for new endpoints
-- Authorization checks (which roles can do what)
-- Input validation (what fields, what constraints)
-- Rate limiting needs
+## Data flow
+trigger -> layer -> layer -> storage -> response
 
-## Database Changes
-- New tables with column types and constraints
-- New columns with defaults and nullability
-- Indexes needed
-- Migration strategy (data backfill if needed)
+## Failure handling & recovery
+| Failure | Detection | Behaviour | Operator action |
+|---|---|---|---|
+| {{...}} | | | |
 
-## API Contract
-- New/Changed endpoints with request/response shapes
-- Status codes per outcome
-- Error response format
+## Security
+- Authentication:
+- Authorization (permission names):
+- Input validation (Joi schema):
+- Sensitive data:
+- Rate limiting:
+
+## Performance
+- Expected load:
+- Query/index risks:
+- Pagination:
+
+## Risks & edge cases
+| Risk / edge case | Impact | Mitigation |
+|---|---|---|
+| {{...}} | | |
+
+## Rollout
+1. migration -> backend -> frontend -> enable flag
+2. Rollback:
+
+## Open questions
+| # | Question | Resolution |
+|---|---|---|
+| 1 | {{...}} | {{...}} |
+
+Deferred items are recorded in 00 -> Deferred register; do not list them here.
 `,
-      '03_ARCHITECT_IMPLEMENTATION.md': `# 03_ARCHITECT_IMPLEMENTATION.md
+      '03_ARCHITECT_IMPLEMENTATION.md': `# 03_ARCHITECT_IMPLEMENTATION.md — {{Title}}
 
-**Status**: planned
-**Date created**: ${new Date().toISOString().split('T')[0]}
-**Effort**: Small | Medium | Large
+> Owns: work order, per-file changes, verification matrix, results.
+> Not here: design rationale (02), exact signatures (04), status (00).
 
-## Purpose
-One-sentence summary of what this implementation achieves.
+## Plan
+Ordered slices. Each slice should be independently verifiable.
+1. {{Slice name}} — {{what changes}} — verify: {{command or test}}
+2. {{...}}
 
-## Implementation Order
-Steps must be executed in this order (dependencies listed):
+## Per-file changes
+| File | Action | Change |
+|---|---|---|
+| backend/src/... | CREATE / MODIFY / DELETE | {{what}} |
+| frontend/src/... | CREATE / MODIFY / DELETE | {{what}} |
+| agent/src/... | CREATE / MODIFY / DELETE | {{what}} |
 
-1. **Step 1**: Short description — file path
-   - Sub-step
-   - Sub-step
-   - *Depends on*: nothing
+Exact imports and signatures belong in 04 when it exists; otherwise add them
+here.
 
-2. **Step 2**: Short description — file path
-   - Sub-step
-   - Sub-step
-   - *Depends on*: Step 1
+## Dependencies
+- {{service, client or ticket this needs}}
+- {{what depends on this change}}
 
-## Per-File Action Plan
+## Migration notes
+- File: NNN_{{name}}.sql + _rollback.sql
+- Apply order: {{position in the apply.js array}}
+- Backfill/rollback risk:
 
-### \`backend/src/services/FooService.js\` (MODIFY)
-- Add \`createFoo(data)\` method
-- Signature: \`async createFoo(data: CreateFooInput): Promise<Foo>\`
-- Logic: validate → insert into DB → return created record
-- Error cases: duplicate key → 409, validation fail → 400
+## Verification matrix (canonical)
+One row per requirement. This table is the contract between 01 and the code.
+| Req | Layer | Test file | Test case | Command |
+|---|---|---|---|---|
+| FR1 | backend unit | backend/src/__tests__/... | {{name}} | npm test |
+| FR1 | bash integration | backend/integration-test/suites/... | {{name}} | bash integration-test/run.sh --only |
+| NFR1 | agent unit | agent/src/test/... | {{name}} | mvn test |
 
-### \`frontend/src/api/foo.js\` (MODIFY)
-- Add \`createFoo(data)\` function
-- Signature: \`export async function createFoo(data: CreateFooInput): Promise<Foo>\`
-- HTTP: POST /api/v1/foo with JSON body
+A requirement with no row is not done.
 
-## Migration Plan
-1. Run migration 018_add_foo_table.sql
-2. Verify columns and constraints
-3. Rollback: 018_add_foo_table_rollback.sql
+## Verification commands
+The standard set lives in planning/ENGINEERING_STANDARDS.md -> Definition of
+done. Ticket-specific additions:
+{{command}}
 
-## Test Plan
+## Review checklist
+- [ ] Every FR/NFR has a passing row in the matrix
+- [ ] Error paths and edge cases are covered, not only the happy path
+- [ ] Migration has a rollback and is registered in apply.js
+- [ ] API contract matches 02; OpenAPI/types regenerated if it changed
+- [ ] No secret, .env, Jenkinsfile, or unrelated file touched
+- [ ] 04 (if present) matches what was actually built
 
-### Unit Tests
-| File | Test | What It Covers |
-|------|------|----------------|
-| \`FooService.test.js\` | creates a foo successfully | Happy path |
-| \`FooService.test.js\` | rejects duplicate name | Unique constraint |
-| \`FooService.test.js\` | rejects missing required field | Validation |
-
-### Integration Tests
-- What to test against real DB
-- What curl commands to run
-
-## Rollback Steps
-1. \`git revert <commit>\`
-2. \`npm run db:rollback\` (migration 018)
-3. Verify frontend shows no errors
+## Results
+| Date | Commit | Suites | Outcome |
+|---|---|---|---|
+| {{YYYY-MM-DD}} | {{sha}} | {{suites}} | {{pass/fail}} |
 `,
-      '04_SPECIFICATION.md': `# 04_SPECIFICATION.md — Model Execution Spec
+      '04_SPECIFICATION.md': `# 04_SPECIFICATION.md — Execution Spec
 
-**Generated from**: Architect + Technical templates
-**Target model**: 7B–34B local model (e.g., CodeLlama, Qwen, DeepSeek-Coder)
-**Date**: YYYY-MM-DD
+Optional. Use when a smaller model will execute the ticket. This file makes
+file operations exact; it does not restate 01, 02 or 03.
 
-## File Operations
+**Generated from**: 01_ARCHITECT_REQUIREMENT.md, 02_ARCHITECT_DESIGN.md,
+03_ARCHITECT_IMPLEMENTATION.md
+**Target model**: 7B | 14B | 34B
+**Requirement IDs covered**: {{FR1, FR2, NFR1}}
 
-Each entry specifies exactly what the model should produce. The model MUST NOT create,
-modify, or delete any file not listed here.
+## Test-first requirement
+Create the empty test stubs listed under Test expectations before any
+production code. Then implement. Then fill in the assertions.
 
-### CREATE: \`<file-path>\`
+## File operations
+The model must not create, modify, or delete a file that is not listed here.
 
-**Imports** (exact):
-\`\`\`
-// List every import statement with exact module paths
-import { something } from 'module'
-\`\`\`
+### CREATE \`{{path}}\`
+**Imports (exact):** list every import and module path.
+**State (exact names and types):** name -> type -> purpose.
+**Functions (exact signatures):** signature, then the ordered steps.
+**Template structure (UI only):** exact element hierarchy.
 
-**State variables** (exact names and types):
-\`\`\`
-variableName: type              → purpose and binding description
-\`\`\`
+### MODIFY \`{{path}}\`
+- Position: after which method or at which line.
+- Add: the exact change.
+- Imports to add.
 
-**Functions** (exact signatures):
-\`\`\`
-async function functionName(params): ReturnType
-  1. Step 1
-  2. Step 2
-  3. Step 3
-\`\`\`
+### DELETE \`{{path}}\`
+- Remove: what and why.
 
-**Template structure** (exact hierarchy):
-\`\`\`
-<!-- Provide the exact component/template structure -->
-\`\`\`
+## Test expectations
+Each case is tagged with the requirement it proves. Minimum: one happy and one
+error path per new public function; loading, empty and error states per new UI
+component.
 
-**Styling**: Describe styling requirements (scoped CSS, class names, etc.).
+[FR1][happy] input -> expected
+[FR1][error] input -> expected
+[NFR1][edge] condition -> behaviour
 
-### MODIFY: \`<file-path>\`
+## Edge cases
+| Case | Expected behaviour |
+|---|---|
+| {{...}} | {{...}} |
 
-**Add/modify**: \`<method or property name>\`
-\`\`\`
-// Describe the exact logic to add or modify
-\`\`\`
+## Patterns to follow
+- Follow the surrounding code style.
+- Repo-wide rules: planning/ENGINEERING_STANDARDS.md
 
-**Position in file**: Describe where in the file the changes should go.
-
-### DELETE: \`<file-path>\`
-
-**Reason**: Brief explanation of why this file is being removed.
-
-## Test Expectations
-
-### <component or module name>
-\`\`\`
-✓ Test assertion 1
-✓ Test assertion 2
-✓ Test assertion 3
-\`\`\`
-
-## Edge Cases to Handle
-1. **Edge case 1**: Description and handling approach
-2. **Edge case 2**: Description and handling approach
-
-## Existing Code Patterns to Follow
-- Pattern 1: Description
-- Pattern 2: Description
+## Files NOT to change
+- {{path}} — {{why}}
 `,
     };
     return templates[fileKey] || '';
@@ -479,78 +479,11 @@ Additional notes go here.
   }
 
   static getSpecificationTemplateContent(fileKey) {
-    const templates = {
-      '04_SPECIFICATION.md': `# 04_SPECIFICATION.md — Model Execution Spec
-
-**Generated from**: Architect + Technical templates
-**Target model**: 7B–34B local model (e.g., CodeLlama, Qwen, DeepSeek-Coder)
-**Date**: YYYY-MM-DD
-
-## File Operations
-
-Each entry specifies exactly what the model should produce. The model MUST NOT create,
-modify, or delete any file not listed here.
-
-### CREATE: \`<file-path>\`
-
-**Imports** (exact):
-\`\`\`
-// List every import statement with exact module paths
-import { something } from 'module'
-\`\`\`
-
-**State variables** (exact names and types):
-\`\`\`
-variableName: type              → purpose and binding description
-\`\`\`
-
-**Functions** (exact signatures):
-\`\`\`
-async function functionName(params): ReturnType
-  1. Step 1
-  2. Step 2
-  3. Step 3
-\`\`\`
-
-**Template structure** (exact hierarchy):
-\`\`\`
-<!-- Provide the exact component/template structure -->
-\`\`\`
-
-**Styling**: Describe styling requirements (scoped CSS, class names, etc.).
-
-### MODIFY: \`<file-path>\`
-
-**Add/modify**: \`<method or property name>\`
-\`\`\`
-// Describe the exact logic to add or modify
-\`\`\`
-
-**Position in file**: Describe where in the file the changes should go.
-
-### DELETE: \`<file-path>\`
-
-**Reason**: Brief explanation of why this file is being removed.
-
-## Test Expectations
-
-### <component or module name>
-\`\`\`
-✓ Test assertion 1
-✓ Test assertion 2
-✓ Test assertion 3
-\`\`\`
-
-## Edge Cases to Handle
-1. **Edge case 1**: Description and handling approach
-2. **Edge case 2**: Description and handling approach
-
-## Existing Code Patterns to Follow
-- Pattern 1: Description
-- Pattern 2: Description
-`,
-    };
-    return templates[fileKey] || '';
+    // The standalone specification is the same document as the architect
+    // suite's 04 file. Return the shared definition instead of keeping a
+    // second copy that can drift.
+    if (fileKey !== '04_SPECIFICATION.md') return '';
+    return TemplateService.getArchitectTemplateContent('04_SPECIFICATION.md');
   }
 
   static async list(projectId, _userId) {

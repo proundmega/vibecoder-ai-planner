@@ -345,7 +345,7 @@ Planning suites live in `planning/`:
 - `archived/` — Archived suites
 - `TICKETS.txt` — Active tickets
 
-Each suite follows templates: `00_ARCHITECT_CHECKLIST.md` → `01_ARCHITECT_REQUIREMENT.md` → `02_ARCHITECT_DESIGN.md` → `03_ARCHITECT_IMPLEMENTATION.md` → `04_SPECIFICATION.md`.
+Each suite follows templates: `00_ARCHITECT_CHECKLIST.md` → `01_ARCHITECT_REQUIREMENT.md` → `02_ARCHITECT_DESIGN.md` → `03_ARCHITECT_IMPLEMENTATION.md` → `04_SPECIFICATION.md` (optional) → `05_RUNBOOK.md` (optional). See `planning/README.md` for document ownership and rules, and `planning/ENGINEERING_STANDARDS.md` for repo-wide engineering conventions.
 
 ## Migration System
 

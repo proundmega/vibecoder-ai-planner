@@ -1,8 +1,5 @@
 # 01_ARCHITECT_REQUIREMENT.md - Harness Observability, Replay and Audit (fg-41)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1, fg-33 durable execution
 **Related code:** `HarnessEvent`, `HarnessTicketProcessor`, `AgentApp`, logging/metrics
 
 ## Problem
@@ -73,11 +70,6 @@ There is no structured timeline of what the agent did, which tools it called, wh
 - Real-time event streaming UI.
 - Compliance certification.
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-33 | Durable run/checkpoint state | Reliability | `fg-33-durable-harness-execution` | No |
-| 2 | fg-38 | Budget metrics and alerts | Billing | `fg-38-harness-budgets-routing` | No |
-| 3 | fg-42 | Retention/redaction policy | Privacy | `fg-42-harness-privacy` | No |
-| 4 | bp-106 | Reuse log aggregation transport | Observability | `bp-106` follow-up | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.
