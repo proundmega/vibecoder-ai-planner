@@ -75,6 +75,28 @@ describe('TemplateService', () => {
       const content = TemplateService.getArchitectTemplateContent('unknown.md');
       expect(content).toBe('');
     });
+
+    it('keeps each fact in one document', () => {
+      const checklist = TemplateService.getArchitectTemplateContent('00_ARCHITECT_CHECKLIST.md');
+      const requirement = TemplateService.getArchitectTemplateContent('01_ARCHITECT_REQUIREMENT.md');
+      const design = TemplateService.getArchitectTemplateContent('02_ARCHITECT_DESIGN.md');
+      const implementation = TemplateService.getArchitectTemplateContent('03_ARCHITECT_IMPLEMENTATION.md');
+      const specification = TemplateService.getArchitectTemplateContent('04_SPECIFICATION.md');
+
+      // Status and deferred scope live only in 00.
+      expect(checklist).toContain('Deferred register');
+      [requirement, design, implementation, specification].forEach((content) => {
+        expect(content).not.toContain('Pending Scope');
+      });
+
+      // Requirements are numbered once, in 01.
+      expect(requirement).toContain('| FR1 |');
+      expect(requirement).toContain('| NFR1 |');
+
+      // The requirement-to-test contract lives only in 03.
+      expect(implementation).toContain('Verification matrix');
+      expect(specification).not.toContain('Verification matrix');
+    });
   });
 
   describe('getTechnicalTemplateContent', () => {
@@ -125,7 +147,7 @@ describe('TemplateService', () => {
       const content = TemplateService.getSpecificationTemplateContent('04_SPECIFICATION.md');
       expect(content).toBeTruthy();
       expect(content.length).toBeGreaterThan(0);
-      expect(content).toContain('Model Execution Spec');
+      expect(content).toContain('Execution Spec');
     });
 
     it('returns empty string for unknown key', () => {

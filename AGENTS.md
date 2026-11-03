@@ -184,7 +184,11 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 
 ## Planning
 
-When making architectural changes, read `planning/` templates in order: `00_ARCHITECT_CHECKLIST.md`, `01_ARCHITECT_REQUIREMENT.md`, `02_ARCHITECT_DESIGN.md`, `03_ARCHITECT_IMPLEMENTATION.md`, `04_SPECIFICATION.md` (if exists).
+When making architectural changes, read `planning/README.md` first, then the
+suite's documents in order: `00_ARCHITECT_CHECKLIST.md`,
+`01_ARCHITECT_REQUIREMENT.md`, `02_ARCHITECT_DESIGN.md`,
+`03_ARCHITECT_IMPLEMENTATION.md`, and optionally `04_SPECIFICATION.md` /
+`05_RUNBOOK.md`. Repo-wide rules live in `planning/ENGINEERING_STANDARDS.md`.
 
 **Check existing infrastructure first** — if backend API exists, work frontend-only. If frontend exists, work backend-first. Both exist → extend. Neither → plan both.
 
@@ -192,7 +196,12 @@ Create new planning suites in `planning/bp-XX-name/` for multi-file changes requ
 
 **Pending tickets**: See `PENDING.txt` for all unimplemented planning suites. Completed suites are in `planning/DONE/`.
 
-**Pending scope requirement**: Every planning document (01, 02, 03, 04) MUST include a "Pending Scope Items to Present to User" section that lists all deferred improvements found in previous tickets' "Out of Scope" sections.
+**Single-source rule**: each fact has one owner. Status lives only in `00`
+frontmatter; deferred scope lives only in `00`'s Deferred register;
+requirements are numbered `FR*`/`NFR*` in `01`; the requirement-to-test matrix
+lives only in `03`. Other documents link to the owner instead of copying the
+table. Do not add a "Pending Scope" section to `02`, `03` or `04`. Run
+`node planning/check-planning.js` before opening a planning PR.
 
 ## Coding methodology
 
@@ -207,7 +216,11 @@ State which IPEE step you're in at each moment. Skipping any step is not permitt
 
 ## Deferred Improvements (Goldmine)
 
-Every planning ticket has an "Out of Scope" section. These are deferred improvements — small, high-value changes that were intentionally left for later. **Before starting any ticket, scan the "Out of Scope" sections of previously committed tickets** (in `planning/DONE/` and `planning/archived/`). Common goldmine categories:
+Every planning ticket keeps a **Deferred register** in
+`00_ARCHITECT_CHECKLIST.md`. These are deferred improvements — small,
+high-value changes that were intentionally left for later. **Before starting
+any ticket, read the deferred registers** of previously committed tickets (in
+`planning/DONE/` and `planning/archived/`). Common goldmine categories:
 
 - **Security**: account lockout, API key rotation/expiry, IP whitelisting
 - **Observability**: Prometheus metrics, log aggregation, distributed tracing
@@ -216,7 +229,8 @@ Every planning ticket has an "Out of Scope" section. These are deferred improvem
 - **UX**: rate limit countdown UI, usage alerts, real-time billing dashboard
 - **Testing**: Cypress component tests, integration test coverage gaps
 
-When you create a new ticket, list ALL deferred improvements from "Out of Scope" sections as follow-up items.
+When you create a new ticket, record relevant follow-ups in its own deferred
+register — do not copy the whole backlog into every document.
 
 ## Gotchas
 

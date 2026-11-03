@@ -1,8 +1,5 @@
 # 01_ARCHITECT_REQUIREMENT.md - Repository Onboarding and Environment Profiles (fg-39)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1, fg-34 sandbox
 **Related code:** `VerificationRunner`, `WorkspaceManager`, `agent/Dockerfile`, project settings
 
 ## Problem
@@ -79,11 +76,6 @@ Without profiles, agents spend their budget debugging the environment or fail ve
 - Production deployment/preview environments.
 - Secret rotation (fg-35).
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-34 | Sandbox runtime for profiles | Security | `fg-34-harness-sandbox` | No |
-| 2 | fg-37 | Evaluate profile reliability | Evaluation | `fg-37-agent-evaluation-harness` | No |
-| 3 | fg-38 | Cache-aware budgets | Billing | `fg-38-harness-budgets-routing` | No |
-| 4 | fg-41 | Profile/setup telemetry | Observability | `fg-41-harness-observability` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

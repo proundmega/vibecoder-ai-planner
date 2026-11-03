@@ -1,8 +1,5 @@
 # 01_ARCHITECT_REQUIREMENT.md - Merge Lifecycle and Conflict Handling (fg-36)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1, fg-31 reviewer, fg-32 fixer loop
 **Related code:** `HarnessTicketProcessor`, `GitHubService`, `WorkspaceManager`, `PhaseService`
 
 ## Problem
@@ -82,11 +79,6 @@ Current gaps:
 - Multi-repo atomic merges.
 - Semantic conflict resolution by an LLM without human review.
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-31 | Reviewer should check mergeability before review | Review | `fg-31` follow-up | No |
-| 2 | fg-32 | Fixer round for conflicts | Agent | `fg-32` follow-up | No |
-| 3 | fg-37 | Measure merge/rollback outcomes | Evaluation | `fg-37-agent-evaluation-harness` | No |
-| 4 | fg-41 | Merge queue audit events | Observability | `fg-41-harness-observability` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

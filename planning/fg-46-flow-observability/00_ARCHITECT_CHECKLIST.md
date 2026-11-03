@@ -1,9 +1,23 @@
-# 00_ARCHITECT_CHECKLIST.md - Flow and Harness Observability (fg-46)
+---
+id: "fg-46"
+title: "Flow and Harness Observability"
+status: deferred
+priority: "P2 - after the project completes a full build -> review -> fix -> merge cycle"
+effort: "Large"
+scope: "Backend"
+created: "2026-10-31"
+updated: "2026-11-03"
+pr: null
+branch: null
+depends_on: ["fg-30", "fg-31", "fg-32", "fg-33", "fg-36", "fg-41", "fg-44", "fg-45"]
+---
 
-**Status:** planned - **deferred**
+# 00 — Flow and Harness Observability (fg-46)
+
+> **Owns:** status, ticket map, deferred scope, user decisions.
+> **Not here:** requirements (`01`), design (`02`), verification matrix (`03`), file operations (`04`).
+
 **Priority:** P2 - after the project completes a full build -> review -> fix -> merge cycle
-**Date:** 2026-10-31
-**Depends on:** fg-30, fg-31, fg-32, fg-33, fg-36, fg-41, fg-44, fg-45 (required)
 **Related code:** `backend/src/metrics.js`, `middleware/slowRequest.js`, `HeartbeatService`, `PhaseService`, `approval_requests`, `ticket_phases`, `usage_logs`, `Dashboard.vue`, `AgentList.vue`
 
 ## Why this ticket exists
@@ -12,28 +26,17 @@ The system has infrastructure metrics and agent heartbeats, but no way to answer
 
 **This is wanted, but it is intentionally lower priority than making the full cycle work.** A working end-to-end loop is more valuable than perfect visibility into a loop that does not yet finish.
 
-## Checklist
+## Deferred register (canonical)
 
-- [ ] Confirm the end-to-end cycle (build -> review -> fix -> merge) works first
-- [ ] Define `deriveStage(ticket)` from status/phase/planning/approvals, with documented precedence
-- [ ] Define metric definitions and mark which are not yet measurable
-- [ ] Add `GET /api/v1/metrics/flow` with JWT + project-membership auth
-- [ ] Keep `METRICS_TOKEN` for the Prometheus `/metrics` scrape only
-- [ ] Use fg-31/32 tables for review/fix metrics
-- [ ] Use `approval_requests` for human-approval timing
-- [ ] Reuse the fg-33 `run_id` (no new identifier)
-- [ ] Use fg-45 `ready_at`/`plan_approved_at` (fg-45 required, not optional)
-- [ ] Implement one `deriveStage` in JS; no parallel SQL `CASE`
-- [ ] Paginate all live project tickets (`deleted_at IS NULL`) for exact counts; flag truncation past `FLOW_MAX_SCAN_TICKETS`
-- [ ] Call `assertProjectMember` for project-scoped flow views
-- [ ] Add `null`/“not instrumented” handling for merge, queue wait and provider latency
-- [ ] Add Prometheus counters/histograms (later)
-- [ ] Add provider latency/error/token metrics (instrumentation required)
-- [ ] Add agent pool and storage metrics (fg-44)
-- [ ] Add a Flow dashboard in the UI
-- [ ] Add Prometheus/Grafana (or keep the JSON view if enough)
-- [ ] Add alerts for stuck tickets, provider errors and disk pressure
-- [ ] Keep the first version read-only and cheap to operate
+Every deliberate omission and follow-up lives here exactly once. Status and
+deferred scope are owned by this document; `01`–`04` link here.
+
+| ID | Item | Source | Category | Follow-up | State |
+|---|---|---|---|---|---|
+| D1 | Quality metrics from evaluation | fg-37 | Evaluation | fg-37-agent-evaluation-harness | open |
+| D2 | Cost/budget metrics | fg-38 | Billing | fg-38-harness-budgets-routing | open |
+| D3 | Structured harness events and replay | fg-41 | Observability | fg-41-harness-observability | open |
+| D4 | Readiness and blocked-ticket metrics | fg-45 | Quality | fg-45-ticket-quality-gates | open |
 
 ## Important design decisions
 

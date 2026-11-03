@@ -1,8 +1,5 @@
 # 04_SPECIFICATION.md - Durable Harness Execution, slices 2-3 (fg-33)
 
-**Status:** Implemented (slices 1-3 merged into the feature branch via PR #112; PR #110 carries the combined diff to master)
-**Date:** 2026-11-02
-**Depends on:** slice 1 (`045_harness_runs.sql`, `HarnessRunService`,
 `HarnessTicketProcessor`)
 
 ## Milestone goal
@@ -96,22 +93,7 @@ Make an interrupted run self-healing without ever undoing published work.
 | Workspace retention | `agent/src/test/java/.../WorkspaceManagerTest.java` | stale/fresh/foreign dirs, protected/current paths, symlinks, zero retention, temp dirs |
 | Metrics | `backend/src/__tests__/harnessMetrics.test.js` | counters, failure counter and complete-only success timestamp |
 
-## Out of scope
+## Deferred scope
 
-- A CI process-kill/e2e matrix (current crash coverage is service/processor
-  level).
-- Scheduled workspace pruning during long-lived agent runs; cleanup currently
-  runs after startup recovery.
-- Full workspace inventory (sizes/ages/disk metrics) and workspace metrics (fg-44).
-- Automatic dead-letter after N failed attempts (manual operator dead-letter only).
-- Resuming a live OpenCode session (only published work is adopted).
-- FR9 structured event streaming (fg-41) and fg-41 dashboards beyond the
-  counters in `05_RUNBOOK.md`.
-- FR10 explicit force-clean-restart operator action.
-
-## Pending Scope Items to Present to User
-
-- CI process-kill matrix and live-session resume (fg-33 remainder).
-- FR10 explicit force-clean-restart action.
-- fg-41: structured harness events and dashboards beyond the current counters.
-- fg-44: storage lifecycle (idle refresh, disk/inode watermarks).
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register (D6–D11). This document
+does not keep a copy.

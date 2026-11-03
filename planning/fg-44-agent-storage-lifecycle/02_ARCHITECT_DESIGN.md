@@ -1,9 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - Agent Storage Lifecycle and Idle Refresh (fg-44)
 
-**Status:** planned
-**Date:** 2026-10-31
-**Depends on:** fg-43, fg-33
-
 ## Design summary
 
 Make storage a first-class lifecycle: per-agent workspace roots, ticket-scoped cleanup, idle refresh, disk watermarks and a reaper. `PoolManager` remains the owner of container lifecycle; `WorkspaceManager` remains the owner of ticket workspaces.
@@ -180,11 +176,6 @@ Document:
 5. Do we need a read-only shared cache for node_modules/Maven?
 6. Where should the reaper run: backend, host cron, or a sidecar?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-43 | Host sizing and limits | Infrastructure | `fg-43-agent-docker-deployment` | No |
-| 2 | fg-33 | Durable lease before cleanup | Reliability | `fg-33-durable-harness-execution` | No |
-| 3 | fg-34 | Sandboxed workspaces | Security | `fg-34-harness-sandbox` | No |
-| 4 | fg-40 | Per-agent worktrees | Agent | `fg-40-multi-agent-orchestration` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

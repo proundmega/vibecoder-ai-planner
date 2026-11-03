@@ -1,9 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - Harness Privacy and Data Governance (fg-42)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1, fg-34, fg-41
-
 ## Design summary
 
 Add a privacy pipeline around the prompt and artifact boundary: classify, redact, enforce provider policy, scan output, and store only what policy allows.
@@ -108,11 +104,6 @@ Before a run, verify the selected provider/model satisfies the policy. If not, f
 4. What is the default retention for prompts/diffs?
 5. Which local model/provider do we support first?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-34 | Sandbox secret boundary | Security | `fg-34-harness-sandbox` | No |
-| 2 | fg-35 | Scoped credentials | Security | `fg-35-github-app-credentials` | No |
-| 3 | fg-41 | Event redaction/retention | Observability | `fg-41-harness-observability` | No |
-| 4 | fg-38 | Provider routing | Billing | `fg-38-harness-budgets-routing` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

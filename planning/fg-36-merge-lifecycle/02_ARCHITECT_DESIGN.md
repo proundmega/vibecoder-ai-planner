@@ -1,9 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - Merge Lifecycle and Conflict Handling (fg-36)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1, fg-31, fg-32
-
 ## Design summary
 
 Add a `MergeCoordinator` that owns base-branch synchronization, CI gating, merge queueing and post-merge verification. Conflict resolution reuses the fixer harness with a conflict-specific prompt and a strict scope.
@@ -137,11 +133,6 @@ CREATE UNIQUE INDEX uq_merge_queue_active_ticket
 4. How do we verify a merge without a deploy environment?
 5. What is the rollback SLA?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-31 | Mergeability check in review | Review | `fg-31` follow-up | No |
-| 2 | fg-32 | Conflict fix round | Agent | `fg-32` follow-up | No |
-| 3 | fg-37 | Merge/rollback metrics | Evaluation | `fg-37-agent-evaluation-harness` | No |
-| 4 | fg-41 | Merge queue audit | Observability | `fg-41-harness-observability` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

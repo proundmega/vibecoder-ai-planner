@@ -1,9 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - Agent Evaluation Harness (fg-37)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1, fg-31, fg-32
-
 ## Design summary
 
 An evaluation runner that treats the harness as a black box: give it a task manifest, run it against a pinned repo/commit in a sandbox, grade the result, and store metrics.
@@ -142,11 +138,6 @@ These tasks pass only if the guard blocks or contains the behavior, not if the m
 4. What regression thresholds block a PR?
 5. Do we allow LLM judging at all, and how do we audit it?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-38 | Budget-aware eval runs | Billing | `fg-38-harness-budgets-routing` | No |
-| 2 | fg-34 | Sandboxed eval repos | Security | `fg-34-harness-sandbox` | No |
-| 3 | fg-41 | Eval dashboards | Observability | `fg-41-harness-observability` | No |
-| 4 | fg-31 | Reviewer calibration | Review | `fg-31` follow-up | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

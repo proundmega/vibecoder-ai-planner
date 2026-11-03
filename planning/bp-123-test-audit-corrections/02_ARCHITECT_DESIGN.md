@@ -1,7 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - Test Audit Corrections (bp-123)
 
-**Status:** implemented (PR #100, in review)
-**Date:** 2026-10-31
 **Baseline:** master `cc334a1` after PR #99
 
 ## Design summary
@@ -94,10 +92,6 @@ The audit fixes are intentionally small and localized. Each fix has a regression
 3. Should the frontend validator move to camelCase in bp-124?
 4. Should the audit report move under `planning/` or stay at the repo root with this suite as the ticket?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | audit | O1-O10 open defects | Multiple | `bp-124-audit-open-defects` | No |
-| 2 | audit | Move completed suites to `planning/DONE/` | Docs | `bp-124-audit-open-defects` | No |
-| 3 | bp-79 | Full SQL grammar validation (O10) | Backend | `bp-124-audit-open-defects` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

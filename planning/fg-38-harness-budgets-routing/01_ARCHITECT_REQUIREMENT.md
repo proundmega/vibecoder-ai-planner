@@ -1,8 +1,5 @@
 # 01_ARCHITECT_REQUIREMENT.md - Harness Budgets and Model Routing (fg-38)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1
 **Related code:** `HarnessConfig`, `OpenCodeClient`, `HarnessTicketProcessor`, usage/billing APIs
 
 ## Problem
@@ -74,11 +71,6 @@ fg-30 has defaults, but they are configuration values, not enforcement. There is
 - Per-user budgets.
 - Model quality routing based on evaluation (fg-37 can feed it later).
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-37 | Use eval quality to inform routing | Evaluation | `fg-37-agent-evaluation-harness` | No |
-| 2 | fg-41 | Budget/token dashboards | Observability | `fg-41-harness-observability` | No |
-| 3 | fg-33 | Budget-aware recovery | Reliability | `fg-33-durable-harness-execution` | No |
-| 4 | bp-04 | Reuse usage/billing aggregation | Billing | `bp-04` follow-up | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

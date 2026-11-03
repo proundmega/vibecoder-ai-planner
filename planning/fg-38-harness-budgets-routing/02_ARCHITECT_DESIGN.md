@@ -1,9 +1,5 @@
 # 02_ARCHITECT_DESIGN.md - Harness Budgets and Model Routing (fg-38)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1
-
 ## Design summary
 
 Add a `BudgetTracker` to the supervisor and a `ModelRouter` decision point before session creation. The tracker consumes OpenCode events and enforces limits; the router picks a model and records the reason.
@@ -152,11 +148,6 @@ CREATE TABLE model_prices (
 4. Should budget breach trigger a human question instead of a hard fail?
 5. How do we handle prepaid vs postpaid billing?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-37 | Quality-aware routing | Evaluation | `fg-37-agent-evaluation-harness` | No |
-| 2 | fg-41 | Budget dashboards | Observability | `fg-41-harness-observability` | No |
-| 3 | fg-33 | Durable usage checkpoints | Reliability | `fg-33-durable-harness-execution` | No |
-| 4 | bp-04 | Billing aggregation | Billing | `bp-04` follow-up | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

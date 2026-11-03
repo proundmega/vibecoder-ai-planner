@@ -1,32 +1,37 @@
-# 00_ARCHITECT_CHECKLIST.md - Agent Docker Deployment and Host Sizing (fg-43)
+---
+id: "fg-43"
+title: "Agent Docker Deployment and Host Sizing"
+status: planned
+priority: "P1"
+effort: "Large"
+scope: "Backend"
+created: "2026-10-31"
+updated: "2026-11-03"
+pr: null
+branch: null
+depends_on: ["fg-33", "fg-34"]
+---
 
-**Status:** planned
-**Date:** 2026-10-31
-**Depends on:** fg-33 durable execution; fg-34 sandbox recommended
+# 00 — Agent Docker Deployment and Host Sizing (fg-43)
+
+> **Owns:** status, ticket map, deferred scope, user decisions.
+> **Not here:** requirements (`01`), design (`02`), verification matrix (`03`), file operations (`04`).
+
 **Related code:** `agent/docker-compose.yml`, `backend/src/services/PoolManager.js`
 
 ## Why this ticket exists
 
 The current deployment is a single `agent` Compose service plus a `PoolManager` that creates containers through the Docker API. On a large host (for example 24 cores / 48 threads, 192 GB RAM, 2 TB SSD) the pool size is a manual constant (`MAX_POOL_SIZE=50`) and the container limits are hardcoded (2 GB RAM, no CPU limit). There is no host-sizing heuristic and no one-command deployment.
 
-## Checklist
+## Deferred register (canonical)
 
-- [ ] Define the host capacity model and reservation policy
-- [ ] Write the sizing formula and examples for build/review/light agents
-- [ ] Allow a computed pool of 0 and fail closed; add `POOL_PAUSED`
-- [ ] Fix the `MAX_POOL_SIZE` parser so 0 is not coerced to 50
-- [ ] Add a runtime pool pause/resume config endpoint (`{ paused, maxPoolSize }`) guarded by `POOL_ADMIN_TOKEN`
-- [ ] Generate `POOL_ADMIN_TOKEN` with mode `0600` in `.env.agent-host` for host-init/recovery
-- [ ] Keep `POOL_ADMIN_TOKEN` backend-only; filter it from `agent/docker-compose.host.yml` and the PoolManager agent env allowlist
-- [ ] Map `AGENT_MAX_POOL_SIZE` (hard cap), `AGENT_POOL_SIZE` (capped override, can only lower) and `MAX_POOL_SIZE` (runtime)
-- [ ] Resolve `AGENT_REPO_DIR` from the repo volume mountpoint for `df`/`du`
-- [ ] Create `agent/host-init.sh` with `--dry-run` and `--yes`
-- [ ] Generate a `.env.agent-host` consumed by Compose/PoolManager
-- [ ] Add per-container CPU/RAM/PID/log limits
-- [ ] Define role profiles (build, review, fixer, light poller) with one pool per role in Phase 1
-- [ ] Decide the single-host topology (backend + PoolManager + agents on one Docker host)
-- [ ] Add compose deployment file and health checks
-- [ ] Persist `POOL_PAUSED=false`, add a backend startup health gate, and wait for `/health`; a restart resumes automatically
-- [ ] Add validation, logging and override behavior
-- [ ] Document multi-host/remote-Docker as a follow-up
-- [ ] Keep Kubernetes out of scope for this ticket
+Every deliberate omission and follow-up lives here exactly once. Status and
+deferred scope are owned by this document; `01`–`04` link here.
+
+| ID | Item | Source | Category | Follow-up | State |
+|---|---|---|---|---|---|
+| D1 | Queue-based autoscaling | fg-30 | Infrastructure | fg-38-harness-budgets-routing follow-up | open |
+| D2 | Durable leases across restarts | fg-33 | Reliability | fg-33-durable-harness-execution | open |
+| D3 | Sandboxed agent containers | fg-34 | Security | fg-34-harness-sandbox | open |
+| D4 | Multi-host/multi-agent orchestration | fg-40 | Agent | fg-40-multi-agent-orchestration | open |
+| D5 | Storage lifecycle and idle refresh | fg-44 | Infrastructure | fg-44-agent-storage-lifecycle | open |

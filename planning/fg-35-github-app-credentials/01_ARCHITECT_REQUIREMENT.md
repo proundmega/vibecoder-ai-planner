@@ -1,8 +1,5 @@
 # 01_ARCHITECT_REQUIREMENT.md - GitHub App Credentials and Least Privilege (fg-35)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
-**Depends on:** fg-30 Phase 1 (harness publishing)
 **Related code:** `WorkspaceManager`, `GitHubService`, backend credential storage
 
 ## Problem
@@ -71,11 +68,6 @@ Scrubbing `.git/config` (fg-30) was necessary but not sufficient. A compromised 
 - Fine-grained PAT migration tooling.
 - Review approval identity: fg-31 Phase 1 posts COMMENT-only reviews, and the publishing identity cannot approve its own PR. `APPROVE`/`REQUEST_CHANGES` require a separate reviewer App/identity in Phase 2.
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-34 | Tokenless sandbox with a provider proxy | Security | `fg-34-harness-sandbox` | No |
-| 2 | fg-41 | Credential audit events | Observability | `fg-41-harness-observability` | No |
-| 3 | fg-42 | Secret scanning/redaction | Privacy | `fg-42-harness-privacy` | No |
-| 4 | bp-74 | General agent key rotation follow-up | Security | `bp-74` follow-up | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

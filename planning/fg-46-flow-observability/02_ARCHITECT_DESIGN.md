@@ -1,9 +1,6 @@
 # 02_ARCHITECT_DESIGN.md - Flow and Harness Observability (fg-46)
 
-**Status:** planned - **deferred**
 **Priority:** P2 - after the project completes a full build -> review -> fix -> merge cycle
-**Date:** 2026-10-31
-**Depends on:** fg-30, fg-31, fg-32, fg-33, fg-36 (merge timestamps), fg-41, fg-44 (storage metrics), **fg-45 (required: `ready_at`/`plan_approved_at`)**
 
 ## Design summary
 
@@ -216,11 +213,6 @@ The first version should be read-only and refresh every 30–60 seconds.
 5. How long do we retain stage events?
 6. Do we add Prometheus now because it is cheap, or wait for the flow to stabilize?
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-41 | Harness events/replay | Observability | `fg-41-harness-observability` | No |
-| 2 | fg-45 | Readiness metrics | Quality | `fg-45-ticket-quality-gates` | No |
-| 3 | fg-37 | Evaluation metrics | Evaluation | `fg-37-agent-evaluation-harness` | No |
-| 4 | fg-38 | Budget metrics | Billing | `fg-38-harness-budgets-routing` | No |
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.

@@ -1,7 +1,5 @@
 # 04_SPECIFICATION.md - Test Audit Corrections (bp-123)
 
-**Status:** implemented (PR #100, in review)
-**Date:** 2026-10-31
 **Baseline:** master `cc334a1` after PR #99
 
 This is the implemented contract for the audit corrections. It records the behavior the regression tests must protect.
