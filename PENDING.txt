@@ -2,6 +2,8 @@
 
 Tickets that have planning docs in `planning/` but have NOT been implemented yet (no git history).
 
+**Status vocabulary:** `Planned` = docs complete, not implemented; `Plan merged (#N)` = the planning PR merged, implementation pending; `In progress`; `In review (#N)` = implementation PR open; `Merged (#N)` = implementation merged; `Deferred`. `Merged` never means a planning-only PR.
+
 ## Suggested Implementation Order
 
 ### Phase 1: Backend Foundations
@@ -69,7 +71,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | **bp-120** | `bp-120-agent-connectivity-fixes` | P0 | **Planned (2025-08-18)** — Three bugs preventing Java agents from functioning: (1) Double-wrapping in `getProviderConfig()` — service returns `{ success, data: {...} }` and route handler wraps again → `{ success, data: { success, data: {...} } }` — Java agent can't parse provider config; (2) `getAllAgents()` queries FROM `agent_heartbeats` so agents without heartbeats don't appear in heartbeat tab; (3) Defensive Java agent parsing for double-wrapped responses during transition. Backend-only fixes + Java defensive parsing. No DB migrations. |
 | **bp-121** | `bp-121-agent-connectivity-ip` | P2 | **Planned (2026-09-11)** — Java agents on non-localhost hosts fail due to CORS blocking, double-wrapped provider config, and missing IP whitelist support. Three bugs: CORS rejects non-localhost origins, provider config response double-wrapped, no IP whitelist for agent auth. |
 | **bp-122** | `bp-122-code-cleanup` | P3 | ~~**Planned (2026-09-15)** — Three code quality issues from PR #97: (1) Dead `createPullRequestRetry()` method in agent GitHubService, (2) Verbose 8-parameter `Ticket.update()` signature, (3) Unpinned git version in Agent Dockerfile. All independent cleanups, no cross-dependencies.~~ ✅ Done (PR #99) |
-| **bp-123** | `bp-123-test-audit-corrections` | P0 | **In review (PR #100)** — Full test/quality audit corrections: assignee validation against `project_memberships`, password-hash serialization, lockout `Retry-After`, ticket field mapping, no-op status updates, `critical` priority end-to-end, no-DB migration dry-run, Windows POSIX guard, refreshed Cypress specs. |
+| **bp-123** | `bp-123-test-audit-corrections` | P0 | **Merged (#100)** — Full test/quality audit corrections: assignee validation against `project_memberships`, password-hash serialization, lockout `Retry-After`, ticket field mapping, no-op status updates, `critical` priority end-to-end, no-DB migration dry-run, Windows POSIX guard, refreshed Cypress specs. |
 | **bp-124** | `bp-124-audit-open-defects` | P1 | **Planned (2026-10-31)** — Audit open defects O1-O10: milestone persistence, dead SQL/tables, stale E2E/CI, agent identity, frontend validator snake_case, PUT response drift, docs drift, integration setup error handling, component-test backfill, dry-run grammar validation. |
 
 ## Test Backfills (bt-*)
@@ -79,7 +81,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | ~~bt-53~~ | `bt-53-backfill-redis-integration-tests` | bp-53 | ~~Redis integration tests~~ ✅ Covered in bp-53 PR |
 | ~~bt-56~~ | `bt-56-backfill-design-system-tests` | bp-56 | ~~Design system tests~~ ✅ Done (this session) |
 | ~~bt-57~~ | `bt-57-backfill-typescript-migration-tests` | bp-57 | ~~TypeScript migration tests~~ ✅ Done (this session) |
-| **bt-60** | `bt-60-durable-harness-e2e-tests` | fg-33 | **Ready (2026-11-03)** — Full durable-harness e2e: real backend HTTP + Postgres, agent contract/processor gap check, and a disposable staging run (real OpenCode/GitHub/PR). fg-33 slices 1-3 are merged (#110), so Phase A and Phase B are unblocked. Remaining blocker: a dedicated disposable staging project/repo/agent, provider key and GitHub token. No production code; never use a product ticket. |
+| **bt-60** | `bt-60-durable-harness-e2e-tests` | fg-33 | **Plan merged (#111); ready for implementation** — Full durable-harness e2e: real backend HTTP + Postgres, agent contract/processor gap check, and a disposable staging run (real OpenCode/GitHub/PR). fg-33 slices 1-3 are merged (#110), so Phase A and Phase B are unblocked. Remaining blocker: a dedicated disposable staging project/repo/agent, provider key and GitHub token. No production code; never use a product ticket. |
 
 ## Feature Gaps (fg-*)
 
@@ -123,14 +125,16 @@ Docker-native agent host deployment and storage lifecycle. These are also indexe
 | **fg-43** | `fg-43-agent-docker-deployment` | P1 | fg-33 (fg-34 recommended) | One-command Docker host deployment with a CPU/RAM/disk sizing heuristic, role profiles, per-container limits and validation. |
 | **fg-44** | `fg-44-agent-storage-lifecycle` | P1 | fg-43, fg-33 | Per-agent workspaces, ticket cleanup, 2h idle refresh, disk/inode watermarks, log rotation, orphan/image reaping and recovery. |
 
-## Quality and Observability (fg-45..fg-46)
+## Quality and Observability (fg-45..fg-48)
 
-Also indexed in `planning/HARNESS_ROADMAP.md` (fg-45 in Phase C, fg-46 deferred at the end of Phase C).
+Also indexed in `planning/HARNESS_ROADMAP.md` (fg-45 in Phase C, fg-46 deferred at the end of Phase C; fg-47/fg-48 are review-quality follow-ups).
 
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|
 | **fg-45** | `fg-45-ticket-quality-gates` | P1 | fg-30, fg-31/32 | Definition of Ready: permissive drafts, acceptance criteria, template sections, readiness gates on pickup/status/PUT/phase paths, service-owned planning completion, scoped audited overrides, both agent modes. |
 | **fg-46** | `fg-46-flow-observability` | P2 - deferred | fg-30, fg-31, fg-32, fg-33, fg-36, fg-41, fg-44, fg-45 | Flow and harness observability. **Wanted, but deferred until the project completes a full build -> review -> fix -> merge cycle.** Canonical `deriveStage` (status-first, fg-45 `ready_at`), read-only flow endpoint with JWT + membership auth, reuses the fg-33 `run_id`; add Prometheus/Grafana later. |
+| **fg-47** | `fg-47-independent-review-pass` | P2 | fg-31, fg-32, fg-37, fg-41 | Independent second reviewer pass: different model family/provider, separate read-only context, structured findings, dedupe/triage, blocking-only gating, cost caps and human escalation. **Planned; not part of the current review flow.** |
+| **fg-48** | `fg-48-planning-claim-checks` | P2 | fg-47, fg-31 | Deterministic `check-claims` script: structured Status evidence, `Plan merged` vs `Merged` index labels, matrix coverage, done placeholders, deferred-register counts. Read-only, no network/LLM by default. **Planned; `check-planning.js` covers the easy invariants today.** |
 
 ## Other (pa-*)
 
@@ -147,7 +151,7 @@ Also indexed in `planning/HARNESS_ROADMAP.md` (fg-45 in Phase C, fg-46 deferred 
 - bp-68, bp-69, bp-70 are **completed** (PRs #44, #46, #47).
 - pa-01 is **completed** (this session — permission system was already implemented, only remaining frontend role checks were cleaned up).
 - bt-53, bt-56, bt-57 are **completed** (test backfills for corresponding bp-* suites).
-- **bt-60** is **ready** (2026-11-03) — full durable-harness e2e. fg-33 slices 1-3 are merged (#110), so Phase A (backend HTTP/Postgres e2e + disposable staging happy path) and Phase B (crash/reaper/idempotent-publish failure matrix) are unblocked. The only blocker is the disposable staging project/repo/agent, provider key and GitHub token. See `planning/bt-60-durable-harness-e2e-tests/`.
+- **bt-60** is **planned** (plan merged #111; ready for implementation) — full durable-harness e2e. fg-33 slices 1-3 are merged (#110), so Phase A (backend HTTP/Postgres e2e + disposable staging happy path) and Phase B (crash/reaper/idempotent-publish failure matrix) are unblocked. The only blocker is the disposable staging project/repo/agent, provider key and GitHub token. See `planning/bt-60-durable-harness-e2e-tests/`.
 - bt-53/56/57 are test backfills for their bp-* suites; **bt-60** is a forward end-to-end validation for fg-33.
 - fg-01 through fg-07 are **completed** (this session).
 - fg-08 through fg-12 were implemented (merged into a single commit) but have no separate planning directory.
@@ -172,3 +176,5 @@ Also indexed in `planning/HARNESS_ROADMAP.md` (fg-45 in Phase C, fg-46 deferred 
 - **Jenkins DOCKER_HOST override** — Jenkins agent's `DOCKER_HOST` env var points to Jenkins' own `docker-socket-proxy:2375` infrastructure, which doesn't resolve for project containers. All `docker` and `docker compose` commands in Jenkinsfile Integration Tests stage now prefix with `DOCKER_HOST=unix:///var/run/docker.sock` to use the local DinD socket instead.
 
 - **bp-120** (P2) — **Deployment pipeline on Jenkins node** — Currently deployments to the remote instance (192.168.3.50) are manual: `git pull`, `docker compose build`, `docker compose up`. Need automated deployment pipeline that runs on the same node where Jenkins is running. Should: pull latest from master, build Docker images without cache, restart services, verify health checks pass. Consider using Jenkins pipeline or a simple deployment script triggered after successful CI.
+
+- **fg-47 / fg-48** — Planning-only review-quality follow-ups. `fg-47` adds an independent second reviewer pass (different model family/provider, separate read-only context, dedupe/triage, blocking policy). `fg-48` plans the deterministic `check-claims` script for structured evidence, index labels, matrix coverage and deferred-register counts. Neither changes the current review flow; `check-planning.js` now covers the easy status/claim invariants.

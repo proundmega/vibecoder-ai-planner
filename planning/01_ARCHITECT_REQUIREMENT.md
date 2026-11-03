@@ -27,6 +27,11 @@ Include the failure sequence, not just the label.}}
 Acceptance is a behaviour, not an implementation detail. `03` maps every ID to
 at least one test; a requirement with no test row is not done.
 
+Every constraint is a requirement. Integration constraints, cross-ticket
+guards, migration rules and safety gates must be `FR*`/`NFR*` rows here — not
+only prose in `02` or an acceptance criterion in the tail of this file. If it
+can fail, it needs an ID and a matrix row.
+
 ## Non-functional / safety requirements
 
 | ID | Requirement | Acceptance |

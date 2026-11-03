@@ -73,6 +73,15 @@ component.
 |---|---|
 | {{...}} | {{...}} |
 
+## Review notes
+
+- Every `FR*`/`NFR*` from `01` must appear in the test expectations above; a
+  missing requirement is a spec bug, not a coding decision.
+- The model must not create, modify or delete a file outside the listed
+  operations. The reviewer checks the diff against this list.
+- Record reviewer evidence and blocking-finding resolution in `03`; this file
+  contains instructions, not results.
+
 ## Patterns to follow
 
 - {{`backend/src/services/FooService.js` — controller/service split}}

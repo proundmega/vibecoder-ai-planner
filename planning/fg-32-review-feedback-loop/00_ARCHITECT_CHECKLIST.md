@@ -24,6 +24,14 @@ depends_on: ["fg-31", "fg-30", "fg-33"]
 > kept in `03` for execution. The follow-up added by this PR is D6 (the fg-33
 > publish-evidence guard allow path, now specified as FR13).
 
+## Status evidence
+
+| Claim | Evidence | Checked |
+|---|---|---|
+| Plan merged | PR #104 | ☑ |
+| Implementation merged | pending | ☐ |
+| Verification results | n/a — planned | ☐ |
+
 **Related code:** `ReviewProcessor`, `HarnessTicketProcessor`, `WorkspaceManager`, `PhaseService`, `CodeReview.vue`, `PhaseReview.vue`
 
 ## Why this ticket exists

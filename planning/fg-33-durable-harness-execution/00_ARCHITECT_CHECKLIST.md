@@ -21,6 +21,14 @@ depends_on: ["fg-30"]
 **Related code:** `HarnessTicketProcessor`, `WorkspaceManager`, `AgentApp`,
 `OpenCodeClient`, `HarnessRunService`, `api/harnessRuns.js`
 
+## Status evidence
+
+| Claim | Evidence | Checked |
+|---|---|---|
+| Plan merged | PR #110 | ☑ |
+| Implementation merged | PR #110, merge commit `7c7a12d` | ☑ |
+| Verification results | `03` → Results | ☑ |
+
 ## Why this ticket exists
 
 Phase 1 keeps the whole run in memory: clone, OpenCode session, prompt,
