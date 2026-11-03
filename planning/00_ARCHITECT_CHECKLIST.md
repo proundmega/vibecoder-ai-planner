@@ -7,15 +7,15 @@ effort: "{{Small | Medium | Large}}"
 scope: "{{Frontend | Backend | Both | Agent | Infra}}"
 created: "{{YYYY-MM-DD}}"
 updated: "{{YYYY-MM-DD}}"
-pr: null                 # PR number once opened
+pr: null                 # implementation PR only; planning PR goes in Status evidence
 branch: null             # branch name once created
 depends_on: []           # e.g. ["fg-30"]
 ---
 
 # 00 — {{Title}} ({{id}})
 
-> **Owns:** status, ticket map, readiness/completion gates, deferred scope,
-> user decisions.
+> **Owns:** status, status evidence, ticket map, readiness/completion gates,
+> deferred scope, user decisions.
 > **Not here:** requirements (`01`), design (`02`), verification matrix
 > (`03`), exact file operations (`04`).
 
@@ -42,6 +42,23 @@ depends_on: []           # e.g. ["fg-30"]
       here, not copied into other docs
 - [ ] Open decisions are answered or explicitly accepted as assumptions
 - [ ] No fact is duplicated across documents (see `planning/README.md`)
+- [ ] Review policy is applied: independent reviewer, evidence-backed findings,
+      blocking-only fix rounds (`planning/README.md` §Review policy)
+- [ ] Status evidence below matches the intended status
+
+## Status evidence
+
+Keep this table factual and short. `check-planning.js` checks the structural
+rules now; the future `fg-48` `check-claims` script will check the evidence.
+
+| Claim | Evidence | Checked |
+|---|---|---|
+| Plan merged | {{PR #N / date, or n/a}} | ☐ |
+| Implementation merged | {{PR #N + commit, or pending}} | ☐ |
+| Verification results | {{`03` Results row, or n/a}} | ☐ |
+
+A merged planning PR is **plan merged**, not `done`. Set `status: done` only
+after the implementation PR is merged and `03` has a dated Results row.
 
 ## Deferred register (canonical)
 
@@ -69,8 +86,11 @@ patterns.*
 ## Completion gate
 
 - [ ] Every `FR*`/`NFR*` acceptance statement in `01` is met
-- [ ] Verification matrix in `03` is green and results are recorded
-- [ ] `status` in the frontmatter above is `done`, and `pr` is set
+- [ ] Verification matrix in `03` is green and has a row for every requirement
+- [ ] `03` Results has a dated, non-placeholder row
+- [ ] `status` is `done` only after the implementation PR merged, and `pr` is set
+- [ ] `PENDING.txt` / `HARNESS_ROADMAP.md` labels match `00` (`Plan merged` vs `Merged`)
+- [ ] Review record in `03` shows all blocking findings resolved
 - [ ] Deferred register reflects what was actually left out
 
 ## Notes

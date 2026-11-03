@@ -43,6 +43,16 @@ Optional. Operational procedures only — no requirements, design or status.
 |---|---|---|
 | {{...}} | {{...}} | {{...}} |
 
+## Review evidence
+
+| Check | Command / signal | Expected |
+|---|---|---|
+| {{health}} | {{...}} | {{...}} |
+| {{recover}} | {{...}} | {{...}} |
+
+A runbook is only done when the recover/rollback path has been exercised, or
+the untested path is explicitly recorded in `00` → Deferred register.
+
 ## Do not
 
 - {{action that loses data or duplicates work}}

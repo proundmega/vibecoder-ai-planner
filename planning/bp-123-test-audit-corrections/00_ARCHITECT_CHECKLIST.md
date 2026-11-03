@@ -1,15 +1,15 @@
 ---
 id: "bp-123"
 title: "Test Audit Corrections"
-status: in_review
+status: done
 priority: "P0"
 effort: "Large"
 scope: "Backend"
 created: "2026-10-31"
 updated: "2026-11-03"
-pr: null
-branch: null
-depends_on: ["bp-124"]
+pr: 100
+branch: "fix/audit-corrections"
+depends_on: []
 ---
 
 # 00 — Test Audit Corrections (bp-123)
@@ -19,6 +19,20 @@ depends_on: ["bp-124"]
 
 **Baseline:** master `cc334a1` after PR #99
 **Report:** `AUDIT_REPORT.md`
+
+## Status evidence
+
+| Claim | Evidence | Checked |
+|---|---|---|
+| Plan merged | PR #100 (planning + implementation) | ☑ |
+| Implementation merged | PR #100, merge commit `4d62350` | ☑ |
+| Verification results | `03` → Results | ☑ |
+
+## Completion gate
+
+- [x] Implementation merged in #100
+- [x] Results recorded in `03`
+- [x] Deferred register reflects the follow-ups (D1-D8 → bp-124)
 
 ## Why this ticket exists
 

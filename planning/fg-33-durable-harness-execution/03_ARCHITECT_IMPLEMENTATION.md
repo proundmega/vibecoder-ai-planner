@@ -236,3 +236,9 @@ All remaining and deferred work — FR8, FR5/FR7, FR9, FR10, the CI
 process-kill matrix and live-session resume — is tracked in
 `00_ARCHITECT_CHECKLIST.md` → Deferred register (D6–D11). This document does
 not keep a second list.
+
+## Results
+
+| Date | Commit | Suites | Outcome |
+|---|---|---|---|
+| 2026-11-02 | `7c7a12d` | backend unit + integration, agent unit | Passed; merged in #110 |

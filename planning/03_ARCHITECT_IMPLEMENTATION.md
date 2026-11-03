@@ -1,6 +1,7 @@
 # 03 — Implementation ({{id}})
 
-> **Owns:** work order, per-file changes, verification matrix, results.
+> **Owns:** work order, per-file changes, verification matrix, review record,
+> results.
 > **Not here:** design rationale (`02`), exact signatures (`04`), status
 > (`00`).
 
@@ -51,6 +52,7 @@ The standard set lives in `planning/ENGINEERING_STANDARDS.md` →
 *Definition of done*. Ticket-specific additions:
 
 ```bash
+node planning/check-planning.js
 {{command}}
 ```
 
@@ -62,9 +64,27 @@ The standard set lives in `planning/ENGINEERING_STANDARDS.md` →
 - [ ] API contract matches `02`; OpenAPI/types regenerated if it changed
 - [ ] No secret, `.env`, `Jenkinsfile`, or unrelated file touched
 - [ ] `04` (if present) matches what was actually built
+- [ ] `check-planning.js` passes; no status/claim/index mismatch
+- [ ] Independent reviewer evidence is recorded; every blocking finding is resolved
+- [ ] `status: done` only if the implementation PR is merged and Results is non-placeholder
+- [ ] `PENDING.txt` / `HARNESS_ROADMAP.md` labels match `00`
+
+## Review record
+
+Record the review loop, not a narrative. The reviewer is a separate session/
+agent (see `planning/README.md` §Review policy); the second pass is `fg-47`.
+
+| Round | Reviewer | Blocking findings | Resolution | Re-review |
+|---|---|---|---|---|
+| 0 | {{primary / second}} | {{finding IDs or none}} | {{commit / change}} | {{new SHA / none}} |
+
+Only blocking findings gate. Non-blocking findings belong in the deferred
+register or a follow-up ticket, not in an endless round.
 
 ## Results
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
 | {{YYYY-MM-DD}} | {{sha}} | {{e.g. backend 115/1476, agent 180}} | {{pass/fail}} |
+
+A placeholder, `Not run`, or empty row means the suite is **not done**.

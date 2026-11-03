@@ -17,6 +17,11 @@
 
 **Key insight:** {{frontend-only / backend-first / extend both / new build}}
 
+Audit rows must cite real paths. Do not write `none` or `no test` without
+searching code, tests and migrations; say where you checked. A cross-ticket
+constraint belongs in `01` as an `FR*`/`NFR*` — this section explains the
+design, it does not replace the requirement.
+
 ## Design summary
 
 {{2–4 paragraphs or a small diagram. Explain why this shape, not a full
@@ -77,6 +82,15 @@ restatement of the requirement.}}
 | Risk / edge case | Impact | Mitigation |
 |---|---|---|
 | {{...}} | | |
+
+## Review focus
+
+The independent reviewer should start here. Point at the risky seams; do not
+ask the reviewer to rediscover the whole design.
+
+| Area | Why it is risky | Reviewer check |
+|---|---|---|
+| {{integration/security/contract}} | {{...}} | {{command, file:line or test}} |
 
 ## Rollout
 

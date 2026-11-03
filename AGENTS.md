@@ -203,6 +203,17 @@ lives only in `03`. Other documents link to the owner instead of copying the
 table. Do not add a "Pending Scope" section to `02`, `03` or `04`. Run
 `node planning/check-planning.js` before opening a planning PR.
 
+**Review policy**: the reviewer must be a separate session/agent from the
+author and read-only; findings need file:line/command evidence; only blocking
+findings gate; the fix loop is bounded. See `planning/README.md` §Review policy.
+The second independent reviewer pass (`fg-47`) is planned, not part of the
+current flow; `fg-48` plans the deterministic `check-claims` script.
+
+**Status/claim rule**: `done` means the implementation merged, with a PR and a
+dated `03` Results row. A merged planning PR is `plan merged`, not `done`.
+`PENDING.txt` and `HARNESS_ROADMAP.md` labels must match `00` (`Plan merged` vs
+`Merged`). Do not claim "implementation merged" in a `planned` suite.
+
 ## Coding methodology
 
 All code changes **must** follow the IPEE methodology defined in `ai/CODING.md` and `ai/IPEE.md`:

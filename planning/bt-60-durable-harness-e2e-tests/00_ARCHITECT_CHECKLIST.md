@@ -37,6 +37,14 @@ finish-failure mismatch can pass every current test.
 dependencies are both satisfied; the remaining blocker is the disposable
 staging project/repo/agent, provider key and GitHub token.
 
+## Status evidence
+
+| Claim | Evidence | Checked |
+|---|---|---|
+| Plan merged | PR #111 | ☑ |
+| Implementation merged | pending — staging credentials required | ☐ |
+| Verification results | n/a — planned | ☐ |
+
 ## Deferred register (canonical)
 
 Every deliberate omission and follow-up lives here exactly once. Status and

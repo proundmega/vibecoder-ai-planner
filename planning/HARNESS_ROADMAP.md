@@ -5,6 +5,8 @@
 
 This index groups the autonomous coding harness work. It links the execution plans, the review loop, and the cross-cutting hardening tickets.
 
+**Status vocabulary:** `Planned` = docs complete, not started; `Plan merged (#N); implementation pending` = the planning PR merged; `Merged (#N)` = the implementation merged. A planning-only PR is never `Merged`.
+
 ## Suites
 
 | ID | Directory | Status | Focus | Depends on |
@@ -13,12 +15,14 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-31 | `fg-31-automatic-review-harness` | Plan merged (#103); implementation pending | Read-only reviewer harness, structured findings, GitHub reviews | fg-30 Phase 1 |
 | fg-32 | `fg-32-review-feedback-loop` | Plan merged (#104); implementation pending | Reviewer -> fixer loop, same branch, rounds, escalation | fg-31 |
 | fg-33 | `fg-33-durable-harness-execution` | Merged (#110) | Run/checkpoint/lease model, crash recovery, idempotent publish | fg-30 Phase 1 |
-| bt-60 | `bt-60-durable-harness-e2e-tests` | Ready (fg-33 merged, #110; staging credentials pending) | Full harness e2e: real backend HTTP + Postgres, agent contract, disposable staging run | fg-33 (merged) |
+| bt-60 | `bt-60-durable-harness-e2e-tests` | Plan merged (#111); ready for implementation (staging credentials pending) | Full harness e2e: real backend HTTP + Postgres, agent contract, disposable staging run | fg-33 (merged) |
 | fg-34 | `fg-34-harness-sandbox` | Planned | Sandbox isolation, limits, egress, secretless execution | fg-30 Phase 1 |
 | fg-43 | `fg-43-agent-docker-deployment` | Planned | One-command Docker agent host sizing, role pools, per-container limits | fg-33 (fg-34 recommended) |
 | fg-44 | `fg-44-agent-storage-lifecycle` | Planned | Per-agent workspaces, cleanup, idle refresh, disk/inode watermarks | fg-43, fg-33 |
 | fg-45 | `fg-45-ticket-quality-gates` | Planned | Definition of Ready, acceptance criteria, readiness gates on every execution path | fg-30, fg-31/32 |
 | fg-46 | `fg-46-flow-observability` | Planned - deferred | Flow stages, queue age, harness/provider/review metrics, `run_id` correlation | fg-30, fg-31/32, fg-33, fg-36, fg-41, fg-44, fg-45 |
+| fg-47 | `fg-47-independent-review-pass` | Planned | Independent second reviewer: different model/provider/context, read-only, dedupe/triage, blocking policy | fg-31, fg-32, fg-37, fg-41 |
+| fg-48 | `fg-48-planning-claim-checks` | Planned | Deterministic `check-claims` script: structured evidence, index labels, matrix coverage, deferred counts | fg-47, fg-31 |
 | fg-35 | `fg-35-github-app-credentials` | Planned | GitHub App installation tokens, least privilege | fg-30 Phase 1 |
 | fg-36 | `fg-36-merge-lifecycle` | Planned | Base branch, conflicts, CI gate, merge queue, rollback | fg-31, fg-32 |
 | fg-37 | `fg-37-agent-evaluation-harness` | Planned | Golden corpus, grading, metrics, A/B, reviewer calibration | fg-30/31/32 |
@@ -40,9 +44,13 @@ fg-30 Phases 2-4 (human loop, autonomy, hardening) remain part of the fg-30 impl
 5. **fg-35** GitHub App credentials
 
 ### Phase B - Review loop
-6. **fg-31** reviewer harness (merged in #103)
+6. **fg-31** reviewer harness (plan merged in #103; implementation pending)
 7. **fg-32** review feedback loop (plan merged in #104; implementation pending)
 8. **fg-36** merge lifecycle and conflict handling
+
+### Review-quality follow-ups (after fg-31/fg-32)
+- **fg-47** independent second reviewer (different model family/provider; advisory first)
+- **fg-48** deterministic `check-claims` script for structured evidence and index labels
 
 ### Phase C - Quality and operations
 9. **fg-45** ticket quality gates and Definition of Ready
@@ -58,6 +66,11 @@ fg-30 Phases 2-4 (human loop, autonomy, hardening) remain part of the fg-30 impl
 17. fg-30 Phase 3 autonomy policies / plan gate / auto-merge (write 03/04 when scheduled)
 
 ## How to use these suites
+
+Run `node planning/check-planning.js` before opening a planning PR, and follow
+`planning/README.md` §Review policy (independent reviewer, evidence-backed
+findings, blocking-only fix rounds). `03` is the canonical verification matrix
+and review record; `05` is the operational runbook.
 
 Each directory follows the planning template:
 
