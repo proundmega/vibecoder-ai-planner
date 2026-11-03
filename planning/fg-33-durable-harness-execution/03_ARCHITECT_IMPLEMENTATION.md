@@ -14,6 +14,7 @@ Delivered:
 
 - `045_harness_runs.sql` creates `harness_runs`, `harness_checkpoints` and
   `harness_leases` (UUID primary keys, BIGINT FKs, indexes, checks).
+  `budget_exceeded` is reserved for fg-38 and is not produced by fg-33.
   - A partial unique index (`ticket_id WHERE status='running'`) is the
     database backstop: a crashed start/claim pair cannot create a second live
     run for a ticket.
@@ -214,10 +215,12 @@ Operator recovery, cleanup and observability:
   all checkpoints.
 - `harnessReaper.test.js` covers guarded release, `run_failed=false` skips,
   release refusals and per-row failure isolation.
-- `HarnessTicketProcessorTest` also covers startup recovery: interrupted runs
-  fail and release, published runs are adopted without release, `resume` finds
-  an existing PR from publish evidence, and an unconfirmed finish leaves the run
-  for the reaper.
+- `HarnessTicketProcessorTest` also covers startup recovery: fresh
+  heartbeat/lease runs are skipped and keep recovery pending (including fresh
+  heartbeat + expired lease and stale heartbeat + unexpired lease), interrupted
+  runs fail and release, published runs are adopted without release, `resume`
+  finds an existing PR from publish evidence, and an unconfirmed finish leaves
+  the run for the reaper.
 - `ApiServiceHarnessTest` exercises the real HTTP client against a local
   `HttpServer`: start/checkpoint/heartbeat/finish/lease/publish/recovery paths,
   auth header, request bodies, 401 fatal classification and 409-vs-transient

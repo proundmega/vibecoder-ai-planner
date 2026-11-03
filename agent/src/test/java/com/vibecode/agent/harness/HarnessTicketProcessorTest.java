@@ -143,11 +143,44 @@ class HarnessTicketProcessorTest {
         )));
 
         assertEquals(0, processor.recoverActiveRuns());
+        assertTrue(processor.isRecoveryDeferred());
 
         verify(apiService, never()).finishHarnessRun(
             anyString(), anyString(), any(), any(), any());
         verify(apiService, never()).releaseHarnessTicket(anyString());
         verify(apiService, never()).reconcileHarnessRun(anyString());
+    }
+
+    @Test
+    void startupRecoverySkipsFreshHeartbeatWithAnExpiredLease() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-fresh-heartbeat",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "heartbeat_at", Instant.now().toString(),
+            "lease_expires_at", Instant.now().minusSeconds(60).toString()
+        )));
+
+        assertEquals(0, processor.recoverActiveRuns());
+        assertTrue(processor.isRecoveryDeferred());
+        verify(apiService, never()).releaseHarnessTicket(anyString());
+    }
+
+    @Test
+    void startupRecoverySkipsAnUnexpiredLeaseWithAStaleHeartbeat() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-fresh-lease",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "heartbeat_at", Instant.now().minusSeconds(3600).toString(),
+            "lease_expires_at", Instant.now().plusSeconds(60).toString()
+        )));
+
+        assertEquals(0, processor.recoverActiveRuns());
+        assertTrue(processor.isRecoveryDeferred());
+        verify(apiService, never()).releaseHarnessTicket(anyString());
     }
 
     @Test
@@ -167,6 +200,7 @@ class HarnessTicketProcessorTest {
         when(apiService.releaseHarnessTicket("run-stale")).thenReturn(true);
 
         assertEquals(1, processor.recoverActiveRuns());
+        assertFalse(processor.isRecoveryDeferred());
 
         verify(apiService).finishHarnessRun(
             eq("run-stale"), eq("failed"), anyString(), isNull(), isNull());

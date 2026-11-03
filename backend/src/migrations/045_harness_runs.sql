@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS harness_runs (
   heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   finished_at TIMESTAMPTZ,
   error TEXT,
+  -- budget_exceeded is reserved for fg-38 and is not produced by fg-33.
   CONSTRAINT harness_runs_status_check CHECK (
     status IN ('running', 'succeeded', 'failed', 'dead_letter', 'budget_exceeded')
   ),

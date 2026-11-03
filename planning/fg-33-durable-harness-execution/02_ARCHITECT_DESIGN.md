@@ -1,6 +1,6 @@
 # 02_ARCHITECT_DESIGN.md - Durable Harness Execution (fg-33)
 
-**Status:** Slices 1-3 implemented on the feature branch; disk inventory, automatic dead-letter and structured events are deferred.
+**Status:** Slices 1-3 implemented on the feature branch; disk inventory, automatic dead-letter, structured events and the force-clean-restart action are deferred.
 **Date:** 2026-10-31
 **Depends on:** fg-30 Phase 1 (OpenCode harness supervisor)
 
@@ -126,6 +126,9 @@ startup after recovery succeeds:
 - Lease loss during a run: stop before publishing; never publish without a valid lease.
 
 ## Tests
+
+These process-kill cases are a deferred CI follow-up; the current suite covers
+the same transitions at the service/processor level.
 
 - kill the agent during prompt, verification and publish; assert resume/fail behavior;
 - kill during the push after the commit exists; assert no duplicate PR;

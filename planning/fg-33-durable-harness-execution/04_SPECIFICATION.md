@@ -39,9 +39,11 @@ Make an interrupted run self-healing without ever undoing published work.
   recovery or reaping.
 - A latest run with head-sha-only or no-PR success evidence leaves the ticket
   in `in_progress` and is reported as `needs_operator` rather than released.
-- At startup, an agent lists only its own active runs, reconciles each one and
-  asks the backend to reconcile terminal runs synchronously, so a published
-  backlog ticket cannot be polled again.
+- At startup, an agent lists only its own active runs, skips runs whose
+  heartbeat or lease is still fresh, reconciles the rest and asks the backend
+  to reconcile terminal runs synchronously, so a published backlog ticket
+  cannot be polled again. A skipped fresh run keeps recovery pending for a
+  later poll.
 - A backlog ticket with a PR URL is not eligible for polling, and `startRun`
   refuses it (or a ticket whose earlier run has PR/head evidence) even if it is
   polled by an older agent.
@@ -86,7 +88,7 @@ Make an interrupted run self-healing without ever undoing published work.
 | Route unit | `backend/src/__tests__/api-harness-runs.test.js` | agent-scoped list, publish, reconcile, release-ticket auth |
 | GitHub unit | `agent/src/test/java/.../GitHubServiceTest.java` | recovery PR lookup uses `state=open` |
 | Postgres integration | `backend/src/__tests__/integration/harnessRuns.test.js` | publish evidence, checkpoint-only evidence adoption/dead-letter refusal, checkpoint join, run-level PR/head-sha release guards, reaped-published adoption, interrupted release, multi-run ordering, existing ticket PR, backlog adoption, one-time reconciliation, newer-run guard |
-| Agent processor | `agent/src/test/java/.../HarnessTicketProcessorTest.java` | restart release, publish adoption, synchronous reconcile, stale-ticket PR rejection, terminal mismatch, unconfirmed finish, post-publish no-release |
+| Agent processor | `agent/src/test/java/.../HarnessTicketProcessorTest.java` | fresh-heartbeat/lease skip + retry deferral, restart release, publish adoption, synchronous reconcile, stale-ticket PR rejection, terminal mismatch, unconfirmed finish, post-publish no-release |
 | Agent ticket model | `agent/src/test/java/.../TicketTest.java` | backlog ticket with a PR is not pollable |
 | Agent HTTP | `agent/src/test/java/.../ApiServiceHarnessTest.java` | recovery list path, publish body, guarded release boolean |
 | Config | `agent/src/test/java/.../HarnessConfigTest.java` | `HARNESS_RESUME_MODE` parsing/validation |
@@ -103,10 +105,13 @@ Make an interrupted run self-healing without ever undoing published work.
 - Full workspace inventory (sizes/ages/disk metrics) and workspace metrics (fg-44).
 - Automatic dead-letter after N failed attempts (manual operator dead-letter only).
 - Resuming a live OpenCode session (only published work is adopted).
-- fg-41 dashboards beyond the counters in `05_RUNBOOK.md`.
+- FR9 structured event streaming (fg-41) and fg-41 dashboards beyond the
+  counters in `05_RUNBOOK.md`.
+- FR10 explicit force-clean-restart operator action.
 
 ## Pending Scope Items to Present to User
 
 - CI process-kill matrix and live-session resume (fg-33 remainder).
+- FR10 explicit force-clean-restart action.
 - fg-41: structured harness events and dashboards beyond the current counters.
 - fg-44: storage lifecycle (idle refresh, disk/inode watermarks).

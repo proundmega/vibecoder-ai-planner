@@ -315,6 +315,11 @@ public class AgentApp {
                     + "will retry on the next cycle");
                 return;
             }
+            if (harnessWorker.isRecoveryDeferred()) {
+                log.info("Harness startup recovery skipped fresh run(s); "
+                    + "will retry on the next cycle");
+                return;
+            }
             startupRecoveryComplete = true;
             log.info("Harness startup recovery reconciled {} run(s)", recovered);
             // Cleanup is only safe after the active-run listing succeeded; the

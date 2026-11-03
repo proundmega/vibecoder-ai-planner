@@ -75,6 +75,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private volatile String currentTicketId;
     private volatile String currentStep;
     private volatile String startFailureReason;
+    private volatile boolean recoveryDeferred;
     private volatile String currentRunId;
     private volatile boolean leaseLost;
     private volatile boolean published;
@@ -209,6 +210,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
      * @return the number of runs reconciled
      */
     public int recoverActiveRuns() {
+        recoveryDeferred = false;
         if (config.isDryRun()) {
             return 0;
         }
@@ -248,6 +250,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private boolean recoverRun(Map<String, Object> run) {
         String runId = textValue(run.get("id"));
         if (isRunFresh(run)) {
+            recoveryDeferred = true;
             log.info("Skipping active harness run {}: heartbeat or lease is still fresh",
                 runId);
             return false;
@@ -459,6 +462,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
             log.warn("Could not restore PR URL on ticket {}: {}", ticketId, e.getMessage());
             return false;
         }
+    }
+
+    /** True when recovery skipped a fresh run and should be retried later. */
+    public boolean isRecoveryDeferred() {
+        return recoveryDeferred;
     }
 
     private boolean isRunFresh(Map<String, Object> run) {
