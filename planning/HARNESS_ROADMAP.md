@@ -10,8 +10,8 @@ This index groups the autonomous coding harness work. It links the execution pla
 | ID | Directory | Status | Focus | Depends on |
 |---|---|---|---|---|
 | fg-30 | `fg-30-autonomous-coding-harness` | Phase 1 merged (#102); Phases 2-4 planned | OpenCode build harness, human loop, autonomy, hardening | bp-120/bp-121 |
-| fg-31 | `fg-31-automatic-review-harness` | Merged (#103) | Read-only reviewer harness, structured findings, GitHub reviews | fg-30 Phase 1 |
-| fg-32 | `fg-32-review-feedback-loop` | Merged (#104) | Reviewer -> fixer loop, same branch, rounds, escalation | fg-31 |
+| fg-31 | `fg-31-automatic-review-harness` | Plan merged (#103); implementation pending | Read-only reviewer harness, structured findings, GitHub reviews | fg-30 Phase 1 |
+| fg-32 | `fg-32-review-feedback-loop` | Plan merged (#104); implementation pending | Reviewer -> fixer loop, same branch, rounds, escalation | fg-31 |
 | fg-33 | `fg-33-durable-harness-execution` | Merged (#110) | Run/checkpoint/lease model, crash recovery, idempotent publish | fg-30 Phase 1 |
 | bt-60 | `bt-60-durable-harness-e2e-tests` | Ready (fg-33 merged, #110; staging credentials pending) | Full harness e2e: real backend HTTP + Postgres, agent contract, disposable staging run | fg-33 (merged) |
 | fg-34 | `fg-34-harness-sandbox` | Planned | Sandbox isolation, limits, egress, secretless execution | fg-30 Phase 1 |
@@ -41,7 +41,7 @@ fg-30 Phases 2-4 (human loop, autonomy, hardening) remain part of the fg-30 impl
 
 ### Phase B - Review loop
 6. **fg-31** reviewer harness (merged in #103)
-7. **fg-32** review feedback loop (merged in #104)
+7. **fg-32** review feedback loop (plan merged in #104; implementation pending)
 8. **fg-36** merge lifecycle and conflict handling
 
 ### Phase C - Quality and operations

@@ -1,9 +1,7 @@
 # 01_ARCHITECT_REQUIREMENT.md - Review Feedback Loop / Fixer Agent (fg-32)
 
-**Status:** Planned - not implemented
-**Date:** 2026-10-31
 **Revised:** 2026-11-02 (addresses PR #104 design review)
-**Depends on:** fg-31 Automatic Review Harness (merged, PR #103), fg-30 Phase 1 harness supervisor; fg-30 Phase 3 for token/cost budgets
+**Revised:** 2026-11-03 (fg-33 fixer-run integration: FR13, run lifecycle, identity rule)
 **Related code:** `ReviewProcessor`, `HarnessTicketProcessor`, `WorkspaceManager`, `PhaseService`, `CodeReview.vue`, `PhaseReview.vue`
 
 ## Problem
@@ -18,7 +16,7 @@ Current behavior:
 - The frontend "Request changes" paths transition `review -> in_progress` directly: `CodeReview.vue` sends `metadata.reason`, while `PhaseReview.vue` sends `metadata.feedback`. No agent polls `in_progress`, and neither key is consumed by agent code.
 - `PhaseService` allows `review -> in_progress` and `review -> backlog`, but no review result triggers either transition automatically.
 - There is no reviewed-SHA/round counter, no same-branch checkout, no re-review trigger and no escalation rule.
-- fg-31 writes the review attempt/findings and posts the COMMENT review, but does not create a fix request.
+- fg-31 will write the review attempt/findings and post the COMMENT review, but does not create a fix request.
 
 ## Goals
 
@@ -53,6 +51,7 @@ Current behavior:
 - **FR10 - No-progress rule:** if the fixer produces no new commit, the same critical findings persist, verification fails identically twice, or the remote branch moved, stop and escalate instead of spending more rounds.
 - **FR11 - Manual and automatic dispatch:** `FIX_LOOP_MODE=off|manual|auto` and `projects.fix_loop_mode` control dispatch. Humans create requests through a JWT path or the `PhaseService.transition()` hook; both normalize `metadata.reason` and `metadata.feedback` into `feedback`. Manual requests resolve `reviewed_sha` from the latest completed attempt or the PR head, and include `feedback` in the fix prompt. Branch resolution uses `tickets.branch_name` (written on PR creation by both build paths and exposed via `Ticket.fromRow`) or the PR head ref.
 - **FR12 - Failure handling:** a failed fixer clears the lease, increments `attempts`, and resets the request to `queued` with `next_attempt_at` backoff and `review_state=changes_requested` while attempts remain; at `FIX_MAX_ATTEMPTS` (default 3) it sets `failed`/`fix_failed`, then escalates and sets `review_state=escalated`. The queue selects only due `queued` rows; `failed` is terminal and never claimable. A ticket must never be left in `in_progress` with no claimable queue entry or lease.
+- **FR13 - Fixer run authorization and lifecycle:** the fixer starts exactly one harness run for the claimed fix request with `purpose=fix`, `fix_request_id` and `base_sha=reviewed_sha`. The run records the normal checkpoints, sends heartbeats and finishes `succeeded`/`failed`. The backend validates that the request is claimed by this agent, belongs to the ticket, and its branch/`reviewed_sha` match the current PR head; the fixer agent shares the ticket assignee's `owner_id` so `startRun`'s assignment check holds. Missing, unclaimed, stale or cross-ticket requests remain refused, and the normal build start is unchanged.
 
 ## Safety requirements
 
@@ -64,6 +63,29 @@ Current behavior:
 - No provider key, GitHub token or server password in findings, prompts, logs or messages.
 - Phase 1 enforces `FIX_MAX_DURATION_MINUTES` and fg-30 diff caps as hard stops. Token/cost budgets are not enforced until fg-30 Phase 3 lands.
 - Human approval remains the final gate.
+
+## Integration constraint: fg-33 publish-evidence guard
+
+fg-33 slice 2 makes `HarnessRunService.startRun` refuse a new run when the ticket has a `pr_url`, or when any earlier harness run for that ticket recorded `pr_url` or `head_sha`. This is correct for build/recovery duplicate prevention, but fg-32's fixer must intentionally start a new run for an `in_progress` ticket that already has a reviewed PR and `reviewed_sha`.
+
+Do not weaken the normal build guard. Add an explicit fixer-only allow path:
+
+- the request carries a claimed fix request id (or equivalent fixer authorization) for this ticket;
+- the branch and `reviewed_sha` match the claimed request and the current PR head;
+- the fixer identity owns the active fix lease;
+- at most one fix run is active per ticket/request;
+- a missing, stale, unclaimed or cross-ticket fix request remains refused.
+
+Run lifecycle and identity (FR13):
+
+1. The fixer calls `ApiService.startHarnessRun(..., purpose='fix', fixRequestId=<claimed request>, baseSha=<reviewed_sha>)`. `POST /harness/runs` and `HarnessRunService.startRun` accept and validate the three new fields.
+2. The fixer agent is provisioned with the same `owner_id` as the ticket's assigned agent. `startRun`'s `t.assigned_agent_id = a.owner_id` check stays in force; the fixer-only allowance does not bypass it. If a deployment cannot share the owner, the fix path must use the claimed fix lease as the authorization instead — a separate design change, not Phase 1.
+3. After start, the fixer records the normal checkpoints (`created` → `cloned` → `session_ready` → `prompting` → `verifying` → `publishing` → `done`), sends heartbeats during long steps, and calls `finishRun` with `succeeded` or `failed`.
+4. `startRun` still enforces `t.status='in_progress'`, the one-active-run lease and the existing PR/head guard for `purpose=build`.
+
+`ticket_fix_requests.claimed_by` stores the numeric `agents.id` (BIGINT), matching `harness_runs.agent_id`; compare it with the authenticated agent id, not the agent name or API key.
+
+The normal build `startRun` continues to refuse tickets and prior runs with PR/head evidence.
 
 ## Acceptance criteria
 
@@ -79,6 +101,7 @@ Current behavior:
 10. Unit/contract tests cover claim race, same-branch checkout, fast-forward-only publish, moved-head abort, findings parsing, failed->queued retry, phase-aware escalation and round limits.
 11. No secrets appear in logs, prompts, findings or PR text.
 12. The `review_state` cache is `changes_requested` while a request is queued, `fixing` while claimed, and `fix_failed`/`escalated` on termination.
+13. (FR13) The fixer can start exactly one authorized fix run for an `in_progress` ticket with an existing PR, records checkpoints/heartbeats and finishes it cleanly, while a normal build start for the same ticket remains refused; missing, unclaimed, stale or cross-ticket fix requests are refused.
 
 ## Out of scope
 
@@ -90,15 +113,6 @@ Current behavior:
 - Writing review attempts/findings (fg-31).
 - Token/cost budget enforcement until fg-30 Phase 3.
 
-## Pending Scope Items to Present to User
+## Deferred scope
 
-| # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
-|---|---|---|---|---|---|
-| 1 | fg-31 | Structured finding store and GitHub PR reviews | Agent / Review | TBD (delivered by fg-31 Phase 1) | No |
-| 2 | fg-30 | Human question loop for ambiguous findings | Agent / UX | `fg-30` Phase 2 | No |
-| 3 | new | Email notifications for fix requests and escalations (no existing email-notification ticket; bp-71 is account lockout) | UX | TBD | No |
-| 4 | bp-106 | Ship fix/review events to log aggregation | Observability | TBD (new follow-up) | No |
-| 5 | bp-04 | Fix/review cost dashboard | Observability / Billing | TBD (new follow-up) | No |
-| 6 | bp-99-frontend-testing | E2E coverage for the fix loop UI | Testing | TBD (new follow-up) | No |
-
-`From Ticket` records where the deferred improvement was found; `TBD` means no follow-up ticket exists yet, so this table does not imply one is already tracked.
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.
