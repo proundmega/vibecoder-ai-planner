@@ -61,6 +61,20 @@ describe('tickets API', () => {
     expect(result).toEqual({ id: 't1', status: 'in_progress' })
   })
 
+  it('updateTicket forwards milestone fields to put (bp-124 O1/O6)', async () => {
+    const { put } = await import('../api/client')
+    put.mockResolvedValue({ id: 't1', milestoneId: null, estimate: 3, dependsOn: ['46'] })
+
+    const result = await tickets.updateTicket('t1', { milestoneId: null, estimate: 3, dependsOn: ['46'] })
+
+    expect(put).toHaveBeenCalledWith('/api/v1/tickets/t1', {
+      milestoneId: null,
+      estimate: 3,
+      dependsOn: ['46'],
+    })
+    expect(result).toEqual({ id: 't1', milestoneId: null, estimate: 3, dependsOn: ['46'] })
+  })
+
   it('updateTicket returns null on error', async () => {
     const { put } = await import('../api/client')
     put.mockRejectedValue(new Error('Update failed'))

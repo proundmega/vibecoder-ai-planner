@@ -1,6 +1,7 @@
 interface SchemaDefinition {
   type: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'null';
   format?: string;
+  nullable?: boolean;
   enum?: string[];
   properties?: Record<string, SchemaDefinition>;
   items?: SchemaDefinition;
@@ -11,7 +12,7 @@ const schemas: Record<string, SchemaDefinition> = {
   User: {
     type: 'object',
     properties: {
-      id: { type: 'string', format: 'uuid' },
+      id: { type: 'string', format: 'int64' },
       name: { type: 'string' },
       email: { type: 'string', format: 'email' },
       role: { type: 'string', enum: ['user', 'member', 'project_admin', 'super_admin'] },
@@ -25,10 +26,10 @@ const schemas: Record<string, SchemaDefinition> = {
   Project: {
     type: 'object',
     properties: {
-      id: { type: 'string', format: 'uuid' },
+      id: { type: 'string', format: 'int64' },
       name: { type: 'string' },
       description: { type: 'string' },
-      ownerId: { type: 'string', format: 'uuid' },
+      ownerId: { type: 'string', format: 'int64' },
       ownerName: { type: 'string' },
       createdAt: { type: 'string', format: 'date-time' },
     },
@@ -37,13 +38,17 @@ const schemas: Record<string, SchemaDefinition> = {
   Ticket: {
     type: 'object',
     properties: {
-      id: { type: 'string', format: 'uuid' },
+      id: { type: 'string', format: 'int64' },
       title: { type: 'string' },
       description: { type: 'string' },
       status: { type: 'string', enum: ['backlog', 'in_progress', 'review', 'done'] },
       priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical', 'urgent'] },
-      ownerId: { type: 'string', format: 'uuid' },
-      projectId: { type: 'string', format: 'uuid' },
+      ownerId: { type: 'string', format: 'int64' },
+      projectId: { type: 'string', format: 'int64' },
+      milestoneId: { type: 'string', format: 'uuid', nullable: true },
+      estimate: { type: 'number', nullable: true },
+      // BIGINT[] from pg: each element is a decimal string.
+      dependsOn: { type: 'array', items: { type: 'string', format: 'int64' } },
       createdAt: { type: 'string', format: 'date-time' },
       updatedAt: { type: 'string', format: 'date-time' },
     },
@@ -53,9 +58,9 @@ const schemas: Record<string, SchemaDefinition> = {
   Agent: {
     type: 'object',
     properties: {
-      id: { type: 'number' },
+      id: { type: 'string', format: 'int64' },
       name: { type: 'string' },
-      owner_id: { type: 'number' },
+      owner_id: { type: 'string', format: 'int64' },
       rate_limit: { type: 'number' },
       max_actions_per_day: { type: 'number' },
       created_at: { type: 'string', format: 'date-time' },
@@ -96,10 +101,18 @@ function validateValue(value: unknown, schema: SchemaDefinition, path: string = 
     const itemsSchema = schema.items;
     if (itemsSchema) {
       for (let i = 0; i < value.length; i++) {
-        validateValue(value[i], itemsSchema, `${path}[${i}]`);
+        errors.push(...validateValue(value[i], itemsSchema, `${path}[${i}]`));
       }
     }
   } else {
+    if (schema.nullable && value === null) {
+      return errors;
+    }
+    const actualType = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+    if (schema.type !== actualType) {
+      errors.push(`${path}: expected ${schema.type}, got ${actualType}`);
+      return errors;
+    }
     if (schema.enum && !schema.enum.includes(String(value))) {
       errors.push(`${path}: expected one of ${schema.enum.join(', ')}, got ${value}`);
     }

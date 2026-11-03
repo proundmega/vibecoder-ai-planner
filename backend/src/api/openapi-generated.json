@@ -27,12 +27,16 @@
       }
     },
     "schemas": {
+      "NumericId": {
+        "type": "string",
+        "pattern": "^[0-9]+$",
+        "description": "BIGSERIAL/BIGINT identifier serialized as a decimal string"
+      },
       "User": {
         "type": "object",
         "properties": {
           "id": {
-            "type": "string",
-            "format": "uuid"
+            "$ref": "#/components/schemas/NumericId"
           },
           "name": {
             "type": "string"
@@ -70,8 +74,7 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string",
-            "format": "uuid"
+            "$ref": "#/components/schemas/NumericId"
           },
           "name": {
             "type": "string"
@@ -80,8 +83,7 @@
             "type": "string"
           },
           "ownerId": {
-            "type": "string",
-            "format": "uuid"
+            "$ref": "#/components/schemas/NumericId"
           },
           "ownerName": {
             "type": "string"
@@ -96,8 +98,7 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string",
-            "format": "uuid"
+            "$ref": "#/components/schemas/NumericId"
           },
           "title": {
             "type": "string"
@@ -125,12 +126,10 @@
             ]
           },
           "ownerId": {
-            "type": "string",
-            "format": "uuid"
+            "$ref": "#/components/schemas/NumericId"
           },
           "projectId": {
-            "type": "string",
-            "format": "uuid"
+            "$ref": "#/components/schemas/NumericId"
           },
           "milestoneId": {
             "type": "string",
@@ -145,7 +144,8 @@
           "dependsOn": {
             "type": "array",
             "items": {
-              "type": "integer"
+              "type": "string",
+              "pattern": "^[0-9]+$"
             }
           },
           "createdAt": {
@@ -162,15 +162,13 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "string",
-            "format": "uuid"
+            "$ref": "#/components/schemas/NumericId"
           },
           "name": {
             "type": "string"
           },
           "owner_id": {
-            "type": "string",
-            "format": "uuid"
+            "$ref": "#/components/schemas/NumericId"
           },
           "rate_limit": {
             "type": "integer"
@@ -826,7 +824,8 @@
                   },
                   "assigneeId": {
                     "type": "string",
-                    "format": "uuid"
+                    "pattern": "^[0-9]+$",
+                    "nullable": true
                   },
                   "milestoneId": {
                     "type": "string",
@@ -841,7 +840,15 @@
                   "dependsOn": {
                     "type": "array",
                     "items": {
-                      "type": "integer"
+                      "oneOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9]+$"
+                        }
+                      ]
                     }
                   }
                 }

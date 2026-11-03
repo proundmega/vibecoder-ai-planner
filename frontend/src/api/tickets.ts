@@ -10,6 +10,9 @@ export interface Ticket {
   ownerId?: string
   assigneeId?: string
   assigneeName?: string
+  milestoneId?: string | null
+  estimate?: number | null
+  dependsOn?: string[]
   planningStatus?: string
   templateSchema?: string | null
   phase?: string

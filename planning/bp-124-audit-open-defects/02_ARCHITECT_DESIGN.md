@@ -45,7 +45,7 @@ This is an umbrella ticket. Each defect gets its own implementation slice (and, 
 
 - Either return the updated Ticket from `PUT /tickets/:id` or change `api/tickets.ts` to the actual shape.
 - Prefer returning the Ticket for consistency with create.
-- Update OpenAPI and generated types.
+- Update OpenAPI (including `dependsOn` as `string[]` and numeric-string BIGSERIAL ids). Regenerating the frontend client types is deferred per `00` D12.
 
 ## O7 - Docs drift
 

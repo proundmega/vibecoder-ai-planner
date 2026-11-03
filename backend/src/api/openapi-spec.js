@@ -30,10 +30,16 @@ const options = {
         },
       },
       schemas: {
+        // BIGSERIAL/BIGINT columns are returned by pg as decimal strings, not numbers.
+        NumericId: {
+          type: 'string',
+          pattern: '^[0-9]+$',
+          description: 'BIGSERIAL/BIGINT identifier serialized as a decimal string',
+        },
         User: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' },
+            id: { $ref: '#/components/schemas/NumericId' },
             name: { type: 'string' },
             email: { type: 'string', format: 'email' },
             role: { type: 'string', enum: ['user', 'member', 'project_admin', 'super_admin'] },
@@ -46,10 +52,10 @@ const options = {
         Project: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' },
+            id: { $ref: '#/components/schemas/NumericId' },
             name: { type: 'string' },
             description: { type: 'string' },
-            ownerId: { type: 'string', format: 'uuid' },
+            ownerId: { $ref: '#/components/schemas/NumericId' },
             ownerName: { type: 'string' },
             createdAt: { type: 'string', format: 'date-time' },
           },
@@ -57,16 +63,17 @@ const options = {
         Ticket: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' },
+            id: { $ref: '#/components/schemas/NumericId' },
             title: { type: 'string' },
             description: { type: 'string' },
             status: { type: 'string', enum: ['backlog', 'in_progress', 'review', 'done'] },
             priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical', 'urgent'] },
-            ownerId: { type: 'string', format: 'uuid' },
-            projectId: { type: 'string', format: 'uuid' },
+            ownerId: { $ref: '#/components/schemas/NumericId' },
+            projectId: { $ref: '#/components/schemas/NumericId' },
             milestoneId: { type: 'string', format: 'uuid', nullable: true },
             estimate: { type: 'integer', minimum: 1, nullable: true },
-            dependsOn: { type: 'array', items: { type: 'integer' } },
+            // tickets.depends_on is BIGINT[]; pg serializes int8 elements as strings.
+            dependsOn: { type: 'array', items: { type: 'string', pattern: '^[0-9]+$' } },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
           },
@@ -74,9 +81,9 @@ const options = {
         Agent: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' },
+            id: { $ref: '#/components/schemas/NumericId' },
             name: { type: 'string' },
-            owner_id: { type: 'string', format: 'uuid' },
+            owner_id: { $ref: '#/components/schemas/NumericId' },
             rate_limit: { type: 'integer' },
             max_actions_per_day: { type: 'integer' },
             created_at: { type: 'string', format: 'date-time' },

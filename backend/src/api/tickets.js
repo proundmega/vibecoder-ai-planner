@@ -97,12 +97,15 @@ router.get('/:ticketId', verifyTokenOrAgent, validatePathParams({ ticketId: path
  *               description: { type: string }
  *               status: { type: string }
  *               priority: { type: string }
- *               assigneeId: { type: string, format: uuid }
+ *               assigneeId: { type: string, pattern: '^[0-9]+$', nullable: true }
  *               milestoneId: { type: string, format: uuid, nullable: true }
  *               estimate: { type: integer, minimum: 1, nullable: true }
  *               dependsOn:
  *                 type: array
- *                 items: { type: integer }
+ *                 items:
+ *                   oneOf:
+ *                     - { type: integer }
+ *                     - { type: string, pattern: '^[0-9]+$' }
  *     responses:
  *       200:
  *         description: Ticket updated
