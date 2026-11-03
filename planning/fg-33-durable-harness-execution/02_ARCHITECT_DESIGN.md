@@ -1,6 +1,6 @@
 # 02_ARCHITECT_DESIGN.md - Durable Harness Execution (fg-33)
 
-**Status:** In progress — slice 1 implemented (persistence, leases, reaper)
+**Status:** Slices 1-3 implemented on the feature branch; disk inventory, automatic dead-letter and structured events are deferred.
 **Date:** 2026-10-31
 **Depends on:** fg-30 Phase 1 (OpenCode harness supervisor)
 
@@ -70,7 +70,8 @@ A Redis lease is acceptable if it is durable enough for the deployment; Postgres
 On `AgentApp` startup:
 
 1. find `harness_runs` where `agent_id = me` and `status = running`;
-2. if the heartbeat is fresh, assume another instance is alive and skip;
+2. if the heartbeat is fresh or its lease is unexpired, assume another
+   instance is alive and skip;
 3. otherwise reconcile based on the last checkpoint:
    - `PUBLISHING`/`DONE` with a stored head sha or PR -> look up an **open**
      PR and adopt the run as succeeded (`HARNESS_RESUME_MODE=resume`); a run
@@ -95,12 +96,15 @@ sha. The workspace, branch and ticket must still match the run record.
 
 ## Workspace registry and cleanup
 
-Track workspace paths in `harness_runs.workspace_path` plus a periodic inventory:
+Track workspace paths in `harness_runs.workspace_path` and clean them at agent
+startup after recovery succeeds:
 
-- remove workspaces with no active lease and `updated_at < retention`;
-- never delete a workspace with an unexpired lease;
-- clean temporary OpenCode config/home with the workspace;
-- report disk usage and leftover count as metrics.
+- remove generated workspace names with no running run/unexpired lease and an
+  old mtime;
+- never delete a workspace with an active run or unexpired lease;
+- clean crash-left OpenCode/askpass temp dirs with the same retention;
+- a full size/age inventory, scheduled cleanup and disk-usage/leftover metrics
+  are deferred to fg-44.
 
 ## Configuration
 
@@ -108,13 +112,15 @@ Track workspace paths in `harness_runs.workspace_path` plus a periodic inventory
 |---|---|---|
 | `HARNESS_LEASE_SECONDS` | `600` | Ticket lease TTL |
 | `HARNESS_HEARTBEAT_SECONDS` | `30` | Lease renewal interval |
-| `HARNESS_MAX_ATTEMPTS` | `3` | Retries before dead letter |
+| `HARNESS_MAX_ATTEMPTS` | `3` | Retry backoff only; automatic dead-letter is deferred |
 | `HARNESS_WORKSPACE_RETENTION_HOURS` | `24` | Orphan cleanup age |
 | `HARNESS_RESUME_MODE` | `restart` | `restart`, `resume` |
 
 ## Failure handling
 
-- Publish failure: keep the run in `PUBLISHING`, retry with backoff, then dead letter.
+- Publish failure: keep the run in `PUBLISHING`, retry with backoff, and leave
+  repeated failures for manual dead-letter/operator action. Automatic
+  dead-letter after N attempts is deferred.
 - Provider/session failure: recreate the session once; if it fails again, restart cleanly.
 - Disk full or clone failure: fail the run, release the ticket, alert.
 - Lease loss during a run: stop before publishing; never publish without a valid lease.

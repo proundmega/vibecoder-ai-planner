@@ -116,6 +116,7 @@ describe('HarnessRunService', () => {
       expect(sql).toContain("status = 'running'");
       expect(sql).toContain('last_checkpoint_payload');
       expect(sql).toContain('ticket_status');
+      expect(sql).toContain('lease_expires_at');
       expect(sql).toContain('LEFT JOIN LATERAL');
     });
 

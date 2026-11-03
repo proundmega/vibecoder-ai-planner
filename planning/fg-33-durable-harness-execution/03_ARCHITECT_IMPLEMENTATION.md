@@ -101,9 +101,10 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   terminal run per ticket recovers the crash gap between reaping and releasing.
 - **Agent startup recovery.** `HarnessTicketProcessor.recoverActiveRuns()` lists
   this agent's active runs at startup (with the latest checkpoint payload). It
-  adopts a run that has durable publish evidence (PR URL, or head sha plus an
-  existing PR) as `succeeded`, restores the ticket PR URL/review state, and
-  never releases it. It then calls the agent-scoped reconcile route so a
+  skips a run whose heartbeat or lease is still fresh (another instance may be
+  alive), adopts a run that has durable publish evidence (PR URL, or head sha
+  plus an existing PR) as `succeeded`, restores the ticket PR URL/review state,
+  and never releases it. It then calls the agent-scoped reconcile route so a
   backlog ticket moves to review synchronously, before the poll loop can claim
   it. Other runs are failed and released through the guarded path; if the
   finish cannot be confirmed the run is left for terminal-run reconciliation.
@@ -187,7 +188,7 @@ Operator recovery, cleanup and observability:
 | `HARNESS_LEASE_SECONDS` | `600` | Lease claim/renew TTL (clamped 60–86400) |
 | `HARNESS_HEARTBEAT_SECONDS` | `30` | Heartbeat + lease renewal interval (≤ lease/2) |
 | `HARNESS_DURABILITY_REQUIRED` | `false` | Fail closed when the initial run cannot be persisted |
-| `HARNESS_MAX_ATTEMPTS` | `3` | Existing retry backoff (attempt persisted on the run) |
+| `HARNESS_MAX_ATTEMPTS` | `3` | Retry backoff only; automatic dead-letter is deferred |
 | `HARNESS_RESUME_MODE` | `restart` | Startup recovery: `restart` or `resume` (adopt published evidence) |
 | `HARNESS_REAPER_INTERVAL_SECONDS` | `60` | Scheduled reaper sweep interval; `0` disables it |
 | `HARNESS_WORKSPACE_RETENTION_HOURS` | `24` | Agent startup cleanup of stale clone dirs; `0` disables |
@@ -232,6 +233,15 @@ Operator recovery, cleanup and observability:
 
 ## Remaining for fg-33
 
-1. A CI process-kill/e2e matrix (the current tests simulate crash gaps at the
+1. FR8: automatic dead-letter after N failed attempts. Manual operator
+   dead-letter exists; `HARNESS_MAX_ATTEMPTS` currently controls backoff only.
+2. FR7/FR5: full workspace inventory (sizes/ages/disk metrics) and scheduled
+   pruning. Startup cleanup and path tracking are implemented; the rest is
+   deferred to fg-44.
+3. FR9: structured event stream. Heartbeats, checkpoints and Prometheus counters
+   are implemented; fg-41 owns the event stream.
+4. FR10: an explicit force-clean-restart operator action. Dead-letter/adopt and
+   the runbook cover manual recovery today.
+5. A CI process-kill/e2e matrix (the current tests simulate crash gaps at the
    service/processor level).
-2. Live OpenCode session resume; only published work is adopted today.
+6. Live OpenCode session resume; only published work is adopted today.

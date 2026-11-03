@@ -227,10 +227,12 @@ class HarnessRunService {
       `SELECT r.*,
               t.status AS ticket_status,
               t.pr_url AS ticket_pr_url,
+              l.expires_at AS lease_expires_at,
               c.step AS last_checkpoint_step,
               c.payload AS last_checkpoint_payload
        FROM harness_runs r
        JOIN tickets t ON t.id = r.ticket_id
+       LEFT JOIN harness_leases l ON l.run_id = r.id
        LEFT JOIN LATERAL (
          SELECT step, payload
          FROM harness_checkpoints

@@ -140,10 +140,16 @@ Deployment assumptions:
 
 ## Crash scenarios
 
+Automatic dead-letter is not implemented; repeated failures keep backing off and
+need an operator dead-letter. Startup recovery skips a run whose heartbeat/lease
+is still fresh, so a second process with the same agent identity cannot kill a
+live run.
+
 - **Crash before clone**: next poll/reaper recovers; no workspace exists.
 - **Crash after clone/session/prompt**: run stays `running` until the lease
   expires, then is failed and the ticket is released if there is no PR/head
-  evidence.
+  evidence. Clean restart is intentional for non-published work; the old
+  workspace is retained for the retention window for debugging.
 - **Crash after push / during PR**: `head_sha` prevents release. Use `adopt` if
   a PR exists, otherwise reset manually after inspecting the branch.
 - **Finish response lost**: `reconciled_at` retries adoption/release; never
@@ -157,4 +163,4 @@ Deployment assumptions:
   without confirming the branch/PR state.
 - Do not mark a `review`/`done` ticket back to `backlog` by hand unless the PR
   is closed and the branch is intentionally being replaced.
-- Do not dead-letter a succeeded run.
+- Do not dead-letter a succeeded run with publish evidence.

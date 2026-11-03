@@ -14,6 +14,7 @@ import org.mockito.ArgumentCaptor;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -127,6 +128,49 @@ class HarnessTicketProcessorTest {
             verificationRunner,
             new PublishingGuard(resumeConfig.protectedPaths())
         );
+    }
+
+    @Test
+    void startupRecoverySkipsARunWithAFreshHeartbeatOrLease() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-live",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "step", "prompting",
+            "heartbeat_at", Instant.now().toString(),
+            "lease_expires_at", Instant.now().plusSeconds(600).toString()
+        )));
+
+        assertEquals(0, processor.recoverActiveRuns());
+
+        verify(apiService, never()).finishHarnessRun(
+            anyString(), anyString(), any(), any(), any());
+        verify(apiService, never()).releaseHarnessTicket(anyString());
+        verify(apiService, never()).reconcileHarnessRun(anyString());
+    }
+
+    @Test
+    void startupRecoveryProceedsAfterTheHeartbeatAndLeaseAreStale() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-stale",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "step", "prompting",
+            "heartbeat_at", Instant.now().minusSeconds(3600).toString(),
+            "lease_expires_at", Instant.now().minusSeconds(3600).toString()
+        )));
+        when(apiService.finishHarnessRun(
+            eq("run-stale"), eq("failed"), anyString(), isNull(), isNull()))
+            .thenReturn("failed");
+        when(apiService.releaseHarnessTicket("run-stale")).thenReturn(true);
+
+        assertEquals(1, processor.recoverActiveRuns());
+
+        verify(apiService).finishHarnessRun(
+            eq("run-stale"), eq("failed"), anyString(), isNull(), isNull());
+        verify(apiService).releaseHarnessTicket("run-stale");
     }
 
     @Test

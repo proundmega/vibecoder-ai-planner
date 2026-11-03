@@ -15,6 +15,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -245,6 +247,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
     private boolean recoverRun(Map<String, Object> run) {
         String runId = textValue(run.get("id"));
+        if (isRunFresh(run)) {
+            log.info("Skipping active harness run {}: heartbeat or lease is still fresh",
+                runId);
+            return false;
+        }
+
         Long ticketId = longValue(run.get("ticket_id"));
         String branch = textValue(run.get("branch"));
         String step = textValue(run.get("step"));
@@ -450,6 +458,47 @@ public final class HarnessTicketProcessor implements TicketWorker {
         } catch (IOException | RuntimeException e) {
             log.warn("Could not restore PR URL on ticket {}: {}", ticketId, e.getMessage());
             return false;
+        }
+    }
+
+    private boolean isRunFresh(Map<String, Object> run) {
+        Instant now = Instant.now();
+        long freshnessSeconds = Math.max(60, heartbeatSeconds * 3);
+
+        Object rawHeartbeat = run.get("heartbeat_at");
+        if (rawHeartbeat != null) {
+            Instant heartbeat = instantValue(rawHeartbeat);
+            if (heartbeat == null) {
+                return true;
+            }
+            if (heartbeat.isAfter(now.minusSeconds(freshnessSeconds))) {
+                return true;
+            }
+        }
+
+        Object rawLease = run.get("lease_expires_at");
+        if (rawLease != null) {
+            Instant leaseExpiry = instantValue(rawLease);
+            if (leaseExpiry == null || leaseExpiry.isAfter(now)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Instant instantValue(Object value) {
+        String text = textValue(value);
+        if (text == null) {
+            return null;
+        }
+        try {
+            return Instant.parse(text);
+        } catch (DateTimeParseException e) {
+            try {
+                return OffsetDateTime.parse(text).toInstant();
+            } catch (DateTimeParseException ignored) {
+                return null;
+            }
         }
     }
 
