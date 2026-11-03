@@ -52,13 +52,18 @@ SELECT * FROM harness_leases WHERE ticket_id = :ticket_id;
 4. Observe `harness_runs`/`harness_checkpoints`/`harness_leases` and the
    ticket/PR.
 5. Assert:
-   - one run, `status=succeeded`, `step=done`, branch/base/head_sha/pr_url populated;
+   - one run, `status=succeeded`, `step=done`, `finished_at` set,
+     branch/base/head_sha/pr_url populated;
    - checkpoints `cloned → session_ready → prompting → verifying → publishing
      → done`;
    - no lease row after finish;
-   - ticket `review` with `pr_url`; agent heartbeat cleared;
+   - ticket `review` with `pr_url`;
    - exactly one test PR/branch.
 6. Record the evidence (run ID, PR URL) without secrets.
+
+`agent_heartbeats.current_ticket_id` may retain the last ticket until the next
+pickup or stale cleanup; `finishRun` updates `harness_runs.heartbeat_at` and
+does not clear it.
 
 ## Failure cases
 
@@ -67,16 +72,21 @@ SELECT * FROM harness_leases WHERE ticket_id = :ticket_id;
   release/reset the ticket. If this cannot be reproduced without production
   changes, rely on `successFinishFailureNeverResetsAReviewedTicket` and record
   the staging reproduction as deferred.
-- **Key expired/revoked mid-run**: assert no push/PR; the failure is fatal; the
-  ticket is left for recovery.
-- **Lease loss/expired before publish**: assert no push/PR; the ticket is left
-  for recovery.
+- **Key expired/revoked mid-run**: after the run starts, expire the key:
+  `UPDATE agents SET api_key_expires_at = NOW() - INTERVAL '1 minute' WHERE id = :agent_id;`
+  Assert no push/PR; the failure is fatal; the ticket is left for recovery.
+- **Lease loss/expired before publish**: delete the lease row
+  (`DELETE FROM harness_leases WHERE ticket_id = :ticket_id;`) or lower
+  `HARNESS_LEASE_SECONDS` before the run; assert no push/PR and that the ticket
+  is left for recovery.
 - **Duplicate start/lease**: assert 409 and no clone.
 - **Crash/restart**: assert startup recovery skips a fresh run, fails/releases
   a stale run without publish evidence, and adopts a run with published work;
   assert the reaper reconciles the terminal run and no duplicate PR appears.
-- **Scheduled reaper/ticket release**: assert release only when the ticket is
-  `in_progress`, has no `pr_url`, and the run has no publish evidence.
+- **Scheduled reaper/ticket release**: set
+  `HARNESS_REAPER_INTERVAL_SECONDS=10` (or invoke `HarnessReaper.runOnce()`);
+  assert release only when the ticket is `in_progress`, has no `pr_url`, and the
+  run has no publish evidence.
 
 ## Cleanup
 

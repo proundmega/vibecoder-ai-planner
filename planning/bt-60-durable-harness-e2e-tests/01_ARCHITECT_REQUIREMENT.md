@@ -33,7 +33,8 @@ expected.
    OpenCode/provider/GitHub/PR path.
 3. Detect contract, authorization and finish-failure gaps that split-layer
    tests miss.
-4. Run Phase A immediately; Phase B is unblocked now that fg-33 slices 1-3 are
+4. Run the automated Phase A immediately; the manual staging layer waits on
+   the credentials below. Phase B is unblocked now that fg-33 slices 1-3 are
    merged (#110).
 
 ## Non-goals
@@ -75,8 +76,9 @@ expected.
   `backend/src/__tests__/integration/harnessHttpE2E.test.js`.
 - Extend `ApiServiceHarnessTest` / `HarnessTicketProcessorTest` only if a
   concrete gap is found; do not duplicate existing coverage.
-- Add the manual staging runbook and failure matrix to
-  `03_ARCHITECT_IMPLEMENTATION.md`.
+- Add the verification/failure matrix to
+  `03_ARCHITECT_IMPLEMENTATION.md` and the manual runbook to
+  `05_RUNBOOK.md`.
 - Update `PENDING.txt` and `planning/HARNESS_ROADMAP.md`.
 
 ## Out of scope

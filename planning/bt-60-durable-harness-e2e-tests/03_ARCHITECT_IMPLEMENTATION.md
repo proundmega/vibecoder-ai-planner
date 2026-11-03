@@ -246,10 +246,12 @@ crash/reaper/idempotent-publish cases now that fg-33 slices 1-3 are merged.
 8. **Concurrent test execution** — integration config `maxWorkers:1`; still use
    unique suffixes.
 
-## Verification matrix
+## Verification
+
+### Verification matrix
 
 One row per scenario, tagged with the requirement it proves. E1-E22 are the
-original scenarios; E23-E27 cover the non-scenario requirements so every
+original scenarios; E23-E28 cover the non-scenario requirements so every
 `FR*`/`NFR*` in `01` has a row.
 
 | Req | ID | Scenario | Layer | Expected | Phase |
@@ -315,5 +317,7 @@ keep a copy.
 |---|---|---|---|
 | — | — | — | Not run |
 
-**Residual rows:** none (verify)
-**Manual staging evidence:** —
+| Field | Value |
+|---|---|
+| Residual rows | none (verify) |
+| Manual staging evidence | — |

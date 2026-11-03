@@ -11,7 +11,8 @@
 - Migrations: `045_harness_runs.sql`, `046_harness_run_reconciliation.sql`,
   `047_harness_checkpoint_publish_evidence.sql` (each with rollback).
 - Endpoints: start/checkpoint/heartbeat/finish, leases, `/publish`, `/reconcile`,
-  `/dead-letter`, `/adopt` and `/release-ticket`.
+  `/dead-letter`, `/adopt` and `/release-ticket`; startup recovery also uses
+  `GET /agents/:agentId/runs` and `/workspaces`.
 - Route tests: `backend/src/__tests__/api-harness-runs.test.js` (service mocked).
 - Service/Postgres integration: `backend/src/__tests__/integration/harnessRuns.test.js` (45 tests).
 - Reaper: `backend/src/services/HarnessReaper.js`, `harnessReaper.test.js`,
@@ -210,7 +211,10 @@ No production migration. Test fixtures use:
 - `users`, `projects`, `agents`, `tickets` (unique suffix)
 - `harness_runs`, `harness_checkpoints`, `harness_leases` (created/deleted through the API or cleanup cascade)
 
-Fixture cleanup must remove test users/projects/agents/tickets and rely on `ON DELETE CASCADE` for harness rows. If a test fails mid-run, cleanup still runs in `afterAll`; a documented manual cleanup SQL is included in `03`.
+Fixture cleanup must remove test users/projects/agents/tickets and rely on
+`ON DELETE CASCADE` for harness rows. If a test fails mid-run, cleanup still
+runs in `afterAll`; a documented manual cleanup SQL is included in
+`05_RUNBOOK.md`.
 
 ---
 
