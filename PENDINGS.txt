@@ -1,5 +1,9 @@
 # Pending Implementation Tickets
 
+> **SUPERSEDED — do not use as a work queue.** This is an older snapshot with stale
+> statuses. The canonical queue is **`PENDING.txt`** (indexed from each suite's `00`
+> frontmatter). Kept for history only.
+
 ## Suggested Implementation Order
 
 1. **bp-53** (P1) - Distributed State Management ✅ COMPLETED (PR #38)
