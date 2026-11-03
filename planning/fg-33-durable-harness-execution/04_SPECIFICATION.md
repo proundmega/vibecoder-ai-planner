@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 **Date:** 2026-11-02
-**Branch:** `feat/fg-33-slice-2-recovery-and-reaper` (PR #112, stacked on slice 1)
+**Status:** Slices 1-3 merged into `feat/fg-33-durable-harness-execution` via PR #112; PR #110 carries the combined diff to master.
 **Depends on:** slice 1 (`045_harness_runs.sql`, `HarnessRunService`,
 `HarnessTicketProcessor`)
 
