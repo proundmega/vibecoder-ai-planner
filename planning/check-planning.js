@@ -46,7 +46,7 @@ for (const name of fs.readdirSync(ROOT)) {
     if (/^## Pending Scope Items/m.test(text)) {
       fail(`${file} still has a legacy Pending Scope section; link to 00 instead`);
     }
-    if (/^\*\*Status:?\*\*/m.test(text)) {
+    if (/^\s*(?:[-*]\s*)?\*\*Status:?\*\*/m.test(text)) {
       fail(`${file} carries a Status line; status lives in 00 frontmatter`);
     }
   }

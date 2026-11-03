@@ -1,6 +1,6 @@
 # Harness Roadmap
 
-**Last updated:** 2026-11-02
+**Last updated:** 2026-11-03
 **Status:** planning index - no production code
 
 This index groups the autonomous coding harness work. It links the execution plans, the review loop, and the cross-cutting hardening tickets.
@@ -12,7 +12,8 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-30 | `fg-30-autonomous-coding-harness` | Phase 1 merged (#102); Phases 2-4 planned | OpenCode build harness, human loop, autonomy, hardening | bp-120/bp-121 |
 | fg-31 | `fg-31-automatic-review-harness` | Merged (#103) | Read-only reviewer harness, structured findings, GitHub reviews | fg-30 Phase 1 |
 | fg-32 | `fg-32-review-feedback-loop` | Merged (#104) | Reviewer -> fixer loop, same branch, rounds, escalation | fg-31 |
-| fg-33 | `fg-33-durable-harness-execution` | Merged to feature branch (PR #110 to master) | Run/checkpoint/lease model, crash recovery, idempotent publish | fg-30 Phase 1 |
+| fg-33 | `fg-33-durable-harness-execution` | Merged (#110) | Run/checkpoint/lease model, crash recovery, idempotent publish | fg-30 Phase 1 |
+| bt-60 | `bt-60-durable-harness-e2e-tests` | Ready (fg-33 merged, #110; staging credentials pending) | Full harness e2e: real backend HTTP + Postgres, agent contract, disposable staging run | fg-33 (merged) |
 | fg-34 | `fg-34-harness-sandbox` | Planned | Sandbox isolation, limits, egress, secretless execution | fg-30 Phase 1 |
 | fg-43 | `fg-43-agent-docker-deployment` | Planned | One-command Docker agent host sizing, role pools, per-container limits | fg-33 (fg-34 recommended) |
 | fg-44 | `fg-44-agent-storage-lifecycle` | Planned | Per-agent workspaces, cleanup, idle refresh, disk/inode watermarks | fg-43, fg-33 |
@@ -32,7 +33,7 @@ fg-30 Phases 2-4 (human loop, autonomy, hardening) remain part of the fg-30 impl
 ## Recommended order
 
 ### Phase A - Reliability and security foundations
-1. **fg-33** durable execution and recovery
+1. **fg-33** durable execution and recovery (validation: **bt-60**; fg-33 slices 1-3 merged, Phase A/B unblocked)
 2. **fg-34** sandbox and supply-chain security
 3. **fg-43** Docker agent host sizing and deployment
 4. **fg-44** agent storage lifecycle and idle refresh

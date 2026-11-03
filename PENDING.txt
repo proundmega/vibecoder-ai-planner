@@ -79,6 +79,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | ~~bt-53~~ | `bt-53-backfill-redis-integration-tests` | bp-53 | ~~Redis integration tests~~ ✅ Covered in bp-53 PR |
 | ~~bt-56~~ | `bt-56-backfill-design-system-tests` | bp-56 | ~~Design system tests~~ ✅ Done (this session) |
 | ~~bt-57~~ | `bt-57-backfill-typescript-migration-tests` | bp-57 | ~~TypeScript migration tests~~ ✅ Done (this session) |
+| **bt-60** | `bt-60-durable-harness-e2e-tests` | fg-33 | **Ready (2026-11-03)** — Full durable-harness e2e: real backend HTTP + Postgres, agent contract/processor gap check, and a disposable staging run (real OpenCode/GitHub/PR). fg-33 slices 1-3 are merged (#110), so Phase A and Phase B are unblocked. Remaining blocker: a dedicated disposable staging project/repo/agent, provider key and GitHub token. No production code; never use a product ticket. |
 
 ## Feature Gaps (fg-*)
 
@@ -102,7 +103,7 @@ Cross-cutting plans for the autonomous coding harness. See `planning/HARNESS_ROA
 
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|
-| **fg-33** | `fg-33-durable-harness-execution` | P0 | fg-30 Phase 1 | **Slices 1-3 merged to the feature branch (PR #110 to master)** — runs/checkpoints/leases, scheduled guarded reaping, startup recovery, `HARNESS_RESUME_MODE`, durable publish evidence, operator dead-letter/adoption, workspace retention, metrics and a runbook. Remaining: automatic dead-letter (FR8), full workspace inventory/scheduled cleanup (fg-44), structured events (fg-41), force-clean-restart action (FR10), CI process-kill matrix and live-session resume. |
+| **fg-33** | `fg-33-durable-harness-execution` | P0 | fg-30 Phase 1 | **Merged (#110)** — runs/checkpoints/leases, scheduled guarded reaping, startup recovery, `HARNESS_RESUME_MODE`, durable publish evidence, operator dead-letter/adoption, workspace retention, metrics and a runbook. Remaining: automatic dead-letter (FR8), full workspace inventory/scheduled cleanup (fg-44), structured events (fg-41), force-clean-restart action (FR10), CI process-kill matrix and live-session resume. |
 | **fg-34** | `fg-34-harness-sandbox` | P0 | fg-30 Phase 1 | Isolate repo code: limits, read-only rootfs, no host socket, egress allowlist, secretless execution, supply-chain checks. |
 | **fg-35** | `fg-35-github-app-credentials` | P0 | fg-30 Phase 1 | Replace long-lived PATs with repo-scoped GitHub App installation tokens, short TTL, rotation and audit. |
 | **fg-36** | `fg-36-merge-lifecycle` | P1 | fg-31, fg-32 | Default/base branch detection, mergeability, update/rebase, conflict worker, CI gate, merge queue, post-merge rollback. |
@@ -146,7 +147,8 @@ Also indexed in `planning/HARNESS_ROADMAP.md` (fg-45 in Phase C, fg-46 deferred 
 - bp-68, bp-69, bp-70 are **completed** (PRs #44, #46, #47).
 - pa-01 is **completed** (this session — permission system was already implemented, only remaining frontend role checks were cleaned up).
 - bt-53, bt-56, bt-57 are **completed** (test backfills for corresponding bp-* suites).
-- All bt-* suites are test backfills for corresponding bp-* suites.
+- **bt-60** is **ready** (2026-11-03) — full durable-harness e2e. fg-33 slices 1-3 are merged (#110), so Phase A (backend HTTP/Postgres e2e + disposable staging happy path) and Phase B (crash/reaper/idempotent-publish failure matrix) are unblocked. The only blocker is the disposable staging project/repo/agent, provider key and GitHub token. See `planning/bt-60-durable-harness-e2e-tests/`.
+- bt-53/56/57 are test backfills for their bp-* suites; **bt-60** is a forward end-to-end validation for fg-33.
 - fg-01 through fg-07 are **completed** (this session).
 - fg-08 through fg-12 were implemented (merged into a single commit) but have no separate planning directory.
 - fg-13 is **completed** (PR #82) — FE↔BE API surface audit: F1 feedback endpoint reuse, F2-F4 router mounts + auth fixes, F5 usage route ordering + URL fixes, F6 regenerated client, F7 WS proxy config.
