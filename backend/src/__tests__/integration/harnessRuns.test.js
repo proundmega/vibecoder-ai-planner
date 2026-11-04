@@ -968,6 +968,27 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     expect(stored.rows[0].status).toBe('in_progress');
   });
 
+  test('a failed run cannot release a ticket another agent has picked up', async () => {
+    const run = await start({ branch: 'harness/reassigned' });
+    await HarnessRunService.finishRun(run.id, { status: 'failed' });
+
+    await pool.query(
+      "UPDATE tickets SET status = 'in_progress', assigned_agent_id = $2 WHERE id = $1",
+      [ticketId, otherAgentId]
+    );
+
+    await expect(
+      HarnessRunService.releaseTicketForRun(run.id)
+    ).resolves.toBeNull();
+
+    const stored = await pool.query(
+      'SELECT status, assigned_agent_id FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(stored.rows[0].status).toBe('in_progress');
+    expect(String(stored.rows[0].assigned_agent_id)).toBe(String(otherAgentId));
+  });
+
   test('renewal fails after the ticket is released or the run becomes terminal', async () => {
     const run = await start({ branch: 'harness/renew' });
     await HarnessRunService.claimLease({
