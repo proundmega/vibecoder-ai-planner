@@ -52,10 +52,15 @@
 | `backend/src/migrations/apply.js` | modify | Register migration 048 |
 | `backend/src/controllers/ticketController.js` | modify | Pickup uses `req.agent.id`; JWT callers get 403 |
 | `backend/src/services/TicketService.js` | modify | `enforceOwnership` compares agent ids as strings |
-| `backend/src/services/HarnessRunService.js` | modify | Start/lease checks compare `assigned_agent_id` to `agents.id` |
+| `backend/src/services/HarnessRunService.js` | modify | Start/lease checks compare `assigned_agent_id` to `agents.id`; run release requires `assigned_agent_id = run.agent_id` |
+| `backend/src/services/HeartbeatService.js` | modify | Pass the stale agent id when releasing its ticket |
+| `backend/src/controllers/ticketController.js` | modify | Pickup uses `req.agent.id`; release checks agent ownership or JWT `TICKET_UPDATE` |
 | `backend/src/middleware/ticketOwnership.js` | modify | Enforce using the agent id, not the owner user id |
-| `backend/src/__tests__/integration/ticketAgentIdentity.test.js` | add | Real DB: FK points at agents, pickup stores agent id, non-agent ids rejected |
+| `backend/src/__tests__/integration/ticketAgentIdentity.test.js` | add | Real DB: FK points at agents, pickup/release identity, agent deletion releases ticket |
+| `backend/src/__tests__/integration/ticketAssignedAgentMigration.test.js` | add | Transactional backfill: oldest agent, status reset, idempotent re-run, rollback |
+| `backend/src/__tests__/ticketReleaseAuthorization.test.js` | add | Service-level release identity checks |
 | `backend/src/__tests__/ticketAgentIdentityMigration.test.js` | add | Migration registration/rollback guard |
+| `backend/src/__tests__/ticket_ownership_controller.test.js` | modify | Pickup/release actor and permission cases |
 | `README.md`, `AGENTS.md` | modify | Migration count 46 → 47 |
 
 ## Dependencies
@@ -79,6 +84,10 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR4 | Backend controller | `src/__tests__/ticket_ownership_controller.test.js` | pickup passes `req.agent.id`; JWT caller gets 403 | `npm test` |
 | FR4 | Backend service | `src/__tests__/harnessRunService.test.js` | start/lease checks compare `assigned_agent_id` to `agents.id` | `npm test` |
 | FR4 | Migration guard | `src/__tests__/ticketAgentIdentityMigration.test.js` | 048 registered, rollback exists, FK targets agree | `npm test` |
+| FR4 | Backend service | `src/__tests__/ticketReleaseAuthorization.test.js` | assigned agent releases; another agent rejected; operator path allowed | `npm test` |
+| FR4 | Backend controller | `src/__tests__/ticket_ownership_controller.test.js` | release requires agent ownership or JWT `PROJECT_UPDATE` | `npm test` |
+| FR4 | Integration / DB | `src/__tests__/integration/ticketAgentIdentity.test.js` | user-role JWT gets 403 on release; deleting an assigned agent returns its `in_progress` ticket to backlog | `npm run test:integration` |
+| FR4 | Integration / migration | `src/__tests__/integration/ticketAssignedAgentMigration.test.js` | oldest agent wins; unmapped → backlog/null; review/done preserved; re-run idempotent; rollback restores owner id | `npm run test:integration` |
 | FR5 | Frontend contract | `src/__tests__/api-contract.test.ts` | camelCase Project/Ticket accepted; `owner_id` rejected; numeric-string ids; `dependsOn` string[] enforced | `npm test -- --run` |
 | FR5 | Frontend UI contract | `src/__tests__/tickets.test.js` | `updateTicket` forwards `milestoneId`/`estimate`/`dependsOn` | `npm test -- --run` |
 | FR6 | Backend route | `src/__tests__/api-ticket-put.test.js` | response `data` is the updated ticket, no `message` | `npm test` |
@@ -103,3 +112,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 |---|---|---|---|
 | 2026-11-03 | `e43c2b1` + `8e27c2a` + `d49d723b` + `5c96e6d` + `287f4ea` (PR #116) | O1, O2, O5, O6, O8 (+ O7/O10 docs) | Backend 120 suites / 1519 tests pass; frontend 60 files / 562 tests pass; integration 5 suites / 131 tests pass (fresh + re-run); typecheck clean; lint 0 errors (31 pre-existing warnings); OpenAPI regenerated |
 | 2026-11-04 | `bdd8dd0` (stacked PR #117) | O4 | Backend 121 suites / 1524 tests pass; frontend 60 files / 562 tests pass; integration 6 suites / 134 tests pass (fresh + re-run); migration 048 backfill and rollback verified against simulated legacy data |
+| 2026-11-04 | this commit (stacked PR #117) | O4 review fixes | Backend 122 suites / 1530 tests pass; frontend 60 files / 562 tests pass; integration 7 suites / 138 tests pass (fresh + re-run); backfill status reset, agent-delete trigger, release authorization, and transactional migration test added |

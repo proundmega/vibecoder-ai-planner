@@ -419,7 +419,7 @@ class HarnessRunService {
 
     const result = await pool.query(
       `WITH run AS (
-         SELECT r.id, r.ticket_id
+         SELECT r.id, r.ticket_id, r.agent_id
          FROM harness_runs r
          WHERE r.id = $1
            AND r.status IN ('failed', 'dead_letter')
@@ -443,6 +443,7 @@ class HarnessRunService {
        FROM run
        WHERE t.id = run.ticket_id
          AND t.status = 'in_progress'
+         AND t.assigned_agent_id = run.agent_id
          AND NULLIF(BTRIM(t.pr_url), '') IS NULL
          AND NOT EXISTS (
            SELECT 1 FROM harness_runs other

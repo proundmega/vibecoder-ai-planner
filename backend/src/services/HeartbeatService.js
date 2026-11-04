@@ -78,7 +78,7 @@ class HeartbeatService {
     for (const agent of staleAgents) {
       if (agent.current_ticket_id) {
         try {
-          await TicketService.releaseTicket(agent.current_ticket_id);
+          await TicketService.releaseTicket(agent.current_ticket_id, { agentId: agent.agent_id });
         } catch (err) {
           logger.error(`Failed to release ticket ${agent.current_ticket_id} for stale agent ${agent.agent_id}:`, err.message);
         }

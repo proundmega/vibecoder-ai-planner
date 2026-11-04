@@ -198,7 +198,7 @@ class TicketService {
     return result.rows[0];
   }
 
-  async releaseTicket(ticketId, _adminId) {
+  async releaseTicket(ticketId, { agentId = null } = {}) {
     
 
     const ticketResult = await pool.query(
@@ -214,6 +214,10 @@ class TicketService {
 
     if (!ticket.assigned_agent_id) {
       throw new ValidationError('Ticket is not assigned to any agent');
+    }
+
+    if (agentId !== null && String(ticket.assigned_agent_id) !== String(agentId)) {
+      throw new ForbiddenError('Ticket is assigned to another agent');
     }
 
     const result = await pool.query(

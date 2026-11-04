@@ -1,5 +1,8 @@
 const { Pool } = require('pg');
+const request = require('supertest');
+const app = require('../../index');
 const TicketService = require('../../services/TicketService');
+const { ForbiddenError } = require('../../errors/HttpError');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -9,6 +12,7 @@ describe('Ticket assigned agent identity (real DB)', () => {
   let userId;
   let projectId;
   let agentId;
+  let otherAgentId;
   let ticketId;
 
   beforeAll(async () => {
@@ -32,6 +36,13 @@ describe('Ticket assigned agent identity (real DB)', () => {
     );
     agentId = agent.rows[0].id;
 
+    const otherAgent = await pool.query(
+      `INSERT INTO agents (name, api_key, owner_id)
+       VALUES ($1, $2, $3) RETURNING id`,
+      [`agent-identity-other-${suffix}`, `other_key_${suffix}`, userId]
+    );
+    otherAgentId = otherAgent.rows[0].id;
+
     const ticket = await pool.query(
       `INSERT INTO tickets (project_id, title, status, owner_id)
        VALUES ($1, 'Agent identity ticket', 'backlog', $2) RETURNING id`,
@@ -50,9 +61,10 @@ describe('Ticket assigned agent identity (real DB)', () => {
   });
 
   afterAll(async () => {
-    await pool.query('DELETE FROM tickets WHERE id = $1', [ticketId]);
+    await pool.query('DELETE FROM tickets WHERE project_id = $1', [projectId]);
     await pool.query('DELETE FROM projects WHERE id = $1', [projectId]);
-    await pool.query('DELETE FROM agents WHERE id = $1', [agentId]);
+    await pool.query('DELETE FROM agents WHERE id = ANY($1)', [[agentId, otherAgentId]]);
+    await pool.query("DELETE FROM users WHERE email LIKE 'release_user_%'");
     await pool.query('DELETE FROM users WHERE id = $1', [userId]);
     await pool.end();
   });
@@ -64,7 +76,8 @@ describe('Ticket assigned agent identity (real DB)', () => {
        JOIN information_schema.constraint_column_usage ccu
          ON ccu.constraint_name = tc.constraint_name
         AND ccu.table_schema = tc.table_schema
-       WHERE tc.table_name = 'tickets'
+       WHERE tc.table_schema = current_schema()
+         AND tc.table_name = 'tickets'
          AND tc.constraint_name = 'tickets_assigned_agent_id_agent_fkey'`
     );
 
@@ -78,10 +91,69 @@ describe('Ticket assigned agent identity (real DB)', () => {
     expect(String(pickedUp.assigned_agent_id)).toBe(String(agentId));
     expect(pickedUp.status).toBe('in_progress');
 
-    const released = await TicketService.releaseTicket(ticketId, agentId);
+    const released = await TicketService.releaseTicket(ticketId, { agentId });
 
     expect(released.assigned_agent_id).toBeNull();
     expect(released.status).toBe('backlog');
+  });
+
+  test('release rejects an agent that does not own the ticket', async () => {
+    await TicketService.pickUpTicket(ticketId, agentId);
+
+    await expect(
+      TicketService.releaseTicket(ticketId, { agentId: otherAgentId })
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  test('a user-role JWT cannot release an agent-assigned ticket via the API', async () => {
+    await TicketService.pickUpTicket(ticketId, agentId);
+
+    const email = `release_user_${suffix}@test.com`;
+    const registered = await request(app)
+      .post('/api/auth/register')
+      .send({ name: 'Release User', email, password: 'password123', role: 'user' });
+
+    expect(registered.status).toBe(201);
+
+    const response = await request(app)
+      .post(`/api/v1/tickets/${ticketId}/release`)
+      .set('Authorization', `Bearer ${registered.body.token}`);
+
+    expect(response.status).toBe(403);
+
+    const stored = await pool.query(
+      'SELECT status, assigned_agent_id FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(stored.rows[0].status).toBe('in_progress');
+    expect(String(stored.rows[0].assigned_agent_id)).toBe(String(agentId));
+  });
+
+  test('deleting an assigned agent releases an in_progress ticket', async () => {
+    const doomedAgent = await pool.query(
+      `INSERT INTO agents (name, api_key, owner_id)
+       VALUES ($1, $2, $3) RETURNING id`,
+      [`agent-doomed-${suffix}`, `doomed_key_${suffix}`, userId]
+    );
+    const doomedAgentId = doomedAgent.rows[0].id;
+
+    const doomedTicket = await pool.query(
+      `INSERT INTO tickets (project_id, title, status, owner_id, assigned_agent_id, locked_at)
+       VALUES ($1, 'Doomed agent ticket', 'in_progress', $2, $3, NOW())
+       RETURNING id`,
+      [projectId, userId, doomedAgentId]
+    );
+
+    await pool.query('DELETE FROM agents WHERE id = $1', [doomedAgentId]);
+
+    const released = await pool.query(
+      'SELECT status, assigned_agent_id, locked_at FROM tickets WHERE id = $1',
+      [doomedTicket.rows[0].id]
+    );
+
+    expect(released.rows[0].status).toBe('backlog');
+    expect(released.rows[0].assigned_agent_id).toBeNull();
+    expect(released.rows[0].locked_at).toBeNull();
   });
 
   test('rejects an assigned_agent_id that is not an agent', async () => {

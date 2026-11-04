@@ -26,13 +26,24 @@ describe('048 ticket assigned agent migration', () => {
     expect(sql).toContain('REFERENCES agents(id)');
     expect(sql).toContain('a.owner_id = t.assigned_agent_id');
     expect(sql).toContain('tickets_assigned_agent_id_agent_fkey');
+    expect(sql).toContain('current_schema()');
   });
 
-  test('rollback restores the users(id) FK', () => {
+  test('forward migration releases unmapped in_progress tickets', () => {
+    const sql = fs.readFileSync(forwardPath, 'utf8');
+
+    expect(sql).toContain("CASE WHEN t.status = 'in_progress' THEN 'backlog'");
+    expect(sql).toContain('CREATE TRIGGER release_agent_tickets_on_delete');
+    expect(sql).toContain('BEFORE DELETE ON agents');
+  });
+
+  test('rollback restores the users(id) FK and releases unmapped tickets', () => {
     const sql = fs.readFileSync(rollbackPath, 'utf8');
 
     expect(sql).toContain('REFERENCES users(id)');
     expect(sql).toContain('a.owner_id');
     expect(sql).toContain('tickets_assigned_agent_id_fkey');
+    expect(sql).toContain("CASE WHEN t.status = 'in_progress' THEN 'backlog'");
+    expect(sql).toContain('DROP TRIGGER IF EXISTS release_agent_tickets_on_delete');
   });
 });
