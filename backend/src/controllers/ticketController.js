@@ -138,7 +138,19 @@ async function changeStatus(req, res, next) {
 async function pickUpTicket(req, res, next) {
   try {
     const { ticketId } = req.params;
-    const agentId = req.user.userId;
+    // assigned_agent_id references agents(id); only API-key agent requests
+    // carry an agent identity.
+    const agentId = req.agent && req.agent.id;
+
+    if (!agentId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Agent credentials required to pick up a ticket',
+        },
+      });
+    }
 
     const result = await TicketService.pickUpTicket(ticketId, agentId);
     res.json({

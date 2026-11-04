@@ -187,7 +187,7 @@ vibecode/
 │   ├── services/           → ~25 business logic services
 │   ├── controllers/        → ~12 request handlers
 │   ├── models/             → approval, project, ticket, user
-│   ├── migrations/         → 46 SQL files + 2 data migrations
+│   ├── migrations/         → 47 SQL files + 2 data migrations
 │   ├── validators/         → Joi schemas
 │   ├── db.js               → pg Pool (DATABASE_URL)
 │   └── utils/logger.js     → Winston logger

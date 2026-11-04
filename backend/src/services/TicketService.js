@@ -226,7 +226,7 @@ class TicketService {
     return result.rows[0];
   }
 
-  async enforceOwnership(ticketId, userId) {
+  async enforceOwnership(ticketId, agentId) {
     
 
     const result = await pool.query(
@@ -240,7 +240,7 @@ class TicketService {
 
     const ticket = result.rows[0];
 
-    if (ticket.assigned_agent_id && ticket.assigned_agent_id !== userId) {
+    if (ticket.assigned_agent_id && String(ticket.assigned_agent_id) !== String(agentId)) {
       throw new ForbiddenError(`Ticket is being worked on by agent ${ticket.assigned_agent_id}`);
     }
 

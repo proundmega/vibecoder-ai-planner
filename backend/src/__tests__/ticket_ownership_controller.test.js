@@ -48,30 +48,48 @@ describe('TicketController - Agent Orchestration', () => {
   });
 
   describe('pickUpTicket', () => {
-    test('should pick up a ticket and return agent info', async () => {
+    test('should pick up a ticket using the agent id, not the owner user id', async () => {
       const mockTicket = {
         id: 100,
         title: 'Test Ticket',
         status: 'in_progress',
-        assigned_agent_id: 1,
+        assigned_agent_id: 7,
         locked_at: new Date(),
       };
 
       TicketService.pickUpTicket.mockResolvedValueOnce(mockTicket);
 
       req.params.ticketId = '100';
+      req.agent = { id: 7, owner_id: 1 };
 
       await ticketController.pickUpTicket(req, res);
 
-      expect(TicketService.pickUpTicket).toHaveBeenCalledWith('100', 1);
+      expect(TicketService.pickUpTicket).toHaveBeenCalledWith('100', 7);
       expect(res.json).toHaveBeenCalledWith({
         success: true,
         data: {
           id: 100,
           title: 'Test Ticket',
           status: 'in_progress',
-          assignedAgentId: 1,
+          assignedAgentId: 7,
           lockedAt: expect.any(Date),
+        },
+      });
+    });
+
+    test('should reject a JWT request that has no agent identity', async () => {
+      req.params.ticketId = '100';
+      req.agent = undefined;
+
+      await ticketController.pickUpTicket(req, res);
+
+      expect(TicketService.pickUpTicket).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Agent credentials required to pick up a ticket',
         },
       });
     });
@@ -81,6 +99,7 @@ describe('TicketController - Agent Orchestration', () => {
       TicketService.pickUpTicket.mockRejectedValueOnce(mockError);
 
       req.params.ticketId = '100';
+      req.agent = { id: 7, owner_id: 1 };
 
       const next = jest.fn();
       await ticketController.pickUpTicket(req, res, next);

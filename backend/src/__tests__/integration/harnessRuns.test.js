@@ -39,20 +39,6 @@ describe('HarnessRunService — PostgreSQL integration', () => {
       [`Harness Other Project ${suffix}`, otherOwnerId]
     );
 
-    const ticket = await pool.query(
-      `INSERT INTO tickets (project_id, title, status, owner_id, assigned_agent_id)
-       VALUES ($1, 'Harness ticket', 'in_progress', $2, $2) RETURNING id`,
-      [project.rows[0].id, ownerId]
-    );
-    ticketId = ticket.rows[0].id;
-
-    const otherTicket = await pool.query(
-      `INSERT INTO tickets (project_id, title, status, owner_id, assigned_agent_id)
-       VALUES ($1, 'Other harness ticket', 'in_progress', $2, $2) RETURNING id`,
-      [otherProject.rows[0].id, otherOwnerId]
-    );
-    otherTicketId = otherTicket.rows[0].id;
-
     const agent = await pool.query(
       `INSERT INTO agents (name, api_key, owner_id)
        VALUES ($1, $2, $3) RETURNING id`,
@@ -66,6 +52,20 @@ describe('HarnessRunService — PostgreSQL integration', () => {
       [`harness-other-agent-${suffix}`, `other_key_${suffix}`, otherOwnerId]
     );
     otherAgentId = otherAgent.rows[0].id;
+
+    const ticket = await pool.query(
+      `INSERT INTO tickets (project_id, title, status, owner_id, assigned_agent_id)
+       VALUES ($1, 'Harness ticket', 'in_progress', $2, $3) RETURNING id`,
+      [project.rows[0].id, ownerId, agentId]
+    );
+    ticketId = ticket.rows[0].id;
+
+    const otherTicket = await pool.query(
+      `INSERT INTO tickets (project_id, title, status, owner_id, assigned_agent_id)
+       VALUES ($1, 'Other harness ticket', 'in_progress', $2, $3) RETURNING id`,
+      [otherProject.rows[0].id, otherOwnerId, otherAgentId]
+    );
+    otherTicketId = otherTicket.rows[0].id;
   });
 
   afterAll(async () => {
@@ -81,7 +81,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
       `UPDATE tickets
        SET status = 'in_progress', assigned_agent_id = $2, pr_url = NULL
        WHERE id = $1`,
-      [ticketId, ownerId]
+      [ticketId, agentId]
     );
   });
 
@@ -120,7 +120,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
       `UPDATE tickets
        SET status = 'in_progress', assigned_agent_id = $2, pr_url = NULL
        WHERE id = $1`,
-      [ticketId, ownerId]
+      [ticketId, agentId]
     );
 
     await expect(
@@ -984,7 +984,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
     await pool.query(
       "UPDATE tickets SET status = 'in_progress', assigned_agent_id = $2 WHERE id = $1",
-      [ticketId, ownerId]
+      [ticketId, agentId]
     );
     await pool.query("UPDATE harness_runs SET status = 'failed' WHERE id = $1", [run.id]);
     await expect(
