@@ -39,7 +39,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D1 | O1 milestone persistence | audit | Backend | bp-124 slice (in review #116) | in review (#116) |
 | D2 | O2 dead SQL/tables | audit | Backend | bp-124 slice (methods deleted) | in review (#116) |
 | D3 | O3 E2E rewrite + CI | audit | Testing | bp-124 slice (not started) | open |
-| D4 | O4 agent identity | audit | Agent / DB | bp-124 slice (FK + backfill, stacked PR) | in review (stacked PR) |
+| D4 | O4 agent identity | audit | Agent / DB | bp-124 slice (FK + backfill, PR #117) | in review (#117) |
 | D5 | O5 validator camelCase | audit | Frontend | bp-124 slice (in review #116) | in review (#116) |
 | D6 | O6 PUT response type | audit | Backend / Frontend | bp-124 slice (in review #116) | in review (#116) |
 | D7 | O7 docs drift | audit | Docs | bp-124 slice (README fixed; DONE moves pending) | in progress |
