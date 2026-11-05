@@ -24,8 +24,8 @@
 | File | Action | Change |
 |---|---|---|
 | `backend/src/models/ticket.js` | modify | Map `milestoneId`/`estimate`/`dependsOn`; persist them in `UPDATE`; `RETURNING *` and return the ticket; delete `deleteWithAudit` |
-| `backend/src/services/TicketService.js` | modify | Validate camelCase milestone fields (snake_case aliases kept), pass them to the model, return the ticket; delete `updateMilestoneFields` and `getAgentTickets`; fix `dependsOn` in dependency checks |
-| `backend/src/controllers/ticketController.js` | modify | Allow `milestoneId`/`estimate`/`dependsOn`; respond with the updated ticket |
+| `backend/src/services/TicketService.js` | modify | Validate camelCase milestone fields (snake_case aliases kept), pass them to the model, return the ticket; delete `updateMilestoneFields` and `getAgentTickets`; fix `dependsOn` in dependency checks; `enforceOwnership` compares agent ids as strings |
+| `backend/src/controllers/ticketController.js` | modify | Allow `milestoneId`/`estimate`/`dependsOn` and return the updated ticket; pickup uses `req.agent.id`; release checks agent ownership or JWT `PROJECT_UPDATE` |
 | `backend/src/api/openapi-spec.js` | modify | `dependsOn` string[]; `NumericId` for BIGSERIAL ids; nullable name/description/ownerName |
 | `backend/src/api/tickets.js` | modify | PUT body: numeric-string `assigneeId`, `dependsOn` integer-or-string |
 | `backend/src/validators/tickets.js` | modify | Joi rules for `milestoneId`, `estimate`, `dependsOn`; `assigneeId` accepts numeric string/number |
@@ -35,7 +35,7 @@
 | `backend/src/__tests__/integration/setup.js` | modify | Use the shared runner so migrations fail the run |
 | `frontend/src/api/validator.ts` | modify | Project/Ticket → camelCase numeric-string ids; Agent matches snake_case DB rows; primitive type enforcement + nullable fields |
 | `frontend/src/api/tickets.ts` | modify | Add `milestoneId`/`estimate`/`dependsOn`; `description` nullable |
-| `frontend/src/api/projects.ts` | modify | camelCase `createdAt`/`updatedAt`, add `ownerId`/`ownerName`, nullable `description` |
+| `frontend/src/api/projects.ts` | modify | camelCase `createdAt`, add `ownerId`/`ownerName`, nullable `description` |
 | `frontend/src/views/Dashboard.vue`, `ProjectList.vue` | modify | Read `project.createdAt` instead of the never-populated `created_at` |
 | `frontend/src/__tests__/api-contract.test.ts` | modify | Fixtures use BIGSERIAL numeric strings; milestone fields + `dependsOn` string[] tests; snake_case rejection test |
 | `frontend/src/__tests__/tickets.test.js` | modify | UI contract: `updateTicket` forwards milestone fields |
@@ -47,14 +47,11 @@
 | `backend/src/__tests__/noMissingTableReferences.test.js` | add | O2 guard against missing-table SQL |
 | `backend/src/__tests__/api-ticket-put.test.js` | modify | O1/O6 route regression tests |
 | `backend/src/__tests__/ticketController.test.js`, `ticketModelRegressions.test.js`, `agentService.test.js`, `ticket_ownership*.test.js` | modify | Align with the new return value and removed methods |
-| `backend/src/migrations/048_ticket_assigned_agent_fk.sql` | add | Drop users FK, backfill owner→oldest agent, add `agents(id)` FK `ON DELETE SET NULL` |
+| `backend/src/migrations/048_ticket_assigned_agent_fk.sql` | add | Drop users FK, backfill owner→oldest agent, release unmapped `in_progress` tickets to `backlog`, add `agents(id)` FK `ON DELETE SET NULL`, and a `BEFORE DELETE` trigger that releases an agent's ticket |
 | `backend/src/migrations/048_ticket_assigned_agent_fk_rollback.sql` | add | Restore the legacy `users(id)` FK |
 | `backend/src/migrations/apply.js` | modify | Register migration 048 |
-| `backend/src/controllers/ticketController.js` | modify | Pickup uses `req.agent.id`; JWT callers get 403 |
-| `backend/src/services/TicketService.js` | modify | `enforceOwnership` compares agent ids as strings |
 | `backend/src/services/HarnessRunService.js` | modify | Start/lease checks compare `assigned_agent_id` to `agents.id`; run release requires `assigned_agent_id = run.agent_id` |
 | `backend/src/services/HeartbeatService.js` | modify | Pass the stale agent id when releasing its ticket |
-| `backend/src/controllers/ticketController.js` | modify | Pickup uses `req.agent.id`; release checks agent ownership or JWT `TICKET_UPDATE` |
 | `backend/src/middleware/ticketOwnership.js` | modify | Enforce using the agent id, not the owner user id |
 | `backend/src/__tests__/integration/ticketAgentIdentity.test.js` | add | Real DB: FK points at agents, pickup/release identity, agent deletion releases ticket |
 | `backend/src/__tests__/integration/ticketAssignedAgentMigration.test.js` | add | Transactional backfill: oldest agent, status reset, idempotent re-run, rollback |
