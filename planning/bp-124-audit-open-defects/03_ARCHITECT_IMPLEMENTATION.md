@@ -9,7 +9,7 @@
 - [x] Create per-defect planning suites when scheduled (folded into bp-124 slices; see `00`)
 - [x] Fix O1 milestone field persistence
 - [x] Fix O2 dead SQL / missing tables
-- [ ] Rewrite and wire Cypress E2E (O3)
+- [x] Rewrite and wire Cypress E2E (O3)
 - [x] Reconcile agent identity semantics (O4)
 - [x] Migrate frontend validator to camelCase (O5)
 - [x] Fix `PUT /tickets/:id` response type (O6)
@@ -56,6 +56,13 @@
 | `backend/src/__tests__/integration/ticketAgentIdentity.test.js` | add | Real DB: FK points at agents, pickup/release identity, agent deletion releases ticket |
 | `backend/src/__tests__/integration/ticketAssignedAgentMigration.test.js` | add | Transactional backfill: oldest agent, status reset, idempotent re-run, rollback |
 | `backend/src/__tests__/ticketReleaseAuthorization.test.js` | add | Service-level release identity checks |
+| `frontend/cypress/support/commands.ts` | modify | `cy.seed`/`cy.login` for `/api/v1`, permission seeding, API fixtures |
+| `frontend/cypress/e2e/*.cy.ts` | modify | Rewrite all 7 specs against API-seeded users |
+| `frontend/cypress/support/e2e.ts` | modify | Auto-accept `window.confirm` during user deletion |
+| `frontend/src/components/TicketEditModal.vue` | modify | `Unassigned` option uses `value=""` so clearing sends `null` |
+| `frontend/src/__tests__/ticketEditModal.test.ts` | modify | Assert the `Unassigned` option has an empty value |
+| `Jenkinsfile` | modify | Add `Cypress E2E` stage on the compose network |
+| `docker-compose.e2e.yml` | add | Disable rate limiting for the disposable E2E stack |
 | `backend/src/__tests__/ticketAgentIdentityMigration.test.js` | add | Migration registration/rollback guard |
 | `backend/src/__tests__/ticket_ownership_controller.test.js` | modify | Pickup/release actor and permission cases |
 | `backend/integration-test/suites/ticket_ownership.test.sh`, `agent_lifecycle.test.sh` | modify | Authenticate pickup/release with `X-API-Key`; assert JWT pickup is rejected (O4) |
@@ -77,7 +84,8 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR1 | Backend integration | `src/__tests__/integration/ticketMilestoneContract.test.js` | real DB/API: PUT persists `dependsOn`/`estimate`; GET returns `dependsOn` as string[] | `npm run test:integration` |
 | FR1 | OpenAPI contract | `src/__tests__/openapiTicketContract.test.js` | `dependsOn.items` is string; BIGSERIAL ids use `NumericId`; `milestoneId` stays uuid | `npm test` |
 | FR2 | Backend guard | `src/__tests__/noMissingTableReferences.test.js` | no `project_agents`/`audit_log` references in `src/` | `npm test` |
-| FR3 | — | — | not started (O3) | — |
+| FR3 | Cypress E2E | `frontend/cypress/e2e/*.cy.ts` | API-seeded auth/projects/tickets/roles/registration/users/assignment | `npm run cypress:e2e` |
+| FR3 | CI | `Jenkinsfile` | `Cypress E2E` stage starts the e2e stack and runs the suite | Jenkins |
 | FR4 | Migration / DB | `src/__tests__/integration/ticketAgentIdentity.test.js` | FK references `agents(id)`; pickup stores agent id; non-agent id rejected | `npm run test:integration` |
 | FR4 | Backend controller | `src/__tests__/ticket_ownership_controller.test.js` | pickup passes `req.agent.id`; JWT caller gets 403 | `npm test` |
 | FR4 | Backend service | `src/__tests__/harnessRunService.test.js` | start/lease checks compare `assigned_agent_id` to `agents.id` | `npm test` |
@@ -112,3 +120,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 | 2026-11-04 | `bdd8dd0` (stacked PR #117) | O4 | Backend 121 suites / 1524 tests pass; frontend 60 files / 562 tests pass; integration 6 suites / 134 tests pass (fresh + re-run); migration 048 backfill and rollback verified against simulated legacy data |
 | 2026-11-06 | PR #117 | O4 integration-test auth | `ticket_ownership` + `agent_lifecycle` bash suites pass (21/21) with agent API keys; JWT pickup returns 403 |
 | 2026-11-04 | `78b64b9` (stacked PR #117) | O4 review fixes | Backend 122 suites / 1530 tests pass; frontend 60 files / 562 tests pass; integration 7 suites / 139 tests pass (fresh + re-run); backfill status reset, agent-delete trigger, release authorization, and transactional migration test added |
+| 2026-11-05 | this commit (stacked PR) | O3 | Cypress 7 specs / 37 tests pass against the dev stack; backend 122 suites / 1530 tests; frontend 60 files / 562 tests; integration 7 suites / 139 tests; fixed the `Unassigned` assignee option found by the new E2E |

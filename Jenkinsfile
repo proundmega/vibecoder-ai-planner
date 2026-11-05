@@ -205,6 +205,73 @@ pipeline {
             }
         }
 
+        stage('Cypress E2E') {
+            when {
+                anyOf {
+                    branch 'master'
+                    expression { env.FRONTEND_CHANGED == 'true' }
+                }
+            }
+            steps {
+                script {
+                    // The API needs the same secrets as the Integration stage.
+                    sh """
+                        cat > .env <<EOF
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+JWT_SECRET=${JWT_SECRET}
+ENCRYPTION_KEY=${ENCRYPTION_KEY}
+PGADMIN_PASSWORD=changeme
+EOF
+                    """
+
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml down -v --remove-orphans || true"
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml up -d --build"
+
+                    // Wait for the API and frontend health checks before Cypress
+                    // starts seeding users through the API.
+                    def ready = false
+                    for (int i = 0; i < 30; i++) {
+                        def healthFormat = '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}'
+                        def apiHealth = sh(
+                            script: "DOCKER_HOST=\$DOCKER_HOST docker inspect --format '${healthFormat}' \$(DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml ps -q api) 2>/dev/null || echo starting",
+                            returnStdout: true
+                        ).trim()
+                        def frontendHealth = sh(
+                            script: "DOCKER_HOST=\$DOCKER_HOST docker inspect --format '${healthFormat}' \$(DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml ps -q frontend) 2>/dev/null || echo starting",
+                            returnStdout: true
+                        ).trim()
+                        if (apiHealth == 'healthy' && frontendHealth == 'healthy') {
+                            ready = true
+                            break
+                        }
+                        echo "Cypress stack not ready (api=${apiHealth}, frontend=${frontendHealth})"
+                        sleep(time: 3, unit: 'SECONDS')
+                    }
+                    if (!ready) {
+                        sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml logs --tail=100 || true"
+                        error('Cypress E2E stack failed to become healthy')
+                    }
+
+                    // Run inside the compose network so the browser can reach
+                    // the frontend service directly; specs seed via the API.
+                    sh """
+                        DOCKER_HOST=\$DOCKER_HOST docker run --rm --user root \
+                          --network ${COMPOSE_PROJECT_NAME}_default \
+                          -v "\$WORKSPACE:/repo" -w /repo/frontend \
+                          -e CYPRESS_baseUrl=http://frontend \
+                          -e CYPRESS_video=false \
+                          -e CYPRESS_screenshotsFolder=/tmp/cypress/screenshots \
+                          cypress/included:15.19.0 --browser chrome
+                    """
+                }
+            }
+            post {
+                always {
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml down -v --remove-orphans || true"
+                }
+            }
+        }
+
         stage('Agent') {
             when {
                 anyOf {

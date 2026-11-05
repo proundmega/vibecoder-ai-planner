@@ -20,10 +20,11 @@ This is an umbrella ticket. Each defect gets its own implementation slice (and, 
 
 ## O3 - Cypress E2E
 
-- Replace hardcoded `alice@example.com` with API-seeded users.
-- Use versioned `/api/v1` paths.
-- Fix `.error` assertions to match the current UI.
-- Add a Jenkins stage with a seeded backend/frontend stack.
+- Seed through the API: `cy.seed()` registers an admin via `/api/auth/register`, the admin creates member/agent users via `/api/v1/users`, and projects/tickets are created via `/api/v1`. No hardcoded `alice@example.com`.
+- `cy.login()` fetches `/api/v1/permissions/:role` and stores the token, user and permissions in localStorage so router guards work.
+- Versioned `/api/v1` paths throughout; error assertions target `.login__error` / `.register__error`.
+- The assignment spec opens the edit modal from API-created tickets and verifies assigning and clearing the assignee. Clearing exposed an `Unassigned` option with no value; the option now uses `value=""`.
+- Jenkins stage `Cypress E2E` starts `docker-compose.yml` + `docker-compose.e2e.yml` (rate limiting off), waits for API/frontend health, and runs `cypress/included` on the compose network.
 - Component tests are tracked separately as **O9**, not folded into the E2E rewrite.
 
 ## O4 - Agent identity

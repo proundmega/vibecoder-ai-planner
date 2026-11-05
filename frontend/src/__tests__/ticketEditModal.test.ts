@@ -61,6 +61,7 @@ describe('TicketEditModal', () => {
     await flushPromises()
 
     const assigneeSelect = wrapper.findAll('select')[1]
+    expect(assigneeSelect.findAll('option')[0].attributes('value')).toBe('')
     await assigneeSelect.setValue('')
     await wrapper.find('form').trigger('submit')
     await flushPromises()

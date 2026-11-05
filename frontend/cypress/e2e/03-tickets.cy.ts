@@ -1,99 +1,82 @@
 describe('Ticket CRUD and Status Transitions', () => {
+  let admin: any;
+  let projectId: string;
+  let projectName: string;
+
+  before(() => {
+    cy.seed().then((seed) => {
+      admin = seed.users.admin;
+      projectId = seed.projectId;
+      projectName = seed.projectName;
+    });
+  });
+
   beforeEach(() => {
-    cy.login('alice@example.com', 'password123');
+    cy.login(admin.email, admin.password);
   });
 
-  it('should create a ticket and see it in backlog', () => {
-    cy.visit('/projects');
-    cy.get('.project-card').first().click();
-    cy.url().should('include', '/tickets');
-    
-    const ticketTitle = `Cypress Ticket ${Date.now()}`;
-    cy.get('button').contains('+ New Ticket').click();
-    cy.get('input[placeholder="Enter ticket title"]').type(ticketTitle);
-    cy.get('textarea[placeholder="Optional description"]').type('Created by Cypress');
-    cy.get('button[type="submit"]').contains('Create').click();
-    
-    cy.get('.ticket-card').should('contain', ticketTitle);
-    cy.get('.status-col.backlog .ticket-card').should('contain', ticketTitle);
+  it('should create a ticket from the board and see it in backlog', () => {
+    const title = `Board Ticket ${Date.now()}`;
+
+    cy.visit(`/projects/${projectId}/tickets`);
+    cy.contains('button', '+ New Ticket').click();
+    cy.get('.modal input[placeholder="Enter ticket title"]').type(title);
+    cy.get('.modal textarea[placeholder="Optional description"]').type('Created by Cypress');
+    cy.get('.modal .btn-submit').contains('Create').click();
+
+    cy.get('.status-col.backlog .ticket-card').should('contain', title);
   });
 
-  it('should edit a ticket via edit modal', () => {
-    cy.visit('/projects');
-    cy.get('.project-card').first().click();
-    cy.url().should('include', '/tickets');
-    
-    cy.get('.ticket-card').first().click();
-    cy.url().should('include', '/tickets/');
-    
-    cy.get('button').contains('Edit Ticket').click();
-    cy.get('.modal input[type="text"]').clear().type('Updated Title');
-    cy.get('.modal button[type="submit"]').contains('Save Changes').click();
-    
-    cy.get('.ticket-header .title').should('contain', 'Updated Title');
+  it('should edit a ticket through the edit modal', () => {
+    const title = `Editable Ticket ${Date.now()}`;
+    const updated = `Updated ${Date.now()}`;
+
+    cy.createTicket(projectId, title).then((ticketId) => {
+      cy.visit(`/projects/${projectId}/tickets/${ticketId}`);
+      cy.contains('button', 'Edit Ticket').click();
+      cy.get('.v-modal input[placeholder="Ticket title"]').clear().type(updated);
+      cy.contains('.v-modal button', 'Save Changes').click();
+
+      cy.get('.ticket-header .title').should('contain', updated);
+    });
   });
 
-  it('should change ticket status via buttons', () => {
-    cy.visit('/projects');
-    cy.get('.project-card').first().click();
-    cy.url().should('include', '/tickets');
-    
-    cy.get('.ticket-card').first().click();
-    cy.url().should('include', '/tickets/');
-    
-    const currentStatus = Cypress.$('.badge.status').first().text().trim();
-    
-    if (currentStatus === 'backlog') {
-      cy.get('button').contains('Start Work').click();
+  it('should move a backlog ticket to in progress', () => {
+    const title = `Transition Ticket ${Date.now()}`;
+
+    cy.createTicket(projectId, title).then((ticketId) => {
+      cy.visit(`/projects/${projectId}/tickets/${ticketId}`);
+      cy.contains('button', 'Start Work').click();
       cy.get('.badge.status').should('contain', 'in_progress');
-    }
-  });
-
-  it('should show status transitions based on current status', () => {
-    cy.visit('/projects');
-    cy.get('.project-card').first().click();
-    cy.url().should('include', '/tickets');
-    
-    cy.get('.ticket-card').first().click();
-    cy.url().should('include', '/tickets/');
-    
-    cy.get('.actions button').should('have.length.greaterThan', 0);
+    });
   });
 
   it('should add a comment to a ticket', () => {
-    cy.visit('/projects');
-    cy.get('.project-card').first().click();
-    cy.url().should('include', '/tickets');
-    
-    cy.get('.ticket-card').first().click();
-    cy.url().should('include', '/tickets/');
-    
-    cy.get('.comment-input input').type('Cypress test comment');
-    cy.get('.comment-input button').contains('Add').click();
-    
-    cy.get('.comment').last().should('contain', 'Cypress test comment');
+    const title = `Comment Ticket ${Date.now()}`;
+    const comment = `Cypress comment ${Date.now()}`;
+
+    cy.createTicket(projectId, title).then((ticketId) => {
+      cy.visit(`/projects/${projectId}/tickets/${ticketId}`);
+      cy.get('.comment-input input').type(comment);
+      cy.contains('.comment-input button', 'Add').click();
+      cy.get('.comment').should('contain', comment);
+    });
   });
 
-  it('should delete a ticket', () => {
-    cy.visit('/projects');
-    cy.get('.project-card').first().click();
-    cy.url().should('include', '/tickets');
-    
-    cy.get('.ticket-card').first().click();
-    cy.url().should('include', '/tickets/');
-    
-    cy.get('button').contains('Delete Ticket').click();
-    cy.get('.delete-confirm').should('exist');
-    cy.get('.modal button').contains('Delete').click();
-    
-    cy.url().should('include', '/tickets');
+  it('should delete a ticket after confirmation', () => {
+    const title = `Delete Ticket ${Date.now()}`;
+
+    cy.createTicket(projectId, title).then((ticketId) => {
+      cy.visit(`/projects/${projectId}/tickets/${ticketId}`);
+      cy.contains('button', 'Delete Ticket').click();
+      cy.get('.delete-confirm .btn-danger').click();
+      cy.url().should('include', `/projects/${projectId}/tickets`);
+      cy.url().should('not.include', `/tickets/${ticketId}`);
+    });
   });
 
-  it('should filter tickets by project selection', () => {
-    cy.visit('/projects');
-    cy.get('.project-card').first().click();
-    cy.url().should('include', '/tickets');
-    
-    cy.get('.project-select').should('exist');
+  it('should show the project selector on the board', () => {
+    cy.visit(`/projects/${projectId}/tickets`);
+    cy.get('.project-select').should('contain', projectName);
   });
 });

@@ -1,0 +1,6 @@
+services:
+  api:
+    environment:
+      # Cypress seeds users via the API; disable login/register rate limits
+      # for the disposable E2E stack only.
+      INTEGRATION_TESTS: "1"
