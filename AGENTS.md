@@ -109,7 +109,7 @@ cypress e2e: docker compose (e2e overlay) → cypress/included on the compose ne
 integration job: docker compose up → Jest integration tests → bash integration tests
 agent job: mvn package -q -DskipTests
 ```
-Change detection: only runs changed layers (not full pipeline on every branch). Backend CI uses a real PostgreSQL service container. Integration tests run in a dedicated `docker-compose.test.yml` test container.
+The full pipeline runs on every build; no stages are skipped by change detection. Backend CI uses a real PostgreSQL service container. Integration tests run in a dedicated `docker-compose.test.yml` test container.
 
 ### Bug fix protocol
 Every fix **must** include a regression test.

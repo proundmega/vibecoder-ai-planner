@@ -330,8 +330,8 @@ integration:   docker compose up → Jest integration tests → bash integration
 agent job:     mvn package -q -DskipTests
 ```
 
-Change detection runs only the layers that changed. The backend job uses a real
-PostgreSQL service container.
+The full pipeline runs on every build; no stages are skipped by change
+detection. The backend job uses a real PostgreSQL service container.
 
 ## Planning
 
