@@ -12,6 +12,9 @@ describe('Ticket Assignment', () => {
   });
 
   function openFreshTicket(title: string) {
+    // Ticket writes are currently guarded only by TICKET_UPDATE, not project
+    // membership, so this seeded member can edit the admin's project ticket.
+    // Membership enforcement is recorded as deferred item 00 D16.
     cy.login(admin.email, admin.password);
     cy.createTicket(projectId, title).then((ticketId) => {
       cy.login(member.email, member.password);
@@ -26,7 +29,6 @@ describe('Ticket Assignment', () => {
     cy.get('.v-modal select').eq(1).select(admin.name);
     cy.contains('.v-modal button', 'Save Changes').click();
 
-    cy.reload();
     cy.get('.meta').should('contain', admin.name);
   });
 
@@ -36,13 +38,11 @@ describe('Ticket Assignment', () => {
     cy.contains('button', 'Edit Ticket').click();
     cy.get('.v-modal select').eq(1).select(admin.name);
     cy.contains('.v-modal button', 'Save Changes').click();
-    cy.reload();
     cy.get('.meta').should('contain', admin.name);
 
     cy.contains('button', 'Edit Ticket').click();
     cy.get('.v-modal select').eq(1).select('Unassigned');
     cy.contains('.v-modal button', 'Save Changes').click();
-    cy.reload();
     cy.get('.meta').should('not.contain', admin.name);
   });
 

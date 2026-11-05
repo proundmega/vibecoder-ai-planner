@@ -2,5 +2,6 @@ services:
   api:
     environment:
       # Cypress seeds users via the API; disable login/register rate limits
-      # for the disposable E2E stack only.
-      INTEGRATION_TESTS: "1"
+      # and allow the origin the browser uses inside the compose network.
+      - INTEGRATION_TESTS=1
+      - ALLOWED_ORIGINS=http://frontend,http://localhost:3000,http://localhost:3002

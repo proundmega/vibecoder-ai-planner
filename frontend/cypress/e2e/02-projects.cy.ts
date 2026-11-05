@@ -33,7 +33,10 @@ describe('Project CRUD', () => {
     cy.get('.modal textarea[placeholder="Optional description"]').type('Created by Cypress');
     cy.get('.modal .btn-submit').contains('Create').click();
 
-    cy.get('.project-card').should('contain', name);
+    // handleCreate navigates straight to the new board.
+    cy.url().should('include', '/tickets');
+    cy.visit('/projects');
+    cy.contains('.project-card', name).should('exist');
   });
 
   it('should navigate to the ticket board from a project card', () => {
