@@ -74,11 +74,16 @@ describe('Ticket model regression tests', () => {
             priority: 'medium',
           }],
         })
-        .mockResolvedValueOnce({ rows: [] });
+        .mockResolvedValueOnce({ rows: [{
+          id: 1,
+          project_id: 2,
+          title: 'New title',
+          status: 'backlog',
+          priority: 'medium',
+        }] });
 
-      await expect(
-        Ticket.update(1, { title: 'New title', status: 'backlog' })
-      ).resolves.toBeUndefined();
+      const updated = await Ticket.update(1, { title: 'New title', status: 'backlog' });
+      expect(updated.title).toBe('New title');
 
       expect(pool.query).toHaveBeenCalledTimes(2);
       const [sql, params] = pool.query.mock.calls[1];

@@ -187,7 +187,7 @@ vibecode/
 │   ├── services/           → ~25 business logic services
 │   ├── controllers/        → ~12 request handlers
 │   ├── models/             → approval, project, ticket, user
-│   ├── migrations/         → 37 SQL files + 2 data migrations
+│   ├── migrations/         → 46 SQL files + 2 data migrations
 │   ├── validators/         → Joi schemas
 │   ├── db.js               → pg Pool (DATABASE_URL)
 │   └── utils/logger.js     → Winston logger
@@ -319,14 +319,18 @@ Every fix **must** include a regression test:
 
 ## CI/CD
 
-GitHub Actions (`.github/workflows/ci.yml`):
+Jenkins (`Jenkinsfile`):
 
 ```
-backend job:  npm ci → lint → test → contract test → node --check src/index.js
-frontend job: npm ci → lint → typecheck → build
+backend job:   npm ci → lint → syntax check → unit test → coverage
+frontend job:  npm ci → lint → typecheck → unit test → coverage → build
+contract test: vitest run api-contract.test.ts (after backend + frontend)
+integration:   docker compose up → Jest integration tests → bash integration tests
+agent job:     mvn package -q -DskipTests
 ```
 
-Backend CI job runs a real PostgreSQL service container.
+Change detection runs only the layers that changed. The backend job uses a real
+PostgreSQL service container.
 
 ## Planning
 
@@ -343,7 +347,7 @@ Planning suites live in `planning/`:
 - `fg-XX-*` — Feature groups
 - `DONE/` — Completed suites
 - `archived/` — Archived suites
-- `TICKETS.txt` — Active tickets
+- `PENDING.txt` — Active ticket queue (canonical)
 
 Each suite follows templates: `00_ARCHITECT_CHECKLIST.md` → `01_ARCHITECT_REQUIREMENT.md` → `02_ARCHITECT_DESIGN.md` → `03_ARCHITECT_IMPLEMENTATION.md` → `04_SPECIFICATION.md` (optional) → `05_RUNBOOK.md` (optional). See `planning/README.md` for document ownership and rules, and `planning/ENGINEERING_STANDARDS.md` for repo-wide engineering conventions.
 

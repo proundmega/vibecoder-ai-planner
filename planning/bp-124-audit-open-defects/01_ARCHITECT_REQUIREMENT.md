@@ -39,7 +39,7 @@
 
 ## Functional requirements
 
-- **FR1 - O1:** `TicketService.update()` persists `milestone_id`, `estimate`, `depends_on`; `updateMilestoneFields()` has callers and tests.
+- **FR1 - O1:** `TicketService.update()` persists `milestoneId`, `estimate`, `dependsOn` and returns the persisted ticket. `updateMilestoneFields()` had no callers and was removed rather than wired; the model/service/route/integration tests cover the chosen path.
 - **FR2 - O2:** either create the missing tables or remove the dead methods; no latent 500s.
 - **FR3 - O3:** rewrite E2E specs for `/api/v1`, seed via API, and add a Jenkins stage.
 - **FR4 - O4:** `assigned_agent_id` identifies the agent, not the owner user; pickup/release/audit are correct.

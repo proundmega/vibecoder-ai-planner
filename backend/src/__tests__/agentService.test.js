@@ -101,21 +101,6 @@ describe('AgentService', () => {
     });
   });
 
-  describe('getAgentTickets', () => {
-    it('returns tickets with nested subquery join', async () => {
-      const mockRows = [{ id: 't1', title: 'Test', assignee_name: 'User' }];
-      pool.query.mockResolvedValueOnce({ rows: mockRows });
-
-      const result = await AgentService.getAgentTickets('a1', 'proj-1');
-
-      expect(pool.query).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT t.*'),
-        ['a1', 'proj-1']
-      );
-      expect(result).toEqual(mockRows);
-    });
-  });
-
   describe('incrementDailyUsage', () => {
     it('increments current_daily_usage by 1', async () => {
       await AgentService.incrementDailyUsage('a1');

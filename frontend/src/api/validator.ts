@@ -1,18 +1,25 @@
 interface SchemaDefinition {
   type: 'string' | 'number' | 'boolean' | 'object' | 'array' | 'null';
   format?: string;
+  pattern?: string;
+  nullable?: boolean;
   enum?: string[];
   properties?: Record<string, SchemaDefinition>;
   items?: SchemaDefinition;
   required?: string[];
 }
 
+const FORMAT_PATTERNS: Record<string, RegExp> = {
+  int64: /^[0-9]+$/,
+  uuid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+};
+
 const schemas: Record<string, SchemaDefinition> = {
   User: {
     type: 'object',
     properties: {
-      id: { type: 'string', format: 'uuid' },
-      name: { type: 'string' },
+      id: { type: 'string', format: 'int64' },
+      name: { type: 'string', nullable: true },
       email: { type: 'string', format: 'email' },
       role: { type: 'string', enum: ['user', 'member', 'project_admin', 'super_admin'] },
       isActive: { type: 'boolean' },
@@ -25,41 +32,49 @@ const schemas: Record<string, SchemaDefinition> = {
   Project: {
     type: 'object',
     properties: {
-      id: { type: 'string', format: 'uuid' },
+      id: { type: 'string', format: 'int64' },
       name: { type: 'string' },
-      description: { type: 'string' },
-      owner_id: { type: 'string', format: 'uuid' },
-      created_at: { type: 'string', format: 'date-time' },
-      updated_at: { type: 'string', format: 'date-time' },
+      description: { type: 'string', nullable: true },
+      ownerId: { type: 'string', format: 'int64' },
+      ownerName: { type: 'string', nullable: true },
+      createdAt: { type: 'string', format: 'date-time' },
     },
-    required: ['id', 'name', 'owner_id'],
+    required: ['id', 'name', 'ownerId'],
   },
   Ticket: {
     type: 'object',
     properties: {
-      id: { type: 'string', format: 'uuid' },
+      id: { type: 'string', format: 'int64' },
       title: { type: 'string' },
-      description: { type: 'string' },
+      description: { type: 'string', nullable: true },
       status: { type: 'string', enum: ['backlog', 'in_progress', 'review', 'done'] },
       priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical', 'urgent'] },
-      owner_id: { type: 'string', format: 'uuid' },
-      project_id: { type: 'string', format: 'uuid' },
-      created_at: { type: 'string', format: 'date-time' },
-      updated_at: { type: 'string', format: 'date-time' },
+      ownerId: { type: 'string', format: 'int64' },
+      projectId: { type: 'string', format: 'int64' },
+      assigneeId: { type: 'string', format: 'int64', nullable: true },
+      assigneeName: { type: 'string', nullable: true },
+      milestoneId: { type: 'string', format: 'uuid', nullable: true },
+      estimate: { type: 'number', nullable: true },
+      // BIGINT[] from pg: each element is a decimal string.
+      dependsOn: { type: 'array', items: { type: 'string', format: 'int64' } },
+      createdAt: { type: 'string', format: 'date-time' },
+      updatedAt: { type: 'string', format: 'date-time' },
     },
-    required: ['id', 'title', 'status', 'owner_id', 'project_id'],
+    required: ['id', 'title', 'status', 'ownerId', 'projectId'],
   },
+  // AgentService.list() returns raw DB rows, so this contract is snake_case.
   Agent: {
     type: 'object',
     properties: {
-      id: { type: 'string', format: 'uuid' },
+      id: { type: 'string', format: 'int64' },
       name: { type: 'string' },
-      user_id: { type: 'string', format: 'uuid' },
-      api_key: { type: 'string' },
-      is_active: { type: 'boolean' },
+      owner_id: { type: 'string', format: 'int64' },
+      rate_limit: { type: 'number' },
+      max_actions_per_day: { type: 'number' },
       created_at: { type: 'string', format: 'date-time' },
+      updated_at: { type: 'string', format: 'date-time' },
     },
-    required: ['id', 'name', 'user_id'],
+    required: ['id', 'name', 'owner_id'],
   },
 };
 
@@ -94,12 +109,26 @@ function validateValue(value: unknown, schema: SchemaDefinition, path: string = 
     const itemsSchema = schema.items;
     if (itemsSchema) {
       for (let i = 0; i < value.length; i++) {
-        validateValue(value[i], itemsSchema, `${path}[${i}]`);
+        errors.push(...validateValue(value[i], itemsSchema, `${path}[${i}]`));
       }
     }
   } else {
+    if (schema.nullable && value === null) {
+      return errors;
+    }
+    const actualType = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+    if (schema.type !== actualType) {
+      errors.push(`${path}: expected ${schema.type}, got ${actualType}`);
+      return errors;
+    }
     if (schema.enum && !schema.enum.includes(String(value))) {
       errors.push(`${path}: expected one of ${schema.enum.join(', ')}, got ${value}`);
+    }
+    const pattern = schema.pattern
+      ? new RegExp(schema.pattern)
+      : (schema.format ? FORMAT_PATTERNS[schema.format] : undefined);
+    if (pattern && typeof value === 'string' && !pattern.test(value)) {
+      errors.push(`${path}: does not match ${schema.pattern || schema.format}`);
     }
   }
 

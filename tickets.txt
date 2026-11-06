@@ -1,5 +1,8 @@
 # AI Kanban Planner - Development Tickets
 
+> **HISTORICAL — not a work queue.** The original TKT-001…TKT-018 bootstrap tickets,
+> all complete. Current work is tracked in **`PENDING.txt`**.
+
 ## Status: ALL COMPLETE (18/18 done)
 
 All tickets implemented. See `architecture/system-design.md` for full design docs.

@@ -1,8 +1,8 @@
 # 00_ARCHITECT_CHECKLIST.md — Pre-Implementation Checklist
 
-**Status**: planned
+**Status**: done
 **Date started**: 2026-08-12
-**Date completed**:
+**Date completed**: 2026-08-17 (PR #94)
 **Author**: AI Assistant
 **Feature scope**: Backend
 **Parent ticket**: fg-13 (FE↔BE API surface audit)

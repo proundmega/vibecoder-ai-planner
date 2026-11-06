@@ -1,5 +1,9 @@
 # DREAM_PENDING.md — Unplanned Phases & Gaps
 
+> **NOT a work queue.** This is an early design roadmap (bp-31…bp-41); most phases were
+> since implemented under different ticket IDs and are not tracked here. The canonical
+> queue is **`PENDING.txt`**.
+
 > Refined build order after user input. Each row becomes a `planning/bp-XX/` suite.
 
 ## Build Order (Next Batch)

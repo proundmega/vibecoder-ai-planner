@@ -3,13 +3,16 @@ import { get, post, put, del } from './client'
 export interface Ticket {
   id: string
   title: string
-  description?: string
+  description?: string | null
   status: string
   priority: string
   projectId: string
   ownerId?: string
-  assigneeId?: string
-  assigneeName?: string
+  assigneeId?: string | null
+  assigneeName?: string | null
+  milestoneId?: string | null
+  estimate?: number | null
+  dependsOn?: string[]
   planningStatus?: string
   templateSchema?: string | null
   phase?: string

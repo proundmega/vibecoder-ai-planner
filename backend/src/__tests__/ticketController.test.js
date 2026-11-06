@@ -78,15 +78,16 @@ describe('Ticket Controller', () => {
       const user = { role: 'project_admin' };
       TicketService.getOne.mockResolvedValue(ticket);
       User.find.mockResolvedValue(user);
-      TicketService.update.mockResolvedValue();
-      
+      const updated = { id: '1', title: 'Updated Title', status: 'backlog' };
+      TicketService.update.mockResolvedValue(updated);
+
       mockReq.params.ticketId = '1';
       mockReq.body = { title: 'Updated Title' };
       await ticketController.updateTicket(mockReq, mockRes, nextFn);
-      
+
       expect(mockRes.json).toHaveBeenCalledWith({
         success: true,
-        data: { message: 'Ticket updated' },
+        data: updated,
       });
     });
 

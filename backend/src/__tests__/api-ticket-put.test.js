@@ -64,6 +64,92 @@ describe('PUT /api/v1/tickets/:id — status-only body', () => {
     expect(capturedArgs[1].assigneeId).toBeUndefined();
   });
 
+  it('should respond with the updated ticket, not a message (bp-124 O6)', async () => {
+    TicketService.getOne.mockResolvedValueOnce({
+      id: 't1', title: 'Test', status: 'backlog', ownerId: 1, projectId: 1,
+    });
+    const updated = { id: 't1', title: 'Test', status: 'in_progress', milestoneId: null };
+    TicketService.update.mockResolvedValueOnce(updated);
+
+    const res = await request(app)
+      .put('/api/v1/tickets/1')
+      .set('Authorization', 'Bearer mock-token')
+      .send({ status: 'in_progress' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data).toEqual(updated);
+    expect(res.body.data.message).toBeUndefined();
+  });
+
+  it('should accept milestone fields (bp-124 O1)', async () => {
+    TicketService.getOne.mockResolvedValueOnce({
+      id: 't1', title: 'Test', status: 'backlog', ownerId: 1, projectId: 1,
+    });
+    let capturedArgs;
+    TicketService.update.mockImplementation((...args) => {
+      capturedArgs = args;
+      return { id: 't1' };
+    });
+
+    const res = await request(app)
+      .put('/api/v1/tickets/1')
+      .set('Authorization', 'Bearer mock-token')
+      .send({ estimate: 3, dependsOn: [2], milestoneId: null });
+
+    expect(res.statusCode).toBe(200);
+    expect(capturedArgs[1]).toEqual({ estimate: 3, dependsOn: [2], milestoneId: null });
+  });
+
+  it('should accept a numeric-string assigneeId because users.id is BIGSERIAL', async () => {
+    TicketService.getOne.mockResolvedValueOnce({
+      id: 't1', title: 'Test', status: 'backlog', ownerId: 1, projectId: 1,
+    });
+    let capturedArgs;
+    TicketService.update.mockImplementation((...args) => {
+      capturedArgs = args;
+      return { id: 't1', assigneeId: '2' };
+    });
+
+    const res = await request(app)
+      .put('/api/v1/tickets/1')
+      .set('Authorization', 'Bearer mock-token')
+      .send({ assigneeId: '2' });
+
+    expect(res.statusCode).toBe(200);
+    // Joi coerces the numeric string to a number; pg accepts it for BIGINT.
+    expect(capturedArgs[1]).toEqual({ assigneeId: 2 });
+  });
+
+  it('should accept a numeric assigneeId and reject a UUID one', async () => {
+    TicketService.getOne.mockResolvedValueOnce({
+      id: 't1', title: 'Test', status: 'backlog', ownerId: 1, projectId: 1,
+    });
+    TicketService.update.mockResolvedValueOnce({ id: 't1' });
+
+    const numeric = await request(app)
+      .put('/api/v1/tickets/1')
+      .set('Authorization', 'Bearer mock-token')
+      .send({ assigneeId: 2 });
+    expect(numeric.statusCode).toBe(200);
+
+    const uuid = await request(app)
+      .put('/api/v1/tickets/1')
+      .set('Authorization', 'Bearer mock-token')
+      .send({ assigneeId: '123e4567-e89b-12d3-a456-426614174000' });
+    expect(uuid.statusCode).toBe(400);
+    expect(uuid.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('should reject a non-positive estimate (bp-124 O1)', async () => {
+    const res = await request(app)
+      .put('/api/v1/tickets/1')
+      .set('Authorization', 'Bearer mock-token')
+      .send({ estimate: 0 });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('should return 200 with full body including title', async () => {
     TicketService.getOne.mockResolvedValueOnce({
       id: 't1',

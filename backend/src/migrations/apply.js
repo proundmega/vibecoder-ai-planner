@@ -452,6 +452,9 @@ if (require.main === module) {
 
   if (dryRun) {
     console.log('=== DRY-RUN MODE: No changes will be applied ===\n');
+    console.log('Validation is structural only (quotes, parentheses, empty statements).');
+    console.log('It is not a SQL grammar parser and does not connect to the database.');
+    console.log('Use a real database (or test:integration) to validate semantics.\n');
   }
 
   migrate(dryRun);

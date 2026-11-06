@@ -63,25 +63,6 @@ class Project {
     );
   }
 
-  static async deleteWithAudit(id, userId, action) {
-    return transaction(async (client) => {
-      const project = await this.findById(id);
-      if (!project) {
-        throw new Error('Project not found');
-      }
-
-      await client.query(
-        'UPDATE projects SET deleted_at = NOW() WHERE id = $1',
-        [id]
-      );
-
-      await client.query(
-        'INSERT INTO audit_log (user_id, action, entity_type, entity_id, created_at) VALUES ($1, $2, $3, $4, NOW())',
-        [userId, action, 'project', id]
-      );
-    });
-  }
-
   static async share(id, userId) {
     return transaction(async (client) => {
       const existing = await client.query(

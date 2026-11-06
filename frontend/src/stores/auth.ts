@@ -2,7 +2,7 @@ import { ref, Ref } from 'vue'
 
 export interface User {
   id: string
-  name: string
+  name: string | null
   email: string
   role: string
 }

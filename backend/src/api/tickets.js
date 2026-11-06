@@ -97,10 +97,26 @@ router.get('/:ticketId', verifyTokenOrAgent, validatePathParams({ ticketId: path
  *               description: { type: string }
  *               status: { type: string }
  *               priority: { type: string }
- *               assigneeId: { type: string, format: uuid }
+ *               assigneeId: { type: string, pattern: '^[0-9]+$', nullable: true }
+ *               milestoneId: { type: string, format: uuid, nullable: true }
+ *               estimate: { type: integer, minimum: 1, nullable: true }
+ *               dependsOn:
+ *                 type: array
+ *                 items:
+ *                   oneOf:
+ *                     - { type: integer }
+ *                     - { type: string, pattern: '^[0-9]+$' }
  *     responses:
  *       200:
  *         description: Ticket updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   $ref: '#/components/schemas/Ticket'
  */
 router.put('/:ticketId', verifyTokenOrAgent, requireAnyPermission('TICKET_UPDATE'), validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: updateTicketSchema }), ticketController.updateTicket);
 
