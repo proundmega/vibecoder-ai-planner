@@ -8,8 +8,11 @@
 - **D12:** `frontend/src/api/generated/models/Ticket.ts`, `Project.ts` and
   `Agent.ts` still use stale snake_case fields; `frontend/src/api/generated`
   is unused by typed callers but is the published client surface.
-- **D13:** `backend/src/api/openapi-spec.js` still documents BIGSERIAL ids as
-  `format: uuid` on route path parameters and on `POST /tickets` bodies.
+- **D13:** the route JSDoc in `backend/src/api/*.js` (e.g. `tickets.js`,
+  `projects.js`, `users.js`, `agents.js`) still documents BIGSERIAL ids as
+  `format: uuid` on path parameters and request bodies. `openapi-spec.js`
+  only has the legitimate `milestoneId` UUID; it scans the route files via its
+  `apis` glob, so the route JSDoc is the source to fix.
 - **D14:** `UserService.listUsers()` builds a `WHERE` clause without a
   `deleted_at IS NULL` predicate, so soft-deleted accounts stay listed.
 - **D16:** `TicketService.update()` / `delete()` / `releaseTicket()` rely on
@@ -27,17 +30,20 @@ large; review it as generated output plus the small caller changes.
 
 ### FR2 — OpenAPI id formats
 
-Introduce/reuse the `NumericId` schema for BIGSERIAL route params. Keep
-`milestoneId` as `uuid` because `milestones.id` is UUID. Path parameters for
-ticket/project/user/agent ids become `type: string`, `pattern: '^[0-9]+$'`.
-Regenerate the spec and add a guard test that scans for `format: uuid` on
-numeric id fields.
+Edit the route JSDoc files under `backend/src/api/*.js` (the `apis` glob in
+`openapi-spec.js` is the actual source). Reuse `NumericId` where a `$ref` is
+possible; otherwise document `type: string`, `pattern: '^[0-9]+$'`. Keep
+`milestoneId` as `uuid` because `milestones.id` is UUID. Regenerate the spec
+and extend the guard test to walk `specs.paths` (path parameters and request
+bodies), not only `components.schemas`.
 
 ### FR3 — soft-deleted users
 
-Add `AND deleted_at IS NULL` to the `listUsers` predicate (and to the
-pagination count if present). Use a unit test with a mocked pool plus an
-integration assertion against a real DB.
+Add `AND deleted_at IS NULL` to both `listUsers` and `listAllUsers`
+predicates (and to any pagination count). The super-admin table uses
+`listAllUsers`, so fixing only the project-admin list leaves the same bug
+visible. Use unit tests with a mocked pool plus an integration assertion
+against a real DB.
 
 ### FR4 — project membership
 
@@ -47,9 +53,14 @@ Resolve the project for the ticket and allow the action when the actor is:
 2. an active `project_memberships` member, or
 3. `super_admin` (and `project_admin` per the existing bypass policy).
 
-Apply the check in the service layer so every route inherits it. Keep the
-agent path keyed to `assigned_agent_id = agents.id` (bp-124 O4). Tests must
-cover owner, member, non-member and admin.
+Pickup/release authorization currently lives in `ticketController.js`:
+`pickUpTicket` uses `req.agent` and `releaseTicket` receives `{ operatorId }`
+but `TicketService.releaseTicket()` ignores it. Normalize the actor in the
+controller (`{ agentId, operatorId, role }`) and pass it to both
+`TicketService.pickUpTicket()` and `releaseTicket()`; the services verify the
+project/assignment. Keep the agent path keyed to
+`assigned_agent_id = agents.id` (bp-124 O4). Tests must cover owner, member,
+non-member and admin for update, pickup and release.
 
 ## Contracts
 

@@ -15,10 +15,13 @@
 | File | Action | Change |
 |---|---|---|
 | `frontend/src/api/generated/**` | regenerate | Current camelCase/string-id contracts |
-| `backend/src/api/openapi-spec.js` | modify | `NumericId` for route/body BIGSERIAL ids |
+| `backend/src/api/*.js` | modify | Route JSDoc: `NumericId` for BIGSERIAL path/body ids (tickets, projects, users, agents, approvals, credentials, github, ...) |
+| `backend/src/api/openapi-spec.js` | modify | Keep the legitimate `milestoneId` UUID; scan the updated route JSDoc |
 | `backend/src/api/openapi-generated.json` | regenerate | Reflect the spec change |
-| `backend/src/services/UserService.js` | modify | `deleted_at IS NULL` in `listUsers` |
-| `backend/src/services/TicketService.js` | modify | Project membership/owner/admin checks |
+| `backend/src/services/UserService.js` | modify | `deleted_at IS NULL` in `listUsers` and `listAllUsers` |
+| `backend/src/services/TicketService.js` | modify | Accept the normalized actor in `update`/`pickUpTicket`/`releaseTicket`; project membership/owner/admin checks |
+| `backend/src/controllers/ticketController.js` | modify | Pass `{ agentId, operatorId, role }` to pickup/release/update |
+| `backend/src/__tests__/openapiTicketContract.test.js` | modify | Scan `specs.paths` for BIGSERIAL ids, not only component schemas |
 | `backend/src/__tests__/` | add/modify | Regression tests for FR1-FR4 |
 | `frontend/src/__tests__/api-contract.test.ts` | modify | Generated-type/spec alignment where applicable |
 
@@ -32,9 +35,9 @@ One row per requirement from `01`. A requirement with no row is not done.
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
 | FR1 | Frontend build | `frontend/src/api/generated/**` | regenerate and commit; typecheck/build clean | `npm run generate:api && npm run typecheck` |
-| FR2 | API contract | `backend/src/__tests__/openapiTicketContract.test.js` | no BIGSERIAL id documented as `uuid` | `npm test` |
-| FR3 | Backend service | `backend/src/__tests__/userService.test.js` | deleted user excluded from `listUsers` | `npm test` |
-| FR4 | Backend route | `backend/src/__tests__/ticket_ownership_controller.test.js` | non-member rejected; owner/member/admin allowed | `npm test` |
+| FR2 | API contract | `backend/src/__tests__/openapiTicketContract.test.js` | route path/body BIGSERIAL ids are not documented as `uuid` | `npm test` |
+| FR3 | Backend service | `backend/src/__tests__/userService.test.js` | deleted user excluded from `listUsers` and `listAllUsers` | `npm test` |
+| FR4 | Backend route/service | `backend/src/__tests__/ticket_ownership_controller.test.js`, `ticketReleaseAuthorization.test.js` | non-member rejected; owner/member/admin allowed for update, pickup and release | `npm test` |
 
 ## Review record
 

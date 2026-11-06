@@ -17,7 +17,7 @@ depends_on: ["bp-124"]
 > **Owns:** status, scope, deferred register, user decisions.
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`).
 
-**Source:** `planning/bp-124-audit-open-defects/00_ARCHITECT_CHECKLIST.md` deferred register, items D12–D16.
+**Source:** `planning/bp-124-audit-open-defects/00_ARCHITECT_CHECKLIST.md` deferred register, items D12–D14 and D16 (D15 was fixed in bp-124).
 
 ## Why this ticket exists
 
@@ -40,7 +40,7 @@ product behavior not listed above.
 
 - Split the four follow-ups into this ticket; bp-124 stays focused on FR11 and
   its DONE hygiene.
-- D12/D13 were non-goals in bp-124 `01`; they are in scope here.
+- D12 was a non-goal in bp-124 `01`; D13 was recorded as deferred in bp-124's register. Both are in scope here.
 - FR4 is an authorization change and needs its own review before scheduling.
 
 ## Deferred register (canonical)
@@ -60,5 +60,5 @@ deferred scope are owned by this document; `01`–`03` link here.
 
 | Claim | Evidence |
 |---|---|
-| No implementation yet | `status: planned`; `03` matrix rows are `not started`. |
+| No implementation yet | `status: planned`; every `03` plan checkbox is unchecked and there is no `03` Results row. |
 | Items originated in bp-124 | bp-124 `00` deferred register D12–D16. |

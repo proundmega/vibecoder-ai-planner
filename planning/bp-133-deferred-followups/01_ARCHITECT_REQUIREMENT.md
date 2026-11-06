@@ -32,9 +32,10 @@ correctness bug (soft-deleted users still listed); one is an authorization gap
 - **FR2 — D13:** replace the remaining `format: uuid` declarations on
   BIGSERIAL route path/body ids with the numeric-string contract (or document
   each deliberate exception). Regenerate `openapi-generated.json`.
-- **FR3 — D14:** `UserService.listUsers()` excludes rows with
-  `deleted_at IS NOT NULL`; add a regression test proving a deleted user is
-  absent from the admin list while a live user remains.
+- **FR3 — D14:** both `UserService.listUsers()` (project admin) and
+  `listAllUsers()` (super-admin) exclude rows with `deleted_at IS NOT NULL`;
+  add regression tests proving a deleted user is absent from both lists while
+  a live user remains.
 - **FR4 — D16:** ticket update/delete/release/pickup verify that the actor can
   act on the ticket's project (owner, project member, or an explicit admin
   bypass). Add positive and negative route tests.
@@ -44,8 +45,8 @@ correctness bug (soft-deleted users still listed); one is an authorization gap
 - FR1: `npm run generate:api` produces no further diff; typecheck/build pass.
 - FR2: `npm run generate:spec` produces no further diff; no BIGSERIAL id is
   documented as `uuid`.
-- FR3: a soft-deleted user cannot appear in `GET /api/v1/users`; test covers
-  both deleted and live users.
+- FR3: a soft-deleted user cannot appear in `GET /api/v1/users` or
+  `GET /api/v1/users/super-admin`; tests cover both deleted and live users.
 - FR4: a non-member with `TICKET_UPDATE`/`TICKET_DELETE` is rejected on
   another project's ticket; owners/admins still succeed. Tests cover both.
 
