@@ -58,6 +58,7 @@
 | `backend/src/__tests__/ticketReleaseAuthorization.test.js` | add | Service-level release identity checks |
 | `backend/src/__tests__/ticketAgentIdentityMigration.test.js` | add | Migration registration/rollback guard |
 | `backend/src/__tests__/ticket_ownership_controller.test.js` | modify | Pickup/release actor and permission cases |
+| `backend/integration-test/suites/ticket_ownership.test.sh`, `agent_lifecycle.test.sh` | modify | Authenticate pickup/release with `X-API-Key`; assert JWT pickup is rejected (O4) |
 | `README.md`, `AGENTS.md` | modify | Migration count 46 → 47 |
 
 ## Dependencies
@@ -109,4 +110,5 @@ One row per requirement from `01`. A requirement with no row is not done.
 |---|---|---|---|
 | 2026-11-03 | `e43c2b1` + `8e27c2a` + `d49d723b` + `5c96e6d` + `287f4ea` (PR #116) | O1, O2, O5, O6, O8 (+ O7/O10 docs) | Backend 120 suites / 1519 tests pass; frontend 60 files / 562 tests pass; integration 5 suites / 131 tests pass (fresh + re-run); typecheck clean; lint 0 errors (31 pre-existing warnings); OpenAPI regenerated |
 | 2026-11-04 | `bdd8dd0` (stacked PR #117) | O4 | Backend 121 suites / 1524 tests pass; frontend 60 files / 562 tests pass; integration 6 suites / 134 tests pass (fresh + re-run); migration 048 backfill and rollback verified against simulated legacy data |
+| 2026-11-06 | PR #117 | O4 integration-test auth | `ticket_ownership` + `agent_lifecycle` bash suites pass (21/21) with agent API keys; JWT pickup returns 403 |
 | 2026-11-04 | `78b64b9` (stacked PR #117) | O4 review fixes | Backend 122 suites / 1530 tests pass; frontend 60 files / 562 tests pass; integration 7 suites / 139 tests pass (fresh + re-run); backfill status reset, agent-delete trigger, release authorization, and transactional migration test added |
