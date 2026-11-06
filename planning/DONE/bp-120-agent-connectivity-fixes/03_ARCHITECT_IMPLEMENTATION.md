@@ -375,10 +375,6 @@ agent/src/main/java/com/vibecode/agent/AgentApp.java → MODIFY (defensive parsi
 5. [ ] Frontend: agents appear in heartbeat tab even without heartbeats
 6. [ ] End-to-end: create agent → assign provider → start agent → agent connects → appears in heartbeat tab
 
----
-
-*Fill in all sections before starting implementation.*
-
 ## Results
 
 | Date | Commit | Suites | Outcome |
