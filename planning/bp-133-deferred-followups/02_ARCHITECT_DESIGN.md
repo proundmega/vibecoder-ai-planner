@@ -13,8 +13,9 @@
   `format: uuid` on path parameters and request bodies. `openapi-spec.js`
   only has the legitimate `milestoneId` UUID; it scans the route files via its
   `apis` glob, so the route JSDoc is the source to fix.
-- **D14:** `UserService.listUsers()` builds a `WHERE` clause without a
-  `deleted_at IS NULL` predicate, so soft-deleted accounts stay listed.
+- **D14:** `UserService.listUsers()` and `listAllUsers()` build a `WHERE`
+  clause without a `deleted_at IS NULL` predicate, so soft-deleted accounts
+  stay listed in both the project-admin and super-admin tables.
 - **D16:** `TicketService.update()` / `delete()` / `releaseTicket()` rely on
   the global `TICKET_*` permissions; they do not check
   `project_memberships` or project ownership.
