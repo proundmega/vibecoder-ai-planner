@@ -31,7 +31,27 @@ SCAN_SEVERITY="${SANDBOX_SCAN_SEVERITY:-HIGH,CRITICAL}"
 SCAN_FAIL_ON="${SANDBOX_SCAN_FAIL_ON:-high}"
 
 usage() {
-    sed -n '3,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    cat <<'EOF'
+Supply-chain checks for the fg-34 sandbox images.
+
+The deterministic gate is --check-pins: every FROM line in the sandbox,
+proxy and supervisor Dockerfiles must reference a base image by digest.
+SBOM generation and vulnerability scanning use syft/trivy/grype when they
+are installed; set SANDBOX_SCAN_REQUIRED=1 in CI to fail instead of skipping.
+
+Usage:
+  scripts/sandbox-image-security.sh --check-pins [--dockerfile FILE ...]
+  scripts/sandbox-image-security.sh --sbom IMAGE [OUT]
+  scripts/sandbox-image-security.sh --scan IMAGE
+  scripts/sandbox-image-security.sh --sbom-and-scan IMAGE [OUT]
+  scripts/sandbox-image-security.sh --all IMAGE [OUT]
+
+Environment:
+  SANDBOX_SCAN_SEVERITY   trivy severities (default: HIGH,CRITICAL)
+  SANDBOX_SCAN_FAIL_ON    grype failure threshold (default: high)
+  SANDBOX_SCAN_REQUIRED   "1" fails when no scanner is installed
+  COSIGN_PUBLIC_KEY       public key for optional signature verification
+EOF
 }
 
 require_command() {
