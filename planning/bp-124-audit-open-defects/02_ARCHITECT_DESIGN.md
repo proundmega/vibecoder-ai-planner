@@ -25,7 +25,7 @@ This is an umbrella ticket. Each defect gets its own implementation slice (and, 
 - Versioned `/api/v1` paths throughout; error assertions target `.login__error` / `.register__error`.
 - The assignment spec opens the edit modal from API-created tickets and verifies assigning and clearing the assignee without a reload. Clearing exposed an `Unassigned` option with no value; the option now uses `value=""`.
 - The spec uses a seeded member who is not in `project_memberships`; ticket writes are currently guarded only by `TICKET_UPDATE` (recorded as deferred `00` D16).
-- Jenkins stage `Cypress E2E` starts `docker-compose.yml` + `docker-compose.e2e.yml` (rate limiting off), waits for API/frontend health, and runs `cypress/included` on the compose network.
+- Jenkins stage `Cypress E2E` starts `docker-compose.yml` + `docker-compose.e2e.yml` (rate limiting off), waits for API/frontend health, and runs a **compose-built** Cypress image (`frontend/Dockerfile.cypress`) on the compose network. A host bind mount is not used because the Docker daemon behind `DOCKER_HOST` does not share the Jenkins workspace path.
 - Component tests are tracked separately as **O9**, not folded into the E2E rewrite.
 
 ## O4 - Agent identity

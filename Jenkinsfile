@@ -193,17 +193,11 @@ EOF
                         error('Cypress E2E stack failed to become healthy')
                     }
 
-                    // Run inside the compose network so the browser can reach
-                    // the frontend service directly; specs seed via the API.
-                    sh """
-                        DOCKER_HOST=\$DOCKER_HOST docker run --rm --user root \
-                          --network ${COMPOSE_PROJECT_NAME}_default \
-                          -v "\$WORKSPACE:/repo" -w /repo/frontend \
-                          -e CYPRESS_baseUrl=http://frontend \
-                          -e CYPRESS_video=false \
-                          -e CYPRESS_screenshotsFolder=/tmp/cypress/screenshots \
-                          cypress/included:15.19.0 --browser chrome
-                    """
+                    // Build the runner from the frontend context instead of
+                    // bind-mounting the workspace: the Docker daemon behind
+                    // DOCKER_HOST does not share the Jenkins workspace path.
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml --profile e2e build cypress"
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml --profile e2e run --rm --no-deps cypress"
                 }
             }
             post {

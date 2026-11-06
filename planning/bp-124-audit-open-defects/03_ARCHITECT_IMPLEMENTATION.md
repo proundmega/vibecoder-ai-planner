@@ -63,7 +63,8 @@
 | `frontend/src/views/TicketDetail.vue` | modify | Refetch the ticket after an assignment change so `assigneeName` updates (D15) |
 | `frontend/src/__tests__/ticketEditModal.test.ts` | modify | Assert the `Unassigned` option has an empty value |
 | `Jenkinsfile` | modify | Add `Cypress E2E` stage on the compose network |
-| `docker-compose.e2e.yml` | add | Disable rate limiting for the disposable E2E stack |
+| `docker-compose.e2e.yml` | add | Disable rate limiting, allow the `http://frontend` origin, and define the `cypress` build service |
+| `frontend/Dockerfile.cypress` | add | Compose-built Cypress runner (no host bind mount; the daemon does not share the workspace) |
 | `backend/src/__tests__/ticketAgentIdentityMigration.test.js` | add | Migration registration/rollback guard |
 | `backend/src/__tests__/ticket_ownership_controller.test.js` | modify | Pickup/release actor and permission cases |
 | `backend/integration-test/suites/ticket_ownership.test.sh`, `agent_lifecycle.test.sh` | modify | Authenticate pickup/release with `X-API-Key`; assert JWT pickup is rejected (O4) |
@@ -123,3 +124,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 | 2026-11-04 | `78b64b9` (stacked PR #117) | O4 review fixes | Backend 122 suites / 1530 tests pass; frontend 60 files / 562 tests pass; integration 7 suites / 139 tests pass (fresh + re-run); backfill status reset, agent-delete trigger, release authorization, and transactional migration test added |
 | 2026-11-05 | `dedc8c2` (stacked PR #118) | O3 | Cypress 7 specs / 37 tests pass against the dev stack; backend 122 suites / 1530 tests; frontend 60 files / 562 tests; integration 7 suites / 139 tests; fixed the `Unassigned` assignee option found by the new E2E |
 | 2026-11-05 | `a2d006d` (stacked PR #118) | O3 review fixes | E2E overlay allows `http://frontend` (200) and rejects other origins (403); project create asserts the board redirect; assignment asserts without reload after the D15 refetch fix; Cypress 37/37 pass |
+| 2026-11-06 | this commit (stacked PR #118) | O3 Jenkins fix | Replaced the workspace bind mount with a compose-built Cypress image; `docker compose --profile e2e run cypress` passes 37/37 against `http://frontend` |
