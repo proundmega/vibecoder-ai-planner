@@ -185,12 +185,15 @@ function resolveSafe(host, callback) {
       callback(new Error("dns lookup failed"));
       return;
     }
-    const safe = addresses.find((entry) => !isPrivateAddress(entry.address));
-    if (!safe) {
+    const safe = addresses.filter((entry) => !isPrivateAddress(entry.address));
+    if (safe.length === 0) {
       callback(new Error("resolves to a private address"));
       return;
     }
-    callback(null, safe.address);
+    // Prefer IPv4 so a proxy without an IPv6 route still works; fall back to
+    // IPv6 only when no safe IPv4 address exists.
+    const chosen = safe.find((entry) => entry.family === 4) || safe[0];
+    callback(null, chosen.address);
   });
 }
 

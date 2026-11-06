@@ -104,19 +104,21 @@ class DockerSandboxRunnerTest {
         DockerSandboxRunner.EgressRuntime egress = new DockerSandboxRunner.EgressRuntime(
             "vibecode-egress-test",
             "vibecode-egress-proxy-test",
-            "http://vibecode-egress-proxy-test:3128");
+            "172.19.0.2",
+            "http://172.19.0.2:3128");
 
         String joined = String.join(" ",
             DockerSandboxRunner.buildCreateArgs(spec, "vibecode-sandbox-test", egress));
 
         assertTrue(joined.contains("--network vibecode-egress-test"));
         assertFalse(joined.contains("--network none"));
-        assertTrue(joined.contains("-e HTTP_PROXY=http://vibecode-egress-proxy-test:3128"));
-        assertTrue(joined.contains("-e HTTPS_PROXY=http://vibecode-egress-proxy-test:3128"));
-        assertTrue(joined.contains("-e http_proxy=http://vibecode-egress-proxy-test:3128"));
+        assertTrue(joined.contains("--dns 127.0.0.1"));
+        assertTrue(joined.contains("--add-host vibecode-egress-proxy-test:172.19.0.2"));
+        assertTrue(joined.contains("-e HTTP_PROXY=http://172.19.0.2:3128"));
+        assertTrue(joined.contains("-e HTTPS_PROXY=http://172.19.0.2:3128"));
+        assertTrue(joined.contains("-e http_proxy=http://172.19.0.2:3128"));
         assertTrue(joined.contains("-e NO_PROXY=localhost,127.0.0.1,::1"));
-        assertTrue(joined.contains(
-            "-e npm_config_https_proxy=http://vibecode-egress-proxy-test:3128"));
+        assertTrue(joined.contains("-e npm_config_https_proxy=http://172.19.0.2:3128"));
     }
 
     @Test
@@ -154,8 +156,13 @@ class DockerSandboxRunnerTest {
             case "$1" in
               network) exit 0 ;;
               run) exit 0 ;;
-              inspect) echo true ;;
-              logs) exit 0 ;;
+              inspect)
+                case "$*" in
+                  *"State.Running"*) echo true ;;
+                  *) echo 172.19.0.2 ;;
+                esac
+                ;;
+              logs) echo '{"message":"egress proxy listening"}'; exit 0 ;;
               rm) exit 0 ;;
               exec)
                 case "$*" in
@@ -207,7 +214,13 @@ class DockerSandboxRunnerTest {
                 if [ "$count" -ge 2 ]; then echo "sandbox boom"; exit 1; fi
                 exit 0
                 ;;
-              inspect) echo true ;;
+              inspect)
+                case "$*" in
+                  *"State.Running"*) echo true ;;
+                  *) echo 172.19.0.2 ;;
+                esac
+                ;;
+              logs) echo '{"message":"egress proxy listening"}'; exit 0 ;;
               *) exit 0 ;;
             esac
             """.replace("__RUNS__", runs.toString()));

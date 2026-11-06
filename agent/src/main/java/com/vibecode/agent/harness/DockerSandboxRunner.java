@@ -707,7 +707,12 @@ public final class DockerSandboxRunner implements SandboxRunner {
     }
 
     /** Handle for one sandbox's egress proxy and internal network. */
-    record EgressRuntime(String network, String proxyName, String proxyUrl) {
+    record EgressRuntime(
+        String network,
+        String proxyName,
+        String proxyAddress,
+        String proxyUrl
+    ) {
     }
 
     private static volatile String proxyScriptCommand;
@@ -753,6 +758,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 throw new IOException("Egress proxy '" + proxy + "' is not running: "
                     + inspect.output());
             }
+            awaitProxyReady(proxy);
 
             // The proxy is attached to the internal network at start. Give it
             // the upstream network only after it is healthy so a broken proxy
@@ -768,9 +774,23 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     + "' to '" + spec.egressUpstreamNetwork() + "': " + connected.output());
             }
 
+            DockerResult address = runDocker(
+                List.of(config.dockerBinary(), "inspect", "-f",
+                    "{{index .NetworkSettings.Networks \"" + network + "\" \"IPAddress\"}}",
+                    proxy),
+                INSPECT_TIMEOUT,
+                1_024
+            );
+            String proxyAddress = address.output().trim();
+            if (address.exitCode() != 0 || !proxyAddress.matches("[0-9a-fA-F:.]+")) {
+                throw new IOException("Could not determine the egress proxy address: "
+                    + address.output());
+            }
+
             log.info("Started egress proxy {} on internal network {} (upstream {})",
                 proxy, network, spec.egressUpstreamNetwork());
-            return new EgressRuntime(network, proxy, "http://" + proxy + ":3128");
+            return new EgressRuntime(network, proxy, proxyAddress,
+                "http://" + proxyAddress + ":3128");
         } catch (IOException | RuntimeException e) {
             stopEgress(network, proxy);
             throw e instanceof IOException io ? io : new IOException(e);
@@ -833,6 +853,27 @@ public final class DockerSandboxRunner implements SandboxRunner {
             }
         }
         return proxyScriptCommand;
+    }
+
+    private void awaitProxyReady(String proxy) throws IOException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+        while (System.nanoTime() < deadline) {
+            DockerResult logs = runDocker(
+                List.of(config.dockerBinary(), "logs", "--tail", "20", proxy),
+                CONTROL_TIMEOUT,
+                CONTROL_OUTPUT_BYTES
+            );
+            if (logs.output().contains("egress proxy listening")) {
+                return;
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while waiting for the egress proxy", e);
+            }
+        }
+        throw new IOException("Egress proxy '" + proxy + "' did not become ready");
     }
 
     private void stopEgress(String name) {
@@ -946,9 +987,17 @@ public final class DockerSandboxRunner implements SandboxRunner {
         // descendant sweep can kill everything else without exiting the
         // container. --pids-limit and the sweep bound runaway children.
         // Network is default-deny unless an egress allowlist is configured; in
-        // that case the sandbox joins only the proxy's internal network.
+        // that case the sandbox joins only the proxy's internal network and
+        // resolves nothing: external DNS would be an untracked exfiltration
+        // channel. The proxy is addressed by IP and also pinned in /etc/hosts.
         args.add("--network");
         args.add(egress == null ? "none" : egress.network());
+        if (egress != null) {
+            args.add("--dns");
+            args.add("127.0.0.1");
+            args.add("--add-host");
+            args.add(egress.proxyName() + ":" + egress.proxyAddress());
+        }
 
         for (Map.Entry<String, String> entry : containerEnvironment(spec, egress).entrySet()) {
             args.add("-e");

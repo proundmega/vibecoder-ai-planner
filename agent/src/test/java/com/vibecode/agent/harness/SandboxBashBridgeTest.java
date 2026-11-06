@@ -115,6 +115,16 @@ class SandboxBashBridgeTest {
     }
 
     @Test
+    void returnsA500WhenTheSandboxExecFails() throws Exception {
+        when(runner.exec(any(), any())).thenThrow(new IOException("sandbox gone"));
+
+        HttpResponse<String> response = exec(Map.of("command", "ls"), bridge.token());
+
+        assertEquals(500, response.statusCode());
+        assertTrue(response.body().contains("sandbox gone"));
+    }
+
+    @Test
     void rejectsAnOversizedBody() throws Exception {
         String oversized = "x".repeat(SandboxBashBridge.MAX_BODY_BYTES + 1024);
         HttpResponse<String> response = exec(Map.of("command", oversized), bridge.token());

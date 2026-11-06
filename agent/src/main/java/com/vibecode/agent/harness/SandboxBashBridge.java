@@ -157,13 +157,19 @@ final class SandboxBashBridge implements AutoCloseable {
             }
 
             String rewritten = rewritePaths(command);
-            ExecResult result = runner.exec(handle, new ExecRequest(
-                rewritten,
-                cwd,
-                requestedTimeout(root.path("timeoutSeconds")),
-                ExecRequest.DEFAULT_MAX_OUTPUT_BYTES,
-                Map.of()
-            ));
+            ExecResult result;
+            try {
+                result = runner.exec(handle, new ExecRequest(
+                    rewritten,
+                    cwd,
+                    requestedTimeout(root.path("timeoutSeconds")),
+                    ExecRequest.DEFAULT_MAX_OUTPUT_BYTES,
+                    Map.of()
+                ));
+            } catch (IOException e) {
+                send(exchange, 500, Map.of("error", "sandbox exec failed: " + safeMessage(e)));
+                return;
+            }
             send(exchange, 200, Map.of(
                 "exitCode", result.exitCode(),
                 "output", result.output(),
@@ -257,7 +263,7 @@ final class SandboxBashBridge implements AutoCloseable {
         return builder.toString();
     }
 
-    private static String safeMessage(RuntimeException e) {
+    private static String safeMessage(Exception e) {
         String message = e.getMessage();
         return message == null || message.isBlank() ? e.getClass().getSimpleName() : message;
     }

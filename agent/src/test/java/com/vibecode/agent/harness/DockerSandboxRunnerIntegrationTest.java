@@ -225,6 +225,23 @@ class DockerSandboxRunnerIntegrationTest {
                         + "&& echo ALLOWED || echo DENIED",
                     Duration.ofSeconds(30)));
                 assertTrue(metadata.output().contains("DENIED"), metadata.output());
+
+                // External DNS is disabled so it cannot be used as an
+                // untracked exfiltration channel.
+                ExecResult dns = runner.exec(handle, ExecRequest.of(
+                    "node -e \"require('dns').lookup('example.org', "
+                        + "(e) => process.exit(e ? 1 : 0))\" "
+                        + "&& echo RESOLVED || echo BLOCKED",
+                    Duration.ofSeconds(20)));
+                assertTrue(dns.output().contains("BLOCKED"), dns.output());
+
+                // The package manager must still work through the proxy.
+                ExecResult npm = runner.exec(handle, ExecRequest.of(
+                    "npm ping --registry=https://registry.npmjs.org "
+                        + "--fetch-timeout=15000 >/dev/null 2>&1 "
+                        + "&& echo NPM_OK || echo NPM_FAIL",
+                    Duration.ofSeconds(40)));
+                assertTrue(npm.output().contains("NPM_OK"), npm.output());
             } finally {
                 runner.destroy(handle);
             }
