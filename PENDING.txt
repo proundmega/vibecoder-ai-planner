@@ -18,10 +18,11 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | Order | Ticket | State | Blocker |
 |-------|--------|-------|---------|
 | 1 | **bp-124** — audit open defects O1-O10 | In review (#116) | O1/O2/O5/O6/O8 in #116; O4 in #117; O3 in #118; O9 in #119; FR11 remains. |
-| 2 | **bt-60** — durable-harness e2e | Ready, blocked | Disposable staging project/repo/agent, provider key and GitHub token. |
-| 3 | **fg-31** — automatic review harness | Blocked | fg-30 Phase 2 and fg-32. |
-| 4 | **fg-32** — review feedback loop | Blocked | fg-31, fg-30, fg-33. |
-| 5 | **fg-30 Phases 2-4** | Not ticketed | Needs its own ticket IDs before work starts. |
+| 2 | **bp-133** — bp-124 deferred follow-ups | Planned | D12/D13/D14/D16; FR4 needs its own review. |
+| 3 | **bt-60** — durable-harness e2e | Ready, blocked | Disposable staging project/repo/agent, provider key and GitHub token. |
+| 4 | **fg-31** — automatic review harness | Blocked | fg-30 Phase 2 and fg-32. |
+| 5 | **fg-32** — review feedback loop | Blocked | fg-31, fg-30, fg-33. |
+| 6 | **fg-30 Phases 2-4** | Not ticketed | Needs its own ticket IDs before work starts. |
 
 `fg-34` (sandbox) and `fg-35` (GitHub App credentials) depend only on fg-30 Phase 1,
 which is merged, so they are unblocked but not yet scheduled. `fg-36` onward have unmet
@@ -99,7 +100,8 @@ prerequisites, and `fg-46` is deferred. Do not start a roadmap suite until its
 | ~~**bp-121**~~ | `bp-121-agent-connectivity-ip` | P2 | ✅ Done (2026-09-11, commits `1b1b793` + `59c3ec0`, in HEAD) — Java agents on non-localhost hosts fail due to CORS blocking, double-wrapped provider config, and missing IP whitelist support. Three bugs: CORS rejects non-localhost origins, provider config response double-wrapped, no IP whitelist for agent auth. |
 | **bp-122** | `bp-122-code-cleanup` | P3 | ~~**Planned (2026-09-15)** — Three code quality issues from PR #97: (1) Dead `createPullRequestRetry()` method in agent GitHubService, (2) Verbose 8-parameter `Ticket.update()` signature, (3) Unpinned git version in Agent Dockerfile. All independent cleanups, no cross-dependencies.~~ ✅ Done (PR #99) |
 | ~~**bp-123**~~ | `bp-123-test-audit-corrections` | P0 | ✅ Done (merged PR #100, commit `4d62350`) — Full test/quality audit corrections: assignee validation against `project_memberships`, password-hash serialization, lockout `Retry-After`, ticket field mapping, no-op status updates, `critical` priority end-to-end, no-DB migration dry-run, Windows POSIX guard, refreshed Cypress specs. Remaining open defects are owned by bp-124. |
-| **bp-124** | `bp-124-audit-open-defects` | P1 | **In review (PR #116)** — ✅ O1 (milestone persistence), O2 (dead SQL deleted), O5 (validator camelCase), O6 (PUT returns Ticket), O8 (integration setup fails on migration errors), O10 (dry-run documented as structural-only). 🔄 O4 in #117; O3 (Cypress E2E + Jenkins stage) in #118; O9 (component-test backfill) in #119. ⬜ Remaining: FR11 DONE moves. Audit open defects O1-O10: milestone persistence, dead SQL/tables, stale E2E/CI, agent identity, frontend validator snake_case, PUT response drift, docs drift, integration setup error handling, component-test backfill, dry-run grammar validation. |
+| **bp-124** | `bp-124-audit-open-defects` | P1 | **In review (PR #116)** — ✅ O1 (milestone persistence), O2 (dead SQL deleted), O5 (validator camelCase), O6 (PUT returns Ticket), O8 (integration setup fails on migration errors), O10 (dry-run documented as structural-only). 🔄 O4 in #117; O3 (Cypress E2E + Jenkins stage) in #118; O9 (component-test backfill) in #119. ⬜ Remaining: FR11 DONE moves. Follow-ups D12/D13/D14/D16 moved to bp-133. Audit open defects O1-O10: milestone persistence, dead SQL/tables, stale E2E/CI, agent identity, frontend validator snake_case, PUT response drift, docs drift, integration setup error handling, component-test backfill, dry-run grammar validation. |
+| **bp-133** | `bp-133-deferred-followups` | P2 | **Planned (2026-11-06)** — D12 regenerate the frontend generated client types; D13 clean up remaining OpenAPI BIGSERIAL id formats; D14 exclude soft-deleted users from the admin list; D16 enforce project membership for ticket writes. Depends on bp-124. FR4 is an authorization change and needs its own review. |
 
 ## Test Backfills (bt-*)
 

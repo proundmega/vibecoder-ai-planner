@@ -47,11 +47,11 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D9 | O1-O10 umbrella | bp-123 | Multiple | bp-124-audit-open-defects | in review (#116) |
 | D10 | Full SQL grammar validation (O10) | bp-79 | Backend | bp-124 (documented structural-only) | in review (#116) |
 | D11 | Harness roadmap | fg-30 | Agent | fg-33+ | open |
-| D12 | Regenerate frontend generated client types | bp-124 | Frontend | Stale snake_case `Ticket`/`Project`/`Agent` models and `format: uuid` ids; non-goal in `01`, regenerate after O4/O5 settle | deferred |
-| D13 | OpenAPI route path/body id formats | bp-124 | Docs / API | Schema properties now use `NumericId`/`string[]`; route path params and `POST /tickets` body still say `format: uuid` for BIGSERIAL ids | deferred |
-| D14 | User list includes soft-deleted users | O3 | Backend | `UserService.listUsers()` does not filter `deleted_at IS NULL`, so deleted accounts stay in the admin table | open |
+| D12 | Regenerate frontend generated client types | bp-124 | Frontend | Moved to bp-133 FR1 | deferred (bp-133) |
+| D13 | OpenAPI route path/body id formats | bp-124 | Docs / API | Moved to bp-133 FR2 | deferred (bp-133) |
+| D14 | User list includes soft-deleted users | O3 | Backend | Moved to bp-133 FR3 | open (bp-133) |
 | D15 | Assignee name stale after edit save | O3 | Frontend | `TicketDetail.handleEditSaved` now refetches the ticket when `assigneeId` changes | done (O3) |
-| D16 | Ticket writes ignore project membership | O3 | Backend | Any authenticated user with `TICKET_UPDATE` can edit another project's ticket; update/release do not check membership | open |
+| D16 | Ticket writes ignore project membership | O3 | Backend | Moved to bp-133 FR4 | open (bp-133) |
 
 `bp-125`…`bp-132` were proposed as separate suites but were never created. Their
 scope is executed as slices inside bp-124; do not look for those directories.
