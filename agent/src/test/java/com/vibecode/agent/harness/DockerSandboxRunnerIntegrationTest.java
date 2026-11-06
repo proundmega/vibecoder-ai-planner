@@ -322,6 +322,9 @@ class DockerSandboxRunnerIntegrationTest {
         Map<String, String> env = new HashMap<>();
         env.put("SANDBOX_MODE", "docker");
         env.put("SANDBOX_IMAGE", image);
+        String proxyImage = System.getenv("SANDBOX_IT_PROXY_IMAGE");
+        env.put("SANDBOX_PROXY_IMAGE",
+            proxyImage == null || proxyImage.isBlank() ? image : proxyImage);
         env.put("SANDBOX_USER", "1000:1000");
         env.put("SANDBOX_MEMORY_MB", "256");
         env.put("SANDBOX_PIDS", "128");

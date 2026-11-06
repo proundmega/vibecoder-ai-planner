@@ -7,9 +7,15 @@
 // outbound request must pass through here. Every denied request is logged as a
 // single JSON line so the supervisor can surface it.
 //
-// Test seam: `node egress-proxy.js --check-allow host:port` performs the
-// static checks (allowlist, blocked name, IP literal, port) and exits 0 when
-// the target is allowed. It deliberately does not resolve DNS.
+// Test seams:
+//   node egress-proxy.js --check-allow host:port
+//     Performs the generic allowlist/blocked-name/IP/port checks (plain HTTP).
+//   node egress-proxy.js --check-connect host:port
+//     Applies CONNECT policy (443 only) plus the generic checks.
+//   node egress-proxy.js --check-resolve host
+//     Runs the DNS/private-address check (with the gated test resolver seam).
+//   node egress-proxy.js --check-hello <base64>
+//     Parses a TLS ClientHello and reports the SNI/error.
 
 const dns = require("dns");
 const http = require("http");
@@ -235,9 +241,11 @@ function denyRaw(socket, status, reason, host, port) {
 }
 
 function resolveSafe(host, callback) {
-  // Deterministic test seam for the Java resolveSafe regression tests. The
-  // proxy container does not receive this variable from the sandbox.
-  const override = process.env.EGRESS_TEST_RESOLVE_IP;
+  // Deterministic test seam for the Java resolveSafe regression tests. It is
+  // only honored when EGRESS_TEST_MODE=1, which the supervisor explicitly
+  // clears in the proxy container's environment.
+  const testMode = process.env.EGRESS_TEST_MODE === "1";
+  const override = testMode ? process.env.EGRESS_TEST_RESOLVE_IP : null;
   if (override) {
     if (isPrivateAddress(override)) {
       callback(new Error("resolves to a private address"));
@@ -613,6 +621,24 @@ if (process.argv.includes("--check-hello")) {
     process.exit(1);
   }
   console.log(`SNI ${parsed.sni || ""}${parsed.ech ? " ECH" : ""}`);
+  process.exit(0);
+} else if (process.argv.includes("--check-connect")) {
+  const target = process.argv[process.argv.indexOf("--check-connect") + 1];
+  const authority = parseAuthority(target);
+  if (!authority) {
+    console.log("DENY bad authority");
+    process.exit(1);
+  }
+  if (authority.port !== 443) {
+    console.log("DENY CONNECT is only supported on 443");
+    process.exit(1);
+  }
+  const reason = staticDenyReason(authority.host, authority.port);
+  if (reason) {
+    console.log(`DENY ${reason}`);
+    process.exit(1);
+  }
+  console.log("ALLOW");
   process.exit(0);
 } else if (process.argv.includes("--check-resolve")) {
   const target = process.argv[process.argv.indexOf("--check-resolve") + 1];

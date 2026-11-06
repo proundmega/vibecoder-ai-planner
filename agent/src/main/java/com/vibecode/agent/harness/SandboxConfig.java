@@ -44,6 +44,7 @@ public record SandboxConfig(
 ) {
 
     public static final String DEFAULT_IMAGE = "vibecode-agent-sandbox:latest";
+    public static final String DEFAULT_PROXY_IMAGE = "vibecode-sandbox-proxy:latest";
     public static final String DEFAULT_DOCKER_BINARY = "docker";
     public static final String DEFAULT_USER = "1000:1000";
     public static final String DEFAULT_CONTAINER_WORKSPACE_ROOT = "/repos";
@@ -100,7 +101,7 @@ public record SandboxConfig(
         SandboxConfig config = new SandboxConfig(
             mode,
             sandboxImage,
-            value(env, "SANDBOX_PROXY_IMAGE", sandboxImage),
+            value(env, "SANDBOX_PROXY_IMAGE", DEFAULT_PROXY_IMAGE),
             value(env, "SANDBOX_DOCKER_BIN", DEFAULT_DOCKER_BINARY),
             Duration.ofSeconds(longValue(env, "SANDBOX_EXEC_TIMEOUT_SECONDS",
                 DEFAULT_EXEC_TIMEOUT.toSeconds(), 1L)),

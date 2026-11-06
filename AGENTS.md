@@ -166,7 +166,8 @@ and model-driven shell commands), `SANDBOX_IMAGE`, `SANDBOX_PROXY_IMAGE`,
 `SANDBOX_DISK_MB`/`SANDBOX_DISK_CHECK_INTERVAL_SECONDS`/`SANDBOX_DISK_ENFORCE`,
 `SANDBOX_NOFILE`, `SANDBOX_TMPFS_MB`,
 `SANDBOX_NETWORK` (`none` or `allowlist`), `SANDBOX_ALLOWED_HOSTS`,
-`SANDBOX_EGRESS_UPSTREAM_NETWORK`, `SANDBOX_EGRESS_PROXY` (reserved; rejected),
+`SANDBOX_EGRESS_UPSTREAM_NETWORK`, `SANDBOX_EGRESS_PROBE_TIMEOUT_MS`,
+`SANDBOX_EGRESS_PROXY` (reserved; rejected),
 `SANDBOX_ENV`, `SANDBOX_USER`, `SANDBOX_ALLOW_ROOT`,
 `SANDBOX_EXEC_TIMEOUT_SECONDS`, `SANDBOX_ARTIFACT_MAX_BYTES`,
 `SANDBOX_SECCOMP_PROFILE`, `SANDBOX_APPARMOR_PROFILE`,
@@ -180,7 +181,8 @@ through a hardened proxy attached to an internal Docker network that validates
 the first CONNECT ClientHello SNI and rejects multiple SNI names/extra
 handshakes and CONNECT :80. TLS renegotiation and the encrypted inner Host are
 D16. Do not enable Docker mode for untrusted repos until D14 (the
-descendant-sweep fork race) is closed.
+descendant-sweep fork race) is closed, and do not treat the allowlist as a
+hard host boundary until D16 is closed.
 Phase 1 is blocking
 prompt mode and denies the `question` and `doom_loop` tools; autonomy and the
 human question loop are later phases.

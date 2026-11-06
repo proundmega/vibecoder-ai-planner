@@ -39,7 +39,7 @@ services:
       # supervisor talks to the daemon.
       - SANDBOX_MODE=${SANDBOX_MODE:-host}
       - SANDBOX_IMAGE=${SANDBOX_IMAGE:-vibecode-agent-sandbox:latest}
-      - SANDBOX_PROXY_IMAGE=${SANDBOX_PROXY_IMAGE:-}
+      - SANDBOX_PROXY_IMAGE=${SANDBOX_PROXY_IMAGE:-vibecode-sandbox-proxy:latest}
       - SANDBOX_DOCKER_BIN=${SANDBOX_DOCKER_BIN:-docker}
       - SANDBOX_REQUIRE=${SANDBOX_REQUIRE:-false}
       - SANDBOX_CPUS=${SANDBOX_CPUS:-2.0}

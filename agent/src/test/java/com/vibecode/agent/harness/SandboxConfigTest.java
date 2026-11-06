@@ -36,6 +36,7 @@ class SandboxConfigTest {
         assertTrue(config.isHost());
         assertFalse(config.isDocker());
         assertEquals(SandboxConfig.DEFAULT_IMAGE, config.image());
+        assertEquals(SandboxConfig.DEFAULT_PROXY_IMAGE, config.proxyImage());
         assertEquals(SandboxConfig.DEFAULT_DOCKER_BINARY, config.dockerBinary());
         assertEquals(Duration.ofMinutes(15), config.execTimeout());
         assertEquals("2.0", config.limits().cpus());

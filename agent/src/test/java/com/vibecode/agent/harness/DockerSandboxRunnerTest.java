@@ -152,6 +152,27 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void proxyArgsClearTheTestSeamAndUseTheConfiguredImage() throws IOException {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_PROXY_IMAGE", "proxy:img",
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org"
+        )::get);
+        SandboxSpec spec = config.specFor(workspace());
+
+        String joined = String.join(" ",
+            DockerSandboxRunner.buildProxyRunArgs(spec, "proxy-1", "internal-1"));
+
+        assertTrue(joined.contains("--entrypoint node proxy:img"));
+        assertTrue(joined.contains("-e EGRESS_TEST_MODE=0"));
+        assertTrue(joined.contains("EGRESS_TEST_RESOLVE_IP="));
+        assertTrue(joined.contains("--log-opt max-size=1m"));
+    }
+
+    @Test
     void createStartsAndDestroysTheEgressProxyAndNetwork() throws IOException {
         Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
         Path log = tempDir.resolve("docker.log");

@@ -72,8 +72,17 @@ class EgressProxyScriptTest {
     }
 
     @Test
-    void allowsAPublicHostAfterResolution() throws Exception {
-        Result result = checkResolve("registry.npmjs.org", "93.184.216.34");
+    void connectProbeIs443Only() throws Exception {
+        Result allowed = checkConnect("registry.npmjs.org:443");
+        assertEquals(0, allowed.exitCode, allowed.output);
+
+        Result port80 = checkConnect("registry.npmjs.org:80");
+        assertEquals(1, port80.exitCode, port80.output);
+        assertTrue(port80.output.contains("443"), port80.output);
+    }
+
+    @Test
+    void allowsAPublicHostAfterResolution() throws Exception {        Result result = checkResolve("registry.npmjs.org", "93.184.216.34");
         assertEquals(0, result.exitCode, result.output);
         assertTrue(result.output.contains("ALLOW"), result.output);
     }
@@ -209,7 +218,13 @@ class EgressProxyScriptTest {
     }
 
     private Result checkResolve(String target, String ip) throws Exception {
-        return run("--check-resolve", target, Map.of("EGRESS_TEST_RESOLVE_IP", ip));
+        return run("--check-resolve", target, Map.of(
+            "EGRESS_TEST_MODE", "1",
+            "EGRESS_TEST_RESOLVE_IP", ip));
+    }
+
+    private Result checkConnect(String target) throws Exception {
+        return run("--check-connect", target, Map.of());
     }
 
     private Result run(String mode, String target, Map<String, String> extra) throws Exception {

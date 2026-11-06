@@ -837,6 +837,12 @@ public final class DockerSandboxRunner implements SandboxRunner {
         args.add("EGRESS_ALLOWED_HOSTS=" + String.join(",", spec.allowedHosts()));
         args.add("-e");
         args.add("EGRESS_TUNNEL_PROBE_TIMEOUT_MS=" + spec.egressProbeTimeoutMs());
+        // Never inherit a test seam from the proxy image. The resolver override
+        // is only honored when EGRESS_TEST_MODE=1, which the supervisor clears.
+        args.add("-e");
+        args.add("EGRESS_TEST_MODE=0");
+        args.add("-e");
+        args.add("EGRESS_TEST_RESOLVE_IP=");
         args.add("--entrypoint");
         args.add("node");
         args.add(spec.proxyImage());
