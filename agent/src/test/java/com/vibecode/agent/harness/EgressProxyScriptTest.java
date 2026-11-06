@@ -67,6 +67,29 @@ class EgressProxyScriptTest {
         assertDenied("registry.npmjs.org:8080");
     }
 
+    @Test
+    void allowsAPublicHostAfterResolution() throws Exception {
+        Result result = checkResolve("registry.npmjs.org");
+        Assumptions.assumeFalse(result.output.contains("dns lookup failed"),
+            "DNS is unavailable in this environment");
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains("ALLOW"), result.output);
+    }
+
+    @Test
+    void blocksHostnamesThatResolveToLoopbackOrMetadata() throws Exception {
+        Result loopback = checkResolve("localtest.me");
+        Assumptions.assumeFalse(loopback.output.contains("dns lookup failed"),
+            "DNS is unavailable in this environment");
+        assertEquals(1, loopback.exitCode, loopback.output);
+        assertTrue(loopback.output.contains("private"), loopback.output);
+
+        Result metadata = checkResolve("169.254.169.254.nip.io");
+        Assumptions.assumeFalse(metadata.output.contains("dns lookup failed"),
+            "DNS is unavailable in this environment");
+        assertEquals(1, metadata.exitCode, metadata.output);
+    }
+
     private void assertDenied(String target) throws Exception {
         Result result = check(target);
         assertEquals(1, result.exitCode, result.output);
@@ -74,10 +97,19 @@ class EgressProxyScriptTest {
     }
 
     private Result check(String target) throws Exception {
+        return run("--check-allow", target);
+    }
+
+    private Result checkResolve(String target) throws Exception {
+        return run("--check-resolve", target);
+    }
+
+    private Result run(String mode, String target) throws Exception {
         ProcessBuilder builder = new ProcessBuilder(
-            List.of("node", script.toString(), "--check-allow", target));
+            List.of("node", script.toString(), mode, target));
         builder.environment().put("EGRESS_ALLOWED_HOSTS",
-            "registry.npmjs.org,*.githubusercontent.com");
+            "registry.npmjs.org,*.githubusercontent.com,"
+                + "localtest.me,169.254.169.254.nip.io");
         builder.redirectErrorStream(true);
         Process process = builder.start();
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);

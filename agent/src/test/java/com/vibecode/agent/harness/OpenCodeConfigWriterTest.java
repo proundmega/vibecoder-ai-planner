@@ -69,6 +69,7 @@ class OpenCodeConfigWriterTest {
         JsonNode root = mapper.readTree(configFile.toFile());
 
         assertEquals("deny", root.path("permission").path("bash").asText());
+        assertEquals("deny", root.path("permission").path("shell").asText());
         assertEquals("allow", root.path("permission").path("sandbox_bash").asText());
     }
 

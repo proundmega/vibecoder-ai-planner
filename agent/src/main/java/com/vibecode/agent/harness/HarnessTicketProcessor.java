@@ -695,7 +695,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
             currentStep = "implementing";
             String prompt = promptBuilder.build(
-                pickedUp, planningDocs, commands, bridge != null);
+                pickedUp, planningDocs, commands, bridge != null,
+                sandboxConfig.networkEnabled());
             harness.subscribe(sessionId, event -> {
                 if (event.isToolEvent()) {
                     currentStep = "implementing";

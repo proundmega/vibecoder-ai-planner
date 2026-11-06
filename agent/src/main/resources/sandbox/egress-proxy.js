@@ -22,6 +22,8 @@ const ALLOW = String(process.env.EGRESS_ALLOWED_HOSTS || "")
   .filter(Boolean);
 const CONNECT_TIMEOUT_MS = 10_000;
 const IDLE_TIMEOUT_MS = 120_000;
+const TUNNEL_PROBE_TIMEOUT_MS = 5_000;
+const MAX_TUNNEL_PREFIX_BYTES = 64 * 1024;
 const ALLOWED_PORTS = new Set([80, 443]);
 
 function log(level, message, extra) {
@@ -32,6 +34,25 @@ function log(level, message, extra) {
     ...extra,
   };
   console.log(JSON.stringify(record));
+}
+
+const MAX_DENY_LOGS_PER_SECOND = 20;
+let denyWindowStarted = Date.now();
+let denyWindowCount = 0;
+
+// Denials are the only per-request log sink: allowed requests would let a
+// hostile repo flood the supervisor's log storage. The rate limit bounds the
+// denial stream too; the supervisor still sees the first N per second.
+function logDenied(extra) {
+  const now = Date.now();
+  if (now - denyWindowStarted >= 1000) {
+    denyWindowStarted = now;
+    denyWindowCount = 0;
+  }
+  denyWindowCount++;
+  if (denyWindowCount <= MAX_DENY_LOGS_PER_SECOND) {
+    log("warn", "egress denied", { decision: "deny", ...extra });
+  }
 }
 
 function normaliseHost(host) {
@@ -103,6 +124,22 @@ function isPrivateAddress(address) {
     if (a === 100 && b >= 64 && b <= 127) {
       return true;
     }
+    // Cloud metadata / platform endpoints and non-routable test ranges.
+    if (a === 168 && b === 63 && parts[2] === 129 && parts[3] === 16) {
+      return true; // Azure WireServer
+    }
+    if (a === 192 && b === 0 && (parts[2] === 0 || parts[2] === 2)) {
+      return true; // 192.0.0.0/24, 192.0.2.0/24
+    }
+    if (a === 198 && (b === 18 || b === 19)) {
+      return true; // 198.18.0.0/15
+    }
+    if (a === 198 && b === 51 && parts[2] === 100) {
+      return true; // 198.51.100.0/24
+    }
+    if (a === 203 && b === 0 && parts[2] === 113) {
+      return true; // 203.0.113.0/24
+    }
     return a >= 224;
   }
   if (net.isIPv6(address)) {
@@ -123,6 +160,21 @@ function isPrivateAddress(address) {
     }
     if (value.startsWith("ff")) {
       return true;
+    }
+    if (value.startsWith("64:ff9b:")) {
+      return true; // NAT64
+    }
+    if (value.startsWith("2002:")) {
+      return true; // 6to4
+    }
+    if (value.startsWith("2001:db8:")) {
+      return true; // documentation
+    }
+    if (value.startsWith("2001:0:")) {
+      return true; // Teredo
+    }
+    if (value.startsWith("100::")) {
+      return true; // discard-only
     }
     if (value.startsWith("::ffff:")) {
       return isPrivateAddress(value.slice(7));
@@ -166,7 +218,7 @@ function staticDenyReason(host, port) {
 }
 
 function denyRaw(socket, status, reason, host, port) {
-  log("warn", "egress denied", { decision: "deny", host, port, reason });
+  logDenied({ host, port, reason });
   try {
     socket.write(
       `HTTP/1.1 ${status} ${status === 403 ? "Forbidden" : "Bad Request"}\r\n` +
@@ -197,6 +249,229 @@ function resolveSafe(host, callback) {
   });
 }
 
+/**
+ * Parse the SNI from the first TLS ClientHello. Returns null while more bytes
+ * are needed, {error} for a malformed/non-TLS prefix, or {sni, ech}.
+ */
+function parseClientHelloSni(buffer) {
+  let offset = 0;
+  let handshake = Buffer.alloc(0);
+  while (offset + 5 <= buffer.length) {
+    const contentType = buffer[offset];
+    const length = buffer.readUInt16BE(offset + 3);
+    if (contentType !== 0x16) {
+      return { error: "not a TLS handshake" };
+    }
+    if (offset + 5 + length > buffer.length) {
+      return null;
+    }
+    handshake = Buffer.concat([
+      handshake,
+      buffer.subarray(offset + 5, offset + 5 + length),
+    ]);
+    offset += 5 + length;
+    if (handshake.length >= 4) {
+      if (handshake[0] !== 0x01) {
+        return { error: "not a ClientHello" };
+      }
+      const bodyLength = handshake.readUIntBE(1, 3);
+      if (handshake.length < 4 + bodyLength) {
+        return null;
+      }
+      return parseClientHelloBody(handshake.subarray(4, 4 + bodyLength));
+    }
+  }
+  return null;
+}
+
+function parseClientHelloBody(body) {
+  try {
+    let index = 0;
+    if (body.length < 2 + 32 + 1) {
+      return { error: "truncated ClientHello" };
+    }
+    index += 2 + 32; // legacy_version + random
+    const sessionLength = body[index];
+    index += 1;
+    if (index + sessionLength + 2 > body.length) {
+      return { error: "truncated session id" };
+    }
+    index += sessionLength;
+    const cipherLength = body.readUInt16BE(index);
+    index += 2;
+    if (index + cipherLength + 1 > body.length) {
+      return { error: "truncated cipher suites" };
+    }
+    index += cipherLength;
+    const compressionLength = body[index];
+    index += 1;
+    if (index + compressionLength + 2 > body.length) {
+      return { error: "truncated compression methods" };
+    }
+    index += compressionLength;
+    const extensionsLength = body.readUInt16BE(index);
+    index += 2;
+    const end = Math.min(body.length, index + extensionsLength);
+    let sni = null;
+    let ech = false;
+    while (index + 4 <= end) {
+      const type = body.readUInt16BE(index);
+      const length = body.readUInt16BE(index + 2);
+      index += 4;
+      if (index + length > end) {
+        return { error: "truncated extension" };
+      }
+      if (type === 0x0000) {
+        let cursor = index;
+        if (cursor + 2 > index + length) {
+          return { error: "truncated SNI list" };
+        }
+        const listLength = body.readUInt16BE(cursor);
+        cursor += 2;
+        const listEnd = Math.min(cursor + listLength, index + length);
+        while (cursor + 3 <= listEnd) {
+          const nameType = body[cursor];
+          const nameLength = body.readUInt16BE(cursor + 1);
+          cursor += 3;
+          if (cursor + nameLength > listEnd) {
+            return { error: "truncated SNI name" };
+          }
+          if (nameType === 0) {
+            sni = body.toString("ascii", cursor, cursor + nameLength);
+          }
+          cursor += nameLength;
+        }
+      } else if (type === 0xfe0d) {
+        ech = true;
+      }
+      index += length;
+    }
+    return { sni, ech };
+  } catch (error) {
+    return { error: "malformed ClientHello" };
+  }
+}
+
+/** Parse the Host header of the first tunneled HTTP/1.x request. */
+function parseHttpRequestHost(buffer) {
+  const end = buffer.indexOf("\r\n\r\n");
+  if (end < 0) {
+    return null;
+  }
+  const lines = buffer.subarray(0, end).toString("latin1").split("\r\n");
+  if (!/^[A-Z]+ \S+ HTTP\/1\.[01]$/.test(lines[0] || "")) {
+    return { error: "bad tunneled HTTP request" };
+  }
+  let host = null;
+  for (let i = 1; i < lines.length; i++) {
+    const colon = lines[i].indexOf(":");
+    if (colon > 0 && lines[i].slice(0, colon).toLowerCase() === "host") {
+      host = lines[i].slice(colon + 1).trim();
+      break;
+    }
+  }
+  if (!host) {
+    return { error: "missing Host header" };
+  }
+  let hostname = host;
+  if (host.startsWith("[")) {
+    const close = host.indexOf("]");
+    hostname = close > 0 ? host.slice(1, close) : host;
+  } else {
+    const colon = host.lastIndexOf(":");
+    if (colon > 0 && /^\d+$/.test(host.slice(colon + 1))) {
+      hostname = host.slice(0, colon);
+    }
+  }
+  return { host: normaliseHost(hostname) };
+}
+
+/**
+ * Validate the bytes inside a CONNECT tunnel before forwarding them. This
+ * prevents domain fronting: the TLS SNI (or the HTTP Host for port 80) must
+ * match the allowlisted CONNECT target. Failures close both sockets.
+ */
+function validateTunnel(clientSocket, upstream, host, port, initial) {
+  let buffer = initial && initial.length > 0 ? Buffer.from(initial) : Buffer.alloc(0);
+  let settled = false;
+
+  const finish = (allowed, reason) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearTimeout(timer);
+    clientSocket.removeListener("data", onData);
+    if (!allowed) {
+      logDenied({ method: "CONNECT", host, port, reason });
+      clientSocket.destroy();
+      upstream.destroy();
+      return;
+    }
+    if (buffer.length > 0) {
+      upstream.write(buffer);
+    }
+    clientSocket.pipe(upstream);
+    upstream.pipe(clientSocket);
+  };
+
+  const inspect = () => {
+    const parsed = port === 80
+      ? parseHttpRequestHost(buffer)
+      : parseClientHelloSni(buffer);
+    if (parsed === null) {
+      return;
+    }
+    if (parsed.error) {
+      finish(false, parsed.error);
+      return;
+    }
+    if (port === 80) {
+      if (normaliseHost(parsed.host) !== normaliseHost(host)) {
+        finish(false, "Host does not match the CONNECT target");
+        return;
+      }
+    } else {
+      if (parsed.ech) {
+        finish(false, "ECH is not supported");
+        return;
+      }
+      if (!parsed.sni) {
+        finish(false, "missing SNI");
+        return;
+      }
+      if (normaliseHost(parsed.sni) !== normaliseHost(host)) {
+        finish(false, "SNI does not match the CONNECT target");
+        return;
+      }
+    }
+    finish(true);
+  };
+
+  const onData = (chunk) => {
+    if (settled) {
+      return;
+    }
+    buffer = Buffer.concat([buffer, chunk]);
+    if (buffer.length > MAX_TUNNEL_PREFIX_BYTES) {
+      finish(false, "tunnel prefix too large");
+      return;
+    }
+    inspect();
+  };
+
+  const timer = setTimeout(
+    () => finish(false, "tunnel validation timeout"),
+    TUNNEL_PROBE_TIMEOUT_MS
+  );
+  clientSocket.on("data", onData);
+  clientSocket.on("error", () => finish(false, "client error"));
+  clientSocket.on("close", () => finish(false, "client closed"));
+  if (buffer.length > 0) {
+    inspect();
+  }
+}
+
 function handleConnect(request, clientSocket, head) {
   const authority = parseAuthority(request.url);
   if (!authority) {
@@ -218,18 +493,8 @@ function handleConnect(request, clientSocket, head) {
     const upstream = net.connect(
       { host: address, port: authority.port, timeout: CONNECT_TIMEOUT_MS },
       () => {
-        log("info", "egress allowed", {
-          decision: "allow",
-          method: "CONNECT",
-          host: authority.host,
-          port: authority.port,
-        });
         clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
-        if (head && head.length > 0) {
-          upstream.write(head);
-        }
-        upstream.pipe(clientSocket);
-        clientSocket.pipe(upstream);
+        validateTunnel(clientSocket, upstream, authority.host, authority.port, head);
       }
     );
     upstream.setTimeout(IDLE_TIMEOUT_MS, () => upstream.destroy());
@@ -255,8 +520,7 @@ function handleRequest(request, response) {
   const port = Number(target.port || 80);
   const reason = staticDenyReason(host, port);
   if (reason) {
-    log("warn", "egress denied", {
-      decision: "deny",
+    logDenied({
       method: request.method,
       host,
       port,
@@ -268,8 +532,7 @@ function handleRequest(request, response) {
 
   resolveSafe(host, (error, address) => {
     if (error) {
-      log("warn", "egress denied", {
-        decision: "deny",
+      logDenied({
         method: request.method,
         host,
         port,
@@ -278,13 +541,6 @@ function handleRequest(request, response) {
       response.writeHead(403).end();
       return;
     }
-
-    log("info", "egress allowed", {
-      decision: "allow",
-      method: request.method,
-      host,
-      port,
-    });
 
     const upstream = http.request(
       {
@@ -338,7 +594,22 @@ function runProxy() {
   process.on("SIGINT", shutdown);
 }
 
-if (process.argv.includes("--check-allow")) {
+if (process.argv.includes("--check-resolve")) {
+  const target = process.argv[process.argv.indexOf("--check-resolve") + 1];
+  const reason = staticDenyReason(normaliseHost(target), 443);
+  if (reason) {
+    console.log(`DENY ${reason}`);
+    process.exit(1);
+  }
+  resolveSafe(target, (error, address) => {
+    if (error) {
+      console.log(`DENY ${error.message}`);
+      process.exit(1);
+    }
+    console.log(`ALLOW ${address}`);
+    process.exit(0);
+  });
+} else if (process.argv.includes("--check-allow")) {
   const target = process.argv[process.argv.indexOf("--check-allow") + 1];
   const authority = parseAuthority(target);
   if (!authority) {

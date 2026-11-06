@@ -22,6 +22,16 @@ public final class PromptBuilder {
         List<String> verificationCommands,
         boolean sandboxedBash
     ) {
+        return build(ticket, planningDocs, verificationCommands, sandboxedBash, false);
+    }
+
+    public String build(
+        Ticket ticket,
+        List<String> planningDocs,
+        List<String> verificationCommands,
+        boolean sandboxedBash,
+        boolean egressAllowlist
+    ) {
         StringBuilder prompt = new StringBuilder();
 
         prompt.append("You are an autonomous coding agent working in an isolated git workspace.\n");
@@ -65,13 +75,19 @@ public final class PromptBuilder {
 
         if (sandboxedBash) {
             prompt.append("## Sandboxed shell\n\n");
-            prompt.append("- The built-in `bash` tool is disabled. Use the `sandbox_bash` tool ");
-            prompt.append("for every shell command.\n");
+            prompt.append("- The built-in `bash`/`shell` tool is disabled. Use the ");
+            prompt.append("`sandbox_bash` tool for every shell command.\n");
             prompt.append("- Commands run in a disposable sandbox where the workspace is mounted ");
             prompt.append("at `/workspace`. Prefer relative paths in shell commands; the read/edit ");
             prompt.append("tools still use the normal workspace paths.\n");
-            prompt.append("- The sandbox has no Git credentials and no direct network access. Only ");
-            prompt.append("the approved package registries are reachable.\n\n");
+            prompt.append("- The sandbox has no Git credentials. ");
+            if (egressAllowlist) {
+                prompt.append("Only the approved package registries are reachable through the ");
+                prompt.append("egress proxy; external DNS and every other host are blocked.\n\n");
+            } else {
+                prompt.append("It has no network access; installs that need the network must use ");
+                prompt.append("a pre-populated workspace.\n\n");
+            }
         }
 
         prompt.append("## Verification\n\n");

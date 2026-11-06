@@ -173,11 +173,12 @@ and model-driven shell commands), `SANDBOX_IMAGE`, `SANDBOX_PROXY_IMAGE`,
 `SANDBOX_CONTAINER_WORKSPACE_ROOT`, `SANDBOX_HOST_WORKSPACE_ROOT`.
 Docker mode needs a daemon connection and a host-visible workspace; the
 PoolManager/compose wiring is deferred to fg-34 D8. OpenCode still runs in the
-supervisor, but the built-in `bash` tool is disabled and the `sandbox_bash`
-tool forwards commands to the sandbox bridge. The sandbox has no direct egress;
-`SANDBOX_NETWORK=allowlist` routes traffic through a hardened proxy attached to
-an internal Docker network. Do not enable Docker mode for untrusted repos until
-D14 (the descendant-sweep fork race) is closed.
+supervisor, but the built-in `bash`/`shell` tool is disabled and the
+`sandbox_bash` tool forwards commands to the sandbox bridge. The sandbox has
+no direct egress or external DNS; `SANDBOX_NETWORK=allowlist` routes traffic
+through a hardened proxy attached to an internal Docker network that validates
+the CONNECT SNI/port-80 Host. Do not enable Docker mode for untrusted repos
+until D14 (the descendant-sweep fork race) is closed.
 Phase 1 is blocking
 prompt mode and denies the `question` and `doom_loop` tools; autonomy and the
 human question loop are later phases.

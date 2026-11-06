@@ -230,10 +230,12 @@ public final class OpenCodeConfigWriter {
             bash.put(denied, "deny");
         }
         if (sandboxedBash) {
-            // Fail closed: the built-in bash tool must never execute on the
-            // supervisor. The model uses the sandbox_bash custom tool, which
-            // forwards to the disposable sandbox instead.
+            // Fail closed: the built-in bash/shell tool must never execute on
+            // the supervisor. The model uses the sandbox_bash custom tool,
+            // which forwards to the disposable sandbox instead. Deny both
+            // names because OpenCode v2 renamed bash to shell.
             permission.put("bash", "deny");
+            permission.put("shell", "deny");
             permission.put("sandbox_bash", "allow");
         } else {
             permission.put("bash", bash);

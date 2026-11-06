@@ -5,6 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -242,7 +246,73 @@ class DockerSandboxRunnerIntegrationTest {
                         + "&& echo NPM_OK || echo NPM_FAIL",
                     Duration.ofSeconds(40)));
                 assertTrue(npm.output().contains("NPM_OK"), npm.output());
+
+                // Domain fronting: CONNECT the allowlisted host but send a
+                // different TLS SNI.
+                ExecResult sni = runner.exec(handle, ExecRequest.of(
+                    "curl -fsS --max-time 10 -o /dev/null "
+                        + "--connect-to example.org:443:registry.npmjs.org:443 "
+                        + "https://example.org/ && echo ALLOWED || echo DENIED",
+                    Duration.ofSeconds(30)));
+                assertTrue(sni.output().contains("DENIED"), sni.output());
+
+                // Domain fronting over a CONNECT :80 tunnel with a different
+                // Host header.
+                ExecResult httpHost = runner.exec(handle, ExecRequest.of(
+                    "node -e 'const n=require(\"net\");"
+                        + "const u=new URL(process.env.HTTPS_PROXY);"
+                        + "const s=n.connect(Number(u.port),u.hostname,()=>{"
+                        + "s.write(\"CONNECT registry.npmjs.org:80 HTTP/1.1\\r\\n"
+                        + "Host: registry.npmjs.org:80\\r\\n\\r\\n\");});"
+                        + "let b=\"\";s.on(\"data\",d=>{b+=d;if(b.includes(\"200\")){"
+                        + "s.write(\"GET / HTTP/1.1\\r\\nHost: example.org\\r\\n\\r\\n\");}});"
+                        + "s.on(\"close\",()=>process.exit(0));"
+                        + "s.on(\"error\",()=>process.exit(0));"
+                        + "setTimeout(()=>process.exit(1),5000);' "
+                        + "&& echo TUNNEL_CLOSED || echo TUNNEL_OPEN",
+                    Duration.ofSeconds(20)));
+                assertTrue(httpHost.output().contains("TUNNEL_CLOSED"), httpHost.output());
             } finally {
+                runner.destroy(handle);
+            }
+        }
+    }
+
+    @Test
+    void bridgeExecutesCommandsInsideTheSandbox() throws Exception {
+        String image = System.getenv("SANDBOX_IT_IMAGE");
+        Assumptions.assumeTrue(image != null && !image.isBlank(),
+            "SANDBOX_IT_IMAGE is not set; skipping the sandbox bridge smoke test");
+        Assumptions.assumeTrue(
+            FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+            "POSIX permissions are required for the non-root smoke test");
+
+        SandboxConfig config = integrationConfig(image, Map.of());
+        Path workspace = Files.createDirectories(tempDir.resolve("bridge"));
+        Files.setPosixFilePermissions(workspace, PosixFilePermissions.fromString("rwxrwxrwx"));
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace));
+            SandboxBashBridge bridge = new SandboxBashBridge(
+                runner, handle, workspace, Duration.ofSeconds(30));
+            bridge.start();
+            try {
+                HttpClient client = HttpClient.newHttpClient();
+                HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(bridge.baseUrl() + "/exec"))
+                    .header("Content-Type", "application/json")
+                    .header("X-Sandbox-Token", bridge.token())
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                        "{\"command\":\"pwd && echo bridge-ok\"}"))
+                    .build();
+                HttpResponse<String> response = client.send(
+                    request, HttpResponse.BodyHandlers.ofString());
+
+                assertEquals(200, response.statusCode(), response.body());
+                assertTrue(response.body().contains("/workspace"), response.body());
+                assertTrue(response.body().contains("bridge-ok"), response.body());
+            } finally {
+                bridge.close();
                 runner.destroy(handle);
             }
         }

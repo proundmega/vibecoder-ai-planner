@@ -789,8 +789,11 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
             log.info("Started egress proxy {} on internal network {} (upstream {})",
                 proxy, network, spec.egressUpstreamNetwork());
+            String urlHost = proxyAddress.contains(":")
+                ? "[" + proxyAddress + "]"
+                : proxyAddress;
             return new EgressRuntime(network, proxy, proxyAddress,
-                "http://" + proxyAddress + ":3128");
+                "http://" + urlHost + ":3128");
         } catch (IOException | RuntimeException e) {
             stopEgress(network, proxy);
             throw e instanceof IOException io ? io : new IOException(e);
@@ -822,6 +825,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
         args.add("134217728");
         args.add("--cpus");
         args.add("0.5");
+        args.add("--log-opt");
+        args.add("max-size=1m");
+        args.add("--log-opt");
+        args.add("max-file=1");
         args.add("--network");
         args.add(network);
         args.add("-e");
@@ -896,8 +903,27 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 log.warn("Sandbox egress denied: {}", line.trim());
             }
         }
-        runControl(List.of(config.dockerBinary(), "rm", "-f", proxyName));
-        runControl(List.of(config.dockerBinary(), "network", "rm", network));
+        DockerResult proxyRemoved = runDocker(
+            List.of(config.dockerBinary(), "rm", "-f", proxyName),
+            CONTROL_TIMEOUT,
+            CONTROL_OUTPUT_BYTES
+        );
+        if (proxyRemoved.exitCode() != 0 && !proxyRemoved.timedOut()
+            && !proxyRemoved.output().toLowerCase().contains("no such")) {
+            log.warn("Could not remove the egress proxy {}: {}",
+                proxyName, proxyRemoved.output().trim());
+        }
+        DockerResult networkRemoved = runDocker(
+            List.of(config.dockerBinary(), "network", "rm", network),
+            CONTROL_TIMEOUT,
+            CONTROL_OUTPUT_BYTES
+        );
+        if (networkRemoved.exitCode() != 0 && !networkRemoved.timedOut()
+            && !networkRemoved.output().toLowerCase().contains("not found")
+            && !networkRemoved.output().toLowerCase().contains("no such")) {
+            log.warn("Could not remove the egress network {}: {}",
+                network, networkRemoved.output().trim());
+        }
     }
 
     /**
