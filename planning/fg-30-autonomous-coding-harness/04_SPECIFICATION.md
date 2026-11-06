@@ -728,8 +728,8 @@ Add:
 
 | # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
 |---|---|---|---|---|---|
-| 1 | bp-120 | Agent connectivity fixes (provider envelope, heartbeat listing) | Agent | `bp-120-agent-connectivity-fixes` | Yes (PR #101) |
-| 2 | bp-121 | Non-localhost agent CORS/IP support | Agent / Security | `bp-121-agent-connectivity-ip` | Yes (PR #101) |
+| 1 | bp-120 | Agent connectivity fixes (provider envelope, heartbeat listing) | Agent | `DONE/bp-120-agent-connectivity-fixes` | Yes (PR #101) |
+| 2 | bp-121 | Non-localhost agent CORS/IP support | Agent / Security | `DONE/bp-121-agent-connectivity-ip` | Yes (PR #101) |
 | 3 | bp-71 | Email notifications (reuse for agent questions) | UX / Security | `bp-71-email-notifications` | Yes (PR #101) |
 | 4 | bp-74 | Session/API key rotation | Security | `bp-74-session-credentials` | Yes (PR #101) |
 | 5 | bp-14 | S3 planning storage | Infrastructure | `bp-14-s3-planning-storage` | Yes (PR #101) |

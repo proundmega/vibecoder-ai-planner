@@ -17,7 +17,7 @@
 - [x] Make integration setup fail on migration errors (O8)
 - [x] Add EditTicketModal/TicketDetail component tests and refresh assignment E2E (O9)
 - [x] Decide on full SQL grammar validation for dry-run (O10) — documented as structural-only
-- [ ] Move completed planning suites to `planning/DONE/` (FR11)
+- [x] Move completed planning suites to `planning/DONE/` (FR11)
 
 ## Per-file changes
 
@@ -99,11 +99,11 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR5 | Frontend contract | `src/__tests__/api-contract.test.ts` | camelCase Project/Ticket accepted; `owner_id` rejected; numeric-string ids; `dependsOn` string[] enforced | `npm test -- --run` |
 | FR5 | Frontend UI contract | `src/__tests__/tickets.test.js` | `updateTicket` forwards `milestoneId`/`estimate`/`dependsOn` | `npm test -- --run` |
 | FR6 | Backend route | `src/__tests__/api-ticket-put.test.js` | response `data` is the updated ticket, no `message` | `npm test` |
-| FR7 | Docs | — | README matches Jenkins, 46 migrations, `PENDING.txt` | manual |
+| FR7 | Docs | — | README matches Jenkins, 47 migrations, `PENDING.txt` | manual |
 | FR8 | Integration bootstrap | `src/__tests__/migrationSupport.test.js` | unexpected error throws; idempotent errors ignored | `npm test` |
 | FR9 | Component | `frontend/cypress/component/EditTicketModal.cy.ts`, `TicketDetail.cy.ts` | limits, priorities, save payload, clear assignee, required title; detail render/actions and D15 assignee refresh | `npm run cypress:component` |
 | FR10 | Docs | — | dry-run documented as structural-only in `02`/`03` | manual |
-| FR11 | — | — | not started (DONE moves) | — |
+| FR11 | Docs / repo | `planning/DONE/**` | bp-120/bp-121/bp-123/fg-13/fg-14 moved; fg-13 status fixed; placeholders filled | manual + `node planning/check-planning.js` |
 
 ## Review checklist
 
@@ -124,6 +124,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 | 2026-11-04 | `78b64b9` (stacked PR #117) | O4 review fixes | Backend 122 suites / 1530 tests pass; frontend 60 files / 562 tests pass; integration 7 suites / 139 tests pass (fresh + re-run); backfill status reset, agent-delete trigger, release authorization, and transactional migration test added |
 | 2026-11-05 | `50f9f4e` (stacked PR #118) | O3 | Cypress 7 specs / 37 tests pass against the dev stack; backend 122 suites / 1530 tests; frontend 60 files / 562 tests; integration 7 suites / 139 tests; fixed the `Unassigned` assignee option found by the new E2E |
 | 2026-11-05 | `92b85df` (stacked PR #118) | O3 review fixes | E2E overlay allows `http://frontend` (200) and rejects other origins (403); project create asserts the board redirect; assignment asserts without reload after the D15 refetch fix; Cypress 37/37 pass |
+| 2026-11-06 | this commit (stacked PR) | FR11 | Moved bp-120/bp-121/bp-123/fg-13/fg-14 to `planning/DONE`; fg-13 marked done; placeholders filled; 21 → 20 migrated suites (bp-133 added, bp-123 moved to DONE) |
 | 2026-11-06 | `4262f14` (stacked PR #119) | O9 review fixes | Component suite 69/69 across 6 consecutive runs with the dev API up; every TicketDetail onMounted request awaited, catch-all API stub and auth reset added |
 | 2026-11-06 | `8f746e3` (stacked PR #119) | O9 | Component suite 7 specs / 69 tests (4 EditTicketModal + 3 TicketDetail); E2E 37/37 |
 | 2026-11-06 | `f90b177` (stacked PR #118) | O3 Jenkins fix | Replaced the workspace bind mount with a compose-built Cypress image; `docker compose --profile e2e run cypress` passes 37/37 against `http://frontend` |

@@ -2,7 +2,7 @@
 
 ## Ticket: fg-13 — Frontend/Backend API Surface Inconsistencies
 
-**Status**: planned
+**Status**: done
 **Priority**: P1
 **Effort**: Medium
 **Author**: AI Assistant

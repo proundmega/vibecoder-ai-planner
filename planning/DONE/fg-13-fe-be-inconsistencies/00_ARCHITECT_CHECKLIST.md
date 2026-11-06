@@ -1,8 +1,9 @@
 # 00_ARCHITECT_CHECKLIST.md — Pre-Implementation Checklist
 
-**Status**: planned
+**Status**: done
 **Date started**: 2026-08-06
-**Date completed**:
+**Date completed**: 2026-08-06
+**PR**: #82
 **Author**: AI Assistant
 **Feature scope**: Both
 

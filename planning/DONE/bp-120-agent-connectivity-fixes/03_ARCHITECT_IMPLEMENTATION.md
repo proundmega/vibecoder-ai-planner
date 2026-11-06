@@ -6,14 +6,14 @@
 
 ## Ticket: bp-120-agent-connectivity-fixes — Fix Agent Provider Config, Visibility, and Response Format
 
-**Status**: planned
+**Status**: done
 **Priority**: P0
 **Effort**: Medium
 **Author**: AI Assistant
 **Date created**: 2025-08-18
-**Date completed**: {{YYYY-MM-DD}}
-**PR**: {{link}}
-**Branch**: {{branch-name}}
+**Date completed**: 2026-09-11
+**PR**: #97
+**Branch**: n/a (merged via #97)
 **Scope**: Backend + Java Agent
 **Dependencies**: None
 

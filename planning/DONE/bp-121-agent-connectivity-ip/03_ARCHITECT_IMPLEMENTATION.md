@@ -6,13 +6,13 @@
 
 ## Ticket: bp-121 — Agent Connectivity Fixes for Non-Locality Deployments
 
-**Status**: planned
+**Status**: done
 **Priority**: P0
 **Effort**: Small
 **Author**: AI Assistant
 **Date created**: 2026-09-11
-**Date completed**: {{DATE}}
-**PR**: {{link}}
+**Date completed**: 2026-09-11
+**PR**: #97 + commit 59c3ec0
 **Branch**: fix/bp-121-agent-connectivity-ip
 **Scope**: Backend
 
