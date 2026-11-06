@@ -9,7 +9,8 @@
 |---|---|---|
 | 1 | Sandbox runtime foundation: config, host/docker runners, limits, filesystem/user hardening, secretless env, default-deny network, sandboxed install/verification commands, tests | Merged (#126) |
 | 2 | Egress allowlist proxy (FR4) and the OpenCode bash-tool bridge so model-driven repo commands also run in the sandbox (FR11 complete) | Merged (#127) |
-| 3 | Prompt-injection defenses (FR8), SBOM/image scan/digest pinning (FR9), artifact redaction | Pending |
+| 3a | Prompt-injection defenses (FR8): untrusted-content labeling, instruction precedence, credential read denies, command exfiltration policy, credential-leak publish gate | In review (#TBD) |
+| 3b | SBOM/image scan/digest pinning (FR9) and artifact redaction (D11) | Pending |
 
 Slice 1 deliberately keeps `SANDBOX_MODE=host` as the default so the Phase 1
 harness is unchanged until the Docker path is validated. Docker mode is
@@ -36,10 +37,10 @@ bridge. Operator docs state this explicitly.
 - [x] Deny host Docker socket, privileged mode and host mounts (only the workspace is mounted rw; `.git` is checked on the supervisor path and mounted ro from the daemon path)
 - [x] Define the network egress policy (slice 2: internal Docker network + hardened allowlist proxy; default-deny `--network none`)
 - [x] Define secretless execution and a safe way to inject non-secret test config (strict boolean/numeric parsing; credential keys and URLs rejected)
-- [ ] Harden prompt-injection handling for repo docs, issues and PR text (slice 3)
+- [x] Harden prompt-injection handling for repo docs, issues and PR text (slice 3a)
 - [x] Add malicious-repo and escape-attempt tests (guard-failure fail-closed with non-zero exit codes, symlink/FIFO copy, background persistence, download-cap pre-check, destroy-failure publish stop, secret, read-only, no-socket, disk quota, non-root, egress allow/deny and direct-egress-blocked integration coverage)
 - [x] Bridge the OpenCode bash tool into the sandbox (slice 2: `sandbox_bash` global tool + loopback per-run-token bridge; built-in bash disabled)
-- [ ] Add image scanning, SBOM and signed base images (slice 3; a minimal sandbox Dockerfile is added now)
+- [ ] Add image scanning, SBOM and signed base images (slice 3b; a minimal sandbox Dockerfile is added now)
 - [x] Define the fallback for local Windows development (`SANDBOX_MODE=host`, loud warning, production guard)
 - [x] Roll out behind a flag before making it the default (`SANDBOX_MODE`, `SANDBOX_REQUIRE`)
 
@@ -51,11 +52,12 @@ bridge. Operator docs state this explicitly.
 | `agent/src/main/java/com/vibecode/agent/harness/SandboxConfig.java` | Added | Env-driven limits, image, user, secretless env, fail-closed validation and daemon-path mapping |
 | `agent/src/main/java/com/vibecode/agent/harness/SandboxSpec.java` | Added | Immutable per-run sandbox description (including egress network and proxy image) |
 | `agent/src/main/java/com/vibecode/agent/harness/SandboxBashBridge.java` | Added | Loopback, per-run-token exec bridge for the OpenCode shell tool |
-| `agent/src/main/java/com/vibecode/agent/harness/SandboxCommandPolicy.java` | Added | Supervisor-side deny-list for publishing / host-control commands |
+| `agent/src/main/java/com/vibecode/agent/harness/SandboxCommandPolicy.java` | Added | Supervisor-side deny-list for publishing / host-control / credential-read / network-upload commands |
+| `agent/src/main/java/com/vibecode/agent/harness/SecretLeakGuard.java` | Added | Refuses to publish a diff whose added lines contain a configured credential or a high-confidence credential format |
 | `agent/src/main/resources/sandbox/egress-proxy.js` | Added | Allowlist HTTP/CONNECT proxy: private/metadata/cloud-range blocking, first-ClientHello SNI validation with multi-SNI/extra-handshake rejection, CONNECT :80 rejection, denial-only rate-limited logging |
-| `agent/src/main/java/com/vibecode/agent/harness/OpenCodeConfigWriter.java` | Changed | Disable the built-in bash tool and allow `sandbox_bash` when a sandbox bridge is active |
+| `agent/src/main/java/com/vibecode/agent/harness/OpenCodeConfigWriter.java` | Changed | Denies the built-in bash tool, allows `sandbox_bash`, and denies reads of credential-bearing paths when a sandbox bridge is active |
 | `agent/src/main/java/com/vibecode/agent/harness/OpenCodeClient.java` | Changed | Write the global `sandbox_bash` tool and inject the per-run bridge URL/token |
-| `agent/src/main/java/com/vibecode/agent/harness/PromptBuilder.java` | Changed | Tell the model to use `sandbox_bash` and `/workspace` in Docker mode |
+| `agent/src/main/java/com/vibecode/agent/harness/PromptBuilder.java` | Changed | Labels ticket/planning/repo content as untrusted, states instruction precedence, and tells the model to use `sandbox_bash` and `/workspace` in Docker mode |
 | `agent/src/main/java/com/vibecode/agent/harness/SandboxSecurity.java` | Added | Secret-key and credential-URL rejection for values entering a sandbox |
 | `agent/src/main/java/com/vibecode/agent/harness/SandboxSpec.java` | Added | Immutable per-run sandbox description |
 | `agent/src/main/java/com/vibecode/agent/harness/SandboxHandle.java` | Added | Running sandbox handle |
@@ -68,7 +70,8 @@ bridge. Operator docs state this explicitly.
 | `agent/src/main/java/com/vibecode/agent/harness/DockerSandboxRunner.java` | Added | Hardened sibling container lifecycle, lifetime disk watchdog, fail-closed copy guards, post-exec descendant sweep, pre-copy artifact cap, symlink-safe temp-file downloads, internal egress network + hardened allowlist proxy lifecycle |
 | `agent/src/main/java/com/vibecode/agent/harness/SandboxRunnerFactory.java` | Added | Explicit mode selection with no silent fallback |
 | `agent/src/main/java/com/vibecode/agent/harness/VerificationRunner.java` | Changed | Sandboxed `run(SandboxRunner, SandboxHandle, ...)` overload; shared tail buffer |
-| `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java` | Changed | Create a Docker sandbox before the model run; route install/verify through it; start the bash bridge; require a successful pre-publish destroy; guarded retry in `finally` |
+| `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java` | Changed | Create a Docker sandbox before the model run; route install/verify through it; start the bash bridge; require a successful pre-publish destroy; run the credential-leak gate before publishing; guarded retry in `finally` |
+| `agent/src/main/java/com/vibecode/agent/service/WorkspaceManager.java` | Changed | Expose the staged diff text for the credential-leak gate; the publish path still uses the guarded tree |
 | `agent/src/main/java/com/vibecode/agent/config/AgentConfig.java` | Changed | Load `SandboxConfig` from the environment |
 | `agent/Dockerfile` | Changed | Add `docker-cli` so the supervisor can reach a daemon/socket proxy |
 | `agent/sandbox.Dockerfile` | Added | Minimal Node/git/build-tools sandbox image |
@@ -81,7 +84,9 @@ bridge. Operator docs state this explicitly.
 | `agent/src/test/java/com/vibecode/agent/harness/HostSandboxRunnerTest.java` | Added | Host runner exec/timeout/file/env behaviour and symlink copy rejection |
 | `agent/src/test/java/com/vibecode/agent/harness/DockerSandboxRunnerTest.java` | Added | Hardening args, mapped `.git` ro mount, lifecycle, fail-closed guards, guard failure, disk watchdog/measurement failure, artifact cap, symlink/FIFO rejection, egress network/proxy lifecycle |
 | `agent/src/test/java/com/vibecode/agent/harness/SandboxBashBridgeTest.java` | Added | Command/cwd mapping, token rejection, cwd escape, denied command, oversized body, timeout clamp |
-| `agent/src/test/java/com/vibecode/agent/harness/SandboxCommandPolicyTest.java` | Added | Allowed build commands and denied publishing/host-control commands |
+| `agent/src/test/java/com/vibecode/agent/harness/SandboxCommandPolicyTest.java` | Added | Allowed build commands and denied publishing, host-control, credential-read and network-upload commands |
+| `agent/src/test/java/com/vibecode/agent/harness/SecretLeakGuardTest.java` | Added | Configured secrets, token/key formats, removed lines and short values |
+| `agent/src/test/java/com/vibecode/agent/harness/PromptBuilderTest.java` | Changed | Untrusted-content labeling, precedence and block-terminator escaping |
 | `agent/src/test/java/com/vibecode/agent/harness/EgressProxyScriptTest.java` | Added | Exact/wildcard allow, apex mismatch, private/metadata/IP/port denial without Docker |
 | `agent/src/test/java/com/vibecode/agent/harness/BoundedTailBufferTest.java` | Added | Exact-full vs truncated tail behaviour |
 | `agent/src/test/java/com/vibecode/agent/harness/SandboxRunnerFactoryTest.java` | Added | Mode selection and production guard |
@@ -105,7 +110,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR5 | Java unit + integration | `SandboxConfigTest`, `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Secret keys (including `OPENAI_KEY`) and credential URLs (scheme and scheme-less) rejected; container `env` has no provider/GitHub/DB secrets | `cd agent && mvn test`; integration command above |
 | FR6 | Java unit + integration | `SandboxConfigTest`, `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Root uid rejected; `--user`, `--cap-drop ALL`, `no-new-privileges`; integration asserts `id -u == 1000` | `cd agent && mvn test`; integration command above |
 | FR7 | Java unit + integration | `SandboxPathsTest`, `HostSandboxRunnerTest`, `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Lexical traversal and symlinked/FIFO copies rejected; Docker guards fail with non-zero exit codes (flood-proof) and require `OK`; downloads are size-checked before `docker cp` and use a temp file; host writes land in the workspace | `cd agent && mvn test`; integration command above |
-| FR8 | Pending slice 3 | — | Prompt-injection classification, instruction precedence and output/exfiltration scanning | — |
+| FR8 | Java unit + processor integration | `PromptBuilderTest`, `OpenCodeConfigWriterTest`, `SandboxCommandPolicyTest`, `SecretLeakGuardTest`, `HarnessTicketProcessorTest`, `WorkspaceManagerTest` | Ticket/planning/repo content is labeled untrusted with instruction precedence; credential-bearing reads are denied; bridge commands that read `.env`/`secrets`/`.git/config`/SSH/AWS files or upload data are denied; a staged diff containing the configured provider key/GitHub token or a high-confidence credential format blocks publishing | `cd agent && mvn test` |
 | FR9 | Partial (sandbox image) / pending slice 3 | `agent/sandbox.Dockerfile` | Minimal image added; SBOM, scanner threshold and digest pinning still pending | — |
 | FR10 | Java unit + runtime | `SandboxConfigTest`, `SandboxRunnerFactoryTest` | Host is the compatibility default with a warning; strict booleans make `SANDBOX_REQUIRE=true` refuse host mode | `cd agent && mvn test` |
 | FR11 | **Done** — exec/file + bridge | `SandboxBashBridgeTest`, `OpenCodeClientTest`, `OpenCodeConfigWriterTest`, `HarnessTicketProcessorTest`, `DockerSandboxRunnerIntegrationTest` | Loopback-only, per-run token, cwd/path mapping, command policy, timeout clamp, no inbound sandbox port; built-in `bash` and `shell` denied and `sandbox_bash` routed into the sandbox; real-Docker bridge exec smoke test; output streaming is D15 and idempotency is D17 | `cd agent && mvn test`; `SANDBOX_IT_IMAGE=redis:7-alpine mvn test -Dtest=DockerSandboxRunnerIntegrationTest#bridgeExecutesCommandsInsideTheSandbox` |
@@ -119,6 +124,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 ### Coverage notes
 
+- The prompt labels ticket, planning and repository content as untrusted, states that supervisor instructions and the publishing policy take precedence, and escapes the untrusted-content terminator. The OpenCode read permission denies `.env*`, `secrets/**`, `.git/config`, `.ssh/**`, `.aws/**`, `.npmrc` and `.netrc`. The bash bridge denies credential-file reads and network-upload/exfiltration commands, and the supervisor refuses to publish a diff whose added lines contain a configured credential or a high-confidence credential format. Prompt injection remains probabilistic; the sandbox, secretless env and publishing guard are the boundary (FR8).
 - CPU/PID enforcement is asserted through the `docker run` flags; the integration test asserts the memory cgroup bound. A behavioral CPU/PID stress test is deferred to slice 3.
 - The disk quota is enforced by a lifetime supervisor watchdog at `SANDBOX_DISK_CHECK_INTERVAL_SECONDS` granularity. Measurement failure (including per-file `visitFileFailed`) fails closed. Unlinked-but-open files are outside the supervisor walk and require a real FS quota (D12).
 - The Docker file channel uses distinct non-zero exit codes for guard failures, so a same-UID stdout flood cannot mask them; successful guards also print `OK`/`OK <size>`. Downloads are sized inside the container before copying and use a temp file. The size and `docker cp` remain untrusted (D10).
@@ -132,7 +138,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 ## Review checklist
 
-- [ ] Every `FR*`/`NFR*` has a passing row in the matrix (FR8/FR9/NFR5 are later slices)
+- [ ] Every `FR*`/`NFR*` has a passing row in the matrix (FR9/NFR5 are later slices)
 - [x] Error paths and edge cases are covered, not only the happy path
 - [x] Migration: N/A (agent-only; no DB migration)
 - [x] API contract: N/A (no backend/frontend contract change)
@@ -145,3 +151,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 |---|---|---|---|
 | 2026-11-06 | fg-34 slice 1 | `mvn test` (266 tests, 2 skipped) + `SANDBOX_IT_IMAGE=redis:7-alpine mvn test -Dtest=DockerSandboxRunnerIntegrationTest` (2 tests) | All unit tests pass; the real-Docker smoke tests passed locally (non-root uid, read-only rootfs, workspace write, file copy, symlink/FIFO rejection, background/postinstall containment, pre-copy download cap, no docker socket, no secrets, memory limit, disk-quota kill) and skip when `SANDBOX_IT_IMAGE` is unset. |
 | 2026-11-06 | fg-34 slice 2 | `mvn test` (309 tests, 4 skipped) + `SANDBOX_IT_NETWORK=1 SANDBOX_IT_NETWORK_IMAGE=vibecode-agent-sandbox:latest SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:latest mvn test -Dtest=DockerSandboxRunnerIntegrationTest#allowsOnlyTheConfiguredEgressHostsAndBlocksDirectAccess` + `SANDBOX_IT_IMAGE=redis:7-alpine mvn test -Dtest=DockerSandboxRunnerIntegrationTest` (4 tests, 1 skipped / 3 executed) + `SANDBOX_IT_IMAGE=redis:7-alpine mvn test -Dtest=DockerSandboxRunnerIntegrationTest#bridgeExecutesCommandsInsideTheSandbox` | All unit tests pass. The real-Docker egress test passed locally: the allowlisted host succeeded through the proxy; a non-allowlisted host, direct egress with proxy env cleared, and the metadata address were blocked; denials were logged. `EgressProxyScriptTest` covers the allowlist rules without Docker; `SandboxBashBridgeTest` covers the loopback token, cwd mapping and command policy. |
+| 2026-11-06 | fg-34 slice 3a | `mvn test` (323 tests, 4 skipped) + `mvn package -q -DskipTests` + `node planning/check-planning.js` | All unit tests pass. FR8 coverage: untrusted-content labeling/precedence/terminator escaping, credential read denies, credential-file and network-upload command denial with false-positive guards, configured-secret and token-format diff scanning, and a processor regression proving a credential in the staged diff blocks publishing and releases the ticket. |

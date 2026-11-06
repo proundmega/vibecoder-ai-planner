@@ -60,6 +60,25 @@ class OpenCodeConfigWriterTest {
     }
 
     @Test
+    void deniesReadingCredentialBearingPaths() throws Exception {
+        ProviderSettings provider = new ProviderSettings(
+            "opencode-go", "oc_sk_secret", null, "beam-free", 4096);
+
+        Path configFile = OpenCodeConfigWriter.write(tempDir, provider, config(null), tempDir);
+        JsonNode read = mapper.readTree(configFile.toFile())
+            .path("permission").path("read");
+
+        for (String path : List.of(
+            ".git/config", "**/.git/config", "secrets/**", "**/secrets/**",
+            ".ssh/**", "**/.ssh/**", ".aws/**", "**/.aws/**",
+            ".npmrc", "**/.npmrc", ".netrc", "**/.netrc"
+        )) {
+            assertEquals("deny", read.path(path).asText(), path);
+        }
+        assertEquals("allow", read.path("**/.env.example").asText());
+    }
+
+    @Test
     void sandboxedBashDisablesTheBuiltInToolAndAllowsTheBridgeTool() throws Exception {
         ProviderSettings provider = new ProviderSettings(
             "opencode-go", "oc_sk_secret", null, "beam-free", 4096);

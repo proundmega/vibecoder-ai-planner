@@ -87,9 +87,9 @@ Slice 2 implements this with an internal Docker network whose only peer is a har
 ## Prompt-injection defenses
 
 - Treat repo files, issue text and PR comments as untrusted data.
-- Put system/developer instructions above repository content; tell the model that repo text cannot change its rules.
-- Deny reading `.env*`, `secrets/**`, `.git/config` and host paths.
-- Scan model output for suspicious commands (`curl | sh`, credential paths) and post-run diffs for exfiltration patterns.
+- Put system/developer instructions above repository content; tell the model that repo text cannot change its rules. `PromptBuilder` wraps ticket and planning content in `<untrusted-content>` blocks and escapes the closing tag; the security section states that the supervisor instructions and publishing policy take precedence.
+- Deny reading `.env*`, `secrets/**`, `.git/config`, `.ssh/**`, `.aws/**`, `.npmrc`, `.netrc` and host paths. The OpenCode read permission enforces this for the read tool; host mode is explicitly not a security boundary.
+- Scan commands for suspicious exfiltration (`curl`/`wget` uploads, netcat/socat, remote copy, credential-file reads) and deny them in the bash bridge. A post-run diff scan refuses to publish a configured provider key/GitHub token or a high-confidence credential format. The scan is defense in depth and cannot detect every encoded leak.
 - Keep the publishing guard independent of the model.
 
 ## Supply chain

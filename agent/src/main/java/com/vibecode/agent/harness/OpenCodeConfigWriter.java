@@ -212,6 +212,18 @@ public final class OpenCodeConfigWriter {
         read.put("*.env.*", "deny");
         read.put(".env*", "deny");
         read.put("**/.env*", "deny");
+        // Credential-bearing paths are never needed to implement a ticket.
+        // The sandbox has no secrets, but host mode and repo files can.
+        for (String denied : List.of(
+            ".git/config", "**/.git/config",
+            "secrets/**", "**/secrets/**",
+            ".ssh/**", "**/.ssh/**",
+            ".aws/**", "**/.aws/**",
+            ".npmrc", "**/.npmrc",
+            ".netrc", "**/.netrc"
+        )) {
+            read.put(denied, "deny");
+        }
         // Allow configuration examples after the deny rules.
         read.put("*.env.example", "allow");
         read.put("**/.env.example", "allow");

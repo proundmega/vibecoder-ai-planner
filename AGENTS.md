@@ -183,6 +183,12 @@ handshakes and CONNECT :80. TLS renegotiation and the encrypted inner Host are
 D16. Do not enable Docker mode for untrusted repos until D14 (the
 descendant-sweep fork race) is closed, and do not treat the allowlist as a
 hard host boundary until D16 is closed.
+The prompt labels ticket/planning/repository content as untrusted and states
+that supervisor rules win; the bridge denies credential-file reads and
+network-upload commands, and the supervisor refuses to publish a diff
+containing a configured credential or a high-confidence credential format.
+Prompt injection remains probabilistic; the sandbox and publishing guard are
+the boundary.
 Phase 1 is blocking
 prompt mode and denies the `question` and `doom_loop` tools; autonomy and the
 human question loop are later phases.

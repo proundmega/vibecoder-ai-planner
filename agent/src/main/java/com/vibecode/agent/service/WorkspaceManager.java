@@ -304,6 +304,22 @@ public class WorkspaceManager {
         return diffFromTree(base, guardedTree);
     }
 
+    /**
+     * Return the staged diff (base to the guarded tree) for output scanning.
+     *
+     * <p>This must be called after {@link #stageFreshDiff()} and before
+     * {@link #discardStaged()}. The publishing guard already bounds the diff
+     * size; {@code --unified=0} keeps the scan focused on added lines.</p>
+     */
+    public String stagedDiffText() throws IOException {
+        if (supervisorIndex == null || guardedTree == null) {
+            throw new IOException("No guarded diff is staged");
+        }
+        return runGitWithIndex(
+            "diff", "--cached", "--no-ext-diff", "--no-color", "--no-renames",
+            "--unified=0", baseCommitOrHead());
+    }
+
     public void discardStaged() {
         Path index = supervisorIndex;
         supervisorIndex = null;

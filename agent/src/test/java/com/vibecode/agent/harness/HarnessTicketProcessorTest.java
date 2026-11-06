@@ -649,6 +649,21 @@ class HarnessTicketProcessorTest {
     }
 
     @Test
+    void credentialInStagedDiffBlocksPublishingAndReleases() throws Exception {
+        when(workspace.stagedDiffText()).thenReturn(
+            "+++ b/README.md\n+token: secret-key\n");
+
+        processor.processTicket(ticket());
+
+        verify(workspace, never()).commitAndPush(anyString(), anyString());
+        verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
+        verify(apiService).releaseTicket(1L);
+        assertTrue(postedMessages().stream().anyMatch(message ->
+            message.contains("Publishing blocked")
+                && message.contains("configured credential")));
+    }
+
+    @Test
     void harnessStartupFailureReleasesAndCleansUp() throws Exception {
         doThrow(new IOException("server exploded")).when(harness).start(any());
 

@@ -64,6 +64,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private final PlanningDocFetcher planningDocFetcher;
     private final VerificationRunner verificationRunner;
     private final PublishingGuard publishingGuard;
+    private final SecretLeakGuard secretLeakGuard;
     private final PromptBuilder promptBuilder = new PromptBuilder();
     private final Map<Long, FailureState> failures = new ConcurrentHashMap<>();
     private final int maxAttempts = intEnv(
@@ -194,6 +195,16 @@ public final class HarnessTicketProcessor implements TicketWorker {
         this.planningDocFetcher = planningDocFetcher;
         this.verificationRunner = verificationRunner;
         this.publishingGuard = publishingGuard;
+        this.secretLeakGuard = new SecretLeakGuard(knownSecrets(provider, githubToken));
+    }
+
+    private static List<String> knownSecrets(ProviderSettings provider, String githubToken) {
+        List<String> secrets = new ArrayList<>();
+        if (provider != null) {
+            secrets.add(provider.apiKey());
+        }
+        secrets.add(githubToken);
+        return secrets;
     }
 
     @Override
@@ -776,6 +787,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 DiffSummary diff = workspace.stageFreshDiff();
                 try {
                     publishingGuard.assertPublishable(diff);
+                    secretLeakGuard.assertClean(workspace.stagedDiffText());
                 } catch (IllegalStateException e) {
                     failAndRelease(pickedUp.getId(), "Publishing blocked: " + e.getMessage());
                     return;

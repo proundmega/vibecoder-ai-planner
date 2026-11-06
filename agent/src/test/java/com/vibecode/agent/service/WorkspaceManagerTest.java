@@ -589,6 +589,34 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void stageFreshDiffTextExposesOnlyAddedContentForScanning() throws Exception {
+        Path repoDir = initRepo("staged-diff-text");
+        Files.writeString(repoDir.resolve("feature.txt"), "hello\n");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff = wm.stageFreshDiff();
+        try {
+            new PublishingGuard(List.of()).assertPublishable(diff);
+            String text = wm.stagedDiffText();
+            assertTrue(text.contains("feature.txt"), text);
+            assertTrue(text.contains("+hello"), text);
+        } finally {
+            wm.discardStaged();
+        }
+    }
+
+    @Test
+    void stagedDiffTextRequiresAGuardedDiff() throws Exception {
+        Path repoDir = initRepo("staged-diff-unguarded");
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        assertThrows(IOException.class, wm::stagedDiffText);
+    }
+
+    @Test
     void hugeBlobLineCountingIsBoundedByBytes() throws Exception {
         Path repoDir = initRepo("huge-blob");
         String huge = "\u0000" + "x".repeat(11 * 1024 * 1024);
