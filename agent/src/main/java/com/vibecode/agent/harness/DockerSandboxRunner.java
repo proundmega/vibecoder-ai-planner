@@ -5,10 +5,13 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -22,6 +25,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Disposable Docker sandbox for repo-controlled commands.
@@ -103,8 +107,20 @@ public final class DockerSandboxRunner implements SandboxRunner {
         artifactLimits.put(name, spec.artifactMaxBytes());
         AtomicBoolean quotaExceeded = new AtomicBoolean(false);
         quotaFlags.put(name, quotaExceeded);
-        ScheduledExecutorService watchdog =
-            startDiskWatchdog(name, workspace, quotaExceeded);
+        ScheduledExecutorService watchdog;
+        try {
+            watchdog = startDiskWatchdog(name, workspace, quotaExceeded);
+        } catch (RuntimeException e) {
+            // Never leave a container running because its watchdog could not
+            // be scheduled.
+            destroyByName(name);
+            active.remove(name);
+            created.remove(name);
+            maxDurations.remove(name);
+            artifactLimits.remove(name);
+            quotaFlags.remove(name);
+            throw new IOException("Could not start the sandbox watchdog", e);
+        }
         if (watchdog != null) {
             watchdogs.put(name, watchdog);
         }
@@ -236,12 +252,15 @@ public final class DockerSandboxRunner implements SandboxRunner {
     }
 
     @Override
-    public void destroy(SandboxHandle handle) {
+    public void destroy(SandboxHandle handle) throws IOException {
         if (handle == null) {
             return;
         }
+        if (!destroyByName(handle.id())) {
+            throw new IOException("Could not destroy sandbox " + handle.id()
+                + "; it may still be running. The supervisor must not publish.");
+        }
         stopWatchdog(handle.id());
-        destroyByName(handle.id());
         active.remove(handle.id());
         created.remove(handle.id());
         maxDurations.remove(handle.id());
@@ -253,7 +272,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
     @Override
     public void close() {
         for (String name : new ArrayList<>(created)) {
-            destroyByName(name);
+            if (!destroyByName(name)) {
+                log.warn("Sandbox {} is still present after close; startup reaping is D9", name);
+            }
         }
         for (ScheduledExecutorService watchdog : new ArrayList<>(watchdogs.values())) {
             watchdog.shutdownNow();
@@ -285,12 +306,40 @@ public final class DockerSandboxRunner implements SandboxRunner {
     }
 
     private void stopByName(String name) {
+        stopWatchdog(name);
+        stopContainer(name);
+    }
+
+    private void stopContainer(String name) {
         active.remove(name);
         runControl(List.of(config.dockerBinary(), "kill", "--signal", "KILL", name));
     }
 
-    private void destroyByName(String name) {
-        runControl(List.of(config.dockerBinary(), "rm", "-f", name));
+    /**
+     * Remove the container and prove it is gone. Returns false when the
+     * container may still be running; callers must not publish in that case.
+     */
+    private boolean destroyByName(String name) {
+        DockerResult removed = runDocker(
+            List.of(config.dockerBinary(), "rm", "-f", name),
+            CONTROL_TIMEOUT,
+            CONTROL_OUTPUT_BYTES
+        );
+        if (!removed.timedOut() && removed.exitCode() == 0) {
+            return true;
+        }
+        DockerResult inspect = runDocker(
+            List.of(config.dockerBinary(), "inspect", "-f", "{{.State.Running}}", name),
+            INSPECT_TIMEOUT,
+            1_024
+        );
+        String combined = (removed.output() + "\n" + inspect.output()).toLowerCase();
+        if (combined.contains("no such container") || combined.contains("no such object")) {
+            return true;
+        }
+        log.warn("Could not destroy sandbox {} (rm exit {}, inspect exit {}): {}",
+            name, removed.exitCode(), inspect.exitCode(), combined.trim());
+        return false;
     }
 
     private void stopWatchdog(String name) {
@@ -341,7 +390,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 handle.id()
             );
             if (result.timedOut() || result.exitCode() != 0
-                || !result.output().trim().endsWith("OK")) {
+                || !"OK".equals(result.output().trim())) {
                 log.warn("Sandbox {} descendant cleanup failed; stopping it", handle.id());
                 stop(handle);
             }
@@ -381,7 +430,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     exceeded.set(true);
                     log.warn("Sandbox {} could not measure its workspace; failing closed", name);
                     killRunningProcess(name);
-                    stopByName(name);
+                    stopContainer(name);
+                    stopWatchdog(name);
                     return;
                 }
                 if (size > limit) {
@@ -390,7 +440,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
                         "Sandbox {} exceeded the workspace quota ({} > {} bytes); killing it",
                         name, size, limit);
                     killRunningProcess(name);
-                    stopByName(name);
+                    stopContainer(name);
+                    stopWatchdog(name);
                 }
             } catch (RuntimeException e) {
                 // A lazy Files.walk can throw during iteration. Never let the
@@ -399,7 +450,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 log.warn("Sandbox {} quota check failed; failing closed: {}",
                     name, e.getMessage());
                 killRunningProcess(name);
-                stopByName(name);
+                stopContainer(name);
+                stopWatchdog(name);
             }
         }, interval, interval, TimeUnit.SECONDS);
         return executor;
@@ -407,18 +459,25 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
     /** Package-visible for tests: total size of regular files under the workspace. */
     static long workspaceSize(Path root) {
-        try (var stream = Files.walk(root)) {
-            return stream
-                .filter(path -> !Files.isSymbolicLink(path))
-                .filter(Files::isRegularFile)
-                .mapToLong(path -> {
-                    try {
-                        return Files.size(path);
-                    } catch (IOException e) {
-                        return 0L;
+        AtomicLong total = new AtomicLong();
+        AtomicBoolean failed = new AtomicBoolean(false);
+        try {
+            Files.walkFileTree(root, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                    if (attrs.isRegularFile() && !Files.isSymbolicLink(file)) {
+                        total.addAndGet(attrs.size());
                     }
-                })
-                .sum();
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                    failed.set(true);
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+            return failed.get() ? -1L : total.get();
         } catch (IOException | RuntimeException e) {
             log.debug("Could not measure sandbox workspace {}: {}", root, e.getMessage());
             return -1L;
@@ -456,11 +515,13 @@ public final class DockerSandboxRunner implements SandboxRunner {
     private long assertContainerSourceSafe(SandboxHandle handle, String source)
         throws IOException {
         String quoted = shellQuote(source);
+        // Exit codes, not stdout, are authoritative: a same-UID process can
+        // flood the guard's stdout, but it cannot change the shell's status.
         String script = "p=" + quoted + "; "
-            + "if [ -L \"$p\" ]; then echo SYMLINK; exit 0; fi; "
-            + "if [ ! -f \"$p\" ]; then echo NOTFILE; exit 0; fi; "
+            + "if [ -L \"$p\" ]; then echo SYMLINK; exit 11; fi; "
+            + "if [ ! -f \"$p\" ]; then echo NOTFILE; exit 12; fi; "
             + "r=$(readlink -f \"$p\" 2>/dev/null || true); "
-            + "case \"$r\" in /workspace|/workspace/*) ;; *) echo ESCAPE; exit 0;; esac; "
+            + "case \"$r\" in /workspace|/workspace/*) ;; *) echo ESCAPE; exit 13;; esac; "
             + "s=$(wc -c < \"$p\" 2>/dev/null || echo -1); "
             + "echo \"OK $s\"";
         String output = runGuard(handle, script).output().trim();
@@ -491,16 +552,16 @@ public final class DockerSandboxRunner implements SandboxRunner {
         String parent = parentOf(target);
         String quotedParent = shellQuote(parent);
         String script = "p=" + shellQuote(target) + "; "
-            + "if [ -L \"$p\" ]; then echo SYMLINK; exit 0; fi; "
-            + "if [ -e \"$p\" ] && [ ! -f \"$p\" ]; then echo NOTFILE; exit 0; fi; "
+            + "if [ -L \"$p\" ]; then echo SYMLINK; exit 21; fi; "
+            + "if [ -e \"$p\" ] && [ ! -f \"$p\" ]; then echo NOTFILE; exit 22; fi; "
             + "d=" + quotedParent + "; "
             + "while [ \"$d\" != \"/workspace\" ] && [ \"$d\" != \"/\" ] && [ \"$d\" != \".\" ]; do "
-            + "  if [ -L \"$d\" ]; then echo SYMLINK; exit 0; fi; "
+            + "  if [ -L \"$d\" ]; then echo SYMLINK; exit 23; fi; "
             + "  d=$(dirname \"$d\"); "
             + "done; "
-            + "mkdir -p " + quotedParent + " 2>/dev/null || { echo MKDIRFAILED; exit 0; }; "
+            + "mkdir -p " + quotedParent + " 2>/dev/null || { echo MKDIRFAILED; exit 24; }; "
             + "r=$(readlink -f " + quotedParent + " 2>/dev/null || true); "
-            + "case \"$r\" in /workspace|/workspace/*) echo OK ;; *) echo ESCAPE ;; esac";
+            + "case \"$r\" in /workspace|/workspace/*) echo OK ;; *) echo ESCAPE; exit 25 ;; esac";
         String output = runGuard(handle, script).output().trim();
         if (!"OK".equals(output)) {
             throw new IOException(

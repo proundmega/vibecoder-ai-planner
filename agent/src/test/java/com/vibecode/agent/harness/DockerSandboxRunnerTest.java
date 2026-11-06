@@ -502,6 +502,100 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void destroyFailureThrowsAndKeepsTheSandboxTracked() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              rm) echo "rm failed"; exit 1 ;;
+              exec)
+                case "$*" in
+                  *"/proc/"*) echo OK ;;
+                  *"wc -c"*) echo "OK 0" ;;
+                  *"mkdir -p"*) echo OK ;;
+                  *) echo fake-output ;;
+                esac
+                ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            assertThrows(IOException.class, () -> runner.destroy(handle));
+
+            // A failed destroy must not remove tracking, so a retry can still
+            // see (and kill) the container.
+            ExecResult result = runner.exec(handle,
+                ExecRequest.of("echo hi", Duration.ofSeconds(5)));
+            assertEquals("fake-output", result.output().trim());
+        }
+
+        assertTrue(Files.readString(log).contains("rm -f"));
+    }
+
+    @Test
+    void guardFailureWithAZeroExitAndFailureTokenIsRejected() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec) echo SYMLINK; exit 0 ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+        Path local = Files.writeString(tempDir.resolve("local.txt"), "hello");
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            assertThrows(IOException.class,
+                () -> runner.getFile(handle, "/workspace/leak", tempDir.resolve("out")));
+            assertThrows(IOException.class,
+                () -> runner.putFile(handle, local, "/workspace/leak"));
+        }
+
+        assertFalse(Files.readString(log).contains("cp "));
+    }
+
+    @Test
+    void guardFloodCannotHideAFailureExitCode() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec)
+                echo SYMLINK
+                i=0
+                while [ $i -lt 500 ]; do printf ' '; i=$((i+1)); done
+                echo "OK 0"
+                exit 11
+                ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+        Path local = Files.writeString(tempDir.resolve("local.txt"), "hello");
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            assertThrows(IOException.class,
+                () -> runner.getFile(handle, "/workspace/leak", tempDir.resolve("out")));
+            assertThrows(IOException.class,
+                () -> runner.putFile(handle, local, "/workspace/leak"));
+        }
+
+        assertFalse(Files.readString(log).contains("cp "));
+    }
+
+    @Test
     void guardFailureFailsClosedAndNeverRunsDockerCp() throws IOException {
         Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
         Path log = tempDir.resolve("docker.log");

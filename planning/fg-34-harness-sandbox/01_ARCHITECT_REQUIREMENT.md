@@ -54,7 +54,7 @@ Phase 1 relies on OpenCode config denies (`git push`, `rm -rf`, `docker`, etc.) 
 - **NFR3 - Supervisor-only secrets:** the OpenCode server password and provider key remain outside the sandbox.
 - **NFR4 - Process-tree kill:** killing a sandbox must kill all descendant processes.
 - **NFR5 - Redaction:** sandbox logs must be redacted before storage.
-- **NFR6 - Fail closed:** failed sandbox creation must fail closed; never fall back silently to host execution in production.
+- **NFR6 - Fail closed:** failed sandbox creation or pre-publish destruction must fail closed; never fall back silently to host execution in production, and never stage or push with a live sandbox.
 - **NFR7 - Non-root boundary:** the sandbox runs as a non-root user with no-new-privileges and dropped capabilities.
 
 ## Acceptance criteria

@@ -23,7 +23,7 @@ public interface SandboxRunner extends AutoCloseable {
     void stop(SandboxHandle handle);
 
     /** Destroy the sandbox and all of its state. Idempotent. */
-    void destroy(SandboxHandle handle);
+    void destroy(SandboxHandle handle) throws IOException;
 
     @Override
     void close();

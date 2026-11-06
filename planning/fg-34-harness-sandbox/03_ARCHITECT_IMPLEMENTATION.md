@@ -37,7 +37,7 @@ bridge. Operator docs state this explicitly.
 - [ ] Define the network egress policy (slice 2; slice 1 is default-deny `--network none`)
 - [x] Define secretless execution and a safe way to inject non-secret test config (strict boolean/numeric parsing; credential keys and URLs rejected)
 - [ ] Harden prompt-injection handling for repo docs, issues and PR text (slice 3)
-- [x] Add malicious-repo and escape-attempt tests (guard-failure fail-closed, symlink/FIFO copy, background persistence, download-cap pre-check, secret, read-only, no-socket, disk quota and non-root integration coverage)
+- [x] Add malicious-repo and escape-attempt tests (guard-failure fail-closed with non-zero exit codes, symlink/FIFO copy, background persistence, download-cap pre-check, destroy-failure publish stop, secret, read-only, no-socket, disk quota and non-root integration coverage)
 - [ ] Add image scanning, SBOM and signed base images (slice 3; a minimal sandbox Dockerfile is added now)
 - [x] Define the fallback for local Windows development (`SANDBOX_MODE=host`, loud warning, production guard)
 - [x] Roll out behind a flag before making it the default (`SANDBOX_MODE`, `SANDBOX_REQUIRE`)
@@ -60,7 +60,7 @@ bridge. Operator docs state this explicitly.
 | `agent/src/main/java/com/vibecode/agent/harness/DockerSandboxRunner.java` | Added | Hardened sibling container lifecycle, lifetime disk watchdog, fail-closed copy guards, post-exec descendant sweep, pre-copy artifact cap, symlink-safe temp-file downloads |
 | `agent/src/main/java/com/vibecode/agent/harness/SandboxRunnerFactory.java` | Added | Explicit mode selection with no silent fallback |
 | `agent/src/main/java/com/vibecode/agent/harness/VerificationRunner.java` | Changed | Sandboxed `run(SandboxRunner, SandboxHandle, ...)` overload; shared tail buffer |
-| `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java` | Changed | Create a Docker sandbox before the model run; route install/verify through it; guarded destroy in `finally` |
+| `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java` | Changed | Create a Docker sandbox before the model run; route install/verify through it; require a successful pre-publish destroy; guarded retry in `finally` |
 | `agent/src/main/java/com/vibecode/agent/config/AgentConfig.java` | Changed | Load `SandboxConfig` from the environment |
 | `agent/Dockerfile` | Changed | Add `docker-cli` so the supervisor can reach a daemon/socket proxy |
 | `agent/sandbox.Dockerfile` | Added | Minimal Node/git/build-tools sandbox image |
@@ -92,7 +92,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR4 | Java unit | `SandboxConfigTest`, `DockerSandboxRunnerTest` | Default-deny `--network none`; any allowlist mode fails closed until slice 2 | `cd agent && mvn test` |
 | FR5 | Java unit + integration | `SandboxConfigTest`, `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Secret keys (including `OPENAI_KEY`) and credential URLs (scheme and scheme-less) rejected; container `env` has no provider/GitHub/DB secrets | `cd agent && mvn test`; integration command above |
 | FR6 | Java unit + integration | `SandboxConfigTest`, `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Root uid rejected; `--user`, `--cap-drop ALL`, `no-new-privileges`; integration asserts `id -u == 1000` | `cd agent && mvn test`; integration command above |
-| FR7 | Java unit + integration | `SandboxPathsTest`, `HostSandboxRunnerTest`, `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Lexical traversal and symlinked/FIFO copies rejected; Docker guards require exit 0 + `OK` (guard failure fails closed), downloads are size-checked before `docker cp`, and downloads use a temp file; host writes land in the workspace | `cd agent && mvn test`; integration command above |
+| FR7 | Java unit + integration | `SandboxPathsTest`, `HostSandboxRunnerTest`, `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Lexical traversal and symlinked/FIFO copies rejected; Docker guards fail with non-zero exit codes (flood-proof) and require `OK`; downloads are size-checked before `docker cp` and use a temp file; host writes land in the workspace | `cd agent && mvn test`; integration command above |
 | FR8 | Pending slice 3 | — | Prompt-injection classification, instruction precedence and output/exfiltration scanning | — |
 | FR9 | Partial (sandbox image) / pending slice 3 | `agent/sandbox.Dockerfile` | Minimal image added; SBOM, scanner threshold and digest pinning still pending | — |
 | FR10 | Java unit + runtime | `SandboxConfigTest`, `SandboxRunnerFactoryTest` | Host is the compatibility default with a warning; strict booleans make `SANDBOX_REQUIRE=true` refuse host mode | `cd agent && mvn test` |
@@ -100,17 +100,18 @@ One row per requirement from `01`. A requirement with no row is not done.
 | NFR1 | Java unit + integration | `SandboxPathsTest`, `HostSandboxRunnerTest`, `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Escape/symlink rejection, read-only rootfs, workspace-only mount, no docker socket | `cd agent && mvn test`; integration command above |
 | NFR2 | Java unit | `DockerSandboxRunnerTest` | `--network none`, no host network, no internal reachability | `cd agent && mvn test` |
 | NFR3 | Java unit + integration | `SandboxConfigTest`, `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Provider/GitHub/DB secrets absent from the sandbox env | `cd agent && mvn test`; integration command above |
-| NFR4 | Java unit + integration | `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Timeout and quota kills destroy the process tree/container; a post-exec sweep kills daemonized children (background-writer regression) | `cd agent && mvn test`; integration command above |
+| NFR4 | Java unit + integration | `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Timeout and quota kills destroy the process tree/container; a post-exec sweep kills daemonized children (background-writer regression); the sweep is one pass, so a fork race is D14 | `cd agent && mvn test`; integration command above |
 | NFR5 | Pending slice 3 (D11) | — | Redaction before storage is not separate in slice 1; failure messages use the existing provider redaction | — |
-| NFR6 | Java unit | `SandboxConfigTest`, `SandboxRunnerFactoryTest`, `HarnessTicketProcessorTest` | Strict config parsing; sandbox create failure is fatal and skips the harness | `cd agent && mvn test` |
+| NFR6 | Java unit | `SandboxConfigTest`, `SandboxRunnerFactoryTest`, `HarnessTicketProcessorTest`, `DockerSandboxRunnerTest` | Strict config parsing; create failure is fatal; pre-publish destroy failure fails the ticket and never stages/pushes; `destroy` throws when `docker rm -f` cannot prove removal | `cd agent && mvn test` |
 | NFR7 | Java unit + integration | `SandboxConfigTest`, `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Non-root uid, `--cap-drop ALL`, `no-new-privileges`; integration asserts the uid | `cd agent && mvn test`; integration command above |
 
 ### Coverage notes
 
 - CPU/PID enforcement is asserted through the `docker run` flags; the integration test asserts the memory cgroup bound. A behavioral CPU/PID stress test is deferred to slice 2.
-- The disk quota is enforced by a lifetime supervisor watchdog at `SANDBOX_DISK_CHECK_INTERVAL_SECONDS` granularity. Measurement failure fails closed. Unlinked-but-open files are outside the supervisor walk and require a real FS quota (D12).
-- The Docker file channel requires an explicit `OK` sentinel and a zero exit from its guards; a failed/timed-out guard never reaches `docker cp`. Downloads are sized inside the container before copying and use a temp file. A same-container TOCTOU swap remains (D10).
-- Hostile install/test containment is covered by the real-Docker background-writer and postinstall-like lifecycle regressions; a real npm lifecycle fixture and a built sandbox image are D13.
+- The disk quota is enforced by a lifetime supervisor watchdog at `SANDBOX_DISK_CHECK_INTERVAL_SECONDS` granularity. Measurement failure (including per-file `visitFileFailed`) fails closed. Unlinked-but-open files are outside the supervisor walk and require a real FS quota (D12).
+- The Docker file channel uses distinct non-zero exit codes for guard failures, so a same-UID stdout flood cannot mask them; successful guards also print `OK`/`OK <size>`. Downloads are sized inside the container before copying and use a temp file. The size and `docker cp` remain untrusted (D10).
+- A pre-publish `destroy` failure fails the ticket and never stages or pushes; `DockerSandboxRunner.destroy` verifies removal and keeps tracking on failure. `close()`/finally can retry; a hard-killed agent leaves cleanup to the D9 reaper.
+- Hostile install/test containment is covered by the real-Docker background-writer and postinstall-like lifecycle regressions. The descendant sweep is one pass and best-effort (D14); a real npm lifecycle fixture and a built sandbox image are D13.
 - The integration test is opt-in (`SANDBOX_IT_IMAGE`); CI and `PoolManager` wiring are D8/D13.
 - NFR5 (redaction before storage) is D11; the FR11 streaming/per-run-token parts are slice 2.
 
@@ -127,4 +128,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-06 | fg-34 slice 1 | `mvn test` (257 tests, 2 skipped) + `SANDBOX_IT_IMAGE=redis:7-alpine mvn test -Dtest=DockerSandboxRunnerIntegrationTest` (2 tests) | All unit tests pass; the real-Docker smoke tests passed locally (non-root uid, read-only rootfs, workspace write, file copy, symlink/FIFO rejection, background/postinstall containment, pre-copy download cap, no docker socket, no secrets, memory limit, disk-quota kill) and skip when `SANDBOX_IT_IMAGE` is unset. |
+| 2026-11-06 | fg-34 slice 1 | `mvn test` (262 tests, 2 skipped) + `SANDBOX_IT_IMAGE=redis:7-alpine mvn test -Dtest=DockerSandboxRunnerIntegrationTest` (2 tests) | All unit tests pass; the real-Docker smoke tests passed locally (non-root uid, read-only rootfs, workspace write, file copy, symlink/FIFO rejection, background/postinstall containment, pre-copy download cap, no docker socket, no secrets, memory limit, disk-quota kill) and skip when `SANDBOX_IT_IMAGE` is unset. |

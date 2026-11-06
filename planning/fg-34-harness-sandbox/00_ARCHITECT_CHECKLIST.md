@@ -46,7 +46,8 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D7 | SBOM, image scanning and digest-pinned base images (FR9) | fg-34 | Supply chain | fg-34 slice 3 | open |
 | D8 | Docker sandbox deployment wiring: `PoolManager` env, socket proxy/DOCKER_HOST and a host-visible repo volume | fg-34 | Infrastructure | fg-34 slice 2 / fg-43 | open |
 | D9 | Startup reaper for sandbox containers left by a killed agent (the slice-1 shutdown hook covers graceful exit only) | fg-34 | Reliability | fg-34 slice 2 | open |
-| D10 | Race-free artifact copy: the Docker file channel pre-checks symlinks inside the container, but `docker cp` still follows a symlink swapped in after the check | fg-34 | Security | fg-34 slice 2 | open |
+| D10 | Race-free artifact copy: the Docker file channel rejects failures by exit code, but `docker cp` and the reported size remain untrusted; a same-container swap/spoof is possible | fg-34 | Security | fg-34 slice 2 | open |
 | D11 | Redaction before storage (NFR5): sandbox/verification output is bounded but not separately redacted | fg-34 | Privacy | fg-34 slice 3 | open |
 | D12 | True disk quota: the supervisor walk cannot see unlinked-but-open files; a quota-enabled volume/filesystem is the durable fix | fg-34 | Reliability | fg-34 slice 2 | open |
 | D13 | CI builds and smoke-tests `agent/sandbox.Dockerfile`; the integration suite currently uses `SANDBOX_IT_IMAGE` (e.g. `redis:7-alpine`) | fg-34 | Testing | fg-34 slice 2 | open |
+| D14 | Post-exec descendant sweep is one pass and best-effort; a fork race can survive until the pre-publish destroy. Ephemeral containers/process namespaces or a confirmed repeated sweep are the hard guarantee | fg-34 | Security | fg-34 slice 2 | open |

@@ -122,7 +122,7 @@ public final class HostSandboxRunner implements SandboxRunner {
     }
 
     @Override
-    public void destroy(SandboxHandle handle) {
+    public void destroy(SandboxHandle handle) throws IOException {
         // Nothing to destroy on the host.
     }
 
