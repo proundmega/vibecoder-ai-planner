@@ -1,7 +1,7 @@
 ---
 id: "fg-34"
 title: "Harness Sandbox and Supply-Chain Security"
-status: in_review
+status: in_progress
 priority: "P0"
 effort: "Large"
 scope: "Agent"

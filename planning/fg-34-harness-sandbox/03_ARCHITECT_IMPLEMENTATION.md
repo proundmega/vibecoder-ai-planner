@@ -7,7 +7,7 @@
 
 | Slice | Scope | State |
 |---|---|---|
-| 1 | Sandbox runtime foundation: config, host/docker runners, limits, filesystem/user hardening, secretless env, default-deny network, sandboxed install/verification commands, tests | In review (PR #126) |
+| 1 | Sandbox runtime foundation: config, host/docker runners, limits, filesystem/user hardening, secretless env, default-deny network, sandboxed install/verification commands, tests | Merged (#126) |
 | 2 | Egress allowlist proxy (FR4) and the OpenCode bash-tool bridge so model-driven repo commands also run in the sandbox (FR11 complete) | Pending |
 | 3 | Prompt-injection defenses (FR8), SBOM/image scan/digest pinning (FR9), artifact redaction | Pending |
 
