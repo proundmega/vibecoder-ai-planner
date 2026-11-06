@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { NumericId } from '../models/NumericId';
 import type { User } from '../models/User';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -73,7 +74,7 @@ export class UsersService {
      * @throws ApiError
      */
     public static putUsers(
-        id: string,
+        id: NumericId,
         requestBody?: {
             name?: string;
             is_active?: boolean;
@@ -99,7 +100,7 @@ export class UsersService {
      * @throws ApiError
      */
     public static deleteUsers(
-        id: string,
+        id: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'DELETE',
@@ -119,7 +120,7 @@ export class UsersService {
      * @throws ApiError
      */
     public static patchUsersToggleActive(
-        id: string,
+        id: NumericId,
     ): CancelablePromise<{
         success?: boolean;
         data?: User;
@@ -174,7 +175,7 @@ export class UsersService {
      * @throws ApiError
      */
     public static postUsersUnlock(
-        id: string,
+        id: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',

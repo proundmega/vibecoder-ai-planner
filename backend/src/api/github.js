@@ -16,7 +16,7 @@ const { connectRepoSchema, createBranchSchema, createPRSchema } = require('../va
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Repository status
@@ -33,7 +33,7 @@ router.get('/:projectId/repo', verifyToken, githubController.getRepoStatus);
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     security:
  *       - apiKeyAuth: []
  *     responses:
@@ -52,7 +52,7 @@ router.get('/:projectId/repo/agent', verifyTokenOrAgent, githubController.getRep
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:
@@ -77,7 +77,7 @@ router.post('/:projectId/repo/connect', verifyToken, requireAnyPermission('PROJE
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Repository disconnected
@@ -94,7 +94,7 @@ router.delete('/:projectId/repo', verifyToken, requireAnyPermission('PROJECT_MAN
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: List of branches
@@ -111,7 +111,7 @@ router.get('/:projectId/branches', verifyToken, githubController.listBranches);
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Branch created
@@ -128,7 +128,7 @@ router.post('/:ticketId/branch', verifyToken, validate(createBranchSchema), gith
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Branch deleted
@@ -145,7 +145,7 @@ router.delete('/:ticketId/branch', verifyToken, githubController.deleteBranch);
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: List of PRs
@@ -162,7 +162,7 @@ router.get('/:projectId/prs', verifyToken, githubController.listPRs);
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: PR created

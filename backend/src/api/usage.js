@@ -14,7 +14,7 @@ const UsageLogger = require('../services/UsageLogger');
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Usage data for project

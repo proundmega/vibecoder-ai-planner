@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { NumericId } from '../models/NumericId';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -14,7 +15,7 @@ export class ApprovalsService {
      */
     public static postApprovals(
         requestBody?: {
-            ticketId?: string;
+            ticketId?: NumericId;
         },
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
@@ -71,7 +72,7 @@ export class ApprovalsService {
      * @throws ApiError
      */
     public static getApprovalsTicket(
-        ticketId: string,
+        ticketId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -88,7 +89,7 @@ export class ApprovalsService {
      * @throws ApiError
      */
     public static postApprovalsApprove(
-        approvalId: string,
+        approvalId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -108,7 +109,7 @@ export class ApprovalsService {
      * @throws ApiError
      */
     public static postApprovalsReject(
-        approvalId: string,
+        approvalId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',

@@ -71,7 +71,7 @@ router.post('/', verifyToken, requireAnyPermission('PROJECT_CREATE'), validate(c
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Project details with ticket info
@@ -90,7 +90,7 @@ router.get('/:id', verifyToken, projectController.getProject);
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:
@@ -117,7 +117,7 @@ router.put('/:id', verifyToken, requireAnyPermission('PROJECT_UPDATE'), validate
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Project deleted
@@ -136,7 +136,7 @@ router.delete('/:id', verifyToken, requireAnyPermission('PROJECT_DELETE'), proje
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: List of tickets
@@ -153,7 +153,7 @@ router.get('/:id/tickets', verifyToken, projectController.getProjectTickets);
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *       - in: path
  *         name: status
  *         required: true
@@ -174,7 +174,7 @@ router.get('/:id/tickets/status/:status', verifyToken, projectController.getProj
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: List of project members
@@ -191,7 +191,7 @@ router.get('/:id/members', verifyToken, projectController.getProjectMemberships)
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: List of assignable users
@@ -208,7 +208,7 @@ router.get('/:id/users', verifyToken, projectController.getProjectUsers);
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       required: true
  *       content:
@@ -236,7 +236,7 @@ router.post('/:id/tickets', verifyTokenOrAgent, requireAnyPermission('TICKET_CRE
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:
@@ -247,7 +247,7 @@ router.post('/:id/tickets', verifyTokenOrAgent, requireAnyPermission('TICKET_CRE
  *               description: { type: string }
  *               status: { type: string }
  *               priority: { type: string }
- *               assigneeId: { type: string, format: uuid }
+ *               assigneeId: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Ticket updated
@@ -264,7 +264,7 @@ router.put('/tickets/:ticketId', verifyToken, requireAnyPermission('TICKET_UPDAT
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Ticket deleted
@@ -281,11 +281,11 @@ router.delete('/tickets/:ticketId', verifyToken, projectController.deleteProject
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:

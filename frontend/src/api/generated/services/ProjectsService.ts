@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { NumericId } from '../models/NumericId';
 import type { Project } from '../models/Project';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -50,7 +51,7 @@ export class ProjectsService {
      * @throws ApiError
      */
     public static getProjects1(
-        id: string,
+        id: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -71,7 +72,7 @@ export class ProjectsService {
      * @throws ApiError
      */
     public static putProjects(
-        id: string,
+        id: NumericId,
         requestBody?: {
             name?: string;
             description?: string;
@@ -97,7 +98,7 @@ export class ProjectsService {
      * @throws ApiError
      */
     public static deleteProjects(
-        id: string,
+        id: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'DELETE',
@@ -117,7 +118,7 @@ export class ProjectsService {
      * @throws ApiError
      */
     public static getProjectsTickets(
-        id: string,
+        id: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -135,7 +136,7 @@ export class ProjectsService {
      * @throws ApiError
      */
     public static postProjectsTickets(
-        id: string,
+        id: NumericId,
         requestBody: {
             title: string;
             description?: string;
@@ -160,7 +161,7 @@ export class ProjectsService {
      * @throws ApiError
      */
     public static getProjectsTicketsStatus(
-        id: string,
+        id: NumericId,
         status: 'backlog' | 'in_progress' | 'review' | 'done',
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
@@ -179,7 +180,7 @@ export class ProjectsService {
      * @throws ApiError
      */
     public static getProjectsMembers(
-        id: string,
+        id: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -196,7 +197,7 @@ export class ProjectsService {
      * @throws ApiError
      */
     public static getProjectsUsers(
-        id: string,
+        id: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -214,13 +215,13 @@ export class ProjectsService {
      * @throws ApiError
      */
     public static putProjectsTickets(
-        ticketId: string,
+        ticketId: NumericId,
         requestBody?: {
             title?: string;
             description?: string;
             status?: string;
             priority?: string;
-            assigneeId?: string;
+            assigneeId?: NumericId;
         },
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
@@ -240,7 +241,7 @@ export class ProjectsService {
      * @throws ApiError
      */
     public static deleteProjectsTickets(
-        ticketId: string,
+        ticketId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'DELETE',
@@ -259,8 +260,8 @@ export class ProjectsService {
      * @throws ApiError
      */
     public static postProjectsTicketsStatus(
-        id: string,
-        ticketId: string,
+        id: NumericId,
+        ticketId: NumericId,
         requestBody?: {
             status?: 'backlog' | 'in_progress' | 'review' | 'done';
         },

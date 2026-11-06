@@ -2,16 +2,22 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { NumericId } from './NumericId';
 export type Ticket = {
-    id?: string;
+    id?: NumericId;
     title?: string;
-    description?: string;
+    description?: string | null;
     status?: Ticket.status;
     priority?: Ticket.priority;
-    owner_id?: string;
-    project_id?: string;
-    created_at?: string;
-    updated_at?: string;
+    ownerId?: NumericId;
+    projectId?: NumericId;
+    assigneeId?: string | null;
+    assigneeName?: string | null;
+    milestoneId?: string | null;
+    estimate?: number | null;
+    dependsOn?: Array<string>;
+    createdAt?: string;
+    updatedAt?: string;
 };
 export namespace Ticket {
     export enum status {

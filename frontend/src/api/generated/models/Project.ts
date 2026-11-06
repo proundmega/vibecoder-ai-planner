@@ -2,12 +2,13 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { NumericId } from './NumericId';
 export type Project = {
-    id?: string;
+    id?: NumericId;
     name?: string;
-    description?: string;
-    owner_id?: string;
-    created_at?: string;
-    updated_at?: string;
+    description?: string | null;
+    ownerId?: NumericId;
+    ownerName?: string | null;
+    createdAt?: string;
 };
 

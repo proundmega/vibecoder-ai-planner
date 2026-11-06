@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { NumericId } from '../models/NumericId';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -13,7 +14,7 @@ export class MemoryService {
      * @throws ApiError
      */
     public static getMemoryProject(
-        projectId: string,
+        projectId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -31,7 +32,7 @@ export class MemoryService {
      * @throws ApiError
      */
     public static postMemoryProject(
-        projectId: string,
+        projectId: NumericId,
         requestBody?: {
             content?: string;
             metadata?: Record<string, any>;
@@ -55,7 +56,7 @@ export class MemoryService {
      * @throws ApiError
      */
     public static getMemoryProjectSearch(
-        projectId: string,
+        projectId: NumericId,
         q: string,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
@@ -76,7 +77,7 @@ export class MemoryService {
      * @throws ApiError
      */
     public static getMemoryAgent(
-        agentId: string,
+        agentId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -93,7 +94,7 @@ export class MemoryService {
      * @throws ApiError
      */
     public static getMemory(
-        id: string,
+        id: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -114,7 +115,7 @@ export class MemoryService {
      * @throws ApiError
      */
     public static putMemory(
-        id: string,
+        id: NumericId,
         requestBody?: {
             content?: string;
             metadata?: Record<string, any>;
@@ -137,7 +138,7 @@ export class MemoryService {
      * @throws ApiError
      */
     public static deleteMemory(
-        id: string,
+        id: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'DELETE',

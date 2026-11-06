@@ -2,9 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { NumericId } from './NumericId';
 export type User = {
-    id?: string;
-    name?: string;
+    id?: NumericId;
+    name?: string | null;
     email?: string;
     role?: User.role;
     isActive?: boolean;

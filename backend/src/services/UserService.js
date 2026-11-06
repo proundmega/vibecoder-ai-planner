@@ -79,7 +79,7 @@ class UserService {
     const { role, search, page = 1, perPage = 20 } = filters;
     const offset = (page - 1) * perPage;
     
-    let whereClause = '1=1';
+    let whereClause = 'deleted_at IS NULL';
     const params = [];
     
     const canViewAll = await PermissionService.hasPermission(userRole, 'USER_VIEW_ALL');
@@ -115,7 +115,7 @@ class UserService {
     const { role, search, is_active, page = 1, perPage = 50 } = filters;
     const offset = (page - 1) * perPage;
     
-    let whereClause = '1=1';
+    let whereClause = 'deleted_at IS NULL';
     const params = [];
     
     if (role) {

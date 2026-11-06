@@ -29,7 +29,7 @@ const logger = require('../utils/logger');
  *           schema:
  *             type: object
  *             properties:
- *               ticketId: { type: string, format: uuid }
+ *               ticketId: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       201:
  *         description: Approval request created
@@ -110,7 +110,7 @@ router.get('/pending', verifyToken, async (req, res) => {
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: List of approvals for ticket
@@ -135,7 +135,7 @@ router.get('/ticket/:ticketId', verifyToken, validatePathParams({ ticketId: path
  *       - in: path
  *         name: approvalId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Approval approved
@@ -163,7 +163,7 @@ router.post('/:approvalId/approve', verifyToken, requireAnyPermission('APPROVAL_
  *       - in: path
  *         name: approvalId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Approval rejected

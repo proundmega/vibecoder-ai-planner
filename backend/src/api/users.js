@@ -82,7 +82,7 @@ router.post('/', verifyToken, requireAnyPermission('USER_CREATE'), validate(crea
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:
@@ -109,7 +109,7 @@ router.put('/:id', verifyToken, requireActiveUser, validate(updateUserSchema), u
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: User status toggled
@@ -136,7 +136,7 @@ router.patch('/:id/toggle-active', verifyToken, requireAnyPermission('USER_TOGGL
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: User deleted
@@ -185,7 +185,7 @@ router.get('/super-admin', verifyToken, requireAnyPermission('USER_VIEW_ALL'), u
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: User unlocked successfully

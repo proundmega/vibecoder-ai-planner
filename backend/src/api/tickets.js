@@ -27,7 +27,7 @@ const GitHubService = require('../services/GitHubService');
  *             type: object
  *             required: [projectId, title]
  *             properties:
- *               projectId: { type: string, format: uuid }
+ *               projectId: { $ref: '#/components/schemas/NumericId' }
  *               title: { type: string }
  *               description: { type: string }
  *               priority: { type: string, enum: [low, medium, high, critical, urgent] }
@@ -47,7 +47,7 @@ router.post('/', verifyTokenOrAgent, requireAnyPermission('TICKET_CREATE'), vali
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *       - in: query
  *         name: status
  *         schema: { type: string, enum: [backlog, in_progress, review, done] }
@@ -67,7 +67,7 @@ router.get('/project/:projectId', verifyTokenOrAgent, validatePathParams({ proje
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Ticket details
@@ -86,7 +86,7 @@ router.get('/:ticketId', verifyTokenOrAgent, validatePathParams({ ticketId: path
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:
@@ -130,7 +130,7 @@ router.put('/:ticketId', verifyTokenOrAgent, requireAnyPermission('TICKET_UPDATE
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Ticket deleted
@@ -147,7 +147,7 @@ router.delete('/:ticketId', verifyToken, validatePathParams({ ticketId: pathPara
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:
@@ -171,7 +171,7 @@ router.post('/:ticketId/status', verifyTokenOrAgent, requireAnyPermission('TICKE
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Ticket picked up
@@ -189,7 +189,7 @@ router.post('/:ticketId/pickup', verifyTokenOrAgent, validatePathParams({ ticket
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Ticket released
@@ -207,7 +207,7 @@ router.post('/:ticketId/release', verifyTokenOrAgent, validatePathParams({ ticke
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: List of comments
@@ -224,7 +224,7 @@ router.get('/:ticketId/comments', verifyToken, validatePathParams({ ticketId: pa
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:
@@ -248,7 +248,7 @@ router.post('/:ticketId/comments', verifyToken, requireAnyPermission('TICKET_COM
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *       - in: query
  *         name: limit
  *         schema: { type: integer }
@@ -268,7 +268,7 @@ router.get('/:ticketId/messages', verifyTokenOrAgent, validatePathParams({ ticke
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:
@@ -294,7 +294,7 @@ router.post('/:ticketId/messages', verifyTokenOrAgent, validatePathParams({ tick
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Phase history
@@ -318,7 +318,7 @@ router.get('/:ticketId/phases', verifyTokenOrAgent, validatePathParams({ ticketI
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Current phase
@@ -342,7 +342,7 @@ router.get('/:ticketId/phases/current', verifyTokenOrAgent, validatePathParams({
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Allowed next phases
@@ -366,7 +366,7 @@ router.get('/:ticketId/phases/allowed', verifyTokenOrAgent, validatePathParams({
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:
@@ -408,7 +408,7 @@ router.post('/:ticketId/phases/transition', verifyTokenOrAgent, validatePathPara
  *       - in: path
  *         name: ticketId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: PR diff files

@@ -2,12 +2,14 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { NumericId } from './NumericId';
 export type Agent = {
-    id?: string;
+    id?: NumericId;
     name?: string;
-    user_id?: string;
-    api_key?: string;
-    is_active?: boolean;
+    owner_id?: NumericId;
+    rate_limit?: number;
+    max_actions_per_day?: number;
     created_at?: string;
+    updated_at?: string;
 };
 

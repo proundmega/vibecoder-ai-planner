@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { Agent } from '../models/Agent';
+import type { NumericId } from '../models/NumericId';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -18,9 +19,9 @@ export class AgentsService {
             name?: string;
         },
     ): CancelablePromise<{
-        id?: string;
+        id?: NumericId;
         name?: string;
-        user_id?: string;
+        user_id?: NumericId;
         api_key?: string;
         generatedApiKey?: string;
     }> {
@@ -54,7 +55,7 @@ export class AgentsService {
      * @throws ApiError
      */
     public static postAgentsRevoke(
-        agentId: string,
+        agentId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -75,7 +76,7 @@ export class AgentsService {
      * @throws ApiError
      */
     public static putAgents(
-        agentId: string,
+        agentId: NumericId,
         requestBody?: {
             name?: string;
         },
@@ -101,7 +102,7 @@ export class AgentsService {
      * @throws ApiError
      */
     public static deleteAgents(
-        agentId: string,
+        agentId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'DELETE',
@@ -121,7 +122,7 @@ export class AgentsService {
      * @throws ApiError
      */
     public static getAgentsHistory(
-        agentId: string,
+        agentId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -141,7 +142,7 @@ export class AgentsService {
      * @throws ApiError
      */
     public static getAgentsKey(
-        agentId: string,
+        agentId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -161,7 +162,7 @@ export class AgentsService {
      * @throws ApiError
      */
     public static getAgentsProviderConfig(
-        agentId: string,
+        agentId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -176,13 +177,41 @@ export class AgentsService {
         });
     }
     /**
+     * Check if provider config has changed
+     * @param agentId
+     * @param since
+     * @returns any Config change status
+     * @throws ApiError
+     */
+    public static getAgentsProviderConfigChanged(
+        agentId: NumericId,
+        since?: string,
+    ): CancelablePromise<{
+        success?: boolean;
+        data?: {
+            changed?: boolean;
+            lastUpdated?: string;
+        };
+    }> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/agents/{agentId}/provider-config/changed',
+            path: {
+                'agentId': agentId,
+            },
+            query: {
+                'since': since,
+            },
+        });
+    }
+    /**
      * Rotate agent API key
      * @param agentId
      * @returns any API key rotated successfully
      * @throws ApiError
      */
     public static postAgentsRotateKey(
-        agentId: string,
+        agentId: NumericId,
     ): CancelablePromise<{
         agentId?: number;
         agentName?: string;
