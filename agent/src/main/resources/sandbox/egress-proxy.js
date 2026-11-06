@@ -22,7 +22,10 @@ const ALLOW = String(process.env.EGRESS_ALLOWED_HOSTS || "")
   .filter(Boolean);
 const CONNECT_TIMEOUT_MS = 10_000;
 const IDLE_TIMEOUT_MS = 120_000;
-const TUNNEL_PROBE_TIMEOUT_MS = 5_000;
+const TUNNEL_PROBE_TIMEOUT_MS = Math.max(
+  100,
+  Number(process.env.EGRESS_TUNNEL_PROBE_TIMEOUT_MS || 5000) || 5000
+);
 const MAX_TUNNEL_PREFIX_BYTES = 64 * 1024;
 const ALLOWED_PORTS = new Set([80, 443]);
 
@@ -232,6 +235,17 @@ function denyRaw(socket, status, reason, host, port) {
 }
 
 function resolveSafe(host, callback) {
+  // Deterministic test seam for the Java resolveSafe regression tests. The
+  // proxy container does not receive this variable from the sandbox.
+  const override = process.env.EGRESS_TEST_RESOLVE_IP;
+  if (override) {
+    if (isPrivateAddress(override)) {
+      callback(new Error("resolves to a private address"));
+      return;
+    }
+    callback(null, override);
+    return;
+  }
   dns.lookup(host, { all: true }, (error, addresses) => {
     if (error || !Array.isArray(addresses) || addresses.length === 0) {
       callback(new Error("dns lookup failed"));
@@ -278,7 +292,30 @@ function parseClientHelloSni(buffer) {
       if (handshake.length < 4 + bodyLength) {
         return null;
       }
-      return parseClientHelloBody(handshake.subarray(4, 4 + bodyLength));
+      if (handshake.length > 4 + bodyLength) {
+        // A second handshake message (for example a second ClientHello) must
+        // not be forwarded unchecked.
+        return { error: "unexpected extra handshake data" };
+      }
+      const parsed = parseClientHelloBody(handshake.subarray(4, 4 + bodyLength));
+      if (parsed.error) {
+        return parsed;
+      }
+      // Reject any further handshake record in the same buffered prefix.
+      // Application data (for example TLS 1.3 early data) is allowed.
+      let scan = offset;
+      while (scan + 5 <= buffer.length) {
+        const type = buffer[scan];
+        const recordLength = buffer.readUInt16BE(scan + 3);
+        if (type === 0x16) {
+          return { error: "multiple TLS handshakes" };
+        }
+        if (scan + 5 + recordLength > buffer.length) {
+          break;
+        }
+        scan += 5 + recordLength;
+      }
+      return parsed;
     }
   }
   return null;
@@ -312,7 +349,7 @@ function parseClientHelloBody(body) {
     const extensionsLength = body.readUInt16BE(index);
     index += 2;
     const end = Math.min(body.length, index + extensionsLength);
-    let sni = null;
+    const names = [];
     let ech = false;
     while (index + 4 <= end) {
       const type = body.readUInt16BE(index);
@@ -337,7 +374,7 @@ function parseClientHelloBody(body) {
             return { error: "truncated SNI name" };
           }
           if (nameType === 0) {
-            sni = body.toString("ascii", cursor, cursor + nameLength);
+            names.push(body.toString("ascii", cursor, cursor + nameLength));
           }
           cursor += nameLength;
         }
@@ -346,52 +383,23 @@ function parseClientHelloBody(body) {
       }
       index += length;
     }
-    return { sni, ech };
+    if (names.length > 1) {
+      return { error: "multiple SNI names" };
+    }
+    return { sni: names.length === 1 ? names[0] : null, ech };
   } catch (error) {
     return { error: "malformed ClientHello" };
   }
 }
 
 /** Parse the Host header of the first tunneled HTTP/1.x request. */
-function parseHttpRequestHost(buffer) {
-  const end = buffer.indexOf("\r\n\r\n");
-  if (end < 0) {
-    return null;
-  }
-  const lines = buffer.subarray(0, end).toString("latin1").split("\r\n");
-  if (!/^[A-Z]+ \S+ HTTP\/1\.[01]$/.test(lines[0] || "")) {
-    return { error: "bad tunneled HTTP request" };
-  }
-  let host = null;
-  for (let i = 1; i < lines.length; i++) {
-    const colon = lines[i].indexOf(":");
-    if (colon > 0 && lines[i].slice(0, colon).toLowerCase() === "host") {
-      host = lines[i].slice(colon + 1).trim();
-      break;
-    }
-  }
-  if (!host) {
-    return { error: "missing Host header" };
-  }
-  let hostname = host;
-  if (host.startsWith("[")) {
-    const close = host.indexOf("]");
-    hostname = close > 0 ? host.slice(1, close) : host;
-  } else {
-    const colon = host.lastIndexOf(":");
-    if (colon > 0 && /^\d+$/.test(host.slice(colon + 1))) {
-      hostname = host.slice(0, colon);
-    }
-  }
-  return { host: normaliseHost(hostname) };
-}
-
 /**
- * Validate the bytes inside a CONNECT tunnel before forwarding them. This
- * prevents domain fronting: the TLS SNI (or the HTTP Host for port 80) must
- * match the allowlisted CONNECT target. Failures close both sockets.
+ * Validate the first TLS ClientHello inside a CONNECT tunnel before forwarding
+ * it. The SNI must equal the allowlisted CONNECT target; ECH, missing SNI,
+ * multiple SNI names and extra handshakes are rejected. Only the validated
+ * prefix is forwarded; later renegotiation is D16.
  */
-function validateTunnel(clientSocket, upstream, host, port, initial) {
+function validateTunnel(clientSocket, upstream, host, initial) {
   let buffer = initial && initial.length > 0 ? Buffer.from(initial) : Buffer.alloc(0);
   let settled = false;
 
@@ -403,7 +411,7 @@ function validateTunnel(clientSocket, upstream, host, port, initial) {
     clearTimeout(timer);
     clientSocket.removeListener("data", onData);
     if (!allowed) {
-      logDenied({ method: "CONNECT", host, port, reason });
+      logDenied({ method: "CONNECT", host, port: 443, reason });
       clientSocket.destroy();
       upstream.destroy();
       return;
@@ -416,9 +424,7 @@ function validateTunnel(clientSocket, upstream, host, port, initial) {
   };
 
   const inspect = () => {
-    const parsed = port === 80
-      ? parseHttpRequestHost(buffer)
-      : parseClientHelloSni(buffer);
+    const parsed = parseClientHelloSni(buffer);
     if (parsed === null) {
       return;
     }
@@ -426,24 +432,17 @@ function validateTunnel(clientSocket, upstream, host, port, initial) {
       finish(false, parsed.error);
       return;
     }
-    if (port === 80) {
-      if (normaliseHost(parsed.host) !== normaliseHost(host)) {
-        finish(false, "Host does not match the CONNECT target");
-        return;
-      }
-    } else {
-      if (parsed.ech) {
-        finish(false, "ECH is not supported");
-        return;
-      }
-      if (!parsed.sni) {
-        finish(false, "missing SNI");
-        return;
-      }
-      if (normaliseHost(parsed.sni) !== normaliseHost(host)) {
-        finish(false, "SNI does not match the CONNECT target");
-        return;
-      }
+    if (parsed.ech) {
+      finish(false, "ECH is not supported");
+      return;
+    }
+    if (!parsed.sni) {
+      finish(false, "missing SNI");
+      return;
+    }
+    if (normaliseHost(parsed.sni) !== normaliseHost(host)) {
+      finish(false, "SNI does not match the CONNECT target");
+      return;
     }
     finish(true);
   };
@@ -478,6 +477,14 @@ function handleConnect(request, clientSocket, head) {
     denyRaw(clientSocket, 400, "bad authority", "", 0);
     return;
   }
+  // Plain HTTP uses absolute-form requests, which handleRequest() validates
+  // per request. A CONNECT :80 tunnel would carry multiple HTTP messages that
+  // cannot be checked after the first one, so it is not supported.
+  if (authority.port !== 443) {
+    denyRaw(clientSocket, 403, "CONNECT is only supported on 443",
+      authority.host, authority.port);
+    return;
+  }
   const reason = staticDenyReason(authority.host, authority.port);
   if (reason) {
     denyRaw(clientSocket, 403, reason, authority.host, authority.port);
@@ -494,7 +501,7 @@ function handleConnect(request, clientSocket, head) {
       { host: address, port: authority.port, timeout: CONNECT_TIMEOUT_MS },
       () => {
         clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
-        validateTunnel(clientSocket, upstream, authority.host, authority.port, head);
+        validateTunnel(clientSocket, upstream, authority.host, head);
       }
     );
     upstream.setTimeout(IDLE_TIMEOUT_MS, () => upstream.destroy());
@@ -594,7 +601,20 @@ function runProxy() {
   process.on("SIGINT", shutdown);
 }
 
-if (process.argv.includes("--check-resolve")) {
+if (process.argv.includes("--check-hello")) {
+  const encoded = process.argv[process.argv.indexOf("--check-hello") + 1];
+  const parsed = parseClientHelloSni(Buffer.from(encoded, "base64"));
+  if (parsed === null) {
+    console.log("INCOMPLETE");
+    process.exit(2);
+  }
+  if (parsed.error) {
+    console.log(`ERROR ${parsed.error}`);
+    process.exit(1);
+  }
+  console.log(`SNI ${parsed.sni || ""}${parsed.ech ? " ECH" : ""}`);
+  process.exit(0);
+} else if (process.argv.includes("--check-resolve")) {
   const target = process.argv[process.argv.indexOf("--check-resolve") + 1];
   const reason = staticDenyReason(normaliseHost(target), 443);
   if (reason) {

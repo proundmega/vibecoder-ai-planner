@@ -177,8 +177,10 @@ supervisor, but the built-in `bash`/`shell` tool is disabled and the
 `sandbox_bash` tool forwards commands to the sandbox bridge. The sandbox has
 no direct egress or external DNS; `SANDBOX_NETWORK=allowlist` routes traffic
 through a hardened proxy attached to an internal Docker network that validates
-the CONNECT SNI/port-80 Host. Do not enable Docker mode for untrusted repos
-until D14 (the descendant-sweep fork race) is closed.
+the first CONNECT ClientHello SNI and rejects multiple SNI names/extra
+handshakes and CONNECT :80. TLS renegotiation and the encrypted inner Host are
+D16. Do not enable Docker mode for untrusted repos until D14 (the
+descendant-sweep fork race) is closed.
 Phase 1 is blocking
 prompt mode and denies the `question` and `doom_loop` tools; autonomy and the
 human question loop are later phases.

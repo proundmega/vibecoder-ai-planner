@@ -75,7 +75,7 @@ Default deny. Allow only:
 
 Provider/model calls originate in the supervisor (OpenCode runs outside the sandbox), so no provider host needs to be reachable from repo code. Implement with an egress proxy or network namespace rules, log every denied request, and make the allowlist part of the repo profile rather than the prompt.
 
-Slice 2 implements this with an internal Docker network whose only peer is a hardened allowlist proxy. The sandbox has no default route and external DNS is disabled. For CONNECT tunnels the proxy validates the TLS ClientHello SNI against the allowlisted target, and for port-80 tunnels it validates the HTTP `Host` header; mismatches are denied. ECH and missing SNI are rejected. The encrypted HTTP `Host` inside a TLS tunnel is not visible without TLS termination, so a shared-CDN tenant with the same allowlisted SNI remains a limitation (**D16**).
+Slice 2 implements this with an internal Docker network whose only peer is a hardened allowlist proxy. The sandbox has no default route and external DNS is disabled. For CONNECT tunnels the proxy validates the TLS ClientHello SNI against the allowlisted target and rejects multiple SNI names, extra handshake messages, ECH and missing SNI. CONNECT :80 is rejected; plain HTTP uses per-request absolute-form validation. Only the first ClientHello is inspected: TLS renegotiation and the encrypted HTTP `Host` inside a TLS tunnel are not visible without TLS termination, so a shared-CDN tenant with the same allowlisted SNI remains a limitation (**D16**).
 
 ## Secrets
 

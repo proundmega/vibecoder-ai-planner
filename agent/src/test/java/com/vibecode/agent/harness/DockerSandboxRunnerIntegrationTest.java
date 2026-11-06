@@ -256,22 +256,22 @@ class DockerSandboxRunnerIntegrationTest {
                     Duration.ofSeconds(30)));
                 assertTrue(sni.output().contains("DENIED"), sni.output());
 
-                // Domain fronting over a CONNECT :80 tunnel with a different
-                // Host header.
-                ExecResult httpHost = runner.exec(handle, ExecRequest.of(
+                // CONNECT :80 is not supported: it would carry multiple HTTP
+                // requests that cannot be checked after the first one.
+                ExecResult connect80 = runner.exec(handle, ExecRequest.of(
                     "node -e 'const n=require(\"net\");"
                         + "const u=new URL(process.env.HTTPS_PROXY);"
                         + "const s=n.connect(Number(u.port),u.hostname,()=>{"
                         + "s.write(\"CONNECT registry.npmjs.org:80 HTTP/1.1\\r\\n"
                         + "Host: registry.npmjs.org:80\\r\\n\\r\\n\");});"
-                        + "let b=\"\";s.on(\"data\",d=>{b+=d;if(b.includes(\"200\")){"
-                        + "s.write(\"GET / HTTP/1.1\\r\\nHost: example.org\\r\\n\\r\\n\");}});"
+                        + "let b=\"\";s.on(\"data\",d=>{b+=d;"
+                        + "if(b.includes(\"403\"))process.exit(0);});"
                         + "s.on(\"close\",()=>process.exit(0));"
                         + "s.on(\"error\",()=>process.exit(0));"
                         + "setTimeout(()=>process.exit(1),5000);' "
-                        + "&& echo TUNNEL_CLOSED || echo TUNNEL_OPEN",
+                        + "&& echo CONNECT_DENIED || echo CONNECT_OPEN",
                     Duration.ofSeconds(20)));
-                assertTrue(httpHost.output().contains("TUNNEL_CLOSED"), httpHost.output());
+                assertTrue(connect80.output().contains("CONNECT_DENIED"), connect80.output());
             } finally {
                 runner.destroy(handle);
             }

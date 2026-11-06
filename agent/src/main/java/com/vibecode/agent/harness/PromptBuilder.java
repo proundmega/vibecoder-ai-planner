@@ -82,8 +82,8 @@ public final class PromptBuilder {
             prompt.append("tools still use the normal workspace paths.\n");
             prompt.append("- The sandbox has no Git credentials. ");
             if (egressAllowlist) {
-                prompt.append("Only the approved package registries are reachable through the ");
-                prompt.append("egress proxy; external DNS and every other host are blocked.\n\n");
+                prompt.append("Network access is limited to the approved package registries ");
+                prompt.append("through the egress proxy; external DNS is blocked.\n\n");
             } else {
                 prompt.append("It has no network access; installs that need the network must use ");
                 prompt.append("a pre-populated workspace.\n\n");

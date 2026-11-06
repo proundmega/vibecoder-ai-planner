@@ -835,6 +835,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
         args.add("EGRESS_PORT=3128");
         args.add("-e");
         args.add("EGRESS_ALLOWED_HOSTS=" + String.join(",", spec.allowedHosts()));
+        args.add("-e");
+        args.add("EGRESS_TUNNEL_PROBE_TIMEOUT_MS=" + spec.egressProbeTimeoutMs());
         args.add("--entrypoint");
         args.add("node");
         args.add(spec.proxyImage());
@@ -1022,13 +1024,23 @@ public final class DockerSandboxRunner implements SandboxRunner {
             args.add("--dns");
             args.add("127.0.0.1");
             args.add("--add-host");
-            args.add(egress.proxyName() + ":" + egress.proxyAddress());
+            String pinned = egress.proxyAddress().contains(":")
+                ? "[" + egress.proxyAddress() + "]"
+                : egress.proxyAddress();
+            args.add(egress.proxyName() + ":" + pinned);
         }
 
         for (Map.Entry<String, String> entry : containerEnvironment(spec, egress).entrySet()) {
             args.add("-e");
             args.add(entry.getKey() + "=" + entry.getValue());
         }
+
+        // A hostile process can write to /proc/1/fd/1, so bound the sandbox
+        // container logs just like the proxy logs.
+        args.add("--log-opt");
+        args.add("max-size=1m");
+        args.add("--log-opt");
+        args.add("max-file=1");
 
         args.add("--entrypoint");
         args.add("/bin/sh");

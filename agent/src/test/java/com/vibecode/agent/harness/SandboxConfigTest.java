@@ -139,6 +139,7 @@ class SandboxConfigTest {
             List.of("registry.npmjs.org", "*.githubusercontent.com"),
             config.allowedHosts());
         assertEquals("bridge", config.egressUpstreamNetwork());
+        assertEquals(5_000, config.egressProbeTimeoutMs());
     }
 
     @Test

@@ -86,6 +86,8 @@ class DockerSandboxRunnerTest {
         assertTrue(joined.contains("-e CI=1"));
         assertTrue(joined.contains("-e HOME=/tmp"));
         assertTrue(joined.contains("-e TMPDIR=/tmp"));
+        assertTrue(joined.contains("--log-opt max-size=1m"));
+        assertTrue(joined.contains("--log-opt max-file=1"));
         assertFalse(joined.contains("docker.sock"));
         assertFalse(joined.contains("--privileged"));
         assertFalse(joined.contains("--network host"));
@@ -142,6 +144,7 @@ class DockerSandboxRunnerTest {
         assertTrue(joined.contains("--network internal-1"));
         assertTrue(joined.contains("--pids-limit 64"));
         assertTrue(joined.contains("EGRESS_ALLOWED_HOSTS=registry.npmjs.org,*.githubusercontent.com"));
+        assertTrue(joined.contains("EGRESS_TUNNEL_PROBE_TIMEOUT_MS=5000"));
         assertTrue(joined.contains("--entrypoint node"));
         assertTrue(joined.contains("Buffer.from("));
         assertFalse(joined.contains("--privileged"));
@@ -290,7 +293,7 @@ class DockerSandboxRunnerTest {
         SandboxSpec poisoned = new SandboxSpec(
             spec.image(), spec.proxyImage(), spec.workspace(), spec.mountSource(), spec.maxDuration(),
             spec.limits(), spec.networkEnabled(), spec.allowedHosts(), spec.egressProxy(),
-            spec.egressUpstreamNetwork(),
+            spec.egressUpstreamNetwork(), spec.egressProbeTimeoutMs(),
             Map.of("OPENAI_KEY", "sk-secret"), spec.user(), spec.seccompProfile(),
             spec.apparmorProfile(), spec.artifactMaxBytes());
 
