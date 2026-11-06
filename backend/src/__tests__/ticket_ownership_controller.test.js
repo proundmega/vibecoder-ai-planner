@@ -66,7 +66,7 @@ describe('TicketController - Agent Orchestration', () => {
 
       await ticketController.pickUpTicket(req, res);
 
-      expect(TicketService.pickUpTicket).toHaveBeenCalledWith('100', 7);
+      expect(TicketService.pickUpTicket).toHaveBeenCalledWith('100', { agentId: 7, operatorId: 1 });
       expect(res.json).toHaveBeenCalledWith({
         success: true,
         data: {
@@ -130,7 +130,7 @@ describe('TicketController - Agent Orchestration', () => {
       await ticketController.releaseTicket(req, res);
 
       expect(PermissionService.hasPermission).toHaveBeenCalledWith('project_admin', 'PROJECT_UPDATE');
-      expect(TicketService.releaseTicket).toHaveBeenCalledWith('100', { operatorId: 1 });
+      expect(TicketService.releaseTicket).toHaveBeenCalledWith('100', { operatorId: 1, role: 'project_admin' });
       expect(res.json).toHaveBeenCalledWith({
         success: true,
         data: {

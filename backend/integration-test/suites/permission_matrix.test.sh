@@ -97,6 +97,12 @@ test_permission_matrix() {
     -H "Authorization: Bearer $user_token")
   assert_status "user cannot delete others' tickets" "403" "$user_del_code"
 
+  # bp-133 FR4: ticket writes are project-scoped; make the member an active
+  # project member so this exercises the role permission itself.
+  docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+    "INSERT INTO project_memberships (project_id, user_id) SELECT $proj_id, id FROM users WHERE email='member@test.com' ON CONFLICT DO NOTHING;" \
+    >/dev/null 2>&1 || true
+
   # member can delete any ticket in project
   local member_del_code
   member_del_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/v1/tickets/$ticket_id" \

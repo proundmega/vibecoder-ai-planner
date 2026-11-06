@@ -7,7 +7,7 @@ effort: "Medium"
 scope: "Both"
 created: "2026-11-06"
 updated: "2026-11-06"
-pr: 123
+pr: 124
 branch: "feat/bp-133-fr1-fr3"
 depends_on: ["bp-124"]
 ---
@@ -51,7 +51,7 @@ deferred scope are owned by this document; `01`–`03` link here.
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
 | E1 | Soft-deleted users remain in the admin list | bp-124 D14 | Backend | FR3 | done (`916bfe0`) |
-| E2 | Ticket writes ignore project membership | bp-124 D16 | Backend / Auth | FR4 | open (separate slice) |
+| E2 | Ticket writes ignore project membership | bp-124 D16 | Backend / Auth | FR4 | done (`8296e30`) |
 | E3 | Regenerate frontend generated client types | bp-124 D12 | Frontend | FR1 | done (`916bfe0`) |
 | E4 | Remaining OpenAPI BIGSERIAL id formats | bp-124 D13 | Docs / API | FR2 | done (`916bfe0`) |
 | E5 | Harness roadmap | bp-124 D11 | Agent | fg-33+ (separate track) | open |
@@ -60,7 +60,9 @@ deferred scope are owned by this document; `01`–`03` link here.
 
 | Claim | Evidence |
 |---|---|
-| FR1-FR3 implemented | Commit `916bfe0`; `03` plan items checked and three dated `03` Results rows |
-| Generated client | Regenerated from the committed spec; the `User` schema now matches `User.toJSON()` (camelCase, no stale timestamps) |
-| FR4 not started here | Tracked as the separate FR4 slice; this branch covers FR1-FR3 only |
+| FR1-FR3 implemented | Commit `916bfe0`; `03` plan items checked and dated `03` Results rows |
+| FR1 review fix | Commit `359ed4f`; `User` schema matches `User.toJSON()`, project assignee is nullable |
+| FR4 implemented | Commit `8296e30` (project-scope checks for update/delete/pickup/release) |
+| Verification | `03` → Results; backend 125 suites / 1557 tests, frontend 60 / 562, integration all pass |
+| FR4 review | Authorization change; needs its own review round on the stacked PR |
 | Items originated in bp-124 | bp-124 `00` deferred register D12–D16 |

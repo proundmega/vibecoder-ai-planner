@@ -35,6 +35,11 @@ test_role_based_ticket_permissions() {
   local ticket_id
   ticket_id=$(echo "$ticket_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
 
+  # bp-133 FR4: ticket writes are project-scoped; add the member to the project.
+  docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c \
+    "INSERT INTO project_memberships (project_id, user_id) SELECT $proj_id, id FROM users WHERE email='perm_member@integration.test' ON CONFLICT DO NOTHING;" \
+    >/dev/null 2>&1 || true
+
   local member_token
   member_token=$(login "perm_member@integration.test" "password123")
   local delete_code

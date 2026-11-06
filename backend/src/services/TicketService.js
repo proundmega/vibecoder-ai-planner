@@ -52,6 +52,61 @@ class TicketService {
     };
   }
 
+  /**
+   * Normalize a legacy scalar actor (an agent id) into the explicit actor shape.
+   */
+  normalizeActor(actor) {
+    if (actor && typeof actor === 'object') return actor;
+    return { agentId: actor };
+  }
+
+  /**
+   * Resolve the owning user and role for an API-key agent. The agent's own
+   * request carries role='member' from the auth middleware, so the service
+   * looks up the owner's real role for the admin bypass.
+   */
+  async resolveAgentActor({ agentId, operatorId, role }) {
+    if (!agentId || role !== undefined) return { agentId, operatorId, role };
+
+    const result = await pool.query(
+      `SELECT a.owner_id, u.role
+         FROM agents a
+         LEFT JOIN users u ON u.id = a.owner_id
+        WHERE a.id = $1`,
+      [agentId]
+    );
+    const row = result.rows[0] || {};
+    return { agentId, operatorId: operatorId || row.owner_id, role: row.role };
+  }
+
+  /**
+   * bp-133 FR4: a ticket write requires project scope. Allowed actors are the
+   * ticket owner, the project owner, an active project member, or an admin
+   * bypass (project_admin/super_admin) — matching the existing permission
+   * policy while closing the cross-project gap.
+   */
+  async canActOnTicketProject(ticket, actor = {}) {
+    const role = actor.role || 'member';
+    if (role === 'super_admin' || role === 'project_admin') return true;
+
+    const userId = actor.operatorId ?? actor.userId;
+    const ownerId = ticket.ownerId ?? ticket.owner_id;
+    const projectId = ticket.projectId ?? ticket.project_id;
+
+    if (userId && String(ownerId) === String(userId)) return true;
+
+    const project = await Project.findById(projectId);
+    if (!project) throw new NotFoundError('Project not found');
+    if (userId && String(project.ownerId) === String(userId)) return true;
+    if (!userId) return false;
+
+    const membership = await pool.query(
+      'SELECT 1 FROM project_memberships WHERE project_id = $1 AND user_id = $2',
+      [projectId, userId]
+    );
+    return membership.rows.length > 0;
+  }
+
   async update(id, data, userId, userRole) {
     const ticket = await Ticket.findById(id);
     if (!ticket) throw new NotFoundError('Ticket not found');
@@ -62,6 +117,10 @@ class TicketService {
     const canUpdate = await PermissionService.hasPermission(role, 'TICKET_UPDATE');
     if (!canUpdate && ticket.ownerId !== userId) {
       throw new ForbiddenError('Unauthorized to edit this ticket');
+    }
+
+    if (!(await this.canActOnTicketProject(ticket, { operatorId: userId, role }))) {
+      throw new ForbiddenError('Unauthorized: not a member of this ticket\'s project');
     }
 
     // Validate title not empty (if being updated)
@@ -141,6 +200,10 @@ class TicketService {
       throw new ForbiddenError('Forbidden');
     }
 
+    if (!(await this.canActOnTicketProject(ticket, { operatorId: userId, role }))) {
+      throw new ForbiddenError('Unauthorized: not a member of this ticket\'s project');
+    }
+
     await Ticket.delete(id);
   }
 
@@ -161,8 +224,9 @@ class TicketService {
     return await Ticket.addComment(ticketId, content.trim(), userId);
   }
 
-  async pickUpTicket(ticketId, agentId) {
-    
+  async pickUpTicket(ticketId, actor) {
+    const normalizedActor = await this.resolveAgentActor(this.normalizeActor(actor));
+    const { agentId } = normalizedActor;
 
     const ticketResult = await pool.query(
       'SELECT * FROM tickets WHERE id = $1',
@@ -174,6 +238,10 @@ class TicketService {
     }
 
     const ticket = ticketResult.rows[0];
+
+    if (!(await this.canActOnTicketProject(ticket, normalizedActor))) {
+      throw new ForbiddenError('Unauthorized: not a member of this ticket\'s project');
+    }
 
     if (ticket.status !== 'backlog') {
       throw new ValidationError('Only backlog tickets can be picked up');
@@ -198,9 +266,7 @@ class TicketService {
     return result.rows[0];
   }
 
-  async releaseTicket(ticketId, { agentId = null } = {}) {
-    
-
+  async releaseTicket(ticketId, { agentId = null, operatorId = null, role = null } = {}) {
     const ticketResult = await pool.query(
       'SELECT * FROM tickets WHERE id = $1',
       [ticketId]
@@ -216,8 +282,19 @@ class TicketService {
       throw new ValidationError('Ticket is not assigned to any agent');
     }
 
-    if (agentId !== null && String(ticket.assigned_agent_id) !== String(agentId)) {
-      throw new ForbiddenError('Ticket is assigned to another agent');
+    if (agentId !== null) {
+      // The assigned agent may always release its own ticket, even if its
+      // owner's membership changed after pickup.
+      if (String(ticket.assigned_agent_id) !== String(agentId)) {
+        throw new ForbiddenError('Ticket is assigned to another agent');
+      }
+    } else {
+      if (!operatorId) {
+        throw new ForbiddenError('Operator identity required to release a ticket');
+      }
+      if (!(await this.canActOnTicketProject(ticket, { operatorId, role }))) {
+        throw new ForbiddenError('Unauthorized: not a member of this ticket\'s project');
+      }
     }
 
     const result = await pool.query(

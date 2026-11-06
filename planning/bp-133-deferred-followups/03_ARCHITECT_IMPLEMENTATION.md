@@ -8,7 +8,7 @@
 - [x] FR1 — regenerate the frontend generated client and fix callers
 - [x] FR2 — numeric-string OpenAPI id formats and a guard test
 - [x] FR3 — exclude soft-deleted users from `listUsers` and `listAllUsers`
-- [ ] FR4 — project-membership checks for ticket writes (separate review)
+- [x] FR4 — project-membership checks for ticket writes (separate review)
 
 ## Per-file changes (expected)
 
@@ -42,7 +42,8 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 ## Review record
 
-Slice 1 (FR1-FR3) awaiting review. FR4 is not implemented yet.
+Slice 1 (FR1-FR3) and slice 2 (FR4) awaiting review. FR4 is an authorization
+change and needs a separate review round.
 
 ## Results
 
@@ -52,3 +53,4 @@ Slice 1 (FR1-FR3) awaiting review. FR4 is not implemented yet.
 | 2026-11-06 | PR #123 review | FR1 | Corrected the `User` schema to match `User.toJSON()` (camelCase; no stale `created_at`/`updated_at`); regenerated spec/client; added field-level contract test; 22 contract tests pass; backend 124 suites / 1543 tests |
 | 2026-11-06 | `916bfe0` | FR2 | Route JSDoc ids are `NumericId` (only `milestoneId` remains uuid); spec regenerated with no further diff; contract guard 19/19; backend 123 suites / 1540 pass |
 | 2026-11-06 | `916bfe0` | FR3 | `deleted_at IS NULL` in both list queries; 3 unit tests; integration suite passes both admin-list assertions |
+| 2026-11-06 | `8296e30` | FR4 | Ticket update/delete/pickup/release require ticket-owner, project-owner, active member, or admin bypass; 11 service tests, new HTTP suite for member/non-member/owner/admin/agent pickup, backend 125 suites / 1557 tests, integration all pass, Cypress e2e 37/37 + component 69/69 |
