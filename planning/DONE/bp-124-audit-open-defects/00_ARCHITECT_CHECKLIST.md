@@ -31,7 +31,7 @@ depends_on: ["bp-123"]
 
 - [x] Implementation merged in #116-#121
 - [x] Results recorded in `03`
-- [x] Deferred register points remaining work at bp-133
+- [x] Deferred register points remaining work at bp-133 / fg-30
 
 ## Why this ticket exists
 

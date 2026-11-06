@@ -45,11 +45,11 @@ deferred scope are owned by this document; `01`–`04` link here.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Component tests for edit modal/detail and assignment E2E | audit | Testing | bp-124-audit-open-defects (O9) | open |
-| D2 | Integration setup should fail on migration errors | audit | Testing | bp-124-audit-open-defects | open |
-| D3 | Migrate frontend validator to camelCase | audit | Frontend | bp-124-audit-open-defects | open |
-| D4 | Move completed suites to `planning/DONE/` | audit | Docs | bp-124-audit-open-defects | open |
-| D5 | O1-O10 open defects | audit | Multiple | bp-124-audit-open-defects | open |
-| D6 | Reconcile agent identity (`assigned_agent_id`) | audit | Agent | bp-124-audit-open-defects | open |
-| D7 | Remove dead SQL or add missing tables | audit | Backend | bp-124-audit-open-defects | open |
-| D8 | Full SQL grammar validation in dry-run | bp-79 | Backend | bp-124-audit-open-defects (O10) | open |
+| D1 | Component tests for edit modal/detail and assignment E2E | audit | Testing | bp-124-audit-open-defects (O9) | done (bp-124) |
+| D2 | Integration setup should fail on migration errors | audit | Testing | bp-124-audit-open-defects | done (bp-124) |
+| D3 | Migrate frontend validator to camelCase | audit | Frontend | bp-124-audit-open-defects | done (bp-124) |
+| D4 | Move completed suites to `planning/DONE/` | audit | Docs | bp-124-audit-open-defects | done (bp-124) |
+| D5 | O1-O10 open defects | audit | Multiple | bp-124-audit-open-defects | done (bp-124) |
+| D6 | Reconcile agent identity (`assigned_agent_id`) | audit | Agent | bp-124-audit-open-defects | done (bp-124) |
+| D7 | Remove dead SQL or add missing tables | audit | Backend | bp-124-audit-open-defects | done (bp-124) |
+| D8 | Full SQL grammar validation in dry-run | bp-79 | Backend | bp-124-audit-open-defects (O10) | done (bp-124: documented structural-only) |

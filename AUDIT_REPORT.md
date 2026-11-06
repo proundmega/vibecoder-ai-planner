@@ -169,9 +169,9 @@ TicketDetail 1, UserManagement 10, UserModal 7).
 
 ---
 
-## 4. Open defects and risks (not changed)
+## 4. Open defects and risks (tracked and fixed in bp-124)
 
-Tracked in `planning/DONE/bp-124-audit-open-defects/`. The fixes in this report are
+Tracked and fixed in `planning/DONE/bp-124-audit-open-defects/`. The fixes in this report are
 recorded in `planning/DONE/bp-123-test-audit-corrections/`.
 
 | # | Severity | Finding |
