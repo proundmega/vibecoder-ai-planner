@@ -92,6 +92,11 @@ public final class HostSandboxRunner implements SandboxRunner {
             throw new IOException("Sandbox upload must be a regular file: " + local);
         }
         Path target = SandboxPaths.remoteToLocal(handle.workspace(), remote);
+        if (Files.exists(target, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            && !Files.isRegularFile(target, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException(
+                "Sandbox upload target is not a regular file: " + remote);
+        }
         if (target.getParent() != null) {
             Files.createDirectories(target.getParent());
         }

@@ -69,7 +69,6 @@ class DockerSandboxRunnerTest {
         assertTrue(args.contains(name));
         assertTrue(args.contains("--read-only"));
         assertTrue(args.contains("--tmpfs"));
-        assertTrue(args.contains("--init"));
         assertTrue(args.contains("--cap-drop"));
         assertTrue(args.contains("ALL"));
         assertTrue(joined.contains("--security-opt no-new-privileges"));
@@ -175,7 +174,14 @@ class DockerSandboxRunnerTest {
             case "$1" in
               run) exit 0 ;;
               inspect) echo true ;;
-              exec) echo fake-output ;;
+              exec)
+                case "$*" in
+                  *"/proc/"*) echo OK ;;
+                  *"wc -c"*) echo "OK 0" ;;
+                  *"mkdir -p"*) echo OK ;;
+                  *) echo fake-output ;;
+                esac
+                ;;
               *) exit 0 ;;
             esac
             """);
@@ -367,7 +373,7 @@ class DockerSandboxRunnerTest {
         try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
             SandboxHandle handle = runner.create(config.specFor(workspace));
             ExecResult result = runner.exec(handle,
-                ExecRequest.of("sleep 10", Duration.ofSeconds(20)));
+                ExecRequest.of("sleep 10", Duration.ofSeconds(5)));
             assertTrue(result.timedOut(), result.toString());
             assertTrue(result.output().contains("workspace disk quota exceeded"), result.output());
         }
@@ -383,7 +389,13 @@ class DockerSandboxRunnerTest {
             case "$1" in
               run) exit 0 ;;
               inspect) echo true ;;
-              exec) exit 0 ;;
+              exec)
+                case "$*" in
+                  *"wc -c"*) echo "OK 100" ;;
+                  *"mkdir -p"*) echo OK ;;
+                  *) exit 0 ;;
+                esac
+                ;;
               cp)
                 last=""
                 for a in "$@"; do last="$a"; done
@@ -413,6 +425,56 @@ class DockerSandboxRunnerTest {
             assertThrows(IOException.class,
                 () -> runner.getFile(handle, "/workspace/big.txt", downloaded));
             assertFalse(Files.exists(downloaded));
+            assertFalse(Files.readString(log).contains("cp "),
+                "download must be rejected before docker cp");
+        }
+    }
+
+    @Test
+    void getFileOverflowPreservesAnExistingLocalFile() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec)
+                case "$*" in
+                  *"wc -c"*) echo "OK 0" ;;
+                  *"mkdir -p"*) echo OK ;;
+                  *) exit 0 ;;
+                esac
+                ;;
+              cp)
+                last=""
+                for a in "$@"; do last="$a"; done
+                case "$last" in
+                  *:*) : ;;
+                  *) head -c 100 /dev/zero > "$last" ;;
+                esac
+                ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_ARTIFACT_MAX_BYTES", "10"
+        )::get);
+        Path local = Files.writeString(tempDir.resolve("existing.txt"), "keep");
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            assertThrows(IOException.class,
+                () -> runner.getFile(handle, "/workspace/file.txt", local));
+        }
+
+        assertEquals("keep", Files.readString(local));
+        try (var listing = Files.list(tempDir)) {
+            assertFalse(listing.anyMatch(path -> path.getFileName().toString()
+                .startsWith(".sandbox-download-")));
         }
     }
 
@@ -440,6 +502,95 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void guardFailureFailsClosedAndNeverRunsDockerCp() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec) exit 1 ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+        Path local = Files.writeString(tempDir.resolve("local.txt"), "hello");
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            assertThrows(IOException.class,
+                () -> runner.getFile(handle, "/workspace/file", tempDir.resolve("out")));
+            assertThrows(IOException.class,
+                () -> runner.putFile(handle, local, "/workspace/file"));
+        }
+
+        assertFalse(Files.readString(log).contains("cp "),
+            "a failed guard must never reach docker cp");
+    }
+
+    @Test
+    void uploadRejectsANonRegularTarget() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec) echo NOTFILE ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+        Path local = Files.writeString(tempDir.resolve("local.txt"), "hello");
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            assertThrows(IOException.class,
+                () -> runner.putFile(handle, local, "/workspace/fifo"));
+        }
+
+        assertFalse(Files.readString(log).contains("cp "));
+    }
+
+    @Test
+    void failsClosedWhenTheWorkspaceCannotBeMeasured() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path workspace = workspace();
+        Path log = tempDir.resolve("docker.log");
+        String body = """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec)
+                rm -rf '__WORKSPACE__'
+                sleep 10
+                ;;
+              *) exit 0 ;;
+            esac
+            """.replace("__WORKSPACE__", workspace.toString());
+        Path script = fakeDocker(log, body);
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_DISK_MB", "1",
+            "SANDBOX_DISK_CHECK_INTERVAL_SECONDS", "1"
+        )::get);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace));
+            ExecResult result = runner.exec(handle,
+                ExecRequest.of("sleep 10", Duration.ofSeconds(5)));
+            assertTrue(result.timedOut(), result.toString());
+            assertTrue(result.output().contains("workspace disk quota exceeded"),
+                result.output());
+        }
+
+        assertTrue(Files.readString(log).contains("kill --signal KILL"));
+    }
+
+    @Test
     void workspaceSizeCountsRegularFilesAndIgnoresSymlinks() throws IOException {
         Assumptions.assumeFalse(windows(), "symlink creation is not portable");
         Path root = Files.createDirectories(tempDir.resolve("size"));
@@ -452,6 +603,7 @@ class DockerSandboxRunnerTest {
         }
 
         assertEquals(5L, DockerSandboxRunner.workspaceSize(root));
+        assertEquals(-1L, DockerSandboxRunner.workspaceSize(tempDir.resolve("missing")));
     }
 
     private static boolean runnerCanExec(DockerSandboxRunner runner, SandboxHandle handle) {

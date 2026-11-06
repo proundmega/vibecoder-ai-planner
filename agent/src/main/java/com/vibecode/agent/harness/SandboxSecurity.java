@@ -30,7 +30,7 @@ final class SandboxSecurity {
 
     /** Scheme-less {@code user:pass@host} credentials (for example proxy URLs). */
     private static final Pattern SCHEMELESS_CREDENTIAL = Pattern.compile(
-        "(?i)(^|[\\s,;])[^\\s/@:]+:[^\\s/@]+@[^\\s/]+");
+        "(?i)(^|[\\s,;])(//)?[^\\s/@:]+:[^\\s/@]+@[^\\s/]+");
 
     private SandboxSecurity() {
     }

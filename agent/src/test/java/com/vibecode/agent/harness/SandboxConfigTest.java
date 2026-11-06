@@ -179,6 +179,28 @@ class SandboxConfigTest {
     }
 
     @Test
+    void rejectsNonFiniteCpuLimits() {
+        assertThrows(IllegalStateException.class, () -> SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_CPUS", "NaN"
+        )::get));
+        assertThrows(IllegalStateException.class, () -> SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_CPUS", "Infinity"
+        )::get));
+    }
+
+    @Test
+    void rejectsSchemeLessCredentialUrlsWithDoubleSlash() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_ENV", "HTTP_PROXY=//proxy-user:proxy-pass@proxy:8080"
+            )::get));
+        assertTrue(error.getMessage().contains("credentials"));
+    }
+
+    @Test
     void allowsNonSecretDatabaseUrl() {
         SandboxConfig config = SandboxConfig.from(env(
             "SANDBOX_MODE", "docker",

@@ -722,6 +722,20 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 return;
             }
 
+            // Verification is complete. Destroy the sandbox before staging or
+            // publishing so no surviving repo process can edit the workspace
+            // between the verification gate and the guarded commit.
+            if (sandbox != null) {
+                SandboxHandle verifiedSandbox = sandbox;
+                sandbox = null;
+                try {
+                    sandboxRunner.destroy(verifiedSandbox);
+                } catch (RuntimeException e) {
+                    log.warn("Could not destroy sandbox {} before publishing: {}",
+                        verifiedSandbox.id(), e.getMessage());
+                }
+            }
+
             if (!assertLeaseHeld(pickedUp.getId())) {
                 return;
             }

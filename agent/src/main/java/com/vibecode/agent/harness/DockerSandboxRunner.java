@@ -8,6 +8,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -41,11 +42,14 @@ public final class DockerSandboxRunner implements SandboxRunner {
     private static final String LABEL = "vibecode.sandbox.managed=true";
 
     private final SandboxConfig config;
+    private final Thread shutdownHook;
     private final Set<String> active = ConcurrentHashMap.newKeySet();
     private final Set<String> created = ConcurrentHashMap.newKeySet();
     private final Map<String, Duration> maxDurations = new ConcurrentHashMap<>();
     private final Map<String, Long> artifactLimits = new ConcurrentHashMap<>();
-    private volatile Process currentDockerProcess;
+    private final Map<String, AtomicBoolean> quotaFlags = new ConcurrentHashMap<>();
+    private final Map<String, ScheduledExecutorService> watchdogs = new ConcurrentHashMap<>();
+    private final Map<String, Process> runningProcesses = new ConcurrentHashMap<>();
 
     public DockerSandboxRunner(SandboxConfig config) {
         if (config == null) {
@@ -56,8 +60,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
         config.validate();
         this.config = config;
-        Runtime.getRuntime().addShutdownHook(
-            new Thread(this::close, "sandbox-shutdown"));
+        this.shutdownHook = new Thread(this::close, "sandbox-shutdown");
+        Runtime.getRuntime().addShutdownHook(shutdownHook);
     }
 
     @Override
@@ -97,6 +101,13 @@ public final class DockerSandboxRunner implements SandboxRunner {
         active.add(name);
         maxDurations.put(name, spec.maxDuration());
         artifactLimits.put(name, spec.artifactMaxBytes());
+        AtomicBoolean quotaExceeded = new AtomicBoolean(false);
+        quotaFlags.put(name, quotaExceeded);
+        ScheduledExecutorService watchdog =
+            startDiskWatchdog(name, workspace, quotaExceeded);
+        if (watchdog != null) {
+            watchdogs.put(name, watchdog);
+        }
         log.info("Started sandbox {} (image {}, workspace {})",
             name, spec.image(), spec.mountSource());
         return new SandboxHandle(name, workspace, false, Instant.now());
@@ -119,11 +130,11 @@ public final class DockerSandboxRunner implements SandboxRunner {
         command.add(config.dockerBinary());
         command.addAll(buildExecArgs(handle, effective));
 
-        AtomicBoolean quotaExceeded = new AtomicBoolean(false);
-        ScheduledExecutorService watchdog = startDiskWatchdog(handle, quotaExceeded);
+        AtomicBoolean quotaExceeded =
+            quotaFlags.getOrDefault(handle.id(), new AtomicBoolean(false));
         try {
             DockerResult result = runDocker(
-                command, effective.timeout(), effective.maxOutputBytes());
+                command, effective.timeout(), effective.maxOutputBytes(), handle.id());
             if (quotaExceeded.get()) {
                 return new ExecResult(
                     request.command(),
@@ -144,8 +155,11 @@ public final class DockerSandboxRunner implements SandboxRunner {
             return new ExecResult(
                 request.command(), result.exitCode(), result.output(), false, result.truncated());
         } finally {
-            if (watchdog != null) {
-                watchdog.shutdownNow();
+            // A command that exits normally can leave daemonized children
+            // behind in the container's PID namespace. They must not keep
+            // editing the workspace between verification and publishing.
+            if (active.contains(handle.id())) {
+                killDescendants(handle);
             }
         }
     }
@@ -179,24 +193,37 @@ public final class DockerSandboxRunner implements SandboxRunner {
     public void getFile(SandboxHandle handle, String remote, Path local) throws IOException {
         requireActive(handle);
         String source = SandboxPaths.containerPath(remote);
-        assertContainerSourceSafe(handle, source);
-        if (local.getParent() != null) {
-            Files.createDirectories(local.getParent());
-        }
-        DockerResult result = runDocker(
-            List.of(config.dockerBinary(), "cp", handle.id() + ":" + source, local.toString()),
-            COPY_TIMEOUT,
-            CONTROL_OUTPUT_BYTES
-        );
-        if (result.exitCode() != 0 || result.timedOut()) {
-            throw new IOException("Could not download " + source + " to " + local + ": "
-                + result.output());
-        }
+        long remoteSize = assertContainerSourceSafe(handle, source);
         long limit = artifactLimits.getOrDefault(handle.id(), 0L);
-        if (limit > 0 && Files.exists(local) && Files.size(local) > limit) {
-            Files.deleteIfExists(local);
-            throw new IOException("Downloaded artifact " + source
-                + " exceeds SANDBOX_ARTIFACT_MAX_BYTES=" + limit);
+        if (limit > 0 && remoteSize > limit) {
+            throw new IOException("Artifact " + source + " is " + remoteSize
+                + " bytes, over SANDBOX_ARTIFACT_MAX_BYTES=" + limit);
+        }
+
+        Path parent = local.toAbsolutePath().getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        Path temp = Files.createTempFile(
+            parent == null ? Path.of(".") : parent, ".sandbox-download-", ".tmp");
+        try {
+            DockerResult result = runDocker(
+                List.of(config.dockerBinary(), "cp",
+                    handle.id() + ":" + source, temp.toString()),
+                COPY_TIMEOUT,
+                CONTROL_OUTPUT_BYTES
+            );
+            if (result.exitCode() != 0 || result.timedOut()) {
+                throw new IOException("Could not download " + source + " to " + local + ": "
+                    + result.output());
+            }
+            if (limit > 0 && Files.size(temp) > limit) {
+                throw new IOException("Downloaded artifact " + source
+                    + " exceeds SANDBOX_ARTIFACT_MAX_BYTES=" + limit);
+            }
+            Files.move(temp, local, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            Files.deleteIfExists(temp);
         }
     }
 
@@ -205,8 +232,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
         if (handle == null) {
             return;
         }
-        active.remove(handle.id());
-        runControl(List.of(config.dockerBinary(), "kill", "--signal", "KILL", handle.id()));
+        stopByName(handle.id());
     }
 
     @Override
@@ -214,11 +240,14 @@ public final class DockerSandboxRunner implements SandboxRunner {
         if (handle == null) {
             return;
         }
+        stopWatchdog(handle.id());
         destroyByName(handle.id());
         active.remove(handle.id());
         created.remove(handle.id());
         maxDurations.remove(handle.id());
         artifactLimits.remove(handle.id());
+        quotaFlags.remove(handle.id());
+        runningProcesses.remove(handle.id());
     }
 
     @Override
@@ -226,10 +255,21 @@ public final class DockerSandboxRunner implements SandboxRunner {
         for (String name : new ArrayList<>(created)) {
             destroyByName(name);
         }
+        for (ScheduledExecutorService watchdog : new ArrayList<>(watchdogs.values())) {
+            watchdog.shutdownNow();
+        }
         created.clear();
         active.clear();
         maxDurations.clear();
         artifactLimits.clear();
+        quotaFlags.clear();
+        watchdogs.clear();
+        runningProcesses.clear();
+        try {
+            Runtime.getRuntime().removeShutdownHook(shutdownHook);
+        } catch (IllegalStateException ignored) {
+            // Already shutting down; the hook is running this method.
+        }
     }
 
     private void requireActive(SandboxHandle handle) throws IOException {
@@ -244,8 +284,27 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
     }
 
+    private void stopByName(String name) {
+        active.remove(name);
+        runControl(List.of(config.dockerBinary(), "kill", "--signal", "KILL", name));
+    }
+
     private void destroyByName(String name) {
         runControl(List.of(config.dockerBinary(), "rm", "-f", name));
+    }
+
+    private void stopWatchdog(String name) {
+        ScheduledExecutorService watchdog = watchdogs.remove(name);
+        if (watchdog != null) {
+            watchdog.shutdownNow();
+        }
+    }
+
+    private void killRunningProcess(String name) {
+        Process running = runningProcesses.get(name);
+        if (running != null) {
+            ProcessGroup.kill(running);
+        }
     }
 
     private void runControl(List<String> command) {
@@ -261,13 +320,45 @@ public final class DockerSandboxRunner implements SandboxRunner {
     }
 
     /**
-     * Watch the supervisor-visible workspace size. {@code --storage-opt}
-     * bounds the container writable layer, not a bind mount, so this is the
-     * real total quota. The per-file {@code fsize} ulimit remains in place as
-     * a fast burst guard.
+     * Kill every process in the container except PID 1 and the cleanup shell
+     * itself. {@code docker exec} shares the container PID namespace, so a
+     * normal command exit would otherwise leave daemonized children editing the
+     * bind-mounted workspace after verification.
+     */
+    private void killDescendants(SandboxHandle handle) {
+        String script = "for d in /proc/[0-9]*; do "
+            + "p=${d#/proc/}; "
+            + "[ \"$p\" = \"1\" ] && continue; "
+            + "[ \"$p\" = \"$$\" ] && continue; "
+            + "kill -9 \"$p\" 2>/dev/null || true; "
+            + "done; echo OK";
+        try {
+            DockerResult result = runDocker(
+                List.of(config.dockerBinary(), "exec",
+                    handle.id(), "/bin/sh", "-c", script),
+                CONTROL_TIMEOUT,
+                1_024,
+                handle.id()
+            );
+            if (result.timedOut() || result.exitCode() != 0
+                || !result.output().trim().endsWith("OK")) {
+                log.warn("Sandbox {} descendant cleanup failed; stopping it", handle.id());
+                stop(handle);
+            }
+        } catch (RuntimeException e) {
+            log.warn("Sandbox {} descendant cleanup failed: {}", handle.id(), e.getMessage());
+            stop(handle);
+        }
+    }
+
+    /**
+     * Watch the supervisor-visible workspace for the sandbox lifetime.
+     * {@code --storage-opt} bounds the container writable layer, not a bind
+     * mount, so this is the real total quota. Measurement failure fails closed.
      */
     private ScheduledExecutorService startDiskWatchdog(
-        SandboxHandle handle,
+        String name,
+        Path workspace,
         AtomicBoolean exceeded
     ) {
         long limit = config.limits().diskBytes();
@@ -276,7 +367,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
         long interval = Math.max(1, config.diskCheckInterval().toSeconds());
         ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "sandbox-disk-" + handle.id());
+            Thread thread = new Thread(runnable, "sandbox-disk-" + name);
             thread.setDaemon(true);
             return thread;
         });
@@ -284,16 +375,31 @@ public final class DockerSandboxRunner implements SandboxRunner {
             if (exceeded.get()) {
                 return;
             }
-            long size = workspaceSize(handle.workspace());
-            if (size > limit) {
-                exceeded.set(true);
-                log.warn("Sandbox {} exceeded the workspace quota ({} > {} bytes); killing it",
-                    handle.id(), size, limit);
-                Process running = currentDockerProcess;
-                if (running != null) {
-                    ProcessGroup.kill(running);
+            try {
+                long size = workspaceSize(workspace);
+                if (size < 0) {
+                    exceeded.set(true);
+                    log.warn("Sandbox {} could not measure its workspace; failing closed", name);
+                    killRunningProcess(name);
+                    stopByName(name);
+                    return;
                 }
-                stop(handle);
+                if (size > limit) {
+                    exceeded.set(true);
+                    log.warn(
+                        "Sandbox {} exceeded the workspace quota ({} > {} bytes); killing it",
+                        name, size, limit);
+                    killRunningProcess(name);
+                    stopByName(name);
+                }
+            } catch (RuntimeException e) {
+                // A lazy Files.walk can throw during iteration. Never let the
+                // scheduled task cancel silently and disable the quota.
+                exceeded.set(true);
+                log.warn("Sandbox {} quota check failed; failing closed: {}",
+                    name, e.getMessage());
+                killRunningProcess(name);
+                stopByName(name);
             }
         }, interval, interval, TimeUnit.SECONDS);
         return executor;
@@ -313,67 +419,93 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     }
                 })
                 .sum();
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             log.debug("Could not measure sandbox workspace {}: {}", root, e.getMessage());
             return -1L;
         }
     }
 
     /**
-     * Reject a download whose container path is a symlink or resolves outside
-     * {@code /workspace}. {@code docker cp} follows symlinks, so the check has
-     * to happen inside the container first.
+     * Run a fail-closed guard inside the container.
+     *
+     * <p>The guard must exit zero, not time out, and print an explicit
+     * {@code OK} sentinel. An empty output with a non-zero exit is a failure,
+     * never a pass.</p>
      */
-    private void assertContainerSourceSafe(SandboxHandle handle, String source)
+    private DockerResult runGuard(SandboxHandle handle, String script) throws IOException {
+        DockerResult result = runDocker(
+            List.of(config.dockerBinary(), "exec", handle.id(), "/bin/sh", "-c", script),
+            CONTROL_TIMEOUT,
+            1_024
+        );
+        if (result.timedOut()) {
+            throw new IOException("Sandbox file-copy guard timed out");
+        }
+        if (result.exitCode() != 0) {
+            throw new IOException("Sandbox file-copy guard failed (exit "
+                + result.exitCode() + "): " + result.output());
+        }
+        return result;
+    }
+
+    /**
+     * Reject a download whose container path is a symlink, non-regular file,
+     * or resolves outside {@code /workspace}. Returns the size measured inside
+     * the container so the artifact cap is applied before {@code docker cp}.
+     */
+    private long assertContainerSourceSafe(SandboxHandle handle, String source)
         throws IOException {
         String quoted = shellQuote(source);
         String script = "p=" + quoted + "; "
             + "if [ -L \"$p\" ]; then echo SYMLINK; exit 0; fi; "
             + "if [ ! -f \"$p\" ]; then echo NOTFILE; exit 0; fi; "
             + "r=$(readlink -f \"$p\" 2>/dev/null || true); "
-            + "if [ -z \"$r\" ]; then echo MISSING; "
-            + "elif [ \"$r\" != \"/workspace\" ] && [ \"${r#/workspace/}\" = \"$r\" ]; then echo ESCAPE; fi";
-        DockerResult result = runDocker(
-            List.of(config.dockerBinary(), "exec", handle.id(), "/bin/sh", "-c", script),
-            CONTROL_TIMEOUT,
-            1_024
-        );
-        String output = result.output().trim();
-        if (output.contains("SYMLINK") || output.contains("ESCAPE")
-            || output.contains("MISSING") || output.contains("NOTFILE")) {
+            + "case \"$r\" in /workspace|/workspace/*) ;; *) echo ESCAPE; exit 0;; esac; "
+            + "s=$(wc -c < \"$p\" 2>/dev/null || echo -1); "
+            + "echo \"OK $s\"";
+        String output = runGuard(handle, script).output().trim();
+        if (!output.startsWith("OK ")) {
             throw new IOException(
-                "Refusing to copy a non-regular, symlinked or outside-workspace path: " + source);
+                "Refusing to copy a symlinked, non-regular or outside-workspace path: "
+                    + source + " (" + output + ")");
+        }
+        try {
+            long size = Long.parseLong(output.substring(3).trim());
+            if (size < 0) {
+                throw new IOException("Guard could not size " + source);
+            }
+            return size;
+        } catch (NumberFormatException e) {
+            throw new IOException("Guard returned an invalid size for " + source
+                + ": " + output, e);
         }
     }
 
     /**
-     * Create the upload parent inside the container only after proving its
-     * ancestor chain has no symlink escaping {@code /workspace}.
+     * Create the upload parent only after proving the target is a regular file
+     * (or absent) and its ancestor chain has no symlink escaping
+     * {@code /workspace}.
      */
     private void prepareContainerParent(SandboxHandle handle, String target)
         throws IOException {
         String parent = parentOf(target);
-        String quoted = shellQuote(parent);
+        String quotedParent = shellQuote(parent);
         String script = "p=" + shellQuote(target) + "; "
             + "if [ -L \"$p\" ]; then echo SYMLINK; exit 0; fi; "
-            + "d=" + quoted + "; "
+            + "if [ -e \"$p\" ] && [ ! -f \"$p\" ]; then echo NOTFILE; exit 0; fi; "
+            + "d=" + quotedParent + "; "
             + "while [ \"$d\" != \"/workspace\" ] && [ \"$d\" != \"/\" ] && [ \"$d\" != \".\" ]; do "
             + "  if [ -L \"$d\" ]; then echo SYMLINK; exit 0; fi; "
             + "  d=$(dirname \"$d\"); "
             + "done; "
-            + "mkdir -p " + quoted + " 2>/dev/null || true; "
-            + "r=$(readlink -f " + quoted + " 2>/dev/null || true); "
-            + "if [ -z \"$r\" ]; then echo MISSING; "
-            + "elif [ \"$r\" != \"/workspace\" ] && [ \"${r#/workspace/}\" = \"$r\" ]; then echo ESCAPE; fi";
-        DockerResult result = runDocker(
-            List.of(config.dockerBinary(), "exec", handle.id(), "/bin/sh", "-c", script),
-            CONTROL_TIMEOUT,
-            1_024
-        );
-        String output = result.output().trim();
-        if (output.contains("SYMLINK") || output.contains("ESCAPE") || output.contains("MISSING")) {
+            + "mkdir -p " + quotedParent + " 2>/dev/null || { echo MKDIRFAILED; exit 0; }; "
+            + "r=$(readlink -f " + quotedParent + " 2>/dev/null || true); "
+            + "case \"$r\" in /workspace|/workspace/*) echo OK ;; *) echo ESCAPE ;; esac";
+        String output = runGuard(handle, script).output().trim();
+        if (!"OK".equals(output)) {
             throw new IOException(
-                "Refusing to copy through a symlink or outside /workspace: " + target);
+                "Refusing to copy a symlinked, non-regular or outside-workspace path: "
+                    + target + " (" + output + ")");
         }
     }
 
@@ -387,7 +519,16 @@ public final class DockerSandboxRunner implements SandboxRunner {
     }
 
     private DockerResult runDocker(List<String> command, Duration timeout, int maxOutputBytes) {
-        ProcessBuilder builder = new ProcessBuilder(command);
+        return runDocker(command, timeout, maxOutputBytes, null);
+    }
+
+    private DockerResult runDocker(
+        List<String> command,
+        Duration timeout,
+        int maxOutputBytes,
+        String sandboxId
+    ) {
+        ProcessBuilder builder = new ProcessBuilder(ProcessGroup.wrap(command));
         builder.redirectErrorStream(true);
         EnvironmentSanitizer.sanitize(builder.environment());
         copyDockerEnvironment(builder.environment());
@@ -396,7 +537,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
         Process process = null;
         try {
             process = builder.start();
-            currentDockerProcess = process;
+            if (sandboxId != null) {
+                runningProcesses.put(sandboxId, process);
+            }
             Process running = process;
             Thread reader = new Thread(() -> {
                 try (InputStream input = running.getInputStream()) {
@@ -426,7 +569,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
         } catch (IOException e) {
             return new DockerResult(-1, e.getMessage(), false, false);
         } finally {
-            currentDockerProcess = null;
+            if (sandboxId != null && process != null) {
+                runningProcesses.remove(sandboxId, process);
+            }
         }
     }
 
@@ -521,7 +666,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
             args.add("size=" + limits.diskBytes());
         }
 
-        args.add("--init");
+        // No --init: PID 1 must remain the shell loop so the post-exec
+        // descendant sweep can kill everything else without exiting the
+        // container. --pids-limit and the sweep bound runaway children.
         // Slice 1 is default-deny. The allowlist proxy is fg-34 slice 2.
         args.add("--network");
         args.add("none");

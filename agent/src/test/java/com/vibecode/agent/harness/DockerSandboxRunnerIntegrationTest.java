@@ -31,7 +31,7 @@ class DockerSandboxRunnerIntegrationTest {
     Path tempDir;
 
     @Test
-    void runsCommandsAsANonRootUserInADisposableSandbox() throws IOException {
+    void runsCommandsAsANonRootUserInADisposableSandbox() throws Exception {
         String image = System.getenv("SANDBOX_IT_IMAGE");
         Assumptions.assumeTrue(image != null && !image.isBlank(),
             "SANDBOX_IT_IMAGE is not set; skipping the Docker sandbox smoke test");
@@ -78,6 +78,40 @@ class DockerSandboxRunnerIntegrationTest {
                         tempDir.resolve("leak.out")));
                 assertThrows(IOException.class,
                     () -> runner.putFile(handle, upload, "/workspace/leak"));
+
+                ExecResult background = runner.exec(handle, ExecRequest.of(
+                    "sh -c '(sleep 2; echo late > late.txt) >/dev/null 2>&1 &' ; true",
+                    Duration.ofSeconds(20)));
+                assertTrue(background.passed(), background.output());
+                Thread.sleep(2_500);
+                assertFalse(Files.exists(workspace.resolve("late.txt")),
+                    "background process survived a normal exec");
+
+                ExecResult lifecycle = runner.exec(handle, ExecRequest.of(
+                    "printf '#!/bin/sh\\n(sleep 2; echo pwned > lifecycle.txt) "
+                        + ">/dev/null 2>&1 &\\n' "
+                        + "> postinstall.sh && chmod +x postinstall.sh && ./postinstall.sh",
+                    Duration.ofSeconds(20)));
+                assertTrue(lifecycle.passed(), lifecycle.output());
+                Thread.sleep(2_500);
+                assertFalse(Files.exists(workspace.resolve("lifecycle.txt")),
+                    "postinstall-like child survived a normal exec");
+
+                ExecResult fifo = runner.exec(handle,
+                    ExecRequest.of("mkfifo fifo", Duration.ofSeconds(20)));
+                assertTrue(fifo.passed(), fifo.output());
+                assertThrows(IOException.class,
+                    () -> runner.putFile(handle, upload, "/workspace/fifo"));
+
+                ExecResult big = runner.exec(handle, ExecRequest.of(
+                    "dd if=/dev/zero of=big.bin bs=1M count=2 2>/dev/null",
+                    Duration.ofSeconds(20)));
+                assertTrue(big.passed(), big.output());
+                Path bigDownload = tempDir.resolve("big.bin");
+                assertThrows(IOException.class,
+                    () -> runner.getFile(handle, "/workspace/big.bin", bigDownload));
+                assertFalse(Files.exists(bigDownload),
+                    "an over-cap download must be rejected before docker cp");
 
                 ExecResult readOnly = runner.exec(handle, ExecRequest.of(
                     "touch /etc/sandbox-escape 2>/dev/null || echo READONLY",
@@ -153,6 +187,7 @@ class DockerSandboxRunnerIntegrationTest {
         env.put("SANDBOX_NOFILE", "256");
         env.put("SANDBOX_TMPFS_MB", "64");
         env.put("SANDBOX_EXEC_TIMEOUT_SECONDS", "30");
+        env.put("SANDBOX_ARTIFACT_MAX_BYTES", "1024");
         env.putAll(extra);
         return SandboxConfig.from(env::get);
     }

@@ -1,5 +1,6 @@
 package com.vibecode.agent.harness;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -139,6 +140,19 @@ class HostSandboxRunnerTest {
         Path directory = Files.createDirectories(tempDir.resolve("dir"));
 
         assertThrows(IOException.class, () -> runner.putFile(handle, directory, "/workspace/dir"));
+    }
+
+    @Test
+    void putFileRejectsANonRegularTarget() throws Exception {
+        Assumptions.assumeFalse(windows(), "mkfifo is POSIX");
+        HostSandboxRunner runner = runner();
+        SandboxHandle handle = handle(runner);
+        Path fifo = tempDir.resolve("fifo");
+        Process mkfifo = new ProcessBuilder("mkfifo", fifo.toString()).start();
+        assertEquals(0, mkfifo.waitFor());
+        Path local = Files.writeString(tempDir.resolve("local.txt"), "hello");
+
+        assertThrows(IOException.class, () -> runner.putFile(handle, local, "/workspace/fifo"));
     }
 
     @Test

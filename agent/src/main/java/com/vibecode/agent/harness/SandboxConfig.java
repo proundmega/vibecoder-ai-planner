@@ -176,8 +176,9 @@ public record SandboxConfig(
             throw new IllegalStateException("Sandbox limits are required");
         }
         try {
-            if (Double.parseDouble(limits.cpus()) <= 0) {
-                throw new IllegalStateException("SANDBOX_CPUS must be positive");
+            double cpus = Double.parseDouble(limits.cpus());
+            if (!Double.isFinite(cpus) || cpus <= 0) {
+                throw new IllegalStateException("SANDBOX_CPUS must be a finite positive number");
             }
         } catch (NumberFormatException e) {
             throw new IllegalStateException("SANDBOX_CPUS must be a number");
