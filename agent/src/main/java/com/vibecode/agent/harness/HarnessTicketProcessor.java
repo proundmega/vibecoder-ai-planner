@@ -51,6 +51,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private final GitHubService gitHubService;
     private final String githubToken;
     private final HarnessConfig harnessConfig;
+    private final SandboxConfig sandboxConfig;
+    private final SandboxRunner sandboxRunner;
     private final Function<String, WorkspaceManager> workspaceFactory;
     private final Function<Path, HarnessClient> harnessFactory;
     private final PlanningDocFetcher planningDocFetcher;
@@ -118,7 +120,13 @@ public final class HarnessTicketProcessor implements TicketWorker {
             tempDir -> new OpenCodeClient(harnessConfig, provider, tempDir),
             new PlanningDocFetcher(apiService, config),
             new VerificationRunner(harnessConfig),
-            new PublishingGuard(harnessConfig.protectedPaths())
+            new PublishingGuard(harnessConfig.protectedPaths()),
+            config.getSandboxConfig() == null
+                ? SandboxConfig.defaults()
+                : config.getSandboxConfig(),
+            SandboxRunnerFactory.create(config.getSandboxConfig() == null
+                ? SandboxConfig.defaults()
+                : config.getSandboxConfig())
         );
     }
 
@@ -135,12 +143,46 @@ public final class HarnessTicketProcessor implements TicketWorker {
         VerificationRunner verificationRunner,
         PublishingGuard publishingGuard
     ) {
+        this(
+            config,
+            apiService,
+            provider,
+            gitHubService,
+            githubToken,
+            harnessConfig,
+            workspaceFactory,
+            harnessFactory,
+            planningDocFetcher,
+            verificationRunner,
+            publishingGuard,
+            SandboxConfig.defaults(),
+            SandboxRunnerFactory.hostOnly()
+        );
+    }
+
+    HarnessTicketProcessor(
+        AgentConfig config,
+        ApiService apiService,
+        ProviderSettings provider,
+        GitHubService gitHubService,
+        String githubToken,
+        HarnessConfig harnessConfig,
+        Function<String, WorkspaceManager> workspaceFactory,
+        Function<Path, HarnessClient> harnessFactory,
+        PlanningDocFetcher planningDocFetcher,
+        VerificationRunner verificationRunner,
+        PublishingGuard publishingGuard,
+        SandboxConfig sandboxConfig,
+        SandboxRunner sandboxRunner
+    ) {
         this.config = config;
         this.apiService = apiService;
         this.provider = provider;
         this.gitHubService = gitHubService;
         this.githubToken = githubToken;
         this.harnessConfig = harnessConfig;
+        this.sandboxConfig = sandboxConfig == null ? SandboxConfig.defaults() : sandboxConfig;
+        this.sandboxRunner = sandboxRunner == null ? SandboxRunnerFactory.hostOnly() : sandboxRunner;
         this.workspaceFactory = workspaceFactory;
         this.harnessFactory = harnessFactory;
         this.planningDocFetcher = planningDocFetcher;
@@ -577,6 +619,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         WorkspaceManager workspace = null;
         HarnessClient harness = null;
         Path tempDir = null;
+        SandboxHandle sandbox = null;
 
         try {
             List<String> planningDocs = planningDocFetcher.fetch(pickedUp.getId());
@@ -612,6 +655,15 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 return;
             }
 
+            // Create the sandbox before the model runs. In Docker mode a
+            // create failure is fatal: repo code must never fall back to the
+            // supervisor filesystem.
+            if (sandboxConfig.isDocker()) {
+                currentStep = "sandbox";
+                sandbox = createSandbox(workspace);
+                recordCheckpoint("sandbox_ready", Map.of("sandbox", sandbox.id()));
+            }
+
             tempDir = Files.createTempDirectory("opencode-harness-");
             harness = harnessFactory.apply(tempDir);
 
@@ -642,8 +694,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             List<VerificationResult> verification = new ArrayList<>();
             List<String> installCommands = safeResolveInstallCommands(workspace);
             if (!installCommands.isEmpty()) {
-                List<VerificationResult> installResults = verificationRunner.run(
-                    workspace.getRepoDir(), installCommands, remaining(deadline, INSTALL_TIMEOUT));
+                List<VerificationResult> installResults = runVerification(
+                    sandbox, workspace, installCommands, remaining(deadline, INSTALL_TIMEOUT));
                 verification.addAll(installResults);
                 List<VerificationResult> installFailures = failures(installResults);
                 if (!installFailures.isEmpty()) {
@@ -655,8 +707,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
 
             currentStep = "verifying";
-            List<VerificationResult> verifyResults = verificationRunner.run(
-                workspace.getRepoDir(), commands, remaining(deadline, VERIFICATION_TIMEOUT));
+            List<VerificationResult> verifyResults = runVerification(
+                sandbox, workspace, commands, remaining(deadline, VERIFICATION_TIMEOUT));
             verification.addAll(verifyResults);
             recordCheckpoint("verifying", Map.of());
             if (!verification.isEmpty()) {
@@ -668,6 +720,23 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 failAndRelease(pickedUp.getId(),
                     "Verification failed; not publishing.\n\n" + failureDetails(verifyFailures));
                 return;
+            }
+
+            // Verification is complete. Destroy the sandbox before staging or
+            // publishing so no surviving repo process can edit the workspace
+            // between the verification gate and the guarded commit. A failed
+            // destroy is fatal: never publish with a live sandbox.
+            if (sandbox != null) {
+                SandboxHandle verifiedSandbox = sandbox;
+                try {
+                    sandboxRunner.destroy(verifiedSandbox);
+                } catch (IOException | RuntimeException e) {
+                    failAndRelease(pickedUp.getId(),
+                        "Could not destroy the sandbox before publishing; refusing to "
+                            + "stage or push: " + e.getMessage());
+                    return;
+                }
+                sandbox = null;
             }
 
             if (!assertLeaseHeld(pickedUp.getId())) {
@@ -762,6 +831,13 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
             closeQuietly(harness);
             deleteQuietly(tempDir);
+            if (sandbox != null) {
+                try {
+                    sandboxRunner.destroy(sandbox);
+                } catch (IOException | RuntimeException e) {
+                    log.warn("Could not destroy sandbox {}: {}", sandbox.id(), e.getMessage());
+                }
+            }
             if (workspace != null) {
                 workspace.cleanup();
             }
@@ -810,6 +886,37 @@ public final class HarnessTicketProcessor implements TicketWorker {
             log.warn("Could not resolve install commands: {}", e.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * Create the per-run sandbox. Any failure is fatal in Docker mode: the
+     * harness must not fall back to running repo code on the supervisor.
+     */
+    private SandboxHandle createSandbox(WorkspaceManager workspace) throws IOException {
+        try {
+            SandboxSpec spec = sandboxConfig.specFor(workspace.getRepoDir());
+            return sandboxRunner.create(spec);
+        } catch (IOException | RuntimeException e) {
+            throw new IOException(
+                "Sandbox creation failed (" + sandboxConfig.mode() + "): " + e.getMessage()
+                    + ". Refusing to run repo code without the requested sandbox.", e);
+        }
+    }
+
+    /**
+     * Route commands through the sandbox when one exists; otherwise keep the
+     * Phase 1 host path. The host path is only used when SANDBOX_MODE=host.
+     */
+    private List<VerificationResult> runVerification(
+        SandboxHandle sandbox,
+        WorkspaceManager workspace,
+        List<String> commands,
+        Duration timeout
+    ) {
+        if (sandbox != null) {
+            return verificationRunner.run(sandboxRunner, sandbox, commands, timeout);
+        }
+        return verificationRunner.run(workspace.getRepoDir(), commands, timeout);
     }
 
     private static List<VerificationResult> failures(List<VerificationResult> results) {

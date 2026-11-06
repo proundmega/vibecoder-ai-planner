@@ -1,6 +1,7 @@
 package com.vibecode.agent.config;
 
 import com.vibecode.agent.harness.HarnessConfig;
+import com.vibecode.agent.harness.SandboxConfig;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -51,6 +52,7 @@ public class AgentConfig {
     private final String repoCloneDir;
     private final String githubToken;
     private final HarnessConfig harnessConfig;
+    private final SandboxConfig sandboxConfig;
 
     public AgentConfig() {
         this.agentApiKey = requireEnv("AGENT_API_KEY");
@@ -71,6 +73,7 @@ public class AgentConfig {
         this.maxTicketsPerCycle = getIntEnv("MAX_TICKETS", 1);
         this.repoCloneDir = getEnv("REPO_CLONE_DIR", "/tmp/repos");
         this.harnessConfig = HarnessConfig.fromEnvironment();
+        this.sandboxConfig = SandboxConfig.fromEnvironment();
         if (this.repoOwner != null && !this.repoOwner.isBlank()) {
             validateCloneDir(this.repoCloneDir);
         }
@@ -116,6 +119,7 @@ public class AgentConfig {
     public String getGitHubToken() { return githubToken; }
 
     public HarnessConfig getHarnessConfig() { return harnessConfig; }
+    public SandboxConfig getSandboxConfig() { return sandboxConfig; }
     public String getHarnessMode() { return harnessConfig.mode(); }
     public String getHarnessBin() { return harnessConfig.binary(); }
     public long getHarnessStartupTimeoutMs() { return harnessConfig.startupTimeout().toMillis(); }
@@ -186,6 +190,7 @@ public class AgentConfig {
             ", maxTicketsPerCycle=" + maxTicketsPerCycle +
             ", repoCloneDir='" + repoCloneDir + '\'' +
             ", harnessMode='" + harnessConfig.mode() + '\'' +
+            ", sandboxMode='" + sandboxConfig.mode() + '\'' +
             '}';
     }
 }

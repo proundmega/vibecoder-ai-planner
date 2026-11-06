@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -31,8 +32,10 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -983,6 +986,108 @@ class HarnessTicketProcessorTest {
         assertEquals(3, processor.pruneStaleWorkspaces());
         verify(workspace).pruneStaleWorkspaces(
             any(), eq(List.of("/tmp/protected-workspace")));
+    }
+
+    @Test
+    void dockerModeRunsVerificationInTheSandboxAndDestroysIt() throws Exception {
+        SandboxHandle handle = new SandboxHandle("sandbox-1", tempDir, false, null);
+        SandboxRunner sandboxRunner = mock(SandboxRunner.class);
+        when(sandboxRunner.create(any())).thenReturn(handle);
+        when(verificationRunner.run(eq(sandboxRunner), eq(handle), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult("npm test", 0, "ok", false)));
+
+        HarnessTicketProcessor dockerProcessor = dockerProcessor(sandboxRunner);
+        dockerProcessor.processTicket(apiService.pickUpTicket(1L));
+
+        verify(sandboxRunner).create(any());
+        verify(verificationRunner).run(
+            eq(sandboxRunner), eq(handle), eq(List.of("npm test")), any());
+        verify(sandboxRunner).destroy(handle);
+    }
+
+    @Test
+    void dockerSandboxCreateFailureIsFatalAndSkipsTheHarness() throws Exception {
+        SandboxRunner sandboxRunner = mock(SandboxRunner.class);
+        when(sandboxRunner.create(any())).thenThrow(new IOException("docker down"));
+
+        HarnessTicketProcessor dockerProcessor = dockerProcessor(sandboxRunner);
+        dockerProcessor.processTicket(apiService.pickUpTicket(1L));
+
+        verify(harness, never()).start(any());
+        verify(verificationRunner, never()).run(any(), anyList(), any());
+        assertTrue(postedMessages().stream()
+            .anyMatch(message -> message.contains("Sandbox creation failed")));
+    }
+
+    @Test
+    void dockerModeDestroysTheSandboxBeforeStaging() throws Exception {
+        SandboxHandle handle = new SandboxHandle("sandbox-1", tempDir, false, null);
+        SandboxRunner sandboxRunner = mock(SandboxRunner.class);
+        when(sandboxRunner.create(any())).thenReturn(handle);
+        when(verificationRunner.run(eq(sandboxRunner), eq(handle), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult("npm test", 0, "ok", false)));
+
+        dockerProcessor(sandboxRunner).processTicket(apiService.pickUpTicket(1L));
+
+        InOrder inOrder = inOrder(sandboxRunner, workspace);
+        inOrder.verify(sandboxRunner).destroy(handle);
+        inOrder.verify(workspace).stageFreshDiff();
+    }
+
+    @Test
+    void dockerSandboxDestroyFailureStopsPublishing() throws Exception {
+        SandboxHandle handle = new SandboxHandle("sandbox-1", tempDir, false, null);
+        SandboxRunner sandboxRunner = mock(SandboxRunner.class);
+        when(sandboxRunner.create(any())).thenReturn(handle);
+        when(verificationRunner.run(eq(sandboxRunner), eq(handle), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult("npm test", 0, "ok", false)));
+        doThrow(new IOException("rm failed")).when(sandboxRunner).destroy(handle);
+
+        dockerProcessor(sandboxRunner).processTicket(apiService.pickUpTicket(1L));
+
+        verify(workspace, never()).stageFreshDiff();
+        verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
+        verify(gitHubService, never()).createPullRequest(
+            anyString(), anyString(), anyString(), anyString());
+        assertTrue(postedMessages().stream()
+            .anyMatch(message -> message.contains(
+                "Could not destroy the sandbox before publishing")));
+    }
+
+    @Test
+    void dockerSandboxDestroyIsRetriedInTheFinally() throws Exception {
+        SandboxHandle handle = new SandboxHandle("sandbox-1", tempDir, false, null);
+        SandboxRunner sandboxRunner = mock(SandboxRunner.class);
+        when(sandboxRunner.create(any())).thenReturn(handle);
+        when(verificationRunner.run(eq(sandboxRunner), eq(handle), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult("npm test", 0, "ok", false)));
+        doThrow(new IOException("first"))
+            .doNothing()
+            .when(sandboxRunner).destroy(handle);
+
+        dockerProcessor(sandboxRunner).processTicket(apiService.pickUpTicket(1L));
+
+        verify(sandboxRunner, times(2)).destroy(handle);
+        verify(workspace, never()).stageFreshDiff();
+    }
+
+    private HarnessTicketProcessor dockerProcessor(SandboxRunner sandboxRunner) {
+        SandboxConfig sandboxConfig = SandboxConfig.from(Map.of(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_USER", "1000:1000"
+        )::get);
+        return new HarnessTicketProcessor(
+            config, apiService, provider, gitHubService, "ghp_token",
+            harnessConfig,
+            repoName -> workspace,
+            ignored -> harness,
+            planningDocFetcher,
+            verificationRunner,
+            new PublishingGuard(harnessConfig.protectedPaths()),
+            sandboxConfig,
+            sandboxRunner
+        );
     }
 
     private List<String> postedMessages() throws Exception {

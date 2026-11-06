@@ -219,4 +219,97 @@ class VerificationRunnerTest {
 
         assertEquals(List.of("make verify"), commands);
     }
+
+    @Test
+    void sandboxedRunMapsExecResultsToVerificationResults() {
+        SandboxHandle handle = new SandboxHandle("sandbox-1", tempDir, false, null);
+        SandboxRunner sandbox = new SandboxRunner() {
+            @Override
+            public SandboxHandle create(SandboxSpec spec) {
+                return handle;
+            }
+
+            @Override
+            public ExecResult exec(SandboxHandle ignored, ExecRequest request) {
+                if ("npm test".equals(request.command())) {
+                    return new ExecResult(request.command(), 0, "all good", false, false);
+                }
+                return new ExecResult(request.command(), 2, "lint failed", false, false);
+            }
+
+            @Override
+            public void putFile(SandboxHandle ignored, java.nio.file.Path local, String remote) {
+            }
+
+            @Override
+            public void getFile(SandboxHandle ignored, String remote, java.nio.file.Path local) {
+            }
+
+            @Override
+            public void stop(SandboxHandle ignored) {
+            }
+
+            @Override
+            public void destroy(SandboxHandle ignored) {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+
+        List<VerificationResult> results = new VerificationRunner()
+            .run(sandbox, handle, List.of("npm test", "npm run lint"), Duration.ofSeconds(30));
+
+        assertEquals(2, results.size());
+        assertTrue(results.get(0).passed());
+        assertEquals("all good", results.get(0).output());
+        assertFalse(results.get(1).passed());
+        assertEquals(2, results.get(1).exitCode());
+        assertEquals("lint failed", results.get(1).output());
+    }
+
+    @Test
+    void sandboxedRunReportsExecTransportFailures() {
+        SandboxRunner sandbox = new SandboxRunner() {
+            @Override
+            public SandboxHandle create(SandboxSpec spec) {
+                return null;
+            }
+
+            @Override
+            public ExecResult exec(SandboxHandle ignored, ExecRequest request) throws IOException {
+                throw new IOException("sandbox is gone");
+            }
+
+            @Override
+            public void putFile(SandboxHandle ignored, java.nio.file.Path local, String remote) {
+            }
+
+            @Override
+            public void getFile(SandboxHandle ignored, String remote, java.nio.file.Path local) {
+            }
+
+            @Override
+            public void stop(SandboxHandle ignored) {
+            }
+
+            @Override
+            public void destroy(SandboxHandle ignored) {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+
+        List<VerificationResult> results = new VerificationRunner()
+            .run(sandbox, new SandboxHandle("sandbox-1", tempDir, false, null),
+                List.of("npm test"), Duration.ofSeconds(30));
+
+        assertEquals(1, results.size());
+        assertFalse(results.get(0).passed());
+        assertEquals(-1, results.get(0).exitCode());
+        assertTrue(results.get(0).output().contains("sandbox is gone"));
+    }
 }

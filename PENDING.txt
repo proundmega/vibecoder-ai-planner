@@ -17,13 +17,13 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 
 | Order | Ticket | State | Blocker |
 |-------|--------|-------|---------|
-| 1 | **bt-60** — durable-harness e2e | Ready, blocked | Disposable staging project/repo/agent, provider key and GitHub token. |
-| 2 | **fg-31** — automatic review harness | Blocked | fg-30 Phase 2 and fg-32. |
-| 3 | **fg-32** — review feedback loop | Blocked | fg-31, fg-30, fg-33. |
-| 4 | **fg-30 Phases 2-4** | Not ticketed | Needs its own ticket IDs before work starts. |
+| 1 | **fg-34** — harness sandbox | In review (#126, slice 1) | Sandbox runtime + install/verify isolation in review; egress allowlist/OpenCode bridge (slice 2) and prompt/supply-chain hardening (slice 3) pending. |
+| 2 | **bt-60** — durable-harness e2e | Ready, blocked | Disposable staging project/repo/agent, provider key and GitHub token. |
+| 3 | **fg-31** — automatic review harness | Blocked | fg-30 Phase 2 and fg-32. |
+| 4 | **fg-32** — review feedback loop | Blocked | fg-31, fg-30, fg-33. |
+| 5 | **fg-30 Phases 2-4** | Not ticketed | Needs its own ticket IDs before work starts. |
 
-`fg-34` (sandbox) and `fg-35` (GitHub App credentials) depend only on fg-30 Phase 1,
-which is merged, so they are unblocked but not yet scheduled. `fg-36` onward have unmet
+`fg-34` (sandbox) is in review as slice 1 (#126); `fg-35` (GitHub App credentials) depends only on fg-30 Phase 1 and remains unblocked but unscheduled. `fg-36` onward have unmet
 prerequisites, and `fg-46` is deferred. Do not start a roadmap suite until its
 "Depends on" column is satisfied.
 
@@ -134,7 +134,7 @@ Cross-cutting plans for the autonomous coding harness. See `planning/HARNESS_ROA
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|
 | **fg-33** | `fg-33-durable-harness-execution` | P0 | fg-30 Phase 1 | **Merged (#110)** — runs/checkpoints/leases, scheduled guarded reaping, startup recovery, `HARNESS_RESUME_MODE`, durable publish evidence, operator dead-letter/adoption, workspace retention, metrics and a runbook. Remaining: automatic dead-letter (FR8), full workspace inventory/scheduled cleanup (fg-44), structured events (fg-41), force-clean-restart action (FR10), CI process-kill matrix and live-session resume. |
-| **fg-34** | `fg-34-harness-sandbox` | P0 | fg-30 Phase 1 | Isolate repo code: limits, read-only rootfs, no host socket, egress allowlist, secretless execution, supply-chain checks. |
+| **fg-34** | `fg-34-harness-sandbox` | P0 | fg-30 Phase 1 | **In review (slice 1, #126)** — sandbox runtime + host/docker runners, limits, read-only rootfs, no host socket, secretless env, default-deny network, sandboxed install/verification. Pending: egress allowlist/OpenCode bridge (slice 2), prompt/supply-chain hardening (slice 3). |
 | **fg-35** | `fg-35-github-app-credentials` | P0 | fg-30 Phase 1 | Replace long-lived PATs with repo-scoped GitHub App installation tokens, short TTL, rotation and audit. |
 | **fg-36** | `fg-36-merge-lifecycle` | P1 | fg-31, fg-32 | Default/base branch detection, mergeability, update/rebase, conflict worker, CI gate, merge queue, post-merge rollback. |
 | **fg-37** | `fg-37-agent-evaluation-harness` | P1 | fg-30/31/32 | Golden task corpus, objective grading, metrics, model/prompt A/B, reviewer calibration, adversarial cases. |

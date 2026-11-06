@@ -41,20 +41,21 @@ Phase 1 relies on OpenCode config denies (`git push`, `rm -rf`, `docker`, etc.) 
 - **FR4 - Network:** default deny; allow only approved package registries and an internal artifact cache, via an egress proxy with logging. Provider/model calls stay in the supervisor, outside the sandbox.
 - **FR5 - Secrets:** no provider keys, GitHub tokens, DB passwords or agent API keys inside the sandbox; provider calls happen in the supervisor via a scoped proxy, and the sandbox holds no credentials.
 - **FR6 - User:** non-root, no-new-privileges, dropped capabilities, seccomp/AppArmor profile where available.
-- **FR7 - Artifacts:** extract diff, verification output and logs through an explicit artifact channel; never mount the host repo writable.
+- **FR7 - Artifacts:** Extract diff, verification output and logs through an explicit artifact channel. The disposable clone may be writable, but the host repository is never mounted writable and only the supervisor's publishing guard decides what is published.
 - **FR8 - Prompt-injection defense:** label repo content as untrusted, enforce instruction precedence, deny secret access, and scan outputs for suspicious commands/exfiltration.
 - **FR9 - Supply chain:** SBOM, image scan, signed/pinned base image, lockfile-aware installs.
-- **FR10 - Local mode:** a clearly labeled `SANDBOX_MODE=host` for Windows/dev, never the production default.
-- **FR11 - Control channel:** supervisor↔sandbox exec/file/stream API over a per-run authenticated local channel; OpenCode stays in the supervisor, repo code cannot reach the channel, and the sandbox exposes no inbound ports.
+- **FR10 - Local mode:** a clearly labeled `SANDBOX_MODE=host` for Windows/dev. During the Phase 1 rollout it remains the code default with a loud warning; production must set `SANDBOX_REQUIRE=true`, which refuses host mode.
+- **FR11 - Control channel:** supervisor↔sandbox exec/file/stream API over a per-run authenticated local channel; OpenCode stays in the supervisor, repo code cannot reach the channel, and the sandbox exposes no inbound ports. Slice 1 provides exec/file over the local control path; the per-run token, streaming and the OpenCode bash bridge are slice 2.
 
-## Safety requirements
+## Non-functional requirements
 
-- A sandbox escape must not expose the host workspace, credentials or other tickets.
-- A malicious test must not be able to reach the planner backend or metadata service.
-- The OpenCode server password and provider key remain outside the sandbox.
-- Killing a sandbox must kill all descendant processes.
-- Sandbox logs must be redacted before storage.
-- Failed sandbox creation must fail closed; never fall back silently to host execution in production.
+- **NFR1 - Escape containment:** a sandbox escape must not expose the host workspace, credentials or other tickets.
+- **NFR2 - No internal reachability:** a malicious test must not be able to reach the planner backend or metadata service.
+- **NFR3 - Supervisor-only secrets:** the OpenCode server password and provider key remain outside the sandbox.
+- **NFR4 - Process-tree kill:** killing a sandbox must kill all descendant processes.
+- **NFR5 - Redaction:** sandbox logs must be redacted before storage.
+- **NFR6 - Fail closed:** failed sandbox creation or pre-publish destruction must fail closed; never fall back silently to host execution in production, and never stage or push with a live sandbox.
+- **NFR7 - Non-root boundary:** the sandbox runs as a non-root user with no-new-privileges and dropped capabilities.
 
 ## Acceptance criteria
 
@@ -62,10 +63,10 @@ Phase 1 relies on OpenCode config denies (`git push`, `rm -rf`, `docker`, etc.) 
 2. A test that attempts network access to a non-allowlisted host is blocked and logged.
 3. CPU/memory/PID/disk breaches kill the run and mark it failed.
 4. No provider key or GitHub token is visible inside the sandbox.
-5. A malicious `postinstall` script runs contained and cannot persist beyond the run.
+5. A malicious `postinstall`-style script runs contained; its background children are swept after each command, but the documented fork-race window can persist until the pre-publish destroy (D14). The destroy gate prevents publishing with a live sandbox.
 6. The diff and test output are extracted correctly.
 7. The sandbox image has a SBOM and passes the scanner threshold.
-8. Host mode is opt-in and warns loudly.
+8. Host mode is the Phase 1 compatibility default, warns loudly, and production sets `SANDBOX_REQUIRE=true`, which refuses it.
 
 ## Out of scope
 
