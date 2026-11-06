@@ -17,7 +17,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 
 | Order | Ticket | State | Blocker |
 |-------|--------|-------|---------|
-| 1 | **bp-133** — bp-124 deferred follow-ups | Ready (bp-124 merged) | D12/D13/D14/D16; FR4 needs its own review. |
+| 1 | **bp-133** — bp-124 deferred follow-ups | In progress (FR4 remains) | FR1-FR3 on `feat/bp-133-fr1-fr3`; FR4 needs its own review. |
 | 2 | **bt-60** — durable-harness e2e | Ready, blocked | Disposable staging project/repo/agent, provider key and GitHub token. |
 | 3 | **fg-31** — automatic review harness | Blocked | fg-30 Phase 2 and fg-32. |
 | 4 | **fg-32** — review feedback loop | Blocked | fg-31, fg-30, fg-33. |
@@ -100,7 +100,7 @@ prerequisites, and `fg-46` is deferred. Do not start a roadmap suite until its
 | **bp-122** | `bp-122-code-cleanup` | P3 | ~~**Planned (2026-09-15)** — Three code quality issues from PR #97: (1) Dead `createPullRequestRetry()` method in agent GitHubService, (2) Verbose 8-parameter `Ticket.update()` signature, (3) Unpinned git version in Agent Dockerfile. All independent cleanups, no cross-dependencies.~~ ✅ Done (PR #99) |
 | ~~**bp-123**~~ | `DONE/bp-123-test-audit-corrections` | P0 | ✅ Done (merged PR #100, commit `4d62350`) — Full test/quality audit corrections: assignee validation against `project_memberships`, password-hash serialization, lockout `Retry-After`, ticket field mapping, no-op status updates, `critical` priority end-to-end, no-DB migration dry-run, Windows POSIX guard, refreshed Cypress specs. Remaining open defects were fixed by bp-124; deferred follow-ups are owned by bp-133. |
 | ~~**bp-124**~~ | `DONE/bp-124-audit-open-defects` | P1 | ✅ Done (2026-11-06, PRs #116-#121) — O1 milestone persistence; O2 dead SQL deleted; O3 Cypress E2E + Jenkins stage; O4 agent identity FK/backfill; O5 validator camelCase; O6 PUT returns Ticket; O7 docs drift; O8 integration setup fails on migration errors; O9 component-test backfill; O10 dry-run documented as structural-only; FR11 DONE hygiene. Follow-ups D12/D13/D14/D16 owned by bp-133. |
-| **bp-133** | `bp-133-deferred-followups` | P2 | **Planned (2026-11-06) — ready to schedule** (bp-124 merged) — D12 regenerate the frontend generated client types; D13 clean up remaining OpenAPI BIGSERIAL id formats; D14 exclude soft-deleted users from both admin lists; D16 enforce project membership for ticket writes. FR4 is an authorization change and needs its own review. |
+| **bp-133** | `bp-133-deferred-followups` | P2 | **In progress (2026-11-06)** — ✅ FR1 regenerate the frontend generated client types; ✅ FR2 remaining OpenAPI BIGSERIAL id formats; ✅ FR3 exclude soft-deleted users from both admin lists. ⬜ FR4 enforce project membership for ticket writes (authorization; needs its own review). |
 
 ## Test Backfills (bt-*)
 
