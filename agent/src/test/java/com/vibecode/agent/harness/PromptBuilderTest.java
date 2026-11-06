@@ -55,6 +55,19 @@ class PromptBuilderTest {
     }
 
     @Test
+    void sandboxedBashPointsTheModelAtTheBridgeTool() {
+        String hostPrompt = new PromptBuilder().build(
+            ticket(), List.of(), List.of("npm test"));
+        String sandboxPrompt = new PromptBuilder().build(
+            ticket(), List.of(), List.of("npm test"), true);
+
+        assertFalse(hostPrompt.contains("sandbox_bash"));
+        assertTrue(sandboxPrompt.contains("sandbox_bash"));
+        assertTrue(sandboxPrompt.contains("/workspace"));
+        assertTrue(sandboxPrompt.contains("built-in `bash` tool is disabled"));
+    }
+
+    @Test
     void emptyPlanningDocsStillProducesValidPrompt() {
         String prompt = new PromptBuilder().build(ticket(), null, null);
 

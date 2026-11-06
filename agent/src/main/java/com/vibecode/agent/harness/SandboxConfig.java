@@ -22,6 +22,7 @@ import java.util.function.Function;
 public record SandboxConfig(
     SandboxMode mode,
     String image,
+    String proxyImage,
     String dockerBinary,
     Duration execTimeout,
     Limits limits,
@@ -29,6 +30,7 @@ public record SandboxConfig(
     boolean networkEnabled,
     List<String> allowedHosts,
     String egressProxy,
+    String egressUpstreamNetwork,
     Map<String, String> runEnv,
     String user,
     boolean requireSandbox,
@@ -44,6 +46,9 @@ public record SandboxConfig(
     public static final String DEFAULT_DOCKER_BINARY = "docker";
     public static final String DEFAULT_USER = "1000:1000";
     public static final String DEFAULT_CONTAINER_WORKSPACE_ROOT = "/repos";
+    public static final String DEFAULT_EGRESS_UPSTREAM_NETWORK = "bridge";
+    public static final String NETWORK_NONE = "none";
+    public static final String NETWORK_ALLOWLIST = "allowlist";
     public static final Duration DEFAULT_EXEC_TIMEOUT = Duration.ofMinutes(15);
     public static final Duration DEFAULT_DISK_CHECK_INTERVAL = Duration.ofSeconds(10);
     public static final long DEFAULT_ARTIFACT_MAX_BYTES = 5L * 1024 * 1024;
@@ -82,12 +87,19 @@ public record SandboxConfig(
             mbToBytes(longValue(env, "SANDBOX_TMPFS_MB", 256L, 1L))
         );
 
-        String network = normalize(value(env, "SANDBOX_NETWORK", "none"));
-        boolean networkEnabled = !"none".equals(network);
+        String network = normalize(value(env, "SANDBOX_NETWORK", NETWORK_NONE));
+        if (!NETWORK_NONE.equals(network) && !NETWORK_ALLOWLIST.equals(network)) {
+            throw new IllegalStateException(
+                "SANDBOX_NETWORK must be one of: none, allowlist (got: " + network + ")");
+        }
+        boolean networkEnabled = NETWORK_ALLOWLIST.equals(network);
+
+        String sandboxImage = value(env, "SANDBOX_IMAGE", DEFAULT_IMAGE);
 
         SandboxConfig config = new SandboxConfig(
             mode,
-            value(env, "SANDBOX_IMAGE", DEFAULT_IMAGE),
+            sandboxImage,
+            value(env, "SANDBOX_PROXY_IMAGE", sandboxImage),
             value(env, "SANDBOX_DOCKER_BIN", DEFAULT_DOCKER_BINARY),
             Duration.ofSeconds(longValue(env, "SANDBOX_EXEC_TIMEOUT_SECONDS",
                 DEFAULT_EXEC_TIMEOUT.toSeconds(), 1L)),
@@ -97,6 +109,7 @@ public record SandboxConfig(
             networkEnabled,
             normalizeHosts(value(env, "SANDBOX_ALLOWED_HOSTS", "")),
             value(env, "SANDBOX_EGRESS_PROXY", ""),
+            value(env, "SANDBOX_EGRESS_UPSTREAM_NETWORK", DEFAULT_EGRESS_UPSTREAM_NETWORK),
             parseEnv(value(env, "SANDBOX_ENV", "")),
             value(env, "SANDBOX_USER", defaultUser()),
             booleanValue(env, "SANDBOX_REQUIRE", false),
@@ -130,6 +143,7 @@ public record SandboxConfig(
         }
         if (mode == SandboxMode.DOCKER) {
             requireText(image, "SANDBOX_IMAGE");
+            requireText(proxyImage, "SANDBOX_PROXY_IMAGE");
             requireText(dockerBinary, "SANDBOX_DOCKER_BIN");
         }
 
@@ -147,12 +161,29 @@ public record SandboxConfig(
         }
 
         if (networkEnabled) {
-            // Slice 1 intentionally ships default-deny only. The allowlist
-            // proxy is fg-34 slice 2; accepting the setting without enforcing
-            // it would silently weaken the boundary.
-            throw new IllegalStateException(
-                "SANDBOX_NETWORK other than 'none' is not implemented yet "
-                    + "(fg-34 slice 2 adds the egress allowlist proxy)");
+            if (mode == SandboxMode.HOST) {
+                throw new IllegalStateException(
+                    "SANDBOX_NETWORK=allowlist requires SANDBOX_MODE=docker; "
+                        + "host mode is not a security boundary");
+            }
+            if (allowedHosts == null || allowedHosts.isEmpty()) {
+                throw new IllegalStateException(
+                    "SANDBOX_ALLOWED_HOSTS must list at least one host when "
+                        + "SANDBOX_NETWORK=allowlist");
+            }
+            if (egressProxy != null && !egressProxy.isBlank()) {
+                // The built-in proxy runs inside the sandbox's internal network.
+                // An arbitrary external proxy URL would reintroduce direct
+                // egress without an enforceable boundary.
+                throw new IllegalStateException(
+                    "SANDBOX_EGRESS_PROXY is not supported with the built-in "
+                        + "allowlist proxy; leave it empty");
+            }
+            requireText(egressUpstreamNetwork, "SANDBOX_EGRESS_UPSTREAM_NETWORK");
+            if (!egressUpstreamNetwork.matches("[A-Za-z0-9_.-]+")) {
+                throw new IllegalStateException(
+                    "SANDBOX_EGRESS_UPSTREAM_NETWORK must be a Docker network name");
+            }
         }
 
         requireText(containerWorkspaceRoot, "SANDBOX_CONTAINER_WORKSPACE_ROOT");
@@ -232,6 +263,7 @@ public record SandboxConfig(
         Path mountSource = mountSource(supervisorWorkspace);
         return new SandboxSpec(
             image,
+            proxyImage,
             supervisorWorkspace,
             mountSource,
             execTimeout,
@@ -239,6 +271,7 @@ public record SandboxConfig(
             networkEnabled,
             allowedHosts,
             egressProxy,
+            egressUpstreamNetwork,
             withSafeDefaults(runEnv),
             user,
             seccompProfile,
@@ -301,14 +334,56 @@ public record SandboxConfig(
             if (host.isEmpty()) {
                 continue;
             }
-            if (host.contains("*") || host.equals("0.0.0.0") || host.equals("::")
-                || host.equals("localhost")) {
-                throw new IllegalStateException(
-                    "SANDBOX_ALLOWED_HOSTS must list concrete external hosts, not: " + host);
-            }
+            validateHostPattern(host);
             hosts.add(host);
         }
         return List.copyOf(hosts);
+    }
+
+    private static void validateHostPattern(String pattern) {
+        String host = pattern;
+        if (host.startsWith("*.")) {
+            host = host.substring(2);
+            if (host.isEmpty() || !host.contains(".")) {
+                throw new IllegalStateException(
+                    "SANDBOX_ALLOWED_HOSTS wildcard must be *.domain.tld: " + pattern);
+            }
+        } else if (host.contains("*")) {
+            throw new IllegalStateException(
+                "SANDBOX_ALLOWED_HOSTS only supports a leading *.: " + pattern);
+        }
+        if (host.isEmpty() || host.length() > 253) {
+            throw new IllegalStateException("SANDBOX_ALLOWED_HOSTS has an invalid host: " + pattern);
+        }
+        if (!host.matches("[a-z0-9.-]+")) {
+            throw new IllegalStateException(
+                "SANDBOX_ALLOWED_HOSTS has an invalid host: " + pattern);
+        }
+        if (isIpLiteral(host)) {
+            throw new IllegalStateException(
+                "SANDBOX_ALLOWED_HOSTS must list hostnames, not IP literals: " + pattern);
+        }
+        if (host.equals("localhost") || host.endsWith(".localhost")
+            || host.equals("0.0.0.0") || host.equals("::") || host.equals("::1")
+            || host.equals("metadata") || host.equals("metadata.google.internal")
+            || host.endsWith(".local") || host.endsWith(".internal")
+            || host.endsWith(".home.arpa")
+            || host.equals("host.docker.internal")
+            || host.equals("gateway.docker.internal")) {
+            throw new IllegalStateException(
+                "SANDBOX_ALLOWED_HOSTS must not allow internal or metadata hosts: " + pattern);
+        }
+    }
+
+    private static boolean isIpLiteral(String host) {
+        if (host.startsWith("[") && host.endsWith("]")) {
+            return true;
+        }
+        if (host.matches("\\d{1,3}(\\.\\d{1,3}){3}")) {
+            return true;
+        }
+        // A bare IPv6 literal contains multiple colons; DNS names never do.
+        return host.indexOf(':') >= 0;
     }
 
     private static Map<String, String> parseEnv(String value) {

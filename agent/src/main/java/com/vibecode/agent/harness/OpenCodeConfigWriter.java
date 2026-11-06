@@ -49,6 +49,15 @@ public final class OpenCodeConfigWriter {
         ProviderSettings provider,
         HarnessConfig config
     ) throws IOException {
+        return write(tempDir, provider, config, false);
+    }
+
+    public static Path write(
+        Path tempDir,
+        ProviderSettings provider,
+        HarnessConfig config,
+        boolean sandboxedBash
+    ) throws IOException {
         Files.createDirectories(tempDir);
 
         ModelSelection selection = selectModel(provider, config);
@@ -70,7 +79,7 @@ public final class OpenCodeConfigWriter {
         root.put("autoupdate", false);
         root.put("share", "disabled");
         root.put("snapshot", false);
-        root.put("permission", permissions());
+        root.put("permission", permissions(sandboxedBash));
 
         Map<String, Object> providers = new LinkedHashMap<>();
         providers.put(mapping.providerId, providerEntry(mapping));
@@ -173,7 +182,7 @@ public final class OpenCodeConfigWriter {
         return entry;
     }
 
-    private static Map<String, Object> permissions() {
+    private static Map<String, Object> permissions(boolean sandboxedBash) {
         Map<String, Object> permission = new LinkedHashMap<>();
         Map<String, Object> edit = new LinkedHashMap<>();
         edit.put("*", "allow");
@@ -220,7 +229,15 @@ public final class OpenCodeConfigWriter {
         )) {
             bash.put(denied, "deny");
         }
-        permission.put("bash", bash);
+        if (sandboxedBash) {
+            // Fail closed: the built-in bash tool must never execute on the
+            // supervisor. The model uses the sandbox_bash custom tool, which
+            // forwards to the disposable sandbox instead.
+            permission.put("bash", "deny");
+            permission.put("sandbox_bash", "allow");
+        } else {
+            permission.put("bash", bash);
+        }
 
         return permission;
     }

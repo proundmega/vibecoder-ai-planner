@@ -37,6 +37,12 @@ import java.util.stream.Collectors;
  */
 public final class HarnessTicketProcessor implements TicketWorker {
 
+    /** Creates the harness client, optionally wired to the sandbox bash bridge. */
+    @FunctionalInterface
+    interface HarnessClientFactory {
+        HarnessClient create(Path tempDir, SandboxBashBridge bridge) throws IOException;
+    }
+
     private static final Logger log = LoggerFactory.getLogger(HarnessTicketProcessor.class);
     private static final int MAX_MESSAGE_CHARS = 8_192;
     private static final Duration VERIFICATION_TIMEOUT = Duration.ofMinutes(10);
@@ -54,7 +60,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private final SandboxConfig sandboxConfig;
     private final SandboxRunner sandboxRunner;
     private final Function<String, WorkspaceManager> workspaceFactory;
-    private final Function<Path, HarnessClient> harnessFactory;
+    private final HarnessClientFactory harnessFactory;
     private final PlanningDocFetcher planningDocFetcher;
     private final VerificationRunner verificationRunner;
     private final PublishingGuard publishingGuard;
@@ -117,7 +123,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             harnessConfig,
             repoName -> new WorkspaceManager(
                 config.getRepoCloneDir(), repoName, config.isDryRun(), githubToken),
-            tempDir -> new OpenCodeClient(harnessConfig, provider, tempDir),
+            (tempDir, bridge) -> new OpenCodeClient(harnessConfig, provider, tempDir, bridge),
             new PlanningDocFetcher(apiService, config),
             new VerificationRunner(harnessConfig),
             new PublishingGuard(harnessConfig.protectedPaths()),
@@ -138,7 +144,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         String githubToken,
         HarnessConfig harnessConfig,
         Function<String, WorkspaceManager> workspaceFactory,
-        Function<Path, HarnessClient> harnessFactory,
+        HarnessClientFactory harnessFactory,
         PlanningDocFetcher planningDocFetcher,
         VerificationRunner verificationRunner,
         PublishingGuard publishingGuard
@@ -168,7 +174,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         String githubToken,
         HarnessConfig harnessConfig,
         Function<String, WorkspaceManager> workspaceFactory,
-        Function<Path, HarnessClient> harnessFactory,
+        HarnessClientFactory harnessFactory,
         PlanningDocFetcher planningDocFetcher,
         VerificationRunner verificationRunner,
         PublishingGuard publishingGuard,
@@ -620,6 +626,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         HarnessClient harness = null;
         Path tempDir = null;
         SandboxHandle sandbox = null;
+        SandboxBashBridge bridge = null;
 
         try {
             List<String> planningDocs = planningDocFetcher.fetch(pickedUp.getId());
@@ -662,10 +669,24 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 currentStep = "sandbox";
                 sandbox = createSandbox(workspace);
                 recordCheckpoint("sandbox_ready", Map.of("sandbox", sandbox.id()));
+
+                // Route model-driven bash calls into the same sandbox. A bridge
+                // failure is fatal: the model must never fall back to running
+                // repo commands on the supervisor filesystem.
+                currentStep = "sandbox-bridge";
+                bridge = new SandboxBashBridge(
+                    sandboxRunner, sandbox, workspace.getRepoDir(), sandboxConfig.execTimeout());
+                try {
+                    bridge.start();
+                } catch (IOException e) {
+                    throw new IOException("Could not start the sandbox bash bridge: "
+                        + e.getMessage(), e);
+                }
+                recordCheckpoint("sandbox_bridge_ready", Map.of());
             }
 
             tempDir = Files.createTempDirectory("opencode-harness-");
-            harness = harnessFactory.apply(tempDir);
+            harness = harnessFactory.create(tempDir, bridge);
 
             currentStep = "starting-harness";
             harness.start(workspace.getRepoDir());
@@ -673,7 +694,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             recordCheckpoint("session_ready", Map.of("sessionId", sessionId));
 
             currentStep = "implementing";
-            String prompt = promptBuilder.build(pickedUp, planningDocs, commands);
+            String prompt = promptBuilder.build(
+                pickedUp, planningDocs, commands, bridge != null);
             harness.subscribe(sessionId, event -> {
                 if (event.isToolEvent()) {
                     currentStep = "implementing";
@@ -687,6 +709,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 // workspace while the supervisor stages and guards the tree.
                 closeQuietly(harness);
                 harness = null;
+                closeBridge(bridge);
+                bridge = null;
             }
             recordCheckpoint("prompting", Map.of());
 
@@ -830,6 +854,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 }
             }
             closeQuietly(harness);
+            closeBridge(bridge);
             deleteQuietly(tempDir);
             if (sandbox != null) {
                 try {
@@ -1486,6 +1511,17 @@ public final class HarnessTicketProcessor implements TicketWorker {
             harness.close();
         } catch (RuntimeException e) {
             log.warn("Failed to close harness client: {}", e.getMessage());
+        }
+    }
+
+    private static void closeBridge(SandboxBashBridge bridge) {
+        if (bridge == null) {
+            return;
+        }
+        try {
+            bridge.close();
+        } catch (RuntimeException e) {
+            log.warn("Failed to close sandbox bash bridge: {}", e.getMessage());
         }
     }
 

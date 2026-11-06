@@ -15,6 +15,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +56,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
     private final Map<String, AtomicBoolean> quotaFlags = new ConcurrentHashMap<>();
     private final Map<String, ScheduledExecutorService> watchdogs = new ConcurrentHashMap<>();
     private final Map<String, Process> runningProcesses = new ConcurrentHashMap<>();
+    private final Map<String, EgressRuntime> egress = new ConcurrentHashMap<>();
 
     public DockerSandboxRunner(SandboxConfig config) {
         this(config, null);
@@ -85,17 +87,24 @@ public final class DockerSandboxRunner implements SandboxRunner {
         if (spec == null) {
             throw new IOException("Sandbox spec is required");
         }
-        if (spec.networkEnabled()) {
-            throw new IOException(
-                "Sandbox network allowlist is not implemented yet (fg-34 slice 2); refusing to start");
-        }
         Path workspace = SandboxPaths.validateWorkspace(spec.workspace());
         String name = "vibecode-sandbox-" + UUID.randomUUID().toString()
             .replace("-", "").substring(0, 12);
 
+        EgressRuntime egressRuntime = null;
+        if (spec.networkEnabled()) {
+            egressRuntime = startEgress(name, spec);
+            egress.put(name, egressRuntime);
+        }
+
         List<String> command = new ArrayList<>();
         command.add(config.dockerBinary());
-        command.addAll(buildCreateArgs(spec, name));
+        try {
+            command.addAll(buildCreateArgs(spec, name, egressRuntime));
+        } catch (RuntimeException e) {
+            destroyByName(name);
+            throw new IOException("Could not build the sandbox command", e);
+        }
         DockerResult result = runDocker(command, CREATE_TIMEOUT, CONTROL_OUTPUT_BYTES);
         if (result.timedOut() || result.exitCode() != 0) {
             destroyByName(name);
@@ -298,12 +307,16 @@ public final class DockerSandboxRunner implements SandboxRunner {
         for (ScheduledExecutorService watchdog : new ArrayList<>(watchdogs.values())) {
             watchdog.shutdownNow();
         }
+        for (String name : new ArrayList<>(egress.keySet())) {
+            stopEgress(name);
+        }
         active.clear();
         maxDurations.clear();
         artifactLimits.clear();
         quotaFlags.clear();
         watchdogs.clear();
         runningProcesses.clear();
+        egress.clear();
         if (created.isEmpty()) {
             try {
                 Runtime.getRuntime().removeShutdownHook(shutdownHook);
@@ -331,6 +344,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
     private void stopByName(String name) {
         stopWatchdog(name);
         stopContainer(name);
+        stopEgress(name);
     }
 
     private void stopContainer(String name) {
@@ -348,21 +362,25 @@ public final class DockerSandboxRunner implements SandboxRunner {
             CONTROL_TIMEOUT,
             CONTROL_OUTPUT_BYTES
         );
-        if (!removed.timedOut() && removed.exitCode() == 0) {
-            return true;
+        boolean gone = !removed.timedOut() && removed.exitCode() == 0;
+        if (!gone) {
+            DockerResult inspect = runDocker(
+                List.of(config.dockerBinary(), "inspect", "-f", "{{.State.Running}}", name),
+                INSPECT_TIMEOUT,
+                1_024
+            );
+            String combined = (removed.output() + "\n" + inspect.output()).toLowerCase();
+            if (combined.contains("no such container") || combined.contains("no such object")) {
+                gone = true;
+            } else {
+                log.warn("Could not destroy sandbox {} (rm exit {}, inspect exit {}): {}",
+                    name, removed.exitCode(), inspect.exitCode(), combined.trim());
+            }
         }
-        DockerResult inspect = runDocker(
-            List.of(config.dockerBinary(), "inspect", "-f", "{{.State.Running}}", name),
-            INSPECT_TIMEOUT,
-            1_024
-        );
-        String combined = (removed.output() + "\n" + inspect.output()).toLowerCase();
-        if (combined.contains("no such container") || combined.contains("no such object")) {
-            return true;
-        }
-        log.warn("Could not destroy sandbox {} (rm exit {}, inspect exit {}): {}",
-            name, removed.exitCode(), inspect.exitCode(), combined.trim());
-        return false;
+        // The sandbox may still exist; always attempt to remove its egress
+        // network and proxy so a later retry does not leak them.
+        stopEgress(name);
+        return gone;
     }
 
     private void stopWatchdog(String name) {
@@ -688,6 +706,159 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
     }
 
+    /** Handle for one sandbox's egress proxy and internal network. */
+    record EgressRuntime(String network, String proxyName, String proxyUrl) {
+    }
+
+    private static volatile String proxyScriptCommand;
+
+    /**
+     * Create the proxy-only internal network and start the allowlist proxy.
+     * The sandbox joins only the internal network, so it has no default route
+     * and every outbound connection must pass through the proxy.
+     */
+    private EgressRuntime startEgress(String sandboxName, SandboxSpec spec) throws IOException {
+        String suffix = sandboxName.startsWith("vibecode-sandbox-")
+            ? sandboxName.substring("vibecode-sandbox-".length())
+            : sandboxName;
+        String network = "vibecode-egress-" + suffix;
+        String proxy = "vibecode-egress-proxy-" + suffix;
+        try {
+            DockerResult created = runDocker(
+                List.of(config.dockerBinary(), "network", "create",
+                    "--driver", "bridge", "--internal", "--label", LABEL, network),
+                CREATE_TIMEOUT,
+                CONTROL_OUTPUT_BYTES
+            );
+            if (created.timedOut() || created.exitCode() != 0) {
+                throw new IOException("Could not create egress network '" + network + "': "
+                    + created.output());
+            }
+
+            List<String> proxyCommand = new ArrayList<>();
+            proxyCommand.add(config.dockerBinary());
+            proxyCommand.addAll(buildProxyRunArgs(spec, proxy, network));
+            DockerResult started = runDocker(proxyCommand, CREATE_TIMEOUT, CONTROL_OUTPUT_BYTES);
+            if (started.timedOut() || started.exitCode() != 0) {
+                throw new IOException("Could not start egress proxy '" + proxy + "': "
+                    + started.output());
+            }
+
+            DockerResult inspect = runDocker(
+                List.of(config.dockerBinary(), "inspect", "-f", "{{.State.Running}}", proxy),
+                INSPECT_TIMEOUT,
+                1_024
+            );
+            if (!"true".equals(inspect.output().trim())) {
+                throw new IOException("Egress proxy '" + proxy + "' is not running: "
+                    + inspect.output());
+            }
+
+            // The proxy is attached to the internal network at start. Give it
+            // the upstream network only after it is healthy so a broken proxy
+            // cannot leave the sandbox with direct egress.
+            DockerResult connected = runDocker(
+                List.of(config.dockerBinary(), "network", "connect",
+                    spec.egressUpstreamNetwork(), proxy),
+                CREATE_TIMEOUT,
+                CONTROL_OUTPUT_BYTES
+            );
+            if (connected.timedOut() || connected.exitCode() != 0) {
+                throw new IOException("Could not attach egress proxy '" + proxy
+                    + "' to '" + spec.egressUpstreamNetwork() + "': " + connected.output());
+            }
+
+            log.info("Started egress proxy {} on internal network {} (upstream {})",
+                proxy, network, spec.egressUpstreamNetwork());
+            return new EgressRuntime(network, proxy, "http://" + proxy + ":3128");
+        } catch (IOException | RuntimeException e) {
+            stopEgress(network, proxy);
+            throw e instanceof IOException io ? io : new IOException(e);
+        }
+    }
+
+    /** Build the hardened proxy container arguments. Package-visible for tests. */
+    static List<String> buildProxyRunArgs(SandboxSpec spec, String proxyName, String network) {
+        List<String> args = new ArrayList<>();
+        args.add("run");
+        args.add("-d");
+        args.add("--name");
+        args.add(proxyName);
+        args.add("--label");
+        args.add(LABEL);
+        args.add("--read-only");
+        args.add("--tmpfs");
+        args.add("/tmp:rw,nosuid,nodev,size="
+            + Math.min(spec.limits().tmpfsBytes(), 64L * 1024 * 1024));
+        args.add("--user");
+        args.add(spec.user());
+        args.add("--cap-drop");
+        args.add("ALL");
+        args.add("--security-opt");
+        args.add("no-new-privileges");
+        args.add("--pids-limit");
+        args.add("64");
+        args.add("--memory");
+        args.add("134217728");
+        args.add("--cpus");
+        args.add("0.5");
+        args.add("--network");
+        args.add(network);
+        args.add("-e");
+        args.add("EGRESS_PORT=3128");
+        args.add("-e");
+        args.add("EGRESS_ALLOWED_HOSTS=" + String.join(",", spec.allowedHosts()));
+        args.add("--entrypoint");
+        args.add("node");
+        args.add(spec.proxyImage());
+        args.add("-e");
+        try {
+            args.add(proxyCommand());
+        } catch (IOException e) {
+            throw new IllegalStateException("Could not load the egress proxy script", e);
+        }
+        return args;
+    }
+
+    private static String proxyCommand() throws IOException {
+        if (proxyScriptCommand == null) {
+            try (InputStream input = DockerSandboxRunner.class
+                .getResourceAsStream("/sandbox/egress-proxy.js")) {
+                if (input == null) {
+                    throw new IOException("Missing sandbox/egress-proxy.js resource");
+                }
+                String encoded = Base64.getEncoder().encodeToString(input.readAllBytes());
+                proxyScriptCommand =
+                    "eval(Buffer.from('" + encoded + "','base64').toString('utf8'))";
+            }
+        }
+        return proxyScriptCommand;
+    }
+
+    private void stopEgress(String name) {
+        EgressRuntime runtime = egress.remove(name);
+        if (runtime != null) {
+            stopEgress(runtime.network(), runtime.proxyName());
+        }
+    }
+
+    private void stopEgress(String network, String proxyName) {
+        // Surface denials before the container is removed. The proxy logs one
+        // JSON line per decision.
+        DockerResult logs = runDocker(
+            List.of(config.dockerBinary(), "logs", "--tail", "200", proxyName),
+            CONTROL_TIMEOUT,
+            CONTROL_OUTPUT_BYTES
+        );
+        for (String line : logs.output().split("\n")) {
+            if (line.contains("\"decision\":\"deny\"")) {
+                log.warn("Sandbox egress denied: {}", line.trim());
+            }
+        }
+        runControl(List.of(config.dockerBinary(), "rm", "-f", proxyName));
+        runControl(List.of(config.dockerBinary(), "network", "rm", network));
+    }
+
     /**
      * Build the argument list after the docker binary. Package-visible so tests
      * can assert the hardening flags without a daemon.
@@ -695,6 +866,14 @@ public final class DockerSandboxRunner implements SandboxRunner {
     static List<String> buildCreateArgs(
         SandboxSpec spec,
         String name
+    ) {
+        return buildCreateArgs(spec, name, null);
+    }
+
+    static List<String> buildCreateArgs(
+        SandboxSpec spec,
+        String name,
+        EgressRuntime egress
     ) {
         List<String> args = new ArrayList<>();
         args.add("run");
@@ -766,11 +945,12 @@ public final class DockerSandboxRunner implements SandboxRunner {
         // No --init: PID 1 must remain the shell loop so the post-exec
         // descendant sweep can kill everything else without exiting the
         // container. --pids-limit and the sweep bound runaway children.
-        // Slice 1 is default-deny. The allowlist proxy is fg-34 slice 2.
+        // Network is default-deny unless an egress allowlist is configured; in
+        // that case the sandbox joins only the proxy's internal network.
         args.add("--network");
-        args.add("none");
+        args.add(egress == null ? "none" : egress.network());
 
-        for (Map.Entry<String, String> entry : containerEnvironment(spec).entrySet()) {
+        for (Map.Entry<String, String> entry : containerEnvironment(spec, egress).entrySet()) {
             args.add("-e");
             args.add(entry.getKey() + "=" + entry.getValue());
         }
@@ -808,11 +988,26 @@ public final class DockerSandboxRunner implements SandboxRunner {
      * writable tmpfs because the rootfs is read-only.
      */
     static Map<String, String> containerEnvironment(SandboxSpec spec) {
+        return containerEnvironment(spec, null);
+    }
+
+    static Map<String, String> containerEnvironment(SandboxSpec spec, EgressRuntime egress) {
         Map<String, String> env = new LinkedHashMap<>(spec.env());
         env.putIfAbsent("HOME", "/tmp");
         env.putIfAbsent("TMPDIR", "/tmp");
         env.putIfAbsent("XDG_CACHE_HOME", "/tmp/.cache");
         env.putIfAbsent("NPM_CONFIG_CACHE", "/tmp/npm-cache");
+        if (egress != null) {
+            String proxyUrl = egress.proxyUrl();
+            for (String key : List.of(
+                "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+                "http_proxy", "https_proxy", "all_proxy",
+                "npm_config_proxy", "npm_config_https_proxy")) {
+                env.putIfAbsent(key, proxyUrl);
+            }
+            env.putIfAbsent("NO_PROXY", "localhost,127.0.0.1,::1");
+            env.putIfAbsent("no_proxy", "localhost,127.0.0.1,::1");
+        }
         SandboxSecurity.validateEnv(env, "sandbox environment");
         return env;
     }

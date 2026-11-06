@@ -14,6 +14,7 @@ import java.util.Map;
  */
 public record SandboxSpec(
     String image,
+    String proxyImage,
     Path workspace,
     Path mountSource,
     Duration maxDuration,
@@ -21,6 +22,7 @@ public record SandboxSpec(
     boolean networkEnabled,
     List<String> allowedHosts,
     String egressProxy,
+    String egressUpstreamNetwork,
     Map<String, String> env,
     String user,
     String seccompProfile,
@@ -32,6 +34,7 @@ public record SandboxSpec(
         if (image == null || image.isBlank()) {
             throw new IllegalArgumentException("Sandbox image must not be blank");
         }
+        proxyImage = proxyImage == null || proxyImage.isBlank() ? image : proxyImage;
         if (workspace == null) {
             throw new IllegalArgumentException("Sandbox workspace is required");
         }
@@ -42,6 +45,9 @@ public record SandboxSpec(
         }
         allowedHosts = allowedHosts == null ? List.of() : List.copyOf(allowedHosts);
         egressProxy = egressProxy == null ? "" : egressProxy;
+        egressUpstreamNetwork = egressUpstreamNetwork == null || egressUpstreamNetwork.isBlank()
+            ? SandboxConfig.DEFAULT_EGRESS_UPSTREAM_NETWORK
+            : egressUpstreamNetwork;
         env = env == null ? Map.of() : Map.copyOf(env);
         user = user == null || user.isBlank() ? SandboxConfig.DEFAULT_USER : user;
         seccompProfile = blankToNull(seccompProfile);

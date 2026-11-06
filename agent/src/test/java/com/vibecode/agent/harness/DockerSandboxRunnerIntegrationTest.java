@@ -177,6 +177,60 @@ class DockerSandboxRunnerIntegrationTest {
         }
     }
 
+    @Test
+    void allowsOnlyTheConfiguredEgressHostsAndBlocksDirectAccess() throws IOException {
+        Assumptions.assumeTrue("1".equals(System.getenv("SANDBOX_IT_NETWORK")),
+            "SANDBOX_IT_NETWORK=1 is not set; skipping the egress allowlist smoke test");
+        String image = System.getenv("SANDBOX_IT_NETWORK_IMAGE");
+        Assumptions.assumeTrue(image != null && !image.isBlank(),
+            "SANDBOX_IT_NETWORK_IMAGE must name an image with node and curl");
+        Assumptions.assumeTrue(
+            FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+            "POSIX permissions are required for the non-root smoke test");
+
+        SandboxConfig config = integrationConfig(image, Map.of(
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org"
+        ));
+        Path workspace = Files.createDirectories(tempDir.resolve("egress"));
+        Files.setPosixFilePermissions(workspace, PosixFilePermissions.fromString("rwxrwxrwx"));
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace));
+            try {
+                ExecResult allowed = runner.exec(handle, ExecRequest.of(
+                    "curl -fsS --max-time 15 -o /dev/null https://registry.npmjs.org/ "
+                        + "&& echo ALLOWED || echo DENIED",
+                    Duration.ofSeconds(30)));
+                assertTrue(allowed.output().contains("ALLOWED"), allowed.output());
+
+                ExecResult denied = runner.exec(handle, ExecRequest.of(
+                    "curl -fsS --max-time 15 -o /dev/null https://example.org/ "
+                        + "&& echo ALLOWED || echo DENIED",
+                    Duration.ofSeconds(30)));
+                assertTrue(denied.output().contains("DENIED"), denied.output());
+
+                // Even an allowlisted proxy cannot be bypassed by clearing the
+                // proxy environment: the internal network has no default route.
+                ExecResult direct = runner.exec(handle, ExecRequest.of(
+                    "env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY "
+                        + "-u http_proxy -u https_proxy -u all_proxy "
+                        + "curl -fsS --max-time 10 -o /dev/null https://registry.npmjs.org/ "
+                        + "&& echo ALLOWED || echo DENIED",
+                    Duration.ofSeconds(30)));
+                assertTrue(direct.output().contains("DENIED"), direct.output());
+
+                ExecResult metadata = runner.exec(handle, ExecRequest.of(
+                    "curl -fsS --max-time 5 -o /dev/null http://169.254.169.254/ "
+                        + "&& echo ALLOWED || echo DENIED",
+                    Duration.ofSeconds(30)));
+                assertTrue(metadata.output().contains("DENIED"), metadata.output());
+            } finally {
+                runner.destroy(handle);
+            }
+        }
+    }
+
     private static SandboxConfig integrationConfig(String image, Map<String, String> extra) {
         Map<String, String> env = new HashMap<>();
         env.put("SANDBOX_MODE", "docker");

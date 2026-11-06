@@ -30,14 +30,16 @@ services:
       - HARNESS_RETRY_PIN_ATTEMPTS=${HARNESS_RETRY_PIN_ATTEMPTS:-3}
       - HARNESS_RETRY_BASE_DELAY_MS=${HARNESS_RETRY_BASE_DELAY_MS:-60000}
       - HARNESS_RETRY_MAX_DELAY_MS=${HARNESS_RETRY_MAX_DELAY_MS:-3600000}
-      # fg-34 sandbox. Slice 1 sandboxes supervisor-driven install/verification
-      # commands only; OpenCode still runs in the supervisor. Docker mode needs
-      # a daemon connection (DOCKER_HOST or a socket proxy) and a workspace path
-      # the daemon can bind-mount; PoolManager/compose wiring is deferred to D8.
+      # fg-34 sandbox. Slice 2 sandboxes supervisor-driven install/verification
+      # commands and bridges the OpenCode bash tool into the same sandbox.
+      # Docker mode needs a daemon connection (DOCKER_HOST or a socket proxy)
+      # and a workspace path the daemon can bind-mount; PoolManager/compose
+      # wiring is deferred to D8.
       # Do not mount /var/run/docker.sock into the sandbox itself; only the
       # supervisor talks to the daemon.
       - SANDBOX_MODE=${SANDBOX_MODE:-host}
       - SANDBOX_IMAGE=${SANDBOX_IMAGE:-vibecode-agent-sandbox:latest}
+      - SANDBOX_PROXY_IMAGE=${SANDBOX_PROXY_IMAGE:-}
       - SANDBOX_DOCKER_BIN=${SANDBOX_DOCKER_BIN:-docker}
       - SANDBOX_REQUIRE=${SANDBOX_REQUIRE:-false}
       - SANDBOX_CPUS=${SANDBOX_CPUS:-2.0}
@@ -51,6 +53,7 @@ services:
       - SANDBOX_NETWORK=${SANDBOX_NETWORK:-none}
       - SANDBOX_ALLOWED_HOSTS=${SANDBOX_ALLOWED_HOSTS:-}
       - SANDBOX_EGRESS_PROXY=${SANDBOX_EGRESS_PROXY:-}
+      - SANDBOX_EGRESS_UPSTREAM_NETWORK=${SANDBOX_EGRESS_UPSTREAM_NETWORK:-bridge}
       - SANDBOX_ENV=${SANDBOX_ENV:-}
       - SANDBOX_USER=${SANDBOX_USER:-}
       - SANDBOX_ALLOW_ROOT=${SANDBOX_ALLOW_ROOT:-false}

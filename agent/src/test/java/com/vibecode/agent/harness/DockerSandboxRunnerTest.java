@@ -92,6 +92,143 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void createArgsUseTheInternalEgressNetworkAndProxyEnvironment() throws IOException {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org,*.githubusercontent.com"
+        )::get);
+        SandboxSpec spec = config.specFor(workspace());
+        DockerSandboxRunner.EgressRuntime egress = new DockerSandboxRunner.EgressRuntime(
+            "vibecode-egress-test",
+            "vibecode-egress-proxy-test",
+            "http://vibecode-egress-proxy-test:3128");
+
+        String joined = String.join(" ",
+            DockerSandboxRunner.buildCreateArgs(spec, "vibecode-sandbox-test", egress));
+
+        assertTrue(joined.contains("--network vibecode-egress-test"));
+        assertFalse(joined.contains("--network none"));
+        assertTrue(joined.contains("-e HTTP_PROXY=http://vibecode-egress-proxy-test:3128"));
+        assertTrue(joined.contains("-e HTTPS_PROXY=http://vibecode-egress-proxy-test:3128"));
+        assertTrue(joined.contains("-e http_proxy=http://vibecode-egress-proxy-test:3128"));
+        assertTrue(joined.contains("-e NO_PROXY=localhost,127.0.0.1,::1"));
+        assertTrue(joined.contains(
+            "-e npm_config_https_proxy=http://vibecode-egress-proxy-test:3128"));
+    }
+
+    @Test
+    void proxyContainerIsHardenedAndReceivesTheAllowlist() throws IOException {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org,*.githubusercontent.com"
+        )::get);
+        SandboxSpec spec = config.specFor(workspace());
+
+        String joined = String.join(" ",
+            DockerSandboxRunner.buildProxyRunArgs(spec, "proxy-1", "internal-1"));
+
+        assertTrue(joined.contains("--read-only"));
+        assertTrue(joined.contains("--cap-drop ALL"));
+        assertTrue(joined.contains("--security-opt no-new-privileges"));
+        assertTrue(joined.contains("--user 1000:1000"));
+        assertTrue(joined.contains("--network internal-1"));
+        assertTrue(joined.contains("--pids-limit 64"));
+        assertTrue(joined.contains("EGRESS_ALLOWED_HOSTS=registry.npmjs.org,*.githubusercontent.com"));
+        assertTrue(joined.contains("--entrypoint node"));
+        assertTrue(joined.contains("Buffer.from("));
+        assertFalse(joined.contains("--privileged"));
+        assertFalse(joined.contains("docker.sock"));
+    }
+
+    @Test
+    void createStartsAndDestroysTheEgressProxyAndNetwork() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              network) exit 0 ;;
+              run) exit 0 ;;
+              inspect) echo true ;;
+              logs) exit 0 ;;
+              rm) exit 0 ;;
+              exec)
+                case "$*" in
+                  *"/proc/"*) echo OK ;;
+                  *"wc -c"*) echo "OK 0" ;;
+                  *"mkdir -p"*) echo OK ;;
+                  *) echo fake-output ;;
+                esac
+                ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org"
+        )::get);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            runner.exec(handle, ExecRequest.of("echo hi", Duration.ofSeconds(5)));
+            runner.destroy(handle);
+        }
+
+        String logText = Files.readString(log);
+        assertTrue(logText.contains("network create --driver bridge --internal"), logText);
+        assertTrue(logText.contains("--network vibecode-egress-"), logText);
+        assertTrue(logText.contains("network connect bridge vibecode-egress-proxy-"), logText);
+        assertTrue(logText.contains("logs --tail 200 vibecode-egress-proxy-"), logText);
+        assertTrue(logText.contains("rm -f vibecode-egress-proxy-"), logText);
+        assertTrue(logText.contains("network rm vibecode-egress-"), logText);
+    }
+
+    @Test
+    void egressCleanupRunsWhenTheSandboxContainerFailsToStart() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path runs = tempDir.resolve("runs");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              network) exit 0 ;;
+              run)
+                count=$(cat '__RUNS__' 2>/dev/null || echo 0)
+                count=$((count + 1))
+                echo "$count" > '__RUNS__'
+                if [ "$count" -ge 2 ]; then echo "sandbox boom"; exit 1; fi
+                exit 0
+                ;;
+              inspect) echo true ;;
+              *) exit 0 ;;
+            esac
+            """.replace("__RUNS__", runs.toString()));
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org"
+        )::get);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            assertThrows(IOException.class, () -> runner.create(config.specFor(workspace())));
+        }
+
+        String logText = Files.readString(log);
+        assertTrue(logText.contains("network rm vibecode-egress-"), logText);
+    }
+
+    @Test
     void createArgsMountTheMappedGitPathReadOnly() throws IOException {
         Path containerRoot = Files.createDirectories(tempDir.resolve("repos"));
         Path mappedWorkspace = Files.createDirectories(containerRoot.resolve("run-1"));
@@ -138,8 +275,9 @@ class DockerSandboxRunnerTest {
         SandboxConfig config = dockerConfig("docker");
         SandboxSpec spec = config.specFor(workspace());
         SandboxSpec poisoned = new SandboxSpec(
-            spec.image(), spec.workspace(), spec.mountSource(), spec.maxDuration(),
+            spec.image(), spec.proxyImage(), spec.workspace(), spec.mountSource(), spec.maxDuration(),
             spec.limits(), spec.networkEnabled(), spec.allowedHosts(), spec.egressProxy(),
+            spec.egressUpstreamNetwork(),
             Map.of("OPENAI_KEY", "sk-secret"), spec.user(), spec.seccompProfile(),
             spec.apparmorProfile(), spec.artifactMaxBytes());
 
