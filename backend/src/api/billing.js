@@ -15,7 +15,7 @@ const BillingService = require('../services/BillingService');
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Billing data for project

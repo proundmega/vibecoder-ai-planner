@@ -15,7 +15,7 @@ const { addMemorySchema, updateMemorySchema } = require('../validators/memory');
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: List of memories
@@ -32,7 +32,7 @@ router.get('/project/:projectId', verifyToken, memoryController.getProjectMemory
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *       - in: query
  *         name: q
  *         required: true
@@ -53,7 +53,7 @@ router.get('/project/:projectId/search', verifyToken, memoryController.searchMem
  *       - in: path
  *         name: agentId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: List of agent memories
@@ -70,7 +70,7 @@ router.get('/agent/:agentId', verifyToken, memoryController.getAgentMemory);
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:
@@ -95,7 +95,7 @@ router.post('/project/:projectId', verifyToken, validate(addMemorySchema), memor
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Memory details
@@ -114,7 +114,7 @@ router.get('/:id', verifyToken, memoryController.getMemory);
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:
@@ -139,7 +139,7 @@ router.put('/:id', verifyToken, validate(updateMemorySchema), memoryController.u
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Memory deleted

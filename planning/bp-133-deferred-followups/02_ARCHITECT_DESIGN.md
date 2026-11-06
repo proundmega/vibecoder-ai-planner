@@ -81,6 +81,10 @@ non-member and admin for update, pickup and release.
   admin list query changes.
 - **FR4:** the existing admin bypass must not regress. This is the highest-risk
   item and needs its own review round.
+- **Generated-model scope:** the client is generated from the documented
+  schemas, which are still narrower than some runtime responses (e.g. ticket
+  planning/attachments and agent usage/provider fields). A full OpenAPI
+  completeness pass is out of scope for this ticket.
 
 ## Rollout
 

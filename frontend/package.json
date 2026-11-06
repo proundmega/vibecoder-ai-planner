@@ -10,7 +10,7 @@
     "test": "vitest",
     "test:coverage": "vitest --run --coverage",
     "typecheck": "vue-tsc --noEmit",
-    "generate:api": "openapi-typescript-codegen --input ../backend/src/api/openapi-generated.json --output src/api/generated --exportServices true",
+    "generate:api": "openapi --input ../backend/src/api/openapi-generated.json --output src/api/generated --exportServices true",
     "generate:spec": "cd ../backend && npm run generate:spec",
     "cypress:open": "cypress open",
     "cypress:component": "cypress run --component --browser chrome",

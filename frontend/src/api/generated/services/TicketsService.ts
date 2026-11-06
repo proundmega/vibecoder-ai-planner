@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { NumericId } from '../models/NumericId';
+import type { Ticket } from '../models/Ticket';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -14,7 +16,7 @@ export class TicketsService {
      */
     public static postTickets(
         requestBody: {
-            projectId: string;
+            projectId: NumericId;
             title: string;
             description?: string;
             priority?: 'low' | 'medium' | 'high' | 'critical' | 'urgent';
@@ -35,7 +37,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static getTicketsProject(
-        projectId: string,
+        projectId: NumericId,
         status?: 'backlog' | 'in_progress' | 'review' | 'done',
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
@@ -56,7 +58,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static getTickets(
-        ticketId: string,
+        ticketId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -77,15 +79,21 @@ export class TicketsService {
      * @throws ApiError
      */
     public static putTickets(
-        ticketId: string,
+        ticketId: NumericId,
         requestBody?: {
             title?: string;
             description?: string;
             status?: string;
             priority?: string;
-            assigneeId?: string;
+            assigneeId?: string | null;
+            milestoneId?: string | null;
+            estimate?: number | null;
+            dependsOn?: Array<(number | string)>;
         },
-    ): CancelablePromise<any> {
+    ): CancelablePromise<{
+        success?: boolean;
+        data?: Ticket;
+    }> {
         return __request(OpenAPI, {
             method: 'PUT',
             url: '/tickets/{ticketId}',
@@ -103,7 +111,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static deleteTickets(
-        ticketId: string,
+        ticketId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'DELETE',
@@ -121,7 +129,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static postTicketsStatus(
-        ticketId: string,
+        ticketId: NumericId,
         requestBody?: {
             status?: 'backlog' | 'in_progress' | 'review' | 'done';
         },
@@ -143,7 +151,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static postTicketsPickup(
-        ticketId: string,
+        ticketId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -160,7 +168,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static postTicketsRelease(
-        ticketId: string,
+        ticketId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -177,7 +185,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static getTicketsComments(
-        ticketId: string,
+        ticketId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -195,7 +203,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static postTicketsComments(
-        ticketId: string,
+        ticketId: NumericId,
         requestBody?: {
             content?: string;
         },
@@ -218,7 +226,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static getTicketsMessages(
-        ticketId: string,
+        ticketId: NumericId,
         limit?: number,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
@@ -240,7 +248,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static postTicketsMessages(
-        ticketId: string,
+        ticketId: NumericId,
         requestBody?: {
             messageType?: string;
             content?: string;
@@ -264,7 +272,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static getTicketsPhases(
-        ticketId: string,
+        ticketId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -281,7 +289,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static getTicketsPhasesCurrent(
-        ticketId: string,
+        ticketId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -298,7 +306,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static getTicketsPhasesAllowed(
-        ticketId: string,
+        ticketId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -316,7 +324,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static postTicketsPhasesTransition(
-        ticketId: string,
+        ticketId: NumericId,
         requestBody?: {
             toPhase: string;
             actorType?: 'human' | 'agent' | 'system';
@@ -340,7 +348,7 @@ export class TicketsService {
      * @throws ApiError
      */
     public static getTicketsReviewDiff(
-        ticketId: string,
+        ticketId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',

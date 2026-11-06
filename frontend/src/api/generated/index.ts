@@ -10,6 +10,7 @@ export type { OpenAPIConfig } from './core/OpenAPI';
 export type { Agent } from './models/Agent';
 export type { ApiResponse } from './models/ApiResponse';
 export type { Error } from './models/Error';
+export type { NumericId } from './models/NumericId';
 export type { Project } from './models/Project';
 export { Ticket } from './models/Ticket';
 export { User } from './models/User';

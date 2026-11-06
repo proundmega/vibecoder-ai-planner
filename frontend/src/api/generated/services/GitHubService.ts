@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { NumericId } from '../models/NumericId';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -13,7 +14,7 @@ export class GitHubService {
      * @throws ApiError
      */
     public static getGithubRepo(
-        projectId: string,
+        projectId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -30,11 +31,28 @@ export class GitHubService {
      * @throws ApiError
      */
     public static deleteGithubRepo(
-        projectId: string,
+        projectId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'DELETE',
             url: '/github/{projectId}/repo',
+            path: {
+                'projectId': projectId,
+            },
+        });
+    }
+    /**
+     * Get repository connection for agent (with decrypted PAT)
+     * @param projectId
+     * @returns any Repository config with decrypted access token
+     * @throws ApiError
+     */
+    public static getGithubRepoAgent(
+        projectId: NumericId,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/github/{projectId}/repo/agent',
             path: {
                 'projectId': projectId,
             },
@@ -48,7 +66,7 @@ export class GitHubService {
      * @throws ApiError
      */
     public static postGithubRepoConnect(
-        projectId: string,
+        projectId: NumericId,
         requestBody?: {
             repoUrl?: string;
             branch?: string;
@@ -71,7 +89,7 @@ export class GitHubService {
      * @throws ApiError
      */
     public static getGithubBranches(
-        projectId: string,
+        projectId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -88,7 +106,7 @@ export class GitHubService {
      * @throws ApiError
      */
     public static postGithubBranch(
-        ticketId: string,
+        ticketId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -105,7 +123,7 @@ export class GitHubService {
      * @throws ApiError
      */
     public static deleteGithubBranch(
-        ticketId: string,
+        ticketId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'DELETE',
@@ -122,7 +140,7 @@ export class GitHubService {
      * @throws ApiError
      */
     public static getGithubPrs(
-        projectId: string,
+        projectId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -139,7 +157,7 @@ export class GitHubService {
      * @throws ApiError
      */
     public static postGithubPr(
-        ticketId: string,
+        ticketId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',

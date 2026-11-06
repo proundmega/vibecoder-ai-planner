@@ -1,14 +1,14 @@
 ---
 id: "bp-133"
 title: "bp-124 Deferred Follow-ups"
-status: planned
+status: in_review
 priority: "P2"
 effort: "Medium"
 scope: "Both"
 created: "2026-11-06"
 updated: "2026-11-06"
-pr: null
-branch: null
+pr: 123
+branch: "feat/bp-133-fr1-fr3"
 depends_on: ["bp-124"]
 ---
 
@@ -50,15 +50,17 @@ deferred scope are owned by this document; `01`–`03` link here.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| E1 | Soft-deleted users remain in the admin list | bp-124 D14 | Backend | FR3 | open |
-| E2 | Ticket writes ignore project membership | bp-124 D16 | Backend / Auth | FR4 | open |
-| E3 | Regenerate frontend generated client types | bp-124 D12 | Frontend | FR1 | deferred |
-| E4 | Remaining OpenAPI BIGSERIAL id formats | bp-124 D13 | Docs / API | FR2 | deferred |
+| E1 | Soft-deleted users remain in the admin list | bp-124 D14 | Backend | FR3 | done (`916bfe0`) |
+| E2 | Ticket writes ignore project membership | bp-124 D16 | Backend / Auth | FR4 | open (separate slice) |
+| E3 | Regenerate frontend generated client types | bp-124 D12 | Frontend | FR1 | done (`916bfe0`) |
+| E4 | Remaining OpenAPI BIGSERIAL id formats | bp-124 D13 | Docs / API | FR2 | done (`916bfe0`) |
 | E5 | Harness roadmap | bp-124 D11 | Agent | fg-33+ (separate track) | open |
 
 ## Status evidence
 
 | Claim | Evidence |
 |---|---|
-| No implementation yet | `status: planned`; every `03` plan checkbox is unchecked and there is no `03` Results row. |
-| Items originated in bp-124 | bp-124 `00` deferred register D12–D16. |
+| FR1-FR3 implemented | Commit `916bfe0`; `03` plan items checked and three dated `03` Results rows |
+| Generated client | Regenerated from the committed spec; the `User` schema now matches `User.toJSON()` (camelCase, no stale timestamps) |
+| FR4 not started here | Tracked as the separate FR4 slice; this branch covers FR1-FR3 only |
+| Items originated in bp-124 | bp-124 `00` deferred register D12–D16 |

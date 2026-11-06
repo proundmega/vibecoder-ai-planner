@@ -2,15 +2,18 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { NumericId } from './NumericId';
 export type User = {
-    id?: string;
-    name?: string;
+    id?: NumericId;
+    name?: string | null;
     email?: string;
     role?: User.role;
     isActive?: boolean;
     currentPlan?: string;
-    created_at?: string;
-    updated_at?: string;
+    userCreatedBy?: string | null;
+    createdAt?: string;
+    lockedUntil?: string | null;
+    loginAttempts?: number;
 };
 export namespace User {
     export enum role {

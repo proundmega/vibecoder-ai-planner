@@ -16,7 +16,7 @@ const { addCredentialSchema, updateCredentialSchema } = require('../validators/c
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: List of credentials
@@ -33,7 +33,7 @@ router.get('/:projectId/credentials', verifyToken, credentialController.listCred
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:
@@ -58,11 +58,11 @@ router.post('/:projectId/credentials', verifyToken, requireAnyPermission('PROJEC
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *       - in: path
  *         name: credentialId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:
@@ -87,11 +87,11 @@ router.patch('/:projectId/credentials/:credentialId', verifyToken, requireAnyPer
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *       - in: path
  *         name: credentialId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Credential deleted
@@ -108,11 +108,11 @@ router.delete('/:projectId/credentials/:credentialId', verifyToken, requireAnyPe
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *       - in: path
  *         name: credentialId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Credential rotated
@@ -129,7 +129,7 @@ router.post('/:projectId/credentials/:credentialId/rotate', verifyToken, require
  *       - in: path
  *         name: projectId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Decrypted key

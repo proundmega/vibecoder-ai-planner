@@ -54,9 +54,9 @@ function maskAgentList(agents) {
  *             schema:
  *               type: object
  *               properties:
- *                 id: { type: string, format: uuid }
+ *                 id: { $ref: '#/components/schemas/NumericId' }
  *                 name: { type: string }
- *                 user_id: { type: string, format: uuid }
+ *                 user_id: { $ref: '#/components/schemas/NumericId' }
  *                 api_key: { type: string }
  *                 generatedApiKey: { type: string }
  *       400:
@@ -116,7 +116,7 @@ router.get('/', verifyTokenOrAgent, requireAnyPermission('AGENT_READ'), async (r
  *       - in: path
  *         name: agentId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: API key revoked
@@ -143,7 +143,7 @@ router.post('/revoke/:agentId', verifyTokenOrAgent, requireAnyPermission('AGENT_
  *       - in: path
  *         name: agentId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     requestBody:
  *       content:
  *         application/json:
@@ -183,7 +183,7 @@ router.put('/:agentId', verifyTokenOrAgent, requireAnyPermission('AGENT_REVOKE')
  *       - in: path
  *         name: agentId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Agent deleted
@@ -210,7 +210,7 @@ router.delete('/:agentId', verifyTokenOrAgent, requireAnyPermission('AGENT_DELET
  *       - in: path
  *         name: agentId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Agent activity history
@@ -274,7 +274,7 @@ router.get('/:agentId/history', verifyTokenOrAgent, requireAnyPermission('AGENT_
  *       - in: path
  *         name: agentId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Agent key info
@@ -311,7 +311,7 @@ router.get('/:agentId/key', verifyTokenOrAgent, async (req, res) => {
  *       - in: path
  *         name: agentId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     headers:
  *       X-API-Key:
  *         required: true
@@ -356,7 +356,7 @@ router.get('/:agentId/provider-config', async (req, res, next) => {
  *       - in: path
  *         name: agentId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *       - in: query
  *         name: since
  *         schema: { type: string, format: date-time }
@@ -424,7 +424,7 @@ router.get('/:agentId/provider-config/changed', verifyTokenOrAgent, async (req, 
  *       - in: path
  *         name: agentId
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: API key rotated successfully

@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { NumericId } from '../models/NumericId';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -13,7 +14,7 @@ export class CredentialsService {
      * @throws ApiError
      */
     public static getCredentialsCredentials(
-        projectId: string,
+        projectId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -31,7 +32,7 @@ export class CredentialsService {
      * @throws ApiError
      */
     public static postCredentialsCredentials(
-        projectId: string,
+        projectId: NumericId,
         requestBody?: {
             name?: string;
             credential?: string;
@@ -56,8 +57,8 @@ export class CredentialsService {
      * @throws ApiError
      */
     public static patchCredentialsCredentials(
-        projectId: string,
-        credentialId: string,
+        projectId: NumericId,
+        credentialId: NumericId,
         requestBody?: {
             name?: string;
             credential?: string;
@@ -82,8 +83,8 @@ export class CredentialsService {
      * @throws ApiError
      */
     public static deleteCredentialsCredentials(
-        projectId: string,
-        credentialId: string,
+        projectId: NumericId,
+        credentialId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'DELETE',
@@ -102,8 +103,8 @@ export class CredentialsService {
      * @throws ApiError
      */
     public static postCredentialsCredentialsRotate(
-        projectId: string,
-        credentialId: string,
+        projectId: NumericId,
+        credentialId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -121,7 +122,7 @@ export class CredentialsService {
      * @throws ApiError
      */
     public static getCredentialsCredentialsDecrypt(
-        projectId: string,
+        projectId: NumericId,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',

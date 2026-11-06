@@ -91,5 +91,58 @@ test_role_based_user_management() {
   super_code=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/v1/users/super-admin" \
     -H "Authorization: Bearer $admin_token")
   assert_status "Non-super-admin cannot access super-admin endpoint" "403" "$super_code"
+
+  # bp-133 FR3: soft-deleted users must not appear in either admin list.
+  local list_after_delete
+  list_after_delete=$(curl_sf "${BASE}/api/v1/users" \
+    -H "Authorization: Bearer $admin_token")
+  if echo "$list_after_delete" | grep -q '"email":"member@integration.test"'; then
+    fail "Deleted user absent from admin list" "member@integration.test is still listed"
+  else
+    pass "Deleted user absent from admin list"
+  fi
+
+  local super_token
+  super_token=$(seed_user "root@integration.test" "password123" "super_admin")
+  if [ -z "$super_token" ]; then
+    fail "Super admin seeded" "no token returned"
+    return
+  fi
+  pass "Super admin seeded"
+
+  local doomed_body doomed_id
+  doomed_body=$(curl_sf -X POST "${BASE}/api/v1/users" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $super_token" \
+    -d '{"name":"Soft Deleted","email":"softdeleted@integration.test","password":"password123","role":"user"}')
+  doomed_id=$(echo "$doomed_body" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+  local super_before
+  super_before=$(curl_sf "${BASE}/api/v1/users/super-admin" \
+    -H "Authorization: Bearer $super_token")
+  if echo "$super_before" | grep -q '"email":"softdeleted@integration.test"'; then
+    pass "Live user present in super-admin list"
+  else
+    fail "Live user present in super-admin list" "softdeleted@integration.test is missing"
+  fi
+
+  local super_delete_code
+  super_delete_code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE}/api/v1/users/$doomed_id" \
+    -H "Authorization: Bearer $super_token")
+  assert_status "Super admin can delete user" "200" "$super_delete_code"
+
+  local super_after
+  super_after=$(curl_sf "${BASE}/api/v1/users/super-admin" \
+    -H "Authorization: Bearer $super_token")
+  if echo "$super_after" | grep -q '"email":"softdeleted@integration.test"'; then
+    fail "Deleted user absent from super-admin list" "softdeleted@integration.test is still listed"
+  else
+    pass "Deleted user absent from super-admin list"
+  fi
+  if echo "$super_after" | grep -q '"email":"alice@integration.test"'; then
+    pass "Live user remains in super-admin list"
+  else
+    fail "Live user remains in super-admin list" "alice@integration.test is missing"
+  fi
 }
 test_role_based_user_management
