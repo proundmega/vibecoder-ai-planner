@@ -23,7 +23,7 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 | 4 | **fg-32** — review feedback loop | Blocked | fg-31, fg-30, fg-33. |
 | 5 | **fg-30 Phases 2-4** | Not ticketed | Needs its own ticket IDs before work starts. |
 
-`fg-34` (sandbox) is in progress as slice 1; `fg-35` (GitHub App credentials) depends only on fg-30 Phase 1 and remains unblocked but unscheduled. `fg-36` onward have unmet
+`fg-34` (sandbox) is in review as slice 1 (#126); `fg-35` (GitHub App credentials) depends only on fg-30 Phase 1 and remains unblocked but unscheduled. `fg-36` onward have unmet
 prerequisites, and `fg-46` is deferred. Do not start a roadmap suite until its
 "Depends on" column is satisfied.
 
