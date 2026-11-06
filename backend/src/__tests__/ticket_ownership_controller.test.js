@@ -1,6 +1,8 @@
 const ticketController = require('../controllers/ticketController');
 const TicketService = require('../services/TicketService');
 const MessageService = require('../services/MessageService');
+const PermissionService = require('../services/PermissionService');
+const User = require('../models/user');
 
 jest.mock('../services/TicketService', () => {
   const actual = jest.requireActual('../services/TicketService');
@@ -48,30 +50,48 @@ describe('TicketController - Agent Orchestration', () => {
   });
 
   describe('pickUpTicket', () => {
-    test('should pick up a ticket and return agent info', async () => {
+    test('should pick up a ticket using the agent id, not the owner user id', async () => {
       const mockTicket = {
         id: 100,
         title: 'Test Ticket',
         status: 'in_progress',
-        assigned_agent_id: 1,
+        assigned_agent_id: 7,
         locked_at: new Date(),
       };
 
       TicketService.pickUpTicket.mockResolvedValueOnce(mockTicket);
 
       req.params.ticketId = '100';
+      req.agent = { id: 7, owner_id: 1 };
 
       await ticketController.pickUpTicket(req, res);
 
-      expect(TicketService.pickUpTicket).toHaveBeenCalledWith('100', 1);
+      expect(TicketService.pickUpTicket).toHaveBeenCalledWith('100', 7);
       expect(res.json).toHaveBeenCalledWith({
         success: true,
         data: {
           id: 100,
           title: 'Test Ticket',
           status: 'in_progress',
-          assignedAgentId: 1,
+          assignedAgentId: 7,
           lockedAt: expect.any(Date),
+        },
+      });
+    });
+
+    test('should reject a JWT request that has no agent identity', async () => {
+      req.params.ticketId = '100';
+      req.agent = undefined;
+
+      await ticketController.pickUpTicket(req, res);
+
+      expect(TicketService.pickUpTicket).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Agent credentials required to pick up a ticket',
         },
       });
     });
@@ -81,6 +101,7 @@ describe('TicketController - Agent Orchestration', () => {
       TicketService.pickUpTicket.mockRejectedValueOnce(mockError);
 
       req.params.ticketId = '100';
+      req.agent = { id: 7, owner_id: 1 };
 
       const next = jest.fn();
       await ticketController.pickUpTicket(req, res, next);
@@ -90,7 +111,7 @@ describe('TicketController - Agent Orchestration', () => {
   });
 
   describe('releaseTicket', () => {
-    test('should release a ticket and return updated info', async () => {
+    test('should release as an operator with PROJECT_UPDATE', async () => {
       const mockTicket = {
         id: 100,
         title: 'Test Ticket',
@@ -100,12 +121,16 @@ describe('TicketController - Agent Orchestration', () => {
       };
 
       TicketService.releaseTicket.mockResolvedValueOnce(mockTicket);
+      User.find.mockResolvedValueOnce({ role: 'project_admin' });
+      PermissionService.hasPermission.mockResolvedValueOnce(true);
 
       req.params.ticketId = '100';
+      req.agent = undefined;
 
       await ticketController.releaseTicket(req, res);
 
-      expect(TicketService.releaseTicket).toHaveBeenCalledWith('100', 1);
+      expect(PermissionService.hasPermission).toHaveBeenCalledWith('project_admin', 'PROJECT_UPDATE');
+      expect(TicketService.releaseTicket).toHaveBeenCalledWith('100', { operatorId: 1 });
       expect(res.json).toHaveBeenCalledWith({
         success: true,
         data: {
@@ -118,11 +143,50 @@ describe('TicketController - Agent Orchestration', () => {
       });
     });
 
+    test('should release as the assigned agent and pass the agent id', async () => {
+      TicketService.releaseTicket.mockResolvedValueOnce({
+        id: 100,
+        title: 'Test Ticket',
+        status: 'backlog',
+        assigned_agent_id: null,
+        locked_at: null,
+      });
+
+      req.params.ticketId = '100';
+      req.agent = { id: 7, owner_id: 1 };
+
+      await ticketController.releaseTicket(req, res);
+
+      expect(TicketService.releaseTicket).toHaveBeenCalledWith('100', { agentId: 7 });
+      expect(PermissionService.hasPermission).not.toHaveBeenCalled();
+    });
+
+    test('should reject a JWT caller without PROJECT_UPDATE', async () => {
+      User.find.mockResolvedValueOnce({ role: 'user' });
+      PermissionService.hasPermission.mockResolvedValueOnce(false);
+
+      req.params.ticketId = '100';
+      req.agent = undefined;
+
+      await ticketController.releaseTicket(req, res);
+
+      expect(TicketService.releaseTicket).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'PROJECT_UPDATE permission required to release a ticket',
+        },
+      });
+    });
+
     test('should pass errors to next middleware', async () => {
       const mockError = new Error('Ticket not found');
       TicketService.releaseTicket.mockRejectedValueOnce(mockError);
 
       req.params.ticketId = '100';
+      req.agent = { id: 7, owner_id: 1 };
 
       const next = jest.fn();
       await ticketController.releaseTicket(req, res, next);

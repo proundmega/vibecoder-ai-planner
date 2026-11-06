@@ -280,7 +280,7 @@ describe('HeartbeatService', () => {
 
       await heartbeatService.cleanupStaleAgents();
 
-      expect(ticketService.releaseTicket).toHaveBeenCalledWith('ticket-123');
+      expect(ticketService.releaseTicket).toHaveBeenCalledWith('ticket-123', { agentId: 1 });
     });
 
     test('should skip ticket release when current_ticket_id is null', async () => {

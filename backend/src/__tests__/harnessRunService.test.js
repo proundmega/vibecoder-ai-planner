@@ -63,11 +63,11 @@ describe('HarnessRunService', () => {
       ).rejects.toThrow('attempt must be a positive integer');
     });
 
-    it('requires the ticket to be assigned to the agent owner', async () => {
+    it('requires the ticket to be assigned to the agent', async () => {
       await expect(
         HarnessRunService.startRun({ ticketId: 42, agentId: 7, branch: 'b' })
       ).rejects.toThrow('Ticket is not assigned to this agent');
-      expect(pool.query.mock.calls[0][0]).toContain('t.assigned_agent_id = a.owner_id');
+      expect(pool.query.mock.calls[0][0]).toContain('t.assigned_agent_id = a.id');
     });
 
     it('maps the active-run unique index to a conflict', async () => {
@@ -312,7 +312,7 @@ describe('HarnessRunService', () => {
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('ON CONFLICT (ticket_id) DO UPDATE');
       expect(sql).toContain('EXISTS');
-      expect(sql).toContain('t.assigned_agent_id = a.owner_id');
+      expect(sql).toContain('t.assigned_agent_id = a.id');
       expect(params).toEqual([42, RUN_ID, 7, 120]);
     });
 
@@ -345,7 +345,7 @@ describe('HarnessRunService', () => {
       expect(sql).toContain("r.status = 'running'");
       expect(sql).toContain('l.ticket_id = r.ticket_id');
       expect(sql).toContain('l.agent_id = r.agent_id');
-      expect(sql).toContain('t.assigned_agent_id = a.owner_id');
+      expect(sql).toContain('t.assigned_agent_id = a.id');
     });
 
     it('returns null when renewing a lost lease', async () => {

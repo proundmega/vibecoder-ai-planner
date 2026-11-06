@@ -138,7 +138,19 @@ async function changeStatus(req, res, next) {
 async function pickUpTicket(req, res, next) {
   try {
     const { ticketId } = req.params;
-    const agentId = req.user.userId;
+    // assigned_agent_id references agents(id); only API-key agent requests
+    // carry an agent identity.
+    const agentId = req.agent && req.agent.id;
+
+    if (!agentId) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Agent credentials required to pick up a ticket',
+        },
+      });
+    }
 
     const result = await TicketService.pickUpTicket(ticketId, agentId);
     res.json({
@@ -159,9 +171,38 @@ async function pickUpTicket(req, res, next) {
 async function releaseTicket(req, res, next) {
   try {
     const { ticketId } = req.params;
-    const adminId = req.user.userId;
 
-    const result = await TicketService.releaseTicket(ticketId, adminId);
+    if (req.agent) {
+      const result = await TicketService.releaseTicket(ticketId, { agentId: req.agent.id });
+      return res.json({
+        success: true,
+        data: {
+          id: result.id,
+          title: result.title,
+          status: result.status,
+          assignedAgentId: result.assigned_agent_id,
+          lockedAt: result.locked_at,
+        },
+      });
+    }
+
+    const user = await User.find(req.user.userId);
+    const userRole = user?.role || req.user.role || 'member';
+    // TICKET_UPDATE is granted to the base `user` role, so releasing an
+    // agent-assigned ticket needs the operator-level PROJECT_UPDATE instead.
+    const canRelease = await PermissionService.hasPermission(userRole, 'PROJECT_UPDATE');
+
+    if (!canRelease) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'PROJECT_UPDATE permission required to release a ticket',
+        },
+      });
+    }
+
+    const result = await TicketService.releaseTicket(ticketId, { operatorId: req.user.userId });
     res.json({
       success: true,
       data: {

@@ -105,7 +105,7 @@ describe('TicketService - Agent Orchestration', () => {
 
       TicketService.releaseTicket.mockResolvedValueOnce(releasedTicket);
 
-      const result = await TicketService.releaseTicket(100, 1);
+      const result = await TicketService.releaseTicket(100, { agentId: 1 });
 
       expect(result.status).toBe('backlog');
       expect(result.assigned_agent_id).toBeNull();
@@ -115,13 +115,13 @@ describe('TicketService - Agent Orchestration', () => {
     test('should throw error for non-existent ticket', async () => {
       TicketService.releaseTicket.mockRejectedValueOnce(new NotFoundError('Ticket not found'));
 
-      await expect(TicketService.releaseTicket(999, 1)).rejects.toThrow(NotFoundError);
+      await expect(TicketService.releaseTicket(999, { agentId: 1 })).rejects.toThrow(NotFoundError);
     });
 
     test('should throw error if ticket is not assigned to any agent', async () => {
       TicketService.releaseTicket.mockRejectedValueOnce(new ValidationError('Ticket is not assigned to any agent'));
 
-      await expect(TicketService.releaseTicket(100, 1)).rejects.toThrow(ValidationError);
+      await expect(TicketService.releaseTicket(100, { agentId: 1 })).rejects.toThrow(ValidationError);
     });
   });
 

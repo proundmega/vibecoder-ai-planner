@@ -8,7 +8,6 @@ const { ForbiddenError } = require('../errors/HttpError');
 async function requireTicketOwnership(req, res, next) {
   try {
     const { id } = req.params;
-    const userId = req.user.userId;
     const userRole = req.user.role;
 
     // Admins bypass ownership check
@@ -16,7 +15,14 @@ async function requireTicketOwnership(req, res, next) {
       return next();
     }
 
-    await TicketService.enforceOwnership(id, userId);
+    // assigned_agent_id references agents(id); only API-key agent requests
+    // have an agent identity to compare.
+    const agentId = req.agent && req.agent.id;
+    if (!agentId) {
+      throw new ForbiddenError('Agent credentials required to modify this ticket');
+    }
+
+    await TicketService.enforceOwnership(id, agentId);
     next();
   } catch (error) {
     if (error instanceof ForbiddenError) {

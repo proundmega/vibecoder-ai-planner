@@ -28,11 +28,14 @@ This is an umbrella ticket. Each defect gets its own implementation slice (and, 
 
 ## O4 - Agent identity
 
-- Current `assigned_agent_id` references `users(id)` and stores the owner user id.
-- Decide: add `agents.id` FK or store `agent_id` with a clear name.
-- Migration + backfill from existing agents/users.
+- **Decision (2026-11-04):** `tickets.assigned_agent_id` references `agents(id)` and stores the agent id, not `agents.owner_id`.
+- Migration `048_ticket_assigned_agent_fk.sql` drops the legacy `users(id)` FK, maps each stored owner user id to the oldest agent owned by that user (ambiguous owners use the lowest agent id), clears unmappable values, and adds the new FK with `ON DELETE SET NULL`. Rollback restores the `users(id)` FK.
+- Unmapped legacy tickets that were `in_progress` return to `backlog` (with `locked_at` cleared); `review`/`done` keep their status. A `BEFORE DELETE` trigger on `agents` applies the same release when an agent is deleted.
+- Pickup requires API-key agent credentials (`req.agent.id`); JWT callers receive 403 instead of storing a user id.
+- Release is identity-checked: agent callers must own the assignment; JWT callers need `PROJECT_UPDATE` (operator/admin). `HeartbeatService` passes the stale agent id.
+- Harness start/lease checks compare `assigned_agent_id` to `agents.id`; `releaseTicketForRun` also requires `assigned_agent_id = run.agent_id`.
 - Update pickup/release/heartbeat/audit and tests.
-- Preserve existing data; provide a rollback.
+- Preserve existing data where a mapping exists; provide a rollback.
 
 ## O5 - Validator camelCase
 

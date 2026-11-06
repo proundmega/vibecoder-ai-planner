@@ -33,45 +33,51 @@ test_ticket_ownership() {
     fail "Ticket ownership" "expected no assigned_agent_id, got $agent_id"
   fi
 
-  local agent_email="agent_own_$(date +%s)@integration.test"
-  local agent_body
-  agent_body=$(curl_sf -X POST "${BASE}/api/v1/users" \
+  # O4: pickup/release are authenticated as an agent record, not the owner user.
+  local agent_body agent_api_key
+  agent_body=$(curl_sf -X POST "${BASE}/api/v1/agents/create" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
-    -d "{\"name\":\"Test Agent\",\"email\":\"$agent_email\",\"password\":\"password123\",\"role\":\"member\",\"is_agent\":true,\"agent_roles\":[\"worker\"]}")
-  local agent_user_id
-  agent_user_id=$(echo "$agent_body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+    -d '{"name":"Ownership Agent"}')
+  agent_api_key=$(echo "$agent_body" | jq -r '.generatedApiKey // .api_key // empty')
+  if [ -n "$agent_api_key" ]; then
+    pass "Agent API key issued"
+  else
+    fail "Agent API key issued" "no key returned: $agent_body"
+  fi
 
-  local agent_token
-  agent_token=$(login "$agent_email" "password123")
+  local jwt_pickup_code
+  jwt_pickup_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${BASE}/api/v1/tickets/$ticket_id/pickup" \
+    -H "Authorization: Bearer $token")
+  assert_status "JWT pickup is rejected" "403" "$jwt_pickup_code"
 
   local pickup_body
   pickup_body=$(curl_sf -X POST "${BASE}/api/v1/tickets/$ticket_id/pickup" \
-    -H "Authorization: Bearer $agent_token")
+    -H "X-API-Key: $agent_api_key")
   assert_has_field "Pickup assigns agent" "assignedAgentId" "$pickup_body"
   assert_field "Pickup sets status to in_progress" "status" "in_progress" "$(echo "$pickup_body" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)"
 
   local msg_body
   msg_body=$(curl_sf -X POST "${BASE}/api/v1/tickets/$ticket_id/messages" \
     -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $agent_token" \
-    -d '{"messageType":"update","content":"Agent started working on this ticket","senderId":"'"$agent_user_id"'"}')
+    -H "Authorization: Bearer $token" \
+    -d '{"messageType":"update","content":"Agent started working on this ticket"}')
   assert_has_field "Post message returns id" "id" "$msg_body"
   assert_field "Message content preserved" "content" "Agent started working on this ticket" "$(echo "$msg_body" | grep -o '"content":"[^"]*"' | cut -d'"' -f4)"
 
   local msgs_body
   msgs_body=$(curl_sf "${BASE}/api/v1/tickets/$ticket_id/messages" \
-    -H "Authorization: Bearer $agent_token")
+    -H "Authorization: Bearer $token")
   assert_has_field "Get messages returns array" "data" "$msgs_body"
 
   local release_body
   release_body=$(curl_sf -X POST "${BASE}/api/v1/tickets/$ticket_id/release" \
-    -H "Authorization: Bearer $agent_token")
+    -H "X-API-Key: $agent_api_key")
   assert_has_field "Release clears agent assignment" "assignedAgentId" "$release_body"
 
   local single_body
   single_body=$(curl_sf "${BASE}/api/v1/tickets/$ticket_id" \
-    -H "Authorization: Bearer $agent_token")
+    -H "Authorization: Bearer $token")
   assert_field "Released ticket status is backlog" "status" "backlog" "$(echo "$single_body" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)"
 }
 test_ticket_ownership

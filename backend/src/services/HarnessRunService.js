@@ -121,7 +121,7 @@ class HarnessRunService {
          JOIN agents a ON a.id = $2
          WHERE t.id = $1
            AND t.status = 'in_progress'
-           AND t.assigned_agent_id = a.owner_id
+           AND t.assigned_agent_id = a.id
            AND NULLIF(BTRIM(t.pr_url), '') IS NULL
            AND NOT EXISTS (
              SELECT 1 FROM harness_runs existing
@@ -161,7 +161,7 @@ class HarnessRunService {
         `SELECT t.status,
                 NULLIF(BTRIM(t.pr_url), '') AS pr_url,
                 t.assigned_agent_id,
-                a.owner_id,
+                a.id AS agent_id,
                 EXISTS (
                   SELECT 1 FROM harness_runs existing
                   WHERE existing.ticket_id = t.id
@@ -186,7 +186,7 @@ class HarnessRunService {
       }
       if (
         ticket.status !== 'in_progress' ||
-        String(ticket.assigned_agent_id) !== String(ticket.owner_id)
+        String(ticket.assigned_agent_id) !== String(ticket.agent_id)
       ) {
         throw new ForbiddenError('Ticket is not assigned to this agent or is not in progress');
       }
@@ -419,7 +419,7 @@ class HarnessRunService {
 
     const result = await pool.query(
       `WITH run AS (
-         SELECT r.id, r.ticket_id
+         SELECT r.id, r.ticket_id, r.agent_id
          FROM harness_runs r
          WHERE r.id = $1
            AND r.status IN ('failed', 'dead_letter')
@@ -443,6 +443,7 @@ class HarnessRunService {
        FROM run
        WHERE t.id = run.ticket_id
          AND t.status = 'in_progress'
+         AND t.assigned_agent_id = run.agent_id
          AND NULLIF(BTRIM(t.pr_url), '') IS NULL
          AND NOT EXISTS (
            SELECT 1 FROM harness_runs other
@@ -798,7 +799,7 @@ class HarnessRunService {
            AND r.agent_id = $3
            AND r.status = 'running'
            AND t.status = 'in_progress'
-           AND t.assigned_agent_id = a.owner_id
+           AND t.assigned_agent_id = a.id
        )
        ON CONFLICT (ticket_id) DO UPDATE
        SET run_id = EXCLUDED.run_id,
@@ -836,7 +837,7 @@ class HarnessRunService {
          AND r.id = l.run_id
          AND r.status = 'running'
          AND t.status = 'in_progress'
-         AND t.assigned_agent_id = a.owner_id
+         AND t.assigned_agent_id = a.id
        RETURNING l.*`,
       [normalisedTicketId, normalisedRunId, normalisedAgentId, ttl]
     );
