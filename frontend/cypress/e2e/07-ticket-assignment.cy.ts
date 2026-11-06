@@ -12,12 +12,11 @@ describe('Ticket Assignment', () => {
   });
 
   function openFreshTicket(title: string) {
-    // Ticket writes are currently guarded only by TICKET_UPDATE, not project
-    // membership, so this seeded member can edit the admin's project ticket.
-    // Membership enforcement is recorded as deferred item 00 D16.
-    cy.login(admin.email, admin.password);
+    // Ticket writes are project-scoped (bp-133 FR4). The seeded member owns
+    // the ticket created here, which keeps the ticket-owner path valid while
+    // the project owner (admin) remains available in the assignee list.
+    cy.login(member.email, member.password);
     cy.createTicket(projectId, title).then((ticketId) => {
-      cy.login(member.email, member.password);
       cy.visit(`/projects/${projectId}/tickets/${ticketId}`);
     });
   }
