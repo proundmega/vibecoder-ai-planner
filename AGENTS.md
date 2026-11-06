@@ -183,6 +183,10 @@ handshakes and CONNECT :80. TLS renegotiation and the encrypted inner Host are
 D16. Do not enable Docker mode for untrusted repos until D14 (the
 descendant-sweep fork race) is closed, and do not treat the allowlist as a
 hard host boundary until D16 is closed.
+Sandbox base images are digest-pinned; `agent/scripts/sandbox-image-security.sh
+--check-pins` enforces that, and the same script generates an SBOM (syft),
+scans for vulnerabilities (trivy/grype) and optionally verifies a cosign
+signature. Set `SANDBOX_SCAN_REQUIRED=1` in CI to make the scan mandatory.
 Phase 1 is blocking
 prompt mode and denies the `question` and `doom_loop` tools; autonomy and the
 human question loop are later phases.

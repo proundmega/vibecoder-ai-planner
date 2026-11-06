@@ -236,6 +236,41 @@ EOF
             }
         }
 
+        stage('Sandbox Supply Chain') {
+            steps {
+                dir('agent') {
+                    sh 'bash scripts/sandbox-image-security.sh --check-pins'
+                    // SBOM/scan tools are optional on the Jenkins agent. The
+                    // digest-pin check above is always enforced; set
+                    // SANDBOX_SCAN_REQUIRED=1 on a runner with syft/trivy or
+                    // grype to make the scan mandatory.
+                    sh '''
+                        if command -v syft >/dev/null 2>&1 \
+                            && { command -v trivy >/dev/null 2>&1 || command -v grype >/dev/null 2>&1; }; then
+                            if echo "$DOCKER_HOST" | grep -q "^tcp://"; then
+                                HOSTNAME=$(echo "$DOCKER_HOST" | sed "s|tcp://||; s|:.*||")
+                                PORT=$(echo "$DOCKER_HOST" | sed "s|.*:||")
+                                IP=$(getent hosts "$HOSTNAME" 2>/dev/null | awk '{print $1}')
+                                if [ -n "$IP" ]; then
+                                    export DOCKER_HOST="tcp://$IP:$PORT"
+                                elif [ -n "$DOCKER_HOST_FALLBACK" ]; then
+                                    export DOCKER_HOST="$DOCKER_HOST_FALLBACK"
+                                fi
+                            fi
+                            docker build -f sandbox.Dockerfile -t vibecode-agent-sandbox:ci .
+                            bash scripts/sandbox-image-security.sh \
+                                --sbom-and-scan vibecode-agent-sandbox:ci
+                        elif [ "${SANDBOX_SCAN_REQUIRED:-0}" = "1" ]; then
+                            echo "SBOM/scan tools are required but syft/trivy/grype is missing" >&2
+                            exit 1
+                        else
+                            echo "syft/trivy/grype not installed; SBOM/scan skipped (pin check passed)"
+                        fi
+                    '''
+                }
+            }
+        }
+
         stage('Integration Tests') {
             steps {
                 nodejs('Node') {

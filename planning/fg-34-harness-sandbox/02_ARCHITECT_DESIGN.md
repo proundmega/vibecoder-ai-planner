@@ -94,10 +94,10 @@ Slice 2 implements this with an internal Docker network whose only peer is a har
 
 ## Supply chain
 
-- Pin base images by digest; rebuild on a schedule.
-- Generate an SBOM per image; scan OS packages and language dependencies.
-- Use lockfiles and `npm ci`/equivalent where possible.
-- Consider `--ignore-scripts` as the default, with an explicit profile opt-in for repos that need lifecycle scripts.
+- Pin base images by digest; rebuild on a schedule. All `FROM` images in `agent/Dockerfile`, `agent/sandbox.Dockerfile` and `agent/sandbox-proxy.Dockerfile` are digest-pinned; `agent/scripts/sandbox-image-security.sh --check-pins` is the deterministic gate (CI runs it even when scanners are unavailable).
+- Generate an SBOM per image (`--sbom`, syft/SPDX JSON under `agent/target/sbom/`); scan OS packages and language dependencies (`--scan`, trivy or grype, HIGH/CRITICAL by default). `--all` optionally verifies a cosign signature when `COSIGN_PUBLIC_KEY` is set.
+- Use lockfiles and `npm ci`/equivalent where possible. The harness already uses `npm ci` when a lockfile exists and `--no-package-lock` otherwise.
+- Consider `--ignore-scripts` as the default, with an explicit profile opt-in for repos that need lifecycle scripts. Lifecycle scripts currently run inside the sandbox; fg-39 repo profiles will own the opt-out.
 - Keep the image minimal; no shell utilities that are not required.
 
 ## Artifact extraction

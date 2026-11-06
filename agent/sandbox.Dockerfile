@@ -7,9 +7,9 @@
 # Build:
 #   docker build -f agent/sandbox.Dockerfile -t vibecode-agent-sandbox:latest agent
 #
-# Base images must be pinned by digest before this is a production default
-# (fg-34 FR9). The node:24-alpine tag is a development convenience for now.
-FROM node:24-alpine
+# Base image is pinned by digest (fg-34 FR9). Update the digest deliberately
+# when upgrading; run `agent/scripts/sandbox-image-security.sh --check-pins`.
+FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8
 
 RUN apk add --no-cache \
         git \

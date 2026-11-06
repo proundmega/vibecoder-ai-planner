@@ -28,6 +28,7 @@ Phase 1 runs OpenCode with `bash` access in a cloned repo on the agent container
 - **Rollout:** `SANDBOX_MODE=host` remains the Phase 1 compatibility default. Docker mode is opt-in, and a Docker create/exec failure never falls back to host execution.
 - **Slice 1** delivers the sandbox runtime foundation and routes supervisor-driven install/verification commands through it.
 - **Slice 2** (merged in #127) adds the egress allowlist proxy (FR4) and bridges the OpenCode bash tool into the sandbox (FR11). The built-in `bash`/`shell` tool is disabled in Docker mode; the model uses `sandbox_bash`, which forwards over a per-run loopback token. The proxy validates the first CONNECT ClientHello SNI, rejects multiple SNI names/duplicate extensions/extra handshakes, rejects CONNECT :80, blocks external DNS, and logs denials only. TLS renegotiation and the encrypted inner HTTP Host inside TLS remain shared-CDN limitations (D16), and output streaming/idempotency are D15/D17.
+- **Slice 3b** (in review) pins every base image by digest and adds `agent/scripts/sandbox-image-security.sh` plus a CI gate: the deterministic pin check always runs; SBOM (syft), vulnerability scan (trivy/grype) and optional cosign verification run when the tools are available. Artifact redaction (D11) remains deferred.
 - It does **not** claim full isolation yet: prompt-injection/supply-chain hardening are later slices. Do **not** enable Docker mode for untrusted repositories until D14 (bounded repeated 5-pass/fork-race descendant sweep) is closed, and do not treat the allowlist as a hard host boundary until D16 is closed; the pre-publish destroy gate prevents publishing with a live sandbox, but a survivor can write before that gate.
 - **Deployment:** Docker mode needs a daemon connection and a workspace path visible to the host. `PoolManager`/compose wiring is deferred to D8; slice 1 requires a manually run host agent (or equivalent path mapping).
 - **Remaining slices** are tracked in `03_ARCHITECT_IMPLEMENTATION.md` and the deferred register below.
@@ -45,7 +46,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D4 | Data redaction before model calls | fg-42 | Privacy | fg-42-harness-privacy | open |
 | D5 | Egress allowlist proxy (FR4) and the OpenCode bash-tool bridge into the sandbox (FR11 complete) | fg-34 | Security | fg-34 slice 2 | done (#127) |
 | D6 | Prompt-injection classification, output scanning and instruction precedence (FR8) | fg-34 | Security | fg-34 slice 3 | open |
-| D7 | SBOM, image scanning and digest-pinned base images (FR9) | fg-34 | Supply chain | fg-34 slice 3 | open |
+| D7 | SBOM, image scanning and digest-pinned base images (FR9) | fg-34 | Supply chain | fg-34 slice 3b | in review (#TBD) |
 | D8 | Docker sandbox deployment wiring: `PoolManager` env, socket proxy/DOCKER_HOST and a host-visible repo volume | fg-34 | Infrastructure | fg-34 slice 2 / fg-43 | open |
 | D9 | Startup reaper for sandbox containers left by a killed agent (the slice-1 shutdown hook covers graceful exit only) | fg-34 | Reliability | fg-34 slice 2 | open |
 | D10 | Race-free artifact copy: the Docker file channel rejects failures by exit code, but `docker cp` and the reported size remain untrusted; a same-container swap/spoof is possible | fg-34 | Security | fg-34 slice 2 | open |
