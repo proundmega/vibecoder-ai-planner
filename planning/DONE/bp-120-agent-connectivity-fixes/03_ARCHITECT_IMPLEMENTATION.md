@@ -6,7 +6,6 @@
 
 ## Ticket: bp-120-agent-connectivity-fixes — Fix Agent Provider Config, Visibility, and Response Format
 
-**Status**: done
 **Priority**: P0
 **Effort**: Medium
 **Author**: AI Assistant
@@ -379,3 +378,9 @@ agent/src/main/java/com/vibecode/agent/AgentApp.java → MODIFY (defensive parsi
 ---
 
 *Fill in all sections before starting implementation.*
+
+## Results
+
+| Date | Commit | Suites | Outcome |
+|---|---|---|---|
+| 2026-09-11 | `33792a5` + `0e62cb0` (#97) | Agent connectivity (backend + Java) | Merged; provider config, heartbeat listing and defensive parsing fixed |

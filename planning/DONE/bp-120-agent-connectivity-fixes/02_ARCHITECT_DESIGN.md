@@ -1,6 +1,5 @@
 # 02_ARCHITECT_DESIGN.md — Agent Connectivity Fixes
 
-**Status**: Working draft
 **Author**: AI Assistant
 **Scope**: Backend + Java Agent
 **Related**: `01_ARCHITECT_REQUIREMENT.md`, `03_ARCHITECT_IMPLEMENTATION.md`

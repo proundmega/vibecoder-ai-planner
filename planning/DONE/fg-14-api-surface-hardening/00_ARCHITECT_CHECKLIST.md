@@ -95,3 +95,10 @@ After implementation, complete ALL items below before marking the ticket as done
 ---
 
 *This checklist prevents agents from skipping planning and jumping straight to coding.*
+
+## Status evidence
+
+| Claim | Evidence |
+|---|---|
+| Implementation merged | PR #94 merged 2026-08-17 |
+| Results recorded | `03_ARCHITECT_IMPLEMENTATION.md` Results row dated 2026-08-17 |

@@ -2,7 +2,6 @@
 
 ## Ticket: fg-13 — Frontend/Backend API Surface Inconsistencies
 
-**Status**: done
 **Priority**: P1
 **Effort**: Medium
 **Author**: AI Assistant
@@ -294,3 +293,9 @@ frontend/cypress/component/ (phase flow)       → EXTEND (F1 feedback URL/body 
 ---
 
 *Fill in all sections before starting implementation. Update status as work progresses. The "Files Changed" section is the most important — it prevents agents from creating redundant code by forcing them to check what already exists.*
+
+## Results
+
+| Date | Commit | Suites | Outcome |
+|---|---|---|---|
+| 2026-08-06 | #82 (merge) | F1–F7 | Merged; post-deploy verification recorded above |

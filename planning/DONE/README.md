@@ -12,13 +12,13 @@
 - **Description**: Fixed the double-wrapped provider config, agent heartbeat listing, and Java defensive parsing.
 
 ## bp-121: Agent Connectivity IP / CORS
-- **PR**: #97 + commit 59c3ec0
+- **PR**: #97 (1b1b793)
 - **Date**: 2026-09-11
 - **Description**: CORS/IP whitelist support for non-localhost agents.
 
 ## bp-123: Test Audit Corrections
 - **PR**: #100
-- **Date**: 2026-11-03
+- **Date**: 2026-11-01
 - **Description**: Test/quality audit corrections (assignee validation, lockout headers, field mapping, critical priority).
 
 ## fg-13: FE/BE API Surface Inconsistencies

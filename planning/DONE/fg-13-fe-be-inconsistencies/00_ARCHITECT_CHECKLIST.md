@@ -134,3 +134,10 @@ Do NOT guess. Do NOT assume. Ask the user.
 ---
 
 *This checklist prevents agents from skipping planning and jumping straight to coding. Always audit existing infrastructure before creating new code.*
+
+## Status evidence
+
+| Claim | Evidence |
+|---|---|
+| Implementation merged | PR #82 merged 2026-08-06 |
+| Results recorded | `03_ARCHITECT_IMPLEMENTATION.md` Results row dated 2026-08-06 |
