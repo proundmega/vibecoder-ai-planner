@@ -47,6 +47,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
     private final SandboxConfig config;
     private final Thread shutdownHook;
+    private final WatchdogFactory watchdogFactory;
     private final Set<String> active = ConcurrentHashMap.newKeySet();
     private final Set<String> created = ConcurrentHashMap.newKeySet();
     private final Map<String, Duration> maxDurations = new ConcurrentHashMap<>();
@@ -56,6 +57,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
     private final Map<String, Process> runningProcesses = new ConcurrentHashMap<>();
 
     public DockerSandboxRunner(SandboxConfig config) {
+        this(config, null);
+    }
+
+    DockerSandboxRunner(SandboxConfig config, WatchdogFactory watchdogFactory) {
         if (config == null) {
             throw new IllegalArgumentException("Sandbox config is required");
         }
@@ -64,8 +69,15 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
         config.validate();
         this.config = config;
+        this.watchdogFactory = watchdogFactory;
         this.shutdownHook = new Thread(this::close, "sandbox-shutdown");
         Runtime.getRuntime().addShutdownHook(shutdownHook);
+    }
+
+    /** Test seam for the watchdog scheduler. */
+    @FunctionalInterface
+    interface WatchdogFactory {
+        ScheduledExecutorService start(String name, Path workspace, AtomicBoolean exceeded);
     }
 
     @Override
@@ -112,10 +124,15 @@ public final class DockerSandboxRunner implements SandboxRunner {
             watchdog = startDiskWatchdog(name, workspace, quotaExceeded);
         } catch (RuntimeException e) {
             // Never leave a container running because its watchdog could not
-            // be scheduled.
-            destroyByName(name);
+            // be scheduled. Retain tracking if removal itself fails so close()
+            // can retry (and D9 can reap it after a hard kill).
+            if (!destroyByName(name)) {
+                log.warn("Sandbox {} could not be removed after watchdog startup "
+                    + "failure; retaining tracking for close/retry", name);
+            } else {
+                created.remove(name);
+            }
             active.remove(name);
-            created.remove(name);
             maxDurations.remove(name);
             artifactLimits.remove(name);
             quotaFlags.remove(name);
@@ -272,14 +289,15 @@ public final class DockerSandboxRunner implements SandboxRunner {
     @Override
     public void close() {
         for (String name : new ArrayList<>(created)) {
-            if (!destroyByName(name)) {
+            if (destroyByName(name)) {
+                created.remove(name);
+            } else {
                 log.warn("Sandbox {} is still present after close; startup reaping is D9", name);
             }
         }
         for (ScheduledExecutorService watchdog : new ArrayList<>(watchdogs.values())) {
             watchdog.shutdownNow();
         }
-        created.clear();
         active.clear();
         maxDurations.clear();
         artifactLimits.clear();
@@ -375,12 +393,22 @@ public final class DockerSandboxRunner implements SandboxRunner {
      * bind-mounted workspace after verification.
      */
     private void killDescendants(SandboxHandle handle) {
-        String script = "for d in /proc/[0-9]*; do "
-            + "p=${d#/proc/}; "
-            + "[ \"$p\" = \"1\" ] && continue; "
-            + "[ \"$p\" = \"$$\" ] && continue; "
-            + "kill -9 \"$p\" 2>/dev/null || true; "
-            + "done; echo OK";
+        // Bounded repeated sweep: a child that forks between enumeration and
+        // kill is picked up by the next pass. This narrows the fork race but
+        // is still not a hard guarantee (D14).
+        String script = "n=0; "
+            + "while [ $n -lt 5 ]; do "
+            + "  found=0; "
+            + "  for d in /proc/[0-9]*; do "
+            + "    p=${d#/proc/}; "
+            + "    [ \"$p\" = \"1\" ] && continue; "
+            + "    [ \"$p\" = \"$$\" ] && continue; "
+            + "    if kill -9 \"$p\" 2>/dev/null; then found=1; fi; "
+            + "  done; "
+            + "  [ $found -eq 0 ] && break; "
+            + "  n=$((n+1)); "
+            + "done; "
+            + "echo OK";
         try {
             DockerResult result = runDocker(
                 List.of(config.dockerBinary(), "exec",
@@ -415,6 +443,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
             return null;
         }
         long interval = Math.max(1, config.diskCheckInterval().toSeconds());
+        if (watchdogFactory != null) {
+            return watchdogFactory.start(name, workspace, exceeded);
+        }
         ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "sandbox-disk-" + name);
             thread.setDaemon(true);

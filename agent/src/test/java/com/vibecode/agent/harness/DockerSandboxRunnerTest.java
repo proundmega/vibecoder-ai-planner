@@ -538,6 +538,85 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void destroyTreatsAnAlreadyRemovedContainerAsSuccess() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path marker = tempDir.resolve("removed.marker");
+        String body = """
+            case "$1" in
+              run) exit 0 ;;
+              inspect)
+                if [ -f '__MARKER__' ]; then echo "Error: No such object"; exit 1; fi
+                echo true
+                ;;
+              rm)
+                touch '__MARKER__'
+                echo "Error: No such container: $*"
+                exit 1
+                ;;
+              *) exit 0 ;;
+            esac
+            """.replace("__MARKER__", marker.toString());
+        Path script = fakeDocker(log, body);
+        SandboxConfig config = dockerConfig(script.toString());
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            runner.destroy(handle);
+        }
+
+        assertTrue(Files.readString(log).contains("rm -f"));
+    }
+
+    @Test
+    void createRetainsTrackingWhenWatchdogSchedulingAndRemovalFail() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              rm) echo "rm failed"; exit 1 ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+        DockerSandboxRunner runner = new DockerSandboxRunner(config,
+            (name, workspace, exceeded) -> {
+                throw new RuntimeException("no scheduler threads");
+            });
+
+        IOException error = assertThrows(IOException.class,
+            () -> runner.create(config.specFor(workspace())));
+        assertTrue(error.getMessage().contains("watchdog"));
+        runner.close();
+
+        assertTrue(Files.readString(log).contains("rm -f"),
+            "create cleanup must attempt to remove the container");
+    }
+
+    @Test
+    void closeWarnsAndRetainsAContainerItCannotRemove() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              rm) echo "rm failed"; exit 1 ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+        DockerSandboxRunner runner = new DockerSandboxRunner(config);
+
+        runner.create(config.specFor(workspace()));
+        runner.close();
+
+        assertTrue(Files.readString(log).contains("rm -f"));
+    }
+
+    @Test
     void guardFailureWithAZeroExitAndFailureTokenIsRejected() throws IOException {
         Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
         Path log = tempDir.resolve("docker.log");

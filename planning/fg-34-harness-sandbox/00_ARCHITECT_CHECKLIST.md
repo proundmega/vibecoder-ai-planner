@@ -26,7 +26,7 @@ Phase 1 runs OpenCode with `bash` access in a cloned repo on the agent container
 ## Scope decisions
 
 - **Rollout:** `SANDBOX_MODE=host` remains the Phase 1 compatibility default. Docker mode is opt-in, and a Docker create/exec failure never falls back to host execution.
-- **Slice 1** delivers the sandbox runtime foundation and routes supervisor-driven install/verification commands through it. It does **not** claim full isolation yet: OpenCode still runs in the supervisor, egress is default-deny only, and prompt-injection/supply-chain hardening are later slices.
+- **Slice 1** delivers the sandbox runtime foundation and routes supervisor-driven install/verification commands through it. It does **not** claim full isolation yet: OpenCode still runs in the supervisor, egress is default-deny only, and prompt-injection/supply-chain hardening are later slices. Do **not** enable Docker mode for untrusted repositories until D14 (one-pass/fork-race descendant sweep) is closed; the pre-publish destroy gate prevents publishing with a live sandbox, but a survivor can write before that gate.
 - **Deployment:** Docker mode needs a daemon connection and a workspace path visible to the host. `PoolManager`/compose wiring is deferred to D8; slice 1 requires a manually run host agent (or equivalent path mapping).
 - **Remaining slices** are tracked in `03_ARCHITECT_IMPLEMENTATION.md` and the deferred register below.
 
@@ -50,4 +50,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D11 | Redaction before storage (NFR5): sandbox/verification output is bounded but not separately redacted | fg-34 | Privacy | fg-34 slice 3 | open |
 | D12 | True disk quota: the supervisor walk cannot see unlinked-but-open files; a quota-enabled volume/filesystem is the durable fix | fg-34 | Reliability | fg-34 slice 2 | open |
 | D13 | CI builds and smoke-tests `agent/sandbox.Dockerfile`; the integration suite currently uses `SANDBOX_IT_IMAGE` (e.g. `redis:7-alpine`) | fg-34 | Testing | fg-34 slice 2 | open |
-| D14 | Post-exec descendant sweep is one pass and best-effort; a fork race can survive until the pre-publish destroy. Ephemeral containers/process namespaces or a confirmed repeated sweep are the hard guarantee | fg-34 | Security | fg-34 slice 2 | open |
+| D14 | Post-exec descendant sweep is bounded and repeated but still best-effort; a process forking during the final pass can survive until the pre-publish destroy. Ephemeral containers/process namespaces or a confirmed quiescent sweep are the hard guarantee | fg-34 | Security | fg-34 slice 2 | open |

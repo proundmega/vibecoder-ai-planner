@@ -63,7 +63,7 @@ Phase 1 relies on OpenCode config denies (`git push`, `rm -rf`, `docker`, etc.) 
 2. A test that attempts network access to a non-allowlisted host is blocked and logged.
 3. CPU/memory/PID/disk breaches kill the run and mark it failed.
 4. No provider key or GitHub token is visible inside the sandbox.
-5. A malicious `postinstall`-style script runs contained and its background children cannot persist beyond the command.
+5. A malicious `postinstall`-style script runs contained; its background children are swept after each command, but the documented fork-race window can persist until the pre-publish destroy (D14). The destroy gate prevents publishing with a live sandbox.
 6. The diff and test output are extracted correctly.
 7. The sandbox image has a SBOM and passes the scanner threshold.
 8. Host mode is the Phase 1 compatibility default, warns loudly, and production sets `SANDBOX_REQUIRE=true`, which refuses it.

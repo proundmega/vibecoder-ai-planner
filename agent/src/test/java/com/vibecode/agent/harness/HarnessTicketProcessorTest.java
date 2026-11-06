@@ -35,6 +35,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -1051,6 +1052,23 @@ class HarnessTicketProcessorTest {
         assertTrue(postedMessages().stream()
             .anyMatch(message -> message.contains(
                 "Could not destroy the sandbox before publishing")));
+    }
+
+    @Test
+    void dockerSandboxDestroyIsRetriedInTheFinally() throws Exception {
+        SandboxHandle handle = new SandboxHandle("sandbox-1", tempDir, false, null);
+        SandboxRunner sandboxRunner = mock(SandboxRunner.class);
+        when(sandboxRunner.create(any())).thenReturn(handle);
+        when(verificationRunner.run(eq(sandboxRunner), eq(handle), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult("npm test", 0, "ok", false)));
+        doThrow(new IOException("first"))
+            .doNothing()
+            .when(sandboxRunner).destroy(handle);
+
+        dockerProcessor(sandboxRunner).processTicket(apiService.pickUpTicket(1L));
+
+        verify(sandboxRunner, times(2)).destroy(handle);
+        verify(workspace, never()).stageFreshDiff();
     }
 
     private HarnessTicketProcessor dockerProcessor(SandboxRunner sandboxRunner) {
