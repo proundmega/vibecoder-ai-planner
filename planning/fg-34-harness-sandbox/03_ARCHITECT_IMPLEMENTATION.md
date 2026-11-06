@@ -9,7 +9,8 @@
 |---|---|---|
 | 1 | Sandbox runtime foundation: config, host/docker runners, limits, filesystem/user hardening, secretless env, default-deny network, sandboxed install/verification commands, tests | Merged (#126) |
 | 2 | Egress allowlist proxy (FR4) and the OpenCode bash-tool bridge so model-driven repo commands also run in the sandbox (FR11 complete) | Merged (#127) |
-| 3 | Prompt-injection defenses (FR8), SBOM/image scan/digest pinning (FR9), artifact redaction | Pending |
+| 3a | Prompt-injection defenses (FR8): untrusted-content labeling, instruction precedence, credential read denies, command exfiltration policy, credential-leak publish gate | In review (#128) |
+| 3b | SBOM/image scan/digest pinning (FR9); artifact redaction (D11) remains deferred | In review (#129) |
 
 Slice 1 deliberately keeps `SANDBOX_MODE=host` as the default so the Phase 1
 harness is unchanged until the Docker path is validated. Docker mode is
@@ -39,7 +40,7 @@ bridge. Operator docs state this explicitly.
 - [ ] Harden prompt-injection handling for repo docs, issues and PR text (slice 3)
 - [x] Add malicious-repo and escape-attempt tests (guard-failure fail-closed with non-zero exit codes, symlink/FIFO copy, background persistence, download-cap pre-check, destroy-failure publish stop, secret, read-only, no-socket, disk quota, non-root, egress allow/deny and direct-egress-blocked integration coverage)
 - [x] Bridge the OpenCode bash tool into the sandbox (slice 2: `sandbox_bash` global tool + loopback per-run-token bridge; built-in bash disabled)
-- [ ] Add image scanning, SBOM and signed base images (slice 3; a minimal sandbox Dockerfile is added now)
+- [x] Add image scanning, SBOM and signed base images (slice 3b: digest-pinned Dockerfiles, `agent/scripts/sandbox-image-security.sh`, CI pin gate, optional syft/trivy/grype/cosign)
 - [x] Define the fallback for local Windows development (`SANDBOX_MODE=host`, loud warning, production guard)
 - [x] Roll out behind a flag before making it the default (`SANDBOX_MODE`, `SANDBOX_REQUIRE`)
 
@@ -71,8 +72,10 @@ bridge. Operator docs state this explicitly.
 | `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java` | Changed | Create a Docker sandbox before the model run; route install/verify through it; start the bash bridge; require a successful pre-publish destroy; guarded retry in `finally` |
 | `agent/src/main/java/com/vibecode/agent/config/AgentConfig.java` | Changed | Load `SandboxConfig` from the environment |
 | `agent/Dockerfile` | Changed | Add `docker-cli` so the supervisor can reach a daemon/socket proxy |
-| `agent/sandbox.Dockerfile` | Added | Minimal Node/git/build-tools sandbox image |
-| `agent/sandbox-proxy.Dockerfile` | Added | Minimal trusted Node image for the egress proxy, separate from `SANDBOX_IMAGE` |
+| `agent/sandbox.Dockerfile` | Added | Minimal Node/git/build-tools sandbox image (base digest-pinned) |
+| `agent/sandbox-proxy.Dockerfile` | Added | Minimal trusted Node image for the egress proxy, separate from `SANDBOX_IMAGE` (base digest-pinned) |
+| `agent/scripts/sandbox-image-security.sh` | Added | Deterministic digest-pin gate plus SBOM (syft), vulnerability scan (trivy/grype) and optional cosign verification |
+| `Jenkinsfile` | Changed | Agent stage builds the sandbox image and runs the pin gate; SBOM/scan runs when tools are present |
 | `agent/docker-compose.yml` | Changed | Pass through sandbox environment variables |
 | `agent/.env.example` | Changed | Document every sandbox variable |
 | `AGENTS.md` | Changed | Document the sandbox environment |
@@ -106,7 +109,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR6 | Java unit + integration | `SandboxConfigTest`, `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Root uid rejected; `--user`, `--cap-drop ALL`, `no-new-privileges`; integration asserts `id -u == 1000` | `cd agent && mvn test`; integration command above |
 | FR7 | Java unit + integration | `SandboxPathsTest`, `HostSandboxRunnerTest`, `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Lexical traversal and symlinked/FIFO copies rejected; Docker guards fail with non-zero exit codes (flood-proof) and require `OK`; downloads are size-checked before `docker cp` and use a temp file; host writes land in the workspace | `cd agent && mvn test`; integration command above |
 | FR8 | Pending slice 3 | — | Prompt-injection classification, instruction precedence and output/exfiltration scanning | — |
-| FR9 | Partial (sandbox image) / pending slice 3 | `agent/sandbox.Dockerfile` | Minimal image added; SBOM, scanner threshold and digest pinning still pending | — |
+| FR9 | Dockerfile/script unit | `SandboxImageSecurityScriptTest`; `VerificationRunnerTest` | All `FROM` images in `agent/Dockerfile`, `agent/sandbox.Dockerfile` and `agent/sandbox-proxy.Dockerfile` are `@sha256` pinned; the script rejects an unpinned fixture and allows `scratch`; SBOM (`syft`), scan (`trivy`/`grype`) and optional cosign verification are available; Node installs use `npm ci` when a lockfile exists and never create a lockfile | `cd agent && mvn test`; `bash agent/scripts/sandbox-image-security.sh --check-pins` |
 | FR10 | Java unit + runtime | `SandboxConfigTest`, `SandboxRunnerFactoryTest` | Host is the compatibility default with a warning; strict booleans make `SANDBOX_REQUIRE=true` refuse host mode | `cd agent && mvn test` |
 | FR11 | **Done** — exec/file + bridge | `SandboxBashBridgeTest`, `OpenCodeClientTest`, `OpenCodeConfigWriterTest`, `HarnessTicketProcessorTest`, `DockerSandboxRunnerIntegrationTest` | Loopback-only, per-run token, cwd/path mapping, command policy, timeout clamp, no inbound sandbox port; built-in `bash` and `shell` denied and `sandbox_bash` routed into the sandbox; real-Docker bridge exec smoke test; output streaming is D15 and idempotency is D17 | `cd agent && mvn test`; `SANDBOX_IT_IMAGE=redis:7-alpine mvn test -Dtest=DockerSandboxRunnerIntegrationTest#bridgeExecutesCommandsInsideTheSandbox` |
 | NFR1 | Java unit + integration | `SandboxPathsTest`, `HostSandboxRunnerTest`, `DockerSandboxRunnerTest`, `DockerSandboxRunnerIntegrationTest` | Escape/symlink rejection, read-only rootfs, workspace-only mount, no docker socket | `cd agent && mvn test`; integration command above |
@@ -120,6 +123,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 ### Coverage notes
 
 - CPU/PID enforcement is asserted through the `docker run` flags; the integration test asserts the memory cgroup bound. A behavioral CPU/PID stress test is deferred to slice 3.
+- Supply chain (FR9): every base image in the supervisor, sandbox and proxy Dockerfiles is pinned by digest; `agent/scripts/sandbox-image-security.sh --check-pins` is the deterministic CI gate. `--sbom` uses syft (SPDX JSON under `agent/target/sbom/`), `--scan` uses trivy or grype with a HIGH/CRITICAL default, and `--all` optionally verifies a cosign signature when `COSIGN_PUBLIC_KEY` is set. SBOM/scan tools are optional locally; set `SANDBOX_SCAN_REQUIRED=1` in CI to fail instead of skipping. Node installs already use `npm ci` when a lockfile exists and `--no-package-lock` otherwise. Lifecycle scripts run inside the sandbox; a repo-profile opt-out is fg-39.
 - The disk quota is enforced by a lifetime supervisor watchdog at `SANDBOX_DISK_CHECK_INTERVAL_SECONDS` granularity. Measurement failure (including per-file `visitFileFailed`) fails closed. Unlinked-but-open files are outside the supervisor walk and require a real FS quota (D12).
 - The Docker file channel uses distinct non-zero exit codes for guard failures, so a same-UID stdout flood cannot mask them; successful guards also print `OK`/`OK <size>`. Downloads are sized inside the container before copying and use a temp file. The size and `docker cp` remain untrusted (D10).
 - A pre-publish `destroy` failure fails the ticket and never stages or pushes; `DockerSandboxRunner.destroy` verifies removal and keeps tracking on failure. `close()` retries tracked containers and retains the shutdown hook while any remain; a hard-killed agent leaves cleanup to the D9 reaper.
@@ -132,7 +136,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 ## Review checklist
 
-- [ ] Every `FR*`/`NFR*` has a passing row in the matrix (FR8/FR9/NFR5 are later slices)
+- [ ] Every `FR*`/`NFR*` has a passing row in the matrix (NFR5 is a later slice)
 - [x] Error paths and edge cases are covered, not only the happy path
 - [x] Migration: N/A (agent-only; no DB migration)
 - [x] API contract: N/A (no backend/frontend contract change)
@@ -145,3 +149,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 |---|---|---|---|
 | 2026-11-06 | fg-34 slice 1 | `mvn test` (266 tests, 2 skipped) + `SANDBOX_IT_IMAGE=redis:7-alpine mvn test -Dtest=DockerSandboxRunnerIntegrationTest` (2 tests) | All unit tests pass; the real-Docker smoke tests passed locally (non-root uid, read-only rootfs, workspace write, file copy, symlink/FIFO rejection, background/postinstall containment, pre-copy download cap, no docker socket, no secrets, memory limit, disk-quota kill) and skip when `SANDBOX_IT_IMAGE` is unset. |
 | 2026-11-06 | fg-34 slice 2 | `mvn test` (309 tests, 4 skipped) + `SANDBOX_IT_NETWORK=1 SANDBOX_IT_NETWORK_IMAGE=vibecode-agent-sandbox:latest SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:latest mvn test -Dtest=DockerSandboxRunnerIntegrationTest#allowsOnlyTheConfiguredEgressHostsAndBlocksDirectAccess` + `SANDBOX_IT_IMAGE=redis:7-alpine mvn test -Dtest=DockerSandboxRunnerIntegrationTest` (4 tests, 1 skipped / 3 executed) + `SANDBOX_IT_IMAGE=redis:7-alpine mvn test -Dtest=DockerSandboxRunnerIntegrationTest#bridgeExecutesCommandsInsideTheSandbox` | All unit tests pass. The real-Docker egress test passed locally: the allowlisted host succeeded through the proxy; a non-allowlisted host, direct egress with proxy env cleared, and the metadata address were blocked; denials were logged. `EgressProxyScriptTest` covers the allowlist rules without Docker; `SandboxBashBridgeTest` covers the loopback token, cwd mapping and command policy. |
+| 2026-11-06 | fg-34 slice 3b | `mvn test` (312 tests, 4 skipped) + `bash agent/scripts/sandbox-image-security.sh --check-pins` + `docker build -f agent/sandbox-proxy.Dockerfile -t vibecode-sandbox-proxy:test agent` + `mvn package -q -DskipTests` + `node planning/check-planning.js` | All tests pass. The pin gate accepts the repository Dockerfiles and rejects an unpinned fixture; the digest-pinned proxy image builds successfully. SBOM/scan/cosign paths are implemented but require syft/trivy/grype/cosign; CI runs the pin gate unconditionally and the scan when the tools are present (`SANDBOX_SCAN_REQUIRED=1` makes them mandatory). |

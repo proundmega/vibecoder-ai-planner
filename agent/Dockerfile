@@ -1,4 +1,6 @@
-FROM maven:3.9-eclipse-temurin-17-alpine AS build
+# Base images are pinned by digest (fg-34 FR9). Update the digest deliberately
+# when upgrading; run `agent/scripts/sandbox-image-security.sh --check-pins`.
+FROM maven:3.9-eclipse-temurin-17-alpine@sha256:b7c8d7298dbabbe750441736cd99a1d120a58083d5af8d2bd75a1624cfdd8f3a AS build
 
 WORKDIR /app
 COPY pom.xml .
@@ -9,9 +11,9 @@ RUN mvn package -DskipTests -B
 
 # Node runtime for the OpenCode harness. Copied into the JRE image so the
 # supervisor and the harness share one container.
-FROM node:24-alpine AS node
+FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS node
 
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre-alpine@sha256:e2ba4e947bd5e236a9866fbdda03e4936036cb9e9d16ea0d84d103d6634a5c21
 
 ARG OPENCODE_VERSION=1.19.5
 

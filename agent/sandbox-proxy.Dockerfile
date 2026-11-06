@@ -8,8 +8,9 @@
 # Build:
 #   docker build -f agent/sandbox-proxy.Dockerfile -t vibecode-sandbox-proxy:latest agent
 #
-# Pin the base image by digest before production (fg-34 FR9).
-FROM node:24-alpine
+# Base image is pinned by digest (fg-34 FR9). Update the digest deliberately
+# when upgrading; run `agent/scripts/sandbox-image-security.sh --check-pins`.
+FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8
 
 WORKDIR /opt/vibecode
 USER 1000:1000
