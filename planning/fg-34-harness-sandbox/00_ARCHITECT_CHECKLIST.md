@@ -7,8 +7,8 @@ effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
 updated: "2026-11-06"
-pr: 126
-branch: "feat/fg-34-sandbox-foundation"
+pr: 127
+branch: "feat/fg-34-slice-2-egress-bridge"
 depends_on: ["fg-30"]
 ---
 
