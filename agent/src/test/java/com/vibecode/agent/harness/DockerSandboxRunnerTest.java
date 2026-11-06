@@ -591,8 +591,8 @@ class DockerSandboxRunnerTest {
         assertTrue(error.getMessage().contains("watchdog"));
         runner.close();
 
-        assertTrue(Files.readString(log).contains("rm -f"),
-            "create cleanup must attempt to remove the container");
+        assertTrue(countOccurrences(Files.readString(log), "rm -f") >= 2,
+            "create cleanup and close must both retry removal");
     }
 
     @Test
@@ -612,8 +612,10 @@ class DockerSandboxRunnerTest {
 
         runner.create(config.specFor(workspace()));
         runner.close();
+        runner.close();
 
-        assertTrue(Files.readString(log).contains("rm -f"));
+        assertTrue(countOccurrences(Files.readString(log), "rm -f") >= 2,
+            "a retained container must be retried by a later close()");
     }
 
     @Test
@@ -788,8 +790,17 @@ class DockerSandboxRunnerTest {
         }
     }
 
-    private Path fakeDocker(Path log, String body) throws IOException {
-        Path script = tempDir.resolve("fake-docker.sh");
+    private static int countOccurrences(String text, String token) {
+        int count = 0;
+        int index = 0;
+        while ((index = text.indexOf(token, index)) >= 0) {
+            count++;
+            index += token.length();
+        }
+        return count;
+    }
+
+    private Path fakeDocker(Path log, String body) throws IOException {        Path script = tempDir.resolve("fake-docker.sh");
         String content = "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '" + log + "'\n" + body + "\n";
         Files.writeString(script, content);
         try {

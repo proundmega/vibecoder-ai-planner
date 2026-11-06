@@ -26,7 +26,7 @@ Phase 1 runs OpenCode with `bash` access in a cloned repo on the agent container
 ## Scope decisions
 
 - **Rollout:** `SANDBOX_MODE=host` remains the Phase 1 compatibility default. Docker mode is opt-in, and a Docker create/exec failure never falls back to host execution.
-- **Slice 1** delivers the sandbox runtime foundation and routes supervisor-driven install/verification commands through it. It does **not** claim full isolation yet: OpenCode still runs in the supervisor, egress is default-deny only, and prompt-injection/supply-chain hardening are later slices. Do **not** enable Docker mode for untrusted repositories until D14 (one-pass/fork-race descendant sweep) is closed; the pre-publish destroy gate prevents publishing with a live sandbox, but a survivor can write before that gate.
+- **Slice 1** delivers the sandbox runtime foundation and routes supervisor-driven install/verification commands through it. It does **not** claim full isolation yet: OpenCode still runs in the supervisor, egress is default-deny only, and prompt-injection/supply-chain hardening are later slices. Do **not** enable Docker mode for untrusted repositories until D14 (bounded repeated 5-pass/fork-race descendant sweep) is closed; the pre-publish destroy gate prevents publishing with a live sandbox, but a survivor can write before that gate.
 - **Deployment:** Docker mode needs a daemon connection and a workspace path visible to the host. `PoolManager`/compose wiring is deferred to D8; slice 1 requires a manually run host agent (or equivalent path mapping).
 - **Remaining slices** are tracked in `03_ARCHITECT_IMPLEMENTATION.md` and the deferred register below.
 

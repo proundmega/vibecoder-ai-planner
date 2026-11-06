@@ -304,10 +304,15 @@ public final class DockerSandboxRunner implements SandboxRunner {
         quotaFlags.clear();
         watchdogs.clear();
         runningProcesses.clear();
-        try {
-            Runtime.getRuntime().removeShutdownHook(shutdownHook);
-        } catch (IllegalStateException ignored) {
-            // Already shutting down; the hook is running this method.
+        if (created.isEmpty()) {
+            try {
+                Runtime.getRuntime().removeShutdownHook(shutdownHook);
+            } catch (IllegalStateException ignored) {
+                // Already shutting down; the hook is running this method.
+            }
+        } else {
+            log.warn("Retaining the sandbox shutdown hook; {} container(s) still tracked",
+                created.size());
         }
     }
 
