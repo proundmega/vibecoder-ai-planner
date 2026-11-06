@@ -297,8 +297,8 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 
 ### Frontend (Vitest + Cypress)
 
-- 22+ unit test files in `src/__tests__/`
-- 7 Cypress E2E specs + 5 component specs in `cypress/`
+- 60 unit test files in `src/__tests__/`
+- 7 Cypress E2E specs + 7 component specs in `cypress/`
 - Contract test: `src/__tests__/api-contract.test.ts`
 
 ### Coverage threshold (60%)
@@ -325,7 +325,7 @@ Jenkins (`Jenkinsfile`):
 backend job:   npm ci → lint → syntax check → unit test → coverage
 frontend job:  npm ci → lint → typecheck → unit test → coverage → build
 contract test: vitest run api-contract.test.ts (after backend + frontend)
-cypress e2e:   docker compose (e2e overlay) → cypress/included on the compose network
+cypress:       docker compose (e2e overlay) → cypress/included runs e2e + component
 integration:   docker compose up → Jest integration tests → bash integration tests
 agent job:     mvn package -q -DskipTests
 ```
