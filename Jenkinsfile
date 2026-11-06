@@ -152,7 +152,7 @@ pipeline {
             }
         }
 
-        stage('Cypress E2E') {
+        stage('Cypress') {
             steps {
                 script {
                     // The API needs the same secrets as the Integration stage.
@@ -198,6 +198,7 @@ EOF
                     // DOCKER_HOST does not share the Jenkins workspace path.
                     sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml --profile e2e build cypress"
                     sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml --profile e2e run --rm --no-deps cypress"
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml --profile e2e run --rm --no-deps cypress --component"
                 }
             }
             post {
