@@ -665,6 +665,17 @@ describe('Role System Integration', () => {
         .send({ email: memberEmail, password: 'password123' });
       const memberToken = memberRes.body.token;
 
+      // bp-133 FR4: ticket writes are project-scoped; make the member an
+      // active project member so this exercises the role permission itself.
+      const memberUserId = (await pool.query(
+        'SELECT id FROM users WHERE email = $1',
+        [memberEmail]
+      )).rows[0].id;
+      await pool.query(
+        'INSERT INTO project_memberships (project_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+        [projectId, memberUserId]
+      );
+
       const ticketRes = await request(app)
         .post(`/api/v1/projects/${projectId}/tickets`)
         .set('Authorization', `Bearer ${adminToken}`)

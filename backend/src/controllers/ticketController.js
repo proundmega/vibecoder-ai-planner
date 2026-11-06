@@ -152,7 +152,8 @@ async function pickUpTicket(req, res, next) {
       });
     }
 
-    const result = await TicketService.pickUpTicket(ticketId, agentId);
+    const operatorId = req.user && req.user.userId;
+    const result = await TicketService.pickUpTicket(ticketId, { agentId, operatorId });
     res.json({
       success: true,
       data: {
@@ -202,7 +203,7 @@ async function releaseTicket(req, res, next) {
       });
     }
 
-    const result = await TicketService.releaseTicket(ticketId, { operatorId: req.user.userId });
+    const result = await TicketService.releaseTicket(ticketId, { operatorId: req.user.userId, role: userRole });
     res.json({
       success: true,
       data: {
