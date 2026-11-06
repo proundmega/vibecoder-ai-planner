@@ -6,14 +6,13 @@
 
 ## Ticket: bp-120-agent-connectivity-fixes — Fix Agent Provider Config, Visibility, and Response Format
 
-**Status**: planned
 **Priority**: P0
 **Effort**: Medium
 **Author**: AI Assistant
 **Date created**: 2025-08-18
-**Date completed**: {{YYYY-MM-DD}}
-**PR**: {{link}}
-**Branch**: {{branch-name}}
+**Date completed**: 2026-09-11
+**PR**: #97
+**Branch**: n/a (merged via #97)
 **Scope**: Backend + Java Agent
 **Dependencies**: None
 
@@ -376,6 +375,8 @@ agent/src/main/java/com/vibecode/agent/AgentApp.java → MODIFY (defensive parsi
 5. [ ] Frontend: agents appear in heartbeat tab even without heartbeats
 6. [ ] End-to-end: create agent → assign provider → start agent → agent connects → appears in heartbeat tab
 
----
+## Results
 
-*Fill in all sections before starting implementation.*
+| Date | Commit | Suites | Outcome |
+|---|---|---|---|
+| 2026-09-11 | `33792a5` + `0e62cb0` (#97) | Agent connectivity (backend + Java) | Merged; provider config, heartbeat listing and defensive parsing fixed |

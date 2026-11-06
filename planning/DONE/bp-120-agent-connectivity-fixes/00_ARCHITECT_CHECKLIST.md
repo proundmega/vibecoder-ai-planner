@@ -91,3 +91,10 @@ No design decisions require user input. All choices follow existing patterns.
 ---
 
 *This checklist prevents agents from skipping planning and jumping straight to coding.*
+
+## Status evidence
+
+| Claim | Evidence |
+|---|---|
+| Implementation merged | Commits `33792a5` + `0e62cb0` (PR #97) |
+| Results recorded | `03_ARCHITECT_IMPLEMENTATION.md` Results row dated 2026-09-11 |

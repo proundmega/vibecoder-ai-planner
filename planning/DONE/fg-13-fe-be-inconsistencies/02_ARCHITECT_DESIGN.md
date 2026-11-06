@@ -1,6 +1,5 @@
 # 02_ARCHITECT_DESIGN.md — Feature Design Specification
 
-**Status**: Working draft
 **Author**: AI Assistant
 **Scope**: Both
 **Related**: `01_ARCHITECT_REQUIREMENT.md`, `03_ARCHITECT_IMPLEMENTATION.md`, `04_SPECIFICATION.md`

@@ -6,13 +6,12 @@
 
 ## Ticket: bp-121 — Agent Connectivity Fixes for Non-Locality Deployments
 
-**Status**: planned
 **Priority**: P0
 **Effort**: Small
 **Author**: AI Assistant
 **Date created**: 2026-09-11
-**Date completed**: {{DATE}}
-**PR**: {{link}}
+**Date completed**: 2026-09-11
+**PR**: #97 (1b1b793)
 **Branch**: fix/bp-121-agent-connectivity-ip
 **Scope**: Backend
 
@@ -356,3 +355,9 @@ backend/src/__tests__/corsValidation.test.js → EXTEND (2 new tests)
 12. [ ] CORS allows 127.0.0.1: `curl -H "Origin: http://127.0.0.1:3000" http://localhost:3001/api/health`
 13. [ ] Auth/permissions work correctly
 14. [ ] Error cases handled gracefully
+
+## Results
+
+| Date | Commit | Suites | Outcome |
+|---|---|---|---|
+| 2026-09-11 | `1b1b793` (#97) | CORS / IP whitelist | Merged; non-localhost agents allowed |

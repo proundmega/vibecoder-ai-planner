@@ -134,8 +134,8 @@ A scan of previous tickets' "Out of Scope" sections found these relevant deferre
 
 | # | From Ticket | Improvement | Category | Suggested Next Ticket | User Notified |
 |---|---|---|---|---|---|
-| 1 | bp-120 | Agent connectivity fixes (double-wrapped provider config, heartbeat listing, Java defensive parsing) — prerequisite for reliable harness provider config | Agent | `bp-120-agent-connectivity-fixes` | Yes (PR #101) |
-| 2 | bp-121 | Agent IP/CORS/whitelist support for non-localhost agents — needed for remote harness nodes | Agent / Security | `bp-121-agent-connectivity-ip` | Yes (PR #101) |
+| 1 | bp-120 | Agent connectivity fixes (double-wrapped provider config, heartbeat listing, Java defensive parsing) — prerequisite for reliable harness provider config | Agent | `DONE/bp-120-agent-connectivity-fixes` | Yes (PR #101) |
+| 2 | bp-121 | Agent IP/CORS/whitelist support for non-localhost agents — needed for remote harness nodes | Agent / Security | `DONE/bp-121-agent-connectivity-ip` | Yes (PR #101) |
 | 3 | bp-71 | Email notification on account lockout — reuse the notification channel for agent questions | Security / UX | `bp-71-email-notifications` | Yes (PR #101) |
 | 4 | bp-74 | API key rotation/expiry — extend to harness session credentials | Security | `bp-74-session-credentials` | Yes (PR #101) |
 | 5 | bp-14 | S3 storage for planning artifacts — harness needs planning docs from a stable store | Infrastructure | `bp-14-s3-planning-storage` | Yes (PR #101) |

@@ -88,7 +88,7 @@ The backend is the source of truth for all 5 findings. The fixes are:
 
 ### Out of Scope
 - Any backend change (all backend shapes are correct)
-- The fg-13 findings (F1–F7: router mounting, planning-usage URL prefix, generated API, terminal WS) — tracked in `planning/fg-13-fe-be-inconsistencies/`
+- The fg-13 findings (F1–F7: router mounting, planning-usage URL prefix, generated API, terminal WS) — tracked in `planning/DONE/fg-13-fe-be-inconsistencies/`
 - New UI components or pages
 - Changing `extractData` semantics in `client.ts`
 - Deleting dead exports (e.g., `getPlanningFileUsage`, `postWithHeaders`) — deferred (see Pending Scope Items)

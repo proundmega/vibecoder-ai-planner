@@ -42,7 +42,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D4 | O4 agent identity | audit | Agent / DB | bp-124 slice (FK + backfill, PR #117) | in review (#117) |
 | D5 | O5 validator camelCase | audit | Frontend | bp-124 slice (in review #116) | in review (#116) |
 | D6 | O6 PUT response type | audit | Backend / Frontend | bp-124 slice (in review #116) | in review (#116) |
-| D7 | O7 docs drift | audit | Docs | bp-124 slice (README fixed; DONE moves pending) | in progress |
+| D7 | O7 docs drift | audit | Docs | bp-124 slice (README fixed; suites moved to DONE) | done |
 | D8 | O8 integration setup | audit | Testing | bp-124 slice (in review #116) | in review (#116) |
 | D9 | O1-O10 umbrella | bp-123 | Multiple | bp-124-audit-open-defects | in review (#116) |
 | D10 | Full SQL grammar validation (O10) | bp-79 | Backend | bp-124 (documented structural-only) | in review (#116) |

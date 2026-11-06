@@ -2,7 +2,6 @@
 
 ## Ticket: fg-13 — Frontend/Backend API Surface Inconsistencies
 
-**Status**: planned
 **Priority**: P1
 **Effort**: Medium
 **Author**: AI Assistant
@@ -291,6 +290,8 @@ frontend/cypress/component/ (phase flow)       → EXTEND (F1 feedback URL/body 
  16. [ ] Terminal WS connects in dev (browser console) and through nginx (prod)
  17. [ ] Generated types compile; `getApiMetrics`/rotate-key templates correct
 
----
+## Results
 
-*Fill in all sections before starting implementation. Update status as work progresses. The "Files Changed" section is the most important — it prevents agents from creating redundant code by forcing them to check what already exists.*
+| Date | Commit | Suites | Outcome |
+|---|---|---|---|
+| 2026-08-06 | #82 (merge) | F1–F7 | Merged in #82 |

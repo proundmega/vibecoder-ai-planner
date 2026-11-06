@@ -123,3 +123,10 @@ After implementation, complete ALL items below before marking the ticket as done
 8. ~~**Model can't resolve** — the local model fails repeatedly on a task; ask if a larger model or human intervention is needed~~ — N/A
 
 Do NOT guess. Do NOT assume. Ask the user.
+
+## Status evidence
+
+| Claim | Evidence |
+|---|---|
+| Implementation merged | Commit `1b1b793` (PR #97) |
+| Results recorded | `03_ARCHITECT_IMPLEMENTATION.md` Results row dated 2026-09-11 |

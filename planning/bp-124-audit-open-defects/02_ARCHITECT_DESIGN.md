@@ -55,7 +55,7 @@ This is an umbrella ticket. Each defect gets its own implementation slice (and, 
 ## O7 - Docs drift
 
 - Reconcile README CI text, migration counts, setup commands and planning statuses.
-- Move completed suites to `planning/DONE/` and fill placeholders.
+- Completed suites (bp-120, bp-121, bp-123, fg-13, fg-14) moved to `planning/DONE/`; placeholders filled.
 - Link `AUDIT_REPORT.md` to bp-123/bp-124.
 
 ## O8 - Integration setup errors
