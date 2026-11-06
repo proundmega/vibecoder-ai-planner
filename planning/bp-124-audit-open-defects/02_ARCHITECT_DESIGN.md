@@ -26,7 +26,7 @@ This is an umbrella ticket. Each defect gets its own implementation slice (and, 
 - The assignment spec opens the edit modal from API-created tickets and verifies assigning and clearing the assignee without a reload. Clearing exposed an `Unassigned` option with no value; the option now uses `value=""`.
 - The spec uses a seeded member who is not in `project_memberships`; ticket writes are currently guarded only by `TICKET_UPDATE` (recorded as deferred `00` D16).
 - Jenkins stage `Cypress` starts `docker-compose.yml` + `docker-compose.e2e.yml` (rate limiting off), waits for API/frontend health, and runs a **compose-built** Cypress image (`frontend/Dockerfile.cypress`) on the compose network. A host bind mount is not used because the Docker daemon behind `DOCKER_HOST` does not share the Jenkins workspace path.
-- Component tests are tracked separately as **O9**, not folded into the E2E rewrite.
+- Component tests live in O9 (`frontend/cypress/component`) and run in the same Jenkins `Cypress` stage.
 
 ## O4 - Agent identity
 
@@ -66,11 +66,10 @@ This is an umbrella ticket. Each defect gets its own implementation slice (and, 
 
 ## O9 - Component tests
 
-- Add `EditTicketModal.cy.ts` covering title/description limits, priority options, assignee selection/clearing and save payload.
-- Replace the `TicketDetail.cy.ts` placeholder with real coverage for the detail/edit flow.
-- Refresh `07-ticket-assignment.cy.ts` for the current DOM (do not use a generic `.modal select`).
-- Verify the "Unassigned" path sends `assigneeId: null` and actually clears the assignment.
-- Keep these component tests separate from the E2E suite (O3).
+- `EditTicketModal.cy.ts` covers title/description limits, priority options, assignee selection/clearing, the save payload and required-title validation.
+- `TicketDetail.cy.ts` replaces the placeholder with real render/action coverage and a **D15** regression: the assignee name refreshes after a save without a reload.
+- The assignment E2E (`07-ticket-assignment.cy.ts`) was refreshed in O3 and exercises assign + clear without `cy.reload()`.
+- Component tests run in the Jenkins `Cypress` stage via the same compose image (`... cypress --component`).
 
 ## O10 - Dry-run grammar validation
 
