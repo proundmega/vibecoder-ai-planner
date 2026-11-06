@@ -160,18 +160,29 @@ closed), `HARNESS_PROTECTED_PATHS`, `HARNESS_MODEL`, `HARNESS_MAX_FILES`,
 `HARNESS_DURABILITY_REQUIRED`, `HARNESS_RESUME_MODE`,
 `HARNESS_REAPER_INTERVAL_SECONDS`, `HARNESS_WORKSPACE_RETENTION_HOURS`.
 Sandbox: `SANDBOX_MODE` (`host` legacy, `docker` sandboxes install/verification
-only in slice 1), `SANDBOX_IMAGE`, `SANDBOX_REQUIRE`, `SANDBOX_CPUS`,
+and model-driven shell commands), `SANDBOX_IMAGE`, `SANDBOX_PROXY_IMAGE`,
+`SANDBOX_REQUIRE`, `SANDBOX_CPUS`,
 `SANDBOX_MEMORY_MB`, `SANDBOX_PIDS`,
 `SANDBOX_DISK_MB`/`SANDBOX_DISK_CHECK_INTERVAL_SECONDS`/`SANDBOX_DISK_ENFORCE`,
-`SANDBOX_NOFILE`, `SANDBOX_TMPFS_MB`, `SANDBOX_NETWORK` (slice 1: `none` only),
-`SANDBOX_ALLOWED_HOSTS`/`SANDBOX_EGRESS_PROXY` (slice 2 placeholders),
+`SANDBOX_NOFILE`, `SANDBOX_TMPFS_MB`,
+`SANDBOX_NETWORK` (`none` or `allowlist`), `SANDBOX_ALLOWED_HOSTS`,
+`SANDBOX_EGRESS_UPSTREAM_NETWORK`, `SANDBOX_EGRESS_PROBE_TIMEOUT_MS`,
+`SANDBOX_EGRESS_PROXY` (reserved; rejected),
 `SANDBOX_ENV`, `SANDBOX_USER`, `SANDBOX_ALLOW_ROOT`,
 `SANDBOX_EXEC_TIMEOUT_SECONDS`, `SANDBOX_ARTIFACT_MAX_BYTES`,
 `SANDBOX_SECCOMP_PROFILE`, `SANDBOX_APPARMOR_PROFILE`,
 `SANDBOX_CONTAINER_WORKSPACE_ROOT`, `SANDBOX_HOST_WORKSPACE_ROOT`.
 Docker mode needs a daemon connection and a host-visible workspace; the
 PoolManager/compose wiring is deferred to fg-34 D8. OpenCode still runs in the
-supervisor in slice 1, so model-driven bash is not sandboxed yet.
+supervisor, but the built-in `bash`/`shell` tool is disabled and the
+`sandbox_bash` tool forwards commands to the sandbox bridge. The sandbox has
+no direct egress or external DNS; `SANDBOX_NETWORK=allowlist` routes traffic
+through a hardened proxy attached to an internal Docker network that validates
+the first CONNECT ClientHello SNI and rejects multiple SNI names/extra
+handshakes and CONNECT :80. TLS renegotiation and the encrypted inner Host are
+D16. Do not enable Docker mode for untrusted repos until D14 (the
+descendant-sweep fork race) is closed, and do not treat the allowlist as a
+hard host boundary until D16 is closed.
 Phase 1 is blocking
 prompt mode and denies the `question` and `doom_loop` tools; autonomy and the
 human question loop are later phases.

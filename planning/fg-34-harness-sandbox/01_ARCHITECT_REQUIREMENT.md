@@ -38,14 +38,14 @@ Phase 1 relies on OpenCode config denies (`git push`, `rm -rf`, `docker`, etc.) 
 - **FR1 - Runtime:** launch a per-ticket sandbox from a pinned image; destroy it after the run.
 - **FR2 - Limits:** CPU, memory, PID count, disk quota, open files, and max runtime; kill the process tree on breach.
 - **FR3 - Filesystem:** only the workspace is writable; the base image is read-only; no host bind mounts except the workspace; no host Docker socket.
-- **FR4 - Network:** default deny; allow only approved package registries and an internal artifact cache, via an egress proxy with logging. Provider/model calls stay in the supervisor, outside the sandbox.
+- **FR4 - Network:** default deny; allow only approved package registries and an internal artifact cache, via an egress proxy with logging. Provider/model calls stay in the supervisor, outside the sandbox. Implemented with an internal Docker network whose only peer is a hardened allowlist proxy; the sandbox has no default route and no external DNS. The proxy validates the first CONNECT ClientHello SNI against the allowlisted target, rejects multiple SNI names/extra handshakes/ECH/missing SNI, and rejects CONNECT :80 (plain HTTP uses per-request absolute-form validation). TLS renegotiation and the encrypted inner TLS Host are D16.
 - **FR5 - Secrets:** no provider keys, GitHub tokens, DB passwords or agent API keys inside the sandbox; provider calls happen in the supervisor via a scoped proxy, and the sandbox holds no credentials.
 - **FR6 - User:** non-root, no-new-privileges, dropped capabilities, seccomp/AppArmor profile where available.
 - **FR7 - Artifacts:** Extract diff, verification output and logs through an explicit artifact channel. The disposable clone may be writable, but the host repository is never mounted writable and only the supervisor's publishing guard decides what is published.
 - **FR8 - Prompt-injection defense:** label repo content as untrusted, enforce instruction precedence, deny secret access, and scan outputs for suspicious commands/exfiltration.
 - **FR9 - Supply chain:** SBOM, image scan, signed/pinned base image, lockfile-aware installs.
 - **FR10 - Local mode:** a clearly labeled `SANDBOX_MODE=host` for Windows/dev. During the Phase 1 rollout it remains the code default with a loud warning; production must set `SANDBOX_REQUIRE=true`, which refuses host mode.
-- **FR11 - Control channel:** supervisor↔sandbox exec/file/stream API over a per-run authenticated local channel; OpenCode stays in the supervisor, repo code cannot reach the channel, and the sandbox exposes no inbound ports. Slice 1 provides exec/file over the local control path; the per-run token, streaming and the OpenCode bash bridge are slice 2.
+- **FR11 - Control channel:** supervisor↔sandbox exec/file/stream API over a per-run authenticated local channel; OpenCode stays in the supervisor, repo code cannot reach the channel, and the sandbox exposes no inbound ports. Slice 2 provides a loopback, per-run-token bridge for the model's shell commands (the built-in `bash`/`shell` tools are disabled and `sandbox_bash` forwards into the sandbox). Streaming output is D15; request IDs/idempotency are D17.
 
 ## Non-functional requirements
 

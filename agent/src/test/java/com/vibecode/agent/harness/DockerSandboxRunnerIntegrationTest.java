@@ -5,6 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -177,10 +181,150 @@ class DockerSandboxRunnerIntegrationTest {
         }
     }
 
+    @Test
+    void allowsOnlyTheConfiguredEgressHostsAndBlocksDirectAccess() throws IOException {
+        Assumptions.assumeTrue("1".equals(System.getenv("SANDBOX_IT_NETWORK")),
+            "SANDBOX_IT_NETWORK=1 is not set; skipping the egress allowlist smoke test");
+        String image = System.getenv("SANDBOX_IT_NETWORK_IMAGE");
+        Assumptions.assumeTrue(image != null && !image.isBlank(),
+            "SANDBOX_IT_NETWORK_IMAGE must name an image with node and curl");
+        Assumptions.assumeTrue(
+            FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+            "POSIX permissions are required for the non-root smoke test");
+
+        SandboxConfig config = integrationConfig(image, Map.of(
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org"
+        ));
+        Path workspace = Files.createDirectories(tempDir.resolve("egress"));
+        Files.setPosixFilePermissions(workspace, PosixFilePermissions.fromString("rwxrwxrwx"));
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace));
+            try {
+                ExecResult allowed = runner.exec(handle, ExecRequest.of(
+                    "curl -fsS --max-time 15 -o /dev/null https://registry.npmjs.org/ "
+                        + "&& echo ALLOWED || echo DENIED",
+                    Duration.ofSeconds(30)));
+                assertTrue(allowed.output().contains("ALLOWED"), allowed.output());
+
+                ExecResult denied = runner.exec(handle, ExecRequest.of(
+                    "curl -fsS --max-time 15 -o /dev/null https://example.org/ "
+                        + "&& echo ALLOWED || echo DENIED",
+                    Duration.ofSeconds(30)));
+                assertTrue(denied.output().contains("DENIED"), denied.output());
+
+                // Even an allowlisted proxy cannot be bypassed by clearing the
+                // proxy environment: the internal network has no default route.
+                ExecResult direct = runner.exec(handle, ExecRequest.of(
+                    "env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY "
+                        + "-u http_proxy -u https_proxy -u all_proxy "
+                        + "curl -fsS --max-time 10 -o /dev/null https://registry.npmjs.org/ "
+                        + "&& echo ALLOWED || echo DENIED",
+                    Duration.ofSeconds(30)));
+                assertTrue(direct.output().contains("DENIED"), direct.output());
+
+                ExecResult metadata = runner.exec(handle, ExecRequest.of(
+                    "curl -fsS --max-time 5 -o /dev/null http://169.254.169.254/ "
+                        + "&& echo ALLOWED || echo DENIED",
+                    Duration.ofSeconds(30)));
+                assertTrue(metadata.output().contains("DENIED"), metadata.output());
+
+                // External DNS is disabled so it cannot be used as an
+                // untracked exfiltration channel.
+                ExecResult dns = runner.exec(handle, ExecRequest.of(
+                    "node -e \"require('dns').lookup('example.org', "
+                        + "(e) => process.exit(e ? 1 : 0))\" "
+                        + "&& echo RESOLVED || echo BLOCKED",
+                    Duration.ofSeconds(20)));
+                assertTrue(dns.output().contains("BLOCKED"), dns.output());
+
+                // The package manager must still work through the proxy.
+                ExecResult npm = runner.exec(handle, ExecRequest.of(
+                    "npm ping --registry=https://registry.npmjs.org "
+                        + "--fetch-timeout=15000 >/dev/null 2>&1 "
+                        + "&& echo NPM_OK || echo NPM_FAIL",
+                    Duration.ofSeconds(40)));
+                assertTrue(npm.output().contains("NPM_OK"), npm.output());
+
+                // Domain fronting: CONNECT the allowlisted host but send a
+                // different TLS SNI.
+                ExecResult sni = runner.exec(handle, ExecRequest.of(
+                    "curl -fsS --max-time 10 -o /dev/null "
+                        + "--connect-to example.org:443:registry.npmjs.org:443 "
+                        + "https://example.org/ && echo ALLOWED || echo DENIED",
+                    Duration.ofSeconds(30)));
+                assertTrue(sni.output().contains("DENIED"), sni.output());
+
+                // CONNECT :80 is not supported: it would carry multiple HTTP
+                // requests that cannot be checked after the first one.
+                ExecResult connect80 = runner.exec(handle, ExecRequest.of(
+                    "node -e 'const n=require(\"net\");"
+                        + "const u=new URL(process.env.HTTPS_PROXY);"
+                        + "const s=n.connect(Number(u.port),u.hostname,()=>{"
+                        + "s.write(\"CONNECT registry.npmjs.org:80 HTTP/1.1\\r\\n"
+                        + "Host: registry.npmjs.org:80\\r\\n\\r\\n\");});"
+                        + "let b=\"\";s.on(\"data\",d=>{b+=d;"
+                        + "if(b.includes(\"403\"))process.exit(0);});"
+                        + "s.on(\"close\",()=>process.exit(0));"
+                        + "s.on(\"error\",()=>process.exit(0));"
+                        + "setTimeout(()=>process.exit(1),5000);' "
+                        + "&& echo CONNECT_DENIED || echo CONNECT_OPEN",
+                    Duration.ofSeconds(20)));
+                assertTrue(connect80.output().contains("CONNECT_DENIED"), connect80.output());
+            } finally {
+                runner.destroy(handle);
+            }
+        }
+    }
+
+    @Test
+    void bridgeExecutesCommandsInsideTheSandbox() throws Exception {
+        String image = System.getenv("SANDBOX_IT_IMAGE");
+        Assumptions.assumeTrue(image != null && !image.isBlank(),
+            "SANDBOX_IT_IMAGE is not set; skipping the sandbox bridge smoke test");
+        Assumptions.assumeTrue(
+            FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+            "POSIX permissions are required for the non-root smoke test");
+
+        SandboxConfig config = integrationConfig(image, Map.of());
+        Path workspace = Files.createDirectories(tempDir.resolve("bridge"));
+        Files.setPosixFilePermissions(workspace, PosixFilePermissions.fromString("rwxrwxrwx"));
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace));
+            SandboxBashBridge bridge = new SandboxBashBridge(
+                runner, handle, workspace, Duration.ofSeconds(30));
+            bridge.start();
+            try {
+                HttpClient client = HttpClient.newHttpClient();
+                HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(bridge.baseUrl() + "/exec"))
+                    .header("Content-Type", "application/json")
+                    .header("X-Sandbox-Token", bridge.token())
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                        "{\"command\":\"pwd && echo bridge-ok\"}"))
+                    .build();
+                HttpResponse<String> response = client.send(
+                    request, HttpResponse.BodyHandlers.ofString());
+
+                assertEquals(200, response.statusCode(), response.body());
+                assertTrue(response.body().contains("/workspace"), response.body());
+                assertTrue(response.body().contains("bridge-ok"), response.body());
+            } finally {
+                bridge.close();
+                runner.destroy(handle);
+            }
+        }
+    }
+
     private static SandboxConfig integrationConfig(String image, Map<String, String> extra) {
         Map<String, String> env = new HashMap<>();
         env.put("SANDBOX_MODE", "docker");
         env.put("SANDBOX_IMAGE", image);
+        String proxyImage = System.getenv("SANDBOX_IT_PROXY_IMAGE");
+        env.put("SANDBOX_PROXY_IMAGE",
+            proxyImage == null || proxyImage.isBlank() ? image : proxyImage);
         env.put("SANDBOX_USER", "1000:1000");
         env.put("SANDBOX_MEMORY_MB", "256");
         env.put("SANDBOX_PIDS", "128");

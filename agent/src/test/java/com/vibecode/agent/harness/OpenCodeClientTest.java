@@ -4,9 +4,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -158,6 +161,70 @@ class OpenCodeClientTest {
         assertEquals("server-password", environment.get("OPENCODE_SERVER_PASSWORD"));
         assertFalse(environment.containsKey("GITHUB_TOKEN"));
         assertFalse(environment.containsKey("DATABASE_URL"));
+    }
+
+    @Test
+    void writesTheSandboxBashToolIntoThePerRunHome() throws Exception {
+        Path home = tempDir.resolve("tool-home");
+
+        Path tool = OpenCodeClient.writeSandboxTool(home);
+
+        assertEquals(home.resolve(".config/opencode/tools/sandbox_bash.ts"), tool);
+        String source = Files.readString(tool);
+        assertTrue(source.contains("VIBECODE_SANDBOX_BRIDGE_URL"));
+        assertTrue(source.contains("VIBECODE_SANDBOX_BRIDGE_TOKEN"));
+        assertTrue(source.contains("tool.schema.string()"));
+        assertTrue(source.contains("x-sandbox-token"));
+        assertTrue(source.contains("sandbox command rejected"));
+    }
+
+    @Test
+    void generatedSandboxToolIsSyntacticallyValid() throws Exception {
+        Path home = tempDir.resolve("syntax-home");
+        Path tool = OpenCodeClient.writeSandboxTool(home);
+
+        Process process;
+        try {
+            process = new ProcessBuilder("node", "--check", tool.toString())
+                .redirectErrorStream(true)
+                .start();
+        } catch (IOException e) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false,
+                "node is required to validate the generated tool");
+            return;
+        }
+        String output = new String(process.getInputStream().readAllBytes());
+        assertEquals(0, process.waitFor(), output);
+    }
+
+    @Test
+    void injectsTheBridgeUrlAndTokenOnlyWhenASandboxIsActive() throws Exception {
+        Path home = tempDir.resolve("env-home");
+        Path workspace = Files.createDirectories(tempDir.resolve("env-workspace"));
+        SandboxBashBridge bridge = new SandboxBashBridge(
+            SandboxRunnerFactory.hostOnly(),
+            new SandboxHandle("sandbox-1", workspace, false, null),
+            workspace,
+            Duration.ofSeconds(30));
+        bridge.start();
+        try {
+            Map<String, String> environment = new HashMap<>();
+            OpenCodeClient.configureChildEnvironment(
+                environment, home, home.resolve("opencode.json"), "password", bridge);
+
+            assertEquals(bridge.baseUrl(), environment.get("VIBECODE_SANDBOX_BRIDGE_URL"));
+            assertEquals(bridge.token(), environment.get("VIBECODE_SANDBOX_BRIDGE_TOKEN"));
+
+            Map<String, String> hostEnvironment = new HashMap<>();
+            hostEnvironment.put("VIBECODE_SANDBOX_BRIDGE_URL", "http://stale");
+            hostEnvironment.put("VIBECODE_SANDBOX_BRIDGE_TOKEN", "stale");
+            OpenCodeClient.configureChildEnvironment(
+                hostEnvironment, home, home.resolve("opencode.json"), "password");
+            assertFalse(hostEnvironment.containsKey("VIBECODE_SANDBOX_BRIDGE_URL"));
+            assertFalse(hostEnvironment.containsKey("VIBECODE_SANDBOX_BRIDGE_TOKEN"));
+        } finally {
+            bridge.close();
+        }
     }
 
     @Test

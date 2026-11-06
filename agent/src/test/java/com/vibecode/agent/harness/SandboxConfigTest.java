@@ -36,6 +36,7 @@ class SandboxConfigTest {
         assertTrue(config.isHost());
         assertFalse(config.isDocker());
         assertEquals(SandboxConfig.DEFAULT_IMAGE, config.image());
+        assertEquals(SandboxConfig.DEFAULT_PROXY_IMAGE, config.proxyImage());
         assertEquals(SandboxConfig.DEFAULT_DOCKER_BINARY, config.dockerBinary());
         assertEquals(Duration.ofMinutes(15), config.execTimeout());
         assertEquals("2.0", config.limits().cpus());
@@ -127,15 +128,77 @@ class SandboxConfigTest {
     }
 
     @Test
-    void rejectsNetworkUntilTheEgressProxyExists() {
+    void acceptsAnEgressAllowlistWithConcreteHosts() {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org,*.githubusercontent.com"
+        )::get);
+
+        assertTrue(config.networkEnabled());
+        assertEquals(
+            List.of("registry.npmjs.org", "*.githubusercontent.com"),
+            config.allowedHosts());
+        assertEquals("bridge", config.egressUpstreamNetwork());
+        assertEquals(5_000, config.egressProbeTimeoutMs());
+    }
+
+    @Test
+    void rejectsAnAllowlistWithoutHosts() {
         IllegalStateException error = assertThrows(IllegalStateException.class,
             () -> SandboxConfig.from(env(
                 "SANDBOX_MODE", "docker",
-                "SANDBOX_NETWORK", "proxy",
+                "SANDBOX_NETWORK", "allowlist"
+            )::get));
+        assertTrue(error.getMessage().contains("SANDBOX_ALLOWED_HOSTS"));
+    }
+
+    @Test
+    void rejectsAnAllowlistInHostMode() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_NETWORK", "allowlist",
+                "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org"
+            )::get));
+        assertTrue(error.getMessage().contains("SANDBOX_MODE=docker"));
+    }
+
+    @Test
+    void rejectsUnknownNetworkModes() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_NETWORK", "proxy"
+            )::get));
+        assertTrue(error.getMessage().contains("none, allowlist"));
+    }
+
+    @Test
+    void rejectsInternalMetadataAndIpAllowlistEntries() {
+        for (String host : List.of(
+            "localhost", "127.0.0.1", "169.254.169.254",
+            "10.0.0.1", "metadata.google.internal", "host.docker.internal",
+            "*.local", "*")) {
+            assertThrows(IllegalStateException.class,
+                () -> SandboxConfig.from(env(
+                    "SANDBOX_MODE", "docker",
+                    "SANDBOX_NETWORK", "allowlist",
+                    "SANDBOX_ALLOWED_HOSTS", host
+                )::get),
+                "expected " + host + " to be rejected");
+        }
+    }
+
+    @Test
+    void rejectsAnExternalEgressProxyUrl() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_NETWORK", "allowlist",
                 "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org",
                 "SANDBOX_EGRESS_PROXY", "http://proxy:3128"
             )::get));
-        assertTrue(error.getMessage().contains("slice 2"));
+        assertTrue(error.getMessage().contains("SANDBOX_EGRESS_PROXY"));
     }
 
     @Test

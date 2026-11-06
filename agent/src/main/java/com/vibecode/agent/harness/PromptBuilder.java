@@ -13,6 +13,25 @@ public final class PromptBuilder {
     private static final int MAX_TOTAL_DOC_CHARS = 120_000;
 
     public String build(Ticket ticket, List<String> planningDocs, List<String> verificationCommands) {
+        return build(ticket, planningDocs, verificationCommands, false);
+    }
+
+    public String build(
+        Ticket ticket,
+        List<String> planningDocs,
+        List<String> verificationCommands,
+        boolean sandboxedBash
+    ) {
+        return build(ticket, planningDocs, verificationCommands, sandboxedBash, false);
+    }
+
+    public String build(
+        Ticket ticket,
+        List<String> planningDocs,
+        List<String> verificationCommands,
+        boolean sandboxedBash,
+        boolean egressAllowlist
+    ) {
         StringBuilder prompt = new StringBuilder();
 
         prompt.append("You are an autonomous coding agent working in an isolated git workspace.\n");
@@ -53,6 +72,23 @@ public final class PromptBuilder {
         prompt.append("- Do NOT modify .github/workflows or files under secrets/.\n");
         prompt.append("- If the environment lacks information, make a reasonable, documented assumption; ");
         prompt.append("do not wait for a human in this phase.\n\n");
+
+        if (sandboxedBash) {
+            prompt.append("## Sandboxed shell\n\n");
+            prompt.append("- The built-in `bash`/`shell` tool is disabled. Use the ");
+            prompt.append("`sandbox_bash` tool for every shell command.\n");
+            prompt.append("- Commands run in a disposable sandbox where the workspace is mounted ");
+            prompt.append("at `/workspace`. Prefer relative paths in shell commands; the read/edit ");
+            prompt.append("tools still use the normal workspace paths.\n");
+            prompt.append("- The sandbox has no Git credentials. ");
+            if (egressAllowlist) {
+                prompt.append("Network access is limited to the approved package registries ");
+                prompt.append("through the egress proxy; external DNS is blocked.\n\n");
+            } else {
+                prompt.append("It has no network access; installs that need the network must use ");
+                prompt.append("a pre-populated workspace.\n\n");
+            }
+        }
 
         prompt.append("## Verification\n\n");
         if (verificationCommands == null || verificationCommands.isEmpty()) {

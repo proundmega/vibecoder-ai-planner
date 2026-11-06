@@ -54,6 +54,7 @@ public final class OpenCodeClient implements HarnessClient {
     private final boolean externalServer;
     private final String externalBaseUrl;
     private final String externalPassword;
+    private final SandboxBashBridge bridge;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ConcurrentLinkedDeque<String> logTail = new ConcurrentLinkedDeque<>();
     private final List<Subscription> subscriptions = new CopyOnWriteArrayList<>();
@@ -72,18 +73,27 @@ public final class OpenCodeClient implements HarnessClient {
     private volatile boolean closed;
 
     public OpenCodeClient(HarnessConfig config, ProviderSettings provider, Path tempDir) {
-        this(config, provider, tempDir, false, null, null);
+        this(config, provider, tempDir, null);
+    }
+
+    public OpenCodeClient(
+        HarnessConfig config,
+        ProviderSettings provider,
+        Path tempDir,
+        SandboxBashBridge bridge
+    ) {
+        this(config, provider, tempDir, false, null, null, bridge);
     }
 
     /**
      * Test seam: talks to an already-running server without spawning a process.
      */
     OpenCodeClient(String baseUrl, String password, Path tempDir) {
-        this(null, null, tempDir, true, baseUrl, password);
+        this(null, null, tempDir, true, baseUrl, password, null);
     }
 
     OpenCodeClient(String baseUrl, String password, Path tempDir, HarnessConfig config) {
-        this(config, null, tempDir, true, baseUrl, password);
+        this(config, null, tempDir, true, baseUrl, password, null);
     }
 
     private OpenCodeClient(
@@ -92,7 +102,8 @@ public final class OpenCodeClient implements HarnessClient {
         Path tempDir,
         boolean externalServer,
         String externalBaseUrl,
-        String externalPassword
+        String externalPassword,
+        SandboxBashBridge bridge
     ) {
         this.config = config;
         this.provider = provider;
@@ -100,6 +111,7 @@ public final class OpenCodeClient implements HarnessClient {
         this.externalServer = externalServer;
         this.externalBaseUrl = externalBaseUrl;
         this.externalPassword = externalPassword == null ? "" : externalPassword;
+        this.bridge = bridge;
     }
 
     @Override
@@ -122,11 +134,15 @@ public final class OpenCodeClient implements HarnessClient {
         config.validate();
 
         Files.createDirectories(tempDir);
-        Path configFile = OpenCodeConfigWriter.write(tempDir, provider, config, workspace);
+        Path configFile = OpenCodeConfigWriter.write(
+            tempDir, provider, config, bridge != null);
         Path home = Files.createDirectories(tempDir.resolve("home"));
         Files.createDirectories(home.resolve(".config"));
         Files.createDirectories(home.resolve(".local/share"));
         Files.createDirectories(home.resolve(".cache"));
+        if (bridge != null) {
+            writeSandboxTool(home);
+        }
 
         IOException lastFailure = null;
         for (int attempt = 1; attempt <= PORT_ATTEMPTS; attempt++) {
@@ -167,7 +183,7 @@ public final class OpenCodeClient implements HarnessClient {
         builder.directory(workspace.toFile());
         builder.redirectErrorStream(true);
 
-        configureChildEnvironment(builder.environment(), home, configFile, password);
+        configureChildEnvironment(builder.environment(), home, configFile, password, bridge);
 
         Process started = builder.start();
         this.process = started;
@@ -658,6 +674,16 @@ public final class OpenCodeClient implements HarnessClient {
         Path configFile,
         String password
     ) {
+        configureChildEnvironment(environment, home, configFile, password, null);
+    }
+
+    static void configureChildEnvironment(
+        Map<String, String> environment,
+        Path home,
+        Path configFile,
+        String password,
+        SandboxBashBridge bridge
+    ) {
         // The harness must not inherit planner credentials. The provider key is
         // injected through the temporary config instead.
         sanitizeEnvironment(environment);
@@ -673,6 +699,79 @@ public final class OpenCodeClient implements HarnessClient {
         // add plugins/MCP servers, or change the model. The temporary config
         // generated outside the workspace must be authoritative.
         environment.put("OPENCODE_DISABLE_PROJECT_CONFIG", "true");
+        // The bash tool is replaced by a global tool that forwards to the
+        // sandbox bridge. Only expose its loopback URL and per-run token when a
+        // sandbox is active; host mode keeps the built-in bash tool.
+        if (bridge != null && bridge.baseUrl() != null) {
+            environment.put("VIBECODE_SANDBOX_BRIDGE_URL", bridge.baseUrl());
+            environment.put("VIBECODE_SANDBOX_BRIDGE_TOKEN", bridge.token());
+        } else {
+            environment.remove("VIBECODE_SANDBOX_BRIDGE_URL");
+            environment.remove("VIBECODE_SANDBOX_BRIDGE_TOKEN");
+        }
+    }
+
+    /**
+     * Install a global OpenCode tool that overrides the built-in {@code bash}
+     * tool. It forwards the command to the supervisor bridge, which runs it in
+     * the disposable sandbox. The file lives in the per-run HOME, never in the
+     * repository.
+     */
+    static Path writeSandboxTool(Path home) throws IOException {
+        Path tools = Files.createDirectories(home.resolve(".config/opencode/tools"));
+        Path file = tools.resolve("sandbox_bash.ts");
+        Files.writeString(file, sandboxToolSource(), StandardCharsets.UTF_8);
+        return file;
+    }
+
+    static String sandboxToolSource() {
+        return """
+            import { tool } from "@opencode-ai/plugin"
+
+            const url = process.env.VIBECODE_SANDBOX_BRIDGE_URL
+            const token = process.env.VIBECODE_SANDBOX_BRIDGE_TOKEN
+
+            export default tool({
+              description: "Run a shell command in the isolated ticket sandbox. "
+                + "Use this instead of the disabled built-in bash tool. "
+                + "The workspace is mounted at /workspace; prefer relative paths.",
+              args: {
+                command: tool.schema.string().describe("Shell command to run in /workspace"),
+                timeout: tool.schema.number().int().positive().optional()
+                  .describe("Timeout in seconds"),
+                description: tool.schema.string().optional().describe("Short description"),
+              },
+              async execute(args, context) {
+                if (!url || !token) {
+                  throw new Error("sandbox bridge is not configured")
+                }
+                const response = await fetch(url + "/exec", {
+                  method: "POST",
+                  headers: {
+                    "content-type": "application/json",
+                    "x-sandbox-token": token,
+                  },
+                  body: JSON.stringify({
+                    command: args.command,
+                    cwd: context.directory,
+                    timeoutSeconds: args.timeout,
+                  }),
+                })
+                const text = await response.text()
+                if (!response.ok) {
+                  throw new Error("sandbox command rejected: " + text)
+                }
+                const body = JSON.parse(text)
+                if (body.timedOut) {
+                  throw new Error("sandbox command timed out\\n" + (body.output || ""))
+                }
+                const output = body.output || ""
+                return body.exitCode === 0
+                  ? output
+                  : output + "\\n\\n(exit code " + body.exitCode + ")"
+              },
+            })
+            """;
     }
 
     private static int findFreePort() throws IOException {
@@ -719,6 +818,9 @@ public final class OpenCodeClient implements HarnessClient {
         }
         if (provider != null && provider.hasApiKey()) {
             redacted = redacted.replace(provider.apiKey(), "[REDACTED]");
+        }
+        if (bridge != null && bridge.token() != null && !bridge.token().isBlank()) {
+            redacted = redacted.replace(bridge.token(), "[REDACTED]");
         }
         return redacted;
     }

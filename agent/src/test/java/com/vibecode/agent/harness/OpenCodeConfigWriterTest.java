@@ -60,6 +60,20 @@ class OpenCodeConfigWriterTest {
     }
 
     @Test
+    void sandboxedBashDisablesTheBuiltInToolAndAllowsTheBridgeTool() throws Exception {
+        ProviderSettings provider = new ProviderSettings(
+            "opencode-go", "oc_sk_secret", null, "beam-free", 4096);
+
+        Path configFile = OpenCodeConfigWriter.write(
+            tempDir, provider, config(null), true);
+        JsonNode root = mapper.readTree(configFile.toFile());
+
+        assertEquals("deny", root.path("permission").path("bash").asText());
+        assertEquals("deny", root.path("permission").path("shell").asText());
+        assertEquals("allow", root.path("permission").path("sandbox_bash").asText());
+    }
+
+    @Test
     void writesGenericOpenAiCompatibleProvider() throws Exception {
         ProviderSettings provider = new ProviderSettings(
             "generic", "sk-local", "http://localhost:11434/v1", "qwen", 4096);

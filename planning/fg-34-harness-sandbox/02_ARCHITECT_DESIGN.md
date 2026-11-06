@@ -50,7 +50,7 @@ void destroy(SandboxHandle h);
 
 - OpenCode stays in the supervisor so it can call the model/provider proxy and receive events; it never runs repo code directly.
 - The model's bash/edit/read tools are translated into `exec`/`putFile`/`getFile` calls. Prompts and event streaming stay on the supervisor side; the untrusted code runs in the sandbox.
-- The channel is a per-run Unix socket (or a loopback port bound to 127.0.0.1) with a random per-run token, request ids and idempotent exec. Repo processes cannot reach it and the sandbox exposes no inbound port.
+- The channel is a per-run Unix socket (or a loopback port bound to 127.0.0.1) with a random per-run token. Repo processes cannot reach it and the sandbox exposes no inbound port. Slice 2 implements the token and loopback binding; request IDs and idempotent exec are **D17**.
 - If a future OpenCode build must run inside the sandbox, add an explicit `attach/exec/port` contract and authenticated loopback channel; do not run it without one.
 
 ## Runtime
@@ -74,6 +74,8 @@ Default deny. Allow only:
 - an internal artifact cache, if used.
 
 Provider/model calls originate in the supervisor (OpenCode runs outside the sandbox), so no provider host needs to be reachable from repo code. Implement with an egress proxy or network namespace rules, log every denied request, and make the allowlist part of the repo profile rather than the prompt.
+
+Slice 2 implements this with an internal Docker network whose only peer is a hardened allowlist proxy. The sandbox has no default route and external DNS is disabled. For CONNECT tunnels the proxy validates the TLS ClientHello SNI against the allowlisted target and rejects multiple SNI names, extra handshake messages, ECH and missing SNI. CONNECT :80 is rejected; plain HTTP uses per-request absolute-form validation. Only the first ClientHello is inspected: TLS renegotiation and the encrypted HTTP `Host` inside a TLS tunnel are not visible without TLS termination, so a shared-CDN tenant with the same allowlisted SNI remains a limitation (**D16**).
 
 ## Secrets
 

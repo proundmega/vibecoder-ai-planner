@@ -18,9 +18,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -110,7 +112,7 @@ class HarnessTicketProcessorTest {
             config, apiService, provider, gitHubService, "ghp_token",
             harnessConfig,
             repoName -> workspace,
-            ignored -> harness,
+            (ignored, bridge) -> harness,
             planningDocFetcher,
             verificationRunner,
             new PublishingGuard(harnessConfig.protectedPaths())
@@ -126,7 +128,7 @@ class HarnessTicketProcessorTest {
             config, apiService, provider, gitHubService, "ghp_token",
             resumeConfig,
             repoName -> workspace,
-            ignored -> harness,
+            (ignored, bridge) -> harness,
             planningDocFetcher,
             verificationRunner,
             new PublishingGuard(resumeConfig.protectedPaths())
@@ -1071,6 +1073,43 @@ class HarnessTicketProcessorTest {
         verify(workspace, never()).stageFreshDiff();
     }
 
+    @Test
+    void dockerModeStartsTheBashBridgeAndPassesItToTheHarness() throws Exception {
+        SandboxHandle handle = new SandboxHandle("sandbox-1", tempDir, false, null);
+        SandboxRunner sandboxRunner = mock(SandboxRunner.class);
+        when(sandboxRunner.create(any())).thenReturn(handle);
+        when(verificationRunner.run(eq(sandboxRunner), eq(handle), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult("npm test", 0, "ok", false)));
+
+        AtomicReference<SandboxBashBridge> captured = new AtomicReference<>();
+        SandboxConfig sandboxConfig = SandboxConfig.from(Map.of(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_USER", "1000:1000"
+        )::get);
+        HarnessTicketProcessor dockerProcessor = new HarnessTicketProcessor(
+            config, apiService, provider, gitHubService, "ghp_token",
+            harnessConfig,
+            repoName -> workspace,
+            (ignored, bridge) -> {
+                captured.set(bridge);
+                assertNotNull(bridge, "docker mode must route bash through a sandbox bridge");
+                assertNotNull(bridge.baseUrl(), "the bridge must be listening before the harness starts");
+                return harness;
+            },
+            planningDocFetcher,
+            verificationRunner,
+            new PublishingGuard(harnessConfig.protectedPaths()),
+            sandboxConfig,
+            sandboxRunner
+        );
+
+        dockerProcessor.processTicket(apiService.pickUpTicket(1L));
+
+        assertNotNull(captured.get());
+        assertNull(captured.get().baseUrl(), "the bridge must be closed after the prompt");
+    }
+
     private HarnessTicketProcessor dockerProcessor(SandboxRunner sandboxRunner) {
         SandboxConfig sandboxConfig = SandboxConfig.from(Map.of(
             "SANDBOX_MODE", "docker",
@@ -1081,7 +1120,7 @@ class HarnessTicketProcessorTest {
             config, apiService, provider, gitHubService, "ghp_token",
             harnessConfig,
             repoName -> workspace,
-            ignored -> harness,
+            (ignored, bridge) -> harness,
             planningDocFetcher,
             verificationRunner,
             new PublishingGuard(harnessConfig.protectedPaths()),
