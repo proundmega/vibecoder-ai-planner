@@ -9,7 +9,7 @@
 |---|---|---|
 | 1 | Sandbox runtime foundation: config, host/docker runners, limits, filesystem/user hardening, secretless env, default-deny network, sandboxed install/verification commands, tests | Merged (#126) |
 | 2 | Egress allowlist proxy (FR4) and the OpenCode bash-tool bridge so model-driven repo commands also run in the sandbox (FR11 complete) | Merged (#127) |
-| 3a | Prompt-injection defenses (FR8): untrusted-content labeling, instruction precedence, credential read denies, command exfiltration policy, credential-leak publish gate | In review (#TBD) |
+| 3a | Prompt-injection defenses (FR8): untrusted-content labeling, instruction precedence, credential read denies, command exfiltration policy, credential-leak publish gate | In review (#128) |
 | 3b | SBOM/image scan/digest pinning (FR9) and artifact redaction (D11) | Pending |
 
 Slice 1 deliberately keeps `SANDBOX_MODE=host` as the default so the Phase 1
