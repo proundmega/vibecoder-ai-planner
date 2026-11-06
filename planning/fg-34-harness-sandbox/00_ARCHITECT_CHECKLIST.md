@@ -7,8 +7,8 @@ effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
 updated: "2026-11-06"
-pr: 127
-branch: "master"
+pr: 129
+branch: "feat/fg-34-slice-3b-supply-chain"
 depends_on: ["fg-30"]
 ---
 
@@ -45,8 +45,8 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D3 | Repo-specific images and caches | fg-39 | Infrastructure | fg-39-repo-environment-profiles | open |
 | D4 | Data redaction before model calls | fg-42 | Privacy | fg-42-harness-privacy | open |
 | D5 | Egress allowlist proxy (FR4) and the OpenCode bash-tool bridge into the sandbox (FR11 complete) | fg-34 | Security | fg-34 slice 2 | done (#127) |
-| D6 | Prompt-injection classification, output scanning and instruction precedence (FR8) | fg-34 | Security | fg-34 slice 3 | open |
-| D7 | SBOM, image scanning and digest-pinned base images (FR9) | fg-34 | Supply chain | fg-34 slice 3b | in review (#TBD) |
+| D6 | Prompt-injection classification, output scanning and instruction precedence (FR8) | fg-34 | Security | fg-34 slice 3a | in review (#128) |
+| D7 | SBOM, image scanning and digest-pinned base images (FR9) | fg-34 | Supply chain | fg-34 slice 3b | in review (#129) |
 | D8 | Docker sandbox deployment wiring: `PoolManager` env, socket proxy/DOCKER_HOST and a host-visible repo volume | fg-34 | Infrastructure | fg-34 slice 2 / fg-43 | open |
 | D9 | Startup reaper for sandbox containers left by a killed agent (the slice-1 shutdown hook covers graceful exit only) | fg-34 | Reliability | fg-34 slice 2 | open |
 | D10 | Race-free artifact copy: the Docker file channel rejects failures by exit code, but `docker cp` and the reported size remain untrusted; a same-container swap/spoof is possible | fg-34 | Security | fg-34 slice 2 | open |
