@@ -247,7 +247,7 @@ router.post('/:id/tickets', verifyTokenOrAgent, requireAnyPermission('TICKET_CRE
  *               description: { type: string }
  *               status: { type: string }
  *               priority: { type: string }
- *               assigneeId: { $ref: '#/components/schemas/NumericId' }
+ *               assigneeId: { type: string, pattern: '^[0-9]+$', nullable: true }
  *     responses:
  *       200:
  *         description: Ticket updated

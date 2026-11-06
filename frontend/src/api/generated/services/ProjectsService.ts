@@ -221,7 +221,7 @@ export class ProjectsService {
             description?: string;
             status?: string;
             priority?: string;
-            assigneeId?: NumericId;
+            assigneeId?: string | null;
         },
     ): CancelablePromise<any> {
         return __request(OpenAPI, {

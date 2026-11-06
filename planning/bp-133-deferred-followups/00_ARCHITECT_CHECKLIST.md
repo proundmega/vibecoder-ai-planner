@@ -60,5 +60,7 @@ deferred scope are owned by this document; `01`–`03` link here.
 
 | Claim | Evidence |
 |---|---|
-| No implementation yet | `status: in_review`; every `03` plan checkbox is unchecked and there is no `03` Results row. |
-| Items originated in bp-124 | bp-124 `00` deferred register D12–D16. |
+| FR1-FR3 implemented | Commit `916bfe0`; `03` plan items checked and three dated `03` Results rows |
+| Generated client | Regenerated from the committed spec; the `User` schema now matches `User.toJSON()` (camelCase, no stale timestamps) |
+| FR4 not started here | Tracked as the separate FR4 slice; this branch covers FR1-FR3 only |
+| Items originated in bp-124 | bp-124 `00` deferred register D12–D16 |

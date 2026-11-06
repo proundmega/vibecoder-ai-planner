@@ -96,4 +96,14 @@ describe('OpenAPI path/body id contract (bp-133 FR2)', () => {
       nullable: true,
     });
   });
+
+  test('the project ticket update body can clear assigneeId', () => {
+    const update = specs.paths['/projects/tickets/{ticketId}'].put.requestBody.content['application/json'].schema;
+
+    expect(update.properties.assigneeId).toEqual({
+      type: 'string',
+      pattern: '^[0-9]+$',
+      nullable: true,
+    });
+  });
 });

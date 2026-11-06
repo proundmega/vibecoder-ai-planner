@@ -45,8 +45,12 @@ const options = {
             role: { type: 'string', enum: ['user', 'member', 'project_admin', 'super_admin'] },
             isActive: { type: 'boolean' },
             currentPlan: { type: 'string' },
-            created_at: { type: 'string', format: 'date-time' },
-            updated_at: { type: 'string', format: 'date-time' },
+            // User.toJSON() serializes these camelCase fields; user_created_by
+            // is a nullable BIGINT returned as a decimal string.
+            userCreatedBy: { type: 'string', pattern: '^[0-9]+$', nullable: true },
+            createdAt: { type: 'string', format: 'date-time' },
+            lockedUntil: { type: 'string', format: 'date-time', nullable: true },
+            loginAttempts: { type: 'integer' },
           },
         },
         Project: {
