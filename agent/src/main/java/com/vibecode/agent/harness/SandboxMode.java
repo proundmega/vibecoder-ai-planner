@@ -18,7 +18,7 @@ public enum SandboxMode {
         }
         return switch (value.trim().toLowerCase(Locale.ROOT)) {
             case "host" -> HOST;
-            case "docker", "podman" -> DOCKER;
+            case "docker" -> DOCKER;
             default -> throw new IllegalStateException(
                 "SANDBOX_MODE must be one of: host, docker (got: " + value + ")");
         };

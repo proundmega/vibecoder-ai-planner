@@ -18,7 +18,7 @@ RUN apk add --no-cache \
         curl \
         jq \
         python3 \
-        make \
+        build-base \
         libstdc++ \
         ca-certificates
 

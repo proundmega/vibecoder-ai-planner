@@ -25,6 +25,7 @@ public record SandboxConfig(
     String dockerBinary,
     Duration execTimeout,
     Limits limits,
+    Duration diskCheckInterval,
     boolean networkEnabled,
     List<String> allowedHosts,
     String egressProxy,
@@ -44,6 +45,7 @@ public record SandboxConfig(
     public static final String DEFAULT_USER = "1000:1000";
     public static final String DEFAULT_CONTAINER_WORKSPACE_ROOT = "/repos";
     public static final Duration DEFAULT_EXEC_TIMEOUT = Duration.ofMinutes(15);
+    public static final Duration DEFAULT_DISK_CHECK_INTERVAL = Duration.ofSeconds(10);
     public static final long DEFAULT_ARTIFACT_MAX_BYTES = 5L * 1024 * 1024;
 
     /** Resource limits applied to one sandbox. */
@@ -74,7 +76,7 @@ public record SandboxConfig(
             value(env, "SANDBOX_CPUS", "2.0"),
             mbToBytes(longValue(env, "SANDBOX_MEMORY_MB", 2048L, 1L)),
             (int) longValue(env, "SANDBOX_PIDS", 512L, 1L),
-            mbToBytes(longValue(env, "SANDBOX_DISK_MB", 0L, 0L)),
+            mbToBytes(longValue(env, "SANDBOX_DISK_MB", 5120L, 0L)),
             booleanValue(env, "SANDBOX_DISK_ENFORCE", false),
             (int) longValue(env, "SANDBOX_NOFILE", 1024L, 1L),
             mbToBytes(longValue(env, "SANDBOX_TMPFS_MB", 256L, 1L))
@@ -90,6 +92,8 @@ public record SandboxConfig(
             Duration.ofSeconds(longValue(env, "SANDBOX_EXEC_TIMEOUT_SECONDS",
                 DEFAULT_EXEC_TIMEOUT.toSeconds(), 1L)),
             limits,
+            Duration.ofSeconds(longValue(env, "SANDBOX_DISK_CHECK_INTERVAL_SECONDS",
+                DEFAULT_DISK_CHECK_INTERVAL.toSeconds(), 1L)),
             networkEnabled,
             normalizeHosts(value(env, "SANDBOX_ALLOWED_HOSTS", "")),
             value(env, "SANDBOX_EGRESS_PROXY", ""),
@@ -131,6 +135,11 @@ public record SandboxConfig(
 
         validateLimits();
         validateUser();
+        if (diskCheckInterval == null
+            || diskCheckInterval.isNegative() || diskCheckInterval.isZero()) {
+            throw new IllegalStateException(
+                "SANDBOX_DISK_CHECK_INTERVAL_SECONDS must be positive");
+        }
         try {
             SandboxSecurity.validateEnv(runEnv, "SANDBOX_ENV");
         } catch (IllegalArgumentException e) {
@@ -370,9 +379,12 @@ public record SandboxConfig(
         }
         try {
             long parsed = Long.parseLong(value.trim());
-            return parsed >= minimum ? parsed : fallback;
+            if (parsed < minimum) {
+                throw new IllegalStateException(name + " must be >= " + minimum);
+            }
+            return parsed;
         } catch (NumberFormatException e) {
-            return fallback;
+            throw new IllegalStateException(name + " must be an integer >= " + minimum, e);
         }
     }
 
@@ -385,6 +397,11 @@ public record SandboxConfig(
         if (value == null || value.isBlank()) {
             return fallback;
         }
-        return "true".equalsIgnoreCase(value.trim()) || "1".equals(value.trim());
+        return switch (value.trim().toLowerCase(Locale.ROOT)) {
+            case "true", "1" -> true;
+            case "false", "0" -> false;
+            default -> throw new IllegalStateException(
+                name + " must be one of: true, false, 1, 0 (got: " + value + ")");
+        };
     }
 }

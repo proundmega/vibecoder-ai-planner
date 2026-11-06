@@ -71,4 +71,32 @@ class SandboxPathsTest {
         assertThrows(IOException.class,
             () -> SandboxPaths.remoteToLocal(tempDir, "/workspace/../../etc/passwd"));
     }
+
+    @Test
+    void rejectsSymlinkedFileCopies() throws IOException {
+        Path outside = Files.writeString(outsideDir.resolve("outside.txt"), "secret");
+        Path link = tempDir.resolve("leak.txt");
+        try {
+            Files.createSymbolicLink(link, outside);
+        } catch (UnsupportedOperationException | IOException e) {
+            return;
+        }
+
+        assertThrows(IOException.class,
+            () -> SandboxPaths.remoteToLocal(tempDir, "/workspace/leak.txt"));
+    }
+
+    @Test
+    void rejectsCopiesThroughASymlinkedDirectory() throws IOException {
+        Files.writeString(outsideDir.resolve("outside.txt"), "secret");
+        Path link = tempDir.resolve("leakdir");
+        try {
+            Files.createSymbolicLink(link, outsideDir);
+        } catch (UnsupportedOperationException | IOException e) {
+            return;
+        }
+
+        assertThrows(IOException.class,
+            () -> SandboxPaths.remoteToLocal(tempDir, "/workspace/leakdir/outside.txt"));
+    }
 }

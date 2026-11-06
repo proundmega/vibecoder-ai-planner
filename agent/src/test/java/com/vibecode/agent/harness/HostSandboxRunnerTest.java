@@ -20,6 +20,9 @@ class HostSandboxRunnerTest {
     @TempDir
     Path tempDir;
 
+    @TempDir
+    Path outsideDir;
+
     private static boolean windows() {
         return System.getProperty("os.name", "").toLowerCase().contains("win");
     }
@@ -136,5 +139,36 @@ class HostSandboxRunnerTest {
         Path directory = Files.createDirectories(tempDir.resolve("dir"));
 
         assertThrows(IOException.class, () -> runner.putFile(handle, directory, "/workspace/dir"));
+    }
+
+    @Test
+    void rejectsCopiesThroughSymlinks() throws IOException {
+        HostSandboxRunner runner = runner();
+        SandboxHandle handle = handle(runner);
+        Path outside = Files.writeString(outsideDir.resolve("outside.txt"), "secret");
+        Path link = tempDir.resolve("leak.txt");
+        try {
+            Files.createSymbolicLink(link, outside);
+        } catch (UnsupportedOperationException | IOException e) {
+            return;
+        }
+        Path local = Files.writeString(tempDir.resolve("local.txt"), "hello");
+
+        assertThrows(IOException.class,
+            () -> runner.getFile(handle, "/workspace/leak.txt", tempDir.resolve("leak.out")));
+        assertThrows(IOException.class,
+            () -> runner.putFile(handle, local, "/workspace/leak.txt"));
+    }
+
+    @Test
+    void fileOperationsRejectAHandleFromAnotherRunner() throws IOException {
+        HostSandboxRunner runner = runner();
+        SandboxHandle dockerHandle = new SandboxHandle("docker", tempDir, false, null);
+        Path local = Files.writeString(tempDir.resolve("local.txt"), "hello");
+
+        assertThrows(IOException.class,
+            () -> runner.putFile(dockerHandle, local, "/workspace/local.txt"));
+        assertThrows(IOException.class,
+            () -> runner.getFile(dockerHandle, "/workspace/local.txt", tempDir.resolve("out.txt")));
     }
 }

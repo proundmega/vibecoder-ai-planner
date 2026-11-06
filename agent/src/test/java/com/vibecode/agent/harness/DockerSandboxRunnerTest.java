@@ -93,6 +93,29 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void createArgsMountTheMappedGitPathReadOnly() throws IOException {
+        Path containerRoot = Files.createDirectories(tempDir.resolve("repos"));
+        Path mappedWorkspace = Files.createDirectories(containerRoot.resolve("run-1"));
+        Files.createDirectories(mappedWorkspace.resolve(".git"));
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_CONTAINER_WORKSPACE_ROOT", containerRoot.toString(),
+            "SANDBOX_HOST_WORKSPACE_ROOT", "/host/repos"
+        )::get);
+        SandboxSpec spec = config.specFor(mappedWorkspace);
+
+        String joined = String.join(" ",
+            DockerSandboxRunner.buildCreateArgs(spec, "mapped-sandbox"));
+
+        // The supervisor can see .git; the daemon mounts the mapped path.
+        assertTrue(joined.contains("-v /host/repos/run-1:/workspace:rw"));
+        assertTrue(joined.contains("-v /host/repos/run-1/.git:/workspace/.git:ro"));
+        assertFalse(joined.contains(mappedWorkspace + ":/workspace:rw"));
+    }
+
+    @Test
     void createArgsIncludeDiskBoundsWhenConfigured() throws IOException {
         SandboxConfig config = SandboxConfig.from(env(
             "SANDBOX_MODE", "docker",
@@ -118,7 +141,7 @@ class DockerSandboxRunnerTest {
         SandboxSpec poisoned = new SandboxSpec(
             spec.image(), spec.workspace(), spec.mountSource(), spec.maxDuration(),
             spec.limits(), spec.networkEnabled(), spec.allowedHosts(), spec.egressProxy(),
-            Map.of("GITHUB_TOKEN", "ghp_secret"), spec.user(), spec.seccompProfile(),
+            Map.of("OPENAI_KEY", "sk-secret"), spec.user(), spec.seccompProfile(),
             spec.apparmorProfile(), spec.artifactMaxBytes());
 
         assertThrows(IllegalArgumentException.class,
@@ -283,6 +306,152 @@ class DockerSandboxRunnerTest {
             assertThrows(IOException.class, () -> runner.putFile(handle, local, "/etc/passwd"));
             assertThrows(IOException.class, () -> runner.getFile(handle, "/etc/passwd", local));
         }
+    }
+
+    @Test
+    void capsExecAtTheConfiguredTimeout() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec) sleep 10 ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_EXEC_TIMEOUT_SECONDS", "1"
+        )::get);
+        long started = System.currentTimeMillis();
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            ExecResult result = runner.exec(handle,
+                ExecRequest.of("sleep 10", Duration.ofSeconds(30)));
+            assertTrue(result.timedOut());
+        }
+
+        assertTrue(System.currentTimeMillis() - started < 5_000);
+    }
+
+    @Test
+    void killsTheSandboxWhenTheWorkspaceExceedsItsQuota() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path workspace = workspace();
+        // Pre-populate over the quota so the first watchdog tick is
+        // deterministic; the script only needs to stay alive.
+        Files.write(workspace.resolve("big"), new byte[3 * 1024 * 1024]);
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec) sleep 10 ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_DISK_MB", "1",
+            "SANDBOX_DISK_CHECK_INTERVAL_SECONDS", "1"
+        )::get);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace));
+            ExecResult result = runner.exec(handle,
+                ExecRequest.of("sleep 10", Duration.ofSeconds(20)));
+            assertTrue(result.timedOut(), result.toString());
+            assertTrue(result.output().contains("workspace disk quota exceeded"), result.output());
+        }
+
+        assertTrue(Files.readString(log).contains("kill --signal KILL"));
+    }
+
+    @Test
+    void enforcesArtifactMaxBytesOnUploadAndDownload() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec) exit 0 ;;
+              cp)
+                last=""
+                for a in "$@"; do last="$a"; done
+                case "$last" in
+                  *:*) : ;;
+                  *) head -c 100 /dev/zero > "$last" ;;
+                esac
+                ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_ARTIFACT_MAX_BYTES", "10"
+        )::get);
+        Path local = Files.writeString(tempDir.resolve("big.txt"), "x".repeat(100));
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            assertThrows(IOException.class,
+                () -> runner.putFile(handle, local, "/workspace/big.txt"));
+
+            Path downloaded = tempDir.resolve("downloaded.bin");
+            assertThrows(IOException.class,
+                () -> runner.getFile(handle, "/workspace/big.txt", downloaded));
+            assertFalse(Files.exists(downloaded));
+        }
+    }
+
+    @Test
+    void rejectsSymlinkedContainerPaths() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path script = fakeDocker(tempDir.resolve("docker.log"), """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec) echo SYMLINK ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+        Path local = Files.writeString(tempDir.resolve("local.txt"), "hello");
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            assertThrows(IOException.class,
+                () -> runner.getFile(handle, "/workspace/leak", tempDir.resolve("leak.out")));
+            assertThrows(IOException.class,
+                () -> runner.putFile(handle, local, "/workspace/nested/file"));
+        }
+    }
+
+    @Test
+    void workspaceSizeCountsRegularFilesAndIgnoresSymlinks() throws IOException {
+        Assumptions.assumeFalse(windows(), "symlink creation is not portable");
+        Path root = Files.createDirectories(tempDir.resolve("size"));
+        Files.writeString(root.resolve("a.txt"), "12345");
+        Path outside = Files.writeString(tempDir.resolve("outside.txt"), "outside");
+        try {
+            Files.createSymbolicLink(root.resolve("link"), outside);
+        } catch (UnsupportedOperationException | IOException e) {
+            return;
+        }
+
+        assertEquals(5L, DockerSandboxRunner.workspaceSize(root));
     }
 
     private static boolean runnerCanExec(DockerSandboxRunner runner, SandboxHandle handle) {

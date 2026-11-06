@@ -110,6 +110,29 @@ final class SandboxPaths {
         if (!resolved.startsWith(root)) {
             throw new IOException("Sandbox path escapes the workspace: " + remote);
         }
+        assertNoSymlinkEscape(root, resolved);
         return resolved;
+    }
+
+    /**
+     * Prove that the path (or its nearest existing ancestor) resolves inside the
+     * workspace. The copy channel must never follow a symlink out of the
+     * workspace; rejecting the link itself is safer than resolving it.
+     */
+    private static void assertNoSymlinkEscape(Path root, Path path) throws IOException {
+        Path existing = path;
+        while (existing != null
+            && !Files.exists(existing, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            existing = existing.getParent();
+        }
+        if (existing == null || !existing.startsWith(root)) {
+            throw new IOException("Sandbox path escapes the workspace: " + path);
+        }
+        if (!existing.toRealPath().startsWith(root)) {
+            throw new IOException("Sandbox path resolves outside the workspace: " + path);
+        }
+        if (Files.isSymbolicLink(path)) {
+            throw new IOException("Refusing to copy through a symlink: " + path);
+        }
     }
 }

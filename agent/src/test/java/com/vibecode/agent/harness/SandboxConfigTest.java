@@ -43,6 +43,8 @@ class SandboxConfigTest {
         assertEquals(512, config.limits().pids());
         assertEquals(1_024, config.limits().openFiles());
         assertEquals(256L * 1024 * 1024, config.limits().tmpfsBytes());
+        assertEquals(5120L * 1024 * 1024, config.limits().diskBytes());
+        assertEquals(Duration.ofSeconds(10), config.diskCheckInterval());
         assertFalse(config.limits().diskEnforced());
         assertFalse(config.networkEnabled());
         assertEquals(List.of(), config.allowedHosts());
@@ -91,6 +93,33 @@ class SandboxConfigTest {
     }
 
     @Test
+    void rejectsPodmanBecauseTheRunnerUsesDockerFlags() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env("SANDBOX_MODE", "podman")::get));
+        assertTrue(error.getMessage().contains("host, docker"));
+    }
+
+    @Test
+    void rejectsAmbiguousBooleansInsteadOfFailingOpen() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "host",
+                "SANDBOX_REQUIRE", "yes"
+            )::get));
+        assertTrue(error.getMessage().contains("SANDBOX_REQUIRE"));
+    }
+
+    @Test
+    void rejectsMalformedNumericLimits() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_MEMORY_MB", "lots"
+            )::get));
+        assertTrue(error.getMessage().contains("SANDBOX_MEMORY_MB"));
+    }
+
+    @Test
     void requireSandboxRefusesHostMode() {
         IllegalStateException error = assertThrows(IllegalStateException.class,
             () -> SandboxConfig.from(env("SANDBOX_REQUIRE", "true")::get));
@@ -125,6 +154,26 @@ class SandboxConfigTest {
             () -> SandboxConfig.from(env(
                 "SANDBOX_MODE", "docker",
                 "SANDBOX_ENV", "DATABASE_URL=postgres://user:secret@db/test"
+            )::get));
+        assertTrue(error.getMessage().contains("credentials"));
+    }
+
+    @Test
+    void rejectsBareKeyNames() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_ENV", "OPENAI_KEY=sk-live"
+            )::get));
+        assertTrue(error.getMessage().contains("OPENAI_KEY"));
+    }
+
+    @Test
+    void rejectsSchemeLessCredentialUrls() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_ENV", "HTTP_PROXY=proxy-user:proxy-pass@proxy:8080"
             )::get));
         assertTrue(error.getMessage().contains("credentials"));
     }
@@ -171,6 +220,7 @@ class SandboxConfigTest {
         IllegalStateException error = assertThrows(IllegalStateException.class,
             () -> SandboxConfig.from(env(
                 "SANDBOX_MODE", "docker",
+                "SANDBOX_DISK_MB", "0",
                 "SANDBOX_DISK_ENFORCE", "true"
             )::get));
         assertTrue(error.getMessage().contains("SANDBOX_DISK_ENFORCE"));
@@ -194,6 +244,7 @@ class SandboxConfigTest {
     void mapsContainerWorkspaceToTheDaemonVisibleHostPath() throws IOException {
         Path containerRoot = Files.createDirectories(tempDir.resolve("repos"));
         Path workspace = Files.createDirectories(containerRoot.resolve("run-1"));
+        Files.createDirectories(workspace.resolve(".git"));
 
         SandboxConfig config = SandboxConfig.from(env(
             "SANDBOX_MODE", "docker",
@@ -204,6 +255,9 @@ class SandboxConfigTest {
         SandboxSpec spec = config.specFor(workspace);
         assertEquals(workspace.toRealPath(), spec.workspace());
         assertEquals(Path.of("/host/agent-workspaces/run-1"), spec.mountSource());
+        assertTrue(Files.isDirectory(spec.workspace().resolve(".git")));
+        assertFalse(Files.exists(spec.mountSource().resolve(".git")),
+            "the mapped daemon path is intentionally not visible in the supervisor test");
     }
 
     @Test

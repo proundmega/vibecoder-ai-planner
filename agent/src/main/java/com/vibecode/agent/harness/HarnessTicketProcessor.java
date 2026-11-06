@@ -815,7 +815,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
             closeQuietly(harness);
             deleteQuietly(tempDir);
             if (sandbox != null) {
-                sandboxRunner.destroy(sandbox);
+                try {
+                    sandboxRunner.destroy(sandbox);
+                } catch (RuntimeException e) {
+                    log.warn("Could not destroy sandbox {}: {}", sandbox.id(), e.getMessage());
+                }
             }
             if (workspace != null) {
                 workspace.cleanup();

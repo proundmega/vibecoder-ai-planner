@@ -27,6 +27,7 @@ Phase 1 runs OpenCode with `bash` access in a cloned repo on the agent container
 
 - **Rollout:** `SANDBOX_MODE=host` remains the Phase 1 compatibility default. Docker mode is opt-in, and a Docker create/exec failure never falls back to host execution.
 - **Slice 1** delivers the sandbox runtime foundation and routes supervisor-driven install/verification commands through it. It does **not** claim full isolation yet: OpenCode still runs in the supervisor, egress is default-deny only, and prompt-injection/supply-chain hardening are later slices.
+- **Deployment:** Docker mode needs a daemon connection and a workspace path visible to the host. `PoolManager`/compose wiring is deferred to D8; slice 1 requires a manually run host agent (or equivalent path mapping).
 - **Remaining slices** are tracked in `03_ARCHITECT_IMPLEMENTATION.md` and the deferred register below.
 
 ## Deferred register (canonical)
@@ -43,3 +44,6 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D5 | Egress allowlist proxy (FR4) and the OpenCode bash-tool bridge into the sandbox (FR11 complete) | fg-34 | Security | fg-34 slice 2 | open |
 | D6 | Prompt-injection classification, output scanning and instruction precedence (FR8) | fg-34 | Security | fg-34 slice 3 | open |
 | D7 | SBOM, image scanning and digest-pinned base images (FR9) | fg-34 | Supply chain | fg-34 slice 3 | open |
+| D8 | Docker sandbox deployment wiring: `PoolManager` env, socket proxy/DOCKER_HOST and a host-visible repo volume | fg-34 | Infrastructure | fg-34 slice 2 / fg-43 | open |
+| D9 | Startup reaper for sandbox containers left by a killed agent (the slice-1 shutdown hook covers graceful exit only) | fg-34 | Reliability | fg-34 slice 2 | open |
+| D10 | Race-free artifact copy: the Docker file channel pre-checks symlinks inside the container, but `docker cp` still follows a symlink swapped in after the check | fg-34 | Security | fg-34 slice 2 | open |

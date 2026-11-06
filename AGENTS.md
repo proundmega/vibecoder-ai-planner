@@ -159,13 +159,19 @@ closed), `HARNESS_PROTECTED_PATHS`, `HARNESS_MODEL`, `HARNESS_MAX_FILES`,
 `HARNESS_LEASE_SECONDS`, `HARNESS_HEARTBEAT_SECONDS`,
 `HARNESS_DURABILITY_REQUIRED`, `HARNESS_RESUME_MODE`,
 `HARNESS_REAPER_INTERVAL_SECONDS`, `HARNESS_WORKSPACE_RETENTION_HOURS`.
-Sandbox: `SANDBOX_MODE` (`host` legacy, `docker` isolated), `SANDBOX_IMAGE`,
-`SANDBOX_REQUIRE`, `SANDBOX_CPUS`, `SANDBOX_MEMORY_MB`, `SANDBOX_PIDS`,
-`SANDBOX_DISK_MB`/`SANDBOX_DISK_ENFORCE`, `SANDBOX_NOFILE`,
-`SANDBOX_TMPFS_MB`, `SANDBOX_NETWORK` (slice 1: `none` only),
-`SANDBOX_ENV`, `SANDBOX_USER`, `SANDBOX_EXEC_TIMEOUT_SECONDS`,
+Sandbox: `SANDBOX_MODE` (`host` legacy, `docker` sandboxes install/verification
+only in slice 1), `SANDBOX_IMAGE`, `SANDBOX_REQUIRE`, `SANDBOX_CPUS`,
+`SANDBOX_MEMORY_MB`, `SANDBOX_PIDS`,
+`SANDBOX_DISK_MB`/`SANDBOX_DISK_CHECK_INTERVAL_SECONDS`/`SANDBOX_DISK_ENFORCE`,
+`SANDBOX_NOFILE`, `SANDBOX_TMPFS_MB`, `SANDBOX_NETWORK` (slice 1: `none` only),
+`SANDBOX_ALLOWED_HOSTS`/`SANDBOX_EGRESS_PROXY` (slice 2 placeholders),
+`SANDBOX_ENV`, `SANDBOX_USER`, `SANDBOX_ALLOW_ROOT`,
+`SANDBOX_EXEC_TIMEOUT_SECONDS`, `SANDBOX_ARTIFACT_MAX_BYTES`,
 `SANDBOX_SECCOMP_PROFILE`, `SANDBOX_APPARMOR_PROFILE`,
 `SANDBOX_CONTAINER_WORKSPACE_ROOT`, `SANDBOX_HOST_WORKSPACE_ROOT`.
+Docker mode needs a daemon connection and a host-visible workspace; the
+PoolManager/compose wiring is deferred to fg-34 D8. OpenCode still runs in the
+supervisor in slice 1, so model-driven bash is not sandboxed yet.
 Phase 1 is blocking
 prompt mode and denies the `question` and `doom_loop` tools; autonomy and the
 human question loop are later phases.

@@ -34,9 +34,7 @@ public final class HostSandboxRunner implements SandboxRunner {
 
     @Override
     public ExecResult exec(SandboxHandle handle, ExecRequest request) throws IOException {
-        if (handle == null || !handle.host()) {
-            throw new IOException("HostSandboxRunner requires a host sandbox handle");
-        }
+        requireHost(handle);
         Path cwd = SandboxPaths.resolveCwd(handle.workspace(), request.cwd());
 
         List<String> command = WINDOWS
@@ -89,6 +87,7 @@ public final class HostSandboxRunner implements SandboxRunner {
 
     @Override
     public void putFile(SandboxHandle handle, Path local, String remote) throws IOException {
+        requireHost(handle);
         if (local == null || !Files.isRegularFile(local)) {
             throw new IOException("Sandbox upload must be a regular file: " + local);
         }
@@ -101,6 +100,7 @@ public final class HostSandboxRunner implements SandboxRunner {
 
     @Override
     public void getFile(SandboxHandle handle, String remote, Path local) throws IOException {
+        requireHost(handle);
         Path source = SandboxPaths.remoteToLocal(handle.workspace(), remote);
         if (!Files.isRegularFile(source)) {
             throw new IOException("Sandbox file does not exist: " + remote);
@@ -124,5 +124,11 @@ public final class HostSandboxRunner implements SandboxRunner {
     @Override
     public void close() {
         // Nothing to release.
+    }
+
+    private static void requireHost(SandboxHandle handle) throws IOException {
+        if (handle == null || !handle.host()) {
+            throw new IOException("HostSandboxRunner requires a host sandbox handle");
+        }
     }
 }

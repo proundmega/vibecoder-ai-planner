@@ -19,7 +19,7 @@ final class SandboxSecurity {
      * {@code HOME}, {@code NPM_CONFIG_CACHE}, ...).
      */
     private static final Pattern SECRET_KEY = Pattern.compile(
-        "(?i).*(api[_-]?key|access[_-]?key|secret|token|password|passwd|credential|private[_-]?key).*");
+        "(?i).*((^|_)key($|_)|api[_-]?key|access[_-]?key|secret|token|password|passwd|credential|private[_-]?key).*");
 
     /**
      * URLs with embedded userinfo ({@code scheme://user:pass@host}). Non-secret
@@ -27,6 +27,10 @@ final class SandboxSecurity {
      */
     private static final Pattern CREDENTIAL_URL = Pattern.compile(
         "(?i)[a-z][a-z0-9+.-]*://[^/@\\s]+:[^/@\\s]+@");
+
+    /** Scheme-less {@code user:pass@host} credentials (for example proxy URLs). */
+    private static final Pattern SCHEMELESS_CREDENTIAL = Pattern.compile(
+        "(?i)(^|[\\s,;])[^\\s/@:]+:[^\\s/@]+@[^\\s/]+");
 
     private SandboxSecurity() {
     }
@@ -36,7 +40,9 @@ final class SandboxSecurity {
     }
 
     static boolean looksLikeCredential(String value) {
-        return value != null && CREDENTIAL_URL.matcher(value).find();
+        return value != null
+            && (CREDENTIAL_URL.matcher(value).find()
+                || SCHEMELESS_CREDENTIAL.matcher(value).find());
     }
 
     /**

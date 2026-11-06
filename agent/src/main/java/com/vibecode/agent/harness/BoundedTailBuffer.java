@@ -13,6 +13,7 @@ final class BoundedTailBuffer extends OutputStream {
     private final byte[] buffer;
     private int size;
     private int writePosition;
+    private boolean truncated;
 
     BoundedTailBuffer(int capacity) {
         this.buffer = new byte[Math.max(1, capacity)];
@@ -20,6 +21,9 @@ final class BoundedTailBuffer extends OutputStream {
 
     @Override
     public synchronized void write(int value) {
+        if (size == buffer.length) {
+            truncated = true;
+        }
         buffer[writePosition] = (byte) value;
         writePosition = (writePosition + 1) % buffer.length;
         if (size < buffer.length) {
@@ -35,7 +39,7 @@ final class BoundedTailBuffer extends OutputStream {
     }
 
     synchronized boolean truncated() {
-        return size >= buffer.length;
+        return truncated;
     }
 
     synchronized String text() {
