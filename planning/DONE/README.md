@@ -30,3 +30,8 @@
 - **PR**: #94
 - **Date**: 2026-08-17
 - **Description**: Query/path/header/response validation wired into routes.
+
+## bp-124: Audit Open Defects
+- **PR**: #116-#121 (stacked)
+- **Date**: 2026-11-06
+- **Description**: Addressed the open audit defects O1-O10 (O10 documented as structural-only) and completed the DONE hygiene pass (FR11).

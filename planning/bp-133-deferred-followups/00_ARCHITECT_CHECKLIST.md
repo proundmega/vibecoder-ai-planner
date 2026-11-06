@@ -17,7 +17,7 @@ depends_on: ["bp-124"]
 > **Owns:** status, scope, deferred register, user decisions.
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`).
 
-**Source:** `planning/bp-124-audit-open-defects/00_ARCHITECT_CHECKLIST.md` deferred register, items D12–D14 and D16 (D15 was fixed in bp-124).
+**Source:** `planning/DONE/bp-124-audit-open-defects/00_ARCHITECT_CHECKLIST.md` deferred register, items D12–D14 and D16 (D15 was fixed in bp-124).
 
 ## Why this ticket exists
 

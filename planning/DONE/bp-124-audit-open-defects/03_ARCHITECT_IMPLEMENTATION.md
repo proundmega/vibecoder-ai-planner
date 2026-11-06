@@ -126,5 +126,6 @@ One row per requirement from `01`. A requirement with no row is not done.
 | 2026-11-05 | `92b85df` (stacked PR #118) | O3 review fixes | E2E overlay allows `http://frontend` (200) and rejects other origins (403); project create asserts the board redirect; assignment asserts without reload after the D15 refetch fix; Cypress 37/37 pass |
 | 2026-11-06 | PR #121 | FR11 | Moved bp-120/bp-121/bp-123/fg-13/fg-14 to `planning/DONE`; fg-13 marked done; placeholders/evidence/results added; 21 → 20 migrated suites (bp-133 added, bp-123 moved to DONE) |
 | 2026-11-06 | `4262f14` (stacked PR #119) | O9 review fixes | Component suite 69/69 across 6 consecutive runs with the dev API up; every TicketDetail onMounted request awaited, catch-all API stub and auth reset added |
+| 2026-11-06 | PRs #116-#121 (`5f42d6c`, `773adfb`, `92dfbfe`, `1cbad9b`, `158cfee`, `e649327`) | O1-O10 + FR11 | Full stack merged to master |
 | 2026-11-06 | `8f746e3` (stacked PR #119) | O9 | Component suite 7 specs / 69 tests (4 EditTicketModal + 3 TicketDetail); E2E 37/37 |
 | 2026-11-06 | `f90b177` (stacked PR #118) | O3 Jenkins fix | Replaced the workspace bind mount with a compose-built Cypress image; `docker compose --profile e2e run cypress` passes 37/37 against `http://frontend` |
