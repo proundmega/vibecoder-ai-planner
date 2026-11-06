@@ -112,6 +112,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 - The Docker file channel uses distinct non-zero exit codes for guard failures, so a same-UID stdout flood cannot mask them; successful guards also print `OK`/`OK <size>`. Downloads are sized inside the container before copying and use a temp file. The size and `docker cp` remain untrusted (D10).
 - A pre-publish `destroy` failure fails the ticket and never stages or pushes; `DockerSandboxRunner.destroy` verifies removal and keeps tracking on failure. `close()`/finally can retry; a hard-killed agent leaves cleanup to the D9 reaper.
 - Hostile install/test containment is covered by the real-Docker background-writer and postinstall-like lifecycle regressions. The descendant sweep is one pass and best-effort (D14); a real npm lifecycle fixture and a built sandbox image are D13.
+- `--init` is intentionally not used: PID 1 stays the container shell so the descendant sweep can preserve it. This is a deliberate trade-off for the sweep; zombie handling has not shown a problem in the probe, but the sweep's fork race is D14.
 - The integration test is opt-in (`SANDBOX_IT_IMAGE`); CI and `PoolManager` wiring are D8/D13.
 - NFR5 (redaction before storage) is D11; the FR11 streaming/per-run-token parts are slice 2.
 
