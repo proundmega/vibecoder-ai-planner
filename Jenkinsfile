@@ -24,52 +24,19 @@ pipeline {
     }
 
     stages {
-        stage('Detect Changes') {
-            when {
-                not { branch 'master' }
-            }
-            steps {
-                script {
-                    def diff = sh(
-                        script: 'git diff --name-only origin/master...HEAD 2>/dev/null || git diff --name-only HEAD~1',
-                        returnStdout: true
-                    ).trim()
-                    echo "Changed files:\n${diff}"
-
-                    env.BACKEND_CHANGED = (diff.contains('backend/') || diff.contains('Jenkinsfile') || diff.contains('docker-compose')) ? 'true' : 'false'
-                    env.FRONTEND_CHANGED = (diff.contains('frontend/') || diff.contains('Jenkinsfile')) ? 'true' : 'false'
-                    env.AGENT_CHANGED = (diff.contains('agent/')) ? 'true' : 'false'
-                    env.MIGRATIONS_CHANGED = (diff.contains('migrations/')) ? 'true' : 'false'
-
-                    echo "Backend: ${env.BACKEND_CHANGED}, Frontend: ${env.FRONTEND_CHANGED}, Agent: ${env.AGENT_CHANGED}, Migrations: ${env.MIGRATIONS_CHANGED}"
-                }
-            }
-        }
-
+        // The full pipeline runs on every build. Change detection is
+        // intentionally not used, so no stage is skipped by a `when` block.
         stage('Setup') {
-            when {
-                anyOf {
-                    branch 'master'
-                    expression { env.BACKEND_CHANGED == 'true' }
-                    expression { env.FRONTEND_CHANGED == 'true' }
-                    expression { env.MIGRATIONS_CHANGED == 'true' }
-                    expression { env.AGENT_CHANGED == 'true' }
-                }
-            }
             steps {
                 script {
-                    if (env.BACKEND_CHANGED == 'true' || env.BRANCH_NAME == 'master') {
-                        nodejs('Node') {
-                            dir('backend') {
-                                sh 'npm ci'
-                            }
+                    nodejs('Node') {
+                        dir('backend') {
+                            sh 'npm ci'
                         }
                     }
-                    if (env.FRONTEND_CHANGED == 'true' || env.BRANCH_NAME == 'master') {
-                        nodejs('Node') {
-                            dir('frontend') {
-                                sh 'npm ci'
-                            }
+                    nodejs('Node') {
+                        dir('frontend') {
+                            sh 'npm ci'
                         }
                     }
                 }
@@ -77,13 +44,6 @@ pipeline {
         }
 
         stage('Backend') {
-            when {
-                anyOf {
-                    branch 'master'
-                    expression { env.BACKEND_CHANGED == 'true' }
-                    expression { env.MIGRATIONS_CHANGED == 'true' }
-                }
-            }
             parallel {
                 stage('Backend Lint') {
                     steps {
@@ -132,12 +92,6 @@ pipeline {
         }
 
         stage('Frontend') {
-            when {
-                anyOf {
-                    branch 'master'
-                    expression { env.FRONTEND_CHANGED == 'true' }
-                }
-            }
             parallel {
                 stage('Frontend Lint') {
                     steps {
@@ -188,13 +142,6 @@ pipeline {
         }
 
         stage('Contract Test') {
-            when {
-                anyOf {
-                    branch 'master'
-                    expression { env.BACKEND_CHANGED == 'true' }
-                    expression { env.FRONTEND_CHANGED == 'true' }
-                }
-            }
             steps {
                 nodejs('Node') {
                     dir('frontend') {
@@ -205,13 +152,62 @@ pipeline {
             }
         }
 
-        stage('Agent') {
-            when {
-                anyOf {
-                    branch 'master'
-                    expression { env.AGENT_CHANGED == 'true' }
+        stage('Cypress E2E') {
+            steps {
+                script {
+                    // The API needs the same secrets as the Integration stage.
+                    sh """
+                        cat > .env <<EOF
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+JWT_SECRET=${JWT_SECRET}
+ENCRYPTION_KEY=${ENCRYPTION_KEY}
+PGADMIN_PASSWORD=changeme
+EOF
+                    """
+
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml down -v --remove-orphans || true"
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml up -d --build"
+
+                    // Wait for the API and frontend health checks before Cypress
+                    // starts seeding users through the API.
+                    def ready = false
+                    for (int i = 0; i < 30; i++) {
+                        def healthFormat = '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}'
+                        def apiHealth = sh(
+                            script: "DOCKER_HOST=\$DOCKER_HOST docker inspect --format '${healthFormat}' \$(DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml ps -q api) 2>/dev/null || echo starting",
+                            returnStdout: true
+                        ).trim()
+                        def frontendHealth = sh(
+                            script: "DOCKER_HOST=\$DOCKER_HOST docker inspect --format '${healthFormat}' \$(DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml ps -q frontend) 2>/dev/null || echo starting",
+                            returnStdout: true
+                        ).trim()
+                        if (apiHealth == 'healthy' && frontendHealth == 'healthy') {
+                            ready = true
+                            break
+                        }
+                        echo "Cypress stack not ready (api=${apiHealth}, frontend=${frontendHealth})"
+                        sleep(time: 3, unit: 'SECONDS')
+                    }
+                    if (!ready) {
+                        sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml logs --tail=100 || true"
+                        error('Cypress E2E stack failed to become healthy')
+                    }
+
+                    // Build the runner from the frontend context instead of
+                    // bind-mounting the workspace: the Docker daemon behind
+                    // DOCKER_HOST does not share the Jenkins workspace path.
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml --profile e2e build cypress"
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml --profile e2e run --rm --no-deps cypress"
                 }
             }
+            post {
+                always {
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml down -v --remove-orphans || true"
+                }
+            }
+        }
+
+        stage('Agent') {
             steps {
                 dir('agent') {
                     sh 'mvn test -q'
@@ -240,15 +236,6 @@ pipeline {
         }
 
         stage('Integration Tests') {
-            when {
-                anyOf {
-                    branch 'master'
-                    expression { env.BACKEND_CHANGED == 'true' }
-                    expression { env.FRONTEND_CHANGED == 'true' }
-                    expression { env.MIGRATIONS_CHANGED == 'true' }
-                    expression { env.AGENT_CHANGED == 'true' }
-                }
-            }
             steps {
                 nodejs('Node') {
                     script {

@@ -325,12 +325,13 @@ Jenkins (`Jenkinsfile`):
 backend job:   npm ci → lint → syntax check → unit test → coverage
 frontend job:  npm ci → lint → typecheck → unit test → coverage → build
 contract test: vitest run api-contract.test.ts (after backend + frontend)
+cypress e2e:   docker compose (e2e overlay) → cypress/included on the compose network
 integration:   docker compose up → Jest integration tests → bash integration tests
 agent job:     mvn package -q -DskipTests
 ```
 
-Change detection runs only the layers that changed. The backend job uses a real
-PostgreSQL service container.
+The full pipeline runs on every build; no stages are skipped by change
+detection. The backend job uses a real PostgreSQL service container.
 
 ## Planning
 

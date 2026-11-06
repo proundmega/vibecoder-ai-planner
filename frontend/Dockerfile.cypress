@@ -1,0 +1,14 @@
+FROM cypress/included:15.19.0
+
+WORKDIR /e2e
+
+# The included image already ships the Cypress binary; --ignore-scripts skips
+# downloading it again. Project deps are needed for cypress-localstorage-commands
+# and for resolving `cypress` from cypress.config.ts.
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+
+COPY tsconfig.json cypress.config.ts ./
+COPY cypress ./cypress
+
+ENTRYPOINT ["cypress", "run", "--browser", "chrome"]

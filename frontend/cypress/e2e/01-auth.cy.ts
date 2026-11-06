@@ -1,4 +1,12 @@
 describe('Authentication Flows', () => {
+  let admin: any;
+
+  before(() => {
+    cy.seed().then((seed) => {
+      admin = seed.users.admin;
+    });
+  });
+
   beforeEach(() => {
     cy.visit('/login');
   });
@@ -10,27 +18,34 @@ describe('Authentication Flows', () => {
     cy.get('button[type="submit"]').should('exist');
   });
 
-  it('should show error on empty form submit', () => {
+  it('should not submit an empty form', () => {
     cy.get('button[type="submit"]').click();
+    cy.url().should('include', '/login');
     cy.get('input[type="email"]').should('have.value', '');
     cy.get('input[type="password"]').should('have.value', '');
   });
 
-  it('should login with valid credentials and redirect to dashboard', () => {
-    cy.login('alice@example.com', 'password123');
+  it('should login with API-seeded credentials and redirect to dashboard', () => {
+    cy.get('input[type="email"]').type(admin.email);
+    cy.get('input[type="password"]').type(admin.password);
+    cy.get('button[type="submit"]').click();
+
     cy.url().should('include', '/dashboard');
     cy.getLocalStorage('vibecode_token').should('exist');
+    cy.getLocalStorage('vibecode_permissions').then((perms) => {
+      expect(JSON.parse(perms || '[]')).to.include('DASHBOARD_READ');
+    });
     cy.getLocalStorage('vibecode_user').then((userStr) => {
-      const user = JSON.parse(userStr || '{}');
-      expect(user.email).to.equal('alice@example.com');
+      expect(JSON.parse(userStr || '{}').email).to.equal(admin.email);
     });
   });
 
-  it('should show error on invalid credentials', () => {
-    cy.get('input[type="email"]').clear().type('wrong@example.com');
-    cy.get('input[type="password"]').clear().type('wrongpassword');
+  it('should show an error on invalid credentials', () => {
+    cy.get('input[type="email"]').type(`wrong-${Date.now()}@example.com`);
+    cy.get('input[type="password"]').type('wrongpassword');
     cy.get('button[type="submit"]').click();
-    cy.get('.error').should('exist');
+
+    cy.get('.login__error').should('be.visible');
     cy.url().should('include', '/login');
   });
 
@@ -41,16 +56,15 @@ describe('Authentication Flows', () => {
   });
 
   it('should navigate to register page from login', () => {
-    cy.get('a[href="/register"]').should('contain', 'Register');
-    cy.get('a[href="/register"]').click();
+    cy.get('.login__link a[href="/register"]').should('contain', 'Register').click();
     cy.url().should('include', '/register');
   });
 
   it('should logout and redirect to login', () => {
-    cy.login('alice@example.com', 'password123');
-    cy.url().should('include', '/dashboard');
-    cy.clearLocalStorage();
+    cy.login(admin.email, admin.password);
     cy.visit('/dashboard');
+    cy.contains('button', 'Logout').click();
     cy.url().should('include', '/login');
+    cy.getLocalStorage('vibecode_token').should('not.exist');
   });
 });

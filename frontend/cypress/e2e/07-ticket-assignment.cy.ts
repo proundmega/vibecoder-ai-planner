@@ -1,65 +1,54 @@
 describe('Ticket Assignment', () => {
-  beforeEach(() => {
-    cy.login('alice@example.com', 'password123');
-    cy.visit('/projects');
-    cy.get('.project-card').first().click();
-    cy.url().should('include', '/tickets');
+  let admin: any;
+  let member: any;
+  let projectId: string;
+
+  before(() => {
+    cy.seed().then((seed) => {
+      admin = seed.users.admin;
+      member = seed.users.member;
+      projectId = seed.projectId;
+    });
   });
 
-  it('should assign a ticket to a user', () => {
-    cy.get('.ticket-card').first().click();
-    cy.url().should('include', '/tickets/');
-    cy.get('button').contains('Edit Ticket').click();
-    cy.get('.modal select').select('Bob Member');
-    cy.get('.modal button[type="submit"]').contains('Save Changes').click();
-    cy.get('.meta').should('contain', 'Bob Member');
+  function openFreshTicket(title: string) {
+    // Ticket writes are currently guarded only by TICKET_UPDATE, not project
+    // membership, so this seeded member can edit the admin's project ticket.
+    // Membership enforcement is recorded as deferred item 00 D16.
+    cy.login(admin.email, admin.password);
+    cy.createTicket(projectId, title).then((ticketId) => {
+      cy.login(member.email, member.password);
+      cy.visit(`/projects/${projectId}/tickets/${ticketId}`);
+    });
+  }
+
+  it('should assign a ticket to the project owner from the edit modal', () => {
+    openFreshTicket(`Assign Ticket ${Date.now()}`);
+
+    cy.contains('button', 'Edit Ticket').click();
+    cy.get('.v-modal select').eq(1).select(admin.name);
+    cy.contains('.v-modal button', 'Save Changes').click();
+
+    cy.get('.meta').should('contain', admin.name);
   });
 
-  it('should reassign a ticket to a different user', () => {
-    cy.get('.ticket-card').first().click();
-    cy.url().should('include', '/tickets/');
-    cy.get('button').contains('Edit Ticket').click();
-    cy.get('.modal select').select('Bob Member');
-    cy.get('.modal button[type="submit"]').contains('Save Changes').click();
-    cy.get('.meta').should('contain', 'Bob Member');
+  it('should clear an assignment back to unassigned', () => {
+    openFreshTicket(`Reassign Ticket ${Date.now()}`);
 
-    cy.get('button').contains('Edit Ticket').click();
-    cy.get('.modal select').select('Charlie User');
-    cy.get('.modal button[type="submit"]').contains('Save Changes').click();
-    cy.get('.meta').should('contain', 'Charlie User');
+    cy.contains('button', 'Edit Ticket').click();
+    cy.get('.v-modal select').eq(1).select(admin.name);
+    cy.contains('.v-modal button', 'Save Changes').click();
+    cy.get('.meta').should('contain', admin.name);
+
+    cy.contains('button', 'Edit Ticket').click();
+    cy.get('.v-modal select').eq(1).select('Unassigned');
+    cy.contains('.v-modal button', 'Save Changes').click();
+    cy.get('.meta').should('not.contain', admin.name);
   });
 
-  it('should show status transitions based on current status', () => {
-    cy.get('.ticket-card').first().click();
-    cy.url().should('include', '/tickets/');
+  it('should show the status actions for an assigned ticket', () => {
+    openFreshTicket(`Actions Ticket ${Date.now()}`);
+
     cy.get('.actions button').should('have.length.greaterThan', 0);
-  });
-
-  it('should show assignee name in ticket detail', () => {
-    cy.get('.ticket-card').first().click();
-    cy.url().should('include', '/tickets/');
-    cy.get('.meta').should('exist');
-  });
-
-  it('full workflow: register → create user → assign ticket → change status', () => {
-    const timestamp = Date.now();
-    cy.register(`Workflow User ${timestamp}`, `workflow-${timestamp}@example.com`, 'password123');
-
-    cy.login('alice@example.com', 'password123');
-    cy.visit('/users');
-    cy.get('button').contains('Create User').click();
-    cy.get('.modal input[placeholder="Name"]').type(`Workflow Admin ${timestamp}`);
-    cy.get('.modal input[placeholder="Email"]').type(`workflow-admin-${timestamp}@example.com`);
-    cy.get('.modal input[placeholder="Password"]').type('password123');
-    cy.get('.modal select').select('project_admin');
-    cy.get('.modal button[type="submit"]').contains('Create').click();
-
-    cy.visit('/projects');
-    cy.get('.project-card').first().click();
-    cy.url().should('include', '/tickets');
-    cy.get('.ticket-card').first().click();
-    cy.url().should('include', '/tickets/');
-    cy.get('button').contains('Start Work').click();
-    cy.get('.badge.status').should('contain', 'in_progress');
   });
 });

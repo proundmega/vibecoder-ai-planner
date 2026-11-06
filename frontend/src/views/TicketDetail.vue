@@ -142,6 +142,12 @@ async function handleEditSaved(updates) {
   if (ticket.value) {
     Object.assign(ticket.value, updates)
     error.value = null
+    // assigneeName is derived from the assignee_id join, so refetch when the
+    // assignment changed instead of leaving the header stale.
+    if (updates.assigneeId !== undefined) {
+      const fresh = await fetchTicket(ticket.value.id)
+      if (fresh) ticket.value = fresh
+    }
   }
 }
 

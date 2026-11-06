@@ -92,7 +92,7 @@ async function handleSave() {
       </VInput>
       
       <VInput v-model="assigneeId" label="Assignee" type="select">
-        <option :value="null">Unassigned</option>
+        <option value="">Unassigned</option>
         <option v-for="user in assignees" :key="user.id" :value="user.id">
           {{ user.name || user.email }}
         </option>

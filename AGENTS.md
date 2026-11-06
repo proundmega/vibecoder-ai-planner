@@ -105,10 +105,11 @@ docker compose down -v           # stop and remove volumes
 backend job:  npm ci → lint → syntax check → unit test → coverage
 frontend job: npm ci → lint → typecheck → unit test → coverage → build
 contract test: vitest run api-contract.test.ts (runs after backend+frontend)
+cypress e2e: docker compose (e2e overlay) → cypress/included on the compose network
 integration job: docker compose up → Jest integration tests → bash integration tests
 agent job: mvn package -q -DskipTests
 ```
-Change detection: only runs changed layers (not full pipeline on every branch). Backend CI uses a real PostgreSQL service container. Integration tests run in a dedicated `docker-compose.test.yml` test container.
+The full pipeline runs on every build; no stages are skipped by change detection. Backend CI uses a real PostgreSQL service container. Integration tests run in a dedicated `docker-compose.test.yml` test container.
 
 ### Bug fix protocol
 Every fix **must** include a regression test.
