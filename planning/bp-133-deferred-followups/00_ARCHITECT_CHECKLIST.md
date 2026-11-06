@@ -51,7 +51,7 @@ deferred scope are owned by this document; `01`–`03` link here.
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
 | E1 | Soft-deleted users remain in the admin list | bp-124 D14 | Backend | FR3 | done (`916bfe0`) |
-| E2 | Ticket writes ignore project membership | bp-124 D16 | Backend / Auth | FR4 | open (separate slice) |
+| E2 | Ticket writes ignore project membership | bp-124 D16 | Backend / Auth | FR4 | done (`8296e30`) |
 | E3 | Regenerate frontend generated client types | bp-124 D12 | Frontend | FR1 | done (`916bfe0`) |
 | E4 | Remaining OpenAPI BIGSERIAL id formats | bp-124 D13 | Docs / API | FR2 | done (`916bfe0`) |
 | E5 | Harness roadmap | bp-124 D11 | Agent | fg-33+ (separate track) | open |
