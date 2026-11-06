@@ -1,14 +1,14 @@
 ---
 id: "bp-133"
 title: "bp-124 Deferred Follow-ups"
-status: in_progress
+status: in_review
 priority: "P2"
 effort: "Medium"
 scope: "Both"
 created: "2026-11-06"
 updated: "2026-11-06"
-pr: null
-branch: null
+pr: 123
+branch: "feat/bp-133-fr1-fr3"
 depends_on: ["bp-124"]
 ---
 
@@ -60,5 +60,5 @@ deferred scope are owned by this document; `01`–`03` link here.
 
 | Claim | Evidence |
 |---|---|
-| No implementation yet | `status: in_progress`; every `03` plan checkbox is unchecked and there is no `03` Results row. |
+| No implementation yet | `status: in_review`; every `03` plan checkbox is unchecked and there is no `03` Results row. |
 | Items originated in bp-124 | bp-124 `00` deferred register D12–D16. |
