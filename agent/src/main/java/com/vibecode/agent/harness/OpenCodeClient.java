@@ -819,6 +819,9 @@ public final class OpenCodeClient implements HarnessClient {
         if (provider != null && provider.hasApiKey()) {
             redacted = redacted.replace(provider.apiKey(), "[REDACTED]");
         }
+        if (bridge != null && bridge.token() != null && !bridge.token().isBlank()) {
+            redacted = redacted.replace(bridge.token(), "[REDACTED]");
+        }
         return redacted;
     }
 
