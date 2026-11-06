@@ -17,11 +17,10 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 
 | Order | Ticket | State | Blocker |
 |-------|--------|-------|---------|
-| 1 | **bp-133** — bp-124 deferred follow-ups | In review (#123, #124) | FR1-FR3 in #123; FR4 (auth) stacked in #124. |
-| 2 | **bt-60** — durable-harness e2e | Ready, blocked | Disposable staging project/repo/agent, provider key and GitHub token. |
-| 3 | **fg-31** — automatic review harness | Blocked | fg-30 Phase 2 and fg-32. |
-| 4 | **fg-32** — review feedback loop | Blocked | fg-31, fg-30, fg-33. |
-| 5 | **fg-30 Phases 2-4** | Not ticketed | Needs its own ticket IDs before work starts. |
+| 1 | **bt-60** — durable-harness e2e | Ready, blocked | Disposable staging project/repo/agent, provider key and GitHub token. |
+| 2 | **fg-31** — automatic review harness | Blocked | fg-30 Phase 2 and fg-32. |
+| 3 | **fg-32** — review feedback loop | Blocked | fg-31, fg-30, fg-33. |
+| 4 | **fg-30 Phases 2-4** | Not ticketed | Needs its own ticket IDs before work starts. |
 
 `fg-34` (sandbox) and `fg-35` (GitHub App credentials) depend only on fg-30 Phase 1,
 which is merged, so they are unblocked but not yet scheduled. `fg-36` onward have unmet
@@ -98,9 +97,9 @@ prerequisites, and `fg-46` is deferred. Do not start a roadmap suite until its
 | ~~**bp-120**~~ | `DONE/bp-120-agent-connectivity-fixes` | P0 | ✅ Done (2026-09-11, commits `33792a5` + `0e62cb0`, in HEAD) — Three bugs preventing Java agents from functioning: (1) Double-wrapping in `getProviderConfig()` — service returns `{ success, data: {...} }` and route handler wraps again → `{ success, data: { success, data: {...} } }` — Java agent can't parse provider config; (2) `getAllAgents()` queries FROM `agent_heartbeats` so agents without heartbeats don't appear in heartbeat tab; (3) Defensive Java agent parsing for double-wrapped responses during transition. Backend-only fixes + Java defensive parsing. No DB migrations. |
 | ~~**bp-121**~~ | `DONE/bp-121-agent-connectivity-ip` | P2 | ✅ Done (2026-09-11, commit `1b1b793`, in HEAD) — Java agents on non-localhost hosts fail due to CORS blocking, double-wrapped provider config, and missing IP whitelist support. Three bugs: CORS rejects non-localhost origins, provider config response double-wrapped, no IP whitelist for agent auth. |
 | **bp-122** | `bp-122-code-cleanup` | P3 | ~~**Planned (2026-09-15)** — Three code quality issues from PR #97: (1) Dead `createPullRequestRetry()` method in agent GitHubService, (2) Verbose 8-parameter `Ticket.update()` signature, (3) Unpinned git version in Agent Dockerfile. All independent cleanups, no cross-dependencies.~~ ✅ Done (PR #99) |
-| ~~**bp-123**~~ | `DONE/bp-123-test-audit-corrections` | P0 | ✅ Done (merged PR #100, commit `4d62350`) — Full test/quality audit corrections: assignee validation against `project_memberships`, password-hash serialization, lockout `Retry-After`, ticket field mapping, no-op status updates, `critical` priority end-to-end, no-DB migration dry-run, Windows POSIX guard, refreshed Cypress specs. Remaining open defects were fixed by bp-124; deferred follow-ups are owned by bp-133. |
-| ~~**bp-124**~~ | `DONE/bp-124-audit-open-defects` | P1 | ✅ Done (2026-11-06, PRs #116-#121) — O1 milestone persistence; O2 dead SQL deleted; O3 Cypress E2E + Jenkins stage; O4 agent identity FK/backfill; O5 validator camelCase; O6 PUT returns Ticket; O7 docs drift; O8 integration setup fails on migration errors; O9 component-test backfill; O10 dry-run documented as structural-only; FR11 DONE hygiene. Follow-ups D12/D13/D14/D16 owned by bp-133. |
-| **bp-133** | `bp-133-deferred-followups` | P2 | **In review (PR #123, #124)** — ✅ FR1 regenerate the frontend generated client types; ✅ FR2 remaining OpenAPI BIGSERIAL id formats; ✅ FR3 exclude soft-deleted users from both admin lists; ✅ FR4 enforce project membership for ticket writes (stacked #124, needs an auth review). |
+| ~~**bp-123**~~ | `DONE/bp-123-test-audit-corrections` | P0 | ✅ Done (merged PR #100, commit `4d62350`) — Full test/quality audit corrections: assignee validation against `project_memberships`, password-hash serialization, lockout `Retry-After`, ticket field mapping, no-op status updates, `critical` priority end-to-end, no-DB migration dry-run, Windows POSIX guard, refreshed Cypress specs. Remaining open defects were fixed by bp-124; deferred follow-ups were completed by bp-133. |
+| ~~**bp-124**~~ | `DONE/bp-124-audit-open-defects` | P1 | ✅ Done (2026-11-06, PRs #116-#121) — O1 milestone persistence; O2 dead SQL deleted; O3 Cypress E2E + Jenkins stage; O4 agent identity FK/backfill; O5 validator camelCase; O6 PUT returns Ticket; O7 docs drift; O8 integration setup fails on migration errors; O9 component-test backfill; O10 dry-run documented as structural-only; FR11 DONE hygiene. Follow-ups D12/D13/D14/D16 were completed by bp-133. |
+| ~~**bp-133**~~ | `DONE/bp-133-deferred-followups` | P2 | ✅ Done (2026-11-06, PRs #123, #124) — FR1 regenerated the frontend client and corrected the User/project-assignee contracts; FR2 removed the remaining BIGSERIAL-as-UUID docs; FR3 excluded soft-deleted users from both admin lists; FR4 scoped ticket writes to project membership. |
 
 ## Test Backfills (bt-*)
 
@@ -209,6 +208,6 @@ Also indexed in `planning/HARNESS_ROADMAP.md` (fg-45 in Phase C, fg-46 deferred 
 - **fg-47 / fg-48** — Planning-only review-quality follow-ups. `fg-47` adds an independent second reviewer pass (different model family/provider, separate read-only context, dedupe/triage, blocking policy). `fg-48` plans the deterministic `check-claims` script for structured evidence, index labels, matrix coverage and deferred-register counts. Neither changes the current review flow; `check-planning.js` now covers the easy status/claim invariants.
 
 - **Status reconciliation (2026-11-03)** — bp-120, bp-121, bp-123 and fg-14 were already merged into HEAD while their docs still said planned/pending. All four are now marked done here and in their `00` headers. bp-123's `depends_on` was corrected from `["bp-124"]` to `[]`: the two tickets referenced each other. bp-124 correctly depends on bp-123.
-- **bp-125…bp-132 were never created** — their scope (milestone write API, dead-SQL cleanup, Cypress E2E, agent identity, validator camelCase, ticket-update contract, docs sync, integration setup) was executed as bp-124 slices, which is now done. Remaining work is owned by **bp-133** (D12-D14/D16) and **fg-30** (D11).
+- **bp-125…bp-132 were never created** — their scope (milestone write API, dead-SQL cleanup, Cypress E2E, agent identity, validator camelCase, ticket-update contract, docs sync, integration setup) was executed as bp-124 slices, which is now done. bp-133 completed D12-D14/D16; **fg-30** owns D11.
 - **Superseded files** — `PENDINGS.txt` (older snapshot) and `tickets.txt` (TKT-001…018, all done) are historical. `DREAM_PENDING.md` is a design roadmap for bp-31…bp-41, most of which are already implemented and are not part of this queue.
 - **Housekeeping (resolved 2026-11-06)** — bp-120, bp-121, bp-123, fg-13 and fg-14 moved to `planning/DONE/`; fg-13 marked done and placeholders filled (bp-124 FR11).

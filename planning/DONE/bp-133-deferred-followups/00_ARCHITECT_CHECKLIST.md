@@ -1,14 +1,14 @@
 ---
 id: "bp-133"
 title: "bp-124 Deferred Follow-ups"
-status: in_review
+status: done
 priority: "P2"
 effort: "Medium"
 scope: "Both"
 created: "2026-11-06"
 updated: "2026-11-06"
 pr: 124
-branch: "feat/bp-133-fr1-fr3"
+branch: "feat/bp-133-fr4"
 depends_on: ["bp-124"]
 ---
 
@@ -50,19 +50,25 @@ deferred scope are owned by this document; `01`–`03` link here.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| E1 | Soft-deleted users remain in the admin list | bp-124 D14 | Backend | FR3 | done (`916bfe0`) |
-| E2 | Ticket writes ignore project membership | bp-124 D16 | Backend / Auth | FR4 | done (`8296e30`) |
-| E3 | Regenerate frontend generated client types | bp-124 D12 | Frontend | FR1 | done (`916bfe0`) |
-| E4 | Remaining OpenAPI BIGSERIAL id formats | bp-124 D13 | Docs / API | FR2 | done (`916bfe0`) |
+| E1 | Soft-deleted users remain in the admin list | bp-124 D14 | Backend | FR3 | done (#123) |
+| E2 | Ticket writes ignore project membership | bp-124 D16 | Backend / Auth | FR4 | done (#124) |
+| E3 | Regenerate frontend generated client types | bp-124 D12 | Frontend | FR1 | done (#123) |
+| E4 | Remaining OpenAPI BIGSERIAL id formats | bp-124 D13 | Docs / API | FR2 | done (#123) |
 | E5 | Harness roadmap | bp-124 D11 | Agent | fg-33+ (separate track) | open |
 
 ## Status evidence
 
 | Claim | Evidence |
 |---|---|
-| FR1-FR3 implemented | Commit `916bfe0`; `03` plan items checked and dated `03` Results rows |
-| FR1 review fix | Commit `359ed4f`; `User` schema matches `User.toJSON()`, project assignee is nullable |
-| FR4 implemented | Commit `8296e30` (project-scope checks for update/delete/pickup/release) |
-| Verification | `03` → Results; backend 125 suites / 1557 tests, frontend 60 / 562, integration all pass |
-| FR4 review | Authorization change; needs its own review round on the stacked PR |
+| FR1-FR3 implemented | PR #123, merge commit `6329d5c` |
+| FR1 review fix | PR #123 (`User` schema matches `User.toJSON()`; project assignee nullable) |
+| FR4 implemented | PR #124, merge commit `67d7bca` (project-scope checks for update/delete/pickup/release) |
+| Verification | `03` → Results; backend 125 suites / 1557 tests, frontend 60 / 562, integration + Cypress all pass |
+| Review | Reviewer approved both PRs with no remaining comments |
 | Items originated in bp-124 | bp-124 `00` deferred register D12–D16 |
+
+## Completion gate
+
+- [x] Implementation merged in #123/#124
+- [x] Results recorded in `03`
+- [x] Deferred register complete (only E5 harness remains, owned by fg-30)

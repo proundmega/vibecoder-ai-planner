@@ -35,3 +35,8 @@
 - **PR**: #116-#121 (stacked)
 - **Date**: 2026-11-06
 - **Description**: Addressed the open audit defects O1-O10 (O10 documented as structural-only) and completed the DONE hygiene pass (FR11).
+
+## bp-133: bp-124 Deferred Follow-ups
+- **PR**: #123, #124
+- **Date**: 2026-11-06
+- **Description**: Regenerated the frontend client and corrected the User/project-assignee contracts, removed remaining BIGSERIAL-as-UUID docs, filtered soft-deleted users from both admin lists, and scoped ticket writes to project membership.
