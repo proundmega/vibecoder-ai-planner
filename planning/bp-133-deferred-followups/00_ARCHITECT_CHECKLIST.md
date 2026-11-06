@@ -7,7 +7,7 @@ effort: "Medium"
 scope: "Both"
 created: "2026-11-06"
 updated: "2026-11-06"
-pr: 123
+pr: 124
 branch: "feat/bp-133-fr1-fr3"
 depends_on: ["bp-124"]
 ---
