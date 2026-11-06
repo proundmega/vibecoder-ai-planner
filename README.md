@@ -297,8 +297,8 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 
 ### Frontend (Vitest + Cypress)
 
-- 22+ unit test files in `src/__tests__/`
-- 7 Cypress E2E specs + 5 component specs in `cypress/`
+- 60 unit test files in `src/__tests__/`
+- 7 Cypress E2E specs + 7 component specs in `cypress/`
 - Contract test: `src/__tests__/api-contract.test.ts`
 
 ### Coverage threshold (60%)

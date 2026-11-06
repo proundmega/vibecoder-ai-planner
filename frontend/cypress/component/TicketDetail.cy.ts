@@ -71,8 +71,14 @@ function mountDetail(router: ReturnType<typeof makeRouter>) {
 }
 
 describe('TicketDetail.vue', () => {
+  afterEach(() => {
+    useAuthStore().logout();
+  });
+
   beforeEach(() => {
     signIn();
+    // Fallback so no component request can reach the real API.
+    cy.intercept({ method: 'GET', url: '/api/**' }, { statusCode: 200, body: { success: true, data: [] } });
 
     let ticketReads = 0;
     cy.intercept('GET', '/api/v1/tickets/1', (req) => {
@@ -88,11 +94,11 @@ describe('TicketDetail.vue', () => {
       });
     }).as('ticket');
 
-    cy.intercept('GET', '/api/v1/tickets/1/comments', { success: true, data: [] });
-    cy.intercept('GET', '/api/v1/tickets/1/attachments', { success: true, data: [] });
-    cy.intercept('GET', '/api/v1/tickets/1/planning', { success: true, data: [] });
-    cy.intercept('GET', '/api/v1/tickets/1/planning/usage', { success: true, data: planningUsage });
-    cy.intercept('GET', '/api/v1/approvals/ticket/1', { success: true, data: [] });
+    cy.intercept('GET', '/api/v1/tickets/1/comments', { success: true, data: [] }).as('comments');
+    cy.intercept('GET', '/api/v1/tickets/1/attachments', { success: true, data: [] }).as('attachments');
+    cy.intercept('GET', '/api/v1/tickets/1/planning', { success: true, data: [] }).as('planning');
+    cy.intercept('GET', '/api/v1/tickets/1/planning/usage', { success: true, data: planningUsage }).as('planningUsage');
+    cy.intercept('GET', '/api/v1/approvals/ticket/1', { success: true, data: [] }).as('approvals');
 
     cy.intercept('GET', '/api/v1/projects/1/users', {
       statusCode: 200,
@@ -114,7 +120,7 @@ describe('TicketDetail.vue', () => {
   it('renders the ticket header, status and description', () => {
     mountDetail(makeRouter());
 
-    cy.wait('@ticket');
+    cy.wait(['@ticket', '@comments', '@approvals', '@attachments', '@planning', '@planningUsage']);
     cy.get('.ticket-header .title').should('contain', 'Detail ticket');
     cy.get('.badge.status').should('contain', 'backlog');
     cy.get('.description').should('contain', 'A description');
@@ -123,7 +129,7 @@ describe('TicketDetail.vue', () => {
   it('shows edit and delete actions for a project admin', () => {
     mountDetail(makeRouter());
 
-    cy.wait('@ticket');
+    cy.wait(['@ticket', '@comments', '@approvals', '@attachments', '@planning', '@planningUsage']);
     cy.contains('button', 'Edit Ticket').should('exist');
     cy.contains('button', 'Delete Ticket').should('exist');
   });
@@ -131,7 +137,7 @@ describe('TicketDetail.vue', () => {
   it('refreshes the assignee name after an edit save without a reload', () => {
     mountDetail(makeRouter());
 
-    cy.wait('@ticket');
+    cy.wait(['@ticket', '@comments', '@approvals', '@attachments', '@planning', '@planningUsage']);
     cy.get('.meta').should('contain', 'Bob Member');
 
     cy.contains('button', 'Edit Ticket').click();

@@ -31,8 +31,14 @@ function mountModal() {
 }
 
 describe('EditTicketModal.vue', () => {
+  afterEach(() => {
+    useAuthStore().logout();
+  });
+
   beforeEach(() => {
     signIn();
+    // Fallback so an unexpected request cannot reach the real API.
+    cy.intercept('GET', '/api/**', { statusCode: 200, body: { success: true, data: [] } });
     cy.intercept('GET', '/api/v1/projects/1/users', {
       statusCode: 200,
       body: { success: true, data: [{ id: '2', name: 'Bob Member' }] },
@@ -45,6 +51,7 @@ describe('EditTicketModal.vue', () => {
 
   it('exposes the title/description limits and the extended priorities', () => {
     mountModal();
+    cy.wait('@projectUsers');
 
     cy.get('input[placeholder="Ticket title"]').should('have.attr', 'maxlength', '200');
     cy.get('textarea').should('have.attr', 'maxlength', '5000');

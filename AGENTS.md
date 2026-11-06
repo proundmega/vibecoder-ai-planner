@@ -95,8 +95,8 @@ docker compose down -v           # stop and remove volumes
 - **File upload tests** (`file_upload.test.sh`) are skipped in CI (`CI=1` env var). Run locally with `CI=` (unset).
 
 ### Frontend (Vitest + Cypress)
-- 56 unit test files in `src/__tests__/`. `setupFiles: src/__tests__/setup.ts` loads design-tokens.css variables into DOM for tests.
-- 7 Cypress e2e specs + 6 component specs in `cypress/`. Seed: `cypress/support/seed.ts`.
+- 60 unit test files in `src/__tests__/`. `setupFiles: src/__tests__/setup.ts` loads design-tokens.css variables into DOM for tests.
+- 7 Cypress e2e specs + 7 component specs in `cypress/`. Seed data is created through `cy.seed()` in `cypress/support/commands.ts`.
 - Contract test: `src/__tests__/api-contract.test.ts` — verified in CI.
 - Coverage excludes many views/components intentionally listed in `vitest.config.ts`.
 
