@@ -1,13 +1,13 @@
 ---
 id: "fg-34"
 title: "Harness Sandbox and Supply-Chain Security"
-status: in_progress
+status: in_review
 priority: "P0"
 effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
 updated: "2026-11-06"
-pr: null
+pr: 126
 branch: "feat/fg-34-sandbox-foundation"
 depends_on: ["fg-30"]
 ---
