@@ -7,8 +7,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -188,6 +186,63 @@ public class VerificationRunner {
         return results;
     }
 
+    /**
+     * Run verification commands through an explicit sandbox.
+     *
+     * <p>This is the production path when {@code SANDBOX_MODE=docker}; the host
+     * overload above remains the Phase 1 compatibility path.</p>
+     */
+    public List<VerificationResult> run(
+        SandboxRunner sandbox,
+        SandboxHandle handle,
+        List<String> commands,
+        Duration timeout
+    ) {
+        List<VerificationResult> results = new ArrayList<>();
+        if (commands == null || sandbox == null || handle == null) {
+            return results;
+        }
+        long budgetMs = timeout == null ? 600_000L : Math.max(1, timeout.toMillis());
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(budgetMs);
+        for (String command : commands) {
+            if (command == null || command.isBlank()) {
+                continue;
+            }
+            long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+            if (remainingMs <= 0) {
+                results.add(new VerificationResult(
+                    command.trim(), -1, "verification budget exhausted", true));
+                continue;
+            }
+            String trimmed = command.trim();
+            try {
+                ExecResult result = sandbox.exec(handle, new ExecRequest(
+                    trimmed,
+                    null,
+                    Duration.ofMillis(remainingMs),
+                    MAX_CAPTURE_BYTES,
+                    Map.of()
+                ));
+                results.add(new VerificationResult(
+                    trimmed,
+                    result.exitCode(),
+                    truncateOutput(result.output()),
+                    result.timedOut()
+                ));
+            } catch (IOException e) {
+                results.add(new VerificationResult(trimmed, -1, e.getMessage(), false));
+            }
+        }
+        return results;
+    }
+
+    private static String truncateOutput(String text) {
+        String value = text == null ? "" : text;
+        return value.length() > MAX_OUTPUT_CHARS
+            ? value.substring(value.length() - MAX_OUTPUT_CHARS)
+            : value;
+    }
+
     private VerificationResult runOne(Path workspace, String command, Duration timeout) {
         boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
         List<String> processCommand = windows
@@ -201,7 +256,7 @@ public class VerificationRunner {
         Process process = null;
         try {
             process = builder.start();
-            TailBuffer output = new TailBuffer(MAX_CAPTURE_BYTES);
+            BoundedTailBuffer output = new BoundedTailBuffer(MAX_CAPTURE_BYTES);
             Process finalProcess = process;
             Thread reader = new Thread(() -> {
                 try (InputStream input = finalProcess.getInputStream()) {
@@ -258,44 +313,5 @@ public class VerificationRunner {
 
     private static String devNull() {
         return System.getProperty("os.name", "").toLowerCase().contains("win") ? "NUL" : "/dev/null";
-    }
-
-    /**
-     * Fixed-size ring buffer: a noisy or hostile test cannot grow the
-     * supervisor's heap without bound.
-     */
-    private static final class TailBuffer extends OutputStream {
-        private final byte[] buffer;
-        private int size;
-        private int writePosition;
-
-        private TailBuffer(int capacity) {
-            this.buffer = new byte[Math.max(1, capacity)];
-        }
-
-        @Override
-        public synchronized void write(int value) {
-            buffer[writePosition] = (byte) value;
-            writePosition = (writePosition + 1) % buffer.length;
-            if (size < buffer.length) {
-                size++;
-            }
-        }
-
-        @Override
-        public synchronized void write(byte[] bytes, int offset, int length) {
-            for (int i = 0; i < length; i++) {
-                write(bytes[offset + i]);
-            }
-        }
-
-        private synchronized String text() {
-            byte[] ordered = new byte[size];
-            int start = (writePosition - size + buffer.length) % buffer.length;
-            for (int i = 0; i < size; i++) {
-                ordered[i] = buffer[(start + i) % buffer.length];
-            }
-            return new String(ordered, StandardCharsets.UTF_8);
-        }
     }
 }

@@ -985,6 +985,56 @@ class HarnessTicketProcessorTest {
             any(), eq(List.of("/tmp/protected-workspace")));
     }
 
+    @Test
+    void dockerModeRunsVerificationInTheSandboxAndDestroysIt() throws Exception {
+        SandboxHandle handle = new SandboxHandle("sandbox-1", tempDir, false, null);
+        SandboxRunner sandboxRunner = mock(SandboxRunner.class);
+        when(sandboxRunner.create(any())).thenReturn(handle);
+        when(verificationRunner.run(eq(sandboxRunner), eq(handle), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult("npm test", 0, "ok", false)));
+
+        HarnessTicketProcessor dockerProcessor = dockerProcessor(sandboxRunner);
+        dockerProcessor.processTicket(apiService.pickUpTicket(1L));
+
+        verify(sandboxRunner).create(any());
+        verify(verificationRunner).run(
+            eq(sandboxRunner), eq(handle), eq(List.of("npm test")), any());
+        verify(sandboxRunner).destroy(handle);
+    }
+
+    @Test
+    void dockerSandboxCreateFailureIsFatalAndSkipsTheHarness() throws Exception {
+        SandboxRunner sandboxRunner = mock(SandboxRunner.class);
+        when(sandboxRunner.create(any())).thenThrow(new IOException("docker down"));
+
+        HarnessTicketProcessor dockerProcessor = dockerProcessor(sandboxRunner);
+        dockerProcessor.processTicket(apiService.pickUpTicket(1L));
+
+        verify(harness, never()).start(any());
+        verify(verificationRunner, never()).run(any(), anyList(), any());
+        assertTrue(postedMessages().stream()
+            .anyMatch(message -> message.contains("Sandbox creation failed")));
+    }
+
+    private HarnessTicketProcessor dockerProcessor(SandboxRunner sandboxRunner) {
+        SandboxConfig sandboxConfig = SandboxConfig.from(Map.of(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_USER", "1000:1000"
+        )::get);
+        return new HarnessTicketProcessor(
+            config, apiService, provider, gitHubService, "ghp_token",
+            harnessConfig,
+            repoName -> workspace,
+            ignored -> harness,
+            planningDocFetcher,
+            verificationRunner,
+            new PublishingGuard(harnessConfig.protectedPaths()),
+            sandboxConfig,
+            sandboxRunner
+        );
+    }
+
     private List<String> postedMessages() throws Exception {
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
         verify(apiService, atLeastOnce()).postMessage(any(), anyString(), captor.capture());
