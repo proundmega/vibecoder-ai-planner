@@ -32,7 +32,7 @@ final class SandboxCommandPolicy {
             + ")(?![A-Za-z0-9_-])";
 
     private static final Pattern CURL_UPPER_FLAGS =
-        Pattern.compile("\\bcurl\\b[^;&|\\n]*\\s-[FT]\\b");
+        Pattern.compile("\\bcurl\\b[^;&|\\n]*\\s-[FKT]\\b");
 
     private static final List<Rule> DENY = List.of(
         rule("git push", "\\bgit\\b[^;&|\\n]*\\bpush\\b"),
@@ -56,7 +56,7 @@ final class SandboxCommandPolicy {
             "\\b(cat|less|more|head|tail|grep|rg|sed|awk|cut|base64|xxd|od|strings|cp|mv|tar|zip|gzip|scp)\\b[^;&|\\n]*"
                 + CREDENTIAL_PATH),
         rule("curl upload",
-            "\\bcurl\\b[^;&|\\n]*(?:--data(?:-raw|-binary)?|--form|--json|--upload-file|--config|--header\\s+@|\\s-h\\s*@|\\s-[dt]\\b)"),
+            "\\bcurl\\b[^;&|\\n]*(?:--data(?:-raw|-binary)?|--form|--json|--upload-file|--config|--header\\s*=?\\s*@|\\s-h\\s*=?\\s*@|\\s-[dt]\\b)"),
         rule("wget upload",
             "\\bwget\\b[^;&|\\n]*(?:--post-data|--post-file|--body-data|--body-file)"),
         rule("interpreter credential access",

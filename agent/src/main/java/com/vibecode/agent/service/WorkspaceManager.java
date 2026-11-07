@@ -344,31 +344,55 @@ public class WorkspaceManager {
             if (path.isBlank() || status.startsWith("D")) {
                 continue;
             }
+            boolean newPath = status.startsWith("A");
             // A gitlink points at a commit, not blob content. It cannot carry
-            // a credential into the published tree.
+            // a credential in its content, but a newly added gitlink path can
+            // still contain one, so expose it as a path-only blob.
             if ("160000".equals(newMode)) {
+                if (newPath) {
+                    blobs.add(new GuardedBlob(path, new byte[0], new byte[0], true));
+                }
                 continue;
             }
             byte[] content = runGitBytes(
                 MAX_GUARDED_BLOB_BYTES,
                 "cat-file", "blob", guardedTree + ":" + path);
-            blobs.add(new GuardedBlob(path, content));
+            byte[] baseContent = newPath
+                ? new byte[0]
+                : runGitBytes(
+                    MAX_GUARDED_BLOB_BYTES,
+                    "cat-file", "blob", base + ":" + path);
+            blobs.add(new GuardedBlob(path, content, baseContent, newPath));
         }
         return List.copyOf(blobs);
     }
 
     /**
-     * A changed file from the guarded tree. The content is a copy, so the
-     * scanner cannot observe or mutate the tree object.
+     * A changed file from the guarded tree. {@code baseContent} is the blob
+     * from the base commit (empty for a new file), and {@code newPath} marks a
+     * file that did not exist in the base. The content arrays are copies, so
+     * the scanner cannot observe or mutate the tree object.
      */
-    public record GuardedBlob(String path, byte[] content) {
+    public record GuardedBlob(
+        String path,
+        byte[] content,
+        byte[] baseContent,
+        boolean newPath
+    ) {
         public GuardedBlob {
+            path = path == null ? "" : path;
             content = content == null ? new byte[0] : content.clone();
+            baseContent = baseContent == null ? new byte[0] : baseContent.clone();
         }
 
         @Override
         public byte[] content() {
             return content.clone();
+        }
+
+        @Override
+        public byte[] baseContent() {
+            return baseContent.clone();
         }
     }
 

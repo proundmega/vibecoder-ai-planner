@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -20,7 +21,9 @@ import java.util.regex.Pattern;
  * <p>The scanner reads the guarded tree blobs directly instead of parsing
  * {@code git diff} output. This closes the diff-format bypasses: a
  * {@code .gitattributes} {@code * -diff} rule, a binary file, a line beginning
- * with {@code ++}, or a secret used as a filename cannot hide content.</p>
+ * with {@code ++}, or a secret used as a filename cannot hide content. Matches
+ * already present in the base blob are ignored, so a pre-existing fixture does
+ * not block an unrelated edit to the same file.</p>
  *
  * <p>This is an output guard, not the reason the sandbox is safe. It runs in
  * addition to the publishing guard and never replaces secretless execution.</p>
@@ -58,14 +61,16 @@ public final class SecretLeakGuard {
     /**
      * @throws IllegalStateException when a changed path or blob contains a
      *     known secret value, a high-confidence credential format, or a blob
-     *     larger than the scan limit
+     *     larger than the scan limit; also when the blob list is missing
      */
     public void assertClean(List<GuardedBlob> blobs) {
         if (blobs == null) {
-            return;
+            // Production always passes the guarded-tree list. Treat a missing
+            // list as a fail-closed guard error rather than a clean result.
+            throw new IllegalStateException("Guarded blobs are required");
         }
         for (GuardedBlob blob : blobs) {
-            String finding = findLeak(blob.path(), blob.content());
+            String finding = findLeak(blob);
             if (finding != null) {
                 throw new IllegalStateException(
                     "Refusing to publish a diff that contains " + finding);
@@ -77,11 +82,26 @@ public final class SecretLeakGuard {
      * @return a description of the leak, or {@code null} when the path and
      *     content are clean
      */
-    String findLeak(String path, byte[] content) {
-        String pathLeak = findLeakInText(path);
-        if (pathLeak != null) {
-            return pathLeak;
+    String findLeak(GuardedBlob blob) {
+        if (blob == null) {
+            return "a missing changed blob";
         }
+        if (blob.newPath()) {
+            String pathLeak = findLeakInText(blob.path());
+            if (pathLeak != null) {
+                return pathLeak;
+            }
+        }
+        return findNewContentLeak(blob.content(), blob.baseContent());
+    }
+
+    /**
+     * Compare the new blob with the base blob and only report matches that are
+     * not already present in the base. This preserves added-line semantics for
+     * modified files: a pre-existing test fixture is not treated as a new
+     * leak, while a newly added credential is.
+     */
+    private String findNewContentLeak(byte[] content, byte[] baseContent) {
         if (content == null || content.length == 0) {
             return null;
         }
@@ -90,7 +110,28 @@ public final class SecretLeakGuard {
             // published. Fail closed instead.
             return "a file larger than the credential-scan limit";
         }
-        return findLeakInText(new String(content, StandardCharsets.ISO_8859_1));
+        if (baseContent != null && baseContent.length > MAX_SCAN_BYTES) {
+            return "a base file larger than the credential-scan limit";
+        }
+        String text = new String(content, StandardCharsets.ISO_8859_1);
+        String baseText = baseContent == null
+            ? ""
+            : new String(baseContent, StandardCharsets.ISO_8859_1);
+
+        for (String secret : knownSecrets) {
+            if (text.contains(secret) && !baseText.contains(secret)) {
+                return "a configured credential";
+            }
+        }
+        for (Rule rule : PATTERNS) {
+            Matcher matcher = rule.pattern.matcher(text);
+            while (matcher.find()) {
+                if (!baseText.contains(matcher.group())) {
+                    return rule.description;
+                }
+            }
+        }
+        return null;
     }
 
     private String findLeakInText(String text) {

@@ -95,6 +95,7 @@ class HarnessTicketProcessorTest {
         when(workspace.getRepoDir()).thenReturn(tempDir);
         when(workspace.stageFreshDiff()).thenReturn(new DiffSummary(
             List.of(new DiffSummary.ChangedFile("src/App.java", "modified")), 12, 3));
+        when(workspace.guardedChangedBlobs()).thenReturn(List.of());
         when(workspace.commitAndPushStaged(anyString(), anyString())).thenReturn("abc1234");
 
         harness = mock(HarnessClient.class);
@@ -653,7 +654,8 @@ class HarnessTicketProcessorTest {
     void credentialInStagedDiffBlocksPublishingAndReleases() throws Exception {
         when(workspace.guardedChangedBlobs()).thenReturn(List.of(
             new WorkspaceManager.GuardedBlob(
-                "README.md", "token: secret-key\n".getBytes(StandardCharsets.UTF_8))));
+                "README.md", "token: secret-key\n".getBytes(StandardCharsets.UTF_8),
+                new byte[0], true)));
 
         processor.processTicket(ticket());
 

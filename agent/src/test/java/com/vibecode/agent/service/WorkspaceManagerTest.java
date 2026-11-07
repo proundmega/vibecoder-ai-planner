@@ -642,6 +642,102 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void guardedChangedBlobsIgnorePreExistingFixturesInModifiedFiles() throws Exception {
+        Path repoDir = initRepo("guarded-blob-fixture");
+        String fixture = "const key = \"sk-ant-api03-long-token-1234567890\";\n";
+        Files.writeString(repoDir.resolve("config.js"), fixture);
+        runGit(repoDir, "add", ".");
+        runGit(repoDir, "commit", "-m", "fixture");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+        SecretLeakGuard guard = new SecretLeakGuard(List.of());
+        Files.writeString(repoDir.resolve("config.js"), fixture + "// unrelated change\n");
+        DiffSummary diff = wm.stageFreshDiff();
+        try {
+            new PublishingGuard(List.of()).assertPublishable(diff);
+            guard.assertClean(wm.guardedChangedBlobs());
+        } finally {
+            wm.discardStaged();
+        }
+
+        Files.writeString(repoDir.resolve("config.js"),
+            fixture + "// unrelated change\n"
+                + "const token = \"ghp_abcdefghijklmnopqrstuvwxyz0123456789\";\n");
+        diff = wm.stageFreshDiff();
+        try {
+            new PublishingGuard(List.of()).assertPublishable(diff);
+            assertThrows(IllegalStateException.class,
+                () -> guard.assertClean(wm.guardedChangedBlobs()));
+        } finally {
+            wm.discardStaged();
+        }
+    }
+
+    @Test
+    void guardedChangedBlobsIgnorePreExistingCredentialPathsButBlockNewOnes() throws Exception {
+        Path repoDir = initRepo("guarded-blob-path-fixture");
+        String secret = "oc_sk_live_1234567890";
+        Path fixtureDir = Files.createDirectories(repoDir.resolve("fixtures"));
+        Path fixture = fixtureDir.resolve(secret + ".txt");
+        Files.writeString(fixture, "ordinary\n");
+        runGit(repoDir, "add", ".");
+        runGit(repoDir, "commit", "-m", "fixture path");
+
+        Files.writeString(fixture, "ordinary\nchanged\n");
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+        SecretLeakGuard guard = new SecretLeakGuard(List.of(secret));
+        DiffSummary diff = wm.stageFreshDiff();
+        try {
+            new PublishingGuard(List.of()).assertPublishable(diff);
+            assertTrue(wm.guardedChangedBlobs().stream()
+                .anyMatch(blob -> blob.path().contains(secret) && !blob.newPath()));
+            guard.assertClean(wm.guardedChangedBlobs());
+        } finally {
+            wm.discardStaged();
+        }
+
+        Files.writeString(repoDir.resolve("new-" + secret + ".txt"), "ordinary\n");
+        diff = wm.stageFreshDiff();
+        try {
+            assertThrows(IllegalStateException.class,
+                () -> guard.assertClean(wm.guardedChangedBlobs()));
+        } finally {
+            wm.discardStaged();
+        }
+    }
+
+    @Test
+    void guardedChangedBlobsExposeNewGitlinkPathsForScanning() throws Exception {
+        Path repoDir = initRepo("guarded-gitlink");
+        String secret = "oc_sk_live_1234567890";
+        Path submodule = repoDir.resolve("submodule-" + secret);
+        Files.createDirectories(submodule);
+        runGit(submodule, "init");
+        runGit(submodule, "config", "user.email", "test@example.com");
+        runGit(submodule, "config", "user.name", "Test User");
+        Files.writeString(submodule.resolve("nested.txt"), "nested\n");
+        runGit(submodule, "add", ".");
+        runGit(submodule, "commit", "-m", "nested");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+        SecretLeakGuard guard = new SecretLeakGuard(List.of(secret));
+        DiffSummary diff = wm.stageFreshDiff();
+        try {
+            new PublishingGuard(List.of()).assertPublishable(diff);
+            assertTrue(wm.guardedChangedBlobs().stream()
+                    .anyMatch(blob -> blob.path().contains(secret)),
+                "new gitlink path was not exposed to the scanner");
+            assertThrows(IllegalStateException.class,
+                () -> guard.assertClean(wm.guardedChangedBlobs()));
+        } finally {
+            wm.discardStaged();
+        }
+    }
+
+    @Test
     void guardedChangedBlobsRequireAGuardedTree() throws Exception {
         Path repoDir = initRepo("guarded-blob-unguarded");
         WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
