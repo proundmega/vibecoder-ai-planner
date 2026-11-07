@@ -31,6 +31,9 @@ final class SandboxCommandPolicy {
             + "|/proc/(?:self|1)/environ"
             + ")(?![A-Za-z0-9_-])";
 
+    // Coarse shell-token check for curl upload flags. It can false-positive
+    // when a "-F"/"-T"/"-K" token appears inside a quoted header value; the
+    // policy is documented as a partial denylist, not a shell parser.
     private static final Pattern CURL_UPPER_FLAGS =
         Pattern.compile("\\bcurl\\b[^;&|\\n]*\\s-[FKT]");
 

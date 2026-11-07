@@ -42,9 +42,9 @@ public final class SecretLeakGuard {
      * still detected.
      */
     private static final Pattern PRIVATE_KEY_BEGIN = Pattern.compile(
-        "-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----");
+        "-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----", Pattern.CASE_INSENSITIVE);
     private static final Pattern PRIVATE_KEY_END = Pattern.compile(
-        "-----END (?:[A-Z0-9]+ )?PRIVATE KEY-----");
+        "-----END (?:[A-Z0-9]+ )?PRIVATE KEY-----", Pattern.CASE_INSENSITIVE);
 
     private static final List<Rule> PATTERNS = List.of(
         rule("a private key", "-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----"),
@@ -170,6 +170,12 @@ public final class SecretLeakGuard {
      * END is ignored here (the header-only pattern still catches it in a new
      * file); a complete block is compared as a whole so a new block using the
      * same header as a pre-existing block is not mistaken for the old one.
+     *
+     * <p>BEGIN/END markers are matched case-insensitively, like the header
+     * rule. Block comparison itself is exact: re-wrapping, re-indenting or
+     * changing the header casing of a pre-existing key counts as a new block
+     * and is blocked. That is intentionally conservative; normalizing would
+     * make the guard easier to evade.</p>
      */
     private static Set<String> privateKeyBlocks(String text) {
         Set<String> blocks = new HashSet<>();

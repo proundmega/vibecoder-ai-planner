@@ -146,6 +146,45 @@ class SecretLeakGuardTest {
     }
 
     @Test
+    void blocksANewLowercasePrivateKeyBlockAlongsideAPreExistingOne() {
+        String oldBlock = """
+            -----begin rsa private key-----
+            OLDKEYMATERIAL
+            -----end rsa private key-----
+            """;
+        String newBlock = """
+            -----begin rsa private key-----
+            NEWKEYMATERIAL
+            -----end rsa private key-----
+            """;
+        GuardedBlob modified = modifiedBlob("key.pem", oldBlock + newBlock, oldBlock);
+
+        assertEquals("a private key block", guard.findLeak(modified));
+    }
+
+    @Test
+    void blocksANewMixedCasePrivateKeyBlockWhenTheBaseOnlyHasAHeader() {
+        String header = "-----Begin Rsa Private Key-----\n";
+        String block = header + "NEWKEYMATERIAL\n-----End Rsa Private Key-----\n";
+        GuardedBlob modified = modifiedBlob("key.pem", block, header);
+
+        assertEquals("a private key block", guard.findLeak(modified));
+    }
+
+    @Test
+    void allowsAVerbatimLowercasePrivateKeyBlock() {
+        String block = """
+            -----begin rsa private key-----
+            OLDKEYMATERIAL
+            -----end rsa private key-----
+            """;
+        GuardedBlob modified = modifiedBlob("key.pem", block + block, block);
+
+        assertNull(guard.findLeak(modified));
+        guard.assertClean(List.of(modified));
+    }
+
+    @Test
     void blocksAnOversizedBlobInsteadOfTruncating() {
         byte[] content = new byte[8 * 1024 * 1024 + 16];
         Arrays.fill(content, (byte) 'a');
