@@ -738,6 +738,34 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void guardedChangedBlobsHandleAGitlinkToFileTypeChange() throws Exception {
+        Path repoDir = initRepo("guarded-gitlink-to-file");
+        String head = gitOutput(repoDir, "rev-parse", "HEAD");
+        runGit(repoDir, "update-index", "--add", "--cacheinfo", "160000," + head + ",submodule");
+        runGit(repoDir, "commit", "-m", "gitlink");
+        runGit(repoDir, "rm", "--cached", "submodule");
+
+        String secret = "oc_sk_live_1234567890";
+        Files.writeString(repoDir.resolve("submodule"), "token: " + secret + "\n");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+        SecretLeakGuard guard = new SecretLeakGuard(List.of(secret));
+        DiffSummary diff = wm.stageFreshDiff();
+        try {
+            new PublishingGuard(List.of()).assertPublishable(diff);
+            assertTrue(wm.guardedChangedBlobs().stream()
+                    .anyMatch(blob -> blob.path().equals("submodule")
+                        && new String(blob.content(), StandardCharsets.UTF_8).contains(secret)),
+                "gitlink->file type change content was not scanned");
+            assertThrows(IllegalStateException.class,
+                () -> guard.assertClean(wm.guardedChangedBlobs()));
+        } finally {
+            wm.discardStaged();
+        }
+    }
+
+    @Test
     void guardedChangedBlobsRequireAGuardedTree() throws Exception {
         Path repoDir = initRepo("guarded-blob-unguarded");
         WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
