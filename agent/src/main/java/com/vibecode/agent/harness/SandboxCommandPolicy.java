@@ -16,16 +16,23 @@ final class SandboxCommandPolicy {
 
     private static final String CREDENTIAL_PATH =
         "(?<![A-Za-z0-9_.\\\\-])(?:"
-            + "\\.env(?!\\.example\\b)(?:\\.[A-Za-z0-9_-]+)?"
+            + "\\.env(?!\\.example\\b)(?:rc|[-.][A-Za-z0-9_-]+)?"
             + "|secrets/"
             + "|\\.git/config"
+            + "|\\.git-credentials"
             + "|\\.ssh/"
             + "|\\.aws/"
+            + "|\\.config/gcloud"
+            + "|\\.kube/config"
+            + "|\\.docker/config\\.json"
             + "|\\.npmrc"
             + "|\\.netrc"
             + "|id_rsa"
             + "|/proc/(?:self|1)/environ"
             + ")(?![A-Za-z0-9_-])";
+
+    private static final Pattern CURL_UPPER_FLAGS =
+        Pattern.compile("\\bcurl\\b[^;&|\\n]*\\s-[FT]\\b");
 
     private static final List<Rule> DENY = List.of(
         rule("git push", "\\bgit\\b[^;&|\\n]*\\bpush\\b"),
@@ -49,11 +56,15 @@ final class SandboxCommandPolicy {
             "\\b(cat|less|more|head|tail|grep|rg|sed|awk|cut|base64|xxd|od|strings|cp|mv|tar|zip|gzip|scp)\\b[^;&|\\n]*"
                 + CREDENTIAL_PATH),
         rule("curl upload",
-            "\\bcurl\\b[^;&|\\n]*(?:--data(?:-raw|-binary)?|--form|--json|--upload-file|\\s-[dFT]\\b)"),
+            "\\bcurl\\b[^;&|\\n]*(?:--data(?:-raw|-binary)?|--form|--json|--upload-file|--config|--header\\s+@|\\s-h\\s*@|\\s-[dt]\\b)"),
         rule("wget upload",
-            "\\bwget\\b[^;&|\\n]*(?:--post-data|--post-file|--body-data)"),
+            "\\bwget\\b[^;&|\\n]*(?:--post-data|--post-file|--body-data|--body-file)"),
+        rule("interpreter credential access",
+            "\\b(python3?|perl|ruby|node|php)\\b[^;&|\\n]*(?:-c|-e|-r)\\b[^;&|\\n]*"
+                + CREDENTIAL_PATH),
+        rule("shell /dev/tcp exfiltration", "/dev/(?:tcp|udp)/"),
         rule("raw network exfiltration", "\\b(nc|ncat|netcat|socat)\\b"),
-        rule("remote copy", "\\b(scp|rsync|telnet)\\b|\\bssh\\b(?!-)"),
+        rule("remote copy", "\\b(scp|sftp|rsync|telnet)\\b|\\bssh\\b(?!-)"),
         rule("environment piped to the network",
             "(?:^|[;&|]\\s*)(printenv|env)\\b[^;&|\\n]*\\|[^;&|\\n]*(curl|wget|nc|ncat|netcat|socat)")
     );
@@ -68,6 +79,11 @@ final class SandboxCommandPolicy {
         }
         if (command.length() > 200_000) {
             return "command is too large";
+        }
+        // -F/-T are upload flags; keep them case-sensitive so the common
+        // curl -f (fail) flag is not treated as an upload.
+        if (CURL_UPPER_FLAGS.matcher(command).find()) {
+            return "curl upload";
         }
         String normalized = command.toLowerCase(Locale.ROOT);
         for (Rule rule : DENY) {

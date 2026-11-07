@@ -787,7 +787,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 DiffSummary diff = workspace.stageFreshDiff();
                 try {
                     publishingGuard.assertPublishable(diff);
-                    secretLeakGuard.assertClean(workspace.stagedDiffText());
+                    secretLeakGuard.assertClean(workspace.guardedChangedBlobs());
                 } catch (IllegalStateException e) {
                     failAndRelease(pickedUp.getId(), "Publishing blocked: " + e.getMessage());
                     return;

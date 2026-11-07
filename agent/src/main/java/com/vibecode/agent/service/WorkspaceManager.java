@@ -60,6 +60,11 @@ public class WorkspaceManager {
 
     private static final int MAX_COUNTED_LINES = 1_000_000;
     private static final long MAX_COUNTED_BYTES = 10L * 1024 * 1024;
+    /**
+     * Upper bound for a single guarded blob passed to the credential scanner.
+     * A larger blob is rejected instead of being truncated (fail closed).
+     */
+    private static final int MAX_GUARDED_BLOB_BYTES = 8 * 1024 * 1024;
     private static final Pattern WORKSPACE_DIR_PATTERN =
         Pattern.compile("^[0-9a-f]{8}-.+");
     private static final List<String> TEMP_DIR_PREFIXES = List.of(
@@ -305,19 +310,66 @@ public class WorkspaceManager {
     }
 
     /**
-     * Return the staged diff (base to the guarded tree) for output scanning.
+     * Return the added/modified blobs from the guarded tree for output
+     * scanning. Reading the tree blobs directly avoids diff-format bypasses:
+     * a {@code .gitattributes} rule such as {@code * -diff}, a binary file,
+     * a {@code ++}-prefixed line, or a secret used as a filename cannot hide
+     * content from this method.
      *
      * <p>This must be called after {@link #stageFreshDiff()} and before
-     * {@link #discardStaged()}. The publishing guard already bounds the diff
-     * size; {@code --unified=0} keeps the scan focused on added lines.</p>
+     * {@link #discardStaged()}. Deleted files are skipped because their
+     * content cannot be published.</p>
      */
-    public String stagedDiffText() throws IOException {
+    public List<GuardedBlob> guardedChangedBlobs() throws IOException {
         if (supervisorIndex == null || guardedTree == null) {
-            throw new IOException("No guarded diff is staged");
+            throw new IOException("No guarded tree is staged");
         }
-        return runGitWithIndex(
-            "diff", "--cached", "--no-ext-diff", "--no-color", "--no-renames",
-            "--unified=0", baseCommitOrHead());
+        String base = baseCommitOrHead();
+        String changed = new String(
+            runGitBytes(
+                MAX_GUARDED_BLOB_BYTES,
+                "diff-tree", "-r", "-z", "--no-renames", "--raw", base, guardedTree),
+            StandardCharsets.UTF_8);
+        String[] tokens = changed.split("\u0000", -1);
+        List<GuardedBlob> blobs = new ArrayList<>();
+        for (int i = 0; i + 1 < tokens.length; i += 2) {
+            String meta = tokens[i];
+            String path = tokens[i + 1];
+            String[] parts = meta.split(" ");
+            if (parts.length < 5) {
+                throw new IOException("Unexpected git diff-tree record for " + path);
+            }
+            String newMode = parts[1];
+            String status = parts[4];
+            if (path.isBlank() || status.startsWith("D")) {
+                continue;
+            }
+            // A gitlink points at a commit, not blob content. It cannot carry
+            // a credential into the published tree.
+            if ("160000".equals(newMode)) {
+                continue;
+            }
+            byte[] content = runGitBytes(
+                MAX_GUARDED_BLOB_BYTES,
+                "cat-file", "blob", guardedTree + ":" + path);
+            blobs.add(new GuardedBlob(path, content));
+        }
+        return List.copyOf(blobs);
+    }
+
+    /**
+     * A changed file from the guarded tree. The content is a copy, so the
+     * scanner cannot observe or mutate the tree object.
+     */
+    public record GuardedBlob(String path, byte[] content) {
+        public GuardedBlob {
+            content = content == null ? new byte[0] : content.clone();
+        }
+
+        @Override
+        public byte[] content() {
+            return content.clone();
+        }
     }
 
     public void discardStaged() {
@@ -502,6 +554,33 @@ public class WorkspaceManager {
             throw new IOException("Workspace has not been cloned");
         }
         return runGitAt(repoDir, Map.of(), args);
+    }
+
+    /**
+     * Run a git command and return raw bytes (for blob content scanning).
+     * Output larger than {@code maxBytes} is rejected rather than truncated.
+     */
+    private byte[] runGitBytes(int maxBytes, String... args) throws IOException {
+        if (repoDir == null) {
+            throw new IOException("Workspace has not been cloned");
+        }
+        Process process = startGit(repoDir, Map.of(), args);
+        byte[] output;
+        try (InputStream input = process.getInputStream()) {
+            output = input.readNBytes(maxBytes + 1);
+        }
+        if (output.length > maxBytes) {
+            process.destroyForcibly();
+            waitFor(process);
+            throw new IllegalStateException(
+                "Changed blob exceeds the " + maxBytes + "-byte scan limit");
+        }
+        int exitCode = waitFor(process);
+        if (exitCode != 0) {
+            throw new IOException("git " + redact(String.join(" ", args))
+                + " failed with exit code " + exitCode);
+        }
+        return output;
     }
 
     private String runGitWithIndex(String... args) throws IOException {

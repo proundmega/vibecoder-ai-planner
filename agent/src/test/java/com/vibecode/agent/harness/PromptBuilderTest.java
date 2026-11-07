@@ -67,6 +67,7 @@ class PromptBuilderTest {
         assertTrue(sandboxPrompt.contains("sandbox_bash"));
         assertTrue(sandboxPrompt.contains("/workspace"));
         assertTrue(sandboxPrompt.contains("built-in `bash`/`shell` tool is disabled"));
+        assertTrue(sandboxPrompt.contains("built-in `grep` tool is disabled"));
         assertTrue(sandboxPrompt.contains("no network access"));
         assertFalse(sandboxPrompt.contains("approved package registries"));
         assertTrue(allowlistPrompt.contains("approved package registries"));

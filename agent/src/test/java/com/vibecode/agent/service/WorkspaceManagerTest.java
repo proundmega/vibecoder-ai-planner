@@ -2,6 +2,7 @@ package com.vibecode.agent.service;
 
 import com.vibecode.agent.harness.DiffSummary;
 import com.vibecode.agent.harness.PublishingGuard;
+import com.vibecode.agent.harness.SecretLeakGuard;
 import com.vibecode.agent.model.FileOperation;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -589,31 +590,64 @@ class WorkspaceManagerTest {
     }
 
     @Test
-    void stageFreshDiffTextExposesOnlyAddedContentForScanning() throws Exception {
-        Path repoDir = initRepo("staged-diff-text");
-        Files.writeString(repoDir.resolve("feature.txt"), "hello\n");
+    void guardedChangedBlobsExposeContentDespiteGitAttributesAndBinaryFiles() throws Exception {
+        Path repoDir = initRepo("guarded-blob-attributes");
+        String secret = "oc_sk_live_1234567890";
+        Files.writeString(repoDir.resolve(".gitattributes"), "* -diff\n");
+        Files.writeString(repoDir.resolve("README.md"), "token: " + secret + "\n");
+        Files.write(repoDir.resolve("secret.bin"),
+            ("prefix\0" + secret + "\0suffix").getBytes(StandardCharsets.ISO_8859_1));
 
         WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         setRepoDir(wm, repoDir);
+        SecretLeakGuard guard = new SecretLeakGuard(List.of(secret));
 
         DiffSummary diff = wm.stageFreshDiff();
         try {
             new PublishingGuard(List.of()).assertPublishable(diff);
-            String text = wm.stagedDiffText();
-            assertTrue(text.contains("feature.txt"), text);
-            assertTrue(text.contains("+hello"), text);
+            assertTrue(wm.guardedChangedBlobs().stream()
+                    .anyMatch(blob -> blob.path().equals("README.md")
+                        && new String(blob.content(), StandardCharsets.ISO_8859_1).contains(secret)),
+                "guarded blob scan did not see README content");
+            assertTrue(wm.guardedChangedBlobs().stream()
+                    .anyMatch(blob -> blob.path().equals("secret.bin")
+                        && new String(blob.content(), StandardCharsets.ISO_8859_1).contains(secret)),
+                "guarded blob scan did not see binary content");
+            assertThrows(IllegalStateException.class,
+                () -> guard.assertClean(wm.guardedChangedBlobs()));
         } finally {
             wm.discardStaged();
         }
     }
 
     @Test
-    void stagedDiffTextRequiresAGuardedDiff() throws Exception {
-        Path repoDir = initRepo("staged-diff-unguarded");
+    void guardedChangedBlobsDetectPlusPrefixedLinesAndSecretFilenames() throws Exception {
+        Path repoDir = initRepo("guarded-blob-plus");
+        String secret = "oc_sk_live_1234567890";
+        Files.writeString(repoDir.resolve("plus.txt"), "++" + secret + "\n");
+        Files.writeString(repoDir.resolve("docs-" + secret + ".txt"), "ordinary\n");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+        SecretLeakGuard guard = new SecretLeakGuard(List.of(secret));
+
+        DiffSummary diff = wm.stageFreshDiff();
+        try {
+            new PublishingGuard(List.of()).assertPublishable(diff);
+            assertThrows(IllegalStateException.class,
+                () -> guard.assertClean(wm.guardedChangedBlobs()));
+        } finally {
+            wm.discardStaged();
+        }
+    }
+
+    @Test
+    void guardedChangedBlobsRequireAGuardedTree() throws Exception {
+        Path repoDir = initRepo("guarded-blob-unguarded");
         WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         setRepoDir(wm, repoDir);
 
-        assertThrows(IOException.class, wm::stagedDiffText);
+        assertThrows(IOException.class, wm::guardedChangedBlobs);
     }
 
     @Test

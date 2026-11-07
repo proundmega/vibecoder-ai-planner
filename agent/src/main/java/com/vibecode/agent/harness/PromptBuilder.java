@@ -104,6 +104,8 @@ public final class PromptBuilder {
             prompt.append("- Commands run in a disposable sandbox where the workspace is mounted ");
             prompt.append("at `/workspace`. Prefer relative paths in shell commands; the read/edit ");
             prompt.append("tools still use the normal workspace paths.\n");
+            prompt.append("- The built-in `grep` tool is disabled in Docker mode. Use ");
+            prompt.append("`sandbox_bash` with `rg`/`grep` for content search.\n");
             prompt.append("- The sandbox has no Git credentials. ");
             if (egressAllowlist) {
                 prompt.append("Network access is limited to the approved package registries ");

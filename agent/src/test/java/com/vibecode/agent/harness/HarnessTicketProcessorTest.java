@@ -13,6 +13,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -650,8 +651,9 @@ class HarnessTicketProcessorTest {
 
     @Test
     void credentialInStagedDiffBlocksPublishingAndReleases() throws Exception {
-        when(workspace.stagedDiffText()).thenReturn(
-            "+++ b/README.md\n+token: secret-key\n");
+        when(workspace.guardedChangedBlobs()).thenReturn(List.of(
+            new WorkspaceManager.GuardedBlob(
+                "README.md", "token: secret-key\n".getBytes(StandardCharsets.UTF_8))));
 
         processor.processTicket(ticket());
 
