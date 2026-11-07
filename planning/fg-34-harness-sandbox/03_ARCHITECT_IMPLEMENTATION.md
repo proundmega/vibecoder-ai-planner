@@ -11,7 +11,7 @@
 | 2 | Egress allowlist proxy (FR4) and the OpenCode bash-tool bridge so model-driven repo commands also run in the sandbox (FR11 complete) | Merged (#127) |
 | 3a | Prompt-injection defenses (FR8): untrusted-content labeling, instruction precedence, literal credential-path read denies, high-confidence command exfiltration policy, guarded-blob credential scan with base-content comparison; read-deny symlink/grep limitations tracked as D18 | Merged (#128) |
 | 3b | SBOM/image scan/digest pinning (FR9) | Merged (#129) |
-| 3c | Artifact redaction (NFR5/D11): configured secrets and high-confidence credential formats are redacted from verification output, ticket messages, run errors and PR bodies | In review (#TBD) |
+| 3c | Artifact redaction (NFR5/D11): configured secrets and high-confidence credential formats are redacted from verification output, ticket messages, run errors and PR bodies | In review (#130) |
 
 Slice 1 deliberately keeps `SANDBOX_MODE=host` as the default so the Phase 1
 harness is unchanged until the Docker path is validated. Docker mode is
