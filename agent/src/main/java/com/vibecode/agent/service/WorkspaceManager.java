@@ -344,6 +344,7 @@ public class WorkspaceManager {
             if (path.isBlank() || status.startsWith("D")) {
                 continue;
             }
+            String oldMode = parts[0].startsWith(":") ? parts[0].substring(1) : parts[0];
             boolean newPath = status.startsWith("A");
             // A gitlink points at a commit, not blob content. It cannot carry
             // a credential in its content, but a newly added gitlink path can
@@ -357,7 +358,9 @@ public class WorkspaceManager {
             byte[] content = runGitBytes(
                 MAX_GUARDED_BLOB_BYTES,
                 "cat-file", "blob", guardedTree + ":" + path);
-            byte[] baseContent = newPath
+            // A gitlink -> regular-file type change has no blob in the base;
+            // treat it like a new-content file for comparison purposes.
+            byte[] baseContent = newPath || "160000".equals(oldMode)
                 ? new byte[0]
                 : runGitBytes(
                     MAX_GUARDED_BLOB_BYTES,

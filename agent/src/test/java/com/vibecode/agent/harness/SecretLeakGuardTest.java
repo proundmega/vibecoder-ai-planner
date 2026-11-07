@@ -105,6 +105,47 @@ class SecretLeakGuardTest {
     }
 
     @Test
+    void blocksANewPrivateKeyBlockAlongsideAPreExistingOne() {
+        String oldBlock = """
+            -----BEGIN RSA PRIVATE KEY-----
+            OLDKEYMATERIAL
+            -----END RSA PRIVATE KEY-----
+            """;
+        String newBlock = """
+            -----BEGIN RSA PRIVATE KEY-----
+            NEWKEYMATERIAL
+            -----END RSA PRIVATE KEY-----
+            """;
+        GuardedBlob modified = modifiedBlob("key.pem", oldBlock + newBlock, oldBlock);
+
+        assertEquals("a private key block", guard.findLeak(modified));
+        assertThrows(IllegalStateException.class,
+            () -> guard.assertClean(List.of(modified)));
+    }
+
+    @Test
+    void blocksANewPrivateKeyBlockWhenTheBaseOnlyHasAHeader() {
+        String header = "-----BEGIN RSA PRIVATE KEY-----\n";
+        String block = header + "NEWKEYMATERIAL\n-----END RSA PRIVATE KEY-----\n";
+        GuardedBlob modified = modifiedBlob("key.pem", block, header);
+
+        assertEquals("a private key block", guard.findLeak(modified));
+    }
+
+    @Test
+    void allowsAVerbatimCopiedPrivateKeyBlock() {
+        String block = """
+            -----BEGIN RSA PRIVATE KEY-----
+            OLDKEYMATERIAL
+            -----END RSA PRIVATE KEY-----
+            """;
+        GuardedBlob modified = modifiedBlob("key.pem", block + block, block);
+
+        assertNull(guard.findLeak(modified));
+        guard.assertClean(List.of(modified));
+    }
+
+    @Test
     void blocksAnOversizedBlobInsteadOfTruncating() {
         byte[] content = new byte[8 * 1024 * 1024 + 16];
         Arrays.fill(content, (byte) 'a');

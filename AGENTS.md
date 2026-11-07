@@ -190,9 +190,9 @@ are D18), the bridge denies a high-confidence subset of credential-read and
 network-upload commands, and the supervisor refuses to publish a guarded-tree
 blob whose content or new path contains a configured credential or a
 high-confidence credential format (matches already present in the base blob are
-ignored, so pre-existing fixtures do not block unrelated edits). Prompt
-injection remains probabilistic; the sandbox and publishing guard are the
-boundary.
+ignored, so pre-existing fixtures do not block unrelated edits; complete PEM
+private-key blocks are compared as a whole). Prompt injection remains
+probabilistic; the sandbox and publishing guard are the boundary.
 Phase 1 is blocking
 prompt mode and denies the `question` and `doom_loop` tools; autonomy and the
 human question loop are later phases.

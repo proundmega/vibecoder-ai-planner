@@ -32,7 +32,7 @@ final class SandboxCommandPolicy {
             + ")(?![A-Za-z0-9_-])";
 
     private static final Pattern CURL_UPPER_FLAGS =
-        Pattern.compile("\\bcurl\\b[^;&|\\n]*\\s-[FKT]\\b");
+        Pattern.compile("\\bcurl\\b[^;&|\\n]*\\s-[FKT]");
 
     private static final List<Rule> DENY = List.of(
         rule("git push", "\\bgit\\b[^;&|\\n]*\\bpush\\b"),

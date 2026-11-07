@@ -5,7 +5,9 @@ import com.vibecode.agent.service.WorkspaceManager.GuardedBlob;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -32,6 +34,17 @@ public final class SecretLeakGuard {
 
     private static final int MIN_KNOWN_SECRET_LENGTH = 8;
     private static final int MAX_SCAN_BYTES = 8 * 1024 * 1024;
+
+    /**
+     * Private-key material is multi-line. The header-only rule catches a new
+     * header in a new file; the full-block scanner below compares complete
+     * blocks so a new key block with the same header as a pre-existing one is
+     * still detected.
+     */
+    private static final Pattern PRIVATE_KEY_BEGIN = Pattern.compile(
+        "-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----");
+    private static final Pattern PRIVATE_KEY_END = Pattern.compile(
+        "-----END (?:[A-Z0-9]+ )?PRIVATE KEY-----");
 
     private static final List<Rule> PATTERNS = List.of(
         rule("a private key", "-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----"),
@@ -123,15 +136,57 @@ public final class SecretLeakGuard {
                 return "a configured credential";
             }
         }
+
+        Set<String> baseBlocks = privateKeyBlocks(baseText);
+        for (String block : privateKeyBlocks(text)) {
+            if (!baseBlocks.contains(block)) {
+                return "a private key block";
+            }
+        }
+
         for (Rule rule : PATTERNS) {
+            Set<String> baseMatches = matchedText(rule.pattern, baseText);
             Matcher matcher = rule.pattern.matcher(text);
             while (matcher.find()) {
-                if (!baseText.contains(matcher.group())) {
+                if (!baseMatches.contains(matcher.group())) {
                     return rule.description;
                 }
             }
         }
         return null;
+    }
+
+    private static Set<String> matchedText(Pattern pattern, String text) {
+        Set<String> matches = new HashSet<>();
+        Matcher matcher = pattern.matcher(text);
+        while (matcher.find()) {
+            matches.add(matcher.group());
+        }
+        return matches;
+    }
+
+    /**
+     * Extract complete PEM private-key blocks. A header without a matching
+     * END is ignored here (the header-only pattern still catches it in a new
+     * file); a complete block is compared as a whole so a new block using the
+     * same header as a pre-existing block is not mistaken for the old one.
+     */
+    private static Set<String> privateKeyBlocks(String text) {
+        Set<String> blocks = new HashSet<>();
+        int index = 0;
+        while (index < text.length()) {
+            Matcher begin = PRIVATE_KEY_BEGIN.matcher(text);
+            if (!begin.find(index)) {
+                break;
+            }
+            Matcher end = PRIVATE_KEY_END.matcher(text);
+            if (!end.find(begin.end())) {
+                break;
+            }
+            blocks.add(text.substring(begin.start(), end.end()));
+            index = end.end();
+        }
+        return blocks;
     }
 
     private String findLeakInText(String text) {
