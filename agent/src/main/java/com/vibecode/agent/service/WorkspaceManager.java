@@ -60,6 +60,11 @@ public class WorkspaceManager {
 
     private static final int MAX_COUNTED_LINES = 1_000_000;
     private static final long MAX_COUNTED_BYTES = 10L * 1024 * 1024;
+    /**
+     * Upper bound for a single guarded blob passed to the credential scanner.
+     * A larger blob is rejected instead of being truncated (fail closed).
+     */
+    private static final int MAX_GUARDED_BLOB_BYTES = 8 * 1024 * 1024;
     private static final Pattern WORKSPACE_DIR_PATTERN =
         Pattern.compile("^[0-9a-f]{8}-.+");
     private static final List<String> TEMP_DIR_PREFIXES = List.of(
@@ -304,6 +309,96 @@ public class WorkspaceManager {
         return diffFromTree(base, guardedTree);
     }
 
+    /**
+     * Return the added/modified blobs from the guarded tree for output
+     * scanning. Reading the tree blobs directly avoids diff-format bypasses:
+     * a {@code .gitattributes} rule such as {@code * -diff}, a binary file,
+     * a {@code ++}-prefixed line, or a secret used as a filename cannot hide
+     * content from this method.
+     *
+     * <p>This must be called after {@link #stageFreshDiff()} and before
+     * {@link #discardStaged()}. Deleted files are skipped because their
+     * content cannot be published.</p>
+     */
+    public List<GuardedBlob> guardedChangedBlobs() throws IOException {
+        if (supervisorIndex == null || guardedTree == null) {
+            throw new IOException("No guarded tree is staged");
+        }
+        String base = baseCommitOrHead();
+        String changed = new String(
+            runGitBytes(
+                MAX_GUARDED_BLOB_BYTES,
+                "diff-tree", "-r", "-z", "--no-renames", "--raw", base, guardedTree),
+            StandardCharsets.UTF_8);
+        String[] tokens = changed.split("\u0000", -1);
+        List<GuardedBlob> blobs = new ArrayList<>();
+        for (int i = 0; i + 1 < tokens.length; i += 2) {
+            String meta = tokens[i];
+            String path = tokens[i + 1];
+            String[] parts = meta.split(" ");
+            if (parts.length < 5) {
+                throw new IOException("Unexpected git diff-tree record for " + path);
+            }
+            String newMode = parts[1];
+            String status = parts[4];
+            if (path.isBlank() || status.startsWith("D")) {
+                continue;
+            }
+            String oldMode = parts[0].startsWith(":") ? parts[0].substring(1) : parts[0];
+            boolean newPath = status.startsWith("A");
+            // A gitlink points at a commit, not blob content. It cannot carry
+            // a credential in its content, but a newly added gitlink path can
+            // still contain one, so expose it as a path-only blob.
+            if ("160000".equals(newMode)) {
+                if (newPath) {
+                    blobs.add(new GuardedBlob(path, new byte[0], new byte[0], true));
+                }
+                continue;
+            }
+            byte[] content = runGitBytes(
+                MAX_GUARDED_BLOB_BYTES,
+                "cat-file", "blob", guardedTree + ":" + path);
+            // A gitlink -> regular-file type change has no blob in the base;
+            // treat it like a new-content file for comparison purposes.
+            byte[] baseContent = newPath || "160000".equals(oldMode)
+                ? new byte[0]
+                : runGitBytes(
+                    MAX_GUARDED_BLOB_BYTES,
+                    "cat-file", "blob", base + ":" + path);
+            blobs.add(new GuardedBlob(path, content, baseContent, newPath));
+        }
+        return List.copyOf(blobs);
+    }
+
+    /**
+     * A changed file from the guarded tree. {@code baseContent} is the blob
+     * from the base commit (empty for a new file), and {@code newPath} marks a
+     * file that did not exist in the base. The content arrays are copies, so
+     * the scanner cannot observe or mutate the tree object.
+     */
+    public record GuardedBlob(
+        String path,
+        byte[] content,
+        byte[] baseContent,
+        boolean newPath
+    ) {
+        public GuardedBlob {
+            path = path == null ? "" : path;
+            content = content == null ? new byte[0] : content.clone();
+            baseContent = baseContent == null ? new byte[0] : baseContent.clone();
+        }
+
+        @Override
+        public byte[] content() {
+            return content.clone();
+        }
+
+        @Override
+        public byte[] baseContent() {
+            return baseContent.clone();
+        }
+    }
+
     public void discardStaged() {
         Path index = supervisorIndex;
         supervisorIndex = null;
@@ -486,6 +581,33 @@ public class WorkspaceManager {
             throw new IOException("Workspace has not been cloned");
         }
         return runGitAt(repoDir, Map.of(), args);
+    }
+
+    /**
+     * Run a git command and return raw bytes (for blob content scanning).
+     * Output larger than {@code maxBytes} is rejected rather than truncated.
+     */
+    private byte[] runGitBytes(int maxBytes, String... args) throws IOException {
+        if (repoDir == null) {
+            throw new IOException("Workspace has not been cloned");
+        }
+        Process process = startGit(repoDir, Map.of(), args);
+        byte[] output;
+        try (InputStream input = process.getInputStream()) {
+            output = input.readNBytes(maxBytes + 1);
+        }
+        if (output.length > maxBytes) {
+            process.destroyForcibly();
+            waitFor(process);
+            throw new IllegalStateException(
+                "Changed blob exceeds the " + maxBytes + "-byte scan limit");
+        }
+        int exitCode = waitFor(process);
+        if (exitCode != 0) {
+            throw new IOException("git " + redact(String.join(" ", args))
+                + " failed with exit code " + exitCode);
+        }
+        return output;
     }
 
     private String runGitWithIndex(String... args) throws IOException {

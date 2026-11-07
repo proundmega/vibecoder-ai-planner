@@ -6,9 +6,9 @@ priority: "P0"
 effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
-updated: "2026-11-06"
-pr: 127
-branch: "master"
+updated: "2026-11-07"
+pr: 128
+branch: "feat/fg-34-slice-3a-prompt-injection"
 depends_on: ["fg-30"]
 ---
 
@@ -28,6 +28,7 @@ Phase 1 runs OpenCode with `bash` access in a cloned repo on the agent container
 - **Rollout:** `SANDBOX_MODE=host` remains the Phase 1 compatibility default. Docker mode is opt-in, and a Docker create/exec failure never falls back to host execution.
 - **Slice 1** delivers the sandbox runtime foundation and routes supervisor-driven install/verification commands through it.
 - **Slice 2** (merged in #127) adds the egress allowlist proxy (FR4) and bridges the OpenCode bash tool into the sandbox (FR11). The built-in `bash`/`shell` tool is disabled in Docker mode; the model uses `sandbox_bash`, which forwards over a per-run loopback token. The proxy validates the first CONNECT ClientHello SNI, rejects multiple SNI names/duplicate extensions/extra handshakes, rejects CONNECT :80, blocks external DNS, and logs denials only. TLS renegotiation and the encrypted inner HTTP Host inside TLS remain shared-CDN limitations (D16), and output streaming/idempotency are D15/D17.
+- **Slice 3a** (in review) adds prompt-injection defenses (FR8): untrusted-content labeling and instruction precedence, literal credential-path read denies, high-confidence credential/exfiltration command blocking on the bash bridge, and a pre-publish gate that scans guarded-tree changed blob contents and new paths (not diff text), compares content matches with the base blob so pre-existing fixtures are not treated as new leaks, compares complete PEM private-key blocks, and scans new gitlink paths. The read deny is not a secret boundary: OpenCode's read tool follows workspace symlinks and its grep tool can bypass path denies, tracked as **D18**. **Slice 3b** will add SBOM/image scanning and digest pinning (FR9/D7) plus artifact redaction (D11).
 - It does **not** claim full isolation yet: prompt-injection/supply-chain hardening are later slices. Do **not** enable Docker mode for untrusted repositories until D14 (bounded repeated 5-pass/fork-race descendant sweep) is closed, and do not treat the allowlist as a hard host boundary until D16 is closed; the pre-publish destroy gate prevents publishing with a live sandbox, but a survivor can write before that gate.
 - **Deployment:** Docker mode needs a daemon connection and a workspace path visible to the host. `PoolManager`/compose wiring is deferred to D8; slice 1 requires a manually run host agent (or equivalent path mapping).
 - **Remaining slices** are tracked in `03_ARCHITECT_IMPLEMENTATION.md` and the deferred register below.
@@ -44,7 +45,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D3 | Repo-specific images and caches | fg-39 | Infrastructure | fg-39-repo-environment-profiles | open |
 | D4 | Data redaction before model calls | fg-42 | Privacy | fg-42-harness-privacy | open |
 | D5 | Egress allowlist proxy (FR4) and the OpenCode bash-tool bridge into the sandbox (FR11 complete) | fg-34 | Security | fg-34 slice 2 | done (#127) |
-| D6 | Prompt-injection classification, output scanning and instruction precedence (FR8) | fg-34 | Security | fg-34 slice 3 | open |
+| D6 | Prompt-injection classification, output scanning and instruction precedence (FR8) | fg-34 | Security | fg-34 slice 3a | in review (#128) |
 | D7 | SBOM, image scanning and digest-pinned base images (FR9) | fg-34 | Supply chain | fg-34 slice 3 | open |
 | D8 | Docker sandbox deployment wiring: `PoolManager` env, socket proxy/DOCKER_HOST and a host-visible repo volume | fg-34 | Infrastructure | fg-34 slice 2 / fg-43 | open |
 | D9 | Startup reaper for sandbox containers left by a killed agent (the slice-1 shutdown hook covers graceful exit only) | fg-34 | Reliability | fg-34 slice 2 | open |
@@ -56,3 +57,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D15 | Streaming exec output over the sandbox control channel (FR11): the bridge currently buffers each command's bounded output. A streaming API is needed for long installs and live progress | fg-34 | UX/Reliability | fg-34 slice 3 | open |
 | D16 | TLS renegotiation and the encrypted HTTP Host inside a CONNECT tunnel are not visible without TLS termination. The proxy validates only the first ClientHello (multiple SNI names/extra handshakes are rejected); a later renegotiation ClientHello or a shared-CDN tenant that serves the same allowlisted SNI can still be reached. Dedicated hosts or proxy TLS termination would close this | fg-34 | Security | fg-34 slice 3 | open |
 | D17 | Bridge request IDs/idempotency: the bridge has no request ID or result cache, so a lost HTTP response can lead to a re-executed command. A stable request ID and bounded idempotency cache are needed | fg-34 | Reliability | fg-34 slice 3 | open |
+| D18 | OpenCode read/grep can expose supervisor-only files despite the FR8 read denies: the read tool normalizes then follows symlinks (a repo symlink or one created via `sandbox_bash` can point outside the workspace), and the grep tool/ripgrep bypasses read path rules. A custom read/grep wrapper using `toRealPath()` plus workspace symlink rejection/removal is needed. Partial mitigation: grep is denied in sandboxed mode and `sandbox_bash rg` is used instead; the provider key remains supervisor-only in Docker mode but is readable by the model if the path is followed | fg-34 | Security | fg-34 slice 3c | open |

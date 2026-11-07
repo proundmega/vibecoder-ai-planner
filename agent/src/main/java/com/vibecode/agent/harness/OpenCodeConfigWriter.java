@@ -196,9 +196,10 @@ public final class OpenCodeConfigWriter {
         }
         permission.put("edit", edit);
 
-        for (String tool : List.of("grep", "glob", "todowrite", "lsp")) {
+        for (String tool : List.of("glob", "todowrite", "lsp")) {
             permission.put(tool, "allow");
         }
+        permission.put("grep", sandboxedBash ? "deny" : "allow");
         permission.put("webfetch", "deny");
         permission.put("websearch", "deny");
         permission.put("task", "deny");
@@ -212,10 +213,25 @@ public final class OpenCodeConfigWriter {
         read.put("*.env.*", "deny");
         read.put(".env*", "deny");
         read.put("**/.env*", "deny");
-        // Allow configuration examples after the deny rules.
+        // Allow configuration examples after the .env deny but before the
+        // directory denies. Last match wins, so secrets/.env.example and
+        // .ssh/.env.example stay denied below.
         read.put("*.env.example", "allow");
         read.put("**/.env.example", "allow");
         read.put("**/*.env.example", "allow");
+        // Credential-bearing paths are never needed to implement a ticket.
+        // The sandbox has no secrets, but host mode and repo files can.
+        // These also override the .env.example allow for matching directories.
+        for (String denied : List.of(
+            ".git/config", "**/.git/config",
+            "secrets/**", "**/secrets/**",
+            ".ssh/**", "**/.ssh/**",
+            ".aws/**", "**/.aws/**",
+            ".npmrc", "**/.npmrc",
+            ".netrc", "**/.netrc"
+        )) {
+            read.put(denied, "deny");
+        }
         permission.put("read", read);
 
         Map<String, Object> bash = new LinkedHashMap<>();

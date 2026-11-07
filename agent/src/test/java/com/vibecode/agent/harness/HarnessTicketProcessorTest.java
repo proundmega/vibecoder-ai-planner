@@ -13,6 +13,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -94,6 +95,7 @@ class HarnessTicketProcessorTest {
         when(workspace.getRepoDir()).thenReturn(tempDir);
         when(workspace.stageFreshDiff()).thenReturn(new DiffSummary(
             List.of(new DiffSummary.ChangedFile("src/App.java", "modified")), 12, 3));
+        when(workspace.guardedChangedBlobs()).thenReturn(List.of());
         when(workspace.commitAndPushStaged(anyString(), anyString())).thenReturn("abc1234");
 
         harness = mock(HarnessClient.class);
@@ -646,6 +648,23 @@ class HarnessTicketProcessorTest {
         verify(apiService).releaseTicket(1L);
         assertTrue(postedMessages().stream().anyMatch(message ->
             message.contains("Publishing blocked") && message.contains(".env")));
+    }
+
+    @Test
+    void credentialInStagedDiffBlocksPublishingAndReleases() throws Exception {
+        when(workspace.guardedChangedBlobs()).thenReturn(List.of(
+            new WorkspaceManager.GuardedBlob(
+                "README.md", "token: secret-key\n".getBytes(StandardCharsets.UTF_8),
+                new byte[0], true)));
+
+        processor.processTicket(ticket());
+
+        verify(workspace, never()).commitAndPush(anyString(), anyString());
+        verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
+        verify(apiService).releaseTicket(1L);
+        assertTrue(postedMessages().stream().anyMatch(message ->
+            message.contains("Publishing blocked")
+                && message.contains("configured credential")));
     }
 
     @Test
