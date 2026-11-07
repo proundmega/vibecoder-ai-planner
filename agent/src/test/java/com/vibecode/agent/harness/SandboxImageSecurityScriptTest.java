@@ -118,8 +118,10 @@ class SandboxImageSecurityScriptTest {
     @Test
     void allowsAReferenceToAnEarlierBuildStage() throws Exception {
         Path dockerfile = dockerfile("Stages.Dockerfile", """
-            FROM node:24-alpine%s AS base
+            FROM scratch AS base
             FROM base AS runtime
+            FROM node:24-alpine%s AS node
+            FROM node AS final
             """.formatted(DIGEST));
 
         Result result = run("--check-pins", "--dockerfile", dockerfile.toString());

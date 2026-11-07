@@ -104,6 +104,11 @@ check_pins() {
                 failed=1
                 continue
             fi
+            # Record an AS <name> alias before any skip so a scratch stage or a
+            # pinned stage can be referenced by a later FROM.
+            if [[ "$suffix" =~ ^[[:space:]]+[Aa][Ss][[:space:]]+([^[:space:]]+) ]]; then
+                stages+=("${BASH_REMATCH[1],,}")
+            fi
             local lower_image="${image,,}"
             if [[ "$lower_image" == "scratch" ]]; then
                 continue
@@ -127,9 +132,6 @@ check_pins() {
                 echo "unpinned base image in ${file#"$ROOT"/}: $line" >&2
                 failed=1
                 continue
-            fi
-            if [[ "$suffix" =~ ^[[:space:]]+[Aa][Ss][[:space:]]+([^[:space:]]+) ]]; then
-                stages+=("${BASH_REMATCH[1],,}")
             fi
         done < "$file"
     done
