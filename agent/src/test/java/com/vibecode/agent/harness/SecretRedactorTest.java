@@ -2,11 +2,13 @@ package com.vibecode.agent.harness;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 class SecretRedactorTest {
 
@@ -59,6 +61,72 @@ class SecretRedactorTest {
         String redacted = redactor.redact("https://user:super-secret@internal.example/path");
 
         assertEquals("https://[REDACTED]@internal.example/path", redacted);
+    }
+
+    @Test
+    void redactsPrefixedAndSuffixedCredentialKeys() {
+        List<String> keys = List.of(
+            "client_secret",
+            "access_token",
+            "refresh_token",
+            "db_password",
+            "DB_PASSWORD",
+            "secret_key",
+            "private_key",
+            "auth_token",
+            "clientSecret",
+            "accessToken"
+        );
+
+        for (String key : keys) {
+            String redacted = redactor.redact(key + "=abcdefghijklmnop");
+            assertFalse(redacted.contains("abcdefghijklmnop"), key + " -> " + redacted);
+            assertTrue(redacted.contains("[REDACTED]"), key + " -> " + redacted);
+        }
+    }
+
+    @Test
+    void redactsAwsSecretAccessKeys() {
+        String redacted = redactor.redact(
+            "AWS_SECRET_ACCESS_KEY=abcdefghijklmnopqrstuvwxyz0123456789ABCD");
+
+        assertFalse(redacted.contains("abcdefghijklmnopqrstuvwxyz0123456789ABCD"), redacted);
+    }
+
+    @Test
+    void redactsPasswordBearingUrlsWithAndWithoutAUsername() {
+        String redis = redactor.redact("redis://:super-secret@host:6379/0");
+        assertFalse(redis.contains("super-secret"), redis);
+        assertTrue(redis.contains("redis://[REDACTED]@host:6379/0"), redis);
+
+        String https = redactor.redact("https://user:super-secret@internal.example/path");
+        assertFalse(https.contains("super-secret"), https);
+    }
+
+    @Test
+    void redactsQuotedCredentialValuesWithSpaces() {
+        String redacted = redactor.redact("\"password\": \"super secret phrase\"");
+
+        assertFalse(redacted.contains("super secret phrase"), redacted);
+        assertTrue(redacted.contains("[REDACTED]"), redacted);
+    }
+
+    @Test
+    void redactsTheRemainderOfAnUnmatchedPrivateKey() {
+        String redacted = redactor.redact(
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA1234567890");
+
+        assertFalse(redacted.contains("MIIEowIBAAKCAQEA1234567890"), redacted);
+        assertTrue(redacted.contains("[REDACTED PRIVATE KEY]"), redacted);
+    }
+
+    @Test
+    void redactsLargeAlphanumericOutputWithoutCatastrophicBacktracking() {
+        String input = "x".repeat(32_768);
+
+        assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+            assertEquals(input, redactor.redact(input));
+        });
     }
 
     @Test

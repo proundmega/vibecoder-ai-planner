@@ -11,6 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -810,8 +812,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 if (!assertLeaseHeld(pickedUp.getId())) {
                     return;
                 }
-                String commitSha = workspace.commitAndPushStaged(
-                    "feat: " + pickedUp.getTitle(), branchName);
+                String publishTitle = redactor.redact("feat: " + pickedUp.getTitle());
+                String commitSha = workspace.commitAndPushStaged(publishTitle, branchName);
                 published = true;
                 publishedHeadSha = commitSha;
                 recordPublishSafely(commitSha, null);
@@ -819,7 +821,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     return;
                 }
                 String prUrl = gitHubService.createPullRequest(
-                    "feat: " + pickedUp.getTitle(),
+                    publishTitle,
                     buildPrBody(pickedUp, branchName, commitSha, diff, verification),
                     branchName,
                     "main"
@@ -1003,8 +1005,20 @@ public final class HarnessTicketProcessor implements TicketWorker {
         String message = redactWithProvider(failure.getMessage() == null
             ? failure.getClass().getSimpleName()
             : failure.getMessage());
-        log.error("Harness failed for ticket {}: {}", ticketId, message, failure);
+        log.error("Harness failed for ticket {}: {}", ticketId, message);
+        if (log.isDebugEnabled()) {
+            // The throwable is not passed to SLF4J: its message and causes are
+            // another persisted-log boundary and must be redacted too.
+            log.debug("Harness failure stack for ticket {}:\n{}", ticketId,
+                redactWithProvider(stackTrace(failure)));
+        }
         failAndRelease(ticketId, "Harness failed: " + message);
+    }
+
+    private static String stackTrace(Throwable failure) {
+        StringWriter writer = new StringWriter();
+        failure.printStackTrace(new PrintWriter(writer));
+        return writer.toString();
     }
 
     /**

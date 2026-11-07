@@ -473,6 +473,29 @@ class HarnessTicketProcessorTest {
     }
 
     @Test
+    void pullRequestTitleAndCommitMessageAreRedactedBeforePublishing() throws Exception {
+        String token = "ghp_abcdefghijklmnopqrstuvwxyz012345";
+        Ticket ticket = ticket();
+        ticket.setTitle("Add filtering " + token);
+        when(apiService.pickUpTicket(1L)).thenReturn(ticket);
+        when(config.getGitHubBranchName(1L, ticket.getTitle()))
+            .thenReturn("vibecode/ticket-1-redacted");
+
+        processor.processTicket(ticket);
+
+        ArgumentCaptor<String> title = ArgumentCaptor.forClass(String.class);
+        verify(gitHubService).createPullRequest(
+            title.capture(), anyString(), anyString(), anyString());
+        assertFalse(title.getValue().contains(token), "Leaked token into the PR title");
+        assertTrue(title.getValue().contains("Add filtering"), title.getValue());
+
+        ArgumentCaptor<String> commitMessage = ArgumentCaptor.forClass(String.class);
+        verify(workspace).commitAndPushStaged(commitMessage.capture(), anyString());
+        assertFalse(commitMessage.getValue().contains(token),
+            "Leaked token into the commit message");
+    }
+
+    @Test
     void happyPathPromptsVerifiesPublishesAndSetsReview() throws Exception {
         processor.processTicket(ticket());
 
