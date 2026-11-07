@@ -59,6 +59,17 @@ class VerificationRunnerTest {
     }
 
     @Test
+    void redactsCredentialPatternsFromCapturedOutput() {
+        String token = "ghp_abcdefghijklmnopqrstuvwxyz012345";
+        List<VerificationResult> results = new VerificationRunner()
+            .run(tempDir, List.of("echo token=" + token), Duration.ofSeconds(20));
+
+        assertEquals(1, results.size());
+        assertFalse(results.get(0).output().contains(token), results.get(0).output());
+        assertTrue(results.get(0).output().contains("[REDACTED]"), results.get(0).output());
+    }
+
+    @Test
     void truncatesOutputToLast8192Chars() throws IOException {
         Path overflow = tempDir.resolve("overflow.txt");
         Files.writeString(overflow, "x".repeat(20_000));

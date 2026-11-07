@@ -454,6 +454,25 @@ class HarnessTicketProcessorTest {
     }
 
     @Test
+    void pullRequestBodyIsRedactedBeforePublishing() throws Exception {
+        Ticket ticket = ticket();
+        ticket.setDescription("Do not leak ghp_abcdefghijklmnopqrstuvwxyz012345 "
+            + "or password=super-secret");
+        when(apiService.pickUpTicket(1L)).thenReturn(ticket);
+
+        processor.processTicket(ticket);
+
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(gitHubService).createPullRequest(
+            anyString(), body.capture(), anyString(), anyString());
+        assertFalse(body.getValue().contains("ghp_abcdefghijklmnopqrstuvwxyz012345"),
+            "Leaked GitHub-shaped token into the PR body");
+        assertFalse(body.getValue().contains("super-secret"),
+            "Leaked password into the PR body");
+        assertTrue(body.getValue().contains("Add filtering"), body.getValue());
+    }
+
+    @Test
     void happyPathPromptsVerifiesPublishesAndSetsReview() throws Exception {
         processor.processTicket(ticket());
 
@@ -626,7 +645,12 @@ class HarnessTicketProcessorTest {
     void verificationFailureOutputIsRedactedBeforePosting() throws Exception {
         when(verificationRunner.run(any(), anyList(), any()))
             .thenReturn(List.of(new VerificationResult(
-                "npm test", 1, "leak secret-key and ghp_token and test-key", false)));
+                "npm test", 1,
+                "leak secret-key and ghp_token and test-key and "
+                    + "ghp_abcdefghijklmnopqrstuvwxyz012345 and "
+                    + "sk-abcdefghijklmnopqrstuvwxyz012345 and "
+                    + "password=super-secret",
+                false)));
 
         processor.processTicket(ticket());
 
@@ -634,6 +658,11 @@ class HarnessTicketProcessorTest {
             assertFalse(message.contains("secret-key"), "Leaked provider key in: " + message);
             assertFalse(message.contains("ghp_token"), "Leaked GitHub token in: " + message);
             assertFalse(message.contains("test-key"), "Leaked agent API key in: " + message);
+            assertFalse(message.contains("ghp_abcdefghijklmnopqrstuvwxyz012345"),
+                "Leaked GitHub-shaped token in: " + message);
+            assertFalse(message.contains("sk-abcdefghijklmnopqrstuvwxyz012345"),
+                "Leaked OpenAI-shaped key in: " + message);
+            assertFalse(message.contains("super-secret"), "Leaked password in: " + message);
         }
     }
 

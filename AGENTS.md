@@ -193,7 +193,9 @@ high-confidence credential format (matches already present in the base blob are
 ignored, so pre-existing fixtures do not block unrelated edits; complete PEM
 private-key blocks are compared as a whole with case-insensitive BEGIN/END
 markers). Prompt injection remains probabilistic; the sandbox and publishing
-guard are the boundary.
+guard are the boundary. Verification output is redacted for configured secrets
+and high-confidence credential formats before ticket messages, run errors and PR
+bodies are stored (NFR5).
 Sandbox base images are digest-pinned; `agent/scripts/sandbox-image-security.sh
 --check-pins` enforces that (case-insensitive `FROM`, BOM tolerant, digest on
 the image token), and the same script generates an SBOM (syft), scans for

@@ -32,6 +32,7 @@ public class VerificationRunner {
      * of a UTF-8 sequence cannot shorten the visible output.
      */
     private static final int MAX_CAPTURE_BYTES = MAX_OUTPUT_CHARS * 4;
+    private static final SecretRedactor REDACTOR = SecretRedactor.patternsOnly();
 
     private final HarnessConfig config;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -238,6 +239,9 @@ public class VerificationRunner {
 
     private static String truncateOutput(String text) {
         String value = text == null ? "" : text;
+        // Redact before truncating so a credential that straddles the tail
+        // boundary is not partially exposed.
+        value = REDACTOR.redact(value);
         return value.length() > MAX_OUTPUT_CHARS
             ? value.substring(value.length() - MAX_OUTPUT_CHARS)
             : value;
@@ -279,13 +283,10 @@ public class VerificationRunner {
             reader.join(5_000);
 
             String text = output.text();
-            if (text.length() > MAX_OUTPUT_CHARS) {
-                text = text.substring(text.length() - MAX_OUTPUT_CHARS);
-            }
             return new VerificationResult(
                 command,
                 exitCode,
-                text,
+                truncateOutput(text),
                 !finished
             );
         } catch (IOException e) {
