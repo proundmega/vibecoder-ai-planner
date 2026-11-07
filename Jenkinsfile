@@ -258,8 +258,15 @@ EOF
                                 fi
                             fi
                             docker build -f sandbox.Dockerfile -t vibecode-agent-sandbox:ci .
-                            bash scripts/sandbox-image-security.sh \
-                                --sbom-and-scan vibecode-agent-sandbox:ci
+                            docker build -f sandbox-proxy.Dockerfile -t vibecode-sandbox-proxy:ci .
+                            # Scan every image the harness runs, not only the
+                            # repo sandbox image: the supervisor (built in the
+                            # Agent stage) and the trusted egress proxy are
+                            # part of the same boundary.
+                            for image in vibecode-agent:ci vibecode-agent-sandbox:ci vibecode-sandbox-proxy:ci; do
+                                bash scripts/sandbox-image-security.sh \
+                                    --sbom-and-scan "$image"
+                            done
                         elif [ "${SANDBOX_SCAN_REQUIRED:-0}" = "1" ]; then
                             echo "SBOM/scan tools are required but syft/trivy/grype is missing" >&2
                             exit 1
@@ -267,6 +274,7 @@ EOF
                             echo "syft/trivy/grype not installed; SBOM/scan skipped (pin check passed)"
                         fi
                     '''
+                    archiveArtifacts artifacts: 'target/sbom/**', allowEmptyArchive: true
                 }
             }
         }

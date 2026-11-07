@@ -3,9 +3,13 @@
 # Supply-chain checks for the fg-34 sandbox images.
 #
 # The deterministic gate is `--check-pins`: every FROM line in the sandbox,
-# proxy and supervisor Dockerfiles must reference a base image by digest.
+# proxy and supervisor Dockerfiles must reference a base image by digest. The
+# check is case-insensitive, tolerates a UTF-8 BOM/CRLF, ignores earlier-stage
+# references and requires the digest on the image token itself.
 # SBOM generation and vulnerability scanning use syft/trivy/grype when they are
 # installed; set SANDBOX_SCAN_REQUIRED=1 in CI to fail instead of skipping.
+# Scanner thresholds are not identical: trivy uses --ignore-unfixed, while
+# grype has no equivalent and fails on any matching (incl. unfixed) finding.
 #
 # Usage:
 #   scripts/sandbox-image-security.sh --check-pins [--dockerfile FILE ...]
@@ -35,9 +39,13 @@ usage() {
 Supply-chain checks for the fg-34 sandbox images.
 
 The deterministic gate is --check-pins: every FROM line in the sandbox,
-proxy and supervisor Dockerfiles must reference a base image by digest.
+proxy and supervisor Dockerfiles must reference a base image by digest. The
+check is case-insensitive, tolerates a UTF-8 BOM/CRLF, ignores earlier-stage
+references and requires the digest on the image token itself.
 SBOM generation and vulnerability scanning use syft/trivy/grype when they
 are installed; set SANDBOX_SCAN_REQUIRED=1 in CI to fail instead of skipping.
+Scanner thresholds differ: trivy uses --ignore-unfixed; grype has no
+equivalent and fails on any matching (including unfixed) finding.
 
 Usage:
   scripts/sandbox-image-security.sh --check-pins [--dockerfile FILE ...]
@@ -70,15 +78,58 @@ check_pins() {
             failed=1
             continue
         fi
-        while IFS= read -r line; do
-            if [[ "$line" =~ ^[[:space:]]*FROM[[:space:]] ]]; then
-                if [[ "$line" =~ FROM[[:space:]]+scratch([[:space:]]|$) ]]; then
-                    continue
+        local -a stages=()
+        local line
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            # Docker ignores a UTF-8 BOM before the first instruction and
+            # accepts CRLF files; normalize both before parsing.
+            line="${line%$'\r'}"
+            line="${line#$'\xEF\xBB\xBF'}"
+            # Instruction keywords are case-insensitive in Dockerfiles.
+            if [[ ! "$line" =~ ^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]+(.*)$ ]]; then
+                continue
+            fi
+            local rest="${BASH_REMATCH[1]}"
+            # FROM [--platform=<platform>] <image> [AS <name>]
+            while [[ "$rest" =~ ^[[:space:]]*--[^[:space:]]+[[:space:]]+(.*)$ ]]; do
+                rest="${BASH_REMATCH[1]}"
+            done
+            local image="" suffix=""
+            if [[ "$rest" =~ ^([^[:space:]]+)(.*)$ ]]; then
+                image="${BASH_REMATCH[1]}"
+                suffix="${BASH_REMATCH[2]}"
+            fi
+            if [[ -z "$image" ]]; then
+                echo "unpinned base image in ${file#"$ROOT"/}: $line" >&2
+                failed=1
+                continue
+            fi
+            local lower_image="${image,,}"
+            if [[ "$lower_image" == "scratch" ]]; then
+                continue
+            fi
+            # A FROM <stage> references an earlier build stage, not a registry
+            # image, so it does not need a digest.
+            local stage
+            local is_stage=0
+            for stage in "${stages[@]}"; do
+                if [[ "$lower_image" == "$stage" ]]; then
+                    is_stage=1
+                    break
                 fi
-                if [[ ! "$line" =~ @sha256:[0-9a-f]{64}([[:space:]]|$) ]]; then
-                    echo "unpinned base image in ${file#"$ROOT"/}: $line" >&2
-                    failed=1
-                fi
+            done
+            if [[ "$is_stage" -eq 1 ]]; then
+                continue
+            fi
+            # Require the digest on the image token itself. An inline comment
+            # such as "# @sha256:<hex>" must not satisfy the gate.
+            if [[ ! "$image" =~ @sha256:[0-9a-f]{64}$ ]]; then
+                echo "unpinned base image in ${file#"$ROOT"/}: $line" >&2
+                failed=1
+                continue
+            fi
+            if [[ "$suffix" =~ ^[[:space:]]+[Aa][Ss][[:space:]]+([^[:space:]]+) ]]; then
+                stages+=("${BASH_REMATCH[1],,}")
             fi
         done < "$file"
     done
@@ -141,12 +192,16 @@ main() {
 
     local mode="$1"
     shift
+    # Default to the repository Dockerfiles for every mode. Modes that accept
+    # --dockerfile reset the list on the first override. In particular, --all
+    # must run the pin check against these defaults instead of an unset array.
+    DOCKERFILES=("${DEFAULT_DOCKERFILES[@]}")
     case "$mode" in
         -h|--help)
             usage
             ;;
         --check-pins)
-            DOCKERFILES=("${DEFAULT_DOCKERFILES[@]}")
+            local replaced=0
             while [[ $# -gt 0 ]]; do
                 case "$1" in
                     --dockerfile)
@@ -154,8 +209,9 @@ main() {
                             echo "error: --dockerfile needs a path" >&2
                             exit 2
                         fi
-                        if [[ ${#DOCKERFILES[@]} -eq ${#DEFAULT_DOCKERFILES[@]} ]]; then
+                        if [[ "$replaced" -eq 0 ]]; then
                             DOCKERFILES=()
+                            replaced=1
                         fi
                         DOCKERFILES+=("$2")
                         shift 2
