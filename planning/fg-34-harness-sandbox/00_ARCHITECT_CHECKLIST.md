@@ -6,7 +6,7 @@ priority: "P0"
 effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
-updated: "2026-11-06"
+updated: "2026-11-07"
 pr: 128
 branch: "feat/fg-34-slice-3a-prompt-injection"
 depends_on: ["fg-30"]
