@@ -345,6 +345,8 @@ Planning suites live in `planning/`:
 
 Each suite follows templates: `00_ARCHITECT_CHECKLIST.md` → `01_ARCHITECT_REQUIREMENT.md` → `02_ARCHITECT_DESIGN.md` → `03_ARCHITECT_IMPLEMENTATION.md` → `04_SPECIFICATION.md` (optional) → `05_RUNBOOK.md` (optional). Small, single-layer tickets use the lightweight `00` + `03` templates in `planning/lightweight/`. See `planning/README.md` for document ownership and rules, and `planning/ENGINEERING_STANDARDS.md` for repo-wide engineering conventions.
 
+The review policy defines the formal gates before merge: deterministic check → **pre-implementation risk review** (assumptions, failure modes, security considerations, change impact) → independent review → fixer → **requirement traceability** (requirement → code → test → verification evidence) → human approval. The risk review is owned by `fg-45`; traceability is owned by `fg-51`.
+
 ## Migration System
 
 Migrations are SQL files in `backend/src/migrations/`, applied by `src/migrations/apply.js` in **array order** (not numeric). Notable ordering:

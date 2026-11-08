@@ -251,6 +251,13 @@ findings gate; the fix loop is bounded. See `planning/README.md` §Review policy
 The second independent reviewer pass (`fg-47`) is planned, not part of the
 current flow; `fg-48` plans the deterministic `check-claims` script.
 
+**Formal pre-merge steps**: before implementation, `01` carries an assumptions
+table and change impact, and `02` carries failure modes and security
+considerations for non-small tickets (`fg-45`). Before `human_approval` and
+merge, every `FR*`/`NFR*` maps to code, a test and passing verification evidence
+at the reviewed SHA (`fg-51`). Both are readiness/review gates inside the
+existing phases, not new phases; their automated enforcement is planned.
+
 **Status/claim rule**: `done` means the implementation merged, with a PR and a
 dated `03` Results row. A merged planning PR is `plan merged`, not `done`.
 `PENDING.txt` and `HARNESS_ROADMAP.md` labels must match `00` (`Plan merged` vs

@@ -1,6 +1,6 @@
 # Harness Roadmap
 
-**Last updated:** 2026-11-03
+**Last updated:** 2026-11-08
 **Status:** planning index - no production code
 
 This index groups the autonomous coding harness work. It links the execution plans, the review loop, and the cross-cutting hardening tickets.
@@ -19,10 +19,13 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-34 | `fg-34-harness-sandbox` | Slices 1-2 merged (#126, #127); slice 3a merged (#128); slice 3b merged (#129) | Sandbox isolation, limits, egress, secretless execution | fg-30 Phase 1 |
 | fg-43 | `fg-43-agent-docker-deployment` | Planned | One-command Docker agent host sizing, role pools, per-container limits | fg-33 (fg-34 recommended) |
 | fg-44 | `fg-44-agent-storage-lifecycle` | Planned | Per-agent workspaces, cleanup, idle refresh, disk/inode watermarks | fg-43, fg-33 |
-| fg-45 | `fg-45-ticket-quality-gates` | Planned | Definition of Ready, acceptance criteria, readiness gates on every execution path | fg-30, fg-31/32 |
+| fg-45 | `fg-45-ticket-quality-gates` | Planned | Definition of Ready, pre-implementation risk review (assumptions, failure modes, security, impact), acceptance criteria, readiness gates on every execution path | fg-30, fg-31/32 |
 | fg-46 | `fg-46-flow-observability` | Planned - deferred | Flow stages, queue age, harness/provider/review metrics, `run_id` correlation | fg-30, fg-31/32, fg-33, fg-36, fg-41, fg-44, fg-45 |
 | fg-47 | `fg-47-independent-review-pass` | Planned | Independent second reviewer: different model/provider/context, read-only, dedupe/triage, blocking policy | fg-31, fg-32, fg-37, fg-41 |
 | fg-48 | `fg-48-planning-claim-checks` | Planned | Deterministic `check-claims` script: structured evidence, index labels, matrix coverage, deferred counts | fg-47, fg-31 |
+| fg-49 | `fg-49-planning-placeholder-check` | Planned | Active suites fail on unresolved `{{...}}`; report suite/file/line/token; `DONE/`, `archived/` and `lightweight/` exempt | fg-48 |
+| fg-50 | `fg-50-planning-template-hygiene` | Planned | Move completed suites to `DONE/`, repo/product template drift test, stale wording/frontmatter checks, index validation, execution-only `04` | fg-48, fg-49 |
+| fg-51 | `fg-51-requirement-traceability` | Planned | Requirement → code → test → verification evidence, per-requirement gap report, gate before human approval/merge, scoped waivers | fg-31, fg-45, fg-48 |
 | fg-35 | `fg-35-github-app-credentials` | Planned | GitHub App installation tokens, least privilege | fg-30 Phase 1 |
 | fg-36 | `fg-36-merge-lifecycle` | Planned | Base branch, conflicts, CI gate, merge queue, rollback | fg-31, fg-32 |
 | fg-37 | `fg-37-agent-evaluation-harness` | Planned | Golden corpus, grading, metrics, A/B, reviewer calibration | fg-30/31/32 |
@@ -53,19 +56,21 @@ fg-30 Phases 2-4 (human loop, autonomy, hardening) remain part of the fg-30 impl
 - **fg-48** deterministic `check-claims` script for structured evidence and index labels
 - **fg-49** planning placeholder check (active suites fail on unresolved `{{...}}`; `DONE/`, `archived/` and `lightweight/` exempt)
 - **fg-50** planning template hygiene (move completed suites to `DONE/`, template drift test, stale wording/frontmatter checks, index validation, execution-only `04`)
+- **fg-51** requirement traceability (every `FR*`/`NFR*` maps to code, a test and passing verification at the reviewed SHA; gap report gates human approval/merge; scoped waivers)
 
 ### Phase C - Quality and operations
-9. **fg-45** ticket quality gates and Definition of Ready
-10. **fg-37** evaluation harness
-11. **fg-38** budgets and routing
-12. **fg-39** repo environment profiles
-13. **fg-41** observability, replay and audit
-14. **fg-42** privacy and redaction (after fg-41, because event/artifact retention depends on it)
-15. **fg-46** flow observability (deferred until a full build -> review -> fix -> merge cycle completes)
+9. **fg-45** ticket quality gates and Definition of Ready (includes the pre-implementation risk review)
+10. **fg-51** requirement traceability (after fg-45; start in `warn`, enforce after the pilot)
+11. **fg-37** evaluation harness
+12. **fg-38** budgets and routing
+13. **fg-39** repo environment profiles
+14. **fg-41** observability, replay and audit
+15. **fg-42** privacy and redaction (after fg-41, because event/artifact retention depends on it)
+16. **fg-46** flow observability (deferred until a full build -> review -> fix -> merge cycle completes)
 
 ### Phase D - Scale
-16. **fg-40** multi-agent orchestration
-17. fg-30 Phase 3 autonomy policies / plan gate / auto-merge (write 03/04 when scheduled)
+17. **fg-40** multi-agent orchestration
+18. fg-30 Phase 3 autonomy policies / plan gate / auto-merge (write 03/04 when scheduled)
 
 ## How to use these suites
 

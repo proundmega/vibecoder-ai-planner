@@ -20,6 +20,8 @@
 | FR1 | {{layer}} | `{{test file}}` | {{name}} | `{{command}}` |
 | NFR1 | {{layer}} | `{{test file}}` | {{name}} | `{{command}}` |
 
+Name tests with the requirement ID (`FR1`) so `fg-51` can map the evidence.
+
 ## Verification commands
 
 ```bash

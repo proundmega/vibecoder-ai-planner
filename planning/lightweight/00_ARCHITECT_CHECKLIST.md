@@ -29,10 +29,19 @@ depends_on: []
 | FR1 | {{what the system must do}} | {{observable pass/fail condition}} |
 | NFR1 | {{safety, performance or operability constraint}} | {{observable condition}} |
 
+## Assumptions
+
+| ID | Assumption | Impact if wrong | Validation / evidence |
+|---|---|---|---|
+| A1 | {{what must be true for this fix to work}} | {{what breaks if it is false}} | {{test or accepted risk}} |
+
+If none: *No material assumptions — {{one-line reason}}.*
+
 ## Readiness gate (before implementation)
 
 - [ ] Scope is one layer and the root cause is understood
 - [ ] Every requirement above has a testable acceptance statement
+- [ ] Assumptions are listed (or explicitly none) with a validation path
 - [ ] The verification command/test is identified
 - [ ] No API, database, auth, migration or agent-boundary change is involved
 
@@ -65,6 +74,8 @@ patterns.*
 
 - [ ] Every requirement is met
 - [ ] `03` Results has a dated, non-placeholder row
+- [ ] Tests carry the requirement ID; a lightweight ticket has no non-waived
+      `missing`/`partial` traceability gaps
 - [ ] `status` is `done` only after the implementation PR is merged, and `pr` is set
 - [ ] `PENDING.txt` / `HARNESS_ROADMAP.md` labels match this file
 

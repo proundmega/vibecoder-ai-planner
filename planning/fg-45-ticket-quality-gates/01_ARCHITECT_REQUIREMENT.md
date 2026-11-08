@@ -46,6 +46,12 @@ Phase transitions into `in_progress` come from `assigned`, `blocked`, `review` a
 7. Provide a scoped human override with reason and audit.
 8. Measure readiness and blocked tickets.
 9. Avoid blocking existing in-progress work during rollout.
+10. Require a **pre-implementation risk review**: assumptions, failure modes,
+    security considerations and change impact are documented before execution.
+11. Export stable requirement IDs so traceability (`fg-51`) can map every
+    requirement to code, tests and verification evidence.
+12. Keep the risk review structural and boring: the checker verifies presence
+    and placeholder-free content; reviewers and humans judge quality.
 
 ## Non-goals
 
@@ -54,6 +60,12 @@ Phase transitions into `in_progress` come from `assigned`, `blocked`, `review` a
 - Replacing human product prioritization.
 - Blocking ticket creation completely; drafts are allowed, execution is gated.
 - Changing the review/fix workflow.
+- Adding a separate pre-implementation reviewer agent or a new phase; the
+  checks are part of the Definition of Ready.
+- Auto-generating or auto-approving assumptions, failure modes, security
+  considerations or change impact.
+- Semantically scoring the quality of those sections; that remains reviewer
+  and human work.
 
 ## Definition of Ready
 
@@ -68,6 +80,17 @@ A ticket is ready when all are true:
 7. Required sections are filled; placeholder markers like `{{DATE}}`, `TBD`, `TODO` are rejected.
 8. The plan has been explicitly approved by an authorized human.
 9. Dependencies, test plan and rollback/risk are documented for non-small tickets.
+10. Assumptions are listed with impact-if-wrong and a validation/evidence path.
+11. Failure modes are listed with detection, mitigation and a test or
+    monitoring signal for non-small tickets.
+12. Security considerations cover authentication, authorization/permissions,
+    project/tenant scoping, secrets, audit, rate limiting, input validation and
+    data exposure for non-small tickets.
+13. Change impact identifies affected API routes, database migrations,
+    frontend, agent, permissions, background jobs, downstream tickets and
+    rollback.
+14. Requirement IDs are stable, unique and exported for traceability
+    (`fg-51`).
 
 **Enforcement point:** the DoR is checked when work starts, not when the ticket is created. A title-only ticket is a valid draft (`status=backlog`, `phase=draft`) and simply cannot be picked up or moved into `in_progress`. There is no separate `draft` status; “draft” is shorthand for that pair.
 
@@ -82,6 +105,10 @@ Allowed only when all are true:
 - reason is recorded and audited.
 
 If any condition is false, a template is required.
+
+A small fix is exempt from conditions 11-14. Condition 10 is reduced to a
+one-line assumptions statement (`No material assumptions — <reason>` is
+valid) and conditions 1-4, 7, 8 and 10 still apply.
 
 ### Small fix vs override
 
@@ -139,6 +166,11 @@ Required sections are declared per template file (`requiredSections` in `file_de
 - **FR14 - Audit:** readiness approvals, approval invalidations, small-fix exemptions, override grants/revocations/expiries and blocked attempts are written to a real table (see design) because `audit_log` does not exist yet (bp-124 O2). Blocked attempts are written **after** the status transaction ends (after `COMMIT` in `warn`, after `ROLLBACK` in `enforce`), exactly once via `attemptId`, so neither a rollback, an FK lock timeout nor a successful warn-mode transition loses the evidence.
 - **FR15 - Project scoping:** approval, small-fix, replan and override require `assertProjectMember`; there is no existing membership check on project or ticket reads (`ProjectService.getOne` and `Ticket.findByProject` ignore `userId`), so this ticket adds a shared helper rather than assuming one exists.
 - **FR16 - Content-bound approval:** a post-approval content edit re-evaluates immediately. If checks still pass, approval and `ready_at` stay. If checks fail, `plan_approved_at/by` and `ready_at/by` are cleared, `planning_status` returns to `in_progress`, and an `approval_invalidated` event is written; fixing the content does **not** restore readiness — a human must approve again. `replan` clears the same fields including the `*_by` actors.
+- **FR17 - Assumptions register:** `01` gains a canonical `## Assumptions` table (`A1...`, assumption, impact if wrong, validation/evidence, state). Readiness rejects a missing/empty table unless the author writes `No material assumptions — <one-line reason>`. An assumption that cannot be validated becomes an accepted risk in `00`'s deferred register or a follow-up ticket; it is not silently dropped.
+- **FR18 - Failure modes:** `02` gains a `## Failure modes and recovery` table (failure mode, trigger, detection, mitigation/test, operator action) for non-small tickets. Readiness rejects a missing/empty table. Each mitigation names a test, verification command or monitoring signal; “handle errors” is not a mitigation.
+- **FR19 - Security considerations:** `02` gains a `## Security considerations` section covering authentication, authorization/permission names, project/tenant scoping, secrets handling, audit logging, rate limiting, input validation and data exposure. For security-sensitive scopes (auth, permissions, migrations, agent boundary, external calls, secrets, user data), the section is required and the plan reviewer must acknowledge it before approval.
+- **FR20 - Change impact:** `01` gains a `## Change impact` table (area, impact, evidence/owner) covering API routes/contracts, database/migrations, frontend, agent/harness, permissions/auth, background jobs/external calls, downstream tickets and rollback. Non-small tickets require it; a small fix may state `n/a` with a reason.
+- **FR21 - Requirement ID export:** the readiness service parses `01` FR/NFR IDs and acceptance statements and exposes them read-only for `fg-51`. IDs are unique and stable after approval; renaming or removing an approved ID requires `replan` (FR16). Acceptance criteria rows carry the requirement ID they prove.
 
 ## Safety requirements
 
@@ -149,6 +181,14 @@ Required sections are declared per template file (`requiredSections` in `file_de
 - Do not expose secrets or internal file contents in readiness errors.
 - Existing tickets must not be unexpectedly released or blocked mid-flight.
 - Agents must never bypass the gate to “help”.
+- Risk sections must name concrete conditions, controls and evidence. The
+  deterministic check rejects empty sections and placeholders; reviewers reject
+  generic filler such as “handle errors” or “auth required” with no route,
+  permission or test.
+- AI may draft risk content, but only an authorized human approves the plan
+  (FR8/FR16). The model cannot mark an assumption or control as validated.
+- Risk content must not contain secret values; use names, paths and
+  placeholders.
 
 ## Acceptance criteria
 
@@ -166,16 +206,22 @@ Required sections are declared per template file (`requiredSections` in `file_de
 12. Metrics show readiness rate and blocked tickets.
 13. `READINESS_GATE_MODE=off|warn|enforce` behaves as specified, with tests for all three.
 14. Tests cover schema, evaluator, all five write paths, planning-status guard, override, project scoping, agent handling, backfill and UI.
+15. Missing/empty/placeholder assumptions, failure modes, security considerations or change impact produce specific issue codes and block pickup in `enforce` mode.
+16. A security-sensitive ticket without security considerations is blocked; a non-security small fix is not forced through the failure-mode table.
+17. Requirement IDs are unique, stable and exposed for `fg-51`; renaming or removing an approved ID requires `replan`.
+18. The root and product templates contain the same risk sections and headings; the `fg-50` drift test fails when only one copy changes.
+19. Tests cover the new sections, issue codes, small-fix behavior and security-sensitive scopes.
 
-## Impact analysis
+## Change impact
 
-| Area | Impact |
-|---|---|
-| API | New readiness routes; `PUT /tickets/:id` and `POST /tickets/:id/status` can now return 409; `PATCH /planning/status` rejects `completed` |
-| Agent | New structured error type in the Java client; both processors need the failure branch |
-| Database | Migration adds readiness columns, `ticket_acceptance_criteria`, `ticket_readiness_events` |
-| Frontend | New wizard fields, readiness panel, error propagation in `api/tickets.ts` |
-| Existing data | Grandfather backfill; no ticket is released or blocked mid-flight |
+| Area | Impact | Evidence / owner |
+|---|---|---|
+| API | New readiness routes; `PUT /tickets/:id` and `POST /tickets/:id/status` can now return 409; `PATCH /planning/status` rejects `completed` | readiness routes + contract tests |
+| Agent | New structured error type in the Java client; both processors need the failure branch | `agent/src/main/java/...` |
+| Database | Migration adds readiness columns, `ticket_acceptance_criteria`, `ticket_readiness_events` | `backend/src/migrations/` |
+| Frontend | New wizard fields, readiness panel, error propagation in `api/tickets.ts`; the panel shows missing risk sections | `frontend/src/views/`, `frontend/src/api/tickets.ts` |
+| Templates | Root `01`/`02`, lightweight `00`/`03` and product templates gain the risk sections; `fg-50` adds the drift test | `planning/`, `backend/src/services/TemplateService.js` |
+| Existing data | Grandfather backfill; no ticket is released or blocked mid-flight | migration/backfill test |
 
 ## Important design decisions
 
@@ -184,6 +230,9 @@ Required sections are declared per template file (`requiredSections` in `file_de
 3. `plan_approved_at` is separate from `ready_at`; `completed` is derived, not authoritative.
 4. Small-fix exemption and override are separate state.
 5. Audit lives in a new table because `audit_log` is a known missing table (bp-124 O2).
+6. The risk review is a readiness check, not a new phase or a separate agent. It runs before plan approval/pickup and reuses the issue-code/waiver machinery.
+7. Presence is deterministic; quality is human/reviewer judgement. The checker never “approves” an assumption or a security control.
+8. Requirement IDs are the hand-off contract to `fg-51`; traceability does not re-parse prose.
 
 ## Known unknowns
 
@@ -191,6 +240,9 @@ Required sections are declared per template file (`requiredSections` in `file_de
 - Minimum description length (proposed 80 characters) needs product confirmation.
 - How project templates expose `requiredSections` today (some have arbitrary `file_definitions`); the design specifies a schema.
 - Whether `member` should ever hold `TICKET_READINESS_OVERRIDE`; Phase 1 restricts it to `project_admin`/`super_admin`.
+- Which templates require which risk sections. Phase 1 proposal: `architecture`, `technical` and `specification` require all four; `simple` requires assumptions and change impact.
+- How to detect security-sensitive scope without false positives (keyword/scope hints plus a human-visible issue code, not an automatic security judgement).
+- Whether a security-sensitive `simple` ticket must always carry a security section; Phase 1 proposal: yes.
 
 ## Testing checklist
 
@@ -202,8 +254,11 @@ Required sections are declared per template file (`requiredSections` in `file_de
 - [ ] Service: approve then edit → readiness recomputed false.
 - [ ] Permission: override without `TICKET_READINESS_OVERRIDE` → 403; expired/waived scope honored.
 - [ ] Agent: both processors post issues, release, start no harness.
-- [ ] Frontend: `updateTicket` propagates the 409; TicketDetail shows issues.
+- [ ] Frontend: `updateTicket` propagates the 409; TicketDetail shows issues, including missing risk sections.
 - [ ] Migration: grandfathered tickets stay claimable.
+- [ ] Risk sections: missing, empty and placeholder content produce the expected codes for assumptions, failure modes, security and change impact.
+- [ ] Security-sensitive scope: a ticket without security considerations is blocked; a non-security small fix follows the reduced path.
+- [ ] Requirement IDs: duplicate/renamed/removed IDs are reported; an approved ID change requires `replan`.
 
 ## Out of scope
 
@@ -212,6 +267,10 @@ Required sections are declared per template file (`requiredSections` in `file_de
 - Enforcing a specific wording of acceptance criteria.
 - Cross-project template inheritance.
 - Replacing the planner’s human product process.
+- Auto-generating or auto-approving assumptions, failure modes, security
+  considerations or change impact.
+- Semantic scoring/ranking of risk-section quality.
+- Requirement-to-code traceability runtime evidence; that is `fg-51`.
 
 ## Deferred scope
 

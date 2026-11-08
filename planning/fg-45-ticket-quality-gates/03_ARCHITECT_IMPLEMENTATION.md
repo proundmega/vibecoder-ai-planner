@@ -24,7 +24,11 @@
 - [ ] Propagate readiness errors in `frontend/src/api/tickets.ts`
 - [ ] Add the ticket creation wizard and readiness panel
 - [ ] Add readiness metrics and blocked-ticket messages
-- [ ] Add tests for every write path, both agent modes, override and UI
+- [ ] Add assumptions and change impact to the `01` templates (root, lightweight, product)
+- [ ] Add failure modes and security considerations to the `02` templates (root, product)
+- [ ] Parse and validate the risk sections; add the new issue codes and security-sensitive scope detection
+- [ ] Export the parsed requirement IDs for `fg-51`
+- [ ] Add tests for every write path, both agent modes, override, risk sections and UI
 
 ## Per-file changes
 
@@ -37,6 +41,8 @@ To be filled in when implementation starts.
 ## Dependencies
 
 - fg-30, fg-31
+- fg-50 for the repo/product template drift test that keeps the risk sections aligned
+- `fg-51` consumes the requirement IDs exported by this ticket; do not duplicate traceability here
 
 ## Verification matrix (canonical)
 
@@ -60,6 +66,11 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR14 | | | | |
 | FR15 | | | | |
 | FR16 | | | | |
+| FR17 | Backend unit | `backend/src/__tests__/readiness.test.js` | missing/empty assumptions fail; explicit “No material assumptions” passes | `cd backend && npm test -- readiness` |
+| FR18 | Backend unit | `backend/src/__tests__/readiness.test.js` | missing/empty failure modes fail for non-small templates | `cd backend && npm test -- readiness` |
+| FR19 | Backend unit | `backend/src/__tests__/readiness.test.js` | missing security section fails; security-sensitive `simple` ticket is blocked | `cd backend && npm test -- readiness` |
+| FR20 | Backend unit | `backend/src/__tests__/readiness.test.js` | missing/empty change impact fails | `cd backend && npm test -- readiness` |
+| FR21 | Backend unit | `backend/src/__tests__/readiness.test.js` | requirement IDs are unique, parsed and exposed; rename/remove requires `replan` | `cd backend && npm test -- readiness` |
 
 ## Review checklist
 

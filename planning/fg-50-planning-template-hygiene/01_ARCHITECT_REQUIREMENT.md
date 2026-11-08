@@ -39,7 +39,7 @@ templates and indexes are not self-maintaining:
 | ID | Requirement | Acceptance (testable) |
 |---|---|---|
 | FR1 | Completed suites are moved to `planning/DONE/`; `check-planning.js` fails an active suite with `status: done`. | The checker exits non-zero for a fixture done suite outside `DONE/`; the real tree has no active done suites. |
-| FR2 | Repository and product `04` templates share one source or a drift test compares required headings/wording. | Changing only one template makes the template test fail. |
+| FR2 | Repository and product templates (`00`–`04`) share one source or a drift test compares required headings/wording, including the `01` risk sections (assumptions, change impact) and `02` risk sections (failure modes, security considerations). | Changing only one template makes the template test fail. |
 | FR3 | Active templates and suites reject retired wording (`IPEE`, `small model`, `7B`, `14B`, `34B`, `Target model`). | A fixture with `small model` fails; `DONE/` and `archived/` are exempt. |
 | FR4 | Pending suites use the current YAML `00` frontmatter; legacy-format pending suites are reported. | A planned suite with `**Status**:` fails; a legacy suite in `DONE/` passes. |
 | FR5 | `PENDING.txt` and `HARNESS_ROADMAP.md` rows are generated from `00` frontmatter or strictly checked against it. | A mismatched label fails; a suite with no index row is reported. |

@@ -49,10 +49,12 @@ The layers are independent: a change can pass one and fail another.
 |---|---|---|---|
 | 0. Deterministic | CI / `check-planning.js` | structure, status, matrix coverage, results, tests, lint, paths | blocking |
 | 1. Author self-check | author | `03` review checklist, evidence, results | blocking |
-| 2. Independent reviewer | reviewer agent (`fg-31`) | requirements/design/code against evidence | blocking findings |
-| 3. Second reviewer | `fg-47` (planned) | different model/provider/context; adversarial pass | blocking findings |
-| 4. Fixer | separate fixer (`fg-32`) | resolve blocking findings, hand back the new SHA | bounded rounds |
-| 5. Human | human | final approval, security, architecture, product intent | blocking |
+| 2. Pre-implementation risk review | `fg-45` (planned) | assumptions, failure modes, security considerations, change impact present and actionable | blocking before plan approval/pickup |
+| 3. Independent reviewer | reviewer agent (`fg-31`) | requirements/design/code against evidence | blocking findings |
+| 4. Second reviewer | `fg-47` (planned) | different model/provider/context; adversarial pass | blocking findings |
+| 5. Fixer | separate fixer (`fg-32`) | resolve blocking findings, hand back the new SHA | bounded rounds |
+| 6. Traceability | `fg-51` (planned) | every `FR*`/`NFR*` maps to code, a test and passing verification at the reviewed SHA; gap report | blocking before human approval/merge |
+| 7. Human | human | final approval, security, architecture, product intent | blocking |
 
 Rules:
 
@@ -74,6 +76,46 @@ Rules:
   "done", or "N open follow-ups", it must cite the evidence. A planning PR is
   **plan merged**, never `done`. The index labels in `PENDING.txt` and
   `HARNESS_ROADMAP.md` must match `00`.
+- **Risk before code.** No ticket starts implementation until its assumptions,
+  change impact and (for non-small work) failure modes and security
+  considerations are present and approved. This is a readiness check, not a
+  new phase.
+- **Traceability before merge.** No ticket reaches `human_approval` or merge
+  with an unresolved `missing`/`partial` requirement unless a scoped,
+  reason-bearing, expiring waiver is recorded. Code coverage is not
+  requirement coverage.
+- **AI drafts, humans ratify.** An agent may draft risk sections or propose
+  mappings, but it cannot mark an assumption validated, waive a gap or approve
+  the plan.
+
+### Pre-implementation risk review (`fg-45`)
+
+Before plan approval and pickup:
+
+- `01` carries an **Assumptions** table (assumption, impact if wrong,
+  validation/evidence) and a **Change impact** table (API, DB, frontend,
+  agent, permissions, jobs, downstream, rollback).
+- `02` carries **Failure modes and recovery** and **Security considerations**
+  for `architecture`, `technical` and `specification` tickets.
+- The deterministic check verifies that the sections exist, are non-empty and
+  contain no placeholders. The independent reviewer and the human decide
+  whether each row is real and testable.
+- A small fix follows the reduced path: a one-line assumptions statement and
+  change impact may be `n/a` with a reason; no failure-mode/security tables
+  unless the fix touches auth, permissions, migrations, the agent boundary,
+  external calls or secrets.
+
+### Requirement traceability (`fg-51`)
+
+Before `review -> human_approval` and before merge:
+
+- Every `FR*`/`NFR*` must map to code, at least one test and passing
+  verification evidence at the reviewed SHA.
+- The report is per-requirement rows plus counts (`verified`, `partial`,
+  `missing`, `waived`), not a composite percentage.
+- A suite-level green run without a mapped test is `partial`, not `verified`.
+- Missing/partial requirements block in `enforce`; waivers name specific
+  requirement IDs and carry a reason, expiry, permission and audit row.
 
 ### Claim verification
 
@@ -117,11 +159,15 @@ planned → in_progress → in_review → done
    operations) into the new folder. For a lightweight ticket, copy
    `planning/lightweight/00` and `planning/lightweight/03` instead.
 2. Fill `00` first: id, title, status, dependencies, status evidence.
-3. Write `01` before `02`, and `02` before `03`.
-4. Fill the deferred register in `00` as decisions are made.
-5. Keep `PENDING.txt` and `HARNESS_ROADMAP.md` as indexes only — they
+3. Write `01` before `02`, and `02` before `03`. Fill the assumptions and
+   change-impact tables in `01`; fill the failure-mode and security sections
+   in `02` (non-small tickets).
+4. Name tests with their requirement ID (`FR1`) so requirement traceability
+   can map code → test → verification.
+5. Fill the deferred register in `00` as decisions are made.
+6. Keep `PENDING.txt` and `HARNESS_ROADMAP.md` as indexes only — they
    summarise, they do not become a second copy of the register.
-6. Run `node planning/check-planning.js` and record the first review round in
+7. Run `node planning/check-planning.js` and record the first review round in
    `03`.
 
 ## Check

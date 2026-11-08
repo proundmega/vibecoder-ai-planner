@@ -36,8 +36,11 @@ depends_on: []           # e.g. ["fg-30"]
 ## Readiness gate (before implementation)
 
 - [ ] `01` has numbered `FR*`/`NFR*`, each with a testable acceptance statement
+- [ ] `01` has assumptions and change impact; `02` has failure modes and
+      security considerations (non-small tickets) — see `fg-45`
 - [ ] `02` records the current-state audit and the chosen design
 - [ ] `03` has a verification-matrix row for every `FR*`/`NFR*`
+- [ ] Tests are named with their requirement ID so `fg-51` can trace evidence
 - [ ] Deferred register below is complete; out-of-scope items are recorded
       here, not copied into other docs
 - [ ] Open decisions are answered or explicitly accepted as assumptions
@@ -88,6 +91,7 @@ patterns.*
 - [ ] Every `FR*`/`NFR*` acceptance statement in `01` is met
 - [ ] Verification matrix in `03` is green and has a row for every requirement
 - [ ] `03` Results has a dated, non-placeholder row
+- [ ] `fg-51` traceability report has no non-waived `missing`/`partial` requirements
 - [ ] `status` is `done` only after the implementation PR merged, and `pr` is set
 - [ ] `PENDING.txt` / `HARNESS_ROADMAP.md` labels match `00` (`Plan merged` vs `Merged`)
 - [ ] Review record in `03` shows all blocking findings resolved

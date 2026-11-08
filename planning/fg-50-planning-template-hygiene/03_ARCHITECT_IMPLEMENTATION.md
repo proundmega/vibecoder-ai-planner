@@ -25,6 +25,9 @@
 | `planning/check-planning.js` | MODIFY | Add lifecycle, wording, frontmatter and index checks |
 | `planning/check-planning.test.js` | MODIFY | Add fixtures/tests for the new rules |
 | `planning/README.md` | MODIFY | Document the lifecycle, template drift and `04` rules |
+| `planning/01_ARCHITECT_REQUIREMENT.md` | MODIFY | Keep assumptions and change impact aligned with the product `01` template |
+| `planning/02_ARCHITECT_DESIGN.md` | MODIFY | Keep failure modes and security considerations aligned with the product `02` template |
+| `planning/lightweight/00_ARCHITECT_CHECKLIST.md` | MODIFY | Keep the lightweight assumptions section aligned |
 | `planning/04_SPECIFICATION.md` | MODIFY | Mark the spec as execution-time only |
 | `backend/src/services/TemplateService.js` | MODIFY | Align the `04` product template with the canonical wording |
 | `frontend/src/views/phases/PhasePlanning.vue` | MODIFY | Keep the product label aligned with the template |
@@ -42,7 +45,7 @@
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
 | FR1 | Node script | `planning/check-planning.test.js` | active done suite fails; moved suite passes | `node --test planning/check-planning.test.js` |
-| FR2 | Backend unit | `backend/src/__tests__/templateService.test.js` | repo/product `04` headings and banned phrases agree | `cd backend && npm test -- templateService` |
+| FR2 | Backend unit | `backend/src/__tests__/templateService.test.js` | repo/product `00`–`04` headings and banned phrases agree, including assumptions/change impact/failure modes/security | `cd backend && npm test -- templateService` |
 | FR3 | Node script | `planning/check-planning.test.js` | retired wording in an active suite fails; historical fixtures pass | `node --test planning/check-planning.test.js` |
 | FR4 | Node script | `planning/check-planning.test.js` | legacy `**Status**` planned suite fails; legacy done fixture passes | `node --test planning/check-planning.test.js` |
 | FR5 | Node script | `planning/check-planning.test.js` | mismatched/missing index row fails | `node --test planning/check-planning.test.js` |

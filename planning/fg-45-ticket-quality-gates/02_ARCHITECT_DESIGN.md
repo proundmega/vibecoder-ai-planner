@@ -19,6 +19,31 @@ Create ticket (draft: status=backlog, phase=draft)
   -> override (permission, reason, waivedCodes[], expiry, audit)
 ```
 
+## Pre-implementation risk review
+
+The DoR gains four structural checks. They are **not** a new phase and not a
+separate agent: the readiness evaluator parses the planning files and reports
+missing, empty or placeholder sections; the independent reviewer and the human
+plan approval judge the content.
+
+| Section | File | Required for | Deterministic check |
+|---|---|---|---|
+| Assumptions | `01` | every template; a small fix may use a one-line statement | at least one row with impact + validation, or `No material assumptions — <reason>` |
+| Failure modes | `02` | `architecture`, `technical`, `specification` | at least one row with detection + mitigation/test |
+| Security considerations | `02` | `architecture`, `technical`, `specification`; always for security-sensitive scope | non-empty section covering authn, authz/permissions, scoping, secrets, audit, rate limiting, validation, data exposure |
+| Change impact | `01` | every template | at least one row with area + impact + evidence/owner |
+
+**Security-sensitive scope** is derived from the ticket's scope, description
+and planning files (auth, permissions, migrations, agent boundary, external
+calls, secrets, user data). A `simple` ticket that touches one of those still
+fails `MISSING_SECURITY_CONSIDERATIONS`; a non-security small fix follows the
+reduced path.
+
+The checks are deliberately dumb: they prove that a section exists and is not
+a placeholder. They do **not** prove that an assumption is complete, a failure
+mode is likely, or a control is correct. That is `fg-31`/`fg-47` and the human
+gate. AI may draft the sections; only a human approves the plan.
+
 ## Enforcement matrix (the core of this ticket)
 
 | Path | Code | When the assertion runs |
@@ -243,6 +268,13 @@ planning_status: not_started -> template_selected -> in_progress
 | `MISSING_TEST_PLAN` | non-small template without a test/verification section | yes |
 | `MISSING_DEPENDENCIES` | non-small template without a dependencies section | yes |
 | `MISSING_ROLLBACK` | non-small template without rollback/risk | yes |
+| `MISSING_ASSUMPTIONS` | `01` has no assumptions table and no explicit `No material assumptions` statement | yes |
+| `EMPTY_ASSUMPTIONS` | assumptions table exists but rows lack impact or validation/evidence | yes |
+| `MISSING_FAILURE_MODES` | non-small ticket has no non-empty `## Failure modes and recovery` table | yes |
+| `MISSING_SECURITY_CONSIDERATIONS` | missing/empty section, or security-sensitive scope without it | no for security-sensitive scope; yes otherwise |
+| `MISSING_CHANGE_IMPACT` | non-small ticket has no non-empty `## Change impact` table | yes |
+| `DUPLICATE_REQUIREMENT_ID` | `01` repeats an `FR*`/`NFR*` ID | no |
+| `MISSING_REQUIREMENT_ACCEPTANCE` | an `FR*`/`NFR*` row has no acceptance statement | yes |
 
 `waivedCodes` matches issue codes exactly. An expired waiver is ignored (not deleted) and the issues reappear.
 
@@ -261,7 +293,20 @@ planning_status: not_started -> template_selected -> in_progress
 
 - `TemplateService` gets `requiredSections` on the built-in architect/technical/simple/specification definitions, and `GET /templates/:name` returns it.
 - Custom project templates may omit `requiredSections`; the evaluator then only enforces file presence/non-emptiness and placeholders, and the readiness response reports `sectionsEnforced: false`.
+- Built-in Phase 1 metadata:
+  - `01_ARCHITECT_REQUIREMENT.md`: `["Assumptions", "Change impact"]`
+  - `02_ARCHITECT_DESIGN.md`: `["Failure modes and recovery", "Security considerations"]`
 - Acceptance criteria: the `ticket_acceptance_criteria` table is authoritative. `apply-template` seeds it from a `## Acceptance Criteria` list if the table is empty; later edits go through the criteria endpoints, not free text.
+
+## Interaction with fg-51
+
+`fg-45` owns the planning-side contract: stable `FR*`/`NFR*` IDs, acceptance
+statements and the risk sections. `fg-51` owns the implementation-side
+evidence: requirement → code → test → verification at the reviewed SHA.
+`fg-45` exposes the parsed requirement list read-only; `fg-51` does not parse
+prose itself. A requirement ID that changes after approval requires `replan`
+(FR16/FR21), so a traceability snapshot cannot silently attach evidence to a
+different requirement.
 
 ## API
 
@@ -310,7 +355,7 @@ async assertProjectMember(userId, projectId, { role, allowSuperAdmin = true } = 
 `approve-plan` transaction:
 
 1. `SELECT ... FOR UPDATE` the ticket.
-2. Evaluate content checks 1-7 and 9.
+2. Evaluate content checks 1-7 and 9-14 (including the risk sections).
 3. If issues remain **outside** the waiver set → 409 `READINESS_FAILED`.
 4. Set `plan_approved_at/by`, `planning_status='completed'`.
 5. If no non-waived issues → set `ready_at/by`.
