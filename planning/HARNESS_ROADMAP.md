@@ -51,6 +51,8 @@ fg-30 Phases 2-4 (human loop, autonomy, hardening) remain part of the fg-30 impl
 ### Review-quality follow-ups (after fg-31/fg-32)
 - **fg-47** independent second reviewer (different model family/provider; advisory first)
 - **fg-48** deterministic `check-claims` script for structured evidence and index labels
+- **fg-49** planning placeholder check (active suites fail on unresolved `{{...}}`; `DONE/`, `archived/` and `lightweight/` exempt)
+- **fg-50** planning template hygiene (move completed suites to `DONE/`, template drift test, stale wording/frontmatter checks, index validation, execution-only `04`)
 
 ### Phase C - Quality and operations
 9. **fg-45** ticket quality gates and Definition of Ready

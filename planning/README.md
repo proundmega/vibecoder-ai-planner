@@ -18,6 +18,11 @@ documents with **one owner per fact** — no fact is copied into a second file.
 layers, coverage, API conventions). Templates link to it instead of restating
 it.
 
+For a small, single-layer ticket (one layer, no API/DB contract, auth,
+migration or agent-boundary change), copy `planning/lightweight/00` and
+`planning/lightweight/03` instead of the full `00`–`03` set. Requirements live
+in the lightweight `00`; `01` and `02` are intentionally omitted.
+
 ## The rules
 
 1. **One fact, one home.** The table above is binding. If another doc needs the
@@ -109,7 +114,8 @@ planned → in_progress → in_review → done
 ## Creating a suite
 
 1. Copy `00`–`03` (and `04` if an implementation agent needs exact file
-   operations) into the new folder.
+   operations) into the new folder. For a lightweight ticket, copy
+   `planning/lightweight/00` and `planning/lightweight/03` instead.
 2. Fill `00` first: id, title, status, dependencies, status evidence.
 3. Write `01` before `02`, and `02` before `03`.
 4. Fill the deferred register in `00` as decisions are made.

@@ -343,7 +343,7 @@ Planning suites live in `planning/`:
 - `archived/` — Archived suites
 - `PENDING.txt` — Active ticket queue (canonical)
 
-Each suite follows templates: `00_ARCHITECT_CHECKLIST.md` → `01_ARCHITECT_REQUIREMENT.md` → `02_ARCHITECT_DESIGN.md` → `03_ARCHITECT_IMPLEMENTATION.md` → `04_SPECIFICATION.md` (optional) → `05_RUNBOOK.md` (optional). See `planning/README.md` for document ownership and rules, and `planning/ENGINEERING_STANDARDS.md` for repo-wide engineering conventions.
+Each suite follows templates: `00_ARCHITECT_CHECKLIST.md` → `01_ARCHITECT_REQUIREMENT.md` → `02_ARCHITECT_DESIGN.md` → `03_ARCHITECT_IMPLEMENTATION.md` → `04_SPECIFICATION.md` (optional) → `05_RUNBOOK.md` (optional). Small, single-layer tickets use the lightweight `00` + `03` templates in `planning/lightweight/`. See `planning/README.md` for document ownership and rules, and `planning/ENGINEERING_STANDARDS.md` for repo-wide engineering conventions.
 
 ## Migration System
 
