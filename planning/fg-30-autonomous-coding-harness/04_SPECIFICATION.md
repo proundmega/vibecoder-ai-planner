@@ -1,10 +1,10 @@
-# 04_SPECIFICATION.md — Model Execution Spec (Phase 1)
+# 04_SPECIFICATION.md — Execution Spec (Phase 1)
 
 **Use this file for Phase 1 only.** Phases 2–4 require their own specification after Phase 1 is
 validated.
 
 **Generated from**: `01_ARCHITECT_REQUIREMENT.md`, `02_ARCHITECT_DESIGN.md`, `03_ARCHITECT_IMPLEMENTATION.md`
-**Target model**: implementation agent with architecture context (not a 7B model)
+**Target agent**: implementation agent with architecture context
 **Date**: 2026-10-31
 
 > **Phase 1 implementation note**: the shipped guard uses the pinned

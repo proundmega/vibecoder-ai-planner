@@ -11,7 +11,7 @@ documents with **one owner per fact** — no fact is copied into a second file.
 | `01_ARCHITECT_REQUIREMENT.md` | yes | problem, goals/non-goals, numbered `FR*`/`NFR*`, acceptance |
 | `02_ARCHITECT_DESIGN.md` | yes | current-state audit, design, data model, contracts, risks, review focus, rollout |
 | `03_ARCHITECT_IMPLEMENTATION.md` | yes | work order, per-file changes, **verification matrix**, review record, results |
-| `04_SPECIFICATION.md` | optional | exact file operations for a small model |
+| `04_SPECIFICATION.md` | optional | exact file operations for an implementation agent |
 | `05_RUNBOOK.md` | optional | operational procedures (health, recover, dead-letter, rollback) |
 
 `ENGINEERING_STANDARDS.md` holds the repo-wide rules (paths, commands, test
@@ -108,8 +108,8 @@ planned → in_progress → in_review → done
 
 ## Creating a suite
 
-1. Copy `00`–`03` (and `04` if a small model will execute it) into the new
-   folder.
+1. Copy `00`–`03` (and `04` if an implementation agent needs exact file
+   operations) into the new folder.
 2. Fill `00` first: id, title, status, dependencies, status evidence.
 3. Write `01` before `02`, and `02` before `03`.
 4. Fill the deferred register in `00` as decisions are made.

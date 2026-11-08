@@ -127,12 +127,12 @@ Both backend and frontend enforce a **60% minimum coverage** (lines, functions, 
 - CI will fail if coverage drops below 60%. Run coverage locally before pushing.
 
 ### Test-first requirement
-When a `04_SPECIFICATION.md` is created for a ticket, it includes a **Test-First Requirement** section. The implementing model MUST:
+When a `04_SPECIFICATION.md` is created for a ticket, it includes a **Test-First Requirement** section. The implementing agent MUST:
 1. Create empty test stub files (with imports, `describe` blocks, stub `it` blocks) **before** any production code
 2. Create production code files
 3. Fill in test stubs with actual assertions
 
-This prevents models from skipping tests. The test stubs are listed as the first file operations in `04_SPECIFICATION.md`.
+This prevents agents from skipping tests. The test stubs are listed as the first file operations in `04_SPECIFICATION.md`.
 
 ## Agent harness (fg-30)
 

@@ -1,11 +1,11 @@
 # 04 — Execution Spec ({{id}})
 
-Optional. Use when a smaller model will execute the ticket. This file makes
-file operations exact; it does **not** restate `01`, `02`, or `03`.
+Optional. Use when an implementation agent needs exact file operations. This
+file makes file operations exact; it does **not** restate `01`, `02`, or `03`.
 
 **Generated from:** `01_ARCHITECT_REQUIREMENT.md`,
 `02_ARCHITECT_DESIGN.md`, `03_ARCHITECT_IMPLEMENTATION.md`
-**Target model:** {{7B | 14B | 34B}}
+**Target agent:** {{implementation agent / model}}
 **Requirement IDs covered:** {{FR1, FR2, NFR1}}
 
 ## Test-first requirement
@@ -15,7 +15,7 @@ production code. Then implement. Then fill in the assertions.
 
 ## File operations
 
-The model must not create, modify, or delete a file that is not listed here.
+The agent must not create, modify, or delete a file that is not listed here.
 
 ### CREATE `{{path}}`
 
@@ -77,7 +77,7 @@ component.
 
 - Every `FR*`/`NFR*` from `01` must appear in the test expectations above; a
   missing requirement is a spec bug, not a coding decision.
-- The model must not create, modify or delete a file outside the listed
+- The agent must not create, modify or delete a file outside the listed
   operations. The reviewer checks the diff against this list.
 - Record reviewer evidence and blocking-finding resolution in `03`; this file
   contains instructions, not results.
