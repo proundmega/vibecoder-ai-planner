@@ -82,7 +82,7 @@ CREATE INDEX idx_agent_memory_embedding ON agent_memory USING hnsw (embedding ve
 | `file_change` | What files were modified and how | "Modified src/auth/middleware.js: added JWT validation, removed session check" |
 | `decision` | Architecture/tech decisions | "Chose JWT over sessions for stateless auth" |
 | `context` | Project context discovered during work | "Project uses Express, pg, and Joi for validation" |
-| `pattern` | Coding patterns observed | "Project uses IPEE pattern: Identify, Plan, Execute, Evaluate" |
+| `pattern` | Coding patterns observed | "Project uses a plan, test, and verify workflow" |
 
 ### Embedding Generation
 

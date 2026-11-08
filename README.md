@@ -335,13 +335,6 @@ detection. The backend job uses a real PostgreSQL service container.
 
 ## Planning
 
-The project uses an IPEE-based planning methodology (see `ai/CODING.md`):
-
-1. **Identify** — define the problem, inputs, outputs, constraints
-2. **Plan** — evaluate solutions (~80% planning, ~20% coding)
-3. **Execute** — implement
-4. **Evaluate** — test against expected outcomes
-
 Planning suites live in `planning/`:
 - `bp-XX-*` — Bug fixes / improvements
 - `bt-XX-*` — Test backfill
@@ -364,7 +357,7 @@ Each migration has a `_rollback.sql` counterpart.
 ## Contributing
 
 1. Read `AGENTS.md` for full guidelines and gotchas
-2. Read `ai/CODING.md` for IPEE methodology
+2. Read `ai/CODING.md` for coding principles
 3. Check `planning/TICKETS.txt` for active work
 4. Check `PENDING.txt` for unimplemented planning suites
 5. Scan `Out of Scope` sections in `planning/DONE/` for deferred improvements (goldmine)

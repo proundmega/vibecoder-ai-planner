@@ -4,7 +4,7 @@ AI-powered Kanban SaaS. Backend: Node.js/Express (CommonJS). Frontend: Vue 3 + V
 
 ## How to investigate
 
-Read highest-value sources first: `README*`, root manifests, workspace config, lockfiles, build/test/lint/typecheck/codegen config, CI workflows, existing instruction files (`ai/CODING.md`, `ai/IPEE.md`). Prefer executable sources (package.json scripts, jest/vitest configs, CI) over prose. If docs conflict with config, trust the config.
+Read highest-value sources first: `README*`, root manifests, workspace config, lockfiles, build/test/lint/typecheck/codegen config, CI workflows, existing instruction files (`ai/CODING.md`). Prefer executable sources (package.json scripts, jest/vitest configs, CI) over prose. If docs conflict with config, trust the config.
 
 ## Quick Start
 
@@ -42,7 +42,7 @@ frontend/src/
   router/index.ts       → reads vibecode_token directly from localStorage
 
 agent/                  → Java 17 Maven, shaded JAR; `harness/` = OpenCode supervisor (fg-30)
-ai/CODING.md            → IPEE methodology (mandatory for all code changes)
+ai/CODING.md            → coding principles
 architecture/           → system-design.md
 planning/               → 00-04 templates + bp-XX/, bt-XX/, fg-XX/ suites
 ```
@@ -258,14 +258,7 @@ dated `03` Results row. A merged planning PR is `plan merged`, not `done`.
 
 ## Coding methodology
 
-All code changes **must** follow the IPEE methodology defined in `ai/CODING.md` and `ai/IPEE.md`:
-
-1. **Identify** — define the problem, inputs, outputs, constraints, edge cases
-2. **Plan** — brainstorm solutions, evaluate, select strategy (spend ~80% planning vs coding)
-3. **Execute** — implement, follow best practices
-4. **Evaluate** — test against expected outcomes, edge cases, performance
-
-State which IPEE step you're in at each moment. Skipping any step is not permitted.
+Plan before making non-trivial changes, make the smallest coherent change, and add or update tests for the behavior you change. Run the project's verification commands before finishing. Record assumptions and non-obvious trade-offs in the ticket or PR.
 
 ## Deferred Improvements (Goldmine)
 
