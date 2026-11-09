@@ -142,6 +142,7 @@ public final class OpenCodeClient implements HarnessClient {
         Files.createDirectories(home.resolve(".local/share"));
         Files.createDirectories(home.resolve(".cache"));
 
+        closeWorkspaceBridge();
         WorkspaceFileBridge createdBridge = new WorkspaceFileBridge(workspace);
         createdBridge.start();
         this.workspaceBridge = createdBridge;
