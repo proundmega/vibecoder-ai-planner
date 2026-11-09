@@ -4,13 +4,13 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Redacts credentials from sandbox/verification output before it is stored in
- * ticket messages, harness run errors or pull-request bodies (NFR5).
+ * ticket messages, branch names, harness run errors or pull-request
+ * titles/bodies (NFR5).
  *
  * <p>The supervisor already replaces the exact provider/GitHub/agent secrets it
  * knows about. This class adds high-confidence credential <em>formats</em> so a
@@ -66,37 +66,30 @@ public final class SecretRedactor {
     );
 
     /**
-     * Credential key/value forms. The identifier is matched once with a
-     * possessive quantifier and then tested for a credential keyword in code;
-     * doing the keyword search inside the regex would rescan the suffix from
-     * every keyword occurrence and go quadratic on hostile input such as
-     * {@code "token".repeat(26_214)}. The value branch is escape-aware so a
-     * JSON value containing {@code \"} is redacted as a whole instead of
-     * stopping at the escaped quote.
+     * Credential key/value forms. The lookahead requires a credential keyword
+     * somewhere in the identifier before the identifier is consumed. Without
+     * it, a non-credential assignment such as {@code message="..."} would
+     * consume the value span, and nested credentials inside it (for example
+     * {@code {"message": "password=supersecret"}}) would never be examined.
+     * The identifier is then matched once with a possessive quantifier so
+     * repeated keywords are linear rather than quadratic.
+     *
+     * <p>The value branch is escape-aware so a JSON value containing
+     * {@code \"} is redacted as a whole instead of stopping at the escaped
+     * quote. An unquoted value continues to the end of the line (stopping at a
+     * quote, newline, or closing brace/parenthesis); over-redacting adjacent
+     * text is preferred to leaving part of a multi-word value.</p>
      */
+    private static final String CREDENTIAL_KEY =
+        "(?:api[_-]?key|private[_-]?key|secret|token|password|passwd|pwd"
+            + "|authorization|pass[_-]?phrase)";
+
     private static final Pattern KEY_VALUE = Pattern.compile(
-        "(?i)(?<![\\w.-])([\\w.-]++)([\"']?)(\\s*[:=]\\s*)"
+        "(?i)(?<![\\w.-])(?=[\\w.-]*" + CREDENTIAL_KEY + ")"
+            + "([\\w.-]++)([\"']?)(\\s*[:=]\\s*)"
             + "(?:\"((?:[^\"\\\\]|\\\\.){8,})\""
             + "|'((?:[^'\\\\]|\\\\.){8,})'"
-            + "|([^\\s\"',}]{8,}))");
-
-    /**
-     * Keywords are compared after removing {@code _} and {@code -} so
-     * {@code api_key}, {@code api-key}, {@code apikey} and {@code clientSecret}
-     * all match while ordinary prose (which lacks a {@code :}/{@code =}
-     * separator) does not.
-     */
-    private static final List<String> CREDENTIAL_KEYWORDS = List.of(
-        "apikey",
-        "privatekey",
-        "secret",
-        "token",
-        "password",
-        "passwd",
-        "pwd",
-        "authorization",
-        "passphrase"
-    );
+            + "|([^\"'\\r\\n})]{8,}))");
 
     private final List<String> knownSecrets;
 
@@ -136,10 +129,13 @@ public final class SecretRedactor {
         for (String secret : knownSecrets) {
             redacted = redacted.replace(secret, REDACTED);
         }
-        redacted = redactKeyValues(redacted);
+        // Run multi-line/format rules before key/value: a private-key block
+        // assigned to a credential key (password=-----BEGIN...) must be redacted
+        // across its END marker, not just on the first line.
         for (Rule rule : PATTERNS) {
             redacted = rule.pattern().matcher(redacted).replaceAll(rule.replacement());
         }
+        redacted = redactKeyValues(redacted);
         return redacted;
     }
 
@@ -147,11 +143,7 @@ public final class SecretRedactor {
         Matcher matcher = KEY_VALUE.matcher(value);
         StringBuilder out = new StringBuilder(value.length());
         while (matcher.find()) {
-            String identifier = matcher.group(1);
-            if (!isCredentialKey(identifier)) {
-                continue;
-            }
-            String replacement = identifier + matcher.group(2) + matcher.group(3);
+            String replacement = matcher.group(1) + matcher.group(2) + matcher.group(3);
             if (matcher.group(4) != null) {
                 replacement += "\"" + REDACTED + "\"";
             } else if (matcher.group(5) != null) {
@@ -163,18 +155,6 @@ public final class SecretRedactor {
         }
         matcher.appendTail(out);
         return out.toString();
-    }
-
-    private static boolean isCredentialKey(String identifier) {
-        String normalized = identifier.toLowerCase(Locale.ROOT)
-            .replace("_", "")
-            .replace("-", "");
-        for (String keyword : CREDENTIAL_KEYWORDS) {
-            if (normalized.contains(keyword)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private record Rule(Pattern pattern, String replacement) {

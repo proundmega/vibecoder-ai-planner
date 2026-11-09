@@ -190,13 +190,16 @@ are D18), the bridge denies a high-confidence subset of credential-read and
 network-upload commands, and the supervisor refuses to publish a guarded-tree
 blob whose content or new path contains a configured credential or a
 high-confidence credential format (matches already present in the base blob are
-ignored, so pre-existing fixtures do not block unrelated edits; complete PEM
-private-key blocks are compared as a whole with case-insensitive BEGIN/END
-markers). Prompt injection remains probabilistic; the sandbox and publishing
+ignored, so pre-existing fixtures do not block unrelated edits; complete PEM,
+PGP and SSH2 private-key blocks are compared as a whole with case-insensitive
+BEGIN/END markers, and AWS temporary keys and Slack xoxc/xoxd tokens are
+covered). Prompt injection remains probabilistic; the sandbox and publishing
 guard are the boundary. Verification output (including its exception messages)
 is redacted for configured secrets and high-confidence credential formats before
 branch names, ticket messages, run errors and commit/PR titles and bodies are
-stored (NFR5). Legacy processors and externally shipped logs are D19.
+stored (NFR5); a credential-keyword lookahead keeps nested assignments inside
+non-credential values visible. Legacy processors and externally shipped logs are
+D19.
 Sandbox base images are digest-pinned; `agent/scripts/sandbox-image-security.sh
 --check-pins` enforces that (case-insensitive `FROM`, BOM tolerant, digest on
 the image token), and the same script generates an SBOM (syft), scans for

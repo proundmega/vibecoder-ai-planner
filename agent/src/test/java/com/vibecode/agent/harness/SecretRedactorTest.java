@@ -201,14 +201,46 @@ class SecretRedactorTest {
     }
 
     @Test
-    void redactsPassphraseButLeavesUnquotedMultiWordValuesExplicitlyAlone() {
+    void redactsNestedCredentialsInsideNonCredentialValues() {
+        assertEquals("AssertionError: password=[REDACTED]",
+            redactor.redact("AssertionError: password=supersecret"));
+        assertEquals("{\"message\": \"password=[REDACTED]\"}",
+            redactor.redact("{\"message\": \"password=supersecret\"}"));
+        assertEquals("https://example.com?token=[REDACTED]",
+            redactor.redact("https://example.com?token=abcdefghijklmnop"));
+        assertEquals("redirect=https://example.com?token=[REDACTED]",
+            redactor.redact(
+                "redirect=https://example.com?token=abcdefghijklmnop"));
+    }
+
+    @Test
+    void redactsUnquotedMultiWordCredentialValues() {
+        String password = redactor.redact("password=supersecret phrase");
+        assertFalse(password.contains("supersecret"), password);
+        assertFalse(password.contains("phrase"), password);
+
+        String passphrase = redactor.redact("passphrase=super secret phrase");
+        assertTrue(passphrase.contains("[REDACTED]"), passphrase);
+        assertFalse(passphrase.contains("super secret phrase"), passphrase);
+    }
+
+    @Test
+    void redactsAuthorizationSchemesAndShortBearerValues() {
+        for (String scheme : List.of("Negotiate", "Token", "ApiKey", "Digest")) {
+            String redacted = redactor.redact(
+                "Authorization: " + scheme + " supersecret");
+            assertFalse(redacted.contains("supersecret"), redacted);
+            assertFalse(redacted.contains(scheme), redacted);
+        }
+
+        String bearer = redactor.redact("Authorization: Bearer shorttoken");
+        assertFalse(bearer.contains("shorttoken"), bearer);
+    }
+
+    @Test
+    void redactsPassphraseKeys() {
         String quoted = redactor.redact("passphrase=\"super secret phrase\"");
         assertFalse(quoted.contains("super secret phrase"), quoted);
-
-        // The unquoted branch intentionally stops at whitespace, so a
-        // multi-word value is not treated as a credential.
-        assertEquals("passphrase=super secret phrase",
-            redactor.redact("passphrase=super secret phrase"));
     }
 
     @Test
@@ -216,8 +248,6 @@ class SecretRedactorTest {
         assertEquals("password=hunter2", redactor.redact("password=hunter2"));
         assertEquals("\"password\": \"hunter2\"",
             redactor.redact("\"password\": \"hunter2\""));
-        assertEquals("Authorization: Bearer shorttoken",
-            redactor.redact("Authorization: Bearer shorttoken"));
     }
 
     @Test
@@ -241,6 +271,18 @@ class SecretRedactorTest {
 
         String headerOnly = redactor.redact("-----BEGIN OPENSSH PRIVATE KEY-----");
         assertFalse(headerOnly.contains("OPENSSH PRIVATE KEY"), headerOnly);
+    }
+
+    @Test
+    void redactsAMultiLinePrivateKeyAssignedToACredentialKey() {
+        String input = "password=-----BEGIN RSA PRIVATE KEY-----\n"
+            + "MIIEowIBAAKCAQEA1234567890\n"
+            + "-----END RSA PRIVATE KEY-----";
+
+        String redacted = redactor.redact(input);
+
+        assertFalse(redacted.contains("MIIEowIBAAKCAQEA1234567890"), redacted);
+        assertTrue(redacted.contains("[REDACTED"), redacted);
     }
 
     @Test
