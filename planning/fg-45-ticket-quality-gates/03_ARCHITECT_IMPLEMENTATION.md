@@ -66,11 +66,11 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR14 | | | | |
 | FR15 | | | | |
 | FR16 | | | | |
-| FR17 | Backend unit | `backend/src/__tests__/readiness.test.js` | `FR17 missing/empty assumptions fail in 01 or lightweight 00; explicit “No material assumptions” passes` | `cd backend && npm test -- readiness` |
-| FR18 | Backend unit | `backend/src/__tests__/readiness.test.js` | `FR18 missing/empty failure modes fail for non-small templates` | `cd backend && npm test -- readiness` |
-| FR19 | Backend unit | `backend/src/__tests__/readiness.test.js` | `FR19 missing security section fails; security-sensitive simple ticket is blocked` | `cd backend && npm test -- readiness` |
-| FR20 | Backend unit | `backend/src/__tests__/readiness.test.js` | `FR20 missing/empty change impact fails in 01 or lightweight 00` | `cd backend && npm test -- readiness` |
-| FR21 | Backend unit | `backend/src/__tests__/readiness.test.js` | `FR21 requirement IDs are unique, parsed and exposed; rename/remove requires replan` | `cd backend && npm test -- readiness` |
+| FR17 | Backend unit | `backend/src/__tests__/readiness.test.js` | FR17 missing/empty assumptions fail in 01 or lightweight 00; explicit “No material assumptions” passes | `cd backend && npm test -- readiness` |
+| FR18 | Backend unit | `backend/src/__tests__/readiness.test.js` | FR18 missing/empty failure modes fail for non-small templates | `cd backend && npm test -- readiness` |
+| FR19 | Backend unit | `backend/src/__tests__/readiness.test.js` | FR19 missing security section fails; security-sensitive simple ticket is blocked | `cd backend && npm test -- readiness` |
+| FR20 | Backend unit | `backend/src/__tests__/readiness.test.js` | FR20 missing/empty change impact fails in 01 or lightweight 00 | `cd backend && npm test -- readiness` |
+| FR21 | Backend unit | `backend/src/__tests__/readiness.test.js` | FR21 requirement IDs are unique, parsed and exposed; rename/remove requires replan | `cd backend && npm test -- readiness` |
 
 ## Review checklist
 

@@ -272,11 +272,15 @@ planning_status: not_started -> template_selected -> in_progress
 | `EMPTY_ASSUMPTIONS` | assumptions table exists but rows lack impact or validation/evidence | yes |
 | `MISSING_FAILURE_MODES` | non-small ticket has no non-empty `## Failure modes and recovery` table | yes |
 | `MISSING_SECURITY_CONSIDERATIONS` | missing/empty section, or security-sensitive scope without it | no for security-sensitive scope; yes otherwise |
-| `MISSING_CHANGE_IMPACT` | non-small ticket has no non-empty `## Change impact` table in `01` or the lightweight `00` | yes |
+| `MISSING_CHANGE_IMPACT` | a non-small ticket, or a lightweight ticket, has no non-empty `## Change impact` table in `01` or the lightweight `00` (the section may say `n/a` with a reason, but it must exist) | yes |
 | `DUPLICATE_REQUIREMENT_ID` | `01` repeats an `FR*`/`NFR*` ID | no |
 | `MISSING_REQUIREMENT_ACCEPTANCE` | an `FR*`/`NFR*` row has no acceptance statement | yes |
 
 `waivedCodes` matches issue codes exactly. An expired waiver is ignored (not deleted) and the issues reappear.
+
+Lightweight tickets are always checked for `## Assumptions` and `## Change impact`
+in their `00`; either section may state `n/a` with a reason, but it must exist.
+The failure-mode and security sections remain non-small/security-sensitive only.
 
 ## Template schema (no more guessing)
 
