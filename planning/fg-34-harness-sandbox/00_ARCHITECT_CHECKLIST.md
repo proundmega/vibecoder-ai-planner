@@ -7,8 +7,8 @@ effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
 updated: "2026-11-09"
-pr: 130
-branch: "master"
+pr: 132
+branch: "feat/fg-34-slice-3d-read-grep-guard"
 depends_on: ["fg-30"]
 ---
 
@@ -60,5 +60,5 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D15 | Streaming exec output over the sandbox control channel (FR11): the bridge currently buffers each command's bounded output. A streaming API is needed for long installs and live progress | fg-34 | UX/Reliability | fg-34 slice 3 | open |
 | D16 | TLS renegotiation and the encrypted HTTP Host inside a CONNECT tunnel are not visible without TLS termination. The proxy validates only the first ClientHello (multiple SNI names/extra handshakes are rejected); a later renegotiation ClientHello or a shared-CDN tenant that serves the same allowlisted SNI can still be reached. Dedicated hosts or proxy TLS termination would close this | fg-34 | Security | fg-34 slice 3 | open |
 | D17 | Bridge request IDs/idempotency: the bridge has no request ID or result cache, so a lost HTTP response can lead to a re-executed command. A stable request ID and bounded idempotency cache are needed | fg-34 | Reliability | fg-34 slice 3 | open |
-| D18 | OpenCode read/grep can expose supervisor-only files despite the FR8 read denies: the read tool normalizes then follows symlinks (a repo symlink or one created via `sandbox_bash` can point outside the workspace), and the grep tool/ripgrep bypasses read path rules. Slice 3d disables the built-in read/grep/lsp tools and adds `sandbox_read`/`sandbox_grep` over a loopback workspace bridge that resolves `toRealPath()`, rejects paths outside the workspace and credential paths, and never follows symlinks during grep | fg-34 | Security | fg-34 slice 3d | done |
+| D18 | OpenCode read/grep can expose supervisor-only files despite the FR8 read denies: the read tool normalizes then follows symlinks (a repo symlink or one created via `sandbox_bash` can point outside the workspace), and the grep tool/ripgrep bypasses read path rules. Slice 3d disables the built-in read/grep/lsp tools and adds `sandbox_read`/`sandbox_grep` over a loopback workspace bridge that resolves `toRealPath()`, rejects paths outside the workspace and credential paths, and never follows symlinks during grep | fg-34 | Security | fg-34 slice 3d | in review (#132) |
 | D19 | Agent-wide redaction beyond harness mode: legacy `TicketProcessor`/`ReviewProcessor` messages and PRs and externally shipped supervisor logs are not covered by the harness redactor | fg-34 | Privacy | fg-34 follow-up / fg-42 | open |
