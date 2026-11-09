@@ -55,6 +55,7 @@ public final class OpenCodeClient implements HarnessClient {
     private final String externalBaseUrl;
     private final String externalPassword;
     private final SandboxBashBridge bridge;
+    private volatile WorkspaceFileBridge workspaceBridge;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ConcurrentLinkedDeque<String> logTail = new ConcurrentLinkedDeque<>();
     private final List<Subscription> subscriptions = new CopyOnWriteArrayList<>();
@@ -140,32 +141,43 @@ public final class OpenCodeClient implements HarnessClient {
         Files.createDirectories(home.resolve(".config"));
         Files.createDirectories(home.resolve(".local/share"));
         Files.createDirectories(home.resolve(".cache"));
-        if (bridge != null) {
-            writeSandboxTool(home);
-        }
 
-        IOException lastFailure = null;
-        for (int attempt = 1; attempt <= PORT_ATTEMPTS; attempt++) {
-            int candidate = findFreePort();
-            try {
-                launch(workspace, candidate, home, configFile);
-                return;
-            } catch (IOException e) {
-                lastFailure = e;
-                log.warn("OpenCode start attempt {}/{} failed: {}",
-                    attempt, PORT_ATTEMPTS, redact(e.getMessage()));
-                stopProcess();
-                String message = String.valueOf(e.getMessage()).toLowerCase();
-                boolean portCollision = message.contains("address already in use")
-                    || message.contains("eaddrinuse");
-                if (!portCollision) {
-                    break;
+        closeWorkspaceBridge();
+        WorkspaceFileBridge createdBridge = new WorkspaceFileBridge(workspace);
+        createdBridge.start();
+        this.workspaceBridge = createdBridge;
+        try {
+            writeWorkspaceTools(home);
+            if (bridge != null) {
+                writeSandboxTool(home);
+            }
+
+            IOException lastFailure = null;
+            for (int attempt = 1; attempt <= PORT_ATTEMPTS; attempt++) {
+                int candidate = findFreePort();
+                try {
+                    launch(workspace, candidate, home, configFile);
+                    return;
+                } catch (IOException e) {
+                    lastFailure = e;
+                    log.warn("OpenCode start attempt {}/{} failed: {}",
+                        attempt, PORT_ATTEMPTS, redact(e.getMessage()));
+                    stopProcess();
+                    String message = String.valueOf(e.getMessage()).toLowerCase();
+                    boolean portCollision = message.contains("address already in use")
+                        || message.contains("eaddrinuse");
+                    if (!portCollision) {
+                        break;
+                    }
                 }
             }
+            throw lastFailure == null
+                ? new IOException("Could not start the OpenCode server")
+                : lastFailure;
+        } catch (IOException | RuntimeException e) {
+            closeWorkspaceBridge();
+            throw e;
         }
-        throw lastFailure == null
-            ? new IOException("Could not start the OpenCode server")
-            : lastFailure;
     }
 
     private void launch(Path workspace, int candidatePort, Path home, Path configFile) throws IOException {
@@ -183,7 +195,8 @@ public final class OpenCodeClient implements HarnessClient {
         builder.directory(workspace.toFile());
         builder.redirectErrorStream(true);
 
-        configureChildEnvironment(builder.environment(), home, configFile, password, bridge);
+        configureChildEnvironment(builder.environment(), home, configFile, password, bridge,
+            workspaceBridge);
 
         Process started = builder.start();
         this.process = started;
@@ -345,6 +358,7 @@ public final class OpenCodeClient implements HarnessClient {
         // Stop the process group first: a hung server must not delay cleanup,
         // and any background child it spawned must die with it.
         stopProcess();
+        closeWorkspaceBridge();
 
         if (lastSessionId != null) {
             deleteSession(lastSessionId);
@@ -353,6 +367,14 @@ public final class OpenCodeClient implements HarnessClient {
 
         if (!externalServer && tempDir != null) {
             deleteRecursively(tempDir);
+        }
+    }
+
+    private void closeWorkspaceBridge() {
+        WorkspaceFileBridge current = workspaceBridge;
+        workspaceBridge = null;
+        if (current != null) {
+            current.close();
         }
     }
 
@@ -684,6 +706,17 @@ public final class OpenCodeClient implements HarnessClient {
         String password,
         SandboxBashBridge bridge
     ) {
+        configureChildEnvironment(environment, home, configFile, password, bridge, null);
+    }
+
+    static void configureChildEnvironment(
+        Map<String, String> environment,
+        Path home,
+        Path configFile,
+        String password,
+        SandboxBashBridge bridge,
+        WorkspaceFileBridge workspaceBridge
+    ) {
         // The harness must not inherit planner credentials. The provider key is
         // injected through the temporary config instead.
         sanitizeEnvironment(environment);
@@ -709,6 +742,14 @@ public final class OpenCodeClient implements HarnessClient {
             environment.remove("VIBECODE_SANDBOX_BRIDGE_URL");
             environment.remove("VIBECODE_SANDBOX_BRIDGE_TOKEN");
         }
+        // The read/grep tools always go through the guarded workspace bridge.
+        if (workspaceBridge != null && workspaceBridge.baseUrl() != null) {
+            environment.put("VIBECODE_WORKSPACE_BRIDGE_URL", workspaceBridge.baseUrl());
+            environment.put("VIBECODE_WORKSPACE_BRIDGE_TOKEN", workspaceBridge.token());
+        } else {
+            environment.remove("VIBECODE_WORKSPACE_BRIDGE_URL");
+            environment.remove("VIBECODE_WORKSPACE_BRIDGE_TOKEN");
+        }
     }
 
     /**
@@ -722,6 +763,102 @@ public final class OpenCodeClient implements HarnessClient {
         Path file = tools.resolve("sandbox_bash.ts");
         Files.writeString(file, sandboxToolSource(), StandardCharsets.UTF_8);
         return file;
+    }
+
+    /**
+     * Install the guarded read/grep tools. The built-in tools are denied in the
+     * config; these wrappers forward to the loopback workspace bridge, which
+     * resolves paths with {@code toRealPath()} and rejects escapes.
+     */
+    static Path writeWorkspaceTools(Path home) throws IOException {
+        Path tools = Files.createDirectories(home.resolve(".config/opencode/tools"));
+        Files.writeString(tools.resolve("sandbox_read.ts"),
+            workspaceReadToolSource(), StandardCharsets.UTF_8);
+        Files.writeString(tools.resolve("sandbox_grep.ts"),
+            workspaceGrepToolSource(), StandardCharsets.UTF_8);
+        return tools;
+    }
+
+    static String workspaceReadToolSource() {
+        return """
+            import { tool } from "@opencode-ai/plugin"
+
+            const url = process.env.VIBECODE_WORKSPACE_BRIDGE_URL
+            const token = process.env.VIBECODE_WORKSPACE_BRIDGE_TOKEN
+
+            export default tool({
+              description: "Read a text file inside the repository. The built-in read tool is disabled. "
+                + "Paths are resolved inside the workspace; symlinks that escape it and credential paths are rejected.",
+              args: {
+                filePath: tool.schema.string().describe("File path relative to the workspace or absolute inside it"),
+                offset: tool.schema.number().int().positive().optional().describe("1-based start line"),
+                limit: tool.schema.number().int().positive().optional().describe("Maximum lines to return"),
+              },
+              async execute(args) {
+                if (!url || !token) {
+                  throw new Error("workspace guard is not configured")
+                }
+                const response = await fetch(url + "/read", {
+                  method: "POST",
+                  headers: {
+                    "content-type": "application/json",
+                    "x-workspace-token": token,
+                  },
+                  body: JSON.stringify({
+                    path: args.filePath,
+                    offset: args.offset,
+                    limit: args.limit,
+                  }),
+                })
+                const text = await response.text()
+                if (!response.ok) {
+                  throw new Error("read rejected: " + text)
+                }
+                return text
+              },
+            })
+            """;
+    }
+
+    static String workspaceGrepToolSource() {
+        return """
+            import { tool } from "@opencode-ai/plugin"
+
+            const url = process.env.VIBECODE_WORKSPACE_BRIDGE_URL
+            const token = process.env.VIBECODE_WORKSPACE_BRIDGE_TOKEN
+
+            export default tool({
+              description: "Search file contents inside the repository. The built-in grep tool is disabled. "
+                + "Paths and symlinks are resolved inside the workspace; credential paths are rejected.",
+              args: {
+                pattern: tool.schema.string().describe("Regular expression to search for"),
+                path: tool.schema.string().optional().describe("File or directory relative to the workspace"),
+                include: tool.schema.string().optional().describe("Optional file-name glob, for example *.java"),
+              },
+              async execute(args) {
+                if (!url || !token) {
+                  throw new Error("workspace guard is not configured")
+                }
+                const response = await fetch(url + "/grep", {
+                  method: "POST",
+                  headers: {
+                    "content-type": "application/json",
+                    "x-workspace-token": token,
+                  },
+                  body: JSON.stringify({
+                    pattern: args.pattern,
+                    path: args.path,
+                    include: args.include,
+                  }),
+                })
+                const text = await response.text()
+                if (!response.ok) {
+                  throw new Error("grep rejected: " + text)
+                }
+                return text
+              },
+            })
+            """;
     }
 
     static String sandboxToolSource() {

@@ -179,6 +179,76 @@ class OpenCodeClientTest {
     }
 
     @Test
+    void writesTheWorkspaceGuardToolsIntoThePerRunHome() throws Exception {
+        Path home = tempDir.resolve("workspace-tool-home");
+
+        Path tools = OpenCodeClient.writeWorkspaceTools(home);
+
+        assertEquals(home.resolve(".config/opencode/tools"), tools);
+        String read = Files.readString(tools.resolve("sandbox_read.ts"));
+        String grep = Files.readString(tools.resolve("sandbox_grep.ts"));
+        assertTrue(read.contains("VIBECODE_WORKSPACE_BRIDGE_URL"));
+        assertTrue(read.contains("VIBECODE_WORKSPACE_BRIDGE_TOKEN"));
+        assertTrue(read.contains("/read"));
+        assertTrue(read.contains("x-workspace-token"));
+        assertTrue(read.contains("read rejected"));
+        assertTrue(grep.contains("/grep"));
+        assertTrue(grep.contains("x-workspace-token"));
+        assertTrue(grep.contains("grep rejected"));
+    }
+
+    @Test
+    void generatedWorkspaceToolsAreSyntacticallyValid() throws Exception {
+        Path home = tempDir.resolve("workspace-syntax-home");
+        Path tools = OpenCodeClient.writeWorkspaceTools(home);
+
+        for (String name : List.of("sandbox_read.ts", "sandbox_grep.ts")) {
+            Process process;
+            try {
+                process = new ProcessBuilder("node", "--check",
+                    tools.resolve(name).toString())
+                    .redirectErrorStream(true)
+                    .start();
+            } catch (IOException e) {
+                org.junit.jupiter.api.Assumptions.assumeTrue(false,
+                    "node is required to validate the generated tool");
+                return;
+            }
+            String output = new String(process.getInputStream().readAllBytes());
+            assertEquals(0, process.waitFor(), name + ": " + output);
+        }
+    }
+
+    @Test
+    void injectsTheWorkspaceBridgeUrlAndToken() throws Exception {
+        Path home = tempDir.resolve("workspace-env-home");
+        Path workspace = Files.createDirectories(tempDir.resolve("workspace-env"));
+        WorkspaceFileBridge workspaceBridge = new WorkspaceFileBridge(workspace);
+        workspaceBridge.start();
+        try {
+            Map<String, String> environment = new HashMap<>();
+            OpenCodeClient.configureChildEnvironment(
+                environment, home, home.resolve("opencode.json"), "password",
+                null, workspaceBridge);
+
+            assertEquals(workspaceBridge.baseUrl(),
+                environment.get("VIBECODE_WORKSPACE_BRIDGE_URL"));
+            assertEquals(workspaceBridge.token(),
+                environment.get("VIBECODE_WORKSPACE_BRIDGE_TOKEN"));
+
+            Map<String, String> stale = new HashMap<>();
+            stale.put("VIBECODE_WORKSPACE_BRIDGE_URL", "http://stale");
+            stale.put("VIBECODE_WORKSPACE_BRIDGE_TOKEN", "stale");
+            OpenCodeClient.configureChildEnvironment(
+                stale, home, home.resolve("opencode.json"), "password");
+            assertFalse(stale.containsKey("VIBECODE_WORKSPACE_BRIDGE_URL"));
+            assertFalse(stale.containsKey("VIBECODE_WORKSPACE_BRIDGE_TOKEN"));
+        } finally {
+            workspaceBridge.close();
+        }
+    }
+
+    @Test
     void generatedSandboxToolIsSyntacticallyValid() throws Exception {
         Path home = tempDir.resolve("syntax-home");
         Path tool = OpenCodeClient.writeSandboxTool(home);

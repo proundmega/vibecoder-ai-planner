@@ -196,43 +196,23 @@ public final class OpenCodeConfigWriter {
         }
         permission.put("edit", edit);
 
-        for (String tool : List.of("glob", "todowrite", "lsp")) {
+        for (String tool : List.of("glob", "todowrite")) {
             permission.put(tool, "allow");
         }
-        permission.put("grep", sandboxedBash ? "deny" : "allow");
+        // The built-in read/grep/lsp tools can bypass literal path denies or
+        // follow workspace symlinks. Replace read/grep with guarded wrappers and
+        // keep lsp disabled until it has the same path policy.
+        permission.put("read", "deny");
+        permission.put("grep", "deny");
+        permission.put("lsp", "deny");
+        permission.put("sandbox_read", "allow");
+        permission.put("sandbox_grep", "allow");
         permission.put("webfetch", "deny");
         permission.put("websearch", "deny");
         permission.put("task", "deny");
         permission.put("question", "deny");
         permission.put("doom_loop", "deny");
         permission.put("external_directory", "deny");
-
-        Map<String, Object> read = new LinkedHashMap<>();
-        read.put("*", "allow");
-        read.put("*.env", "deny");
-        read.put("*.env.*", "deny");
-        read.put(".env*", "deny");
-        read.put("**/.env*", "deny");
-        // Allow configuration examples after the .env deny but before the
-        // directory denies. Last match wins, so secrets/.env.example and
-        // .ssh/.env.example stay denied below.
-        read.put("*.env.example", "allow");
-        read.put("**/.env.example", "allow");
-        read.put("**/*.env.example", "allow");
-        // Credential-bearing paths are never needed to implement a ticket.
-        // The sandbox has no secrets, but host mode and repo files can.
-        // These also override the .env.example allow for matching directories.
-        for (String denied : List.of(
-            ".git/config", "**/.git/config",
-            "secrets/**", "**/secrets/**",
-            ".ssh/**", "**/.ssh/**",
-            ".aws/**", "**/.aws/**",
-            ".npmrc", "**/.npmrc",
-            ".netrc", "**/.netrc"
-        )) {
-            read.put(denied, "deny");
-        }
-        permission.put("read", read);
 
         Map<String, Object> bash = new LinkedHashMap<>();
         bash.put("*", "allow");

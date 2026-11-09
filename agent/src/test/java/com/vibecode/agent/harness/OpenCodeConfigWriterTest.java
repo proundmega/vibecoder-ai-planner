@@ -8,7 +8,6 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -61,22 +60,18 @@ class OpenCodeConfigWriterTest {
     }
 
     @Test
-    void deniesReadingCredentialBearingPaths() throws Exception {
+    void deniesBuiltInReadAndGrepAndAllowsGuardedTools() throws Exception {
         ProviderSettings provider = new ProviderSettings(
             "opencode-go", "oc_sk_secret", null, "beam-free", 4096);
 
         Path configFile = OpenCodeConfigWriter.write(tempDir, provider, config(null), tempDir);
-        JsonNode read = mapper.readTree(configFile.toFile())
-            .path("permission").path("read");
+        JsonNode permission = mapper.readTree(configFile.toFile()).path("permission");
 
-        for (String path : List.of(
-            ".git/config", "**/.git/config", "secrets/**", "**/secrets/**",
-            ".ssh/**", "**/.ssh/**", ".aws/**", "**/.aws/**",
-            ".npmrc", "**/.npmrc", ".netrc", "**/.netrc"
-        )) {
-            assertEquals("deny", read.path(path).asText(), path);
-        }
-        assertEquals("allow", read.path("**/.env.example").asText());
+        assertEquals("deny", permission.path("read").asText());
+        assertEquals("deny", permission.path("grep").asText());
+        assertEquals("deny", permission.path("lsp").asText());
+        assertEquals("allow", permission.path("sandbox_read").asText());
+        assertEquals("allow", permission.path("sandbox_grep").asText());
     }
 
     @Test
@@ -91,33 +86,18 @@ class OpenCodeConfigWriterTest {
         assertEquals("deny", root.path("permission").path("bash").asText());
         assertEquals("deny", root.path("permission").path("shell").asText());
         assertEquals("deny", root.path("permission").path("grep").asText());
+        assertEquals("deny", root.path("permission").path("read").asText());
         assertEquals("allow", root.path("permission").path("sandbox_bash").asText());
+        assertEquals("allow", root.path("permission").path("sandbox_grep").asText());
+        assertEquals("allow", root.path("permission").path("sandbox_read").asText());
 
         Path hostFile = OpenCodeConfigWriter.write(
             tempDir.resolve("host"), provider, config(null), false);
-        assertEquals("allow", mapper.readTree(hostFile.toFile())
-            .path("permission").path("grep").asText());
-    }
-
-    @Test
-    void envExamplesAreAllowedWithoutOverridingDirectoryDenies() throws Exception {
-        ProviderSettings provider = new ProviderSettings(
-            "opencode-go", "oc_sk_secret", null, "beam-free", 4096);
-
-        Path configFile = OpenCodeConfigWriter.write(tempDir, provider, config(null), tempDir);
-        JsonNode read = mapper.readTree(configFile.toFile())
-            .path("permission").path("read");
-
-        assertEquals("allow", read.path("**/.env.example").asText());
-        assertEquals("deny", read.path("**/secrets/**").asText());
-        assertEquals("deny", read.path("**/.ssh/**").asText());
-
-        // The map is serialized in insertion order (last match wins), so the
-        // example allow must precede the directory denies.
-        List<String> order = new ArrayList<>();
-        read.fieldNames().forEachRemaining(order::add);
-        assertTrue(order.indexOf("**/.env.example") < order.indexOf("**/secrets/**"), order.toString());
-        assertTrue(order.indexOf("**/.env.example") < order.indexOf("**/.ssh/**"), order.toString());
+        JsonNode host = mapper.readTree(hostFile.toFile()).path("permission");
+        assertEquals("deny", host.path("grep").asText());
+        assertEquals("deny", host.path("read").asText());
+        assertEquals("allow", host.path("sandbox_grep").asText());
+        assertEquals("allow", host.path("sandbox_read").asText());
     }
 
     @Test
