@@ -161,8 +161,9 @@ Verification and harness children receive proxy/registry variables only after
 URL userinfo is stripped, and `MAVEN_OPTS` is not inherited. Authenticated
 enterprise proxies must therefore be configured at the network/container layer
 rather than through supervisor credentials. Private npm registries follow the
-same rule: mount a `.npmrc` into the sandbox or route through a registry proxy;
-do not put registry tokens in the supervisor environment.
+same rule: prefer a pull-only registry proxy for untrusted sandboxes; a mounted
+`.npmrc` must be read-only and pull-only, and registry tokens must not enter the
+supervisor environment.
 
 ### Runtime Flags
 

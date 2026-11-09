@@ -274,8 +274,9 @@ public class WorkspaceManager {
     }
 
     /**
-     * Build a supervisor-owned index from HEAD, apply the worktree on top of
-     * it, and return a diff computed from index blobs.
+     * Build a supervisor-owned index from the pinned base commit (falling back
+     * to HEAD only when no base commit was pinned), apply the worktree on top
+     * of it, and return a diff computed from index blobs.
      *
      * <p>This deliberately ignores the agent-controlled {@code .git/index}:
      * {@code assume-unchanged}, {@code skip-worktree} and index-only cache
@@ -293,8 +294,8 @@ public class WorkspaceManager {
         String base = baseCommitOrHead();
 
         // The object store is agent-writable. Verify integrity and ignore
-        // replacement refs before reading the base tree. HARNESS_FSCK=false is
-        // available for very large repositories where the full scan is too
+        // replacement refs before reading the base tree. HARNESS_FSCK=false/0
+        // is available for very large repositories where the full scan is too
         // expensive; it trades integrity checking for throughput.
         checkObjectIntegrity(System.getenv("HARNESS_FSCK"));
         Path index = Files.createTempFile("vibecode-harness-index-", ".idx");
@@ -684,7 +685,7 @@ public class WorkspaceManager {
         if (fsckEnabled(value)) {
             runGit("fsck", "--strict", "--no-progress", "--no-reflogs");
         } else {
-            log.warn("HARNESS_FSCK=false: skipping git object-integrity checks for {}; "
+            log.warn("HARNESS_FSCK=false/0: skipping git object-integrity checks for {}; "
                 + "use only for trusted, very large repositories", repoDir);
         }
     }
