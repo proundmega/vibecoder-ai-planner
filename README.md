@@ -160,7 +160,10 @@ The harness requires OpenCode 1.x (the Docker image pins `1.19.5`). A local
 Verification and harness children receive proxy/registry variables only after
 URL userinfo is stripped, and `MAVEN_OPTS` is not inherited. Authenticated
 enterprise proxies must therefore be configured at the network/container layer
-rather than through supervisor credentials.
+rather than through supervisor credentials. Private npm registries follow the
+same rule: prefer a pull-only registry proxy for untrusted sandboxes; a mounted
+`.npmrc` must be read-only and pull-only, and registry tokens must not enter the
+supervisor environment.
 
 ### Runtime Flags
 

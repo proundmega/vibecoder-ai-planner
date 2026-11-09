@@ -274,8 +274,9 @@ public class WorkspaceManager {
     }
 
     /**
-     * Build a supervisor-owned index from HEAD, apply the worktree on top of
-     * it, and return a diff computed from index blobs.
+     * Build a supervisor-owned index from the pinned base commit (falling back
+     * to HEAD only when no base commit was pinned), apply the worktree on top
+     * of it, and return a diff computed from index blobs.
      *
      * <p>This deliberately ignores the agent-controlled {@code .git/index}:
      * {@code assume-unchanged}, {@code skip-worktree} and index-only cache
@@ -285,17 +286,18 @@ public class WorkspaceManager {
         if (dryRun) {
             return DiffSummary.empty();
         }
+        if (repoDir == null || !Files.exists(repoDir)) {
+            throw new IOException("Workspace is not initialized");
+        }
         hardenGitRepository();
         discardStaged();
         String base = baseCommitOrHead();
 
         // The object store is agent-writable. Verify integrity and ignore
-        // replacement refs before reading the base tree. HARNESS_FSCK=false is
-        // available for very large repositories where the full scan is too
+        // replacement refs before reading the base tree. HARNESS_FSCK=false/0
+        // is available for very large repositories where the full scan is too
         // expensive; it trades integrity checking for throughput.
-        if (fsckEnabled()) {
-            runGit("fsck", "--strict", "--no-progress", "--no-reflogs");
-        }
+        checkObjectIntegrity(System.getenv("HARNESS_FSCK"));
         Path index = Files.createTempFile("vibecode-harness-index-", ".idx");
         Files.deleteIfExists(index);
         this.supervisorIndex = index;
@@ -530,13 +532,15 @@ public class WorkspaceManager {
         if (lower.equals(".git") || lower.startsWith(".git/") || lower.contains("/.git/")) {
             return true;
         }
-        if (lower.startsWith(".github/") || lower.contains("/.github/")
+        if (lower.equals(".github") || lower.endsWith("/.github")
+            || lower.startsWith(".github/") || lower.contains("/.github/")
             || lower.equals(".gitlab-ci.yml") || lower.startsWith(".circleci/")
             || lower.equals("azure-pipelines.yml") || lower.equals("jenkinsfile")
             || lower.endsWith("/jenkinsfile")) {
             return true;
         }
-        if (lower.startsWith("secrets/") || lower.contains("/secrets/")) {
+        if (lower.equals("secrets") || lower.endsWith("/secrets")
+            || lower.startsWith("secrets/") || lower.contains("/secrets/")) {
             return true;
         }
         String name = lower.substring(lower.lastIndexOf('/') + 1);
@@ -677,8 +681,16 @@ public class WorkspaceManager {
         }
     }
 
-    private static boolean fsckEnabled() {
-        String value = System.getenv("HARNESS_FSCK");
+    void checkObjectIntegrity(String value) throws IOException {
+        if (fsckEnabled(value)) {
+            runGit("fsck", "--strict", "--no-progress", "--no-reflogs");
+        } else {
+            log.warn("HARNESS_FSCK=false/0: skipping git object-integrity checks for {}; "
+                + "use only for trusted, very large repositories", repoDir);
+        }
+    }
+
+    static boolean fsckEnabled(String value) {
         return value == null || value.isBlank()
             || !("false".equalsIgnoreCase(value.trim()) || "0".equals(value.trim()));
     }
@@ -880,98 +892,6 @@ public class WorkspaceManager {
         return helperScript;
     }
 
-    /**
-     * Collect the workspace changes as a summary the supervisor can inspect
-     * before committing. The harness is never trusted to report its own diff.
-     *
-     * <p>{@code -uall -z} is essential: without it git collapses untracked
-     * directories into a single entry such as {@code ?? .github/}, which would
-     * let the real files bypass every protected-path and size check.</p>
-     *
-     * <p>This method is a non-publishing, test-only convenience view and still
-     * reflects the current index/HEAD. Harness publishing must use
-     * {@link #stageFreshDiff()} so the base commit and guarded tree are pinned.</p>
-     *
-     * @deprecated use {@link #stageFreshDiff()} for any publishing decision
-     */
-    @Deprecated
-    public DiffSummary collectDiff() throws IOException {
-        if (repoDir == null || !Files.exists(repoDir)) {
-            return DiffSummary.empty();
-        }
-
-        // --no-renames is essential: with rename detection a protected old path
-        // (Jenkinsfile, .env, .github/...) disappears from the changed-file list
-        // and only the new, unprotected path remains.
-        String porcelain = runGitCommand(
-            "status", "--porcelain", "-z", "-uall", "--no-renames");
-        Map<String, String> indexBlobs = indexBlobs();
-        Map<String, String> headBlobs = headBlobs();
-        Map<String, int[]> stagedStats = parseNumstat(
-            runGitCommandAllowFailure("diff", "--cached", "--numstat", "-z", "--no-renames"));
-        Map<String, int[]> unstagedStats = parseNumstat(
-            runGitCommandAllowFailure("diff", "--numstat", "-z", "--no-renames"));
-        List<DiffSummary.ChangedFile> files = new ArrayList<>();
-
-        int additions = 0;
-        int deletions = 0;
-        long bytes = 0;
-
-        String[] entries = porcelain.split("\u0000", -1);
-        for (String entry : entries) {
-            if (entry == null || entry.length() < 4) {
-                continue;
-            }
-            String code = entry.substring(0, 2);
-            String path = entry.substring(3);
-            if (path.isBlank()) {
-                continue;
-            }
-
-            String status;
-            if (code.contains("?")) {
-                status = "added";
-            } else if (code.contains("A")) {
-                status = "added";
-            } else if (code.contains("D")) {
-                status = "deleted";
-            } else {
-                status = "modified";
-            }
-            files.add(new DiffSummary.ChangedFile(path, status));
-
-            boolean staged = code.charAt(0) != ' ' && code.charAt(0) != '?';
-            Map<String, int[]> stats = staged ? stagedStats : unstagedStats;
-            int[] stat = stats.get(path);
-
-            if ("deleted".equals(status)) {
-                if (stat != null && stat[1] >= 0) {
-                    deletions += stat[1];
-                } else {
-                    deletions += countBlobLines(headBlobs.get(path));
-                }
-                continue;
-            }
-
-            if (stat != null && stat[0] >= 0 && stat[1] >= 0) {
-                additions += stat[0];
-                deletions += stat[1];
-            } else if (staged && indexBlobs.containsKey(path)) {
-                additions += countBlobLines(indexBlobs.get(path));
-            } else {
-                additions += countLines(repoDir.resolve(path));
-            }
-
-            if (staged && indexBlobs.containsKey(path)) {
-                bytes += blobSize(indexBlobs.get(path));
-            } else {
-                bytes += fileSize(repoDir.resolve(path));
-            }
-        }
-
-        return new DiffSummary(files, additions, deletions, bytes);
-    }
-
     private DiffSummary diffFromTree(String base, String tree) throws IOException {
         String changed = runGitCommand(
             "diff-tree", "-r", "-z", "--no-renames", "--name-status", base, tree);
@@ -1018,14 +938,6 @@ public class WorkspaceManager {
         }
 
         return new DiffSummary(files, additions, deletions, bytes);
-    }
-
-    private Map<String, String> indexBlobs() throws IOException {
-        return parseLsFiles(runGitWithIndexOrWorking("ls-files", "-s", "-z"));
-    }
-
-    private Map<String, String> headBlobs() throws IOException {
-        return parseLsFiles(runGitCommand("ls-tree", "-z", "-r", baseCommitOrHead()));
     }
 
     private Map<String, String> treeBlobs(String treeish) throws IOException {
@@ -1184,54 +1096,12 @@ public class WorkspaceManager {
         }
     }
 
-    private long fileSize(Path file) {
-        if (file == null || Files.isSymbolicLink(file)
-            || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
-            return 0;
-        }
-        try {
-            return Files.size(file);
-        } catch (IOException e) {
-            return 0;
-        }
-    }
-
     private String runGitCommandAllowFailure(String... args) {
         try {
             return runGitCommand(args);
         } catch (IOException e) {
             log.debug("git {} unavailable: {}", redact(String.join(" ", args)), e.getMessage());
             return "";
-        }
-    }
-
-    /**
-     * Count newlines without assuming UTF-8 and without loading the file into
-     * memory. Binary files and huge files are bounded; an {@link IOException}
-     * must never abort a publish because of an untracked fixture.
-     */
-    private int countLines(Path file) {
-        if (file == null || Files.isSymbolicLink(file) || !Files.isRegularFile(file)) {
-            return 0;
-        }
-        try (InputStream input = Files.newInputStream(file)) {
-            byte[] buffer = new byte[8_192];
-            int newlines = 0;
-            int read;
-            while ((read = input.read(buffer)) != -1) {
-                for (int i = 0; i < read; i++) {
-                    if (buffer[i] == '\n') {
-                        newlines++;
-                        if (newlines > MAX_COUNTED_LINES) {
-                            return MAX_COUNTED_LINES + 1;
-                        }
-                    }
-                }
-            }
-            return newlines;
-        } catch (IOException | RuntimeException e) {
-            log.debug("Could not count lines in {}: {}", file, e.getMessage());
-            return 0;
         }
     }
 

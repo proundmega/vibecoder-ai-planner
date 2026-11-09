@@ -183,6 +183,12 @@ handshakes and CONNECT :80. TLS renegotiation and the encrypted inner Host are
 D16. Do not enable Docker mode for untrusted repos until D14 (the
 descendant-sweep fork race) is closed, and do not treat the allowlist as a
 hard host boundary until D16 is closed.
+Verification and harness children receive proxy/registry variables only after
+URL userinfo is stripped, and `MAVEN_OPTS` is not inherited. Authenticated
+enterprise proxies and private npm registries must be configured at the
+network/container layer, not through supervisor credentials: prefer a pull-only
+registry proxy for untrusted sandboxes, and make any mounted `.npmrc`
+read-only/pull-only.
 The prompt labels ticket/planning/repository content as untrusted and states
 that supervisor rules win; the built-in `read`/`grep`/`lsp` tools are disabled,
 `sandbox_read`/`sandbox_grep` resolve `toRealPath()` and reject any target

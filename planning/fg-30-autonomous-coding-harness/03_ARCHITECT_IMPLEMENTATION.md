@@ -255,7 +255,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 ### Step 7: Publishing — extend `WorkspaceManager` + reuse `GitHubService`
 
-- `collectDiff()` → list of changed/added/deleted files + line stats (`git status --porcelain`, `git diff`).
+- `stageFreshDiff()` → list of changed/added/deleted files + line stats from a supervisor-owned index (not the agent-controlled local `HEAD`/index).
 - Protected-path check (Phase 1 hardcoded: `.env*`, `**/secrets/**`, `**/*.pem`, `**/*.key`,
   `**/id_rsa*`, `.git/**`, `.github/workflows/**`, `backend/src/migrations/**`,
   `backend/src/middleware/auth*`, `backend/src/services/UserService.js`,
@@ -466,7 +466,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 - Add harness env fields + getters; include in `toString` without secrets.
 
 #### `agent/src/main/java/com/vibecode/agent/service/WorkspaceManager.java` (MODIFY)
-- Add `getRepoDir()`, `collectDiff()`, `runCommand()` helper (or keep commands in VerificationRunner).
+- Add `getRepoDir()`, `stageFreshDiff()`, `runCommand()` helper (or keep commands in VerificationRunner).
 - **Replace token-in-URL clone** with a one-shot `http.extraHeader`; do not persist the PAT in
   `.git/config`; remove/reset `origin` before the harness starts; push with the same header.
 - Add `WorkspaceSanitizer` invocation before the harness starts.
