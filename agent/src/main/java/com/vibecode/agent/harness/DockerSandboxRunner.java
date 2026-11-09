@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class DockerSandboxRunner implements SandboxRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DockerSandboxRunner.class);
+    private static final SecretRedactor LOG_REDACTOR = SecretRedactor.patternsOnly();
     private static final Duration CREATE_TIMEOUT = Duration.ofSeconds(90);
     private static final Duration INSPECT_TIMEOUT = Duration.ofSeconds(15);
     private static final Duration COPY_TIMEOUT = Duration.ofSeconds(60);
@@ -374,7 +375,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 gone = true;
             } else {
                 log.warn("Could not destroy sandbox {} (rm exit {}, inspect exit {}): {}",
-                    name, removed.exitCode(), inspect.exitCode(), combined.trim());
+                    name, removed.exitCode(), inspect.exitCode(),
+                    LOG_REDACTOR.redact(combined.trim()));
             }
         }
         // The sandbox may still exist; always attempt to remove its egress
@@ -402,7 +404,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
             DockerResult result = runDocker(command, CONTROL_TIMEOUT, CONTROL_OUTPUT_BYTES);
             if (result.exitCode() != 0 && !result.timedOut()) {
                 log.debug("Sandbox control command failed: {} -> {}",
-                    command, result.output());
+                    command, LOG_REDACTOR.redact(result.output()));
             }
         } catch (RuntimeException e) {
             log.debug("Sandbox control command failed: {}: {}", command, e.getMessage());

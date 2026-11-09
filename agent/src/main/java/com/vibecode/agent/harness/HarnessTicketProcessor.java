@@ -11,6 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -65,6 +67,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private final VerificationRunner verificationRunner;
     private final PublishingGuard publishingGuard;
     private final SecretLeakGuard secretLeakGuard;
+    private final SecretRedactor redactor;
     private final PromptBuilder promptBuilder = new PromptBuilder();
     private final Map<Long, FailureState> failures = new ConcurrentHashMap<>();
     private final int maxAttempts = intEnv(
@@ -196,6 +199,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         this.verificationRunner = verificationRunner;
         this.publishingGuard = publishingGuard;
         this.secretLeakGuard = new SecretLeakGuard(knownSecrets(provider, githubToken));
+        this.redactor = new SecretRedactor(redactionSecrets(provider, githubToken));
     }
 
     private static List<String> knownSecrets(ProviderSettings provider, String githubToken) {
@@ -204,6 +208,18 @@ public final class HarnessTicketProcessor implements TicketWorker {
             secrets.add(provider.apiKey());
         }
         secrets.add(githubToken);
+        return secrets;
+    }
+
+    /**
+     * Every value the supervisor must keep out of persisted output: the
+     * configured provider/GitHub secrets plus environment-supplied ones.
+     */
+    private static List<String> redactionSecrets(ProviderSettings provider, String githubToken) {
+        List<String> secrets = new ArrayList<>(knownSecrets(provider, githubToken));
+        secrets.add(System.getenv("AI_API_KEY"));
+        secrets.add(System.getenv("GITHUB_TOKEN"));
+        secrets.add(System.getenv("AGENT_API_KEY"));
         return secrets;
     }
 
@@ -604,7 +620,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             return;
         }
 
-        log.info("Harness processing ticket: {} - {}", ticket.getId(), ticket.getTitle());
+        log.info("Harness processing ticket: {} - {}",
+            ticket.getId(), redactor.redact(ticket.getTitle()));
 
         Ticket pickedUp = pickUpTicket(ticket.getId());
         if (pickedUp == null) {
@@ -618,7 +635,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         postMessage(pickedUp.getId(), "update", "Started working on: " + pickedUp.getTitle());
 
-        String branchName = config.getGitHubBranchName(pickedUp.getId(), pickedUp.getTitle());
+        // Redact before slugification: the slug lowercases and strips
+        // punctuation, so redacting afterwards would turn a GitHub token into
+        // a non-matching "ghp-..." string. The branch is persisted by the
+        // backend, pushed and logged, so it must not carry the raw title.
+        String branchName = config.getGitHubBranchName(
+            pickedUp.getId(), redactor.redact(pickedUp.getTitle()));
         if (!startDurableRun(pickedUp, branchName)) {
             // A live lease or published evidence means this ticket must not be
             // run again automatically. Leave recovery to the operator/reaper.
@@ -796,8 +818,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 if (!assertLeaseHeld(pickedUp.getId())) {
                     return;
                 }
-                String commitSha = workspace.commitAndPushStaged(
-                    "feat: " + pickedUp.getTitle(), branchName);
+                String publishTitle = redactor.redact("feat: " + pickedUp.getTitle());
+                String commitSha = workspace.commitAndPushStaged(publishTitle, branchName);
                 published = true;
                 publishedHeadSha = commitSha;
                 recordPublishSafely(commitSha, null);
@@ -805,7 +827,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     return;
                 }
                 String prUrl = gitHubService.createPullRequest(
-                    "feat: " + pickedUp.getTitle(),
+                    publishTitle,
                     buildPrBody(pickedUp, branchName, commitSha, diff, verification),
                     branchName,
                     "main"
@@ -989,8 +1011,20 @@ public final class HarnessTicketProcessor implements TicketWorker {
         String message = redactWithProvider(failure.getMessage() == null
             ? failure.getClass().getSimpleName()
             : failure.getMessage());
-        log.error("Harness failed for ticket {}: {}", ticketId, message, failure);
+        log.error("Harness failed for ticket {}: {}", ticketId, message);
+        if (log.isDebugEnabled()) {
+            // The throwable is not passed to SLF4J: its message and causes are
+            // another persisted-log boundary and must be redacted too.
+            log.debug("Harness failure stack for ticket {}:\n{}", ticketId,
+                redactWithProvider(stackTrace(failure)));
+        }
         failAndRelease(ticketId, "Harness failed: " + message);
+    }
+
+    private static String stackTrace(Throwable failure) {
+        StringWriter writer = new StringWriter();
+        failure.printStackTrace(new PrintWriter(writer));
+        return writer.toString();
     }
 
     /**
@@ -1396,7 +1430,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
     private void postMessage(Long ticketId, String type, String content) {
         try {
-            TicketMessage ignored = apiService.postMessage(ticketId, type, truncate(content));
+            // Redact before storage: ticket messages are persisted by the
+            // backend and may contain bounded sandbox/verification output.
+            String safe = truncate(redactor.redact(content));
+            TicketMessage ignored = apiService.postMessage(ticketId, type, safe);
             if (ignored == null) {
                 log.debug("Ticket message returned no body for ticket {}", ticketId);
             }
@@ -1473,38 +1510,13 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
 
         body.append("\n---\nGenerated by the Vibecode OpenCode harness (supervisor-owned publishing).\n");
-        return body.toString();
-    }
-
-    private static String redact(String value) {
-        if (value == null) {
-            return "";
-        }
-        String redacted = value;
-        String key = System.getenv("AI_API_KEY");
-        if (key != null && !key.isBlank()) {
-            redacted = redacted.replace(key, "[REDACTED]");
-        }
-        String github = System.getenv("GITHUB_TOKEN");
-        if (github != null && !github.isBlank()) {
-            redacted = redacted.replace(github, "[REDACTED]");
-        }
-        String agentKey = System.getenv("AGENT_API_KEY");
-        if (agentKey != null && !agentKey.isBlank()) {
-            redacted = redacted.replace(agentKey, "[REDACTED]");
-        }
-        return redacted;
+        // The PR body is stored on the remote and may quote ticket content or
+        // command text; keep the same redaction boundary as ticket messages.
+        return redactor.redact(body.toString());
     }
 
     private String redactWithProvider(String value) {
-        String redacted = redact(value);
-        if (provider != null && provider.hasApiKey()) {
-            redacted = redacted.replace(provider.apiKey(), "[REDACTED]");
-        }
-        if (githubToken != null && !githubToken.isBlank()) {
-            redacted = redacted.replace(githubToken, "[REDACTED]");
-        }
-        return redacted;
+        return redactor.redact(value);
     }
 
     private static String truncate(String value) {

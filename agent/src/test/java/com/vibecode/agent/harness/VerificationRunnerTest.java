@@ -59,6 +59,17 @@ class VerificationRunnerTest {
     }
 
     @Test
+    void redactsCredentialPatternsFromCapturedOutput() {
+        String token = "ghp_abcdefghijklmnopqrstuvwxyz012345";
+        List<VerificationResult> results = new VerificationRunner()
+            .run(tempDir, List.of("echo token=" + token), Duration.ofSeconds(20));
+
+        assertEquals(1, results.size());
+        assertFalse(results.get(0).output().contains(token), results.get(0).output());
+        assertTrue(results.get(0).output().contains("[REDACTED]"), results.get(0).output());
+    }
+
+    @Test
     void truncatesOutputToLast8192Chars() throws IOException {
         Path overflow = tempDir.resolve("overflow.txt");
         Files.writeString(overflow, "x".repeat(20_000));
@@ -279,7 +290,8 @@ class VerificationRunnerTest {
 
             @Override
             public ExecResult exec(SandboxHandle ignored, ExecRequest request) throws IOException {
-                throw new IOException("sandbox is gone");
+                throw new IOException(
+                    "sandbox is gone ghp_abcdefghijklmnopqrstuvwxyz012345");
             }
 
             @Override
@@ -311,5 +323,8 @@ class VerificationRunnerTest {
         assertFalse(results.get(0).passed());
         assertEquals(-1, results.get(0).exitCode());
         assertTrue(results.get(0).output().contains("sandbox is gone"));
+        assertFalse(results.get(0).output()
+            .contains("ghp_abcdefghijklmnopqrstuvwxyz012345"));
+        assertTrue(results.get(0).output().contains("[REDACTED]"));
     }
 }

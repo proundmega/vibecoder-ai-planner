@@ -41,14 +41,58 @@ class SecretLeakGuardTest {
     void blocksHighConfidenceCredentialFormats() {
         assertFinding("a private key",
             newBlob("key.pem", "-----BEGIN RSA PRIVATE KEY-----"));
+        assertFinding("a private key",
+            newBlob("key.asc", "-----BEGIN PGP PRIVATE KEY BLOCK-----"));
+        assertFinding("a private key",
+            newBlob("key.ssh2", "---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----"));
         assertFinding("a GitHub token",
             newBlob("ci.yml", "token: ghp_abcdefghijklmnopqrstuvwxyz0123456789"));
         assertFinding("a GitHub fine-grained token",
             newBlob("ci.yml", "token: github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz"));
         assertFinding("an AWS access key",
             newBlob(".env.example", "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE"));
+        assertFinding("an AWS access key",
+            newBlob(".env.example", "AWS_ACCESS_KEY_ID=ASIAIOSFODNN7EXAMPLE"));
+        assertFinding("a Slack token",
+            newBlob("ci.yml", "SLACK_TOKEN=xoxc-123456789012-abcdefghijkl"));
+        assertFinding("a Slack token",
+            newBlob("ci.yml", "SLACK_TOKEN=xoxd-123456789012-abcdefghijkl"));
         assertFinding("an OpenAI-style key",
             newBlob("ci.yml", "api_key: sk-abcdefghijklmnopqrstuvwx"));
+        assertFinding("a JWT",
+            newBlob("ci.yml", "token: eyJhbGciOiJIUzI1NiJ9."
+                + "eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature1234567890"));
+    }
+
+    @Test
+    void blocksNewPgpAndSsh2PrivateKeyBlocks() {
+        String oldPgp = """
+            -----BEGIN PGP PRIVATE KEY BLOCK-----
+            OLDKEYMATERIAL
+            -----END PGP PRIVATE KEY BLOCK-----
+            """;
+        String newPgp = """
+            -----BEGIN PGP PRIVATE KEY BLOCK-----
+            NEWKEYMATERIAL
+            -----END PGP PRIVATE KEY BLOCK-----
+            """;
+        assertEquals("a private key block", guard.findLeak(
+            modifiedBlob("key.asc", oldPgp + newPgp, oldPgp)));
+        assertNull(guard.findLeak(modifiedBlob("key.asc", oldPgp + oldPgp, oldPgp)));
+
+        String oldSsh2 = """
+            ---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----
+            OLDKEYMATERIAL
+            ---- END SSH2 ENCRYPTED PRIVATE KEY ----
+            """;
+        String newSsh2 = """
+            ---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----
+            NEWKEYMATERIAL
+            ---- END SSH2 ENCRYPTED PRIVATE KEY ----
+            """;
+        assertEquals("a private key block", guard.findLeak(
+            modifiedBlob("key.ssh2", oldSsh2 + newSsh2, oldSsh2)));
+        assertNull(guard.findLeak(modifiedBlob("key.ssh2", oldSsh2 + oldSsh2, oldSsh2)));
     }
 
     @Test

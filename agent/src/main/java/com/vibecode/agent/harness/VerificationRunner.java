@@ -32,6 +32,7 @@ public class VerificationRunner {
      * of a UTF-8 sequence cannot shorten the visible output.
      */
     private static final int MAX_CAPTURE_BYTES = MAX_OUTPUT_CHARS * 4;
+    private static final SecretRedactor REDACTOR = SecretRedactor.patternsOnly();
 
     private final HarnessConfig config;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -230,7 +231,8 @@ public class VerificationRunner {
                     result.timedOut()
                 ));
             } catch (IOException e) {
-                results.add(new VerificationResult(trimmed, -1, e.getMessage(), false));
+                results.add(new VerificationResult(
+                    trimmed, -1, redactedMessage(e), false));
             }
         }
         return results;
@@ -238,9 +240,16 @@ public class VerificationRunner {
 
     private static String truncateOutput(String text) {
         String value = text == null ? "" : text;
+        // Redact before truncating so a credential that straddles the tail
+        // boundary is not partially exposed.
+        value = REDACTOR.redact(value);
         return value.length() > MAX_OUTPUT_CHARS
             ? value.substring(value.length() - MAX_OUTPUT_CHARS)
             : value;
+    }
+
+    private static String redactedMessage(Throwable failure) {
+        return REDACTOR.redact(failure == null ? "" : failure.getMessage());
     }
 
     private VerificationResult runOne(Path workspace, String command, Duration timeout) {
@@ -262,7 +271,7 @@ public class VerificationRunner {
                 try (InputStream input = finalProcess.getInputStream()) {
                     input.transferTo(output);
                 } catch (IOException e) {
-                    log.debug("Verification output reader stopped: {}", e.getMessage());
+                    log.debug("Verification output reader stopped: {}", redactedMessage(e));
                 }
             }, "verify-output");
             reader.setDaemon(true);
@@ -279,17 +288,16 @@ public class VerificationRunner {
             reader.join(5_000);
 
             String text = output.text();
-            if (text.length() > MAX_OUTPUT_CHARS) {
-                text = text.substring(text.length() - MAX_OUTPUT_CHARS);
-            }
             return new VerificationResult(
                 command,
                 exitCode,
-                text,
+                truncateOutput(text),
                 !finished
             );
         } catch (IOException e) {
-            return new VerificationResult(command, -1, e.getMessage(), false);
+            // An exception message is another capture path; never let it bypass
+            // the same redaction as the normal output.
+            return new VerificationResult(command, -1, redactedMessage(e), false);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             if (process != null) {

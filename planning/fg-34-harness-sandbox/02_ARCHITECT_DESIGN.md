@@ -105,6 +105,7 @@ Slice 2 implements this with an internal Docker network whose only peer is a har
 
 - Compute the diff inside the sandbox but validate it outside against the expected branch/base.
 - Copy test output and logs through a bounded artifact directory.
+- Redact configured secrets and high-confidence credential formats before persistence (branch names, ticket messages, run errors, commit/PR titles and PR bodies); scope is the OpenCode supervisor path (legacy processors and external log shipping are D19). Treat redaction as a storage guard, not a sandbox boundary.
 - Verify no symlinks or paths escape the workspace.
 - Destroy the sandbox even on failure; retain only artifacts.
 

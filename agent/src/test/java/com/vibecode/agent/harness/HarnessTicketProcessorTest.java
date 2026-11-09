@@ -6,11 +6,15 @@ import com.vibecode.agent.model.TicketMessage;
 import com.vibecode.agent.service.ApiService;
 import com.vibecode.agent.service.GitHubService;
 import com.vibecode.agent.service.WorkspaceManager;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -454,6 +458,74 @@ class HarnessTicketProcessorTest {
     }
 
     @Test
+    void pullRequestBodyIsRedactedBeforePublishing() throws Exception {
+        Ticket ticket = ticket();
+        ticket.setDescription("Do not leak ghp_abcdefghijklmnopqrstuvwxyz012345 "
+            + "or password=super-secret");
+        when(apiService.pickUpTicket(1L)).thenReturn(ticket);
+
+        processor.processTicket(ticket);
+
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(gitHubService).createPullRequest(
+            anyString(), body.capture(), anyString(), anyString());
+        assertFalse(body.getValue().contains("ghp_abcdefghijklmnopqrstuvwxyz012345"),
+            "Leaked GitHub-shaped token into the PR body");
+        assertFalse(body.getValue().contains("super-secret"),
+            "Leaked password into the PR body");
+        assertTrue(body.getValue().contains("Add filtering"), body.getValue());
+    }
+
+    @Test
+    void pullRequestTitleAndCommitMessageAreRedactedBeforePublishing() throws Exception {
+        String token = "ghp_abcdefghijklmnopqrstuvwxyz012345";
+        Ticket ticket = ticket();
+        ticket.setTitle("Add filtering " + token);
+        when(apiService.pickUpTicket(1L)).thenReturn(ticket);
+        when(config.getGitHubBranchName(1L, "Add filtering [REDACTED]"))
+            .thenReturn("vibecode/ticket-1-redacted");
+
+        processor.processTicket(ticket);
+
+        ArgumentCaptor<String> title = ArgumentCaptor.forClass(String.class);
+        verify(gitHubService).createPullRequest(
+            title.capture(), anyString(), anyString(), anyString());
+        assertFalse(title.getValue().contains(token), "Leaked token into the PR title");
+        assertTrue(title.getValue().contains("Add filtering"), title.getValue());
+
+        ArgumentCaptor<String> commitMessage = ArgumentCaptor.forClass(String.class);
+        verify(workspace).commitAndPushStaged(commitMessage.capture(), anyString());
+        assertFalse(commitMessage.getValue().contains(token),
+            "Leaked token into the commit message");
+    }
+
+    @Test
+    void branchNameIsDerivedFromTheRedactedTitle() throws Exception {
+        String token = "ghp_abcdefghijklmnopqrstuvwxyz012345";
+        Ticket ticket = ticket();
+        ticket.setTitle("Add filtering " + token);
+        when(apiService.pickUpTicket(1L)).thenReturn(ticket);
+        when(config.getGitHubBranchName(1L, "Add filtering [REDACTED]"))
+            .thenReturn("vibecode/ticket-1-add-filtering-redacted");
+
+        processor.processTicket(ticket);
+
+        verify(config).getGitHubBranchName(1L, "Add filtering [REDACTED]");
+        verify(apiService).startHarnessRun(
+            1L, "vibecode/ticket-1-add-filtering-redacted",
+            null, "opencode-go", "beam-free", 1);
+
+        ArgumentCaptor<String> pushedBranch = ArgumentCaptor.forClass(String.class);
+        verify(workspace).commitAndPushStaged(anyString(), pushedBranch.capture());
+        assertFalse(pushedBranch.getValue().contains(token), pushedBranch.getValue());
+
+        ArgumentCaptor<String> prBranch = ArgumentCaptor.forClass(String.class);
+        verify(gitHubService).createPullRequest(
+            anyString(), anyString(), prBranch.capture(), anyString());
+        assertFalse(prBranch.getValue().contains(token), prBranch.getValue());
+    }
+
+    @Test
     void happyPathPromptsVerifiesPublishesAndSetsReview() throws Exception {
         processor.processTicket(ticket());
 
@@ -566,6 +638,55 @@ class HarnessTicketProcessorTest {
     }
 
     @Test
+    void durableRunErrorIsRedactedBeforeFinishing() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        String token = "ghp_abcdefghijklmnopqrstuvwxyz012345";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        doThrow(new IOException("github failed with " + token))
+            .when(gitHubService).createPullRequest(
+                anyString(), anyString(), anyString(), anyString());
+
+        processor.processTicket(ticket());
+
+        ArgumentCaptor<String> error = ArgumentCaptor.forClass(String.class);
+        verify(apiService).finishHarnessRun(
+            eq("run-1"), eq("failed"), error.capture(), eq("abc1234"), isNull());
+        assertFalse(error.getValue().contains(token), error.getValue());
+        assertTrue(error.getValue().contains("[REDACTED]"), error.getValue());
+    }
+
+    @Test
+    void processingLogDoesNotContainTheRawTicketTitle() throws Exception {
+        String token = "ghp_abcdefghijklmnopqrstuvwxyz012345";
+        Ticket ticket = ticket();
+        ticket.setTitle("Add filtering " + token);
+        when(apiService.pickUpTicket(1L)).thenReturn(ticket);
+        when(config.getGitHubBranchName(1L, "Add filtering [REDACTED]"))
+            .thenReturn("vibecode/ticket-1-redacted");
+
+        Logger logger = (Logger) LoggerFactory.getLogger(HarnessTicketProcessor.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            processor.processTicket(ticket);
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertTrue(appender.list.stream()
+            .anyMatch(event -> event.getFormattedMessage().contains("[REDACTED]")));
+        for (ILoggingEvent event : appender.list) {
+            assertFalse(event.getFormattedMessage().contains(token),
+                event.getFormattedMessage());
+        }
+    }
+
+    @Test
     void postPublishFailureAfterASuccessfulPrSendsBothEvidenceFields() throws Exception {
         String branch = "vibecode/ticket-1-add-filtering";
         when(apiService.startHarnessRun(
@@ -626,7 +747,12 @@ class HarnessTicketProcessorTest {
     void verificationFailureOutputIsRedactedBeforePosting() throws Exception {
         when(verificationRunner.run(any(), anyList(), any()))
             .thenReturn(List.of(new VerificationResult(
-                "npm test", 1, "leak secret-key and ghp_token and test-key", false)));
+                "npm test", 1,
+                "leak secret-key and ghp_token and test-key and "
+                    + "ghp_abcdefghijklmnopqrstuvwxyz012345 and "
+                    + "sk-abcdefghijklmnopqrstuvwxyz012345 and "
+                    + "password=super-secret",
+                false)));
 
         processor.processTicket(ticket());
 
@@ -634,6 +760,11 @@ class HarnessTicketProcessorTest {
             assertFalse(message.contains("secret-key"), "Leaked provider key in: " + message);
             assertFalse(message.contains("ghp_token"), "Leaked GitHub token in: " + message);
             assertFalse(message.contains("test-key"), "Leaked agent API key in: " + message);
+            assertFalse(message.contains("ghp_abcdefghijklmnopqrstuvwxyz012345"),
+                "Leaked GitHub-shaped token in: " + message);
+            assertFalse(message.contains("sk-abcdefghijklmnopqrstuvwxyz012345"),
+                "Leaked OpenAI-shaped key in: " + message);
+            assertFalse(message.contains("super-secret"), "Leaked password in: " + message);
         }
     }
 

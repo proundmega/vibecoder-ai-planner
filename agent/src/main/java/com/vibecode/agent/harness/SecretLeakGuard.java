@@ -36,24 +36,41 @@ public final class SecretLeakGuard {
     private static final int MAX_SCAN_BYTES = 8 * 1024 * 1024;
 
     /**
-     * Private-key material is multi-line. The header-only rule catches a new
+     * Private-key material is multi-line. The header-only rules catch a new
      * header in a new file; the full-block scanner below compares complete
      * blocks so a new key block with the same header as a pre-existing one is
-     * still detected.
+     * still detected. PEM, PGP and SSH2 blocks are covered.
      */
-    private static final Pattern PRIVATE_KEY_BEGIN = Pattern.compile(
-        "-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----", Pattern.CASE_INSENSITIVE);
-    private static final Pattern PRIVATE_KEY_END = Pattern.compile(
-        "-----END (?:[A-Z0-9]+ )?PRIVATE KEY-----", Pattern.CASE_INSENSITIVE);
+    private static final List<KeyBlockFormat> KEY_BLOCK_FORMATS = List.of(
+        new KeyBlockFormat(
+            Pattern.compile("-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----",
+                Pattern.CASE_INSENSITIVE),
+            Pattern.compile("-----END (?:[A-Z0-9]+ )?PRIVATE KEY-----",
+                Pattern.CASE_INSENSITIVE)),
+        new KeyBlockFormat(
+            Pattern.compile("-----BEGIN PGP PRIVATE KEY BLOCK-----",
+                Pattern.CASE_INSENSITIVE),
+            Pattern.compile("-----END PGP PRIVATE KEY BLOCK-----",
+                Pattern.CASE_INSENSITIVE)),
+        new KeyBlockFormat(
+            Pattern.compile("---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----",
+                Pattern.CASE_INSENSITIVE),
+            Pattern.compile("---- END SSH2 ENCRYPTED PRIVATE KEY ----",
+                Pattern.CASE_INSENSITIVE))
+    );
 
     private static final List<Rule> PATTERNS = List.of(
         rule("a private key", "-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----"),
+        rule("a private key", "-----BEGIN PGP PRIVATE KEY BLOCK-----"),
+        rule("a private key", "---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----"),
         rule("a GitHub token", "\\bgh[pousr]_[A-Za-z0-9]{20,}\\b"),
         rule("a GitHub fine-grained token", "\\bgithub_pat_[A-Za-z0-9_]{20,}\\b"),
         rule("an OpenAI-style key", "\\bsk-[A-Za-z0-9_-]{20,}\\b"),
-        rule("an AWS access key", "\\bAKIA[0-9A-Z]{16}\\b"),
-        rule("a Slack token", "\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b"),
-        rule("a Google API key", "\\bAIza[0-9A-Za-z_-]{35}\\b")
+        rule("an AWS access key", "\\b(?:AKIA|ASIA)[0-9A-Z]{16}\\b"),
+        rule("a Slack token", "\\bxox[abpcrsd]-[A-Za-z0-9-]{10,}\\b"),
+        rule("a Google API key", "\\bAIza[0-9A-Za-z_-]{35}\\b"),
+        rule("a JWT", "\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}"
+            + "\\.[A-Za-z0-9_-]{10,}\\b")
     );
 
     private final List<String> knownSecrets;
@@ -179,18 +196,20 @@ public final class SecretLeakGuard {
      */
     private static Set<String> privateKeyBlocks(String text) {
         Set<String> blocks = new HashSet<>();
-        int index = 0;
-        while (index < text.length()) {
-            Matcher begin = PRIVATE_KEY_BEGIN.matcher(text);
-            if (!begin.find(index)) {
-                break;
+        for (KeyBlockFormat format : KEY_BLOCK_FORMATS) {
+            int index = 0;
+            while (index < text.length()) {
+                Matcher begin = format.begin().matcher(text);
+                if (!begin.find(index)) {
+                    break;
+                }
+                Matcher end = format.end().matcher(text);
+                if (!end.find(begin.end())) {
+                    break;
+                }
+                blocks.add(text.substring(begin.start(), end.end()));
+                index = end.end();
             }
-            Matcher end = PRIVATE_KEY_END.matcher(text);
-            if (!end.find(begin.end())) {
-                break;
-            }
-            blocks.add(text.substring(begin.start(), end.end()));
-            index = end.end();
         }
         return blocks;
     }
@@ -220,5 +239,8 @@ public final class SecretLeakGuard {
         private Rule {
             description = description == null ? "a credential" : description;
         }
+    }
+
+    private record KeyBlockFormat(Pattern begin, Pattern end) {
     }
 }
