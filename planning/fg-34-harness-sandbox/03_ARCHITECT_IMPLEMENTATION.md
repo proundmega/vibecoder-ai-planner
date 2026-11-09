@@ -12,7 +12,7 @@
 | 3a | Prompt-injection defenses (FR8): untrusted-content labeling, instruction precedence, literal credential-path read denies, high-confidence command exfiltration policy, guarded-blob credential scan with base-content comparison; read-deny symlink/grep limitations tracked as D18 | Merged (#128) |
 | 3b | SBOM/image scan/digest pinning (FR9) | Merged (#129) |
 | 3c | Artifact redaction (NFR5/D11): configured secrets and high-confidence credential formats are redacted from verification output, ticket messages, run errors, branch names and PR titles/bodies, including nested assignments inside non-credential values | Merged (#130) |
-| 3d | Read/grep isolation (D18): disable built-in read/grep/lsp; add `sandbox_read`/`sandbox_grep` over a loopback workspace bridge that resolves `toRealPath()`, rejects workspace escapes and credential paths, and does not follow symlinks during grep | In review (#132) |
+| 3d | Read/grep isolation (D18): disable built-in read/grep/lsp; add `sandbox_read`/`sandbox_grep` over a loopback workspace bridge that resolves `toRealPath()`, rejects workspace escapes and credential paths, and does not follow symlinks during grep | Merged (#132) |
 
 Slice 1 deliberately keeps `SANDBOX_MODE=host` as the default so the Phase 1
 harness is unchanged until the Docker path is validated. Docker mode is
