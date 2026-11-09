@@ -464,7 +464,7 @@ Add:
 
 ```java
 public java.nio.file.Path getRepoDir();
-public DiffSummary collectDiff();
+public DiffSummary stageFreshDiff();
 public void commitAndPush(String message, String branch); // exists; secure it
 ```
 
@@ -472,8 +472,8 @@ public void commitAndPush(String message, String branch); // exists; secure it
   `git -c http.extraHeader="Authorization: Basic <base64>"`; never put the token in the URL; never
   `git remote set-url origin <authenticatedUrl>`. Remove/reset `origin` before the harness starts.
 - **Tokenless push:** `commitAndPush` uses the same one-shot header; the token is not persisted.
-- `collectDiff` runs `git status --porcelain` and `git diff --numstat` in the repo dir and returns
-  `DiffSummary`; include untracked files as `status="added"`.
+- `stageFreshDiff` builds a supervisor-owned index from the pinned base commit and the worktree,
+  then returns `DiffSummary`; include untracked files as `status="added"`.
 
 ### MODIFY: `backend/src/services/TicketLifecycleService.js`, `PhaseService.js`, `TicketService.js`
 

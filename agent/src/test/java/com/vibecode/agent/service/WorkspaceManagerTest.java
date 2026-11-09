@@ -4,9 +4,13 @@ import com.vibecode.agent.harness.DiffSummary;
 import com.vibecode.agent.harness.PublishingGuard;
 import com.vibecode.agent.harness.SecretLeakGuard;
 import com.vibecode.agent.model.FileOperation;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -374,7 +378,7 @@ class WorkspaceManagerTest {
     }
 
     @Test
-    void testCollectDiffReportsModifiedAndUntrackedFiles() throws Exception {
+    void stageFreshDiffReportsModifiedAndUntrackedFiles() throws Exception {
         Path repoDir = tempDir.resolve("diff-repo");
         Files.createDirectories(repoDir);
         runGit(repoDir, "init");
@@ -390,7 +394,12 @@ class WorkspaceManagerTest {
         WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         setRepoDir(wm, repoDir);
 
-        DiffSummary diff = wm.collectDiff();
+        DiffSummary diff;
+        try {
+            diff = wm.stageFreshDiff();
+        } finally {
+            wm.discardStaged();
+        }
 
         assertTrue(diff.files().stream().anyMatch(
             file -> file.path().equals("tracked.txt") && file.status().equals("modified")));
@@ -401,7 +410,7 @@ class WorkspaceManagerTest {
     }
 
     @Test
-    void collectDiffExpandsNewDirectoriesSoProtectedFilesCannotHide() throws Exception {
+    void stageFreshDiffExpandsNewDirectoriesSoProtectedFilesCannotHide() throws Exception {
         Path repoDir = initRepo("untracked-dirs");
         java.nio.file.Files.createDirectories(repoDir.resolve(".github/workflows"));
         java.nio.file.Files.createDirectories(repoDir.resolve("cfg"));
@@ -412,7 +421,12 @@ class WorkspaceManagerTest {
         WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         setRepoDir(wm, repoDir);
 
-        DiffSummary diff = wm.collectDiff();
+        DiffSummary diff;
+        try {
+            diff = wm.stageFreshDiff();
+        } finally {
+            wm.discardStaged();
+        }
         List<String> paths = diff.files().stream().map(DiffSummary.ChangedFile::path).toList();
 
         assertTrue(paths.contains(".github/workflows/evil.yml"), "paths=" + paths);
@@ -424,7 +438,7 @@ class WorkspaceManagerTest {
     }
 
     @Test
-    void collectDiffCountsBinaryUntrackedFilesWithoutThrowing() throws Exception {
+    void stageFreshDiffCountsBinaryUntrackedFilesWithoutThrowing() throws Exception {
         Path repoDir = initRepo("binary");
         byte[] binary = new byte[]{0x00, (byte) 0xff, 0x10, 0x0a, (byte) 0x80};
         Files.write(repoDir.resolve("fixture.bin"), binary);
@@ -432,14 +446,19 @@ class WorkspaceManagerTest {
         WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         setRepoDir(wm, repoDir);
 
-        DiffSummary diff = assertDoesNotThrow(wm::collectDiff);
+        DiffSummary diff;
+        try {
+            diff = assertDoesNotThrow(wm::stageFreshDiff);
+        } finally {
+            wm.discardStaged();
+        }
 
         assertTrue(diff.files().stream().anyMatch(file -> file.path().equals("fixture.bin")));
         assertTrue(diff.changedBytes() >= binary.length);
     }
 
     @Test
-    void stageAllThenCollectDiffReportsTheIndexThatWillBeCommitted() throws Exception {
+    void stageFreshDiffUsesTheWorktreeNotTheAgentIndex() throws Exception {
         Path repoDir = initRepo("staged");
         Files.writeString(repoDir.resolve("README.md"), "initial\nchanged\n");
         Files.writeString(repoDir.resolve("added.txt"), "one\ntwo\n");
@@ -448,7 +467,12 @@ class WorkspaceManagerTest {
         setRepoDir(wm, repoDir);
         wm.stageAll();
 
-        DiffSummary diff = wm.collectDiff();
+        DiffSummary diff;
+        try {
+            diff = wm.stageFreshDiff();
+        } finally {
+            wm.discardStaged();
+        }
 
         assertTrue(diff.files().stream().anyMatch(
             file -> file.path().equals("README.md") && file.status().equals("modified")));
@@ -535,12 +559,12 @@ class WorkspaceManagerTest {
 
         // Simulate the harness editing the workspace after the clone.
         Files.writeString(wm.getRepoDir().resolve("feature.txt"), "implemented\n");
-        wm.stageAll();
-        DiffSummary diff = wm.collectDiff();
+        DiffSummary diff = wm.stageFreshDiff();
         new PublishingGuard(List.of(".env*", "**/.env*", "Jenkinsfile", ".github/**"))
             .assertPublishable(diff);
 
         wm.commitAndPushStaged("feat: e2e", "vibecode/ticket-1-e2e");
+        wm.discardStaged();
 
         runGit(bare, "rev-parse", "--verify", "refs/heads/vibecode/ticket-1-e2e");
         assertEquals(1, diff.files().stream()
@@ -778,20 +802,24 @@ class WorkspaceManagerTest {
     void hugeBlobLineCountingIsBoundedByBytes() throws Exception {
         Path repoDir = initRepo("huge-blob");
         String huge = "\u0000" + "x".repeat(11 * 1024 * 1024);
-        String sha = gitOutputWithInput(repoDir, huge, "hash-object", "-w", "--stdin");
-        runGit(repoDir, "update-index", "--add", "--cacheinfo", "100644," + sha + ",huge.bin");
+        Files.writeString(repoDir.resolve("huge.bin"), huge);
 
         WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         setRepoDir(wm, repoDir);
 
-        DiffSummary diff = wm.collectDiff();
+        DiffSummary diff;
+        try {
+            diff = wm.stageFreshDiff();
+        } finally {
+            wm.discardStaged();
+        }
 
         assertTrue(diff.changedBytes() >= 11L * 1024 * 1024);
         assertEquals(0, diff.additions());
     }
 
     @Test
-    void collectDiffCountsIndexOnlyBlobBytes() throws Exception {
+    void stageFreshDiffIgnoresIndexOnlyBlobs() throws Exception {
         Path repoDir = initRepo("index-only-bytes");
         String big = "x".repeat(20_000);
         String sha = gitOutputWithInput(repoDir, big, "hash-object", "-w", "--stdin");
@@ -801,11 +829,15 @@ class WorkspaceManagerTest {
         WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
         setRepoDir(wm, repoDir);
 
-        DiffSummary diff = wm.collectDiff();
+        DiffSummary diff;
+        try {
+            diff = wm.stageFreshDiff();
+        } finally {
+            wm.discardStaged();
+        }
 
-        assertTrue(diff.files().stream().anyMatch(file -> file.path().equals("big.txt")));
-        assertTrue(diff.changedBytes() >= 20_000,
-            "index-only blob bytes must be guarded, got " + diff.changedBytes());
+        assertTrue(diff.files().stream().noneMatch(file -> file.path().equals("big.txt")),
+            "agent-controlled index-only entries must not enter the guarded tree");
     }
 
     @Test
@@ -922,6 +954,61 @@ class WorkspaceManagerTest {
             "backend/.env.example", "SAFE=example", FileOperation.Action.CREATE);
         assertDoesNotThrow(() -> wm.writeFiles(List.of(example)));
         assertTrue(Files.exists(repoDir.resolve("backend/.env.example")));
+    }
+
+    @Test
+    void fsckOptOutIsRecognized() {
+        assertTrue(WorkspaceManager.fsckEnabled(null));
+        assertTrue(WorkspaceManager.fsckEnabled(""));
+        assertTrue(WorkspaceManager.fsckEnabled("true"));
+        assertTrue(WorkspaceManager.fsckEnabled("1"));
+        assertFalse(WorkspaceManager.fsckEnabled("false"));
+        assertFalse(WorkspaceManager.fsckEnabled("0"));
+        assertFalse(WorkspaceManager.fsckEnabled(" FALSE "));
+    }
+
+    @Test
+    void fsckDisabledLogsAWarningAndEnabledPathRuns() throws Exception {
+        Path repoDir = initRepo("fsck-warning");
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        Logger logger = (Logger) LoggerFactory.getLogger(WorkspaceManager.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            wm.checkObjectIntegrity("false");
+            assertTrue(appender.list.stream().anyMatch(event ->
+                    event.getFormattedMessage().contains("HARNESS_FSCK=false")),
+                "disabled fsck must warn");
+            wm.checkObjectIntegrity("true");
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
+    void legacyWriteFilesRejectExactProtectedDirectoryDeletes() throws Exception {
+        Path repoDir = initRepo("legacy-protected-empty-dirs");
+        Path github = Files.createDirectories(repoDir.resolve(".github"));
+        Path secrets = Files.createDirectories(repoDir.resolve("secrets"));
+        Path nestedGithub = Files.createDirectories(repoDir.resolve("sub/.github"));
+        Path nestedSecrets = Files.createDirectories(repoDir.resolve("sub/secrets"));
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        for (String path : List.of(".github", "secrets", "sub/.github", "sub/secrets")) {
+            FileOperation op = new FileOperation(path, null, FileOperation.Action.DELETE);
+            assertThrows(IOException.class, () -> wm.writeFiles(List.of(op)),
+                "Expected exact protected directory delete to be rejected: " + path);
+        }
+
+        assertTrue(Files.exists(github));
+        assertTrue(Files.exists(secrets));
+        assertTrue(Files.exists(nestedGithub));
+        assertTrue(Files.exists(nestedSecrets));
     }
 
     @Test
@@ -1068,10 +1155,10 @@ class WorkspaceManagerTest {
     }
 
     @Test
-    void testCollectDiffWithoutWorkspaceIsEmpty() throws Exception {
+    void stageFreshDiffWithoutWorkspaceFailsClosed() {
         WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
 
-        assertTrue(wm.collectDiff().isEmpty());
+        assertThrows(IOException.class, wm::stageFreshDiff);
     }
 
     private static void runGit(Path directory, String... args) throws Exception {
