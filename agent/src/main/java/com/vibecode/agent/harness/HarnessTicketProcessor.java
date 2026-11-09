@@ -620,7 +620,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             return;
         }
 
-        log.info("Harness processing ticket: {} - {}", ticket.getId(), ticket.getTitle());
+        log.info("Harness processing ticket: {} - {}",
+            ticket.getId(), redactor.redact(ticket.getTitle()));
 
         Ticket pickedUp = pickUpTicket(ticket.getId());
         if (pickedUp == null) {
@@ -634,7 +635,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         postMessage(pickedUp.getId(), "update", "Started working on: " + pickedUp.getTitle());
 
-        String branchName = config.getGitHubBranchName(pickedUp.getId(), pickedUp.getTitle());
+        // Redact before slugification: the slug lowercases and strips
+        // punctuation, so redacting afterwards would turn a GitHub token into
+        // a non-matching "ghp-..." string. The branch is persisted by the
+        // backend, pushed and logged, so it must not carry the raw title.
+        String branchName = config.getGitHubBranchName(
+            pickedUp.getId(), redactor.redact(pickedUp.getTitle()));
         if (!startDurableRun(pickedUp, branchName)) {
             // A live lease or published evidence means this ticket must not be
             // run again automatically. Leave recovery to the operator/reaper.

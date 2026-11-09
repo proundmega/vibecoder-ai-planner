@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -18,27 +20,37 @@ import java.util.regex.Pattern;
  * known secret or a common token shape.</p>
  *
  * <p>This is a storage guard, not the sandbox boundary. It cannot catch every
- * encoded or split credential.</p>
+ * encoded or split credential. Credential values shorter than eight characters
+ * are left alone by the pattern rules (and configured secrets shorter than
+ * eight characters are ignored) to avoid corrupting ordinary output.</p>
  */
 public final class SecretRedactor {
 
     static final String REDACTED = "[REDACTED]";
     private static final int MIN_KNOWN_SECRET_LENGTH = 8;
 
+    /**
+     * Complete PEM/PGP/SSH2 private-key blocks. The alternation's second branch
+     * redacts the remainder of the output when the END marker was lost (for
+     * example because the capture ring split the block), so base64 material
+     * cannot survive a truncated header. Matching the remainder also keeps the
+     * scan linear when hostile output contains many unmatched headers.
+     */
     private static final List<Rule> PATTERNS = List.of(
-        // Complete PEM private-key blocks. The fallback below handles a BEGIN
-        // whose END was lost (for example because the capture ring split the
-        // block) by redacting the remainder rather than leaking the material.
         new Rule("(?is)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----"
-            + ".*?-----END [A-Z0-9 ]*PRIVATE KEY-----",
+            + "(?:.*?-----END [A-Z0-9 ]*PRIVATE KEY-----|.*)",
             "[REDACTED PRIVATE KEY]"),
-        new Rule("(?is)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*",
+        new Rule("(?is)-----BEGIN PGP PRIVATE KEY BLOCK-----"
+            + "(?:.*?-----END PGP PRIVATE KEY BLOCK-----|.*)",
+            "[REDACTED PRIVATE KEY]"),
+        new Rule("(?is)---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----"
+            + "(?:.*?---- END SSH2 ENCRYPTED PRIVATE KEY ----|.*)",
             "[REDACTED PRIVATE KEY]"),
         new Rule("\\b(?:gh[pousr]_[A-Za-z0-9]{20,}"
             + "|github_pat_[A-Za-z0-9_]{20,})\\b", REDACTED),
         new Rule("\\bsk-[A-Za-z0-9_-]{20,}\\b", REDACTED),
-        new Rule("\\bAKIA[0-9A-Z]{16}\\b", REDACTED),
-        new Rule("\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b", REDACTED),
+        new Rule("\\b(?:AKIA|ASIA)[0-9A-Z]{16}\\b", REDACTED),
+        new Rule("\\bxox[abpcrsd]-[A-Za-z0-9-]{10,}\\b", REDACTED),
         new Rule("\\bAIza[0-9A-Za-z_-]{35}\\b", REDACTED),
         new Rule("\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}"
             + "\\.[A-Za-z0-9_-]{10,}\\b", REDACTED),
@@ -50,21 +62,40 @@ public final class SecretRedactor {
         // every position.
         new Rule("(?i)(?<![A-Za-z0-9+.-])"
             + "([a-z][a-z0-9+.-]*+://)([^/\\s:@]*+):([^/\\s@]++)@",
-            "$1" + REDACTED + "@"),
-        // key=value / "key": "value" forms for common credential names.
-        // Prefixes/suffixes allow client_secret, access_token, DB_PASSWORD,
-        // AWS_SECRET_ACCESS_KEY and clientSecret; the [:=] requirement keeps
-        // ordinary prose out. The lookbehind starts at most one attempt per
-        // identifier, which keeps the backtracking-linear.
-        new Rule("(?i)(?<![A-Za-z0-9_.-])"
-            + "([A-Za-z0-9_.-]*(?:api[_-]?key|private[_-]?key|secret|token"
-            + "|password|passwd|pwd|authorization)[A-Za-z0-9_.-]*)"
-            + "[\"']?\\s*[:=]\\s*"
-            + "(?:\"([^\"]{8,})\"|'([^']{8,})'|([^\\s\"',}]{8,}))",
-            "$1=" + REDACTED),
-        // Header-only fallback for any BEGIN not consumed above.
-        new Rule("(?i)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----",
-            "[REDACTED PRIVATE KEY]")
+            "$1" + REDACTED + "@")
+    );
+
+    /**
+     * Credential key/value forms. The identifier is matched once with a
+     * possessive quantifier and then tested for a credential keyword in code;
+     * doing the keyword search inside the regex would rescan the suffix from
+     * every keyword occurrence and go quadratic on hostile input such as
+     * {@code "token".repeat(26_214)}. The value branch is escape-aware so a
+     * JSON value containing {@code \"} is redacted as a whole instead of
+     * stopping at the escaped quote.
+     */
+    private static final Pattern KEY_VALUE = Pattern.compile(
+        "(?i)(?<![\\w.-])([\\w.-]++)([\"']?)(\\s*[:=]\\s*)"
+            + "(?:\"((?:[^\"\\\\]|\\\\.){8,})\""
+            + "|'((?:[^'\\\\]|\\\\.){8,})'"
+            + "|([^\\s\"',}]{8,}))");
+
+    /**
+     * Keywords are compared after removing {@code _} and {@code -} so
+     * {@code api_key}, {@code api-key}, {@code apikey} and {@code clientSecret}
+     * all match while ordinary prose (which lacks a {@code :}/{@code =}
+     * separator) does not.
+     */
+    private static final List<String> CREDENTIAL_KEYWORDS = List.of(
+        "apikey",
+        "privatekey",
+        "secret",
+        "token",
+        "password",
+        "passwd",
+        "pwd",
+        "authorization",
+        "passphrase"
     );
 
     private final List<String> knownSecrets;
@@ -105,10 +136,45 @@ public final class SecretRedactor {
         for (String secret : knownSecrets) {
             redacted = redacted.replace(secret, REDACTED);
         }
+        redacted = redactKeyValues(redacted);
         for (Rule rule : PATTERNS) {
             redacted = rule.pattern().matcher(redacted).replaceAll(rule.replacement());
         }
         return redacted;
+    }
+
+    private static String redactKeyValues(String value) {
+        Matcher matcher = KEY_VALUE.matcher(value);
+        StringBuilder out = new StringBuilder(value.length());
+        while (matcher.find()) {
+            String identifier = matcher.group(1);
+            if (!isCredentialKey(identifier)) {
+                continue;
+            }
+            String replacement = identifier + matcher.group(2) + matcher.group(3);
+            if (matcher.group(4) != null) {
+                replacement += "\"" + REDACTED + "\"";
+            } else if (matcher.group(5) != null) {
+                replacement += "'" + REDACTED + "'";
+            } else {
+                replacement += REDACTED;
+            }
+            matcher.appendReplacement(out, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(out);
+        return out.toString();
+    }
+
+    private static boolean isCredentialKey(String identifier) {
+        String normalized = identifier.toLowerCase(Locale.ROOT)
+            .replace("_", "")
+            .replace("-", "");
+        for (String keyword : CREDENTIAL_KEYWORDS) {
+            if (normalized.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private record Rule(Pattern pattern, String replacement) {

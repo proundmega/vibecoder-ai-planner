@@ -231,7 +231,8 @@ public class VerificationRunner {
                     result.timedOut()
                 ));
             } catch (IOException e) {
-                results.add(new VerificationResult(trimmed, -1, e.getMessage(), false));
+                results.add(new VerificationResult(
+                    trimmed, -1, redactedMessage(e), false));
             }
         }
         return results;
@@ -245,6 +246,10 @@ public class VerificationRunner {
         return value.length() > MAX_OUTPUT_CHARS
             ? value.substring(value.length() - MAX_OUTPUT_CHARS)
             : value;
+    }
+
+    private static String redactedMessage(Throwable failure) {
+        return REDACTOR.redact(failure == null ? "" : failure.getMessage());
     }
 
     private VerificationResult runOne(Path workspace, String command, Duration timeout) {
@@ -266,7 +271,7 @@ public class VerificationRunner {
                 try (InputStream input = finalProcess.getInputStream()) {
                     input.transferTo(output);
                 } catch (IOException e) {
-                    log.debug("Verification output reader stopped: {}", e.getMessage());
+                    log.debug("Verification output reader stopped: {}", redactedMessage(e));
                 }
             }, "verify-output");
             reader.setDaemon(true);
@@ -290,7 +295,9 @@ public class VerificationRunner {
                 !finished
             );
         } catch (IOException e) {
-            return new VerificationResult(command, -1, e.getMessage(), false);
+            // An exception message is another capture path; never let it bypass
+            // the same redaction as the normal output.
+            return new VerificationResult(command, -1, redactedMessage(e), false);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             if (process != null) {

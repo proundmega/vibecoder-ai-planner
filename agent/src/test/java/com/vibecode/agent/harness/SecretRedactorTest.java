@@ -130,6 +130,97 @@ class SecretRedactorTest {
     }
 
     @Test
+    void redactsRepeatedCredentialKeywordsInBoundedTime() {
+        String sixtyFourK = "token".repeat(13_107);
+        String oneTwentyEightK = "token".repeat(26_214);
+
+        assertTimeoutPreemptively(Duration.ofSeconds(10), () -> {
+            assertEquals(sixtyFourK, redactor.redact(sixtyFourK));
+            assertEquals(oneTwentyEightK, redactor.redact(oneTwentyEightK));
+        });
+    }
+
+    @Test
+    void redactsARepeatedKeywordIdentifierFollowedByASeparator() {
+        String input = "token".repeat(1_000) + "=abcdefghijklmnop";
+
+        assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+            String redacted = redactor.redact(input);
+            assertFalse(redacted.contains("abcdefghijklmnop"), redacted);
+            assertTrue(redacted.contains("[REDACTED]"), redacted);
+        });
+    }
+
+    @Test
+    void redactsQuotedValuesContainingEscapedQuotes() {
+        String escapedSuffix = redactor.redact(
+            "{\"password\": \"abcdefgh\\\"ijklmnop\"}");
+        assertFalse(escapedSuffix.contains("abcdefgh"), escapedSuffix);
+        assertFalse(escapedSuffix.contains("ijklmnop"), escapedSuffix);
+        assertTrue(escapedSuffix.contains("\"[REDACTED]\""), escapedSuffix);
+
+        String escapedPrefix = redactor.redact(
+            "{\"password\": \"\\\"abcdefghijklmnop\"}");
+        assertFalse(escapedPrefix.contains("abcdefghijklmnop"), escapedPrefix);
+        assertTrue(escapedPrefix.contains("\"[REDACTED]\""), escapedPrefix);
+    }
+
+    @Test
+    void preservesKeyValueSyntaxWhenRedacting() {
+        assertEquals("api_key: [REDACTED]",
+            redactor.redact("api_key: abcdefghijklmnop"));
+        assertEquals("\"password\": \"[REDACTED]\"",
+            redactor.redact("\"password\": \"abcdefghijklmnop\""));
+        assertEquals("password='[REDACTED]'",
+            redactor.redact("password='abcdefghijklmnop'"));
+    }
+
+    @Test
+    void redactsTemporaryAwsKeysAndAdditionalSlackPrefixes() {
+        assertFalse(redactor.redact("ASIAIOSFODNN7EXAMPLE")
+            .contains("ASIAIOSFODNN7EXAMPLE"));
+        assertFalse(redactor.redact("xoxc-123456789012-abcdefghijkl")
+            .contains("xoxc-123456789012-abcdefghijkl"));
+        assertFalse(redactor.redact("xoxd-123456789012-abcdefghijkl")
+            .contains("xoxd-123456789012-abcdefghijkl"));
+    }
+
+    @Test
+    void redactsPgpAndSsh2PrivateKeyBlocks() {
+        String pgp = "-----BEGIN PGP PRIVATE KEY BLOCK-----\nABCDEF\n"
+            + "-----END PGP PRIVATE KEY BLOCK-----";
+        String pgpRedacted = redactor.redact(pgp);
+        assertFalse(pgpRedacted.contains("ABCDEF"), pgpRedacted);
+        assertTrue(pgpRedacted.contains("[REDACTED PRIVATE KEY]"), pgpRedacted);
+
+        String ssh2 = "---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----\nABCDEF\n"
+            + "---- END SSH2 ENCRYPTED PRIVATE KEY ----";
+        String ssh2Redacted = redactor.redact(ssh2);
+        assertFalse(ssh2Redacted.contains("ABCDEF"), ssh2Redacted);
+        assertTrue(ssh2Redacted.contains("[REDACTED PRIVATE KEY]"), ssh2Redacted);
+    }
+
+    @Test
+    void redactsPassphraseButLeavesUnquotedMultiWordValuesExplicitlyAlone() {
+        String quoted = redactor.redact("passphrase=\"super secret phrase\"");
+        assertFalse(quoted.contains("super secret phrase"), quoted);
+
+        // The unquoted branch intentionally stops at whitespace, so a
+        // multi-word value is not treated as a credential.
+        assertEquals("passphrase=super secret phrase",
+            redactor.redact("passphrase=super secret phrase"));
+    }
+
+    @Test
+    void leavesShortCredentialValuesAlone() {
+        assertEquals("password=hunter2", redactor.redact("password=hunter2"));
+        assertEquals("\"password\": \"hunter2\"",
+            redactor.redact("\"password\": \"hunter2\""));
+        assertEquals("Authorization: Bearer shorttoken",
+            redactor.redact("Authorization: Bearer shorttoken"));
+    }
+
+    @Test
     void redactsCommonKeyValueForms() {
         assertFalse(redactor.redact("password=super-secret").contains("super-secret"));
         assertFalse(redactor.redact("\"token\": \"abcdefghijklmnop\"").contains("abcdefghijklmnop"));
