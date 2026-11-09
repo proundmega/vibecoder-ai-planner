@@ -163,6 +163,19 @@ class WorkspaceFileBridgeTest {
     }
 
     @Test
+    void grepTruncatesLongMatchingLines() throws Exception {
+        Files.writeString(workspace.resolve("long.txt"),
+            "needle " + "x".repeat(1_000) + "\n");
+
+        HttpResponse<String> response = post("/grep", "{\"pattern\":\"needle\"}", true);
+
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("needle xxx"), response.body());
+        assertTrue(response.body().contains("..."), response.body());
+        assertFalse(response.body().contains("x".repeat(600)), response.body());
+    }
+
+    @Test
     void rejectsAnInvalidRegularExpression() throws Exception {
         HttpResponse<String> response = post("/grep", "{\"pattern\":\"[\"}", true);
 

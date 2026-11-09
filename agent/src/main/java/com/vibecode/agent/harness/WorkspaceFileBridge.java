@@ -48,6 +48,7 @@ final class WorkspaceFileBridge implements AutoCloseable {
     static final long MAX_GREP_FILE_BYTES = 1024 * 1024;
     static final int MAX_GREP_FILES = 20_000;
     static final long MAX_GREP_TOTAL_BYTES = 64L * 1024 * 1024;
+    private static final int MAX_GREP_LINE_CHARS = 500;
     private static final int DEFAULT_READ_LINES = 2000;
     private static final String TOKEN_HEADER = "X-Workspace-Token";
 
@@ -325,7 +326,10 @@ final class WorkspaceFileBridge implements AutoCloseable {
                         truncated[0] = true;
                         return;
                     }
-                    matches.add(display + ":" + lineNumber + ": " + line);
+                    String shown = line.length() > MAX_GREP_LINE_CHARS
+                        ? line.substring(0, MAX_GREP_LINE_CHARS) + "..."
+                        : line;
+                    matches.add(display + ":" + lineNumber + ": " + shown);
                 }
             }
         } catch (CharacterCodingException e) {
