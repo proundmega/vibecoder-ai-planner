@@ -302,11 +302,14 @@ Must include:
 public record DiffSummary(
     java.util.List<ChangedFile> files,
     int additions,
-    int deletions
+    int deletions,
+    long bytes
 ) {
     public record ChangedFile(String path, String status) {}
     public boolean isEmpty();
     public int changedFileCount();
+    public int changedLines();
+    public long changedBytes();
 }
 ```
 
@@ -474,6 +477,10 @@ public void commitAndPush(String message, String branch); // exists; secure it
 - **Tokenless push:** `commitAndPush` uses the same one-shot header; the token is not persisted.
 - `stageFreshDiff` builds a supervisor-owned index from the pinned base commit and the worktree,
   then returns `DiffSummary`; include untracked files as `status="added"`.
+- `DiffSummary.changedBytes` counts added plus removed content: a deleted file contributes its old
+  blob size, a shrunk file contributes its new size plus the removed delta, and a grown file
+  contributes its new size. Unchanged content is not double-counted, so `HARNESS_MAX_BYTES`
+  enforces deletes and shrinks as well as additions.
 
 ### MODIFY: `backend/src/services/TicketLifecycleService.js`, `PhaseService.js`, `TicketService.js`
 

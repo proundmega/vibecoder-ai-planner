@@ -23,6 +23,7 @@ import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -816,6 +817,123 @@ class WorkspaceManagerTest {
 
         assertTrue(diff.changedBytes() >= 11L * 1024 * 1024);
         assertEquals(0, diff.additions());
+    }
+
+    @Test
+    void stageFreshDiffCountsAddedPlusRemovedContentBytes() throws Exception {
+        Path repoDir = initRepo("byte-semantics");
+        Files.writeString(repoDir.resolve("data.txt"), "1234567890\n");
+        runGit(repoDir, "add", "data.txt");
+        runGit(repoDir, "commit", "-m", "add data");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        Files.writeString(repoDir.resolve("data.txt"), "123\n");
+        DiffSummary shrunk;
+        try {
+            shrunk = wm.stageFreshDiff();
+        } finally {
+            wm.discardStaged();
+        }
+        assertEquals(11, shrunk.changedBytes(),
+            "shrunk file must count new content plus removed bytes");
+
+        Files.writeString(repoDir.resolve("data.txt"), "12345678901234567890\n");
+        DiffSummary grown;
+        try {
+            grown = wm.stageFreshDiff();
+        } finally {
+            wm.discardStaged();
+        }
+        assertEquals(21, grown.changedBytes(),
+            "grown file must count its new content without double-counting unchanged bytes");
+    }
+
+    @Test
+    void stageFreshDiffCountsDeletedOversizeBlobBytes() throws Exception {
+        Path repoDir = initRepo("deleted-huge-blob");
+        Files.writeString(repoDir.resolve("huge.txt"), "x".repeat(11 * 1024 * 1024));
+        runGit(repoDir, "add", "huge.txt");
+        runGit(repoDir, "commit", "-m", "huge");
+        Files.delete(repoDir.resolve("huge.txt"));
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff;
+        try {
+            diff = wm.stageFreshDiff();
+        } finally {
+            wm.discardStaged();
+        }
+
+        assertTrue(diff.files().stream().anyMatch(
+            file -> file.path().equals("huge.txt") && file.status().equals("deleted")));
+        assertEquals(11L * 1024 * 1024, diff.changedBytes(),
+            "deleted blob bytes must count even above the line-count scan limit");
+    }
+
+    @Test
+    void stageFreshDiffCountsRemovedBytesWhenLargeBinaryShrinks() throws Exception {
+        Path repoDir = initRepo("shrunk-large-binary");
+        byte[] original = new byte[12 * 1024 * 1024];
+        Arrays.fill(original, (byte) 0x7f);
+        original[0] = 0;
+        Files.write(repoDir.resolve("asset.bin"), original);
+        runGit(repoDir, "add", "asset.bin");
+        runGit(repoDir, "commit", "-m", "large binary");
+
+        byte[] shrunk = new byte[1 * 1024 * 1024];
+        Arrays.fill(shrunk, (byte) 0x7f);
+        shrunk[0] = 0;
+        Files.write(repoDir.resolve("asset.bin"), shrunk);
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff;
+        try {
+            diff = wm.stageFreshDiff();
+        } finally {
+            wm.discardStaged();
+        }
+
+        assertTrue(diff.files().stream().anyMatch(
+            file -> file.path().equals("asset.bin") && file.status().equals("modified")));
+        assertEquals(12L * 1024 * 1024, diff.changedBytes(),
+            "shrunk binary must count its new size plus the removed delta");
+        assertEquals(0, diff.additions(), "binary line counts are not meaningful");
+    }
+
+    @Test
+    void oversizedDiffAttributeTextFailsClosedForLinesWithRaisedByteLimit() throws Exception {
+        Path repoDir = initRepo("huge-diff-attribute");
+        Files.writeString(repoDir.resolve(".gitattributes"), "* -diff\n");
+        String content = "line\n".repeat((11 * 1024 * 1024) / 5 + 1);
+        Files.writeString(repoDir.resolve("huge.txt"), content);
+        runGit(repoDir, "add", ".gitattributes", "huge.txt");
+        runGit(repoDir, "commit", "-m", "huge text with -diff");
+
+        Files.writeString(repoDir.resolve("huge.txt"), content + "extra\n");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff;
+        try {
+            diff = wm.stageFreshDiff();
+        } finally {
+            wm.discardStaged();
+        }
+
+        assertTrue(diff.changedBytes() > 10L * 1024 * 1024,
+            "oversized -diff text bytes must be counted");
+        assertTrue(diff.additions() > 1_000_000,
+            "oversized -diff text must fail closed instead of reporting zero lines");
+        PublishingGuard guard = new PublishingGuard(List.of(), 50, 2_000, 20L * 1024 * 1024);
+        assertThrows(IllegalStateException.class, () -> guard.assertPublishable(diff),
+            "the line guard must still reject the diff when only the byte limit is raised");
     }
 
     @Test
