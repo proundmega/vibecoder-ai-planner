@@ -76,20 +76,20 @@ public final class SecretRedactor {
      *
      * <p>The value branch is escape-aware so a JSON value containing
      * {@code \"} is redacted as a whole instead of stopping at the escaped
-     * quote. An unquoted value continues to the end of the line (stopping at a
-     * quote, newline, or closing brace/parenthesis); over-redacting adjacent
-     * text is preferred to leaving part of a multi-word value.</p>
+     * quote. An unquoted value continues to the end of the line (stopping only
+     * at a quote or newline); over-redacting an unquoted closing delimiter is
+     * preferred to leaving part of the value.</p>
      */
     private static final String CREDENTIAL_KEY =
-        "(?:api[_-]?key|private[_-]?key|secret|token|password|passwd|pwd"
-            + "|authorization|pass[_-]?phrase)";
+        "(?:api[_-]*key|private[_-]*key|secret|token|password|passwd|pwd"
+            + "|authorization|pass[_-]*phrase)";
 
     private static final Pattern KEY_VALUE = Pattern.compile(
         "(?i)(?<![\\w.-])(?=[\\w.-]*" + CREDENTIAL_KEY + ")"
             + "([\\w.-]++)([\"']?)(\\s*[:=]\\s*)"
             + "(?:\"((?:[^\"\\\\]|\\\\.){8,})\""
             + "|'((?:[^'\\\\]|\\\\.){8,})'"
-            + "|([^\"'\\r\\n})]{8,}))");
+            + "|([^\"'\\r\\n]{8,}))");
 
     private final List<String> knownSecrets;
 

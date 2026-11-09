@@ -225,6 +225,32 @@ class SecretRedactorTest {
     }
 
     @Test
+    void redactsUnquotedValuesContainingClosingDelimiters() {
+        for (String input : List.of(
+            "password=super)secret",
+            "password=(super)secret",
+            "password=supersecret)phrase",
+            "token=super)secret",
+            "api_key=super)secret",
+            "password=super}secret",
+            "password=supersecret}phrase")) {
+            String redacted = redactor.redact(input);
+            assertFalse(redacted.contains("secret"), input + " -> " + redacted);
+            assertFalse(redacted.contains("phrase"), input + " -> " + redacted);
+            assertTrue(redacted.contains("[REDACTED]"), input + " -> " + redacted);
+        }
+    }
+
+    @Test
+    void redactsKeysWithRepeatedSeparators() {
+        for (String key : List.of("api__key", "api-_key", "private__key", "pass__phrase")) {
+            String redacted = redactor.redact(key + "=abcdefghijklmnop");
+            assertFalse(redacted.contains("abcdefghijklmnop"), key + " -> " + redacted);
+            assertTrue(redacted.contains("[REDACTED]"), key + " -> " + redacted);
+        }
+    }
+
+    @Test
     void redactsAuthorizationSchemesAndShortBearerValues() {
         for (String scheme : List.of("Negotiate", "Token", "ApiKey", "Digest")) {
             String redacted = redactor.redact(

@@ -68,7 +68,9 @@ public final class SecretLeakGuard {
         rule("an OpenAI-style key", "\\bsk-[A-Za-z0-9_-]{20,}\\b"),
         rule("an AWS access key", "\\b(?:AKIA|ASIA)[0-9A-Z]{16}\\b"),
         rule("a Slack token", "\\bxox[abpcrsd]-[A-Za-z0-9-]{10,}\\b"),
-        rule("a Google API key", "\\bAIza[0-9A-Za-z_-]{35}\\b")
+        rule("a Google API key", "\\bAIza[0-9A-Za-z_-]{35}\\b"),
+        rule("a JWT", "\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}"
+            + "\\.[A-Za-z0-9_-]{10,}\\b")
     );
 
     private final List<String> knownSecrets;

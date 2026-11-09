@@ -59,6 +59,9 @@ class SecretLeakGuardTest {
             newBlob("ci.yml", "SLACK_TOKEN=xoxd-123456789012-abcdefghijkl"));
         assertFinding("an OpenAI-style key",
             newBlob("ci.yml", "api_key: sk-abcdefghijklmnopqrstuvwx"));
+        assertFinding("a JWT",
+            newBlob("ci.yml", "token: eyJhbGciOiJIUzI1NiJ9."
+                + "eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature1234567890"));
     }
 
     @Test
