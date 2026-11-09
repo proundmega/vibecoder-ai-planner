@@ -20,8 +20,9 @@ it.
 
 For a small, single-layer ticket (one layer, no API/DB contract, auth,
 migration or agent-boundary change), copy `planning/lightweight/00` and
-`planning/lightweight/03` instead of the full `00`–`03` set. Requirements live
-in the lightweight `00`; `01` and `02` are intentionally omitted.
+`planning/lightweight/03` instead of the full `00`–`03` set. Requirements,
+assumptions and change impact live in the lightweight `00`; `01` and `02` are
+intentionally omitted.
 
 ## The rules
 
@@ -49,12 +50,16 @@ The layers are independent: a change can pass one and fail another.
 |---|---|---|---|
 | 0. Deterministic | CI / `check-planning.js` | structure, status, matrix coverage, results, tests, lint, paths | blocking |
 | 1. Author self-check | author | `03` review checklist, evidence, results | blocking |
-| 2. Pre-implementation risk review | `fg-45` (planned) | assumptions, failure modes, security considerations, change impact present and actionable | blocking before plan approval/pickup |
+| 2. Pre-implementation risk review | `fg-45` (planned) | assumptions, failure modes, security considerations, change impact present and actionable | policy target: blocking once `fg-45` lands |
 | 3. Independent reviewer | reviewer agent (`fg-31`) | requirements/design/code against evidence | blocking findings |
 | 4. Second reviewer | `fg-47` (planned) | different model/provider/context; adversarial pass | blocking findings |
 | 5. Fixer | separate fixer (`fg-32`) | resolve blocking findings, hand back the new SHA | bounded rounds |
-| 6. Traceability | `fg-51` (planned) | every `FR*`/`NFR*` maps to code, a test and passing verification at the reviewed SHA; gap report | blocking before human approval/merge |
+| 6. Traceability | `fg-51` (planned) | every `FR*`/`NFR*` maps to code, a test and passing verification at the reviewed SHA; gap report | policy target: blocking once `fg-51` lands |
 | 7. Human | human | final approval, security, architecture, product intent | blocking |
+
+Layers 2 and 6 are **policy targets**, not current automated enforcement. Until
+`fg-45` and `fg-51` land, the author/reviewer apply them manually; the
+deterministic checks in `check-planning.js` cover layers 0–1 only.
 
 Rules:
 
@@ -79,11 +84,11 @@ Rules:
 - **Risk before code.** No ticket starts implementation until its assumptions,
   change impact and (for non-small work) failure modes and security
   considerations are present and approved. This is a readiness check, not a
-  new phase.
+  new phase. (Policy target until `fg-45` lands.)
 - **Traceability before merge.** No ticket reaches `human_approval` or merge
   with an unresolved `missing`/`partial` requirement unless a scoped,
   reason-bearing, expiring waiver is recorded. Code coverage is not
-  requirement coverage.
+  requirement coverage. (Policy target until `fg-51` lands.)
 - **AI drafts, humans ratify.** An agent may draft risk sections or propose
   mappings, but it cannot mark an assumption validated, waive a gap or approve
   the plan.

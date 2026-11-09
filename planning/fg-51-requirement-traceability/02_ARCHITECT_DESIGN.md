@@ -160,6 +160,7 @@ CREATE TABLE ticket_requirement_trace_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   ticket_id BIGINT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
   action VARCHAR(32) NOT NULL,          -- computed|waived|waiver_revoked|gate_blocked|report_capped
+  run_id TEXT,                          -- supervisor/CI run correlation
   evidence_sha TEXT,
   actor_type VARCHAR(16) NOT NULL CHECK (actor_type IN ('user','agent','system')),
   actor_user_id BIGINT REFERENCES users(id),
@@ -170,6 +171,8 @@ CREATE TABLE ticket_requirement_trace_events (
 
 CREATE INDEX idx_requirement_trace_events_ticket
   ON ticket_requirement_trace_events(ticket_id, created_at DESC);
+CREATE INDEX idx_requirement_trace_events_run
+  ON ticket_requirement_trace_events(run_id);
 ```
 
 Why a separate table from `fg-45` readiness: readiness is about the plan before
@@ -181,6 +184,7 @@ different lifecycles, waiver scopes and permissions.
 | Method | Path | Purpose | Auth |
 |---|---|---|---|
 | GET | `/tickets/:id/traceability` | Latest snapshot + gap report | `TICKET_READ` |
+| GET | `/tickets/:id/traceability/events?runId=` | Event rows for the ticket, filterable by `run_id` | `TICKET_READ` |
 | POST | `/tickets/:id/traceability/recompute` | Recompute for the current PR head | `TICKET_UPDATE` (agent or human) |
 | POST | `/tickets/:id/traceability/waive` | Waive named requirement IDs with reason/expiry | `TICKET_TRACEABILITY_WAIVE` + project membership |
 | DELETE | `/tickets/:id/traceability/waive/:requirementId` | Revoke a waiver | `TICKET_TRACEABILITY_WAIVE` |

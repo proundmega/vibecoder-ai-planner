@@ -6,7 +6,7 @@ priority: "P1"
 effort: "Large"
 scope: "Infra"
 created: "2026-11-08"
-updated: "2026-11-08"
+updated: "2026-11-09"
 pr: null
 branch: null
 depends_on: ["fg-48", "fg-49"]
@@ -46,10 +46,12 @@ suites that escape the checker.
 ## Readiness gate (before implementation)
 
 - [x] `01` has numbered requirements with testable acceptance
-- [x] `02` records the current-state audit and rollout
+- [x] `01` has assumptions and change impact; `02` has failure modes, security considerations and the current-state audit
 - [x] `03` has a verification-matrix row for every requirement
 - [x] The work is docs/checker-only; no runtime behavior change
 - [x] Historical `DONE/` and `archived/` content is preserved
+- [x] Planned/deferred suites, fenced examples and active legacy suites are explicitly scoped out or reported separately
+- [x] A repository self-check test proves the checks pass where they are committed
 
 ## Status evidence
 
@@ -66,7 +68,7 @@ after the implementation PR is merged and `03` has a dated Results row.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Migrate every legacy suite, including historical ones | self | Tooling | none | open |
+| D1 | Migrate legacy suites into the frontmatter/status model in staged batches (eventual; not one pass) | self | Tooling | none | open |
 | D2 | Auto-fix trivial template placeholders | fg-49 | Tooling | none | open |
 | D3 | Publish generated indexes as a machine-readable artifact | self | Tooling | none | open |
 

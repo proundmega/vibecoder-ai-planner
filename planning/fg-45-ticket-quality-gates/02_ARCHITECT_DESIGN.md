@@ -31,7 +31,7 @@ plan approval judge the content.
 | Assumptions | `01` | every template; a small fix may use a one-line statement | at least one row with impact + validation, or `No material assumptions — <reason>` |
 | Failure modes | `02` | `architecture`, `technical`, `specification` | at least one row with detection + mitigation/test |
 | Security considerations | `02` | `architecture`, `technical`, `specification`; always for security-sensitive scope | non-empty section covering authn, authz/permissions, scoping, secrets, audit, rate limiting, validation, data exposure |
-| Change impact | `01` | every template | at least one row with area + impact + evidence/owner |
+| Change impact | `01` (or lightweight `00`) | every template | at least one row with area + impact + evidence/owner |
 
 **Security-sensitive scope** is derived from the ticket's scope, description
 and planning files (auth, permissions, migrations, agent boundary, external

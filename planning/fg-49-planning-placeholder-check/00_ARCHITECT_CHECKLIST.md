@@ -6,7 +6,7 @@ priority: "P2"
 effort: "Small"
 scope: "Infra"
 created: "2026-11-08"
-updated: "2026-11-08"
+updated: "2026-11-09"
 pr: null
 branch: null
 depends_on: ["fg-48"]
@@ -39,10 +39,12 @@ leave the suite incomplete.
 ## Readiness gate (before implementation)
 
 - [x] `01` has numbered `FR*`/`NFR*` requirements with testable acceptance
-- [x] `02` records the current state and the checker design
+- [x] `01` has assumptions and change impact; `02` records the current state and the checker design (failure/security sections apply to non-small tickets; this is Small)
 - [x] `03` has a verification-matrix row for every requirement
 - [x] The checker stays deterministic and network-free
 - [x] `DONE/`, `archived/` and the lightweight template directory are exempt
+- [x] Planned/deferred suites and fenced examples are explicitly exempt
+- [x] A repository self-check test proves the check passes where it is committed
 
 ## Status evidence
 

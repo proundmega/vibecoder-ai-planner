@@ -37,6 +37,17 @@ depends_on: []
 
 If none: *No material assumptions — {{one-line reason}}.*
 
+## Change impact
+
+For a lightweight suite this is normally `n/a`: there is no API, database,
+auth/permission, migration or agent-boundary change. If any of those apply, use
+the full `01` template instead.
+
+| Area | Impact | Evidence / owner |
+|---|---|---|
+| API, DB, frontend, agent, permissions, jobs | n/a — single-layer change | readiness gate |
+| Rollback | revert the change | git revert |
+
 ## Readiness gate (before implementation)
 
 - [ ] Scope is one layer and the root cause is understood

@@ -6,10 +6,10 @@ priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-11-08"
-updated: "2026-11-08"
+updated: "2026-11-09"
 pr: null
 branch: null
-depends_on: ["fg-31", "fg-45", "fg-48"]
+depends_on: ["fg-31", "fg-32", "fg-36", "fg-45", "fg-48"]
 ---
 
 # 00 — Requirement Traceability and Merge Readiness (fg-51)
@@ -42,10 +42,10 @@ untested requirement can reach `human_approval` and merge.
 ## Readiness gate (before implementation)
 
 - [x] `01` has numbered `FR*`/`NFR*` requirements with testable acceptance
+- [x] `01` has assumptions and change impact; `02` has failure modes and security considerations (see `fg-45`)
 - [x] `02` records the current-state audit, evidence sources and gate design
 - [x] `03` has a verification-matrix row for every requirement
-- [x] `fg-31`, `fg-45` and `fg-48` own their adjacent pieces; this ticket does
-      not duplicate them
+- [x] `fg-31`, `fg-32`, `fg-36`, `fg-45` and `fg-48` own their adjacent pieces; this ticket does not duplicate them
 - [x] The feature is additive and can ship behind `TRACEABILITY_GATE_MODE=warn`
 
 ## Status evidence
@@ -85,6 +85,8 @@ after the implementation PR is merged and `03` has a dated Results row.
 - [ ] `03` Results has a dated, non-placeholder row
 - [ ] `status` is `done` only after the implementation PR merged, and `pr` is set
 - [ ] `PENDING.txt` / `HARNESS_ROADMAP.md` labels match this file
+- [ ] `fg-32` fix requests and `fg-36` merge gate consume the trace API and reject a stale SHA
+- [ ] The trace event carries `run_id`, and the query path is covered by a test
 
 ## Notes
 
