@@ -57,19 +57,31 @@ restatement of the requirement.}}
 {{trigger}} → {{layer}} → {{layer}} → {{storage}} → {{response}}
 ```
 
-## Failure handling & recovery
+## Failure modes and recovery
 
-| Failure | Detection | Behaviour | Operator action |
-|---|---|---|---|
-| {{...}} | | | |
+Enumerate how the change fails, not only how it works. Every mitigation names a
+test, verification command or monitoring signal; “handle errors” is not a
+mitigation.
 
-## Security
+| Failure mode | Trigger | Detection | Mitigation / test | Operator action |
+|---|---|---|---|---|
+| {{database unavailable}} | | | | |
+| {{duplicate/concurrent request}} | | | | |
+| {{timeout / partial write}} | | | | |
 
-- Authentication: {{...}}
-- Authorization: {{permission names}}
-- Input validation: {{Joi schema}}
-- Sensitive data: {{what is stored, masked or redacted}}
-- Rate limiting: {{...}}
+## Security considerations
+
+- Authentication: {{JWT user / X-API-Key agent / public}}
+- Authorization: {{permission names and project/tenant scoping}}
+- Input validation: {{Joi schema / parser limits}}
+- Secrets: {{what is read, where it is stored, how it is redacted}}
+- Audit: {{events written, actor identity}}
+- Rate limiting / abuse: {{limits and failure behaviour}}
+- Data exposure: {{PII, logs, error messages, provider prompts}}
+
+Security-sensitive scopes (auth, permissions, migrations, agent boundary,
+external calls, secrets, user data) must fill this section even when the ticket
+uses the `simple` template.
 
 ## Performance
 

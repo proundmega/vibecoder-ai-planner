@@ -5,7 +5,7 @@
 - [x] Read all 01-04 planning docs for this ticket
 - [x] Understand scope: 4 bug fixes across backend services, API routes, frontend components
 - [x] No assumptions — all bugs verified with code inspection and test execution
-- [x] Read `ai/CODING.md` and `ai/IPEE.md` — IPEE methodology mandatory
+- [x] Read `ai/CODING.md` — coding principles
 
 ## Existing Infrastructure Audit
 

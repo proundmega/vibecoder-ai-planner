@@ -4,7 +4,7 @@ AI-powered Kanban SaaS. Backend: Node.js/Express (CommonJS). Frontend: Vue 3 + V
 
 ## How to investigate
 
-Read highest-value sources first: `README*`, root manifests, workspace config, lockfiles, build/test/lint/typecheck/codegen config, CI workflows, existing instruction files (`ai/CODING.md`, `ai/IPEE.md`). Prefer executable sources (package.json scripts, jest/vitest configs, CI) over prose. If docs conflict with config, trust the config.
+Read highest-value sources first: `README*`, root manifests, workspace config, lockfiles, build/test/lint/typecheck/codegen config, CI workflows, existing instruction files (`ai/CODING.md`). Prefer executable sources (package.json scripts, jest/vitest configs, CI) over prose. If docs conflict with config, trust the config.
 
 ## Quick Start
 
@@ -42,7 +42,7 @@ frontend/src/
   router/index.ts       → reads vibecode_token directly from localStorage
 
 agent/                  → Java 17 Maven, shaded JAR; `harness/` = OpenCode supervisor (fg-30)
-ai/CODING.md            → IPEE methodology (mandatory for all code changes)
+ai/CODING.md            → coding principles
 architecture/           → system-design.md
 planning/               → 00-04 templates + bp-XX/, bt-XX/, fg-XX/ suites
 ```
@@ -127,12 +127,12 @@ Both backend and frontend enforce a **60% minimum coverage** (lines, functions, 
 - CI will fail if coverage drops below 60%. Run coverage locally before pushing.
 
 ### Test-first requirement
-When a `04_SPECIFICATION.md` is created for a ticket, it includes a **Test-First Requirement** section. The implementing model MUST:
+When a `04_SPECIFICATION.md` is created for a ticket, it includes a **Test-First Requirement** section. The implementing agent MUST:
 1. Create empty test stub files (with imports, `describe` blocks, stub `it` blocks) **before** any production code
 2. Create production code files
 3. Fill in test stubs with actual assertions
 
-This prevents models from skipping tests. The test stubs are listed as the first file operations in `04_SPECIFICATION.md`.
+This prevents agents from skipping tests. The test stubs are listed as the first file operations in `04_SPECIFICATION.md`.
 
 ## Agent harness (fg-30)
 
@@ -257,6 +257,13 @@ findings gate; the fix loop is bounded. See `planning/README.md` §Review policy
 The second independent reviewer pass (`fg-47`) is planned, not part of the
 current flow; `fg-48` plans the deterministic `check-claims` script.
 
+**Formal pre-merge steps**: before implementation, `01` carries an assumptions
+table and change impact, and `02` carries failure modes and security
+considerations for non-small tickets (`fg-45`). Before `human_approval` and
+merge, every `FR*`/`NFR*` maps to code, a test and passing verification evidence
+at the reviewed SHA (`fg-51`). Both are readiness/review gates inside the
+existing phases, not new phases; their automated enforcement is planned.
+
 **Status/claim rule**: `done` means the implementation merged, with a PR and a
 dated `03` Results row. A merged planning PR is `plan merged`, not `done`.
 `PENDING.txt` and `HARNESS_ROADMAP.md` labels must match `00` (`Plan merged` vs
@@ -264,14 +271,7 @@ dated `03` Results row. A merged planning PR is `plan merged`, not `done`.
 
 ## Coding methodology
 
-All code changes **must** follow the IPEE methodology defined in `ai/CODING.md` and `ai/IPEE.md`:
-
-1. **Identify** — define the problem, inputs, outputs, constraints, edge cases
-2. **Plan** — brainstorm solutions, evaluate, select strategy (spend ~80% planning vs coding)
-3. **Execute** — implement, follow best practices
-4. **Evaluate** — test against expected outcomes, edge cases, performance
-
-State which IPEE step you're in at each moment. Skipping any step is not permitted.
+Plan before making non-trivial changes, make the smallest coherent change, and add or update tests for the behavior you change. Run the project's verification commands before finishing. Record assumptions and non-obvious trade-offs in the ticket or PR.
 
 ## Deferred Improvements (Goldmine)
 

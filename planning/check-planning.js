@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = __dirname;
-const SKIP = new Set(['DONE', 'archived']);
+const SKIP = new Set(['DONE', 'archived', 'lightweight']);
 const failures = [];
 const checked = [];
 

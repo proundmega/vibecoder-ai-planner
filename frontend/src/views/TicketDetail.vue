@@ -608,7 +608,7 @@ async function handleShowTemplateSelect() {
                   <p v-if="template === 'architecture'">Detailed architecture planning with system design sections</p>
                   <p v-else-if="template === 'technical'">Technical implementation plan with steps and tasks</p>
                   <p v-else-if="template === 'simple'">Simple task breakdown with checkboxes</p>
-                  <p v-else>Model execution specification with exact file operations</p>
+                  <p v-else>Execution specification with exact file operations</p>
                 </button>
                 <div v-if="customTemplates.length > 0" class="template-separator">
                   <span>Custom Templates</span>

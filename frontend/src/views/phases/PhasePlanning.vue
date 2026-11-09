@@ -20,7 +20,7 @@ const templateOptions = [
   { key: 'architecture', label: 'Architecture', desc: 'Detailed architecture planning with system design' },
   { key: 'technical', label: 'Technical', desc: 'Technical implementation plan with steps' },
   { key: 'simple', label: 'Simple', desc: 'Simple task breakdown with checkboxes' },
-  { key: 'specification', label: 'Specification', desc: 'Model execution spec with exact file operations' },
+  { key: 'specification', label: 'Specification', desc: 'Execution spec with exact file operations' },
 ]
 
 onMounted(async () => {

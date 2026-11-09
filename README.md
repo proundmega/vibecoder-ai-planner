@@ -335,13 +335,6 @@ detection. The backend job uses a real PostgreSQL service container.
 
 ## Planning
 
-The project uses an IPEE-based planning methodology (see `ai/CODING.md`):
-
-1. **Identify** — define the problem, inputs, outputs, constraints
-2. **Plan** — evaluate solutions (~80% planning, ~20% coding)
-3. **Execute** — implement
-4. **Evaluate** — test against expected outcomes
-
 Planning suites live in `planning/`:
 - `bp-XX-*` — Bug fixes / improvements
 - `bt-XX-*` — Test backfill
@@ -350,7 +343,9 @@ Planning suites live in `planning/`:
 - `archived/` — Archived suites
 - `PENDING.txt` — Active ticket queue (canonical)
 
-Each suite follows templates: `00_ARCHITECT_CHECKLIST.md` → `01_ARCHITECT_REQUIREMENT.md` → `02_ARCHITECT_DESIGN.md` → `03_ARCHITECT_IMPLEMENTATION.md` → `04_SPECIFICATION.md` (optional) → `05_RUNBOOK.md` (optional). See `planning/README.md` for document ownership and rules, and `planning/ENGINEERING_STANDARDS.md` for repo-wide engineering conventions.
+Each suite follows templates: `00_ARCHITECT_CHECKLIST.md` → `01_ARCHITECT_REQUIREMENT.md` → `02_ARCHITECT_DESIGN.md` → `03_ARCHITECT_IMPLEMENTATION.md` → `04_SPECIFICATION.md` (optional) → `05_RUNBOOK.md` (optional). Small, single-layer tickets use the lightweight `00` + `03` templates in `planning/lightweight/`. See `planning/README.md` for document ownership and rules, and `planning/ENGINEERING_STANDARDS.md` for repo-wide engineering conventions.
+
+The review policy defines the target formal gates before merge: deterministic check → **pre-implementation risk review** (assumptions, failure modes, security considerations, change impact) → independent review → fixer → **requirement traceability** (requirement → code → test → verification evidence) → human approval. The risk review is owned by `fg-45`; traceability is owned by `fg-51`. Layers 2 and 6 are policy targets until those tickets land; until then they are applied manually.
 
 ## Migration System
 
@@ -364,7 +359,7 @@ Each migration has a `_rollback.sql` counterpart.
 ## Contributing
 
 1. Read `AGENTS.md` for full guidelines and gotchas
-2. Read `ai/CODING.md` for IPEE methodology
+2. Read `ai/CODING.md` for coding principles
 3. Check `planning/TICKETS.txt` for active work
 4. Check `PENDING.txt` for unimplemented planning suites
 5. Scan `Out of Scope` sections in `planning/DONE/` for deferred improvements (goldmine)

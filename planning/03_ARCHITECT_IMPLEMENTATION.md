@@ -46,6 +46,11 @@ One row per requirement. This table is the contract between `01` and the code.
 
 A requirement with no row is not done.
 
+Requirement IDs are the traceability keys for `fg-51`. Name each test with its
+ID (`FR1` in the test name, an `@req FR1` annotation, or a manifest entry) so
+the traceability check can map requirement → code → test → verification. A
+suite-level green run without a mapped test is `partial`, not `verified`.
+
 ## Verification commands
 
 The standard set lives in `planning/ENGINEERING_STANDARDS.md` →

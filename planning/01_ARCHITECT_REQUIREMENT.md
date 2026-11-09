@@ -17,6 +17,18 @@ Include the failure sequence, not just the label.}}
 
 - {{...}}
 
+## Assumptions
+
+| ID | Assumption | Impact if wrong | Validation / evidence | State |
+|---|---|---|---|---|
+| A1 | {{what must be true for this plan to work}} | {{what breaks if it is false}} | {{test, monitor, or accepted risk}} | open |
+
+If there are no material assumptions, replace the table with:
+*No material assumptions — {{one-line reason}}.*
+
+An assumption that cannot be validated becomes an accepted risk in `00`'s
+deferred register or a follow-up ticket; it is not silently dropped.
+
 ## Functional requirements
 
 | ID | Requirement | Acceptance (testable) |
@@ -41,6 +53,22 @@ can fail, it needs an ID and a matrix row.
 ## In scope
 
 - {{...}}
+
+## Change impact
+
+| Area | Impact | Evidence / owner |
+|---|---|---|
+| API routes/contracts | {{none / routes}} | |
+| Database/migrations | {{none / tables}} | |
+| Frontend | {{none / views, API client}} | |
+| Agent/harness | {{none / classes}} | |
+| Permissions/auth | {{none / permission codes, scoping}} | |
+| Background jobs/external calls | {{none / jobs, providers}} | |
+| Downstream tickets | {{none / fg-XX}} | |
+| Rollback | {{revert / migration rollback / feature flag}} | |
+
+A small fix may state `n/a` with a reason. Use `fg-51` requirement IDs so
+traceability can map each requirement to code, tests and verification.
 
 ## Out of scope
 
