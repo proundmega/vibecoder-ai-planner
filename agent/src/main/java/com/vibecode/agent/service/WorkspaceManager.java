@@ -935,12 +935,14 @@ public class WorkspaceManager {
                 // Binary or `-diff` attribute: fall back to the raw blob so a
                 // hostile .gitattributes cannot hide a large text file.
                 additions += countBlobLines(newSha);
-                if (oldSha != null && !oldSha.equals(newSha)) {
+                if (oldSha != null && !oldSha.equals(newSha)
+                    && (oldSize > newSize || oldSize > MAX_COUNTED_BYTES)) {
                     // Without numstat we cannot isolate the removed lines, so
-                    // count the old blob too. Otherwise a shrinking -diff text
+                    // count the old blob too when content was removed or the
+                    // old blob is oversized. Otherwise a shrinking -diff text
                     // file bypasses HARNESS_MAX_LINES once the byte limit is
-                    // raised. Binary blobs report zero lines, so this does not
-                    // inflate binary diffs.
+                    // raised. Small grows/same-size edits keep the new blob
+                    // only, avoiding a full-old-blob false positive.
                     deletions += countBlobLines(oldSha);
                 }
             }

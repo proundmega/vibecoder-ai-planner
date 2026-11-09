@@ -968,6 +968,33 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void smallDiffAttributeGrowDoesNotDoubleCountTheOldBlob() throws Exception {
+        Path repoDir = initRepo("small-diff-attribute-grow");
+        Files.writeString(repoDir.resolve(".gitattributes"), "* -diff\n");
+        String original = "line\n".repeat(1_500);
+        Files.writeString(repoDir.resolve("small.txt"), original);
+        runGit(repoDir, "add", ".gitattributes", "small.txt");
+        runGit(repoDir, "commit", "-m", "small text with -diff");
+
+        Files.writeString(repoDir.resolve("small.txt"), original + "extra\n");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff;
+        try {
+            diff = wm.stageFreshDiff();
+        } finally {
+            wm.discardStaged();
+        }
+
+        assertEquals(1_501, diff.additions());
+        assertEquals(0, diff.deletions(),
+            "a small grow must not count the whole old blob as removed");
+        assertTrue(diff.changedLines() < 2_000);
+    }
+
+    @Test
     void smallBinaryBlobReportsZeroLines() throws Exception {
         Path repoDir = initRepo("small-binary-lines");
         Files.write(repoDir.resolve("asset.bin"), new byte[]{0x00, '\n', '\n'});
