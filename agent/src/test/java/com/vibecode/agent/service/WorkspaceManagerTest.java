@@ -937,6 +937,56 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void oversizedDiffAttributeTextShrinkFailsClosedForLinesWithRaisedByteLimit() throws Exception {
+        Path repoDir = initRepo("huge-diff-attribute-shrink");
+        Files.writeString(repoDir.resolve(".gitattributes"), "* -diff\n");
+        String content = "line\n".repeat((11 * 1024 * 1024) / 5 + 1);
+        Files.writeString(repoDir.resolve("huge.txt"), content);
+        runGit(repoDir, "add", ".gitattributes", "huge.txt");
+        runGit(repoDir, "commit", "-m", "huge text with -diff");
+
+        Files.writeString(repoDir.resolve("huge.txt"), "small\n");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff;
+        try {
+            diff = wm.stageFreshDiff();
+        } finally {
+            wm.discardStaged();
+        }
+
+        assertEquals(1, diff.additions());
+        assertTrue(diff.deletions() > 1_000_000,
+            "removed lines from the old -diff text blob must be counted");
+        assertTrue(diff.changedBytes() > 10L * 1024 * 1024,
+            "shrunk -diff text bytes must count the old content");
+        PublishingGuard guard = new PublishingGuard(List.of(), 50, 2_000, 20L * 1024 * 1024);
+        assertThrows(IllegalStateException.class, () -> guard.assertPublishable(diff),
+            "the line guard must reject a shrinking -diff text diff when only the byte limit is raised");
+    }
+
+    @Test
+    void smallBinaryBlobReportsZeroLines() throws Exception {
+        Path repoDir = initRepo("small-binary-lines");
+        Files.write(repoDir.resolve("asset.bin"), new byte[]{0x00, '\n', '\n'});
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", false, null);
+        setRepoDir(wm, repoDir);
+
+        DiffSummary diff;
+        try {
+            diff = wm.stageFreshDiff();
+        } finally {
+            wm.discardStaged();
+        }
+
+        assertEquals(0, diff.additions(), "binary newlines must not count as text lines");
+        assertTrue(diff.changedBytes() >= 3);
+    }
+
+    @Test
     void stageFreshDiffIgnoresIndexOnlyBlobs() throws Exception {
         Path repoDir = initRepo("index-only-bytes");
         String big = "x".repeat(20_000);
