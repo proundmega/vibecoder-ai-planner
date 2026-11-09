@@ -44,8 +44,9 @@ No new phase. The trace service computes a snapshot at these points:
 3. **On demand** — `GET /tickets/:id/traceability` for the UI and humans.
 4. **Merge check** — `fg-36` reads the latest snapshot and rejects a stale SHA.
 
-The service is deterministic and read-only. It never runs tests itself; it
-consumes results produced by the supervisor/CI.
+The service is deterministic and read-only with respect to the repository and
+approval state. It never runs tests itself; it consumes results produced by the
+supervisor/CI. It writes only its own trace snapshot and event rows.
 
 ## Requirement registry
 

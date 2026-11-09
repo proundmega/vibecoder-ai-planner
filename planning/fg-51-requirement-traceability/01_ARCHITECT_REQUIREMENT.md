@@ -31,7 +31,9 @@ be “covered” by a test that never asserts its acceptance condition.
 5. Gate `review -> human_approval` and merge on missing/partial requirements,
    with scoped waivers.
 6. Feed gaps to the reviewer and fixer so the loop fixes the right requirement.
-7. Keep the check deterministic, offline by default and read-only for agents.
+7. Keep the check deterministic, offline by default and read-only for the
+   repository/approval state; an agent may trigger recompute but cannot mutate
+   code, tests, commits or approvals.
 
 ## Non-goals
 
@@ -74,7 +76,7 @@ be “covered” by a test that never asserts its acceptance condition.
 |---|---|---|
 | NFR1 | Deterministic and offline by default; no network/LLM calls in the default check. | Two runs over the same inputs produce the same report; no external process starts. |
 | NFR2 | No secrets in reports, prompts, logs or stored evidence. | Redaction tests pass; tokens/keys never appear in a row or event. |
-| NFR3 | Read-only for the reviewer/agent; traceability never writes code, tests, commits or approvals. | Permission/tests prove the agent path cannot mutate the repository or approve. |
+| NFR3 | Read-only for the repository and approval state: the reviewer/agent path cannot mutate code, tests, commits or approvals; the trace service may write its own snapshot/event rows for recompute. | Permission/tests prove the agent path cannot mutate the repository or approve; recompute writes only trace/event rows. |
 | NFR4 | Bounded: cap report size and parsing time; a too-large/unparseable report fails with a recorded reason, not an unbounded run. | A large fixture terminates within the configured cap and records `report_capped`. |
 | NFR5 | Backward compatible: grandfather existing tickets; the gate is disabled/warn until enabled per project. | Existing tickets without snapshots are not blocked; enabling `enforce` is explicit. |
 

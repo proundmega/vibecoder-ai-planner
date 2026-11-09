@@ -30,7 +30,7 @@ Start with a drift test rather than generation:
 - extract required headings and a small set of banned/required phrases from
   `planning/00`–`04` (including the `01` assumptions/change-impact sections,
   the `02` failure-mode/security sections and the lightweight `00`
-  change-impact section);
+  assumptions/change-impact sections);
 - assert the `TemplateService` string and frontend labels contain the same
   required headings and wording;
 - compare required headings, required phrases and banned phrases, not whole

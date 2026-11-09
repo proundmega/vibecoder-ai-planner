@@ -28,7 +28,7 @@ plan approval judge the content.
 
 | Section | File | Required for | Deterministic check |
 |---|---|---|---|
-| Assumptions | `01` | every template; a small fix may use a one-line statement | at least one row with impact + validation, or `No material assumptions — <reason>` |
+| Assumptions | `01` (or lightweight `00`) | every template; a small fix may use a one-line statement | at least one row with impact + validation, or `No material assumptions — <reason>` |
 | Failure modes | `02` | `architecture`, `technical`, `specification` | at least one row with detection + mitigation/test |
 | Security considerations | `02` | `architecture`, `technical`, `specification`; always for security-sensitive scope | non-empty section covering authn, authz/permissions, scoping, secrets, audit, rate limiting, validation, data exposure |
 | Change impact | `01` (or lightweight `00`) | every template | at least one row with area + impact + evidence/owner |
@@ -268,11 +268,11 @@ planning_status: not_started -> template_selected -> in_progress
 | `MISSING_TEST_PLAN` | non-small template without a test/verification section | yes |
 | `MISSING_DEPENDENCIES` | non-small template without a dependencies section | yes |
 | `MISSING_ROLLBACK` | non-small template without rollback/risk | yes |
-| `MISSING_ASSUMPTIONS` | `01` has no assumptions table and no explicit `No material assumptions` statement | yes |
+| `MISSING_ASSUMPTIONS` | `01` (or lightweight `00`) has no assumptions table and no explicit `No material assumptions` statement | yes |
 | `EMPTY_ASSUMPTIONS` | assumptions table exists but rows lack impact or validation/evidence | yes |
 | `MISSING_FAILURE_MODES` | non-small ticket has no non-empty `## Failure modes and recovery` table | yes |
 | `MISSING_SECURITY_CONSIDERATIONS` | missing/empty section, or security-sensitive scope without it | no for security-sensitive scope; yes otherwise |
-| `MISSING_CHANGE_IMPACT` | non-small ticket has no non-empty `## Change impact` table | yes |
+| `MISSING_CHANGE_IMPACT` | non-small ticket has no non-empty `## Change impact` table in `01` or the lightweight `00` | yes |
 | `DUPLICATE_REQUIREMENT_ID` | `01` repeats an `FR*`/`NFR*` ID | no |
 | `MISSING_REQUIREMENT_ACCEPTANCE` | an `FR*`/`NFR*` row has no acceptance statement | yes |
 
@@ -295,6 +295,7 @@ planning_status: not_started -> template_selected -> in_progress
 - Custom project templates may omit `requiredSections`; the evaluator then only enforces file presence/non-emptiness and placeholders, and the readiness response reports `sectionsEnforced: false`.
 - Built-in Phase 1 metadata:
   - `01_ARCHITECT_REQUIREMENT.md`: `["Assumptions", "Change impact"]`
+  - lightweight `00_ARCHITECT_CHECKLIST.md`: `["Assumptions", "Change impact"]`
   - `02_ARCHITECT_DESIGN.md`: `["Failure modes and recovery", "Security considerations"]`
 - Acceptance criteria: the `ticket_acceptance_criteria` table is authoritative. `apply-template` seeds it from a `## Acceptance Criteria` list if the table is empty; later edits go through the criteria endpoints, not free text.
 

@@ -57,7 +57,7 @@
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
 | FR1 | Node script | `planning/check-planning.test.js` | `FR1 active done suite fails; moved suite passes` | `node --test planning/check-planning.test.js` |
-| FR2 | Backend unit | `backend/src/__tests__/templateService.test.js` | `FR2 repo/product 00–04 headings and banned phrases agree, including assumptions/change impact/failure modes/security and lightweight 00` | `cd backend && npm test -- templateService` |
+| FR2 | Backend unit | `backend/src/__tests__/templateService.test.js` | `FR2 repo/product 00–04 headings and banned phrases agree, including assumptions/change impact/failure modes/security and lightweight 00 assumptions/change impact` | `cd backend && npm test -- templateService` |
 | FR3 | Node script | `planning/check-planning.test.js` | `FR3 retired wording in an in-progress suite fails; planned, DONE/ and legacy fixtures pass/report separately; fenced/inline examples pass` | `node --test planning/check-planning.test.js` |
 | FR4 | Node script | `planning/check-planning.test.js` | `FR4 legacy **Status** planned suite fails; legacy done fixture passes` | `node --test planning/check-planning.test.js` |
 | FR5 | Node script | `planning/check-planning.test.js` | `FR5 mismatched/missing index row fails` | `node --test planning/check-planning.test.js` |

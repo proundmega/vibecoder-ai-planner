@@ -82,7 +82,7 @@ Indicative; exact signatures belong in `04` if one is written.
 | FR10 | Frontend unit | `frontend/src/__tests__/traceability.test.js` | `FR10 panel renders counts/rows; event displays ticket/run_id` | `cd frontend && npm test -- traceability` |
 | NFR1 | Backend unit | `backend/src/services/RequirementTraceService.test.js` | `NFR1 repeated runs are deterministic and offline` | `cd backend && npm test -- traceability` |
 | NFR2 | Backend unit | `backend/src/services/RequirementTraceService.test.js` | `NFR2 secrets are absent from rows/events/logs` | `cd backend && npm test -- traceability` |
-| NFR3 | Backend unit | `backend/src/services/RequirementTraceService.test.js` | `NFR3 agent path cannot mutate repo or approve` | `cd backend && npm test -- traceability` |
+| NFR3 | Backend unit | `backend/src/services/RequirementTraceService.test.js` | `NFR3 agent path cannot mutate repo or approve; recompute writes only trace/event rows` | `cd backend && npm test -- traceability` |
 | NFR4 | Backend unit | `backend/src/services/RequirementTraceService.test.js` | `NFR4 oversized/malformed report records report_capped/parse failure` | `cd backend && npm test -- traceability` |
 | NFR5 | Backend unit | `backend/src/services/RequirementTraceService.test.js` | `NFR5 grandfathered ticket is not blocked; enforce is explicit` | `cd backend && npm test -- traceability` |
 

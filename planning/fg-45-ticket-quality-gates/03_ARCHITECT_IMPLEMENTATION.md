@@ -24,7 +24,7 @@
 - [ ] Propagate readiness errors in `frontend/src/api/tickets.ts`
 - [ ] Add the ticket creation wizard and readiness panel
 - [ ] Add readiness metrics and blocked-ticket messages
-- [ ] Add assumptions and change impact to the `01` templates (root, lightweight, product)
+- [ ] Add assumptions and change impact to the `01` templates and the lightweight `00` (root, product)
 - [ ] Add failure modes and security considerations to the `02` templates (root, product)
 - [ ] Parse and validate the risk sections; add the new issue codes and security-sensitive scope detection
 - [ ] Export the parsed requirement IDs for `fg-51`

@@ -23,9 +23,9 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-46 | `fg-46-flow-observability` | Planned - deferred | Flow stages, queue age, harness/provider/review metrics, `run_id` correlation | fg-30, fg-31/32, fg-33, fg-36, fg-41, fg-44, fg-45 |
 | fg-47 | `fg-47-independent-review-pass` | Planned | Independent second reviewer: different model/provider/context, read-only, dedupe/triage, blocking policy | fg-31, fg-32, fg-37, fg-41 |
 | fg-48 | `fg-48-planning-claim-checks` | Planned | Deterministic `check-claims` script: structured evidence, index labels, matrix coverage, deferred counts | fg-47, fg-31 |
-| fg-49 | `fg-49-planning-placeholder-check` | Planned | Active suites fail on unresolved `{{...}}`; report suite/file/line/token; `DONE/`, `archived/` and `lightweight/` exempt | fg-48 |
-| fg-50 | `fg-50-planning-template-hygiene` | Planned | Move completed suites to `DONE/`, repo/product template drift test, stale wording/frontmatter checks, index validation, execution-only `04` | fg-48, fg-49 |
-| fg-51 | `fg-51-requirement-traceability` | Planned | Requirement → code → test → verification evidence, per-requirement gap report, gate before human approval/merge, scoped waivers | fg-31, fg-45, fg-48 |
+| fg-49 | `fg-49-planning-placeholder-check` | Planned | Migrated started suites (`in_progress`/`in_review`/`done`) fail on unresolved `{{...}}`; report suite/file/line/token; planned/deferred, fenced/inline examples, Results, `DONE/`, `archived/`, `lightweight/` and legacy suites exempt/reported | fg-48 |
+| fg-50 | `fg-50-planning-template-hygiene` | Planned | Move completed suites to `DONE/`, `00`–`04` repo/product template drift test (risk sections + lightweight `00`), retired-wording checks for migrated active suites/root templates (legacy reported), index validation, execution-only `04` | fg-48, fg-49 |
+| fg-51 | `fg-51-requirement-traceability` | Planned | Requirement → code → test → verification evidence, per-requirement gap report, gate before human approval/merge, scoped waivers; consumed by `fg-32` fix requests and the `fg-36` stale-SHA merge gate | fg-31, fg-32, fg-36, fg-45, fg-48 |
 | fg-35 | `fg-35-github-app-credentials` | Planned | GitHub App installation tokens, least privilege | fg-30 Phase 1 |
 | fg-36 | `fg-36-merge-lifecycle` | Planned | Base branch, conflicts, CI gate, merge queue, rollback | fg-31, fg-32 |
 | fg-37 | `fg-37-agent-evaluation-harness` | Planned | Golden corpus, grading, metrics, A/B, reviewer calibration | fg-30/31/32 |
@@ -54,13 +54,13 @@ fg-30 Phases 2-4 (human loop, autonomy, hardening) remain part of the fg-30 impl
 ### Review-quality follow-ups (after fg-31/fg-32)
 - **fg-47** independent second reviewer (different model family/provider; advisory first)
 - **fg-48** deterministic `check-claims` script for structured evidence and index labels
-- **fg-49** planning placeholder check (active suites fail on unresolved `{{...}}`; `DONE/`, `archived/` and `lightweight/` exempt)
-- **fg-50** planning template hygiene (move completed suites to `DONE/`, template drift test, stale wording/frontmatter checks, index validation, execution-only `04`)
-- **fg-51** requirement traceability (every `FR*`/`NFR*` maps to code, a test and passing verification at the reviewed SHA; gap report gates human approval/merge; scoped waivers)
+- **fg-49** planning placeholder check (migrated started suites fail on unresolved `{{...}}`; planned/deferred, fenced/inline examples, Results, `DONE/`, `archived/`, `lightweight/` and legacy suites exempt/reported)
+- **fg-50** planning template hygiene (move completed suites to `DONE/`, `00`–`04` template drift test, retired-wording checks for migrated active suites/root templates, index validation, execution-only `04`)
+- **fg-51** requirement traceability (every `FR*`/`NFR*` maps to code, a test and passing verification at the reviewed SHA; gap report gates human approval/merge; scoped waivers; consumed by `fg-32`/`fg-36`)
 
 ### Phase C - Quality and operations
 9. **fg-45** ticket quality gates and Definition of Ready (includes the pre-implementation risk review)
-10. **fg-51** requirement traceability (after fg-45; start in `warn`, enforce after the pilot)
+10. **fg-51** requirement traceability (after fg-32, fg-36 and fg-45; start in `warn`, enforce after the pilot)
 11. **fg-37** evaluation harness
 12. **fg-38** budgets and routing
 13. **fg-39** repo environment profiles
