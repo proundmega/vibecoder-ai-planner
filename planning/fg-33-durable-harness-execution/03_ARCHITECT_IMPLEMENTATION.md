@@ -185,7 +185,7 @@ Operator recovery, cleanup and observability:
 | `HARNESS_LEASE_SECONDS` | `600` | Lease claim/renew TTL (clamped 60–86400) |
 | `HARNESS_HEARTBEAT_SECONDS` | `30` | Heartbeat + lease renewal interval (≤ lease/2) |
 | `HARNESS_DURABILITY_REQUIRED` | `false` | Fail closed when the initial run cannot be persisted |
-| `HARNESS_MAX_ATTEMPTS` | `3` | Retry backoff only; automatic dead-letter is deferred |
+| `HARNESS_RETRY_PIN_ATTEMPTS` / `HARNESS_MAX_ATTEMPTS` | `3` | Agent retries before terminal/manual recovery; automatic dead-letter is deferred |
 | `HARNESS_RESUME_MODE` | `restart` | Startup recovery: `restart` or `resume` (adopt published evidence) |
 | `HARNESS_REAPER_INTERVAL_SECONDS` | `60` | Scheduled reaper sweep interval; `0` disables it |
 | `HARNESS_WORKSPACE_RETENTION_HOURS` | `24` | Agent startup cleanup of stale clone dirs; `0` disables |

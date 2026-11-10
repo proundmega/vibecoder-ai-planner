@@ -59,7 +59,7 @@ A strictly read-only mount cannot run verification: fg-30's `resolveInstallComma
 - clone the PR head into a per-run directory (same tokenless, shallow clone as fg-30);
 - allow installs/builds only inside that directory;
 - after the run, discard the tree; the supervisor never commits, pushes, merges or opens a PR from it;
-- run with the controls fg-30 actually provides: `HARNESS_STARTUP_TIMEOUT_MS`, `HARNESS_IDLE_TIMEOUT_MS`, `HARNESS_MAX_DURATION_MINUTES`, bounded `VerificationRunner` output capture, and process-group kill. CPU/memory limits currently come from `agent/docker-compose.yml`; there is no pids limit. Add real pids/memory limits in the sandbox follow-up and never pass host credentials.
+- run with the controls fg-30 actually provides: `HARNESS_STARTUP_TIMEOUT_MS`, `HARNESS_MAX_DURATION_MINUTES`, bounded `VerificationRunner` output capture, and process-group kill. CPU/memory limits currently come from `agent/docker-compose.yml`; there is no pids limit. Add real pids/memory limits in the sandbox follow-up and never pass host credentials.
 
 Verification executes arbitrary PR code. A dedicated sandbox/egress-hardening ticket is required before enabling this on untrusted contributions; no `fg-34` ticket exists in this repository yet, so track it as a new follow-up and cross-reference the fg-30 hardening phase.
 

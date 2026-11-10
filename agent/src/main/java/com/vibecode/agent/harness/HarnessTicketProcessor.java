@@ -616,7 +616,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             return;
         }
         if (isBackingOff(ticket.getId())) {
-            log.info("Ticket {} is in failure backoff; skipping this poll", ticket.getId());
+            log.info("Ticket {} is in failure backoff or terminal failure state; skipping this poll",
+                ticket.getId());
             return;
         }
 
@@ -1301,12 +1302,20 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         FailureState state = failures.computeIfAbsent(ticketId, ignored -> new FailureState());
         int attempt = state.recordFailure(maxAttempts, retryBaseDelayMs, retryMaxDelayMs);
-        String note = " (attempt " + Math.min(attempt, maxAttempts) + "/" + maxAttempts
+        if (state.isTerminal()) {
+            releaseAfterTerminalFinish = false;
+            log.warn("Ticket {} exhausted {} automatic attempt(s); leaving it in_progress "
+                + "for operator recovery", ticketId, maxAttempts);
+            postMessage(ticketId, "update", message
+                + "\n\nAutomatic retries exhausted after "
+                + Math.min(attempt, maxAttempts) + "/" + maxAttempts
+                + " attempts. The ticket was left in_progress for operator recovery; "
+                + "the terminal state clears when the agent restarts.");
+            return;
+        }
+        String note = " (attempt " + attempt + "/" + maxAttempts
             + ", retry after "
             + Math.max(0, (state.nextAttemptAt - System.currentTimeMillis()) / 1000) + "s)";
-        if (attempt > maxAttempts) {
-            note += " — retry backoff pinned at the maximum interval; manual intervention recommended if this persists";
-        }
         postMessage(ticketId, "update", message + note);
 
         // Route every run-bound release through the backend guard. It refuses
@@ -1327,7 +1336,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
     private boolean isBackingOff(Long ticketId) {
         FailureState state = failures.get(ticketId);
-        return state != null && System.currentTimeMillis() < state.nextAttemptAt;
+        return state != null
+            && (state.isTerminal() || System.currentTimeMillis() < state.nextAttemptAt);
     }
 
     /**
@@ -1408,12 +1418,24 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private static final class FailureState {
         private int attempts;
         private long nextAttemptAt;
+        private boolean terminal;
 
         private synchronized int recordFailure(int maxAttempts, long baseDelayMs, long maxDelayMs) {
             attempts++;
-            nextAttemptAt = System.currentTimeMillis()
-                + retryDelayMillis(attempts, maxAttempts, baseDelayMs, maxDelayMs);
+            if (attempts >= maxAttempts) {
+                // Terminal/manual policy: do not schedule another automatic
+                // attempt and do not release the ticket back to the backlog.
+                terminal = true;
+                nextAttemptAt = Long.MAX_VALUE;
+            } else {
+                nextAttemptAt = System.currentTimeMillis()
+                    + retryDelayMillis(attempts, maxAttempts, baseDelayMs, maxDelayMs);
+            }
             return attempts;
+        }
+
+        private synchronized boolean isTerminal() {
+            return terminal;
         }
     }
 

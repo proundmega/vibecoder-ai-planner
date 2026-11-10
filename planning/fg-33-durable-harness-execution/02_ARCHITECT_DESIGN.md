@@ -108,7 +108,7 @@ startup after recovery succeeds:
 |---|---|---|
 | `HARNESS_LEASE_SECONDS` | `600` | Ticket lease TTL |
 | `HARNESS_HEARTBEAT_SECONDS` | `30` | Lease renewal interval |
-| `HARNESS_MAX_ATTEMPTS` | `3` | Retry backoff only; automatic dead-letter is deferred |
+| `HARNESS_RETRY_PIN_ATTEMPTS` / `HARNESS_MAX_ATTEMPTS` | `3` | Agent retries before terminal/manual recovery; automatic dead-letter is deferred |
 | `HARNESS_WORKSPACE_RETENTION_HOURS` | `24` | Orphan cleanup age |
 | `HARNESS_RESUME_MODE` | `restart` | `restart`, `resume` |
 

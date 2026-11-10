@@ -17,6 +17,8 @@ import org.mockito.InOrder;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -64,7 +66,7 @@ class HarnessTicketProcessorTest {
         "opencode-go", "secret-key", null, "beam-free", 4096);
 
     private final HarnessConfig harnessConfig = new HarnessConfig(
-        "opencode", "opencode", Duration.ofSeconds(30), Duration.ofSeconds(30),
+        "opencode", "opencode", Duration.ofSeconds(30),
         Duration.ofMinutes(45), List.of("npm test"),
         List.of(".env*", ".github/workflows/**", "**/secrets/**"), null, "restart");
 
@@ -127,7 +129,7 @@ class HarnessTicketProcessorTest {
 
     private HarnessTicketProcessor processorWithResumeMode() {
         HarnessConfig resumeConfig = new HarnessConfig(
-            "opencode", "opencode", Duration.ofSeconds(30), Duration.ofSeconds(30),
+            "opencode", "opencode", Duration.ofSeconds(30),
             Duration.ofMinutes(45), List.of("npm test"),
             List.of(".env*", ".github/workflows/**", "**/secrets/**"), null, "resume");
         return new HarnessTicketProcessor(
@@ -713,6 +715,34 @@ class HarnessTicketProcessorTest {
         assertEquals(2_000, HarnessTicketProcessor.retryDelayMillis(2, 3, 1_000, 10_000));
         assertEquals(10_000, HarnessTicketProcessor.retryDelayMillis(3, 3, 1_000, 10_000));
         assertEquals(10_000, HarnessTicketProcessor.retryDelayMillis(4, 3, 1_000, 10_000));
+    }
+
+    @Test
+    void retryExhaustionIsTerminalAndLeavesTheTicketForRecovery() throws Exception {
+        when(apiService.releaseHarnessTicket("run-1")).thenReturn(true);
+
+        Field maxField = HarnessTicketProcessor.class.getDeclaredField("maxAttempts");
+        maxField.setAccessible(true);
+        int maxAttempts = (int) maxField.get(processor);
+
+        Method apply = HarnessTicketProcessor.class.getDeclaredMethod(
+            "applyFailureRelease", Long.class, String.class, String.class);
+        apply.setAccessible(true);
+        for (int i = 0; i < maxAttempts; i++) {
+            apply.invoke(processor, 1L, "Harness failed", "run-1");
+        }
+
+        verify(apiService, times(maxAttempts - 1)).releaseHarnessTicket("run-1");
+        verify(apiService, never()).releaseTicket(1L);
+
+        ArgumentCaptor<String> messages = ArgumentCaptor.forClass(String.class);
+        verify(apiService, times(maxAttempts))
+            .postMessage(eq(1L), eq("update"), messages.capture());
+        assertTrue(messages.getAllValues().get(maxAttempts - 1)
+            .contains("Automatic retries exhausted"));
+
+        processor.processTicket(ticket());
+        verify(apiService, never()).pickUpTicket(1L);
     }
 
     @Test

@@ -28,7 +28,6 @@ class OpenCodeConfigWriterTest {
             "opencode",
             "opencode",
             Duration.ofSeconds(30),
-            Duration.ofSeconds(30),
             Duration.ofMinutes(45),
             List.of(),
             List.of(".env*", ".github/workflows/**", "**/secrets/**"),

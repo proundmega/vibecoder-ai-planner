@@ -15,11 +15,6 @@ public record HarnessConfig(
     String mode,
     String binary,
     Duration startupTimeout,
-    /**
-     * Reserved for a Phase 2 event-stream watchdog. Blocking prompt mode uses
-     * {@link #maxDuration()} and does not call {@code awaitIdle()}.
-     */
-    Duration idleTimeout,
     Duration maxDuration,
     List<String> verificationCommands,
     List<String> protectedPaths,
@@ -46,7 +41,6 @@ public record HarnessConfig(
         String mode = value(env, "HARNESS_MODE", DEFAULT_MODE);
         String binary = value(env, "HARNESS_BIN", DEFAULT_BINARY);
         long startupMs = longValue(env, "HARNESS_STARTUP_TIMEOUT_MS", 30_000L);
-        long idleMs = longValue(env, "HARNESS_IDLE_TIMEOUT_MS", 300_000L);
         long maxMinutes = longValue(env, "HARNESS_MAX_DURATION_MINUTES", 45L);
 
         String model = value(env, "HARNESS_MODEL", "");
@@ -57,7 +51,6 @@ public record HarnessConfig(
             mode,
             binary,
             Duration.ofMillis(startupMs),
-            Duration.ofMillis(idleMs),
             Duration.ofMinutes(maxMinutes),
             split(value(env, "HARNESS_VERIFY_COMMANDS", "")),
             split(value(env, "HARNESS_PROTECTED_PATHS", DEFAULT_PROTECTED_PATHS)),
@@ -79,7 +72,6 @@ public record HarnessConfig(
                 "HARNESS_RESUME_MODE must be one of: restart, resume");
         }
         requirePositive(startupTimeout, "HARNESS_STARTUP_TIMEOUT_MS");
-        requirePositive(idleTimeout, "HARNESS_IDLE_TIMEOUT_MS");
         requirePositive(maxDuration, "HARNESS_MAX_DURATION_MINUTES");
     }
 

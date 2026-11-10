@@ -29,7 +29,6 @@ class OpenCodeClientTest {
             "opencode",
             "opencode",
             startupTimeout,
-            Duration.ofSeconds(30),
             Duration.ofMinutes(45),
             List.of(),
             List.of(".env*"),
@@ -304,7 +303,7 @@ class OpenCodeClientTest {
             System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java"
         ).toString();
         HarnessConfig processConfig = new HarnessConfig(
-            "opencode", javaBinary, Duration.ofSeconds(10), Duration.ofSeconds(5),
+            "opencode", javaBinary, Duration.ofSeconds(10),
             Duration.ofMinutes(5), List.of(), List.of(".env*"), null, "restart");
         ProviderSettings provider = new ProviderSettings(
             "opencode-go", "key", null, "beam-free", 4096);
