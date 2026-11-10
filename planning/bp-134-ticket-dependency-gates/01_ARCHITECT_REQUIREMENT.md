@@ -15,7 +15,7 @@ Evidence:
 - `TicketService.updateStatus()` delegates straight to the model transition.
 - `AgentApp.processCycle()` fetches backlog tickets and calls `processTicket()` without a dependency check.
 
-A planner can therefore show `010 depends_on 005`, but an agent can still start 010 while 005 is open.
+A planner can therefore return `010 depends_on 005`, but an agent can still start 010 while 005 is open.
 
 ## Goals
 
@@ -51,7 +51,7 @@ A planner can therefore show `010 depends_on 005`, but an agent can still start 
 
 - **FR1 - Pickup gate:** `TicketService.pickUpTicket()` rejects a ticket whose dependencies are not complete before writing `status='in_progress'`.
 - **FR2 - Transition gate:** `TicketService.updateStatus()`, `TicketService.update()` when the payload enters `in_progress`, and `PhaseService.transition()` when the target enters execution all enforce the same dependency check. A transition to the `blocked` phase is explicitly excluded: `blocked` maps to status `in_progress`, but it is the safe action for a ticket that is already in progress and must remain available when dependencies are incomplete.
-- **FR3 - Durable start gate:** `HarnessRunService.startRun()` rejects a **new** durable run for a ticket whose dependencies are not complete, so a direct agent call cannot bypass FR1/FR2. Recovery of an already-started run via `HarnessTicketProcessor.recoverRun()` is exempt: it does not enter execution again, and blocking it would strand in-flight work. The recovery path still reports `ready=false`/`dependency_reopened` on the ticket.
+- **FR3 - Durable start gate:** `HarnessRunService.startRun()` rejects a **new** durable run for a ticket whose dependencies are not complete, so a direct agent call cannot bypass FR1/FR2. Recovery of an already-started run via `HarnessTicketProcessor.recoverRun()` is exempt: it does not enter execution again, and blocking it would strand in-flight work. Recovery emits a structured readiness log/audit event; the normal ticket read path independently reports `ready=false`/`dependency_reopened`.
 - **FR4 - Fail-closed resolution:** missing, deleted, self-referential, unreadable and cross-project dependency IDs block execution. Only dependencies with `status='done'` or `phase IN ('done','deployed')` satisfy the gate. Each unresolved entry carries a machine-readable `reason` (`not_done`, `dependency_reopened`, `missing`, `deleted`, `self`, `cross_project`, `unreadable`).
 - **FR5 - Blocked-by contract:** a blocked operation returns `409 DEPENDENCIES_NOT_DONE` with `blockedBy[]` entries containing `id`, nullable `title`, nullable `status`/`phase` and a `reason`, plus a human-readable message. This requires a dependency-specific error (for example `DependencyConflictError extends ConflictError`) because the current `ConflictError` hardcodes `CONFLICT` and accepts no details. The same data is exposed read-only on ticket responses as `ready` and `blockedBy[]`.
 - **FR6 - Backlog filtering:** the agent backlog query excludes blocked tickets so they do not consume `MAX_TICKETS`; project and planner views still list them with `ready=false`.
@@ -60,7 +60,7 @@ A planner can therefore show `010 depends_on 005`, but an agent can still start 
 
 ## Non-functional requirements
 
-- **NFR1 - Atomicity:** the dependency assertion and the `in_progress` write cannot race. The check runs in the same transaction as the status update, **and the transaction locks the target ticket plus all resolved dependency rows** (`SELECT ... FOR UPDATE`, ordered by id) so a concurrent dependency reopen (`done → in_progress`) serializes before or after the start rather than between check and write. Alternatively a single `NOT EXISTS` predicate inspects the affected row count. A later reopen is allowed and only affects future starts.
+- **NFR1 - Atomicity:** the dependency assertion and the `in_progress` write cannot race. The check runs in the same transaction as the status update, **and the transaction locks the target ticket plus all same-project resolved dependency rows** (`SELECT ... FOR UPDATE`, ordered by id) so a concurrent dependency reopen (`done → in_progress`) serializes before or after the start rather than between check and write. A snapshot-only `NOT EXISTS` predicate is not sufficient because it does not lock dependency rows. Cross-project, self, missing, deleted or unreadable entries are rejected before the lock step and are never locked. A later reopen is allowed and only affects future starts.
 - **NFR2 - Backward compatibility:** existing done/review/in-progress tickets and phase-based completion keep working. No historical ticket becomes stuck merely because it is already in progress: the gate applies to entering execution, not to recovery, and `in_progress → blocked` remains allowed.
 - **NFR3 - Performance:** a single-ticket readiness check is one bounded query. List enrichment uses one batch query (for example `= ANY(depends_on)` plus a lateral/aggregate readiness projection) rather than an N+1 helper per ticket.
 - **NFR4 - Scoping and integrity:** dependency checks respect project membership and existing circular-dependency validation; cross-project IDs are rejected.

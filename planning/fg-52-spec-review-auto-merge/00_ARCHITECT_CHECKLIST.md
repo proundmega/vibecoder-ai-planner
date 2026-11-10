@@ -47,6 +47,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D5 | Cross-project policy inheritance | self | Administration | fg-52 follow-up | open |
 | D6 | Merge-queue integration and conflict resolution | fg-36 | Merge | fg-36-merge-lifecycle | open |
 | D7 | Automatic revert on post-merge failure | fg-36 | Reliability | fg-36-merge-lifecycle | open |
+| D8 | First-class `ticket_specs` store (this phase uses ticket planning files as the canonical spec) | self | Storage | fg-52 follow-up | open |
 
 ## Important design decisions
 
@@ -73,9 +74,10 @@ deferred scope are owned by this document; `01`–`04` link here.
 ## Known unknowns
 
 - Initial thresholds for effort, risk and confidence (proposal: effort ≤ 30, risk ≤ 20, confidence ≥ 0.8; all configurable).
-- Whether the spec lives only in ticket planning files or also has a first-class `ticket_specs` table.
 - The minimum calibration sample size before enabling low-risk auto-merge.
 - Which model/provider diversity is required for the reviewer/merger.
+
+Resolved: ticket planning files are the canonical spec source in this phase; a first-class `ticket_specs` store is deferred to `D8`.
 
 Resolved: `auto_approve` skips only the human **approval** step (the `human_approval` gate); a human still performs the merge. It never skips review or a deterministic gate. The security-sensitive deny list is a fixed platform baseline that projects may extend but never replace.
 
@@ -88,10 +90,13 @@ Resolved: `auto_approve` skips only the human **approval** step (the `human_appr
 - [ ] Each tier (`off`, `shadow`, `auto_approve`, `auto_merge_low_risk`) behaves as designed; `auto_approve` skips approval but not review or human merge.
 - [ ] Deterministic gates override a favourable estimate.
 - [ ] Security-sensitive paths cannot be auto-merged in any tier, even when a project sets `additional_deny_paths = []`.
+- [ ] The baseline regression classifies every real auth/permission path (`backend/src/auth.js`, `backend/src/api/routes.js`, `backend/src/middleware/auth.js`, `backend/src/api/permissions.js`, `backend/src/services/PermissionService.js`, `backend/src/validators/auth.js`) as human-only.
 - [ ] Project deny paths are additive to the fixed platform baseline; a project cannot remove a baseline path.
 - [ ] Required gates and quotas are enforced and covered by tests.
 - [ ] Project and global kill switches stop decisions immediately; a project cannot override the global switch.
-- [ ] Every policy change is recorded in an append-only project-level audit trail.
+- [ ] Only `super_admin` can change the global control.
+- [ ] Every policy change is recorded in an append-only audit trail; global changes and hard-deleted projects remain distinguishable.
+- [ ] A global policy change uses `scope='global'`/null project and a deleted project keeps its `scope='project'` history.
 - [ ] Implementer cannot estimate or merge its own ticket.
 - [ ] Final-diff re-score can downgrade or reject an auto-merge.
 - [ ] Human veto/override is immediate and audited.

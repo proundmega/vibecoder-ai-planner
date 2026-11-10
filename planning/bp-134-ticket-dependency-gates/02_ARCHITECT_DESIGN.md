@@ -28,18 +28,19 @@ The canonical helper lives in `TicketService` and returns:
 }
 ```
 
-Resolved tickets always carry `title`, `status` and `phase`. Unresolvable
-entries carry a `reason` and null title/status/phase rather than pretending the
-ticket exists.
+Resolved same-project tickets always carry `title`, `status` and `phase`.
+Cross-project, self, missing, deleted or unreadable entries are rejected before
+any `FOR UPDATE` and carry `reason` with null title/status/phase, so the gate
+does not leak another project's ticket or imply a row it will lock.
 
 Rules:
 
 - Empty/absent `depends_on` → ready.
 - Every dependency must resolve to a ticket in the same project.
 - A dependency is complete when `status='done'` or `phase IN ('done','deployed')`.
-- Missing, deleted, self, cross-project or unreadable IDs → `ready=false` with a distinct `reason` (`missing`, `deleted`, `self`, `cross_project`, `unreadable`).
+- Missing, deleted, self, cross-project or unreadable IDs → `ready=false` with a distinct `reason` (`missing`, `deleted`, `self`, `cross_project`, `unreadable`) and null title/status/phase. These are rejected before the lock step and are never locked.
 - `10` depends on `5` is directed: `10` is blocked, `5` is unaffected.
-- Dependency reopening is allowed (`done → in_progress`). Readiness is evaluated at start time; a later reopen sets `ready=false` and `reason=dependency_reopened` on the dependent but does not retroactively undo a start.
+- Dependency reopening is allowed (`done → in_progress`). Readiness is evaluated at start time; a later reopen sets `ready=false` and `reason=dependency_reopened` on the dependent but does not retroactively undo a start. The reason is sourced from the dependency's latest `ticket_phases` row: a transition from `done`/`deployed` into an executing phase that occurred after the dependent's current `in_progress` start. Without that evidence, an incomplete dependency is `not_done`.
 - The helper is read-only; it does not mutate dependencies.
 
 ## Enforcement matrix
@@ -51,28 +52,33 @@ Rules:
 | Ticket PUT | `TicketService.update()` | when the payload changes status into `in_progress` |
 | Phase transition | `PhaseService.transition()` | when the target enters execution, **excluding `toPhase === 'blocked'`** |
 | Durable new start | `HarnessRunService.startRun()` | before creating/claiming the run |
-| Durable recovery | `HarnessTicketProcessor.recoverRun()` | exempt (already-started run); reports readiness but does not block |
+| Durable recovery | `HarnessTicketProcessor.recoverRun()` | exempt (already-started run); logs/audits readiness but does not block; the ticket read path computes `ready` independently |
 | Agent queue | backend project-ticket query used by `ApiService.listBacklogTickets()` | exclude tickets whose dependencies are incomplete |
 
 ## Atomicity and concurrency
 
-Two acceptable implementations:
+One required implementation: **transaction + row locks**. `SELECT ... FOR UPDATE`
+the target ticket and every same-project resolved dependency row (ordered by id
+to avoid deadlocks), evaluate readiness, then update in the same transaction.
 
-1. **Single query with `NOT EXISTS`:** include the dependency predicate in the same `UPDATE` as the status write, then inspect the affected row count.
-2. **Transaction + row locks:** `SELECT ... FOR UPDATE` the target ticket and every resolved dependency row (ordered by id to avoid deadlocks), evaluate readiness, then update in the same transaction.
-
-The second is easier to explain and matches the readiness/error contract. The
-existing state machine allows `done → in_progress`
+The existing state machine allows `done → in_progress`
 (`PhaseService.ALLOWED_TRANSITIONS`), so a dependency can reopen. Locking only
-the target ticket would not serialize that race. Locking the dependency rows
-ensures a concurrent reopen either commits before the readiness check (and is
-seen) or waits until after the start; it cannot slip between check and write.
+the target ticket would not serialize that race, and a snapshot-only
+`NOT EXISTS` predicate does not lock dependency rows, so a reopen can commit
+after the statement snapshot and let the start through. Locking the dependency
+rows ensures a concurrent reopen either commits before the readiness check (and
+is seen) or waits until after the start; it cannot slip between check and write.
+Cross-project, self, missing, deleted or unreadable entries are rejected before
+the lock step and are never locked.
+
 A reopen that happens after a successful start is allowed: it only affects
 future starts and marks the dependent `ready=false`. `in_progress → blocked`
 is not gated, because blocking is the safe action and does not enter execution.
 
 Recovery of an already-started run is exempt. It does not re-enter execution
-and blocking it would strand the run; it still reports readiness for visibility.
+and blocking it would strand the run. It emits a structured log/audit event when
+readiness is false, while the normal ticket read endpoint independently computes
+`ready`/`blockedBy` for display.
 
 ## Error contract
 
@@ -125,7 +131,7 @@ The hard boundary is the service gate; filtering is a throughput optimization.
 |---|---|---|---|---|
 | Dependency check bypassed | A new path writes `in_progress` directly | Integration test enumerates all paths; code review of `UPDATE tickets SET status` | Shared assertion + grep/test for writes | Revert the path; add a regression |
 | Missing dependency treated as done | Dependency ticket deleted or malformed array | Unit test with missing ID | Fail closed with `ready=false` | Repair the dependency data |
-| Race between dependency edit and start | Concurrent update | Transaction/lock test or `NOT EXISTS` under concurrency | Same-transaction assertion | Re-run the blocked start |
+| Race between dependency edit and start | Concurrent update | Dependency-row lock test under concurrency | Same-transaction `FOR UPDATE` on target plus dependency rows | Re-run the blocked start |
 | Performance regression | N+1 readiness calls on backlog listing | Query count test / EXPLAIN | One bounded query or SQL predicate | Add an index or batch query |
 | Existing ticket stranded | Historical in-progress ticket with open deps | Backfill report | NFR2: gate entry only; recovery and `in_progress → blocked` stay allowed | Leave it; only new starts are gated |
 | Dependency reopened after start | `done → in_progress` on a prerequisite | Dependent shows `ready=false`/`dependency_reopened`; audit event | Allowed by product decision; row locks serialize a concurrent reopen during start | Review the dependent; block or rework it if needed |

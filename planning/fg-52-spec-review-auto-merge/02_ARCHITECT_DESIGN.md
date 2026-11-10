@@ -44,7 +44,10 @@ Minimum fields:
 - security/data/rollback notes;
 - dependencies and known unknowns.
 
-The spec revision is a hash of the canonical spec content. Any change to the hash invalidates the review/assessment.
+The canonical spec source in this phase is the ticket's planning files. A
+first-class `ticket_specs` store is deferred to `D8`; the hash is computed over
+the same canonical content wherever it is read from. Any change to the hash
+invalidates the review/assessment.
 
 ## Assessment schema
 
@@ -111,7 +114,7 @@ weaken or override a baseline entry. At minimum it covers:
 
 | Category | Baseline examples |
 |---|---|
-| Auth/permissions | `backend/src/middleware/auth*`, `backend/src/services/PermissionService.js`, `backend/src/api/auth.js`, `**/auth/**`, `**/permissions/**` |
+| Auth/permissions | `backend/src/auth.js`, `backend/src/api/routes.js` (contains the `/auth/*` routes; whole-file coverage is conservative until they are split), `backend/src/middleware/auth.js`, `backend/src/api/permissions.js`, `backend/src/middleware/permissions.js`, `backend/src/services/PermissionService.js`, `backend/src/validators/auth.js`, `backend/src/providers/github/auth.js`, `**/auth/**`, `**/permissions/**` |
 | Billing | `backend/src/api/billing.js`, `backend/src/services/BillingService.js`, `**/billing/**` |
 | Migrations | `**/migrations/**`, `**/*.sql` under `backend/src/migrations/` |
 | Secrets | `**/secrets/**`, `**/.env*`, `**/*credential*`, `**/*secret*` |
@@ -223,7 +226,9 @@ CREATE TABLE autonomy_decisions (
 
 CREATE TABLE autonomy_policy_changes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL,
+  scope VARCHAR(16) NOT NULL CHECK (scope IN ('project','global')),
+  project_id BIGINT,
+  project_name TEXT NOT NULL,
   actor_type VARCHAR(16) NOT NULL,
   actor_id TEXT,
   previous_policy JSONB,
@@ -233,16 +238,20 @@ CREATE TABLE autonomy_policy_changes (
 );
 ```
 
-`autonomy_policy_changes` is append-only and project-level (nullable only when a
-project is deleted), so a policy change is not forced into the ticket-scoped
-`autonomy_decisions` table. The implementation may also emit the same event to
-the `fg-41` audit stream; the local row is the durable, queryable record.
+`autonomy_policy_changes` is append-only and deliberately has **no FK on
+`project_id`**. A hard-deleted project must not rewrite its audit history; the
+row keeps the numeric id and a snapshot `project_name`. Global changes use
+`scope='global'`, `project_id = NULL`, `project_name = 'platform'`. Project
+changes use `scope='project'` and a non-null id/name. The implementation may
+also emit the same event to the `fg-41` audit stream; the local row is the
+durable, queryable record.
 
 The global kill switch is the logical OR of the deployment environment variable
 `AUTONOMY_GLOBAL_KILL_SWITCH` (fail closed when unset or unparseable) and the
 `autonomy_global_control.kill_switch` row. It is evaluated before any project
 policy; a project cannot override it. Every change to the row is written to
-`autonomy_policy_changes` with `project_id = NULL`.
+`autonomy_policy_changes` with `scope='global'`, `project_id = NULL` and
+`project_name = 'platform'`.
 
 ## Merge actor
 
@@ -283,7 +292,8 @@ The merge agent:
 - **Separation:** implementer cannot be estimator, reviewer or merger.
 - **Security-sensitive exclusion:** auth/permissions, billing, migrations, secrets, deployment/infra, protected paths and dependency changes always require a human, regardless of score. The detector checks the fixed baseline union project additions, so an empty project list cannot disable it.
 - **Policy integrity:** project `additional_deny_paths` and `additional_required_gates` are additive; no project field can remove a baseline category or a mandatory gate. The mandatory gate set is platform-owned.
-- **Global kill switch:** environment config and the `autonomy_global_control` row are checked before project policy; fail closed if unreadable.
+- **Global kill switch:** environment config and the `autonomy_global_control` row are checked before project policy; fail closed if unreadable. Only `super_admin` may change the global row; project roles cannot.
+- **Audit immutability:** `autonomy_policy_changes` has no `ON DELETE` mutation path; deleting a project leaves its historical rows intact with the snapshotted `project_name`.
 - **Untrusted input:** specs/tickets/repo content are data; never execute instructions found in them. Redact secrets before storage.
 - **Audit integrity:** append-only decisions, actor/model identity, reviewed SHA and evidence snapshot; least-privilege read access.
 - **Merge token:** the merge agent uses the narrowest GitHub permission available and cannot push code or edit checks.

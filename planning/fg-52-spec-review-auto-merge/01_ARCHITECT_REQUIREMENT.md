@@ -46,11 +46,11 @@ The system needs a tiered, auditable autonomy policy that starts in shadow mode 
 - **FR4 - Structured assessment:** the estimator records effort `0–100`, risk/blast radius `0–100`, confidence `0–1`, band, signals, missing-information flags, rationale, estimator identity/model and the spec revision.
 - **FR5 - Estimation rubric and provenance:** the estimate uses a documented rubric (scope, files/services, migrations, auth/billing/security, external deps, test burden, uncertainty). The implementing agent’s self-estimate is not authoritative. The estimator does not see the author’s scores before scoring.
 - **FR6 - Policy tiers:** each project selects one tier: `off` (human-only), `auto_approve`, `shadow`, or `auto_merge_low_risk`. The default is `off`. `auto_approve` skips only the `human_approval` gate; a human still performs the merge, and review plus every deterministic gate still apply.
-- **FR7 - Per-project configuration:** thresholds for effort/risk/confidence, additional deny paths, additional required gates, quotas and the project kill switch are project-scoped, validated, authorized and audited. Additional deny paths and gates are additive to a fixed platform baseline and cannot remove or weaken a baseline entry or mandatory gate.
+- **FR7 - Per-project configuration:** thresholds for effort/risk/confidence, additional deny paths, additional required gates, quotas and the project kill switch are project-scoped, validated, authorized and audited. Additional deny paths and gates are additive to a fixed platform baseline and cannot remove or weaken a baseline entry or mandatory gate. The platform-global control is a separate `super_admin` action.
 - **FR8 - Deterministic gate engine:** before auto-approval or merge, evaluate CI/required checks, review verdict, tests changed, diff size/file/line limits, protected/high-risk paths, migrations/auth/billing/secrets/infra, dependency readiness, branch freshness, secret/publish guards and traceability evidence.
 - **FR9 - Separate merge actor:** an independent merge agent (different session; different model/provider where available) performs the merge only in an enabled tier. It cannot edit code, bypass checks or approve its own work.
 - **FR10 - Final-diff re-score:** before merge, re-evaluate the actual diff against the spec and risk gates. A mismatch, unexpected path, missing test or increased risk downgrades to human review.
-- **FR11 - Audit, metrics and calibration:** store assessments, decisions, overrides, vetoes, merges and rollbacks with actor/model/provenance. Record every policy change with before/after values in an append-only project-level audit row or the `fg-41` audit stream. Track estimated vs actual effort, review rounds, rollbacks and incidents; use the data to recalibrate thresholds.
+- **FR11 - Audit, metrics and calibration:** store assessments, decisions, overrides, vetoes, merges and rollbacks with actor/model/provenance. Record every policy change with before/after values and scope (`project` or `global`) in an append-only audit row or the `fg-41` audit stream. Estimated effort is stored here; actual effort/outcomes come from `fg-37` evaluation and `fg-41` audit/usage data. Track estimated vs actual effort, review rounds, rollbacks and incidents; use the data to recalibrate thresholds.
 - **FR12 - UI and API controls:** show the spec review, assessment and policy decision on the ticket; provide project settings for the tier/thresholds/deny paths/required gates and a human veto/force-review action.
 - **FR13 - Shadow and canary rollout:** `shadow` records would-merge decisions without merging. A canary project can enable low-risk auto-merge. A project kill switch and a platform-global kill switch stop decisions immediately; a project cannot override the global switch.
 - **FR14 - Readiness integration:** auto-approval requires dependency readiness (`bp-134`), Definition of Ready/risk sections (`fg-45`) and requirement traceability (`fg-51`). Missing evidence blocks the tier.
@@ -61,7 +61,7 @@ The system needs a tiered, auditable autonomy policy that starts in shadow mode 
 - **NFR2 - Security-sensitive exclusion:** auth/permissions, billing, migrations, secrets, deployment/infra, protected paths and dependency changes are never auto-merged, regardless of effort score. These categories are detected by a fixed, non-configurable platform baseline; project configuration may add paths but cannot remove baseline coverage.
 - **NFR3 - Separation of duties:** author, spec reviewer, estimator, implementer and merger are distinct roles/contexts. No self-approval or self-merge.
 - **NFR4 - Fail closed/default off:** missing assessment, low confidence, policy ambiguity, audit failure or a disabled gate results in human review, never an automatic merge.
-- **NFR5 - Audit and least privilege:** only authorized humans can change project policy or issue a waiver; every change and decision is auditable and access-controlled.
+- **NFR5 - Audit and least privilege:** only authorized humans can change project policy or issue a waiver; only `super_admin` can change the platform-global control. Every change and decision is auditable and access-controlled.
 - **NFR6 - Cost and latency bounds:** the extra spec-review and estimation passes have a documented cost/latency budget; simple tickets may use a cheaper reviewer, but deterministic gates are never skipped.
 - **NFR7 - Calibration and model diversity:** confidence is not trusted in isolation; reviewer/estimator diversity and historical calibration are required before broad auto-merge.
 - **NFR8 - Rollback and alerting:** an auto-merged change has a revert/rollback path, post-merge health detection and an operator alert on failure.
@@ -86,7 +86,7 @@ The system needs a tiered, auditable autonomy policy that starts in shadow mode 
 |---|---|---|---|
 | A1 | Effort and risk are separate axes | A single threshold would authorize unsafe low-effort changes | Design rationale; security-sensitive exclusion |
 | A2 | A separate reviewer/estimator is affordable for the target ticket volume | The policy becomes the new bottleneck | Cost/latency budget; shadow metrics |
-| A3 | Planning/spec files are the canonical spec source | A second spec store could diverge | `fg-45` planning/readiness design |
+| A3 | Ticket planning files are the canonical spec source in this phase | A second spec store could diverge | `fg-45` planning/readiness design; first-class store deferred to `D8` |
 | A4 | `bp-134`/`fg-31`/`fg-32`/`fg-36`/`fg-37`/`fg-41`/`fg-45`/`fg-51` land before this suite | The policy engine has no review/merge/trace/audit evidence to consume | `depends_on` frontmatter; roadmap order places fg-52 after fg-37/fg-41 |
 | A5 | Project policy can be stored in a dedicated audited table | JSONB settings may be simpler but harder to audit | Design choice; migration review |
 | A6 | Shadow mode produces enough signal before canary | Enabling auto-merge would rely on untested assumptions | Shadow metrics and calibration |
@@ -96,11 +96,11 @@ The system needs a tiered, auditable autonomy policy that starts in shadow mode 
 
 | Area | Impact | Evidence/owner |
 |---|---|---|
-| API routes/contracts | Assessment/review/policy endpoints; ticket responses gain assessment/decision fields | `api/tickets.js`, `api/harnessRuns.js` |
+| API routes/contracts | Assessment/review/policy endpoints; ticket responses gain assessment/decision fields; OpenAPI and generated frontend types are updated | `api/tickets.js`, `api/harnessRuns.js`, `api/openapi-spec.js`, `frontend/src/api/generated/**` |
 | Database/migrations | New assessment, review, policy, policy-change audit and decision tables | New migration(s); serialized with other tickets |
 | Frontend | Ticket assessment panel, project autonomy settings on `ProjectDetail.vue`, veto/force-review action | `TicketDetail.vue`, `ProjectDetail.vue` |
 | Agent/harness | Spec-review and estimation stages; merge-agent role; final-diff re-score | `HarnessTicketProcessor`, merge agent |
-| Permissions/auth | Policy changes require an operator/admin permission and project scope | `PermissionService` |
+| Permissions/auth | Project policy changes require an operator/admin permission and project scope; global control is `super_admin`-only | `PermissionService` |
 | Background jobs/external calls | Optional calibration/rollback monitors; GitHub merge API | fg-36, fg-41 |
 | Downstream tickets | Consumes `bp-134`, `fg-31`, `fg-32`, `fg-36`, `fg-37`, `fg-41`, `fg-45`, `fg-51` | `depends_on` |
 | Rollback | Disable the tier/kill switch; revert the merged commit; preserve audit | policy + fg-36 rollback |

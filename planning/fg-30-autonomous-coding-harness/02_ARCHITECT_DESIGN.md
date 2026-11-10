@@ -116,7 +116,7 @@ replaceable behind a `HarnessClient` interface (future Claude Code/Codex adapter
                                  │                              │                          │
 ┌──────────────── Frontend (Vue) ┴────────────────┐   ┌─────────┴──────────────────────────┴──────────┐
 │ Notification bell · Question inbox · Ticket      │   │ Harness Supervisor (Java agent)               │
-│ Agent tab · Project autonomy settings            │   │  · polls backlog                              │
+│ Agent tab · Project policy (fg-52) · budgets      │   │  · polls backlog                              │
 └──────────────────────────────────────────────────┘   │  · clones workspace + branch                  │
                                                        │  · starts OpenCode server (per ticket)        │
                                                        │  · maps SSE events → heartbeat/messages/usage │
@@ -253,15 +253,15 @@ Agent needs a decision
 
 **Phase 1 is unattended.** Every rule must resolve to `allow` or `deny`; an `ask` rule is a startup
 error. Safe commands are allowlisted, everything else is denied, and any unexpected permission
-request is auto-rejected. The supervised/standard/autonomous matrix arrives with the Phase 2 bridge.
+request is auto-rejected. Autonomy decisions are owned by `fg-52`; Phase 2 consumes its policy decision instead of a second mode matrix.
 
 | Operation | Phase 1 (unattended) | Phase 2+ |
 |---|---|---|
-| read/glob/edit inside workspace | allow, except protected/secret paths | policy modes |
-| `grep` | allow (secret files are removed from the workspace before start) | policy modes |
-| run tests/lint/typecheck | allow via safe `shell` prefixes (`npm test *`, `npm run lint *`, `npm run typecheck *`, `mvn test *`, `pytest *`, `make test *`) | allow/ask per autonomy |
+| read/glob/edit inside workspace | allow, except protected/secret paths | fg-52 policy |
+| `grep` | allow (secret files are removed from the workspace before start) | fg-52 policy |
+| run tests/lint/typecheck | allow via safe `shell` prefixes (`npm test *`, `npm run lint *`, `npm run typecheck *`, `mvn test *`, `pytest *`, `make test *`) | allow/ask per fg-52 policy |
 | other safe read commands | allow only `git status *`, `git branch --show-current`, `ls *`, `rg *`, `find *`; **deny `git log`/`git show`/`git diff`** (history/content) | allow/ask |
-| arbitrary shell, installs, deletes | deny | ask/allow per autonomy |
+| arbitrary shell, installs, deletes | deny | ask/allow per fg-52 policy |
 | network fetch / web search / subagents | deny | ask/allow |
 | DB migrations / auth / `.github/` / secrets | deny edit; publishing blocked | ask + approval |
 | git push / commit / merge / force-push | deny (supervisor publishes) | deny |
@@ -510,11 +510,11 @@ CREATE TABLE notifications (
 );
 CREATE INDEX idx_notifications_user_unread ON notifications(user_id, created_at DESC) WHERE read_at IS NULL;
 
+-- Budget/execution limits only. Autonomy modes, risk gates and auto-merge
+-- decisions live in fg-52 project_autonomy_policies; do not add a second mode field here.
 CREATE TABLE agent_policies (
   id BIGSERIAL PRIMARY KEY,
   project_id BIGINT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
-  autonomy VARCHAR(20) NOT NULL DEFAULT 'standard'
-    CHECK (autonomy IN ('supervised','standard','autonomous')),
   require_plan_approval BOOLEAN NOT NULL DEFAULT FALSE,
   max_duration_minutes INTEGER NOT NULL DEFAULT 45,
   max_tokens BIGINT NOT NULL DEFAULT 1500000,
