@@ -77,13 +77,15 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   `HARNESS_REAPER_INTERVAL_SECONDS` (default 60, `0` disables). Each sweep calls
   `reapExpiredLeases`, then reconciles every reaped run plus any terminal run
   whose `reconciled_at` marker is still unset.
-- **Guarded ticket release.** `HarnessRunService.releaseTicketForRun` is the only
-  recovery path that returns a ticket to backlog. It requires a terminal
-  (`failed`/`dead_letter`) run **with no run-level PR or head sha**, the ticket
-  still `in_progress`, no ticket PR, no other run for the ticket with PR/head
-  evidence, and no newer active run. A pushed branch (`head_sha` without a PR)
-  is treated as publish evidence and reported as `needs_operator` instead of
-  being silently re-run.
+- **Automatic failed release.** `HarnessRunService.reconcileRun` returns a ticket
+  to backlog only for a latest `failed` run **with no run-level PR or head sha**
+  when the ticket is still `in_progress`, has no ticket PR, no other run has
+  PR/head evidence, and no newer active run exists. A pushed branch (`head_sha`
+  without a PR) is treated as publish evidence and reported as `needs_operator`
+  instead of being silently re-run.
+- **Explicit release.** `HarnessRunService.releaseTicketForRun` is the manual
+  recovery path. Agent callers may release only `failed` runs; dead_letter runs
+  are a manual hold and require the operator route (`allowDeadLetter`).
 - **Terminal-run reconciliation.** `046_harness_run_reconciliation.sql` adds a
   `reconciled_at` marker, a partial index for pending terminal runs, a one-time
   backfill for historical terminal runs and empty-string normalisation.
@@ -96,6 +98,8 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   `review`; done tickets are never changed. `reapExpiredLeases` marks a run
   `succeeded` when it already has a PR URL, and a sweep of the newest pending
   terminal run per ticket recovers the crash gap between reaping and releasing.
+  A `dead_letter` run is never auto-released: the ticket stays `in_progress`
+  and the sweep reports `needs_operator` so a human can release or adopt it.
 - **Agent startup recovery.** `HarnessTicketProcessor.recoverActiveRuns()` lists
   this agent's active runs at startup (with the latest checkpoint payload). It
   skips a run whose heartbeat or lease is still fresh (another instance may be
@@ -185,7 +189,7 @@ Operator recovery, cleanup and observability:
 | `HARNESS_LEASE_SECONDS` | `600` | Lease claim/renew TTL (clamped 60–86400) |
 | `HARNESS_HEARTBEAT_SECONDS` | `30` | Heartbeat + lease renewal interval (≤ lease/2) |
 | `HARNESS_DURABILITY_REQUIRED` | `false` | Fail closed when the initial run cannot be persisted |
-| `HARNESS_MAX_ATTEMPTS` | `3` | Retry backoff only; automatic dead-letter is deferred |
+| `HARNESS_RETRY_PIN_ATTEMPTS` / `HARNESS_MAX_ATTEMPTS` | `3` | Agent retries before the run is marked `dead_letter`; durable attempt counts are Phase 2 |
 | `HARNESS_RESUME_MODE` | `restart` | Startup recovery: `restart` or `resume` (adopt published evidence) |
 | `HARNESS_REAPER_INTERVAL_SECONDS` | `60` | Scheduled reaper sweep interval; `0` disables it |
 | `HARNESS_WORKSPACE_RETENTION_HOURS` | `24` | Agent startup cleanup of stale clone dirs; `0` disables |

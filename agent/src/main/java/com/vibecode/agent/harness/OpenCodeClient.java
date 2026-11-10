@@ -68,9 +68,6 @@ public final class OpenCodeClient implements HarnessClient {
     private volatile OkHttpClient promptHttpClient;
     private volatile EventSource eventSource;
     private volatile String lastSessionId;
-    private volatile boolean idleSeen;
-    private volatile boolean errorSeen;
-    private volatile long lastEventAt = System.currentTimeMillis();
     private volatile boolean closed;
 
     public OpenCodeClient(HarnessConfig config, ProviderSettings provider, Path tempDir) {
@@ -219,8 +216,6 @@ public final class OpenCodeClient implements HarnessClient {
             throw new IOException("OpenCode did not return a session id");
         }
         this.lastSessionId = id;
-        this.idleSeen = false;
-        this.errorSeen = false;
         return id;
     }
 
@@ -232,7 +227,6 @@ public final class OpenCodeClient implements HarnessClient {
         // This single POST blocks for the whole agent run. Use the long-lived
         // client only here; all control-plane calls have a short timeout.
         postJson("/session/" + sessionId + "/message", body, true);
-        this.lastEventAt = System.currentTimeMillis();
     }
 
     @Override
@@ -267,39 +261,6 @@ public final class OpenCodeClient implements HarnessClient {
             log.debug("OpenCode diff endpoint unavailable, supervisor will use git: {}", redact(e.getMessage()));
             return DiffSummary.empty();
         }
-    }
-
-    /**
-     * Reserved for Phase 2 event streaming. Blocking prompt mode relies on the
-     * prompt HTTP call and the processor's wall-clock budget instead.
-     */
-    public void awaitIdle(Duration timeout) throws IOException {
-        Duration effective = timeout == null || timeout.isNegative() || timeout.isZero()
-            ? Duration.ofMinutes(45)
-            : timeout;
-        long deadline = System.nanoTime() + effective.toNanos();
-
-        while (System.nanoTime() < deadline) {
-            if (errorSeen) {
-                throw new IOException("OpenCode session reported an error");
-            }
-            // Do not treat a returned prompt POST as idle: the server can
-            // finish the request before the session emits session.idle.
-            if (idleSeen) {
-                return;
-            }
-            if (process != null && !process.isAlive()) {
-                throw new IOException("OpenCode server exited: " + processLogTail());
-            }
-            if (config != null && config.idleTimeout() != null
-                && !config.idleTimeout().isZero()
-                && System.currentTimeMillis() - lastEventAt > config.idleTimeout().toMillis()) {
-                throw new IOException(
-                    "OpenCode session idle timeout exceeded: " + config.idleTimeout().toMillis() + "ms");
-            }
-            sleep(100);
-        }
-        throw new IOException("OpenCode session did not become idle within " + effective.toMillis() + "ms");
     }
 
     @Override
@@ -409,13 +370,6 @@ public final class OpenCodeClient implements HarnessClient {
         HarnessEvent event = parseEvent(type, data);
         if (event == null) {
             return;
-        }
-        lastEventAt = System.currentTimeMillis();
-        if (event.isIdle()) {
-            idleSeen = true;
-        }
-        if (event.isError()) {
-            errorSeen = true;
         }
 
         String eventSession = sessionIdOf(event.payload());

@@ -616,7 +616,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             return;
         }
         if (isBackingOff(ticket.getId())) {
-            log.info("Ticket {} is in failure backoff; skipping this poll", ticket.getId());
+            log.info("Ticket {} is in failure backoff or terminal failure state; skipping this poll",
+                ticket.getId());
             return;
         }
 
@@ -878,11 +879,21 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     message = "Harness run ended without a terminal checkpoint";
                 }
                 String finishingRunId = currentRunId;
-                boolean finished = finishDurableRun(
+                String actualStatus = finishDurableRun(
                     status, message, pendingHeadSha, pendingPrUrl);
-                if (finished && releaseAfterTerminalFinish && pickedUp.getId() != null) {
-                    applyFailureRelease(pickedUp.getId(), message, finishingRunId);
-                } else if (!finished && releaseAfterTerminalFinish && pickedUp.getId() != null) {
+                if (actualStatus != null && releaseAfterTerminalFinish && pickedUp.getId() != null) {
+                    if (actualStatus.equals(status)) {
+                        applyFailureRelease(pickedUp.getId(), message, finishingRunId);
+                    } else {
+                        releaseAfterTerminalFinish = false;
+                        log.warn("Refusing to release ticket {}: run {} is {}",
+                            pickedUp.getId(), finishingRunId, actualStatus);
+                        postMessage(pickedUp.getId(), "update", message
+                            + "\n\nThe harness run was already " + actualStatus
+                            + "; the ticket was left in_progress for operator recovery.");
+                    }
+                } else if (actualStatus == null && releaseAfterTerminalFinish
+                    && pickedUp.getId() != null) {
                     postMessage(pickedUp.getId(), "update",
                         message + "\n\nCould not confirm the harness run finished; "
                             + "leaving the ticket assigned for recovery instead of retrying it.");
@@ -1138,10 +1149,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
      * failure. The run id is cleared only after the backend confirms, and the
      * backend finish is idempotent.
      */
-    private boolean finishDurableRun(String status, String error, String headSha, String prUrl) {
+    private String finishDurableRun(String status, String error, String headSha, String prUrl) {
         String runId = currentRunId;
         if (runId == null) {
-            return true;
+            return status;
         }
         stopHeartbeat();
 
@@ -1160,7 +1171,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                         runId, terminal, status);
                 }
                 currentRunId = null;
-                return true;
+                return terminal == null ? status : terminal;
             } catch (IOException | RuntimeException e) {
                 lastFailure = e;
                 if (attempt < 3) {
@@ -1171,7 +1182,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         log.warn("Could not finish harness run {}: {}", runId,
             lastFailure == null ? "unknown error" : lastFailure.getMessage());
-        return false;
+        return null;
     }
 
     private boolean assertLeaseHeld(Long ticketId) {
@@ -1264,7 +1275,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
      * another multi-minute harness.
      */
     private void failAndRelease(Long ticketId, String message) {
-        pendingTerminalStatus = "failed";
+        // Failures that already published work are never retried automatically,
+        // so keep their terminal status failed and let publish evidence win.
+        boolean terminal = !published
+            && failures.computeIfAbsent(ticketId, ignored -> new FailureState())
+                .nextAttempt() >= maxAttempts;
+        pendingTerminalStatus = terminal ? "dead_letter" : "failed";
         pendingTerminalMessage = message;
         // Preserve publish evidence on the failed finish so the backend guard
         // refuses to return a pushed branch to backlog.
@@ -1273,13 +1289,24 @@ public final class HarnessTicketProcessor implements TicketWorker {
         releaseAfterTerminalFinish = true;
 
         String runId = currentRunId;
-        boolean finished = finishDurableRun(
-            "failed", message, publishedHeadSha, publishedPrUrl);
-        if (!finished) {
+        String requestedStatus = pendingTerminalStatus;
+        String actualStatus = finishDurableRun(
+            requestedStatus, message, publishedHeadSha, publishedPrUrl);
+        if (actualStatus == null) {
             // The run/lease may still be live. The finally block retries the
             // finish and applies the backoff + release only if it succeeds.
             log.warn("Could not confirm the harness run finished for ticket {}; "
                 + "deferring ticket release", ticketId);
+            return;
+        }
+        if (!actualStatus.equals(requestedStatus)) {
+            // An operator dead-letter (or another terminal state) already holds
+            // the ticket. Never release it from the agent failure path.
+            releaseAfterTerminalFinish = false;
+            log.warn("Refusing to release ticket {}: run {} is {}", ticketId, runId, actualStatus);
+            postMessage(ticketId, "update", message
+                + "\n\nThe harness run was already " + actualStatus
+                + "; the ticket was left in_progress for operator recovery.");
             return;
         }
 
@@ -1301,12 +1328,21 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         FailureState state = failures.computeIfAbsent(ticketId, ignored -> new FailureState());
         int attempt = state.recordFailure(maxAttempts, retryBaseDelayMs, retryMaxDelayMs);
-        String note = " (attempt " + Math.min(attempt, maxAttempts) + "/" + maxAttempts
+        if (state.isTerminal()) {
+            releaseAfterTerminalFinish = false;
+            log.warn("Ticket {} exhausted {} automatic attempt(s); leaving it in_progress "
+                + "for operator recovery", ticketId, maxAttempts);
+            postMessage(ticketId, "update", message
+                + "\n\nAutomatic retries exhausted after "
+                + Math.min(attempt, maxAttempts) + "/" + maxAttempts
+                + " attempts. The harness run was marked dead_letter and the ticket was "
+                + "left in_progress for operator recovery. Release the ticket, then restart "
+                + "this agent (or use a fresh agent) before it can be retried.");
+            return;
+        }
+        String note = " (attempt " + attempt + "/" + maxAttempts
             + ", retry after "
             + Math.max(0, (state.nextAttemptAt - System.currentTimeMillis()) / 1000) + "s)";
-        if (attempt > maxAttempts) {
-            note += " — retry backoff pinned at the maximum interval; manual intervention recommended if this persists";
-        }
         postMessage(ticketId, "update", message + note);
 
         // Route every run-bound release through the backend guard. It refuses
@@ -1327,7 +1363,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
     private boolean isBackingOff(Long ticketId) {
         FailureState state = failures.get(ticketId);
-        return state != null && System.currentTimeMillis() < state.nextAttemptAt;
+        return state != null
+            && (state.isTerminal() || System.currentTimeMillis() < state.nextAttemptAt);
     }
 
     /**
@@ -1408,12 +1445,28 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private static final class FailureState {
         private int attempts;
         private long nextAttemptAt;
+        private boolean terminal;
 
         private synchronized int recordFailure(int maxAttempts, long baseDelayMs, long maxDelayMs) {
             attempts++;
-            nextAttemptAt = System.currentTimeMillis()
-                + retryDelayMillis(attempts, maxAttempts, baseDelayMs, maxDelayMs);
+            if (attempts >= maxAttempts) {
+                // Terminal/manual policy: do not schedule another automatic
+                // attempt and do not release the ticket back to the backlog.
+                terminal = true;
+                nextAttemptAt = Long.MAX_VALUE;
+            } else {
+                nextAttemptAt = System.currentTimeMillis()
+                    + retryDelayMillis(attempts, maxAttempts, baseDelayMs, maxDelayMs);
+            }
             return attempts;
+        }
+
+        private synchronized int nextAttempt() {
+            return attempts + 1;
+        }
+
+        private synchronized boolean isTerminal() {
+            return terminal;
         }
     }
 

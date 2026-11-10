@@ -50,7 +50,6 @@ class AgentConfigTest {
         assertEquals(expected.mode(), config.getHarnessMode());
         assertEquals(expected.binary(), config.getHarnessBin());
         assertEquals(expected.startupTimeout().toMillis(), config.getHarnessStartupTimeoutMs());
-        assertEquals(expected.idleTimeout().toMillis(), config.getHarnessIdleTimeoutMs());
         assertEquals(expected.maxDuration().toMinutes(), config.getHarnessMaxDurationMinutes());
         assertEquals(expected.protectedPaths(), config.getHarnessProtectedPaths());
         assertEquals(expected.modelOverride(), config.getHarnessModel());

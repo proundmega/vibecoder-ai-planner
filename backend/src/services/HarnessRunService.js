@@ -405,24 +405,31 @@ class HarnessRunService {
   }
 
   /**
-   * Return a ticket to backlog after its run failed, but only when it is safe:
-   * the run is terminal **and recorded no PR URL or head sha**, no other run for
-   * the ticket has publish evidence, the ticket is still in_progress and it has
-   * no PR. This is the reaper/recovery guard that stops a published run from
+   * Explicitly return a ticket to backlog after its run failed, but only when
+   * it is safe: the run is terminal **and recorded no PR URL or head sha**, no
+   * other run for the ticket has publish evidence, the ticket is still
+   * in_progress and it has no PR. This guard stops a published run from
    * resetting a reviewed ticket.
+   *
+   * <p>Agent callers may release only `failed` runs. Dead-letter runs are a
+   * manual hold and require the operator route, which sets
+   * {@code allowDeadLetter}.</p>
    */
-  async releaseTicketForRun(runId, { agentId = null } = {}) {
+  async releaseTicketForRun(runId, { agentId = null, allowDeadLetter = false } = {}) {
     const id = requiredUuid(runId, 'runId');
     const normalisedAgentId = agentId === null || agentId === undefined
       ? null
       : positiveInteger(agentId, 'agentId');
+    const statusPredicate = allowDeadLetter
+      ? "r.status IN ('failed', 'dead_letter')"
+      : "r.status = 'failed'";
 
     const result = await pool.query(
       `WITH run AS (
          SELECT r.id, r.ticket_id, r.agent_id
          FROM harness_runs r
          WHERE r.id = $1
-           AND r.status IN ('failed', 'dead_letter')
+           AND ${statusPredicate}
            AND NULLIF(BTRIM(r.pr_url), '') IS NULL
            AND NULLIF(BTRIM(r.head_sha), '') IS NULL
            AND ($2::bigint IS NULL OR r.agent_id = $2)
@@ -473,8 +480,10 @@ class HarnessRunService {
    * - A run with a stored PR URL is adopted: a missing ticket PR is filled,
    *   an existing different PR is kept, and in_progress/backlog tickets move
    *   to review. Done tickets are never changed.
-   * - A failed/dead-letter run with no PR or head evidence releases the ticket
-   *   only when it is in_progress with no PR and no newer run exists.
+   * - A failed run with no PR or head evidence releases the ticket only when it
+   *   is in_progress with no PR and no newer run exists.
+   * - A dead_letter run is a manual-recovery state: it is never auto-released,
+   *   so the ticket stays in_progress and needs_operator is reported.
    */
   async reconcileRun(runId) {
     const id = requiredUuid(runId, 'runId');
@@ -574,7 +583,7 @@ class HarnessRunService {
          FROM run, marked
          WHERE marked.id = run.id
            AND run.is_latest
-           AND run.status IN ('failed', 'dead_letter')
+           AND run.status = 'failed'
            AND run.pr_url IS NULL
            AND run.head_sha IS NULL
            AND t.id = run.ticket_id
@@ -687,9 +696,10 @@ class HarnessRunService {
   }
 
   /**
-   * Operator action: stop a run and hand its ticket to reconciliation.
-   * A running run loses its lease immediately; the next sweep either adopts
-   * publish evidence or releases the ticket through the normal guard.
+   * Operator action: stop a run and hand its ticket to manual recovery.
+   * A running run loses its lease immediately. The next sweep may adopt
+   * publish evidence, but a dead_letter run is never auto-released: the ticket
+   * stays in_progress and is reported as needs_operator.
    */
   async deadLetterRun(runId, { error = null } = {}) {
     const id = requiredUuid(runId, 'runId');

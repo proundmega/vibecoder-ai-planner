@@ -688,7 +688,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     expect(ticket.rows[0].status).toBe('in_progress');
   });
 
-  test('dead-lettering a running run releases its lease and ticket', async () => {
+  test('dead-lettering a running run leaves its ticket for operator recovery', async () => {
     const run = await start({ branch: 'harness/dead-letter' });
     await HarnessRunService.claimLease({
       ticketId, runId: run.id, agentId, ttlSeconds: 60,
@@ -705,10 +705,21 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     expect(leases.rows).toHaveLength(0);
 
     const reconciled = await HarnessRunService.reconcileRun(run.id);
-    expect(reconciled.released).toBe(true);
+    expect(reconciled.released).toBe(false);
+    expect(reconciled.needs_operator).toBe(true);
 
     const ticket = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
-    expect(ticket.rows[0].status).toBe('backlog');
+    expect(ticket.rows[0].status).toBe('in_progress');
+
+    // Agent callers may not release a manual hold; the operator option may.
+    await expect(
+      HarnessRunService.releaseTicketForRun(run.id)
+    ).resolves.toBeNull();
+    await expect(
+      HarnessRunService.releaseTicketForRun(run.id, { allowDeadLetter: true })
+    ).resolves.not.toBeNull();
+    const released = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
+    expect(released.rows[0].status).toBe('backlog');
   });
 
   test('done-checkpoint evidence is adopted instead of released after a failed finish', async () => {
@@ -752,16 +763,27 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     ).rejects.toThrow('Cannot dead-letter a succeeded harness run with publish evidence');
   });
 
-  test('dead-lettering a succeeded run without evidence releases the ticket', async () => {
+  test('dead-lettering a succeeded run without evidence leaves the ticket for operator recovery', async () => {
     const run = await start({ branch: 'harness/succeeded-no-evidence' });
     await HarnessRunService.finishRun(run.id, { status: 'succeeded' });
 
     await HarnessRunService.deadLetterRun(run.id, { error: 'no PR produced' });
     const reconciled = await HarnessRunService.reconcileRun(run.id);
-    expect(reconciled.released).toBe(true);
+    expect(reconciled.released).toBe(false);
+    expect(reconciled.needs_operator).toBe(true);
 
     const ticket = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
-    expect(ticket.rows[0].status).toBe('backlog');
+    expect(ticket.rows[0].status).toBe('in_progress');
+
+    // Agent callers may not release a manual hold; the operator option may.
+    await expect(
+      HarnessRunService.releaseTicketForRun(run.id)
+    ).resolves.toBeNull();
+    await expect(
+      HarnessRunService.releaseTicketForRun(run.id, { allowDeadLetter: true })
+    ).resolves.not.toBeNull();
+    const released = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
+    expect(released.rows[0].status).toBe('backlog');
   });
 
   test('operator adoption accepts a verified PR URL for a head-only run', async () => {
@@ -902,6 +924,17 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
     const stored = await HarnessRunService.getRun(run.id);
     expect(stored.reconciled_at).not.toBeNull();
+  });
+
+  test('reaper leaves a dead-letter run for operator recovery', async () => {
+    const run = await start({ branch: 'harness/reaper-dead-letter' });
+    await HarnessRunService.deadLetterRun(run.id, { error: 'stuck' });
+
+    const summary = await HarnessReaper.runOnce();
+
+    expect(summary.needsOperator).toBeGreaterThanOrEqual(1);
+    const ticket = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
+    expect(ticket.rows[0].status).toBe('in_progress');
   });
 
   test('reaper adopts the newest run when an older failed run is also pending', async () => {

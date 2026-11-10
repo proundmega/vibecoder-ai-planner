@@ -102,7 +102,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 ### Step 1: Harness config and interface — `agent/src/main/java/com/vibecode/agent/harness/`
 
 - Create `HarnessConfig.java` (04 is canonical):
-  - mode (`legacy`/`opencode`), binary, startup timeout, idle timeout, max duration,
+  - mode (`legacy`/`opencode`), binary, startup timeout, max duration,
     verification commands, protected paths, bash allowlist, permission mode (`unattended`),
     model override.
   - Read from env with defaults; validate (including rejecting `ask`). The workspace is passed to
@@ -224,9 +224,9 @@ interaction. Questions are disabled in this phase (the model must make assumptio
   1. pick up ticket (via `TicketLifecycleService`, atomic phase+status),
   2. clone repo + branch (tokenless),
   3. sanitise workspace; start `ProviderProxy`; start server + session,
-  4. **subscribe to events first**, then send the async prompt,
+  4. **subscribe to events first**, then send the blocking prompt,
   5. consume events → heartbeat `current_step`, log progress; auto-reject unexpected permissions,
-  6. wait for idle/error with wall-clock timeout,
+  6. rely on the blocking prompt and the processor's `maxDuration` wall-clock budget,
   7. run verification commands (Jest/Vitest-aware detection),
   8. collect diff; reject protected paths; redact output,
   9. commit/push + PR (reuse `WorkspaceManager`/`GitHubService`, one-shot auth header),
@@ -272,7 +272,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 - `HARNESS_MODE=legacy|opencode` (default `legacy`).
 - `AgentApp` constructs either `TicketProcessor` or `HarnessTicketProcessor`.
 - New env vars (documented in `AGENTS.md` / README):
-  `HARNESS_BIN`, `HARNESS_STARTUP_TIMEOUT_MS`, `HARNESS_IDLE_TIMEOUT_MS`,
+  `HARNESS_BIN`, `HARNESS_STARTUP_TIMEOUT_MS`,
   `HARNESS_MAX_DURATION_MINUTES`, `HARNESS_VERIFY_COMMANDS`,
   `HARNESS_PROTECTED_PATHS`, `HARNESS_BASH_ALLOWLIST`, `HARNESS_PERMISSION_MODE`,
   `HARNESS_PROXY_TOKEN`, `OPENCODE_CONFIG`, `HARNESS_MODEL`.

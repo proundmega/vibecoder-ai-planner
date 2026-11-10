@@ -51,7 +51,6 @@ permission bridge.
 | `HARNESS_MODE` | `legacy` | `legacy` or `opencode` |
 | `HARNESS_BIN` | `opencode` | OpenCode executable |
 | `HARNESS_STARTUP_TIMEOUT_MS` | `30000` | Server health timeout |
-| `HARNESS_IDLE_TIMEOUT_MS` | `300000` | Max time without events |
 | `HARNESS_MAX_DURATION_MINUTES` | `45` | Hard wall-clock cap |
 | `HARNESS_VERIFY_COMMANDS` | `` | Semicolon-separated commands; empty = autodetect |
 | `HARNESS_PROTECTED_PATHS` | `.env*;.github/workflows/**;**/secrets/**;**/*.pem;**/*.key;**/id_rsa*;.git/**;backend/src/migrations/**;backend/src/middleware/auth*;backend/src/services/UserService.js;backend/src/validators/auth*` | Semicolon-separated publish-blocking globs |
@@ -84,7 +83,6 @@ public record HarnessConfig(
     String mode,
     String binary,
     java.time.Duration startupTimeout,
-    java.time.Duration idleTimeout,
     java.time.Duration maxDuration,
     java.util.List<String> verificationCommands,
     java.util.List<String> protectedPaths,
@@ -377,7 +375,6 @@ Throws `IllegalStateException` when:
 public final class OpenCodeClient implements HarnessClient {
     public OpenCodeClient(HarnessConfig config, ProxySettings provider, java.nio.file.Path tempDir);
     // interface methods
-    public void awaitIdle(java.time.Duration timeout) throws java.io.IOException;
     public int getPort();
 }
 ```
@@ -402,7 +399,6 @@ Behavior:
     `/api/session/<id>/message` endpoint.
 - During subscription startup, buffer events until the listener is registered, then dispatch. The
   client exposes `awaitSubscribed()` so the processor can send the prompt only after SSE is live.
-- `awaitIdle`: block until an idle event, error event, or timeout.
 - `close`: delete session (best effort), destroy process (wait 5s, then force), delete temp dir.
 
 ### CREATE: `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java`
@@ -433,8 +429,9 @@ Flow:
    `pip install -r`, or `mvn dependency:go-offline`).
 6. `step="starting-harness"`; start `ProviderProxy`, obtain `ProxySettings`, then start
    `OpenCodeClient` with `ProxySettings`; create session.
-7. `step="implementing"`; **subscribe first**, wait for `awaitSubscribed`, then `sendPromptAsync`;
-   await idle with `maxDuration`. Auto-reject any unexpected permission event.
+7. `step="implementing"`; **subscribe first**, wait for `awaitSubscribed`, then send the blocking
+   prompt. The processor's `maxDuration` wall-clock budget is the timeout. Auto-reject any
+   unexpected permission event.
 8. `step="verifying"`; resolve + run verification commands; post a redacted pass/fail summary.
 9. If verification fails: post redacted last 8KB output; **release to `backlog`** in Phase 1 (no human
    loop yet); stop (no commit/push). Phase 2 changes this to `blocked` + notification.
@@ -592,7 +589,7 @@ Add:
 ### `OpenCodeClientTest`
 
 ```
-✓ [happy] starts the server, creates a session, subscribes, then sends an async prompt
+✓ [happy] starts the server, creates a session, subscribes, then sends the blocking prompt
 ✓ [timing] fastEvents: tool/idle emitted immediately after prompt are not missed
 ✓ [happy] parses scripted SSE tool/idle events
 ✓ [happy] replies reject to an unexpected permission request
@@ -685,7 +682,7 @@ Add:
 
 1. **Port collision** — retry with a new ephemeral port up to 3 times.
 2. **Server exits early** — detect process death, capture last 8KB of logs, throw with a redacted message.
-3. **No events** — idle timeout triggers abort; release ticket; no push.
+3. **Run exceeds `maxDuration`** — abort; release ticket; no push.
 4. **Empty diff** — no commit/PR; post "no changes" and release.
 5. **Protected path changed** - block publishing; post the paths; release; auth, migrations, `.git/**`,
    `*.pem`, `*.key` and `id_rsa*` included.

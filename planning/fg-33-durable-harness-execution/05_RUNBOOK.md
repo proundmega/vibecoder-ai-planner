@@ -94,11 +94,15 @@ curl -X POST "$API/api/v1/harness/runs/$RUN_ID/dead-letter" \
   -d '{"error":"stuck in publish; verified manually"}'
 ```
 
-This deletes the lease, sets `dead_letter`, clears `reconciled_at`, and lets the
-next sweep either adopt publish evidence or release the ticket through the
-normal guards. A succeeded run with published evidence cannot be dead-lettered;
-a succeeded run with no PR/head can, which is the recovery path for that
-`needs_operator` state.
+This deletes the lease, sets `dead_letter`, and clears `reconciled_at`. A
+dead-letter run is never auto-released: the next sweep either adopts publish
+evidence or leaves the ticket `in_progress` and reports `needs_operator`. Use
+the explicit `POST /harness/runs/:runId/release-ticket` endpoint after verifying
+that a retry is safe, then restart the agent (or use a fresh agent) before
+returning the ticket to backlog; the current agent's in-memory terminal state
+skips the released ticket until restart and would consume a poll cycle. A
+succeeded run with published evidence cannot be dead-lettered; a succeeded run
+with no PR/head can, which is the recovery path for that `needs_operator` state.
 
 ## Manual sweep
 
@@ -140,10 +144,15 @@ Deployment assumptions:
 
 ## Crash scenarios
 
-Automatic dead-letter is not implemented; repeated failures keep backing off and
-need an operator dead-letter. Startup recovery skips a run whose heartbeat/lease
-is still fresh, so a second process with the same agent identity cannot kill a
-live run.
+After `HARNESS_RETRY_PIN_ATTEMPTS` failures the agent finishes the run as
+`dead_letter` and leaves the ticket `in_progress`. The terminal state is durable
+in the run, but the agent's in-memory attempt bookkeeping clears on restart; the
+ticket is not requeued automatically. An operator must inspect it and either
+release it explicitly (then restart the agent or use a fresh agent) or adopt
+publish evidence. Adoption requires a stored PR or an operator-verified PR URL;
+without evidence, only release is available.
+Startup recovery skips a run whose heartbeat/lease is still fresh, so a second
+process with the same agent identity cannot kill a live run.
 
 - **Crash before clone**: next poll/reaper recovers; no workspace exists.
 - **Crash after clone/session/prompt**: run stays `running` until the lease

@@ -64,16 +64,17 @@ Make an interrupted run self-healing without ever undoing published work.
   migration 047 backfills existing checkpoint-only evidence.
 - An operator can adopt a published terminal run or dead-letter a stuck run;
   agent keys cannot call either action.
-- Dead-lettering clears the lease and reconciliation marker; the next sweep
-  applies the normal PR/head/ticket guards.
+- Dead-lettering clears the lease and reconciliation marker. The run is not
+  auto-released: the ticket stays `in_progress` and is reported as
+  `needs_operator`; an operator can release it explicitly after verification.
 - Stale clone/temp directories older than the retention window are removed only
   after recovery succeeds, never touching paths protected by a running run or
   unexpired lease, the current workspace, symlinks or foreign names. Cleanup
   fails closed if an active run has no recorded workspace path.
 - A run with a head sha but no PR can be adopted with an operator-verified PR
   URL only when the run has no PR yet; a different existing run PR is never
-  overwritten. A succeeded run with no evidence can be dead-lettered so
-  reconciliation releases the ticket.
+  overwritten. A succeeded run with no evidence can be dead-lettered so the
+  run is handed to operator recovery without an automatic retry.
 
 ## Test matrix
 

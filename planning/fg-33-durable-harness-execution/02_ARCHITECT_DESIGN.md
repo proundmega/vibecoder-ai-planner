@@ -108,15 +108,15 @@ startup after recovery succeeds:
 |---|---|---|
 | `HARNESS_LEASE_SECONDS` | `600` | Ticket lease TTL |
 | `HARNESS_HEARTBEAT_SECONDS` | `30` | Lease renewal interval |
-| `HARNESS_MAX_ATTEMPTS` | `3` | Retry backoff only; automatic dead-letter is deferred |
+| `HARNESS_RETRY_PIN_ATTEMPTS` / `HARNESS_MAX_ATTEMPTS` | `3` | Agent retries before the run is marked `dead_letter`; durable attempt counts are Phase 2 |
 | `HARNESS_WORKSPACE_RETENTION_HOURS` | `24` | Orphan cleanup age |
 | `HARNESS_RESUME_MODE` | `restart` | `restart`, `resume` |
 
 ## Failure handling
 
-- Publish failure: keep the run in `PUBLISHING`, retry with backoff, and leave
-  repeated failures for manual dead-letter/operator action. Automatic
-  dead-letter after N attempts is deferred.
+- Publish failure: keep the run in `PUBLISHING`, retry with backoff, and mark
+  the run `dead_letter` after the configured attempt threshold. Durable attempt
+  counts across restarts remain Phase 2.
 - Provider/session failure: recreate the session once; if it fails again, restart cleanly.
 - Disk full or clone failure: fail the run, release the ticket, alert.
 - Lease loss during a run: stop before publishing; never publish without a valid lease.
