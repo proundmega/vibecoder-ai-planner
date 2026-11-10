@@ -882,7 +882,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 String actualStatus = finishDurableRun(
                     status, message, pendingHeadSha, pendingPrUrl);
                 if (actualStatus != null && releaseAfterTerminalFinish && pickedUp.getId() != null) {
-                    if ("dead_letter".equals(status) || "failed".equals(actualStatus)) {
+                    if (actualStatus.equals(status)) {
                         applyFailureRelease(pickedUp.getId(), message, finishingRunId);
                     } else {
                         releaseAfterTerminalFinish = false;
@@ -1299,7 +1299,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 + "deferring ticket release", ticketId);
             return;
         }
-        if (!"dead_letter".equals(requestedStatus) && !"failed".equals(actualStatus)) {
+        if (!actualStatus.equals(requestedStatus)) {
             // An operator dead-letter (or another terminal state) already holds
             // the ticket. Never release it from the agent failure path.
             releaseAfterTerminalFinish = false;
@@ -1336,7 +1336,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 + "\n\nAutomatic retries exhausted after "
                 + Math.min(attempt, maxAttempts) + "/" + maxAttempts
                 + " attempts. The harness run was marked dead_letter and the ticket was "
-                + "left in_progress for operator recovery.");
+                + "left in_progress for operator recovery. Release the ticket, then restart "
+                + "this agent (or use a fresh agent) before it can be retried.");
             return;
         }
         String note = " (attempt " + attempt + "/" + maxAttempts

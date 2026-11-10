@@ -52,7 +52,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D6 | CI process-kill matrix and live-session resume | self | Testing | none | open |
 | D7 | Scheduled workspace pruning during long-lived runs | self | Storage | fg-44-agent-storage-lifecycle | open |
 | D8 | Full workspace inventory (sizes/ages/disk metrics) | self | Storage | fg-44-agent-storage-lifecycle | open |
-| D9 | Automatic dead-letter after N failed attempts (FR8) | self | Reliability | none | open |
+| D9 | Automatic dead-letter after N failed attempts (FR8) | self | Reliability | fg-30 #108 item 7 | done (fg-30 #108 item 7; durable attempt counts remain Phase 2) |
 | D10 | Explicit force-clean-restart operator action (FR10) | self | Operability | none | open |
 | D11 | Cross-host run migration | self | Scope | none | open |
 
@@ -60,7 +60,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 
 | # | Decision | Options | Recommendation | Answer |
 |---|---|---|---|---|
-| 1 | Automatic dead-letter vs manual-only for FR8 | implement now / defer | Defer until fg-38 budgets give a durable stop signal | Deferred |
+| 1 | Automatic dead-letter vs manual-only for FR8 | implement now / defer | Mark the run dead_letter after `HARNESS_RETRY_PIN_ATTEMPTS`; keep durable attempt counts Phase 2 | Implemented (fg-30 #108 item 7) |
 | 2 | Force-clean-restart action for FR10 | implement now / manual runbook | Manual runbook for slice 3 | Deferred |
 
 ## Completion gate

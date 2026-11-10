@@ -781,6 +781,33 @@ class HarnessTicketProcessorTest {
             .anyMatch(message -> message.contains("already dead_letter")));
     }
 
+    @Test
+    void aDifferentActualTerminalStatusIsNotReleased() throws Exception {
+        when(apiService.startHarnessRun(
+            eq(1L), eq("vibecode/ticket-1-add-filtering"), isNull(),
+            eq("opencode-go"), eq("beam-free"), anyInt()))
+            .thenReturn(Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.finishHarnessRun(
+            eq("run-1"), eq("failed"), anyString(), isNull(), isNull()))
+            .thenThrow(new IOException("finish down"))
+            .thenThrow(new IOException("finish down"))
+            .thenThrow(new IOException("finish down"))
+            .thenReturn("succeeded");
+        when(verificationRunner.run(any(), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult("npm test", 1, "failed", false)));
+
+        processor.processTicket(ticket());
+
+        verify(apiService, never()).releaseHarnessTicket("run-1");
+        verify(apiService, never()).releaseTicket(1L);
+        ArgumentCaptor<String> messages = ArgumentCaptor.forClass(String.class);
+        verify(apiService, atLeastOnce()).postMessage(eq(1L), eq("update"), messages.capture());
+        assertTrue(messages.getAllValues().stream()
+            .anyMatch(message -> message.contains("already succeeded")));
+    }
+
     private void clearBackoff(long ticketId) throws Exception {
         Field failuresField = HarnessTicketProcessor.class.getDeclaredField("failures");
         failuresField.setAccessible(true);

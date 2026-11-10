@@ -98,9 +98,11 @@ This deletes the lease, sets `dead_letter`, and clears `reconciled_at`. A
 dead-letter run is never auto-released: the next sweep either adopts publish
 evidence or leaves the ticket `in_progress` and reports `needs_operator`. Use
 the explicit `POST /harness/runs/:runId/release-ticket` endpoint after verifying
-that a retry is safe. A succeeded run with published evidence cannot be
-dead-lettered; a succeeded run with no PR/head can, which is the recovery path
-for that `needs_operator` state.
+that a retry is safe, then restart the agent (or use a fresh agent) before
+returning the ticket to backlog; the current agent's in-memory terminal state
+skips the released ticket until restart and would consume a poll cycle. A
+succeeded run with published evidence cannot be dead-lettered; a succeeded run
+with no PR/head can, which is the recovery path for that `needs_operator` state.
 
 ## Manual sweep
 
@@ -146,8 +148,9 @@ After `HARNESS_RETRY_PIN_ATTEMPTS` failures the agent finishes the run as
 `dead_letter` and leaves the ticket `in_progress`. The terminal state is durable
 in the run, but the agent's in-memory attempt bookkeeping clears on restart; the
 ticket is not requeued automatically. An operator must inspect it and either
-release it explicitly or adopt publish evidence. Adoption requires a stored PR
-or an operator-verified PR URL; without evidence, only release is available.
+release it explicitly (then restart the agent or use a fresh agent) or adopt
+publish evidence. Adoption requires a stored PR or an operator-verified PR URL;
+without evidence, only release is available.
 Startup recovery skips a run whose heartbeat/lease is still fresh, so a second
 process with the same agent identity cannot kill a live run.
 
