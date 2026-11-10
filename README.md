@@ -139,7 +139,7 @@ Required for `docker compose up`:
 | `HARNESS_RESUME_MODE` | Startup recovery policy: `restart` or `resume` (adopt published evidence) | `restart` |
 | `HARNESS_REAPER_INTERVAL_SECONDS` | Sweep interval for expired leases / orphaned runs; `0` disables | `60` |
 | `HARNESS_WORKSPACE_RETENTION_HOURS` | Agent-side stale clone cleanup at startup; `0` disables | `24` |
-| `HARNESS_RETRY_PIN_ATTEMPTS` | Failures before the ticket enters terminal/manual recovery (no further automatic retries; `HARNESS_MAX_ATTEMPTS` is accepted as a legacy alias) | `3` |
+| `HARNESS_RETRY_PIN_ATTEMPTS` | Failures before the run is marked `dead_letter` for manual recovery (the ticket stays in_progress; `HARNESS_MAX_ATTEMPTS` is accepted as a legacy alias) | `3` |
 | `HARNESS_RETRY_BASE_DELAY_MS` | Base exponential retry delay | `60000` |
 | `HARNESS_RETRY_MAX_DELAY_MS` | Maximum retry delay | `3600000` |
 

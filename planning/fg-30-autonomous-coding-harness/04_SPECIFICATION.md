@@ -589,7 +589,7 @@ Add:
 ### `OpenCodeClientTest`
 
 ```
-✓ [happy] starts the server, creates a session, subscribes, then sends an async prompt
+✓ [happy] starts the server, creates a session, subscribes, then sends the blocking prompt
 ✓ [timing] fastEvents: tool/idle emitted immediately after prompt are not missed
 ✓ [happy] parses scripted SSE tool/idle events
 ✓ [happy] replies reject to an unexpected permission request

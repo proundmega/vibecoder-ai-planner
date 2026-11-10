@@ -96,6 +96,8 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   `review`; done tickets are never changed. `reapExpiredLeases` marks a run
   `succeeded` when it already has a PR URL, and a sweep of the newest pending
   terminal run per ticket recovers the crash gap between reaping and releasing.
+  A `dead_letter` run is never auto-released: the ticket stays `in_progress`
+  and the sweep reports `needs_operator` so a human can release or adopt it.
 - **Agent startup recovery.** `HarnessTicketProcessor.recoverActiveRuns()` lists
   this agent's active runs at startup (with the latest checkpoint payload). It
   skips a run whose heartbeat or lease is still fresh (another instance may be

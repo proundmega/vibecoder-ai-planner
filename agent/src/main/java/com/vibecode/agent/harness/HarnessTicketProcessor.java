@@ -1265,7 +1265,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
      * another multi-minute harness.
      */
     private void failAndRelease(Long ticketId, String message) {
-        pendingTerminalStatus = "failed";
+        // Failures that already published work are never retried automatically,
+        // so keep their terminal status failed and let publish evidence win.
+        boolean terminal = !published
+            && failures.computeIfAbsent(ticketId, ignored -> new FailureState())
+                .nextAttempt() >= maxAttempts;
+        pendingTerminalStatus = terminal ? "dead_letter" : "failed";
         pendingTerminalMessage = message;
         // Preserve publish evidence on the failed finish so the backend guard
         // refuses to return a pushed branch to backlog.
@@ -1275,7 +1280,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         String runId = currentRunId;
         boolean finished = finishDurableRun(
-            "failed", message, publishedHeadSha, publishedPrUrl);
+            pendingTerminalStatus, message, publishedHeadSha, publishedPrUrl);
         if (!finished) {
             // The run/lease may still be live. The finally block retries the
             // finish and applies the backoff + release only if it succeeds.
@@ -1309,8 +1314,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             postMessage(ticketId, "update", message
                 + "\n\nAutomatic retries exhausted after "
                 + Math.min(attempt, maxAttempts) + "/" + maxAttempts
-                + " attempts. The ticket was left in_progress for operator recovery; "
-                + "the terminal state clears when the agent restarts.");
+                + " attempts. The harness run was marked dead_letter and the ticket was "
+                + "left in_progress for operator recovery.");
             return;
         }
         String note = " (attempt " + attempt + "/" + maxAttempts
@@ -1432,6 +1437,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     + retryDelayMillis(attempts, maxAttempts, baseDelayMs, maxDelayMs);
             }
             return attempts;
+        }
+
+        private synchronized int nextAttempt() {
+            return attempts + 1;
         }
 
         private synchronized boolean isTerminal() {

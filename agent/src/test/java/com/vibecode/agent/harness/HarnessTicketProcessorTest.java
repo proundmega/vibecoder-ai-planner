@@ -18,7 +18,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -34,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
@@ -719,30 +719,53 @@ class HarnessTicketProcessorTest {
 
     @Test
     void retryExhaustionIsTerminalAndLeavesTheTicketForRecovery() throws Exception {
+        when(apiService.startHarnessRun(
+            eq(1L), eq("vibecode/ticket-1-add-filtering"), isNull(),
+            eq("opencode-go"), eq("beam-free"), anyInt()))
+            .thenReturn(Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
         when(apiService.releaseHarnessTicket("run-1")).thenReturn(true);
+        when(verificationRunner.run(any(), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult("npm test", 1, "failed", false)));
 
         Field maxField = HarnessTicketProcessor.class.getDeclaredField("maxAttempts");
         maxField.setAccessible(true);
         int maxAttempts = (int) maxField.get(processor);
 
-        Method apply = HarnessTicketProcessor.class.getDeclaredMethod(
-            "applyFailureRelease", Long.class, String.class, String.class);
-        apply.setAccessible(true);
         for (int i = 0; i < maxAttempts; i++) {
-            apply.invoke(processor, 1L, "Harness failed", "run-1");
+            if (i > 0) {
+                clearBackoff(1L);
+            }
+            processor.processTicket(ticket());
         }
 
+        verify(apiService, times(maxAttempts)).pickUpTicket(1L);
         verify(apiService, times(maxAttempts - 1)).releaseHarnessTicket("run-1");
         verify(apiService, never()).releaseTicket(1L);
+        verify(apiService, times(1)).finishHarnessRun(
+            eq("run-1"), eq("dead_letter"), anyString(), isNull(), isNull());
 
         ArgumentCaptor<String> messages = ArgumentCaptor.forClass(String.class);
-        verify(apiService, times(maxAttempts))
-            .postMessage(eq(1L), eq("update"), messages.capture());
-        assertTrue(messages.getAllValues().get(maxAttempts - 1)
-            .contains("Automatic retries exhausted"));
+        verify(apiService, atLeastOnce()).postMessage(eq(1L), eq("update"), messages.capture());
+        assertTrue(messages.getAllValues().stream()
+            .anyMatch(message -> message.contains("marked dead_letter")));
 
+        // A terminal ticket that reappears in the backlog is skipped instead of
+        // consuming another cycle.
         processor.processTicket(ticket());
-        verify(apiService, never()).pickUpTicket(1L);
+        verify(apiService, times(maxAttempts)).pickUpTicket(1L);
+    }
+
+    private void clearBackoff(long ticketId) throws Exception {
+        Field failuresField = HarnessTicketProcessor.class.getDeclaredField("failures");
+        failuresField.setAccessible(true);
+        Map<?, ?> failures = (Map<?, ?>) failuresField.get(processor);
+        Object state = failures.get(ticketId);
+        assertNotNull(state, "failure state must exist before the next attempt");
+        Field nextAttemptAt = state.getClass().getDeclaredField("nextAttemptAt");
+        nextAttemptAt.setAccessible(true);
+        nextAttemptAt.setLong(state, 0L);
     }
 
     @Test
