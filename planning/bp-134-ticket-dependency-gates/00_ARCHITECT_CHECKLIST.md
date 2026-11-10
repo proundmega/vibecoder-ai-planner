@@ -17,7 +17,7 @@ depends_on: []
 > **Owns:** status, ticket map, deferred scope, user decisions.
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`), file operations (`04`).
 
-**Related code:** `backend/src/migrations/026_ticket_milestone_fields.sql`, `backend/src/models/ticket.js`, `backend/src/services/TicketService.js`, `backend/src/services/HarnessRunService.js`, `backend/src/api/tickets.js`, `backend/src/services/AgentService.js`, `agent/src/main/java/com/vibecode/agent/AgentApp.java`, `frontend/src/api/tickets.ts`, `frontend/src/views/TicketDetail.vue`
+**Related code:** `backend/src/migrations/026_ticket_milestone_fields.sql`, `backend/src/models/ticket.js`, `backend/src/services/TicketService.js`, `backend/src/services/HarnessRunService.js`, `backend/src/services/PhaseService.js`, `backend/src/api/tickets.js`, `backend/src/controllers/ticketController.js`, `backend/src/errors/HttpError.js`, `agent/src/main/java/com/vibecode/agent/AgentApp.java`, `agent/src/main/java/com/vibecode/agent/service/ApiService.java`, `agent/src/main/java/com/vibecode/agent/model/Ticket.java`, `frontend/src/api/tickets.ts`, `frontend/src/views/TicketDetail.vue`, `frontend/src/views/TicketBoard.vue`
 
 ## Why this ticket exists
 
@@ -37,6 +37,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D3 | Cleanup or audit of orphaned dependency IDs after a ticket is hard-deleted | self | Reliability | bp-134 follow-up | open |
 | D4 | Dependency-aware scheduling and capacity planning across agents | self | Orchestration | fg-40 | open |
 | D5 | Blocked-dependency metrics in the flow dashboard | self | Observability | fg-46 | open |
+| D6 | Dependency editor UI (create/remove dependencies from the board/detail view) | self | UX | bp-134 follow-up | open |
 
 ## Important design decisions
 
@@ -44,18 +45,20 @@ deferred scope are owned by this document; `01`–`04` link here.
 2. Reuse the existing `depends_on BIGINT[]` column; no schema migration is planned.
 3. **Fail closed:** a missing, deleted, unreadable, self, or cross-project dependency blocks execution. An array entry that cannot be resolved is not treated as done.
 4. Dependency completion uses the existing contract: `status=done` or `phase=done`/`deployed`.
-5. Gate every path into `in_progress`: agent pickup, status transition, ticket update, phase transition, and durable harness start.
+5. Gate every path that **enters execution** (`in_progress`): agent pickup, status transition, ticket update, and a phase transition that enters `in_progress`. Do not gate `in_progress → blocked`, which is the safe action for an already-started ticket. A new durable start is gated; recovery of an already-started run is exempt.
 6. Filter blocked tickets from the agent backlog query so they do not consume a `MAX_TICKETS` cycle; keep them visible in the planner.
-7. Expose `ready` and `blockedBy[]` so the UI and planner can explain the block without guessing.
+7. Expose `ready` and `blockedBy[]` so the UI and planner can explain the block without guessing. The UI is read-only; dependencies remain API-authored in this phase.
 8. Do not support cross-project dependencies in this phase; reject them rather than silently comparing IDs from another project.
+9. Reopening a dependency (the existing `done → in_progress` transition) is allowed. The start gate serializes against it by locking the dependency rows; a later reopen does not retroactively start anything, and the dependent is marked `ready=false` with a `dependency_reopened` reason.
 
 ## Known unknowns
 
-- Whether a dependency may be satisfied by `phase=review` rather than `done` (proposal: no; `done`/`done`/`deployed` only).
+- Whether a dependency may be satisfied by `phase=review` rather than `done` (proposal: no; `status=done` or `phase=done`/`deployed` only).
 - Whether dependency edits should be allowed after a ticket reaches `in_progress` (proposal: yes, but they only affect future starts).
 - Whether the planner should show blocked tickets in the agent queue with a badge or keep them out entirely (proposal: out of the agent query, visible in project views).
 - Whether the service should return `409` or `422` for a blocked pickup (proposal: `409 DEPENDENCIES_NOT_DONE`, matching the existing state-conflict style).
-- Whether a durable recovery may start a blocked ticket (proposal: no; the same gate applies).
+
+Resolved: dependency reopening is allowed (the existing state machine supports `done → in_progress`); the start gate locks dependency rows and records a `dependency_reopened` warning rather than blocking recovery. Recovery of an already-started run is exempt from the new-start gate. Dependencies stay API-authored; no editor is added in this phase.
 
 ## Testing checklist
 
@@ -63,10 +66,11 @@ deferred scope are owned by this document; `01`–`04` link here.
 - [ ] Unit: all dependencies done allows pickup.
 - [ ] Unit: missing/deleted/self/cross-project dependency fails closed.
 - [ ] Unit: dependency chain and circular-dependency behavior unchanged.
-- [ ] API: blocked pickup returns `409 DEPENDENCIES_NOT_DONE` with `blockedBy[]`.
-- [ ] API: status transition, ticket update and phase transition into `in_progress` are gated.
-- [ ] Harness: durable start/recovery cannot bypass the gate.
-- [ ] Backlog query excludes blocked tickets; project/planner listing still shows them.
-- [ ] UI: blocked badge/detail renders the dependency titles and IDs.
-- [ ] Integration: real Postgres pickup and transition tests.
+- [ ] API: blocked pickup returns `409 DEPENDENCIES_NOT_DONE` with `blockedBy[]` and a reason.
+- [ ] API: status transition, ticket update and phase transition that enters `in_progress` are gated.
+- [ ] API: `in_progress → blocked` remains allowed even when dependencies are incomplete.
+- [ ] Harness: a new durable start cannot bypass the gate; recovery of an already-started run is exempt and does not strand the ticket.
+- [ ] Backlog query excludes blocked tickets; project/planner listing still shows them with batch-enriched `ready`/`blockedBy`.
+- [ ] UI: blocked badge/detail renders the dependency titles, IDs and reasons; no dependency editor is claimed.
+- [ ] Integration: real Postgres pickup, transition, reopen-race and list tests.
 - [ ] Regression: existing done/phase semantics and milestone/dependency persistence.

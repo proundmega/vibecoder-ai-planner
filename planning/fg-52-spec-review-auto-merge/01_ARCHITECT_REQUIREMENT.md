@@ -1,6 +1,6 @@
 # 01_ARCHITECT_REQUIREMENT.md - Spec Review, Effort/Risk Scoring, and Policy-Gated Auto-Merge (fg-52)
 
-**Related code:** `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java`, `backend/src/services/TicketService.js`, `backend/src/services/HarnessRunService.js`, `backend/src/services/GitHubService.js`, `backend/src/services/PermissionService.js`, `backend/src/api/tickets.js`, `backend/src/api/harnessRuns.js`, `frontend/src/views/TicketDetail.vue`, `frontend/src/views/ProjectSettings.vue`
+**Related code:** `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java`, `backend/src/services/TicketService.js`, `backend/src/services/HarnessRunService.js`, `backend/src/services/GitHubService.js`, `backend/src/services/PermissionService.js`, `backend/src/api/tickets.js`, `backend/src/api/harnessRuns.js`, `frontend/src/views/TicketDetail.vue`, `frontend/src/views/ProjectDetail.vue`
 
 ## Problem
 
@@ -45,20 +45,20 @@ The system needs a tiered, auditable autonomy policy that starts in shadow mode 
 - **FR3 - Bounded revision and re-estimation:** blocking findings go back to the author for a bounded number of rounds. The final spec revision is hashed; any later spec change invalidates the assessment and requires re-review/re-score.
 - **FR4 - Structured assessment:** the estimator records effort `0–100`, risk/blast radius `0–100`, confidence `0–1`, band, signals, missing-information flags, rationale, estimator identity/model and the spec revision.
 - **FR5 - Estimation rubric and provenance:** the estimate uses a documented rubric (scope, files/services, migrations, auth/billing/security, external deps, test burden, uncertainty). The implementing agent’s self-estimate is not authoritative. The estimator does not see the author’s scores before scoring.
-- **FR6 - Policy tiers:** each project selects one tier: `off` (human-only), `auto_approve`, `shadow`, or `auto_merge_low_risk`. The default is `off`.
-- **FR7 - Per-project configuration:** thresholds for effort/risk/confidence, deny paths, required gates, quotas and kill switch are project-scoped, validated, authorized and audited.
+- **FR6 - Policy tiers:** each project selects one tier: `off` (human-only), `auto_approve`, `shadow`, or `auto_merge_low_risk`. The default is `off`. `auto_approve` skips only the `human_approval` gate; a human still performs the merge, and review plus every deterministic gate still apply.
+- **FR7 - Per-project configuration:** thresholds for effort/risk/confidence, additional deny paths, additional required gates, quotas and the project kill switch are project-scoped, validated, authorized and audited. Additional deny paths and gates are additive to a fixed platform baseline and cannot remove or weaken a baseline entry or mandatory gate.
 - **FR8 - Deterministic gate engine:** before auto-approval or merge, evaluate CI/required checks, review verdict, tests changed, diff size/file/line limits, protected/high-risk paths, migrations/auth/billing/secrets/infra, dependency readiness, branch freshness, secret/publish guards and traceability evidence.
 - **FR9 - Separate merge actor:** an independent merge agent (different session; different model/provider where available) performs the merge only in an enabled tier. It cannot edit code, bypass checks or approve its own work.
 - **FR10 - Final-diff re-score:** before merge, re-evaluate the actual diff against the spec and risk gates. A mismatch, unexpected path, missing test or increased risk downgrades to human review.
-- **FR11 - Audit, metrics and calibration:** store assessments, decisions, overrides, vetoes, merges and rollbacks with actor/model/provenance. Track estimated vs actual effort, review rounds, rollbacks and incidents; use the data to recalibrate thresholds.
-- **FR12 - UI and API controls:** show the spec review, assessment and policy decision on the ticket; provide project settings for the tier/thresholds/deny paths and a human veto/force-review action.
-- **FR13 - Shadow and canary rollout:** `shadow` records would-merge decisions without merging. A canary project can enable low-risk auto-merge; a global/project kill switch stops it immediately.
+- **FR11 - Audit, metrics and calibration:** store assessments, decisions, overrides, vetoes, merges and rollbacks with actor/model/provenance. Record every policy change with before/after values in an append-only project-level audit row or the `fg-41` audit stream. Track estimated vs actual effort, review rounds, rollbacks and incidents; use the data to recalibrate thresholds.
+- **FR12 - UI and API controls:** show the spec review, assessment and policy decision on the ticket; provide project settings for the tier/thresholds/deny paths/required gates and a human veto/force-review action.
+- **FR13 - Shadow and canary rollout:** `shadow` records would-merge decisions without merging. A canary project can enable low-risk auto-merge. A project kill switch and a platform-global kill switch stop decisions immediately; a project cannot override the global switch.
 - **FR14 - Readiness integration:** auto-approval requires dependency readiness (`bp-134`), Definition of Ready/risk sections (`fg-45`) and requirement traceability (`fg-51`). Missing evidence blocks the tier.
 
 ## Non-functional requirements
 
 - **NFR1 - Untrusted content:** ticket text, specs, repository files and review output are untrusted data. The reviewer/estimator treats them as data, not instructions, and resists prompt injection.
-- **NFR2 - Security-sensitive exclusion:** auth/permissions, billing, migrations, secrets, deployment/infra, protected paths and dependency changes are never auto-merged, regardless of effort score.
+- **NFR2 - Security-sensitive exclusion:** auth/permissions, billing, migrations, secrets, deployment/infra, protected paths and dependency changes are never auto-merged, regardless of effort score. These categories are detected by a fixed, non-configurable platform baseline; project configuration may add paths but cannot remove baseline coverage.
 - **NFR3 - Separation of duties:** author, spec reviewer, estimator, implementer and merger are distinct roles/contexts. No self-approval or self-merge.
 - **NFR4 - Fail closed/default off:** missing assessment, low confidence, policy ambiguity, audit failure or a disabled gate results in human review, never an automatic merge.
 - **NFR5 - Audit and least privilege:** only authorized humans can change project policy or issue a waiver; every change and decision is auditable and access-controlled.
@@ -74,10 +74,11 @@ The system needs a tiered, auditable autonomy policy that starts in shadow mode 
 4. A security-sensitive path is always routed to human review.
 5. The implementer cannot estimate, approve or merge its own ticket.
 6. A spec change invalidates the assessment; a final-diff mismatch downgrades auto-merge.
-7. Shadow mode records decisions without merging; canary mode can be stopped by a kill switch.
+7. Shadow mode records decisions without merging; canary mode can be stopped by a project or global kill switch.
 8. Every assessment, veto, policy change and merge is auditable.
 9. A human can always force review or veto an automatic decision.
 10. The final PR/merge path records verification evidence at the reviewed SHA.
+11. An empty project `additional_deny_paths` list cannot authorize a security-sensitive path; the fixed baseline still routes it to a human.
 
 ## Assumptions
 
@@ -86,7 +87,7 @@ The system needs a tiered, auditable autonomy policy that starts in shadow mode 
 | A1 | Effort and risk are separate axes | A single threshold would authorize unsafe low-effort changes | Design rationale; security-sensitive exclusion |
 | A2 | A separate reviewer/estimator is affordable for the target ticket volume | The policy becomes the new bottleneck | Cost/latency budget; shadow metrics |
 | A3 | Planning/spec files are the canonical spec source | A second spec store could diverge | `fg-45` planning/readiness design |
-| A4 | `fg-31`/`fg-32`/`fg-36`/`fg-45`/`fg-51` land before this suite | The policy engine has no review/merge/trace evidence to consume | `depends_on` frontmatter |
+| A4 | `bp-134`/`fg-31`/`fg-32`/`fg-36`/`fg-37`/`fg-41`/`fg-45`/`fg-51` land before this suite | The policy engine has no review/merge/trace/audit evidence to consume | `depends_on` frontmatter; roadmap order places fg-52 after fg-37/fg-41 |
 | A5 | Project policy can be stored in a dedicated audited table | JSONB settings may be simpler but harder to audit | Design choice; migration review |
 | A6 | Shadow mode produces enough signal before canary | Enabling auto-merge would rely on untested assumptions | Shadow metrics and calibration |
 | A7 | Different model/provider improves independence | Same-model review may share blind spots | `fg-47` model-diversity policy |
@@ -96,8 +97,8 @@ The system needs a tiered, auditable autonomy policy that starts in shadow mode 
 | Area | Impact | Evidence/owner |
 |---|---|---|
 | API routes/contracts | Assessment/review/policy endpoints; ticket responses gain assessment/decision fields | `api/tickets.js`, `api/harnessRuns.js` |
-| Database/migrations | New assessment, review, policy and decision/audit tables | New migration(s); serialized with other tickets |
-| Frontend | Ticket assessment panel, project autonomy settings, veto/force-review action | `TicketDetail.vue`, `ProjectSettings.vue` |
+| Database/migrations | New assessment, review, policy, policy-change audit and decision tables | New migration(s); serialized with other tickets |
+| Frontend | Ticket assessment panel, project autonomy settings on `ProjectDetail.vue`, veto/force-review action | `TicketDetail.vue`, `ProjectDetail.vue` |
 | Agent/harness | Spec-review and estimation stages; merge-agent role; final-diff re-score | `HarnessTicketProcessor`, merge agent |
 | Permissions/auth | Policy changes require an operator/admin permission and project scope | `PermissionService` |
 | Background jobs/external calls | Optional calibration/rollback monitors; GitHub merge API | fg-36, fg-41 |

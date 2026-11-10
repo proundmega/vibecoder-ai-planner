@@ -9,7 +9,7 @@ created: "2026-11-10"
 updated: "2026-11-10"
 pr: null
 branch: null
-depends_on: ["fg-31", "fg-32", "fg-36", "fg-37", "fg-41", "fg-45", "fg-51"]
+depends_on: ["bp-134", "fg-31", "fg-32", "fg-36", "fg-37", "fg-41", "fg-45", "fg-51"]
 ---
 
 # 00 — Spec Review, Effort/Risk Scoring, and Policy-Gated Auto-Merge (fg-52)
@@ -17,7 +17,7 @@ depends_on: ["fg-31", "fg-32", "fg-36", "fg-37", "fg-41", "fg-45", "fg-51"]
 > **Owns:** status, ticket map, deferred scope, user decisions.
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`), file operations (`04`).
 
-**Related code:** `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java`, `backend/src/services/TicketService.js`, `backend/src/services/HarnessRunService.js`, `backend/src/services/GitHubService.js`, `backend/src/api/tickets.js`, `backend/src/services/PermissionService.js`, `frontend/src/views/TicketDetail.vue`, `frontend/src/views/ProjectSettings.vue`
+**Related code:** `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java`, `backend/src/services/TicketService.js`, `backend/src/services/HarnessRunService.js`, `backend/src/services/GitHubService.js`, `backend/src/api/tickets.js`, `backend/src/services/PermissionService.js`, `frontend/src/views/TicketDetail.vue`, `frontend/src/views/ProjectDetail.vue`
 
 ## Why this ticket exists
 
@@ -43,7 +43,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D1 | Budget/cost-aware routing and hard stops | fg-38 | Cost | fg-38-harness-budgets-routing | open |
 | D2 | Learned calibration model for estimates vs actuals | fg-37 | Evaluation | fg-52 follow-up | open |
 | D3 | Multi-model ensemble estimation | self | Quality | fg-52 follow-up | open |
-| D4 | Auto-merge for security-sensitive scopes (auth, billing, migrations, secrets, infra) | self | Security | not planned; must remain human-only | open |
+| D4 | Auto-merge for security-sensitive scopes (auth, billing, migrations, secrets, infra) | self | Security | not planned; must remain human-only | rejected |
 | D5 | Cross-project policy inheritance | self | Administration | fg-52 follow-up | open |
 | D6 | Merge-queue integration and conflict resolution | fg-36 | Merge | fg-36-merge-lifecycle | open |
 | D7 | Automatic revert on post-merge failure | fg-36 | Reliability | fg-36-merge-lifecycle | open |
@@ -63,15 +63,21 @@ deferred scope are owned by this document; `01`–`04` link here.
 11. **Security-sensitive paths are excluded** from auto-merge: auth/permissions, billing, migrations, secrets, deployment/infra, protected paths and dependency changes.
 12. **Shadow first.** Record “would auto-merge” decisions without merging, then canary a project before broader rollout.
 
+## Ownership and relationship to fg-30 Phase 3 / fg-36
+
+- **Single owner.** `fg-52` is the sole owner of the autonomy policy engine, effort/risk/confidence assessment, auto-approve and auto-merge decisions. It supersedes and narrows the “policy engine / autonomy modes / auto-merge” part of `fg-30` Phase 3.
+- **`fg-30` Phase 3** retains only residual plan-approval/multi-agent integration; `fg-45` owns readiness and `fg-40` owns orchestration. It consumes `fg-52` policy decisions and must not define a second autonomy mode or auto-merge path. Budgets remain owned by `fg-38`.
+- **`fg-36`** owns merge mechanics (base branch, conflicts, CI gate, merge queue, rollback). It consumes an `fg-52` `allow` decision and does not define policy; its references have been updated to point at `fg-52`.
+- **No duplicate implementation.** A later ticket that needs autonomy policy extends `fg-52` rather than adding a parallel engine.
+
 ## Known unknowns
 
 - Initial thresholds for effort, risk and confidence (proposal: effort ≤ 30, risk ≤ 20, confidence ≥ 0.8; all configurable).
 - Whether the spec lives only in ticket planning files or also has a first-class `ticket_specs` table.
-- Whether the policy is a project JSONB column or a dedicated settings table (proposal: dedicated table with audit).
-- The exact deterministic deny-path list and whether it is inherited from `fg-34`/`fg-45`.
-- Whether auto-approve applies only to `human_approval` or can also skip `review`.
 - The minimum calibration sample size before enabling low-risk auto-merge.
 - Which model/provider diversity is required for the reviewer/merger.
+
+Resolved: `auto_approve` skips only the human **approval** step (the `human_approval` gate); a human still performs the merge. It never skips review or a deterministic gate. The security-sensitive deny list is a fixed platform baseline that projects may extend but never replace.
 
 ## Testing checklist
 
@@ -79,9 +85,13 @@ deferred scope are owned by this document; `01`–`04` link here.
 - [ ] Assessment records effort, risk, confidence, signals, missing info, rationale and provenance.
 - [ ] A spec change invalidates the assessment and blocks auto-approve until re-scored.
 - [ ] Policy defaults to off and requires an authorized, audited change.
-- [ ] Each tier (`off`, `shadow`, `auto_approve`, `auto_merge_low_risk`) behaves as designed.
+- [ ] Each tier (`off`, `shadow`, `auto_approve`, `auto_merge_low_risk`) behaves as designed; `auto_approve` skips approval but not review or human merge.
 - [ ] Deterministic gates override a favourable estimate.
-- [ ] Security-sensitive paths cannot be auto-merged in any tier.
+- [ ] Security-sensitive paths cannot be auto-merged in any tier, even when a project sets `additional_deny_paths = []`.
+- [ ] Project deny paths are additive to the fixed platform baseline; a project cannot remove a baseline path.
+- [ ] Required gates and quotas are enforced and covered by tests.
+- [ ] Project and global kill switches stop decisions immediately; a project cannot override the global switch.
+- [ ] Every policy change is recorded in an append-only project-level audit trail.
 - [ ] Implementer cannot estimate or merge its own ticket.
 - [ ] Final-diff re-score can downgrade or reject an auto-merge.
 - [ ] Human veto/override is immediate and audited.

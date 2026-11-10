@@ -405,9 +405,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 ## Phase 3 - Autonomy, budgets, plan gate, multi-agent - 2-3 weeks
 
-1. **Policy engine** in Java + backend:
-   - risk classifier (paths, commands, diff size, migrations/auth/secrets),
-   - autonomy modes, protected paths, allow/deny commands, network.
+1. **Policy and auto-merge ownership:** the autonomy policy engine, risk/effort assessment, auto-approve and auto-merge decisions are owned by `fg-52` (Phase C). Phase 3 consumes `fg-52` decisions for autonomy and must not implement a second policy engine or auto-merge path; the remaining Phase 3 work is plan-gate/multi-agent integration. The protected-path/allow-deny signals remain inputs to `fg-52`'s deterministic gates.
 2. **Budget enforcement**:
    - time/tokens/cost/tool calls/files/diff lines; 80% warning; 100% pause + question.
 3. **Plan approval gate**:

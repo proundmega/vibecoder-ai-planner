@@ -123,7 +123,7 @@ CREATE UNIQUE INDEX uq_merge_queue_active_ticket
 3. Conflict worker behind a flag.
 4. Merge queue in one project.
 5. Post-merge verification.
-6. Auto-merge only after fg-30 Phase 3 policy and fg-37 metrics.
+6. Auto-merge only after fg-52 policy and fg-37 metrics.
 
 ## Open questions
 

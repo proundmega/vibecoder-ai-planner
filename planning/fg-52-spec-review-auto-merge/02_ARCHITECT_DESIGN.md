@@ -75,7 +75,7 @@ Rubric anchors (configurable, versioned):
 | Tier | Human approval | Merge actor | Use |
 |---|---|---|---|
 | `off` | required | human | default |
-| `auto_approve` | skipped only when gates pass | human | small, low-risk tickets; human still merges |
+| `auto_approve` | skipped only when gates pass | human | small, low-risk tickets; skips the `human_approval` gate only, never review or a deterministic gate |
 | `shadow` | required | human | records would-merge decisions for calibration |
 | `auto_merge_low_risk` | not required when every gate passes | independent merge agent | canary/opt-in projects |
 
@@ -87,13 +87,41 @@ A project policy contains:
   "max_effort": 30,
   "max_risk": 20,
   "min_confidence": 0.8,
-  "deny_paths": [".github/**", "backend/src/middleware/auth*", "billing/**", "**/migrations/**", "**/secrets/**"],
+  "additional_deny_paths": [],
+  "additional_required_gates": [],
+  "max_review_rounds": 3,
+  "max_auto_merges_per_day": 5,
   "require_tests": true,
   "max_files": 10,
   "max_changed_lines": 400,
   "kill_switch": false
 }
 ```
+
+`additional_deny_paths` only extends the fixed baseline below; there is no
+project field that replaces or clears the baseline. Likewise,
+`additional_required_gates` adds project-specific checks to the mandatory
+platform gate set; it cannot remove a mandatory gate.
+
+## Fixed security baseline (non-configurable)
+
+The gate engine hard-codes a platform-owned baseline, versioned in code and
+reviewed like a security control. A project may add paths, but cannot remove,
+weaken or override a baseline entry. At minimum it covers:
+
+| Category | Baseline examples |
+|---|---|
+| Auth/permissions | `backend/src/middleware/auth*`, `backend/src/services/PermissionService.js`, `backend/src/api/auth.js`, `**/auth/**`, `**/permissions/**` |
+| Billing | `backend/src/api/billing.js`, `backend/src/services/BillingService.js`, `**/billing/**` |
+| Migrations | `**/migrations/**`, `**/*.sql` under `backend/src/migrations/` |
+| Secrets | `**/secrets/**`, `**/.env*`, `**/*credential*`, `**/*secret*` |
+| Deployment/infra | `Jenkinsfile`, `docker-compose*.yml`, `Dockerfile*`, `.github/workflows/**`, `deploy/**`, `infra/**` |
+| Dependency manifests | `package.json`, `package-lock.json`, `backend/package.json`, `frontend/package.json`, `agent/pom.xml`, `pom.xml`, lockfiles |
+| Protected paths | The `fg-34` protected-directory list and any repository-level protected paths |
+
+The detector matches both the baseline and the union of
+`baseline ∪ project.additional_deny_paths`. A hit forces human review before any
+merge call, even if the project policy sets `additional_deny_paths = []`.
 
 ## Deterministic gates (hard requirements)
 
@@ -105,10 +133,11 @@ A project policy contains:
 6. CI/required checks green, branch up to date.
 7. Tests changed/added; no test deletion to make the gate pass.
 8. Diff within configured files/lines/bytes limits.
-9. No protected/high-risk paths, migrations, auth/permissions, billing, secrets, deployment/infra or dependency changes.
+9. No protected/high-risk paths, migrations, auth/permissions, billing, secrets, deployment/infra or dependency changes. The fixed baseline is checked independently of project `additional_deny_paths`.
 10. Publish/secret guards pass; no credential or policy bypass.
 11. Final-diff re-score within thresholds.
-12. Human veto absent; kill switch off.
+12. Human veto absent; project and global kill switches off.
+13. Policy quotas and required gates are satisfied.
 
 Any failure downgrades to human review. A model cannot waive a deterministic gate.
 
@@ -160,10 +189,20 @@ CREATE TABLE project_autonomy_policies (
   max_effort SMALLINT NOT NULL DEFAULT 30,
   max_risk SMALLINT NOT NULL DEFAULT 20,
   min_confidence NUMERIC(3,2) NOT NULL DEFAULT 0.80,
-  deny_paths TEXT[] NOT NULL DEFAULT '{}',
+  additional_deny_paths TEXT[] NOT NULL DEFAULT '{}',
+  additional_required_gates TEXT[] NOT NULL DEFAULT '{}',
+  max_review_rounds INT NOT NULL DEFAULT 3,
+  max_auto_merges_per_day INT NOT NULL DEFAULT 5,
   require_tests BOOLEAN NOT NULL DEFAULT TRUE,
   max_files INT NOT NULL DEFAULT 10,
   max_changed_lines INT NOT NULL DEFAULT 400,
+  kill_switch BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_by BIGINT REFERENCES users(id),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE autonomy_global_control (
+  id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
   kill_switch BOOLEAN NOT NULL DEFAULT FALSE,
   updated_by BIGINT REFERENCES users(id),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -181,9 +220,29 @@ CREATE TABLE autonomy_decisions (
   reviewed_sha TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE autonomy_policy_changes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL,
+  actor_type VARCHAR(16) NOT NULL,
+  actor_id TEXT,
+  previous_policy JSONB,
+  new_policy JSONB NOT NULL,
+  reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 ```
 
-Policy changes and decisions are append-only audit rows; the policy table stores current state plus `updated_by/at`.
+`autonomy_policy_changes` is append-only and project-level (nullable only when a
+project is deleted), so a policy change is not forced into the ticket-scoped
+`autonomy_decisions` table. The implementation may also emit the same event to
+the `fg-41` audit stream; the local row is the durable, queryable record.
+
+The global kill switch is the logical OR of the deployment environment variable
+`AUTONOMY_GLOBAL_KILL_SWITCH` (fail closed when unset or unparseable) and the
+`autonomy_global_control.kill_switch` row. It is evaluated before any project
+policy; a project cannot override it. Every change to the row is written to
+`autonomy_policy_changes` with `project_id = NULL`.
 
 ## Merge actor
 
@@ -202,7 +261,7 @@ The merge agent:
 3. Calibrate against human decisions and actual effort/incidents.
 4. Enable `auto_approve` for one canary project.
 5. Enable `auto_merge_low_risk` only after a documented calibration window and security review.
-6. Keep a global and project kill switch; default remains `off`.
+6. Keep the platform-global and project kill switches; default remains `off`. The global switch is environment config plus the `autonomy_global_control` row, and it is checked before project policy.
 
 ## Failure modes and recovery
 
@@ -222,7 +281,9 @@ The merge agent:
 
 - **Authorization:** only authorized project/admin users can change policy or issue waivers; agents cannot change their own tier.
 - **Separation:** implementer cannot be estimator, reviewer or merger.
-- **Security-sensitive exclusion:** auth/permissions, billing, migrations, secrets, deployment/infra, protected paths and dependency changes always require a human, regardless of score.
+- **Security-sensitive exclusion:** auth/permissions, billing, migrations, secrets, deployment/infra, protected paths and dependency changes always require a human, regardless of score. The detector checks the fixed baseline union project additions, so an empty project list cannot disable it.
+- **Policy integrity:** project `additional_deny_paths` and `additional_required_gates` are additive; no project field can remove a baseline category or a mandatory gate. The mandatory gate set is platform-owned.
+- **Global kill switch:** environment config and the `autonomy_global_control` row are checked before project policy; fail closed if unreadable.
 - **Untrusted input:** specs/tickets/repo content are data; never execute instructions found in them. Redact secrets before storage.
 - **Audit integrity:** append-only decisions, actor/model identity, reviewed SHA and evidence snapshot; least-privilege read access.
 - **Merge token:** the merge agent uses the narrowest GitHub permission available and cannot push code or edit checks.

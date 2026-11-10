@@ -259,7 +259,7 @@ Same list; follow-up directories to be created when the harness foundation is me
 
 ## Out of Scope
 
-- Auto-merge, auto-deploy, or production changes without a human.
+- Auto-merge, auto-deploy, or production changes without a human; a merge may be automatic only under the explicit `fg-52` policy. Deployment remains human-only.
 - Email/Slack adapters (Phase 2 follow-up).
 - A generic plugin marketplace for harnesses (design leaves an interface, not an implementation).
 - Reworking the planner's planning documents or templates.
