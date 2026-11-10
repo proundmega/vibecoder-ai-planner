@@ -921,19 +921,42 @@ public class WorkspaceManager {
             }
             files.add(new DiffSummary.ChangedFile(path, status));
 
+            String oldSha = oldBlobs.get(path);
+            String newSha = newBlobs.get(path);
+            long oldSize = oldSha == null ? 0 : blobSize(oldSha);
+            long newSize = newSha == null ? 0 : blobSize(newSha);
             int[] stat = stats.get(path);
             if (stat != null && stat[0] >= 0 && stat[1] >= 0) {
                 additions += stat[0];
                 deletions += stat[1];
             } else if ("deleted".equals(status)) {
-                deletions += countBlobLines(oldBlobs.get(path));
+                deletions += countBlobLines(oldSha);
             } else {
                 // Binary or `-diff` attribute: fall back to the raw blob so a
                 // hostile .gitattributes cannot hide a large text file.
-                additions += countBlobLines(newBlobs.get(path));
+                additions += countBlobLines(newSha);
+                if (oldSha != null && !oldSha.equals(newSha)
+                    && (oldSize > newSize || oldSize > MAX_COUNTED_BYTES)) {
+                    // Without numstat we cannot isolate the removed lines, so
+                    // count the old blob too when content was removed or the
+                    // old blob is oversized. Otherwise a shrinking -diff text
+                    // file bypasses HARNESS_MAX_LINES once the byte limit is
+                    // raised. Small grows/same-size edits keep the new blob
+                    // only, avoiding a full-old-blob false positive.
+                    deletions += countBlobLines(oldSha);
+                }
             }
-            if (!"deleted".equals(status)) {
-                bytes += blobSize(newBlobs.get(path));
+
+            // changedBytes is added plus removed content, so removed content
+            // cannot bypass HARNESS_MAX_BYTES through a delete or shrink.
+            // Unchanged content is not double-counted: a grown file contributes
+            // its new size, while a shrunk file contributes its new size plus
+            // the removed delta.
+            bytes += newSize;
+            if ("deleted".equals(status)) {
+                bytes += oldSize;
+            } else if (oldSize > newSize) {
+                bytes += oldSize - newSize;
             }
         }
 
@@ -1039,23 +1062,24 @@ public class WorkspaceManager {
         if (sha == null || sha.isBlank() || !isBlob(sha)) {
             return 0;
         }
-        // The byte guard rejects oversized blobs; do not scan them line by line.
-        if (blobSize(sha) > MAX_COUNTED_BYTES) {
-            log.debug("Skipping line count for oversized blob {}", sha);
-            return 0;
-        }
         Process process = startGit(
             repoDir,
             supervisorIndex == null ? Map.of() : Map.of("GIT_INDEX_FILE", supervisorIndex.toString()),
             "cat-file", "blob", sha);
         int newlines = 0;
         long seenBytes = 0;
+        boolean binary = false;
         boolean byteOverflow = false;
         boolean lineOverflow = false;
         try (InputStream input = process.getInputStream()) {
             byte[] buffer = new byte[8_192];
             int read;
             while ((read = input.read(buffer)) != -1) {
+                for (int i = 0; i < read; i++) {
+                    if (buffer[i] == 0) {
+                        binary = true;
+                    }
+                }
                 seenBytes += read;
                 if (seenBytes > MAX_COUNTED_BYTES) {
                     byteOverflow = true;
@@ -1075,14 +1099,24 @@ public class WorkspaceManager {
                 }
             }
         }
-        if (byteOverflow || lineOverflow) {
+        boolean overflow = byteOverflow || lineOverflow;
+        if (overflow) {
             process.destroyForcibly();
-            waitFor(process);
-            return byteOverflow ? 0 : MAX_COUNTED_LINES + 1;
         }
         int exit = waitFor(process);
-        if (exit != 0) {
+        if (!overflow && exit != 0) {
             throw new IOException("git cat-file failed for blob " + sha);
+        }
+        if (binary) {
+            // Line counts are not meaningful for binary content. The byte guard
+            // still accounts for its size.
+            log.debug("Binary blob {}; skipping line count", sha);
+            return 0;
+        }
+        if (overflow) {
+            // Fail closed for a blob we cannot fully count. Returning 0 here
+            // would let a large text file bypass HARNESS_MAX_LINES.
+            return MAX_COUNTED_LINES + 1;
         }
         return newlines;
     }

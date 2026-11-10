@@ -4,6 +4,11 @@ import java.util.List;
 
 /**
  * A summary of changes made in the workspace.
+ *
+ * <p>{@code bytes} is the added plus removed content size. Deleted and shrunk
+ * files therefore contribute their old blob size (a shrink contributes its new
+ * size plus the removed delta), so removed content is enforced by
+ * {@code HARNESS_MAX_BYTES}. Unchanged content is not counted twice.</p>
  */
 public record DiffSummary(List<ChangedFile> files, int additions, int deletions, long bytes) {
     public record ChangedFile(String path, String status) {}

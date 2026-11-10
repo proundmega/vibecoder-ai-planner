@@ -131,7 +131,7 @@ Required for `docker compose up`:
 | `HARNESS_MODEL` | Optional harness model override (must match the configured provider) | _(provider default)_ |
 | `HARNESS_MAX_FILES` | Maximum changed files the guard will publish | `50` |
 | `HARNESS_MAX_LINES` | Maximum changed lines the guard will publish | `2000` |
-| `HARNESS_MAX_BYTES` | Maximum total changed bytes the guard will publish | `5242880` |
+| `HARNESS_MAX_BYTES` | Maximum total added + removed content bytes the guard will publish | `5242880` |
 | `HARNESS_FSCK` | Run `git fsck --strict` before staging (`false` skips it for very large repos) | `true` |
 | `HARNESS_LEASE_SECONDS` | Ticket lease TTL for durable runs (clamped 60–86400) | `600` |
 | `HARNESS_HEARTBEAT_SECONDS` | Lease renewal and heartbeat interval (clamped to ≤ lease/2) | `30` |
