@@ -77,13 +77,15 @@ Recovery and safe reaping on top of the slice 1 lifecycle:
   `HARNESS_REAPER_INTERVAL_SECONDS` (default 60, `0` disables). Each sweep calls
   `reapExpiredLeases`, then reconciles every reaped run plus any terminal run
   whose `reconciled_at` marker is still unset.
-- **Guarded ticket release.** `HarnessRunService.releaseTicketForRun` is the only
-  recovery path that returns a ticket to backlog. It requires a terminal
-  (`failed`/`dead_letter`) run **with no run-level PR or head sha**, the ticket
-  still `in_progress`, no ticket PR, no other run for the ticket with PR/head
-  evidence, and no newer active run. A pushed branch (`head_sha` without a PR)
-  is treated as publish evidence and reported as `needs_operator` instead of
-  being silently re-run.
+- **Automatic failed release.** `HarnessRunService.reconcileRun` returns a ticket
+  to backlog only for a latest `failed` run **with no run-level PR or head sha**
+  when the ticket is still `in_progress`, has no ticket PR, no other run has
+  PR/head evidence, and no newer active run exists. A pushed branch (`head_sha`
+  without a PR) is treated as publish evidence and reported as `needs_operator`
+  instead of being silently re-run.
+- **Explicit release.** `HarnessRunService.releaseTicketForRun` is the manual
+  recovery path. Agent callers may release only `failed` runs; dead_letter runs
+  are a manual hold and require the operator route (`allowDeadLetter`).
 - **Terminal-run reconciliation.** `046_harness_run_reconciliation.sql` adds a
   `reconciled_at` marker, a partial index for pending terminal runs, a one-time
   backfill for historical terminal runs and empty-string normalisation.

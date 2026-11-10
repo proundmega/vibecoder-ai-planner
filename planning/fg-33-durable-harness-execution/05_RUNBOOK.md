@@ -143,10 +143,13 @@ Deployment assumptions:
 ## Crash scenarios
 
 After `HARNESS_RETRY_PIN_ATTEMPTS` failures the agent finishes the run as
-`dead_letter` and leaves the ticket `in_progress`; an operator must inspect it
-and explicitly release or adopt the run. Startup recovery skips a run whose
-heartbeat/lease is still fresh, so a second process with the same agent identity
-cannot kill a live run.
+`dead_letter` and leaves the ticket `in_progress`. The terminal state is durable
+in the run, but the agent's in-memory attempt bookkeeping clears on restart; the
+ticket is not requeued automatically. An operator must inspect it and either
+release it explicitly or adopt publish evidence. Adoption requires a stored PR
+or an operator-verified PR URL; without evidence, only release is available.
+Startup recovery skips a run whose heartbeat/lease is still fresh, so a second
+process with the same agent identity cannot kill a live run.
 
 - **Crash before clone**: next poll/reaper recovers; no workspace exists.
 - **Crash after clone/session/prompt**: run stays `running` until the lease

@@ -435,12 +435,25 @@ describe('HarnessRunService', () => {
       ).resolves.toEqual(ticket);
 
       const [sql, params] = pool.query.mock.calls[0];
-      expect(sql).toContain("r.status IN ('failed', 'dead_letter')");
+      expect(sql).toContain("r.status = 'failed'");
       expect(sql).toContain("NULLIF(BTRIM(r.pr_url), '') IS NULL");
       expect(sql).toContain("NULLIF(BTRIM(r.head_sha), '') IS NULL");
       expect(sql).toContain("t.status = 'in_progress'");
       expect(sql).toContain("NULLIF(BTRIM(t.pr_url), '') IS NULL");
       expect(sql).toContain('NOT EXISTS');
+      expect(params).toEqual([RUN_ID, null]);
+    });
+
+    it('allows an operator to release a dead-letter run explicitly', async () => {
+      const ticket = { id: 42, status: 'backlog', assigned_agent_id: null };
+      pool.query.mockResolvedValueOnce({ rows: [ticket] });
+
+      await expect(
+        HarnessRunService.releaseTicketForRun(RUN_ID, { allowDeadLetter: true })
+      ).resolves.toEqual(ticket);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain("r.status IN ('failed', 'dead_letter')");
       expect(params).toEqual([RUN_ID, null]);
     });
 

@@ -879,11 +879,21 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     message = "Harness run ended without a terminal checkpoint";
                 }
                 String finishingRunId = currentRunId;
-                boolean finished = finishDurableRun(
+                String actualStatus = finishDurableRun(
                     status, message, pendingHeadSha, pendingPrUrl);
-                if (finished && releaseAfterTerminalFinish && pickedUp.getId() != null) {
-                    applyFailureRelease(pickedUp.getId(), message, finishingRunId);
-                } else if (!finished && releaseAfterTerminalFinish && pickedUp.getId() != null) {
+                if (actualStatus != null && releaseAfterTerminalFinish && pickedUp.getId() != null) {
+                    if ("dead_letter".equals(status) || "failed".equals(actualStatus)) {
+                        applyFailureRelease(pickedUp.getId(), message, finishingRunId);
+                    } else {
+                        releaseAfterTerminalFinish = false;
+                        log.warn("Refusing to release ticket {}: run {} is {}",
+                            pickedUp.getId(), finishingRunId, actualStatus);
+                        postMessage(pickedUp.getId(), "update", message
+                            + "\n\nThe harness run was already " + actualStatus
+                            + "; the ticket was left in_progress for operator recovery.");
+                    }
+                } else if (actualStatus == null && releaseAfterTerminalFinish
+                    && pickedUp.getId() != null) {
                     postMessage(pickedUp.getId(), "update",
                         message + "\n\nCould not confirm the harness run finished; "
                             + "leaving the ticket assigned for recovery instead of retrying it.");
@@ -1139,10 +1149,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
      * failure. The run id is cleared only after the backend confirms, and the
      * backend finish is idempotent.
      */
-    private boolean finishDurableRun(String status, String error, String headSha, String prUrl) {
+    private String finishDurableRun(String status, String error, String headSha, String prUrl) {
         String runId = currentRunId;
         if (runId == null) {
-            return true;
+            return status;
         }
         stopHeartbeat();
 
@@ -1161,7 +1171,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                         runId, terminal, status);
                 }
                 currentRunId = null;
-                return true;
+                return terminal == null ? status : terminal;
             } catch (IOException | RuntimeException e) {
                 lastFailure = e;
                 if (attempt < 3) {
@@ -1172,7 +1182,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         log.warn("Could not finish harness run {}: {}", runId,
             lastFailure == null ? "unknown error" : lastFailure.getMessage());
-        return false;
+        return null;
     }
 
     private boolean assertLeaseHeld(Long ticketId) {
@@ -1279,13 +1289,24 @@ public final class HarnessTicketProcessor implements TicketWorker {
         releaseAfterTerminalFinish = true;
 
         String runId = currentRunId;
-        boolean finished = finishDurableRun(
-            pendingTerminalStatus, message, publishedHeadSha, publishedPrUrl);
-        if (!finished) {
+        String requestedStatus = pendingTerminalStatus;
+        String actualStatus = finishDurableRun(
+            requestedStatus, message, publishedHeadSha, publishedPrUrl);
+        if (actualStatus == null) {
             // The run/lease may still be live. The finally block retries the
             // finish and applies the backoff + release only if it succeeds.
             log.warn("Could not confirm the harness run finished for ticket {}; "
                 + "deferring ticket release", ticketId);
+            return;
+        }
+        if (!"dead_letter".equals(requestedStatus) && !"failed".equals(actualStatus)) {
+            // An operator dead-letter (or another terminal state) already holds
+            // the ticket. Never release it from the agent failure path.
+            releaseAfterTerminalFinish = false;
+            log.warn("Refusing to release ticket {}: run {} is {}", ticketId, runId, actualStatus);
+            postMessage(ticketId, "update", message
+                + "\n\nThe harness run was already " + actualStatus
+                + "; the ticket was left in_progress for operator recovery.");
             return;
         }
 

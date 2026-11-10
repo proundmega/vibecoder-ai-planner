@@ -237,11 +237,22 @@ router.post('/runs/:runId/adopt', verifyTokenOrAgent, async (req, res, next) => 
 
 router.post('/runs/:runId/release-ticket', verifyTokenOrAgent, async (req, res, next) => {
   try {
-    const agentId = requireAgent(req);
-    const released = await HarnessRunService.releaseTicketForRun(
-      req.params.runId,
-      { agentId }
-    );
+    let released;
+    if (req.agent) {
+      // Agents may only release failed runs; dead_letter is a manual hold.
+      const agentId = requireAgent(req);
+      released = await HarnessRunService.releaseTicketForRun(
+        req.params.runId,
+        { agentId }
+      );
+    } else {
+      const run = await HarnessRunService.getRun(req.params.runId);
+      await assertOperatorCanAccess(req, run);
+      released = await HarnessRunService.releaseTicketForRun(
+        req.params.runId,
+        { allowDeadLetter: true }
+      );
+    }
 
     res.json({ success: true, data: { released: Boolean(released) } });
   } catch (error) {

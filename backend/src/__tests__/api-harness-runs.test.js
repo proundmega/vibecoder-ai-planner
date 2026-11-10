@@ -490,6 +490,35 @@ describe('Harness run API', () => {
       );
     });
 
+    it('lets an operator release a dead-letter ticket', async () => {
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.releaseTicketForRun.mockResolvedValue({ id: 42 });
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/release-ticket`)
+        .set('Authorization', 'Bearer mock-token');
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data).toEqual({ released: true });
+      expect(HarnessRunService.releaseTicketForRun).toHaveBeenCalledWith(
+        RUN_ID, { allowDeadLetter: true }
+      );
+    });
+
+    it('denies a non-operator JWT release of a dead-letter ticket', async () => {
+      jwt.verify.mockReturnValue({
+        userId: 'user-1', id: 'user-1', email: 'user@test.com', role: 'user',
+      });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+
+      const res = await request(app)
+        .post(`/api/v1/harness/runs/${RUN_ID}/release-ticket`)
+        .set('Authorization', 'Bearer mock-token');
+
+      expect(res.statusCode).toBe(403);
+      expect(HarnessRunService.releaseTicketForRun).not.toHaveBeenCalled();
+    });
+
     it('adopts a published run for an operator JWT', async () => {
       HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
       HarnessRunService.adoptPublishedRun.mockResolvedValue({

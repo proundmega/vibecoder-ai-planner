@@ -711,9 +711,12 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     const ticket = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
     expect(ticket.rows[0].status).toBe('in_progress');
 
-    // Manual recovery still has an explicit release path.
+    // Agent callers may not release a manual hold; the operator option may.
     await expect(
       HarnessRunService.releaseTicketForRun(run.id)
+    ).resolves.toBeNull();
+    await expect(
+      HarnessRunService.releaseTicketForRun(run.id, { allowDeadLetter: true })
     ).resolves.not.toBeNull();
     const released = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
     expect(released.rows[0].status).toBe('backlog');
@@ -772,9 +775,12 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     const ticket = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
     expect(ticket.rows[0].status).toBe('in_progress');
 
-    // Manual recovery still has an explicit release path.
+    // Agent callers may not release a manual hold; the operator option may.
     await expect(
       HarnessRunService.releaseTicketForRun(run.id)
+    ).resolves.toBeNull();
+    await expect(
+      HarnessRunService.releaseTicketForRun(run.id, { allowDeadLetter: true })
     ).resolves.not.toBeNull();
     const released = await pool.query('SELECT status FROM tickets WHERE id = $1', [ticketId]);
     expect(released.rows[0].status).toBe('backlog');
