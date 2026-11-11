@@ -62,6 +62,31 @@ class WorkspaceSecureFileTest {
     }
 
     @Test
+    void rejectsAFinalComponentSwapAtOpenTime() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            WorkspaceSecureFile.secureDirectoryStreamsAvailable(workspace),
+            "secure directory streams are unavailable");
+        Path file = Files.writeString(workspace.resolve("file.txt"), "safe");
+        Path outside = Files.writeString(tempDir.resolve("outside.txt"), "super-secret");
+        WorkspaceSecureFile.setBeforeFinalOpenForTesting(() -> {
+            Files.deleteIfExists(file);
+            Files.createSymbolicLink(file, outside);
+        });
+        try {
+            assertThrows(IOException.class,
+                () -> WorkspaceSecureFile.writeString(workspace, file, "pwned", true));
+            assertEquals("super-secret", Files.readString(outside));
+
+            Files.delete(file);
+            Files.writeString(file, "safe");
+            assertThrows(IOException.class,
+                () -> WorkspaceSecureFile.readString(workspace, file, 1024));
+        } finally {
+            WorkspaceSecureFile.setBeforeFinalOpenForTesting(null);
+        }
+    }
+
+    @Test
     void fallbackPathStillWorksWhenSecureDirectoryStreamsAreUnavailable() throws Exception {
         Path file = Files.writeString(workspace.resolve("fallback.txt"), "one");
         WorkspaceSecureFile.forceFallbackForTesting(true);

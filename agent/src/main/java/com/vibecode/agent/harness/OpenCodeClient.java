@@ -140,7 +140,7 @@ public final class OpenCodeClient implements HarnessClient {
         Files.createDirectories(home.resolve(".cache"));
 
         closeWorkspaceBridge();
-        WorkspaceFileBridge createdBridge = new WorkspaceFileBridge(workspace);
+        WorkspaceFileBridge createdBridge = new WorkspaceFileBridge(workspace, bridge != null);
         createdBridge.start();
         this.workspaceBridge = createdBridge;
         try {

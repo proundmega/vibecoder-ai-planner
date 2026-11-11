@@ -64,10 +64,19 @@ final class WorkspaceFileBridge implements AutoCloseable {
     private String baseUrl;
 
     WorkspaceFileBridge(Path workspace) throws IOException {
+        this(workspace, false);
+    }
+
+    WorkspaceFileBridge(Path workspace, boolean requireSecureFileAccess) throws IOException {
         if (workspace == null) {
             throw new IllegalArgumentException("Workspace is required");
         }
         this.workspaceReal = workspace.toAbsolutePath().normalize().toRealPath();
+        if (requireSecureFileAccess
+            && !WorkspaceSecureFile.secureDirectoryStreamsAvailable(workspaceReal)) {
+            throw new IOException(
+                "secure directory streams are required in sandbox mode");
+        }
     }
 
     synchronized void start() throws IOException {

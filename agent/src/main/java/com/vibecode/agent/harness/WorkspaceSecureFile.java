@@ -24,31 +24,49 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Race-free file access for the workspace bridge.
+ * File access for the workspace bridge.
  *
- * <p>{@code toRealPath()} followed by {@code Files.writeString(...,
- * NOFOLLOW_LINKS)} still follows a parent-directory symlink if the workspace
- * process swaps that directory between the check and the open. The primary
- * path walks the relative path through {@link SecureDirectoryStream}
- * descriptors, opening every component with {@code NOFOLLOW_LINKS} and opening
- * the final file relative to the held parent descriptor.</p>
+ * <p>Where {@link SecureDirectoryStream} is available this is race-free: it
+ * walks the relative path through held directory descriptors, opens every
+ * component with {@code NOFOLLOW_LINKS} and opens the final file relative to
+ * the held parent with {@code NOFOLLOW_LINKS} as well.</p>
  *
  * <p>Providers without {@link SecureDirectoryStream} (native Windows) use a
- * best-effort canonical-path fallback. Host mode is explicitly not a security
- * boundary; D20's race-free guarantee applies only where secure directory
- * streams are available.</p>
+ * best-effort canonical-path fallback. Sandbox mode fails fast instead of
+ * using that fallback. Host mode is explicitly not a security boundary.</p>
  */
 final class WorkspaceSecureFile {
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceSecureFile.class);
     private static final AtomicBoolean FALLBACK_WARNED = new AtomicBoolean();
     private static volatile boolean forceFallbackForTesting = false;
+    private static volatile TestHook beforeFinalOpen = () -> { };
 
     private WorkspaceSecureFile() {
     }
 
+    @FunctionalInterface
+    interface TestHook {
+        void run() throws IOException;
+    }
+
     static void forceFallbackForTesting(boolean value) {
         forceFallbackForTesting = value;
+    }
+
+    static void setBeforeFinalOpenForTesting(TestHook hook) {
+        beforeFinalOpen = hook == null ? () -> { } : hook;
+    }
+
+    static boolean secureDirectoryStreamsAvailable(Path workspaceReal) {
+        if (forceFallbackForTesting) {
+            return false;
+        }
+        try (DirectoryStream<Path> rootStream = Files.newDirectoryStream(workspaceReal)) {
+            return rootStream instanceof SecureDirectoryStream<Path>;
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     static SeekableByteChannel openRead(Path workspaceReal, Path target) throws IOException {
@@ -162,6 +180,7 @@ final class WorkspaceSecureFile {
             } else {
                 requireRegularFile(directory, name);
             }
+            beforeFinalOpen.run();
             // LinkOption.NOFOLLOW_LINKS is in `options`, so a final-component
             // swap to a symlink is rejected at open time.
             return directory.newByteChannel(name, options);

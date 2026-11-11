@@ -15,6 +15,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorkspaceFileBridgeTest {
@@ -181,6 +182,17 @@ class WorkspaceFileBridgeTest {
 
         assertEquals(400, response.statusCode());
         assertTrue(response.body().contains("invalid regular expression"), response.body());
+    }
+
+    @Test
+    void sandboxModeFailsClosedWithoutSecureDirectoryStreams() throws Exception {
+        WorkspaceSecureFile.forceFallbackForTesting(true);
+        try {
+            assertThrows(IOException.class,
+                () -> new WorkspaceFileBridge(workspace, true));
+        } finally {
+            WorkspaceSecureFile.forceFallbackForTesting(false);
+        }
     }
 
     @Test
