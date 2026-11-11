@@ -143,23 +143,20 @@ class DockerSandboxRunnerIntegrationTest {
                         "memory limit was not applied: " + limit);
                 }
 
-                // A process that keeps forking during the sweep must not keep
-                // writing after exec returns; the frozen quiescence check
-                // destroys the sandbox if one survives. Keep this last: a
-                // survivor intentionally stops the sandbox.
+                // The parent writes the marker before returning and leaves
+                // short-lived writers behind. The sweep must kill them before
+                // they append. Keep this last: a genuine survivor stops the
+                // sandbox, and the unit tests cover that destruction path.
                 ExecResult forker = runner.exec(handle, ExecRequest.of(
-                    "sh -c 'while :; do (echo x >> fork.txt) & sleep 0.1; done' "
-                        + ">/dev/null 2>&1 & true",
+                    "echo START > fork.txt; for i in 1 2 3 4 5; do "
+                        + "(sleep 2; echo LATE >> fork.txt) >/dev/null 2>&1 & done; exit 0",
                     Duration.ofSeconds(20)));
                 assertTrue(forker.passed(), forker.output());
-                Thread.sleep(1_000);
-                long firstSize = Files.exists(workspace.resolve("fork.txt"))
-                    ? Files.size(workspace.resolve("fork.txt")) : 0;
-                Thread.sleep(2_000);
-                long secondSize = Files.exists(workspace.resolve("fork.txt"))
-                    ? Files.size(workspace.resolve("fork.txt")) : 0;
-                assertEquals(firstSize, secondSize,
-                    "a forking child kept writing after the frozen sweep");
+                assertEquals("START\n", Files.readString(workspace.resolve("fork.txt")),
+                    "the forking writer did not run before the sweep");
+                Thread.sleep(2_500);
+                assertEquals("START\n", Files.readString(workspace.resolve("fork.txt")),
+                    "a forked child wrote after the frozen sweep");
             } finally {
                 runner.destroy(handle);
             }
@@ -331,6 +328,33 @@ class DockerSandboxRunnerIntegrationTest {
                 assertTrue(response.body().contains("bridge-ok"), response.body());
             } finally {
                 bridge.close();
+                runner.destroy(handle);
+            }
+        }
+    }
+
+    @Test
+    void keepsTheSandboxAliveAcrossSequentialExecs() throws Exception {
+        String image = System.getenv("SANDBOX_IT_IMAGE");
+        Assumptions.assumeTrue(image != null && !image.isBlank(),
+            "SANDBOX_IT_IMAGE is not set; skipping the Docker sandbox smoke test");
+        SandboxConfig config = integrationConfig(image, Map.of());
+        Path workspace = Files.createDirectories(tempDir.resolve("workspace"));
+        Files.setPosixFilePermissions(workspace, PosixFilePermissions.fromString("rwxrwxrwx"));
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace));
+            try {
+                ExecResult first = runner.exec(handle,
+                    ExecRequest.of("id -u", Duration.ofSeconds(20)));
+                assertTrue(first.passed(), first.output());
+
+                // Regression: the frozen quiescence check must not count the
+                // init host PID as a survivor and destroy the sandbox.
+                ExecResult second = runner.exec(handle,
+                    ExecRequest.of("id -u", Duration.ofSeconds(20)));
+                assertTrue(second.passed(), second.output());
+            } finally {
                 runner.destroy(handle);
             }
         }
