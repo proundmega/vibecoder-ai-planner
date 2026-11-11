@@ -9,6 +9,8 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitOption;
@@ -18,7 +20,6 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
-import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -210,9 +211,7 @@ final class WorkspaceFileBridge implements AutoCloseable {
             try {
                 Path target = WorkspacePathPolicy.resolveWritable(
                     workspaceReal, root.path("path").asText(""));
-                Files.writeString(target, content, StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
+                WorkspaceSecureFile.writeString(workspaceReal, target, content, true);
                 sendText(exchange, 200, "Wrote " + payload.length + " bytes to "
                     + workspaceReal.relativize(target).toString().replace('\\', '/'));
             } catch (IOException e) {
@@ -234,8 +233,8 @@ final class WorkspaceFileBridge implements AutoCloseable {
             if (root == null) {
                 return;
             }
-            String oldString = root.path("oldString").asText("");
-            if (oldString.isEmpty()) {
+            String rawOldString = root.path("oldString").asText("");
+            if (rawOldString.isEmpty()) {
                 sendJson(exchange, 400, Map.of("error", "oldString is required"));
                 return;
             }
@@ -243,40 +242,73 @@ final class WorkspaceFileBridge implements AutoCloseable {
                 sendJson(exchange, 400, Map.of("error", "newString is required"));
                 return;
             }
-            String newString = root.path("newString").asText();
+            String rawNewString = root.path("newString").asText();
             boolean replaceAll = root.path("replaceAll").asBoolean(false);
             try {
                 Path target = WorkspacePathPolicy.resolveWritable(
                     workspaceReal, root.path("path").asText(""));
-                if (!Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)) {
-                    throw new IOException("not a regular file");
+                try (SeekableByteChannel channel =
+                         WorkspaceSecureFile.openReadWrite(workspaceReal, target)) {
+                    long size = channel.size();
+                    if (size > MAX_READ_FILE_BYTES) {
+                        throw new IOException("file is too large to edit");
+                    }
+                    ByteBuffer buffer = ByteBuffer.allocate((int) size);
+                    while (buffer.hasRemaining()) {
+                        int read = channel.read(buffer);
+                        if (read < 0) {
+                            break;
+                        }
+                    }
+                    String raw = WorkspaceSecureFile.decodeUtf8(buffer.array());
+                    boolean bom = raw.startsWith("\uFEFF");
+                    String body = bom ? raw.substring(1) : raw;
+                    boolean crlf = body.contains("\r\n");
+                    String normalized = normalizeNewlines(body, crlf);
+                    String oldString = normalizeNewlines(rawOldString, crlf);
+                    String newString = normalizeNewlines(rawNewString, crlf);
+                    if (oldString.isEmpty()) {
+                        sendJson(exchange, 400, Map.of("error", "oldString is required"));
+                        return;
+                    }
+
+                    int occurrences = countOccurrences(normalized, oldString);
+                    if (occurrences == 0) {
+                        sendJson(exchange, 400, Map.of("error", "oldString not found"));
+                        return;
+                    }
+                    if (occurrences > 1 && !replaceAll) {
+                        sendJson(exchange, 400,
+                            Map.of("error", "oldString is not unique; set replaceAll"));
+                        return;
+                    }
+                    long projected = normalized.length()
+                        - (long) occurrences * oldString.length()
+                        + (long) occurrences * newString.length();
+                    if (projected > MAX_WRITE_BYTES || projected < 0) {
+                        sendJson(exchange, 413,
+                            Map.of("error", "write exceeds " + MAX_WRITE_BYTES + " bytes"));
+                        return;
+                    }
+
+                    String updatedNormalized = replaceAll
+                        ? normalized.replace(oldString, newString)
+                        : normalized.substring(0, normalized.indexOf(oldString))
+                            + newString
+                            + normalized.substring(
+                                normalized.indexOf(oldString) + oldString.length());
+                    String updatedBody = restoreNewlines(updatedNormalized, crlf);
+                    String updated = bom ? "\uFEFF" + updatedBody : updatedBody;
+                    byte[] payload = updated.getBytes(StandardCharsets.UTF_8);
+                    if (payload.length > MAX_WRITE_BYTES) {
+                        sendJson(exchange, 413,
+                            Map.of("error", "write exceeds " + MAX_WRITE_BYTES + " bytes"));
+                        return;
+                    }
+                    channel.truncate(0);
+                    channel.position(0);
+                    WorkspaceSecureFile.writeFully(channel, payload);
                 }
-                if (Files.size(target) > MAX_READ_FILE_BYTES) {
-                    throw new IOException("file is too large to edit");
-                }
-                String content = Files.readString(target, StandardCharsets.UTF_8);
-                int first = content.indexOf(oldString);
-                if (first < 0) {
-                    sendJson(exchange, 400, Map.of("error", "oldString not found"));
-                    return;
-                }
-                int second = content.indexOf(oldString, first + oldString.length());
-                if (second >= 0 && !replaceAll) {
-                    sendJson(exchange, 400, Map.of("error", "oldString is not unique; set replaceAll"));
-                    return;
-                }
-                String updated = replaceAll
-                    ? content.replace(oldString, newString)
-                    : content.substring(0, first) + newString
-                        + content.substring(first + oldString.length());
-                byte[] payload = updated.getBytes(StandardCharsets.UTF_8);
-                if (payload.length > MAX_WRITE_BYTES) {
-                    sendJson(exchange, 413, Map.of("error", "write exceeds " + MAX_WRITE_BYTES + " bytes"));
-                    return;
-                }
-                Files.writeString(target, updated, StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
                 sendText(exchange, 200, "Edited "
                     + workspaceReal.relativize(target).toString().replace('\\', '/'));
             } catch (CharacterCodingException e) {
@@ -291,11 +323,32 @@ final class WorkspaceFileBridge implements AutoCloseable {
         }
     }
 
+    private static String normalizeNewlines(String value, boolean crlf) {
+        return crlf ? value.replace("\r\n", "\n") : value;
+    }
+
+    private static String restoreNewlines(String value, boolean crlf) {
+        return crlf ? value.replace("\n", "\r\n") : value;
+    }
+
+    private static int countOccurrences(String content, String needle) {
+        if (needle.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        int index = 0;
+        while ((index = content.indexOf(needle, index)) >= 0) {
+            count++;
+            index += needle.length();
+        }
+        return count;
+    }
+
     private String readLines(Path file, int offset, int limit) throws IOException {
         StringBuilder out = new StringBuilder();
         int lineNumber = 0;
         int shown = 0;
-        try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+        try (BufferedReader reader = WorkspaceSecureFile.newBufferedReader(workspaceReal, file)) {
             String line;
             while ((line = reader.readLine()) != null) {
                 lineNumber++;
@@ -423,7 +476,7 @@ final class WorkspaceFileBridge implements AutoCloseable {
     ) {
         Path relative = workspaceReal.relativize(file);
         String display = relative.toString().replace('\\', '/');
-        try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+        try (BufferedReader reader = WorkspaceSecureFile.newBufferedReader(workspaceReal, file)) {
             String line;
             int lineNumber = 0;
             while ((line = reader.readLine()) != null) {

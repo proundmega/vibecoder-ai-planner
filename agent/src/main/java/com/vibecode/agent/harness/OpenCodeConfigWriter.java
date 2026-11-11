@@ -187,6 +187,9 @@ public final class OpenCodeConfigWriter {
         // Built-in edit/write tools only apply a lexical external-directory
         // deny, so a workspace symlink can redirect a write. Replace them with
         // guarded wrappers that resolve the parent with toRealPath().
+        // OpenCode 1.19.5 maps the edit/write/apply_patch tool IDs to the
+        // `edit` permission action; the extra keys are defense in depth for
+        // future versions.
         permission.put("edit", "deny");
         permission.put("write", "deny");
         permission.put("multiedit", "deny");

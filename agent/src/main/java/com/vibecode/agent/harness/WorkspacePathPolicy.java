@@ -20,9 +20,14 @@ import java.util.Set;
  */
 final class WorkspacePathPolicy {
 
-    private static final Set<String> DENIED_SEGMENTS = Set.of("secrets", ".ssh", ".aws");
+    private static final Set<String> DENIED_SEGMENTS = Set.of(
+        "secrets", ".ssh", ".aws", ".docker", ".kube"
+    );
     private static final Set<String> WRITE_DENIED_SEGMENTS = Set.of(".git", ".opencode");
     private static final Set<String> WRITE_DENIED_FILES = Set.of("opencode.json", "opencode.jsonc");
+    private static final Set<String> DENIED_FILES = Set.of(
+        ".npmrc", ".netrc", ".git-credentials", ".gitconfig"
+    );
     private static final List<String> IGNORED_DIRECTORIES = List.of(
         ".git", "node_modules", "target", "build", "dist", ".gradle"
     );
@@ -83,10 +88,11 @@ final class WorkspacePathPolicy {
         if (path.equals(".git/config") || path.endsWith("/.git/config")) {
             return true;
         }
-        if (fileName.equals(".npmrc") || fileName.equals(".netrc")) {
+        if (DENIED_FILES.contains(fileName)) {
             return true;
         }
         boolean envLike = fileName.equals(".env")
+            || fileName.equals(".envrc")
             || fileName.startsWith(".env.")
             || fileName.endsWith(".env")
             || fileName.contains(".env.");

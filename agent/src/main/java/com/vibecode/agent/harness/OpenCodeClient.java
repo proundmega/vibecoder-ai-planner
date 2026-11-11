@@ -828,7 +828,8 @@ public final class OpenCodeClient implements HarnessClient {
 
             export default tool({
               description: "Write a text file inside the repository. The built-in write/edit tools are disabled. "
-                + "The parent directory is resolved inside the workspace; symlink writes and credential/VCS/control paths are rejected.",
+                + "The parent directory must already exist; symlink writes and credential/VCS/control paths are rejected. "
+                + "Writes UTF-8 exactly; use sandbox_edit for BOM/CRLF-preserving changes.",
               args: {
                 filePath: tool.schema.string().describe("File path relative to the workspace or absolute inside it"),
                 content: tool.schema.string().describe("Full UTF-8 file content"),
@@ -867,7 +868,8 @@ public final class OpenCodeClient implements HarnessClient {
 
             export default tool({
               description: "Replace text in a file inside the repository. The built-in edit/write tools are disabled. "
-                + "oldString must be unique unless replaceAll is true; paths are guarded like sandbox_write.",
+                + "oldString must be unique unless replaceAll is true; paths are guarded like sandbox_write. "
+                + "Preserves BOM/CRLF; the resulting file must be at most 1 MiB.",
               args: {
                 filePath: tool.schema.string().describe("File path relative to the workspace or absolute inside it"),
                 oldString: tool.schema.string().describe("Exact text to replace"),

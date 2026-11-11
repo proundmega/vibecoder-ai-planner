@@ -92,7 +92,9 @@ public final class PromptBuilder {
         prompt.append("`sandbox_edit` for changes. The built-in read/grep/edit/write tools are ");
         prompt.append("disabled because they can follow workspace symlinks outside the repo.\n");
         prompt.append("- Prefer `sandbox_edit` for precise replacements and `sandbox_write` for ");
-        prompt.append("new files or full rewrites; do not rewrite an existing file blindly.\n");
+        prompt.append("new files or full rewrites; do not rewrite an existing file blindly. ");
+        prompt.append("Create a new parent directory first with a shell command (`mkdir -p`); ");
+        prompt.append("`sandbox_write` requires the parent to exist.\n");
         prompt.append("- Make the smallest coherent change. No unrelated refactors.\n");
         prompt.append("- Follow the repository's test-first rules when they exist.\n");
         prompt.append("- Do not read .env files, secrets, or paths outside the workspace.\n");

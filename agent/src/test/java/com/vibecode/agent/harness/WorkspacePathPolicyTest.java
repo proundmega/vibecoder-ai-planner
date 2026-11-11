@@ -109,14 +109,25 @@ class WorkspacePathPolicyTest {
             () -> WorkspacePathPolicy.resolveWritable(workspace, "outside-dir-link/new.txt"));
         assertThrows(IOException.class,
             () -> WorkspacePathPolicy.resolveWritable(workspace, "../outside.txt"));
-        assertThrows(IOException.class,
-            () -> WorkspacePathPolicy.resolveWritable(workspace, ".git/hooks/pre-commit"));
-        assertThrows(IOException.class,
-            () -> WorkspacePathPolicy.resolveWritable(workspace, "opencode.json"));
-        assertThrows(IOException.class,
-            () -> WorkspacePathPolicy.resolveWritable(workspace, ".env"));
-        assertThrows(IOException.class,
-            () -> WorkspacePathPolicy.resolveWritable(workspace, "secrets/token.txt"));
+    }
+
+    @Test
+    void deniesWriteControlCredentialAndVcsPathsWhenParentsExist() throws IOException {
+        Files.createDirectories(workspace.resolve(".git/hooks"));
+        Files.createDirectories(workspace.resolve(".opencode"));
+        Files.createDirectories(workspace.resolve("secrets"));
+        Files.createDirectories(workspace.resolve(".docker"));
+        Files.createDirectories(workspace.resolve(".kube"));
+
+        for (String path : java.util.List.of(
+            ".git/hooks/pre-commit", "secrets/token.txt", ".opencode/opencode.json",
+            "opencode.json", "opencode.jsonc", ".env", ".envrc", ".git-credentials",
+            ".gitconfig", ".docker/config.json", ".kube/config")) {
+            IOException error = assertThrows(IOException.class,
+                () -> WorkspacePathPolicy.resolveWritable(workspace, path), path);
+            assertTrue(error.getMessage().contains("denied by the write policy"),
+                path + " -> " + error.getMessage());
+        }
     }
 
     @Test
@@ -133,8 +144,9 @@ class WorkspacePathPolicyTest {
         Files.createDirectories(workspace.resolve(".git"));
 
         for (String path : java.util.List.of(
-            ".env", ".env.local", "app.env", "app.env.local",
+            ".env", ".env.local", ".envrc", "app.env", "app.env.local",
             "secrets/token.txt", ".ssh/id_rsa", ".aws/credentials",
+            ".docker/config.json", ".kube/config", ".git-credentials", ".gitconfig",
             ".git/config", ".npmrc", ".netrc")) {
             Path file = workspace.resolve(path);
             Files.createDirectories(file.getParent());
