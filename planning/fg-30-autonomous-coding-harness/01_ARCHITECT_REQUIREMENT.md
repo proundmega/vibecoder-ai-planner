@@ -108,7 +108,7 @@ as the control plane. See `02_ARCHITECT_DESIGN.md` for alternatives.
 - Persistent agent sessions and event/transcript storage.
 - Human-in-the-loop:
   - Agent question tool → ticket question → notification → human answer → agent resume.
-  - Permission requests (risky operations) routed through the `fg-52` policy decision or human approval.
+  - Permission requests (risky operations) routed through the harness permission policy or human approval. Runtime tool/command rules stay in `fg-30`; `fg-52` only owns autonomy/approval/merge policy.
   - Ticket phase `blocked` while waiting; automatic return to `in_progress` on answer.
 - In-app notification bell + question inbox + ticket question cards.
 - Plan gate and multi-agent integration. Autonomy policy is owned by `fg-52`; budget enforcement is owned by `fg-38`. fg-30 consumes both and does not define a second policy or budget store.
@@ -165,7 +165,7 @@ Same list; follow-up directories to be created when the harness foundation is me
 | `backend/src/api/` | CREATE/MODIFY | Sessions/questions/notifications/policies routes + agent auth |
 | `backend/src/migrations/` | NEW MIGRATION | Sessions, questions, notifications, policies, indexes |
 | `backend/src/services/PoolManager.js` | MODIFY | Forward harness env, sandbox limits, model/provider mapping |
-| `frontend/src/` | CREATE/MODIFY | Notification bell, question inbox/cards, agent timeline, plan-approval card (policy settings are `fg-52`; budget display is `fg-38`) |
+| `frontend/src/` | CREATE/MODIFY | Notification bell, question inbox/cards, agent timeline, plan-approval card (autonomy settings are `fg-52`; budget display is `fg-38`; runtime permission settings stay in harness config) |
 | `database` | NEW TABLES | `agent_sessions`, `agent_events`, `ticket_questions`, `notifications`, `agent_policies` |
 | `config` | NEW ENV VARS | `HARNESS_MODE`, `HARNESS_*`, `OPENCODE_*`, execution limits consumed from `fg-38`, sandbox limits |
 
@@ -235,14 +235,14 @@ Same list; follow-up directories to be created when the harness foundation is me
 15. [ ] Heartbeats expose session id, current tool/step, elapsed time, tokens and cost; a ticket/session list endpoint lets the UI find the active session.
 16. [ ] Event replay cannot create duplicate sessions or questions (idempotency keys are enforced by unique indexes).
 17. [ ] Resume is explicit: a new session reads the answered question, the workspace diff and a prior-session summary; it never assumes the old process is alive.
-18. [ ] Permission requests follow policy: safe operations auto-approved, dangerous denied, ambiguous asked (the bridge exists only in Phase 2; Phase 1 has no `ask`).
+18. [ ] Permission requests follow the harness permission policy: safe operations auto-approved, dangerous denied, ambiguous asked (the bridge exists only in Phase 2; Phase 1 has no `ask`). `fg-52` does not own these runtime decisions.
 19. [ ] Questions expire after a configurable timeout and surface an escalation notification.
 20. [ ] All questions/answers are auditable and scoped to the owning project/user.
 
 ### Plan gate and safety (Phase 3)
 
 21. [ ] `fg-38` budget limits are consumed and pause/resume is honored; fg-30 does not implement a second budget engine.
-22. [ ] Changes touching protected paths (auth, migrations, `.github/`, secrets) require human plan/action approval, backed by `fg-52`'s deterministic gate.
+22. [ ] Changes touching protected paths (auth, migrations, `.github/`, secrets) require human plan/action approval, backed by the `fg-30` publishing guard and `fg-34` sandbox rules. `fg-52` may additionally require human review at merge time but does not own runtime path approval.
 23. [ ] The agent cannot read `.env` files, access outside the workspace, push, merge, or run denied commands.
 24. [ ] A risk-based plan gate exists and can be configured per project.
 25. [ ] Multi-agent mode (architect → builder → reviewer) can be enabled per project without changing the ticket workflow.

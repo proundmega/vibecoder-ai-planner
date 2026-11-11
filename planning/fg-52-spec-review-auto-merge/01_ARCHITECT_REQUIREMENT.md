@@ -36,6 +36,7 @@ The system needs a tiered, auditable autonomy policy that starts in shadow mode 
 - Learned/ML calibration in the first implementation (record the data first).
 - Auto-merge for failed, missing or waived traceability evidence.
 - Letting the implementing agent approve its own work.
+- Runtime tool/command permissions (file edit, shell, network, sandbox, permission requests): these remain the `fg-30` harness permission policy and `fg-34` sandbox rules. `fg-52` only consumes merge-time signals.
 - A single opaque score that cannot be explained.
 
 ## Functional requirements
@@ -54,6 +55,7 @@ The system needs a tiered, auditable autonomy policy that starts in shadow mode 
 - **FR12 - UI and API controls:** show the spec review, assessment and policy decision on the ticket; provide project settings for the tier/thresholds/deny paths/required gates and a human veto/force-review action.
 - **FR13 - Shadow and canary rollout:** `shadow` records would-merge decisions without merging. A canary project can enable low-risk auto-merge. A project kill switch and a platform-global kill switch stop decisions immediately; a project cannot override the global switch.
 - **FR14 - Readiness integration:** auto-approval requires dependency readiness (`bp-134`), Definition of Ready/risk sections (`fg-45`) and requirement traceability (`fg-51`). Missing evidence blocks the tier.
+- **FR15 - Low-risk enablement gate:** `auto_merge_low_risk` stays disabled until the `fg-36` merge-queue and automatic-revert baselines are resolved (D6/D7), a documented calibration window passes, and a security review completes.
 
 ## Non-functional requirements
 
@@ -74,7 +76,7 @@ The system needs a tiered, auditable autonomy policy that starts in shadow mode 
 4. A security-sensitive path is always routed to human review.
 5. The implementer cannot estimate, approve or merge its own ticket.
 6. A spec change invalidates the assessment; a final-diff mismatch downgrades auto-merge.
-7. Shadow mode records decisions without merging; canary mode can be stopped by a project or global kill switch.
+7. Shadow mode records decisions without merging; canary mode can be stopped by a project or global kill switch. `auto_merge_low_risk` is not enabled until the `fg-36` queue/revert baselines, calibration and security review pass.
 8. Every assessment, veto, policy change and merge is auditable.
 9. A human can always force review or veto an automatic decision.
 10. The final PR/merge path records verification evidence at the reviewed SHA.

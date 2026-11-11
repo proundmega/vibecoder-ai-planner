@@ -59,6 +59,7 @@
 | FR12 | Frontend | assessment/policy/veto UI renders and propagates errors | `npm test -- --run`; `npm run typecheck` |
 | FR13 | Unit/integration | shadow records would-merge without merge; canary stops on project or global kill switch; project cannot override global | integration test |
 | FR14 | Unit/integration | missing readiness/dependency/traceability blocks autonomy | integration test |
+| FR15 | Unit/integration | `auto_merge_low_risk` stays disabled until D6/D7, calibration and security review pass | integration test; rollout gate test |
 | NFR1 | Unit/adversarial | prompt-injection spec/repo content does not execute or change policy | adversarial review test |
 | NFR2 | Unit/integration | auth/billing/migrations/secrets/infra/protected/dependency changes always human, including with empty `additional_deny_paths`; baseline classifier covers the real auth paths (`backend/src/auth.js`, `backend/src/api/routes.js`, `backend/src/middleware/auth.js`, `backend/src/api/permissions.js`, `backend/src/services/PermissionService.js`, `backend/src/validators/auth.js`), Jenkinsfile, docker-compose*, package manifests and pom files | gate tests |
 | NFR3 | Review/unit | author/reviewer/estimator/implementer/merger separation enforced | role tests; review record |
@@ -76,6 +77,7 @@
 | 1 | Dependency graph omitted `bp-134`; fg-37/fg-41 order inconsistent; policy ownership overlapped fg-30 Phase 3/fg-36; security baseline was configurable; FR7 gates/quotas and policy-change audit were missing; `ProjectSettings.vue` did not exist | Added bp-134 everywhere, ordered fg-52 after fg-37/fg-41, declared fg-52 the single autonomy owner, added a fixed additive baseline and global kill switch, added additional gates/quotas plus `autonomy_policy_changes`, and moved UI work to `ProjectDetail.vue` | resolved |
 | 2 | Baseline named a nonexistent `backend/src/api/auth.js` and missed real auth files; policy audit used `ON DELETE SET NULL`; fg-30 still defined autonomy modes; missing apply/OpenAPI/generated-type/global-permission/actual-effort/spec-store details | Replaced the auth paths and added a baseline regression, added `scope`/`project_name` with no FK, removed the fg-30 autonomy field, registered the migration, and specified OpenAPI/type regeneration, `super_admin` control, actual-effort source and planning-file spec storage | resolved |
 | 3 | fg-30 still claimed policy/budget outcomes and UI; the policy-audit scope had no DB constraint; D6/D7 ownership timing was ambiguous | Updated fg-30's Phase 3 title/outcomes, impact rows and acceptance criteria to point at fg-52/fg-38, added the scope/project/name CHECK and tests, and gated `auto_merge_low_risk` on D6/D7 | resolved |
+| 4 | fg-30 over-assigned runtime tool/command permissions to fg-52; the rollout step omitted the D6/D7 gate | Restored runtime permissions to fg-30/fg-34, limited fg-52 to autonomy/approval/merge, added FR15 and repeated the D6/D7 gate in rollout | resolved |
 
 ## Results
 

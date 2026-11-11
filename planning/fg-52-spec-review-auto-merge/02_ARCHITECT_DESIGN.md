@@ -273,7 +273,7 @@ The merge agent:
 2. Spec review + scoring in **shadow** only; record would-merge decisions.
 3. Calibrate against human decisions and actual effort/incidents.
 4. Enable `auto_approve` for one canary project.
-5. Enable `auto_merge_low_risk` only after a documented calibration window and security review.
+5. Enable `auto_merge_low_risk` only after a documented calibration window, a security review, and resolution of D6/D7 (the fg-36 merge-queue and automatic-revert baselines). `auto_merge_low_risk` stays disabled until then.
 6. Keep the platform-global and project kill switches; default remains `off`. The global switch is environment config plus the `autonomy_global_control` row, and it is checked before project policy.
 
 ## Failure modes and recovery

@@ -45,8 +45,8 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D3 | Multi-model ensemble estimation | self | Quality | fg-52 follow-up | open |
 | D4 | Auto-merge for security-sensitive scopes (auth, billing, migrations, secrets, infra) | self | Security | not planned; must remain human-only | rejected |
 | D5 | Cross-project policy inheritance | self | Administration | fg-52 follow-up | open |
-| D6 | fg-52 consumption of the fg-36 merge-queue API (fg-36 owns the queue) | fg-36 | Merge | fg-36-merge-lifecycle | open — required before `auto_merge_low_risk` |
-| D7 | Automatic revert on post-merge failure (fg-36 owns revert; fg-52 consumes it) | fg-36 | Reliability | fg-36-merge-lifecycle | open — required before `auto_merge_low_risk` |
+| D6 | fg-52 consumption of the fg-36 merge-queue API (fg-36 owns the queue) | fg-36 | Merge | fg-36-merge-lifecycle | open — gated by FR15 |
+| D7 | Automatic revert on post-merge failure (fg-36 owns revert; fg-52 consumes it) | fg-36 | Reliability | fg-36-merge-lifecycle | open — gated by FR15 |
 | D8 | First-class `ticket_specs` store (this phase uses ticket planning files as the canonical spec) | self | Storage | fg-52 follow-up | open |
 
 ## Important design decisions
@@ -69,6 +69,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 - **Single owner.** `fg-52` is the sole owner of the autonomy policy engine, effort/risk/confidence assessment, auto-approve and auto-merge decisions. It supersedes and narrows the “policy engine / autonomy modes / auto-merge” part of `fg-30` Phase 3.
 - **`fg-30` Phase 3** retains only residual plan-approval/multi-agent integration; `fg-45` owns readiness and `fg-40` owns orchestration. It consumes `fg-52` policy decisions and must not define a second autonomy mode or auto-merge path. Budgets remain owned by `fg-38`.
 - **`fg-36`** owns merge mechanics (base branch, conflicts, CI gate, merge queue, rollback). It consumes an `fg-52` `allow` decision and does not define policy; its references have been updated to point at `fg-52`.
+- **Runtime permissions are not fg-52.** Tool/command allow/ask/deny, protected-path action approval and sandbox rules remain the `fg-30` harness permission policy and `fg-34` sandbox rules. `fg-52` consumes only merge-time signals.
 - **No duplicate implementation.** A later ticket that needs autonomy policy extends `fg-52` rather than adding a parallel engine.
 
 **fg-36 dependency scope:** `fg-36`'s core merge lifecycle (base branch, CI gate, merge queue, rollback path) is a hard dependency. `off`, `auto_approve` and `shadow` may start once that baseline lands. `auto_merge_low_risk` stays disabled until D6 (fg-52 consumes the queue API) and D7 (fg-52 consumes automatic revert) are resolved.
