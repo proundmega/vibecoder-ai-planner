@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -42,6 +43,7 @@ import java.util.regex.PatternSyntaxException;
 final class WorkspaceFileBridge implements AutoCloseable {
 
     static final int MAX_BODY_BYTES = 64 * 1024;
+    static final int MAX_WRITE_BYTES = 1024 * 1024;
     static final int MAX_READ_BYTES = 256 * 1024;
     static final long MAX_READ_FILE_BYTES = 4L * 1024 * 1024;
     static final int MAX_GREP_MATCHES = 200;
@@ -79,6 +81,8 @@ final class WorkspaceFileBridge implements AutoCloseable {
         });
         created.createContext("/read", this::handleRead);
         created.createContext("/grep", this::handleGrep);
+        created.createContext("/write", this::handleWrite);
+        created.createContext("/edit", this::handleEdit);
         created.setExecutor(createdExecutor);
         created.start();
         this.server = created;
@@ -113,7 +117,7 @@ final class WorkspaceFileBridge implements AutoCloseable {
             if (!authorized(exchange)) {
                 return;
             }
-            JsonNode root = readJson(exchange);
+            JsonNode root = readJson(exchange, MAX_BODY_BYTES);
             if (root == null) {
                 return;
             }
@@ -148,7 +152,7 @@ final class WorkspaceFileBridge implements AutoCloseable {
             if (!authorized(exchange)) {
                 return;
             }
-            JsonNode root = readJson(exchange);
+            JsonNode root = readJson(exchange, MAX_BODY_BYTES);
             if (root == null) {
                 return;
             }
@@ -179,6 +183,109 @@ final class WorkspaceFileBridge implements AutoCloseable {
             }
         } catch (RuntimeException e) {
             sendJson(exchange, 500, Map.of("error", "grep failed: " + safeMessage(e)));
+        } finally {
+            exchange.close();
+        }
+    }
+
+    private void handleWrite(HttpExchange exchange) throws IOException {
+        try {
+            if (!authorized(exchange)) {
+                return;
+            }
+            JsonNode root = readJson(exchange, MAX_WRITE_BYTES);
+            if (root == null) {
+                return;
+            }
+            if (!root.has("content") || !root.path("content").isTextual()) {
+                sendJson(exchange, 400, Map.of("error", "content is required"));
+                return;
+            }
+            String content = root.path("content").asText();
+            byte[] payload = content.getBytes(StandardCharsets.UTF_8);
+            if (payload.length > MAX_WRITE_BYTES) {
+                sendJson(exchange, 413, Map.of("error", "write exceeds " + MAX_WRITE_BYTES + " bytes"));
+                return;
+            }
+            try {
+                Path target = WorkspacePathPolicy.resolveWritable(
+                    workspaceReal, root.path("path").asText(""));
+                Files.writeString(target, content, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
+                sendText(exchange, 200, "Wrote " + payload.length + " bytes to "
+                    + workspaceReal.relativize(target).toString().replace('\\', '/'));
+            } catch (IOException e) {
+                sendJson(exchange, 403, Map.of("error", safeMessage(e)));
+            }
+        } catch (RuntimeException e) {
+            sendJson(exchange, 500, Map.of("error", "write failed: " + safeMessage(e)));
+        } finally {
+            exchange.close();
+        }
+    }
+
+    private void handleEdit(HttpExchange exchange) throws IOException {
+        try {
+            if (!authorized(exchange)) {
+                return;
+            }
+            JsonNode root = readJson(exchange, MAX_WRITE_BYTES);
+            if (root == null) {
+                return;
+            }
+            String oldString = root.path("oldString").asText("");
+            if (oldString.isEmpty()) {
+                sendJson(exchange, 400, Map.of("error", "oldString is required"));
+                return;
+            }
+            if (!root.has("newString") || !root.path("newString").isTextual()) {
+                sendJson(exchange, 400, Map.of("error", "newString is required"));
+                return;
+            }
+            String newString = root.path("newString").asText();
+            boolean replaceAll = root.path("replaceAll").asBoolean(false);
+            try {
+                Path target = WorkspacePathPolicy.resolveWritable(
+                    workspaceReal, root.path("path").asText(""));
+                if (!Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)) {
+                    throw new IOException("not a regular file");
+                }
+                if (Files.size(target) > MAX_READ_FILE_BYTES) {
+                    throw new IOException("file is too large to edit");
+                }
+                String content = Files.readString(target, StandardCharsets.UTF_8);
+                int first = content.indexOf(oldString);
+                if (first < 0) {
+                    sendJson(exchange, 400, Map.of("error", "oldString not found"));
+                    return;
+                }
+                int second = content.indexOf(oldString, first + oldString.length());
+                if (second >= 0 && !replaceAll) {
+                    sendJson(exchange, 400, Map.of("error", "oldString is not unique; set replaceAll"));
+                    return;
+                }
+                String updated = replaceAll
+                    ? content.replace(oldString, newString)
+                    : content.substring(0, first) + newString
+                        + content.substring(first + oldString.length());
+                byte[] payload = updated.getBytes(StandardCharsets.UTF_8);
+                if (payload.length > MAX_WRITE_BYTES) {
+                    sendJson(exchange, 413, Map.of("error", "write exceeds " + MAX_WRITE_BYTES + " bytes"));
+                    return;
+                }
+                Files.writeString(target, updated, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
+                sendText(exchange, 200, "Edited "
+                    + workspaceReal.relativize(target).toString().replace('\\', '/'));
+            } catch (CharacterCodingException e) {
+                sendJson(exchange, 403, Map.of("error", "file is not valid UTF-8 text"));
+            } catch (IOException e) {
+                sendJson(exchange, 403, Map.of("error", safeMessage(e)));
+            }
+        } catch (RuntimeException e) {
+            sendJson(exchange, 500, Map.of("error", "edit failed: " + safeMessage(e)));
         } finally {
             exchange.close();
         }
@@ -351,10 +458,10 @@ final class WorkspaceFileBridge implements AutoCloseable {
         return true;
     }
 
-    private JsonNode readJson(HttpExchange exchange) throws IOException {
+    private JsonNode readJson(HttpExchange exchange, int maxBytes) throws IOException {
         String body;
         try {
-            body = readBody(exchange.getRequestBody());
+            body = readBody(exchange.getRequestBody(), maxBytes);
         } catch (IOException e) {
             sendJson(exchange, 413, Map.of("error", e.getMessage()));
             return null;
@@ -368,10 +475,10 @@ final class WorkspaceFileBridge implements AutoCloseable {
         }
     }
 
-    private String readBody(InputStream input) throws IOException {
-        byte[] bytes = input.readNBytes(MAX_BODY_BYTES + 1);
-        if (bytes.length > MAX_BODY_BYTES) {
-            throw new IOException("request body exceeds " + MAX_BODY_BYTES + " bytes");
+    private String readBody(InputStream input, int maxBytes) throws IOException {
+        byte[] bytes = input.readNBytes(maxBytes + 1);
+        if (bytes.length > maxBytes) {
+            throw new IOException("request body exceeds " + maxBytes + " bytes");
         }
         return new String(bytes, StandardCharsets.UTF_8);
     }

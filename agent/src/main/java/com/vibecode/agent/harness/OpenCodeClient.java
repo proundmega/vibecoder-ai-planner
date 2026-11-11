@@ -730,6 +730,10 @@ public final class OpenCodeClient implements HarnessClient {
             workspaceReadToolSource(), StandardCharsets.UTF_8);
         Files.writeString(tools.resolve("sandbox_grep.ts"),
             workspaceGrepToolSource(), StandardCharsets.UTF_8);
+        Files.writeString(tools.resolve("sandbox_write.ts"),
+            workspaceWriteToolSource(), StandardCharsets.UTF_8);
+        Files.writeString(tools.resolve("sandbox_edit.ts"),
+            workspaceEditToolSource(), StandardCharsets.UTF_8);
         return tools;
     }
 
@@ -808,6 +812,88 @@ public final class OpenCodeClient implements HarnessClient {
                 const text = await response.text()
                 if (!response.ok) {
                   throw new Error("grep rejected: " + text)
+                }
+                return text
+              },
+            })
+            """;
+    }
+
+    static String workspaceWriteToolSource() {
+        return """
+            import { tool } from "@opencode-ai/plugin"
+
+            const url = process.env.VIBECODE_WORKSPACE_BRIDGE_URL
+            const token = process.env.VIBECODE_WORKSPACE_BRIDGE_TOKEN
+
+            export default tool({
+              description: "Write a text file inside the repository. The built-in write/edit tools are disabled. "
+                + "The parent directory is resolved inside the workspace; symlink writes and credential/VCS/control paths are rejected.",
+              args: {
+                filePath: tool.schema.string().describe("File path relative to the workspace or absolute inside it"),
+                content: tool.schema.string().describe("Full UTF-8 file content"),
+              },
+              async execute(args) {
+                if (!url || !token) {
+                  throw new Error("workspace guard is not configured")
+                }
+                const response = await fetch(url + "/write", {
+                  method: "POST",
+                  headers: {
+                    "content-type": "application/json",
+                    "x-workspace-token": token,
+                  },
+                  body: JSON.stringify({
+                    path: args.filePath,
+                    content: args.content,
+                  }),
+                })
+                const text = await response.text()
+                if (!response.ok) {
+                  throw new Error("write rejected: " + text)
+                }
+                return text
+              },
+            })
+            """;
+    }
+
+    static String workspaceEditToolSource() {
+        return """
+            import { tool } from "@opencode-ai/plugin"
+
+            const url = process.env.VIBECODE_WORKSPACE_BRIDGE_URL
+            const token = process.env.VIBECODE_WORKSPACE_BRIDGE_TOKEN
+
+            export default tool({
+              description: "Replace text in a file inside the repository. The built-in edit/write tools are disabled. "
+                + "oldString must be unique unless replaceAll is true; paths are guarded like sandbox_write.",
+              args: {
+                filePath: tool.schema.string().describe("File path relative to the workspace or absolute inside it"),
+                oldString: tool.schema.string().describe("Exact text to replace"),
+                newString: tool.schema.string().describe("Replacement text"),
+                replaceAll: tool.schema.boolean().optional().describe("Replace every occurrence"),
+              },
+              async execute(args) {
+                if (!url || !token) {
+                  throw new Error("workspace guard is not configured")
+                }
+                const response = await fetch(url + "/edit", {
+                  method: "POST",
+                  headers: {
+                    "content-type": "application/json",
+                    "x-workspace-token": token,
+                  },
+                  body: JSON.stringify({
+                    path: args.filePath,
+                    oldString: args.oldString,
+                    newString: args.newString,
+                    replaceAll: args.replaceAll,
+                  }),
+                })
+                const text = await response.text()
+                if (!response.ok) {
+                  throw new Error("edit rejected: " + text)
                 }
                 return text
               },

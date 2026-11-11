@@ -183,6 +183,78 @@ class WorkspaceFileBridgeTest {
         assertTrue(response.body().contains("invalid regular expression"), response.body());
     }
 
+    @Test
+    void writesAndEditsFilesInsideTheWorkspace() throws Exception {
+        HttpResponse<String> write = post(
+            "/write", "{\"path\":\"App.java\",\"content\":\"class App {}\"}", true);
+        assertEquals(200, write.statusCode());
+        assertEquals("class App {}", Files.readString(workspace.resolve("App.java")));
+
+        HttpResponse<String> edit = post(
+            "/edit",
+            "{\"path\":\"App.java\",\"oldString\":\"App\",\"newString\":\"Main\"}",
+            true);
+        assertEquals(200, edit.statusCode());
+        assertEquals("class Main {}", Files.readString(workspace.resolve("App.java")));
+    }
+
+    @Test
+    void rejectsWriteSymlinkEscapesAndDeniedPaths() throws Exception {
+        Path outside = Files.writeString(tempDir.resolve("outside.txt"), "super-secret");
+        Path link = workspace.resolve("write-link.txt");
+        try {
+            Files.createSymbolicLink(link, outside);
+        } catch (UnsupportedOperationException | IOException e) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false,
+                "symlinks are unavailable: " + e.getMessage());
+        }
+
+        assertEquals(403, post(
+            "/write", "{\"path\":\"write-link.txt\",\"content\":\"pwned\"}", true).statusCode());
+        assertEquals("super-secret", Files.readString(outside));
+        assertEquals(403, post(
+            "/write", "{\"path\":\".env\",\"content\":\"TOKEN=x\"}", true).statusCode());
+        assertEquals(403, post(
+            "/write", "{\"path\":\".git/hooks/pre-commit\",\"content\":\"x\"}", true).statusCode());
+        assertEquals(403, post(
+            "/write", "{\"path\":\"../outside.txt\",\"content\":\"x\"}", true).statusCode());
+    }
+
+    @Test
+    void editRequiresAUniqueMatchAndRejectsSymlinks() throws Exception {
+        Files.writeString(workspace.resolve("App.java"), "needle needle\n");
+        assertEquals(400, post(
+            "/edit",
+            "{\"path\":\"App.java\",\"oldString\":\"needle\",\"newString\":\"x\"}",
+            true).statusCode());
+
+        HttpResponse<String> all = post(
+            "/edit",
+            "{\"path\":\"App.java\",\"oldString\":\"needle\",\"newString\":\"x\",\"replaceAll\":true}",
+            true);
+        assertEquals(200, all.statusCode());
+        assertEquals("x x\n", Files.readString(workspace.resolve("App.java")));
+
+        assertEquals(400, post(
+            "/edit",
+            "{\"path\":\"App.java\",\"oldString\":\"missing\",\"newString\":\"x\"}",
+            true).statusCode());
+
+        Path outside = Files.writeString(tempDir.resolve("edit-outside.txt"), "secret");
+        Path link = workspace.resolve("edit-link.txt");
+        try {
+            Files.createSymbolicLink(link, outside);
+        } catch (UnsupportedOperationException | IOException e) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false,
+                "symlinks are unavailable: " + e.getMessage());
+        }
+        assertEquals(403, post(
+            "/edit",
+            "{\"path\":\"edit-link.txt\",\"oldString\":\"secret\",\"newString\":\"x\"}",
+            true).statusCode());
+        assertEquals("secret", Files.readString(outside));
+    }
+
     private HttpResponse<String> post(String endpoint, String body, boolean token)
         throws IOException, InterruptedException {
         HttpRequest.Builder request = HttpRequest.newBuilder(

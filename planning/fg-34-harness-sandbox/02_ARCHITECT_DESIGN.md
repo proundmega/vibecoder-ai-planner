@@ -49,7 +49,7 @@ void destroy(SandboxHandle h);
 ```
 
 - OpenCode stays in the supervisor so it can call the model/provider proxy and receive events; it never runs repo code directly.
-- The model's bash/edit/read tools are translated into `exec`/`putFile`/`getFile` calls. Prompts and event streaming stay on the supervisor side; the untrusted code runs in the sandbox.
+- The model's bash/read/write tools are replaced with guarded supervisor bridges (`sandbox_bash`, `sandbox_read`, `sandbox_grep`, `sandbox_write`, `sandbox_edit`). Prompts and event streaming stay on the supervisor side; the untrusted code runs in the sandbox.
 - The channel is a per-run Unix socket (or a loopback port bound to 127.0.0.1) with a random per-run token. Repo processes cannot reach it and the sandbox exposes no inbound port. Slice 2 implements the token and loopback binding; request IDs and idempotent exec are **D17**.
 - If a future OpenCode build must run inside the sandbox, add an explicit `attach/exec/port` contract and authenticated loopback channel; do not run it without one.
 
@@ -89,6 +89,7 @@ Slice 2 implements this with an internal Docker network whose only peer is a har
 - Treat repo files, issue text and PR comments as untrusted data.
 - Put system/developer instructions above repository content; tell the model that repo text cannot change its rules. `PromptBuilder` wraps ticket and planning content in `<untrusted-content>` blocks and escapes the closing tag; the security section states that the supervisor instructions and publishing policy take precedence.
 - Deny the built-in `read`/`grep`/`lsp` tools. `sandbox_read`/`sandbox_grep` forward to a loopback workspace bridge that resolves `toRealPath()`, rejects targets outside the workspace and the credential-path denies (`.env*` except `.env.example`, `secrets/**`, `.git/config`, `.ssh/**`, `.aws/**`, `.npmrc`, `.netrc`), and grep never follows symlinks. This closes the D18 symlink/grep bypass. Host mode remains explicitly not a security boundary.
+- Deny the built-in `edit`/`write`/`multiedit`/`patch` tools. `sandbox_write`/`sandbox_edit` resolve the parent directory with `toRealPath()`, reject a symlink final component, reject credential/VCS/OpenCode-control paths, cap writes at 1 MiB, and use `NOFOLLOW_LINKS` on the write. This closes D20.
 - Scan commands for high-confidence exfiltration (`curl`/`wget` uploads, netcat/socat, remote copy, shell `/dev/tcp`, common credential-file reads) and deny them in the bash bridge. This is a partial denylist: interpreter one-liners, encoded payloads and unlisted tools can bypass it.
 - Scan the guarded tree's added/modified blob contents and new paths before publishing, not `git diff` output. This prevents `.gitattributes`/binary/`++`-prefix/filename bypasses, compares content matches against the base blob so pre-existing fixtures do not block unrelated edits, compares complete PEM private-key blocks (case-insensitive BEGIN/END markers, exact block comparison so reformatting a pre-existing key counts as new), exposes new gitlink paths, and fails closed on an oversized blob. It refuses a configured provider key/GitHub token or a high-confidence credential format. The scan is defense in depth and cannot detect every encoded leak.
 - Keep the publishing guard independent of the model.

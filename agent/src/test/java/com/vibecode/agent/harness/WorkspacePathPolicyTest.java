@@ -76,6 +76,56 @@ class WorkspacePathPolicyTest {
     }
 
     @Test
+    void resolvesWritableTargetsInsideTheWorkspace() throws IOException {
+        Path existing = Files.writeString(workspace.resolve("App.java"), "class App {}");
+        assertEquals(existing.toRealPath(),
+            WorkspacePathPolicy.resolveWritable(workspace, "App.java"));
+
+        Path created = WorkspacePathPolicy.resolveWritable(workspace, "New.java");
+        assertEquals(workspace.resolve("New.java"), created);
+    }
+
+    @Test
+    void rejectsWriteSymlinksTraversalAndDeniedPaths() throws Exception {
+        Path outside = Files.writeString(tempDir.resolve("outside.txt"), "super-secret");
+        Path link = workspace.resolve("write-link.txt");
+        Path outsideDir = Files.createDirectories(tempDir.resolve("outside-dir"));
+        Path dirLink = workspace.resolve("outside-dir-link");
+        Path brokenLink = workspace.resolve("broken-link.txt");
+        try {
+            Files.createSymbolicLink(link, outside);
+            Files.createSymbolicLink(dirLink, outsideDir);
+            Files.createSymbolicLink(brokenLink, tempDir.resolve("does-not-exist.txt"));
+        } catch (UnsupportedOperationException | IOException e) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false,
+                "symlinks are unavailable: " + e.getMessage());
+        }
+
+        assertThrows(IOException.class,
+            () -> WorkspacePathPolicy.resolveWritable(workspace, "write-link.txt"));
+        assertThrows(IOException.class,
+            () -> WorkspacePathPolicy.resolveWritable(workspace, "broken-link.txt"));
+        assertThrows(IOException.class,
+            () -> WorkspacePathPolicy.resolveWritable(workspace, "outside-dir-link/new.txt"));
+        assertThrows(IOException.class,
+            () -> WorkspacePathPolicy.resolveWritable(workspace, "../outside.txt"));
+        assertThrows(IOException.class,
+            () -> WorkspacePathPolicy.resolveWritable(workspace, ".git/hooks/pre-commit"));
+        assertThrows(IOException.class,
+            () -> WorkspacePathPolicy.resolveWritable(workspace, "opencode.json"));
+        assertThrows(IOException.class,
+            () -> WorkspacePathPolicy.resolveWritable(workspace, ".env"));
+        assertThrows(IOException.class,
+            () -> WorkspacePathPolicy.resolveWritable(workspace, "secrets/token.txt"));
+    }
+
+    @Test
+    void rejectsAWriteWithAMissingParentDirectory() {
+        assertThrows(IOException.class,
+            () -> WorkspacePathPolicy.resolveWritable(workspace, "missing/new.txt"));
+    }
+
+    @Test
     void deniesCredentialPathsAfterResolution() throws IOException {
         Files.createDirectories(workspace.resolve("secrets"));
         Files.createDirectories(workspace.resolve(".ssh"));

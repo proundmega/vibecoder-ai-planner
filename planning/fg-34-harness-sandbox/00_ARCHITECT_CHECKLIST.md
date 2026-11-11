@@ -6,7 +6,7 @@ priority: "P0"
 effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
-updated: "2026-11-09"
+updated: "2026-11-11"
 pr: 132
 branch: "master"
 depends_on: ["fg-30"]
@@ -62,4 +62,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D17 | Bridge request IDs/idempotency: the bridge has no request ID or result cache, so a lost HTTP response can lead to a re-executed command. A stable request ID and bounded idempotency cache are needed | fg-34 | Reliability | fg-34 slice 3 | open |
 | D18 | OpenCode read/grep can expose supervisor-only files despite the FR8 read denies: the read tool normalizes then follows symlinks (a repo symlink or one created via `sandbox_bash` can point outside the workspace), and the grep tool/ripgrep bypasses read path rules. Slice 3d disables the built-in read/grep/lsp tools and adds `sandbox_read`/`sandbox_grep` over a loopback workspace bridge that resolves `toRealPath()`, rejects paths outside the workspace and credential paths, and never follows symlinks during grep | fg-34 | Security | fg-34 slice 3d | done (#132) |
 | D19 | Agent-wide redaction beyond harness mode: legacy `TicketProcessor`/`ReviewProcessor` messages and PRs and externally shipped supervisor logs are not covered by the harness redactor | fg-34 | Privacy | fg-34 follow-up / fg-42 | open |
-| D20 | The built-in `edit`/write tool is not wrapped like read/grep: its `external_directory` deny is lexical, so a workspace symlink can still point at a supervisor path for writes (and possibly error-message reads). A guarded write/edit tool or a workspace symlink policy is needed | fg-34 | Security | fg-34 follow-up | open |
+| D20 | The built-in `edit`/write tool is not wrapped like read/grep: its `external_directory` deny is lexical, so a workspace symlink can still point at a supervisor path for writes (and possibly error-message reads). Built-in edit/write/multiedit/patch are now denied; `sandbox_write`/`sandbox_edit` resolve the parent with `toRealPath()`, reject symlink targets and credential/VCS/control paths, and write with `NOFOLLOW_LINKS` | fg-34 | Security | fg-34 follow-up | in review |

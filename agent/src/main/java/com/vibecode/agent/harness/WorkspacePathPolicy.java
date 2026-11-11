@@ -1,7 +1,9 @@
 package com.vibecode.agent.harness;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
@@ -19,6 +21,8 @@ import java.util.Set;
 final class WorkspacePathPolicy {
 
     private static final Set<String> DENIED_SEGMENTS = Set.of("secrets", ".ssh", ".aws");
+    private static final Set<String> WRITE_DENIED_SEGMENTS = Set.of(".git", ".opencode");
+    private static final Set<String> WRITE_DENIED_FILES = Set.of("opencode.json", "opencode.jsonc");
     private static final List<String> IGNORED_DIRECTORIES = List.of(
         ".git", "node_modules", "target", "build", "dist", ".gradle"
     );
@@ -87,6 +91,88 @@ final class WorkspacePathPolicy {
             || fileName.endsWith(".env")
             || fileName.contains(".env.");
         return envLike && !fileName.endsWith(".env.example");
+    }
+
+    /**
+     * Resolve a model-supplied write target inside {@code workspaceReal}.
+     *
+     * <p>The parent is resolved with {@code toRealPath()} so a symlinked
+     * directory cannot redirect a write. The final component must not itself be
+     * a symlink, and the target must not be a credential, VCS or OpenCode
+     * control path.</p>
+     */
+    static Path resolveWritable(Path workspaceReal, String requested) throws IOException {
+        if (requested == null || requested.isBlank()) {
+            throw new IOException("path is required");
+        }
+        Path raw;
+        try {
+            raw = Path.of(requested);
+        } catch (InvalidPathException e) {
+            throw new IOException("invalid path");
+        }
+        Path candidate = raw.isAbsolute()
+            ? raw.normalize()
+            : workspaceReal.resolve(raw).normalize();
+        Path parent = candidate.getParent();
+        if (parent == null) {
+            parent = workspaceReal;
+        }
+        Path parentReal;
+        try {
+            parentReal = parent.toRealPath();
+        } catch (IOException e) {
+            throw new IOException("parent directory not found");
+        }
+        if (!parentReal.startsWith(workspaceReal)) {
+            throw new IOException("path escapes the workspace");
+        }
+        Path fileName = candidate.getFileName();
+        if (fileName == null) {
+            throw new IOException("a file path is required");
+        }
+        Path target = parentReal.resolve(fileName.toString()).normalize();
+        if (!target.startsWith(workspaceReal)) {
+            throw new IOException("path escapes the workspace");
+        }
+        if (Files.isSymbolicLink(target)) {
+            throw new IOException("refusing to write through a symlink");
+        }
+        if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+            Path real = target.toRealPath();
+            if (!real.startsWith(workspaceReal)) {
+                throw new IOException("path escapes the workspace");
+            }
+            if (isWriteDenied(workspaceReal, real)) {
+                throw new IOException("path is denied by the write policy");
+            }
+            return real;
+        }
+        if (isWriteDenied(workspaceReal, target)) {
+            throw new IOException("path is denied by the write policy");
+        }
+        return target;
+    }
+
+    static boolean isWriteDenied(Path workspaceReal, Path target) {
+        if (isDenied(workspaceReal, target)) {
+            return true;
+        }
+        Path relative;
+        try {
+            relative = workspaceReal.relativize(target);
+        } catch (IllegalArgumentException e) {
+            return true;
+        }
+        for (Path segment : relative) {
+            if (WRITE_DENIED_SEGMENTS.contains(segment.toString())) {
+                return true;
+            }
+        }
+        String fileName = relative.getFileName() == null
+            ? ""
+            : relative.getFileName().toString();
+        return WRITE_DENIED_FILES.contains(fileName);
     }
 
     static boolean isIgnoredDirectory(String name) {
