@@ -435,13 +435,20 @@ class DockerSandboxRunnerTest {
         Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
         Path log = tempDir.resolve("docker.log");
         Path script = fakeDocker(log, """
+            state='__STATE__'
             case "$1" in
-              run) exit 0 ;;
-              inspect) echo true ;;
+              run) echo true > "$state"; exit 0 ;;
+              inspect)
+                case "$*" in
+                  *"State.Running"*) cat "$state" 2>/dev/null || echo true ;;
+                  *) echo true ;;
+                esac
+                ;;
+              kill|rm) echo false > "$state"; exit 0 ;;
               exec) sleep 10 ;;
               *) exit 0 ;;
             esac
-            """);
+            """.replace("__STATE__", log + ".state"));
 
         SandboxConfig config = dockerConfig(script.toString());
         try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
@@ -586,7 +593,12 @@ class DockerSandboxRunnerTest {
 
         try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
             SandboxHandle handle = runner.create(config.specFor(workspace()));
-            runner.exec(handle, ExecRequest.of("echo hi", Duration.ofSeconds(5)));
+            assertThrows(IOException.class,
+                () -> runner.exec(handle,
+                    ExecRequest.of("echo hi", Duration.ofSeconds(5))));
+            // The handle is compromised: the pre-publish destroy must not
+            // report it as cleanly gone.
+            assertThrows(IOException.class, () -> runner.destroy(handle));
         }
 
         String logText = Files.readString(log);
@@ -629,7 +641,9 @@ class DockerSandboxRunnerTest {
 
         try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
             SandboxHandle handle = runner.create(config.specFor(workspace()));
-            runner.exec(handle, ExecRequest.of("echo hi", Duration.ofSeconds(5)));
+            assertThrows(IOException.class,
+                () -> runner.exec(handle,
+                    ExecRequest.of("echo hi", Duration.ofSeconds(5))));
         }
 
         String logText = Files.readString(log);
@@ -662,13 +676,50 @@ class DockerSandboxRunnerTest {
 
         try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
             SandboxHandle handle = runner.create(config.specFor(workspace()));
-            runner.exec(handle, ExecRequest.of("echo hi", Duration.ofSeconds(5)));
+            assertThrows(IOException.class,
+                () -> runner.exec(handle,
+                    ExecRequest.of("echo hi", Duration.ofSeconds(5))));
         }
 
         String logText = Files.readString(log);
         assertTrue(logText.contains("pause vibecode-sandbox-"), logText);
         assertFalse(logText.contains("unpause vibecode-sandbox-"), logText);
         assertTrue(logText.contains("rm -f vibecode-sandbox-"), logText);
+    }
+
+    @Test
+    void failsClosedWhenTheFrozenProcessTableIsBlankOrTruncated() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        for (String top : List.of(
+            "top) exit 0 ;;",
+            "top) echo 'PID STAT COMMAND'; "
+                + "yes '4242 S sleep' | head -n 4000; exit 0 ;;")) {
+            Path log = tempDir.resolve("docker.log");
+            Path script = fakeDocker(log, """
+                case "$1" in
+                  run) exit 0 ;;
+                  inspect) echo true ;;
+                  exec)
+                    case "$*" in
+                      *"/proc/"*) echo OK ;;
+                      *) echo fake-output ;;
+                    esac
+                    ;;
+                  __TOP__
+                  pause|unpause) exit 0 ;;
+                  *) exit 0 ;;
+                esac
+                """.replace("__TOP__", top));
+            SandboxConfig config = dockerConfig(script.toString());
+
+            try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+                SandboxHandle handle = runner.create(config.specFor(workspace()));
+                assertThrows(IOException.class,
+                    () -> runner.exec(handle,
+                        ExecRequest.of("echo hi", Duration.ofSeconds(5))),
+                    "an unverifiable process table must fail the exec");
+            }
+        }
     }
 
     @Test
@@ -753,13 +804,20 @@ class DockerSandboxRunnerTest {
         Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
         Path log = tempDir.resolve("docker.log");
         Path script = fakeDocker(log, """
+            state='__STATE__'
             case "$1" in
-              run) exit 0 ;;
-              inspect) echo true ;;
+              run) echo true > "$state"; exit 0 ;;
+              inspect)
+                case "$*" in
+                  *"State.Running"*) cat "$state" 2>/dev/null || echo true ;;
+                  *) echo true ;;
+                esac
+                ;;
+              kill|rm) echo false > "$state"; exit 0 ;;
               exec) sleep 10 ;;
               *) exit 0 ;;
             esac
-            """);
+            """.replace("__STATE__", log + ".state"));
         SandboxConfig config = SandboxConfig.from(env(
             "SANDBOX_MODE", "docker",
             "SANDBOX_IMAGE", "test:img",
@@ -1257,6 +1315,14 @@ class DockerSandboxRunnerTest {
         Path script = tempDir.resolve("fake-docker.sh");
         // `docker top` reports host PIDs, so the quiescence check reads the
         // init host PID from inspect before parsing the process table.
+        // Tests that do not script `top` get a header and a single init row.
+        String emptyTable = body.contains("top)")
+            ? ""
+            : "if [ \"$1\" = top ]; then\n"
+                + "  echo 'PID STAT COMMAND'\n"
+                + "  echo '" + initPid + " Ss sleep'\n"
+                + "  exit 0\n"
+                + "fi\n";
         String content = "#!/bin/sh\n"
             + "printf '%s\\n' \"$*\" >> '" + log + "'\n"
             + "if [ \"$1\" = inspect ]; then\n"
@@ -1264,6 +1330,7 @@ class DockerSandboxRunnerTest {
             + "    *\".State.Pid\"*) echo '" + initPid + "'; exit 0 ;;\n"
             + "  esac\n"
             + "fi\n"
+            + emptyTable
             + body + "\n";
         Files.writeString(script, content);
         try {

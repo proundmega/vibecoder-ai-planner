@@ -1311,6 +1311,30 @@ class HarnessTicketProcessorTest {
     }
 
     @Test
+    void compromisedSandboxWithNoVerificationCommandsStopsPublishing() throws Exception {
+        SandboxHandle handle = new SandboxHandle("sandbox-1", tempDir, false, null);
+        SandboxRunner sandboxRunner = mock(SandboxRunner.class);
+        when(sandboxRunner.create(any())).thenReturn(handle);
+        // No verification commands: a compromised quiescence check must still
+        // block publishing through the pre-publish destroy gate.
+        when(verificationRunner.run(eq(sandboxRunner), eq(handle), anyList(), any()))
+            .thenReturn(List.of());
+        doThrow(new IOException(
+            "compromised by an unverified quiescence check; refusing to publish"))
+            .when(sandboxRunner).destroy(handle);
+
+        dockerProcessor(sandboxRunner).processTicket(apiService.pickUpTicket(1L));
+
+        verify(workspace, never()).stageFreshDiff();
+        verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
+        verify(gitHubService, never()).createPullRequest(
+            anyString(), anyString(), anyString(), anyString());
+        assertTrue(postedMessages().stream()
+            .anyMatch(message -> message.contains(
+                "Could not destroy the sandbox before publishing")));
+    }
+
+    @Test
     void dockerSandboxDestroyIsRetriedInTheFinally() throws Exception {
         SandboxHandle handle = new SandboxHandle("sandbox-1", tempDir, false, null);
         SandboxRunner sandboxRunner = mock(SandboxRunner.class);

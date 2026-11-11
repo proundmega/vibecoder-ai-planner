@@ -62,6 +62,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
     // One exec at a time per sandbox: the post-exec freeze must not catch
     // another in-flight command and destroy the container for doing so.
     private final Map<String, ReentrantLock> execLocks = new ConcurrentHashMap<>();
+    // A quiescence failure means the workspace may already contain survivor
+    // writes. Such a handle must never be treated as cleanly destroyed.
+    private final Set<String> compromised = ConcurrentHashMap.newKeySet();
 
     public DockerSandboxRunner(SandboxConfig config) {
         this(config, null);
@@ -162,6 +165,21 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
     @Override
     public ExecResult exec(SandboxHandle handle, ExecRequest request) throws IOException {
+        return withHandleLock(handle, () -> execSerialized(handle, request));
+    }
+
+    @FunctionalInterface
+    private interface IoAction<T> {
+        T run() throws IOException;
+    }
+
+    /**
+     * Serialize every container operation (exec and file transfer) per
+     * handle. A post-exec freeze must not catch another in-flight command, and
+     * {@code docker cp} must not race a paused container.
+     */
+    private <T> T withHandleLock(SandboxHandle handle, IoAction<T> action)
+        throws IOException {
         requireActive(handle);
         ReentrantLock lock = execLocks.computeIfAbsent(
             handle.id(), ignored -> new ReentrantLock());
@@ -170,9 +188,12 @@ public final class DockerSandboxRunner implements SandboxRunner {
             // Re-check after waiting: a concurrent stop/destroy may have
             // removed the sandbox while this call was queued.
             requireActive(handle);
-            return execSerialized(handle, request);
+            return action.run();
         } finally {
             lock.unlock();
+            if (!active.contains(handle.id())) {
+                execLocks.remove(handle.id(), lock);
+            }
         }
     }
 
@@ -197,6 +218,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
             DockerResult result = runDocker(
                 command, effective.timeout(), effective.maxOutputBytes(), handle.id());
             if (quotaExceeded.get()) {
+                // The watchdog stops the container, but verify it here too so
+                // the post-exec sweep never runs against a half-stopped
+                // container. The result is already a failure.
+                stopVerified(handle, "the workspace quota was exceeded");
                 return new ExecResult(
                     request.command(),
                     -1,
@@ -207,9 +232,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
             }
             if (result.timedOut()) {
                 // A hung process may have spawned children; killing only the
-                // local `docker exec` client is not enough. Kill the container
-                // (and its whole process tree) so the run fails closed.
-                stop(handle);
+                // local `docker exec` client is not enough. Stop the container
+                // and verify it, then report the timeout (already a failure).
+                stopVerified(handle, "the exec timed out");
                 return new ExecResult(
                     request.command(), -1, result.output(), true, result.truncated());
             }
@@ -227,6 +252,14 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
     @Override
     public void putFile(SandboxHandle handle, Path local, String remote) throws IOException {
+        withHandleLock(handle, () -> {
+            putFileLocked(handle, local, remote);
+            return null;
+        });
+    }
+
+    private void putFileLocked(SandboxHandle handle, Path local, String remote)
+        throws IOException {
         requireActive(handle);
         if (local == null || !Files.isRegularFile(local)) {
             throw new IOException("Sandbox upload must be a regular file: " + local);
@@ -252,6 +285,14 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
     @Override
     public void getFile(SandboxHandle handle, String remote, Path local) throws IOException {
+        withHandleLock(handle, () -> {
+            getFileLocked(handle, remote, local);
+            return null;
+        });
+    }
+
+    private void getFileLocked(SandboxHandle handle, String remote, Path local)
+        throws IOException {
         requireActive(handle);
         String source = SandboxPaths.containerPath(remote);
         long remoteSize = assertContainerSourceSafe(handle, source);
@@ -294,6 +335,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
             return;
         }
         stopByName(handle.id());
+        forgetExecLock(handle.id());
     }
 
     @Override
@@ -301,6 +343,24 @@ public final class DockerSandboxRunner implements SandboxRunner {
         if (handle == null) {
             return;
         }
+        if (compromised.contains(handle.id())) {
+            // The container may be gone, but the workspace was not verified.
+            // Clean up best-effort and refuse to report it as clean so the
+            // pre-publish gate cannot treat the handle as publishable.
+            try {
+                destroyInternal(handle);
+            } catch (IOException e) {
+                log.debug("Compromised sandbox {} cleanup failed: {}",
+                    handle.id(), e.getMessage());
+            }
+            throw new IOException("Sandbox " + handle.id()
+                + " was compromised by an unverified quiescence check; "
+                + "refusing to publish its workspace");
+        }
+        destroyInternal(handle);
+    }
+
+    private void destroyInternal(SandboxHandle handle) throws IOException {
         if (!destroyByName(handle.id())) {
             throw new IOException("Could not destroy sandbox " + handle.id()
                 + "; it may still be running. The supervisor must not publish.");
@@ -312,6 +372,14 @@ public final class DockerSandboxRunner implements SandboxRunner {
         artifactLimits.remove(handle.id());
         quotaFlags.remove(handle.id());
         runningProcesses.remove(handle.id());
+        forgetExecLock(handle.id());
+    }
+
+    private void forgetExecLock(String id) {
+        ReentrantLock lock = execLocks.get(id);
+        if (lock != null && !lock.isLocked() && !lock.hasQueuedThreads()) {
+            execLocks.remove(id, lock);
+        }
     }
 
     @Override
@@ -337,6 +405,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
         runningProcesses.clear();
         egress.clear();
         execLocks.clear();
+        compromised.clear();
         if (created.isEmpty()) {
             try {
                 Runtime.getRuntime().removeShutdownHook(shutdownHook);
@@ -355,6 +424,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
         if (handle.host()) {
             throw new IOException("DockerSandboxRunner cannot operate on a host sandbox handle");
+        }
+        if (compromised.contains(handle.id())) {
+            throw new IOException("Sandbox is compromised by an unverified quiescence "
+                + "check and cannot run more commands: " + handle.id());
         }
         if (!active.contains(handle.id())) {
             throw new IOException("Sandbox is not running: " + handle.id());
@@ -511,7 +584,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 CONTROL_TIMEOUT,
                 CONTROL_OUTPUT_BYTES
             );
-            boolean stateAware = !top.timedOut() && top.exitCode() == 0;
+            boolean stateAware = usableProcessTable(top);
             if (!stateAware) {
                 log.debug("Sandbox {} does not support 'top -eo pid,stat,comm' ({}); "
                     + "falling back to the portable ps -ef output",
@@ -524,9 +597,13 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     CONTROL_OUTPUT_BYTES
                 );
             }
-            if (top.timedOut() || top.exitCode() != 0) {
-                log.warn("Sandbox {} process table could not be read while paused: {}",
-                    handle.id(), LOG_REDACTOR.redact(top.output().trim()));
+            if (!usableProcessTable(top)) {
+                // An empty, failed or truncated table cannot prove that the
+                // workspace is quiescent.
+                log.warn("Sandbox {} process table was blank, failed or truncated "
+                    + "while paused (exit {}, timedOut={}, truncated={}): {}",
+                    handle.id(), top.exitCode(), top.timedOut(), top.truncated(),
+                    LOG_REDACTOR.redact(top.output().trim()));
                 quiescent = false;
             } else {
                 List<String> survivors = parseSurvivors(top.output(), stateAware, initPid);
@@ -585,26 +662,68 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
     }
 
+    private static boolean usableProcessTable(DockerResult result) {
+        return !result.timedOut() && result.exitCode() == 0
+            && result.output() != null && !result.output().isBlank()
+            && !result.truncated();
+    }
+
     /**
-     * Remove a sandbox whose process table could not be verified. A plain
-     * {@code kill} is not enough because it can fail silently; {@code rm -f}
-     * removes the paused container and everything in it, and is verified.
+     * Destroy a sandbox whose quiescence could not be verified, then always
+     * fail. The container may be gone, but the workspace is a bind mount and
+     * may already contain survivor writes, so the exec is unverified and the
+     * handle is marked compromised.
      */
     private void destroyUnverified(SandboxHandle handle, String reason) throws IOException {
         log.warn("Sandbox {} {}; destroying it", handle.id(), reason);
+        boolean destroyed = false;
         try {
-            destroy(handle);
-            return;
+            destroyInternal(handle);
+            destroyed = true;
         } catch (IOException e) {
             log.warn("Sandbox {} could not be destroyed after {}: {}; falling back to kill",
                 handle.id(), reason, e.getMessage());
         }
-        stopOrFail(handle, reason);
+        if (!destroyed) {
+            stop(handle);
+            compromised.add(handle.id());
+            if (!containerStopped(handle.id())) {
+                throw new IOException("Sandbox " + handle.id()
+                    + " could not be stopped after " + reason
+                    + "; refusing to continue with a live container");
+            }
+        } else {
+            compromised.add(handle.id());
+        }
+        throw new IOException("Sandbox " + handle.id() + " " + reason
+            + "; the workspace may contain survivor writes, so the exec is unverified");
     }
 
+    /**
+     * Stop a sandbox after a cleanup failure and always fail: even a verified
+     * stop leaves the workspace tainted.
+     */
     private void stopOrFail(SandboxHandle handle, String reason) throws IOException {
         stop(handle);
+        compromised.add(handle.id());
         if (!containerStopped(handle.id())) {
+            throw new IOException("Sandbox " + handle.id()
+                + " could not be stopped after " + reason
+                + "; refusing to continue with a live container");
+        }
+        throw new IOException("Sandbox " + handle.id() + " " + reason
+            + "; the workspace may be tainted, so the exec is unverified");
+    }
+
+    /**
+     * Stop a sandbox whose exec already failed (for example a timeout) and
+     * verify that it is no longer running. A successful stop leaves the
+     * sandbox in a defined, non-live state; a failure is fatal.
+     */
+    private void stopVerified(SandboxHandle handle, String reason) throws IOException {
+        stop(handle);
+        if (!containerStopped(handle.id())) {
+            compromised.add(handle.id());
             throw new IOException("Sandbox " + handle.id()
                 + " could not be stopped after " + reason
                 + "; refusing to continue with a live container");

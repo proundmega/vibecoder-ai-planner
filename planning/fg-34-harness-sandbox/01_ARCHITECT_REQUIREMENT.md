@@ -63,7 +63,7 @@ Phase 1 relies on OpenCode config denies (`git push`, `rm -rf`, `docker`, etc.) 
 2. A test that attempts network access to a non-allowlisted host is blocked and logged.
 3. CPU/memory/PID/disk breaches kill the run and mark it failed.
 4. No provider key or GitHub token is visible inside the sandbox.
-5. A malicious `postinstall`-style script runs contained; its background children are swept after each command. D14 (in review, #139) freezes the container before the final check so a process cannot fork during it, ignores the init host PID, uses a childless `exec sleep` PID 1 so the init cannot respawn a child, and serializes execs per sandbox. If any other live process remains, or the freeze/table/destroy check cannot be verified, the sandbox is destroyed and the exec fails closed. The pre-publish destroy gate also prevents publishing with a live sandbox.
+5. A malicious `postinstall`-style script runs contained; its background children are swept after each command. D14 (in review, #139) freezes the container before the final check so a process cannot fork during it, ignores the init host PID, uses a childless `exec sleep` PID 1 so the init cannot respawn a child, and serializes execs per sandbox. If any other live process remains, or the freeze/table/destroy check cannot be verified, the sandbox is destroyed, the exec fails closed, and the handle is marked compromised. `destroy()` then refuses to report the handle as clean, so the pre-publish gate blocks publishing even when no verification commands ran.
 6. The diff and test output are extracted correctly.
 7. The sandbox image has a SBOM and passes the scanner threshold.
 8. Host mode is the Phase 1 compatibility default, warns loudly, and production sets `SANDBOX_REQUIRE=true`, which refuses it.
