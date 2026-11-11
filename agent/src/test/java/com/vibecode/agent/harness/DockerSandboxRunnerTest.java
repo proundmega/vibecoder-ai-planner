@@ -520,6 +520,13 @@ class DockerSandboxRunnerTest {
             DockerSandboxRunner.parseSurvivors("7 S worker\n", true, 7));
         assertEquals(List.of("7 S worker"),
             DockerSandboxRunner.parseSurvivors("7 S worker\n", true, 4242));
+        assertTrue(DockerSandboxRunner.containsInitRow(
+            "PID STAT COMMAND\n4242 Ss sleep\n", true, 4242));
+        assertFalse(DockerSandboxRunner.containsInitRow(
+            "PID STAT COMMAND\n", true, 4242));
+        assertTrue(DockerSandboxRunner.containsInitRow(
+            "UID PID PPID C STIME TTY TIME CMD\n"
+                + "root 4242 0 0 10:00 ? 00:00:00 sleep\n", false, 4242));
         // Without a state column, a zombie-looking command is not exempt.
         assertEquals(List.of("root 9 1 0 10:00 ? 00:00:00 [evil] <defunct>"),
             DockerSandboxRunner.parseSurvivors(
@@ -599,6 +606,9 @@ class DockerSandboxRunnerTest {
             // The handle is compromised: the pre-publish destroy must not
             // report it as cleanly gone.
             assertThrows(IOException.class, () -> runner.destroy(handle));
+            // The pre-publish gate has failed; a later cleanup is idempotent
+            // and the compromised id is released.
+            runner.destroy(handle);
         }
 
         String logText = Files.readString(log);
@@ -692,6 +702,7 @@ class DockerSandboxRunnerTest {
         Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
         for (String top : List.of(
             "top) exit 0 ;;",
+            "top) echo 'PID STAT COMMAND'; exit 0 ;;",
             "top) echo 'PID STAT COMMAND'; "
                 + "yes '4242 S sleep' | head -n 4000; exit 0 ;;")) {
             Path log = tempDir.resolve("docker.log");

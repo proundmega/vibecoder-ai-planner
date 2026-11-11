@@ -350,7 +350,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
             try {
                 destroyInternal(handle);
             } catch (IOException e) {
-                log.debug("Compromised sandbox {} cleanup failed: {}",
+                log.warn("Compromised sandbox {} cleanup failed; a container may remain: {}",
                     handle.id(), e.getMessage());
             }
             throw new IOException("Sandbox " + handle.id()
@@ -373,6 +373,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
         quotaFlags.remove(handle.id());
         runningProcesses.remove(handle.id());
         forgetExecLock(handle.id());
+        // The pre-publish destroy has already thrown for a compromised handle;
+        // once the container is gone, do not retain the id for the runner's
+        // lifetime.
+        compromised.remove(handle.id());
     }
 
     private void forgetExecLock(String id) {
@@ -605,6 +609,12 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     handle.id(), top.exitCode(), top.timedOut(), top.truncated(),
                     LOG_REDACTOR.redact(top.output().trim()));
                 quiescent = false;
+            } else if (!containsInitRow(top.output(), stateAware, initPid)) {
+                // A header-only table is not proof that the init process was
+                // observed; require its row before trusting the table.
+                log.warn("Sandbox {} process table did not contain the init host "
+                    + "PID {}; treating it as unverified", handle.id(), initPid);
+                quiescent = false;
             } else {
                 List<String> survivors = parseSurvivors(top.output(), stateAware, initPid);
                 quiescent = survivors.isEmpty();
@@ -746,6 +756,49 @@ public final class DockerSandboxRunner implements SandboxRunner {
             return output.contains("no such container") || output.contains("no such object");
         }
         return "false".equals(output.trim());
+    }
+
+    /**
+     * True only when the table actually contains the init host PID row. A
+     * header-only (or otherwise incomplete) table cannot prove quiescence.
+     */
+    static boolean containsInitRow(String output, boolean stateAware, long initPid) {
+        if (output == null || output.isBlank()) {
+            return false;
+        }
+        List<String> lines = new ArrayList<>();
+        for (String line : output.split("\\R")) {
+            if (!line.isBlank()) {
+                lines.add(line.trim());
+            }
+        }
+        if (lines.isEmpty()) {
+            return false;
+        }
+        String[] header = lines.get(0).split("\\s+");
+        int pidIndex = -1;
+        for (int i = 0; i < header.length; i++) {
+            if ("PID".equalsIgnoreCase(header[i])) {
+                pidIndex = i;
+                break;
+            }
+        }
+        int firstDataLine = 1;
+        if (pidIndex < 0) {
+            if (!stateAware) {
+                return false;
+            }
+            pidIndex = 0;
+            firstDataLine = 0;
+        }
+        for (int i = firstDataLine; i < lines.size(); i++) {
+            String[] parts = lines.get(i).split("\\s+");
+            if (parts.length > pidIndex && parts[pidIndex].matches("\\d+")
+                && Long.parseLong(parts[pidIndex]) == initPid) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
