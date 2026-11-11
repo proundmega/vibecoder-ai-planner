@@ -17,13 +17,13 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 
 | Order | Ticket | State | Blocker |
 |-------|--------|-------|---------|
-| 1 | **fg-34** — harness sandbox | Slices 1-2 merged (#126, #127); slices 3a-3d merged (#128, #129, #130, #132) | Sandbox runtime, egress allowlist, OpenCode bash bridge, prompt-injection defenses, supply-chain hardening, artifact redaction and read/grep isolation merged; Docker-mode hardening (D14/D16) and the unwrapped edit/write path (D20) remain. |
+| 1 | **fg-34** — harness sandbox | Slices 1-2 merged (#126, #127); slices 3a-3d merged (#128, #129, #130, #132) | Sandbox runtime, egress allowlist, OpenCode bash bridge, prompt-injection defenses, supply-chain hardening, artifact redaction, read/grep isolation and guarded edit/write are merged/in review; Docker-mode hardening (D14/D16) remains. D20 is in review (#138). |
 | 2 | **bt-60** — durable-harness e2e | Ready, blocked | Disposable staging project/repo/agent, provider key and GitHub token. |
 | 3 | **fg-31** — automatic review harness | Blocked | fg-30 Phase 2 and fg-32. |
 | 4 | **fg-32** — review feedback loop | Blocked | fg-31, fg-30, fg-33. |
 | 5 | **fg-30 Phases 2-4** | Not ticketed | Needs its own ticket IDs before work starts. |
 
-`fg-34` (sandbox) has slices 1-2 merged (#126, #127) and slices 3a-3d merged (#128, #129, #130, #132), including read/grep isolation; Docker-mode hardening (D14/D16) and the unwrapped edit/write path (D20) remain. `fg-35` (GitHub App credentials) depends only on fg-30 Phase 1 and remains unblocked but unscheduled. `fg-36` onward have unmet
+`fg-34` (sandbox) has slices 1-2 merged (#126, #127) and slices 3a-3d merged (#128, #129, #130, #132), including read/grep isolation; D20 (guarded edit/write) is in review (#138); Docker-mode hardening (D14/D16) remains. `fg-35` (GitHub App credentials) depends only on fg-30 Phase 1 and remains unblocked but unscheduled. `fg-36` onward have unmet
 prerequisites, and `fg-46` is deferred. Do not start a roadmap suite until its
 "Depends on" column is satisfied.
 
