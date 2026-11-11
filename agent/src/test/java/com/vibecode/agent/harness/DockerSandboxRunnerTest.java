@@ -490,6 +490,175 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void parsesOnlyLiveNonInitProcessesFromTop() {
+        assertEquals(List.of(),
+            DockerSandboxRunner.parseSurvivors("", true));
+        assertEquals(List.of(),
+            DockerSandboxRunner.parseSurvivors("1 S /bin/sh\n9 Z [evil]\n", true));
+        assertEquals(List.of("42 R evil"),
+            DockerSandboxRunner.parseSurvivors("1 S /bin/sh\n42 R evil\n", true));
+        assertEquals(List.of("42 R evil"),
+            DockerSandboxRunner.parseSurvivors(
+                "PID STAT COMMAND\n1 S sleep\n42 R evil\n", true));
+        assertEquals(List.of("7 S worker"),
+            DockerSandboxRunner.parseSurvivors("7 S worker\n", false));
+        // Without a state column, a zombie-looking command is not exempt.
+        assertEquals(List.of("root 9 1 0 10:00 ? 00:00:00 [evil] <defunct>"),
+            DockerSandboxRunner.parseSurvivors(
+                "UID PID PPID C STIME TTY TIME CMD\n"
+                    + "root 1 0 0 10:00 ? 00:00:00 /bin/sh\n"
+                    + "root 9 1 0 10:00 ? 00:00:00 [evil] <defunct>\n", false));
+    }
+
+    @Test
+    void freezesAndVerifiesQuiescenceAfterTheDescendantSweep() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec)
+                case "$*" in
+                  *"/proc/"*) echo OK ;;
+                  *) echo fake-output ;;
+                esac
+                ;;
+              top)
+                echo "1 S /bin/sh"
+                echo "9 Z [evil]"
+                exit 0
+                ;;
+              pause|unpause) exit 0 ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            runner.exec(handle, ExecRequest.of("echo hi", Duration.ofSeconds(5)));
+        }
+
+        String logText = Files.readString(log);
+        assertTrue(logText.contains("pause vibecode-sandbox-"), logText);
+        assertTrue(logText.contains("top vibecode-sandbox-"), logText);
+        assertTrue(logText.contains("unpause vibecode-sandbox-"), logText);
+    }
+
+    @Test
+    void stopsTheSandboxWhenAForkSurvivesTheFrozenSweep() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec)
+                case "$*" in
+                  *"/proc/"*) echo OK ;;
+                  *) echo fake-output ;;
+                esac
+                ;;
+              top)
+                echo "1 S /bin/sh"
+                echo "42 R evil"
+                exit 0
+                ;;
+              pause|unpause) exit 0 ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            runner.exec(handle, ExecRequest.of("echo hi", Duration.ofSeconds(5)));
+        }
+
+        String logText = Files.readString(log);
+        assertTrue(logText.contains("pause vibecode-sandbox-"), logText);
+        assertTrue(logText.contains("top vibecode-sandbox-"), logText);
+        assertFalse(logText.contains("unpause vibecode-sandbox-"), logText);
+        assertTrue(logText.contains("rm -f vibecode-sandbox-"), logText);
+    }
+
+    @Test
+    void fallsBackToPortableTopAndFailsClosedWithoutAStateColumn() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec)
+                case "$*" in
+                  *"/proc/"*) echo OK ;;
+                  *) echo fake-output ;;
+                esac
+                ;;
+              top)
+                case "$*" in
+                  *"-eo"*) echo "unsupported"; exit 1 ;;
+                  *)
+                    echo "UID PID PPID C STIME TTY TIME CMD"
+                    echo "root 1 0 0 10:00 ? 00:00:00 /bin/sh"
+                    echo "root 9 1 0 10:00 ? 00:00:00 [evil] <defunct>"
+                    exit 0
+                    ;;
+                esac
+                ;;
+              pause|unpause) exit 0 ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            runner.exec(handle, ExecRequest.of("echo hi", Duration.ofSeconds(5)));
+        }
+
+        String logText = Files.readString(log);
+        assertTrue(logText.contains("-eo pid=,stat=,comm="), logText);
+        assertEquals(2, logText.lines()
+            .filter(line -> line.startsWith("top vibecode-sandbox-")).count());
+        assertFalse(logText.contains("unpause vibecode-sandbox-"), logText);
+        assertTrue(logText.contains("rm -f vibecode-sandbox-"), logText);
+    }
+
+    @Test
+    void stopsTheSandboxWhenItCannotBeFrozen() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec)
+                case "$*" in
+                  *"/proc/"*) echo OK ;;
+                  *) echo fake-output ;;
+                esac
+                ;;
+              pause) echo "freezer unavailable"; exit 1 ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            runner.exec(handle, ExecRequest.of("echo hi", Duration.ofSeconds(5)));
+        }
+
+        String logText = Files.readString(log);
+        assertTrue(logText.contains("pause vibecode-sandbox-"), logText);
+        assertFalse(logText.contains("unpause vibecode-sandbox-"), logText);
+        assertTrue(logText.contains("rm -f vibecode-sandbox-"), logText);
+    }
+
+    @Test
     void capsExecAtTheConfiguredTimeout() throws IOException {
         Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
         Path log = tempDir.resolve("docker.log");

@@ -416,11 +416,16 @@ public final class DockerSandboxRunner implements SandboxRunner {
      * itself. {@code docker exec} shares the container PID namespace, so a
      * normal command exit would otherwise leave daemonized children editing the
      * bind-mounted workspace after verification.
+     *
+     * <p>The repeated sweep narrows the fork race, but a child can still fork
+     * between the last enumeration and the next kill. To close that race the
+     * container is frozen with {@code docker pause} (cgroup freezer) and its
+     * process table is inspected while frozen: no process can fork once the
+     * freeze completes, so an empty table means the container is quiescent. If
+     * a survivor remains, or the freeze cannot be verified, the sandbox is
+     * stopped so nothing can write to the workspace afterwards (D14).</p>
      */
     private void killDescendants(SandboxHandle handle) {
-        // Bounded repeated sweep: a child that forks between enumeration and
-        // kill is picked up by the next pass. This narrows the fork race but
-        // is still not a hard guarantee (D14).
         String script = "n=0; "
             + "while [ $n -lt 5 ]; do "
             + "  found=0; "
@@ -446,11 +451,173 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 || !"OK".equals(result.output().trim())) {
                 log.warn("Sandbox {} descendant cleanup failed; stopping it", handle.id());
                 stop(handle);
+                return;
             }
         } catch (RuntimeException e) {
             log.warn("Sandbox {} descendant cleanup failed: {}", handle.id(), e.getMessage());
             stop(handle);
+            return;
         }
+        verifyQuiescent(handle);
+    }
+
+    /**
+     * Freeze the container, confirm no process other than PID 1 (or a zombie)
+     * remains, then thaw it. Any doubt destroys the sandbox (fail closed).
+     */
+    private void verifyQuiescent(SandboxHandle handle) {
+        DockerResult paused = runDocker(
+            List.of(config.dockerBinary(), "pause", handle.id()),
+            CONTROL_TIMEOUT,
+            1_024
+        );
+        if (paused.timedOut() || paused.exitCode() != 0) {
+            destroyUnverified(handle, "could not be paused for the final sweep: "
+                + LOG_REDACTOR.redact(paused.output().trim()));
+            return;
+        }
+
+        boolean quiescent;
+        try {
+            // Prefer an explicit state column so a live process cannot evade
+            // the sweep by naming itself "<defunct>".
+            DockerResult top = runDocker(
+                List.of(config.dockerBinary(), "top", handle.id(),
+                    "-eo", "pid=,stat=,comm="),
+                CONTROL_TIMEOUT,
+                CONTROL_OUTPUT_BYTES
+            );
+            boolean stateAware = !top.timedOut() && top.exitCode() == 0;
+            if (!stateAware) {
+                // Fall back to the portable default (`ps -ef`). Without a
+                // state column, zombies are not exempt, so an unexpected
+                // table fails closed.
+                top = runDocker(
+                    List.of(config.dockerBinary(), "top", handle.id()),
+                    CONTROL_TIMEOUT,
+                    CONTROL_OUTPUT_BYTES
+                );
+            }
+            if (top.timedOut() || top.exitCode() != 0) {
+                log.warn("Sandbox {} process table could not be read while paused: {}",
+                    handle.id(), LOG_REDACTOR.redact(top.output().trim()));
+                quiescent = false;
+            } else {
+                List<String> survivors = parseSurvivors(top.output(), stateAware);
+                quiescent = survivors.isEmpty();
+                if (!quiescent) {
+                    log.warn("Sandbox {} still has {} process(es) after the sweep "
+                        + "(fork race): {}", handle.id(), survivors.size(), survivors);
+                }
+            }
+        } catch (RuntimeException e) {
+            log.warn("Sandbox {} process table check failed: {}", handle.id(), e.getMessage());
+            quiescent = false;
+        }
+
+        if (!quiescent) {
+            destroyUnverified(handle, "was not quiescent after the final sweep");
+            return;
+        }
+
+        DockerResult resumed = runDocker(
+            List.of(config.dockerBinary(), "unpause", handle.id()),
+            CONTROL_TIMEOUT,
+            1_024
+        );
+        if (resumed.timedOut() || resumed.exitCode() != 0) {
+            destroyUnverified(handle, "could not be unpaused: "
+                + LOG_REDACTOR.redact(resumed.output().trim()));
+        }
+    }
+
+    /**
+     * Remove a sandbox whose process table could not be verified. A plain
+     * {@code kill} is not enough because it can fail silently; {@code rm -f}
+     * removes the paused container and everything in it, and is verified.
+     */
+    private void destroyUnverified(SandboxHandle handle, String reason) {
+        log.warn("Sandbox {} {}; destroying it", handle.id(), reason);
+        try {
+            destroy(handle);
+        } catch (IOException e) {
+            log.warn("Sandbox {} could not be destroyed after {}: {}; falling back to kill",
+                handle.id(), reason, e.getMessage());
+            stop(handle);
+        }
+    }
+
+    /**
+     * Parse {@code docker top} output. PID 1 (the container shell) is ignored.
+     * When a state column is available, zombies (which cannot fork) are
+     * ignored too; without one, every non-init process counts. Unknown layouts
+     * fail closed: any numeric token above 1 counts as a survivor.
+     */
+    static List<String> parseSurvivors(String output, boolean stateAware) {
+        List<String> survivors = new ArrayList<>();
+        if (output == null || output.isBlank()) {
+            return survivors;
+        }
+        List<String> lines = new ArrayList<>();
+        for (String line : output.split("\\R")) {
+            if (!line.isBlank()) {
+                lines.add(line.trim());
+            }
+        }
+        if (lines.isEmpty()) {
+            return survivors;
+        }
+
+        String[] header = lines.get(0).split("\\s+");
+        int pidIndex = -1;
+        int statIndex = -1;
+        for (int i = 0; i < header.length; i++) {
+            if ("PID".equalsIgnoreCase(header[i])) {
+                pidIndex = i;
+            }
+            if ("STAT".equalsIgnoreCase(header[i])) {
+                statIndex = i;
+            }
+        }
+
+        int firstDataLine; // headerless `pid stat comm` output from `-eo`
+        boolean headerRow = pidIndex >= 0 && (!stateAware || statIndex >= 0);
+        if (headerRow) {
+            firstDataLine = 1;
+        } else if (stateAware) {
+            pidIndex = 0;
+            statIndex = 1;
+            firstDataLine = 0;
+        } else {
+            // Unknown layout: do not claim quiescence on a guess.
+            for (String line : lines) {
+                for (String token : line.split("\\s+")) {
+                    if (token.matches("\\d+") && Integer.parseInt(token) > 1) {
+                        survivors.add(line);
+                        break;
+                    }
+                }
+            }
+            return survivors;
+        }
+
+        for (int i = firstDataLine; i < lines.size(); i++) {
+            String line = lines.get(i);
+            String[] parts = line.split("\\s+");
+            if (parts.length <= pidIndex || !parts[pidIndex].matches("\\d+")) {
+                continue;
+            }
+            int pid = Integer.parseInt(parts[pidIndex]);
+            if (pid <= 1) {
+                continue;
+            }
+            if (stateAware && statIndex >= 0 && statIndex < parts.length
+                && parts[statIndex].startsWith("Z")) {
+                continue;
+            }
+            survivors.add(line);
+        }
+        return survivors;
     }
 
     /**

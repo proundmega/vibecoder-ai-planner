@@ -142,6 +142,24 @@ class DockerSandboxRunnerIntegrationTest {
                     assertTrue(Long.parseLong(limit) <= 256L * 1024 * 1024,
                         "memory limit was not applied: " + limit);
                 }
+
+                // A process that keeps forking during the sweep must not keep
+                // writing after exec returns; the frozen quiescence check
+                // destroys the sandbox if one survives. Keep this last: a
+                // survivor intentionally stops the sandbox.
+                ExecResult forker = runner.exec(handle, ExecRequest.of(
+                    "sh -c 'while :; do (echo x >> fork.txt) & sleep 0.1; done' "
+                        + ">/dev/null 2>&1 & true",
+                    Duration.ofSeconds(20)));
+                assertTrue(forker.passed(), forker.output());
+                Thread.sleep(1_000);
+                long firstSize = Files.exists(workspace.resolve("fork.txt"))
+                    ? Files.size(workspace.resolve("fork.txt")) : 0;
+                Thread.sleep(2_000);
+                long secondSize = Files.exists(workspace.resolve("fork.txt"))
+                    ? Files.size(workspace.resolve("fork.txt")) : 0;
+                assertEquals(firstSize, secondSize,
+                    "a forking child kept writing after the frozen sweep");
             } finally {
                 runner.destroy(handle);
             }
