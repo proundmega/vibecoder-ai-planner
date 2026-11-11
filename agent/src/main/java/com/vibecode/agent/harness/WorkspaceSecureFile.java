@@ -1,5 +1,8 @@
 package com.vibecode.agent.harness;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -11,65 +14,65 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.SecureDirectoryStream;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributeView;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Race-free file access for the workspace bridge.
  *
  * <p>{@code toRealPath()} followed by {@code Files.writeString(...,
  * NOFOLLOW_LINKS)} still follows a parent-directory symlink if the workspace
- * process swaps that directory between the check and the open. This helper
- * walks the relative path through {@link SecureDirectoryStream} descriptors,
- * opening every component with {@code NOFOLLOW_LINKS} and opening the final
- * file relative to the held parent descriptor.</p>
+ * process swaps that directory between the check and the open. The primary
+ * path walks the relative path through {@link SecureDirectoryStream}
+ * descriptors, opening every component with {@code NOFOLLOW_LINKS} and opening
+ * the final file relative to the held parent descriptor.</p>
+ *
+ * <p>Providers without {@link SecureDirectoryStream} (native Windows) use a
+ * best-effort canonical-path fallback. Host mode is explicitly not a security
+ * boundary; D20's race-free guarantee applies only where secure directory
+ * streams are available.</p>
  */
 final class WorkspaceSecureFile {
+
+    private static final Logger log = LoggerFactory.getLogger(WorkspaceSecureFile.class);
+    private static final AtomicBoolean FALLBACK_WARNED = new AtomicBoolean();
+    private static volatile boolean forceFallbackForTesting = false;
 
     private WorkspaceSecureFile() {
     }
 
-    @FunctionalInterface
-    private interface SecureAction<T> {
-        T apply(SecureDirectoryStream<Path> parent, Path name) throws IOException;
+    static void forceFallbackForTesting(boolean value) {
+        forceFallbackForTesting = value;
     }
 
     static SeekableByteChannel openRead(Path workspaceReal, Path target) throws IOException {
-        return withFile(workspaceReal, target, (parent, name) -> {
-            requireRegularFile(parent, name);
-            return parent.newByteChannel(name, Set.of(StandardOpenOption.READ));
-        });
+        return open(workspaceReal, target, false, false,
+            Set.of(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS));
     }
 
     static SeekableByteChannel openReadWrite(Path workspaceReal, Path target) throws IOException {
-        return withFile(workspaceReal, target, (parent, name) -> {
-            requireRegularFile(parent, name);
-            return parent.newByteChannel(name,
-                Set.of(StandardOpenOption.READ, StandardOpenOption.WRITE));
-        });
+        return open(workspaceReal, target, true, false,
+            Set.of(StandardOpenOption.READ, StandardOpenOption.WRITE,
+                LinkOption.NOFOLLOW_LINKS));
     }
 
     static void writeString(Path workspaceReal, Path target, String content, boolean create)
         throws IOException {
-        withFile(workspaceReal, target, (parent, name) -> {
-            if (create) {
-                allowCreate(parent, name);
-            } else {
-                requireRegularFile(parent, name);
-            }
-            Set<StandardOpenOption> options = create
-                ? Set.of(StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE)
-                : Set.of(StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-            try (SeekableByteChannel channel = parent.newByteChannel(name, options)) {
-                writeFully(channel, content.getBytes(StandardCharsets.UTF_8));
-            }
-            return null;
-        });
+        Set<OpenOption> options = create
+            ? Set.of(StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)
+            : Set.of(StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE,
+                LinkOption.NOFOLLOW_LINKS);
+        try (SeekableByteChannel channel =
+                 open(workspaceReal, target, true, create, options)) {
+            writeFully(channel, content.getBytes(StandardCharsets.UTF_8));
+        }
     }
 
     static BufferedReader newBufferedReader(Path workspaceReal, Path target) throws IOException {
@@ -114,6 +117,106 @@ final class WorkspaceSecureFile {
         }
     }
 
+    private static SeekableByteChannel open(
+        Path workspaceReal,
+        Path target,
+        boolean writable,
+        boolean create,
+        Set<OpenOption> options
+    ) throws IOException {
+        Path relative = safeRelative(workspaceReal, target);
+        if (!forceFallbackForTesting) {
+            try (DirectoryStream<Path> rootStream = Files.newDirectoryStream(workspaceReal)) {
+                if (rootStream instanceof SecureDirectoryStream<Path> root) {
+                    return openSecure(root, relative, options, create);
+                }
+            }
+        }
+        if (FALLBACK_WARNED.compareAndSet(false, true)) {
+            log.warn("SecureDirectoryStream is unavailable; using the non-atomic host-mode "
+                + "file fallback (host mode is not a security boundary)");
+        }
+        return openFallback(workspaceReal, target, writable, create, options);
+    }
+
+    private static SeekableByteChannel openSecure(
+        SecureDirectoryStream<Path> root,
+        Path relative,
+        Set<OpenOption> options,
+        boolean create
+    ) throws IOException {
+        return descend(root, relative, 0, options, create);
+    }
+
+    private static SeekableByteChannel descend(
+        SecureDirectoryStream<Path> directory,
+        Path relative,
+        int index,
+        Set<OpenOption> options,
+        boolean create
+    ) throws IOException {
+        Path name = relative.getName(index);
+        if (index == relative.getNameCount() - 1) {
+            if (create) {
+                allowCreate(directory, name);
+            } else {
+                requireRegularFile(directory, name);
+            }
+            // LinkOption.NOFOLLOW_LINKS is in `options`, so a final-component
+            // swap to a symlink is rejected at open time.
+            return directory.newByteChannel(name, options);
+        }
+        try (SecureDirectoryStream<Path> child = directory.newDirectoryStream(
+            name, LinkOption.NOFOLLOW_LINKS)) {
+            return descend(child, relative, index + 1, options, create);
+        }
+    }
+
+    private static SeekableByteChannel openFallback(
+        Path workspaceReal,
+        Path target,
+        boolean writable,
+        boolean create,
+        Set<OpenOption> options
+    ) throws IOException {
+        Path resolved = writable
+            ? WorkspacePathPolicy.resolveWritable(workspaceReal, target.toString())
+            : WorkspacePathPolicy.resolveReadable(workspaceReal, target.toString());
+        if (writable) {
+            if (Files.exists(resolved, LinkOption.NOFOLLOW_LINKS)) {
+                BasicFileAttributes attrs = Files.readAttributes(
+                    resolved, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                if (attrs.isSymbolicLink() || !attrs.isRegularFile()) {
+                    throw new IOException("refusing to write a non-regular file");
+                }
+            } else if (!create) {
+                throw new IOException("not a regular file");
+            }
+        } else if (!Files.isRegularFile(resolved, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("not a regular file");
+        }
+        return Files.newByteChannel(resolved, options);
+    }
+
+    private static Path safeRelative(Path workspaceReal, Path target) throws IOException {
+        for (Path segment : target) {
+            if ("..".equals(segment.toString())) {
+                throw new IOException("path escapes the workspace");
+            }
+        }
+        Path normalized = target.isAbsolute()
+            ? target.normalize()
+            : workspaceReal.resolve(target).normalize();
+        if (!normalized.startsWith(workspaceReal)) {
+            throw new IOException("path escapes the workspace");
+        }
+        Path relative = workspaceReal.relativize(normalized);
+        if (relative.getNameCount() == 0) {
+            throw new IOException("a file path is required");
+        }
+        return relative;
+    }
+
     private static void allowCreate(SecureDirectoryStream<Path> parent, Path name)
         throws IOException {
         try {
@@ -143,35 +246,5 @@ final class WorkspaceSecureFile {
             throw new IOException("could not inspect path");
         }
         return view.readAttributes();
-    }
-
-    private static <T> T withFile(Path workspaceReal, Path target, SecureAction<T> action)
-        throws IOException {
-        Path relative = workspaceReal.relativize(target);
-        if (relative.getNameCount() == 0 || relative.startsWith("..")) {
-            throw new IOException("path escapes the workspace");
-        }
-        try (DirectoryStream<Path> rootStream = Files.newDirectoryStream(workspaceReal)) {
-            if (!(rootStream instanceof SecureDirectoryStream<Path> root)) {
-                throw new IOException("secure directory stream is unavailable");
-            }
-            return descend(root, relative, 0, action);
-        }
-    }
-
-    private static <T> T descend(
-        SecureDirectoryStream<Path> directory,
-        Path relative,
-        int index,
-        SecureAction<T> action
-    ) throws IOException {
-        Path name = relative.getName(index);
-        if (index == relative.getNameCount() - 1) {
-            return action.apply(directory, name);
-        }
-        try (SecureDirectoryStream<Path> child = directory.newDirectoryStream(
-            name, LinkOption.NOFOLLOW_LINKS)) {
-            return descend(child, relative, index + 1, action);
-        }
     }
 }

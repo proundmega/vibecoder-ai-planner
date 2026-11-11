@@ -37,11 +37,49 @@ class WorkspaceSecureFileTest {
                 "symlinks are unavailable: " + e.getMessage());
         }
 
-        // Simulate the check-then-open race by calling the secure writer with a
-        // path whose parent is now a symlink.
+        // Simulate a parent component swapping to a symlink before the open.
         assertThrows(IOException.class, () -> WorkspaceSecureFile.writeString(
             workspace, workspace.resolve("sub/file.txt"), "pwned", true));
         assertEquals("safe", Files.readString(outside));
+    }
+
+    @Test
+    void refusesAFinalComponentSymlinkForReadAndWrite() throws Exception {
+        Path outside = Files.writeString(tempDir.resolve("outside.txt"), "super-secret");
+        Path link = workspace.resolve("final-link.txt");
+        try {
+            Files.createSymbolicLink(link, outside);
+        } catch (UnsupportedOperationException | IOException e) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false,
+                "symlinks are unavailable: " + e.getMessage());
+        }
+
+        assertThrows(IOException.class,
+            () -> WorkspaceSecureFile.readString(workspace, link, 1024));
+        assertThrows(IOException.class,
+            () -> WorkspaceSecureFile.writeString(workspace, link, "pwned", true));
+        assertEquals("super-secret", Files.readString(outside));
+    }
+
+    @Test
+    void fallbackPathStillWorksWhenSecureDirectoryStreamsAreUnavailable() throws Exception {
+        Path file = Files.writeString(workspace.resolve("fallback.txt"), "one");
+        WorkspaceSecureFile.forceFallbackForTesting(true);
+        try {
+            WorkspaceSecureFile.writeString(workspace, file, "two", true);
+            assertEquals("two", WorkspaceSecureFile.readString(workspace, file, 1024));
+        } finally {
+            WorkspaceSecureFile.forceFallbackForTesting(false);
+        }
+    }
+
+    @Test
+    void rejectsInteriorParentTraversal() throws Exception {
+        Files.createDirectories(workspace.resolve("sub"));
+        Files.writeString(workspace.resolve("file.txt"), "inside");
+
+        assertThrows(IOException.class, () -> WorkspaceSecureFile.readString(
+            workspace, workspace.resolve("sub/../file.txt"), 1024));
     }
 
     @Test
