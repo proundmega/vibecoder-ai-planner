@@ -269,11 +269,11 @@ plan-approval and merge decisions are owned by `fg-52`; there is no second auton
 | git push / commit / merge / force-push | deny (supervisor publishes) | deny (supervisor publishes); merge decision `fg-52` |
 | read `.env*`, outside workspace | deny; secret files physically absent | deny |
 | docker / sudo / kubectl / cloud CLIs | deny | deny |
+| `question` tool | deny | allow when a bridge exists |
 
 `fg-52` is limited to spec review, effort/risk assessment, auto-approve/auto-merge and merge-time
 deterministic gates. It does not define runtime file, shell, network or permission-request decisions;
 those remain the harness permission policy (`fg-30`) and sandbox rules (`fg-34`).
-| `question` tool | deny | allow when a bridge exists |
 
 `allow` decisions are still subject to the deny list. Deny lists and protected paths are policy config,
 not prompt instructions. `OpenCodeConfigWriter` writes the **V2 `permissions` array** (the same
