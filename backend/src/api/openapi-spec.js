@@ -126,6 +126,7 @@ const options = {
           properties: {
             code: { type: 'string' },
             message: { type: 'string' },
+            details: { type: 'object', nullable: true },
           },
         },
         ApiResponse: {

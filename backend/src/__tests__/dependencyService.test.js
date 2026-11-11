@@ -3,8 +3,17 @@ jest.mock('../db', () => ({
     query: jest.fn(),
   },
 }));
+jest.mock('../utils/logger', () => ({
+  warn: jest.fn(),
+  info: jest.fn(),
+  error: jest.fn(),
+}));
+jest.mock('../metrics', () => ({
+  createCounter: jest.fn(() => ({ inc: jest.fn() })),
+}));
 
 const { pool } = require('../db');
+const logger = require('../utils/logger');
 const DependencyService = require('../services/DependencyService');
 const { DependencyConflictError } = require('../errors/HttpError');
 
@@ -164,6 +173,15 @@ describe('DependencyService', () => {
     ).toBe(false);
   });
 
+  it('fails closed when the dependency field is unreadable', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [target({ depends_on: 'not-an-array' })] });
+
+    const result = await DependencyService.readiness('10');
+
+    expect(result.ready).toBe(false);
+    expect(result.blockedBy[0].reason).toBe('unreadable');
+  });
+
   it('throws DEPENDENCIES_NOT_DONE with blockedBy details', async () => {
     pool.query
       .mockResolvedValueOnce({ rows: [target({ depends_on: ['5'] })] })
@@ -171,7 +189,7 @@ describe('DependencyService', () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [dep()] });
 
-    const assertion = DependencyService.assertReady('10');
+    const assertion = DependencyService.assertReady('10', { action: 'pickup' });
 
     await expect(assertion).rejects.toMatchObject({
       code: 'DEPENDENCIES_NOT_DONE',
@@ -182,6 +200,17 @@ describe('DependencyService', () => {
       },
     });
     await expect(assertion).rejects.toBeInstanceOf(DependencyConflictError);
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Dependency gate blocked execution',
+      expect.objectContaining({
+        ticketId: '10',
+        action: 'pickup',
+        blockedBy: [{ id: '5', reason: 'not_done' }],
+      })
+    );
+    const counter = DependencyService.blockedStarts;
+    expect(counter.inc).toHaveBeenCalledWith({ action: 'pickup', reason: 'not_done' });
   });
 
   it('enriches a list with one dependency query batch', async () => {

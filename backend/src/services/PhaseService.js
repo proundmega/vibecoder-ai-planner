@@ -63,7 +63,11 @@ class PhaseService {
       // in_progress but is the safe action for an already-started ticket, so
       // it is deliberately excluded.
       if (newStatus === 'in_progress' && toPhase !== 'blocked') {
-        await DependencyService.assertReady(ticketId, { client, lock: true });
+        await DependencyService.assertReady(ticketId, {
+          client,
+          lock: true,
+          action: `phase_transition:${toPhase}`,
+        });
       }
 
       await client.query(

@@ -119,6 +119,9 @@ export class TicketsService {
             },
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                409: `Ticket has incomplete dependencies`,
+            },
         });
     }
     /**
@@ -159,6 +162,9 @@ export class TicketsService {
             },
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                409: `Ticket has incomplete dependencies`,
+            },
         });
     }
     /**
@@ -175,6 +181,9 @@ export class TicketsService {
             url: '/tickets/{ticketId}/pickup',
             path: {
                 'ticketId': ticketId,
+            },
+            errors: {
+                409: `Ticket has incomplete dependencies`,
             },
         });
     }

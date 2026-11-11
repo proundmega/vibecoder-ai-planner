@@ -111,28 +111,36 @@ class HarnessRunService {
     const normalisedBranch = requiredString(branch, 'branch');
     const normalisedAttempt = positiveInteger(attempt, 'attempt');
 
-    // bp-134: a new durable start must not bypass dependency readiness. Check
-    // only after confirming the calling agent owns the in-progress ticket, so
-    // an unassigned agent cannot probe dependency titles. Recovery of an
-    // already-started run remains exempt.
-    const ownership = await pool.query(
-      `SELECT status, assigned_agent_id
-       FROM tickets
-       WHERE id = $1 AND deleted_at IS NULL`,
-      [normalisedTicketId]
-    );
-    const ownedTicket = ownership.rows[0];
-    if (
-      ownedTicket
-      && ownedTicket.status === 'in_progress'
-      && String(ownedTicket.assigned_agent_id) === String(normalisedAgentId)
-    ) {
-      await DependencyService.assertReady(normalisedTicketId);
-    }
-
-    let result;
+    // bp-134: a new durable start must not bypass dependency readiness. Lock
+    // the target first so a concurrent dependency reopen cannot slip between
+    // the check and the run insert. Recovery of an already-started run remains
+    // exempt. The ownership pre-check also prevents an unassigned agent from
+    // probing dependency titles.
+    const client = await pool.connect();
     try {
-      result = await pool.query(
+      await client.query('BEGIN');
+
+      const ownership = await client.query(
+        `SELECT status, assigned_agent_id
+         FROM tickets
+         WHERE id = $1 AND deleted_at IS NULL
+         FOR UPDATE`,
+        [normalisedTicketId]
+      );
+      const ownedTicket = ownership.rows[0];
+      if (
+        ownedTicket
+        && ownedTicket.status === 'in_progress'
+        && String(ownedTicket.assigned_agent_id) === String(normalisedAgentId)
+      ) {
+        await DependencyService.assertReady(normalisedTicketId, {
+          client,
+          lock: true,
+          action: 'durable_start',
+        });
+      }
+
+      const result = await client.query(
         `INSERT INTO harness_runs
            (ticket_id, agent_id, branch, base_sha, workspace_path, session_id,
             provider, model, attempt)
@@ -164,56 +172,60 @@ class HarnessRunService {
           normalisedAttempt,
         ]
       );
+
+      if (result.rows.length === 0) {
+        // Explain the refusal instead of always blaming assignment: a published
+        // ticket (or one whose earlier run has publish evidence) must be reset
+        // by an operator before it can be run again.
+        const context = await client.query(
+          `SELECT t.status,
+                  NULLIF(BTRIM(t.pr_url), '') AS pr_url,
+                  t.assigned_agent_id,
+                  a.id AS agent_id,
+                  EXISTS (
+                    SELECT 1 FROM harness_runs existing
+                    WHERE existing.ticket_id = t.id
+                      AND (
+                        NULLIF(BTRIM(existing.pr_url), '') IS NOT NULL
+                        OR NULLIF(BTRIM(existing.head_sha), '') IS NOT NULL
+                      )
+                  ) AS has_publish_evidence
+           FROM tickets t
+           LEFT JOIN agents a ON a.id = $2
+           WHERE t.id = $1`,
+          [normalisedTicketId, normalisedAgentId]
+        );
+        const ticket = context.rows[0];
+        if (!ticket) {
+          throw new ForbiddenError('Ticket is not assigned to this agent');
+        }
+        if (ticket.pr_url || ticket.has_publish_evidence) {
+          throw new ConflictError(
+            'Ticket already has published work; an operator must reset the PR before a new run'
+          );
+        }
+        if (
+          ticket.status !== 'in_progress' ||
+          String(ticket.assigned_agent_id) !== String(ticket.agent_id)
+        ) {
+          throw new ForbiddenError('Ticket is not assigned to this agent or is not in progress');
+        }
+        throw new ForbiddenError('Ticket is not assigned to this agent');
+      }
+
+      await client.query('COMMIT');
+      return result.rows[0];
     } catch (error) {
+      await client.query('ROLLBACK');
       // The partial unique index on (ticket_id) WHERE status='running' is the
       // database backstop for the lease.
       if (error.code === '23505') {
         throw new ConflictError('Ticket already has an active harness run');
       }
       throw error;
+    } finally {
+      client.release();
     }
-
-    if (result.rows.length === 0) {
-      // Explain the refusal instead of always blaming assignment: a published
-      // ticket (or one whose earlier run has publish evidence) must be reset by
-      // an operator before it can be run again.
-      const context = await pool.query(
-        `SELECT t.status,
-                NULLIF(BTRIM(t.pr_url), '') AS pr_url,
-                t.assigned_agent_id,
-                a.id AS agent_id,
-                EXISTS (
-                  SELECT 1 FROM harness_runs existing
-                  WHERE existing.ticket_id = t.id
-                    AND (
-                      NULLIF(BTRIM(existing.pr_url), '') IS NOT NULL
-                      OR NULLIF(BTRIM(existing.head_sha), '') IS NOT NULL
-                    )
-                ) AS has_publish_evidence
-         FROM tickets t
-         LEFT JOIN agents a ON a.id = $2
-         WHERE t.id = $1`,
-        [normalisedTicketId, normalisedAgentId]
-      );
-      const ticket = context.rows[0];
-      if (!ticket) {
-        throw new ForbiddenError('Ticket is not assigned to this agent');
-      }
-      if (ticket.pr_url || ticket.has_publish_evidence) {
-        throw new ConflictError(
-          'Ticket already has published work; an operator must reset the PR before a new run'
-        );
-      }
-      if (
-        ticket.status !== 'in_progress' ||
-        String(ticket.assigned_agent_id) !== String(ticket.agent_id)
-      ) {
-        throw new ForbiddenError('Ticket is not assigned to this agent or is not in progress');
-      }
-      throw new ForbiddenError('Ticket is not assigned to this agent');
-    }
-
-    return result.rows[0];
   }
 
   async getRun(runId) {

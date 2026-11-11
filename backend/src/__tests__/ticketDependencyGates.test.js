@@ -51,9 +51,9 @@ describe('bp-134 dependency gates', () => {
   });
 
   it('blocks pickup and rolls back when a dependency is incomplete', async () => {
-    pool.query.mockResolvedValueOnce({
-      rows: [{ owner_id: '100', role: 'member' }],
-    });
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ owner_id: '100', role: 'member' }] })
+      .mockResolvedValueOnce({ rows: [backlogTicket] });
     const client = clientFor([backlogTicket]);
     DependencyService.assertReady.mockRejectedValueOnce(
       new DependencyConflictError('blocked', { blockedBy: [] })
@@ -66,6 +66,7 @@ describe('bp-134 dependency gates', () => {
     expect(DependencyService.assertReady).toHaveBeenCalledWith('10', {
       client,
       lock: true,
+      action: 'pickup',
     });
     expect(pool.query.mock.calls.some(call => String(call[0]).includes('UPDATE tickets'))).toBe(false);
   });
@@ -83,6 +84,7 @@ describe('bp-134 dependency gates', () => {
     expect(DependencyService.assertReady).toHaveBeenCalledWith('10', {
       client,
       lock: true,
+      action: 'status_transition',
     });
     expect(Ticket.updateStatus).not.toHaveBeenCalled();
   });
@@ -115,6 +117,40 @@ describe('bp-134 dependency gates', () => {
     expect(DependencyService.assertReady).toHaveBeenCalledWith('10', {
       client,
       lock: true,
+      dependsOn: undefined,
+      action: 'ticket_update',
+    });
+    expect(Ticket.update).not.toHaveBeenCalled();
+  });
+
+  it('checks the payload dependsOn set when the same request starts the ticket', async () => {
+    Ticket.findById.mockResolvedValueOnce({
+      id: '10',
+      status: 'backlog',
+      ownerId: '100',
+      projectId: '1',
+      dependsOn: [],
+    });
+    Ticket.findByProject.mockResolvedValueOnce([]);
+    const client = clientFor([{ id: '10' }]);
+    DependencyService.assertReady.mockRejectedValueOnce(
+      new DependencyConflictError('blocked', { blockedBy: [] })
+    );
+
+    await expect(
+      TicketService.update(
+        '10',
+        { status: 'in_progress', dependsOn: ['11'] },
+        '100',
+        'member'
+      )
+    ).rejects.toBeInstanceOf(DependencyConflictError);
+
+    expect(DependencyService.assertReady).toHaveBeenCalledWith('10', {
+      client,
+      lock: true,
+      dependsOn: ['11'],
+      action: 'ticket_update',
     });
     expect(Ticket.update).not.toHaveBeenCalled();
   });

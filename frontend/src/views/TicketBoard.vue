@@ -3,7 +3,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { fetchProjects } from '@/api/projects'
-import { fetchTickets, updateTicket, createTicket, blockerSummary } from '@/api/tickets'
+import { fetchTickets, updateTicket, createTicket, blockerSummary, dependencyBlockedMessage } from '@/api/tickets'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,6 +19,7 @@ const newTicketTitle = ref('')
 const newTicketDesc = ref('')
 const creating = ref(false)
 const creationError = ref(null)
+const statusError = ref(null)
 
 watch(showCreateTicket, (value) => {
   if (!value) {
@@ -79,8 +80,15 @@ async function handleDrop(ticketId, newStatus) {
   try {
     await updateTicket(ticket.id, { status: newStatus })
     ticket.status = newStatus
+    ticket.ready = true
+    ticket.blockedBy = []
+    statusError.value = null
   } catch (err) {
     console.error('Failed to update ticket status:', err)
+    const blocked = dependencyBlockedMessage(err?.details)
+    statusError.value = blocked
+      ? `Cannot move ticket: blocked by ${blocked}`
+      : (err.message || 'Failed to update ticket status')
   }
 }
 
@@ -160,6 +168,10 @@ async function handleCreateTicket() {
     </div>
 
     <div v-else class="board-container">
+      <div v-if="statusError" class="status-error">
+        <span>{{ statusError }}</span>
+        <button @click="statusError = null">Dismiss</button>
+      </div>
       <div v-for="columnDef in statusColumns" :key="columnDef.id"
            class="status-column"
            :class="columnDef.class"
@@ -364,6 +376,27 @@ async function handleCreateTicket() {
   text-transform: uppercase;
   background: #fee2e2;
   color: #b91c1c;
+}
+
+.status-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.status-error button {
+  border: none;
+  background: transparent;
+  color: #991b1b;
+  cursor: pointer;
+  font-weight: 600;
 }
 
 .modal-overlay {

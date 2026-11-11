@@ -122,6 +122,7 @@ describe('TicketService project-membership authorization (bp-133 FR4)', () => {
     test('allows an agent whose owner is a project member', async () => {
       pool.query
         .mockResolvedValueOnce({ rows: [{ owner_id: '300', role: 'member' }] })
+        .mockResolvedValueOnce({ rows: [backlogTicket] })
         .mockResolvedValueOnce({ rows: [{ ok: 1 }] });
       connectWith([pickedUp]);
 
@@ -132,7 +133,8 @@ describe('TicketService project-membership authorization (bp-133 FR4)', () => {
 
     test('allows an agent owned by the project owner', async () => {
       pool.query
-        .mockResolvedValueOnce({ rows: [{ owner_id: '900', role: 'member' }] });
+        .mockResolvedValueOnce({ rows: [{ owner_id: '900', role: 'member' }] })
+        .mockResolvedValueOnce({ rows: [backlogTicket] });
       connectWith([pickedUp]);
 
       const result = await TicketService.pickUpTicket('1', { agentId: '7', operatorId: '900' });
@@ -143,15 +145,8 @@ describe('TicketService project-membership authorization (bp-133 FR4)', () => {
     test('rejects an agent whose owner is not a member', async () => {
       pool.query
         .mockResolvedValueOnce({ rows: [{ owner_id: '400', role: 'member' }] })
+        .mockResolvedValueOnce({ rows: [backlogTicket] })
         .mockResolvedValueOnce({ rows: [] });
-      const client = {
-        query: jest.fn()
-          .mockResolvedValueOnce({}) // BEGIN
-          .mockResolvedValueOnce({ rows: [backlogTicket] }) // SELECT
-          .mockResolvedValueOnce({}), // ROLLBACK
-        release: jest.fn(),
-      };
-      pool.connect.mockResolvedValueOnce(client);
 
       await expect(
         TicketService.pickUpTicket('1', { agentId: '7', operatorId: '400' })
@@ -160,7 +155,8 @@ describe('TicketService project-membership authorization (bp-133 FR4)', () => {
 
     test('supports the legacy scalar agent id and resolves the owner role', async () => {
       pool.query
-        .mockResolvedValueOnce({ rows: [{ owner_id: '400', role: 'project_admin' }] });
+        .mockResolvedValueOnce({ rows: [{ owner_id: '400', role: 'project_admin' }] })
+        .mockResolvedValueOnce({ rows: [backlogTicket] });
       connectWith([pickedUp]);
 
       const result = await TicketService.pickUpTicket('1', '7');

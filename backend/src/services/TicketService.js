@@ -215,7 +215,12 @@ class TicketService {
       );
       if (locked.rows.length === 0) throw new NotFoundError('Ticket not found');
 
-      await DependencyService.assertReady(id, { client, lock: true });
+      await DependencyService.assertReady(id, {
+        client,
+        lock: true,
+        dependsOn,
+        action: 'ticket_update',
+      });
       const updated = await Ticket.update(id, updates, client);
       await client.query('COMMIT');
       return updated;
@@ -258,7 +263,11 @@ class TicketService {
       );
       if (locked.rows.length === 0) throw new NotFoundError('Ticket not found');
 
-      await DependencyService.assertReady(ticketId, { client, lock: true });
+      await DependencyService.assertReady(ticketId, {
+        client,
+        lock: true,
+        action: 'status_transition',
+      });
       await Ticket.updateStatus(ticketId, status, userId, client);
       await client.query('COMMIT');
     } catch (error) {
@@ -286,6 +295,20 @@ class TicketService {
     const normalizedActor = await this.resolveAgentActor(this.normalizeActor(actor));
     const { agentId } = normalizedActor;
 
+    // Keep permission checks outside the write transaction so a slow
+    // membership/project lookup cannot hold a pool client while the
+    // transaction is open.
+    const permissionResult = await pool.query(
+      'SELECT * FROM tickets WHERE id = $1 AND deleted_at IS NULL',
+      [ticketId]
+    );
+    if (permissionResult.rows.length === 0) {
+      throw new NotFoundError('Ticket not found');
+    }
+    if (!(await this.canActOnTicketProject(permissionResult.rows[0], normalizedActor))) {
+      throw new ForbiddenError('Unauthorized: not a member of this ticket\'s project');
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -300,10 +323,6 @@ class TicketService {
 
       const ticket = ticketResult.rows[0];
 
-      if (!(await this.canActOnTicketProject(ticket, normalizedActor))) {
-        throw new ForbiddenError('Unauthorized: not a member of this ticket\'s project');
-      }
-
       if (ticket.status !== 'backlog') {
         throw new ValidationError('Only backlog tickets can be picked up');
       }
@@ -312,7 +331,11 @@ class TicketService {
         throw new ValidationError('Ticket already assigned to another agent');
       }
 
-      await DependencyService.assertReady(ticketId, { client, lock: true });
+      await DependencyService.assertReady(ticketId, {
+        client,
+        lock: true,
+        action: 'pickup',
+      });
 
       const result = await client.query(
         `UPDATE tickets
@@ -399,7 +422,7 @@ class TicketService {
   }
 
   async validateDependencies(ticketId) {
-    return DependencyService.assertReady(ticketId);
+    return DependencyService.assertReady(ticketId, { action: 'validate_dependencies' });
   }
 
   async hasCircularDependency(ticketId, newDepIds, allProjectTickets) {

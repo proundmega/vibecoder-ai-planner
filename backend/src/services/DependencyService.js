@@ -1,14 +1,43 @@
 const { pool } = require('../db');
+const logger = require('../utils/logger');
+const { createCounter } = require('../metrics');
 const { NotFoundError, DependencyConflictError } = require('../errors/HttpError');
+
+const blockedStarts = createCounter(
+  'dependency_start_blocked_total',
+  'Execution starts blocked by incomplete ticket dependencies',
+  ['action', 'reason']
+);
 
 const COMPLETE_PHASES = new Set(['done', 'deployed']);
 const REOPEN_SOURCE_PHASES = new Set(['done', 'deployed']);
 const REOPEN_TARGET_PHASE = 'in_progress';
 
+/**
+ * Normalise a depends_on value. A non-array or a non-numeric entry is
+ * unreadable, not "no dependencies": NFR5 requires fail-closed behaviour.
+ */
 function normaliseDependsOn(value) {
-  if (!value) return [];
-  if (!Array.isArray(value)) return [];
-  return [...new Set(value.map(String).filter(Boolean))];
+  if (value === null || value === undefined) {
+    return { ids: [], unreadable: false };
+  }
+  if (!Array.isArray(value)) {
+    return { ids: [], unreadable: true };
+  }
+
+  const ids = [];
+  let unreadable = false;
+  for (const entry of value) {
+    const text = (typeof entry === 'string' || typeof entry === 'number')
+      ? String(entry)
+      : '';
+    if (!/^[0-9]+$/.test(text)) {
+      unreadable = true;
+      continue;
+    }
+    if (!ids.includes(text)) ids.push(text);
+  }
+  return { ids, unreadable };
 }
 
 function projectIdOf(ticket) {
@@ -152,9 +181,27 @@ class DependencyService {
     return blockedBy;
   }
 
-  async readiness(ticketId, { client = null, lock = false } = {}) {
+  async readiness(ticketId, { client = null, lock = false, dependsOn } = {}) {
     const target = await this.target(ticketId, client, lock);
-    const ids = normaliseDependsOn(target.depends_on);
+    const effectiveDependsOn = dependsOn !== undefined ? dependsOn : target.depends_on;
+    const parsed = normaliseDependsOn(effectiveDependsOn);
+
+    if (parsed.unreadable) {
+      return {
+        ready: false,
+        blockedBy: [
+          {
+            id: String(ticketId),
+            title: null,
+            status: null,
+            phase: null,
+            reason: 'unreadable',
+          },
+        ],
+      };
+    }
+
+    const ids = parsed.ids;
     if (ids.length === 0) return emptyReadiness();
 
     const startedAt = await this.startedAt(ticketId, client);
@@ -215,13 +262,29 @@ class DependencyService {
   async readinessForTickets(tickets, { client = null } = {}) {
     if (tickets.length === 0) return [];
 
+    const parsed = tickets.map(ticket =>
+      normaliseDependsOn(ticket.dependsOn ?? ticket.depends_on)
+    );
     const allDependencyIds = [
-      ...new Set(
-        tickets.flatMap(ticket => normaliseDependsOn(ticket.dependsOn ?? ticket.depends_on))
-      ),
+      ...new Set(parsed.flatMap(entry => entry.ids)),
     ];
     if (allDependencyIds.length === 0) {
-      return tickets.map(() => emptyReadiness());
+      return parsed.map((entry, index) =>
+        entry.unreadable
+          ? {
+              ready: false,
+              blockedBy: [
+                {
+                  id: String(tickets[index].id),
+                  title: null,
+                  status: null,
+                  phase: null,
+                  reason: 'unreadable',
+                },
+              ],
+            }
+          : emptyReadiness()
+      );
     }
 
     const dependencies = await this.dependencyRows(allDependencyIds, client);
@@ -231,18 +294,32 @@ class DependencyService {
       client
     );
 
-    return tickets.map(ticket => {
+    return tickets.map((ticket, index) => {
+      const entry = parsed[index];
+      if (entry.unreadable) {
+        return {
+          ready: false,
+          blockedBy: [
+            {
+              id: String(ticket.id),
+              title: null,
+              status: null,
+              phase: null,
+              reason: 'unreadable',
+            },
+          ],
+        };
+      }
+      if (entry.ids.length === 0) return emptyReadiness();
+
       const target = {
         id: ticket.id,
         project_id: projectIdOf(ticket),
-        depends_on: ticket.dependsOn ?? ticket.depends_on,
+        depends_on: entry.ids,
       };
-      const ids = normaliseDependsOn(target.depends_on);
-      if (ids.length === 0) return emptyReadiness();
-
       const blockedBy = this.classify(
         target,
-        ids,
+        entry.ids,
         dependencies,
         phaseMap,
         starts.get(String(ticket.id)) || null
@@ -256,10 +333,25 @@ class DependencyService {
     return tickets.map((ticket, index) => Object.assign(ticket, readiness[index]));
   }
 
-  async assertReady(ticketId, { client = null, lock = false } = {}) {
-    const readiness = await this.readiness(ticketId, { client, lock });
+  async assertReady(
+    ticketId,
+    { client = null, lock = false, dependsOn, action = 'start' } = {}
+  ) {
+    const readiness = await this.readiness(ticketId, { client, lock, dependsOn });
     if (!readiness.ready) {
       const count = readiness.blockedBy.length;
+      const reasons = [...new Set(readiness.blockedBy.map(entry => entry.reason))];
+      for (const reason of reasons) {
+        blockedStarts.inc({ action, reason });
+      }
+      logger.warn('Dependency gate blocked execution', {
+        ticketId: String(ticketId),
+        action,
+        blockedBy: readiness.blockedBy.map(entry => ({
+          id: entry.id,
+          reason: entry.reason,
+        })),
+      });
       throw new DependencyConflictError(
         `Cannot start: ${count} dependenc${count === 1 ? 'y is' : 'ies are'} not done`,
         { ticketId: String(ticketId), blockedBy: readiness.blockedBy }
@@ -269,4 +361,7 @@ class DependencyService {
   }
 }
 
-module.exports = new DependencyService();
+const dependencyService = new DependencyService();
+dependencyService.blockedStarts = blockedStarts;
+
+module.exports = dependencyService;

@@ -5,5 +5,6 @@
 export type Error = {
     code?: string;
     message?: string;
+    details?: Record<string, any> | null;
 };
 

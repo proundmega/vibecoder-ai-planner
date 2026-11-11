@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { fetchTicket, updateTicket, addComment, fetchComments, deleteTicket } from '@/api/tickets'
+import { fetchTicket, updateTicket, addComment, fetchComments, deleteTicket, dependencyBlockedMessage } from '@/api/tickets'
 import { getTicketApprovals, createApproval } from '@/api/approvals'
 import { fetchAttachments, uploadAttachment, deleteAttachment } from '@/api/ticketAttachments'
 import { listPlanningFiles, getPlanningFile, upsertPlanningFile, applyTemplate, updatePlanningStatus } from '@/api/ticketPlanning'
@@ -117,7 +117,10 @@ async function changeStatus(newStatus) {
     error.value = null
   } catch (err) {
     console.error('Failed to update status:', err)
-    error.value = 'Failed to update status: ' + err.message
+    const blocked = dependencyBlockedMessage(err?.details)
+    error.value = blocked
+      ? `Cannot start: blocked by ${blocked}`
+      : 'Failed to update status: ' + err.message
   }
 }
 
@@ -411,7 +414,9 @@ async function handleShowTemplateSelect() {
             <router-link :to="`/projects/${route.params.id}/tickets/${blocker.id}`">
               {{ blocker.title || `#${blocker.id}` }}
             </router-link>
-            <span class="dependency-reason">{{ blocker.status || blocker.phase || blocker.reason }}</span>
+            <span class="dependency-reason">
+              {{ blocker.reason }}<template v-if="blocker.status"> · {{ blocker.status }}</template>
+            </span>
           </li>
         </ul>
         <p>This ticket cannot start until these dependencies are done.</p>

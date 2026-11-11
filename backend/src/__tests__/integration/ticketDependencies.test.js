@@ -117,6 +117,27 @@ describe('Ticket dependency gates (real DB)', () => {
     expect(allowed.status).toBe(200);
   });
 
+  test('rejects status=in_progress with a new unmet dependency in the same PUT', async () => {
+    const dependencyId = await createTicket('New dependency');
+    const ticketId = await createTicket('Same-request target');
+
+    const res = await request(app)
+      .put(`/api/v1/tickets/${ticketId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'in_progress', dependsOn: [dependencyId] });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('DEPENDENCIES_NOT_DONE');
+    expect(res.body.error.details.blockedBy[0].id).toBe(String(dependencyId));
+
+    const stored = await request(app)
+      .get(`/api/v1/tickets/${ticketId}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(stored.body.data.status).toBe('backlog');
+    expect(stored.body.data.dependsOn).toEqual([]);
+  });
+
   test('excludes blocked tickets from the agent backlog endpoint', async () => {
     const doneId = await createTicket('Done dependency');
     await pool.query(

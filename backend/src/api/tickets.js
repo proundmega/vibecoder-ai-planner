@@ -134,6 +134,12 @@ router.get('/:ticketId', verifyTokenOrAgent, validatePathParams({ ticketId: path
  *                 success: { type: boolean }
  *                 data:
  *                   $ref: '#/components/schemas/Ticket'
+ *       409:
+ *         description: Ticket has incomplete dependencies
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put('/:ticketId', verifyTokenOrAgent, requireAnyPermission('TICKET_UPDATE'), validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: updateTicketSchema }), ticketController.updateTicket);
 
@@ -175,6 +181,12 @@ router.delete('/:ticketId', verifyToken, validatePathParams({ ticketId: pathPara
  *     responses:
  *       200:
  *         description: Status updated
+ *       409:
+ *         description: Ticket has incomplete dependencies
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/:ticketId/status', verifyTokenOrAgent, requireAnyPermission('TICKET_STATUS_CHANGE'), validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: statusTransitionSchema }), ticketController.changeStatus);
 
@@ -192,6 +204,12 @@ router.post('/:ticketId/status', verifyTokenOrAgent, requireAnyPermission('TICKE
  *     responses:
  *       200:
  *         description: Ticket picked up
+ *       409:
+ *         description: Ticket has incomplete dependencies
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 // Bodyless route - agent picks up ticket without request body
 router.post('/:ticketId/pickup', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), ticketController.pickUpTicket);

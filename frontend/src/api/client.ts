@@ -8,6 +8,8 @@ interface ApiOptions extends RequestInit {
 
 interface ExtendedError extends Error {
   status?: number
+  code?: string
+  details?: unknown
   rateLimitInfo?: { retryAfter: number; retryAt: string }
 }
 
@@ -69,14 +71,20 @@ function apiFetch(url: string, options: ApiOptions = {}): Promise<Response> {
       }
       if (!response.ok) {
         let message = `HTTP ${response.status}`
+        let errorCode: string | undefined
+        let errorDetails: unknown
         try {
           const body = await response.json()
           message = (body?.error?.message as string) || (body?.message as string) || message
+          errorCode = body?.error?.code
+          errorDetails = body?.error?.details
         } catch {
           // Ignore JSON parse errors
         }
         const err = new Error(message) as ExtendedError
         err.status = response.status
+        err.code = errorCode
+        err.details = errorDetails
         throw err
       }
       return response

@@ -59,6 +59,22 @@ describe('TicketBoard', () => {
     ).toBeNull()
   })
 
+  it('formats 409 dependency details for the board error surface', () => {
+    expect(
+      ticketsApi.dependencyBlockedMessage({
+        blockedBy: [{ id: '5', title: 'Create the schema', reason: 'not_done' }],
+      })
+    ).toBe('Create the schema')
+
+    expect(
+      ticketsApi.dependencyBlockedMessage({
+        blockedBy: [{ id: '9', title: null, reason: 'missing' }],
+      })
+    ).toBe('#9')
+
+    expect(ticketsApi.dependencyBlockedMessage(undefined)).toBeNull()
+  })
+
   describe('createTicket optimistic update', () => {
     it('should call createTicket API and then reload tickets on success', async () => {
       const { post } = await import('../api/client')

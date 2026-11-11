@@ -254,6 +254,10 @@
           },
           "message": {
             "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "nullable": true
           }
         }
       },
@@ -948,6 +952,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Ticket has incomplete dependencies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -1012,6 +1026,16 @@
         "responses": {
           "200": {
             "description": "Status updated"
+          },
+          "409": {
+            "description": "Ticket has incomplete dependencies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -1035,6 +1059,16 @@
         "responses": {
           "200": {
             "description": "Ticket picked up"
+          },
+          "409": {
+            "description": "Ticket has incomplete dependencies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }

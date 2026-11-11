@@ -36,6 +36,14 @@ export function blockerSummary(ticket: Ticket): string | null {
   return first?.title || first?.reason || 'Blocked by dependencies'
 }
 
+export function dependencyBlockedMessage(details: unknown): string | null {
+  const blockedBy = (details as { blockedBy?: TicketBlocker[] } | null)?.blockedBy
+  if (!Array.isArray(blockedBy) || blockedBy.length === 0) return null
+  return blockedBy
+    .map(blocker => blocker.title || `#${blocker.id}`)
+    .join(', ')
+}
+
 export interface Comment {
   id: string
   ticket_id: string

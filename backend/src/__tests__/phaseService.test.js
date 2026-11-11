@@ -288,6 +288,7 @@ describe('PhaseService', () => {
       expect(DependencyService.assertReady).toHaveBeenCalledWith('ticket-1', {
         client: mockClient,
         lock: true,
+        action: 'phase_transition:in_progress',
       });
     });
   });
