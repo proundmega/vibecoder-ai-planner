@@ -42,7 +42,7 @@ public class ApiService {
      * List available backlog tickets for the project.
      */
     public List<Ticket> listBacklogTickets() throws IOException {
-        String url = baseUrl + "/tickets/project/" + config.getProjectId() + "?status=backlog";
+        String url = baseUrl + "/tickets/project/" + config.getProjectId() + "/backlog";
         ApiResponse<List<Ticket>> response = executeGet(url, new TypeReference<ApiResponse<List<Ticket>>>() {});
         
         if (response.hasError()) {

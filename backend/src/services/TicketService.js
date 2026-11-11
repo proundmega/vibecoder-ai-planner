@@ -5,6 +5,7 @@ const { pool } = require('../db');
 const PermissionService = require('../services/PermissionService');
 const TicketPlanningService = require('../services/TicketPlanningService');
 const TicketAttachmentService = require('../services/TicketAttachmentService');
+const DependencyService = require('../services/DependencyService');
 const { ValidationError, NotFoundError, ForbiddenError } = require('../errors/HttpError');
 
 class TicketService {
@@ -19,16 +20,27 @@ class TicketService {
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    return await Ticket.findByProject(projectId, userId);
+    return DependencyService.enrich(await Ticket.findByProject(projectId, userId));
   }
 
   async findByStatus(projectId, status, _userId) {
-    return await Ticket.findByStatus(projectId, status);
+    return DependencyService.enrich(await Ticket.findByStatus(projectId, status));
+  }
+
+  /**
+   * Agent execution view: only dependency-ready backlog tickets.
+   */
+  async findBacklog(projectId) {
+    const tickets = await Ticket.findByStatus(projectId, 'backlog');
+    await DependencyService.enrich(tickets);
+    return tickets.filter(ticket => ticket.ready !== false);
   }
 
   async getOne(id, userId) {
     const ticket = await Ticket.findById(id);
     if (!ticket) throw new NotFoundError('Ticket not found');
+
+    await DependencyService.enrich([ticket]);
 
     const planning = await TicketPlanningService.getPlanningForTicket(ticket, userId);
     const attachments = await TicketAttachmentService.list(ticket.id, userId);
@@ -176,8 +188,7 @@ class TicketService {
       await this.hasCircularDependency(id, dependsOn, projectTickets);
     }
 
-    // Single SQL round-trip; returns the persisted ticket.
-    return await Ticket.update(id, {
+    const updates = {
       title: data.title,
       description: data.description,
       status: data.status,
@@ -187,7 +198,38 @@ class TicketService {
       milestoneId,
       estimate: data.estimate,
       dependsOn,
-    });
+    };
+
+    const entersExecution = data.status === 'in_progress' && ticket.status !== 'in_progress';
+    if (!entersExecution) {
+      // Single SQL round-trip; returns the persisted ticket.
+      return await Ticket.update(id, updates);
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query(
+        'SELECT id FROM tickets WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+        [id]
+      );
+      if (locked.rows.length === 0) throw new NotFoundError('Ticket not found');
+
+      await DependencyService.assertReady(id, {
+        client,
+        lock: true,
+        dependsOn,
+        action: 'ticket_update',
+      });
+      const updated = await Ticket.update(id, updates, client);
+      await client.query('COMMIT');
+      return updated;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async delete(id, userId, userRole) {
@@ -208,7 +250,32 @@ class TicketService {
   }
 
   async updateStatus(ticketId, status, userId) {
-    await Ticket.updateStatus(ticketId, status, userId);
+    if (status !== 'in_progress') {
+      return await Ticket.updateStatus(ticketId, status, userId);
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query(
+        'SELECT id FROM tickets WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+        [ticketId]
+      );
+      if (locked.rows.length === 0) throw new NotFoundError('Ticket not found');
+
+      await DependencyService.assertReady(ticketId, {
+        client,
+        lock: true,
+        action: 'status_transition',
+      });
+      await Ticket.updateStatus(ticketId, status, userId, client);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async getComments(ticketId, _userId) {
@@ -228,42 +295,68 @@ class TicketService {
     const normalizedActor = await this.resolveAgentActor(this.normalizeActor(actor));
     const { agentId } = normalizedActor;
 
-    const ticketResult = await pool.query(
-      'SELECT * FROM tickets WHERE id = $1',
+    // Keep permission checks outside the write transaction so a slow
+    // membership/project lookup cannot hold a pool client while the
+    // transaction is open.
+    const permissionResult = await pool.query(
+      'SELECT * FROM tickets WHERE id = $1 AND deleted_at IS NULL',
       [ticketId]
     );
-
-    if (ticketResult.rows.length === 0) {
+    if (permissionResult.rows.length === 0) {
       throw new NotFoundError('Ticket not found');
     }
-
-    const ticket = ticketResult.rows[0];
-
-    if (!(await this.canActOnTicketProject(ticket, normalizedActor))) {
+    if (!(await this.canActOnTicketProject(permissionResult.rows[0], normalizedActor))) {
       throw new ForbiddenError('Unauthorized: not a member of this ticket\'s project');
     }
 
-    if (ticket.status !== 'backlog') {
-      throw new ValidationError('Only backlog tickets can be picked up');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const ticketResult = await client.query(
+        'SELECT * FROM tickets WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+        [ticketId]
+      );
+
+      if (ticketResult.rows.length === 0) {
+        throw new NotFoundError('Ticket not found');
+      }
+
+      const ticket = ticketResult.rows[0];
+
+      if (ticket.status !== 'backlog') {
+        throw new ValidationError('Only backlog tickets can be picked up');
+      }
+
+      if (ticket.assigned_agent_id) {
+        throw new ValidationError('Ticket already assigned to another agent');
+      }
+
+      await DependencyService.assertReady(ticketId, {
+        client,
+        lock: true,
+        action: 'pickup',
+      });
+
+      const result = await client.query(
+        `UPDATE tickets
+         SET assigned_agent_id = $1, locked_at = CURRENT_TIMESTAMP, status = 'in_progress'
+         WHERE id = $2 AND status = 'backlog' AND assigned_agent_id IS NULL
+         RETURNING *`,
+        [agentId, ticketId]
+      );
+
+      if (result.rows.length === 0) {
+        throw new ValidationError('Ticket was already picked up by another agent');
+      }
+
+      await client.query('COMMIT');
+      return result.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-
-    if (ticket.assigned_agent_id) {
-      throw new ValidationError('Ticket already assigned to another agent');
-    }
-
-    const result = await pool.query(
-      `UPDATE tickets 
-       SET assigned_agent_id = $1, locked_at = CURRENT_TIMESTAMP, status = 'in_progress'
-       WHERE id = $2 AND status = 'backlog' AND assigned_agent_id IS NULL
-       RETURNING *`,
-      [agentId, ticketId]
-    );
-
-    if (result.rows.length === 0) {
-      throw new ValidationError('Ticket was already picked up by another agent');
-    }
-
-    return result.rows[0];
   }
 
   async releaseTicket(ticketId, { agentId = null, operatorId = null, role = null } = {}) {
@@ -329,24 +422,7 @@ class TicketService {
   }
 
   async validateDependencies(ticketId) {
-    const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new NotFoundError('Ticket not found');
-    if (!ticket.dependsOn || ticket.dependsOn.length === 0) return;
-
-    const placeholders = ticket.dependsOn.map((_, i) => `$${i + 2}`).join(', ');
-    const deps = await pool.query(
-      `SELECT id, title, status, phase FROM tickets WHERE id IN (${placeholders})`,
-      [ticketId, ...ticket.dependsOn]
-    );
-
-    const incomplete = deps.rows.filter(d =>
-      d.status !== 'done' && d.phase !== 'done' && d.phase !== 'deployed'
-    );
-    if (incomplete.length > 0) {
-      throw new ValidationError(
-        `Cannot start: the following dependencies are not done: ${incomplete.map(d => d.title).join(', ')}`
-      );
-    }
+    return DependencyService.assertReady(ticketId, { action: 'validate_dependencies' });
   }
 
   async hasCircularDependency(ticketId, newDepIds, allProjectTickets) {

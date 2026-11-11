@@ -52,6 +52,23 @@ export class TicketsService {
         });
     }
     /**
+     * Get dependency-ready backlog tickets for agent execution
+     * @param projectId
+     * @returns any Backlog tickets whose dependencies are complete
+     * @throws ApiError
+     */
+    public static getTicketsProjectBacklog(
+        projectId: NumericId,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/tickets/project/{projectId}/backlog',
+            path: {
+                'projectId': projectId,
+            },
+        });
+    }
+    /**
      * Get single ticket
      * @param ticketId
      * @returns any Ticket details
@@ -102,6 +119,9 @@ export class TicketsService {
             },
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                409: `Ticket has incomplete dependencies`,
+            },
         });
     }
     /**
@@ -142,6 +162,9 @@ export class TicketsService {
             },
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                409: `Ticket has incomplete dependencies`,
+            },
         });
     }
     /**
@@ -158,6 +181,9 @@ export class TicketsService {
             url: '/tickets/{ticketId}/pickup',
             path: {
                 'ticketId': ticketId,
+            },
+            errors: {
+                409: `Ticket has incomplete dependencies`,
             },
         });
     }
@@ -339,6 +365,9 @@ export class TicketsService {
             },
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                409: `Phase enters execution but dependencies are incomplete`,
+            },
         });
     }
     /**

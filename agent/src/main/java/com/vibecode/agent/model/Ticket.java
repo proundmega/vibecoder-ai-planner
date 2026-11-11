@@ -3,6 +3,9 @@ package com.vibecode.agent.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.List;
+import java.util.Map;
+
 /**
  * Represents a ticket from the backend API.
  */
@@ -21,6 +24,8 @@ public class Ticket {
     private String lockedAt;
     @JsonProperty("pr_url")
     private String prUrl;
+    private Boolean ready;
+    private List<Map<String, Object>> blockedBy;
     private String createdAt;
     private String updatedAt;
 
@@ -54,6 +59,12 @@ public class Ticket {
     public String getPrUrl() { return prUrl; }
     public void setPrUrl(String prUrl) { this.prUrl = prUrl; }
 
+    public Boolean getReady() { return ready; }
+    public void setReady(Boolean ready) { this.ready = ready; }
+
+    public List<Map<String, Object>> getBlockedBy() { return blockedBy; }
+    public void setBlockedBy(List<Map<String, Object>> blockedBy) { this.blockedBy = blockedBy; }
+
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
 
@@ -63,7 +74,8 @@ public class Ticket {
     public boolean isAvailable() {
         return "backlog".equals(status)
             && assignedAgentId == null
-            && (prUrl == null || prUrl.isBlank());
+            && (prUrl == null || prUrl.isBlank())
+            && !Boolean.FALSE.equals(ready);
     }
 
     public boolean isLocked() {

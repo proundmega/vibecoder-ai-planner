@@ -1,10 +1,16 @@
 jest.mock('../db', () => ({
   pool: {
     query: jest.fn(),
+    connect: jest.fn(),
   },
 }));
 
+jest.mock('../services/DependencyService', () => ({
+  assertReady: jest.fn().mockResolvedValue({ ready: true }),
+}));
+
 const HarnessRunService = require('../services/HarnessRunService');
+const DependencyService = require('../services/DependencyService');
 const { pool } = require('../db');
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
@@ -16,9 +22,29 @@ describe('HarnessRunService', () => {
   });
 
   describe('startRun', () => {
+    function clientWith(ownership, insert, extra = []) {
+      const client = {
+        query: jest.fn(),
+        release: jest.fn(),
+      };
+      client.query
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: ownership })
+        .mockResolvedValueOnce(insert);
+      for (const response of extra) {
+        client.query.mockResolvedValueOnce(response);
+      }
+      client.query.mockResolvedValueOnce({}); // COMMIT or ROLLBACK
+      pool.connect.mockResolvedValueOnce(client);
+      return client;
+    }
+
     it('persists a run with normalised ids', async () => {
       const row = { id: RUN_ID, ticket_id: 42, agent_id: 7, status: 'running' };
-      pool.query.mockResolvedValueOnce({ rows: [row] });
+      const client = clientWith(
+        [{ status: 'in_progress', assigned_agent_id: '7' }],
+        { rows: [row] }
+      );
 
       const result = await HarnessRunService.startRun({
         ticketId: '42',
@@ -30,8 +56,13 @@ describe('HarnessRunService', () => {
       });
 
       expect(result).toEqual(row);
-      expect(pool.query.mock.calls[0][0]).toContain('INSERT INTO harness_runs');
-      expect(pool.query.mock.calls[0][1]).toEqual([
+      expect(DependencyService.assertReady).toHaveBeenCalledWith(42, {
+        client,
+        lock: true,
+        action: 'durable_start',
+      });
+      expect(client.query.mock.calls[2][0]).toContain('INSERT INTO harness_runs');
+      expect(client.query.mock.calls[2][1]).toEqual([
         42,
         7,
         'feat/fg-33',
@@ -48,7 +79,7 @@ describe('HarnessRunService', () => {
       await expect(
         HarnessRunService.startRun({ agentId: 7, branch: 'b' })
       ).rejects.toThrow('ticketId must be a positive integer');
-      expect(pool.query).not.toHaveBeenCalled();
+      expect(pool.connect).not.toHaveBeenCalled();
     });
 
     it('rejects a blank branch', async () => {
@@ -64,20 +95,66 @@ describe('HarnessRunService', () => {
     });
 
     it('requires the ticket to be assigned to the agent', async () => {
+      clientWith(
+        [{ status: 'in_progress', assigned_agent_id: '9' }],
+        { rows: [] },
+        [{ rows: [{ status: 'in_progress', assigned_agent_id: '9', agent_id: '7' }] }]
+      );
+
       await expect(
         HarnessRunService.startRun({ ticketId: 42, agentId: 7, branch: 'b' })
       ).rejects.toThrow('Ticket is not assigned to this agent');
-      expect(pool.query.mock.calls[0][0]).toContain('t.assigned_agent_id = a.id');
     });
 
     it('maps the active-run unique index to a conflict', async () => {
       const error = new Error('duplicate key');
       error.code = '23505';
-      pool.query.mockRejectedValueOnce(error);
+      const client = {
+        query: jest.fn(),
+        release: jest.fn(),
+      };
+      client.query
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ rows: [{ status: 'in_progress', assigned_agent_id: '7' }] })
+        .mockRejectedValueOnce(error)
+        .mockResolvedValueOnce({});
+      pool.connect.mockResolvedValueOnce(client);
 
       await expect(
         HarnessRunService.startRun({ ticketId: 42, agentId: 7, branch: 'b' })
       ).rejects.toThrow('Ticket already has an active harness run');
+      expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+    });
+
+    it('refuses a new run when dependencies are not ready', async () => {
+      const client = clientWith(
+        [{ status: 'in_progress', assigned_agent_id: '7' }],
+        { rows: [] }
+      );
+      DependencyService.assertReady.mockRejectedValueOnce(
+        Object.assign(new Error('Cannot start: 2 dependencies are not done'), {
+          code: 'DEPENDENCIES_NOT_DONE',
+        })
+      );
+
+      await expect(
+        HarnessRunService.startRun({ ticketId: 42, agentId: 7, branch: 'b' })
+      ).rejects.toThrow('Cannot start: 2 dependencies are not done');
+      expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(client.query.mock.calls[2][0]).not.toContain('INSERT INTO harness_runs');
+    });
+
+    it('does not probe dependencies for a ticket owned by another agent', async () => {
+      clientWith(
+        [{ status: 'in_progress', assigned_agent_id: '9' }],
+        { rows: [] },
+        [{ rows: [] }]
+      );
+
+      await expect(
+        HarnessRunService.startRun({ ticketId: 42, agentId: 7, branch: 'b' })
+      ).rejects.toThrow('Ticket is not assigned to this agent');
+      expect(DependencyService.assertReady).not.toHaveBeenCalled();
     });
   });
 

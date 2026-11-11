@@ -40,6 +40,14 @@ class ConflictError extends AppError {
   }
 }
 
+class DependencyConflictError extends ConflictError {
+  constructor(message = 'Dependencies are not done', details = null) {
+    super(message);
+    this.code = 'DEPENDENCIES_NOT_DONE';
+    this.details = details;
+  }
+}
+
 class RateLimitError extends AppError {
   constructor(message = 'Too many requests') {
     super(message, 429, 'RATE_LIMITED');
@@ -65,6 +73,7 @@ module.exports = {
   ForbiddenError,
   UnauthorizedError,
   ConflictError,
+  DependencyConflictError,
   RateLimitError,
   ServiceUnavailableError,
   UtilityError,

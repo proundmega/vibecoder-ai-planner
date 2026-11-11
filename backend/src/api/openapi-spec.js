@@ -80,6 +80,31 @@ const options = {
             estimate: { type: 'integer', minimum: 1, nullable: true },
             // tickets.depends_on is BIGINT[]; pg serializes int8 elements as strings.
             dependsOn: { type: 'array', items: { type: 'string', pattern: '^[0-9]+$' } },
+            ready: { type: 'boolean' },
+            blockedBy: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', pattern: '^[0-9]+$', nullable: true },
+                  title: { type: 'string', nullable: true },
+                  status: { type: 'string', nullable: true },
+                  phase: { type: 'string', nullable: true },
+                  reason: {
+                    type: 'string',
+                    enum: [
+                      'not_done',
+                      'dependency_reopened',
+                      'missing',
+                      'deleted',
+                      'self',
+                      'cross_project',
+                      'unreadable',
+                    ],
+                  },
+                },
+              },
+            },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
           },
@@ -96,11 +121,25 @@ const options = {
             updated_at: { type: 'string', format: 'date-time' },
           },
         },
+        ErrorDetailsObject: {
+          type: 'object',
+          additionalProperties: true,
+        },
+        ErrorDetailsArray: {
+          type: 'array',
+          items: {},
+        },
         Error: {
           type: 'object',
           properties: {
             code: { type: 'string' },
             message: { type: 'string' },
+            details: {
+              oneOf: [
+                { $ref: '#/components/schemas/ErrorDetailsObject' },
+                { $ref: '#/components/schemas/ErrorDetailsArray' },
+              ],
+            },
           },
         },
         ApiResponse: {

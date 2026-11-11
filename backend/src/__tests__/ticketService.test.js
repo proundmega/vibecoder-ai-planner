@@ -237,7 +237,7 @@ describe('TicketService', () => {
       await TicketService.update('t1', {
         title: 'Updated',
         description: 'New desc',
-        status: 'in_progress',
+        status: 'review',
         priority: 'high',
       }, 100);
 
@@ -245,7 +245,7 @@ describe('TicketService', () => {
       expect(capturedArgs[1]).toEqual({
         title: 'Updated',
         description: 'New desc',
-        status: 'in_progress',
+        status: 'review',
         priority: 'high',
         assigneeId: undefined,
         prUrl: undefined,

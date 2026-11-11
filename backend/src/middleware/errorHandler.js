@@ -7,7 +7,7 @@ const errorResponseSchema = Joi.object({
   error: Joi.object({
     code: Joi.string().required(),
     message: Joi.string().required(),
-    details: Joi.array().optional(),
+    details: Joi.alternatives().try(Joi.array(), Joi.object()).optional(),
   }).required(),
 });
 

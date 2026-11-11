@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { fetchTicket, updateTicket, addComment, fetchComments, deleteTicket } from '@/api/tickets'
+import { fetchTicket, updateTicket, addComment, fetchComments, deleteTicket, dependencyBlockedMessage } from '@/api/tickets'
 import { getTicketApprovals, createApproval } from '@/api/approvals'
 import { fetchAttachments, uploadAttachment, deleteAttachment } from '@/api/ticketAttachments'
 import { listPlanningFiles, getPlanningFile, upsertPlanningFile, applyTemplate, updatePlanningStatus } from '@/api/ticketPlanning'
@@ -115,9 +115,21 @@ async function changeStatus(newStatus) {
     await updateTicket(ticket.value.id, { status: newStatus })
     ticket.value.status = newStatus
     error.value = null
+
+    // Dependencies may have completed since the page loaded, so refresh the
+    // readiness fields after a successful start/transition.
+    const fresh = await fetchTicket(ticket.value.id)
+    if (fresh) {
+      ticket.value.status = fresh.status
+      ticket.value.ready = fresh.ready
+      ticket.value.blockedBy = fresh.blockedBy
+    }
   } catch (err) {
     console.error('Failed to update status:', err)
-    error.value = 'Failed to update status: ' + err.message
+    const blocked = dependencyBlockedMessage(err?.details)
+    error.value = blocked
+      ? `Cannot start: blocked by ${blocked}`
+      : 'Failed to update status: ' + err.message
   }
 }
 
@@ -402,6 +414,25 @@ async function handleShowTemplateSelect() {
       <div v-if="ticket?.description" class="description">
         <h3>Description</h3>
         <p>{{ ticket.description }}</p>
+      </div>
+
+      <div v-if="ticket?.ready === false && ticket.blockedBy?.length" class="dependency-block">
+        <h3>Blocked by dependencies</h3>
+        <ul>
+          <li v-for="(blocker, index) in ticket.blockedBy" :key="blocker.id || blocker.reason + index">
+            <router-link
+              v-if="blocker.id"
+              :to="`/projects/${route.params.id}/tickets/${blocker.id}`"
+            >
+              {{ blocker.title || `#${blocker.id}` }}
+            </router-link>
+            <span v-else>Unreadable dependency field</span>
+            <span class="dependency-reason">
+              {{ blocker.reason }}<template v-if="blocker.status"> · {{ blocker.status }}</template>
+            </span>
+          </li>
+        </ul>
+        <p>This ticket cannot start until these dependencies are done.</p>
       </div>
 
       <div class="actions">
@@ -750,6 +781,39 @@ h1 {
 .description p {
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.dependency-block {
+  margin: 20px 0;
+  padding: 14px 16px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+}
+
+.dependency-block h3 {
+  margin: 0 0 8px;
+  color: #991b1b;
+}
+
+.dependency-block ul {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.dependency-block li {
+  margin: 4px 0;
+}
+
+.dependency-block p {
+  margin: 0;
+  color: #7f1d1d;
+}
+
+.dependency-reason {
+  margin-left: 8px;
+  color: #6b7280;
+  font-size: 12px;
 }
 
 .actions {

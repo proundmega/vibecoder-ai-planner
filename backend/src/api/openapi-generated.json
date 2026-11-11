@@ -170,6 +170,46 @@
               "pattern": "^[0-9]+$"
             }
           },
+          "ready": {
+            "type": "boolean"
+          },
+          "blockedBy": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$",
+                  "nullable": true
+                },
+                "title": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "status": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "phase": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "not_done",
+                    "dependency_reopened",
+                    "missing",
+                    "deleted",
+                    "self",
+                    "cross_project",
+                    "unreadable"
+                  ]
+                }
+              }
+            }
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -208,6 +248,14 @@
           }
         }
       },
+      "ErrorDetailsObject": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "ErrorDetailsArray": {
+        "type": "array",
+        "items": {}
+      },
       "Error": {
         "type": "object",
         "properties": {
@@ -216,6 +264,16 @@
           },
           "message": {
             "type": "string"
+          },
+          "details": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetailsObject"
+              },
+              {
+                "$ref": "#/components/schemas/ErrorDetailsArray"
+              }
+            ]
           }
         }
       },
@@ -777,6 +835,29 @@
         }
       }
     },
+    "/tickets/project/{projectId}/backlog": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Get dependency-ready backlog tickets for agent execution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Backlog tickets whose dependencies are complete"
+          }
+        }
+      }
+    },
     "/tickets/{ticketId}": {
       "get": {
         "tags": [
@@ -887,6 +968,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Ticket has incomplete dependencies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
@@ -951,6 +1042,16 @@
         "responses": {
           "200": {
             "description": "Status updated"
+          },
+          "409": {
+            "description": "Ticket has incomplete dependencies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -974,6 +1075,16 @@
         "responses": {
           "200": {
             "description": "Ticket picked up"
+          },
+          "409": {
+            "description": "Ticket has incomplete dependencies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -1246,6 +1357,16 @@
         "responses": {
           "200": {
             "description": "Phase transitioned"
+          },
+          "409": {
+            "description": "Phase enters execution but dependencies are incomplete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -2780,6 +2901,83 @@
           },
           "404": {
             "description": "Memory not found"
+          }
+        }
+      }
+    },
+    "/harness/runs": {
+      "post": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Start a durable harness run for an assigned agent ticket",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ticketId",
+                  "branch"
+                ],
+                "properties": {
+                  "ticketId": {
+                    "$ref": "#/components/schemas/NumericId"
+                  },
+                  "branch": {
+                    "type": "string"
+                  },
+                  "baseSha": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "workspacePath": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "provider": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "model": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "attempt": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Harness run created"
+          },
+          "409": {
+            "description": "Incomplete dependencies, an active run, or published work already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }

@@ -3,7 +3,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { fetchProjects } from '@/api/projects'
-import { fetchTickets, updateTicket, createTicket } from '@/api/tickets'
+import { fetchTickets, fetchTicket, updateTicket, createTicket, blockerSummary, dependencyBlockedMessage } from '@/api/tickets'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,6 +19,7 @@ const newTicketTitle = ref('')
 const newTicketDesc = ref('')
 const creating = ref(false)
 const creationError = ref(null)
+const statusError = ref(null)
 
 watch(showCreateTicket, (value) => {
   if (!value) {
@@ -61,6 +62,7 @@ onMounted(async () => {
 })
 
 async function loadTickets(projectId) {
+  statusError.value = null
   try {
     tickets.value = await fetchTickets(projectId)
   } catch (err) {
@@ -79,8 +81,22 @@ async function handleDrop(ticketId, newStatus) {
   try {
     await updateTicket(ticket.id, { status: newStatus })
     ticket.status = newStatus
+    statusError.value = null
+
+    // Readiness depends on dependencies, not on the new status column.
+    // Re-read it so a blocked ticket moved back to backlog keeps its badge.
+    const fresh = await fetchTicket(ticket.id)
+    if (fresh) {
+      ticket.status = fresh.status
+      ticket.ready = fresh.ready
+      ticket.blockedBy = fresh.blockedBy
+    }
   } catch (err) {
     console.error('Failed to update ticket status:', err)
+    const blocked = dependencyBlockedMessage(err?.details)
+    statusError.value = blocked
+      ? `Cannot move ticket: blocked by ${blocked}`
+      : (err.message || 'Failed to update ticket status')
   }
 }
 
@@ -160,6 +176,10 @@ async function handleCreateTicket() {
     </div>
 
     <div v-else class="board-container">
+      <div v-if="statusError" class="status-error">
+        <span>{{ statusError }}</span>
+        <button @click="statusError = null">Dismiss</button>
+      </div>
       <div v-for="columnDef in statusColumns" :key="columnDef.id"
            class="status-column"
            :class="columnDef.class"
@@ -186,6 +206,11 @@ async function handleCreateTicket() {
               <div v-if="ticket.description" class="ticket-description">{{ ticket.description }}</div>
               <div class="ticket-meta">
                 <span v-if="ticket.priority" class="priority-badge" :class="ticket.priority">{{ ticket.priority }}</span>
+                <span
+                  v-if="ticket.ready === false"
+                  class="blocked-badge"
+                  :title="blockerSummary(ticket) || 'Blocked by dependencies'"
+                >Blocked</span>
               </div>
             </div>
           </div>
@@ -350,6 +375,37 @@ async function handleCreateTicket() {
 .priority-badge.medium { background: #fef3c7; color: #92400e; }
 .priority-badge.high { background: #fee2e2; color: #dc2626; }
 .priority-badge.critical { background: #fca5a5; color: #991b1b; }
+
+.blocked-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.status-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.status-error button {
+  border: none;
+  background: transparent;
+  color: #991b1b;
+  cursor: pointer;
+  font-weight: 600;
+}
 
 .modal-overlay {
   position: fixed;

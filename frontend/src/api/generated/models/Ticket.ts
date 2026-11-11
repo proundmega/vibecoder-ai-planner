@@ -16,6 +16,14 @@ export type Ticket = {
     milestoneId?: string | null;
     estimate?: number | null;
     dependsOn?: Array<string>;
+    ready?: boolean;
+    blockedBy?: Array<{
+        id?: string | null;
+        title?: string | null;
+        status?: string | null;
+        phase?: string | null;
+        reason?: 'not_done' | 'dependency_reopened' | 'missing' | 'deleted' | 'self' | 'cross_project' | 'unreadable';
+    }>;
     createdAt?: string;
     updatedAt?: string;
 };

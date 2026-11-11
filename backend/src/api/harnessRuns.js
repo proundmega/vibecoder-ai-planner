@@ -72,6 +72,41 @@ async function assertCanReadRun(req, run) {
   await assertProjectAccess(run, userId);
 }
 
+/**
+ * @openapi
+ * /harness/runs:
+ *   post:
+ *     tags: [Harness]
+ *     summary: Start a durable harness run for an assigned agent ticket
+ *     security:
+ *       - ApiKeyAuth: []
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [ticketId, branch]
+ *             properties:
+ *               ticketId: { $ref: '#/components/schemas/NumericId' }
+ *               branch: { type: string }
+ *               baseSha: { type: string, nullable: true }
+ *               workspacePath: { type: string, nullable: true }
+ *               sessionId: { type: string, nullable: true }
+ *               provider: { type: string, nullable: true }
+ *               model: { type: string, nullable: true }
+ *               attempt: { type: integer, minimum: 1 }
+ *     responses:
+ *       201:
+ *         description: Harness run created
+ *       409:
+ *         description: Incomplete dependencies, an active run, or published work already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/runs', verifyTokenOrAgent, async (req, res, next) => {
   try {
     const agentId = requireAgent(req);
