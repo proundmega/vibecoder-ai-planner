@@ -1,14 +1,14 @@
 ---
 id: "bp-134"
 title: "Ticket Dependency Gates and Readiness Enforcement"
-status: planned
+status: in_review
 priority: "P1"
 effort: "Medium"
 scope: "Both"
 created: "2026-11-10"
 updated: "2026-11-11"
-pr: null
-branch: null
+pr: 137
+branch: "feat/bp-134-ticket-dependency-gates"
 depends_on: []
 ---
 

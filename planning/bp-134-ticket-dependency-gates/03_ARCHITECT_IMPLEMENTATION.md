@@ -68,4 +68,16 @@
 
 ## Results
 
-No implementation results yet. This suite is planned.
+### 2026-11-11 — implementation in review (#137)
+
+- Added `DependencyService` with fail-closed readiness, batch enrichment, dependency-row locking and `DEPENDENCIES_NOT_DONE` details.
+- Gated pickup, status/update transitions, execution phase entry and new durable starts; `in_progress → blocked` and recovery remain exempt.
+- Added `ready`/`blockedBy[]` to reads, the agent backlog endpoint, the Java model/client and the board/detail UI.
+- Verification:
+  - backend Jest: 128 suites / 1578 tests pass;
+  - backend integration (real Postgres): 8 suites / 143 tests pass;
+  - agent `mvn test`: pass;
+  - frontend Vitest: 562 tests pass; `npm run typecheck` pass;
+  - backend/frontend lint: 0 errors;
+  - `node planning/check-planning.js`: pass;
+  - `git diff --check`: pass.
