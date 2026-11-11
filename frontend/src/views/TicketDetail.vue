@@ -404,6 +404,19 @@ async function handleShowTemplateSelect() {
         <p>{{ ticket.description }}</p>
       </div>
 
+      <div v-if="ticket?.ready === false && ticket.blockedBy?.length" class="dependency-block">
+        <h3>Blocked by dependencies</h3>
+        <ul>
+          <li v-for="blocker in ticket.blockedBy" :key="blocker.id">
+            <router-link :to="`/projects/${route.params.id}/tickets/${blocker.id}`">
+              {{ blocker.title || `#${blocker.id}` }}
+            </router-link>
+            <span class="dependency-reason">{{ blocker.status || blocker.phase || blocker.reason }}</span>
+          </li>
+        </ul>
+        <p>This ticket cannot start until these dependencies are done.</p>
+      </div>
+
       <div class="actions">
         <h3>Status Transitions</h3>
         <button v-if="canUpdate()" @click="changeStatus('backlog')" :disabled="ticket?.status === 'backlog'">Move to Backlog</button>
@@ -750,6 +763,39 @@ h1 {
 .description p {
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.dependency-block {
+  margin: 20px 0;
+  padding: 14px 16px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+}
+
+.dependency-block h3 {
+  margin: 0 0 8px;
+  color: #991b1b;
+}
+
+.dependency-block ul {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.dependency-block li {
+  margin: 4px 0;
+}
+
+.dependency-block p {
+  margin: 0;
+  color: #7f1d1d;
+}
+
+.dependency-reason {
+  margin-left: 8px;
+  color: #6b7280;
+  font-size: 12px;
 }
 
 .actions {

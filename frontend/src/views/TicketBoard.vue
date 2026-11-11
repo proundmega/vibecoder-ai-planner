@@ -3,7 +3,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { fetchProjects } from '@/api/projects'
-import { fetchTickets, updateTicket, createTicket } from '@/api/tickets'
+import { fetchTickets, updateTicket, createTicket, blockerSummary } from '@/api/tickets'
 
 const route = useRoute()
 const router = useRouter()
@@ -186,6 +186,11 @@ async function handleCreateTicket() {
               <div v-if="ticket.description" class="ticket-description">{{ ticket.description }}</div>
               <div class="ticket-meta">
                 <span v-if="ticket.priority" class="priority-badge" :class="ticket.priority">{{ ticket.priority }}</span>
+                <span
+                  v-if="ticket.ready === false"
+                  class="blocked-badge"
+                  :title="blockerSummary(ticket) || 'Blocked by dependencies'"
+                >Blocked</span>
               </div>
             </div>
           </div>
@@ -350,6 +355,16 @@ async function handleCreateTicket() {
 .priority-badge.medium { background: #fef3c7; color: #92400e; }
 .priority-badge.high { background: #fee2e2; color: #dc2626; }
 .priority-badge.critical { background: #fca5a5; color: #991b1b; }
+
+.blocked-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: #fee2e2;
+  color: #b91c1c;
+}
 
 .modal-overlay {
   position: fixed;

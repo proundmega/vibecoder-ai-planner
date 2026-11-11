@@ -44,6 +44,16 @@ class TicketTest {
     }
 
     @Test
+    void testIsNotAvailableWhenDependenciesBlockIt() {
+        Ticket ticket = new Ticket();
+        ticket.setStatus("backlog");
+        ticket.setAssignedAgentId(null);
+        ticket.setReady(false);
+
+        assertFalse(ticket.isAvailable());
+    }
+
+    @Test
     void testIsLocked() {
         Ticket ticket = new Ticket();
         ticket.setAssignedAgentId(123L);

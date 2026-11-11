@@ -59,6 +59,23 @@ router.get('/project/:projectId', verifyTokenOrAgent, validatePathParams({ proje
 
 /**
  * @openapi
+ * /tickets/project/{projectId}/backlog:
+ *   get:
+ *     tags: [Tickets]
+ *     summary: Get dependency-ready backlog tickets for agent execution
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Backlog tickets whose dependencies are complete
+ */
+router.get('/project/:projectId/backlog', verifyTokenOrAgent, validatePathParams({ projectId: pathParams.projectId }), ticketController.getBacklogTickets);
+
+/**
+ * @openapi
  * /tickets/{ticketId}:
  *   get:
  *     tags: [Tickets]

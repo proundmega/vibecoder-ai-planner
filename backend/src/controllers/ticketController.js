@@ -83,6 +83,15 @@ async function getProjectTickets(req, res, next) {
   }
 }
 
+async function getBacklogTickets(req, res, next) {
+  try {
+    const tickets = await TicketService.findBacklog(req.params.projectId);
+    res.json({ success: true, data: tickets });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function getTicketComments(req, res, next) {
   try {
     const comments = await TicketService.getComments(req.params.ticketId, req.user.userId);
@@ -267,6 +276,7 @@ module.exports = {
   updateTicket,
   deleteTicket,
   getProjectTickets,
+  getBacklogTickets,
   getTicketComments,
   addComment,
   changeStatus,

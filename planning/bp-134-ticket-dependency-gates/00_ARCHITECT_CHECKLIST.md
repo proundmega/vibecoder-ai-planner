@@ -6,7 +6,7 @@ priority: "P1"
 effort: "Medium"
 scope: "Both"
 created: "2026-11-10"
-updated: "2026-11-10"
+updated: "2026-11-11"
 pr: null
 branch: null
 depends_on: []

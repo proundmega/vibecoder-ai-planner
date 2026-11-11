@@ -170,6 +170,44 @@
               "pattern": "^[0-9]+$"
             }
           },
+          "ready": {
+            "type": "boolean"
+          },
+          "blockedBy": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "$ref": "#/components/schemas/NumericId"
+                },
+                "title": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "status": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "phase": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "not_done",
+                    "dependency_reopened",
+                    "missing",
+                    "deleted",
+                    "self",
+                    "cross_project",
+                    "unreadable"
+                  ]
+                }
+              }
+            }
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -773,6 +811,29 @@
         "responses": {
           "200": {
             "description": "List of tickets"
+          }
+        }
+      }
+    },
+    "/tickets/project/{projectId}/backlog": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Get dependency-ready backlog tickets for agent execution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Backlog tickets whose dependencies are complete"
           }
         }
       }

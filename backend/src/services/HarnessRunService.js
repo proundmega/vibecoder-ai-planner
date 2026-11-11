@@ -1,4 +1,5 @@
 const { pool } = require('../db');
+const DependencyService = require('./DependencyService');
 const {
   NotFoundError,
   ValidationError,
@@ -109,6 +110,25 @@ class HarnessRunService {
     const normalisedAgentId = positiveInteger(agentId, 'agentId');
     const normalisedBranch = requiredString(branch, 'branch');
     const normalisedAttempt = positiveInteger(attempt, 'attempt');
+
+    // bp-134: a new durable start must not bypass dependency readiness. Check
+    // only after confirming the calling agent owns the in-progress ticket, so
+    // an unassigned agent cannot probe dependency titles. Recovery of an
+    // already-started run remains exempt.
+    const ownership = await pool.query(
+      `SELECT status, assigned_agent_id
+       FROM tickets
+       WHERE id = $1 AND deleted_at IS NULL`,
+      [normalisedTicketId]
+    );
+    const ownedTicket = ownership.rows[0];
+    if (
+      ownedTicket
+      && ownedTicket.status === 'in_progress'
+      && String(ownedTicket.assigned_agent_id) === String(normalisedAgentId)
+    ) {
+      await DependencyService.assertReady(normalisedTicketId);
+    }
 
     let result;
     try {

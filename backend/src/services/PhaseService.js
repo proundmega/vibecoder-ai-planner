@@ -1,4 +1,5 @@
 const { pool } = require('../db');
+const DependencyService = require('./DependencyService');
 const { NotFoundError, ValidationError } = require('../errors/HttpError');
 
 class PhaseService {
@@ -38,7 +39,7 @@ class PhaseService {
       await client.query('BEGIN');
 
       const ticketResult = await client.query(
-        'SELECT * FROM tickets WHERE id = $1 AND deleted_at IS NULL',
+        'SELECT * FROM tickets WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
         [ticketId]
       );
 
@@ -57,6 +58,13 @@ class PhaseService {
       }
 
       const newStatus = this.PHASE_TO_STATUS[toPhase] || ticket.status;
+
+      // bp-134: gate entering execution. `blocked` also maps to status
+      // in_progress but is the safe action for an already-started ticket, so
+      // it is deliberately excluded.
+      if (newStatus === 'in_progress' && toPhase !== 'blocked') {
+        await DependencyService.assertReady(ticketId, { client, lock: true });
+      }
 
       await client.query(
         'UPDATE tickets SET phase = $1, status = $2, updated_at = NOW() WHERE id = $3',

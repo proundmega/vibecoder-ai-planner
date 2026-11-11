@@ -1,5 +1,13 @@
 import { get, post, put, del } from './client'
 
+export interface TicketBlocker {
+  id: string
+  title?: string | null
+  status?: string | null
+  phase?: string | null
+  reason: string
+}
+
 export interface Ticket {
   id: string
   title: string
@@ -13,11 +21,19 @@ export interface Ticket {
   milestoneId?: string | null
   estimate?: number | null
   dependsOn?: string[]
+  ready?: boolean
+  blockedBy?: TicketBlocker[]
   planningStatus?: string
   templateSchema?: string | null
   phase?: string
   createdAt?: string
   updatedAt?: string
+}
+
+export function blockerSummary(ticket: Ticket): string | null {
+  if (ticket.ready !== false) return null
+  const first = ticket.blockedBy?.[0]
+  return first?.title || first?.reason || 'Blocked by dependencies'
 }
 
 export interface Comment {

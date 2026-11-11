@@ -22,6 +22,43 @@ describe('TicketBoard', () => {
     vi.clearAllMocks()
   })
 
+  it('summarizes the first dependency blocker for the card badge', () => {
+    expect(
+      ticketsApi.blockerSummary({
+        id: '10',
+        title: 'Dependent',
+        status: 'backlog',
+        priority: 'medium',
+        projectId: '1',
+        ready: false,
+        blockedBy: [{ id: '5', title: 'Create the schema', reason: 'not_done' }],
+      })
+    ).toBe('Create the schema')
+
+    expect(
+      ticketsApi.blockerSummary({
+        id: '10',
+        title: 'Dependent',
+        status: 'backlog',
+        priority: 'medium',
+        projectId: '1',
+        ready: false,
+        blockedBy: [{ id: '9', title: null, reason: 'missing' }],
+      })
+    ).toBe('missing')
+
+    expect(
+      ticketsApi.blockerSummary({
+        id: '10',
+        title: 'Ready',
+        status: 'backlog',
+        priority: 'medium',
+        projectId: '1',
+        ready: true,
+      })
+    ).toBeNull()
+  })
+
   describe('createTicket optimistic update', () => {
     it('should call createTicket API and then reload tickets on success', async () => {
       const { post } = await import('../api/client')

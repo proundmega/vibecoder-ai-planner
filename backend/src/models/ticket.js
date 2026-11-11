@@ -62,8 +62,8 @@ class Ticket {
     return result.rows.map(r => this.fromRow(r));
   }
 
-  static async findById(id) {
-    const result = await pool.query(
+  static async findById(id, db = pool) {
+    const result = await db.query(
       'SELECT * FROM tickets WHERE id = $1 AND deleted_at IS NULL', [id]);
     return result.rows.length > 0 ? this.fromRow(result.rows[0]) : null;
   }
@@ -92,9 +92,9 @@ class Ticket {
     });
   }
 
-  static async update(id, { title, description, status, priority, assigneeId, prUrl, milestoneId, estimate, dependsOn }) {
+  static async update(id, { title, description, status, priority, assigneeId, prUrl, milestoneId, estimate, dependsOn }, db = pool) {
     // Fetch current ticket to validate transitions
-    const current = await Ticket.findById(id);
+    const current = await Ticket.findById(id, db);
     if (current && status && status !== current.status) {
       const allowed = VALID_TRANSITIONS[current.status] || [];
       if (!allowed.includes(status)) {
@@ -158,7 +158,7 @@ class Ticket {
     vals.push(id);
 
     const query = `UPDATE tickets SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`;
-    const result = await pool.query(query, vals);
+    const result = await db.query(query, vals);
     return result.rows.length > 0 ? this.fromRow(result.rows[0]) : null;
   }
 
@@ -169,8 +169,8 @@ class Ticket {
     );
   }
 
-  static async updateStatus(id, status, _userId) {
-    const current = await Ticket.findById(id);
+  static async updateStatus(id, status, _userId, db = pool) {
+    const current = await Ticket.findById(id, db);
     if (!current) throw new Error('Ticket not found');
 
     const allowed = VALID_TRANSITIONS[current.status] || [];
@@ -178,7 +178,7 @@ class Ticket {
       throw new ValidationError(`Invalid status transition from ${current.status} to ${status}`);
     }
 
-    await pool.query(
+    await db.query(
       'UPDATE tickets SET status = $1, updated_at = NOW() WHERE id = $2',
       [status, id]
     );
