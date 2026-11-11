@@ -415,6 +415,12 @@ router.get('/:ticketId/phases/allowed', verifyTokenOrAgent, validatePathParams({
  *     responses:
  *       200:
  *         description: Phase transitioned
+ *       409:
+ *         description: Phase enters execution but dependencies are incomplete
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/:ticketId/phases/transition', verifyTokenOrAgent, validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: phaseTransitionSchema }), async (req, res, next) => {
   try {

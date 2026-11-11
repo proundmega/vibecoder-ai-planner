@@ -410,10 +410,14 @@ async function handleShowTemplateSelect() {
       <div v-if="ticket?.ready === false && ticket.blockedBy?.length" class="dependency-block">
         <h3>Blocked by dependencies</h3>
         <ul>
-          <li v-for="blocker in ticket.blockedBy" :key="blocker.id">
-            <router-link :to="`/projects/${route.params.id}/tickets/${blocker.id}`">
+          <li v-for="(blocker, index) in ticket.blockedBy" :key="blocker.id || blocker.reason + index">
+            <router-link
+              v-if="blocker.id"
+              :to="`/projects/${route.params.id}/tickets/${blocker.id}`"
+            >
               {{ blocker.title || `#${blocker.id}` }}
             </router-link>
+            <span v-else>Unreadable dependency field</span>
             <span class="dependency-reason">
               {{ blocker.reason }}<template v-if="blocker.status"> · {{ blocker.status }}</template>
             </span>

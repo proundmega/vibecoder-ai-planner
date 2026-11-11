@@ -68,6 +68,7 @@
 | 3 | Recovery still claimed a readiness log with no read method; OpenAPI/generated types were missing; the `dependency_reopened` timestamp source was ambiguous | Dropped run-level recovery reporting, added OpenAPI/generated-type updates, and defined the start timestamp as the dependent's latest `ticket_phases` `to_phase='in_progress'` row | resolved |
 | 4 | The `ticketController` row was a probable no-op and the generated-spec source was unclear | Removed the controller row and noted that `npm run generate:spec` writes `openapi-generated.json` from `openapi-spec.js` | resolved |
 | 5 | PUT could start with new unmet dependencies; FR8 telemetry was missing; durable start check/insert was racy; pickup held a transaction during permission queries; unreadable/frontend-details/OpenAPI claims were incomplete | Added effective-`dependsOn` readiness, structured log/counter, transactional durable start, pre-transaction permission checks, fail-closed parsing, frontend 409 details, 409 OpenAPI docs and an honest verification matrix | resolved |
+| 6 | Board cleared readiness after any move; unreadable blockers self-linked; phase/harness 409s and array error details were undocumented; project switches kept stale status errors | Re-fetch readiness after a move, use a null unreadable id, document phase/harness 409s, split object/array error-detail schemas, and clear the status error on project load | resolved |
 
 ## Results
 

@@ -18,7 +18,7 @@ export type Ticket = {
     dependsOn?: Array<string>;
     ready?: boolean;
     blockedBy?: Array<{
-        id?: NumericId;
+        id?: string | null;
         title?: string | null;
         status?: string | null;
         phase?: string | null;

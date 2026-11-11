@@ -365,6 +365,9 @@ export class TicketsService {
             },
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                409: `Phase enters execution but dependencies are incomplete`,
+            },
         });
     }
     /**

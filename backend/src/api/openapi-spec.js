@@ -86,7 +86,7 @@ const options = {
               items: {
                 type: 'object',
                 properties: {
-                  id: { $ref: '#/components/schemas/NumericId' },
+                  id: { type: 'string', pattern: '^[0-9]+$', nullable: true },
                   title: { type: 'string', nullable: true },
                   status: { type: 'string', nullable: true },
                   phase: { type: 'string', nullable: true },
@@ -121,12 +121,25 @@ const options = {
             updated_at: { type: 'string', format: 'date-time' },
           },
         },
+        ErrorDetailsObject: {
+          type: 'object',
+          additionalProperties: true,
+        },
+        ErrorDetailsArray: {
+          type: 'array',
+          items: {},
+        },
         Error: {
           type: 'object',
           properties: {
             code: { type: 'string' },
             message: { type: 'string' },
-            details: { type: 'object', nullable: true },
+            details: {
+              oneOf: [
+                { $ref: '#/components/schemas/ErrorDetailsObject' },
+                { $ref: '#/components/schemas/ErrorDetailsArray' },
+              ],
+            },
           },
         },
         ApiResponse: {

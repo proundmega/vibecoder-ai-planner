@@ -180,6 +180,7 @@ describe('DependencyService', () => {
 
     expect(result.ready).toBe(false);
     expect(result.blockedBy[0].reason).toBe('unreadable');
+    expect(result.blockedBy[0].id).toBeNull();
   });
 
   it('throws DEPENDENCIES_NOT_DONE with blockedBy details', async () => {

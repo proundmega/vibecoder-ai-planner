@@ -179,7 +179,9 @@
               "type": "object",
               "properties": {
                 "id": {
-                  "$ref": "#/components/schemas/NumericId"
+                  "type": "string",
+                  "pattern": "^[0-9]+$",
+                  "nullable": true
                 },
                 "title": {
                   "type": "string",
@@ -246,6 +248,14 @@
           }
         }
       },
+      "ErrorDetailsObject": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "ErrorDetailsArray": {
+        "type": "array",
+        "items": {}
+      },
       "Error": {
         "type": "object",
         "properties": {
@@ -256,8 +266,14 @@
             "type": "string"
           },
           "details": {
-            "type": "object",
-            "nullable": true
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetailsObject"
+              },
+              {
+                "$ref": "#/components/schemas/ErrorDetailsArray"
+              }
+            ]
           }
         }
       },
@@ -1341,6 +1357,16 @@
         "responses": {
           "200": {
             "description": "Phase transitioned"
+          },
+          "409": {
+            "description": "Phase enters execution but dependencies are incomplete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -2875,6 +2901,80 @@
           },
           "404": {
             "description": "Memory not found"
+          }
+        }
+      }
+    },
+    "/harness/runs": {
+      "post": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Start a durable harness run for an assigned agent ticket",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ticketId",
+                  "branch"
+                ],
+                "properties": {
+                  "ticketId": {
+                    "$ref": "#/components/schemas/NumericId"
+                  },
+                  "branch": {
+                    "type": "string"
+                  },
+                  "baseSha": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "workspacePath": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "provider": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "model": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "attempt": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Harness run created"
+          },
+          "409": {
+            "description": "Ticket dependencies are incomplete or an active run already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }

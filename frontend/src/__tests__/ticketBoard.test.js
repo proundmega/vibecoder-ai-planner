@@ -72,6 +72,12 @@ describe('TicketBoard', () => {
       })
     ).toBe('#9')
 
+    expect(
+      ticketsApi.dependencyBlockedMessage({
+        blockedBy: [{ id: null, title: null, reason: 'unreadable' }],
+      })
+    ).toBe('unreadable')
+
     expect(ticketsApi.dependencyBlockedMessage(undefined)).toBeNull()
   })
 

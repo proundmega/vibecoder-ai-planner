@@ -1,7 +1,7 @@
 import { get, post, put, del } from './client'
 
 export interface TicketBlocker {
-  id: string
+  id: string | null
   title?: string | null
   status?: string | null
   phase?: string | null
@@ -40,7 +40,7 @@ export function dependencyBlockedMessage(details: unknown): string | null {
   const blockedBy = (details as { blockedBy?: TicketBlocker[] } | null)?.blockedBy
   if (!Array.isArray(blockedBy) || blockedBy.length === 0) return null
   return blockedBy
-    .map(blocker => blocker.title || `#${blocker.id}`)
+    .map(blocker => blocker.title || (blocker.id ? `#${blocker.id}` : blocker.reason))
     .join(', ')
 }
 

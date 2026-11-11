@@ -191,7 +191,7 @@ class DependencyService {
         ready: false,
         blockedBy: [
           {
-            id: String(ticketId),
+            id: null,
             title: null,
             status: null,
             phase: null,
@@ -275,7 +275,7 @@ class DependencyService {
               ready: false,
               blockedBy: [
                 {
-                  id: String(tickets[index].id),
+                  id: null,
                   title: null,
                   status: null,
                   phase: null,
@@ -301,7 +301,7 @@ class DependencyService {
           ready: false,
           blockedBy: [
             {
-              id: String(ticket.id),
+              id: null,
               title: null,
               status: null,
               phase: null,

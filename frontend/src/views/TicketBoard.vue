@@ -3,7 +3,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { fetchProjects } from '@/api/projects'
-import { fetchTickets, updateTicket, createTicket, blockerSummary, dependencyBlockedMessage } from '@/api/tickets'
+import { fetchTickets, fetchTicket, updateTicket, createTicket, blockerSummary, dependencyBlockedMessage } from '@/api/tickets'
 
 const route = useRoute()
 const router = useRouter()
@@ -62,6 +62,7 @@ onMounted(async () => {
 })
 
 async function loadTickets(projectId) {
+  statusError.value = null
   try {
     tickets.value = await fetchTickets(projectId)
   } catch (err) {
@@ -80,9 +81,16 @@ async function handleDrop(ticketId, newStatus) {
   try {
     await updateTicket(ticket.id, { status: newStatus })
     ticket.status = newStatus
-    ticket.ready = true
-    ticket.blockedBy = []
     statusError.value = null
+
+    // Readiness depends on dependencies, not on the new status column.
+    // Re-read it so a blocked ticket moved back to backlog keeps its badge.
+    const fresh = await fetchTicket(ticket.id)
+    if (fresh) {
+      ticket.status = fresh.status
+      ticket.ready = fresh.ready
+      ticket.blockedBy = fresh.blockedBy
+    }
   } catch (err) {
     console.error('Failed to update ticket status:', err)
     const blocked = dependencyBlockedMessage(err?.details)
