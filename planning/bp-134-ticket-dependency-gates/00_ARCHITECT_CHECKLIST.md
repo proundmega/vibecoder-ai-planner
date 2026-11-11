@@ -1,7 +1,7 @@
 ---
 id: "bp-134"
 title: "Ticket Dependency Gates and Readiness Enforcement"
-status: in_review
+status: done
 priority: "P1"
 effort: "Medium"
 scope: "Both"
@@ -18,6 +18,14 @@ depends_on: []
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`), file operations (`04`).
 
 **Related code:** `backend/src/migrations/026_ticket_milestone_fields.sql`, `backend/src/models/ticket.js`, `backend/src/services/TicketService.js`, `backend/src/services/HarnessRunService.js`, `backend/src/services/PhaseService.js`, `backend/src/api/tickets.js`, `backend/src/controllers/ticketController.js`, `backend/src/errors/HttpError.js`, `agent/src/main/java/com/vibecode/agent/AgentApp.java`, `agent/src/main/java/com/vibecode/agent/service/ApiService.java`, `agent/src/main/java/com/vibecode/agent/model/Ticket.java`, `frontend/src/api/tickets.ts`, `frontend/src/views/TicketDetail.vue`, `frontend/src/views/TicketBoard.vue`
+
+## Status evidence
+
+| Claim | Evidence | Checked |
+|---|---|---|
+| Plan merged | PR #136 | ☑ |
+| Implementation merged | PR #137, merge commit `7fb41fb` | ☑ |
+| Verification results | `03` → Results | ☑ |
 
 ## Why this ticket exists
 

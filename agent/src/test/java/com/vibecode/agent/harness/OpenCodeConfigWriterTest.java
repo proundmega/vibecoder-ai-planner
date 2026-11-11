@@ -50,7 +50,9 @@ class OpenCodeConfigWriterTest {
         assertEquals("deny", root.path("permission").path("question").asText());
         assertEquals("deny", root.path("permission").path("doom_loop").asText());
         assertEquals("deny", root.path("permission").path("bash").path("git push*").asText());
-        assertEquals("deny", root.path("permission").path("edit").path(".git/**").asText());
+        assertEquals("deny", root.path("permission").path("edit").asText());
+        assertEquals("deny", root.path("permission").path("write").asText());
+        assertEquals("allow", root.path("permission").path("sandbox_write").asText());
         assertTrue(root.path("provider").has("opencode-go"));
 
         String configText = Files.readString(configFile);
@@ -69,8 +71,14 @@ class OpenCodeConfigWriterTest {
         assertEquals("deny", permission.path("read").asText());
         assertEquals("deny", permission.path("grep").asText());
         assertEquals("deny", permission.path("lsp").asText());
+        assertEquals("deny", permission.path("edit").asText());
+        assertEquals("deny", permission.path("write").asText());
+        assertEquals("deny", permission.path("multiedit").asText());
+        assertEquals("deny", permission.path("patch").asText());
         assertEquals("allow", permission.path("sandbox_read").asText());
         assertEquals("allow", permission.path("sandbox_grep").asText());
+        assertEquals("allow", permission.path("sandbox_write").asText());
+        assertEquals("allow", permission.path("sandbox_edit").asText());
     }
 
     @Test
@@ -86,17 +94,25 @@ class OpenCodeConfigWriterTest {
         assertEquals("deny", root.path("permission").path("shell").asText());
         assertEquals("deny", root.path("permission").path("grep").asText());
         assertEquals("deny", root.path("permission").path("read").asText());
+        assertEquals("deny", root.path("permission").path("edit").asText());
+        assertEquals("deny", root.path("permission").path("write").asText());
         assertEquals("allow", root.path("permission").path("sandbox_bash").asText());
         assertEquals("allow", root.path("permission").path("sandbox_grep").asText());
         assertEquals("allow", root.path("permission").path("sandbox_read").asText());
+        assertEquals("allow", root.path("permission").path("sandbox_write").asText());
+        assertEquals("allow", root.path("permission").path("sandbox_edit").asText());
 
         Path hostFile = OpenCodeConfigWriter.write(
             tempDir.resolve("host"), provider, config(null), false);
         JsonNode host = mapper.readTree(hostFile.toFile()).path("permission");
         assertEquals("deny", host.path("grep").asText());
         assertEquals("deny", host.path("read").asText());
+        assertEquals("deny", host.path("edit").asText());
+        assertEquals("deny", host.path("write").asText());
         assertEquals("allow", host.path("sandbox_grep").asText());
         assertEquals("allow", host.path("sandbox_read").asText());
+        assertEquals("allow", host.path("sandbox_write").asText());
+        assertEquals("allow", host.path("sandbox_edit").asText());
     }
 
     @Test

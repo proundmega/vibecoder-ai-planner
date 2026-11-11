@@ -73,7 +73,11 @@
 
 ## Results
 
-### 2026-11-11 — implementation in review (#137)
+### 2026-11-11 — merged (#137, `7fb41fb`)
+
+| Date | Commit | Suites | Outcome |
+|---|---|---|---|
+| 2026-11-11 | `7fb41fb` | backend unit + integration, agent, frontend | Passed; merged in #137 |
 
 - Added `DependencyService` with fail-closed readiness, batch enrichment, dependency-row locking and `DEPENDENCIES_NOT_DONE` details.
 - Gated pickup, status/update transitions, execution phase entry and new durable starts; `in_progress → blocked` and recovery remain exempt.

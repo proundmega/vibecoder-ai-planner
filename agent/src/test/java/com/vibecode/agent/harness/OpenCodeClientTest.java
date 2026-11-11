@@ -186,6 +186,8 @@ class OpenCodeClientTest {
         assertEquals(home.resolve(".config/opencode/tools"), tools);
         String read = Files.readString(tools.resolve("sandbox_read.ts"));
         String grep = Files.readString(tools.resolve("sandbox_grep.ts"));
+        String write = Files.readString(tools.resolve("sandbox_write.ts"));
+        String edit = Files.readString(tools.resolve("sandbox_edit.ts"));
         assertTrue(read.contains("VIBECODE_WORKSPACE_BRIDGE_URL"));
         assertTrue(read.contains("VIBECODE_WORKSPACE_BRIDGE_TOKEN"));
         assertTrue(read.contains("/read"));
@@ -194,6 +196,10 @@ class OpenCodeClientTest {
         assertTrue(grep.contains("/grep"));
         assertTrue(grep.contains("x-workspace-token"));
         assertTrue(grep.contains("grep rejected"));
+        assertTrue(write.contains("/write"));
+        assertTrue(write.contains("write rejected"));
+        assertTrue(edit.contains("/edit"));
+        assertTrue(edit.contains("edit rejected"));
     }
 
     @Test
@@ -201,7 +207,8 @@ class OpenCodeClientTest {
         Path home = tempDir.resolve("workspace-syntax-home");
         Path tools = OpenCodeClient.writeWorkspaceTools(home);
 
-        for (String name : List.of("sandbox_read.ts", "sandbox_grep.ts")) {
+        for (String name : List.of(
+            "sandbox_read.ts", "sandbox_grep.ts", "sandbox_write.ts", "sandbox_edit.ts")) {
             Process process;
             try {
                 process = new ProcessBuilder("node", "--check",

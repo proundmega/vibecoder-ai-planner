@@ -65,6 +65,9 @@ class PromptBuilderTest {
 
         assertTrue(hostPrompt.contains("sandbox_read"));
         assertTrue(hostPrompt.contains("sandbox_grep"));
+        assertTrue(hostPrompt.contains("sandbox_write"));
+        assertTrue(hostPrompt.contains("sandbox_edit"));
+        assertTrue(hostPrompt.contains("mkdir -p"));
         assertFalse(hostPrompt.contains("sandbox_bash"));
         assertTrue(sandboxPrompt.contains("sandbox_bash"));
         assertTrue(sandboxPrompt.contains("/workspace"));

@@ -6,7 +6,7 @@ priority: "P0"
 effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
-updated: "2026-11-09"
+updated: "2026-11-11"
 pr: 132
 branch: "master"
 depends_on: ["fg-30"]
@@ -62,4 +62,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D17 | Bridge request IDs/idempotency: the bridge has no request ID or result cache, so a lost HTTP response can lead to a re-executed command. A stable request ID and bounded idempotency cache are needed | fg-34 | Reliability | fg-34 slice 3 | open |
 | D18 | OpenCode read/grep can expose supervisor-only files despite the FR8 read denies: the read tool normalizes then follows symlinks (a repo symlink or one created via `sandbox_bash` can point outside the workspace), and the grep tool/ripgrep bypasses read path rules. Slice 3d disables the built-in read/grep/lsp tools and adds `sandbox_read`/`sandbox_grep` over a loopback workspace bridge that resolves `toRealPath()`, rejects paths outside the workspace and credential paths, and never follows symlinks during grep | fg-34 | Security | fg-34 slice 3d | done (#132) |
 | D19 | Agent-wide redaction beyond harness mode: legacy `TicketProcessor`/`ReviewProcessor` messages and PRs and externally shipped supervisor logs are not covered by the harness redactor | fg-34 | Privacy | fg-34 follow-up / fg-42 | open |
-| D20 | The built-in `edit`/write tool is not wrapped like read/grep: its `external_directory` deny is lexical, so a workspace symlink can still point at a supervisor path for writes (and possibly error-message reads). A guarded write/edit tool or a workspace symlink policy is needed | fg-34 | Security | fg-34 follow-up | open |
+| D20 | The built-in `edit`/write tool is not wrapped like read/grep: its `external_directory` deny is lexical, so a workspace symlink can still point at a supervisor path for writes (and possibly error-message reads). Built-in edit/write/multiedit/patch are denied; `sandbox_write`/`sandbox_edit` (and read/grep) walk paths through `SecureDirectoryStream` with NOFOLLOW on every component **including the final open**, reject symlink/non-regular and credential/VCS/control targets, and bound the replacement before allocation | fg-34 | Security | fg-34 follow-up | in review (#138) |
+| D21 | Guarded bridge writes bypass the OpenCode formatter/LSP/watcher and have no per-file lock; add formatting/diagnostics/watcher events and a bounded per-file lock if edit quality or concurrent-edit clobbering becomes a problem | fg-34 | Quality | fg-34 follow-up | open |
+| D22 | Host mode on providers without `SecureDirectoryStream` (native Windows, FUSE-backed workspaces, etc.) uses a non-atomic canonical-path fallback; sandbox mode fails fast at bridge startup. Provide a secure implementation or keep the host-only limitation explicit; host mode is not a security boundary | fg-34 | Security | fg-34 follow-up | open |
+| D23 | FIFO final-component swap race: the regular-file check can still be followed by a racing FIFO open. Add a bounded/non-blocking open or document the residual DoS race | fg-34 | Reliability | fg-34 follow-up | open |
