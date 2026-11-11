@@ -75,7 +75,7 @@ phase, approval, usage and audit model.
 | Questions waiting on a human | NO | — | New table + API |
 | Notifications / alerts | NO | — | New table + API + UI |
 | Agent session/event persistence | NO | — | New tables + API |
-| Autonomy policies / budgets | NO | — | New table + API |
+| Autonomy policy / budgets | NO | — | Owned by `fg-52` (policy) and `fg-38` (budgets); fg-30 adds no second store |
 
 ### Frontend (Vue)
 
@@ -86,7 +86,7 @@ phase, approval, usage and audit model.
 | Approvals queue | YES | `views/ApprovalsQueue.vue` | Final approvals; questions get their own inbox |
 | Notifications bell | NO | — | New |
 | Agent messages display | NO | — | Messages exist in the API but are not rendered |
-| Autonomy settings | NO | — | New section in project settings |
+| Autonomy settings | NO | — | `fg-52` owns the policy UI; `fg-38` owns budget display |
 
 ### Key Insight
 
@@ -108,10 +108,10 @@ as the control plane. See `02_ARCHITECT_DESIGN.md` for alternatives.
 - Persistent agent sessions and event/transcript storage.
 - Human-in-the-loop:
   - Agent question tool → ticket question → notification → human answer → agent resume.
-  - Permission requests (risky operations) routed through policy or human approval.
+  - Permission requests (risky operations) routed through the harness permission policy or human approval. Runtime tool/command rules stay in `fg-30`; `fg-52` only owns autonomy/approval/merge policy.
   - Ticket phase `blocked` while waiting; automatic return to `in_progress` on answer.
 - In-app notification bell + question inbox + ticket question cards.
-- Autonomy policies and budgets (time, tokens, cost, changed files, risky paths).
+- Plan gate and multi-agent integration. Autonomy policy is owned by `fg-52`; budget enforcement is owned by `fg-38`. fg-30 consumes both and does not define a second policy or budget store.
 - Risk-based plan approval gate.
 - Feature flag with legacy fallback.
 - Tests at every layer, including a fake harness server for deterministic CI.
@@ -161,13 +161,13 @@ Same list; follow-up directories to be created when the harness foundation is me
 |---|---|---|
 | `agent/src/main/java/com/vibecode/agent/` | CREATE/MODIFY | Harness package, config, supervisor, prompt builder, event bridge |
 | `agent/Dockerfile` | MODIFY | Node 24 + OpenCode CLI/server + common toolchains |
-| `backend/src/services/` | CREATE | `AgentSessionService`, `QuestionService`, `NotificationService`, `AgentPolicyService` |
+| `backend/src/services/` | CREATE | `AgentSessionService`, `QuestionService`, `NotificationService`, `AgentPolicyService` (execution-limit defaults only; `fg-52` owns autonomy policy and `fg-38` owns budgets) |
 | `backend/src/api/` | CREATE/MODIFY | Sessions/questions/notifications/policies routes + agent auth |
 | `backend/src/migrations/` | NEW MIGRATION | Sessions, questions, notifications, policies, indexes |
 | `backend/src/services/PoolManager.js` | MODIFY | Forward harness env, sandbox limits, model/provider mapping |
-| `frontend/src/` | CREATE/MODIFY | Notification bell, question inbox/cards, agent timeline, project policy settings |
+| `frontend/src/` | CREATE/MODIFY | Notification bell, question inbox/cards, agent timeline, plan-approval card (autonomy settings are `fg-52`; budget display is `fg-38`; runtime permission settings stay in harness config) |
 | `database` | NEW TABLES | `agent_sessions`, `agent_events`, `ticket_questions`, `notifications`, `agent_policies` |
-| `config` | NEW ENV VARS | `HARNESS_MODE`, `HARNESS_*`, `OPENCODE_*`, budgets, sandbox limits |
+| `config` | NEW ENV VARS | `HARNESS_MODE`, `HARNESS_*`, `OPENCODE_*`, execution limits consumed from `fg-38`, sandbox limits |
 
 ---
 
@@ -183,7 +183,7 @@ Same list; follow-up directories to be created when the harness foundation is me
    a verified coding model and keep the model configurable per project.
 4. **Toolchain coverage.** The agent image must include runtimes used by target repos. Start with Node 24,
    Python 3.12, git, ripgrep; add images/toolchains per project later.
-5. **Cost runaway.** Long agent loops can be expensive. Budgets and pause-on-threshold are mandatory.
+5. **Cost runaway.** Long agent loops can be expensive. Budgets (`fg-38`) and pause-on-threshold are mandatory.
 
 ---
 
@@ -191,14 +191,14 @@ Same list; follow-up directories to be created when the harness foundation is me
 
 1. **Execution engine** — (A) OpenCode server harness (recommended), (B) custom native tool loop,
    (C) one-shot `opencode run` CLI. See 02 for trade-offs.
-2. **Autonomy default** — `standard` (recommended) vs `autonomous` vs `supervised`.
+2. **Autonomy default** — superseded: `fg-52` owns autonomy tiers and policy; fg-30 keeps execution limits only.
 3. **Human alerts MVP** — in-app only (recommended) vs email/Slack in the first iteration.
 4. **Plan gate** — risk-based (recommended) vs always require human plan approval vs never.
 5. **Publishing** — supervisor commits/pushes/opens PR (recommended) vs allowing the harness to run git
    push/commit itself.
 6. **Isolation** — harden the existing agent container per ticket (recommended for Phase 1) vs nested
    per-ticket sandbox containers (stronger, more work).
-7. **Default budgets** — 45 min, 1.5M tokens, $5/ticket, 100 tool calls (recommended; configurable).
+7. **Default budgets** — superseded: `fg-38` owns budget defaults and enforcement; fg-30 consumes them.
 8. **Feature rollout** — `HARNESS_MODE=legacy|opencode` with legacy fallback (recommended).
 9. **Phase 1 permission model** — unattended, no `ask`: safe bash allowlist + deny list + auto-reject
    fallback (recommended). The alternative, a minimal permission bridge, is Phase 2 because it needs
@@ -235,14 +235,14 @@ Same list; follow-up directories to be created when the harness foundation is me
 15. [ ] Heartbeats expose session id, current tool/step, elapsed time, tokens and cost; a ticket/session list endpoint lets the UI find the active session.
 16. [ ] Event replay cannot create duplicate sessions or questions (idempotency keys are enforced by unique indexes).
 17. [ ] Resume is explicit: a new session reads the answered question, the workspace diff and a prior-session summary; it never assumes the old process is alive.
-18. [ ] Permission requests follow policy: safe operations auto-approved, dangerous denied, ambiguous asked (the bridge exists only in Phase 2; Phase 1 has no `ask`).
+18. [ ] Permission requests follow the harness permission policy: safe operations auto-approved, dangerous denied, ambiguous asked (the bridge exists only in Phase 2; Phase 1 has no `ask`). `fg-52` does not own these runtime decisions.
 19. [ ] Questions expire after a configurable timeout and surface an escalation notification.
 20. [ ] All questions/answers are auditable and scoped to the owning project/user.
 
-### Autonomy and safety (Phase 3)
+### Plan gate and safety (Phase 3)
 
-21. [ ] Policies enforce max duration, tokens, cost, tool calls, files changed and diff size.
-22. [ ] Changes touching protected paths (auth, migrations, `.github/`, secrets) require human plan/action approval.
+21. [ ] `fg-38` budget limits are consumed and pause/resume is honored; fg-30 does not implement a second budget engine.
+22. [ ] Changes touching protected paths (auth, migrations, `.github/`, secrets) require human plan/action approval, backed by the `fg-30` publishing guard and `fg-34` sandbox rules. `fg-52` may additionally require human review at merge time but does not own runtime path approval.
 23. [ ] The agent cannot read `.env` files, access outside the workspace, push, merge, or run denied commands.
 24. [ ] A risk-based plan gate exists and can be configured per project.
 25. [ ] Multi-agent mode (architect → builder → reviewer) can be enabled per project without changing the ticket workflow.
@@ -259,7 +259,7 @@ Same list; follow-up directories to be created when the harness foundation is me
 
 ## Out of Scope
 
-- Auto-merge, auto-deploy, or production changes without a human.
+- Auto-merge, auto-deploy, or production changes without a human; a merge may be automatic only under the explicit `fg-52` policy. Deployment remains human-only.
 - Email/Slack adapters (Phase 2 follow-up).
 - A generic plugin marketplace for harnesses (design leaves an interface, not an implementation).
 - Reworking the planner's planning documents or templates.
@@ -336,7 +336,7 @@ Same list; follow-up directories to be created when the harness foundation is me
 - [ ] `notificationBell.test.ts` — unread count, list, mark read, navigation.
 - [ ] `agentQuestion.test.ts` — renders options, submits answer, handles timeout.
 - [ ] `ticketAgentTab.test.ts` — timeline, session status, question card.
-- [ ] `agentPolicySettings.test.ts` — loads/saves policy.
+- [ ] `agentExecutionLimits.test.ts` — renders `fg-38` limits read-only.
 - [ ] Cypress component for question card and notification bell.
 - [ ] Cypress E2E: agent asks → human answers → ticket resumes.
 

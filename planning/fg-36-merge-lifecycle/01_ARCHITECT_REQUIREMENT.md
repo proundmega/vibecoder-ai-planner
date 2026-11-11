@@ -35,7 +35,7 @@ Current gaps:
 
 ## Non-goals
 
-- Implementing auto-merge in Phase 1 of this ticket (policy comes from fg-30 Phase 3).
+- Implementing auto-merge in Phase 1 of this ticket (policy comes from fg-52).
 - Replacing GitHub branch protection.
 - Supporting GitLab/Bitbucket.
 - Resolving semantically complex conflicts without a human escape hatch.
@@ -74,7 +74,7 @@ Current gaps:
 
 ## Out of scope
 
-- Auto-merge policy design (fg-30 Phase 3).
+- Auto-merge policy design (fg-52).
 - Release/deployment pipelines.
 - Multi-repo atomic merges.
 - Semantic conflict resolution by an LLM without human review.

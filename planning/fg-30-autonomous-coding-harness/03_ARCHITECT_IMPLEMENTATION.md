@@ -20,8 +20,9 @@ with local agents if those are not yet complete.
 ### a) Purpose
 
 Replace the blind JSON file-operation agent with a real coding harness (OpenCode server) supervised by
-the Java agent, with durable human-in-the-loop questions, autonomy policies, budgets and auditable
-sessions. Humans plan and review; agents implement and verify; questions pause and resume cleanly.
+the Java agent, with durable human-in-the-loop questions, plan-gate/multi-agent integration and auditable
+sessions. Autonomy policy is owned by fg-52 and budget enforcement by fg-38; fg-30 consumes both and keeps runtime tool/command permissions in its harness policy.
+Humans plan and review; agents implement and verify; questions pause and resume cleanly.
 
 Implementation is split into four phases. Each phase must be merged and functioning before the next.
 
@@ -30,7 +31,7 @@ Implementation is split into four phases. Each phase must be merged and function
 | 0 | fg-30 (prerequisite sub-phase) | Provider session header, pinned harness version/spec fixture, smoke test |
 | 1 | fg-30 | Harness executes a real ticket unattended; verification; PR; feature flag |
 | 2 | TBD | Questions, permissions, notifications, UI, resume, sessions/transcripts |
-| 3 | TBD | Policies, budgets, plan gate, multi-agent loop |
+| 3 | TBD | Plan gate and multi-agent integration (autonomy policy from fg-52, budgets from fg-38) |
 | 4 | TBD | Sandbox hardening, observability, retention |
 
 Phase 0 is a prerequisite **sub-phase of fg-30**, not part of the Phase 1 spec. It is the only place
@@ -205,7 +206,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 ### Step 4: Prompt builder — `PromptBuilder.java`
 
-- Inputs: ticket, planning docs, agent policy (Phase 3), repo conventions, verification commands.
+- Inputs: ticket, planning docs, execution limits (`fg-38`), the harness permission policy and, when available, the `fg-52` autonomy/merge decision, repo conventions, verification commands.
 - Output sections:
   - role and objective,
   - ticket + acceptance criteria,
@@ -355,7 +356,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
    - `AgentSessionService` (create/update/heartbeat/events/orphan reconciliation, list by ticket),
    - `QuestionService` (ask/answer/expire/cancel + phase transitions + notifications, idempotent ask),
    - `NotificationService` (create/list/mark read),
-   - `AgentPolicyService` (Phase 3-ready defaults).
+   - `AgentPolicyService` (execution-limit defaults only; `fg-52` owns autonomy policy and `fg-38` owns budget enforcement).
 3. Routes + validators + OpenAPI JSDoc:
    - agent endpoints under `/api/v1` with `verifyTokenOrAgent`,
    - human endpoints with JWT + `requireAnyPermission`,
@@ -369,7 +370,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 1. `QuestionBridge`: map OpenCode forms/questions → `POST /tickets/:id/questions`; poll answer;
    reply to form endpoint.
-2. `PermissionBridge`: map permission requests → policy engine or question; reply once/always/reject.
+2. `PermissionBridge`: map permission requests → the harness permission policy (`fg-30`) or question; reply once/always/reject. `fg-52` does not define runtime tool/command permissions.
 3. `SessionReporter`: create/update session, batch events (500ms/20 events), usage.
 4. Enable the `question` tool and policy permissions.
 5. Resume flow: on startup, find `waiting_human` sessions with answered questions. If the original
@@ -387,14 +388,14 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 3. `NotificationBell.vue` in `App.vue`; `/agent-questions` page; question card component.
 4. `TicketDetail` Agent tab: status, step, elapsed, tokens/cost, timeline, question card.
 5. `PhaseBlocked` embeds question card.
-6. Project settings autonomy section (read-only until Phase 3).
+6. Project settings plan-approval section (read-only until Phase 3); autonomy settings are `fg-52`, budget display is `fg-38`, and runtime permission settings stay in harness config.
 7. Vitest + Cypress component/E2E.
 
 ### Phase 2 exit criteria
 
 - Agent asks a question; ticket becomes blocked; bell shows unread; answer resumes the session;
   ticket returns to in_progress; answer is auditable.
-- Permission requests respect policy and are answerable.
+- Permission requests respect the harness permission policy (`fg-30`) or default deny and are answerable.
 - No duplicate questions or sessions on event replay (unique indexes + upserts).
 - The Agent tab finds the active session through the ticket/session list endpoint; heartbeat shows
   session id, tool, tokens and cost.
@@ -403,21 +404,18 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 ---
 
-## Phase 3 - Autonomy, budgets, plan gate, multi-agent - 2-3 weeks
+## Phase 3 - Plan gate and multi-agent integration - 2-3 weeks
 
-1. **Policy engine** in Java + backend:
-   - risk classifier (paths, commands, diff size, migrations/auth/secrets),
-   - autonomy modes, protected paths, allow/deny commands, network.
-2. **Budget enforcement**:
-   - time/tokens/cost/tool calls/files/diff lines; 80% warning; 100% pause + question.
+1. **Policy and auto-merge ownership:** the autonomy policy engine, risk/effort assessment, auto-approve and auto-merge decisions are owned by `fg-52` (Phase C). Phase 3 consumes `fg-52` decisions for autonomy and must not implement a second policy engine or auto-merge path; the remaining Phase 3 work is plan-gate/multi-agent integration. Runtime tool/command permissions remain the `fg-30` harness policy (sandbox rules in `fg-34`); only their merge-time signals feed `fg-52`'s deterministic gates.
+2. **Budget integration:** consume the `fg-38` limits and pause/resume signals. Do not implement a second budget engine, budget defaults or budget UI here; `fg-38` owns time/tokens/cost/tool-call/file/diff budgets.
 3. **Plan approval gate**:
    - plan session → plan document → auto/human approval → implementation session.
 4. **Multi-agent** via OpenCode agents/subagents:
    - architect (read-only) → builder → reviewer (read-only) → fixer,
    - reviewer findings become build input; max 2 review rounds.
 5. **Frontend**:
-   - policy editor, budget display, plan approval card, agent role badges.
-6. Tests for classifier, budgets, plan gate, orchestration.
+   - plan approval card and agent role badges; autonomy settings are `fg-52`, budget display is `fg-38`, and runtime permission settings stay in harness config.
+6. Tests for plan-gate and orchestration integration; autonomy/merge tests are `fg-52`, budget tests are `fg-38`, and runtime permission tests are `fg-30`.
 
 ---
 
@@ -427,7 +425,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 2. Event retention/cleanup job (30 days), transcript truncation, secret redaction audit.
 3. Metrics: session duration, success rate, questions per ticket, token/cost per ticket,
    blocked time, tool failure rate.
-4. Alerting: stuck sessions, repeated failures, budget overruns.
+4. Alerting: stuck sessions, repeated failures, budget overruns (`fg-38`).
 5. Runbooks and operator documentation.
 
 ---
@@ -456,7 +454,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 #### `agent/src/main/java/com/vibecode/agent/harness/PublishingGuard.java` (CREATE)
 - `PublishingGuard(List<String> protectedGlobs, List<String> sanitizerRemovals)`.
 - `assertPublishable(DiffSummary diff)` rejects empty diff, protected paths, **any sanitizer-removed
-  path present in the diff** (even outside protected globs), and oversized diff (policy later).
+  path present in the diff** (even outside protected globs), and oversized diff (harness publish policy later).
 
 #### `agent/src/main/java/com/vibecode/agent/AgentApp.java` (MODIFY)
 - Choose processor based on `HARNESS_MODE`.
@@ -570,7 +568,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 - [ ] Bash suite: `harness.test.sh`.
 
 #### Frontend tests (Phase 2)
-- [ ] Notification bell, question card, agent tab, policy settings.
+- [ ] Notification bell, question card, agent tab, plan-approval card and agent role badges.
 - [ ] Cypress component + E2E answer flow.
 - [ ] Contract test for new response shapes.
 
@@ -623,11 +621,11 @@ backend/src/services/TicketService.js                 → MODIFY (Phase 1: deleg
 backend/src/services/AgentSessionService.js           → CREATE (Phase 2)
 backend/src/services/QuestionService.js               → CREATE (Phase 2)
 backend/src/services/NotificationService.js           → CREATE (Phase 2)
-backend/src/services/AgentPolicyService.js            → CREATE (Phase 2)
+backend/src/services/AgentPolicyService.js            → CREATE (Phase 2: execution-limit defaults only; fg-52/fg-38 own autonomy policy/budgets)
 backend/src/services/HeartbeatService.js              → MODIFY (Phase 2: session/tool/tokens)
 backend/src/api/agentSessions.js                      → CREATE (Phase 2, incl. list by ticket)
 backend/src/api/notifications.js                      → CREATE (Phase 2)
-backend/src/api/agentPolicies.js                      → CREATE (Phase 2)
+backend/src/api/agentPolicies.js                      → CREATE (Phase 2: execution-limit defaults only; no autonomy modes)
 backend/src/api/v1/agentHeartbeat.js                  → MODIFY (Phase 2 schema)
 backend/src/api/v1/index.js                           → MODIFY
 backend/src/validators/agentHarness.js                → CREATE

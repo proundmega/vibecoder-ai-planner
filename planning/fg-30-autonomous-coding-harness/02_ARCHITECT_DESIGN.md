@@ -116,7 +116,7 @@ replaceable behind a `HarnessClient` interface (future Claude Code/Codex adapter
                                  │                              │                          │
 ┌──────────────── Frontend (Vue) ┴────────────────┐   ┌─────────┴──────────────────────────┴──────────┐
 │ Notification bell · Question inbox · Ticket      │   │ Harness Supervisor (Java agent)               │
-│ Agent tab · Project autonomy settings            │   │  · polls backlog                              │
+│ Agent tab · permissions · autonomy (fg-52) · budgets │   │  · polls backlog                              │
 └──────────────────────────────────────────────────┘   │  · clones workspace + branch                  │
                                                        │  · starts OpenCode server (per ticket)        │
                                                        │  · maps SSE events → heartbeat/messages/usage │
@@ -253,21 +253,27 @@ Agent needs a decision
 
 **Phase 1 is unattended.** Every rule must resolve to `allow` or `deny`; an `ask` rule is a startup
 error. Safe commands are allowlisted, everything else is denied, and any unexpected permission
-request is auto-rejected. The supervised/standard/autonomous matrix arrives with the Phase 2 bridge.
+request is auto-rejected. Runtime tool/command allow/ask/deny and protected-path action approval stay
+in the harness permission policy defined here (sandbox enforcement in `fg-34`). Autonomy,
+plan-approval and merge decisions are owned by `fg-52`; there is no second autonomy mode matrix.
 
 | Operation | Phase 1 (unattended) | Phase 2+ |
 |---|---|---|
-| read/glob/edit inside workspace | allow, except protected/secret paths | policy modes |
-| `grep` | allow (secret files are removed from the workspace before start) | policy modes |
-| run tests/lint/typecheck | allow via safe `shell` prefixes (`npm test *`, `npm run lint *`, `npm run typecheck *`, `mvn test *`, `pytest *`, `make test *`) | allow/ask per autonomy |
-| other safe read commands | allow only `git status *`, `git branch --show-current`, `ls *`, `rg *`, `find *`; **deny `git log`/`git show`/`git diff`** (history/content) | allow/ask |
-| arbitrary shell, installs, deletes | deny | ask/allow per autonomy |
-| network fetch / web search / subagents | deny | ask/allow |
-| DB migrations / auth / `.github/` / secrets | deny edit; publishing blocked | ask + approval |
-| git push / commit / merge / force-push | deny (supervisor publishes) | deny |
+| read/glob/edit inside workspace | allow, except protected/secret paths | harness permission policy (protected/secret paths) |
+| `grep` | allow (secret files are removed from the workspace before start) | harness permission policy |
+| run tests/lint/typecheck | allow via safe `shell` prefixes (`npm test *`, `npm run lint *`, `npm run typecheck *`, `mvn test *`, `pytest *`, `make test *`) | allow/ask per harness permission policy |
+| other safe read commands | allow only `git status *`, `git branch --show-current`, `ls *`, `rg *`, `find *`; **deny `git log`/`git show`/`git diff`** (history/content) | allow/ask per harness permission policy |
+| arbitrary shell, installs, deletes | deny | ask/allow per harness permission policy |
+| network fetch / web search / subagents | deny | ask/allow per harness permission policy (`fg-34` sandbox rules) |
+| DB migrations / auth / `.github/` / secrets | deny edit; publishing blocked | ask + approval; publishing guard (`fg-30`), sandbox rules (`fg-34`) |
+| git push / commit / merge / force-push | deny (supervisor publishes) | deny (supervisor publishes); merge decision `fg-52` |
 | read `.env*`, outside workspace | deny; secret files physically absent | deny |
 | docker / sudo / kubectl / cloud CLIs | deny | deny |
 | `question` tool | deny | allow when a bridge exists |
+
+`fg-52` is limited to spec review, effort/risk assessment, auto-approve/auto-merge and merge-time
+deterministic gates. It does not define runtime file, shell, network or permission-request decisions;
+those remain the harness permission policy (`fg-30`) and sandbox rules (`fg-34`).
 
 `allow` decisions are still subject to the deny list. Deny lists and protected paths are policy config,
 not prompt instructions. `OpenCodeConfigWriter` writes the **V2 `permissions` array** (the same
@@ -510,11 +516,11 @@ CREATE TABLE notifications (
 );
 CREATE INDEX idx_notifications_user_unread ON notifications(user_id, created_at DESC) WHERE read_at IS NULL;
 
+-- Budget/execution limits only. Autonomy modes, risk gates and auto-merge
+-- decisions live in fg-52 project_autonomy_policies; do not add a second mode field here.
 CREATE TABLE agent_policies (
   id BIGSERIAL PRIMARY KEY,
   project_id BIGINT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
-  autonomy VARCHAR(20) NOT NULL DEFAULT 'standard'
-    CHECK (autonomy IN ('supervised','standard','autonomous')),
   require_plan_approval BOOLEAN NOT NULL DEFAULT FALSE,
   max_duration_minutes INTEGER NOT NULL DEFAULT 45,
   max_tokens BIGINT NOT NULL DEFAULT 1500000,
