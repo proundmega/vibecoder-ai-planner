@@ -234,7 +234,11 @@ CREATE TABLE autonomy_policy_changes (
   previous_policy JSONB,
   new_policy JSONB NOT NULL,
   reason TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT autonomy_policy_changes_scope_check CHECK (
+    (scope = 'global' AND project_id IS NULL AND project_name = 'platform')
+    OR (scope = 'project' AND project_id IS NOT NULL AND project_name <> '')
+  )
 );
 ```
 

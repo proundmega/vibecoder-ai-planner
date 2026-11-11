@@ -55,7 +55,7 @@
 | FR8 | Unit/integration | each deterministic gate blocks independently; model cannot waive; baseline cannot be cleared by project config | `npm test`; integration |
 | FR9 | Unit/integration | merge actor is separate, cannot edit/push/bypass, only merges on `allow` | merge-agent contract test |
 | FR10 | Unit/integration | final-diff mismatch/unexpected path/missing test downgrades | integration test |
-| FR11 | Unit/API | assessments/decisions/policy changes/vetoes/merges/rollbacks audited; policy changes record before/after and `scope`; global vs deleted-project rows stay distinguishable; actual effort comes from fg-37/fg-41 | `npm test`; audit test |
+| FR11 | Unit/API | assessments/decisions/policy changes/vetoes/merges/rollbacks audited; policy changes record before/after and `scope`; the scope/project/name CHECK rejects mixed rows; global vs deleted-project rows stay distinguishable; actual effort comes from fg-37/fg-41 | `npm test`; audit test |
 | FR12 | Frontend | assessment/policy/veto UI renders and propagates errors | `npm test -- --run`; `npm run typecheck` |
 | FR13 | Unit/integration | shadow records would-merge without merge; canary stops on project or global kill switch; project cannot override global | integration test |
 | FR14 | Unit/integration | missing readiness/dependency/traceability blocks autonomy | integration test |
@@ -75,6 +75,7 @@
 | 0 | Plan review pending | — | open |
 | 1 | Dependency graph omitted `bp-134`; fg-37/fg-41 order inconsistent; policy ownership overlapped fg-30 Phase 3/fg-36; security baseline was configurable; FR7 gates/quotas and policy-change audit were missing; `ProjectSettings.vue` did not exist | Added bp-134 everywhere, ordered fg-52 after fg-37/fg-41, declared fg-52 the single autonomy owner, added a fixed additive baseline and global kill switch, added additional gates/quotas plus `autonomy_policy_changes`, and moved UI work to `ProjectDetail.vue` | resolved |
 | 2 | Baseline named a nonexistent `backend/src/api/auth.js` and missed real auth files; policy audit used `ON DELETE SET NULL`; fg-30 still defined autonomy modes; missing apply/OpenAPI/generated-type/global-permission/actual-effort/spec-store details | Replaced the auth paths and added a baseline regression, added `scope`/`project_name` with no FK, removed the fg-30 autonomy field, registered the migration, and specified OpenAPI/type regeneration, `super_admin` control, actual-effort source and planning-file spec storage | resolved |
+| 3 | fg-30 still claimed policy/budget outcomes and UI; the policy-audit scope had no DB constraint; D6/D7 ownership timing was ambiguous | Updated fg-30's Phase 3 title/outcomes, impact rows and acceptance criteria to point at fg-52/fg-38, added the scope/project/name CHECK and tests, and gated `auto_merge_low_risk` on D6/D7 | resolved |
 
 ## Results
 

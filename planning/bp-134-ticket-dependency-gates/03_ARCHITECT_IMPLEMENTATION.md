@@ -19,13 +19,16 @@
 
 | File | Change |
 |---|---|
-| `backend/src/services/TicketService.js` | Readiness helper plus batch variant (including latest `ticket_phases` lookup for `dependency_reopened`); call it from pickup/update/updateStatus; own the project-ticket/backlog query, excluding blocked tickets; return `DEPENDENCIES_NOT_DONE` with `blockedBy[]` |
+| `backend/src/services/TicketService.js` | Readiness helper plus batch variant (latest `ticket_phases` row for the dependency and the dependent's `to_phase='in_progress'` start timestamp, for `dependency_reopened`); call it from pickup/update/updateStatus; own the project-ticket/backlog query, excluding blocked tickets; return `DEPENDENCIES_NOT_DONE` with `blockedBy[]` |
 | `backend/src/errors/HttpError.js` | Add `DependencyConflictError extends ConflictError` (code `DEPENDENCIES_NOT_DONE`, `details`) or extend `ConflictError` with a code/details constructor |
 | `backend/src/services/PhaseService.js` | Gate target phases that enter execution; explicitly allow `toPhase === 'blocked'` |
 | `backend/src/services/HarnessRunService.js` | Gate new durable start by the same readiness helper |
-| `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java` | `recoverRun()` remains exempt and emits a structured readiness log/audit event; it does not report run readiness through `listActiveHarnessRuns` |
+| `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java` | `recoverRun()` remains exempt; it does not block or report readiness through `listActiveHarnessRuns` (the ticket read path computes `ready`) |
 | `backend/src/models/ticket.js` | Enrich list/detail reads with a batch readiness projection or leave the model read-only and enrich in the service |
 | `backend/src/api/tickets.js` | Document the new error/read fields; no new route required |
+| `backend/src/api/openapi-spec.js` | Document `ready`/`blockedBy`/`reason` and `409 DEPENDENCIES_NOT_DONE` |
+| `backend/src/api/openapi-generated.json` | Regenerate/update from the JSDoc spec |
+| `frontend/src/api/generated/**` | Regenerate client types after the OpenAPI update |
 | `backend/src/controllers/ticketController.js` | Propagate the dependency error payload where the controller wraps service errors |
 | `agent/src/main/java/com/vibecode/agent/service/ApiService.java` | Backlog client consumes `ready`; no `AgentService.js` exists for this path |
 | `agent/src/main/java/com/vibecode/agent/model/Ticket.java` | Add `ready` and optional `blockedBy` fields for the fallback skip path |
@@ -61,6 +64,7 @@
 | 0 | Plan review pending | — | open |
 | 1 | Atomicity assumed dependencies cannot reopen; durable recovery path was wrong; `in_progress → blocked` would be blocked; UI claimed a nonexistent editor; backlog owner/error class/model/batch details were incomplete | Added dependency-row locking and reopen semantics, narrowed the gate to new starts with recovery exempt, excluded `blocked`, removed the editor claim, and corrected `ApiService`/`HttpError`/`Ticket.java`/batch-list details | resolved |
 | 2 | The `NOT EXISTS` alternative cannot lock dependency rows; cross-project/title and `dependency_reopened` semantics were ambiguous; recovery reporting had no path; duplicate per-file rows | Made `FOR UPDATE` mandatory, rejected cross-project entries before locking with null fields, sourced `dependency_reopened` from the latest `ticket_phases` transition, moved recovery reporting to the ticket read/log path, and consolidated the file rows | resolved |
+| 3 | Recovery still claimed a readiness log with no read method; OpenAPI/generated types were missing; the `dependency_reopened` timestamp source was ambiguous | Dropped run-level recovery reporting, added OpenAPI/generated-type updates, and defined the start timestamp as the dependent's latest `ticket_phases` `to_phase='in_progress'` row | resolved |
 
 ## Results
 

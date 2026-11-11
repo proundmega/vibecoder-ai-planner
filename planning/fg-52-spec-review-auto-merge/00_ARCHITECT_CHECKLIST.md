@@ -45,8 +45,8 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D3 | Multi-model ensemble estimation | self | Quality | fg-52 follow-up | open |
 | D4 | Auto-merge for security-sensitive scopes (auth, billing, migrations, secrets, infra) | self | Security | not planned; must remain human-only | rejected |
 | D5 | Cross-project policy inheritance | self | Administration | fg-52 follow-up | open |
-| D6 | Merge-queue integration and conflict resolution | fg-36 | Merge | fg-36-merge-lifecycle | open |
-| D7 | Automatic revert on post-merge failure | fg-36 | Reliability | fg-36-merge-lifecycle | open |
+| D6 | fg-52 consumption of the fg-36 merge-queue API (fg-36 owns the queue) | fg-36 | Merge | fg-36-merge-lifecycle | open — required before `auto_merge_low_risk` |
+| D7 | Automatic revert on post-merge failure (fg-36 owns revert; fg-52 consumes it) | fg-36 | Reliability | fg-36-merge-lifecycle | open — required before `auto_merge_low_risk` |
 | D8 | First-class `ticket_specs` store (this phase uses ticket planning files as the canonical spec) | self | Storage | fg-52 follow-up | open |
 
 ## Important design decisions
@@ -70,6 +70,8 @@ deferred scope are owned by this document; `01`–`04` link here.
 - **`fg-30` Phase 3** retains only residual plan-approval/multi-agent integration; `fg-45` owns readiness and `fg-40` owns orchestration. It consumes `fg-52` policy decisions and must not define a second autonomy mode or auto-merge path. Budgets remain owned by `fg-38`.
 - **`fg-36`** owns merge mechanics (base branch, conflicts, CI gate, merge queue, rollback). It consumes an `fg-52` `allow` decision and does not define policy; its references have been updated to point at `fg-52`.
 - **No duplicate implementation.** A later ticket that needs autonomy policy extends `fg-52` rather than adding a parallel engine.
+
+**fg-36 dependency scope:** `fg-36`'s core merge lifecycle (base branch, CI gate, merge queue, rollback path) is a hard dependency. `off`, `auto_approve` and `shadow` may start once that baseline lands. `auto_merge_low_risk` stays disabled until D6 (fg-52 consumes the queue API) and D7 (fg-52 consumes automatic revert) are resolved.
 
 ## Known unknowns
 
@@ -97,6 +99,8 @@ Resolved: `auto_approve` skips only the human **approval** step (the `human_appr
 - [ ] Only `super_admin` can change the global control.
 - [ ] Every policy change is recorded in an append-only audit trail; global changes and hard-deleted projects remain distinguishable.
 - [ ] A global policy change uses `scope='global'`/null project and a deleted project keeps its `scope='project'` history.
+- [ ] The database constraint rejects `scope='global'` with a project id and `scope='project'` with a null id or empty name.
+- [ ] `auto_merge_low_risk` cannot be enabled until the fg-36 queue and automatic-revert baselines (D6/D7) are resolved.
 - [ ] Implementer cannot estimate or merge its own ticket.
 - [ ] Final-diff re-score can downgrade or reject an auto-merge.
 - [ ] Human veto/override is immediate and audited.

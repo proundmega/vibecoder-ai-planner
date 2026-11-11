@@ -40,7 +40,7 @@ Rules:
 - A dependency is complete when `status='done'` or `phase IN ('done','deployed')`.
 - Missing, deleted, self, cross-project or unreadable IDs → `ready=false` with a distinct `reason` (`missing`, `deleted`, `self`, `cross_project`, `unreadable`) and null title/status/phase. These are rejected before the lock step and are never locked.
 - `10` depends on `5` is directed: `10` is blocked, `5` is unaffected.
-- Dependency reopening is allowed (`done → in_progress`). Readiness is evaluated at start time; a later reopen sets `ready=false` and `reason=dependency_reopened` on the dependent but does not retroactively undo a start. The reason is sourced from the dependency's latest `ticket_phases` row: a transition from `done`/`deployed` into an executing phase that occurred after the dependent's current `in_progress` start. Without that evidence, an incomplete dependency is `not_done`.
+- Dependency reopening is allowed (`done → in_progress`). Readiness is evaluated at start time; a later reopen sets `ready=false` and `reason=dependency_reopened` on the dependent but does not retroactively undo a start. The reason is sourced from the dependency's latest `ticket_phases` row: a transition from `done`/`deployed` into an executing phase that occurred after the dependent's current start timestamp. The start timestamp is the latest `ticket_phases` row for the dependent with `to_phase='in_progress'`, not `tickets.locked_at` (which can be refreshed). Without that evidence, an incomplete dependency is `not_done`.
 - The helper is read-only; it does not mutate dependencies.
 
 ## Enforcement matrix
@@ -52,7 +52,7 @@ Rules:
 | Ticket PUT | `TicketService.update()` | when the payload changes status into `in_progress` |
 | Phase transition | `PhaseService.transition()` | when the target enters execution, **excluding `toPhase === 'blocked'`** |
 | Durable new start | `HarnessRunService.startRun()` | before creating/claiming the run |
-| Durable recovery | `HarnessTicketProcessor.recoverRun()` | exempt (already-started run); logs/audits readiness but does not block; the ticket read path computes `ready` independently |
+| Durable recovery | `HarnessTicketProcessor.recoverRun()` | exempt (already-started run); does not block or report readiness; the ticket read path computes `ready` independently |
 | Agent queue | backend project-ticket query used by `ApiService.listBacklogTickets()` | exclude tickets whose dependencies are incomplete |
 
 ## Atomicity and concurrency
@@ -76,8 +76,8 @@ future starts and marks the dependent `ready=false`. `in_progress → blocked`
 is not gated, because blocking is the safe action and does not enter execution.
 
 Recovery of an already-started run is exempt. It does not re-enter execution
-and blocking it would strand the run. It emits a structured log/audit event when
-readiness is false, while the normal ticket read endpoint independently computes
+and blocking it would strand the run. It does not report readiness through the
+run/active-runs API; the normal ticket read endpoint independently computes
 `ready`/`blockedBy` for display.
 
 ## Error contract
