@@ -373,10 +373,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
         quotaFlags.remove(handle.id());
         runningProcesses.remove(handle.id());
         forgetExecLock(handle.id());
-        // The pre-publish destroy has already thrown for a compromised handle;
-        // once the container is gone, do not retain the id for the runner's
-        // lifetime.
-        compromised.remove(handle.id());
+        // A compromised flag is terminal: it is retained until close() so any
+        // later destroy() still refuses to report the handle as publishable.
     }
 
     private void forgetExecLock(String id) {

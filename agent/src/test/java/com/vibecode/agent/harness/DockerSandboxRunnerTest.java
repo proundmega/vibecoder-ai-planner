@@ -606,9 +606,10 @@ class DockerSandboxRunnerTest {
             // The handle is compromised: the pre-publish destroy must not
             // report it as cleanly gone.
             assertThrows(IOException.class, () -> runner.destroy(handle));
-            // The pre-publish gate has failed; a later cleanup is idempotent
-            // and the compromised id is released.
-            runner.destroy(handle);
+            // The compromised flag is terminal until close(): even after the
+            // container is gone, a later destroy still refuses to report the
+            // handle as publishable.
+            assertThrows(IOException.class, () -> runner.destroy(handle));
         }
 
         String logText = Files.readString(log);
