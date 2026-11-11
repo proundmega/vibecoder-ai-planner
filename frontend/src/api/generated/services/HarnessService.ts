@@ -31,7 +31,7 @@ export class HarnessService {
             body: requestBody,
             mediaType: 'application/json',
             errors: {
-                409: `Ticket dependencies are incomplete or an active run already exists`,
+                409: `Incomplete dependencies, an active run, or published work already exists`,
             },
         });
     }

@@ -80,6 +80,7 @@ async function assertCanReadRun(req, run) {
  *     summary: Start a durable harness run for an assigned agent ticket
  *     security:
  *       - ApiKeyAuth: []
+ *       - BearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -100,7 +101,7 @@ async function assertCanReadRun(req, run) {
  *       201:
  *         description: Harness run created
  *       409:
- *         description: Ticket dependencies are incomplete or an active run already exists
+ *         description: Incomplete dependencies, an active run, or published work already exists
  *         content:
  *           application/json:
  *             schema:

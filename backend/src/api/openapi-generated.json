@@ -2914,6 +2914,9 @@
         "security": [
           {
             "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
           }
         ],
         "requestBody": {
@@ -2967,7 +2970,7 @@
             "description": "Harness run created"
           },
           "409": {
-            "description": "Ticket dependencies are incomplete or an active run already exists",
+            "description": "Incomplete dependencies, an active run, or published work already exists",
             "content": {
               "application/json": {
                 "schema": {

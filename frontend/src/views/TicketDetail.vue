@@ -115,6 +115,15 @@ async function changeStatus(newStatus) {
     await updateTicket(ticket.value.id, { status: newStatus })
     ticket.value.status = newStatus
     error.value = null
+
+    // Dependencies may have completed since the page loaded, so refresh the
+    // readiness fields after a successful start/transition.
+    const fresh = await fetchTicket(ticket.value.id)
+    if (fresh) {
+      ticket.value.status = fresh.status
+      ticket.value.ready = fresh.ready
+      ticket.value.blockedBy = fresh.blockedBy
+    }
   } catch (err) {
     console.error('Failed to update status:', err)
     const blocked = dependencyBlockedMessage(err?.details)
