@@ -269,7 +269,7 @@ class DependencyService {
       ...new Set(parsed.flatMap(entry => entry.ids)),
     ];
     if (allDependencyIds.length === 0) {
-      return parsed.map((entry, index) =>
+      return parsed.map(entry =>
         entry.unreadable
           ? {
               ready: false,
