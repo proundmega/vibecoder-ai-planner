@@ -337,7 +337,9 @@ sandbox job:   build sandbox/proxy images → real-Docker integration suite
 The full pipeline runs on every build; no stages are skipped by change
 detection. The backend job uses a real PostgreSQL service container. If Jenkins
 runs in a container, `agent/scripts/sandbox-ci-env.sh` maps the workspace to the
-Docker host path; set `JENKINS_HOST_HOME` when the mount cannot be discovered.
+Docker host path; set `JENKINS_HOST_HOME` when the mount cannot be discovered
+(the identity fallback warns). It only maps workspaces under `JENKINS_HOME`; a
+workspace outside that root is left unchanged.
 
 ## Planning
 

@@ -54,11 +54,19 @@ if [[ -z "$HOST_JENKINS_HOME" ]]; then
     fi
 fi
 if [[ -z "$HOST_JENKINS_HOME" ]]; then
-    # A non-containerized Jenkins needs no path translation.
+    # A non-containerized Jenkins needs no path translation. In a container
+    # with a named volume or an unreachable original daemon this identity
+    # mapping is wrong; make that visible instead of failing later at bind
+    # mount time.
+    echo "warning: could not discover the host path for $JENKINS_HOME_DIR; " \
+         "using identity mapping. Set JENKINS_HOST_HOME when Jenkins runs in a container." >&2
     HOST_JENKINS_HOME="$JENKINS_HOME_DIR"
 fi
 export JENKINS_HOST_HOME="$HOST_JENKINS_HOME"
 
+# JENKINS_HOST_HOME maps only a workspace under JENKINS_HOME. A workspace
+# outside that root is left unchanged; put the workspace under JENKINS_HOME or
+# provide an explicit mapping in the caller.
 if [[ -n "${WORKSPACE:-}" ]]; then
     if [[ "$WORKSPACE" == "$JENKINS_HOME_DIR"/* ]]; then
         SANDBOX_CI_HOST_WORKSPACE="${HOST_JENKINS_HOME}${WORKSPACE#"$JENKINS_HOME_DIR"}"

@@ -216,7 +216,8 @@ EOF
                     // The harness adds Node/OpenCode to the runtime image; a JAR
                     // build alone does not validate that stage. Resolve the
                     // selected daemon in this shell; the export does not carry
-                    // across sh steps.
+                    // across sh steps. --load requires a buildx-capable CLI
+                    // (Docker 23+; CI runs Docker 29).
                     sh '''
                         . scripts/sandbox-ci-env.sh
                         echo "Agent image build DOCKER_HOST=$DOCKER_HOST"

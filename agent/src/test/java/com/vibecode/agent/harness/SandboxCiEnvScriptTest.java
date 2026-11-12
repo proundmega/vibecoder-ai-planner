@@ -12,6 +12,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class SandboxCiEnvScriptTest {
@@ -97,6 +98,7 @@ class SandboxCiEnvScriptTest {
 
         assertEquals(0, result.exitCode, result.output);
         assertEquals("/var/jenkins_home/workspace/job", result.value("HOST_WORKSPACE"));
+        assertTrue(result.output.contains("using identity mapping"), result.output);
     }
 
     @Test

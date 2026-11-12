@@ -110,7 +110,7 @@ integration job: docker compose up → Jest integration tests → bash integrati
 agent job: mvn test → package → agent image build
 sandbox job: build sandbox/proxy images → Docker integration suite
 ```
-The full pipeline runs on every build; no stages are skipped by change detection. Backend CI uses a real PostgreSQL service container. Integration tests run in a dedicated `docker-compose.test.yml` test container. When Jenkins runs in a container, `agent/scripts/sandbox-ci-env.sh` maps its workspace to the Docker host path; set `JENKINS_HOST_HOME` if the mount cannot be discovered automatically.
+The full pipeline runs on every build; no stages are skipped by change detection. Backend CI uses a real PostgreSQL service container. Integration tests run in a dedicated `docker-compose.test.yml` test container. When Jenkins runs in a container, `agent/scripts/sandbox-ci-env.sh` maps its workspace to the Docker host path; set `JENKINS_HOST_HOME` if the mount cannot be discovered automatically (identity fallback warns). `JENKINS_HOST_HOME` only maps a workspace under `JENKINS_HOME`; a workspace outside that root is left unchanged.
 
 ### Bug fix protocol
 Every fix **must** include a regression test.

@@ -24,7 +24,7 @@ PROXY_IMAGE="${SANDBOX_IT_PROXY_IMAGE:-vibecode-sandbox-proxy:ci}"
 if [[ "${SANDBOX_IT_BUILD:-1}" != "0" ]]; then
     # Docker's buildx docker-container driver keeps the result in the build
     # cache unless --load is requested; the integration tests need the tag in
-    # the local image store.
+    # the local image store. This requires a buildx-capable CLI (Docker 23+).
     echo "Building sandbox image ${IMAGE}"
     docker build --load -f "${ROOT}/sandbox.Dockerfile" -t "${IMAGE}" "${ROOT}"
     echo "Building sandbox proxy image ${PROXY_IMAGE}"
