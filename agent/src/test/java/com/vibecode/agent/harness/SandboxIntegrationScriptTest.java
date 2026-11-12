@@ -38,9 +38,9 @@ class SandboxIntegrationScriptTest {
 
         assertEquals(0, result.exitCode, result.output);
         String log = Files.readString(fixture.log);
-        assertTrue(log.contains("docker build -f " + fixture.root
+        assertTrue(log.contains("docker build --load -f " + fixture.root
             + "/sandbox.Dockerfile -t vibecode-agent-sandbox:ci " + fixture.root), log);
-        assertTrue(log.contains("docker build -f " + fixture.root
+        assertTrue(log.contains("docker build --load -f " + fixture.root
             + "/sandbox-proxy.Dockerfile -t vibecode-sandbox-proxy:ci " + fixture.root), log);
         assertTrue(log.contains("mvn -Dtest=DockerSandboxRunnerIntegrationTest test"), log);
         assertTrue(log.contains("SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci"), log);
