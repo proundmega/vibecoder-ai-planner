@@ -51,37 +51,53 @@
      shared volume names (`postgres_data`, `uploads_data`, `vibecode_repos`)
      are refused regardless of labels.
    - `--legacy-inventory` is read-only. It lists pre-label candidates from old
-     `vibecode-*` Compose projects, `vibecode-*`/`:ci` images and the existing
-     sandbox label without requiring the new labels; it marks
+     `vibecode-*` Compose projects, old build-unique tags and the existing
+     sandbox label without requiring the new labels. Every image carrying a
+     `:ci` tag is marked `shared/current — do not remove`; only build-unique old
+     tags such as `vibecode-agent:<build>` are removal candidates. It marks
      `vibecoder-ai-planner` and the exact shared volumes as excluded and never
      issues a delete, prune or `compose down`.
    - `--dry-run`, `--docker-host`, `--daemon-id` and grace-period environment
      variables. Post mode is best-effort and exits 0; scheduled mode exits
      non-zero on any failure. — verify: `JenkinsDockerCleanupScriptTest`.
 
-4. **Explicit daemon mode and build-daemon record** — extend
+4. **Daemon compatibility gate and cleanup target** — extend
    `agent/scripts/sandbox-ci-env.sh` with
    `SANDBOX_CI_DOCKER_HOST_MODE=explicit` (default `auto` keeps today's
    local-socket preference). In explicit mode the helper requires the supplied
    `DOCKER_HOST`, only resolves the TCP hostname, and never falls back to
-   `unix:///var/run/docker.sock`; an empty host is an error. Set
-   `SANDBOX_CI_DOCKER_HOST_MODE=explicit` in the Jenkins pipeline environment so
-   the Agent, Sandbox and Supply Chain stages use the same `DOCKER_HOST` as the
-   Cypress and Integration Tests stages instead of choosing a local socket.
-   Immediately before the first `docker compose` command in the Integration
-   Tests stage, `mkdir -p target` and write `target/ci-docker-daemon.env` with
-   `CI_DOCKER_HOST`, `CI_DOCKER_DAEMON_ID="$(docker info --format '{{.ID}}')"`
-   and `CI_BUILD_NUMBER`.
-   In `post { always }`, prefer that file only when its build number matches the
-   current build, set explicit mode, verify the daemon ID and only then call the
-   cleanup script. If the record is missing or stale (for example an early-stage
-   failure or a reused workspace), use the Jenkins `DOCKER_HOST` in explicit
-   mode and compute the ID; if both are missing, log a warning and skip. Never
-   guess a daemon or use the local socket. The scheduled cleanup uses the same
-   explicit mode with its own `CI_DOCKER_HOST`/`CI_DOCKER_DAEMON_ID` and aborts
-   before listing or deleting anything on a mismatch. — verify:
-   `SandboxCiEnvScriptTest`, `JenkinsDockerCleanupScriptTest` and
-   `JenkinsfileCiCleanupTest`.
+   `unix:///var/run/docker.sock`; an empty host is an error.
+
+   Before changing pipeline daemon mode, run the real-Docker suite through the
+   explicit host:
+   `DOCKER_HOST="$CI_DOCKER_HOST" SANDBOX_CI_DOCKER_HOST_MODE=explicit
+   SANDBOX_IT_BUILD=1 SANDBOX_IT_NETWORK=1
+   bash scripts/sandbox-integration-test.sh`.
+   The script builds the sandbox/proxy images and runs
+   `DockerSandboxRunnerIntegrationTest`. Record the result. If it passes and
+   exec/cp/pause/top/run/network are permitted, set explicit mode for all
+   Docker stages. If it fails because the proxy is restricted, keep the
+   build/test stages on the existing helper/local-socket selection, make the
+   Integration Tests stage use that same selection for its Compose project, and
+   use explicit mode only for cleanup. If the proxy is restricted and there is
+   no local socket, stop and record the sandbox suite as blocked; do not force
+   explicit mode.
+
+   In both cases, capture the actual build/test host and
+   `docker info --format '{{.ID}}'` with `sh(returnStdout: true)` into Jenkins
+   pipeline variables (`CI_DOCKER_HOST`, `CI_DOCKER_DAEMON_ID`) immediately
+   before creating the Compose project. Do not write or read
+   `target/ci-docker-daemon.env`; a workspace file is not authoritative. In
+   `post { always }`, use the pipeline variables, set explicit mode, verify the
+   daemon ID and only then call the cleanup script. If the variables are
+   missing, use the explicit Jenkins `DOCKER_HOST` and compute the ID only in
+   the explicit-all-stages variant; in the local-socket variant, log a warning
+   and skip. Never guess a daemon or use the local socket. The scheduled cleanup
+   uses the same explicit mode with its own
+   `CI_DOCKER_HOST`/`CI_DOCKER_DAEMON_ID` and aborts before listing or deleting
+   anything on a mismatch. — verify: `SandboxCiEnvScriptTest`,
+   `JenkinsDockerCleanupScriptTest`, `JenkinsfileCiCleanupTest` and the
+   pre-implementation `DockerSandboxRunnerIntegrationTest` run.
 
 5. **Scheduled maintenance job** — add `Jenkinsfile.cleanup` with
    `agent { label 'vibecode-ci-docker' }`, a six-hour cron trigger and
@@ -103,16 +119,48 @@
    provisioning prerequisite, retention values, manual dry-run and rollback in
    `05_RUNBOOK.md`. Add the one-time legacy backlog procedure: read-only
    inventory without new-label filters, candidate classification, dry-run
-   command list, explicit confirmation and evidence record. Update `README.md`,
-   `AGENTS.md` and the `PENDING.txt` row. — verify:
-   `node planning/check-planning.js`, a runbook-defaults check and the FR6
-   documentation test.
+   command list, explicit confirmation and evidence record. The procedure marks
+   every shared `:ci` image as current and never removes it; only build-unique
+   old tags are candidates. Inventory volumes with `docker volume ls` plus
+   `docker volume inspect` for creation dates. Run legacy `compose down` from
+   the repo root with the compose files. Update `README.md`, `AGENTS.md` and the
+   `PENDING.txt` row. — verify: `node planning/check-planning.js`, a
+   runbook-defaults check and the FR6 documentation test.
+
+## Pre-implementation daemon gate
+
+Run this **before** changing any Docker stage's daemon mode:
+
+```bash
+cd agent
+DOCKER_HOST="$CI_DOCKER_HOST" \
+SANDBOX_CI_DOCKER_HOST_MODE=explicit \
+SANDBOX_IT_BUILD=1 \
+SANDBOX_IT_NETWORK=1 \
+bash scripts/sandbox-integration-test.sh
+```
+
+Record the result in `03` Results. The script builds the sandbox/proxy images
+and runs `DockerSandboxRunnerIntegrationTest` with the network suite enabled.
+Replace `$CI_DOCKER_HOST` with the explicit host under test.
+
+- **Pass** — the explicit `DOCKER_HOST` supports exec/cp/pause/top/run/network:
+  use explicit mode for all Docker stages.
+- **Fail because the proxy is restricted** — keep the Agent, Sandbox and Supply
+  Chain stages on the existing helper/local-socket selection, make the
+  Integration Tests stage use that same selection, and use explicit mode only
+  for post/scheduled cleanup. If no local socket is available either, record
+  the sandbox suite as blocked and do not force explicit mode.
+
+In both cases, capture the daemon actually used by the build/test stages into
+Jenkins pipeline variables as described in step 4. Do not proceed with the
+explicit-all-stages variant until this gate is green.
 
 ## Per-file changes
 
 | File | Action | Change |
 |---|---|---|
-| `Jenkinsfile` | MODIFY | Teardown first in `post { always }`; `cleanWs()` in `post { cleanup }`; remove success-only cleanup; add `CI_SMOKE_FAIL`; set explicit-daemon mode for all Docker stages so they share `DOCKER_HOST`; record the Integration Tests daemon host/ID in `target/ci-docker-daemon.env`; load it and use explicit mode in post cleanup; add CI labels/tags; call the cleanup script for the current project and current build images. Do not change the main pipeline's agent label. |
+| `Jenkinsfile` | MODIFY | Teardown first in `post { always }`; `cleanWs()` in `post { cleanup }`; remove success-only cleanup; add `CI_SMOKE_FAIL`; apply the daemon compatibility gate; capture the build/test host and daemon ID with `sh(returnStdout: true)` into pipeline variables (never a workspace file); use explicit mode for all stages only if the gate passes, otherwise only for cleanup; add CI labels/tags; call the cleanup script for the current project and current build images. Do not change the main pipeline's agent label. |
 | `Jenkinsfile.cleanup` | CREATE | Scheduled orphan-GC pipeline with dedicated node label, cron, `DRY_RUN`, explicit host/daemon ID and grace-period parameters. |
 | `agent/scripts/jenkins-docker-cleanup.sh` | CREATE | Scoped teardown/build-image removal, label/age-scoped orphan GC and read-only `--legacy-inventory`; dry-run and daemon verification. |
 | `agent/scripts/sandbox-ci-env.sh` | MODIFY | Add explicit-daemon mode that never substitutes the local socket. |
@@ -120,11 +168,11 @@
 | `docker-compose.yml` | MODIFY | Add `build.labels` to `migrate`, `api`, `frontend`; label `default` network and the three volumes with the CI metadata. |
 | `docker-compose.test.yml` | MODIFY | Add `build.labels` to the `test` image. |
 | `docker-compose.e2e.yml` | MODIFY | Add `build.labels` to the `cypress` image. |
-| `agent/src/test/java/com/vibecode/agent/harness/JenkinsDockerCleanupScriptTest.java` | CREATE | Fake-Docker coverage for compose teardown, build-image removal, orphan filters, `:ci` alias protection, dry-run, grace periods, daemon checks, volume protection and legacy inventory. |
-| `agent/src/test/java/com/vibecode/agent/harness/JenkinsfileCiCleanupTest.java` | CREATE | Static assertions for post ordering, `cleanWs()` placement, daemon record/read, labels, smoke hook and scheduled-job wiring. |
+| `agent/src/test/java/com/vibecode/agent/harness/JenkinsDockerCleanupScriptTest.java` | CREATE | Fake-Docker coverage for compose teardown, build-image removal, orphan filters, `:ci` alias protection, dry-run, grace periods, daemon checks, workspace-override rejection, volume protection and legacy inventory. |
+| `agent/src/test/java/com/vibecode/agent/harness/JenkinsfileCiCleanupTest.java` | CREATE | Static assertions for post ordering, `cleanWs()` placement, pipeline daemon variables (no workspace file), daemon gate, labels, smoke hook and scheduled-job wiring. |
 | `agent/src/test/java/com/vibecode/agent/harness/SandboxIntegrationScriptTest.java` | MODIFY | Assert the CI labels and build-unique tags are passed. |
 | `agent/src/test/java/com/vibecode/agent/harness/SandboxCiEnvScriptTest.java` | MODIFY | Cover `SANDBOX_CI_DOCKER_HOST_MODE=explicit`. |
-| `planning/bp-135-ci-docker-resource-cleanup/05_RUNBOOK.md` | CREATE | Provisioning, retention defaults, dry-run, inspect, legacy backlog procedure, recovery and rollback. |
+| `planning/bp-135-ci-docker-resource-cleanup/05_RUNBOOK.md` | CREATE | Provisioning, retention defaults, dry-run, inspect, daemon compatibility, legacy backlog procedure with shared-`:ci` protection, recovery and rollback. |
 | `AGENTS.md`, `README.md` | MODIFY | Document the cleanup job, retention env vars, dedicated node and the no-broad-prune rule. |
 | `PENDING.txt` | MODIFY | Keep the `bp-135` row and label aligned with this suite. |
 
@@ -140,25 +188,28 @@
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphansRemovesOnlyOldLabelledResources` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanGcKeepsSharedCiAlias` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR4 | Script | `JenkinsDockerCleanupScriptTest` | `fr4CleanupNeverPrunesBroadlyOrTouchesLocalDev` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR5 | Manual | `DockerSandboxRunnerIntegrationTest` | `fr5ExplicitDaemonRunsRealDockerSuite` | `DOCKER_HOST="$CI_DOCKER_HOST" SANDBOX_CI_DOCKER_HOST_MODE=explicit SANDBOX_IT_BUILD=1 SANDBOX_IT_NETWORK=1 bash scripts/sandbox-integration-test.sh` |
 | FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5RequiresPinnedDaemonAndRejectsMismatch` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
-| FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5PostCleanupUsesRecordedBuildDaemon` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5PostCleanupUsesPipelineDaemon` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5PostCleanupFallsBackToExplicitHost` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
-| FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5StaleDaemonRecordIsIgnored` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR5 | Static | `JenkinsfileCiCleanupTest` | `fr5ScheduledJobPinsNodeAndDaemon` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
-| FR5 | Static | `JenkinsfileCiCleanupTest` | `fr5PostCleanupReadsDaemonRecord` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
-| FR6 | Script | `JenkinsDockerCleanupScriptTest` | `fr6LegacyInventoryListsOldResourcesWithoutDeleting` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR5 | Static | `JenkinsfileCiCleanupTest` | `fr5PostCleanupUsesPipelineDaemonVariable` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
+| FR6 | Script | `JenkinsDockerCleanupScriptTest` | `fr6LegacyInventoryListsOldResourcesWithoutDeleting` (asserts `:ci` images are shared/current and excluded) | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR6 | Docs | `05_RUNBOOK.md` | `fr6LegacyCleanupRequiresManualConfirmation` | Runbook review: dry-run, explicit confirmation and evidence steps present |
 | NFR1 | Script | `JenkinsDockerCleanupScriptTest` | `nfr1MissingResourcesAreIdempotentAndPostModeNonFatal` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR2 | Script | `JenkinsDockerCleanupScriptTest` | `nfr2GraceAndBuildIdSkipConcurrentBuildResources` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR3 | Script | `JenkinsDockerCleanupScriptTest` | `nfr3FakeDockerCoversAllCleanupPaths` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR4 | Script | `JenkinsDockerCleanupScriptTest` | `nfr4RetentionValuesComeFromEnvironment` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR4 | Docs | `05_RUNBOOK.md` | `nfr4RunbookDocumentsTheSameDefaults` | `grep` the defaults in `05_RUNBOOK.md` and `README.md` |
+| NFR5 | Script | `JenkinsDockerCleanupScriptTest` | `nfr5WorkspaceDaemonFileCannotRedirectCleanup` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| NFR5 | Static | `JenkinsfileCiCleanupTest` | `nfr5NoWorkspaceDaemonFileIsTrusted` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
 
 ## Verification commands
 
 ```bash
 node planning/check-planning.js
 cd agent && mvn -Dtest=JenkinsDockerCleanupScriptTest,JenkinsfileCiCleanupTest,SandboxIntegrationScriptTest,SandboxCiEnvScriptTest test
+cd agent && DOCKER_HOST="$CI_DOCKER_HOST" SANDBOX_CI_DOCKER_HOST_MODE=explicit SANDBOX_IT_BUILD=1 SANDBOX_IT_NETWORK=1 bash scripts/sandbox-integration-test.sh
 cd agent && mvn test
 ```
 
@@ -180,6 +231,7 @@ docker images --filter label=com.vibecode.ci.build="$BUILD_NUMBER"
 | 0 | author | none | Initial lightweight plan | n/a |
 | 1 | external reviewer | B1 post ordering could still no-op after `cleanWs()`; B2 `down -v` contradicted shared-volume protection; B3 scheduled GC daemon/selectors were not deterministic or positive; B4 plan was stale relative to #140. Should-fix: FR2/FR1 traceability, sandbox/proxy images outside Compose teardown, existing sandbox label, missing runbook, Jenkins job provisioning, D1 follow-up, pending decisions and test-name IDs. | This revision: FR1 now fixes ordering explicitly and adds a smoke hook; FR4/decision 4 define the validated build-scoped volume policy and explicit local-dev deny; FR3/FR5/decision 5 use positive labels and a pinned scheduled host/daemon ID; D4 records #140 as merged; every should-fix item is mapped above. | pending |
 | 2 | external reviewer | Existing pre-label backlog was invisible to the labelled GC; post cleanup could select a different daemon than the build; main-pipeline pinning was a capacity/availability change; no `:ci` alias protection test; the CI-label anchor was ambiguous for pulled services; FR2 said Compose images have a `:ci` alias. | This revision adds FR6, the runbook legacy inventory/cleanup procedure and read-only `--legacy-inventory`; sets explicit-daemon mode for all Jenkins Docker stages and records the Integration Tests host/ID for post cleanup; keeps the main pipeline on its existing agents and pins only the scheduled job; adds the `:ci` alias test; uses the project network/volume as the authoritative anchor; corrects FR2. | pending |
+| 3 | external reviewer | Legacy cleanup could remove the current shared `:ci` aliases; the volume inventory used an unsupported `CreatedAt` formatter field; forcing explicit mode for all stages could break the real-Docker sandbox suite; the workspace daemon record could redirect cleanup; legacy compose command depended on the operator's cwd; image inventory omitted size. | This revision marks every `:ci` image shared/current and limits legacy removal to build-unique old tags; fixes volume/image inventory commands and the repo-root compose command; adds the explicit-daemon compatibility gate and keeps build/test on the local socket when the proxy is restricted; moves the cleanup target to Jenkins pipeline variables and adds NFR5; adds FR5/FR6/NFR5 coverage. | pending |
 
 ## Results
 
