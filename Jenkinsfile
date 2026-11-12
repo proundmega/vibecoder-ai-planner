@@ -237,6 +237,9 @@ EOF
                     // the Docker host can bind-mount.
                     sh '''
                         set -e
+                        # WORKSPACE is normally exported by Jenkins; fall back
+                        # to the parent of dir('agent') when it is absent.
+                        export WORKSPACE="${WORKSPACE:-$(cd .. && pwd)}"
                         . scripts/sandbox-ci-env.sh
                         export SANDBOX_IT_BUILD=1
                         IT_ROOT="$WORKSPACE/target/sandbox-it"
