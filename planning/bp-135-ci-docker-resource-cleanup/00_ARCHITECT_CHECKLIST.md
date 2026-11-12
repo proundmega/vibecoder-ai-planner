@@ -95,7 +95,7 @@ daemon restart or Jenkins crash.
 | FR5 daemon gate | pending — run on Jenkins against the explicit `DOCKER_HOST` before daemon-mode implementation; record pass/fallback/blocked in `03` Results. If fallback is selected, also record the existing local-socket suite result as the validating run | ☐ |
 | D13 helper available | PR #140 merged at `02ffc0a`; `agent/scripts/sandbox-ci-env.sh` is on master | ☑ |
 | Plan merged | PR #141, merge `7867a41` | ☑ |
-| Implementation started | `feat/bp-135-ci-docker-cleanup`; local-socket variant first; unit tests and planning check pass | ☑ |
+| Implementation started | `feat/bp-135-ci-docker-cleanup`, PR #142; local-socket variant first; unit tests and planning check pass | ☑ |
 | Implementation completed | pending | ☐ |
 | Verification results | pending (`03` Results) | ☐ |
 
