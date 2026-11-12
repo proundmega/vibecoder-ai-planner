@@ -236,6 +236,35 @@ EOF
             }
         }
 
+        stage('Sandbox Integration') {
+            steps {
+                dir('agent') {
+                    // Build the real sandbox and proxy images and run the
+                    // Docker acceptance suite against them (D13). Resolve
+                    // DOCKER_HOST in this same shell so docker and the JUnit
+                    // process see the same daemon.
+                    sh '''
+                        set -e
+                        if echo "${DOCKER_HOST:-}" | grep -q "^tcp://"; then
+                            HOSTNAME=$(echo "$DOCKER_HOST" | sed "s|tcp://||; s|:.*||")
+                            PORT=$(echo "$DOCKER_HOST" | sed "s|.*:||")
+                            IP=$(getent hosts "$HOSTNAME" 2>/dev/null | awk '{print $1}')
+                            if [ -n "$IP" ]; then
+                                export DOCKER_HOST="tcp://$IP:$PORT"
+                            elif [ -n "${DOCKER_HOST_FALLBACK:-}" ]; then
+                                export DOCKER_HOST="$DOCKER_HOST_FALLBACK"
+                            fi
+                        fi
+                        export SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci
+                        export SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:ci
+                        export SANDBOX_IT_NETWORK_IMAGE="$SANDBOX_IT_IMAGE"
+                        export SANDBOX_IT_NETWORK=1
+                        bash scripts/sandbox-integration-test.sh
+                    '''
+                }
+            }
+        }
+
         stage('Sandbox Supply Chain') {
             steps {
                 dir('agent') {

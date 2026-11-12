@@ -107,7 +107,7 @@ frontend job: npm ci → lint → typecheck → unit test → coverage → build
 contract test: vitest run api-contract.test.ts (runs after backend+frontend)
 cypress: docker compose (e2e overlay) → cypress/included runs e2e + component
 integration job: docker compose up → Jest integration tests → bash integration tests
-agent job: mvn package -q -DskipTests
+agent job: mvn test → package → build sandbox images → Docker integration suite
 ```
 The full pipeline runs on every build; no stages are skipped by change detection. Backend CI uses a real PostgreSQL service container. Integration tests run in a dedicated `docker-compose.test.yml` test container.
 
