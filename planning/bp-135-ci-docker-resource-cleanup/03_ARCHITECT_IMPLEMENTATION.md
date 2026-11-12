@@ -166,7 +166,9 @@ explicit-all-stages variant until this gate is green.
 Jenkins explicit daemon (`docker-socket-proxy` does not resolve here), so the
 gate must be run on Jenkins against the real `DOCKER_HOST` before any
 daemon-mode implementation change. Record `pass`, `local-socket fallback` or
-`blocked` in `03` Results.
+`blocked` in `03` Results. If `local-socket fallback` is selected, also record
+the existing local-socket `DockerSandboxRunnerIntegrationTest` result as the
+validating run; the explicit-host result remains `local-socket fallback`.
 
 ## Per-file changes
 
@@ -245,6 +247,7 @@ docker images --filter label=com.vibecode.ci.build="$BUILD_NUMBER"
 | 2 | external reviewer | Existing pre-label backlog was invisible to the labelled GC; post cleanup could select a different daemon than the build; main-pipeline pinning was a capacity/availability change; no `:ci` alias protection test; the CI-label anchor was ambiguous for pulled services; FR2 said Compose images have a `:ci` alias. | This revision adds FR6, the runbook legacy inventory/cleanup procedure and read-only `--legacy-inventory`; sets explicit-daemon mode for all Jenkins Docker stages and records the Integration Tests host/ID for post cleanup; keeps the main pipeline on its existing agents and pins only the scheduled job; adds the `:ci` alias test; uses the project network/volume as the authoritative anchor; corrects FR2. | pending |
 | 3 | external reviewer | Legacy cleanup could remove the current shared `:ci` aliases; the volume inventory used an unsupported `CreatedAt` formatter field; forcing explicit mode for all stages could break the real-Docker sandbox suite; the workspace daemon record could redirect cleanup; legacy compose command depended on the operator's cwd; image inventory omitted size. | This revision marks every `:ci` image shared/current and limits legacy removal to build-unique old tags; fixes volume/image inventory commands and the repo-root compose command; adds the explicit-daemon compatibility gate and keeps build/test on the local socket when the proxy is restricted; moves the cleanup target to Jenkins pipeline variables and adds NFR5; adds FR5/FR6/NFR5 coverage. | pending |
 | 4 | external reviewer | Local-socket wording could be read as forbidding the captured local socket; the Jenkinsfile was described as running the manual gate; the gate command path was inconsistent; the Cypress stage's daemon choice was unspecified in the fallback. | This revision distinguishes the captured local socket from an uncaptured fallback, says the pipeline applies the recorded gate result, makes the gate command run from `agent`, and documents Cypress as keeping its current `DOCKER_HOST` plus stage-level cleanup. The gate itself is recorded as a pending operational prerequisite. | pending |
+| 5 | external reviewer | FR5 gate remains the only operational prerequisite; if the local-socket fallback is selected, the existing local-socket suite result must be recorded as the validating run. | FR5 status, decision 7, the operational gate section and the runbook now require that evidence; the gate remains pending on Jenkins. | pending |
 
 ## Results
 

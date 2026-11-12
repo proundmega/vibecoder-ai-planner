@@ -238,7 +238,7 @@ remove. It must not issue a delete, prune or `compose down` command.
 | Job provisioned | Jenkins job `vibecode-ci-docker-cleanup` exists with cron | Visible in Jenkins |
 | Dry run | `--orphans --dry-run` | Lists only labelled/old resources; no mutation |
 | Post daemon | Build log shows pipeline-captured host/ID and post cleanup uses the same ID | No local-socket fallback or workspace-file override; mismatch aborts |
-| Daemon compatibility | `DockerSandboxRunnerIntegrationTest` with explicit host and network suite | Recorded pass, local-socket fallback, or documented blocked status |
+| Daemon compatibility | `DockerSandboxRunnerIntegrationTest` with explicit host and network suite | Recorded pass, local-socket fallback with the existing suite result as validation, or documented blocked status |
 | Daemon guard | Wrong `CI_DOCKER_DAEMON_ID` | Non-zero exit before any delete |
 | Post order | Forced-failure build log | Teardown logged before `cleanWs()` |
 | `:ci` alias | Fixture with an old build label still tagged `:ci` | Any cleanup leaves it in place |

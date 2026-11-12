@@ -91,7 +91,8 @@ daemon restart or Jenkins crash.
 | Plan review round 2 | Pre-label backlog and post-cleanup daemon findings addressed; re-review pending (`03` Review record) | ☑ |
 | Plan review round 3 | Legacy `:ci` protection, volume inventory, explicit-daemon compatibility gate and workspace-trust findings addressed; re-review pending (`03` Review record) | ☑ |
 | Plan review round 4 | Local-socket wording, gate ownership/path, Cypress daemon variant and gate status clarified; re-review pending (`03` Review record) | ☑ |
-| FR5 daemon gate | pending — run on Jenkins against the explicit `DOCKER_HOST` before daemon-mode implementation; record pass/fallback/blocked in `03` Results | ☐ |
+| Plan review round 5 | FR5 gate fallback evidence requirement recorded; re-review pending (`03` Review record) | ☑ |
+| FR5 daemon gate | pending — run on Jenkins against the explicit `DOCKER_HOST` before daemon-mode implementation; record pass/fallback/blocked in `03` Results. If fallback is selected, also record the existing local-socket suite result as the validating run | ☐ |
 | D13 helper available | PR #140 merged at `02ffc0a`; `agent/scripts/sandbox-ci-env.sh` is on master | ☑ |
 | Plan merged | pending | ☐ |
 | Implementation completed | pending | ☐ |
@@ -117,7 +118,7 @@ daemon restart or Jenkins crash.
 | 4 | Volume policy for the validated build project? | A: `down -v` for the validated build-scoped project, refuse local-dev/external volumes by positive selector; B: never `-v`, add a separate volume GC | A — build-scoped volumes are already disposable (the Cypress stage uses `-v`); the local-dev project is explicitly refused | A — accepted 2026-11-12 |
 | 5 | Daemon selection for the scheduled job? | A: one dedicated node + explicit host/daemon ID; B: iterate all Docker hosts | A — deterministic and safe; multi-host fan-out is D5 | A — accepted 2026-11-12 |
 | 6 | What about resources created before the new labels/tags? | A: one-time manual inventory/cleanup procedure in this ticket (read-only inventory, dry-run, explicit confirmation); B: defer the existing backlog | A — the new GC cannot see the old backlog, and leaving it in place would not fix the problem that motivated the ticket | A — accepted 2026-11-12 |
-| 7 | What if the explicit `DOCKER_HOST` cannot run the real-Docker sandbox suite? | A: keep build/test stages on the local socket and use explicit mode only for cleanup; B: force explicit mode and accept a broken suite | A — the pre-implementation gate decides; record the result before changing pipeline daemon mode | A — conditional, gate pending |
+| 7 | What if the explicit `DOCKER_HOST` cannot run the real-Docker sandbox suite? | A: keep build/test stages on the local socket and use explicit mode only for cleanup; B: force explicit mode and accept a broken suite | A — the pre-implementation gate decides; if fallback is selected, record the existing local-socket suite result as the validating run | A — conditional, gate pending |
 
 ## Completion gate
 
