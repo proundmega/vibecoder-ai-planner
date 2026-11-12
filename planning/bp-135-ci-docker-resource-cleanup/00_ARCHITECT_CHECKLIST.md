@@ -19,61 +19,73 @@ depends_on: []
 
 ## Why this ticket exists
 
-Failed or aborted Jenkins builds leave per-build Compose images, sandbox/proxy
-images, containers and networks behind. The current pipeline only runs Compose
-teardown in `post { success { ... } }`; the failure path just logs. A long-lived
-Jenkins host therefore accumulates hundreds of images and running containers,
-which wastes disk and can make later scans or tests target stale resources.
+Each Jenkins build runs its Compose stack under a build-unique project name
+(`vibecode-<branch>-<build>`) and builds three shared-tag CI images. Failed or
+aborted builds can leave that project's containers, network, volumes and images
+behind. The problem is not only the failure path: the current top-level cleanup
+is in `post { success { ... } }`, but Jenkins runs `post { always { cleanWs() } }`
+first (the documented order is `always` → … → `success` → `cleanup`).
+`cleanWs()` deletes the workspace, including the Compose files, so the success
+cleanup cannot run and its `catch` hides the failure. The Cypress stage has its
+own stage-level `post { always { ... down -v ... } }`; the gap is the top-level
+integration stack and the CI images built outside that project.
 
-The fix has two layers: each build cleans up after itself even on failure, and a
-scheduled maintenance job removes resources that survive a killed agent or a
-Jenkins crash.
+The fix has two layers: every build tears down its own project in
+`post { always }` before `cleanWs()` moves to `post { cleanup }`, and a
+scheduled maintenance job removes resources that survive a killed agent,
+daemon restart or Jenkins crash.
 
 ## Requirements
 
 | ID | Requirement | Acceptance (testable) |
 |---|---|---|
-| FR1 | Every pipeline run tears down its own Compose project in `post { always }`, including failure and abort paths. | A failed smoke build runs `docker compose -p "$COMPOSE_PROJECT_NAME" down -v --rmi local --remove-orphans`; the project's containers, network and locally built images are gone. |
-| FR2 | CI-built images are labelled with `com.vibecode.ci=true`, `com.vibecode.ci.job` and a unique build identifier (or an equivalent unique tag). | `docker image inspect` shows the labels on the supervisor, sandbox and proxy images built by a run. |
-| FR3 | A scheduled Jenkins maintenance job removes orphaned CI resources by label and age: sandbox containers/networks older than the grace period, CI images older than the image grace period, and stopped Compose projects whose build is no longer running. | A fixture with old labelled resources is removed; current resources and unlabelled resources are left untouched. |
-| FR4 | Cleanup is scoped and safe: no `docker system prune -a`, no removal of shared data volumes (`postgres_data`, `uploads_data`, `vibecode_repos`), no removal of non-`vibecode` resources, and no resource newer than the grace period. | Script test asserts the exact filters and asserts that no broad prune or shared-volume removal command is issued. |
-| FR5 | Cleanup uses the same Docker daemon as the build, via the shared `sandbox-ci-env.sh` selection (or equivalent). | A cleanup invoked with the CI environment talks to the daemon printed by the build stage; `--dry-run` reports the same host. |
-| NFR1 | Cleanup is idempotent and non-fatal for the build: missing resources are ignored; a failed `post` cleanup warns but does not turn a successful build into a failure. The scheduled job reports failures. | Re-running cleanup exits 0; simulated `docker` failure still leaves the build result unchanged; scheduled job exits non-zero. |
-| NFR2 | Cleanup cannot race a concurrent build: the grace period is longer than the pipeline timeout, and labels/project names uniquely identify a build. | A resource younger than the grace period is never selected; two concurrent builds' resources have distinct labels/project names. |
-| NFR3 | The cleanup script has deterministic regression coverage with a fake `docker` binary. | `JenkinsDockerCleanupScriptTest` covers compose teardown, orphan filtering, dry-run, age cutoff and shared-volume protection. |
-| NFR4 | Retention values are configurable and documented. | `CI_IMAGE_GRACE_HOURS`, `CI_CONTAINER_GRACE_HOURS` and `CI_BUILD_GRACE_HOURS` are read from environment; defaults are documented in the runbook. |
+| FR1 | Every pipeline run tears down its own Compose project in `post { always }` before the workspace is deleted, including success, failure and abort paths. `cleanWs()` moves to `post { cleanup }` (the last post condition). Teardown only runs for a validated CI project. | A static test asserts the teardown is in `post { always }` before `cleanWs()` and that `cleanWs()` is under `post { cleanup }`. A successful control build and a build with `CI_SMOKE_FAIL=1` both log the teardown before workspace deletion and leave no containers, network, volumes or Compose-built images with `com.docker.compose.project=$COMPOSE_PROJECT_NAME`. |
+| FR2 | CI-built images are labelled with `com.vibecode.ci=true`, `com.vibecode.ci.job` and `com.vibecode.ci.build`, and carry a build-unique tag in addition to the shared `:ci` alias. This covers the supervisor (`vibecode-agent`), sandbox, proxy and Compose-built images. | `docker image inspect` shows the labels on all four groups from a smoke build; static tests assert `--label`/`build.labels` in the Jenkinsfile, the sandbox script and the Compose files. The shared `:ci` tag is never removed by the age-based GC. |
+| FR3 | A scheduled Jenkins maintenance job removes orphaned CI resources using positive selectors and age: sandbox containers/networks with `vibecode.sandbox.managed=true`, CI images with `com.vibecode.ci=true` and an old build identifier, and stopped Compose projects matching the strict CI name pattern. | A fake-Docker fixture with old labelled resources is removed; current resources, unlabelled resources and the local-dev project are left untouched; `--dry-run` changes nothing. |
+| FR4 | Cleanup is scoped and safe. No `docker system prune -a` and no name-prefix-only selection. A validated build-scoped project may be removed with `down -v`; the local-dev project `vibecoder-ai-planner` and its `postgres_data`, `uploads_data` and `vibecode_repos` volumes are explicitly refused. The exact shared volume names `postgres_data`, `uploads_data` and `vibecode_repos` are refused regardless of labels. Resources outside a validated CI project or without the positive CI label are never removed. | Script tests assert the exact Docker filters, that `down -v` runs only after the project-name regex and CI-label checks, that `vibecoder-ai-planner` is refused, and that no `docker system prune` or `docker volume rm` of the exact shared names is issued. |
+| FR5 | Cleanup uses a deterministic daemon. The scheduled job is pinned to one dedicated Jenkins node and takes explicit `CI_DOCKER_HOST` and `CI_DOCKER_DAEMON_ID`; it verifies `docker info --format '{{.ID}}'` and aborts before any deletion on a missing host or mismatched ID. It never falls back to `unix:///var/run/docker.sock`. Post-build cleanup uses the same daemon as the build and verifies the ID when configured. | A fake-Docker test covers missing host, mismatched daemon and `--dry-run`; the dry run prints the host and daemon ID. A static test asserts `Jenkinsfile.cleanup` uses the dedicated node label and passes the explicit host/ID. |
+| NFR1 | Cleanup is idempotent and non-fatal for the build: missing resources are ignored, and a failed `post` cleanup warns without changing a successful build result. The scheduled job reports failures with a non-zero exit. | Re-running cleanup exits 0; a simulated `docker` failure leaves the build result unchanged in post mode; the scheduled mode exits non-zero. |
+| NFR2 | Cleanup cannot race a concurrent build. The grace period is longer than the 60-minute pipeline timeout, and selection is keyed to the build-ID label and active container references, not only the image `Created` timestamp. | A resource younger than the grace period is never selected; an image with an old `Created` timestamp but the current build ID is skipped; two concurrent builds have distinct labels and project names. |
+| NFR3 | The cleanup script has deterministic regression coverage with a fake `docker` binary, and the Jenkinsfile post ordering has a static regression test. | `JenkinsDockerCleanupScriptTest` covers both modes, dry-run, filters, grace periods, daemon checks and volume protection; `JenkinsfileCiCleanupTest` covers post ordering and label wiring. |
+| NFR4 | Retention values are configurable and documented. | `CI_IMAGE_GRACE_HOURS` (default 24), `CI_CONTAINER_GRACE_HOURS` (default 2) and `CI_BUILD_GRACE_HOURS` (default 6) are read from the environment and documented in `05_RUNBOOK.md`, `README.md` and `AGENTS.md`. |
 
 ## Assumptions
 
 | ID | Assumption | Impact if wrong | Validation / evidence |
 |---|---|---|---|
-| A1 | The Docker daemon is shared by Jenkins builds and CI resources are distinguishable by label or unique project/build name. | Cleanup could remove another build's images or containers. | Compose project names already include branch/build; add labels and age filters. |
-| A2 | `post { always }` runs on ordinary test failures and user aborts; hard agent/daemon failures leave cleanup to the scheduled job. | A hard-killed build leaves resources until the next maintenance run. | Jenkins semantics; scheduled job is the safety net. |
-| A3 | Per-build Compose images do not need to survive the build; they can be rebuilt on the next run. | `--rmi local` would discard a reusable cache. | BuildKit layer cache remains; only the tagged project images are removed. |
-| A4 | The scheduled job can run from the repository with the CI helper and Docker access. | Orphan cleanup needs a separate host-side script. | Jenkins already runs Docker stages; the maintenance job uses the same agent label. |
-| A5 | Shared named volumes are never per-build and must be preserved. | Cleanup could delete data. | `docker compose down` without `-v` for shared stacks; explicit volume-protection test. |
+| A1 | CI resources are distinguishable by a strict project-name pattern and positive labels; build project names include the Jenkins build number. | Cleanup could remove another build's resources. | `Jenkinsfile` sets `COMPOSE_PROJECT_NAME` from `BRANCH_NAME` and `BUILD_NUMBER`; add `com.vibecode.ci.*` labels. |
+| A2 | `post { always }` runs on ordinary test failures and user aborts; `post { cleanup }` runs last. Hard agent/daemon failures leave cleanup to the scheduled job. | A hard-killed build leaves resources until the next maintenance run. | Jenkins post-condition ordering; scheduled job is the safety net. |
+| A3 | Per-build Compose images and build-scoped volumes are disposable; BuildKit layer cache remains. The Cypress stage already uses `down -v` for the same build project. | Removing build-scoped volumes would discard reusable data. | Cypress stage already removes them; only tagged project resources are removed, not the builder cache. |
+| A4 | The scheduled job can run from the repository with Docker access on a dedicated node. Creating the Jenkins job from `Jenkinsfile.cleanup` is a rollout prerequisite; adding the file alone does not schedule anything. | The safety net would not exist until an administrator provisions the job. | Runbook step; Jenkins job configuration. |
+| A5 | The local-dev stack is a separate project (`vibecoder-ai-planner`) and must never be selected. | `down -v` could delete local development data. | Strict `^vibecode-<branch>-<build>$` check plus explicit deny; negative tests. |
+| A6 | The default deployment has one Docker daemon for Jenkins builds. Multiple daemons require one maintenance job per host with its own expected daemon ID. | A single job could clean only one host while others accumulate resources. | Explicit host/ID parameters; multi-host fan-out deferred (D5). |
 
 ## Change impact
 
 | Area | Impact | Evidence / owner |
 |---|---|---|
-| Jenkinsfile / CI scripts | Adds `post { always }` teardown, build labels and a cleanup script; changes the success-only teardown. | this ticket |
-| Compose files | May add build labels so images are discoverable; existing project names remain the primary scope. | this ticket |
+| Jenkinsfile | Fixes post ordering, adds CI labels, a `CI_SMOKE_FAIL` hook and the cleanup call; pins the pipeline to the dedicated Docker node. | this ticket |
+| `Jenkinsfile.cleanup` | Defines the scheduled maintenance pipeline; the Jenkins job itself is provisioned separately. | this ticket |
+| Compose files | Adds `build.labels` and CI metadata so build resources are discoverable; local-dev resources default to `com.vibecode.ci=false` with empty job/build and are not classified as CI. | this ticket |
+| CI helper/scripts | Adds explicit-daemon mode to the helper and a scoped cleanup script. | this ticket |
 | API, DB, frontend, agent boundary | n/a — CI/infra only. | n/a |
-| Rollback | Revert the Jenkinsfile/script changes; labels are inert. | git revert |
+| Rollback | Disable the scheduled job and revert the Jenkinsfile/script/compose changes; labels are inert. | git revert |
 
 ## Readiness gate (before implementation)
 
-- [ ] Scope is one layer and the root cause is understood
-- [ ] Every requirement above has a testable acceptance statement
-- [ ] Assumptions are listed with a validation path
-- [ ] The verification command/test is identified
-- [ ] No API, database, auth, migration or agent-boundary change is involved
+- [x] Scope is one layer and the root cause is understood
+- [x] Every requirement above has a testable acceptance statement
+- [x] Assumptions are listed with a validation path
+- [x] The verification command/test is identified
+- [x] No API, database, auth, migration or agent-boundary change is involved
 
 ## Status evidence
 
 | Claim | Evidence | Checked |
 |---|---|---|
+| Plan authored | PR #141, rebased onto `02ffc0a` | ☑ |
+| Plan review round 1 | Blocking findings B1-B4 addressed in this revision; re-review pending (`03` Review record) | ☑ |
+| D13 helper available | PR #140 merged at `02ffc0a`; `agent/scripts/sandbox-ci-env.sh` is on master | ☑ |
 | Plan merged | pending | ☐ |
 | Implementation completed | pending | ☐ |
 | Verification results | pending (`03` Results) | ☐ |
@@ -82,18 +94,21 @@ Jenkins crash.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Host cron/systemd timer for when Jenkins itself is down and cannot run the scheduled maintenance job. | self | Operability | fg-43 or follow-up | open |
-| D2 | BuildKit cache pruning beyond labelled images; this ticket removes images/containers but not the builder cache. | self | Capacity | follow-up | open |
+| D1 | Host cron/systemd timer for when Jenkins itself is down and cannot run the scheduled maintenance job. | self | Operability | new infra ticket | open |
+| D2 | BuildKit cache pruning beyond labelled images; this ticket removes images, containers, networks and build-scoped volumes but not the builder cache. | self | Capacity | follow-up | open |
 | D3 | Environment-specific retention tuning beyond the documented defaults. | self | Operability | none | open |
-| D4 | Reuse the D13 helper (`agent/scripts/sandbox-ci-env.sh`, #140) once merged; if not available, the cleanup script must duplicate the daemon selection. | fg-34 D13 | Dependency | fg-34 | open |
+| D4 | Reuse the D13 helper (`agent/scripts/sandbox-ci-env.sh`). | fg-34 D13 | Dependency | none | resolved (PR #140, `02ffc0a`) |
+| D5 | Automatic fan-out to every Docker daemon. The first version pins one maintenance job to one host and requires one job per host for multi-daemon deployments. | self | Operability | new infra ticket | open |
 
 ## Decisions needed from the user
 
 | # | Decision | Options | Recommendation | Answer |
 |---|---|---|---|---|
-| 1 | Where should cleanup run? | A: pipeline only; B: scheduled Jenkins job only; C: both | C — `post { always }` for build-scoped teardown, plus a scheduled label/age GC for crashes and hard kills | C (recommended; pending approval) |
-| 2 | Default image/container grace periods? | A: 24h images / 2h containers; B: 48h / 6h; C: other | A — longer than the 60-minute pipeline timeout, short enough to bound disk | A (recommended; pending approval) |
-| 3 | Remove per-build Compose images on every run? | A: yes, `--rmi local`; B: only on failure | A — build cache remains and disk stays bounded | A (recommended; pending approval) |
+| 1 | Where should cleanup run? | A: pipeline only; B: scheduled Jenkins job only; C: both | C — `post { always }` for build-scoped teardown, plus a scheduled label/age GC for crashes and hard kills | C — accepted 2026-11-12 |
+| 2 | Default image/container grace periods? | A: 24h images / 2h containers / 6h build IDs; B: 48h / 6h / 24h; C: other | A — longer than the 60-minute pipeline timeout, short enough to bound disk | A — accepted 2026-11-12 |
+| 3 | Remove per-build Compose images on every run? | A: yes, `--rmi local`; B: only on failure | A — build cache remains and disk stays bounded | A — accepted 2026-11-12 |
+| 4 | Volume policy for the validated build project? | A: `down -v` for the validated build-scoped project, refuse local-dev/external volumes by positive selector; B: never `-v`, add a separate volume GC | A — build-scoped volumes are already disposable (the Cypress stage uses `-v`); the local-dev project is explicitly refused | A — accepted 2026-11-12 |
+| 5 | Daemon selection for the scheduled job? | A: one dedicated node + explicit host/daemon ID; B: iterate all Docker hosts | A — deterministic and safe; multi-host fan-out is D5 | A — accepted 2026-11-12 |
 
 ## Completion gate
 
@@ -108,7 +123,22 @@ Jenkins crash.
 ## Notes
 
 The scheduled job is intentionally a **Jenkins job**, not host cron, so it uses
-the same repository script, daemon selection and log retention as the pipeline.
-A host timer can be added later for the case where Jenkins itself is down
-(D1). The pipeline cleanup is the primary fix; the scheduled job is the safety
-net.
+the same repository script and log retention as the pipeline. A host timer can
+be added later for the case where Jenkins itself is down (D1). The pipeline
+cleanup is the primary fix; the scheduled job is the safety net.
+
+Creating the `vibecode-ci-docker-cleanup` Jenkins job from
+`Jenkinsfile.cleanup`, with its cron trigger, is a rollout prerequisite. Adding
+the file alone does not schedule anything.
+
+The current top-level `post { success { ... } }` cleanup is effectively dead:
+`post { always { cleanWs() } }` runs first and removes the Compose files. The
+implementation must move the teardown to `post { always }` **before** deleting
+the workspace, and move `cleanWs()` to `post { cleanup }`. Do not simply change
+the condition from `success` to `always` and leave `cleanWs()` first.
+
+Build-scoped volumes such as
+`vibecode-<branch>-<build>_postgres_data` are disposable copies. They are
+removed by the validated project teardown. The local-dev volumes
+`vibecoder-ai-planner_{postgres_data,uploads_data,vibecode_repos}` are not
+build-scoped and must never be selected.
