@@ -330,7 +330,7 @@ frontend job:  npm ci → lint → typecheck → unit test → coverage → buil
 contract test: vitest run api-contract.test.ts (after backend + frontend)
 cypress:       docker compose (e2e overlay) → cypress/included runs e2e + component
 integration:   docker compose up → Jest integration tests → bash integration tests
-agent job:     mvn test → package
+agent job:     mvn test → package → agent image build
 sandbox job:   build sandbox/proxy images → real-Docker integration suite
 ```
 
