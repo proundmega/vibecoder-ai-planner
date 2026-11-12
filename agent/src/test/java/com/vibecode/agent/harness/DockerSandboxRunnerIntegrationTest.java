@@ -142,6 +142,21 @@ class DockerSandboxRunnerIntegrationTest {
                     assertTrue(Long.parseLong(limit) <= 256L * 1024 * 1024,
                         "memory limit was not applied: " + limit);
                 }
+
+                // The parent writes the marker before returning and leaves
+                // short-lived writers behind. The sweep must kill them before
+                // they append. Keep this last: a genuine survivor stops the
+                // sandbox, and the unit tests cover that destruction path.
+                ExecResult forker = runner.exec(handle, ExecRequest.of(
+                    "echo START > fork.txt; for i in 1 2 3 4 5; do "
+                        + "(sleep 2; echo LATE >> fork.txt) >/dev/null 2>&1 & done; exit 0",
+                    Duration.ofSeconds(20)));
+                assertTrue(forker.passed(), forker.output());
+                assertEquals("START\n", Files.readString(workspace.resolve("fork.txt")),
+                    "the forking writer did not run before the sweep");
+                Thread.sleep(2_500);
+                assertEquals("START\n", Files.readString(workspace.resolve("fork.txt")),
+                    "a forked child wrote after the frozen sweep");
             } finally {
                 runner.destroy(handle);
             }
@@ -313,6 +328,33 @@ class DockerSandboxRunnerIntegrationTest {
                 assertTrue(response.body().contains("bridge-ok"), response.body());
             } finally {
                 bridge.close();
+                runner.destroy(handle);
+            }
+        }
+    }
+
+    @Test
+    void keepsTheSandboxAliveAcrossSequentialExecs() throws Exception {
+        String image = System.getenv("SANDBOX_IT_IMAGE");
+        Assumptions.assumeTrue(image != null && !image.isBlank(),
+            "SANDBOX_IT_IMAGE is not set; skipping the Docker sandbox smoke test");
+        SandboxConfig config = integrationConfig(image, Map.of());
+        Path workspace = Files.createDirectories(tempDir.resolve("workspace"));
+        Files.setPosixFilePermissions(workspace, PosixFilePermissions.fromString("rwxrwxrwx"));
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace));
+            try {
+                ExecResult first = runner.exec(handle,
+                    ExecRequest.of("id -u", Duration.ofSeconds(20)));
+                assertTrue(first.passed(), first.output());
+
+                // Regression: the frozen quiescence check must not count the
+                // init host PID as a survivor and destroy the sandbox.
+                ExecResult second = runner.exec(handle,
+                    ExecRequest.of("id -u", Duration.ofSeconds(20)));
+                assertTrue(second.passed(), second.output());
+            } finally {
                 runner.destroy(handle);
             }
         }

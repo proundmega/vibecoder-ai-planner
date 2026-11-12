@@ -22,7 +22,11 @@ public interface SandboxRunner extends AutoCloseable {
     /** Kill the whole process tree, but keep the sandbox available for destroy. */
     void stop(SandboxHandle handle);
 
-    /** Destroy the sandbox and all of its state. Idempotent. */
+    /**
+     * Destroy the sandbox and all of its state. Idempotent for a clean handle;
+     * an implementation may throw when the sandbox was not verified so the
+     * caller cannot treat it as publishable.
+     */
     void destroy(SandboxHandle handle) throws IOException;
 
     @Override

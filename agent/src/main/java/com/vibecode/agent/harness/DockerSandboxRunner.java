@@ -27,6 +27,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Disposable Docker sandbox for repo-controlled commands.
@@ -58,6 +59,12 @@ public final class DockerSandboxRunner implements SandboxRunner {
     private final Map<String, ScheduledExecutorService> watchdogs = new ConcurrentHashMap<>();
     private final Map<String, Process> runningProcesses = new ConcurrentHashMap<>();
     private final Map<String, EgressRuntime> egress = new ConcurrentHashMap<>();
+    // One exec at a time per sandbox: the post-exec freeze must not catch
+    // another in-flight command and destroy the container for doing so.
+    private final Map<String, ReentrantLock> execLocks = new ConcurrentHashMap<>();
+    // A quiescence failure means the workspace may already contain survivor
+    // writes. Such a handle must never be treated as cleanly destroyed.
+    private final Set<String> compromised = ConcurrentHashMap.newKeySet();
 
     public DockerSandboxRunner(SandboxConfig config) {
         this(config, null);
@@ -158,8 +165,40 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
     @Override
     public ExecResult exec(SandboxHandle handle, ExecRequest request) throws IOException {
-        requireActive(handle);
+        return withHandleLock(handle, () -> execSerialized(handle, request));
+    }
 
+    @FunctionalInterface
+    private interface IoAction<T> {
+        T run() throws IOException;
+    }
+
+    /**
+     * Serialize every container operation (exec and file transfer) per
+     * handle. A post-exec freeze must not catch another in-flight command, and
+     * {@code docker cp} must not race a paused container.
+     */
+    private <T> T withHandleLock(SandboxHandle handle, IoAction<T> action)
+        throws IOException {
+        requireActive(handle);
+        ReentrantLock lock = execLocks.computeIfAbsent(
+            handle.id(), ignored -> new ReentrantLock());
+        lock.lock();
+        try {
+            // Re-check after waiting: a concurrent stop/destroy may have
+            // removed the sandbox while this call was queued.
+            requireActive(handle);
+            return action.run();
+        } finally {
+            lock.unlock();
+            if (!active.contains(handle.id())) {
+                execLocks.remove(handle.id(), lock);
+            }
+        }
+    }
+
+    private ExecResult execSerialized(SandboxHandle handle, ExecRequest request)
+        throws IOException {
         Duration timeout = request.timeout();
         Duration maxDuration = maxDurations.get(handle.id());
         if (maxDuration != null && timeout.compareTo(maxDuration) > 0) {
@@ -179,6 +218,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
             DockerResult result = runDocker(
                 command, effective.timeout(), effective.maxOutputBytes(), handle.id());
             if (quotaExceeded.get()) {
+                // The watchdog stops the container, but verify it here too so
+                // the post-exec sweep never runs against a half-stopped
+                // container. The result is already a failure.
+                stopVerified(handle, "the workspace quota was exceeded");
                 return new ExecResult(
                     request.command(),
                     -1,
@@ -189,9 +232,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
             }
             if (result.timedOut()) {
                 // A hung process may have spawned children; killing only the
-                // local `docker exec` client is not enough. Kill the container
-                // (and its whole process tree) so the run fails closed.
-                stop(handle);
+                // local `docker exec` client is not enough. Stop the container
+                // and verify it, then report the timeout (already a failure).
+                stopVerified(handle, "the exec timed out");
                 return new ExecResult(
                     request.command(), -1, result.output(), true, result.truncated());
             }
@@ -209,6 +252,14 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
     @Override
     public void putFile(SandboxHandle handle, Path local, String remote) throws IOException {
+        withHandleLock(handle, () -> {
+            putFileLocked(handle, local, remote);
+            return null;
+        });
+    }
+
+    private void putFileLocked(SandboxHandle handle, Path local, String remote)
+        throws IOException {
         requireActive(handle);
         if (local == null || !Files.isRegularFile(local)) {
             throw new IOException("Sandbox upload must be a regular file: " + local);
@@ -234,6 +285,14 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
     @Override
     public void getFile(SandboxHandle handle, String remote, Path local) throws IOException {
+        withHandleLock(handle, () -> {
+            getFileLocked(handle, remote, local);
+            return null;
+        });
+    }
+
+    private void getFileLocked(SandboxHandle handle, String remote, Path local)
+        throws IOException {
         requireActive(handle);
         String source = SandboxPaths.containerPath(remote);
         long remoteSize = assertContainerSourceSafe(handle, source);
@@ -276,6 +335,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
             return;
         }
         stopByName(handle.id());
+        forgetExecLock(handle.id());
     }
 
     @Override
@@ -283,6 +343,24 @@ public final class DockerSandboxRunner implements SandboxRunner {
         if (handle == null) {
             return;
         }
+        if (compromised.contains(handle.id())) {
+            // The container may be gone, but the workspace was not verified.
+            // Clean up best-effort and refuse to report it as clean so the
+            // pre-publish gate cannot treat the handle as publishable.
+            try {
+                destroyInternal(handle);
+            } catch (IOException e) {
+                log.warn("Compromised sandbox {} cleanup failed; a container may remain: {}",
+                    handle.id(), e.getMessage());
+            }
+            throw new IOException("Sandbox " + handle.id()
+                + " was compromised by an unverified quiescence check; "
+                + "refusing to publish its workspace");
+        }
+        destroyInternal(handle);
+    }
+
+    private void destroyInternal(SandboxHandle handle) throws IOException {
         if (!destroyByName(handle.id())) {
             throw new IOException("Could not destroy sandbox " + handle.id()
                 + "; it may still be running. The supervisor must not publish.");
@@ -294,6 +372,16 @@ public final class DockerSandboxRunner implements SandboxRunner {
         artifactLimits.remove(handle.id());
         quotaFlags.remove(handle.id());
         runningProcesses.remove(handle.id());
+        forgetExecLock(handle.id());
+        // A compromised flag is terminal: it is retained until close() so any
+        // later destroy() still refuses to report the handle as publishable.
+    }
+
+    private void forgetExecLock(String id) {
+        ReentrantLock lock = execLocks.get(id);
+        if (lock != null && !lock.isLocked() && !lock.hasQueuedThreads()) {
+            execLocks.remove(id, lock);
+        }
     }
 
     @Override
@@ -318,6 +406,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
         watchdogs.clear();
         runningProcesses.clear();
         egress.clear();
+        execLocks.clear();
+        compromised.clear();
         if (created.isEmpty()) {
             try {
                 Runtime.getRuntime().removeShutdownHook(shutdownHook);
@@ -336,6 +426,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
         if (handle.host()) {
             throw new IOException("DockerSandboxRunner cannot operate on a host sandbox handle");
+        }
+        if (compromised.contains(handle.id())) {
+            throw new IOException("Sandbox is compromised by an unverified quiescence "
+                + "check and cannot run more commands: " + handle.id());
         }
         if (!active.contains(handle.id())) {
             throw new IOException("Sandbox is not running: " + handle.id());
@@ -412,15 +506,20 @@ public final class DockerSandboxRunner implements SandboxRunner {
     }
 
     /**
-     * Kill every process in the container except PID 1 and the cleanup shell
-     * itself. {@code docker exec} shares the container PID namespace, so a
-     * normal command exit would otherwise leave daemonized children editing the
-     * bind-mounted workspace after verification.
+     * Kill every process in the container except its init and the cleanup
+     * shell itself. {@code docker exec} shares the container PID namespace, so
+     * a normal command exit would otherwise leave daemonized children editing
+     * the bind-mounted workspace after verification.
+     *
+     * <p>The repeated sweep narrows the fork race, but a child can still fork
+     * between the last enumeration and the next kill. To close that race the
+     * container is frozen with {@code docker pause} (cgroup freezer) and its
+     * process table is inspected while frozen: no process can fork once the
+     * freeze completes, so only the init process should remain. If a survivor
+     * remains, or the freeze cannot be verified, the sandbox is destroyed so
+     * nothing can write to the workspace afterwards (D14).</p>
      */
-    private void killDescendants(SandboxHandle handle) {
-        // Bounded repeated sweep: a child that forks between enumeration and
-        // kill is picked up by the next pass. This narrows the fork race but
-        // is still not a hard guarantee (D14).
+    private void killDescendants(SandboxHandle handle) throws IOException {
         String script = "n=0; "
             + "while [ $n -lt 5 ]; do "
             + "  found=0; "
@@ -444,13 +543,328 @@ public final class DockerSandboxRunner implements SandboxRunner {
             );
             if (result.timedOut() || result.exitCode() != 0
                 || !"OK".equals(result.output().trim())) {
-                log.warn("Sandbox {} descendant cleanup failed; stopping it", handle.id());
-                stop(handle);
+                stopOrFail(handle, "descendant cleanup failed");
+                return;
             }
         } catch (RuntimeException e) {
             log.warn("Sandbox {} descendant cleanup failed: {}", handle.id(), e.getMessage());
-            stop(handle);
+            stopOrFail(handle, "descendant cleanup threw");
+            return;
         }
+        verifyQuiescent(handle);
+    }
+
+    /**
+     * Freeze the container, confirm only its init process (and zombies)
+     * remains, then thaw it. Any doubt destroys the sandbox (fail closed).
+     */
+    private void verifyQuiescent(SandboxHandle handle) throws IOException {
+        DockerResult paused = runDocker(
+            List.of(config.dockerBinary(), "pause", handle.id()),
+            CONTROL_TIMEOUT,
+            1_024
+        );
+        if (paused.timedOut() || paused.exitCode() != 0) {
+            destroyUnverified(handle, "could not be paused for the final sweep: "
+                + LOG_REDACTOR.redact(paused.output().trim()));
+            return;
+        }
+
+        long initPid = initHostPid(handle);
+        if (initPid <= 0) {
+            destroyUnverified(handle, "could not determine the init host PID");
+            return;
+        }
+
+        boolean quiescent;
+        try {
+            // `docker top` passes the options to the host ps; Docker requires
+            // the PID title in the first line, so do not suppress the header.
+            DockerResult top = runDocker(
+                List.of(config.dockerBinary(), "top", handle.id(),
+                    "-eo", "pid,stat,comm"),
+                CONTROL_TIMEOUT,
+                CONTROL_OUTPUT_BYTES
+            );
+            boolean stateAware = usableProcessTable(top);
+            if (!stateAware) {
+                log.debug("Sandbox {} does not support 'top -eo pid,stat,comm' ({}); "
+                    + "falling back to the portable ps -ef output",
+                    handle.id(), LOG_REDACTOR.redact(top.output().trim()));
+                // Without a state column, zombies are not exempt, so an
+                // unexpected table fails closed.
+                top = runDocker(
+                    List.of(config.dockerBinary(), "top", handle.id()),
+                    CONTROL_TIMEOUT,
+                    CONTROL_OUTPUT_BYTES
+                );
+            }
+            if (!usableProcessTable(top)) {
+                // An empty, failed or truncated table cannot prove that the
+                // workspace is quiescent.
+                log.warn("Sandbox {} process table was blank, failed or truncated "
+                    + "while paused (exit {}, timedOut={}, truncated={}): {}",
+                    handle.id(), top.exitCode(), top.timedOut(), top.truncated(),
+                    LOG_REDACTOR.redact(top.output().trim()));
+                quiescent = false;
+            } else if (!containsInitRow(top.output(), stateAware, initPid)) {
+                // A header-only table is not proof that the init process was
+                // observed; require its row before trusting the table.
+                log.warn("Sandbox {} process table did not contain the init host "
+                    + "PID {}; treating it as unverified", handle.id(), initPid);
+                quiescent = false;
+            } else {
+                List<String> survivors = parseSurvivors(top.output(), stateAware, initPid);
+                quiescent = survivors.isEmpty();
+                if (!quiescent) {
+                    log.warn("Sandbox {} still has {} process(es) after the sweep "
+                        + "(fork race): {}", handle.id(), survivors.size(),
+                        LOG_REDACTOR.redact(survivors.toString()));
+                }
+            }
+        } catch (RuntimeException e) {
+            log.warn("Sandbox {} process table check failed: {}", handle.id(), e.getMessage());
+            quiescent = false;
+        }
+
+        if (!quiescent) {
+            destroyUnverified(handle, "was not quiescent after the final sweep");
+            return;
+        }
+
+        DockerResult resumed = runDocker(
+            List.of(config.dockerBinary(), "unpause", handle.id()),
+            CONTROL_TIMEOUT,
+            1_024
+        );
+        if (resumed.timedOut() || resumed.exitCode() != 0) {
+            destroyUnverified(handle, "could not be unpaused: "
+                + LOG_REDACTOR.redact(resumed.output().trim()));
+        }
+    }
+
+    /**
+     * Host PID of the container init. {@code docker top} reports host PIDs, so
+     * this is the one process that must be ignored. Returns -1 when it cannot
+     * be determined; callers fail closed.
+     */
+    private long initHostPid(SandboxHandle handle) {
+        DockerResult inspect = runDocker(
+            List.of(config.dockerBinary(), "inspect",
+                "-f", "{{.State.Pid}}", handle.id()),
+            INSPECT_TIMEOUT,
+            1_024
+        );
+        if (inspect.timedOut() || inspect.exitCode() != 0) {
+            log.warn("Sandbox {} init PID could not be read: {}",
+                handle.id(), LOG_REDACTOR.redact(inspect.output().trim()));
+            return -1;
+        }
+        try {
+            long pid = Long.parseLong(inspect.output().trim());
+            return pid > 0 ? pid : -1;
+        } catch (NumberFormatException e) {
+            log.warn("Sandbox {} init PID was not numeric: {}",
+                handle.id(), LOG_REDACTOR.redact(inspect.output().trim()));
+            return -1;
+        }
+    }
+
+    private static boolean usableProcessTable(DockerResult result) {
+        return !result.timedOut() && result.exitCode() == 0
+            && result.output() != null && !result.output().isBlank()
+            && !result.truncated();
+    }
+
+    /**
+     * Destroy a sandbox whose quiescence could not be verified, then always
+     * fail. The container may be gone, but the workspace is a bind mount and
+     * may already contain survivor writes, so the exec is unverified and the
+     * handle is marked compromised.
+     */
+    private void destroyUnverified(SandboxHandle handle, String reason) throws IOException {
+        log.warn("Sandbox {} {}; destroying it", handle.id(), reason);
+        boolean destroyed = false;
+        try {
+            destroyInternal(handle);
+            destroyed = true;
+        } catch (IOException e) {
+            log.warn("Sandbox {} could not be destroyed after {}: {}; falling back to kill",
+                handle.id(), reason, e.getMessage());
+        }
+        if (!destroyed) {
+            stop(handle);
+            compromised.add(handle.id());
+            if (!containerStopped(handle.id())) {
+                throw new IOException("Sandbox " + handle.id()
+                    + " could not be stopped after " + reason
+                    + "; refusing to continue with a live container");
+            }
+        } else {
+            compromised.add(handle.id());
+        }
+        throw new IOException("Sandbox " + handle.id() + " " + reason
+            + "; the workspace may contain survivor writes, so the exec is unverified");
+    }
+
+    /**
+     * Stop a sandbox after a cleanup failure and always fail: even a verified
+     * stop leaves the workspace tainted.
+     */
+    private void stopOrFail(SandboxHandle handle, String reason) throws IOException {
+        stop(handle);
+        compromised.add(handle.id());
+        if (!containerStopped(handle.id())) {
+            throw new IOException("Sandbox " + handle.id()
+                + " could not be stopped after " + reason
+                + "; refusing to continue with a live container");
+        }
+        throw new IOException("Sandbox " + handle.id() + " " + reason
+            + "; the workspace may be tainted, so the exec is unverified");
+    }
+
+    /**
+     * Stop a sandbox whose exec already failed (for example a timeout) and
+     * verify that it is no longer running. A successful stop leaves the
+     * sandbox in a defined, non-live state; a failure is fatal.
+     */
+    private void stopVerified(SandboxHandle handle, String reason) throws IOException {
+        stop(handle);
+        if (!containerStopped(handle.id())) {
+            compromised.add(handle.id());
+            throw new IOException("Sandbox " + handle.id()
+                + " could not be stopped after " + reason
+                + "; refusing to continue with a live container");
+        }
+    }
+
+    /**
+     * True when the container is gone or no longer running. Unknown daemon
+     * state is treated as running (fail closed).
+     */
+    private boolean containerStopped(String name) {
+        DockerResult inspect = runDocker(
+            List.of(config.dockerBinary(), "inspect",
+                "-f", "{{.State.Running}}", name),
+            INSPECT_TIMEOUT,
+            1_024
+        );
+        String output = inspect.output() == null ? "" : inspect.output().toLowerCase();
+        if (inspect.timedOut() || inspect.exitCode() != 0) {
+            return output.contains("no such container") || output.contains("no such object");
+        }
+        return "false".equals(output.trim());
+    }
+
+    /**
+     * True only when the table actually contains the init host PID row. A
+     * header-only (or otherwise incomplete) table cannot prove quiescence.
+     */
+    static boolean containsInitRow(String output, boolean stateAware, long initPid) {
+        if (output == null || output.isBlank()) {
+            return false;
+        }
+        List<String> lines = new ArrayList<>();
+        for (String line : output.split("\\R")) {
+            if (!line.isBlank()) {
+                lines.add(line.trim());
+            }
+        }
+        if (lines.isEmpty()) {
+            return false;
+        }
+        String[] header = lines.get(0).split("\\s+");
+        int pidIndex = -1;
+        for (int i = 0; i < header.length; i++) {
+            if ("PID".equalsIgnoreCase(header[i])) {
+                pidIndex = i;
+                break;
+            }
+        }
+        int firstDataLine = 1;
+        if (pidIndex < 0) {
+            if (!stateAware) {
+                return false;
+            }
+            pidIndex = 0;
+            firstDataLine = 0;
+        }
+        for (int i = firstDataLine; i < lines.size(); i++) {
+            String[] parts = lines.get(i).split("\\s+");
+            if (parts.length > pidIndex && parts[pidIndex].matches("\\d+")
+                && Long.parseLong(parts[pidIndex]) == initPid) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Parse {@code docker top} output. {@code docker top} reports host PIDs, so
+     * the init host PID is the only process that is ignored. When a state
+     * column is available, zombies (which cannot fork) are ignored too;
+     * without one, every other process counts. Unknown layouts fail closed.
+     */
+    static List<String> parseSurvivors(String output, boolean stateAware, long initPid) {
+        List<String> survivors = new ArrayList<>();
+        if (output == null || output.isBlank()) {
+            return survivors;
+        }
+        List<String> lines = new ArrayList<>();
+        for (String line : output.split("\\R")) {
+            if (!line.isBlank()) {
+                lines.add(line.trim());
+            }
+        }
+        if (lines.isEmpty()) {
+            return survivors;
+        }
+
+        String[] header = lines.get(0).split("\\s+");
+        int pidIndex = -1;
+        int statIndex = -1;
+        for (int i = 0; i < header.length; i++) {
+            if ("PID".equalsIgnoreCase(header[i])) {
+                pidIndex = i;
+            }
+            if ("STAT".equalsIgnoreCase(header[i])) {
+                statIndex = i;
+            }
+        }
+        if (pidIndex < 0) {
+            // Unknown layout: do not claim quiescence on a guess.
+            for (String line : lines) {
+                for (String token : line.split("\\s+")) {
+                    if (!token.matches("\\d+")) {
+                        continue;
+                    }
+                    long pid = Long.parseLong(token);
+                    if (pid > 0 && pid != initPid) {
+                        survivors.add(line);
+                        break;
+                    }
+                }
+            }
+            return survivors;
+        }
+
+        for (int i = 1; i < lines.size(); i++) {
+            String line = lines.get(i);
+            String[] parts = line.split("\\s+");
+            if (parts.length <= pidIndex || !parts[pidIndex].matches("\\d+")) {
+                continue;
+            }
+            long pid = Long.parseLong(parts[pidIndex]);
+            if (pid <= 0 || pid == initPid) {
+                continue;
+            }
+            if (stateAware && statIndex >= 0 && statIndex < parts.length
+                && parts[statIndex].startsWith("Z")) {
+                continue;
+            }
+            survivors.add(line);
+        }
+        return survivors;
     }
 
     /**
@@ -1019,9 +1433,11 @@ public final class DockerSandboxRunner implements SandboxRunner {
             args.add("size=" + limits.diskBytes());
         }
 
-        // No --init: PID 1 must remain the shell loop so the post-exec
-        // descendant sweep can kill everything else without exiting the
-        // container. --pids-limit and the sweep bound runaway children.
+        // No --init: PID 1 must be a single childless process so the frozen
+        // quiescence check can distinguish it from descendants. The shell
+        // execs into `sleep`, which stays alive without spawning children;
+        // `docker exec` still works. --pids-limit and the sweep bound
+        // runaway children.
         // Network is default-deny unless an egress allowlist is configured; in
         // that case the sandbox joins only the proxy's internal network and
         // resolves nothing: external DNS would be an untracked exfiltration
@@ -1054,7 +1470,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
         args.add("/bin/sh");
         args.add(spec.image());
         args.add("-c");
-        args.add("while :; do sleep 3600; done");
+        // Use a numeric duration so BusyBox and GNU sleep both accept it.
+        args.add("exec sleep 2147483647");
         return args;
     }
 

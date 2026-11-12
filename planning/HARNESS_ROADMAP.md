@@ -16,7 +16,7 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-32 | `fg-32-review-feedback-loop` | Plan merged (#104); implementation pending | Reviewer -> fixer loop, same branch, rounds, escalation | fg-31 |
 | fg-33 | `fg-33-durable-harness-execution` | Merged (#110) | Run/checkpoint/lease model, crash recovery, idempotent publish | fg-30 Phase 1 |
 | bt-60 | `bt-60-durable-harness-e2e-tests` | Plan merged (#111); ready for implementation (staging credentials pending) | Full harness e2e: real backend HTTP + Postgres, agent contract, disposable staging run | fg-33 (merged) |
-| fg-34 | `fg-34-harness-sandbox` | Slices 1-2 merged (#126, #127); slices 3a-3d merged (#128, #129, #130, #132) | Sandbox isolation, limits, egress, secretless execution, read/grep isolation; D14/D16 Docker-mode hardening and D20 edit/write remain | fg-30 Phase 1 |
+| fg-34 | `fg-34-harness-sandbox` | Slices 1-2 merged (#126, #127); slices 3a-3d merged (#128, #129, #130, #132); D20 merged (#138) | Sandbox isolation, limits, egress, secretless execution, read/grep and guarded edit/write isolation; D14 (freeze-and-verify sweep) in review (#139); D16 remains | fg-30 Phase 1 |
 | fg-43 | `fg-43-agent-docker-deployment` | Planned | One-command Docker agent host sizing, role pools, per-container limits | fg-33 (fg-34 recommended) |
 | fg-44 | `fg-44-agent-storage-lifecycle` | Planned | Per-agent workspaces, cleanup, idle refresh, disk/inode watermarks | fg-43, fg-33 |
 | fg-45 | `fg-45-ticket-quality-gates` | Planned | Definition of Ready, pre-implementation risk review (assumptions, failure modes, security, impact), acceptance criteria, readiness gates on every execution path | fg-30, fg-31/32 |
