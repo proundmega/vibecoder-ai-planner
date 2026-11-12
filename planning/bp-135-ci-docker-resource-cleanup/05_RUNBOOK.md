@@ -27,8 +27,10 @@ job. Before the safety net exists, a Jenkins administrator must:
 4. Run the job once manually with `DRY_RUN=true` (the default). Review the
    listed resources, then set `ENABLE_DESTRUCTIVE_CLEANUP=true` and
    `DRY_RUN=false` for the next run.
-5. Confirm the cron trigger (`H */6 * * *`) is active. It stays in dry-run mode
-   until step 4 sets `ENABLE_DESTRUCTIVE_CLEANUP=true` and `DRY_RUN=false`.
+5. Confirm the cron trigger (`H */6 * * *`) is active. The cron uses the
+   Jenkinsfile defaults (`DRY_RUN=true`, `ENABLE_DESTRUCTIVE_CLEANUP=false`),
+   so it stays read-only. Only after the manual destructive run is approved
+   should an administrator deliberately change those defaults/job parameters.
    For more than one Docker daemon, create one job per host with its own
    expected daemon ID (D5).
 
