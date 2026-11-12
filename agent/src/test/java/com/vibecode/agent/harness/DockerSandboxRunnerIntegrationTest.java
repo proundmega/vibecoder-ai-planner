@@ -1,8 +1,9 @@
 package com.vibecode.agent.harness;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.net.URI;
@@ -14,8 +15,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -26,13 +29,54 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * End-to-end smoke test for the Docker sandbox.
  *
  * <p>Opt-in: set {@code SANDBOX_IT_IMAGE} to a small image that has
- * {@code /bin/sh} (for example {@code redis:7-alpine}). CI enables this once a
- * dedicated sandbox image is published; the test skips otherwise.</p>
+ * {@code /bin/sh} (for example {@code redis:7-alpine}). Set
+ * {@code SANDBOX_IT_WORKSPACE_ROOT} to a host-visible directory when the
+ * Docker daemon does not share the JVM's temp directory. CI enables this once
+ * a dedicated sandbox image is published; the test skips otherwise.</p>
  */
 class DockerSandboxRunnerIntegrationTest {
 
-    @TempDir
-    Path tempDir;
+    private Path tempDir;
+    private Path tempRoot;
+    private boolean ownsTempRoot;
+
+    @BeforeEach
+    void createTempDir() throws IOException {
+        String root = System.getenv("SANDBOX_IT_WORKSPACE_ROOT");
+        if (root == null || root.isBlank()) {
+            tempRoot = Files.createTempDirectory("sandbox-it-");
+            ownsTempRoot = true;
+        } else {
+            tempRoot = Files.createDirectories(Path.of(root));
+            ownsTempRoot = false;
+        }
+        tempDir = Files.createDirectories(tempRoot.resolve("it-" + UUID.randomUUID()));
+    }
+
+    @AfterEach
+    void deleteTempDir() {
+        deleteTree(tempDir);
+        if (ownsTempRoot) {
+            deleteTree(tempRoot);
+        }
+    }
+
+    private static void deleteTree(Path root) {
+        if (root == null) {
+            return;
+        }
+        try (var paths = Files.walk(root)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException ignored) {
+                    // Best effort; the CI workspace is disposable.
+                }
+            });
+        } catch (IOException ignored) {
+            // Best effort; the CI workspace is disposable.
+        }
+    }
 
     @Test
     void runsCommandsAsANonRootUserInADisposableSandbox() throws Exception {
@@ -374,7 +418,16 @@ class DockerSandboxRunnerIntegrationTest {
         env.put("SANDBOX_TMPFS_MB", "64");
         env.put("SANDBOX_EXEC_TIMEOUT_SECONDS", "30");
         env.put("SANDBOX_ARTIFACT_MAX_BYTES", "1024");
+        copyEnv(env, "SANDBOX_CONTAINER_WORKSPACE_ROOT");
+        copyEnv(env, "SANDBOX_HOST_WORKSPACE_ROOT");
         env.putAll(extra);
         return SandboxConfig.from(env::get);
+    }
+
+    private static void copyEnv(Map<String, String> env, String name) {
+        String value = System.getenv(name);
+        if (value != null && !value.isBlank()) {
+            env.put(name, value);
+        }
     }
 }

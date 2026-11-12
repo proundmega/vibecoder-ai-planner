@@ -330,11 +330,16 @@ frontend job:  npm ci → lint → typecheck → unit test → coverage → buil
 contract test: vitest run api-contract.test.ts (after backend + frontend)
 cypress:       docker compose (e2e overlay) → cypress/included runs e2e + component
 integration:   docker compose up → Jest integration tests → bash integration tests
-agent job:     mvn package -q -DskipTests
+agent job:     mvn test → package → agent image build
+sandbox job:   build sandbox/proxy images → real-Docker integration suite
 ```
 
 The full pipeline runs on every build; no stages are skipped by change
-detection. The backend job uses a real PostgreSQL service container.
+detection. The backend job uses a real PostgreSQL service container. If Jenkins
+runs in a container, `agent/scripts/sandbox-ci-env.sh` maps the workspace to the
+Docker host path; set `JENKINS_HOST_HOME` when the mount cannot be discovered
+(the identity fallback warns). It only maps workspaces under `JENKINS_HOME`; a
+workspace outside that root is left unchanged.
 
 ## Planning
 
