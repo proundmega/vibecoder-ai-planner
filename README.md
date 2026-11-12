@@ -330,7 +330,8 @@ frontend job:  npm ci → lint → typecheck → unit test → coverage → buil
 contract test: vitest run api-contract.test.ts (after backend + frontend)
 cypress:       docker compose (e2e overlay) → cypress/included runs e2e + component
 integration:   docker compose up → Jest integration tests → bash integration tests
-agent job:     mvn package -q -DskipTests
+agent job:     mvn test → package
+sandbox job:   build sandbox/proxy images → real-Docker integration suite
 ```
 
 The full pipeline runs on every build; no stages are skipped by change
