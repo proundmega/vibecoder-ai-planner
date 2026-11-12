@@ -27,7 +27,7 @@ class SandboxCiEnvScriptTest {
 
     @BeforeEach
     void setUp() throws IOException {
-        assumeTrue(bashAvailable(), "bash is not available on this platform");
+        assumeTrue(shAvailable(), "sh is not available on this platform");
         bin = Files.createDirectories(tempDir.resolve("bin"));
         Path docker = bin.resolve("docker");
         Files.writeString(docker, """
@@ -139,7 +139,7 @@ class SandboxCiEnvScriptTest {
         String command = ". " + SCRIPT + "; "
             + "printf 'DOCKER_HOST=%s\\nHOST_WORKSPACE=%s\\n' "
             + "\"${DOCKER_HOST:-}\" \"${SANDBOX_CI_HOST_WORKSPACE:-}\"";
-        ProcessBuilder builder = new ProcessBuilder("bash", "-c", command);
+        ProcessBuilder builder = new ProcessBuilder("sh", "-c", command);
         builder.redirectErrorStream(true);
         Map<String, String> env = builder.environment();
         env.remove("DOCKER_HOST");
@@ -155,9 +155,9 @@ class SandboxCiEnvScriptTest {
         return new Result(process.waitFor(), output);
     }
 
-    private static boolean bashAvailable() {
+    private static boolean shAvailable() {
         try {
-            Process process = new ProcessBuilder("bash", "-c", "exit 0")
+            Process process = new ProcessBuilder("sh", "-c", "exit 0")
                 .redirectErrorStream(true)
                 .start();
             return process.waitFor() == 0;
