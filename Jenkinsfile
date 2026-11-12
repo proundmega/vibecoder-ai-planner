@@ -214,23 +214,13 @@ EOF
                     sh 'mvn test -q'
                     sh 'mvn package -q -DskipTests'
                     // The harness adds Node/OpenCode to the runtime image; a JAR
-                    // build alone does not validate that stage. Resolve
-                    // DOCKER_HOST in the same shell as the build (the
-                    // Integration stage's export does not persist across sh
-                    // steps).
+                    // build alone does not validate that stage. Resolve the
+                    // selected daemon in this shell; the export does not carry
+                    // across sh steps.
                     sh '''
-                        if echo "$DOCKER_HOST" | grep -q "^tcp://"; then
-                            HOSTNAME=$(echo "$DOCKER_HOST" | sed "s|tcp://||; s|:.*||")
-                            PORT=$(echo "$DOCKER_HOST" | sed "s|.*:||")
-                            IP=$(getent hosts "$HOSTNAME" 2>/dev/null | awk '{print $1}')
-                            if [ -n "$IP" ]; then
-                                export DOCKER_HOST="tcp://$IP:$PORT"
-                            elif [ -n "$DOCKER_HOST_FALLBACK" ]; then
-                                export DOCKER_HOST="$DOCKER_HOST_FALLBACK"
-                            fi
-                        fi
+                        . scripts/sandbox-ci-env.sh
                         echo "Agent image build DOCKER_HOST=$DOCKER_HOST"
-                        docker build -t vibecode-agent:ci .
+                        docker build --load -t vibecode-agent:ci .
                     '''
                 }
             }
@@ -240,53 +230,16 @@ EOF
             steps {
                 dir('agent') {
                     // Build the real sandbox and proxy images and run the
-                    // Docker acceptance suite against them (D13). Use the
-                    // daemon the project containers run on: the Jenkins
-                    // agent's DOCKER_HOST can point at Jenkins' own socket
-                    // proxy, which is a different daemon from a local DinD
-                    // socket. The image must be built and run on the same
-                    // daemon. Sandbox bind mounts are resolved on the Docker
-                    // host, so map the Jenkins workspace to its host path.
+                    // Docker acceptance suite against them (D13). The helper
+                    // selects the same daemon for the build, the test and the
+                    // later scan, and maps the Jenkins workspace to the path
+                    // the Docker host can bind-mount.
                     sh '''
                         set -e
+                        . scripts/sandbox-ci-env.sh
                         export SANDBOX_IT_BUILD=1
-                        if DOCKER_HOST=unix:///var/run/docker.sock docker info >/dev/null 2>&1; then
-                            export DOCKER_HOST=unix:///var/run/docker.sock
-                            echo "Sandbox integration using the local DinD socket"
-                        else
-                            echo "Local DinD socket unavailable; using Jenkins DOCKER_HOST=$DOCKER_HOST"
-                            if echo "${DOCKER_HOST:-}" | grep -q "^tcp://"; then
-                                HOSTNAME=$(echo "$DOCKER_HOST" | sed "s|tcp://||; s|:.*||")
-                                PORT=$(echo "$DOCKER_HOST" | sed "s|.*:||")
-                                IP=$(getent hosts "$HOSTNAME" 2>/dev/null | awk '{print $1}')
-                                if [ -n "$IP" ]; then
-                                    export DOCKER_HOST="tcp://$IP:$PORT"
-                                elif [ -n "${DOCKER_HOST_FALLBACK:-}" ]; then
-                                    export DOCKER_HOST="$DOCKER_HOST_FALLBACK"
-                                fi
-                            fi
-                        fi
-                        JENKINS_HOME_DIR="${JENKINS_HOME:-/var/jenkins_home}"
-                        HOST_JENKINS_HOME="${JENKINS_HOST_HOME:-}"
-                        if [ -z "$HOST_JENKINS_HOME" ]; then
-                            HOST_JENKINS_HOME=$(docker inspect "$(hostname)" \
-                                --format '{{range .Mounts}}{{if eq .Destination "'"$JENKINS_HOME_DIR"'"}}{{.Source}}{{end}}{{end}}' \
-                                2>/dev/null || true)
-                        fi
-                        if [ -z "$HOST_JENKINS_HOME" ]; then
-                            echo "error: could not determine the host path for $JENKINS_HOME_DIR" >&2
-                            echo "Set JENKINS_HOST_HOME on the Jenkins container (for example /opt/jenkins_home)." >&2
-                            exit 1
-                        fi
                         IT_ROOT="$WORKSPACE/target/sandbox-it"
-                        case "$IT_ROOT" in
-                            "$JENKINS_HOME_DIR"/*) ;;
-                            *)
-                                echo "error: $IT_ROOT is outside $JENKINS_HOME_DIR" >&2
-                                exit 1
-                                ;;
-                        esac
-                        HOST_IT_ROOT="${HOST_JENKINS_HOME}${IT_ROOT#$JENKINS_HOME_DIR}"
+                        HOST_IT_ROOT="$SANDBOX_CI_HOST_WORKSPACE/target/sandbox-it"
                         mkdir -p "$IT_ROOT"
                         export SANDBOX_CONTAINER_WORKSPACE_ROOT="$IT_ROOT"
                         export SANDBOX_HOST_WORKSPACE_ROOT="$HOST_IT_ROOT"
@@ -311,24 +264,14 @@ EOF
                     // SANDBOX_SCAN_REQUIRED=1 on a runner with syft/trivy or
                     // grype to make the scan mandatory.
                     sh '''
+                        . scripts/sandbox-ci-env.sh
                         if command -v syft >/dev/null 2>&1 \
                             && { command -v trivy >/dev/null 2>&1 || command -v grype >/dev/null 2>&1; }; then
-                            if echo "$DOCKER_HOST" | grep -q "^tcp://"; then
-                                HOSTNAME=$(echo "$DOCKER_HOST" | sed "s|tcp://||; s|:.*||")
-                                PORT=$(echo "$DOCKER_HOST" | sed "s|.*:||")
-                                IP=$(getent hosts "$HOSTNAME" 2>/dev/null | awk '{print $1}')
-                                if [ -n "$IP" ]; then
-                                    export DOCKER_HOST="tcp://$IP:$PORT"
-                                elif [ -n "$DOCKER_HOST_FALLBACK" ]; then
-                                    export DOCKER_HOST="$DOCKER_HOST_FALLBACK"
-                                fi
-                            fi
-                            # The Sandbox Integration stage built these images
-                            # with the same tags. Scan every image the harness
+                            # Agent and Sandbox Integration built these images
+                            # on this daemon. Scan every image the harness
                             # runs, not only the repo sandbox image: the
-                            # supervisor (built in the Agent stage) and the
-                            # trusted egress proxy are part of the same
-                            # boundary.
+                            # supervisor and the trusted egress proxy are part
+                            # of the same boundary.
                             for image in vibecode-agent:ci vibecode-agent-sandbox:ci vibecode-sandbox-proxy:ci; do
                                 bash scripts/sandbox-image-security.sh \
                                     --sbom-and-scan "$image"

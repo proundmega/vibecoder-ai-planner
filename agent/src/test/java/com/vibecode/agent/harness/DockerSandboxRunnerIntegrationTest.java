@@ -37,22 +37,35 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DockerSandboxRunnerIntegrationTest {
 
     private Path tempDir;
+    private Path tempRoot;
+    private boolean ownsTempRoot;
 
     @BeforeEach
     void createTempDir() throws IOException {
         String root = System.getenv("SANDBOX_IT_WORKSPACE_ROOT");
-        Path base = root == null || root.isBlank()
-            ? Files.createTempDirectory("sandbox-it-")
-            : Files.createDirectories(Path.of(root));
-        tempDir = Files.createDirectories(base.resolve("it-" + UUID.randomUUID()));
+        if (root == null || root.isBlank()) {
+            tempRoot = Files.createTempDirectory("sandbox-it-");
+            ownsTempRoot = true;
+        } else {
+            tempRoot = Files.createDirectories(Path.of(root));
+            ownsTempRoot = false;
+        }
+        tempDir = Files.createDirectories(tempRoot.resolve("it-" + UUID.randomUUID()));
     }
 
     @AfterEach
     void deleteTempDir() {
-        if (tempDir == null) {
+        deleteTree(tempDir);
+        if (ownsTempRoot) {
+            deleteTree(tempRoot);
+        }
+    }
+
+    private static void deleteTree(Path root) {
+        if (root == null) {
             return;
         }
-        try (var paths = Files.walk(tempDir)) {
+        try (var paths = Files.walk(root)) {
             paths.sorted(Comparator.reverseOrder()).forEach(path -> {
                 try {
                     Files.deleteIfExists(path);
