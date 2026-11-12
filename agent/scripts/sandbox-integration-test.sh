@@ -26,7 +26,17 @@ if [[ "${SANDBOX_IT_BUILD:-1}" != "0" ]]; then
     docker build -f "${ROOT}/sandbox.Dockerfile" -t "${IMAGE}" "${ROOT}"
     echo "Building sandbox proxy image ${PROXY_IMAGE}"
     docker build -f "${ROOT}/sandbox-proxy.Dockerfile" -t "${PROXY_IMAGE}" "${ROOT}"
+    for image in "${IMAGE}" "${PROXY_IMAGE}"; do
+        if ! docker image inspect "${image}" >/dev/null 2>&1; then
+            echo "error: ${image} is not present after the build" >&2
+            docker info >&2 || true
+            docker images >&2 || true
+            exit 1
+        fi
+    done
 fi
+
+echo "Docker daemon for the integration suite: $(docker info --format '{{.Name}}' 2>/dev/null || echo unknown)"
 
 export SANDBOX_IT_IMAGE="${IMAGE}"
 export SANDBOX_IT_PROXY_IMAGE="${PROXY_IMAGE}"

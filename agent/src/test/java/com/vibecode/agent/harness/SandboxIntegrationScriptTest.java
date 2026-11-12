@@ -88,6 +88,19 @@ class SandboxIntegrationScriptTest {
         assertTrue(log.contains("SANDBOX_IT_PROXY_IMAGE=proxy:under-test"), log);
     }
 
+    @Test
+    void failsWhenTheBuiltImageIsNotVisibleToTheDaemon() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(Map.of("FAIL_IMAGE_INSPECT", "1"));
+
+        assertEquals(1, result.exitCode, result.output);
+        assertTrue(result.output.contains(
+            "is not present after the build"), result.output);
+        assertTrue(Files.readString(fixture.log).contains("docker info"),
+            result.output);
+    }
+
     private Fixture fixture() throws IOException {
         Path root = Files.createDirectories(tempDir.resolve("agent"));
         Path scripts = Files.createDirectories(root.resolve("scripts"));
@@ -99,6 +112,10 @@ class SandboxIntegrationScriptTest {
         Path bin = Files.createDirectories(tempDir.resolve("bin"));
         Path log = tempDir.resolve("commands.log");
         writeStub(bin, "docker", """
+            if [ "${FAIL_IMAGE_INSPECT:-0}" = "1" ] && [ "$1" = "image" ]; then
+                echo "Error: No such image" >&2
+                exit 1
+            fi
             echo "docker $*" >> "$COMMAND_LOG"
             """);
         writeStub(bin, "mvn", """

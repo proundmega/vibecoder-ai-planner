@@ -240,19 +240,29 @@ EOF
             steps {
                 dir('agent') {
                     // Build the real sandbox and proxy images and run the
-                    // Docker acceptance suite against them (D13). Resolve
-                    // DOCKER_HOST in this same shell so docker and the JUnit
-                    // process see the same daemon.
+                    // Docker acceptance suite against them (D13). Use the
+                    // daemon the project containers run on: the Jenkins
+                    // agent's DOCKER_HOST can point at Jenkins' own socket
+                    // proxy, which is a different daemon from the local DinD
+                    // socket. The image must be built and run on the same
+                    // daemon.
                     sh '''
                         set -e
-                        if echo "${DOCKER_HOST:-}" | grep -q "^tcp://"; then
-                            HOSTNAME=$(echo "$DOCKER_HOST" | sed "s|tcp://||; s|:.*||")
-                            PORT=$(echo "$DOCKER_HOST" | sed "s|.*:||")
-                            IP=$(getent hosts "$HOSTNAME" 2>/dev/null | awk '{print $1}')
-                            if [ -n "$IP" ]; then
-                                export DOCKER_HOST="tcp://$IP:$PORT"
-                            elif [ -n "${DOCKER_HOST_FALLBACK:-}" ]; then
-                                export DOCKER_HOST="$DOCKER_HOST_FALLBACK"
+                        export SANDBOX_IT_BUILD=1
+                        if DOCKER_HOST=unix:///var/run/docker.sock docker info >/dev/null 2>&1; then
+                            export DOCKER_HOST=unix:///var/run/docker.sock
+                            echo "Sandbox integration using the local DinD socket"
+                        else
+                            echo "Local DinD socket unavailable; using Jenkins DOCKER_HOST=$DOCKER_HOST"
+                            if echo "${DOCKER_HOST:-}" | grep -q "^tcp://"; then
+                                HOSTNAME=$(echo "$DOCKER_HOST" | sed "s|tcp://||; s|:.*||")
+                                PORT=$(echo "$DOCKER_HOST" | sed "s|.*:||")
+                                IP=$(getent hosts "$HOSTNAME" 2>/dev/null | awk '{print $1}')
+                                if [ -n "$IP" ]; then
+                                    export DOCKER_HOST="tcp://$IP:$PORT"
+                                elif [ -n "${DOCKER_HOST_FALLBACK:-}" ]; then
+                                    export DOCKER_HOST="$DOCKER_HOST_FALLBACK"
+                                fi
                             fi
                         fi
                         export SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci
