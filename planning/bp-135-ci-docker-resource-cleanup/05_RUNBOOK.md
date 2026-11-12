@@ -47,10 +47,15 @@ The cleanup daemon is captured by the Integration Tests stage with
 `sh(returnStdout: true)` into the Jenkins pipeline variables `CI_DOCKER_HOST`
 and `CI_DOCKER_DAEMON_ID`. Post cleanup uses those variables and verifies the
 ID. If they are missing, it uses the explicit Jenkins `DOCKER_HOST` only when
-all build/test stages use explicit mode; in the local-socket variant it skips.
-No file under the workspace is authoritative. All Docker build/test stages use
-explicit mode only if the pre-implementation daemon gate passes; otherwise they
-stay on the existing local-socket selection and only cleanup uses explicit mode.
+the Agent, Sandbox, Supply Chain and Integration Tests stages use explicit
+mode; in the local-socket variant it skips.
+No file under the workspace is authoritative. The Agent, Sandbox, Supply
+Chain and Integration Tests stages use explicit mode only if the
+pre-implementation daemon gate passes; otherwise they stay on the existing
+local-socket selection and only cleanup uses explicit mode. The Cypress stage
+keeps its current `DOCKER_HOST` selection and stage-level `post { always }`
+teardown in both variants, so its project is independent of the top-level
+cleanup.
 
 ## Inspect (labelled resources)
 
@@ -182,8 +187,11 @@ remove. It must not issue a delete, prune or `compose down` command.
 4. If a build's `post` cleanup failed, the next scheduled GC is the recovery
    path. If the pipeline's `CI_DOCKER_HOST`/`CI_DOCKER_DAEMON_ID` variables are
    missing, post cleanup falls back to the explicit Jenkins `DOCKER_HOST` only
-   when all build/test stages use explicit mode; otherwise it skips. Do not
-   substitute the local socket or manually run `docker system prune`.
+   when the Agent, Sandbox, Supply Chain and Integration Tests stages use
+   explicit mode; otherwise it skips. Do not substitute an uncaptured local
+   socket when the pipeline variables are missing; in the local-socket variant
+   the captured host itself is the local socket and must be used explicitly. Do
+   not manually run `docker system prune`.
 5. If Jenkins itself is down, the scheduled job cannot run. Resources remain
    until Jenkins returns; a host-side timer is deferred (D1). For the existing
    pre-label backlog, use the manual legacy procedure above, not the cron job.
@@ -194,7 +202,7 @@ remove. It must not issue a delete, prune or `compose down` command.
 |---|---|---|
 | Test failure or user abort | `post { always }` teardown runs before `cleanWs()` | Inspect the build log; no manual action if the project is gone. |
 | Hard-killed agent / Jenkins crash | `post` never runs; resources remain | Scheduled GC removes them after the grace period. |
-| Missing/stale pipeline daemon variables | In explicit-all-stages mode, `post` uses the explicit Jenkins `DOCKER_HOST` and computes the ID; in local-socket mode it skips | Check the build log; scheduled GC is the fallback. Never use the local socket or a workspace file. |
+| Missing/stale pipeline daemon variables | In explicit-all-stages mode, `post` uses the explicit Jenkins `DOCKER_HOST` and computes the ID; in local-socket mode it skips | Check the build log; scheduled GC is the fallback. Never fall back to an uncaptured local socket or a workspace file; use the captured host when the local-socket variant selected it. |
 | Daemon restart | Containers/projects may remain labelled | Scheduled GC after the grace period. |
 | Wrong daemon selected | Cleanup aborts before any delete | Fix `CI_DOCKER_HOST`/`CI_DOCKER_DAEMON_ID` and re-run the dry run. |
 | Pre-label backlog | New GC cannot select it | One-time manual legacy inventory/cleanup with written confirmation. |

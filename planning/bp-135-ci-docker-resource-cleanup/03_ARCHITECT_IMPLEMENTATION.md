@@ -70,21 +70,23 @@
 
    Before changing pipeline daemon mode, run the real-Docker suite through the
    explicit host:
-   `DOCKER_HOST="$CI_DOCKER_HOST" SANDBOX_CI_DOCKER_HOST_MODE=explicit
-   SANDBOX_IT_BUILD=1 SANDBOX_IT_NETWORK=1
-   bash scripts/sandbox-integration-test.sh`.
+   `cd agent && DOCKER_HOST="$CI_DOCKER_HOST"
+   SANDBOX_CI_DOCKER_HOST_MODE=explicit SANDBOX_IT_BUILD=1
+   SANDBOX_IT_NETWORK=1 bash scripts/sandbox-integration-test.sh`.
    The script builds the sandbox/proxy images and runs
    `DockerSandboxRunnerIntegrationTest`. Record the result. If it passes and
-   exec/cp/pause/top/run/network are permitted, set explicit mode for all
-   Docker stages. If it fails because the proxy is restricted, keep the
-   build/test stages on the existing helper/local-socket selection, make the
-   Integration Tests stage use that same selection for its Compose project, and
-   use explicit mode only for cleanup. If the proxy is restricted and there is
-   no local socket, stop and record the sandbox suite as blocked; do not force
-   explicit mode.
+   exec/cp/pause/top/run/network are permitted, set explicit mode for the Agent,
+   Sandbox, Supply Chain and Integration Tests stages. The Cypress stage keeps
+   its current `DOCKER_HOST` selection and stage-level `post { always }`
+   teardown in both variants. If the gate fails because the proxy is
+   restricted, keep those four stages on the existing helper/local-socket
+   selection, make the Integration Tests stage use that same selection for its
+   Compose project, and use explicit mode only for cleanup. If the proxy is
+   restricted and there is no local socket, stop and record the sandbox suite as
+   blocked; do not force explicit mode.
 
-   In both cases, capture the actual build/test host and
-   `docker info --format '{{.ID}}'` with `sh(returnStdout: true)` into Jenkins
+   In both cases, capture the actual host and `docker info --format '{{.ID}}'`
+   for the Integration Tests project with `sh(returnStdout: true)` into Jenkins
    pipeline variables (`CI_DOCKER_HOST`, `CI_DOCKER_DAEMON_ID`) immediately
    before creating the Compose project. Do not write or read
    `target/ci-docker-daemon.env`; a workspace file is not authoritative. In
@@ -92,8 +94,9 @@
    daemon ID and only then call the cleanup script. If the variables are
    missing, use the explicit Jenkins `DOCKER_HOST` and compute the ID only in
    the explicit-all-stages variant; in the local-socket variant, log a warning
-   and skip. Never guess a daemon or use the local socket. The scheduled cleanup
-   uses the same explicit mode with its own
+   and skip. Never guess a daemon or fall back to an uncaptured local socket;
+   if the local-socket variant selected it, use the captured socket explicitly.
+   The scheduled cleanup uses the same explicit mode with its own
    `CI_DOCKER_HOST`/`CI_DOCKER_DAEMON_ID` and aborts before listing or deleting
    anything on a mismatch. — verify: `SandboxCiEnvScriptTest`,
    `JenkinsDockerCleanupScriptTest`, `JenkinsfileCiCleanupTest` and the
@@ -145,22 +148,31 @@ and runs `DockerSandboxRunnerIntegrationTest` with the network suite enabled.
 Replace `$CI_DOCKER_HOST` with the explicit host under test.
 
 - **Pass** — the explicit `DOCKER_HOST` supports exec/cp/pause/top/run/network:
-  use explicit mode for all Docker stages.
-- **Fail because the proxy is restricted** — keep the Agent, Sandbox and Supply
-  Chain stages on the existing helper/local-socket selection, make the
-  Integration Tests stage use that same selection, and use explicit mode only
-  for post/scheduled cleanup. If no local socket is available either, record
-  the sandbox suite as blocked and do not force explicit mode.
+  use explicit mode for the Agent, Sandbox, Supply Chain and Integration Tests
+  stages. The Cypress stage keeps its current `DOCKER_HOST` and stage-level
+  cleanup.
+- **Fail because the proxy is restricted** — keep the Agent, Sandbox, Supply
+  Chain and Integration Tests stages on the existing helper/local-socket
+  selection, make the Integration Tests stage use that same selection, and use
+  explicit mode only for post/scheduled cleanup. The Cypress stage keeps its
+  current `DOCKER_HOST` and stage-level cleanup. If no local socket is available
+  either, record the sandbox suite as blocked and do not force explicit mode.
 
-In both cases, capture the daemon actually used by the build/test stages into
-Jenkins pipeline variables as described in step 4. Do not proceed with the
+In both cases, capture the daemon actually used by the Integration Tests stage
+into Jenkins pipeline variables as described in step 4. Do not proceed with the
 explicit-all-stages variant until this gate is green.
+
+**Operational status: pending.** This planning workspace cannot reach the
+Jenkins explicit daemon (`docker-socket-proxy` does not resolve here), so the
+gate must be run on Jenkins against the real `DOCKER_HOST` before any
+daemon-mode implementation change. Record `pass`, `local-socket fallback` or
+`blocked` in `03` Results.
 
 ## Per-file changes
 
 | File | Action | Change |
 |---|---|---|
-| `Jenkinsfile` | MODIFY | Teardown first in `post { always }`; `cleanWs()` in `post { cleanup }`; remove success-only cleanup; add `CI_SMOKE_FAIL`; apply the daemon compatibility gate; capture the build/test host and daemon ID with `sh(returnStdout: true)` into pipeline variables (never a workspace file); use explicit mode for all stages only if the gate passes, otherwise only for cleanup; add CI labels/tags; call the cleanup script for the current project and current build images. Do not change the main pipeline's agent label. |
+| `Jenkinsfile` | MODIFY | Teardown first in `post { always }`; `cleanWs()` in `post { cleanup }`; remove success-only cleanup; add `CI_SMOKE_FAIL`; apply the recorded daemon compatibility result; capture the Integration Tests host and daemon ID with `sh(returnStdout: true)` into pipeline variables (never a workspace file); use explicit mode for the Agent/Sandbox/Supply Chain/Integration Tests stages only if the gate passes, otherwise only for cleanup; keep the Cypress stage on its current `DOCKER_HOST` and stage-level cleanup; add CI labels/tags; call the cleanup script for the current project and current build images. Do not change the main pipeline's agent label. |
 | `Jenkinsfile.cleanup` | CREATE | Scheduled orphan-GC pipeline with dedicated node label, cron, `DRY_RUN`, explicit host/daemon ID and grace-period parameters. |
 | `agent/scripts/jenkins-docker-cleanup.sh` | CREATE | Scoped teardown/build-image removal, label/age-scoped orphan GC and read-only `--legacy-inventory`; dry-run and daemon verification. |
 | `agent/scripts/sandbox-ci-env.sh` | MODIFY | Add explicit-daemon mode that never substitutes the local socket. |
@@ -188,7 +200,7 @@ explicit-all-stages variant until this gate is green.
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphansRemovesOnlyOldLabelledResources` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanGcKeepsSharedCiAlias` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR4 | Script | `JenkinsDockerCleanupScriptTest` | `fr4CleanupNeverPrunesBroadlyOrTouchesLocalDev` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
-| FR5 | Manual | `DockerSandboxRunnerIntegrationTest` | `fr5ExplicitDaemonRunsRealDockerSuite` | `DOCKER_HOST="$CI_DOCKER_HOST" SANDBOX_CI_DOCKER_HOST_MODE=explicit SANDBOX_IT_BUILD=1 SANDBOX_IT_NETWORK=1 bash scripts/sandbox-integration-test.sh` |
+| FR5 | Manual | `DockerSandboxRunnerIntegrationTest` | `fr5ExplicitDaemonRunsRealDockerSuite` | `cd agent && DOCKER_HOST="$CI_DOCKER_HOST" SANDBOX_CI_DOCKER_HOST_MODE=explicit SANDBOX_IT_BUILD=1 SANDBOX_IT_NETWORK=1 bash scripts/sandbox-integration-test.sh` |
 | FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5RequiresPinnedDaemonAndRejectsMismatch` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5PostCleanupUsesPipelineDaemon` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5PostCleanupFallsBackToExplicitHost` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
@@ -232,6 +244,7 @@ docker images --filter label=com.vibecode.ci.build="$BUILD_NUMBER"
 | 1 | external reviewer | B1 post ordering could still no-op after `cleanWs()`; B2 `down -v` contradicted shared-volume protection; B3 scheduled GC daemon/selectors were not deterministic or positive; B4 plan was stale relative to #140. Should-fix: FR2/FR1 traceability, sandbox/proxy images outside Compose teardown, existing sandbox label, missing runbook, Jenkins job provisioning, D1 follow-up, pending decisions and test-name IDs. | This revision: FR1 now fixes ordering explicitly and adds a smoke hook; FR4/decision 4 define the validated build-scoped volume policy and explicit local-dev deny; FR3/FR5/decision 5 use positive labels and a pinned scheduled host/daemon ID; D4 records #140 as merged; every should-fix item is mapped above. | pending |
 | 2 | external reviewer | Existing pre-label backlog was invisible to the labelled GC; post cleanup could select a different daemon than the build; main-pipeline pinning was a capacity/availability change; no `:ci` alias protection test; the CI-label anchor was ambiguous for pulled services; FR2 said Compose images have a `:ci` alias. | This revision adds FR6, the runbook legacy inventory/cleanup procedure and read-only `--legacy-inventory`; sets explicit-daemon mode for all Jenkins Docker stages and records the Integration Tests host/ID for post cleanup; keeps the main pipeline on its existing agents and pins only the scheduled job; adds the `:ci` alias test; uses the project network/volume as the authoritative anchor; corrects FR2. | pending |
 | 3 | external reviewer | Legacy cleanup could remove the current shared `:ci` aliases; the volume inventory used an unsupported `CreatedAt` formatter field; forcing explicit mode for all stages could break the real-Docker sandbox suite; the workspace daemon record could redirect cleanup; legacy compose command depended on the operator's cwd; image inventory omitted size. | This revision marks every `:ci` image shared/current and limits legacy removal to build-unique old tags; fixes volume/image inventory commands and the repo-root compose command; adds the explicit-daemon compatibility gate and keeps build/test on the local socket when the proxy is restricted; moves the cleanup target to Jenkins pipeline variables and adds NFR5; adds FR5/FR6/NFR5 coverage. | pending |
+| 4 | external reviewer | Local-socket wording could be read as forbidding the captured local socket; the Jenkinsfile was described as running the manual gate; the gate command path was inconsistent; the Cypress stage's daemon choice was unspecified in the fallback. | This revision distinguishes the captured local socket from an uncaptured fallback, says the pipeline applies the recorded gate result, makes the gate command run from `agent`, and documents Cypress as keeping its current `DOCKER_HOST` plus stage-level cleanup. The gate itself is recorded as a pending operational prerequisite. | pending |
 
 ## Results
 
