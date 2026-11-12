@@ -243,9 +243,10 @@ EOF
                     // Docker acceptance suite against them (D13). Use the
                     // daemon the project containers run on: the Jenkins
                     // agent's DOCKER_HOST can point at Jenkins' own socket
-                    // proxy, which is a different daemon from the local DinD
+                    // proxy, which is a different daemon from a local DinD
                     // socket. The image must be built and run on the same
-                    // daemon.
+                    // daemon. Sandbox bind mounts are resolved on the Docker
+                    // host, so map the Jenkins workspace to its host path.
                     sh '''
                         set -e
                         export SANDBOX_IT_BUILD=1
@@ -265,6 +266,32 @@ EOF
                                 fi
                             fi
                         fi
+                        JENKINS_HOME_DIR="${JENKINS_HOME:-/var/jenkins_home}"
+                        HOST_JENKINS_HOME="${JENKINS_HOST_HOME:-}"
+                        if [ -z "$HOST_JENKINS_HOME" ]; then
+                            HOST_JENKINS_HOME=$(docker inspect "$(hostname)" \
+                                --format '{{range .Mounts}}{{if eq .Destination "'"$JENKINS_HOME_DIR"'"}}{{.Source}}{{end}}{{end}}' \
+                                2>/dev/null || true)
+                        fi
+                        if [ -z "$HOST_JENKINS_HOME" ]; then
+                            echo "error: could not determine the host path for $JENKINS_HOME_DIR" >&2
+                            echo "Set JENKINS_HOST_HOME on the Jenkins container (for example /opt/jenkins_home)." >&2
+                            exit 1
+                        fi
+                        IT_ROOT="$WORKSPACE/target/sandbox-it"
+                        case "$IT_ROOT" in
+                            "$JENKINS_HOME_DIR"/*) ;;
+                            *)
+                                echo "error: $IT_ROOT is outside $JENKINS_HOME_DIR" >&2
+                                exit 1
+                                ;;
+                        esac
+                        HOST_IT_ROOT="${HOST_JENKINS_HOME}${IT_ROOT#$JENKINS_HOME_DIR}"
+                        mkdir -p "$IT_ROOT"
+                        export SANDBOX_CONTAINER_WORKSPACE_ROOT="$IT_ROOT"
+                        export SANDBOX_HOST_WORKSPACE_ROOT="$HOST_IT_ROOT"
+                        export SANDBOX_IT_WORKSPACE_ROOT="$IT_ROOT"
+                        echo "Sandbox integration workspace: $IT_ROOT -> $HOST_IT_ROOT"
                         export SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci
                         export SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:ci
                         export SANDBOX_IT_NETWORK_IMAGE="$SANDBOX_IT_IMAGE"

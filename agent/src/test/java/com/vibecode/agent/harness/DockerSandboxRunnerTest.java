@@ -436,15 +436,16 @@ class DockerSandboxRunnerTest {
         Path log = tempDir.resolve("docker.log");
         Path script = fakeDocker(log, """
             state='__STATE__'
+            write_state() { printf '%s\n' "$1" > "$state.$$"; mv "$state.$$" "$state"; }
             case "$1" in
-              run) echo true > "$state"; exit 0 ;;
+              run) write_state true; exit 0 ;;
               inspect)
                 case "$*" in
                   *"State.Running"*) cat "$state" 2>/dev/null || echo true ;;
                   *) echo true ;;
                 esac
                 ;;
-              kill|rm) echo false > "$state"; exit 0 ;;
+              kill|rm) write_state false; exit 0 ;;
               exec) sleep 10 ;;
               *) exit 0 ;;
             esac
@@ -817,15 +818,16 @@ class DockerSandboxRunnerTest {
         Path log = tempDir.resolve("docker.log");
         Path script = fakeDocker(log, """
             state='__STATE__'
+            write_state() { printf '%s\n' "$1" > "$state.$$"; mv "$state.$$" "$state"; }
             case "$1" in
-              run) echo true > "$state"; exit 0 ;;
+              run) write_state true; exit 0 ;;
               inspect)
                 case "$*" in
                   *"State.Running"*) cat "$state" 2>/dev/null || echo true ;;
                   *) echo true ;;
                 esac
                 ;;
-              kill|rm) echo false > "$state"; exit 0 ;;
+              kill|rm) write_state false; exit 0 ;;
               exec) sleep 10 ;;
               *) exit 0 ;;
             esac
@@ -859,15 +861,16 @@ class DockerSandboxRunnerTest {
         Path log = tempDir.resolve("docker.log");
         Path script = fakeDocker(log, """
             state='__STATE__'
+            write_state() { printf '%s\n' "$1" > "$state.$$"; mv "$state.$$" "$state"; }
             case "$1" in
-              run) echo true > "$state"; exit 0 ;;
+              run) write_state true; exit 0 ;;
               inspect)
                 case "$*" in
                   *"State.Running"*) cat "$state" 2>/dev/null || echo true ;;
                   *) echo true ;;
                 esac
                 ;;
-              kill|rm) echo false > "$state"; exit 0 ;;
+              kill|rm) write_state false; exit 0 ;;
               exec) sleep 10 ;;
               *) exit 0 ;;
             esac
@@ -1245,15 +1248,16 @@ class DockerSandboxRunnerTest {
         Path log = tempDir.resolve("docker.log");
         String body = """
             state='__STATE__'
+            write_state() { printf '%s\n' "$1" > "$state.$$"; mv "$state.$$" "$state"; }
             case "$1" in
-              run) echo true > "$state"; exit 0 ;;
+              run) write_state true; exit 0 ;;
               inspect)
                 case "$*" in
                   *"State.Running"*) cat "$state" 2>/dev/null || echo true ;;
                   *) echo true ;;
                 esac
                 ;;
-              kill|rm) echo false > "$state"; exit 0 ;;
+              kill|rm) write_state false; exit 0 ;;
               exec)
                 rm -rf '__WORKSPACE__'
                 sleep 10
