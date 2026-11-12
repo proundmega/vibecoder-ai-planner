@@ -15,6 +15,7 @@
 
 SANDBOX_CI_ORIGINAL_DOCKER_HOST="${DOCKER_HOST:-}"
 SANDBOX_CI_ORIGINAL_DOCKER_HOST_FALLBACK="${DOCKER_HOST_FALLBACK:-}"
+SANDBOX_CI_INSPECT_DOCKER_HOST="$SANDBOX_CI_ORIGINAL_DOCKER_HOST"
 
 if DOCKER_HOST=unix:///var/run/docker.sock docker info >/dev/null 2>&1; then
     export DOCKER_HOST=unix:///var/run/docker.sock
@@ -27,9 +28,11 @@ else
         host="${host%:*}"
         ip="$(getent hosts "$host" 2>/dev/null | awk '{print $1}')"
         if [[ -n "$ip" ]]; then
-            export DOCKER_HOST="tcp://$ip:$port"
+            SANDBOX_CI_INSPECT_DOCKER_HOST="tcp://$ip:$port"
+            export DOCKER_HOST="$SANDBOX_CI_INSPECT_DOCKER_HOST"
         elif [[ -n "$SANDBOX_CI_ORIGINAL_DOCKER_HOST_FALLBACK" ]]; then
-            export DOCKER_HOST="$SANDBOX_CI_ORIGINAL_DOCKER_HOST_FALLBACK"
+            SANDBOX_CI_INSPECT_DOCKER_HOST="$SANDBOX_CI_ORIGINAL_DOCKER_HOST_FALLBACK"
+            export DOCKER_HOST="$SANDBOX_CI_INSPECT_DOCKER_HOST"
         else
             export DOCKER_HOST="$SANDBOX_CI_ORIGINAL_DOCKER_HOST"
         fi
@@ -37,14 +40,16 @@ else
         export DOCKER_HOST="$SANDBOX_CI_ORIGINAL_DOCKER_HOST"
     fi
 fi
+export SANDBOX_CI_INSPECT_DOCKER_HOST
 
 JENKINS_HOME_DIR="${JENKINS_HOME:-/var/jenkins_home}"
 HOST_JENKINS_HOME="${JENKINS_HOST_HOME:-}"
 if [[ -z "$HOST_JENKINS_HOME" ]]; then
-    # Inspect through the original daemon: the selected daemon may not be able
-    # to see the Jenkins agent container.
-    if [[ -n "$SANDBOX_CI_ORIGINAL_DOCKER_HOST" ]]; then
-        HOST_JENKINS_HOME="$(DOCKER_HOST="$SANDBOX_CI_ORIGINAL_DOCKER_HOST" docker inspect "$(hostname)" \
+    # Inspect through the resolved original daemon: the selected daemon may
+    # not be able to see the Jenkins agent container, and the original may be
+    # a hostname that only resolves after the lookup above.
+    if [[ -n "$SANDBOX_CI_INSPECT_DOCKER_HOST" ]]; then
+        HOST_JENKINS_HOME="$(DOCKER_HOST="$SANDBOX_CI_INSPECT_DOCKER_HOST" docker inspect "$(hostname)" \
             --format '{{range .Mounts}}{{if eq .Destination "'"$JENKINS_HOME_DIR"'"}}{{.Source}}{{end}}{{end}}' \
             2>/dev/null || true)"
     else

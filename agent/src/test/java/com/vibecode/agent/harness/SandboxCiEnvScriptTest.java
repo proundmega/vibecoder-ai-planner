@@ -43,6 +43,11 @@ class SandboxCiEnvScriptTest {
             """);
         Files.setPosixFilePermissions(docker,
             PosixFilePermissions.fromString("rwxr-xr-x"));
+
+        Path getent = bin.resolve("getent");
+        Files.writeString(getent, "#!/usr/bin/env bash\necho '10.0.0.5 proxy'\n");
+        Files.setPosixFilePermissions(getent,
+            PosixFilePermissions.fromString("rwxr-xr-x"));
     }
 
     @Test
@@ -56,6 +61,21 @@ class SandboxCiEnvScriptTest {
         assertEquals(0, result.exitCode, result.output);
         assertEquals("unix:///var/run/docker.sock", result.value("DOCKER_HOST"));
         assertEquals("/tmp/build", result.value("HOST_WORKSPACE"));
+    }
+
+    @Test
+    void resolvesTheOriginalDaemonBeforeInspectingTheJenkinsMount() throws Exception {
+        Result result = run(Map.of(
+            "FAKE_LOCAL_DOCKER", "0",
+            "FAKE_INSPECT_SOURCE", "/host/inspect",
+            "DOCKER_HOST", "tcp://proxy:2375",
+            "JENKINS_HOME", "/var/jenkins_home",
+            "WORKSPACE", "/var/jenkins_home/workspace/job"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertEquals("tcp://10.0.0.5:2375", result.value("DOCKER_HOST"));
+        assertEquals("/host/inspect/workspace/job", result.value("HOST_WORKSPACE"));
     }
 
     @Test

@@ -41,6 +41,21 @@ fi
 
 echo "Docker daemon for the integration suite: $(docker info --format '{{.Name}}' 2>/dev/null || echo unknown)"
 
+if [[ -n "${SANDBOX_HOST_WORKSPACE_ROOT:-}" \
+    && -n "${SANDBOX_IT_WORKSPACE_ROOT:-}" ]]; then
+    host_check=".sandbox-host-check-$$"
+    printf 'ok\n' > "${SANDBOX_IT_WORKSPACE_ROOT}/${host_check}"
+    if ! docker run --rm -v "${SANDBOX_HOST_WORKSPACE_ROOT}:/check:ro" "${IMAGE}" \
+        sh -c "test -f /check/${host_check}" >/dev/null 2>&1; then
+        echo "error: ${SANDBOX_HOST_WORKSPACE_ROOT} is not visible to the Docker daemon" >&2
+        echo "Check JENKINS_HOST_HOME/SANDBOX_HOST_WORKSPACE_ROOT." >&2
+        rm -f "${SANDBOX_IT_WORKSPACE_ROOT}/${host_check}"
+        docker info >&2 || true
+        exit 1
+    fi
+    rm -f "${SANDBOX_IT_WORKSPACE_ROOT}/${host_check}"
+fi
+
 export SANDBOX_IT_IMAGE="${IMAGE}"
 export SANDBOX_IT_PROXY_IMAGE="${PROXY_IMAGE}"
 if [[ "${SANDBOX_IT_NETWORK:-0}" == "1" ]]; then
