@@ -206,7 +206,7 @@ validating run; the explicit-host result remains `local-socket fallback`.
 | FR2 | Static | `JenkinsfileCiCleanupTest` | `fr2SupervisorAndComposeBuildsCarryCiLabels` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
 | FR2 | Script | `JenkinsDockerCleanupScriptTest` | `fr2BuildImageRemovalKeepsTheSharedCiAlias` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR2 | Script | `JenkinsDockerCleanupScriptTest` | `fr2BuildImageRemovalRemovesUntaggedImageId` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
-| FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanSandboxContainersAreAgeCheckedAndDryRunIsReadOnly` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanSandboxContainersRemoveOldRunningContainers` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanGcKeepsSharedCiAlias` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanSandboxNetworksRemoveOldAttachedNetworks` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanComposeProjectsRemoveOldRunningProjects` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
