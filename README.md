@@ -332,6 +332,7 @@ cypress:       docker compose (e2e overlay) → cypress/included runs e2e + comp
 integration:   docker compose up → Jest integration tests → bash integration tests
 agent job:     mvn test → package → agent image build
 sandbox job:   build sandbox/proxy images → real-Docker integration suite
+cleanup job:   Jenkinsfile.cleanup → label/age-scoped orphan GC (dedicated host)
 ```
 
 The full pipeline runs on every build; no stages are skipped by change
@@ -340,6 +341,17 @@ runs in a container, `agent/scripts/sandbox-ci-env.sh` maps the workspace to the
 Docker host path; set `JENKINS_HOST_HOME` when the mount cannot be discovered
 (the identity fallback warns). It only maps workspaces under `JENKINS_HOME`; a
 workspace outside that root is left unchanged.
+
+BP-135 adds a scoped cleanup path. The pipeline tears down its own Compose
+project before `cleanWs()` and removes its build-unique image tags; the
+scheduled `Jenkinsfile.cleanup` job (pinned to the `vibecode-ci-docker` node)
+removes only positively labelled, age-scoped resources.
+`CI_IMAGE_GRACE_HOURS` (default 24), `CI_CONTAINER_GRACE_HOURS` (2) and
+`CI_BUILD_GRACE_HOURS` (6) control retention. Cleanup never runs a broad
+`docker system prune`, never removes the local-dev `vibecoder-ai-planner`
+project, shared volumes or the shared `:ci` image aliases. See
+`planning/bp-135-ci-docker-resource-cleanup/05_RUNBOOK.md` for provisioning,
+the one-time legacy inventory and rollback.
 
 ## Planning
 

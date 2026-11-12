@@ -1,14 +1,14 @@
 ---
 id: "bp-135"
 title: "Clean up Docker resources left by failed Jenkins runs"
-status: planned
+status: in_progress
 priority: "P1"
 effort: "Medium"
 scope: "Infra"
 created: "2026-11-12"
 updated: "2026-11-12"
 pr: null
-branch: null
+branch: "feat/bp-135-ci-docker-cleanup"
 depends_on: []
 ---
 
@@ -94,7 +94,8 @@ daemon restart or Jenkins crash.
 | Plan review round 5 | FR5 gate fallback evidence requirement recorded; re-review pending (`03` Review record) | ☑ |
 | FR5 daemon gate | pending — run on Jenkins against the explicit `DOCKER_HOST` before daemon-mode implementation; record pass/fallback/blocked in `03` Results. If fallback is selected, also record the existing local-socket suite result as the validating run | ☐ |
 | D13 helper available | PR #140 merged at `02ffc0a`; `agent/scripts/sandbox-ci-env.sh` is on master | ☑ |
-| Plan merged | pending | ☐ |
+| Plan merged | PR #141, merge `7867a41` | ☑ |
+| Implementation started | `feat/bp-135-ci-docker-cleanup`; local-socket variant first; unit tests and planning check pass | ☑ |
 | Implementation completed | pending | ☐ |
 | Verification results | pending (`03` Results) | ☐ |
 

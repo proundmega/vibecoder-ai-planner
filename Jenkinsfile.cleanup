@@ -1,0 +1,51 @@
+pipeline {
+    agent { label 'vibecode-ci-docker' }
+
+    options {
+        timestamps()
+        timeout(time: 30, unit: 'MINUTES')
+    }
+
+    parameters {
+        booleanParam(name: 'DRY_RUN', defaultValue: false,
+            description: 'Report old resources without deleting anything; use true for the first manual run')
+        string(name: 'CI_DOCKER_HOST', defaultValue: '',
+            description: 'Dedicated Docker daemon for this cleanup host')
+        string(name: 'CI_DOCKER_DAEMON_ID', defaultValue: '',
+            description: 'Expected output of docker info --format {{.ID}}')
+        string(name: 'CI_IMAGE_GRACE_HOURS', defaultValue: '24',
+            description: 'Minimum age of a labelled CI image')
+        string(name: 'CI_CONTAINER_GRACE_HOURS', defaultValue: '2',
+            description: 'Minimum age of an orphan sandbox container/network')
+        string(name: 'CI_BUILD_GRACE_HOURS', defaultValue: '6',
+            description: 'Minimum age of a stopped Compose project')
+    }
+
+    triggers {
+        // Provision the Jenkins job before enabling this; adding the file alone
+        // does not create a scheduled job.
+        cron('H */6 * * *')
+    }
+
+    stages {
+        stage('Orphan cleanup') {
+            steps {
+                dir('agent') {
+                    sh '''
+                        set -e
+                        ARGS="--orphans"
+                        if [ "${DRY_RUN:-false}" = "true" ]; then
+                            ARGS="$ARGS --dry-run"
+                        fi
+                        CI_DOCKER_HOST="${CI_DOCKER_HOST:?CI_DOCKER_HOST is required}" \
+                        CI_DOCKER_DAEMON_ID="${CI_DOCKER_DAEMON_ID:?CI_DOCKER_DAEMON_ID is required}" \
+                        CI_IMAGE_GRACE_HOURS="${CI_IMAGE_GRACE_HOURS:-24}" \
+                        CI_CONTAINER_GRACE_HOURS="${CI_CONTAINER_GRACE_HOURS:-2}" \
+                        CI_BUILD_GRACE_HOURS="${CI_BUILD_GRACE_HOURS:-6}" \
+                        bash scripts/jenkins-docker-cleanup.sh $ARGS
+                    '''
+                }
+            }
+        }
+    }
+}

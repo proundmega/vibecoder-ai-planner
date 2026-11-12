@@ -39,13 +39,34 @@ class SandboxIntegrationScriptTest {
         assertEquals(0, result.exitCode, result.output);
         String log = Files.readString(fixture.log);
         assertTrue(log.contains("docker build --load -f " + fixture.root
-            + "/sandbox.Dockerfile -t vibecode-agent-sandbox:ci " + fixture.root), log);
+            + "/sandbox.Dockerfile -t vibecode-agent-sandbox:ci"), log);
         assertTrue(log.contains("docker build --load -f " + fixture.root
-            + "/sandbox-proxy.Dockerfile -t vibecode-sandbox-proxy:ci " + fixture.root), log);
+            + "/sandbox-proxy.Dockerfile -t vibecode-sandbox-proxy:ci"), log);
+        assertTrue(log.contains(fixture.root.toString()), log);
         assertTrue(log.contains("mvn -Dtest=DockerSandboxRunnerIntegrationTest test"), log);
         assertTrue(log.contains("SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci"), log);
         assertTrue(log.contains("SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:ci"), log);
         assertFalse(log.contains("SANDBOX_IT_NETWORK_IMAGE="), log);
+    }
+
+    @Test
+    void fr2SandboxAndProxyBuildsCarryCiLabelsAndBuildTag() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(Map.of(
+            "VIBECODE_CI", "true",
+            "VIBECODE_CI_JOB", "planner/main",
+            "VIBECODE_CI_BUILD", "7",
+            "SANDBOX_IT_BUILD_TAG", "7"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        String log = Files.readString(fixture.log);
+        assertTrue(log.contains("--label com.vibecode.ci=true"), log);
+        assertTrue(log.contains("--label com.vibecode.ci.job=planner/main"), log);
+        assertTrue(log.contains("--label com.vibecode.ci.build=7"), log);
+        assertTrue(log.contains("-t vibecode-agent-sandbox:7"), log);
+        assertTrue(log.contains("-t vibecode-sandbox-proxy:7"), log);
     }
 
     @Test
@@ -82,8 +103,8 @@ class SandboxIntegrationScriptTest {
 
         assertEquals(0, result.exitCode, result.output);
         String log = Files.readString(fixture.log);
-        assertTrue(log.contains("-t sandbox:under-test " + fixture.root), log);
-        assertTrue(log.contains("-t proxy:under-test " + fixture.root), log);
+        assertTrue(log.contains("-t sandbox:under-test"), log);
+        assertTrue(log.contains("-t proxy:under-test"), log);
         assertTrue(log.contains("SANDBOX_IT_IMAGE=sandbox:under-test"), log);
         assertTrue(log.contains("SANDBOX_IT_PROXY_IMAGE=proxy:under-test"), log);
     }

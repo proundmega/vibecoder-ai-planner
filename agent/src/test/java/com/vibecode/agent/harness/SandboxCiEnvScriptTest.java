@@ -64,6 +64,43 @@ class SandboxCiEnvScriptTest {
     }
 
     @Test
+    void explicitModeUsesTheSuppliedHostEvenWhenTheLocalSocketExists() throws Exception {
+        Result result = run(Map.of(
+            "SANDBOX_CI_DOCKER_HOST_MODE", "explicit",
+            "FAKE_LOCAL_DOCKER", "1",
+            "DOCKER_HOST", "tcp://proxy:2375",
+            "JENKINS_HOME", "/var/jenkins_home",
+            "WORKSPACE", "/var/jenkins_home/workspace/job"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertEquals("tcp://10.0.0.5:2375", result.value("DOCKER_HOST"));
+    }
+
+    @Test
+    void explicitModeAcceptsAnExplicitUnixSocket() throws Exception {
+        Result result = run(Map.of(
+            "SANDBOX_CI_DOCKER_HOST_MODE", "explicit",
+            "FAKE_LOCAL_DOCKER", "1",
+            "DOCKER_HOST", "unix:///explicit.sock"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertEquals("unix:///explicit.sock", result.value("DOCKER_HOST"));
+    }
+
+    @Test
+    void explicitModeRequiresAHost() throws Exception {
+        Result result = run(Map.of(
+            "SANDBOX_CI_DOCKER_HOST_MODE", "explicit",
+            "FAKE_LOCAL_DOCKER", "1"
+        ));
+
+        assertTrue(result.output.contains("explicit Docker mode requires DOCKER_HOST"),
+            result.output);
+    }
+
+    @Test
     void resolvesTheOriginalDaemonBeforeInspectingTheJenkinsMount() throws Exception {
         Result result = run(Map.of(
             "FAKE_LOCAL_DOCKER", "0",

@@ -10,7 +10,15 @@ pipeline {
         maven 'Maven'
     }
 
+    parameters {
+        booleanParam(name: 'CI_SMOKE_FAIL', defaultValue: false,
+            description: 'Force a failure after the integration stack is up (cleanup smoke test)')
+    }
+
     environment {
+        VIBECODE_CI = 'true'
+        VIBECODE_CI_JOB = "${JOB_NAME}"
+        VIBECODE_CI_BUILD = "${BUILD_NUMBER}"
         POSTGRES_PASSWORD = 'changeme'
         JWT_SECRET = 'jenkins-ci-secret-for-testing-purposes-2026'
         ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -221,7 +229,13 @@ EOF
                     sh '''
                         . scripts/sandbox-ci-env.sh
                         echo "Agent image build DOCKER_HOST=$DOCKER_HOST"
-                        docker build --load -t vibecode-agent:ci .
+                        docker build --load \
+                            --label "com.vibecode.ci=${VIBECODE_CI:-false}" \
+                            --label "com.vibecode.ci.job=${VIBECODE_CI_JOB:-}" \
+                            --label "com.vibecode.ci.build=${VIBECODE_CI_BUILD:-}" \
+                            -t vibecode-agent:ci \
+                            -t "vibecode-agent:${BUILD_NUMBER}" \
+                            .
                     '''
                 }
             }
@@ -251,6 +265,7 @@ EOF
                         echo "Sandbox integration workspace: $IT_ROOT -> $HOST_IT_ROOT"
                         export SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci
                         export SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:ci
+                        export SANDBOX_IT_BUILD_TAG="$BUILD_NUMBER"
                         export SANDBOX_IT_NETWORK_IMAGE="$SANDBOX_IT_IMAGE"
                         export SANDBOX_IT_NETWORK=1
                         bash scripts/sandbox-integration-test.sh
@@ -296,6 +311,22 @@ EOF
             steps {
                 nodejs('Node') {
                     script {
+                        // Capture the daemon that owns the integration Compose
+                        // project. This is a pipeline variable, not a
+                        // workspace file, so a build cannot redirect cleanup.
+                        def daemon = sh(script: '''
+                            . agent/scripts/sandbox-ci-env.sh >/dev/null
+                            echo "$DOCKER_HOST"
+                            docker info --format '{{.ID}}'
+                        ''', returnStdout: true).trim().readLines()
+                        if (daemon.size() < 2 || !daemon[0]?.trim() || !daemon[1]?.trim()) {
+                            error("Could not capture the integration-test Docker daemon")
+                        }
+                        env.DOCKER_HOST = daemon[0].trim()
+                        env.CI_DOCKER_HOST = daemon[0].trim()
+                        env.CI_DOCKER_DAEMON_ID = daemon[1].trim()
+                        echo "Integration-test daemon: ${env.CI_DOCKER_HOST} (${env.CI_DOCKER_DAEMON_ID})"
+
                         // Write .env for docker compose
                         sh """
                             cat > .env <<EOF
@@ -521,23 +552,43 @@ EOF
                 }
             }
         }
+
+        stage('CI Smoke Failure') {
+            when {
+                expression { params.CI_SMOKE_FAIL }
+            }
+            steps {
+                error('CI_SMOKE_FAIL requested; exercising the failure cleanup path.')
+            }
+        }
     }
 
     post {
         always {
-            cleanWs()
-        }
-        success {
-            echo 'All stages passed.'
             script {
                 try {
-                    // Only remove containers and test-specific volumes, keep postgres_data
-                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml down --remove-orphans || true"
-                    echo 'Integration test stack cleaned up (data volumes preserved).'
+                    if (env.CI_DOCKER_HOST && env.CI_DOCKER_DAEMON_ID) {
+                        sh """
+                            CI_DOCKER_HOST='${env.CI_DOCKER_HOST}' \
+                            CI_DOCKER_DAEMON_ID='${env.CI_DOCKER_DAEMON_ID}' \
+                            bash agent/scripts/jenkins-docker-cleanup.sh \
+                                --compose-project '${COMPOSE_PROJECT_NAME}' \
+                                --build-id '${BUILD_NUMBER}'
+                            CI_DOCKER_HOST='${env.CI_DOCKER_HOST}' \
+                            CI_DOCKER_DAEMON_ID='${env.CI_DOCKER_DAEMON_ID}' \
+                            bash agent/scripts/jenkins-docker-cleanup.sh \
+                                --build-images '${BUILD_NUMBER}'
+                        """
+                    } else {
+                        echo 'No captured CI daemon; skipping post-build Docker cleanup.'
+                    }
                 } catch (Exception e) {
                     echo "Cleanup failed (non-fatal): ${e.getMessage()}"
                 }
             }
+        }
+        cleanup {
+            cleanWs()
         }
         failure {
             echo 'Pipeline failed. Check logs for details.'

@@ -3,6 +3,11 @@
 Operational procedure for the two-layer CI Docker cleanup. The pipeline teardown
 is the primary path; the scheduled Jenkins job is the safety net.
 
+The current implementation uses the **local-socket variant** for the build/test
+stages: the Agent, Sandbox, Supply Chain and Integration Tests stages share the
+helper-selected daemon, and post cleanup uses the pipeline-captured host/ID.
+The explicit-all-stages variant remains gated by the FR5 daemon check.
+
 ## Provisioning prerequisite
 
 Adding `Jenkinsfile.cleanup` to the repository does **not** create the scheduled

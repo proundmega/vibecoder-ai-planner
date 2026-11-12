@@ -1,3 +1,8 @@
+x-ci-labels: &ci-labels
+  com.vibecode.ci: "${VIBECODE_CI:-false}"
+  com.vibecode.ci.job: "${VIBECODE_CI_JOB:-}"
+  com.vibecode.ci.build: "${VIBECODE_CI_BUILD:-}"
+
 services:
   api:
     environment:
@@ -10,6 +15,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.cypress
+      labels: *ci-labels
     environment:
       - CYPRESS_baseUrl=http://frontend
       - CYPRESS_video=false

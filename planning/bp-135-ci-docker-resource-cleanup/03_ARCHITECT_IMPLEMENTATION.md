@@ -199,18 +199,18 @@ validating run; the explicit-host result remains `local-socket fallback`.
 | FR1 | Smoke | Jenkins smoke build | `fr1FailedSmokeBuildLeavesNoComposeProject` (record in `03` Results) | `CI_SMOKE_FAIL=1` build, then `docker ps -a`, `docker network ls`, `docker volume ls` and `docker images` filtered by the build project |
 | FR2 | Script | `SandboxIntegrationScriptTest` | `fr2SandboxAndProxyBuildsCarryCiLabelsAndBuildTag` | `mvn -Dtest=SandboxIntegrationScriptTest test` |
 | FR2 | Static | `JenkinsfileCiCleanupTest` | `fr2SupervisorAndComposeBuildsCarryCiLabels` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
-| FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphansRemovesOnlyOldLabelledResources` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanSandboxContainersAreAgeCheckedAndDryRunIsReadOnly` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanGcKeepsSharedCiAlias` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
-| FR4 | Script | `JenkinsDockerCleanupScriptTest` | `fr4CleanupNeverPrunesBroadlyOrTouchesLocalDev` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR4 | Script | `JenkinsDockerCleanupScriptTest` | `fr4RefusesTheLocalDevProjectAndUnrecognizedNames` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR5 | Manual | `DockerSandboxRunnerIntegrationTest` | `fr5ExplicitDaemonRunsRealDockerSuite` | `cd agent && DOCKER_HOST="$CI_DOCKER_HOST" SANDBOX_CI_DOCKER_HOST_MODE=explicit SANDBOX_IT_BUILD=1 SANDBOX_IT_NETWORK=1 bash scripts/sandbox-integration-test.sh` |
-| FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5RequiresPinnedDaemonAndRejectsMismatch` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5DaemonMismatchFailsBeforeDeletion` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5PostCleanupUsesPipelineDaemon` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5PostCleanupFallsBackToExplicitHost` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR5 | Static | `JenkinsfileCiCleanupTest` | `fr5ScheduledJobPinsNodeAndDaemon` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
 | FR5 | Static | `JenkinsfileCiCleanupTest` | `fr5PostCleanupUsesPipelineDaemonVariable` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
-| FR6 | Script | `JenkinsDockerCleanupScriptTest` | `fr6LegacyInventoryListsOldResourcesWithoutDeleting` (asserts `:ci` images are shared/current and excluded) | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR6 | Script | `JenkinsDockerCleanupScriptTest` | `fr6LegacyInventoryIsReadOnlyAndProtectsSharedAliases` (asserts `:ci` images are shared/current and excluded) | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR6 | Docs | `05_RUNBOOK.md` | `fr6LegacyCleanupRequiresManualConfirmation` | Runbook review: dry-run, explicit confirmation and evidence steps present |
-| NFR1 | Script | `JenkinsDockerCleanupScriptTest` | `nfr1MissingResourcesAreIdempotentAndPostModeNonFatal` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| NFR1 | Script | `JenkinsDockerCleanupScriptTest` | `nfr1MissingAnchorIsANoOp` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR2 | Script | `JenkinsDockerCleanupScriptTest` | `nfr2GraceAndBuildIdSkipConcurrentBuildResources` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR3 | Script | `JenkinsDockerCleanupScriptTest` | `nfr3FakeDockerCoversAllCleanupPaths` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR4 | Script | `JenkinsDockerCleanupScriptTest` | `nfr4RetentionValuesComeFromEnvironment` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
@@ -253,4 +253,4 @@ docker images --filter label=com.vibecode.ci.build="$BUILD_NUMBER"
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| pending | pending | pending | pending |
+| 2026-11-12 | working tree | `cd agent && mvn test` (484 tests, 5 skipped) + `SANDBOX_IT_BUILD=0 SANDBOX_IT_NETWORK=1 SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:ci bash scripts/sandbox-integration-test.sh` (5 tests, 0 skipped) + `mvn package -q -DskipTests` + `node planning/check-planning.js` + `docker compose ... config -q` + `bash -n` | Partial: local-socket variant implemented (post teardown, CI labels/tags, cleanup script and tests, scheduled cleanup pipeline, runbook). The real-Docker suite still passes. FR5 explicit-daemon gate, Jenkins smoke evidence and the one-time legacy cleanup remain pending. |

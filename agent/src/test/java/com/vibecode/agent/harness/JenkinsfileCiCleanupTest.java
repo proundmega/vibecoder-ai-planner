@@ -1,0 +1,103 @@
+package com.vibecode.agent.harness;
+
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class JenkinsfileCiCleanupTest {
+
+    private static final Path JENKINSFILE = Path.of("..", "Jenkinsfile")
+        .toAbsolutePath().normalize();
+    private static final Path CLEANUP_PIPELINE = Path.of("..", "Jenkinsfile.cleanup")
+        .toAbsolutePath().normalize();
+
+    @Test
+    void fr1TeardownRunsBeforeCleanWsInPostAlways() throws IOException {
+        String text = Files.readString(JENKINSFILE, StandardCharsets.UTF_8);
+        int post = text.lastIndexOf("post {");
+        assertTrue(post > 0, "Jenkinsfile has no post block");
+        int always = text.indexOf("always {", post);
+        int cleanup = text.indexOf("cleanup {", post);
+        int cleanWs = text.indexOf("cleanWs()", post);
+        int teardown = text.indexOf("jenkins-docker-cleanup.sh", post);
+        assertTrue(always > post, "post has no always block");
+        assertTrue(cleanup > always, "cleanWs is not in the cleanup condition");
+        assertTrue(cleanWs > cleanup, "cleanWs is not after the cleanup condition");
+        assertTrue(teardown > always && teardown < cleanWs,
+            "teardown must run in always before cleanWs");
+        assertFalse(text.substring(post).contains("success {"),
+            "the old success-only cleanup is still present");
+    }
+
+    @Test
+    void fr2SupervisorAndComposeBuildsCarryCiLabels() throws IOException {
+        String jenkinsfile = Files.readString(JENKINSFILE, StandardCharsets.UTF_8);
+        assertTrue(jenkinsfile.contains("com.vibecode.ci.build"),
+            "supervisor CI label is missing");
+        for (String file : new String[] {
+            "../docker-compose.yml", "../docker-compose.test.yml", "../docker-compose.e2e.yml"
+        }) {
+            String text = Files.readString(Path.of(file).toAbsolutePath().normalize(),
+                StandardCharsets.UTF_8);
+            assertTrue(text.contains("x-ci-labels"), file + " has no CI label anchor");
+            assertTrue(text.contains("labels: *ci-labels"), file + " has no CI labels");
+        }
+        String compose = Files.readString(
+            Path.of("../docker-compose.yml").toAbsolutePath().normalize(),
+            StandardCharsets.UTF_8);
+        assertTrue(compose.contains("labels: *ci-labels"),
+            "Compose network/volume labels are missing");
+    }
+
+    @Test
+    void fr5PostCleanupUsesPipelineDaemonVariable() throws IOException {
+        String text = Files.readString(JENKINSFILE, StandardCharsets.UTF_8);
+        assertTrue(text.contains("sh(script:"), "no sh(returnStdout) capture");
+        assertTrue(text.contains("returnStdout: true"),
+            "the daemon capture must use returnStdout");
+        assertTrue(text.contains("env.CI_DOCKER_HOST"));
+        assertTrue(text.contains("env.CI_DOCKER_DAEMON_ID"));
+        assertTrue(text.contains("--compose-project"));
+        assertTrue(text.contains("--build-images"));
+        assertFalse(text.contains("target/ci-docker-daemon.env"),
+            "the workspace daemon file must not be used");
+    }
+
+    @Test
+    void fr1CleanWsRunsInPostCleanup() throws IOException {
+        String text = Files.readString(JENKINSFILE, StandardCharsets.UTF_8);
+        int post = text.lastIndexOf("post {");
+        int cleanup = text.indexOf("cleanup {", post);
+        int cleanWs = text.indexOf("cleanWs()", cleanup);
+        assertTrue(cleanup > post, "cleanup condition is missing");
+        assertTrue(cleanWs > cleanup, "cleanWs is not inside cleanup");
+    }
+
+    @Test
+    void fr1SmokeFailureHookAndCiLabels() throws IOException {
+        String text = Files.readString(JENKINSFILE, StandardCharsets.UTF_8);
+        assertTrue(text.contains("CI_SMOKE_FAIL"), "CI_SMOKE_FAIL is missing");
+        assertTrue(text.contains("com.vibecode.ci.build"), "CI build label is missing");
+        assertTrue(text.contains("vibecode-agent:${BUILD_NUMBER}"),
+            "supervisor build-unique tag is missing");
+        assertTrue(text.contains("SANDBOX_IT_BUILD_TAG"),
+            "sandbox build-unique tag is missing");
+    }
+
+    @Test
+    void fr5ScheduledJobPinsNodeAndDaemon() throws IOException {
+        String text = Files.readString(CLEANUP_PIPELINE, StandardCharsets.UTF_8);
+        assertTrue(text.contains("agent { label 'vibecode-ci-docker' }"),
+            "scheduled job is not pinned to the dedicated node");
+        assertTrue(text.contains("cron('H */6 * * *')"), "cron trigger is missing");
+        assertTrue(text.contains("--orphans"), "scheduled job does not run orphans");
+        assertTrue(text.contains("CI_DOCKER_HOST"));
+        assertTrue(text.contains("CI_DOCKER_DAEMON_ID"));
+    }
+}
