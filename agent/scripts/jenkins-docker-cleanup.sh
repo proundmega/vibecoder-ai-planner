@@ -185,11 +185,23 @@ clean_compose_project() {
     compose_down "$project"
 }
 
+remove_image_id() {
+    local id="$1"
+    local reason="$2"
+    [ -n "$id" ] || return 0
+    if is_true "$DRY_RUN"; then
+        log "DRY-RUN: docker image rm $id ($reason)"
+    else
+        docker image rm "$id" >/dev/null 2>&1 || true
+        log "removed image $id ($reason)"
+    fi
+}
+
 clean_build_images() {
     local build_id="$1"
     [ -n "$build_id" ] || die "a build id is required"
     local ids
-    ids="$(docker images \
+    ids="$(docker images -a \
         --filter "label=com.vibecode.ci=true" \
         --filter "label=com.vibecode.ci.build=$build_id" \
         --format '{{.ID}}' 2>/dev/null | sort -u)"
@@ -197,11 +209,14 @@ clean_build_images() {
         log "no CI images for build $build_id"
         return 0
     }
-    local id tag
+    local id tag tags has_ci
     for id in $ids; do
-        for tag in $(docker image inspect --format '{{range .RepoTags}}{{.}} {{end}}' "$id" 2>/dev/null); do
+        tags="$(docker image inspect --format '{{range .RepoTags}}{{.}} {{end}}' "$id" 2>/dev/null || true)"
+        has_ci=false
+        for tag in $tags; do
             case "$tag" in
                 *:ci)
+                    has_ci=true
                     log "keeping shared alias $tag"
                     ;;
                 *)
@@ -214,6 +229,9 @@ clean_build_images() {
                     ;;
             esac
         done
+        if [ "$has_ci" = "false" ]; then
+            remove_image_id "$id" "build image with no :ci alias"
+        fi
     done
 }
 
@@ -230,10 +248,12 @@ age_hours() {
 }
 
 orphan_sandbox_containers() {
-    local id created running
-    while IFS=$'\t' read -r id created running; do
+    local id created state
+    while IFS=$'\t' read -r id created state; do
         [ -n "$id" ] || continue
-        [ "$running" = "running" ] && continue
+        # A hard-killed Jenkins run leaves containers running. The grace
+        # period is longer than the pipeline timeout, so an old running
+        # sandbox is an orphan and is removed like a stopped one.
         [ "$(age_hours "$created")" -ge "$CONTAINER_GRACE" ] || continue
         if is_true "$DRY_RUN"; then
             log "DRY-RUN: docker rm -f $id (sandbox container)"
@@ -249,7 +269,8 @@ orphan_sandbox_networks() {
     local id created attached
     while IFS=$'\t' read -r id created attached; do
         [ -n "$id" ] || continue
-        [ "$attached" != "0" ] && continue
+        # Containers are removed first; docker network rm still fails safely
+        # if a younger container is attached.
         [ "$(age_hours "$created")" -ge "$CONTAINER_GRACE" ] || continue
         if is_true "$DRY_RUN"; then
             log "DRY-RUN: docker network rm $id (sandbox network)"
@@ -267,7 +288,7 @@ orphan_sandbox_networks() {
 }
 
 orphan_ci_images() {
-    local id created tags tag build
+    local id created tags tag build has_ci
     while IFS=$'\t' read -r id created; do
         [ -n "$id" ] || continue
         tags="$(docker image inspect --format '{{range .RepoTags}}{{.}} {{end}}' "$id" 2>/dev/null || true)"
@@ -275,9 +296,11 @@ orphan_ci_images() {
         [ -n "$build" ] || continue
         [ -n "$CURRENT_BUILD" ] && [ "$build" = "$CURRENT_BUILD" ] && continue
         [ "$(age_hours "$created")" -ge "$IMAGE_GRACE" ] || continue
+        has_ci=false
         for tag in $tags; do
             case "$tag" in
                 *:ci)
+                    has_ci=true
                     log "keeping shared alias $tag"
                     ;;
                 *)
@@ -290,7 +313,10 @@ orphan_ci_images() {
                     ;;
             esac
         done
-    done < <(docker images --filter label=com.vibecode.ci=true \
+        if [ "$has_ci" = "false" ]; then
+            remove_image_id "$id" "old CI image with no :ci alias"
+        fi
+    done < <(docker images -a --filter label=com.vibecode.ci=true \
         --format '{{.ID}}\t{{.CreatedAt}}' 2>/dev/null)
 }
 
@@ -305,7 +331,9 @@ orphan_compose_projects() {
             valid_project "$name" || continue
             [ "$name" = "${COMPOSE_PROJECT_NAME:-}" ] && continue
             project_anchor "$name" || continue
-            [ -n "$(docker ps -q --filter "label=com.docker.compose.project=$name" 2>/dev/null)" ] && continue
+            # Hard-killed builds can leave running containers. The build grace
+            # period is longer than the pipeline timeout; compose down below
+            # stops and removes them.
             created="$(docker network ls --filter "label=com.docker.compose.project=$name" \
                 --format '{{.ID}}' 2>/dev/null | head -n1)"
             [ -n "$created" ] || continue
@@ -342,7 +370,7 @@ legacy_inventory() {
             esac
         done
     echo "== Images =="
-    docker images --format '{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.CreatedAt}}\t{{.Size}}' 2>/dev/null \
+    docker images -a --format '{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.CreatedAt}}\t{{.Size}}' 2>/dev/null \
         | while IFS=$'\t' read -r tag id created size; do
             case "$tag" in
                 *:ci)
@@ -355,6 +383,18 @@ legacy_inventory() {
                     echo "not a build-unique tag - review only: $tag ($id, $created, $size)"
                     ;;
             esac
+        done
+    echo "== Dangling images (review only) =="
+    docker images -a --filter dangling=true \
+        --format '{{.ID}}\t{{.CreatedAt}}\t{{.Size}}' 2>/dev/null \
+        | while IFS=$'\t' read -r id created size; do
+            [ -n "$id" ] || continue
+            ci="$(docker image inspect --format '{{index .Config.Labels "com.vibecode.ci"}}' "$id" 2>/dev/null || true)"
+            if [ "$ci" = "true" ]; then
+                echo "dangling CI image - review only: $id ($created, $size)"
+            else
+                echo "dangling image - unrelated: $id ($created, $size)"
+            fi
         done
     echo "== Sandbox resources =="
     docker ps -a --filter label=vibecode.sandbox.managed=true \
@@ -371,8 +411,10 @@ legacy_inventory() {
                         echo "EXCLUDED (local dev volume): $name"
                     elif [[ "$name" =~ ^[0-9a-f]{64}$ ]]; then
                         echo "not project-scoped - review only: $name ($driver)"
-                    else
+                    elif [[ "$name" == vibecode-* ]]; then
                         echo "candidate volume: $name ($driver)"
+                    else
+                        echo "unrelated volume - review only: $name ($driver)"
                     fi
                     ;;
             esac

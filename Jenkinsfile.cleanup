@@ -7,8 +7,10 @@ pipeline {
     }
 
     parameters {
-        booleanParam(name: 'DRY_RUN', defaultValue: false,
-            description: 'Report old resources without deleting anything; use true for the first manual run')
+        booleanParam(name: 'DRY_RUN', defaultValue: true,
+            description: 'Report old resources without deleting anything')
+        booleanParam(name: 'ENABLE_DESTRUCTIVE_CLEANUP', defaultValue: false,
+            description: 'Required with DRY_RUN=false after the dry-run review')
         string(name: 'CI_DOCKER_HOST', defaultValue: '',
             description: 'Dedicated Docker daemon for this cleanup host')
         string(name: 'CI_DOCKER_DAEMON_ID', defaultValue: '',
@@ -33,8 +35,13 @@ pipeline {
                 dir('agent') {
                     sh '''
                         set -e
+                        if [ "${DRY_RUN:-true}" != "true" ] \
+                            && [ "${ENABLE_DESTRUCTIVE_CLEANUP:-false}" != "true" ]; then
+                            echo "error: destructive cleanup requires ENABLE_DESTRUCTIVE_CLEANUP=true and DRY_RUN=false" >&2
+                            exit 1
+                        fi
                         ARGS="--orphans"
-                        if [ "${DRY_RUN:-false}" = "true" ]; then
+                        if [ "${DRY_RUN:-true}" = "true" ]; then
                             ARGS="$ARGS --dry-run"
                         fi
                         CI_DOCKER_HOST="${CI_DOCKER_HOST:?CI_DOCKER_HOST is required}" \

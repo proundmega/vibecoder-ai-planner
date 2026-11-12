@@ -211,7 +211,7 @@ EOF
             }
             post {
                 always {
-                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml down -v --remove-orphans || true"
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml down -v --rmi local --remove-orphans || true"
                 }
             }
         }

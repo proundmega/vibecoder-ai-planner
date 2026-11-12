@@ -234,16 +234,103 @@ class JenkinsDockerCleanupScriptTest {
     }
 
     @Test
-    void fr3OrphanSandboxContainersAreAgeCheckedAndDryRunIsReadOnly() throws Exception {
+    void fr3OrphanSandboxContainersRemoveOldRunningContainers() throws Exception {
         Fixture fixture = fixture();
 
         Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
-            "FAKE_PS", "container1\t2020-01-01 00:00:00 +0000 UTC\texited"
+            "FAKE_PS", "container1\t2020-01-01 00:00:00 +0000 UTC\trunning"
         ));
 
         assertEquals(0, result.exitCode, result.output);
         assertTrue(result.output.contains("DRY-RUN: docker rm -f container1"), result.output);
         assertFalse(Files.readString(fixture.log).contains("docker rm -f container1"),
+            result.output);
+    }
+
+    @Test
+    void fr3OrphanSandboxNetworksRemoveOldAttachedNetworks() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
+            "FAKE_SANDBOX_NETWORK", "sandbox-net",
+            "FAKE_NETWORK_CONTAINERS", "1"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains("DRY-RUN: docker network rm sandbox-net"),
+            result.output);
+    }
+
+    @Test
+    void fr3OrphanComposeProjectsRemoveOldRunningProjects() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
+            "FAKE_COMPOSE_JSON",
+            "[{\"Name\":\"vibecode-pr-7-12\",\"Status\":\"running(1)\"}]"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains("DRY-RUN: docker compose ... -p vibecode-pr-7-12"),
+            result.output);
+    }
+
+    @Test
+    void fr3OrphanCiImagesRemoveDanglingImages() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
+            "FAKE_IMAGES", "1",
+            "FAKE_IMAGE_TAGS", "",
+            "FAKE_BUILD_LABEL", "7"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains(
+            "DRY-RUN: docker image rm img1 (old CI image with no :ci alias)"), result.output);
+    }
+
+    @Test
+    void fr2BuildImageRemovalRemovesUntaggedImageId() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--build-images", "7"), Map.of(
+            "FAKE_IMAGES", "1",
+            "FAKE_IMAGE_TAGS", "vibecode-agent:7",
+            "FAKE_BUILD_LABEL", "7"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        String log = Files.readString(fixture.log);
+        assertTrue(log.contains("docker image rm vibecode-agent:7"), log);
+        assertTrue(log.contains("docker image rm img1"), log);
+    }
+
+    @Test
+    void nfr3FakeDockerCoversAllCleanupPaths() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--legacy-inventory"), Map.of(
+            "FAKE_IMAGES", "1",
+            "FAKE_LEGACY_IMAGES", "vibecode-agent:ci\timg1\t2020-01-01\t1MB"
+                + "\nvibecode-agent:7\timg2\t2020-01-01\t1MB",
+            "FAKE_DANGLING_IMAGES", "dangling1\t2020-01-01\t1MB",
+            "FAKE_VOLUMES", "vibecode-pr-7-12_postgres_data\tlocal"
+                + "\njenkins_home\tlocal"
+                + "\npostgres_data\tlocal"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        String log = Files.readString(fixture.log);
+        assertFalse(log.contains("docker image rm"), log);
+        assertFalse(log.contains("down -v"), log);
+        assertTrue(result.output.contains("dangling CI image - review only: dangling1"),
+            result.output);
+        assertTrue(result.output.contains("candidate volume: vibecode-pr-7-12_postgres_data"),
+            result.output);
+        assertTrue(result.output.contains("unrelated volume - review only: jenkins_home"),
+            result.output);
+        assertTrue(result.output.contains("EXCLUDED (shared volume): postgres_data"),
             result.output);
     }
 
@@ -276,22 +363,32 @@ class JenkinsDockerCleanupScriptTest {
                     *label=com.vibecode.ci=true*)
                       [ "${FAKE_ANCHOR:-1}" = "1" ] && echo "net-1"
                       ;;
+                    *label=com.docker.compose.project=*)
+                      [ "${FAKE_ANCHOR:-1}" = "1" ] && echo "net-1"
+                      ;;
                   esac
                 elif [ "$2" = "inspect" ]; then
                   case "$*" in
                     *"{{.Created}}"*) echo "2020-01-01 00:00:00 +0000 UTC" ;;
-                    *"{{len .Containers}}"*) echo "0" ;;
+                    *"{{len .Containers}}"*) echo "${FAKE_NETWORK_CONTAINERS:-0}" ;;
                   esac
                 fi
                 ;;
               volume)
                 if [ "$2" = "ls" ]; then
-                  [ "${FAKE_ANCHOR:-1}" = "1" ] && echo "volume-1"
+                  if [ -n "${FAKE_VOLUMES:-}" ]; then
+                    printf '%s\\n' "$FAKE_VOLUMES"
+                  else
+                    [ "${FAKE_ANCHOR:-1}" = "1" ] && echo "volume-1"
+                  fi
                 fi
                 ;;
               images)
                 if [ "${FAKE_IMAGES:-0}" = "1" ]; then
                   case "$*" in
+                    *dangling=true*)
+                      printf '%s\\n' "${FAKE_DANGLING_IMAGES:-}"
+                      ;;
                     *"{{.Repository}}"*)
                       printf '%s\\n' "${FAKE_LEGACY_IMAGES:-}"
                       ;;
@@ -307,8 +404,9 @@ class JenkinsDockerCleanupScriptTest {
               image)
                 if [ "$2" = "inspect" ]; then
                   case "$*" in
-                    *"RepoTags"*) echo "${FAKE_IMAGE_TAGS:-vibecode-agent:ci}" ;;
+                    *"RepoTags"*) echo "${FAKE_IMAGE_TAGS-vibecode-agent:ci}" ;;
                     *"com.vibecode.ci.build"*) echo "${FAKE_BUILD_LABEL:-}" ;;
+                    *"com.vibecode.ci"*) echo "${FAKE_CI_LABEL:-true}" ;;
                     *"{{.Created}}"*) echo "2020-01-01 00:00:00 +0000 UTC" ;;
                   esac
                 fi

@@ -111,6 +111,22 @@ class JenkinsfileCiCleanupTest {
     }
 
     @Test
+    void fr5CypressTeardownRemovesImages() throws IOException {
+        String text = Files.readString(JENKINSFILE, StandardCharsets.UTF_8);
+        assertTrue(text.contains(
+            "docker compose -f \\${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml "
+                + "down -v --rmi local --remove-orphans"), text);
+    }
+
+    @Test
+    void nfr1ScheduledCleanupDefaultsToDryRun() throws IOException {
+        String text = Files.readString(CLEANUP_PIPELINE, StandardCharsets.UTF_8);
+        assertTrue(text.contains("booleanParam(name: 'DRY_RUN', defaultValue: true"));
+        assertTrue(text.contains("ENABLE_DESTRUCTIVE_CLEANUP"));
+        assertTrue(text.contains("destructive cleanup requires"));
+    }
+
+    @Test
     void fr5ScheduledJobPinsNodeAndDaemon() throws IOException {
         String text = Files.readString(CLEANUP_PIPELINE, StandardCharsets.UTF_8);
         assertTrue(text.contains("agent { label 'vibecode-ci-docker' }"),

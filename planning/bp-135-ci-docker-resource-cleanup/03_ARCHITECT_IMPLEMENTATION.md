@@ -45,9 +45,11 @@
      the shared `:ci` alias or another build's tags.
    - `--orphans` runs the scheduled GC: sandbox containers/networks with
      `vibecode.sandbox.managed=true`, CI images with `com.vibecode.ci=true` and
-     an old build ID, and stopped Compose projects matching the strict pattern
-     with the network/volume anchor. It skips the shared `:ci` alias, the
-     current build ID and images referenced by a running container. The exact
+     an old build ID, and Compose projects matching the strict pattern with the
+     network/volume anchor. Running containers/networks/projects older than the
+     grace period are hard-kill orphans and are removed; image removal fails
+     safely if Docker still reports an image in use. It skips the shared `:ci`
+     alias and the current build ID. The exact
      shared volume names (`postgres_data`, `uploads_data`, `vibecode_repos`)
      are refused regardless of labels.
    - `--legacy-inventory` is read-only. It lists pre-label candidates from old
@@ -105,17 +107,19 @@
 5. **Scheduled maintenance job** — add `Jenkinsfile.cleanup` with
    `agent { label 'vibecode-ci-docker' }`, a six-hour cron trigger and
    parameters for `DRY_RUN`, `CI_DOCKER_HOST`, `CI_DOCKER_DAEMON_ID` and the
-   grace periods. The first manual run is `DRY_RUN=true`; the cron definition is
-   only active after an administrator provisions the Jenkins job. — verify:
+   grace periods. The job defaults to `DRY_RUN=true`; destructive cleanup also
+   requires `ENABLE_DESTRUCTIVE_CLEANUP=true`. The cron definition is only
+   active after an administrator provisions the Jenkins job. — verify:
    `JenkinsfileCiCleanupTest` plus the runbook procedure.
 
 6. **Guard rails** — no broad prune, no name-prefix-only filters, no shared
-   volume removal, no current build, no running container and no resource
-   younger than the grace period. The project network/volume CI label is the
-   authoritative anchor; pulled services do not need a build label. A project
-   with a running container is left alone. The local-dev project is an explicit
-   deny. Pre-label resources are never removed by the automatic path; only the
-   manual legacy inventory/cleanup procedure (FR6) may handle them. — verify:
+   volume removal, no current build and no resource younger than the grace
+   period. Running resources older than the grace period are hard-kill orphans
+   and are removed. The project network/volume CI label is the authoritative
+   anchor; pulled services do not need a build label. The local-dev project is
+   an explicit deny. Pre-label resources are never removed by the automatic
+   path; only the manual legacy inventory/cleanup procedure (FR6) may handle
+   them. — verify:
    negative assertions in `JenkinsDockerCleanupScriptTest`.
 
 7. **Documentation, runbook and index** — document the two-layer model, the
@@ -196,21 +200,30 @@ validating run; the explicit-host result remains `local-socket fallback`.
 |---|---|---|---|---|
 | FR1 | Static | `JenkinsfileCiCleanupTest` | `fr1TeardownRunsBeforeCleanWsInPostAlways` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
 | FR1 | Static | `JenkinsfileCiCleanupTest` | `fr1CleanWsRunsInPostCleanup` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
+| FR1 | Script | `JenkinsDockerCleanupScriptTest` | `fr1ComposeProjectTeardownIsScopedAndUsesTheValidatedName` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR1 | Smoke | Jenkins smoke build | `fr1FailedSmokeBuildLeavesNoComposeProject` (record in `03` Results) | `CI_SMOKE_FAIL=1` build, then `docker ps -a`, `docker network ls`, `docker volume ls` and `docker images` filtered by the build project |
 | FR2 | Script | `SandboxIntegrationScriptTest` | `fr2SandboxAndProxyBuildsCarryCiLabelsAndBuildTag` | `mvn -Dtest=SandboxIntegrationScriptTest test` |
 | FR2 | Static | `JenkinsfileCiCleanupTest` | `fr2SupervisorAndComposeBuildsCarryCiLabels` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
+| FR2 | Script | `JenkinsDockerCleanupScriptTest` | `fr2BuildImageRemovalKeepsTheSharedCiAlias` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR2 | Script | `JenkinsDockerCleanupScriptTest` | `fr2BuildImageRemovalRemovesUntaggedImageId` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanSandboxContainersAreAgeCheckedAndDryRunIsReadOnly` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanGcKeepsSharedCiAlias` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanSandboxNetworksRemoveOldAttachedNetworks` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanComposeProjectsRemoveOldRunningProjects` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanCiImagesRemoveDanglingImages` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR4 | Script | `JenkinsDockerCleanupScriptTest` | `fr4RefusesTheLocalDevProjectAndUnrecognizedNames` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR4 | Script | `JenkinsDockerCleanupScriptTest` | `fr4DryRunDoesNotTearDownOrRemoveAnything` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR5 | Manual | `DockerSandboxRunnerIntegrationTest` | `fr5ExplicitDaemonRunsRealDockerSuite` | `cd agent && DOCKER_HOST="$CI_DOCKER_HOST" SANDBOX_CI_DOCKER_HOST_MODE=explicit SANDBOX_IT_BUILD=1 SANDBOX_IT_NETWORK=1 bash scripts/sandbox-integration-test.sh` |
 | FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5DaemonMismatchFailsBeforeDeletion` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5PostCleanupUsesPipelineDaemon` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR5 | Script | `JenkinsDockerCleanupScriptTest` | `fr5PostCleanupFallsBackToExplicitHost` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR5 | Static | `JenkinsfileCiCleanupTest` | `fr5ScheduledJobPinsNodeAndDaemon` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
 | FR5 | Static | `JenkinsfileCiCleanupTest` | `fr5PostCleanupUsesPipelineDaemonVariable` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
+| FR5 | Static | `JenkinsfileCiCleanupTest` | `fr5CypressTeardownRemovesImages` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
 | FR6 | Script | `JenkinsDockerCleanupScriptTest` | `fr6LegacyInventoryIsReadOnlyAndProtectsSharedAliases` (asserts `:ci` images are shared/current and excluded) | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR6 | Docs | `05_RUNBOOK.md` | `fr6LegacyCleanupRequiresManualConfirmation` | Runbook review: dry-run, explicit confirmation and evidence steps present |
 | NFR1 | Script | `JenkinsDockerCleanupScriptTest` | `nfr1MissingAnchorIsANoOp` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| NFR1 | Static | `JenkinsfileCiCleanupTest` | `nfr1ScheduledCleanupDefaultsToDryRun` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
 | NFR2 | Script | `JenkinsDockerCleanupScriptTest` | `nfr2GraceAndBuildIdSkipCurrentResources` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR3 | Script | `JenkinsDockerCleanupScriptTest` | `nfr3FakeDockerCoversAllCleanupPaths` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR4 | Script | `JenkinsDockerCleanupScriptTest` | `nfr4RetentionValuesComeFromEnvironment` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
@@ -248,9 +261,10 @@ docker images --filter label=com.vibecode.ci.build="$BUILD_NUMBER"
 | 3 | external reviewer | Legacy cleanup could remove the current shared `:ci` aliases; the volume inventory used an unsupported `CreatedAt` formatter field; forcing explicit mode for all stages could break the real-Docker sandbox suite; the workspace daemon record could redirect cleanup; legacy compose command depended on the operator's cwd; image inventory omitted size. | This revision marks every `:ci` image shared/current and limits legacy removal to build-unique old tags; fixes volume/image inventory commands and the repo-root compose command; adds the explicit-daemon compatibility gate and keeps build/test on the local socket when the proxy is restricted; moves the cleanup target to Jenkins pipeline variables and adds NFR5; adds FR5/FR6/NFR5 coverage. | pending |
 | 4 | external reviewer | Local-socket wording could be read as forbidding the captured local socket; the Jenkinsfile was described as running the manual gate; the gate command path was inconsistent; the Cypress stage's daemon choice was unspecified in the fallback. | This revision distinguishes the captured local socket from an uncaptured fallback, says the pipeline applies the recorded gate result, makes the gate command run from `agent`, and documents Cypress as keeping its current `DOCKER_HOST` plus stage-level cleanup. The gate itself is recorded as a pending operational prerequisite. | pending |
 | 5 | external reviewer | FR5 gate remains the only operational prerequisite; if the local-socket fallback is selected, the existing local-socket suite result must be recorded as the validating run. | FR5 status, decision 7, the operational gate section and the runbook now require that evidence; the gate remains pending on Jenkins. | pending |
+| 6 | external reviewer | Old CI images became dangling after the `:ci` alias moved and were never removed; running hard-kill resources were skipped; the scheduled job defaulted to destructive; legacy volume/dangling inventory was incomplete; Cypress images were not removed; matrix/test coverage was incomplete. | This revision removes image IDs when no `:ci` alias remains, treats old running resources as orphans, defaults the scheduled job to dry-run with an explicit destructive-enable flag, restricts legacy volume candidates and lists dangling images, adds `--rmi local` to the Cypress teardown, and adds the missing regression rows. | pending |
 
 ## Results
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-12 | 868451c | `cd agent && mvn test` (489 tests, 5 skipped) + `SANDBOX_IT_BUILD=0 SANDBOX_IT_NETWORK=1 SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:ci bash scripts/sandbox-integration-test.sh` (5 tests, 0 skipped) + `mvn package -q -DskipTests` + `node planning/check-planning.js` + `docker compose ... config -q` + `bash -n` | Partial: local-socket variant implemented (post teardown, CI labels/tags, cleanup script and tests, scheduled cleanup pipeline, runbook). The real-Docker suite still passes. FR5 explicit-daemon gate, Jenkins smoke evidence and the one-time legacy cleanup remain pending. |
+| 2026-11-12 | 868451c | `cd agent && mvn test` (496 tests, 5 skipped) + `SANDBOX_IT_BUILD=0 SANDBOX_IT_NETWORK=1 SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:ci bash scripts/sandbox-integration-test.sh` (5 tests, 0 skipped) + `mvn package -q -DskipTests` + `node planning/check-planning.js` + `docker compose ... config -q` + `bash -n` | Partial: local-socket variant implemented (post teardown, CI labels/tags, cleanup script and tests, scheduled cleanup pipeline, runbook). The real-Docker suite still passes. FR5 explicit-daemon gate, Jenkins smoke evidence and the one-time legacy cleanup remain pending. |

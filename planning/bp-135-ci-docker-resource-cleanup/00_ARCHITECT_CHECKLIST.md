@@ -92,6 +92,7 @@ daemon restart or Jenkins crash.
 | Plan review round 3 | Legacy `:ci` protection, volume inventory, explicit-daemon compatibility gate and workspace-trust findings addressed; re-review pending (`03` Review record) | ☑ |
 | Plan review round 4 | Local-socket wording, gate ownership/path, Cypress daemon variant and gate status clarified; re-review pending (`03` Review record) | ☑ |
 | Plan review round 5 | FR5 gate fallback evidence requirement recorded; re-review pending (`03` Review record) | ☑ |
+| Plan review round 6 | Dangling images, hard-kill running resources, safe scheduled defaults, legacy inventory, Cypress images and test coverage addressed; re-review pending (`03` Review record) | ☑ |
 | FR5 daemon gate | pending — run on Jenkins against the explicit `DOCKER_HOST` before daemon-mode implementation; record pass/fallback/blocked in `03` Results. If fallback is selected, also record the existing local-socket suite result as the validating run | ☐ |
 | D13 helper available | PR #140 merged at `02ffc0a`; `agent/scripts/sandbox-ci-env.sh` is on master | ☑ |
 | Plan merged | PR #141, merge `7867a41` | ☑ |

@@ -24,10 +24,13 @@ job. Before the safety net exists, a Jenkins administrator must:
    ```bash
    DOCKER_HOST="$CI_DOCKER_HOST" docker info --format '{{.ID}}'
    ```
-4. Run the job once manually with `DRY_RUN=true`. Review the listed resources,
-   then run it again with `DRY_RUN=false`.
-5. Enable the cron trigger (`H */6 * * *`). For more than one Docker daemon,
-   create one job per host with its own expected daemon ID (D5).
+4. Run the job once manually with `DRY_RUN=true` (the default). Review the
+   listed resources, then set `ENABLE_DESTRUCTIVE_CLEANUP=true` and
+   `DRY_RUN=false` for the next run.
+5. Confirm the cron trigger (`H */6 * * *`) is active. It stays in dry-run mode
+   until step 4 sets `ENABLE_DESTRUCTIVE_CLEANUP=true` and `DRY_RUN=false`.
+   For more than one Docker daemon, create one job per host with its own
+   expected daemon ID (D5).
 
 Before enabling the cron, run the daemon compatibility gate in `03`. The
 scheduled job itself only needs cleanup permissions; the build/test suite may
@@ -39,14 +42,17 @@ need the local socket or a less restricted proxy.
 |---|---|---|
 | `CI_IMAGE_GRACE_HOURS` | `24` | Minimum age of a labelled CI image before the GC may remove it. |
 | `CI_CONTAINER_GRACE_HOURS` | `2` | Minimum age of an orphan sandbox container/network before removal. |
-| `CI_BUILD_GRACE_HOURS` | `6` | Minimum age of a stopped Compose project/build identifier before removal. |
+| `CI_BUILD_GRACE_HOURS` | `6` | Minimum age of a Compose project/build identifier before removal. |
 | `CI_DOCKER_HOST` | required | Explicit daemon for the scheduled job. No local-socket fallback. |
 | `CI_DOCKER_DAEMON_ID` | required | Expected `docker info --format '{{.ID}}'`; a mismatch aborts before deletion. |
-| `DRY_RUN` | `false` in cron, use `true` for the first manual run | Report actions without changing resources. |
+| `DRY_RUN` | `true` | Report actions without changing resources. |
+| `ENABLE_DESTRUCTIVE_CLEANUP` | `false` | Required with `DRY_RUN=false` after the dry-run review. |
 
 Grace periods are longer than the 60-minute pipeline timeout, so a concurrent
-build is outside the deletion window. The GC also skips the current build ID,
-images referenced by a running container, and the shared `:ci` aliases.
+build is outside the deletion window. Running containers/networks/projects
+older than the grace period are treated as hard-kill orphans and removed. The
+GC also skips the current build ID and the shared `:ci` aliases; image removal
+fails safely if Docker still reports the image in use.
 
 The cleanup daemon is captured by the Integration Tests stage with
 `sh(returnStdout: true)` into the Jenkins pipeline variables `CI_DOCKER_HOST`
@@ -188,7 +194,8 @@ remove. It must not issue a delete, prune or `compose down` command.
    ```bash
    DOCKER_HOST="$CI_DOCKER_HOST" docker info --format '{{.ID}}'
    ```
-3. Re-run with `DRY_RUN=true`, inspect the list, then run with `DRY_RUN=false`.
+3. Re-run with `DRY_RUN=true`, inspect the list, then run with
+   `ENABLE_DESTRUCTIVE_CLEANUP=true` and `DRY_RUN=false`.
 4. If a build's `post` cleanup failed, the next scheduled GC is the recovery
    path. If the pipeline's `CI_DOCKER_HOST`/`CI_DOCKER_DAEMON_ID` variables are
    missing, post cleanup falls back to the explicit Jenkins `DOCKER_HOST` only
