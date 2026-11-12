@@ -211,7 +211,7 @@ validating run; the explicit-host result remains `local-socket fallback`.
 | FR6 | Script | `JenkinsDockerCleanupScriptTest` | `fr6LegacyInventoryIsReadOnlyAndProtectsSharedAliases` (asserts `:ci` images are shared/current and excluded) | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR6 | Docs | `05_RUNBOOK.md` | `fr6LegacyCleanupRequiresManualConfirmation` | Runbook review: dry-run, explicit confirmation and evidence steps present |
 | NFR1 | Script | `JenkinsDockerCleanupScriptTest` | `nfr1MissingAnchorIsANoOp` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
-| NFR2 | Script | `JenkinsDockerCleanupScriptTest` | `nfr2GraceAndBuildIdSkipConcurrentBuildResources` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| NFR2 | Script | `JenkinsDockerCleanupScriptTest` | `nfr2GraceAndBuildIdSkipCurrentResources` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR3 | Script | `JenkinsDockerCleanupScriptTest` | `nfr3FakeDockerCoversAllCleanupPaths` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR4 | Script | `JenkinsDockerCleanupScriptTest` | `nfr4RetentionValuesComeFromEnvironment` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR4 | Docs | `05_RUNBOOK.md` | `nfr4RunbookDocumentsTheSameDefaults` | `grep` the defaults in `05_RUNBOOK.md` and `README.md` |
@@ -253,4 +253,4 @@ docker images --filter label=com.vibecode.ci.build="$BUILD_NUMBER"
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-12 | working tree | `cd agent && mvn test` (484 tests, 5 skipped) + `SANDBOX_IT_BUILD=0 SANDBOX_IT_NETWORK=1 SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:ci bash scripts/sandbox-integration-test.sh` (5 tests, 0 skipped) + `mvn package -q -DskipTests` + `node planning/check-planning.js` + `docker compose ... config -q` + `bash -n` | Partial: local-socket variant implemented (post teardown, CI labels/tags, cleanup script and tests, scheduled cleanup pipeline, runbook). The real-Docker suite still passes. FR5 explicit-daemon gate, Jenkins smoke evidence and the one-time legacy cleanup remain pending. |
+| 2026-11-12 | working tree | `cd agent && mvn test` (489 tests, 5 skipped) + `SANDBOX_IT_BUILD=0 SANDBOX_IT_NETWORK=1 SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:ci bash scripts/sandbox-integration-test.sh` (5 tests, 0 skipped) + `mvn package -q -DskipTests` + `node planning/check-planning.js` + `docker compose ... config -q` + `bash -n` | Partial: local-socket variant implemented (post teardown, CI labels/tags, cleanup script and tests, scheduled cleanup pipeline, runbook). The real-Docker suite still passes. FR5 explicit-daemon gate, Jenkins smoke evidence and the one-time legacy cleanup remain pending. |

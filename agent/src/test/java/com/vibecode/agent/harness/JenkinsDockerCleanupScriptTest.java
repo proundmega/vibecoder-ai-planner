@@ -124,6 +124,52 @@ class JenkinsDockerCleanupScriptTest {
     }
 
     @Test
+    void nfr2GraceAndBuildIdSkipCurrentResources() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
+            "FAKE_IMAGES", "1",
+            "FAKE_IMAGE_TAGS", "vibecode-agent:7",
+            "FAKE_BUILD_LABEL", "7",
+            "CI_CURRENT_BUILD_ID", "7"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertFalse(Files.readString(fixture.log).contains("docker image rm vibecode-agent:7"),
+            result.output);
+    }
+
+    @Test
+    void nfr4RetentionValuesComeFromEnvironment() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
+            "FAKE_PS", "container1\t2020-01-01 00:00:00 +0000 UTC\texited",
+            "CI_CONTAINER_GRACE_HOURS", "999999"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertFalse(result.output.contains("docker rm -f container1"), result.output);
+    }
+
+    @Test
+    void nfr5WorkspaceDaemonFileCannotRedirectCleanup() throws Exception {
+        Fixture fixture = fixture();
+        Path target = Files.createDirectories(fixture.root.resolve("target"));
+        Files.writeString(target.resolve("ci-docker-daemon.env"),
+            "CI_DOCKER_HOST=unix:///hostile.sock\n");
+
+        Result result = fixture.run(List.of(
+            "--compose-project", "vibecode-pr-7-12",
+            "--build-id", "12"), Map.of());
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains("Using explicit Docker host unix:///fake.sock"),
+            result.output);
+        assertFalse(result.output.contains("hostile.sock"), result.output);
+    }
+
+    @Test
     void fr6LegacyInventoryIsReadOnlyAndProtectsSharedAliases() throws Exception {
         Fixture fixture = fixture();
 

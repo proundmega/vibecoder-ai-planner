@@ -91,6 +91,26 @@ class JenkinsfileCiCleanupTest {
     }
 
     @Test
+    void nfr4RunbookDocumentsTheSameDefaults() throws IOException {
+        String runbook = Files.readString(
+            Path.of("../planning/bp-135-ci-docker-resource-cleanup/05_RUNBOOK.md")
+                .toAbsolutePath().normalize(), StandardCharsets.UTF_8);
+        assertTrue(runbook.contains("CI_IMAGE_GRACE_HOURS"));
+        assertTrue(runbook.contains("CI_CONTAINER_GRACE_HOURS"));
+        assertTrue(runbook.contains("CI_BUILD_GRACE_HOURS"));
+        String readme = Files.readString(
+            Path.of("../README.md").toAbsolutePath().normalize(), StandardCharsets.UTF_8);
+        assertTrue(readme.contains("CI_IMAGE_GRACE_HOURS"));
+    }
+
+    @Test
+    void nfr5NoWorkspaceDaemonFileIsTrusted() throws IOException {
+        String text = Files.readString(JENKINSFILE, StandardCharsets.UTF_8);
+        assertFalse(text.contains("target/ci-docker-daemon.env"),
+            "the Jenkinsfile must not trust a workspace daemon file");
+    }
+
+    @Test
     void fr5ScheduledJobPinsNodeAndDaemon() throws IOException {
         String text = Files.readString(CLEANUP_PIPELINE, StandardCharsets.UTF_8);
         assertTrue(text.contains("agent { label 'vibecode-ci-docker' }"),
