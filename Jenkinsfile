@@ -286,12 +286,12 @@ EOF
                                     export DOCKER_HOST="$DOCKER_HOST_FALLBACK"
                                 fi
                             fi
-                            docker build -f sandbox.Dockerfile -t vibecode-agent-sandbox:ci .
-                            docker build -f sandbox-proxy.Dockerfile -t vibecode-sandbox-proxy:ci .
-                            # Scan every image the harness runs, not only the
-                            # repo sandbox image: the supervisor (built in the
-                            # Agent stage) and the trusted egress proxy are
-                            # part of the same boundary.
+                            # The Sandbox Integration stage built these images
+                            # with the same tags. Scan every image the harness
+                            # runs, not only the repo sandbox image: the
+                            # supervisor (built in the Agent stage) and the
+                            # trusted egress proxy are part of the same
+                            # boundary.
                             for image in vibecode-agent:ci vibecode-agent-sandbox:ci vibecode-sandbox-proxy:ci; do
                                 bash scripts/sandbox-image-security.sh \
                                     --sbom-and-scan "$image"
