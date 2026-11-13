@@ -34,6 +34,15 @@ job. Before the safety net exists, a Jenkins administrator must:
    For more than one Docker daemon, create one job per host with its own
    expected daemon ID (D5).
 
+Scheduled builds use the Jenkinsfile parameter defaults, not the values from
+the last manual run. Set non-empty `CI_DOCKER_HOST` and `CI_DOCKER_DAEMON_ID`
+defaults for the scheduled job (for example in a deployment-specific wrapper or
+a Jenkins global environment consumed by the job); otherwise the cron build
+stops with `CI_DOCKER_HOST is required`. To make the cron destructive, change
+`DRY_RUN` to `false` and `ENABLE_DESTRUCTIVE_CLEANUP` to `true` in those
+deployment-specific defaults after the dry-run review. Keep the shared upstream
+defaults dry-run.
+
 Before provisioning the job or relying on the schedule, run the daemon
 compatibility gate in `03`. The cron is active as soon as the job is
 provisioned; the `DRY_RUN=true` default keeps that first scheduled run
