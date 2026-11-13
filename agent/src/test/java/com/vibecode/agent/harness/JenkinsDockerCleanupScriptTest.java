@@ -264,6 +264,23 @@ class JenkinsDockerCleanupScriptTest {
     }
 
     @Test
+    void nfr2BareZoneAbbreviationWithoutOffsetIsSkipped() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
+            "FAKE_PS", "container1\t2020-01-01 00:00:00 PST",
+            "CI_CONTAINER_GRACE_HOURS", "0"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains(
+                "cannot determine a valid age for timestamp '2020-01-01 00:00:00 PST'"),
+            result.output);
+        assertFalse(result.output.contains("DRY-RUN: docker rm -f container1"),
+            result.output);
+    }
+
+    @Test
     void nfr4RetentionValuesComeFromEnvironment() throws Exception {
         Fixture fixture = fixture();
 

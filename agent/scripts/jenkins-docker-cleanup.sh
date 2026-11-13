@@ -421,10 +421,32 @@ clean_build_images() {
 normalize_timestamp() {
     local value="$1"
     value="${value%Z}"
-    # Drop a trailing alphabetic zone abbreviation (UTC, PST, ...) but keep
-    # the numeric offset; date can apply the offset portably.
+    # Drop a trailing alphabetic zone abbreviation (UTC, PST, ...) only when
+    # a numeric offset is present or the abbreviation is UTC itself. A bare
+    # abbreviation without an offset is ambiguous, so fail closed instead of
+    # silently treating it as UTC.
     case "$value" in
-        *" "[A-Za-z]*) value="${value% [A-Za-z]*}" ;;
+        *" "[A-Za-z]*)
+            local zone="${value##* }"
+            local without_zone="${value% *}"
+            local last="${without_zone##* }"
+            case "$zone" in
+                UTC)
+                    value="$without_zone"
+                    ;;
+                *)
+                    case "$last" in
+                        [+-][0-9][0-9][0-9][0-9]|[+-][0-9][0-9]:[0-9][0-9])
+                            value="$without_zone"
+                            ;;
+                        *)
+                            printf '%s' "<invalid>"
+                            return 0
+                            ;;
+                    esac
+                    ;;
+            esac
+            ;;
     esac
     # Replace T only when it is the RFC3339 date separator. A T inside a
     # timezone abbreviation such as PST must be left alone.
