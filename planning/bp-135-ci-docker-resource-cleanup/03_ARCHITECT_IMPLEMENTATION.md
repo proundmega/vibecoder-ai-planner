@@ -58,7 +58,9 @@
      the strict pattern with the network/volume anchor. A project with no
      usable network `Created` (including `<no value>`) is aged from the
      volume's `CreatedAt`; older daemons that return `<no value>` for both
-     leave it for manual review. Running containers/
+     leave it for manual review. Timestamps are normalized to the portable
+     `YYYY-MM-DD HH:MM:SS` form so BusyBox `date` agrees with GNU `date`.
+     Running containers/
      networks/projects older than the grace period are hard-kill orphans and
      are removed. Docker stderr is never parsed as a resource ID. Old CI
      images lose their `:<build>` tag and any Compose
@@ -313,6 +315,7 @@ docker images --filter label=com.vibecode.ci.job="$VIBECODE_CI_JOB" \
 | 8 | external reviewer | The sanitized job slug was not collision-free; `CI_CURRENT_BUILD_ID` was documented as active but never set; Docker stderr was parsed as anchor output; `is_race_error` treated missing-file/configuration errors as races; compose mode allowed a missing build ID; docs/fixture had pattern, quoting, volume-only aging and negative-anchor gaps. | This revision adds `JOB_NAME.hashCode()` to the slug, documents the optional build guard and grace-period reality, captures stderr separately, narrows race patterns, requires `--build-id` for compose, passes the job through the shell environment, ages volume-only projects from `CreatedAt`, and adds collision, stderr, anchor-mismatch, volume-only and compose-failure tests. | pending |
 | 9 | external reviewer | Documented project patterns omitted the hash; the 32-bit hash was stronger than the "collision-free" wording; `compose_down` still merged streams; volume-only aging depends on `.CreatedAt`, which older daemons may omit. | This revision adds `<hash>` to every documented pattern, describes the guarantee as collision-resistant rather than collision-free, uses `capture` and warning-stripped race classification for `compose down`, and documents the older-daemon `<no value>` fallback. | pending |
 | 10 | external reviewer | Warning stripping missed Docker Compose's `time="..." level=warning msg="..."` format; network `.Created` `<no value>` was treated as a timestamp instead of falling back to the volume. | This revision strips plain `WARNING:`, logrus `level=warning`/`WARN[` and applies the `<no value>` guard to networks as well as volumes, with tests using the real Compose warning format and the network fallback. | pending |
+| 11 | Jenkins pipeline | The suite inherited `VIBECODE_CI_JOB`/retention variables from the pipeline, and BusyBox `date` could not parse Docker's `CreatedAt`, so age-scoped tests and real cleanup skipped every resource. | This revision makes the test fixture hermetic, normalizes Docker CLI/RFC3339 timestamps to the portable `YYYY-MM-DD HH:MM:SS` form, and adds a BusyBox-style `date` fixture so the regression is exercised on every run. | pending |
 
 ## Results
 

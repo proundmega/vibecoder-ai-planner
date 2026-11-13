@@ -911,6 +911,29 @@ class JenkinsDockerCleanupScriptTest {
             """);
         Files.setPosixFilePermissions(docker,
             PosixFilePermissions.fromString("rwxr-xr-x"));
+
+        // BusyBox date rejects Docker's "YYYY-MM-DD HH:MM:SS +0000 UTC"
+        // and RFC3339 forms. The cleanup script must normalize timestamps
+        // before calling date.
+        Path date = bin.resolve("date");
+        Files.writeString(date, """
+            #!/usr/bin/env bash
+            for arg in "$@"; do
+              case "$arg" in
+                *T*|*UTC*|*+0000*|*Z*)
+                  echo "date: invalid date '$arg'" >&2
+                  exit 1
+                  ;;
+              esac
+            done
+            if [ -x /bin/date ]; then
+              exec /bin/date "$@"
+            else
+              exec /usr/bin/date "$@"
+            fi
+            """);
+        Files.setPosixFilePermissions(date,
+            PosixFilePermissions.fromString("rwxr-xr-x"));
         return new Fixture(root, script, bin, log);
     }
 
@@ -938,11 +961,22 @@ class JenkinsDockerCleanupScriptTest {
             Map<String, String> env = builder.environment();
             env.remove("CI_DOCKER_HOST");
             env.remove("CI_DOCKER_DAEMON_ID");
+            env.remove("CI_JOB");
+            env.remove("VIBECODE_CI_JOB");
+            env.remove("VIBECODE_CI");
+            env.remove("VIBECODE_CI_BUILD");
+            env.remove("COMPOSE_PROJECT_NAME");
+            env.remove("CI_IMAGE_GRACE_HOURS");
+            env.remove("CI_CONTAINER_GRACE_HOURS");
+            env.remove("CI_BUILD_GRACE_HOURS");
+            env.remove("CI_CURRENT_BUILD_ID");
+            env.remove("DRY_RUN");
             env.remove("DOCKER_HOST");
             env.remove("DOCKER_HOST_FALLBACK");
             env.remove("JENKINS_HOME");
             env.remove("JENKINS_HOST_HOME");
             env.remove("WORKSPACE");
+            env.remove("TMPDIR");
             env.put("PATH", bin + ":" + env.getOrDefault("PATH", ""));
             env.put("COMMAND_LOG", log.toString());
             env.put("CI_REPO_ROOT", root.toString());

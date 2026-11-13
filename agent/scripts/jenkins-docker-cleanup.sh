@@ -414,10 +414,27 @@ clean_build_images() {
     done <<< "$ids"
 }
 
+# Docker CLI timestamps look like "2020-01-01 00:00:00.123 +0000 UTC",
+# volume timestamps are RFC3339, and BusyBox date accepts only
+# "YYYY-MM-DD HH:MM:SS". Normalize to the portable form.
+normalize_timestamp() {
+    local value="$1"
+    value="${value%Z}"
+    value="${value% UTC}"
+    value="${value% [+-]0000}"
+    value="${value%[+-]0000}"
+    value="${value% [+-]00:00}"
+    value="${value%[+-]00:00}"
+    value="${value/T/ }"
+    value="${value%%.*}"
+    printf '%s' "$value"
+}
+
 age_hours() {
-    local created="$1"
+    local created
+    created="$(normalize_timestamp "$1")"
     local then now
-    then="$(date -d "$created" +%s 2>/dev/null || echo 0)"
+    then="$(date -u -d "$created" +%s 2>/dev/null || echo 0)"
     now="$(date +%s)"
     [ "$then" -gt 0 ] || {
         echo 0
