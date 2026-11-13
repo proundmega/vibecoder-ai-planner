@@ -51,6 +51,7 @@ build/test suite may need the local socket or a less restricted proxy.
 | `CI_DOCKER_DAEMON_ID` | required | Expected `docker info --format '{{.ID}}'`; a mismatch aborts before deletion. |
 | `DRY_RUN` | `true` | Report actions without changing resources. |
 | `ENABLE_DESTRUCTIVE_CLEANUP` | `false` | Required with `DRY_RUN=false` after the dry-run review. |
+| `CI_CURRENT_BUILD_ID` | unset | Optional extra guard that preserves one build ID; no pipeline sets it, so the grace periods remain the primary protection. |
 
 Grace periods are longer than the 60-minute pipeline timeout, so a concurrent
 build is outside the deletion window. Running containers/networks/projects
@@ -61,10 +62,12 @@ intentionally job-agnostic. Old CI images lose their `:<build>` tag and any
 Compose project image tag whose repository embeds `-<build>-`; `:ci` and
 unrelated aliases such as `:latest` are preserved, and an image is removed by
 ID only when no tags remain. A failed tag inspect is skipped rather than
-assumed to be tagless. The GC skips the current build ID and the shared
-`:ci` aliases; image removal fails safely if Docker still reports the image in
+assumed to be tagless. The GC always skips the shared `:ci` aliases and, if
+the optional `CI_CURRENT_BUILD_ID` guard is supplied, that build ID. No
+pipeline sets the guard; the grace periods are the primary concurrency
+protection. Image removal fails safely if Docker still reports the image in
 use. Genuine Docker listing/removal errors make `--orphans` exit non-zero,
-while in-use/not-found races are logged and tolerated.
+while resource-level in-use/not-found races are logged and tolerated.
 
 The cleanup daemon is captured by the Integration Tests stage with
 `sh(returnStdout: true)` into the Jenkins pipeline variables `CI_DOCKER_HOST`
@@ -144,7 +147,7 @@ Classify candidates using the old names and tags. `vibecode-agent:ci`,
 shared aliases — do not remove them**. The same applies to any image carrying a
 `:ci` tag. Legacy removal candidates are only build-unique old tags such as
 `vibecode-agent:<build>`, `vibecode-agent-sandbox:<build>` and
-`vibecode-sandbox-proxy:<build>`, plus old `vibecode-<branch>-<build>` Compose
+`vibecode-sandbox-proxy:<build>`, plus old `vibecode-<branch>-ci-<job>-<build>` Compose
 projects and their unique images. Exclude `vibecoder-ai-planner`, the exact
 shared volumes `postgres_data`, `uploads_data` and `vibecode_repos`, and
 anything whose ownership is unclear. Leave a project alone if it has a running
@@ -248,7 +251,7 @@ remove. It must not issue a delete, prune or `compose down` command.
 
 - Run `docker system prune -a` or any broad prune on the shared daemon.
 - Pass an arbitrary `--compose-project`; only the strict
-  `vibecode-<branch>-<job>-<build>` pattern is accepted.
+  `vibecode-<branch>-ci-<job>-<build>` pattern is accepted.
 - Run post-build cleanup without `--job`/`CI_JOB`; the script refuses it so one
   job cannot delete another job's build tags on a shared daemon.
 - Target `vibecoder-ai-planner` or remove `postgres_data`, `uploads_data` or

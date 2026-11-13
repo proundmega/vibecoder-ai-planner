@@ -24,7 +24,9 @@ pipeline {
         ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
         // Sanitize branch name: only lowercase alphanumeric + hyphens allowed by docker compose
         // Collapse consecutive hyphens and trim leading/trailing hyphens for clean names
-        JOB_SLUG = "ci-${JOB_NAME.toLowerCase().replaceAll('[^a-z0-9-]', '-').replaceAll('-+', '-').replaceAll('^-|-$', '')}"
+        // The hash keeps sanitized-but-distinct names (team/a vs team-a)
+        // from collapsing to the same Compose project name.
+        JOB_SLUG = "ci-${JOB_NAME.toLowerCase().replaceAll('[^a-z0-9-]', '-').replaceAll('-+', '-').replaceAll('^-|-$', '')}-${JOB_NAME.hashCode()}"
         // Include the job identity: build numbers are unique only within a job,
         // so branch+build alone can collide across jobs on a shared daemon.
         COMPOSE_PROJECT_NAME = "vibecode-${BRANCH_NAME.toLowerCase().replaceAll('[^a-z0-9-]', '-').replaceAll('-+', '-').replaceAll('^-|-$', '')}-${JOB_SLUG}-${BUILD_NUMBER}"
@@ -577,12 +579,12 @@ EOF
                             bash agent/scripts/jenkins-docker-cleanup.sh \
                                 --compose-project '${COMPOSE_PROJECT_NAME}' \
                                 --build-id '${BUILD_NUMBER}' \
-                                --job '${VIBECODE_CI_JOB}'
+                                --job "\$VIBECODE_CI_JOB"
                             CI_DOCKER_HOST='${env.CI_DOCKER_HOST}' \
                             CI_DOCKER_DAEMON_ID='${env.CI_DOCKER_DAEMON_ID}' \
                             bash agent/scripts/jenkins-docker-cleanup.sh \
                                 --build-images '${BUILD_NUMBER}' \
-                                --job '${VIBECODE_CI_JOB}'
+                                --job "\$VIBECODE_CI_JOB"
                         """
                     } else {
                         echo 'No captured CI daemon; skipping post-build Docker cleanup.'

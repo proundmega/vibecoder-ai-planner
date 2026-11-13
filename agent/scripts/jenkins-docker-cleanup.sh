@@ -74,16 +74,52 @@ record_failure() {
 }
 
 # A resource that disappears, or is still held by a container, is a normal
-# race. It is not a cleanup failure; a real Docker error is.
+# race. It is not a cleanup failure; a missing file or permission error is.
 is_race_error() {
     case "$1" in
-        *"in use"*|*"being used"*|*"No such"*|*"not found"*|*"does not exist"*)
+        *"No such container"*|*"No such image"*|*"No such network"*)
             return 0
             ;;
-        *"has active endpoints"*|*"already exists"*|*"already in progress"*)
+        *"No such volume"*|*"No such object"*)
+            return 0
+            ;;
+        *"is in use"*|*"is being used by"*|*"has active endpoints"*)
+            return 0
+            ;;
+        *"already in progress"*)
             return 0
             ;;
     esac
+    return 1
+}
+
+ERR_FILE=""
+CAPTURE_ERR=""
+
+cleanup_err_file() {
+    if [ -n "$ERR_FILE" ]; then
+        rm -f "$ERR_FILE"
+    fi
+}
+trap cleanup_err_file EXIT
+
+# Run a command with stdout and stderr separated. Docker warnings often go to
+# stderr; treating them as resource IDs or as anchor output is unsafe.
+capture() {
+    local var="$1"
+    shift
+    if [ -z "$ERR_FILE" ]; then
+        ERR_FILE="$(mktemp "${TMPDIR:-/tmp}/jenkins-docker-cleanup.XXXXXX")"
+    fi
+    : > "$ERR_FILE"
+    local out
+    if out="$("$@" 2>"$ERR_FILE")"; then
+        printf -v "$var" '%s' "$out"
+        CAPTURE_ERR="$(<"$ERR_FILE")"
+        return 0
+    fi
+    CAPTURE_ERR="$(<"$ERR_FILE")"
+    printf -v "$var" '%s' "$out"
     return 1
 }
 
@@ -150,6 +186,9 @@ done
 # daemon. The scheduled GC stays job-agnostic and does not require this.
 if [ "$MODE" = "compose" ] || [ "$MODE" = "build-images" ]; then
     [ -n "$JOB" ] || die "--job/CI_JOB is required for post-build cleanup"
+    if [ "$MODE" = "compose" ]; then
+        [ -n "$BUILD_ID" ] || die "--build-id is required with --compose-project"
+    fi
 else
     # --orphans and --legacy-inventory are job-agnostic even if a controller
     # exports CI_JOB into the scheduled job's environment.
@@ -189,16 +228,22 @@ project_anchor() {
         filters+=(--filter "label=com.vibecode.ci.build=$BUILD_ID")
     fi
     local listed
-    if ! listed="$(docker network ls "${filters[@]}" --format '{{.ID}}' 2>&1)"; then
-        record_failure "docker network ls failed for project $project: $listed"
+    if ! capture listed docker network ls "${filters[@]}" --format '{{.ID}}'; then
+        record_failure "docker network ls failed for project $project: ${CAPTURE_ERR:-unknown error}"
         return 1
+    fi
+    if [ -n "$CAPTURE_ERR" ]; then
+        log "warning: docker network ls for $project: $CAPTURE_ERR"
     fi
     if printf '%s\n' "$listed" | grep -q .; then
         return 0
     fi
-    if ! listed="$(docker volume ls "${filters[@]}" --format '{{.Name}}' 2>&1)"; then
-        record_failure "docker volume ls failed for project $project: $listed"
+    if ! capture listed docker volume ls "${filters[@]}" --format '{{.Name}}'; then
+        record_failure "docker volume ls failed for project $project: ${CAPTURE_ERR:-unknown error}"
         return 1
+    fi
+    if [ -n "$CAPTURE_ERR" ]; then
+        log "warning: docker volume ls for $project: $CAPTURE_ERR"
     fi
     if printf '%s\n' "$listed" | grep -q .; then
         return 0
@@ -297,13 +342,16 @@ clean_build_images() {
     [ -n "$build_id" ] || die "a build id is required"
     [ -n "$JOB" ] || die "a job name is required"
     local listing ids
-    if ! listing="$(docker images -a \
+    if ! capture listing docker images -a \
         --filter "label=com.vibecode.ci=true" \
         --filter "label=com.vibecode.ci.job=$JOB" \
         --filter "label=com.vibecode.ci.build=$build_id" \
-        --format '{{.ID}}' 2>&1)"; then
-        record_failure "docker images failed for job $JOB build $build_id: $listing"
+        --format '{{.ID}}'; then
+        record_failure "docker images failed for job $JOB build $build_id: ${CAPTURE_ERR:-unknown error}"
         return 0
+    fi
+    if [ -n "$CAPTURE_ERR" ]; then
+        log "warning: docker images for job $JOB build $build_id: $CAPTURE_ERR"
     fi
     ids="$(printf '%s\n' "$listing" | sort -u)"
     [ -n "$(printf '%s' "$ids" | tr -d '[:space:]')" ] || {
@@ -313,14 +361,17 @@ clean_build_images() {
     local id tag tags remaining
     while IFS= read -r id; do
         [ -n "$id" ] || continue
-        if ! tags="$(docker image inspect --format '{{range .RepoTags}}{{.}} {{end}}' \
-            "$id" 2>&1)"; then
-            if is_race_error "$tags"; then
+        if ! capture tags docker image inspect --format \
+            '{{range .RepoTags}}{{.}} {{end}}' "$id"; then
+            if is_race_error "$CAPTURE_ERR"; then
                 log "warning: tags for $id are unavailable; skipping"
             else
-                record_failure "docker image inspect $id failed: $tags"
+                record_failure "docker image inspect $id failed: ${CAPTURE_ERR:-unknown error}"
             fi
             continue
+        fi
+        if [ -n "$CAPTURE_ERR" ]; then
+            log "warning: docker image inspect $id: $CAPTURE_ERR"
         fi
         remaining=""
         for tag in $tags; do
@@ -360,10 +411,13 @@ age_hours() {
 
 orphan_sandbox_containers() {
     local listing id created output
-    if ! listing="$(docker ps -a --filter label=vibecode.sandbox.managed=true \
-        --format '{{.ID}}\t{{.CreatedAt}}' 2>&1)"; then
-        record_failure "docker ps failed for the sandbox orphan scan: $listing"
+    if ! capture listing docker ps -a --filter label=vibecode.sandbox.managed=true \
+        --format '{{.ID}}\t{{.CreatedAt}}'; then
+        record_failure "docker ps failed for the sandbox orphan scan: ${CAPTURE_ERR:-unknown error}"
         return 0
+    fi
+    if [ -n "$CAPTURE_ERR" ]; then
+        log "warning: docker ps for the sandbox orphan scan: $CAPTURE_ERR"
     fi
     while IFS=$'\t' read -r id created _; do
         [ -n "$id" ] || continue
@@ -389,20 +443,26 @@ orphan_sandbox_containers() {
 
 orphan_sandbox_networks() {
     local listing id created output
-    if ! listing="$(docker network ls --filter label=vibecode.sandbox.managed=true \
-        --format '{{.ID}}' 2>&1)"; then
-        record_failure "docker network ls failed for the sandbox orphan scan: $listing"
+    if ! capture listing docker network ls --filter label=vibecode.sandbox.managed=true \
+        --format '{{.ID}}'; then
+        record_failure "docker network ls failed for the sandbox orphan scan: ${CAPTURE_ERR:-unknown error}"
         return 0
+    fi
+    if [ -n "$CAPTURE_ERR" ]; then
+        log "warning: docker network ls for the sandbox orphan scan: $CAPTURE_ERR"
     fi
     while IFS= read -r id; do
         [ -n "$id" ] || continue
-        if ! created="$(docker network inspect --format '{{.Created}}' "$id" 2>&1)"; then
-            if is_race_error "$created"; then
+        if ! capture created docker network inspect --format '{{.Created}}' "$id"; then
+            if is_race_error "$CAPTURE_ERR"; then
                 log "warning: sandbox network $id disappeared before inspection"
             else
-                record_failure "docker network inspect $id failed: $created"
+                record_failure "docker network inspect $id failed: ${CAPTURE_ERR:-unknown error}"
             fi
             continue
+        fi
+        if [ -n "$CAPTURE_ERR" ]; then
+            log "warning: docker network inspect $id: $CAPTURE_ERR"
         fi
         [ -n "$created" ] || continue
         # Containers are removed first; docker network rm still fails safely
@@ -426,32 +486,41 @@ orphan_sandbox_networks() {
 
 orphan_ci_images() {
     local listing id created tags tag build has_ci remaining
-    if ! listing="$(docker images -a --filter label=com.vibecode.ci=true \
-        --format '{{.ID}}\t{{.CreatedAt}}' 2>&1)"; then
-        record_failure "docker images failed for the orphan image scan: $listing"
+    if ! capture listing docker images -a --filter label=com.vibecode.ci=true \
+        --format '{{.ID}}\t{{.CreatedAt}}'; then
+        record_failure "docker images failed for the orphan image scan: ${CAPTURE_ERR:-unknown error}"
         return 0
+    fi
+    if [ -n "$CAPTURE_ERR" ]; then
+        log "warning: docker images for the orphan image scan: $CAPTURE_ERR"
     fi
     while IFS=$'\t' read -r id created; do
         [ -n "$id" ] || continue
         # A failed tag inspect must never be read as "no :ci alias". Skip the
         # image unless Docker positively confirms the tag list.
-        if ! tags="$(docker image inspect --format '{{range .RepoTags}}{{.}} {{end}}' \
-            "$id" 2>&1)"; then
-            if is_race_error "$tags"; then
+        if ! capture tags docker image inspect --format \
+            '{{range .RepoTags}}{{.}} {{end}}' "$id"; then
+            if is_race_error "$CAPTURE_ERR"; then
                 log "warning: tags for $id are unavailable; skipping (cannot prove :ci is absent)"
             else
-                record_failure "docker image inspect $id failed: $tags"
+                record_failure "docker image inspect $id failed: ${CAPTURE_ERR:-unknown error}"
             fi
             continue
         fi
-        if ! build="$(docker image inspect --format \
-            '{{index .Config.Labels "com.vibecode.ci.build"}}' "$id" 2>&1)"; then
-            if is_race_error "$build"; then
+        if [ -n "$CAPTURE_ERR" ]; then
+            log "warning: docker image inspect $id: $CAPTURE_ERR"
+        fi
+        if ! capture build docker image inspect --format \
+            '{{index .Config.Labels "com.vibecode.ci.build"}}' "$id"; then
+            if is_race_error "$CAPTURE_ERR"; then
                 log "warning: build label for $id is unavailable; skipping"
             else
-                record_failure "docker image inspect $id failed: $build"
+                record_failure "docker image inspect $id failed: ${CAPTURE_ERR:-unknown error}"
             fi
             continue
+        fi
+        if [ -n "$CAPTURE_ERR" ]; then
+            log "warning: docker image inspect $id: $CAPTURE_ERR"
         fi
         [ -n "$build" ] || continue
         [ -n "$CURRENT_BUILD" ] && [ "$build" = "$CURRENT_BUILD" ] && continue
@@ -493,11 +562,58 @@ orphan_ci_images() {
     done <<< "$listing"
 }
 
+# Determine a project's age from its network, or from a volume when the
+# project is a partial leftover with no network. Sets the variable named by
+# the second argument.
+project_created() {
+    local name="$1"
+    local var="$2"
+    local id found
+    if capture id docker network ls \
+        --filter "label=com.docker.compose.project=$name" \
+        --format '{{.ID}}'; then
+        id="$(printf '%s\n' "$id" | head -n1)"
+        if [ -n "$id" ]; then
+            if capture found docker network inspect --format '{{.Created}}' "$id"; then
+                if [ -n "$found" ]; then
+                    printf -v "$var" '%s' "$found"
+                    return 0
+                fi
+            elif ! is_race_error "$CAPTURE_ERR"; then
+                record_failure "docker network inspect failed for $name: ${CAPTURE_ERR:-unknown error}"
+            fi
+        fi
+    elif ! is_race_error "$CAPTURE_ERR"; then
+        record_failure "docker network ls failed for $name: ${CAPTURE_ERR:-unknown error}"
+    fi
+    if capture id docker volume ls \
+        --filter "label=com.docker.compose.project=$name" \
+        --format '{{.Name}}'; then
+        id="$(printf '%s\n' "$id" | head -n1)"
+        if [ -n "$id" ]; then
+            if capture found docker volume inspect --format '{{.CreatedAt}}' "$id"; then
+                if [ -n "$found" ] && [ "$found" != "<no value>" ]; then
+                    printf -v "$var" '%s' "$found"
+                    return 0
+                fi
+            elif ! is_race_error "$CAPTURE_ERR"; then
+                record_failure "docker volume inspect failed for $name: ${CAPTURE_ERR:-unknown error}"
+            fi
+        fi
+    elif ! is_race_error "$CAPTURE_ERR"; then
+        record_failure "docker volume ls failed for $name: ${CAPTURE_ERR:-unknown error}"
+    fi
+    return 1
+}
+
 orphan_compose_projects() {
     local listing names name created
-    if ! listing="$(docker compose ls -a --format json 2>&1)"; then
-        record_failure "docker compose ls failed for the orphan project scan: $listing"
+    if ! capture listing docker compose ls -a --format json; then
+        record_failure "docker compose ls failed for the orphan project scan: ${CAPTURE_ERR:-unknown error}"
         return 0
+    fi
+    if [ -n "$CAPTURE_ERR" ]; then
+        log "warning: docker compose ls for the orphan project scan: $CAPTURE_ERR"
     fi
     names="$(printf '%s' "$listing" \
         | { grep -o '"Name":"[^"]*"' || true; } \
@@ -510,25 +626,12 @@ orphan_compose_projects() {
         project_anchor "$name" || continue
         # Hard-killed builds can leave running containers. The build grace
         # period is longer than the pipeline timeout; compose down below
-        # stops and removes them.
-        if ! created="$(docker network ls \
-            --filter "label=com.docker.compose.project=$name" \
-            --format '{{.ID}}' 2>&1)"; then
-            record_failure "docker network ls failed for $name: $created"
+        # stops and removes them. A volume-only partial project is aged from
+        # the volume's CreatedAt.
+        if ! project_created "$name" created; then
+            log "warning: cannot determine the creation time for $name; skipping"
             continue
         fi
-        created="$(printf '%s\n' "$created" | head -n1)"
-        [ -n "$created" ] || continue
-        if ! created="$(docker network inspect --format '{{.Created}}' \
-            "$created" 2>&1)"; then
-            if is_race_error "$created"; then
-                log "warning: network for $name disappeared before inspection"
-            else
-                record_failure "docker network inspect failed for $name: $created"
-            fi
-            continue
-        fi
-        [ -n "$created" ] || continue
         [ "$(age_hours "$created")" -ge "$BUILD_GRACE" ] || continue
         if is_true "$DRY_RUN"; then
             log "DRY-RUN: docker compose ... -p $name down -v --rmi local --remove-orphans"

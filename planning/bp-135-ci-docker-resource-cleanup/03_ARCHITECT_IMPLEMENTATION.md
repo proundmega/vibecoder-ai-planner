@@ -36,9 +36,13 @@
      anchor: `com.vibecode.ci=true`, `com.vibecode.ci.job=<job>`,
      `com.vibecode.ci.build=<id>` plus `com.docker.compose.project=<name>` on
      the project network or a named volume. The Jenkinsfile includes a
-     sanitized `JOB_NAME` in `COMPOSE_PROJECT_NAME`, because build numbers
-     are unique only within a job. Pulled services (redis, postgres,
-     docker-proxy) do not need build labels. It then runs
+     sanitized `JOB_NAME` plus a hash of the raw name in
+     `COMPOSE_PROJECT_NAME`, because build numbers are unique only within a
+     job and sanitized names such as `team/a` and `team-a` would otherwise
+     collide. `--job` and `--build-id` are required for compose cleanup.
+     Docker stderr is captured separately from stdout so a warning cannot be
+     mistaken for an anchor. Pulled services (redis, postgres, docker-proxy)
+     do not need build labels. It then runs
      `docker compose -f docker-compose.yml -f docker-compose.test.yml
      -f docker-compose.e2e.yml --profile e2e -p <name> down -v --rmi local
      --remove-orphans` so the API/frontend, test and Cypress images are all in
@@ -51,18 +55,22 @@
    - `--orphans` runs the scheduled, job-agnostic GC: sandbox containers/
      networks with `vibecode.sandbox.managed=true`, CI images with
      `com.vibecode.ci=true` and an old build ID, and Compose projects matching
-     the strict pattern with the network/volume anchor. Running containers/
+     the strict pattern with the network/volume anchor. A volume-only partial
+     project is aged from the volume's `CreatedAt`. Running containers/
      networks/projects older than the grace period are hard-kill orphans and
-     are removed. Old CI images lose their `:<build>` tag and any Compose
+     are removed. Docker stderr is never parsed as a resource ID. Old CI
+     images lose their `:<build>` tag and any Compose
      project image tag whose repository embeds `-<build>-`; unrelated aliases
      are preserved and the ID is removed only when no tags remain. A failed
      tag inspect is skipped rather than treated as "no `:ci` alias";
      image removal fails safely if Docker still reports the image in use. It
-     skips the shared `:ci` alias and the current build ID. The exact shared
-     volume names (`postgres_data`, `uploads_data`, `vibecode_repos`) are
-     refused regardless of labels. Genuine Docker listing/removal failures are
-     counted and make `--orphans` exit non-zero; "in use"/"not found" races are
-     tolerated with a warning.
+     skips the shared `:ci` alias and, when the optional
+     `CI_CURRENT_BUILD_ID` guard is supplied, that build ID; no pipeline sets
+     the guard, so the grace periods are the real concurrency protection. The
+     exact shared volume names (`postgres_data`, `uploads_data`,
+     `vibecode_repos`) are refused regardless of labels. Genuine Docker
+     listing/removal failures are counted and make `--orphans` exit non-zero;
+     resource-level in-use/not-found races are tolerated with a warning.
    - `--legacy-inventory` is read-only. It lists pre-label candidates from old
      `vibecode-*` Compose projects, old build-unique tags and the existing
      sandbox label without requiring the new labels. Every image carrying a
@@ -124,8 +132,9 @@
    `JenkinsfileCiCleanupTest` plus the runbook procedure.
 
 6. **Guard rails** — no broad prune, no name-prefix-only filters, no shared
-   volume removal, no current build and no resource younger than the grace
-   period. Running resources older than the grace period are hard-kill orphans
+   volume removal, no build selected by the optional
+   `CI_CURRENT_BUILD_ID` guard and no resource younger than the grace period.
+   Running resources older than the grace period are hard-kill orphans
    and are removed. The project network/volume CI label is the authoritative
    anchor; pulled services do not need a build label. The local-dev project is
    an explicit deny. Pre-label resources are never removed by the automatic
@@ -213,6 +222,10 @@ validating run; the explicit-host result remains `local-socket fallback`.
 | FR1 | Static | `JenkinsfileCiCleanupTest` | `fr1CleanWsRunsInPostCleanup` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
 | FR1 | Script | `JenkinsDockerCleanupScriptTest` | `fr1ComposeProjectTeardownIsScopedAndUsesTheValidatedName` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR1 | Static | `JenkinsfileCiCleanupTest` | `fr1ComposeProjectNameIncludesJobIdentity` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
+| FR1 | Static | `JenkinsfileCiCleanupTest` | `fr1JobSlugDisambiguatesCollidingSanitizedNames` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
+| FR1 | Script | `JenkinsDockerCleanupScriptTest` | `fr1ComposeCleanupRequiresABuildId` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR1 | Script | `JenkinsDockerCleanupScriptTest` | `fr1ProjectAnchorIgnoresDockerStderr` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR1 | Script | `JenkinsDockerCleanupScriptTest` | `fr1ProjectAnchorRejectsMismatchedJob` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR1 | Smoke | Jenkins smoke build | `fr1FailedSmokeBuildLeavesNoComposeProject` (record in `03` Results) | `CI_SMOKE_FAIL=1` build, then `docker ps -a`, `docker network ls`, `docker volume ls` and `docker images` filtered by the build project |
 | FR2 | Script | `SandboxIntegrationScriptTest` | `fr2SandboxAndProxyBuildsCarryCiLabelsAndBuildTag` | `mvn -Dtest=SandboxIntegrationScriptTest test` |
 | FR2 | Static | `JenkinsfileCiCleanupTest` | `fr2SupervisorAndComposeBuildsCarryCiLabels` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
@@ -226,6 +239,7 @@ validating run; the explicit-host result remains `local-socket fallback`.
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanGcKeepsSharedCiAlias` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanSandboxNetworksRemoveOldNetworks` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanComposeProjectsRemoveOldRunningProjects` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanComposeProjectsUseVolumeCreatedAt` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanCiImagesRemoveDanglingImages` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanCiImagesSkipWhenTagInspectFails` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanCiImagesPreserveUnrelatedAliases` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
@@ -246,8 +260,9 @@ validating run; the explicit-host result remains `local-socket fallback`.
 | NFR1 | Script | `JenkinsDockerCleanupScriptTest` | `nfr1OrphanGcFailsOnDockerListingErrors` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR1 | Script | `JenkinsDockerCleanupScriptTest` | `nfr1OrphanGcToleratesInUseRaces` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR1 | Script | `JenkinsDockerCleanupScriptTest` | `nfr1OrphanGcFailsOnNonRaceRemovalErrors` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| NFR1 | Script | `JenkinsDockerCleanupScriptTest` | `nfr1ComposeDownFailureIsNotTreatedAsRace` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR1 | Static | `JenkinsfileCiCleanupTest` | `nfr1ScheduledCleanupDefaultsToDryRun` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
-| NFR2 | Script | `JenkinsDockerCleanupScriptTest` | `nfr2GraceAndBuildIdSkipCurrentResources` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| NFR2 | Script | `JenkinsDockerCleanupScriptTest` | `nfr2GraceAndOptionalBuildIdSkipCurrentResources` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR2 | Script | `JenkinsDockerCleanupScriptTest` | `fr2BuildImageCleanupIsJobScopedOnASharedDaemon` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR3 | Script | `JenkinsDockerCleanupScriptTest` | `nfr3FakeDockerCoversAllCleanupPaths` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR4 | Script | `JenkinsDockerCleanupScriptTest` | `nfr4RetentionValuesComeFromEnvironment` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
@@ -288,6 +303,7 @@ docker images --filter label=com.vibecode.ci.job="$VIBECODE_CI_JOB" \
 | 5 | external reviewer | FR5 gate remains the only operational prerequisite; if the local-socket fallback is selected, the existing local-socket suite result must be recorded as the validating run. | FR5 status, decision 7, the operational gate section and the runbook now require that evidence; the gate remains pending on Jenkins. | pending |
 | 6 | external reviewer | Old CI images became dangling after the `:ci` alias moved and were never removed; running hard-kill resources were skipped; the scheduled job defaulted to destructive; legacy volume/dangling inventory was incomplete; Cypress images were not removed; matrix/test coverage was incomplete. | This revision removes image IDs when no `:ci` alias remains, treats old running resources as orphans, defaults the scheduled job to dry-run with an explicit destructive-enable flag, restricts legacy volume candidates and lists dangling images, adds `--rmi local` to the Cypress teardown, and adds the missing regression rows. | pending |
 | 7 | external reviewer | Post cleanup was build-scoped but not job-scoped; build-image removal deleted unrelated aliases; `--orphans` exited 0 on genuine Docker failures; a failed tag inspect could be read as "no `:ci` alias"; planning/runbook wording and the fake fixture still described stopped projects and did not assert `-a`. | This revision requires `--job`/`CI_JOB` for post cleanup, filters images and the project anchor by job plus build, adds a sanitized job slug to `COMPOSE_PROJECT_NAME`, removes only the `:<build>` tag in post cleanup (plus old Compose project tags in the scheduled GC) while preserving `:ci`/`:latest`, counts genuine Docker failures for a non-zero `--orphans` exit while tolerating in-use/not-found races, skips images when the tag inspect fails, and updates the docs, matrix and fixture. | pending |
+| 8 | external reviewer | The sanitized job slug was not collision-free; `CI_CURRENT_BUILD_ID` was documented as active but never set; Docker stderr was parsed as anchor output; `is_race_error` treated missing-file/configuration errors as races; compose mode allowed a missing build ID; docs/fixture had pattern, quoting, volume-only aging and negative-anchor gaps. | This revision adds `JOB_NAME.hashCode()` to the slug, documents the optional build guard and grace-period reality, captures stderr separately, narrows race patterns, requires `--build-id` for compose, passes the job through the shell environment, ages volume-only projects from `CreatedAt`, and adds collision, stderr, anchor-mismatch, volume-only and compose-failure tests. | pending |
 
 ## Results
 

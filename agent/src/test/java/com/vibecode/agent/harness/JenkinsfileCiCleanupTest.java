@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JenkinsfileCiCleanupTest {
@@ -65,8 +66,8 @@ class JenkinsfileCiCleanupTest {
         assertTrue(text.contains("env.CI_DOCKER_DAEMON_ID"));
         assertTrue(text.contains("--compose-project"));
         assertTrue(text.contains("--build-images"));
-        assertTrue(text.contains("--job '${VIBECODE_CI_JOB}'"),
-            "post cleanup must be scoped to the Jenkins job");
+        assertTrue(text.contains("--job \"\\$VIBECODE_CI_JOB\""),
+            "post cleanup must be scoped to the Jenkins job without shell quoting the raw name");
         assertFalse(text.contains("target/ci-docker-daemon.env"),
             "the workspace daemon file must not be used");
     }
@@ -76,8 +77,28 @@ class JenkinsfileCiCleanupTest {
         String text = Files.readString(JENKINSFILE, StandardCharsets.UTF_8);
         assertTrue(text.contains("JOB_SLUG"), "no job slug for the Compose project");
         assertTrue(text.contains("JOB_NAME"), "job slug does not use the Jenkins job name");
+        assertTrue(text.contains("JOB_NAME.hashCode()"),
+            "job slug has no collision-breaking hash");
         assertTrue(text.contains("-${JOB_SLUG}-${BUILD_NUMBER}"),
             "Compose project name is not job+build scoped");
+    }
+
+    @Test
+    void fr1JobSlugDisambiguatesCollidingSanitizedNames() {
+        assertNotEquals(jobSlug("team/a"), jobSlug("team-a"));
+        assertNotEquals(jobSlug("Job"), jobSlug("job"));
+        assertNotEquals(jobSlug("foo bar"), jobSlug("foo-bar"));
+    }
+
+    private static String jobSlug(String jobName) {
+        // Mirrors the Jenkinsfile expression: sanitize, then append the raw
+        // name's hash so distinct names cannot collapse to one project.
+        return "ci-"
+            + jobName.toLowerCase()
+                .replaceAll("[^a-z0-9-]", "-")
+                .replaceAll("-+", "-")
+                .replaceAll("^-|-$", "")
+            + "-" + jobName.hashCode();
     }
 
     @Test

@@ -52,6 +52,53 @@ class JenkinsDockerCleanupScriptTest {
     }
 
     @Test
+    void fr1ComposeCleanupRequiresABuildId() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of(
+            "--compose-project", "vibecode-pr-7-12",
+            "--job", "job-a"), Map.of());
+
+        assertEquals(2, result.exitCode, result.output);
+        assertTrue(result.output.contains("--build-id is required"), result.output);
+        assertFalse(Files.exists(fixture.log)
+            && Files.readString(fixture.log).contains("down -v"), result.output);
+    }
+
+    @Test
+    void fr1ProjectAnchorIgnoresDockerStderr() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of(
+            "--compose-project", "vibecode-pr-7-12",
+            "--build-id", "12", "--job", "job-a"), Map.of(
+            "FAKE_ANCHOR", "0",
+            "FAKE_NETWORK_WARNING", "1"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains("nothing to do"), result.output);
+        assertTrue(result.output.contains("warning: docker network ls"),
+            result.output);
+        assertFalse(Files.readString(fixture.log).contains("down -v"), result.output);
+    }
+
+    @Test
+    void fr1ProjectAnchorRejectsMismatchedJob() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of(
+            "--compose-project", "vibecode-pr-7-12",
+            "--build-id", "12", "--job", "job-a"), Map.of(
+            "FAKE_ANCHOR_JOB", "job-b"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains("nothing to do"), result.output);
+        assertFalse(Files.readString(fixture.log).contains("down -v"), result.output);
+    }
+
+    @Test
     void fr4DryRunDoesNotTearDownOrRemoveAnything() throws Exception {
         Fixture fixture = fixture();
 
@@ -72,12 +119,12 @@ class JenkinsDockerCleanupScriptTest {
         Fixture fixture = fixture();
 
         Result local = fixture.run(List.of("--compose-project", "vibecoder-ai-planner",
-            "--job", "job-a"), Map.of());
+            "--build-id", "12", "--job", "job-a"), Map.of());
         assertEquals(2, local.exitCode, local.output);
         assertTrue(local.output.contains("refusing unrecognized project name"), local.output);
 
         Result typo = fixture.run(List.of("--compose-project", "vibecode-pr",
-            "--job", "job-a"), Map.of());
+            "--build-id", "12", "--job", "job-a"), Map.of());
         assertEquals(2, typo.exitCode, typo.output);
         assertTrue(typo.output.contains("refusing unrecognized project name"), typo.output);
     }
@@ -87,7 +134,7 @@ class JenkinsDockerCleanupScriptTest {
         Fixture fixture = fixture();
 
         Result result = fixture.run(List.of("--compose-project", "vibecode-pr-7-12",
-                "--job", "job-a"),
+                "--build-id", "12", "--job", "job-a"),
             Map.of("FAKE_ANCHOR", "0"));
 
         assertEquals(0, result.exitCode, result.output);
@@ -184,7 +231,7 @@ class JenkinsDockerCleanupScriptTest {
     }
 
     @Test
-    void nfr2GraceAndBuildIdSkipCurrentResources() throws Exception {
+    void nfr2GraceAndOptionalBuildIdSkipCurrentResources() throws Exception {
         Fixture fixture = fixture();
 
         Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
@@ -286,7 +333,7 @@ class JenkinsDockerCleanupScriptTest {
         Fixture fixture = fixture();
 
         Result result = fixture.run(List.of("--compose-project", "vibecode-pr-7-12",
-                "--job", "job-a"),
+                "--build-id", "12", "--job", "job-a"),
             Map.of("CI_DOCKER_DAEMON_ID", "other-daemon"));
 
         assertEquals(2, result.exitCode, result.output);
@@ -332,6 +379,38 @@ class JenkinsDockerCleanupScriptTest {
 
         assertEquals(0, result.exitCode, result.output);
         assertTrue(result.output.contains("DRY-RUN: docker compose ... -p vibecode-pr-7-12"),
+            result.output);
+    }
+
+    @Test
+    void fr3OrphanComposeProjectsUseVolumeCreatedAt() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
+            "FAKE_COMPOSE_JSON",
+            "[{\"Name\":\"vibecode-pr-7-12\",\"Status\":\"running(1)\"}]",
+            "FAKE_NETWORK_EMPTY", "1",
+            "FAKE_PROJECT_VOLUME", "vibecode-pr-7-12_postgres_data",
+            "FAKE_VOLUME_CREATED", "2020-01-01 00:00:00 +0000 UTC"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains("DRY-RUN: docker compose ... -p vibecode-pr-7-12"),
+            result.output);
+    }
+
+    @Test
+    void nfr1ComposeDownFailureIsNotTreatedAsRace() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans"), Map.of(
+            "FAKE_COMPOSE_JSON",
+            "[{\"Name\":\"vibecode-pr-7-12\",\"Status\":\"running(1)\"}]",
+            "FAKE_COMPOSE_DOWN_ERROR", "no such file or directory"
+        ));
+
+        assertEquals(1, result.exitCode, result.output);
+        assertTrue(result.output.contains("docker compose down failed for vibecode-pr-7-12"),
             result.output);
     }
 
@@ -621,26 +700,53 @@ class JenkinsDockerCleanupScriptTest {
               done
             }
 
+            anchor_allowed() {
+              local want_job="" want_build="" arg
+              for arg in "$@"; do
+                case "$arg" in
+                  label=com.vibecode.ci.job=*) want_job="${arg#label=com.vibecode.ci.job=}" ;;
+                  label=com.vibecode.ci.build=*) want_build="${arg#label=com.vibecode.ci.build=}" ;;
+                esac
+              done
+              [ "${FAKE_ANCHOR:-1}" = "1" ] || return 1
+              if [ -n "$want_job" ] && [ -n "${FAKE_ANCHOR_JOB:-}" ] \\
+                  && [ "$want_job" != "$FAKE_ANCHOR_JOB" ]; then
+                return 1
+              fi
+              if [ -n "$want_build" ] && [ -n "${FAKE_ANCHOR_BUILD:-}" ] \\
+                  && [ "$want_build" != "$FAKE_ANCHOR_BUILD" ]; then
+                return 1
+              fi
+              return 0
+            }
+
             case "$cmd" in
               info)
                 echo "${FAKE_DAEMON_ID:-daemon-1}"
                 ;;
               network)
                 if [ "$sub" = "ls" ]; then
+                  if [ "${FAKE_NETWORK_WARNING:-0}" = "1" ]; then
+                    echo "fake docker warning on stderr" >&2
+                  fi
                   case "$*" in
                     *label=vibecode.sandbox.managed=true*)
                       [ -n "${FAKE_SANDBOX_NETWORK:-}" ] && echo "$FAKE_SANDBOX_NETWORK"
                       ;;
                     *label=com.vibecode.ci=true*)
-                      [ "${FAKE_ANCHOR:-1}" = "1" ] && echo "net-1"
+                      if [ "${FAKE_NETWORK_EMPTY:-0}" != "1" ]; then
+                        anchor_allowed "$@" && echo "net-1"
+                      fi
                       ;;
                     *label=com.docker.compose.project=*)
-                      [ "${FAKE_ANCHOR:-1}" = "1" ] && echo "net-1"
+                      if [ "${FAKE_NETWORK_EMPTY:-0}" != "1" ]; then
+                        anchor_allowed "$@" && echo "net-1"
+                      fi
                       ;;
                   esac
                 elif [ "$sub" = "inspect" ]; then
                   case "$*" in
-                    *"{{.Created}}"*) echo "2020-01-01 00:00:00 +0000 UTC" ;;
+                    *"{{.Created}}"*) echo "${FAKE_NETWORK_CREATED:-2020-01-01 00:00:00 +0000 UTC}" ;;
                     *"{{len .Containers}}"*) echo "0" ;;
                   esac
                 elif [ "$sub" = "rm" ]; then
@@ -654,9 +760,17 @@ class JenkinsDockerCleanupScriptTest {
                 if [ "$sub" = "ls" ]; then
                   if [ -n "${FAKE_VOLUMES:-}" ]; then
                     printf '%s\\n' "$FAKE_VOLUMES"
+                  elif [ -n "${FAKE_PROJECT_VOLUME:-}" ]; then
+                    case "$*" in
+                      *com.docker.compose.project=*) echo "$FAKE_PROJECT_VOLUME" ;;
+                    esac
                   else
-                    [ "${FAKE_ANCHOR:-1}" = "1" ] && echo "volume-1"
+                    anchor_allowed "$@" && echo "volume-1"
                   fi
+                elif [ "$sub" = "inspect" ]; then
+                  case "$*" in
+                    *"{{.CreatedAt}}"*) echo "${FAKE_VOLUME_CREATED:-2020-01-01 00:00:00 +0000 UTC}" ;;
+                  esac
                 fi
                 ;;
               images)
@@ -744,7 +858,7 @@ class JenkinsDockerCleanupScriptTest {
               compose)
                 if [ "$sub" = "ls" ]; then
                   echo "${FAKE_COMPOSE_JSON:-[]}"
-                elif [ "$sub" = "down" ]; then
+                elif printf '%s' "$*" | grep -q ' down '; then
                   if [ -n "${FAKE_COMPOSE_DOWN_ERROR:-}" ]; then
                     echo "$FAKE_COMPOSE_DOWN_ERROR" >&2
                     exit 1
