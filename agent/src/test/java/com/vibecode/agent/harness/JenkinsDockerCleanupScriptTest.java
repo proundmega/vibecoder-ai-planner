@@ -400,6 +400,23 @@ class JenkinsDockerCleanupScriptTest {
     }
 
     @Test
+    void fr3OrphanComposeProjectsFallBackWhenNetworkCreatedIsEmpty() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
+            "FAKE_COMPOSE_JSON",
+            "[{\"Name\":\"vibecode-pr-7-12\",\"Status\":\"running(1)\"}]",
+            "FAKE_NETWORK_CREATED", "<no value>",
+            "FAKE_PROJECT_VOLUME", "vibecode-pr-7-12_postgres_data",
+            "FAKE_VOLUME_CREATED", "2020-01-01 00:00:00 +0000 UTC"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains("DRY-RUN: docker compose ... -p vibecode-pr-7-12"),
+            result.output);
+    }
+
+    @Test
     void fr3OrphanComposeProjectsSkipVolumeWithoutCreatedAt() throws Exception {
         Fixture fixture = fixture();
 
@@ -430,7 +447,8 @@ class JenkinsDockerCleanupScriptTest {
         assertEquals(1, result.exitCode, result.output);
         assertTrue(result.output.contains("docker compose down failed for vibecode-pr-7-12"),
             result.output);
-        assertTrue(result.output.contains("WARNING: network is in use"), result.output);
+        assertTrue(result.output.contains("level=warning"), result.output);
+        assertTrue(result.output.contains("network is in use"), result.output);
     }
 
     @Test
@@ -880,6 +898,7 @@ class JenkinsDockerCleanupScriptTest {
                 elif printf '%s' "$*" | grep -q ' down '; then
                   if [ -n "${FAKE_COMPOSE_DOWN_WARNING:-}" ]; then
                     echo "WARNING: $FAKE_COMPOSE_DOWN_WARNING" >&2
+                    echo "time=\\"2026-11-13T02:21:39Z\\" level=warning msg=\\"$FAKE_COMPOSE_DOWN_WARNING\\"" >&2
                   fi
                   if [ -n "${FAKE_COMPOSE_DOWN_ERROR:-}" ]; then
                     echo "$FAKE_COMPOSE_DOWN_ERROR" >&2

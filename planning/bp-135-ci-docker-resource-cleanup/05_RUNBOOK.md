@@ -62,11 +62,11 @@ intentionally job-agnostic. Old CI images lose their `:<build>` tag and any
 Compose project image tag whose repository embeds `-<build>-`; `:ci` and
 unrelated aliases such as `:latest` are preserved, and an image is removed by
 ID only when no tags remain. A failed tag inspect is skipped rather than
-assumed to be tagless. Volume-only partial projects are aged from
-`docker volume inspect .CreatedAt`; this is available on Docker 29, but an
-older daemon may return `<no value>`, in which case the GC skips the project
-with a warning and it must be reviewed manually. The GC always skips the
-shared `:ci` aliases and, if
+assumed to be tagless. A project whose network `.Created` is missing or
+`<no value>` is aged from the volume's `.CreatedAt`; this is available on
+Docker 29, but an older daemon may return `<no value>` for both, in which case
+the GC skips the project with a warning and it must be reviewed manually. The
+GC always skips the shared `:ci` aliases and, if
 the optional `CI_CURRENT_BUILD_ID` guard is supplied, that build ID. No
 pipeline sets the guard; the grace periods are the primary concurrency
 protection. Image removal fails safely if Docker still reports the image in

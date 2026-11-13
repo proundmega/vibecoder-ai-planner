@@ -98,7 +98,11 @@ is_race_error() {
 is_race_failure() {
     local text="$1"
     local errors
-    errors="$(printf '%s\n' "$text" | grep -viE '^[[:space:]]*warning:' || true)"
+    # Covers the plain `WARNING:` form and Docker Compose's logrus form:
+    # time="..." level=warning msg="..." / WARN[0000] ...
+    errors="$(printf '%s\n' "$text" \
+        | grep -viE '(^[[:space:]]*(warning:|warn\[))|(level=(warning|warn)([^[:alnum:]_]|$))' \
+        || true)"
     [ -n "$errors" ] || return 1
     is_race_error "$errors"
 }
@@ -588,7 +592,7 @@ project_created() {
         id="$(printf '%s\n' "$id" | head -n1)"
         if [ -n "$id" ]; then
             if capture found docker network inspect --format '{{.Created}}' "$id"; then
-                if [ -n "$found" ]; then
+                if [ -n "$found" ] && [ "$found" != "<no value>" ]; then
                     printf -v "$var" '%s' "$found"
                     return 0
                 fi

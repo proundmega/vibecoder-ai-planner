@@ -96,6 +96,7 @@ daemon restart or Jenkins crash.
 | Plan review round 7 | Job-scoped post cleanup, build-tag-only removal, non-zero orphan failures, fail-closed `:ci` inspect and runbook consistency addressed; re-review pending (`03` Review record) | ☑ |
 | Plan review round 8 | Job-slug collisions, optional current-build claim, stderr parsing, race classification, build-ID requirement and volume-only/negative-anchor coverage addressed; re-review pending (`03` Review record) | ☑ |
 | Plan review round 9 | Project-pattern hash examples, collision-resistance wording, compose stderr classification and older-daemon volume note addressed; re-review pending (`03` Review record) | ☑ |
+| Plan review round 10 | Compose logrus warning stripping and network `<no value>` fallback addressed; re-review pending (`03` Review record) | ☑ |
 | FR5 daemon gate | pending — run on Jenkins against the explicit `DOCKER_HOST` before daemon-mode implementation; record pass/fallback/blocked in `03` Results. If fallback is selected, also record the existing local-socket suite result as the validating run | ☐ |
 | D13 helper available | PR #140 merged at `02ffc0a`; `agent/scripts/sandbox-ci-env.sh` is on master | ☑ |
 | Plan merged | PR #141, merge `7867a41` | ☑ |
