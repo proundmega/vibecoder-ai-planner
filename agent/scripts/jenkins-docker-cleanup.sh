@@ -8,21 +8,23 @@
 # and never runs a broad prune.
 #
 # Usage:
-#   jenkins-docker-cleanup.sh --compose-project NAME --build-id ID
-#   jenkins-docker-cleanup.sh --build-images ID
+#   jenkins-docker-cleanup.sh --compose-project NAME --build-id ID --job JOB
+#   jenkins-docker-cleanup.sh --build-images ID --job JOB
 #   jenkins-docker-cleanup.sh --orphans
 #   jenkins-docker-cleanup.sh --legacy-inventory
 #
 # Environment:
 #   CI_DOCKER_HOST            explicit daemon (or --docker-host)
 #   CI_DOCKER_DAEMON_ID       expected docker info ID (or --daemon-id)
+#   CI_JOB                    Jenkins job name for post-cleanup scoping
 #   CI_IMAGE_GRACE_HOURS      default 24
 #   CI_CONTAINER_GRACE_HOURS  default 2
 #   CI_BUILD_GRACE_HOURS      default 6
 #   DRY_RUN                   true/1 for no mutation
 #
-# Compose/post modes are best-effort and exit 0; --orphans exits non-zero on
-# a real failure. --legacy-inventory is read-only.
+# Compose/post modes are job-scoped, best-effort and exit 0; --orphans is
+# job-agnostic and exits non-zero on a real failure. --legacy-inventory is
+# read-only.
 
 set -euo pipefail
 
@@ -37,6 +39,7 @@ fi
 MODE=""
 PROJECT=""
 BUILD_ID=""
+JOB="${CI_JOB:-${VIBECODE_CI_JOB:-}}"
 DRY_RUN="${DRY_RUN:-false}"
 DOCKER_HOST="${CI_DOCKER_HOST:-${DOCKER_HOST:-}}"
 DAEMON_ID="${CI_DOCKER_DAEMON_ID:-}"
@@ -46,6 +49,7 @@ BUILD_GRACE="${CI_BUILD_GRACE_HOURS:-6}"
 CURRENT_BUILD="${CI_CURRENT_BUILD_ID:-}"
 LOCAL_PROJECT="vibecoder-ai-planner"
 SHARED_VOLUMES="postgres_data uploads_data vibecode_repos"
+FAILURES=0
 
 usage() {
     sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
@@ -62,6 +66,25 @@ log() {
 
 is_true() {
     [ "$1" = "true" ] || [ "$1" = "1" ]
+}
+
+record_failure() {
+    echo "error: $*" >&2
+    FAILURES=$((FAILURES + 1))
+}
+
+# A resource that disappears, or is still held by a container, is a normal
+# race. It is not a cleanup failure; a real Docker error is.
+is_race_error() {
+    case "$1" in
+        *"in use"*|*"being used"*|*"No such"*|*"not found"*|*"does not exist"*)
+            return 0
+            ;;
+        *"has active endpoints"*|*"already exists"*|*"already in progress"*)
+            return 0
+            ;;
+    esac
+    return 1
 }
 
 while [ $# -gt 0 ]; do
@@ -81,6 +104,11 @@ while [ $# -gt 0 ]; do
         --build-id)
             [ $# -ge 2 ] || die "--build-id requires a value"
             BUILD_ID="$2"
+            shift 2
+            ;;
+        --job)
+            [ $# -ge 2 ] || die "--job requires a value"
+            JOB="$2"
             shift 2
             ;;
         --orphans)
@@ -117,6 +145,12 @@ done
 
 [ -n "$MODE" ] || die "one mode is required (--compose-project, --build-images, --orphans or --legacy-inventory)"
 [ -n "$DOCKER_HOST" ] || die "DOCKER_HOST/CI_DOCKER_HOST is required in explicit mode"
+# Build numbers are unique only within a Jenkins job. Post cleanup must carry
+# the job identity or it could remove another job's resources from a shared
+# daemon. The scheduled GC stays job-agnostic and does not require this.
+if [ "$MODE" = "compose" ] || [ "$MODE" = "build-images" ]; then
+    [ -n "$JOB" ] || die "--job/CI_JOB is required for post-build cleanup"
+fi
 
 export SANDBOX_CI_DOCKER_HOST_MODE=explicit
 export DOCKER_HOST
@@ -140,14 +174,32 @@ valid_project() {
 
 project_anchor() {
     local project="$1"
-    docker network ls \
-        --filter "label=com.docker.compose.project=$project" \
-        --filter "label=com.vibecode.ci=true" \
-        --format '{{.ID}}' 2>/dev/null | grep -q . \
-        || docker volume ls \
-            --filter "label=com.docker.compose.project=$project" \
-            --filter "label=com.vibecode.ci=true" \
-            --format '{{.Name}}' 2>/dev/null | grep -q .
+    local filters=(
+        --filter "label=com.docker.compose.project=$project"
+        --filter "label=com.vibecode.ci=true"
+    )
+    if [ -n "$JOB" ]; then
+        filters+=(--filter "label=com.vibecode.ci.job=$JOB")
+    fi
+    if [ -n "$BUILD_ID" ]; then
+        filters+=(--filter "label=com.vibecode.ci.build=$BUILD_ID")
+    fi
+    local listed
+    if ! listed="$(docker network ls "${filters[@]}" --format '{{.ID}}' 2>&1)"; then
+        record_failure "docker network ls failed for project $project: $listed"
+        return 1
+    fi
+    if printf '%s\n' "$listed" | grep -q .; then
+        return 0
+    fi
+    if ! listed="$(docker volume ls "${filters[@]}" --format '{{.Name}}' 2>&1)"; then
+        record_failure "docker volume ls failed for project $project: $listed"
+        return 1
+    fi
+    if printf '%s\n' "$listed" | grep -q .; then
+        return 0
+    fi
+    return 1
 }
 
 compose_files() {
@@ -168,7 +220,18 @@ compose_down() {
         log "DRY-RUN: docker compose ${args[*]} -p $project down -v --rmi local --remove-orphans"
         return 0
     fi
-    docker compose "${args[@]}" -p "$project" down -v --rmi local --remove-orphans
+    local output
+    if output="$(docker compose "${args[@]}" -p "$project" down -v --rmi local \
+        --remove-orphans 2>&1)"; then
+        log "compose teardown completed for $project"
+    else
+        if is_race_error "$output"; then
+            log "warning: compose teardown for $project hit a concurrent-removal race"
+        else
+            record_failure "docker compose down failed for $project: $output"
+            return 1
+        fi
+    fi
 }
 
 clean_compose_project() {
@@ -185,54 +248,98 @@ clean_compose_project() {
     compose_down "$project"
 }
 
+remove_image_tag() {
+    local tag="$1"
+    local reason="$2"
+    [ -n "$tag" ] || return 0
+    if is_true "$DRY_RUN"; then
+        log "DRY-RUN: docker image rm $tag ($reason)"
+        return 0
+    fi
+    local output
+    if output="$(docker image rm "$tag" 2>&1)"; then
+        log "removed image tag $tag ($reason)"
+    else
+        if is_race_error "$output"; then
+            log "warning: image tag $tag disappeared or is still in use; leaving it"
+        else
+            record_failure "docker image rm $tag failed: $output"
+        fi
+    fi
+}
+
 remove_image_id() {
     local id="$1"
     local reason="$2"
     [ -n "$id" ] || return 0
     if is_true "$DRY_RUN"; then
         log "DRY-RUN: docker image rm $id ($reason)"
-    else
-        docker image rm "$id" >/dev/null 2>&1 || true
+        return 0
+    fi
+    local output
+    if output="$(docker image rm "$id" 2>&1)"; then
         log "removed image $id ($reason)"
+    else
+        if is_race_error "$output"; then
+            log "warning: image $id disappeared or is still in use; leaving it"
+        else
+            record_failure "docker image rm $id failed: $output"
+        fi
     fi
 }
 
 clean_build_images() {
     local build_id="$1"
     [ -n "$build_id" ] || die "a build id is required"
-    local ids
-    ids="$(docker images -a \
+    [ -n "$JOB" ] || die "a job name is required"
+    local listing ids
+    if ! listing="$(docker images -a \
         --filter "label=com.vibecode.ci=true" \
+        --filter "label=com.vibecode.ci.job=$JOB" \
         --filter "label=com.vibecode.ci.build=$build_id" \
-        --format '{{.ID}}' 2>/dev/null | sort -u)"
-    [ -n "$ids" ] || {
-        log "no CI images for build $build_id"
+        --format '{{.ID}}' 2>&1)"; then
+        record_failure "docker images failed for job $JOB build $build_id: $listing"
+        return 0
+    fi
+    ids="$(printf '%s\n' "$listing" | sort -u)"
+    [ -n "$(printf '%s' "$ids" | tr -d '[:space:]')" ] || {
+        log "no CI images for job $JOB build $build_id"
         return 0
     }
-    local id tag tags has_ci
-    for id in $ids; do
-        tags="$(docker image inspect --format '{{range .RepoTags}}{{.}} {{end}}' "$id" 2>/dev/null || true)"
-        has_ci=false
+    local id tag tags remaining
+    while IFS= read -r id; do
+        [ -n "$id" ] || continue
+        if ! tags="$(docker image inspect --format '{{range .RepoTags}}{{.}} {{end}}' \
+            "$id" 2>&1)"; then
+            if is_race_error "$tags"; then
+                log "warning: tags for $id are unavailable; skipping"
+            else
+                record_failure "docker image inspect $id failed: $tags"
+            fi
+            continue
+        fi
+        remaining=""
         for tag in $tags; do
             case "$tag" in
                 *:ci)
-                    has_ci=true
+                    remaining="$remaining $tag"
                     log "keeping shared alias $tag"
                     ;;
+                *:"$build_id")
+                    remove_image_tag "$tag" "build $build_id tag"
+                    ;;
                 *)
-                    if is_true "$DRY_RUN"; then
-                        log "DRY-RUN: docker image rm $tag"
-                    else
-                        docker image rm "$tag" >/dev/null 2>&1 || true
-                        log "removed build tag $tag"
-                    fi
+                    # Keep unrelated aliases such as :latest.
+                    remaining="$remaining $tag"
+                    log "keeping unrelated alias $tag"
                     ;;
             esac
         done
-        if [ "$has_ci" = "false" ]; then
-            remove_image_id "$id" "build image with no :ci alias"
+        if [ -z "${remaining// /}" ]; then
+            remove_image_id "$id" \
+                "job $JOB build $build_id image has no remaining tags"
         fi
-    done
+    done <<< "$ids"
 }
 
 age_hours() {
@@ -248,8 +355,13 @@ age_hours() {
 }
 
 orphan_sandbox_containers() {
-    local id created state
-    while IFS=$'\t' read -r id created state; do
+    local listing id created output
+    if ! listing="$(docker ps -a --filter label=vibecode.sandbox.managed=true \
+        --format '{{.ID}}\t{{.CreatedAt}}' 2>&1)"; then
+        record_failure "docker ps failed for the sandbox orphan scan: $listing"
+        return 0
+    fi
+    while IFS=$'\t' read -r id created _; do
         [ -n "$id" ] || continue
         # A hard-killed Jenkins run leaves containers running. The grace
         # period is longer than the pipeline timeout, so an old running
@@ -257,96 +369,170 @@ orphan_sandbox_containers() {
         [ "$(age_hours "$created")" -ge "$CONTAINER_GRACE" ] || continue
         if is_true "$DRY_RUN"; then
             log "DRY-RUN: docker rm -f $id (sandbox container)"
-        else
-            docker rm -f "$id" >/dev/null 2>&1 || true
-            log "removed sandbox container $id"
+            continue
         fi
-    done < <(docker ps -a --filter label=vibecode.sandbox.managed=true \
-        --format '{{.ID}}\t{{.CreatedAt}}\t{{.State}}' 2>/dev/null)
+        if output="$(docker rm -f "$id" 2>&1)"; then
+            log "removed sandbox container $id"
+        else
+            if is_race_error "$output"; then
+                log "warning: sandbox container $id disappeared or is still in use"
+            else
+                record_failure "docker rm -f $id failed: $output"
+            fi
+        fi
+    done <<< "$listing"
 }
 
 orphan_sandbox_networks() {
-    local id created attached
-    while IFS=$'\t' read -r id created attached; do
+    local listing id created output
+    if ! listing="$(docker network ls --filter label=vibecode.sandbox.managed=true \
+        --format '{{.ID}}' 2>&1)"; then
+        record_failure "docker network ls failed for the sandbox orphan scan: $listing"
+        return 0
+    fi
+    while IFS= read -r id; do
         [ -n "$id" ] || continue
+        if ! created="$(docker network inspect --format '{{.Created}}' "$id" 2>&1)"; then
+            if is_race_error "$created"; then
+                log "warning: sandbox network $id disappeared before inspection"
+            else
+                record_failure "docker network inspect $id failed: $created"
+            fi
+            continue
+        fi
+        [ -n "$created" ] || continue
         # Containers are removed first; docker network rm still fails safely
         # if a younger container is attached.
         [ "$(age_hours "$created")" -ge "$CONTAINER_GRACE" ] || continue
         if is_true "$DRY_RUN"; then
             log "DRY-RUN: docker network rm $id (sandbox network)"
-        else
-            docker network rm "$id" >/dev/null 2>&1 || true
-            log "removed sandbox network $id"
+            continue
         fi
-    done < <(docker network ls --filter label=vibecode.sandbox.managed=true \
-        --format '{{.ID}}' 2>/dev/null | while read -r id; do
-            [ -n "$id" ] || continue
-            created="$(docker network inspect --format '{{.Created}}' "$id" 2>/dev/null || echo '')"
-            attached="$(docker network inspect --format '{{len .Containers}}' "$id" 2>/dev/null || echo 1)"
-            printf '%s\t%s\t%s\n' "$id" "$created" "$attached"
-        done)
+        if output="$(docker network rm "$id" 2>&1)"; then
+            log "removed sandbox network $id"
+        else
+            if is_race_error "$output"; then
+                log "warning: sandbox network $id still has an attached container; leaving it"
+            else
+                record_failure "docker network rm $id failed: $output"
+            fi
+        fi
+    done <<< "$listing"
 }
 
 orphan_ci_images() {
-    local id created tags tag build has_ci
+    local listing id created tags tag build has_ci remaining
+    if ! listing="$(docker images -a --filter label=com.vibecode.ci=true \
+        --format '{{.ID}}\t{{.CreatedAt}}' 2>&1)"; then
+        record_failure "docker images failed for the orphan image scan: $listing"
+        return 0
+    fi
     while IFS=$'\t' read -r id created; do
         [ -n "$id" ] || continue
-        tags="$(docker image inspect --format '{{range .RepoTags}}{{.}} {{end}}' "$id" 2>/dev/null || true)"
-        build="$(docker image inspect --format '{{index .Config.Labels "com.vibecode.ci.build"}}' "$id" 2>/dev/null || true)"
+        # A failed tag inspect must never be read as "no :ci alias". Skip the
+        # image unless Docker positively confirms the tag list.
+        if ! tags="$(docker image inspect --format '{{range .RepoTags}}{{.}} {{end}}' \
+            "$id" 2>&1)"; then
+            if is_race_error "$tags"; then
+                log "warning: tags for $id are unavailable; skipping (cannot prove :ci is absent)"
+            else
+                record_failure "docker image inspect $id failed: $tags"
+            fi
+            continue
+        fi
+        if ! build="$(docker image inspect --format \
+            '{{index .Config.Labels "com.vibecode.ci.build"}}' "$id" 2>&1)"; then
+            if is_race_error "$build"; then
+                log "warning: build label for $id is unavailable; skipping"
+            else
+                record_failure "docker image inspect $id failed: $build"
+            fi
+            continue
+        fi
         [ -n "$build" ] || continue
         [ -n "$CURRENT_BUILD" ] && [ "$build" = "$CURRENT_BUILD" ] && continue
         [ "$(age_hours "$created")" -ge "$IMAGE_GRACE" ] || continue
         has_ci=false
+        remaining=""
         for tag in $tags; do
+            local repo="${tag%:*}"
             case "$tag" in
                 *:ci)
                     has_ci=true
+                    remaining="$remaining $tag"
                     log "keeping shared alias $tag"
                     ;;
+                *:"$build")
+                    remove_image_tag "$tag" "old CI image tag for build $build"
+                    ;;
                 *)
-                    if is_true "$DRY_RUN"; then
-                        log "DRY-RUN: docker image rm $tag (old CI image)"
-                    else
-                        docker image rm "$tag" >/dev/null 2>&1 || true
-                        log "removed old CI image tag $tag"
-                    fi
+                    case "$repo" in
+                        vibecode-*-"$build"-*)
+                            # Compose-built images embed the project name
+                            # (which ends in the build id) in the repository
+                            # part, not in the tag.
+                            remove_image_tag "$tag" \
+                                "old Compose project image for build $build"
+                            ;;
+                        *)
+                            # Preserve unrelated aliases such as :latest.
+                            remaining="$remaining $tag"
+                            log "keeping unrelated alias $tag"
+                            ;;
+                    esac
                     ;;
             esac
         done
-        if [ "$has_ci" = "false" ]; then
+        if [ "$has_ci" = "false" ] && [ -z "${remaining// /}" ]; then
             remove_image_id "$id" "old CI image with no :ci alias"
         fi
-    done < <(docker images -a --filter label=com.vibecode.ci=true \
-        --format '{{.ID}}\t{{.CreatedAt}}' 2>/dev/null)
+    done <<< "$listing"
 }
 
 orphan_compose_projects() {
-    local name status created
-    { docker compose ls -a --format json 2>/dev/null || true; } \
-        | { grep -o '"Name":"[^"]*"[^}]*' || true; } \
-        | sed 's/.*"Name":"\([^"]*\)".*/\1/' \
-        | sort -u \
-        | while read -r name; do
-            [ -n "$name" ] || continue
-            valid_project "$name" || continue
-            [ "$name" = "${COMPOSE_PROJECT_NAME:-}" ] && continue
-            project_anchor "$name" || continue
-            # Hard-killed builds can leave running containers. The build grace
-            # period is longer than the pipeline timeout; compose down below
-            # stops and removes them.
-            created="$(docker network ls --filter "label=com.docker.compose.project=$name" \
-                --format '{{.ID}}' 2>/dev/null | head -n1)"
-            [ -n "$created" ] || continue
-            created="$(docker network inspect --format '{{.Created}}' "$created" 2>/dev/null || echo '')"
-            [ -n "$created" ] || continue
-            [ "$(age_hours "$created")" -ge "$BUILD_GRACE" ] || continue
-            if is_true "$DRY_RUN"; then
-                log "DRY-RUN: docker compose ... -p $name down -v --rmi local --remove-orphans"
+    local listing names name created
+    if ! listing="$(docker compose ls -a --format json 2>&1)"; then
+        record_failure "docker compose ls failed for the orphan project scan: $listing"
+        return 0
+    fi
+    names="$(printf '%s' "$listing" \
+        | { grep -o '"Name":"[^"]*"' || true; } \
+        | sed 's/.*"Name":"\([^"]*\)"/\1/' \
+        | sort -u)"
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        valid_project "$name" || continue
+        [ "$name" = "${COMPOSE_PROJECT_NAME:-}" ] && continue
+        project_anchor "$name" || continue
+        # Hard-killed builds can leave running containers. The build grace
+        # period is longer than the pipeline timeout; compose down below
+        # stops and removes them.
+        if ! created="$(docker network ls \
+            --filter "label=com.docker.compose.project=$name" \
+            --format '{{.ID}}' 2>&1)"; then
+            record_failure "docker network ls failed for $name: $created"
+            continue
+        fi
+        created="$(printf '%s\n' "$created" | head -n1)"
+        [ -n "$created" ] || continue
+        if ! created="$(docker network inspect --format '{{.Created}}' \
+            "$created" 2>&1)"; then
+            if is_race_error "$created"; then
+                log "warning: network for $name disappeared before inspection"
             else
-                log "removing stopped CI project $name"
-                compose_down "$name" || true
+                record_failure "docker network inspect failed for $name: $created"
             fi
-        done
+            continue
+        fi
+        [ -n "$created" ] || continue
+        [ "$(age_hours "$created")" -ge "$BUILD_GRACE" ] || continue
+        if is_true "$DRY_RUN"; then
+            log "DRY-RUN: docker compose ... -p $name down -v --rmi local --remove-orphans"
+        else
+            log "removing old CI project $name"
+            compose_down "$name" || true
+        fi
+    done <<< "$names"
 }
 
 legacy_inventory() {
@@ -446,11 +632,18 @@ run_mode() {
 }
 
 if [ "$MODE" = "orphans" ]; then
-    run_mode
+    run_mode || true
+    if [ "$FAILURES" -gt 0 ]; then
+        echo "error: $FAILURES Docker operation(s) failed during the orphan scan" >&2
+        exit 1
+    fi
 else
     # Compose/build-image post modes are best-effort; never fail the build.
     if ! run_mode; then
         echo "warning: cleanup failed; post-build cleanup is best-effort" >&2
-        exit 0
     fi
+    if [ "$FAILURES" -gt 0 ]; then
+        echo "warning: $FAILURES Docker operation(s) failed; post-build cleanup is best-effort" >&2
+    fi
+    exit 0
 fi

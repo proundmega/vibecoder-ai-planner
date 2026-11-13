@@ -65,8 +65,19 @@ class JenkinsfileCiCleanupTest {
         assertTrue(text.contains("env.CI_DOCKER_DAEMON_ID"));
         assertTrue(text.contains("--compose-project"));
         assertTrue(text.contains("--build-images"));
+        assertTrue(text.contains("--job '${VIBECODE_CI_JOB}'"),
+            "post cleanup must be scoped to the Jenkins job");
         assertFalse(text.contains("target/ci-docker-daemon.env"),
             "the workspace daemon file must not be used");
+    }
+
+    @Test
+    void fr1ComposeProjectNameIncludesJobIdentity() throws IOException {
+        String text = Files.readString(JENKINSFILE, StandardCharsets.UTF_8);
+        assertTrue(text.contains("JOB_SLUG"), "no job slug for the Compose project");
+        assertTrue(text.contains("JOB_NAME"), "job slug does not use the Jenkins job name");
+        assertTrue(text.contains("-${JOB_SLUG}-${BUILD_NUMBER}"),
+            "Compose project name is not job+build scoped");
     }
 
     @Test
@@ -135,5 +146,7 @@ class JenkinsfileCiCleanupTest {
         assertTrue(text.contains("--orphans"), "scheduled job does not run orphans");
         assertTrue(text.contains("CI_DOCKER_HOST"));
         assertTrue(text.contains("CI_DOCKER_DAEMON_ID"));
+        assertFalse(text.contains("--job"),
+            "the scheduled GC must stay job-agnostic");
     }
 }

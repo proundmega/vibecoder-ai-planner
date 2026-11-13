@@ -343,9 +343,12 @@ Docker host path; set `JENKINS_HOST_HOME` when the mount cannot be discovered
 workspace outside that root is left unchanged.
 
 BP-135 adds a scoped cleanup path. The pipeline tears down its own Compose
-project before `cleanWs()` and removes its build-unique image tags; the
-scheduled `Jenkinsfile.cleanup` job (pinned to the `vibecode-ci-docker` node)
-removes only positively labelled, age-scoped resources.
+project before `cleanWs()` and removes only its job/build image tag; Compose
+project names include the branch, job and build, and post cleanup is scoped by
+`CI_JOB` plus the build ID because build numbers are unique only within a job.
+The scheduled `Jenkinsfile.cleanup` job (pinned to the `vibecode-ci-docker`
+node) is job-agnostic and removes only positively labelled, age-scoped
+resources.
 `CI_IMAGE_GRACE_HOURS` (default 24), `CI_CONTAINER_GRACE_HOURS` (2) and
 `CI_BUILD_GRACE_HOURS` (6) control retention. Cleanup never runs a broad
 `docker system prune`, never removes the local-dev `vibecoder-ai-planner`

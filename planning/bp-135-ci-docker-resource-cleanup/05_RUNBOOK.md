@@ -34,9 +34,11 @@ job. Before the safety net exists, a Jenkins administrator must:
    For more than one Docker daemon, create one job per host with its own
    expected daemon ID (D5).
 
-Before enabling the cron, run the daemon compatibility gate in `03`. The
-scheduled job itself only needs cleanup permissions; the build/test suite may
-need the local socket or a less restricted proxy.
+Before provisioning the job or relying on the schedule, run the daemon
+compatibility gate in `03`. The cron is active as soon as the job is
+provisioned; the `DRY_RUN=true` default keeps that first scheduled run
+read-only. The scheduled job itself only needs cleanup permissions; the
+build/test suite may need the local socket or a less restricted proxy.
 
 ## Retention and parameters
 
@@ -53,8 +55,16 @@ need the local socket or a less restricted proxy.
 Grace periods are longer than the 60-minute pipeline timeout, so a concurrent
 build is outside the deletion window. Running containers/networks/projects
 older than the grace period are treated as hard-kill orphans and removed. The
-GC also skips the current build ID and the shared `:ci` aliases; image removal
-fails safely if Docker still reports the image in use.
+post-build cleanup is scoped to the Jenkins job (`CI_JOB` plus the build ID)
+because build numbers are unique only within a job; the scheduled GC is
+intentionally job-agnostic. Old CI images lose their `:<build>` tag and any
+Compose project image tag whose repository embeds `-<build>-`; `:ci` and
+unrelated aliases such as `:latest` are preserved, and an image is removed by
+ID only when no tags remain. A failed tag inspect is skipped rather than
+assumed to be tagless. The GC skips the current build ID and the shared
+`:ci` aliases; image removal fails safely if Docker still reports the image in
+use. Genuine Docker listing/removal errors make `--orphans` exit non-zero,
+while in-use/not-found races are logged and tolerated.
 
 The cleanup daemon is captured by the Integration Tests stage with
 `sh(returnStdout: true)` into the Jenkins pipeline variables `CI_DOCKER_HOST`
@@ -191,7 +201,10 @@ remove. It must not issue a delete, prune or `compose down` command.
 ## Recover
 
 1. If the scheduled job fails, read the log for `daemon mismatch`, `DOCKER_HOST
-   is required` or a Docker API error. Do not bypass the daemon check.
+   is required`, `Docker operation(s) failed` or a Docker API error. A
+   non-zero exit on a listing/removal error is intentional: the safety net
+   must not report success while doing nothing. Do not bypass the daemon
+   check.
 2. Verify the host and ID:
    ```bash
    DOCKER_HOST="$CI_DOCKER_HOST" docker info --format '{{.ID}}'
@@ -235,7 +248,9 @@ remove. It must not issue a delete, prune or `compose down` command.
 
 - Run `docker system prune -a` or any broad prune on the shared daemon.
 - Pass an arbitrary `--compose-project`; only the strict
-  `vibecode-<branch>-<build>` pattern is accepted.
+  `vibecode-<branch>-<job>-<build>` pattern is accepted.
+- Run post-build cleanup without `--job`/`CI_JOB`; the script refuses it so one
+  job cannot delete another job's build tags on a shared daemon.
 - Target `vibecoder-ai-planner` or remove `postgres_data`, `uploads_data` or
   `vibecode_repos` outside a validated build-scoped project.
 - Run the scheduled job on an agent without an explicit, verified daemon ID.

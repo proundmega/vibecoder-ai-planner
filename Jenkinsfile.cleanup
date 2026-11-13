@@ -20,7 +20,7 @@ pipeline {
         string(name: 'CI_CONTAINER_GRACE_HOURS', defaultValue: '2',
             description: 'Minimum age of an orphan sandbox container/network')
         string(name: 'CI_BUILD_GRACE_HOURS', defaultValue: '6',
-            description: 'Minimum age of a stopped Compose project')
+            description: 'Minimum age of a Compose project (including running hard-kill orphans)')
     }
 
     triggers {
@@ -40,6 +40,8 @@ pipeline {
                             echo "error: destructive cleanup requires ENABLE_DESTRUCTIVE_CLEANUP=true and DRY_RUN=false" >&2
                             exit 1
                         fi
+                        # The scheduled GC is intentionally job-agnostic: it
+                        # removes old orphans from every job on the host.
                         ARGS="--orphans"
                         if [ "${DRY_RUN:-true}" = "true" ]; then
                             ARGS="$ARGS --dry-run"
