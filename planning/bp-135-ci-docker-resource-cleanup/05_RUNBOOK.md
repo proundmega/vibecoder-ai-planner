@@ -62,7 +62,11 @@ intentionally job-agnostic. Old CI images lose their `:<build>` tag and any
 Compose project image tag whose repository embeds `-<build>-`; `:ci` and
 unrelated aliases such as `:latest` are preserved, and an image is removed by
 ID only when no tags remain. A failed tag inspect is skipped rather than
-assumed to be tagless. The GC always skips the shared `:ci` aliases and, if
+assumed to be tagless. Volume-only partial projects are aged from
+`docker volume inspect .CreatedAt`; this is available on Docker 29, but an
+older daemon may return `<no value>`, in which case the GC skips the project
+with a warning and it must be reviewed manually. The GC always skips the
+shared `:ci` aliases and, if
 the optional `CI_CURRENT_BUILD_ID` guard is supplied, that build ID. No
 pipeline sets the guard; the grace periods are the primary concurrency
 protection. Image removal fails safely if Docker still reports the image in
@@ -147,7 +151,7 @@ Classify candidates using the old names and tags. `vibecode-agent:ci`,
 shared aliases — do not remove them**. The same applies to any image carrying a
 `:ci` tag. Legacy removal candidates are only build-unique old tags such as
 `vibecode-agent:<build>`, `vibecode-agent-sandbox:<build>` and
-`vibecode-sandbox-proxy:<build>`, plus old `vibecode-<branch>-ci-<job>-<build>` Compose
+`vibecode-sandbox-proxy:<build>`, plus old `vibecode-<branch>-ci-<job>-<hash>-<build>` Compose
 projects and their unique images. Exclude `vibecoder-ai-planner`, the exact
 shared volumes `postgres_data`, `uploads_data` and `vibecode_repos`, and
 anything whose ownership is unclear. Leave a project alone if it has a running
@@ -251,7 +255,7 @@ remove. It must not issue a delete, prune or `compose down` command.
 
 - Run `docker system prune -a` or any broad prune on the shared daemon.
 - Pass an arbitrary `--compose-project`; only the strict
-  `vibecode-<branch>-ci-<job>-<build>` pattern is accepted.
+  `vibecode-<branch>-ci-<job>-<hash>-<build>` pattern is accepted.
 - Run post-build cleanup without `--job`/`CI_JOB`; the script refuses it so one
   job cannot delete another job's build tags on a shared daemon.
 - Target `vibecoder-ai-planner` or remove `postgres_data`, `uploads_data` or

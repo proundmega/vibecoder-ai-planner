@@ -93,6 +93,16 @@ is_race_error() {
     return 1
 }
 
+# Ignore warning lines before classifying a failure. A warning that happens
+# to contain a race phrase must not mask the real error on stderr.
+is_race_failure() {
+    local text="$1"
+    local errors
+    errors="$(printf '%s\n' "$text" | grep -viE '^[[:space:]]*warning:' || true)"
+    [ -n "$errors" ] || return 1
+    is_race_error "$errors"
+}
+
 ERR_FILE=""
 CAPTURE_ERR=""
 
@@ -270,14 +280,17 @@ compose_down() {
         return 0
     fi
     local output
-    if output="$(docker compose "${args[@]}" -p "$project" down -v --rmi local \
-        --remove-orphans 2>&1)"; then
+    if capture output docker compose "${args[@]}" -p "$project" down -v --rmi local \
+        --remove-orphans; then
+        if [ -n "$CAPTURE_ERR" ]; then
+            log "warning: compose teardown for $project: $CAPTURE_ERR"
+        fi
         log "compose teardown completed for $project"
     else
-        if is_race_error "$output"; then
+        if is_race_failure "$CAPTURE_ERR"; then
             log "warning: compose teardown for $project hit a concurrent-removal race"
         else
-            record_failure "docker compose down failed for $project: $output"
+            record_failure "docker compose down failed for $project: ${CAPTURE_ERR:-unknown error}"
             return 1
         fi
     fi
@@ -309,7 +322,7 @@ remove_image_tag() {
     if output="$(docker image rm "$tag" 2>&1)"; then
         log "removed image tag $tag ($reason)"
     else
-        if is_race_error "$output"; then
+        if is_race_failure "$output"; then
             log "warning: image tag $tag disappeared or is still in use; leaving it"
         else
             record_failure "docker image rm $tag failed: $output"
@@ -329,7 +342,7 @@ remove_image_id() {
     if output="$(docker image rm "$id" 2>&1)"; then
         log "removed image $id ($reason)"
     else
-        if is_race_error "$output"; then
+        if is_race_failure "$output"; then
             log "warning: image $id disappeared or is still in use; leaving it"
         else
             record_failure "docker image rm $id failed: $output"
@@ -363,7 +376,7 @@ clean_build_images() {
         [ -n "$id" ] || continue
         if ! capture tags docker image inspect --format \
             '{{range .RepoTags}}{{.}} {{end}}' "$id"; then
-            if is_race_error "$CAPTURE_ERR"; then
+            if is_race_failure "$CAPTURE_ERR"; then
                 log "warning: tags for $id are unavailable; skipping"
             else
                 record_failure "docker image inspect $id failed: ${CAPTURE_ERR:-unknown error}"
@@ -432,7 +445,7 @@ orphan_sandbox_containers() {
         if output="$(docker rm -f "$id" 2>&1)"; then
             log "removed sandbox container $id"
         else
-            if is_race_error "$output"; then
+            if is_race_failure "$output"; then
                 log "warning: sandbox container $id disappeared or is still in use"
             else
                 record_failure "docker rm -f $id failed: $output"
@@ -454,7 +467,7 @@ orphan_sandbox_networks() {
     while IFS= read -r id; do
         [ -n "$id" ] || continue
         if ! capture created docker network inspect --format '{{.Created}}' "$id"; then
-            if is_race_error "$CAPTURE_ERR"; then
+            if is_race_failure "$CAPTURE_ERR"; then
                 log "warning: sandbox network $id disappeared before inspection"
             else
                 record_failure "docker network inspect $id failed: ${CAPTURE_ERR:-unknown error}"
@@ -475,7 +488,7 @@ orphan_sandbox_networks() {
         if output="$(docker network rm "$id" 2>&1)"; then
             log "removed sandbox network $id"
         else
-            if is_race_error "$output"; then
+            if is_race_failure "$output"; then
                 log "warning: sandbox network $id still has an attached container; leaving it"
             else
                 record_failure "docker network rm $id failed: $output"
@@ -500,7 +513,7 @@ orphan_ci_images() {
         # image unless Docker positively confirms the tag list.
         if ! capture tags docker image inspect --format \
             '{{range .RepoTags}}{{.}} {{end}}' "$id"; then
-            if is_race_error "$CAPTURE_ERR"; then
+            if is_race_failure "$CAPTURE_ERR"; then
                 log "warning: tags for $id are unavailable; skipping (cannot prove :ci is absent)"
             else
                 record_failure "docker image inspect $id failed: ${CAPTURE_ERR:-unknown error}"
@@ -512,7 +525,7 @@ orphan_ci_images() {
         fi
         if ! capture build docker image inspect --format \
             '{{index .Config.Labels "com.vibecode.ci.build"}}' "$id"; then
-            if is_race_error "$CAPTURE_ERR"; then
+            if is_race_failure "$CAPTURE_ERR"; then
                 log "warning: build label for $id is unavailable; skipping"
             else
                 record_failure "docker image inspect $id failed: ${CAPTURE_ERR:-unknown error}"
@@ -579,11 +592,11 @@ project_created() {
                     printf -v "$var" '%s' "$found"
                     return 0
                 fi
-            elif ! is_race_error "$CAPTURE_ERR"; then
+            elif ! is_race_failure "$CAPTURE_ERR"; then
                 record_failure "docker network inspect failed for $name: ${CAPTURE_ERR:-unknown error}"
             fi
         fi
-    elif ! is_race_error "$CAPTURE_ERR"; then
+    elif ! is_race_failure "$CAPTURE_ERR"; then
         record_failure "docker network ls failed for $name: ${CAPTURE_ERR:-unknown error}"
     fi
     if capture id docker volume ls \
@@ -596,11 +609,11 @@ project_created() {
                     printf -v "$var" '%s' "$found"
                     return 0
                 fi
-            elif ! is_race_error "$CAPTURE_ERR"; then
+            elif ! is_race_failure "$CAPTURE_ERR"; then
                 record_failure "docker volume inspect failed for $name: ${CAPTURE_ERR:-unknown error}"
             fi
         fi
-    elif ! is_race_error "$CAPTURE_ERR"; then
+    elif ! is_race_failure "$CAPTURE_ERR"; then
         record_failure "docker volume ls failed for $name: ${CAPTURE_ERR:-unknown error}"
     fi
     return 1

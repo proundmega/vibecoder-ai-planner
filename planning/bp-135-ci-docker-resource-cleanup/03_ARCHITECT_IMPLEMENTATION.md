@@ -56,7 +56,9 @@
      networks with `vibecode.sandbox.managed=true`, CI images with
      `com.vibecode.ci=true` and an old build ID, and Compose projects matching
      the strict pattern with the network/volume anchor. A volume-only partial
-     project is aged from the volume's `CreatedAt`. Running containers/
+     project is aged from the volume's `CreatedAt` when Docker provides it;
+     older daemons that return `<no value>` leave it for manual review.
+     Running containers/
      networks/projects older than the grace period are hard-kill orphans and
      are removed. Docker stderr is never parsed as a resource ID. Old CI
      images lose their `:<build>` tag and any Compose
@@ -70,7 +72,9 @@
      exact shared volume names (`postgres_data`, `uploads_data`,
      `vibecode_repos`) are refused regardless of labels. Genuine Docker
      listing/removal failures are counted and make `--orphans` exit non-zero;
-     resource-level in-use/not-found races are tolerated with a warning.
+     resource-level in-use/not-found races are tolerated with a warning. The
+     classification strips warning lines first, so a warning cannot mask the
+     real error, and `compose down` uses the same stdout/stderr separation.
    - `--legacy-inventory` is read-only. It lists pre-label candidates from old
      `vibecode-*` Compose projects, old build-unique tags and the existing
      sandbox label without requiring the new labels. Every image carrying a
@@ -240,6 +244,7 @@ validating run; the explicit-host result remains `local-socket fallback`.
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanSandboxNetworksRemoveOldNetworks` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanComposeProjectsRemoveOldRunningProjects` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanComposeProjectsUseVolumeCreatedAt` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanComposeProjectsSkipVolumeWithoutCreatedAt` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanCiImagesRemoveDanglingImages` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanCiImagesSkipWhenTagInspectFails` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanCiImagesPreserveUnrelatedAliases` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
@@ -304,9 +309,10 @@ docker images --filter label=com.vibecode.ci.job="$VIBECODE_CI_JOB" \
 | 6 | external reviewer | Old CI images became dangling after the `:ci` alias moved and were never removed; running hard-kill resources were skipped; the scheduled job defaulted to destructive; legacy volume/dangling inventory was incomplete; Cypress images were not removed; matrix/test coverage was incomplete. | This revision removes image IDs when no `:ci` alias remains, treats old running resources as orphans, defaults the scheduled job to dry-run with an explicit destructive-enable flag, restricts legacy volume candidates and lists dangling images, adds `--rmi local` to the Cypress teardown, and adds the missing regression rows. | pending |
 | 7 | external reviewer | Post cleanup was build-scoped but not job-scoped; build-image removal deleted unrelated aliases; `--orphans` exited 0 on genuine Docker failures; a failed tag inspect could be read as "no `:ci` alias"; planning/runbook wording and the fake fixture still described stopped projects and did not assert `-a`. | This revision requires `--job`/`CI_JOB` for post cleanup, filters images and the project anchor by job plus build, adds a sanitized job slug to `COMPOSE_PROJECT_NAME`, removes only the `:<build>` tag in post cleanup (plus old Compose project tags in the scheduled GC) while preserving `:ci`/`:latest`, counts genuine Docker failures for a non-zero `--orphans` exit while tolerating in-use/not-found races, skips images when the tag inspect fails, and updates the docs, matrix and fixture. | pending |
 | 8 | external reviewer | The sanitized job slug was not collision-free; `CI_CURRENT_BUILD_ID` was documented as active but never set; Docker stderr was parsed as anchor output; `is_race_error` treated missing-file/configuration errors as races; compose mode allowed a missing build ID; docs/fixture had pattern, quoting, volume-only aging and negative-anchor gaps. | This revision adds `JOB_NAME.hashCode()` to the slug, documents the optional build guard and grace-period reality, captures stderr separately, narrows race patterns, requires `--build-id` for compose, passes the job through the shell environment, ages volume-only projects from `CreatedAt`, and adds collision, stderr, anchor-mismatch, volume-only and compose-failure tests. | pending |
+| 9 | external reviewer | Documented project patterns omitted the hash; the 32-bit hash was stronger than the "collision-free" wording; `compose_down` still merged streams; volume-only aging depends on `.CreatedAt`, which older daemons may omit. | This revision adds `<hash>` to every documented pattern, describes the guarantee as collision-resistant rather than collision-free, uses `capture` and warning-stripped race classification for `compose down`, and documents the older-daemon `<no value>` fallback. | pending |
 
 ## Results
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-13 | c948dc5 | `cd agent && mvn test` (514 tests, 5 skipped) + `SANDBOX_IT_BUILD=0 SANDBOX_IT_NETWORK=1 SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:ci bash scripts/sandbox-integration-test.sh` (5 tests, 0 skipped) + `mvn package -q -DskipTests` + `node planning/check-planning.js` + `docker compose ... config -q` + `bash -n` | Partial: local-socket variant implemented (post teardown, CI labels/tags, cleanup script and tests, scheduled cleanup pipeline, runbook). The real-Docker suite still passes. Post cleanup is now job-scoped with a collision-free job slug, the scheduled GC stays job-agnostic, and `--orphans` separates stderr, tolerates only resource-level races, and fails non-zero on genuine Docker errors. FR5 explicit-daemon gate, Jenkins smoke evidence and the one-time legacy cleanup remain pending. |
+| 2026-11-13 | c948dc5 | `cd agent && mvn test` (514 tests, 5 skipped) + `SANDBOX_IT_BUILD=0 SANDBOX_IT_NETWORK=1 SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:ci bash scripts/sandbox-integration-test.sh` (5 tests, 0 skipped) + `mvn package -q -DskipTests` + `node planning/check-planning.js` + `docker compose ... config -q` + `bash -n` | Partial: local-socket variant implemented (post teardown, CI labels/tags, cleanup script and tests, scheduled cleanup pipeline, runbook). The real-Docker suite still passes. Post cleanup is now job-scoped with a collision-resistant job slug (32-bit name hash), the scheduled GC stays job-agnostic, and `--orphans` separates stderr, tolerates only resource-level races, and fails non-zero on genuine Docker errors. FR5 explicit-daemon gate, Jenkins smoke evidence and the one-time legacy cleanup remain pending. |
