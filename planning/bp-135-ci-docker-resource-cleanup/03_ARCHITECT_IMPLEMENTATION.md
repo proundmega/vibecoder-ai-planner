@@ -59,8 +59,11 @@
      usable network `Created` (including `<no value>`) is aged from the
      volume's `CreatedAt`; older daemons that return `<no value>` for both
      leave it for manual review. Timestamps are normalized to the portable
-     `YYYY-MM-DD HH:MM:SS` form so BusyBox `date` agrees with GNU `date`.
-     Running containers/
+     `YYYY-MM-DD HH:MM:SS` form so BusyBox `date` agrees with GNU `date`:
+     numeric offsets are preserved, trailing zone abbreviations are removed,
+     and `T` is changed only as the RFC3339 date separator. An unparseable
+     timestamp returns age `-1` and is skipped even when the grace period is
+     `0`. Running containers/
      networks/projects older than the grace period are hard-kill orphans and
      are removed. Docker stderr is never parsed as a resource ID. Old CI
      images lose their `:<build>` tag and any Compose
@@ -243,10 +246,13 @@ validating run; the explicit-host result remains `local-socket fallback`.
 | FR2 | Script | `JenkinsDockerCleanupScriptTest` | `fr2BuildImageCleanupOnlyRemovesTheBuildTag` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR2 | Script | `JenkinsDockerCleanupScriptTest` | `fr2BuildImageRemovalSkipsWhenTagInspectFails` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanSandboxContainersRemoveOldRunningContainers` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanSandboxContainersParseNonUtcTimestamp` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanGcKeepsSharedCiAlias` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanSandboxNetworksRemoveOldNetworks` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanComposeProjectsRemoveOldRunningProjects` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanComposeProjectsUseVolumeCreatedAt` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanComposeProjectsUseRfc3339VolumeCreatedAt` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanComposeProjectsUseOffsetNetworkCreatedAt` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanComposeProjectsFallBackWhenNetworkCreatedIsEmpty` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanComposeProjectsSkipVolumeWithoutCreatedAt` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanCiImagesRemoveDanglingImages` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
@@ -272,6 +278,7 @@ validating run; the explicit-host result remains `local-socket fallback`.
 | NFR1 | Script | `JenkinsDockerCleanupScriptTest` | `nfr1ComposeDownFailureIsNotTreatedAsRace` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR1 | Static | `JenkinsfileCiCleanupTest` | `nfr1ScheduledCleanupDefaultsToDryRun` | `mvn -Dtest=JenkinsfileCiCleanupTest test` |
 | NFR2 | Script | `JenkinsDockerCleanupScriptTest` | `nfr2GraceAndOptionalBuildIdSkipCurrentResources` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| NFR2 | Script | `JenkinsDockerCleanupScriptTest` | `nfr2MalformedTimestampIsSkippedEvenWithZeroGrace` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR2 | Script | `JenkinsDockerCleanupScriptTest` | `fr2BuildImageCleanupIsJobScopedOnASharedDaemon` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR3 | Script | `JenkinsDockerCleanupScriptTest` | `nfr3FakeDockerCoversAllCleanupPaths` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | NFR4 | Script | `JenkinsDockerCleanupScriptTest` | `nfr4RetentionValuesComeFromEnvironment` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
@@ -316,6 +323,7 @@ docker images --filter label=com.vibecode.ci.job="$VIBECODE_CI_JOB" \
 | 9 | external reviewer | Documented project patterns omitted the hash; the 32-bit hash was stronger than the "collision-free" wording; `compose_down` still merged streams; volume-only aging depends on `.CreatedAt`, which older daemons may omit. | This revision adds `<hash>` to every documented pattern, describes the guarantee as collision-resistant rather than collision-free, uses `capture` and warning-stripped race classification for `compose down`, and documents the older-daemon `<no value>` fallback. | pending |
 | 10 | external reviewer | Warning stripping missed Docker Compose's `time="..." level=warning msg="..."` format; network `.Created` `<no value>` was treated as a timestamp instead of falling back to the volume. | This revision strips plain `WARNING:`, logrus `level=warning`/`WARN[` and applies the `<no value>` guard to networks as well as volumes, with tests using the real Compose warning format and the network fallback. | pending |
 | 11 | Jenkins pipeline | The suite inherited `VIBECODE_CI_JOB`/retention variables from the pipeline, and BusyBox `date` could not parse Docker's `CreatedAt`, so age-scoped tests and real cleanup skipped every resource. | This revision makes the test fixture hermetic, normalizes Docker CLI/RFC3339 timestamps to the portable `YYYY-MM-DD HH:MM:SS` form, and adds a BusyBox-style `date` fixture so the regression is exercised on every run. | pending |
+| 12 | external reviewer | Age parse failures returned 0, which selects a resource when grace is 0; the `T` replacement corrupted non-UTC abbreviations such as PST; RFC3339/offset timestamps lacked direct coverage. | This revision returns `-1` for unparseable timestamps and gates every age comparison on `age >= 0`, replaces `T` only when it is the date separator, preserves numeric offsets, strips trailing alphabetic zone abbreviations, and adds PST, malformed/zero-grace, RFC3339 `Z` and offset regression tests. | pending |
 
 ## Results
 

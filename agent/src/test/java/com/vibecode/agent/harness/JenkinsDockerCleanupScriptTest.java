@@ -247,6 +247,23 @@ class JenkinsDockerCleanupScriptTest {
     }
 
     @Test
+    void nfr2MalformedTimestampIsSkippedEvenWithZeroGrace() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
+            "FAKE_PS", "container1\tnot-a-timestamp",
+            "CI_CONTAINER_GRACE_HOURS", "0"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains(
+                "cannot determine a valid age for timestamp 'not-a-timestamp'"),
+            result.output);
+        assertFalse(result.output.contains("DRY-RUN: docker rm -f container1"),
+            result.output);
+    }
+
+    @Test
     void nfr4RetentionValuesComeFromEnvironment() throws Exception {
         Fixture fixture = fixture();
 
@@ -356,6 +373,19 @@ class JenkinsDockerCleanupScriptTest {
     }
 
     @Test
+    void fr3OrphanSandboxContainersParseNonUtcTimestamp() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
+            "FAKE_PS", "container1\t2020-01-01 00:00:00 -0700 PST"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertFalse(result.output.contains("cannot determine a valid age"), result.output);
+        assertTrue(result.output.contains("DRY-RUN: docker rm -f container1"), result.output);
+    }
+
+    @Test
     void fr3OrphanSandboxNetworksRemoveOldNetworks() throws Exception {
         Fixture fixture = fixture();
 
@@ -395,6 +425,42 @@ class JenkinsDockerCleanupScriptTest {
         ));
 
         assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains("DRY-RUN: docker compose ... -p vibecode-pr-7-12"),
+            result.output);
+    }
+
+    @Test
+    void fr3OrphanComposeProjectsUseRfc3339VolumeCreatedAt() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
+            "FAKE_COMPOSE_JSON",
+            "[{\"Name\":\"vibecode-pr-7-12\",\"Status\":\"running(1)\"}]",
+            "FAKE_NETWORK_EMPTY", "1",
+            "FAKE_PROJECT_VOLUME", "vibecode-pr-7-12_postgres_data",
+            "FAKE_VOLUME_CREATED", "2026-11-13T02:09:19Z",
+            "CI_BUILD_GRACE_HOURS", "0"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertFalse(result.output.contains("cannot determine a valid age"), result.output);
+        assertTrue(result.output.contains("DRY-RUN: docker compose ... -p vibecode-pr-7-12"),
+            result.output);
+    }
+
+    @Test
+    void fr3OrphanComposeProjectsUseOffsetNetworkCreatedAt() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
+            "FAKE_COMPOSE_JSON",
+            "[{\"Name\":\"vibecode-pr-7-12\",\"Status\":\"running(1)\"}]",
+            "FAKE_NETWORK_CREATED", "2020-11-13T02:09:19-07:00",
+            "CI_BUILD_GRACE_HOURS", "0"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertFalse(result.output.contains("cannot determine a valid age"), result.output);
         assertTrue(result.output.contains("DRY-RUN: docker compose ... -p vibecode-pr-7-12"),
             result.output);
     }
@@ -920,7 +986,7 @@ class JenkinsDockerCleanupScriptTest {
             #!/usr/bin/env bash
             for arg in "$@"; do
               case "$arg" in
-                *T*|*UTC*|*+0000*|*Z*)
+                *T*|*UTC*|*Z*)
                   echo "date: invalid date '$arg'" >&2
                   exit 1
                   ;;

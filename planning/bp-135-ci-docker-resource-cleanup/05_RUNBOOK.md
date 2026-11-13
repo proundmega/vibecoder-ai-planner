@@ -65,8 +65,10 @@ ID only when no tags remain. A failed tag inspect is skipped rather than
 assumed to be tagless. A project whose network `.Created` is missing or
 `<no value>` is aged from the volume's `.CreatedAt`; this is available on
 Docker 29, but an older daemon may return `<no value>` for both, in which case
-the GC skips the project with a warning and it must be reviewed manually. The
-GC always skips the shared `:ci` aliases and, if
+the GC skips the project with a warning and it must be reviewed manually.
+Timestamps are normalized for both BusyBox and GNU `date`; RFC3339 `Z`/offset
+forms are supported, and an unparseable timestamp is skipped even with a grace
+period of `0`. The GC always skips the shared `:ci` aliases and, if
 the optional `CI_CURRENT_BUILD_ID` guard is supplied, that build ID. No
 pipeline sets the guard; the grace periods are the primary concurrency
 protection. Image removal fails safely if Docker still reports the image in

@@ -416,20 +416,29 @@ clean_build_images() {
 
 # Docker CLI timestamps look like "2020-01-01 00:00:00.123 +0000 UTC",
 # volume timestamps are RFC3339, and BusyBox date accepts only
-# "YYYY-MM-DD HH:MM:SS". Normalize to the portable form.
+# "YYYY-MM-DD HH:MM:SS". Normalize to the portable form while keeping a
+# numeric offset so non-UTC timestamps are not silently shifted.
 normalize_timestamp() {
     local value="$1"
     value="${value%Z}"
-    value="${value% UTC}"
-    value="${value% [+-]0000}"
-    value="${value%[+-]0000}"
-    value="${value% [+-]00:00}"
-    value="${value%[+-]00:00}"
-    value="${value/T/ }"
+    # Drop a trailing alphabetic zone abbreviation (UTC, PST, ...) but keep
+    # the numeric offset; date can apply the offset portably.
+    case "$value" in
+        *" "[A-Za-z]*) value="${value% [A-Za-z]*}" ;;
+    esac
+    # Replace T only when it is the RFC3339 date separator. A T inside a
+    # timezone abbreviation such as PST must be left alone.
+    case "$value" in
+        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T*)
+            value="${value/T/ }"
+            ;;
+    esac
     value="${value%%.*}"
     printf '%s' "$value"
 }
 
+# -1 means the timestamp could not be parsed. Callers must skip on -1 even
+# when the configured grace period is 0.
 age_hours() {
     local created
     created="$(normalize_timestamp "$1")"
@@ -437,10 +446,22 @@ age_hours() {
     then="$(date -u -d "$created" +%s 2>/dev/null || echo 0)"
     now="$(date +%s)"
     [ "$then" -gt 0 ] || {
-        echo 0
+        echo -1
         return
     }
     echo $(( (now - then) / 3600 ))
+}
+
+is_old_enough() {
+    local created="$1"
+    local grace="$2"
+    local age
+    age="$(age_hours "$created")"
+    if [ "$age" -lt 0 ]; then
+        log "warning: cannot determine a valid age for timestamp '$created'; skipping"
+        return 1
+    fi
+    [ "$age" -ge "$grace" ]
 }
 
 orphan_sandbox_containers() {
@@ -458,7 +479,7 @@ orphan_sandbox_containers() {
         # A hard-killed Jenkins run leaves containers running. The grace
         # period is longer than the pipeline timeout, so an old running
         # sandbox is an orphan and is removed like a stopped one.
-        [ "$(age_hours "$created")" -ge "$CONTAINER_GRACE" ] || continue
+        is_old_enough "$created" "$CONTAINER_GRACE" || continue
         if is_true "$DRY_RUN"; then
             log "DRY-RUN: docker rm -f $id (sandbox container)"
             continue
@@ -501,7 +522,7 @@ orphan_sandbox_networks() {
         [ -n "$created" ] || continue
         # Containers are removed first; docker network rm still fails safely
         # if a younger container is attached.
-        [ "$(age_hours "$created")" -ge "$CONTAINER_GRACE" ] || continue
+        is_old_enough "$created" "$CONTAINER_GRACE" || continue
         if is_true "$DRY_RUN"; then
             log "DRY-RUN: docker network rm $id (sandbox network)"
             continue
@@ -558,7 +579,7 @@ orphan_ci_images() {
         fi
         [ -n "$build" ] || continue
         [ -n "$CURRENT_BUILD" ] && [ "$build" = "$CURRENT_BUILD" ] && continue
-        [ "$(age_hours "$created")" -ge "$IMAGE_GRACE" ] || continue
+        is_old_enough "$created" "$IMAGE_GRACE" || continue
         has_ci=false
         remaining=""
         for tag in $tags; do
@@ -666,7 +687,7 @@ orphan_compose_projects() {
             log "warning: cannot determine the creation time for $name; skipping"
             continue
         fi
-        [ "$(age_hours "$created")" -ge "$BUILD_GRACE" ] || continue
+        is_old_enough "$created" "$BUILD_GRACE" || continue
         if is_true "$DRY_RUN"; then
             log "DRY-RUN: docker compose ... -p $name down -v --rmi local --remove-orphans"
         else
