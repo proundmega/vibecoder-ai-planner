@@ -424,6 +424,24 @@ class JenkinsDockerCleanupScriptTest {
     }
 
     @Test
+    void fr3OrphanGcStaysJobAgnostic() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
+            "FAKE_IMAGES", "1",
+            "CI_JOB", "job-a",
+            "FAKE_MULTI_IMAGES", "img-a|job-a|8||2020-01-01 00:00:00 +0000 UTC"
+                + "\nimg-b|job-b|8||2020-01-01 00:00:00 +0000 UTC"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        String log = Files.readString(fixture.log);
+        assertTrue(result.output.contains("DRY-RUN: docker image rm img-a"), result.output);
+        assertTrue(result.output.contains("DRY-RUN: docker image rm img-b"), result.output);
+        assertFalse(log.contains("label=com.vibecode.ci.job="), log);
+    }
+
+    @Test
     void fr3OrphanCiImagesRemoveOldComposeProjectImages() throws Exception {
         Fixture fixture = fixture();
 

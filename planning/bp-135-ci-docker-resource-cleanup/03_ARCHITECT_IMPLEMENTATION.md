@@ -230,6 +230,7 @@ validating run; the explicit-host result remains `local-socket fallback`.
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanCiImagesSkipWhenTagInspectFails` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanCiImagesPreserveUnrelatedAliases` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanCiImagesRemoveOldComposeProjectImages` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
+| FR3 | Script | `JenkinsDockerCleanupScriptTest` | `fr3OrphanGcStaysJobAgnostic` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR4 | Script | `JenkinsDockerCleanupScriptTest` | `fr4RefusesTheLocalDevProjectAndUnrecognizedNames` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR4 | Script | `JenkinsDockerCleanupScriptTest` | `fr4DryRunDoesNotTearDownOrRemoveAnything` | `mvn -Dtest=JenkinsDockerCleanupScriptTest test` |
 | FR5 | Manual | `DockerSandboxRunnerIntegrationTest` | `fr5ExplicitDaemonRunsRealDockerSuite` | `cd agent && DOCKER_HOST="$CI_DOCKER_HOST" SANDBOX_CI_DOCKER_HOST_MODE=explicit SANDBOX_IT_BUILD=1 SANDBOX_IT_NETWORK=1 bash scripts/sandbox-integration-test.sh` |

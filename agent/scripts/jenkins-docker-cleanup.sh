@@ -150,6 +150,10 @@ done
 # daemon. The scheduled GC stays job-agnostic and does not require this.
 if [ "$MODE" = "compose" ] || [ "$MODE" = "build-images" ]; then
     [ -n "$JOB" ] || die "--job/CI_JOB is required for post-build cleanup"
+else
+    # --orphans and --legacy-inventory are job-agnostic even if a controller
+    # exports CI_JOB into the scheduled job's environment.
+    JOB=""
 fi
 
 export SANDBOX_CI_DOCKER_HOST_MODE=explicit
