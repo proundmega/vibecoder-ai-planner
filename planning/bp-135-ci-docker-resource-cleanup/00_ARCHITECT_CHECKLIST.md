@@ -6,8 +6,8 @@ priority: "P1"
 effort: "Medium"
 scope: "Infra"
 created: "2026-11-12"
-updated: "2026-11-12"
-pr: null
+updated: "2026-11-13"
+pr: 142
 branch: "feat/bp-135-ci-docker-cleanup"
 depends_on: []
 ---
@@ -109,6 +109,7 @@ daemon restart or Jenkins crash.
 | Implementation started | `feat/bp-135-ci-docker-cleanup`, PR #142; local-socket variant first; unit tests and planning check pass | ☑ |
 | Implementation completed | PR #142 head `f354846`; 521 unit tests pass locally; Jenkins PR-142 build #3 passes; reports now include the collision-resistant job slug, fail-closed age parsing and operationally safe cleanup | ☑ |
 | Verification results | `03` Results: local `mvn test` (521, 5 skipped), real-Docker sandbox suite (5, 0 skipped), package/planning/compose/shell checks, and Jenkins PR-142 build #3 | ☑ |
+| Legacy backlog cleanup | Manual legacy procedure removed `vibecode-pr-118-3` and `vibecode-pr-117-1` (10 containers, 2 networks, 6 volumes, 9 images); follow-up dry-run returned no resources. Local dev, Jenkins, proxy and buildkit untouched. | ☑ |
 
 ## Deferred register (canonical)
 
