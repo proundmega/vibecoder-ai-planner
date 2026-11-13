@@ -167,6 +167,10 @@ class JenkinsfileCiCleanupTest {
         assertTrue(text.contains("--orphans"), "scheduled job does not run orphans");
         assertTrue(text.contains("CI_DOCKER_HOST"));
         assertTrue(text.contains("CI_DOCKER_DAEMON_ID"));
+        assertTrue(text.matches("(?s).*string\\(name: 'CI_DOCKER_HOST', defaultValue: '[^']+'.*"),
+            "scheduled cleanup needs a non-empty CI_DOCKER_HOST default");
+        assertTrue(text.matches("(?s).*string\\(name: 'CI_DOCKER_DAEMON_ID', defaultValue: '[^']+'.*"),
+            "scheduled cleanup needs a non-empty CI_DOCKER_DAEMON_ID default");
         assertFalse(text.contains("--job"),
             "the scheduled GC must stay job-agnostic");
     }

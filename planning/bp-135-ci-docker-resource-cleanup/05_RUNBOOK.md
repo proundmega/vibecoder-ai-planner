@@ -35,13 +35,14 @@ job. Before the safety net exists, a Jenkins administrator must:
    expected daemon ID (D5).
 
 Scheduled builds use the Jenkinsfile parameter defaults, not the values from
-the last manual run. Set non-empty `CI_DOCKER_HOST` and `CI_DOCKER_DAEMON_ID`
-defaults for the scheduled job (for example in a deployment-specific wrapper or
-a Jenkins global environment consumed by the job); otherwise the cron build
-stops with `CI_DOCKER_HOST is required`. To make the cron destructive, change
-`DRY_RUN` to `false` and `ENABLE_DESTRUCTIVE_CLEANUP` to `true` in those
-deployment-specific defaults after the dry-run review. Keep the shared upstream
-defaults dry-run.
+the last manual run. This repository's local Jenkins defaults are
+`CI_DOCKER_HOST=tcp://docker-socket-proxy:2375` and the daemon ID
+`8e9f6b90-dc42-4bd5-a209-ee8aa81501e2`, so the cron starts successfully. The
+cron remains read-only because `DRY_RUN=true` and
+`ENABLE_DESTRUCTIVE_CLEANUP=false`; a manual destructive run does not change
+the scheduled defaults. To enable scheduled deletion, change both defaults
+after the dry-run review. For another daemon, override both values or use a
+deployment-specific job.
 
 Before provisioning the job or relying on the schedule, run the daemon
 compatibility gate in `03`. The cron is active as soon as the job is

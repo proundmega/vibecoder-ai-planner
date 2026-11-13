@@ -11,9 +11,10 @@ pipeline {
             description: 'Report old resources without deleting anything')
         booleanParam(name: 'ENABLE_DESTRUCTIVE_CLEANUP', defaultValue: false,
             description: 'Required with DRY_RUN=false after the dry-run review')
-        string(name: 'CI_DOCKER_HOST', defaultValue: '',
+        // Local Jenkins defaults. Change these for another deployment.
+        string(name: 'CI_DOCKER_HOST', defaultValue: 'tcp://docker-socket-proxy:2375',
             description: 'Dedicated Docker daemon for this cleanup host')
-        string(name: 'CI_DOCKER_DAEMON_ID', defaultValue: '',
+        string(name: 'CI_DOCKER_DAEMON_ID', defaultValue: '8e9f6b90-dc42-4bd5-a209-ee8aa81501e2',
             description: 'Expected output of docker info --format {{.ID}}')
         string(name: 'CI_IMAGE_GRACE_HOURS', defaultValue: '24',
             description: 'Minimum age of a labelled CI image')

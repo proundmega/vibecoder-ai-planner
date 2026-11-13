@@ -138,9 +138,12 @@
    `agent { label 'vibecode-ci-docker' }`, a six-hour cron trigger and
    parameters for `DRY_RUN`, `CI_DOCKER_HOST`, `CI_DOCKER_DAEMON_ID` and the
    grace periods. The job defaults to `DRY_RUN=true`; destructive cleanup also
-   requires `ENABLE_DESTRUCTIVE_CLEANUP=true`. The cron definition is only
-   active after an administrator provisions the Jenkins job. — verify:
-   `JenkinsfileCiCleanupTest` plus the runbook procedure.
+   requires `ENABLE_DESTRUCTIVE_CLEANUP=true`. This repository's local Jenkins
+   defaults are `CI_DOCKER_HOST=tcp://docker-socket-proxy:2375` and daemon ID
+   `8e9f6b90-dc42-4bd5-a209-ee8aa81501e2`, so the cron has explicit values and
+   remains dry-run until the booleans are intentionally changed. The cron
+   definition is only active after an administrator provisions the Jenkins job.
+   — verify: `JenkinsfileCiCleanupTest` plus the runbook procedure.
 
 6. **Guard rails** — no broad prune, no name-prefix-only filters, no shared
    volume removal, no build selected by the optional
