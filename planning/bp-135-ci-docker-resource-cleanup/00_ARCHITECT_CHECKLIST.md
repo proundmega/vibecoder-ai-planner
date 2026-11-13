@@ -104,6 +104,7 @@ daemon restart or Jenkins crash.
 | D13 helper available | PR #140 merged at `02ffc0a`; `agent/scripts/sandbox-ci-env.sh` is on master | ☑ |
 | Plan merged | PR #141, merge `7867a41` | ☑ |
 | Jenkins PR check | PR-142 build #3, `continuous-integration/jenkins/pr-head` pass; full pipeline including the real-Docker sandbox suite | ☑ |
+| Jenkins smoke build | PR-142 build #4 with `CI_SMOKE_FAIL=true` (expected failure): teardown removed the build project, volumes, Compose images and build tags; shared `:ci` aliases kept; `cleanWs()` followed | ☑ |
 | Implementation started | `feat/bp-135-ci-docker-cleanup`, PR #142; local-socket variant first; unit tests and planning check pass | ☑ |
 | Implementation completed | PR #142 head `f354846`; 521 unit tests pass locally; Jenkins PR-142 build #3 passes; reports now include the collision-resistant job slug, fail-closed age parsing and operationally safe cleanup | ☑ |
 | Verification results | `03` Results: local `mvn test` (521, 5 skipped), real-Docker sandbox suite (5, 0 skipped), package/planning/compose/shell checks, and Jenkins PR-142 build #3 | ☑ |
