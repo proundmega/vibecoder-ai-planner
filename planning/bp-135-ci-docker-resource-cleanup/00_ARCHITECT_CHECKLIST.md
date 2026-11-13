@@ -100,12 +100,13 @@ daemon restart or Jenkins crash.
 | Plan review round 11 | Jenkins pipeline environment leakage in tests and BusyBox timestamp parsing fixed; re-review pending (`03` Review record) | ☑ |
 | Plan review round 12 | Fail-closed age parsing, non-UTC T handling and RFC3339/offset coverage addressed; re-review pending (`03` Review record) | ☑ |
 | Plan review round 13 | Bare zone abbreviation without an offset now fails closed; re-review pending (`03` Review record) | ☑ |
-| FR5 daemon gate | pending — run on Jenkins against the explicit `DOCKER_HOST` before daemon-mode implementation; record pass/fallback/blocked in `03` Results. If fallback is selected, also record the existing local-socket suite result as the validating run | ☐ |
+| FR5 daemon gate | `local-socket fallback` validated by Jenkins PR-142 build #3 (`continuous-integration/jenkins/pr-head` pass, 2026-11-13); the real-Docker sandbox suite ran on the helper-selected local socket. Explicit-all-stages variant remains deferred; `03` Results records the run | ☑ |
 | D13 helper available | PR #140 merged at `02ffc0a`; `agent/scripts/sandbox-ci-env.sh` is on master | ☑ |
 | Plan merged | PR #141, merge `7867a41` | ☑ |
+| Jenkins PR check | PR-142 build #3, `continuous-integration/jenkins/pr-head` pass; full pipeline including the real-Docker sandbox suite | ☑ |
 | Implementation started | `feat/bp-135-ci-docker-cleanup`, PR #142; local-socket variant first; unit tests and planning check pass | ☑ |
-| Implementation completed | pending | ☐ |
-| Verification results | pending (`03` Results) | ☐ |
+| Implementation completed | PR #142 head `f354846`; 521 unit tests pass locally; Jenkins PR-142 build #3 passes; reports now include the collision-resistant job slug, fail-closed age parsing and operationally safe cleanup | ☑ |
+| Verification results | `03` Results: local `mvn test` (521, 5 skipped), real-Docker sandbox suite (5, 0 skipped), package/planning/compose/shell checks, and Jenkins PR-142 build #3 | ☑ |
 
 ## Deferred register (canonical)
 
@@ -127,7 +128,7 @@ daemon restart or Jenkins crash.
 | 4 | Volume policy for the validated build project? | A: `down -v` for the validated build-scoped project, refuse local-dev/external volumes by positive selector; B: never `-v`, add a separate volume GC | A — build-scoped volumes are already disposable (the Cypress stage uses `-v`); the local-dev project is explicitly refused | A — accepted 2026-11-12 |
 | 5 | Daemon selection for the scheduled job? | A: one dedicated node + explicit host/daemon ID; B: iterate all Docker hosts | A — deterministic and safe; multi-host fan-out is D5 | A — accepted 2026-11-12 |
 | 6 | What about resources created before the new labels/tags? | A: one-time manual inventory/cleanup procedure in this ticket (read-only inventory, dry-run, explicit confirmation); B: defer the existing backlog | A — the new GC cannot see the old backlog, and leaving it in place would not fix the problem that motivated the ticket | A — accepted 2026-11-12 |
-| 7 | What if the explicit `DOCKER_HOST` cannot run the real-Docker sandbox suite? | A: keep build/test stages on the local socket and use explicit mode only for cleanup; B: force explicit mode and accept a broken suite | A — the pre-implementation gate decides; if fallback is selected, record the existing local-socket suite result as the validating run | A — conditional, gate pending |
+| 7 | What if the explicit `DOCKER_HOST` cannot run the real-Docker sandbox suite? | A: keep build/test stages on the local socket and use explicit mode only for cleanup; B: force explicit mode and accept a broken suite | A — the pre-implementation gate decides; if fallback is selected, record the existing local-socket suite result as the validating run | A — local-socket fallback validated on Jenkins PR-142 build #3; explicit-all-stages variant deferred |
 
 ## Completion gate
 

@@ -197,13 +197,13 @@ In both cases, capture the daemon actually used by the Integration Tests stage
 into Jenkins pipeline variables as described in step 4. Do not proceed with the
 explicit-all-stages variant until this gate is green.
 
-**Operational status: pending.** This planning workspace cannot reach the
-Jenkins explicit daemon (`docker-socket-proxy` does not resolve here), so the
-gate must be run on Jenkins against the real `DOCKER_HOST` before any
-daemon-mode implementation change. Record `pass`, `local-socket fallback` or
-`blocked` in `03` Results. If `local-socket fallback` is selected, also record
-the existing local-socket `DockerSandboxRunnerIntegrationTest` result as the
-validating run; the explicit-host result remains `local-socket fallback`.
+**Operational status: `local-socket fallback` (validated).** Jenkins PR-142
+build #3 (`continuous-integration/jenkins/pr-head`, 2026-11-13) passed the full
+pipeline, including the real-Docker `DockerSandboxRunnerIntegrationTest` suite
+on the helper-selected local socket (`SANDBOX_IT_NETWORK=1`). No build/test
+stage was moved to the explicit daemon. The explicit-all-stages variant remains
+deferred until a later explicit-host gate; the scheduled job still requires its
+own explicit `CI_DOCKER_HOST`/`CI_DOCKER_DAEMON_ID`.
 
 ## Per-file changes
 
@@ -332,4 +332,6 @@ docker images --filter label=com.vibecode.ci.job="$VIBECODE_CI_JOB" \
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-13 | 82ca64a | `cd agent && mvn test` (521 tests, 5 skipped) + `SANDBOX_IT_BUILD=0 SANDBOX_IT_NETWORK=1 SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:ci bash scripts/sandbox-integration-test.sh` (5 tests, 0 skipped) + `mvn package -q -DskipTests` + `node planning/check-planning.js` + `docker compose ... config -q` + `bash -n` | Partial: local-socket variant implemented (post teardown, CI labels/tags, cleanup script and tests, scheduled cleanup pipeline, runbook). The real-Docker suite still passes. Post cleanup is now job-scoped with a collision-resistant job slug (32-bit name hash), the scheduled GC stays job-agnostic, and `--orphans` separates stderr, tolerates only resource-level races, and fails non-zero on genuine Docker errors. FR5 explicit-daemon gate, Jenkins smoke evidence and the one-time legacy cleanup remain pending. |
+| 2026-11-13 | 82ca64a | `cd agent && mvn test` (521 tests, 5 skipped) + `SANDBOX_IT_BUILD=0 SANDBOX_IT_NETWORK=1 SANDBOX_IT_IMAGE=vibecode-agent-sandbox:ci SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:ci bash scripts/sandbox-integration-test.sh` (5 tests, 0 skipped) + `mvn package -q -DskipTests` + `node planning/check-planning.js` + `docker compose ... config -q` + `bash -n` | Partial: local-socket variant implemented (post teardown, CI labels/tags, cleanup script and tests, scheduled cleanup pipeline, runbook). The real-Docker suite still passes. Post cleanup is now job-scoped with a collision-resistant job slug (32-bit name hash), the scheduled GC stays job-agnostic, and `--orphans` separates stderr, tolerates only resource-level races, and fails non-zero on genuine Docker errors. FR5 selected `local-socket fallback`, validated by Jenkins PR-142 build #3; the explicit-all-stages variant remains deferred. Jenkins smoke evidence remains pending; the one-time legacy inventory is recorded below with no validated candidates. |
+| 2026-11-13 | f354846 | Jenkins PR-142 build #3 (`continuous-integration/jenkins/pr-head`) | Pass. Full pipeline including the real-Docker sandbox suite on the helper-selected local socket; FR5 selected `local-socket fallback`; explicit-all-stages variant deferred. |
+| 2026-11-13 | f354846 | Local legacy inventory (`--legacy-inventory` plus read-only Docker listings) on `unix:///var/run/docker.sock` | No validated legacy candidates. Only the local-dev stack and ambiguous old `:latest` images (`vibecode-bp119-review-*`, `bp124-cypress`) were present; no deletion was performed. Shared `:ci` images, local-dev volumes and anonymous volumes were left untouched. |
