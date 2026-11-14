@@ -353,7 +353,7 @@ resources.
 `CI_BUILD_GRACE_HOURS` (6) control retention. Cleanup never runs a broad
 `docker system prune`, never removes the local-dev `vibecoder-ai-planner`
 project, shared volumes or the shared `:ci` image aliases. See
-`planning/bp-135-ci-docker-resource-cleanup/05_RUNBOOK.md` for provisioning,
+`planning/DONE/bp-135-ci-docker-resource-cleanup/05_RUNBOOK.md` for provisioning,
 the one-time legacy inventory and rollback.
 
 ## Planning

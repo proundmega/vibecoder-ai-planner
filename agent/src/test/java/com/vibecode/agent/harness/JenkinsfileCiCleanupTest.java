@@ -125,7 +125,7 @@ class JenkinsfileCiCleanupTest {
     @Test
     void nfr4RunbookDocumentsTheSameDefaults() throws IOException {
         String runbook = Files.readString(
-            Path.of("../planning/bp-135-ci-docker-resource-cleanup/05_RUNBOOK.md")
+            Path.of("../planning/DONE/bp-135-ci-docker-resource-cleanup/05_RUNBOOK.md")
                 .toAbsolutePath().normalize(), StandardCharsets.UTF_8);
         assertTrue(runbook.contains("CI_IMAGE_GRACE_HOURS"));
         assertTrue(runbook.contains("CI_CONTAINER_GRACE_HOURS"));

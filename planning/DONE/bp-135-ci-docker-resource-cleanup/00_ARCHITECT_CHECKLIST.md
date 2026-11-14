@@ -1,12 +1,12 @@
 ---
 id: "bp-135"
 title: "Clean up Docker resources left by failed Jenkins runs"
-status: in_progress
+status: done
 priority: "P1"
 effort: "Medium"
 scope: "Infra"
 created: "2026-11-12"
-updated: "2026-11-13"
+updated: "2026-11-14"
 pr: 142
 branch: "feat/bp-135-ci-docker-cleanup"
 depends_on: []
@@ -105,9 +105,10 @@ daemon restart or Jenkins crash.
 | Plan merged | PR #141, merge `7867a41` | ☑ |
 | Jenkins PR check | PR-142 build #3, `continuous-integration/jenkins/pr-head` pass; full pipeline including the real-Docker sandbox suite | ☑ |
 | Jenkins smoke build | PR-142 build #4 with `CI_SMOKE_FAIL=true` (expected failure): teardown removed the build project, volumes, Compose images and build tags; shared `:ci` aliases kept; `cleanWs()` followed | ☑ |
-| Scheduled cleanup job | Created from the feature branch and run manually on the built-in node labeled `vibecode-ci-docker`; dry run listed four dangling old CI images, destructive run removed them, and both shared `:ci` aliases were kept. Local host/ID defaults are committed so the cron can run; it remains dry-run until the booleans are changed. Switch SCM to `master` after merge. | ☑ |
+| Scheduled cleanup job | Created from the feature branch and run manually on the built-in node labeled `vibecode-ci-docker`; dry run listed four dangling old CI images, destructive run removed them, and both shared `:ci` aliases were kept. Local host/ID defaults are committed so the cron can run; it remains dry-run until the booleans are changed. The job SCM specifier still tracks `*/feat/bp-135-ci-docker-cleanup`; switching it to `*/master` is the remaining rollout step. | ☑ |
 | Implementation started | `feat/bp-135-ci-docker-cleanup`, PR #142; local-socket variant first; unit tests and planning check pass | ☑ |
 | Implementation completed | PR #142 head `f354846`; 521 unit tests pass locally; Jenkins PR-142 build #3 passes; reports now include the collision-resistant job slug, fail-closed age parsing and operationally safe cleanup | ☑ |
+| Implementation merged | PR #142 into `master`, merge commit `2aba699` (2026-11-14) | ☑ |
 | Verification results | `03` Results: local `mvn test` (521, 5 skipped), real-Docker sandbox suite (5, 0 skipped), package/planning/compose/shell checks, and Jenkins PR-142 build #3 | ☑ |
 | Legacy backlog cleanup | Manual legacy procedure removed `vibecode-pr-118-3` and `vibecode-pr-117-1` (10 containers, 2 networks, 6 volumes, 9 images); follow-up dry-run returned no resources. Local dev, Jenkins, proxy and buildkit untouched. | ☑ |
 
@@ -135,13 +136,13 @@ daemon restart or Jenkins crash.
 
 ## Completion gate
 
-- [ ] Every requirement is met
-- [ ] `03` Results has a dated, non-placeholder row
-- [ ] Tests carry the requirement ID and there are no non-waived `missing`/`partial` gaps
-- [ ] `status` is `done` only after the implementation PR is merged and `pr` is set
-- [ ] `PENDING.txt` label matches this file
-- [ ] Review record in `03` shows blocking findings resolved
-- [ ] Deferred register reflects what was actually left out
+- [x] Every requirement is met
+- [x] `03` Results has a dated, non-placeholder row
+- [x] Tests carry the requirement ID and there are no non-waived `missing`/`partial` gaps
+- [x] `status` is `done` only after the implementation PR is merged and `pr` is set
+- [x] `PENDING.txt` label matches this file
+- [x] Review record in `03` shows blocking findings resolved
+- [x] Deferred register reflects what was actually left out
 
 ## Notes
 
@@ -152,7 +153,9 @@ cleanup is the primary fix; the scheduled job is the safety net.
 
 Creating the `vibecode-ci-docker-cleanup` Jenkins job from
 `Jenkinsfile.cleanup`, with its cron trigger, is a rollout prerequisite. Adding
-the file alone does not schedule anything.
+the file alone does not schedule anything. The job was provisioned from the
+feature branch; after the merge at `2aba699`, the operator switches its SCM
+specifier from `*/feat/bp-135-ci-docker-cleanup` to `*/master`.
 
 The current top-level `post { success { ... } }` cleanup is effectively dead:
 `post { always { cleanWs() } }` runs first and removes the Compose files. The

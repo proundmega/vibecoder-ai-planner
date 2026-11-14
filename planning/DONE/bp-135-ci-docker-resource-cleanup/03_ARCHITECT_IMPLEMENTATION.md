@@ -224,7 +224,7 @@ own explicit `CI_DOCKER_HOST`/`CI_DOCKER_DAEMON_ID`.
 | `agent/src/test/java/com/vibecode/agent/harness/JenkinsfileCiCleanupTest.java` | CREATE | Static assertions for post ordering, `cleanWs()` placement, pipeline daemon variables (no workspace file), daemon gate, labels, smoke hook and scheduled-job wiring. |
 | `agent/src/test/java/com/vibecode/agent/harness/SandboxIntegrationScriptTest.java` | MODIFY | Assert the CI labels and build-unique tags are passed. |
 | `agent/src/test/java/com/vibecode/agent/harness/SandboxCiEnvScriptTest.java` | MODIFY | Cover `SANDBOX_CI_DOCKER_HOST_MODE=explicit`. |
-| `planning/bp-135-ci-docker-resource-cleanup/05_RUNBOOK.md` | CREATE | Provisioning, retention defaults, dry-run, inspect, daemon compatibility, legacy backlog procedure with shared-`:ci` protection, recovery and rollback. |
+| `05_RUNBOOK.md` | CREATE | Provisioning, retention defaults, dry-run, inspect, daemon compatibility, legacy backlog procedure with shared-`:ci` protection, recovery and rollback. |
 | `AGENTS.md`, `README.md` | MODIFY | Document the cleanup job, retention env vars, dedicated node and the no-broad-prune rule. |
 | `PENDING.txt` | MODIFY | Keep the `bp-135` row and label aligned with this suite. |
 
@@ -343,3 +343,4 @@ docker images --filter label=com.vibecode.ci.job="$VIBECODE_CI_JOB" \
 | 2026-11-13 | 2454c01 | Legacy cleanup on `server2` (manual) | Removed `vibecode-pr-118-3` (5 containers, network, 3 volumes, 5 images) and `vibecode-pr-117-1` (5 containers, network, 3 volumes, 4 images). Follow-up dry-run returned no resources for either project; local dev, Jenkins, the shared proxy and buildkit were untouched. |
 | 2026-11-13 | 8e64a8a | Scheduled cleanup job manual dry run (feature branch, built-in node labeled `vibecode-ci-docker`) | SUCCESS. Daemon ID matched `8e9f6b90-dc42-4bd5-a209-ee8aa81501e2`; listed four dangling old CI images with no `:ci` alias and kept the shared `vibecode-sandbox-proxy:ci` and `vibecode-agent-sandbox:ci` aliases. No mutation performed. |
 | 2026-11-13 | 749ea77 | Scheduled cleanup job manual destructive run (feature branch, built-in node labeled `vibecode-ci-docker`) | SUCCESS. Removed four dangling old CI images with no `:ci` alias; kept the shared `vibecode-sandbox-proxy:ci` and `vibecode-agent-sandbox:ci` aliases. No projects, containers, networks or volumes were selected. |
+| 2026-11-14 | 2aba699 | PR #142 merged into `master`; closeout verification (`cd agent && mvn test`, `node planning/check-planning.js`, `git diff --check`) | Merge complete and the suite moved to `planning/DONE/`. The scheduled job SCM specifier is switched from the feature branch to `*/master` by the operator; the committed host/ID defaults keep the cron valid on either branch. |

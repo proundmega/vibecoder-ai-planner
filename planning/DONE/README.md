@@ -40,3 +40,8 @@
 - **PR**: #123, #124
 - **Date**: 2026-11-06
 - **Description**: Regenerated the frontend client and corrected the User/project-assignee contracts, removed remaining BIGSERIAL-as-UUID docs, filtered soft-deleted users from both admin lists, and scoped ticket writes to project membership.
+
+## bp-135: CI Docker Resource Cleanup
+- **PR**: #142
+- **Date**: 2026-11-14
+- **Description**: Scoped CI Docker cleanup: build-scoped teardown before `cleanWs()`, CI labels/build tags, a scheduled positively labelled and age-scoped GC with dry-run defaults, and a one-time manual legacy cleanup.
