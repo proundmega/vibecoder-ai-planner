@@ -47,6 +47,8 @@ final class SandboxBashBridge implements AutoCloseable {
     private final SandboxHandle handle;
     private final List<Path> workspaceAliases;
     private final Duration maxTimeout;
+    private final long cacheTtlMillis;
+    private final long cacheWaitGraceMillis;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String token = randomHex(32);
 
@@ -70,6 +72,17 @@ final class SandboxBashBridge implements AutoCloseable {
         Path supervisorWorkspace,
         Duration maxTimeout
     ) {
+        this(runner, handle, supervisorWorkspace, maxTimeout, CACHE_TTL_MILLIS, 5_000L);
+    }
+
+    SandboxBashBridge(
+        SandboxRunner runner,
+        SandboxHandle handle,
+        Path supervisorWorkspace,
+        Duration maxTimeout,
+        long cacheTtlMillis,
+        long cacheWaitGraceMillis
+    ) {
         if (runner == null) {
             throw new IllegalArgumentException("Sandbox runner is required");
         }
@@ -88,6 +101,8 @@ final class SandboxBashBridge implements AutoCloseable {
         this.maxTimeout = maxTimeout == null || maxTimeout.isNegative() || maxTimeout.isZero()
             ? SandboxConfig.DEFAULT_EXEC_TIMEOUT
             : maxTimeout;
+        this.cacheTtlMillis = Math.max(1L, cacheTtlMillis);
+        this.cacheWaitGraceMillis = Math.max(0L, cacheWaitGraceMillis);
     }
 
     synchronized void start() throws IOException {
@@ -231,7 +246,7 @@ final class SandboxBashBridge implements AutoCloseable {
             try {
                 CachedResponse response = execute(rewritten, cwd, timeout);
                 if (response.status == 200) {
-                    long expiresAt = System.currentTimeMillis() + CACHE_TTL_MILLIS;
+                    long expiresAt = System.currentTimeMillis() + cacheTtlMillis;
                     synchronized (cacheLock) {
                         completed.put(requestId, new Completed(fingerprint, response, expiresAt));
                     }
@@ -282,7 +297,7 @@ final class SandboxBashBridge implements AutoCloseable {
         throws IOException {
         try {
             CachedResponse response = flight.future.get(
-                timeout.toMillis() + 5_000L, TimeUnit.MILLISECONDS);
+                timeout.toMillis() + cacheWaitGraceMillis, TimeUnit.MILLISECONDS);
             send(exchange, response);
         } catch (TimeoutException e) {
             send(exchange, 504, Map.of("error", "duplicate request is still running"));
