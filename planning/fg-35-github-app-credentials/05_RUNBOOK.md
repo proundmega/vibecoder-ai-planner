@@ -53,8 +53,9 @@ curl -X PUT "$BACKEND/api/v1/github/$PROJECT_ID/installation" \
 ```
 
 `repoAllowlist` accepts `owner/repo` or a bare repo name. An empty allowlist
-permits only the project's connected repo. Changing the mapping revokes the
-project's cached installation tokens, so rotate or disable first when
+permits only the project's connected repo. Validate the installation id before
+sending the PUT: changing the mapping revokes the project's cached installation
+tokens, so a typo interrupts active builds. Rotate or disable first when
 responding to a suspected compromise. Check the mapping:
 
 ```bash
@@ -149,6 +150,8 @@ local env token.
 | `GITHUB_ACCESS_DISABLED` | Project access was disabled. | Re-upsert the mapping. |
 | `GITHUB_REPO_NOT_ALLOWED` | Connected repo is outside the allowlist. | Fix `repoAllowlist`. |
 | `GITHUB_REPO_SCOPE_MISMATCH` | Request named a different repo. | Omit `repo` or use the connected repo. |
+| `GITHUB_TOKEN_SCOPE_MISMATCH` | GitHub minted a token for a different repo than the connected one. | Check the installation mapping; the token is revoked automatically. |
+| `GITHUB_RATE_LIMITED` | GitHub rate-limited the token request. | Retry after the reset window. |
 | `GITHUB_INSTALLATION_REJECTED` | GitHub rejected the App JWT/installation. | Check App id, key, installation status and permissions. |
 | `GITHUB_TOKEN_MINT_FAILED` | GitHub 5xx/timeout or no token in the response. | Retry; check backend egress. |
 | `PAT_FALLBACK_DISABLED` | `pat` mode without `ALLOW_PAT=true`. | Set the flag only for local development. |

@@ -102,6 +102,30 @@ class GitHubService {
   }
 
   /**
+   * Run a backend GitHub operation with one retry on a 401. App mode drops the
+   * cached token and mints a fresh one; PAT mode simply rethrows.
+   */
+  async _withProvider(projectId, operation) {
+    let provider = await this._createProvider(projectId);
+    try {
+      return await operation(provider);
+    } catch (error) {
+      if (GitHubAppAuthService.getAuthMode() !== 'app' || !this._isAuthError(error)) {
+        throw error;
+      }
+      GitHubAppAuthService.clearCacheForProject(projectId);
+      provider = await this._createProvider(projectId);
+      return operation(provider);
+    }
+  }
+
+  _isAuthError(error) {
+    const message = String(error && error.message ? error.message : error);
+    return /authentication failed|bad credentials|invalid or expired token|\b401\b/i
+      .test(message);
+  }
+
+  /**
    * Build a GitHub provider for backend-initiated operations. App mode mints a
    * repo-scoped installation token; PAT mode requires the explicit fallback
    * flag and uses the stored PAT.
@@ -144,8 +168,10 @@ class GitHubService {
       throw new ValidationError('Ticket does not belong to this project');
     }
 
-    const provider = await this._createProvider(projectId);
-    const branchName = await provider.createBranch(repo, ticket.id, ticket.title);
+    const branchName = await this._withProvider(
+      projectId,
+      (provider) => provider.createBranch(repo, ticket.id, ticket.title)
+    );
 
     
     await pool.query(
@@ -169,9 +195,12 @@ class GitHubService {
       throw new ValidationError('No branch created for this ticket yet');
     }
 
-    const provider = await this._createProvider(projectId);
-    const pr = await provider.createPR(
-      repo, ticket.id, ticket.title, ticket.branchName, description || ticket.description
+    const pr = await this._withProvider(
+      projectId,
+      (provider) => provider.createPR(
+        repo, ticket.id, ticket.title, ticket.branchName,
+        description || ticket.description
+      )
     );
 
     
@@ -191,9 +220,11 @@ class GitHubService {
     if (!ticket) throw new NotFoundError('Ticket not found');
     if (!ticket.branchName) return { success: true, message: 'No branch to delete' };
 
-    const provider = await this._createProvider(projectId);
     try {
-      await provider.deleteBranch(repo, ticket.branchName);
+      await this._withProvider(
+        projectId,
+        (provider) => provider.deleteBranch(repo, ticket.branchName)
+      );
     } catch (error) {
       logger.warn(`Failed to delete branch ${ticket.branchName}:`, error.message);
     }
@@ -211,16 +242,14 @@ class GitHubService {
     const repo = await this.getProjectRepo(projectId);
     if (!repo) throw new ValidationError('No repository connected to this project');
 
-    const provider = await this._createProvider(projectId);
-    return provider.listBranches(repo);
+    return this._withProvider(projectId, (provider) => provider.listBranches(repo));
   }
 
   async listTicketPRs(projectId) {
     const repo = await this.getProjectRepo(projectId);
     if (!repo) throw new ValidationError('No repository connected to this project');
 
-    const provider = await this._createProvider(projectId);
-    return provider.listPRs(repo);
+    return this._withProvider(projectId, (provider) => provider.listPRs(repo));
   }
 
   async getPRDiff(projectId, ticketId) {
@@ -232,8 +261,10 @@ class GitHubService {
     if (!ticket.prUrl) throw new ValidationError('No PR linked to this ticket');
 
     const prNumber = this._extractPRNumber(ticket.prUrl);
-    const provider = await this._createProvider(projectId);
-    return provider.getPRDiff(repo, prNumber);
+    return this._withProvider(
+      projectId,
+      (provider) => provider.getPRDiff(repo, prNumber)
+    );
   }
 
   _extractPRNumber(prUrl) {

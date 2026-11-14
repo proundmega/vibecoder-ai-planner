@@ -58,14 +58,14 @@ public class AgentApp {
         this.githubTokenProvider = createGitHubTokenProvider();
         this.githubAccessToken = fetchGitHubToken(githubTokenProvider);
         this.gitHubService = new GitHubService(
-            githubTokenProvider::get, config.getRepoOwner(), config.getRepoName());
+            githubTokenProvider, config.getRepoOwner(), config.getRepoName());
 
         HarnessConfig harnessConfig = config.getHarnessConfig();
         if (harnessConfig.isEnabled()) {
             harnessConfig.validate();
             this.ticketWorker = new HarnessTicketProcessor(
                 config, apiService, providerSettings, gitHubService,
-                githubTokenProvider::get, githubAccessToken, harnessConfig);
+                githubTokenProvider, githubAccessToken, harnessConfig);
             log.info("Harness mode: opencode (binary={}, model={})",
                 harnessConfig.binary(),
                 harnessConfig.modelOverride() != null
@@ -74,7 +74,7 @@ public class AgentApp {
         } else {
             this.ticketWorker = new TicketProcessor(
                 config, apiService, aiProvider, gitHubService,
-                githubTokenProvider::get);
+                githubTokenProvider);
             log.info("Harness mode: legacy");
         }
 

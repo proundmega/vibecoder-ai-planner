@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -337,6 +338,114 @@ class WorkspaceManagerTest {
         Path askpass = Path.of(Files.readString(askpassPathFile));
         assertFalse(Files.exists(askpass.getParent()),
             "the token-bearing askpass directory was not removed");
+    }
+
+    @Test
+    void cloneRefreshesAndRetriesAfterAuthenticationFailure() throws Exception {
+        assumePosix();
+        Path bin = Files.createDirectories(tempDir.resolve("fake-auth-bin"));
+        Path git = bin.resolve("git");
+        Path failedOnce = tempDir.resolve("clone-auth-failed-once");
+        Path capturedAskpass = tempDir.resolve("clone-refreshed-askpass.sh");
+        String script = "#!/bin/sh\n"
+            + "while [ $# -gt 0 ] && [ \"$1\" != \"clone\" ] && [ \"$1\" != \"rev-parse\" ]; do shift; done\n"
+            + "[ $# -eq 0 ] && exit 0\n"
+            + "cmd=\"$1\"\n"
+            + "shift\n"
+            + "if [ \"$cmd\" = \"clone\" ]; then\n"
+            + "  if [ ! -f '" + failedOnce + "' ]; then\n"
+            + "    touch '" + failedOnce + "'\n"
+            + "    echo 'fatal: Authentication failed for repo' >&2\n"
+            + "    exit 1\n"
+            + "  fi\n"
+            + "  mkdir -p \"$2/.git\"\n"
+            + "  printf '[core]\\n' > \"$2/.git/config\"\n"
+            + "  [ -n \"$GIT_ASKPASS\" ] && cp \"$GIT_ASKPASS\" '" + capturedAskpass + "'\n"
+            + "  exit 0\n"
+            + "fi\n"
+            + "if [ \"$cmd\" = \"rev-parse\" ]; then echo 0123456789012345678901234567890123456789; exit 0; fi\n"
+            + "exit 0\n";
+        Files.writeString(git, script);
+        Files.setPosixFilePermissions(git,
+            java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
+
+        final int[] refreshes = {0};
+        GitHubTokenSource source = new GitHubTokenSource() {
+            @Override
+            public String get() {
+                return "ghs_first";
+            }
+
+            @Override
+            public String refresh() {
+                refreshes[0] += 1;
+                return "ghs_refreshed";
+            }
+        };
+        WorkspaceManager wm = new WorkspaceManager(
+            tempDir.toString(), "fake-auth", false, null, source);
+        setField(wm, "gitBinary", git.toString());
+
+        wm.cloneRepo("https://github.com/owner/repo.git", "feature");
+
+        assertEquals(1, refreshes[0]);
+        assertTrue(Files.readString(capturedAskpass).contains("ghs_refreshed"));
+    }
+
+    @Test
+    void pushRefreshesAndRetriesAfterAuthenticationFailure() throws Exception {
+        assumePosix();
+        Path repoDir = Files.createDirectories(tempDir.resolve("push-repo"));
+        Files.createDirectories(repoDir.resolve(".git"));
+        Path bin = Files.createDirectories(tempDir.resolve("fake-push-bin"));
+        Path git = bin.resolve("git");
+        Path failedOnce = tempDir.resolve("push-auth-failed-once");
+        Path capturedAskpass = tempDir.resolve("push-refreshed-askpass.sh");
+        String script = "#!/bin/sh\n"
+            + "while [ $# -gt 0 ] && [ \"$1\" != \"ls-remote\" ] && [ \"$1\" != \"push\" ]; do shift; done\n"
+            + "[ $# -eq 0 ] && exit 0\n"
+            + "cmd=\"$1\"\n"
+            + "shift\n"
+            + "if [ \"$cmd\" = \"ls-remote\" ]; then exit 0; fi\n"
+            + "if [ \"$cmd\" = \"push\" ]; then\n"
+            + "  if [ ! -f '" + failedOnce + "' ]; then\n"
+            + "    touch '" + failedOnce + "'\n"
+            + "    echo 'fatal: Authentication failed for repo' >&2\n"
+            + "    exit 1\n"
+            + "  fi\n"
+            + "  [ -n \"$GIT_ASKPASS\" ] && cp \"$GIT_ASKPASS\" '" + capturedAskpass + "'\n"
+            + "  exit 0\n"
+            + "fi\n"
+            + "exit 0\n";
+        Files.writeString(git, script);
+        Files.setPosixFilePermissions(git,
+            java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
+
+        final int[] refreshes = {0};
+        GitHubTokenSource source = new GitHubTokenSource() {
+            @Override
+            public String get() {
+                return "ghs_first";
+            }
+
+            @Override
+            public String refresh() {
+                refreshes[0] += 1;
+                return "ghs_refreshed";
+            }
+        };
+        WorkspaceManager wm = new WorkspaceManager(
+            tempDir.toString(), "fake-push", false, null, source);
+        setField(wm, "gitBinary", git.toString());
+        setRepoDir(wm, repoDir);
+
+        Method push = WorkspaceManager.class.getDeclaredMethod(
+            "pushCommit", String.class, String.class);
+        push.setAccessible(true);
+        push.invoke(wm, "abc123", "feature");
+
+        assertEquals(1, refreshes[0]);
+        assertTrue(Files.readString(capturedAskpass).contains("ghs_refreshed"));
     }
 
     @Test

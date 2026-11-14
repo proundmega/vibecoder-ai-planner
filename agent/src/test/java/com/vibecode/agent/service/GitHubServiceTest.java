@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -120,6 +121,31 @@ class GitHubServiceTest {
 
         assertEquals("https://github.com/owner/repo/pull/9", url);
         assertEquals(1, refreshes[0]);
+        assertEquals(List.of("token ghs_1", "token ghs_2"),
+            new ArrayList<>(authHeaders));
+    }
+
+    @Test
+    void refreshesThroughARealTokenProvider() throws Exception {
+        unauthorizedRequests = 1;
+        authHeaders.clear();
+        responseBody = "[{\"number\":12,\"html_url\":\"https://github.com/owner/repo/pull/12\"}]";
+        final int[] fetches = {0};
+        final int[] forced = {0};
+        GitHubTokenProvider provider = new GitHubTokenProvider(force -> {
+            fetches[0] += 1;
+            if (force) forced[0] += 1;
+            return Map.of("token", "ghs_" + fetches[0], "mode", "app");
+        });
+        GitHubService retrying = new GitHubService(
+            provider, "owner", "repo",
+            "http://127.0.0.1:" + server.getAddress().getPort()
+        );
+
+        String url = retrying.findPullRequestUrl("vibecode/ticket-12");
+
+        assertEquals("https://github.com/owner/repo/pull/12", url);
+        assertEquals(1, forced[0], "provider.refresh() must force a backend refresh");
         assertEquals(List.of("token ghs_1", "token ghs_2"),
             new ArrayList<>(authHeaders));
     }

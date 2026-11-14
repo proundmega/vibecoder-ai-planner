@@ -102,7 +102,8 @@ The token service looks up `project_github_installations` first and falls back t
 
 - Cache key: `projectId + installationId + owner/repo`. A token is never returned for a different project even when the installation is shared.
 - The mint response is verified: `repositories` must contain exactly the project's connected `owner/repo`; a mismatched or missing list rejects and revokes the new token before caching. This blocks the same-repo-name collision across installations.
-- `forceRefresh: true` on the token request bypasses and revokes the cached token; the agent uses it after a GitHub 401 instead of retrying a revoked token.
+- `forceRefresh: true` on the token request bypasses and revokes the cached token; the agent uses it after a GitHub 401 instead of retrying a revoked token. The provider object itself is passed to the git/PR clients so `refresh()` reaches the provider rather than falling through to the interface default.
+- Git clone and push retry once with a refreshed askpass credential after an authentication failure; backend branch/PR calls retry once after a 401 with a freshly minted token.
 - Client-side expiry: `min(GitHub expires_at, now + GITHUB_TOKEN_TTL_SECONDS)`; refresh five minutes before expiry. GitHub still enforces the one-hour server expiry.
 - `GITHUB_AUTH_MODE=app` never reads or returns `project_repos.access_token_encrypted`. `GET /repo/agent` returns `accessToken: null`; agents use `POST /github/:projectId/token`.
 - `GITHUB_AUTH_MODE=pat` requires `ALLOW_PAT=true` on the backend and agent. It returns the stored PAT for local development only and logs a warning. The agent validates the response `mode` against its own configuration and rejects a mismatch, so one side cannot silently downgrade to a PAT.

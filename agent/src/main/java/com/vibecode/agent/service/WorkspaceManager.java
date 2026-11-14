@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -158,9 +159,23 @@ public class WorkspaceManager {
             ensureAskPass(token);
         }
         try {
-            runGitAt(repoDir.getParent(), Map.of(), "clone", repoUrl, repoDir.toString());
-        } catch (IOException e) {
-            throw new IOException("Git clone failed: " + redact(e.getMessage()), e);
+            try {
+                runGitAt(repoDir.getParent(), Map.of(), "clone", repoUrl, repoDir.toString());
+            } catch (IOException first) {
+                if (!authenticate || !isAuthenticationFailure(first.getMessage())) {
+                    throw new IOException("Git clone failed: " + redact(first.getMessage()), first);
+                }
+                String refreshed = refreshToken(first);
+                cleanupAskPass();
+                ensureAskPass(refreshed);
+                try {
+                    runGitAt(repoDir.getParent(), Map.of(), "clone", repoUrl, repoDir.toString());
+                } catch (IOException second) {
+                    throw new IOException(
+                        "Git clone failed after credential refresh: "
+                            + redact(second.getMessage()), second);
+                }
+            }
         } finally {
             cleanupAskPass();
         }
@@ -256,11 +271,17 @@ public class WorkspaceManager {
             ensureAskPass(token);
         }
         try {
-            String remoteSha = remoteBranchSha(pushTarget, branchName);
-            String lease = "--force-with-lease=refs/heads/" + branchName + ":"
-                + (remoteSha == null ? "" : remoteSha);
-            runGit("push", "--no-verify", pushTarget,
-                commitSha + ":refs/heads/" + branchName, lease);
+            try {
+                pushWithLease(pushTarget, commitSha, branchName);
+            } catch (IOException first) {
+                if (!authenticate || !isAuthenticationFailure(first.getMessage())) {
+                    throw first;
+                }
+                String refreshed = refreshToken(first);
+                cleanupAskPass();
+                ensureAskPass(refreshed);
+                pushWithLease(pushTarget, commitSha, branchName);
+            }
         } finally {
             cleanupAskPass();
         }
@@ -786,6 +807,45 @@ public class WorkspaceManager {
             return null;
         }
         return url.replaceFirst("https://[^/@]+@github\\.com/", "https://github.com/");
+    }
+
+    private void pushWithLease(
+        String pushTarget, String commitSha, String branchName) throws IOException {
+        String remoteSha = remoteBranchSha(pushTarget, branchName);
+        String lease = "--force-with-lease=refs/heads/" + branchName + ":"
+            + (remoteSha == null ? "" : remoteSha);
+        runGit("push", "--no-verify", pushTarget,
+            commitSha + ":refs/heads/" + branchName, lease);
+    }
+
+    private String refreshToken(IOException failure) throws IOException {
+        String refreshed;
+        try {
+            refreshed = tokenSource.refresh();
+        } catch (IOException refreshFailure) {
+            throw new IOException(
+                "Git credential refresh failed: " + redact(refreshFailure.getMessage()),
+                failure);
+        }
+        if (refreshed == null || refreshed.isBlank()) {
+            throw new IOException("No GitHub credential is available after refresh", failure);
+        }
+        redactionTokens.add(refreshed);
+        return refreshed;
+    }
+
+    static boolean isAuthenticationFailure(String message) {
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase(Locale.ROOT);
+        return lower.contains("authentication failed")
+            || lower.contains("could not read username")
+            || lower.contains("invalid username or password")
+            || lower.contains("http 401")
+            || lower.contains("http 403")
+            || lower.contains("returned error: 401")
+            || lower.contains("returned error: 403");
     }
 
     private String currentToken() throws IOException {

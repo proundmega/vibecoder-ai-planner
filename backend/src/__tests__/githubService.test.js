@@ -246,6 +246,56 @@ describe('GitHubService', () => {
         .rejects.toMatchObject({ code: 'GITHUB_ACCESS_DISABLED' });
     });
 
+    it('retries a backend GitHub 401 once with a fresh installation token', async () => {
+      GitHubProvider.parseRepoUrl = jest.fn(() => ({ owner: 'owner', repo: 'repo' }));
+      const firstProvider = {
+        createPR: jest.fn().mockRejectedValue(
+          new Error('GitHub authentication failed: invalid or expired token')
+        ),
+      };
+      const secondProvider = {
+        createPR: jest.fn().mockResolvedValue({
+          url: 'https://github.com/owner/repo/pull/2',
+          state: 'open',
+        }),
+      };
+      GitHubProvider
+        .mockImplementationOnce(() => firstProvider)
+        .mockImplementationOnce(() => secondProvider);
+      jest.spyOn(GitHubAppAuthService, 'getAuthMode').mockReturnValue('app');
+      const mint = jest.spyOn(GitHubAppAuthService, 'mintToken')
+        .mockResolvedValueOnce({ token: 'ghs_first' })
+        .mockResolvedValueOnce({ token: 'ghs_second' });
+      pool.query.mockResolvedValue({
+        rows: [{
+          id: 1,
+          project_id: 1,
+          provider: 'github',
+          repo_url: 'https://github.com/owner/repo',
+          access_token_encrypted: 'encrypted-token',
+          default_branch: 'main',
+          is_active: true,
+          created_at: new Date(),
+          updated_at: new Date(),
+        }],
+      });
+      Ticket.findById.mockResolvedValue({
+        id: 42,
+        projectId: '1',
+        title: 'Ticket',
+        branchName: 'vibecode/ticket-42',
+      });
+
+      const result = await GitHubService.createTicketPR('1', 42, null);
+
+      expect(result.url).toBe('https://github.com/owner/repo/pull/2');
+      expect(mint).toHaveBeenCalledTimes(2);
+      expect(GitHubProvider).toHaveBeenNthCalledWith(1, 'ghs_first');
+      expect(GitHubProvider).toHaveBeenNthCalledWith(2, 'ghs_second');
+      expect(firstProvider.createPR).toHaveBeenCalled();
+      expect(secondProvider.createPR).toHaveBeenCalled();
+    });
+
     it('uses a minted installation token for backend PR operations', async () => {
       GitHubProvider.parseRepoUrl = jest.fn(() => ({ owner: 'owner', repo: 'repo' }));
       const provider = { createPR: jest.fn().mockResolvedValue({ url: 'https://github.com/owner/repo/pull/1', state: 'open' }) };

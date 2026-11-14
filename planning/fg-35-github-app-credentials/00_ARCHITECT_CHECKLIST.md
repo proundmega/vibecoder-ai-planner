@@ -30,7 +30,7 @@ Publishing currently uses a long-lived GitHub PAT. We removed it from `.git/conf
 | Plan merged | PR #105, follow-up consistency fix #106 | ☑ |
 | Implementation started | `feat/fg-35-github-app-credentials`; backend migration, mint/cache service, token endpoint, agent token provider and tests | ☑ |
 | Implementation in review | PR #143, head `2a83787`; review rounds B1-B5, R1-R2 and R3-1/R3-2 resolved | ☑ |
-| Verification results | `03` → Results: backend 1637 tests, agent 537 tests (5 skipped), planning check and `git diff --check` | ☑ |
+| Verification results | `03` → Results: backend 1638 tests, agent 540 tests (5 skipped), planning check and `git diff --check` | ☑ |
 
 ## Deferred register (canonical)
 
