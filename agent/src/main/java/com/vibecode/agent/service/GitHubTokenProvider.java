@@ -135,6 +135,12 @@ public class GitHubTokenProvider implements GitHubTokenSource {
         if (fallback == null) {
             throw failure;
         }
+        // A definitive backend rejection means the backend has not opted into
+        // the PAT fallback (for example app mode without App credentials).
+        // Only a transport/unknown failure may use the explicit local PAT.
+        if (failure instanceof GitHubTokenRequestException) {
+            throw failure;
+        }
         if (expectedMode != null
             && !"pat".equalsIgnoreCase(expectedMode)) {
             throw failure;

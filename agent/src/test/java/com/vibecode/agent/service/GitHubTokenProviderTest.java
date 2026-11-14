@@ -65,6 +65,18 @@ class GitHubTokenProviderTest {
     }
 
     @Test
+    void doesNotUseThePatFallbackForADefinitiveBackendRejection() {
+        GitHubTokenProvider provider = new GitHubTokenProvider(
+            force -> {
+                throw new GitHubTokenRequestException(
+                    "PAT_FALLBACK_DISABLED", "PAT fallback is disabled");
+            },
+            () -> "stored-pat");
+
+        assertThrows(GitHubTokenRequestException.class, provider::get);
+    }
+
+    @Test
     void usesTheExplicitPatFallbackOnlyWhenConfigured() throws Exception {
         GitHubTokenProvider withFallback = new GitHubTokenProvider(
             force -> {

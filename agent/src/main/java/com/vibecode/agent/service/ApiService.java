@@ -562,7 +562,10 @@ public class ApiService {
             url, body, new TypeReference<ApiResponse<Map<String, Object>>>() {});
 
         if (response.hasError()) {
-            throw new IOException("Failed to get GitHub token: " + response.getError());
+            ApiResponse.Error error = response.getError();
+            throw new GitHubTokenRequestException(
+                error == null ? null : error.getCode(),
+                error == null ? "token request failed" : error.getMessage());
         }
 
         return response.getData();
