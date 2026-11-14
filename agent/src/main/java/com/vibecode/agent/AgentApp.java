@@ -57,24 +57,20 @@ public class AgentApp {
         AiProvider aiProvider = createAiProvider(providerSettings);
         this.githubTokenProvider = createGitHubTokenProvider();
         this.githubAccessToken = fetchGitHubToken(githubTokenProvider);
-        this.gitHubService = new GitHubService(
-            githubTokenProvider, config.getRepoOwner(), config.getRepoName());
+        GitHubWiring wiring = createGitHubWiring(
+            config, apiService, providerSettings, aiProvider,
+            githubTokenProvider, githubAccessToken, config.getHarnessConfig());
+        this.gitHubService = wiring.gitHubService();
+        this.ticketWorker = wiring.ticketWorker();
 
         HarnessConfig harnessConfig = config.getHarnessConfig();
         if (harnessConfig.isEnabled()) {
-            harnessConfig.validate();
-            this.ticketWorker = new HarnessTicketProcessor(
-                config, apiService, providerSettings, gitHubService,
-                githubTokenProvider, githubAccessToken, harnessConfig);
             log.info("Harness mode: opencode (binary={}, model={})",
                 harnessConfig.binary(),
                 harnessConfig.modelOverride() != null
                     ? harnessConfig.modelOverride()
                     : providerSettings.model());
         } else {
-            this.ticketWorker = new TicketProcessor(
-                config, apiService, aiProvider, gitHubService,
-                githubTokenProvider);
             log.info("Harness mode: legacy");
         }
 
@@ -85,6 +81,38 @@ public class AgentApp {
             log.warn("Review processing disabled: provider '{}' is only supported by the OpenCode harness",
                 providerSettings.normalizedType());
         }
+    }
+
+    /**
+     * Builds the GitHub clients from the provider object itself. The parameter
+     * type is GitHubTokenProvider (not GitHubTokenSource) so a method reference
+     * cannot silently drop the provider's refresh() override.
+     */
+    record GitHubWiring(GitHubService gitHubService, TicketWorker ticketWorker) {
+    }
+
+    static GitHubWiring createGitHubWiring(
+        AgentConfig config,
+        ApiService apiService,
+        ProviderSettings providerSettings,
+        AiProvider aiProvider,
+        GitHubTokenProvider tokenProvider,
+        String githubToken,
+        HarnessConfig harnessConfig
+    ) {
+        GitHubService gitHubService = new GitHubService(
+            tokenProvider, config.getRepoOwner(), config.getRepoName());
+        TicketWorker ticketWorker;
+        if (harnessConfig.isEnabled()) {
+            harnessConfig.validate();
+            ticketWorker = new HarnessTicketProcessor(
+                config, apiService, providerSettings, gitHubService,
+                tokenProvider, githubToken, harnessConfig);
+        } else {
+            ticketWorker = new TicketProcessor(
+                config, apiService, aiProvider, gitHubService, tokenProvider);
+        }
+        return new GitHubWiring(gitHubService, ticketWorker);
     }
 
     private static boolean supportsLegacyProvider(ProviderSettings settings) {
