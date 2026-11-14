@@ -1,13 +1,13 @@
 ---
 id: "fg-35"
 title: "GitHub App Credentials and Least Privilege"
-status: in_progress
+status: in_review
 priority: "P0"
 effort: "Large"
 scope: "Both"
 created: "2026-10-31"
 updated: "2026-11-14"
-pr: null
+pr: 143
 branch: "feat/fg-35-github-app-credentials"
 depends_on: ["fg-30"]
 ---
@@ -29,6 +29,7 @@ Publishing currently uses a long-lived GitHub PAT. We removed it from `.git/conf
 |---|---|---|
 | Plan merged | PR #105, follow-up consistency fix #106 | ☑ |
 | Implementation started | `feat/fg-35-github-app-credentials`; backend migration, mint/cache service, token endpoint, agent token provider and tests | ☑ |
+| Implementation in review | PR #143, head `793bcd5`; review round 1 findings B1-B5 resolved | ☑ |
 | Verification results | `03` → Results: backend 1622 tests, agent 531 tests (5 skipped), planning check and `git diff --check` | ☑ |
 
 ## Deferred register (canonical)
