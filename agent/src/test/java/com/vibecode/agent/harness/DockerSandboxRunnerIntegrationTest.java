@@ -404,6 +404,92 @@ class DockerSandboxRunnerIntegrationTest {
         }
     }
 
+    @Test
+    void terminateModeInstallsTheCaAndCombinedBundle() throws Exception {
+        String image = System.getenv("SANDBOX_IT_IMAGE");
+        String proxyImage = System.getenv("SANDBOX_IT_PROXY_IMAGE");
+        Assumptions.assumeTrue(image != null && !image.isBlank(),
+            "SANDBOX_IT_IMAGE is not set; skipping the Docker sandbox smoke test");
+        Assumptions.assumeTrue(proxyImage != null && !proxyImage.isBlank(),
+            "SANDBOX_IT_PROXY_IMAGE is not set; skipping the terminate-mode test");
+
+        SandboxConfig config = integrationConfig(image, Map.of(
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate",
+            "SANDBOX_PROXY_IMAGE", proxyImage
+        ));
+        Path workspace = Files.createDirectories(tempDir.resolve("terminate-workspace"));
+        Files.setPosixFilePermissions(workspace,
+            PosixFilePermissions.fromString("rwxrwxrwx"));
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace));
+            try {
+                ExecResult trust = runner.exec(handle, ExecRequest.of(
+                    "test -s /tmp/vibecode-egress-ca.crt "
+                        + "&& test -s /tmp/vibecode-ca-bundle.crt "
+                        + "&& grep -q 'BEGIN CERTIFICATE' /tmp/vibecode-ca-bundle.crt "
+                        + "&& printenv NODE_EXTRA_CA_CERTS "
+                        + "&& printenv SSL_CERT_FILE "
+                        + "&& echo TRUST_OK",
+                    Duration.ofSeconds(20)));
+                assertTrue(trust.passed(), trust.output());
+                assertTrue(trust.output().contains("TRUST_OK"), trust.output());
+                assertTrue(trust.output().contains("/tmp/vibecode-egress-ca.crt"),
+                    trust.output());
+                assertTrue(trust.output().contains("/tmp/vibecode-ca-bundle.crt"),
+                    trust.output());
+            } finally {
+                runner.destroy(handle);
+            }
+        }
+    }
+
+    @Test
+    void terminateModeReachesAnAllowlistedHostAndRejectsAHostMismatch() throws Exception {
+        String image = System.getenv("SANDBOX_IT_IMAGE");
+        String proxyImage = System.getenv("SANDBOX_IT_PROXY_IMAGE");
+        String host = System.getenv("SANDBOX_IT_TERMINATE_HOST");
+        Assumptions.assumeTrue(image != null && !image.isBlank(),
+            "SANDBOX_IT_IMAGE is not set; skipping the Docker sandbox smoke test");
+        Assumptions.assumeTrue(proxyImage != null && !proxyImage.isBlank(),
+            "SANDBOX_IT_PROXY_IMAGE is not set; skipping the terminate-mode test");
+        Assumptions.assumeTrue(host != null && host.matches("[a-z0-9.-]+"),
+            "SANDBOX_IT_TERMINATE_HOST is not set; skipping the real TLS request");
+
+        SandboxConfig config = integrationConfig(image, Map.of(
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", host,
+            "SANDBOX_EGRESS_TLS_MODE", "terminate",
+            "SANDBOX_PROXY_IMAGE", proxyImage
+        ));
+        Path workspace = Files.createDirectories(tempDir.resolve("terminate-tls-workspace"));
+        Files.setPosixFilePermissions(workspace,
+            PosixFilePermissions.fromString("rwxrwxrwx"));
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace));
+            try {
+                ExecResult allowed = runner.exec(handle, ExecRequest.of(
+                    "curl -sS -o /dev/null -w '%{http_code}' --max-time 20 https://"
+                        + host + "/",
+                    Duration.ofSeconds(30)));
+                assertTrue(allowed.passed(), allowed.output());
+                assertTrue(allowed.output().trim().matches("[23][0-9][0-9]"),
+                    allowed.output());
+
+                ExecResult mismatch = runner.exec(handle, ExecRequest.of(
+                    "curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "
+                        + "-H 'Host: evil.example' https://" + host + "/",
+                    Duration.ofSeconds(30)));
+                assertTrue(mismatch.output().contains("403"), mismatch.output());
+            } finally {
+                runner.destroy(handle);
+            }
+        }
+    }
+
     private static SandboxConfig integrationConfig(String image, Map<String, String> extra) {
         Map<String, String> env = new HashMap<>();
         env.put("SANDBOX_MODE", "docker");

@@ -159,6 +159,28 @@ describe('PoolManager max capacity (BP-61)', () => {
     expect(createOpts.Env).toContain('SANDBOX_REQUIRE_SECURE_FILE_ACCESS=true');
   });
 
+  it('forwards SANDBOX_EGRESS_TLS_MODE to pool agents', async () => {
+    pm.pool.clear();
+    const { pool } = require('../db');
+    pool.query.mockResolvedValue({
+      rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+    });
+    const mockContainer = { id: 'container-tls', start: jest.fn().mockResolvedValue(undefined) };
+    pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
+
+    const previous = process.env.SANDBOX_EGRESS_TLS_MODE;
+    process.env.SANDBOX_EGRESS_TLS_MODE = 'terminate';
+    try {
+      await pm.requestAgent('proj-tls');
+    } finally {
+      if (previous === undefined) delete process.env.SANDBOX_EGRESS_TLS_MODE;
+      else process.env.SANDBOX_EGRESS_TLS_MODE = previous;
+    }
+
+    const createOpts = pm.docker.createContainer.mock.calls[0][0];
+    expect(createOpts.Env).toContain('SANDBOX_EGRESS_TLS_MODE=terminate');
+  });
+
   it('releases capacity when agent is released', async () => {
     pm.setMaxPoolSize(2);
     pm.pool.clear();

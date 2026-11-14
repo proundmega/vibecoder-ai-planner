@@ -152,10 +152,29 @@ class DockerSandboxRunnerTest {
         assertTrue(joined.contains("--pids-limit 64"));
         assertTrue(joined.contains("EGRESS_ALLOWED_HOSTS=registry.npmjs.org,*.githubusercontent.com"));
         assertTrue(joined.contains("EGRESS_TUNNEL_PROBE_TIMEOUT_MS=5000"));
+        assertTrue(joined.contains("EGRESS_TLS_MODE=sni-only"));
         assertTrue(joined.contains("--entrypoint node"));
         assertTrue(joined.contains("Buffer.from("));
         assertFalse(joined.contains("--privileged"));
         assertFalse(joined.contains("docker.sock"));
+    }
+
+    @Test
+    void proxyArgsCarryTheTerminateMode() throws IOException {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate"
+        )::get);
+        SandboxSpec spec = config.specFor(workspace());
+
+        String joined = String.join(" ",
+            DockerSandboxRunner.buildProxyRunArgs(spec, "proxy-1", "internal-1"));
+
+        assertTrue(joined.contains("EGRESS_TLS_MODE=terminate"));
     }
 
     @Test
@@ -177,6 +196,60 @@ class DockerSandboxRunnerTest {
         assertTrue(joined.contains("-e EGRESS_TEST_MODE=0"));
         assertTrue(joined.contains("EGRESS_TEST_RESOLVE_IP="));
         assertTrue(joined.contains("--log-opt max-size=1m"));
+    }
+
+    @Test
+    void writeContainerFileViaExecTimesOutWhenTheShellIgnoresStdin() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path script = fakeDocker(tempDir.resolve("docker.log"), """
+            case "$1" in
+              exec) sleep 30 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            long started = System.nanoTime();
+            IOException error = assertThrows(IOException.class,
+                () -> runner.writeContainerFileViaExec(
+                    "sandbox-1", "/tmp/vibecode-ca-bundle.crt",
+                    new byte[512 * 1024], Duration.ofMillis(300)));
+            long elapsed = Duration.ofNanos(System.nanoTime() - started).toMillis();
+            assertTrue(error.getMessage().contains("timed out"), error.getMessage());
+            assertTrue(elapsed < 5_000, "write timeout took " + elapsed + "ms");
+        }
+    }
+
+    @Test
+    void classifiesContainerPathStates() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path script = fakeDocker(tempDir.resolve("docker.log"), """
+            case "$1" in
+              exec)
+                case "$*" in
+                  *"/missing"*) echo MISSING ;;
+                  *"/broken"*) echo BROKEN ;;
+                  *"/dir"*) echo NOTFILE ;;
+                  *"/file"*) echo FILE ;;
+                  *) echo UNKNOWN ;;
+                esac
+                ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            assertEquals(DockerSandboxRunner.ContainerPathState.FILE,
+                runner.containerPathState("sandbox-1", "/file"));
+            assertEquals(DockerSandboxRunner.ContainerPathState.MISSING,
+                runner.containerPathState("sandbox-1", "/missing"));
+            assertEquals(DockerSandboxRunner.ContainerPathState.BROKEN_SYMLINK,
+                runner.containerPathState("sandbox-1", "/broken"));
+            assertEquals(DockerSandboxRunner.ContainerPathState.NOT_A_FILE,
+                runner.containerPathState("sandbox-1", "/dir"));
+            assertEquals(DockerSandboxRunner.ContainerPathState.UNKNOWN,
+                runner.containerPathState("sandbox-1", "/other"));
+        }
     }
 
     @Test
@@ -315,13 +388,56 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void terminateModeAddsThePerRunTrustEnvironment() throws IOException {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate"
+        )::get);
+        SandboxSpec spec = config.specFor(workspace());
+        DockerSandboxRunner.EgressRuntime egress = new DockerSandboxRunner.EgressRuntime(
+            "internal-1", "proxy-1", "172.19.0.2", "http://172.19.0.2:3128");
+
+        Map<String, String> env = DockerSandboxRunner.containerEnvironment(spec, egress);
+
+        assertEquals("/tmp/vibecode-egress-ca.crt", env.get("NODE_EXTRA_CA_CERTS"));
+        assertEquals("/tmp/vibecode-ca-bundle.crt", env.get("SSL_CERT_FILE"));
+        assertEquals("/tmp/vibecode-ca-bundle.crt", env.get("GIT_SSL_CAINFO"));
+        assertEquals("/tmp/vibecode-ca-bundle.crt", env.get("CURL_CA_BUNDLE"));
+        assertEquals("/tmp/vibecode-ca-bundle.crt", env.get("PIP_CERT"));
+        assertEquals("/tmp/vibecode-ca-bundle.crt", env.get("REQUESTS_CA_BUNDLE"));
+        assertEquals("/tmp/vibecode-ca-bundle.crt", env.get("CARGO_HTTP_CAINFO"));
+    }
+
+    @Test
+    void sniOnlyModeDoesNotAddTheTrustEnvironment() throws IOException {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org"
+        )::get);
+        SandboxSpec spec = config.specFor(workspace());
+        DockerSandboxRunner.EgressRuntime egress = new DockerSandboxRunner.EgressRuntime(
+            "internal-1", "proxy-1", "172.19.0.2", "http://172.19.0.2:3128");
+
+        Map<String, String> env = DockerSandboxRunner.containerEnvironment(spec, egress);
+
+        assertFalse(env.containsKey("NODE_EXTRA_CA_CERTS"));
+    }
+
+    @Test
     void containerEnvironmentRejectsSecrets() throws IOException {
         SandboxConfig config = dockerConfig("docker");
         SandboxSpec spec = config.specFor(workspace());
         SandboxSpec poisoned = new SandboxSpec(
             spec.image(), spec.proxyImage(), spec.workspace(), spec.mountSource(), spec.maxDuration(),
             spec.limits(), spec.networkEnabled(), spec.allowedHosts(), spec.egressProxy(),
-            spec.egressUpstreamNetwork(), spec.egressProbeTimeoutMs(),
+            spec.egressUpstreamNetwork(), spec.egressProbeTimeoutMs(), spec.egressTlsMode(),
             Map.of("OPENAI_KEY", "sk-secret"), spec.user(), spec.seccompProfile(),
             spec.apparmorProfile(), spec.artifactMaxBytes());
 

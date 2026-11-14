@@ -254,6 +254,9 @@ class PoolManager {
       env.push(`SANDBOX_REQUIRE_SECURE_FILE_ACCESS=${
         process.env.SANDBOX_REQUIRE_SECURE_FILE_ACCESS}`);
     }
+    if (process.env.SANDBOX_EGRESS_TLS_MODE) {
+      env.push(`SANDBOX_EGRESS_TLS_MODE=${process.env.SANDBOX_EGRESS_TLS_MODE}`);
+    }
 
     for (const name of [
       'HARNESS_MODE', 'HARNESS_BIN', 'HARNESS_STARTUP_TIMEOUT_MS',

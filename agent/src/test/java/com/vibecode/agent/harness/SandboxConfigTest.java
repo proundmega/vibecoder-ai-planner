@@ -144,6 +144,47 @@ class SandboxConfigTest {
     }
 
     @Test
+    void defaultsToSniOnlyEgress() {
+        SandboxConfig config = SandboxConfig.from(name -> null);
+
+        assertEquals(EgressTlsMode.SNI_ONLY, config.egressTlsMode());
+    }
+
+    @Test
+    void parsesTerminateEgressMode() {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate"
+        )::get);
+
+        assertEquals(EgressTlsMode.TERMINATE, config.egressTlsMode());
+    }
+
+    @Test
+    void rejectsUnknownEgressTlsModes() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_NETWORK", "allowlist",
+                "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org",
+                "SANDBOX_EGRESS_TLS_MODE", "mitm"
+            )::get));
+        assertTrue(error.getMessage().contains("sni-only, terminate"));
+    }
+
+    @Test
+    void terminateEgressModeRequiresTheAllowlistNetwork() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_EGRESS_TLS_MODE", "terminate"
+            )::get));
+        assertTrue(error.getMessage().contains("SANDBOX_NETWORK=allowlist"));
+    }
+
+    @Test
     void rejectsAnAllowlistWithoutHosts() {
         IllegalStateException error = assertThrows(IllegalStateException.class,
             () -> SandboxConfig.from(env(

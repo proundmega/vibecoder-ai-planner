@@ -12,5 +12,9 @@
 # when upgrading; run `agent/scripts/sandbox-image-security.sh --check-pins`.
 FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8
 
+# TLS termination mode mints per-run CA/leaf certificates with the OpenSSL CLI
+# and verifies origins against the system CA bundle.
+RUN apk add --no-cache openssl ca-certificates
+
 WORKDIR /opt/vibecode
 USER 1000:1000
