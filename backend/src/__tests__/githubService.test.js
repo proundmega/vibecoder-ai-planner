@@ -266,6 +266,7 @@ describe('GitHubService', () => {
       const mint = jest.spyOn(GitHubAppAuthService, 'mintToken')
         .mockResolvedValueOnce({ token: 'ghs_first' })
         .mockResolvedValueOnce({ token: 'ghs_second' });
+      const clearCache = jest.spyOn(GitHubAppAuthService, 'clearCacheForProject');
       pool.query.mockResolvedValue({
         rows: [{
           id: 1,
@@ -290,6 +291,7 @@ describe('GitHubService', () => {
 
       expect(result.url).toBe('https://github.com/owner/repo/pull/2');
       expect(mint).toHaveBeenCalledTimes(2);
+      expect(clearCache).toHaveBeenCalledWith('1');
       expect(GitHubProvider).toHaveBeenNthCalledWith(1, 'ghs_first');
       expect(GitHubProvider).toHaveBeenNthCalledWith(2, 'ghs_second');
       expect(firstProvider.createPR).toHaveBeenCalled();

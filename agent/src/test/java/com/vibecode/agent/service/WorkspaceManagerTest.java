@@ -393,6 +393,42 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void cloneDoesNotRefreshOnANonAuthenticationFailure() throws Exception {
+        assumePosix();
+        Path bin = Files.createDirectories(tempDir.resolve("fake-missing-bin"));
+        Path git = bin.resolve("git");
+        String script = "#!/bin/sh\n"
+            + "while [ $# -gt 0 ] && [ \"$1\" != \"clone\" ]; do shift; done\n"
+            + "[ $# -eq 0 ] && exit 0\n"
+            + "echo 'fatal: repository not found' >&2\n"
+            + "exit 1\n";
+        Files.writeString(git, script);
+        Files.setPosixFilePermissions(git,
+            java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
+
+        final int[] refreshes = {0};
+        GitHubTokenSource source = new GitHubTokenSource() {
+            @Override
+            public String get() {
+                return "ghs_first";
+            }
+
+            @Override
+            public String refresh() {
+                refreshes[0] += 1;
+                return "ghs_refreshed";
+            }
+        };
+        WorkspaceManager wm = new WorkspaceManager(
+            tempDir.toString(), "fake-missing", false, null, source);
+        setField(wm, "gitBinary", git.toString());
+
+        assertThrows(IOException.class,
+            () -> wm.cloneRepo("https://github.com/owner/missing.git", "feature"));
+        assertEquals(0, refreshes[0]);
+    }
+
+    @Test
     void pushRefreshesAndRetriesAfterAuthenticationFailure() throws Exception {
         assumePosix();
         Path repoDir = Files.createDirectories(tempDir.resolve("push-repo"));
