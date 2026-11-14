@@ -137,6 +137,28 @@ describe('PoolManager max capacity (BP-61)', () => {
     expect(pm.pool.size).toBe(3);
   });
 
+  it('forwards SANDBOX_REQUIRE_SECURE_FILE_ACCESS to pool agents', async () => {
+    pm.pool.clear();
+    const { pool } = require('../db');
+    pool.query.mockResolvedValue({
+      rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+    });
+    const mockContainer = { id: 'container-secure', start: jest.fn().mockResolvedValue(undefined) };
+    pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
+
+    const previous = process.env.SANDBOX_REQUIRE_SECURE_FILE_ACCESS;
+    process.env.SANDBOX_REQUIRE_SECURE_FILE_ACCESS = 'true';
+    try {
+      await pm.requestAgent('proj-secure');
+    } finally {
+      if (previous === undefined) delete process.env.SANDBOX_REQUIRE_SECURE_FILE_ACCESS;
+      else process.env.SANDBOX_REQUIRE_SECURE_FILE_ACCESS = previous;
+    }
+
+    const createOpts = pm.docker.createContainer.mock.calls[0][0];
+    expect(createOpts.Env).toContain('SANDBOX_REQUIRE_SECURE_FILE_ACCESS=true');
+  });
+
   it('releases capacity when agent is released', async () => {
     pm.setMaxPoolSize(2);
     pm.pool.clear();
