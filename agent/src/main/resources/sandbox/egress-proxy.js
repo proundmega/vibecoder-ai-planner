@@ -311,7 +311,7 @@ function denyTunneled(response, reason, host) {
   response.end();
 }
 
-function sanitizedHeaders(message, host, contentLength) {
+function sanitizedHeaders(message, host, contentLength, chunked) {
   const headers = {};
   for (let i = 0; i + 1 < message.rawHeaders.length; i += 2) {
     const name = message.rawHeaders[i].toLowerCase();
@@ -329,6 +329,12 @@ function sanitizedHeaders(message, host, contentLength) {
   headers.host = host;
   if (contentLength !== null) {
     headers["content-length"] = contentLength;
+  }
+  // Node's HTTP client only defaults to chunked for some methods. Re-add the
+  // inbound chunked framing explicitly so a GET/HEAD/DELETE/OPTIONS/TRACE body
+  // is never written to the origin unframed (request smuggling).
+  if (chunked) {
+    headers["transfer-encoding"] = "chunked";
   }
   return headers;
 }
@@ -384,13 +390,16 @@ function handleTunneledRequest(request, response, host, address, port, agent, tl
   }
   const contentLengths = rawHeaderValues(request, "content-length");
   const contentLength = contentLengths.length === 1 ? contentLengths[0].trim() : null;
+  const transferEncodings = rawHeaderValues(request, "transfer-encoding");
+  const chunked = transferEncodings.length === 1
+    && transferEncodings[0].trim().toLowerCase() === "chunked";
 
   const upstreamRequest = https.request({
     host: address,
     port,
     method: request.method,
     path: request.url,
-    headers: sanitizedHeaders(request, host, contentLength),
+    headers: sanitizedHeaders(request, host, contentLength, chunked),
     servername: host,
     agent,
     minVersion: "TLSv1.2",
@@ -419,8 +428,13 @@ function handleTunneledRequest(request, response, host, address, port, agent, tl
     const headers = {};
     for (let i = 0; i + 1 < upstreamResponse.rawHeaders.length; i += 2) {
       const name = upstreamResponse.rawHeaders[i].toLowerCase();
+      const value = upstreamResponse.rawHeaders[i + 1];
       if (!HOP_BY_HOP.has(name)) {
-        headers[name] = upstreamResponse.rawHeaders[i + 1];
+        if (Object.prototype.hasOwnProperty.call(headers, name)) {
+          headers[name] = [].concat(headers[name], value);
+        } else {
+          headers[name] = value;
+        }
       }
     }
     response.writeHead(status, headers);

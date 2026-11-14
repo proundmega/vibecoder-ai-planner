@@ -14,7 +14,6 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.attribute.PosixFilePermission;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -23,7 +22,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -1233,9 +1231,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
     /**
      * Install the per-run CA and combined trust bundle into a terminate-mode
-     * sandbox. Both source files are fetched as bounded tar streams so a
-     * hostile repo image cannot make the supervisor read a host symlink or
-     * write an unbounded file.
+     * sandbox. The proxy CA is read with {@code docker exec cat} because
+     * {@code docker cp} cannot see a container's tmpfs. The sandbox system
+     * bundle is read through a bounded tar stream, and the resulting files are
+     * written into the sandbox tmpfs through {@code docker exec -i}.
      */
     private void provisionEgressTrust(
         String sandbox,
@@ -1245,7 +1244,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
         if (egress == null || spec.egressTlsMode() != EgressTlsMode.TERMINATE) {
             return;
         }
-        byte[] ca = readContainerFile(
+        byte[] ca = readContainerFileViaExec(
             egress.proxyName(),
             "/tmp/vibecode-egress-ca/ca.crt",
             64 * 1024,
@@ -1253,23 +1252,126 @@ public final class DockerSandboxRunner implements SandboxRunner {
         );
         validateCaCertificates(ca, 1);
 
+        String systemPath = "/etc/ssl/certs/ca-certificates.crt";
+        ContainerPathState state = containerPathState(sandbox, systemPath);
         byte[] systemBundle = null;
-        try {
-            systemBundle = readContainerFile(
-                sandbox,
-                "/etc/ssl/certs/ca-certificates.crt",
-                4 * 1024 * 1024,
-                COPY_TIMEOUT
-            );
-            validateCaCertificates(systemBundle, Integer.MAX_VALUE);
-        } catch (NoSuchFileException missing) {
+        if (state == ContainerPathState.MISSING) {
             log.warn("Sandbox {} has no system CA bundle; using the per-run CA only",
                 sandbox);
+        } else if (state == ContainerPathState.FILE) {
+            try {
+                systemBundle = readContainerFile(
+                    sandbox, systemPath, 4 * 1024 * 1024, COPY_TIMEOUT);
+            } catch (NoSuchFileException e) {
+                throw new IOException(
+                    "The system CA bundle disappeared after the pre-check", e);
+            }
+            validateCaCertificates(systemBundle, Integer.MAX_VALUE);
+        } else {
+            throw new IOException("The system CA bundle is not a regular file: " + state);
         }
 
         byte[] combined = systemBundle == null ? ca : concat(systemBundle, ca);
-        writeContainerFile(sandbox, "/tmp/vibecode-egress-ca.crt", ca);
-        writeContainerFile(sandbox, "/tmp/vibecode-ca-bundle.crt", combined);
+        writeContainerFileViaExec(sandbox, "/tmp/vibecode-egress-ca.crt", ca);
+        writeContainerFileViaExec(sandbox, "/tmp/vibecode-ca-bundle.crt", combined);
+    }
+
+    private enum ContainerPathState {
+        FILE,
+        MISSING,
+        BROKEN_SYMLINK,
+        NOT_A_FILE,
+        UNKNOWN
+    }
+
+    private ContainerPathState containerPathState(String container, String path)
+        throws IOException {
+        String script = "p=$1; "
+            + "if [ -L \"$p\" ] && [ ! -e \"$p\" ]; then echo BROKEN; "
+            + "elif [ ! -e \"$p\" ]; then echo MISSING; "
+            + "elif [ ! -f \"$p\" ]; then echo NOTFILE; "
+            + "else echo FILE; fi";
+        DockerResult result = runDocker(
+            List.of(config.dockerBinary(), "exec", container, "/bin/sh", "-c",
+                script, "sh", path),
+            INSPECT_TIMEOUT,
+            1_024
+        );
+        if (result.timedOut() || result.exitCode() != 0) {
+            return ContainerPathState.UNKNOWN;
+        }
+        return switch (result.output().trim()) {
+            case "FILE" -> ContainerPathState.FILE;
+            case "MISSING" -> ContainerPathState.MISSING;
+            case "BROKEN" -> ContainerPathState.BROKEN_SYMLINK;
+            case "NOTFILE" -> ContainerPathState.NOT_A_FILE;
+            default -> ContainerPathState.UNKNOWN;
+        };
+    }
+
+    private byte[] readContainerFileViaExec(
+        String container,
+        String remotePath,
+        int maxBytes,
+        Duration timeout
+    ) throws IOException {
+        List<String> command = List.of(
+            config.dockerBinary(), "exec", container, "cat", remotePath);
+        ProcessBuilder builder = new ProcessBuilder(ProcessGroup.wrap(command));
+        builder.redirectErrorStream(false);
+        EnvironmentSanitizer.sanitize(builder.environment());
+        copyDockerEnvironment(builder.environment());
+
+        BoundedTailBuffer stdout = new BoundedTailBuffer(maxBytes);
+        BoundedTailBuffer stderr = new BoundedTailBuffer(8_192);
+        Process process;
+        try {
+            process = builder.start();
+        } catch (IOException e) {
+            throw new IOException("Could not run docker exec cat for " + remotePath, e);
+        }
+        Thread outReader = reader(process.getInputStream(), stdout, "sandbox-exec-out");
+        Thread errReader = reader(process.getErrorStream(), stderr, "sandbox-exec-err");
+        try {
+            boolean finished = process.waitFor(
+                Math.max(1, timeout.toMillis()), TimeUnit.MILLISECONDS);
+            if (!finished) {
+                ProcessGroup.kill(process);
+                outReader.join(2_000);
+                throw new IOException("docker exec cat timed out for " + remotePath);
+            }
+            outReader.join(2_000);
+            errReader.join(1_000);
+            if (process.exitValue() != 0) {
+                throw new IOException("Could not read " + remotePath + ": "
+                    + stderr.text().trim());
+            }
+            if (stdout.truncated()) {
+                throw new IOException("The file at " + remotePath + " exceeds its bound");
+            }
+            return stdout.text().getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            ProcessGroup.kill(process);
+            throw new IOException("Interrupted while reading " + remotePath, e);
+        }
+    }
+
+    private static Thread reader(
+        InputStream input,
+        BoundedTailBuffer target,
+        String name
+    ) {
+        Thread thread = new Thread(() -> {
+            try (InputStream stream = input) {
+                stream.transferTo(target);
+            } catch (IOException ignored) {
+                // The caller classifies failure from the exit status.
+            }
+        }, name);
+        thread.setDaemon(true);
+        thread.start();
+        return thread;
     }
 
     private byte[] readContainerFile(
@@ -1393,31 +1495,51 @@ public final class DockerSandboxRunner implements SandboxRunner {
         return out.toByteArray();
     }
 
-    private void writeContainerFile(String container, String remotePath, byte[] bytes)
-        throws IOException {
-        Path temp = Files.createTempFile("vibecode-egress-", ".pem");
+    private void writeContainerFileViaExec(
+        String container,
+        String remotePath,
+        byte[] bytes
+    ) throws IOException {
+        String script = "cat > " + shellQuote(remotePath)
+            + " && chmod 0444 " + shellQuote(remotePath);
+        List<String> command = List.of(
+            config.dockerBinary(), "exec", "-i", container, "/bin/sh", "-c", script);
+        ProcessBuilder builder = new ProcessBuilder(ProcessGroup.wrap(command));
+        builder.redirectErrorStream(false);
+        EnvironmentSanitizer.sanitize(builder.environment());
+        copyDockerEnvironment(builder.environment());
+
+        BoundedTailBuffer stderr = new BoundedTailBuffer(8_192);
+        Process process;
         try {
-            Files.write(temp, bytes);
-            try {
-                Files.setPosixFilePermissions(temp,
-                    EnumSet.of(PosixFilePermission.OWNER_READ,
-                        PosixFilePermission.GROUP_READ,
-                        PosixFilePermission.OTHERS_READ));
-            } catch (UnsupportedOperationException ignored) {
-                // Windows hosts have no POSIX mode; docker cp keeps the bytes.
+            process = builder.start();
+        } catch (IOException e) {
+            throw new IOException("Could not run docker exec write for " + remotePath, e);
+        }
+        Thread errReader = reader(process.getErrorStream(), stderr, "sandbox-exec-err");
+        try (var stdin = process.getOutputStream()) {
+            stdin.write(bytes);
+        } catch (IOException e) {
+            ProcessGroup.kill(process);
+            throw new IOException("Could not write " + remotePath + " into the sandbox", e);
+        }
+        try {
+            boolean finished = process.waitFor(
+                Math.max(1, COPY_TIMEOUT.toMillis()), TimeUnit.MILLISECONDS);
+            if (!finished) {
+                ProcessGroup.kill(process);
+                errReader.join(2_000);
+                throw new IOException("docker exec write timed out for " + remotePath);
             }
-            DockerResult copied = runDocker(
-                List.of(config.dockerBinary(), "cp", temp.toString(),
-                    container + ":" + remotePath),
-                COPY_TIMEOUT,
-                CONTROL_OUTPUT_BYTES
-            );
-            if (copied.timedOut() || copied.exitCode() != 0) {
-                throw new IOException("Could not write " + remotePath + " into the sandbox: "
-                    + (copied.timedOut() ? "docker cp timed out" : copied.output()));
+            errReader.join(1_000);
+            if (process.exitValue() != 0) {
+                throw new IOException("Could not write " + remotePath
+                    + " into the sandbox: " + stderr.text().trim());
             }
-        } finally {
-            Files.deleteIfExists(temp);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            ProcessGroup.kill(process);
+            throw new IOException("Interrupted while writing " + remotePath, e);
         }
     }
 

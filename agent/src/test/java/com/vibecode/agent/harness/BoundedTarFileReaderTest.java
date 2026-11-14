@@ -34,6 +34,16 @@ class BoundedTarFileReaderTest {
     }
 
     @Test
+    void rejectsDirectoryAndFifoEntries() {
+        for (byte type : new byte[]{'5', '6'}) {
+            byte[] tar = tar(new byte[0], type, "entry");
+            IOException error = assertThrows(IOException.class,
+                () -> BoundedTarFileReader.read(new ByteArrayInputStream(tar), 1024, 4096));
+            assertTrue(error.getMessage().contains("not a regular file"));
+        }
+    }
+
+    @Test
     void rejectsOversizedFilesBeforeReadingTheBody() {
         byte[] tar = header(2048, (byte) '0', "ca.crt");
 

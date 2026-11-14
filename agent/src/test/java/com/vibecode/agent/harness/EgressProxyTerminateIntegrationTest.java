@@ -30,6 +30,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -122,6 +123,144 @@ class EgressProxyTerminateIntegrationTest {
             stop(proxy);
             stop(origin);
         }
+    }
+
+    @Test
+    @Timeout(90)
+    void rejectsChunkedSmugglingAndPreservesDuplicateResponseHeaders() throws Exception {
+        Assumptions.assumeTrue(nodeAvailable(), "node is required");
+        Assumptions.assumeTrue(opensslAvailable(), "openssl is required");
+
+        Path caCert = tempDir.resolve("ca2.crt");
+        Path caKey = tempDir.resolve("ca2.key");
+        Path serverCert = tempDir.resolve("server2.crt");
+        Path serverKey = tempDir.resolve("server2.key");
+        Path serverCsr = tempDir.resolve("server2.csr");
+        Path serverExt = tempDir.resolve("server2.ext");
+        generateCertificates(caCert, caKey, serverCert, serverKey, serverCsr, serverExt);
+
+        int originPort = freePort();
+        Path log = tempDir.resolve("origin.log");
+        Process origin = startNodeOrigin(originPort, serverCert, serverKey, log);
+        int proxyPort = freePort();
+        Path proxyCaDir = tempDir.resolve("proxy-ca2");
+        Process proxy = startProxy(proxyPort, proxyCaDir, originPort, caCert);
+        try {
+            awaitListening(proxy);
+            awaitPort(originPort);
+            awaitPort(proxyPort);
+            SSLContext context = trust(readCertificate(proxyCaDir.resolve("ca.crt")));
+
+            String smuggled = "GET /smuggled HTTP/1.1\r\nHost: evil.test\r\n\r\n";
+            String chunked = Integer.toHexString(smuggled.length()) + "\r\n"
+                + smuggled + "\r\n0\r\n\r\n";
+            String response = requestRaw(context, proxyPort, originPort,
+                "GET /outer HTTP/1.1\r\nHost: localhost.test\r\n"
+                    + "Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+                    + chunked);
+            assertTrue(response.contains("200"), response);
+            Thread.sleep(200);
+            List<String> lines = Files.readAllLines(log);
+            assertEquals(1, lines.stream().filter(line -> line.contains("/outer")).count(),
+                String.join("\n", lines));
+            assertTrue(lines.stream().noneMatch(line -> line.contains("/smuggled")),
+                String.join("\n", lines));
+
+            String hop = requestRaw(context, proxyPort, originPort,
+                "GET /hop HTTP/1.1\r\nHost: localhost.test\r\nConnection: close\r\n\r\n");
+            assertTrue(hop.contains("a=1"), hop);
+            assertTrue(hop.contains("b=2"), hop);
+
+            assertTrue(requestRaw(context, proxyPort, originPort,
+                "GET /204 HTTP/1.1\r\nHost: localhost.test\r\nConnection: close\r\n\r\n")
+                .contains("204"));
+            assertTrue(requestRaw(context, proxyPort, originPort,
+                "GET /304 HTTP/1.1\r\nHost: localhost.test\r\nConnection: close\r\n\r\n")
+                .contains("304"));
+            String head = requestRaw(context, proxyPort, originPort,
+                "HEAD / HTTP/1.1\r\nHost: localhost.test\r\nConnection: close\r\n\r\n");
+            assertTrue(head.contains("200"), head);
+            assertFalse(head.contains("ok"), head);
+            String upgrade = requestRaw(context, proxyPort, originPort,
+                "GET /101 HTTP/1.1\r\nHost: localhost.test\r\nConnection: close\r\n\r\n");
+            assertTrue(upgrade.contains("403") || upgrade.isEmpty(), upgrade);
+            String big = requestRaw(context, proxyPort, originPort,
+                "GET /big HTTP/1.1\r\nHost: localhost.test\r\nConnection: close\r\n\r\n");
+            assertFalse(big.contains("200"), big);
+            String expect = requestRaw(context, proxyPort, originPort,
+                "POST / HTTP/1.1\r\nHost: localhost.test\r\nExpect: 100-continue\r\n"
+                    + "Content-Length: 0\r\nConnection: close\r\n\r\n");
+            assertTrue(expect.contains("100") && expect.contains("200"), expect);
+        } finally {
+            stop(proxy);
+            stop(origin);
+        }
+    }
+
+    private static Process startNodeOrigin(
+        int port,
+        Path cert,
+        Path key,
+        Path log
+    ) throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+            "node", Path.of("src/test/resources/egress-test-origin.js").toString(),
+            String.valueOf(port), cert.toString(), key.toString(), log.toString());
+        builder.redirectErrorStream(true);
+        Process process = builder.start();
+        awaitMessage(process, "origin listening");
+        return process;
+    }
+
+    private static Process startProxy(
+        int proxyPort,
+        Path caDir,
+        int originPort,
+        Path originCa
+    ) throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+            "node", Path.of("src/main/resources/sandbox/egress-proxy.js").toString());
+        builder.redirectErrorStream(true);
+        builder.environment().putAll(java.util.Map.of(
+            "EGRESS_ALLOWED_HOSTS", "localhost.test",
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_PORT", String.valueOf(proxyPort),
+            "EGRESS_CA_DIR", caDir.toString(),
+            "EGRESS_TEST_MODE", "1",
+            "EGRESS_TEST_RESOLVE_IP", "127.0.0.1",
+            "EGRESS_TEST_ALLOW_LOOPBACK", "1",
+            "EGRESS_TEST_CONNECT_PORT", String.valueOf(originPort),
+            "NODE_EXTRA_CA_CERTS", originCa.toString()
+        ));
+        return builder.start();
+    }
+
+    private static void awaitMessage(Process process, String message) throws Exception {
+        BlockingQueue<String> lines = new LinkedBlockingQueue<>();
+        Thread reader = new Thread(() -> {
+            try (BufferedReader buffered = new BufferedReader(
+                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = buffered.readLine()) != null) {
+                    lines.offer(line);
+                }
+            } catch (IOException ignored) {
+                // The process was stopped.
+            }
+        }, "egress-test-log");
+        reader.setDaemon(true);
+        reader.start();
+        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        while (System.nanoTime() < deadline) {
+            String line = lines.poll(200, TimeUnit.MILLISECONDS);
+            if (line != null && line.contains(message)) {
+                return;
+            }
+            if (!process.isAlive()) {
+                throw new AssertionError("process exited before: " + message);
+            }
+        }
+        throw new AssertionError("process did not emit: " + message);
     }
 
     private static String request(
