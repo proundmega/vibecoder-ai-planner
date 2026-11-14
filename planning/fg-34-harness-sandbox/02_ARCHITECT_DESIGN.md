@@ -50,7 +50,7 @@ void destroy(SandboxHandle h);
 
 - OpenCode stays in the supervisor so it can call the model/provider proxy and receive events; it never runs repo code directly.
 - The model's bash/read/write tools are replaced with guarded supervisor bridges (`sandbox_bash`, `sandbox_read`, `sandbox_grep`, `sandbox_write`, `sandbox_edit`). Prompts and event streaming stay on the supervisor side; the untrusted code runs in the sandbox.
-- The channel is a per-run Unix socket (or a loopback port bound to 127.0.0.1) with a random per-run token. Repo processes cannot reach it and the sandbox exposes no inbound port. Slice 2 implements the token and loopback binding; request IDs and idempotent exec are **D17**.
+- The channel is a per-run Unix socket (or a loopback port bound to 127.0.0.1) with a random per-run token. Repo processes cannot reach it and the sandbox exposes no inbound port. Slice 2 implements the token and loopback binding. Exec requests also carry a client request ID and use a bounded 64-entry/10-minute result cache: a duplicate ID returns the cached response, a reused ID with a different command/cwd/timeout is rejected, and a request without an ID keeps the legacy non-cached behavior.
 - If a future OpenCode build must run inside the sandbox, add an explicit `attach/exec/port` contract and authenticated loopback channel; do not run it without one.
 
 ## Runtime

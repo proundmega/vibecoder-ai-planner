@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -152,6 +153,53 @@ class SandboxBashBridgeTest {
             HttpResponse.BodyHandlers.ofString());
 
         assertEquals(405, response.statusCode());
+    }
+
+    @Test
+    void returnsTheCachedResultForADuplicateRequestId() throws Exception {
+        Map<String, Object> request = Map.of(
+            "requestId", "req-1",
+            "command", "ls",
+            "timeoutSeconds", 10
+        );
+
+        HttpResponse<String> first = exec(request, bridge.token());
+        HttpResponse<String> second = exec(request, bridge.token());
+
+        assertEquals(200, first.statusCode());
+        assertEquals(200, second.statusCode());
+        assertEquals(first.body(), second.body());
+        verify(runner, times(1)).exec(any(), any());
+    }
+
+    @Test
+    void rejectsReusingARequestIdWithADifferentCommand() throws Exception {
+        exec(Map.of("requestId", "req-2", "command", "ls"), bridge.token());
+
+        HttpResponse<String> conflict = exec(
+            Map.of("requestId", "req-2", "command", "pwd"), bridge.token());
+
+        assertEquals(409, conflict.statusCode());
+        assertTrue(conflict.body().contains("different request"));
+        verify(runner, times(1)).exec(any(), any());
+    }
+
+    @Test
+    void executesAgainWhenRequestIdIsMissingForCompatibility() throws Exception {
+        exec(Map.of("command", "ls"), bridge.token());
+        exec(Map.of("command", "ls"), bridge.token());
+
+        verify(runner, times(2)).exec(any(), any());
+    }
+
+    @Test
+    void rejectsAnInvalidRequestId() throws Exception {
+        HttpResponse<String> response = exec(
+            Map.of("requestId", "bad id!", "command", "ls"), bridge.token());
+
+        assertEquals(400, response.statusCode());
+        assertTrue(response.body().contains("invalid requestId"));
+        verify(runner, times(0)).exec(any(), any());
     }
 
     private HttpResponse<String> exec(Map<String, ?> body, String token) throws Exception {

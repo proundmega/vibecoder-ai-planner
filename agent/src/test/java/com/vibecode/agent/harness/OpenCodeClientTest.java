@@ -174,6 +174,7 @@ class OpenCodeClientTest {
         assertTrue(source.contains("VIBECODE_SANDBOX_BRIDGE_TOKEN"));
         assertTrue(source.contains("tool.schema.string()"));
         assertTrue(source.contains("x-sandbox-token"));
+        assertTrue(source.contains("requestId"));
         assertTrue(source.contains("sandbox command rejected"));
     }
 

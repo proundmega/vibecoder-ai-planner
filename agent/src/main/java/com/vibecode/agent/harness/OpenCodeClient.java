@@ -936,6 +936,9 @@ public final class OpenCodeClient implements HarnessClient {
                 if (!url || !token) {
                   throw new Error("sandbox bridge is not configured")
                 }
+                const requestId = globalThis.crypto?.randomUUID
+                  ? globalThis.crypto.randomUUID()
+                  : "req-" + Date.now() + "-" + Math.random().toString(16).slice(2)
                 const response = await fetch(url + "/exec", {
                   method: "POST",
                   headers: {
@@ -943,6 +946,7 @@ public final class OpenCodeClient implements HarnessClient {
                     "x-sandbox-token": token,
                   },
                   body: JSON.stringify({
+                    requestId,
                     command: args.command,
                     cwd: context.directory,
                     timeoutSeconds: args.timeout,
