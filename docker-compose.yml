@@ -69,7 +69,16 @@ services:
       - CONTAINER_NETWORK=${COMPOSE_PROJECT_NAME:-vibecode}_default
       - REPO_VOLUME=vibecode_repos
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - GITHUB_AUTH_MODE=${GITHUB_AUTH_MODE:-app}
+      - ALLOW_PAT=${ALLOW_PAT:-false}
+      - GITHUB_APP_ID=${GITHUB_APP_ID:-}
+      - GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY:-}
+      - GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID:-}
+      - GITHUB_TOKEN_TTL_SECONDS=${GITHUB_TOKEN_TTL_SECONDS:-3600}
       - REDIS_URL=redis://redis:6379
+    # Optional GitHub App private key: set
+    # GITHUB_APP_PRIVATE_KEY=file:/run/secrets/github-app.pem and mount the file:
+    # - ${GITHUB_APP_PRIVATE_KEY_PATH:-./secrets/github-app.pem}:/run/secrets/github-app.pem:ro
     volumes:
       - uploads_data:/app/uploads
       - vibecode_repos:/repos

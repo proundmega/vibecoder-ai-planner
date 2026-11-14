@@ -549,9 +549,15 @@ public class ApiService {
      * The backend chooses App or PAT mode and enforces the fallback flag.
      */
     public Map<String, Object> requestGitHubToken(String projectId) throws IOException {
+        return requestGitHubToken(projectId, false);
+    }
+
+    public Map<String, Object> requestGitHubToken(String projectId, boolean forceRefresh)
+            throws IOException {
         String url = baseUrl + "/github/" + projectId + "/token";
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("operation", "agent");
+        body.put("forceRefresh", forceRefresh);
         ApiResponse<Map<String, Object>> response = executePost(
             url, body, new TypeReference<ApiResponse<Map<String, Object>>>() {});
 

@@ -30,7 +30,7 @@ describe('githubController.requestToken (fg-35 FR4/FR10)', () => {
     });
     const req = {
       params: { projectId: '1' },
-      body: { operation: 'clone' },
+      body: { operation: 'clone', forceRefresh: true },
       agent: { id: 10, owner_id: 7 },
     };
     const res = mockRes();
@@ -40,6 +40,7 @@ describe('githubController.requestToken (fg-35 FR4/FR10)', () => {
     expect(GitHubAppAuthService.mintToken).toHaveBeenCalledWith(1, {
       operation: 'clone',
       repo: undefined,
+      forceRefresh: true,
     });
     expect(res.json).toHaveBeenCalledWith({
       success: true,

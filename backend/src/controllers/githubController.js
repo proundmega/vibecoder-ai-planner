@@ -164,6 +164,7 @@ async function requestToken(req, res, next) {
     const token = await GitHubAppAuthService.mintToken(projectId, {
       operation: req.body?.operation || 'agent',
       repo: req.body?.repo,
+      forceRefresh: req.body?.forceRefresh === true,
     });
     res.json({ success: true, data: token });
   } catch (error) {

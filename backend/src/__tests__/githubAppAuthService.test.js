@@ -55,6 +55,7 @@ function makeService(overrides = {}) {
       token: 'ghs_test_token',
       expires_at: EXPIRES_AT,
       permissions: { contents: 'write', metadata: 'read' },
+      repositories: [{ full_name: 'acme/widgets' }],
     },
   });
   let now = NOW;
@@ -203,6 +204,25 @@ describe('GitHubAppAuthService app mode (fg-35 FR3/FR8/FR10)', () => {
       },
     });
     const { service, request } = makeService({ db });
+    request
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        data: {
+          token: 'ghs_project_one',
+          expires_at: EXPIRES_AT,
+          repositories: [{ full_name: 'acme/widgets' }],
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        data: {
+          token: 'ghs_project_two',
+          expires_at: EXPIRES_AT,
+          repositories: [{ full_name: 'acme/gadgets' }],
+        },
+      });
 
     const first = await service.mintToken(1, { operation: 'clone' });
     const second = await service.mintToken(2, { operation: 'clone' });
@@ -230,6 +250,94 @@ describe('GitHubAppAuthService app mode (fg-35 FR3/FR8/FR10)', () => {
     const status = await service.getInstallationStatus(1);
 
     expect(status.installationId).toBe(42);
+  });
+
+  it('rejects a token minted for a different repository', async () => {
+    const { service, request } = makeService();
+    request.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      data: {
+        token: 'ghs_wrong_repo',
+        expires_at: EXPIRES_AT,
+        repositories: [{ full_name: 'victim/widgets' }],
+      },
+    });
+
+    await expect(service.mintToken(1, { operation: 'clone' }))
+      .rejects.toMatchObject({ code: 'GITHUB_TOKEN_SCOPE_MISMATCH' });
+    expect(request).toHaveBeenLastCalledWith(
+      'DELETE',
+      'https://api.github.com/installation/token',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer ghs_wrong_repo' }),
+      })
+    );
+  });
+
+  it('rejects a token response without a repositories list', async () => {
+    const { service, request } = makeService();
+    request.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      data: { token: 'ghs_unscoped', expires_at: EXPIRES_AT },
+    });
+
+    await expect(service.mintToken(1, { operation: 'clone' }))
+      .rejects.toMatchObject({ code: 'GITHUB_TOKEN_SCOPE_MISMATCH' });
+  });
+
+  it('rejects a bare-name allowlist collision across installations', async () => {
+    const db = makeDb({
+      repos: { 1: { repo_url: REPO_URL, access_token_encrypted: 'encrypted' } },
+      installations: { 1: { installation_id: 42, repo_allowlist: ['widgets'] } },
+    });
+    const { service, request } = makeService({ db });
+    request.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      data: {
+        token: 'ghs_collision',
+        expires_at: EXPIRES_AT,
+        repositories: [{ full_name: 'victim/widgets' }],
+      },
+    });
+
+    await expect(service.mintToken(1, { operation: 'clone' }))
+      .rejects.toMatchObject({ code: 'GITHUB_TOKEN_SCOPE_MISMATCH' });
+  });
+
+  it('classifies rate-limit responses separately', async () => {
+    const { service, request } = makeService();
+    request.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      headers: { 'x-ratelimit-remaining': '0' },
+      data: null,
+    });
+
+    await expect(service.mintToken(1, { operation: 'clone' }))
+      .rejects.toMatchObject({ code: 'GITHUB_RATE_LIMITED' });
+  });
+
+  it('bypasses and revokes the cached token on forceRefresh', async () => {
+    const { service, request } = makeService();
+    await service.mintToken(1, { operation: 'clone' });
+
+    const refreshed = await service.mintToken(1, {
+      operation: 'retry',
+      forceRefresh: true,
+    });
+
+    expect(refreshed.cached).toBeUndefined();
+    expect(request).toHaveBeenCalledWith(
+      'DELETE',
+      'https://api.github.com/installation/token',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer ghs_test_token' }),
+      })
+    );
+    expect(request.mock.calls.filter((call) => call[0] === 'POST')).toHaveLength(2);
   });
 
   it('rejects a project whose installation is disabled', async () => {
@@ -385,6 +493,36 @@ describe('GitHubAppAuthService installation management (fg-35 FR2/FR7)', () => {
     expect(result.repoAllowlist).toEqual(['acme/widgets', 'acme/gadgets']);
     expect(result.disabled).toBe(false);
     expect(result.installationId).toBe(42);
+  });
+
+  it('revokes cached tokens when the installation mapping changes', async () => {
+    const db = makeDb({
+      repos: { 1: { repo_url: REPO_URL, access_token_encrypted: 'encrypted' } },
+      installations: { 1: { installation_id: 42, repo_allowlist: [] } },
+    });
+    const { service, request } = makeService({ db });
+    await service.mintToken(1, { operation: 'clone' });
+
+    const result = await service.setInstallation(1, 43, []);
+
+    expect(result.revoked).toBe(1);
+    expect(request).toHaveBeenCalledWith(
+      'DELETE',
+      'https://api.github.com/installation/token',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer ghs_test_token' }),
+      })
+    );
+  });
+
+  it('does not revoke tokens when the mapping is unchanged', async () => {
+    const db = makeDb({ installations: { 1: { installation_id: 42, repo_allowlist: [] } } });
+    const { service, request } = makeService({ db });
+
+    const result = await service.setInstallation(1, 42, []);
+
+    expect(result.revoked).toBe(0);
+    expect(request).not.toHaveBeenCalled();
   });
 
   it('normalizes bare repo names and case in the allowlist', async () => {

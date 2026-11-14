@@ -94,7 +94,13 @@ async function httpRequest(method, url, options = {}) {
         data = null;
       }
     }
-    return { ok: response.ok, status: response.status, data, text };
+    return {
+      ok: response.ok,
+      status: response.status,
+      data,
+      text,
+      headers: Object.fromEntries(response.headers.entries()),
+    };
   } finally {
     clearTimeout(timeout);
   }
@@ -157,6 +163,16 @@ class GitHubAppAuthService {
   }
 
   async setInstallation(projectId, installationId, repoAllowlist = []) {
+    const existing = await this.getInstallation(projectId);
+    const nextAllowlist = normalizeAllowlist(repoAllowlist);
+    const changed = !existing
+      || Number(existing.installation_id) !== Number(installationId)
+      || JSON.stringify(normalizeAllowlist(existing.repo_allowlist))
+        !== JSON.stringify(nextAllowlist);
+    const cachedTokens = changed
+      ? this.cachedTokensForProject(projectId)
+      : new Set();
+
     const result = await this.db.query(
       `INSERT INTO project_github_installations
          (project_id, installation_id, repo_allowlist, disabled_at)
@@ -167,10 +183,26 @@ class GitHubAppAuthService {
            disabled_at = NULL,
            updated_at = NOW()
        RETURNING project_id, installation_id, repo_allowlist, disabled_at, created_at, updated_at`,
-      [projectId, installationId, normalizeAllowlist(repoAllowlist)]
+      [projectId, installationId, nextAllowlist]
     );
     this.clearCacheForProject(projectId);
-    return this.formatInstallation(result.rows[0]);
+
+    let revoked = 0;
+    for (const token of cachedTokens) {
+      if (await this.revokeToken(token, {
+        projectId,
+        installationId: Number(installationId),
+      })) revoked += 1;
+    }
+    if (cachedTokens.size > 0) {
+      this.log.info('github_app_mapping_changed', {
+        projectId,
+        installationId: Number(installationId),
+        revoked,
+        cachedTokens: cachedTokens.size,
+      });
+    }
+    return { ...this.formatInstallation(result.rows[0]), revoked };
   }
 
   async getInstallationStatus(projectId) {
@@ -186,12 +218,7 @@ class GitHubAppAuthService {
 
     // Collect the project's cached installation tokens before clearing the
     // cache; each can be revoked with DELETE /installation/token.
-    const cachedTokens = new Set();
-    for (const entry of this.cache.values()) {
-      if (entry.projectId === Number(projectId) && entry.result?.token) {
-        cachedTokens.add(entry.result.token);
-      }
-    }
+    const cachedTokens = this.cachedTokensForProject(projectId);
 
     await this.db.query(
       `UPDATE project_github_installations
@@ -203,34 +230,10 @@ class GitHubAppAuthService {
 
     let revoked = 0;
     for (const token of cachedTokens) {
-      try {
-        const response = await this.request(
-          'DELETE',
-          `${GITHUB_API_BASE}/installation/token`,
-          {
-            headers: {
-              Accept: 'application/vnd.github+json',
-              Authorization: `Bearer ${token}`,
-              'X-GitHub-Api-Version': '2022-11-28',
-            },
-          }
-        );
-        if (response.ok) {
-          revoked += 1;
-        } else {
-          this.log.warn('github_app_installation_revoke_failed', {
-            projectId,
-            installationId: existing.installation_id,
-            status: response.status,
-          });
-        }
-      } catch (error) {
-        this.log.warn('github_app_installation_revoke_failed', {
-          projectId,
-          installationId: existing.installation_id,
-          error: error.message,
-        });
-      }
+      if (await this.revokeToken(token, {
+        projectId,
+        installationId: existing.installation_id,
+      })) revoked += 1;
     }
     if (cachedTokens.size === 0) {
       this.log.warn('github_app_disable_no_cached_token', {
@@ -261,6 +264,45 @@ class GitHubAppAuthService {
     const id = Number(projectId);
     for (const [key, entry] of this.cache.entries()) {
       if (entry.projectId === id) this.cache.delete(key);
+    }
+  }
+
+  cachedTokensForProject(projectId) {
+    const tokens = new Set();
+    for (const entry of this.cache.values()) {
+      if (entry.projectId === Number(projectId) && entry.result?.token) {
+        tokens.add(entry.result.token);
+      }
+    }
+    return tokens;
+  }
+
+  async revokeToken(token, context = {}) {
+    try {
+      const response = await this.request(
+        'DELETE',
+        `${GITHUB_API_BASE}/installation/token`,
+        {
+          headers: {
+            Accept: 'application/vnd.github+json',
+            Authorization: `Bearer ${token}`,
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+        }
+      );
+      if (!response.ok) {
+        this.log.warn('github_app_installation_revoke_failed', {
+          ...context,
+          status: response.status,
+        });
+      }
+      return response.ok;
+    } catch (error) {
+      this.log.warn('github_app_installation_revoke_failed', {
+        ...context,
+        error: error.message,
+      });
+      return false;
     }
   }
 
@@ -354,8 +396,16 @@ class GitHubAppAuthService {
     const cacheKey = `${Number(projectId)}:${installation.installationId}:${repo.full}`;
     const now = this.now();
     const cached = this.cache.get(cacheKey);
+    if (options.forceRefresh && cached) {
+      this.cache.delete(cacheKey);
+      await this.revokeToken(cached.result.token, {
+        projectId,
+        installationId: installation.installationId,
+      });
+    }
     if (
       cached &&
+      !options.forceRefresh &&
       cached.projectId === Number(projectId) &&
       now < cached.refreshAt
     ) {
@@ -365,7 +415,7 @@ class GitHubAppAuthService {
     let appJwt;
     try {
       appJwt = this.createAppJwt(config);
-    } catch (error) {
+    } catch {
       const configError = new ServiceUnavailableError(
         'GitHub App private key is not a valid RS256 key'
       );
@@ -406,6 +456,25 @@ class GitHubAppAuthService {
       throw mintError;
     }
 
+    const rateLimitRemaining = response.headers
+      ? response.headers['x-ratelimit-remaining']
+      : undefined;
+    if (response.status === 429
+      || (response.status === 403 && rateLimitRemaining === '0')) {
+      const error = new ServiceUnavailableError(
+        'GitHub rate limit reached while minting an installation token; retry later'
+      );
+      error.code = 'GITHUB_RATE_LIMITED';
+      this.audit('failed', {
+        projectId: Number(projectId),
+        mode: 'app',
+        repo: repo.full,
+        installationId: installation.installationId,
+        operation,
+        status: response.status,
+      });
+      throw error;
+    }
     if (response.status === 401 || response.status === 403 || response.status === 404) {
       const error = new ForbiddenError(
         'GitHub rejected the installation token request; check the App installation and permissions'
@@ -446,6 +515,38 @@ class GitHubAppAuthService {
       throw error;
     }
 
+    // Never trust the requested scope: GitHub must return exactly the
+    // project's connected repository. Otherwise a same-named repo in another
+    // installation could be minted and cached for this project.
+    const mintedRepositories = Array.isArray(data.repositories)
+      ? data.repositories
+      : [];
+    const mintedFullNames = mintedRepositories
+      .map((entry) => entry && typeof entry.full_name === 'string'
+        ? entry.full_name.toLowerCase()
+        : null)
+      .filter(Boolean);
+    if (mintedFullNames.length !== 1
+      || mintedFullNames[0] !== repo.full.toLowerCase()) {
+      await this.revokeToken(data.token, {
+        projectId,
+        installationId: installation.installationId,
+      });
+      const error = new ForbiddenError(
+        'GitHub returned a token scoped to a different repository; refusing it'
+      );
+      error.code = 'GITHUB_TOKEN_SCOPE_MISMATCH';
+      this.audit('failed', {
+        projectId: Number(projectId),
+        mode: 'app',
+        repo: repo.full,
+        installationId: installation.installationId,
+        operation,
+        requestedRepositories: repo.full,
+      });
+      throw error;
+    }
+
     const expiresAtMs = this.parseExpiry(data.expires_at, now + config.ttlSeconds * 1000);
     const ttlCap = now + config.ttlSeconds * 1000;
     const validUntil = Math.min(expiresAtMs, ttlCap);
@@ -472,7 +573,7 @@ class GitHubAppAuthService {
       installationId: installation.installationId,
       operation,
       expiresAt: tokenResult.expiresAt,
-      permissions: Object.keys(tokenResult.permissions || {}),
+      permissions: tokenResult.permissions || this.permissions,
     });
     return tokenResult;
   }

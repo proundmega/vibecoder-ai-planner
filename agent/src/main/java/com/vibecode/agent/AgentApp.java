@@ -99,8 +99,10 @@ public class AgentApp {
             legacyFallback = this::fetchLegacyPat;
         }
         return new GitHubTokenProvider(
-            () -> apiService.requestGitHubToken(config.getProjectId()),
-            legacyFallback);
+            force -> apiService.requestGitHubToken(config.getProjectId(), force),
+            legacyFallback,
+            config.getGitHubAuthMode(),
+            config.isAllowPat());
     }
 
     private String fetchGitHubToken(GitHubTokenProvider provider) {

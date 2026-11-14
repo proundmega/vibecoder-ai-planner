@@ -14,4 +14,10 @@ public interface GitHubTokenSource {
     /** Drops any cached credential after GitHub rejects it. */
     default void invalidate() {
     }
+
+    /** Forces a fresh credential from the backend after a 401. */
+    default String refresh() throws IOException {
+        invalidate();
+        return get();
+    }
 }

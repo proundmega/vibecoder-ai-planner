@@ -23,11 +23,13 @@ public class GitHubTokenProvider implements GitHubTokenSource {
     /** Fetches the token payload from the backend. */
     @FunctionalInterface
     public interface Fetcher {
-        Map<String, Object> fetch() throws IOException;
+        Map<String, Object> fetch(boolean forceRefresh) throws IOException;
     }
 
     private final Fetcher fetcher;
     private final GitHubTokenSource fallback;
+    private final String expectedMode;
+    private final boolean allowPat;
     private final LongSupplier clockMillis;
     private final long refreshSkewMillis;
     private final Set<String> knownTokens = new LinkedHashSet<>();
@@ -41,30 +43,57 @@ public class GitHubTokenProvider implements GitHubTokenSource {
     }
 
     public GitHubTokenProvider(Fetcher fetcher, GitHubTokenSource fallback) {
-        this(fetcher, fallback, System::currentTimeMillis, DEFAULT_REFRESH_SKEW_MS);
+        this(fetcher, fallback, null, false);
+    }
+
+    public GitHubTokenProvider(
+        Fetcher fetcher, GitHubTokenSource fallback,
+        String expectedMode, boolean allowPat) {
+        this(fetcher, fallback, expectedMode, allowPat,
+            System::currentTimeMillis, DEFAULT_REFRESH_SKEW_MS);
     }
 
     GitHubTokenProvider(Fetcher fetcher, LongSupplier clockMillis, long refreshSkewMillis) {
-        this(fetcher, null, clockMillis, refreshSkewMillis);
+        this(fetcher, null, null, false, clockMillis, refreshSkewMillis);
     }
 
     GitHubTokenProvider(
         Fetcher fetcher, GitHubTokenSource fallback,
         LongSupplier clockMillis, long refreshSkewMillis) {
+        this(fetcher, fallback, null, false, clockMillis, refreshSkewMillis);
+    }
+
+    GitHubTokenProvider(
+        Fetcher fetcher, GitHubTokenSource fallback,
+        String expectedMode, boolean allowPat,
+        LongSupplier clockMillis, long refreshSkewMillis) {
         this.fetcher = fetcher;
         this.fallback = fallback;
+        this.expectedMode = expectedMode;
+        this.allowPat = allowPat;
         this.clockMillis = clockMillis;
         this.refreshSkewMillis = Math.max(0, refreshSkewMillis);
     }
 
     @Override
     public synchronized String get() throws IOException {
-        if (token != null && !needsRefresh()) {
+        return get(false);
+    }
+
+    @Override
+    public synchronized String refresh() throws IOException {
+        token = null;
+        expiresAt = null;
+        return get(true);
+    }
+
+    private synchronized String get(boolean forceRefresh) throws IOException {
+        if (token != null && !forceRefresh && !needsRefresh()) {
             return token;
         }
         Map<String, Object> data;
         try {
-            data = fetcher.fetch();
+            data = fetcher.fetch(forceRefresh);
         } catch (IOException error) {
             return useFallback(error);
         }
@@ -75,8 +104,10 @@ public class GitHubTokenProvider implements GitHubTokenSource {
         if (!(value instanceof String) || ((String) value).isBlank()) {
             return useFallback(new IOException("Backend returned no GitHub token"));
         }
+        String responseMode = stringValue(data.get("mode"));
+        validateMode(responseMode);
         token = (String) value;
-        mode = stringValue(data.get("mode"));
+        mode = responseMode;
         expiresAt = parseExpiry(data.get("expiresAt"));
         knownTokens.add(token);
         log.info("Fetched GitHub credential (mode={}, expiresAt={})",
@@ -85,8 +116,30 @@ public class GitHubTokenProvider implements GitHubTokenSource {
         return token;
     }
 
+    private void validateMode(String responseMode) throws IOException {
+        if (expectedMode == null) {
+            return;
+        }
+        if (responseMode == null || !expectedMode.equalsIgnoreCase(responseMode)) {
+            throw new IOException(
+                "GitHub credential mode mismatch: expected " + expectedMode
+                    + ", got " + (responseMode == null ? "unknown" : responseMode));
+        }
+        if ("pat".equalsIgnoreCase(responseMode) && !allowPat) {
+            throw new IOException(
+                "Backend returned a PAT but ALLOW_PAT is not enabled");
+        }
+    }
+
     private String useFallback(IOException failure) throws IOException {
         if (fallback == null) {
+            throw failure;
+        }
+        if (expectedMode != null
+            && !"pat".equalsIgnoreCase(expectedMode)) {
+            throw failure;
+        }
+        if (expectedMode != null && !allowPat) {
             throw failure;
         }
         String legacy = fallback.get();

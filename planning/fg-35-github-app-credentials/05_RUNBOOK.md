@@ -30,7 +30,16 @@ commit the key or put it in a workspace `.env`.
 | `GITHUB_TOKEN_TTL_SECONDS` | no | Client-side cap, 60–3600 (default 3600). GitHub still enforces its one-hour expiry. |
 | `ALLOW_PAT` | no | Must be `true` for the explicit PAT fallback. Default `false`. |
 
-The same `GITHUB_AUTH_MODE` and `ALLOW_PAT` values apply to the agent.
+The same `GITHUB_AUTH_MODE` and `ALLOW_PAT` values apply to the agent. The
+repository's `docker-compose.yml` forwards these variables to the `api`
+service, and `docker-compose.override.yml` defaults local development to
+`pat` + `ALLOW_PAT=true`. For a file-based key, set
+`GITHUB_APP_PRIVATE_KEY=file:/run/secrets/github-app.pem` and mount the key
+read-only at that path (an example mount is commented in `docker-compose.yml`).
+
+Pool agents receive `GITHUB_AUTH_MODE` and `ALLOW_PAT` from the backend
+environment; the actual token/PAT is fetched from the backend, not put in the
+container environment.
 
 ## 3. Map a project to an installation
 
@@ -44,7 +53,9 @@ curl -X PUT "$BACKEND/api/v1/github/$PROJECT_ID/installation" \
 ```
 
 `repoAllowlist` accepts `owner/repo` or a bare repo name. An empty allowlist
-permits only the project's connected repo. Check the mapping:
+permits only the project's connected repo. Changing the mapping revokes the
+project's cached installation tokens, so rotate or disable first when
+responding to a suspected compromise. Check the mapping:
 
 ```bash
 curl "$BACKEND/api/v1/github/$PROJECT_ID/installation" \
@@ -141,4 +152,5 @@ developer's local env token.
 | `PAT_FALLBACK_DISABLED` | `pat` mode without `ALLOW_PAT=true`. | Set the flag only for local development. |
 
 GitHub Enterprise Server is not supported in this iteration; the API base is
-the public GitHub endpoint.
+the public GitHub endpoint. GitHub rate limits are reported as
+`GITHUB_RATE_LIMITED`; retry after the reset window.

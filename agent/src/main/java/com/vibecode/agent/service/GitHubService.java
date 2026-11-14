@@ -53,6 +53,22 @@ public class GitHubService {
         this.objectMapper = new ObjectMapper();
     }
 
+    private Response executeWithAuth(Request request) throws IOException {
+        Response response = httpClient.newCall(request).execute();
+        if (response.code() != 401) {
+            return response;
+        }
+        response.close();
+        String refreshed = tokenSource.refresh();
+        if (refreshed == null || refreshed.isBlank()) {
+            throw new IOException("No GitHub credential is available after a 401");
+        }
+        Request retry = request.newBuilder()
+            .header("Authorization", "token " + refreshed)
+            .build();
+        return httpClient.newCall(retry).execute();
+    }
+
     private String token() throws IOException {
         String value = tokenSource.get();
         if (value == null || value.isBlank()) {
@@ -83,7 +99,7 @@ public class GitHubService {
             .post(body)
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = executeWithAuth(request)) {
             if (!response.isSuccessful()) {
                 String errorBody = response.body() != null ? response.body().string() : "";
                 // Branch might already exist
@@ -124,7 +140,7 @@ public class GitHubService {
             .post(body)
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = executeWithAuth(request)) {
             if (!response.isSuccessful()) {
                 String errorBody = response.body() != null ? response.body().string() : "";
                 throw new IOException("Failed to create commit: " + errorBody);
@@ -194,7 +210,7 @@ public class GitHubService {
             .get()
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = executeWithAuth(request)) {
             if (response.isSuccessful()) {
                 JsonNode root = objectMapper.readTree(response.body().string());
                 String defaultBranch = root.path("default_branch").asText();
@@ -235,7 +251,7 @@ public class GitHubService {
             .get()
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = executeWithAuth(request)) {
             if (response.isSuccessful()) {
                 JsonNode pulls = objectMapper.readTree(response.body().string());
                 if (pulls.isArray() && pulls.size() > 0) {
@@ -259,7 +275,7 @@ public class GitHubService {
             .get()
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = executeWithAuth(request)) {
             if (!response.isSuccessful()) {
                 throw new IOException("Failed to get branch " + branchName + ": " + response.code());
             }
@@ -289,7 +305,7 @@ public class GitHubService {
             .post(body)
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = executeWithAuth(request)) {
             if (!response.isSuccessful()) {
                 throw new IOException("Failed to create tree: " + response.code());
             }

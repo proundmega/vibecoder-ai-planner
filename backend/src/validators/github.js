@@ -56,6 +56,7 @@ const installationSchema = Joi.object({
 const tokenRequestSchema = Joi.object({
   operation: Joi.string().max(64).optional(),
   repo: Joi.string().max(200).optional(),
+  forceRefresh: Joi.boolean().default(false),
 });
 
 module.exports = {
