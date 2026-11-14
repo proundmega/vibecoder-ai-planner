@@ -87,6 +87,35 @@ describe('GitHubService', () => {
       expect(result.repoUrl).toBe('owner/repo');
     });
 
+    it('should accept string-typed project and user ids from pg BIGINT', async () => {
+      Project.findById.mockResolvedValue({ id: '1', ownerId: '100' });
+      User.find.mockResolvedValue({ role: 'user' });
+      PermissionService.hasPermission.mockResolvedValue(false);
+      GitHubProvider.validateRepoAccess = jest.fn().mockResolvedValue({
+        accessible: true,
+        defaultBranch: 'main',
+        private: false,
+        error: null,
+      });
+      pool.query.mockResolvedValue({
+        rows: [{
+          id: 1,
+          project_id: '1',
+          provider: 'github',
+          repo_url: 'owner/repo',
+          access_token_encrypted: 'encrypted-token-xyz',
+          default_branch: 'main',
+          is_active: true,
+          created_at: new Date(),
+          updated_at: new Date(),
+        }],
+      });
+
+      const result = await GitHubService.connectProject('1', 'owner/repo', 'test-token', '100');
+
+      expect(result.repoUrl).toBe('owner/repo');
+    });
+
     it('should throw ValidationError if PAT validation fails', async () => {
       Project.findById.mockResolvedValue({ id: 1, ownerId: 100 });
       User.find.mockResolvedValue({ role: 'project_admin' });
@@ -198,6 +227,23 @@ describe('GitHubService', () => {
         accessToken: null,
         authMode: 'app',
       });
+    });
+
+    it('refuses to return a stored PAT for a disabled project', async () => {
+      pool.query.mockImplementation(async (sql) => {
+        if (sql.includes('FROM project_github_installations')) {
+          return { rows: [{ disabled_at: new Date() }] };
+        }
+        return {
+          rows: [{
+            repo_url: 'https://github.com/owner/repo',
+            access_token_encrypted: 'encrypted-token',
+          }],
+        };
+      });
+
+      await expect(GitHubService.getProjectRepoForAgent(1))
+        .rejects.toMatchObject({ code: 'GITHUB_ACCESS_DISABLED' });
     });
 
     it('uses a minted installation token for backend PR operations', async () => {

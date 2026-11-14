@@ -170,6 +170,27 @@ describe('GitHubAppAuthService app mode (fg-35 FR3/FR8/FR10)', () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
+  it('does not reuse the same installation/repo cache entry across projects', async () => {
+    const db = makeDb({
+      repos: {
+        1: { repo_url: REPO_URL, access_token_encrypted: 'encrypted-1' },
+        2: { repo_url: REPO_URL, access_token_encrypted: 'encrypted-2' },
+      },
+      installations: {
+        1: { installation_id: 42, repo_allowlist: [] },
+        2: { installation_id: 42, repo_allowlist: [] },
+      },
+    });
+    const { service, request } = makeService({ db });
+
+    const first = await service.mintToken(1, { operation: 'clone' });
+    const second = await service.mintToken(2, { operation: 'clone' });
+
+    expect(first).not.toHaveProperty('cached');
+    expect(second).not.toHaveProperty('cached');
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
   it('does not reuse a cached token across projects', async () => {
     const db = makeDb({
       repos: {
@@ -198,6 +219,17 @@ describe('GitHubAppAuthService app mode (fg-35 FR3/FR8/FR10)', () => {
     const result = await service.mintToken(1, { operation: 'clone' });
 
     expect(Date.parse(result.expiresAt)).toBe(NOW + 120 * 1000);
+  });
+
+  it('returns a numeric installation id for pg BIGINT rows', async () => {
+    const db = makeDb({
+      installations: { 1: { installation_id: '42', repo_allowlist: [] } },
+    });
+    const { service } = makeService({ db });
+
+    const status = await service.getInstallationStatus(1);
+
+    expect(status.installationId).toBe(42);
   });
 
   it('rejects a project whose installation is disabled', async () => {
@@ -267,6 +299,14 @@ describe('GitHubAppAuthService app mode (fg-35 FR3/FR8/FR10)', () => {
       .rejects.toMatchObject({ code: 'GITHUB_INSTALLATION_REJECTED' });
   });
 
+  it('maps a network failure to a fail-closed mint error', async () => {
+    const { service, request } = makeService();
+    request.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+
+    await expect(service.mintToken(1, { operation: 'clone' }))
+      .rejects.toMatchObject({ code: 'GITHUB_TOKEN_MINT_FAILED' });
+  });
+
   it('fails closed when GitHub returns no token', async () => {
     const { service, request } = makeService();
     request.mockResolvedValueOnce({ ok: true, status: 201, data: {} });
@@ -302,6 +342,20 @@ describe('GitHubAppAuthService PAT fallback (fg-35 FR9)', () => {
     );
   });
 
+  it('honours a disabled project in PAT mode', async () => {
+    process.env.ALLOW_PAT = 'true';
+    const db = makeDb({
+      repos: { 1: { repo_url: REPO_URL, access_token_encrypted: 'encrypted' } },
+      installations: {
+        1: { installation_id: 42, repo_allowlist: [], disabled_at: new Date(NOW) },
+      },
+    });
+    const { service } = makeService({ db });
+
+    await expect(service.mintToken(1, { operation: 'clone' }))
+      .rejects.toMatchObject({ code: 'GITHUB_ACCESS_DISABLED' });
+  });
+
   it('rejects an unknown GITHUB_AUTH_MODE', async () => {
     process.env.GITHUB_AUTH_MODE = 'oauth';
     process.env.ALLOW_PAT = 'true';
@@ -330,46 +384,89 @@ describe('GitHubAppAuthService installation management (fg-35 FR2/FR7)', () => {
     );
     expect(result.repoAllowlist).toEqual(['acme/widgets', 'acme/gadgets']);
     expect(result.disabled).toBe(false);
+    expect(result.installationId).toBe(42);
   });
 
-  it('disables access and revokes installation tokens', async () => {
+  it('normalizes bare repo names and case in the allowlist', async () => {
+    const db = makeDb();
+    const { service } = makeService({ db });
+
+    const result = await service.setInstallation(1, 42, [
+      'widgets',
+      'Acme/Widgets',
+    ]);
+
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO project_github_installations'),
+      [1, 42, ['widgets', 'acme/widgets']]
+    );
+    expect(result.repoAllowlist).toEqual(['widgets', 'acme/widgets']);
+  });
+
+  it('disables access and revokes the cached installation token', async () => {
     const db = makeDb({
+      repos: { 1: { repo_url: REPO_URL, access_token_encrypted: 'encrypted' } },
       installations: { 1: { installation_id: 42, repo_allowlist: [] } },
     });
     const { service, request, log } = makeService({ db });
+    await service.mintToken(1, { operation: 'clone' });
 
     const result = await service.disableProject(1);
 
-    expect(result).toEqual({ disabled: true, revoked: true });
+    expect(result).toEqual({ disabled: true, revoked: 1, cachedTokens: 1 });
     expect(db.query).toHaveBeenCalledWith(
       expect.stringContaining('SET disabled_at = NOW()'),
       [1]
     );
-    expect(request).toHaveBeenCalledWith(
+    expect(request).toHaveBeenLastCalledWith(
       'DELETE',
-      'https://api.github.com/app/installations/42/access_tokens',
+      'https://api.github.com/installation/token',
       expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: 'Bearer app-jwt' }),
+        headers: expect.objectContaining({
+          Authorization: 'Bearer ghs_test_token',
+        }),
       })
     );
     expect(log.info).toHaveBeenCalledWith(
       'github_app_access_disabled',
-      expect.objectContaining({ projectId: 1, installationId: 42, revoked: true })
+      expect.objectContaining({
+        projectId: 1,
+        installationId: 42,
+        revoked: 1,
+        cachedTokens: 1,
+      })
     );
   });
 
   it('keeps the project disabled even when revocation fails', async () => {
     const db = makeDb({
+      repos: { 1: { repo_url: REPO_URL, access_token_encrypted: 'encrypted' } },
       installations: { 1: { installation_id: 42, repo_allowlist: [] } },
     });
     const { service, request, log } = makeService({ db });
+    await service.mintToken(1, { operation: 'clone' });
     request.mockRejectedValueOnce(new Error('network down'));
 
     const result = await service.disableProject(1);
 
-    expect(result).toEqual({ disabled: true, revoked: false });
+    expect(result).toEqual({ disabled: true, revoked: 0, cachedTokens: 1 });
     expect(log.warn).toHaveBeenCalledWith(
       'github_app_installation_revoke_failed',
+      expect.objectContaining({ projectId: 1 })
+    );
+  });
+
+  it('reports when no cached token can be revoked', async () => {
+    const db = makeDb({
+      installations: { 1: { installation_id: 42, repo_allowlist: [] } },
+    });
+    const { service, log } = makeService({ db });
+
+    const result = await service.disableProject(1);
+
+    expect(result).toEqual({ disabled: true, revoked: 0, cachedTokens: 0 });
+    expect(log.warn).toHaveBeenCalledWith(
+      'github_app_disable_no_cached_token',
       expect.objectContaining({ projectId: 1 })
     );
   });

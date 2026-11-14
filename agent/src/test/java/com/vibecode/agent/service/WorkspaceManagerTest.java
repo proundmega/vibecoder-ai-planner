@@ -301,6 +301,45 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void cloneUsesTheCurrentTokenFromTheSourceAndRemovesAskpass() throws Exception {
+        assumePosix();
+        Path bin = Files.createDirectories(tempDir.resolve("fake-bin"));
+        Path git = bin.resolve("git");
+        Path capturedAskpass = tempDir.resolve("captured-askpass.sh");
+        Path askpassPathFile = tempDir.resolve("askpass-path.txt");
+        String script = "#!/bin/sh\n"
+            + "while [ $# -gt 0 ] && [ \"$1\" != \"clone\" ] && [ \"$1\" != \"rev-parse\" ]; do shift; done\n"
+            + "[ $# -eq 0 ] && exit 0\n"
+            + "cmd=\"$1\"\n"
+            + "shift\n"
+            + "if [ \"$cmd\" = \"clone\" ]; then\n"
+            + "  mkdir -p \"$2/.git\"\n"
+            + "  printf '[core]\\n' > \"$2/.git/config\"\n"
+            + "  [ -n \"$GIT_ASKPASS\" ] && printf '%s' \"$GIT_ASKPASS\" > '" + askpassPathFile + "'\n"
+            + "  [ -n \"$GIT_ASKPASS\" ] && cp \"$GIT_ASKPASS\" '" + capturedAskpass + "'\n"
+            + "  exit 0\n"
+            + "fi\n"
+            + "if [ \"$cmd\" = \"rev-parse\" ]; then echo 0123456789012345678901234567890123456789; exit 0; fi\n"
+            + "exit 0\n";
+        Files.writeString(git, script);
+        Files.setPosixFilePermissions(git,
+            java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
+
+        String[] token = {"ghs_first"};
+        WorkspaceManager wm = new WorkspaceManager(
+            tempDir.toString(), "fake", false, null, () -> token[0]);
+        setField(wm, "gitBinary", git.toString());
+
+        wm.cloneRepo("https://github.com/owner/repo.git", "feature");
+
+        assertTrue(Files.exists(capturedAskpass));
+        assertTrue(Files.readString(capturedAskpass).contains("ghs_first"));
+        Path askpass = Path.of(Files.readString(askpassPathFile));
+        assertFalse(Files.exists(askpass.getParent()),
+            "the token-bearing askpass directory was not removed");
+    }
+
+    @Test
     void testCommitShaDryRun() throws Exception {
         WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "test-repo", true, null);
         String sha = wm.getCommitSha();

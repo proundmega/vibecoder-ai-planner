@@ -29,7 +29,7 @@ Publishing currently uses a long-lived GitHub PAT. We removed it from `.git/conf
 |---|---|---|
 | Plan merged | PR #105, follow-up consistency fix #106 | ☑ |
 | Implementation started | `feat/fg-35-github-app-credentials`; backend migration, mint/cache service, token endpoint, agent token provider and tests | ☑ |
-| Verification results | `03` → Results: backend 1611 tests, agent 529 tests (5 skipped), planning check and `git diff --check` | ☑ |
+| Verification results | `03` → Results: backend 1622 tests, agent 531 tests (5 skipped), planning check and `git diff --check` | ☑ |
 
 ## Deferred register (canonical)
 
@@ -43,3 +43,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D3 | Merge queue permissions | fg-36 | Delivery | fg-36-merge-lifecycle | open |
 | D4 | Credential audit events | fg-41 | Observability | fg-41-harness-observability | open |
 | D5 | Secret scanning/redaction | fg-42 | Privacy | fg-42-harness-privacy | open |
+| D6 | Bind every refreshed token from `GitHubTokenProvider.knownTokens()` into the harness redactor/leak guard. The current pattern rules cover `ghs_` tokens, but dynamic binding would make redaction independent of the format. | fg-35 | Privacy | fg-42 / follow-up | open |

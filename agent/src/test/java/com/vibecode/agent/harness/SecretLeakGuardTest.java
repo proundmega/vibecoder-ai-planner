@@ -47,6 +47,8 @@ class SecretLeakGuardTest {
             newBlob("key.ssh2", "---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----"));
         assertFinding("a GitHub token",
             newBlob("ci.yml", "token: ghp_abcdefghijklmnopqrstuvwxyz0123456789"));
+        assertFinding("a GitHub App token",
+            newBlob("ci.yml", "token: ghs_abcdefghijklmnopqrstuvwxyz0123456789ABCD"));
         assertFinding("a GitHub fine-grained token",
             newBlob("ci.yml", "token: github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz"));
         assertFinding("an AWS access key",

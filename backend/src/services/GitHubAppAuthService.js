@@ -49,11 +49,17 @@ function normalizeAllowlist(entries) {
   if (!Array.isArray(entries)) return [];
   const normalized = [];
   for (const entry of entries) {
-    try {
-      const repo = normalizeRepo(entry);
-      if (repo) normalized.push(repo);
-    } catch {
-      // Ignore malformed allowlist entries; an empty match fails closed.
+    const text = String(entry || '').trim().replace(/\.git$/, '');
+    if (!text) continue;
+    if (text.includes('/') || text.includes(':')) {
+      try {
+        const repo = normalizeRepo(text);
+        if (repo) normalized.push(repo.toLowerCase());
+      } catch {
+        // Ignore malformed allowlist entries; an empty match fails closed.
+      }
+    } else if (/^[A-Za-z0-9._-]+$/.test(text)) {
+      normalized.push(text.toLowerCase());
     }
   }
   return [...new Set(normalized)];
@@ -61,8 +67,12 @@ function normalizeAllowlist(entries) {
 
 function repoAllowed(fullRepo, allowlist) {
   if (!allowlist || allowlist.length === 0) return true;
-  const repoName = fullRepo.split('/')[1];
-  return allowlist.includes(fullRepo) || allowlist.includes(repoName);
+  const repoName = fullRepo.split('/')[1].toLowerCase();
+  const full = fullRepo.toLowerCase();
+  return allowlist.some((entry) => {
+    const value = String(entry).toLowerCase();
+    return value === full || value === repoName;
+  });
 }
 
 async function httpRequest(method, url, options = {}) {
@@ -71,7 +81,7 @@ async function httpRequest(method, url, options = {}) {
   try {
     const response = await fetch(url, {
       method,
-      headers: options.headers || {},
+      headers: { 'User-Agent': 'vibecode-ai-planner', ...(options.headers || {}) },
       body: options.body ? JSON.stringify(options.body) : undefined,
       signal: controller.signal,
     });
@@ -101,11 +111,22 @@ class GitHubAppAuthService {
   }
 
   readConfig() {
+    const mode = String(process.env.GITHUB_AUTH_MODE || 'app').toLowerCase();
+    let privateKey = null;
+    let privateKeyError = null;
+    if (mode === 'app' && process.env.GITHUB_APP_PRIVATE_KEY) {
+      try {
+        privateKey = readPrivateKey(process.env.GITHUB_APP_PRIVATE_KEY);
+      } catch (error) {
+        privateKeyError = error.message;
+      }
+    }
     return {
-      mode: String(process.env.GITHUB_AUTH_MODE || 'app').toLowerCase(),
+      mode,
       allowPat: process.env.ALLOW_PAT === 'true',
       appId: process.env.GITHUB_APP_ID || null,
-      privateKey: readPrivateKey(process.env.GITHUB_APP_PRIVATE_KEY),
+      privateKey,
+      privateKeyError,
       singleInstallationId: process.env.GITHUB_APP_INSTALLATION_ID || null,
       ttlSeconds: parseTtlSeconds(process.env.GITHUB_TOKEN_TTL_SECONDS),
     };
@@ -163,6 +184,15 @@ class GitHubAppAuthService {
       throw new ValidationError('No GitHub App installation is configured for this project');
     }
 
+    // Collect the project's cached installation tokens before clearing the
+    // cache; each can be revoked with DELETE /installation/token.
+    const cachedTokens = new Set();
+    for (const entry of this.cache.values()) {
+      if (entry.projectId === Number(projectId) && entry.result?.token) {
+        cachedTokens.add(entry.result.token);
+      }
+    }
+
     await this.db.query(
       `UPDATE project_github_installations
           SET disabled_at = NOW(), updated_at = NOW()
@@ -171,23 +201,23 @@ class GitHubAppAuthService {
     );
     this.clearCacheForProject(projectId);
 
-    let revoked = false;
-    const config = this.readConfig();
-    if (config.mode === 'app' && config.appId && config.privateKey) {
+    let revoked = 0;
+    for (const token of cachedTokens) {
       try {
         const response = await this.request(
           'DELETE',
-          `${GITHUB_API_BASE}/app/installations/${existing.installation_id}/access_tokens`,
+          `${GITHUB_API_BASE}/installation/token`,
           {
             headers: {
               Accept: 'application/vnd.github+json',
-              Authorization: `Bearer ${this.createAppJwt(config)}`,
+              Authorization: `Bearer ${token}`,
               'X-GitHub-Api-Version': '2022-11-28',
             },
           }
         );
-        revoked = response.ok;
-        if (!response.ok) {
+        if (response.ok) {
+          revoked += 1;
+        } else {
           this.log.warn('github_app_installation_revoke_failed', {
             projectId,
             installationId: existing.installation_id,
@@ -202,13 +232,29 @@ class GitHubAppAuthService {
         });
       }
     }
+    if (cachedTokens.size === 0) {
+      this.log.warn('github_app_disable_no_cached_token', {
+        projectId,
+        installationId: existing.installation_id,
+      });
+    }
 
     this.log.info('github_app_access_disabled', {
       projectId,
       installationId: existing.installation_id,
       revoked,
+      cachedTokens: cachedTokens.size,
     });
-    return { disabled: true, revoked };
+    return { disabled: true, revoked, cachedTokens: cachedTokens.size };
+  }
+
+  async assertProjectEnabled(projectId) {
+    const row = await this.getInstallation(projectId);
+    if (row && row.disabled_at) {
+      const error = new ForbiddenError('GitHub access is disabled for this project');
+      error.code = 'GITHUB_ACCESS_DISABLED';
+      throw error;
+    }
   }
 
   clearCacheForProject(projectId) {
@@ -229,6 +275,7 @@ class GitHubAppAuthService {
 
   async mintPat(projectId, options = {}) {
     const operation = options.operation || 'unknown';
+    await this.assertProjectEnabled(projectId);
     if (!this.readConfig().allowPat) {
       const error = new ForbiddenError(
         'PAT fallback is disabled; configure a GitHub App or set ALLOW_PAT=true for local development'
@@ -276,9 +323,9 @@ class GitHubAppAuthService {
   async mintApp(projectId, options = {}) {
     const operation = options.operation || 'unknown';
     const config = this.readConfig();
-    if (!config.appId || !config.privateKey) {
+    if (!config.appId || !config.privateKey || config.privateKeyError) {
       const error = new ServiceUnavailableError(
-        'GitHub App credentials are not configured (GITHUB_APP_ID/GITHUB_APP_PRIVATE_KEY)'
+        'GitHub App credentials are not configured or the private key is unreadable'
       );
       error.code = 'GITHUB_APP_NOT_CONFIGURED';
       throw error;
@@ -326,21 +373,38 @@ class GitHubAppAuthService {
       throw configError;
     }
 
-    const response = await this.request(
-      'POST',
-      `${GITHUB_API_BASE}/app/installations/${installation.installationId}/access_tokens`,
-      {
-        headers: {
-          Accept: 'application/vnd.github+json',
-          Authorization: `Bearer ${appJwt}`,
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
-        body: {
-          repositories: [repo.repo],
-          permissions: this.permissions,
-        },
-      }
-    );
+    let response;
+    try {
+      response = await this.request(
+        'POST',
+        `${GITHUB_API_BASE}/app/installations/${installation.installationId}/access_tokens`,
+        {
+          headers: {
+            Accept: 'application/vnd.github+json',
+            Authorization: `Bearer ${appJwt}`,
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+          body: {
+            repositories: [repo.repo],
+            permissions: this.permissions,
+          },
+        }
+      );
+    } catch (error) {
+      const mintError = new ServiceUnavailableError(
+        'GitHub installation token request failed; check backend connectivity'
+      );
+      mintError.code = 'GITHUB_TOKEN_MINT_FAILED';
+      this.audit('failed', {
+        projectId: Number(projectId),
+        mode: 'app',
+        repo: repo.full,
+        installationId: installation.installationId,
+        operation,
+        error: error.name || 'network_error',
+      });
+      throw mintError;
+    }
 
     if (response.status === 401 || response.status === 403 || response.status === 404) {
       const error = new ForbiddenError(
@@ -464,8 +528,13 @@ class GitHubAppAuthService {
     const parsed = GitHubProvider.parseRepoUrl(repoUrl.replace(/\.git$/, ''));
     const full = `${parsed.owner}/${parsed.repo}`;
     if (requestedRepo) {
-      const requested = normalizeRepo(requestedRepo);
-      if (requested !== full) {
+      let requested;
+      try {
+        requested = normalizeRepo(requestedRepo);
+      } catch {
+        throw new ValidationError('Requested repository is not a valid owner/repo value');
+      }
+      if (requested.toLowerCase() !== full.toLowerCase()) {
         const error = new ForbiddenError(
           `Requested repository ${requested} does not match the connected repository ${full}`
         );
@@ -499,7 +568,7 @@ class GitHubAppAuthService {
   formatInstallation(row) {
     return {
       projectId: row.project_id,
-      installationId: row.installation_id,
+      installationId: Number(row.installation_id),
       repoAllowlist: row.repo_allowlist || [],
       disabled: Boolean(row.disabled_at),
       disabledAt: row.disabled_at,

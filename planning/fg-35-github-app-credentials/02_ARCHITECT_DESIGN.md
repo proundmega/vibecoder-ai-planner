@@ -104,7 +104,7 @@ The token service looks up `project_github_installations` first and falls back t
 - Client-side expiry: `min(GitHub expires_at, now + GITHUB_TOKEN_TTL_SECONDS)`; refresh five minutes before expiry. GitHub still enforces the one-hour server expiry.
 - `GITHUB_AUTH_MODE=app` never reads or returns `project_repos.access_token_encrypted`. `GET /repo/agent` returns `accessToken: null`; agents use `POST /github/:projectId/token`.
 - `GITHUB_AUTH_MODE=pat` requires `ALLOW_PAT=true` on the backend and agent. It returns the stored PAT for local development only and logs a warning.
-- Disabling a project sets `disabled_at`, clears cached tokens and asks GitHub to revoke the installation tokens. Token minting then fails with `GITHUB_ACCESS_DISABLED`.
+- Disabling a project sets `disabled_at`, clears cached tokens and revokes each cached installation token with `DELETE /installation/token`. Token minting then fails with `GITHUB_ACCESS_DISABLED`. If the backend has no cached token (for example after a restart), the already-issued token remains valid until GitHub's one-hour expiry or until the installation is uninstalled/suspended; the runbook records this.
 
 ## Failure modes and recovery
 
@@ -117,7 +117,7 @@ The token service looks up `project_github_installations` first and falls back t
 | GitHub 401/403/404 on mint | `GITHUB_INSTALLATION_REJECTED`; no fallback. | Check App permissions, installation suspension and key rotation. |
 | GitHub 5xx/timeout | `GITHUB_TOKEN_MINT_FAILED`; no fallback. | Retry the run; check backend egress. |
 | Token expires mid-run | The agent refreshes through the provider before the next git/PR call. | None; if GitHub rejects it, the run fails closed and the next attempt mints again. |
-| Revocation/disable during a run | The cached token remains valid until GitHub expiry; the next mint fails and the next run stops. | Re-enable or reinstall, then retry. |
+| Revocation/disable during a run | Cached tokens are revoked immediately; a token not in the cache stays valid until GitHub expiry. The next mint fails and the next run stops. | Re-enable or reinstall, then retry. |
 | Backend unreachable | The agent cannot mint; publishing stops. | Restore the backend; no PAT fallback in `app` mode. |
 
 ## Security considerations

@@ -27,6 +27,7 @@ public class GitHubTokenProvider implements GitHubTokenSource {
     }
 
     private final Fetcher fetcher;
+    private final GitHubTokenSource fallback;
     private final LongSupplier clockMillis;
     private final long refreshSkewMillis;
     private final Set<String> knownTokens = new LinkedHashSet<>();
@@ -36,11 +37,22 @@ public class GitHubTokenProvider implements GitHubTokenSource {
     private String mode;
 
     public GitHubTokenProvider(Fetcher fetcher) {
-        this(fetcher, System::currentTimeMillis, DEFAULT_REFRESH_SKEW_MS);
+        this(fetcher, null);
+    }
+
+    public GitHubTokenProvider(Fetcher fetcher, GitHubTokenSource fallback) {
+        this(fetcher, fallback, System::currentTimeMillis, DEFAULT_REFRESH_SKEW_MS);
     }
 
     GitHubTokenProvider(Fetcher fetcher, LongSupplier clockMillis, long refreshSkewMillis) {
+        this(fetcher, null, clockMillis, refreshSkewMillis);
+    }
+
+    GitHubTokenProvider(
+        Fetcher fetcher, GitHubTokenSource fallback,
+        LongSupplier clockMillis, long refreshSkewMillis) {
         this.fetcher = fetcher;
+        this.fallback = fallback;
         this.clockMillis = clockMillis;
         this.refreshSkewMillis = Math.max(0, refreshSkewMillis);
     }
@@ -50,13 +62,18 @@ public class GitHubTokenProvider implements GitHubTokenSource {
         if (token != null && !needsRefresh()) {
             return token;
         }
-        Map<String, Object> data = fetcher.fetch();
+        Map<String, Object> data;
+        try {
+            data = fetcher.fetch();
+        } catch (IOException error) {
+            return useFallback(error);
+        }
         if (data == null) {
-            throw new IOException("Backend returned no GitHub credential");
+            return useFallback(new IOException("Backend returned no GitHub credential"));
         }
         Object value = data.get("token");
         if (!(value instanceof String) || ((String) value).isBlank()) {
-            throw new IOException("Backend returned no GitHub token");
+            return useFallback(new IOException("Backend returned no GitHub token"));
         }
         token = (String) value;
         mode = stringValue(data.get("mode"));
@@ -66,6 +83,22 @@ public class GitHubTokenProvider implements GitHubTokenSource {
             mode == null ? "unknown" : mode,
             expiresAt == null ? "none" : expiresAt);
         return token;
+    }
+
+    private String useFallback(IOException failure) throws IOException {
+        if (fallback == null) {
+            throw failure;
+        }
+        String legacy = fallback.get();
+        if (legacy == null || legacy.isBlank()) {
+            throw failure;
+        }
+        token = legacy;
+        expiresAt = null;
+        mode = "pat";
+        knownTokens.add(legacy);
+        log.warn("Using the explicit GitHub PAT fallback after the token request failed");
+        return legacy;
     }
 
     @Override

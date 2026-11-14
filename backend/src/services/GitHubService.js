@@ -16,7 +16,7 @@ class GitHubService {
 
     const user = await User.find(userId);
     const isAdmin = await PermissionService.hasPermission(user?.role || 'user', 'PROJECT_MANAGE_MEMBERS');
-    if (!isAdmin && project.ownerId !== parseInt(userId)) {
+    if (!isAdmin && String(project.ownerId) !== String(userId)) {
       throw new ForbiddenError('Only project owner or admin can connect a repository');
     }
 
@@ -90,6 +90,7 @@ class GitHubService {
         'PAT fallback is disabled; configure a GitHub App or set ALLOW_PAT=true for local development'
       );
     }
+    await GitHubAppAuthService.assertProjectEnabled(projectId);
     if (!row.access_token_encrypted) {
       return { repoUrl: row.repo_url, accessToken: null, authMode: 'pat' };
     }
@@ -117,6 +118,7 @@ class GitHubService {
         'PAT fallback is disabled; configure a GitHub App or set ALLOW_PAT=true for local development'
       );
     }
+    await GitHubAppAuthService.assertProjectEnabled(projectId);
     const repo = await this.getProjectRepo(projectId);
     if (!repo) throw new ValidationError('No repository connected to this project');
     return new GitHubProvider(decrypt(repo.accessTokenEncrypted));

@@ -65,6 +65,22 @@ class GitHubTokenProviderTest {
     }
 
     @Test
+    void usesTheExplicitPatFallbackOnlyWhenConfigured() throws Exception {
+        GitHubTokenProvider withFallback = new GitHubTokenProvider(
+            () -> {
+                throw new IOException("backend unavailable");
+            },
+            () -> "stored-pat");
+        assertEquals("stored-pat", withFallback.get());
+        assertEquals("pat", withFallback.getMode());
+
+        GitHubTokenProvider withoutFallback = new GitHubTokenProvider(() -> {
+            throw new IOException("backend unavailable");
+        });
+        assertThrows(IOException.class, withoutFallback::get);
+    }
+
+    @Test
     void invalidationForcesAFreshFetch() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         GitHubTokenProvider provider = new GitHubTokenProvider(() -> {

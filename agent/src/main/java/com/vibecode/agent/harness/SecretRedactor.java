@@ -47,6 +47,7 @@ public final class SecretRedactor {
             + "(?:.*?---- END SSH2 ENCRYPTED PRIVATE KEY ----|.*)",
             "[REDACTED PRIVATE KEY]"),
         new Rule("\\b(?:gh[pousr]_[A-Za-z0-9]{20,}"
+            + "|ghs_[A-Za-z0-9._-]{20,}"
             + "|github_pat_[A-Za-z0-9_]{20,})\\b", REDACTED),
         new Rule("\\bsk-[A-Za-z0-9_-]{20,}\\b", REDACTED),
         new Rule("\\b(?:AKIA|ASIA)[0-9A-Z]{16}\\b", REDACTED),

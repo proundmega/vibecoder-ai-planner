@@ -85,9 +85,12 @@ curl -X DELETE "$BACKEND/api/v1/github/$PROJECT_ID/installation" \
   -H "Authorization: Bearer $JWT"
 ```
 
-This sets `disabled_at`, clears the project's cached tokens and asks GitHub to
-revoke the installation tokens. The next mint fails with
-`GITHUB_ACCESS_DISABLED`. Re-run the `PUT` mapping to re-enable.
+This sets `disabled_at`, clears the project's cached tokens and revokes each
+cached token with `DELETE /installation/token`. The next mint fails with
+`GITHUB_ACCESS_DISABLED`. Re-run the `PUT` mapping to re-enable. If the backend
+has no cached token (for example after a restart), the already-issued token
+remains valid until GitHub's one-hour expiry; uninstall or suspend the
+installation for an immediate stop in that case.
 
 To revoke every token for an installation, remove or suspend the installation
 in GitHub. The next mint fails with `GITHUB_INSTALLATION_REJECTED`.

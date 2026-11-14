@@ -3,6 +3,17 @@ const GitHubService = require('../services/GitHubService');
 const GitHubAppAuthService = require('../services/GitHubAppAuthService');
 const { NotFoundError, ForbiddenError } = require('../errors/HttpError');
 
+async function requireProjectAccess(req, projectId, message) {
+  const project = await Project.findById(projectId);
+  if (!project) throw new NotFoundError('Project not found');
+  const requesterId = req.agent ? req.agent.owner_id : req.user?.userId;
+  const isSuperAdmin = req.user?.role === 'super_admin';
+  if (!isSuperAdmin && String(requesterId) !== String(project.ownerId)) {
+    throw new ForbiddenError(message);
+  }
+  return project;
+}
+
 async function connectRepo(req, res, next) {
   try {
     const projectId = req.params.projectId;
@@ -116,6 +127,11 @@ async function listPRs(req, res, next) {
 async function getRepoForAgent(req, res, next) {
   try {
     const projectId = req.params.projectId;
+    await requireProjectAccess(
+      req,
+      projectId,
+      'Only the project owner or a super admin can read agent repository config'
+    );
     const repo = await GitHubService.getProjectRepoForAgent(projectId);
     
     if (!repo) {
@@ -139,14 +155,11 @@ async function getRepoForAgent(req, res, next) {
 async function requestToken(req, res, next) {
   try {
     const projectId = Number(req.params.projectId);
-    const project = await Project.findById(projectId);
-    if (!project) throw new NotFoundError('Project not found');
-
-    const requesterId = req.agent ? req.agent.owner_id : req.user?.userId;
-    const isSuperAdmin = req.user?.role === 'super_admin';
-    if (!isSuperAdmin && parseInt(requesterId, 10) !== project.ownerId) {
-      throw new ForbiddenError('Only the project owner or a super admin can request a GitHub token');
-    }
+    await requireProjectAccess(
+      req,
+      projectId,
+      'Only the project owner or a super admin can request a GitHub token'
+    );
 
     const token = await GitHubAppAuthService.mintToken(projectId, {
       operation: req.body?.operation || 'agent',
@@ -160,9 +173,13 @@ async function requestToken(req, res, next) {
 
 async function getInstallationStatus(req, res, next) {
   try {
-    const installation = await GitHubAppAuthService.getInstallationStatus(
-      Number(req.params.projectId)
+    const projectId = Number(req.params.projectId);
+    await requireProjectAccess(
+      req,
+      projectId,
+      'Only the project owner or a super admin can read the GitHub installation'
     );
+    const installation = await GitHubAppAuthService.getInstallationStatus(projectId);
     res.json({ success: true, data: installation });
   } catch (error) {
     next(error);
@@ -171,9 +188,15 @@ async function getInstallationStatus(req, res, next) {
 
 async function setInstallation(req, res, next) {
   try {
+    const projectId = Number(req.params.projectId);
+    await requireProjectAccess(
+      req,
+      projectId,
+      'Only the project owner or a super admin can map a GitHub installation'
+    );
     const { installationId, repoAllowlist } = req.body;
     const installation = await GitHubAppAuthService.setInstallation(
-      Number(req.params.projectId),
+      projectId,
       installationId,
       repoAllowlist
     );
@@ -185,9 +208,13 @@ async function setInstallation(req, res, next) {
 
 async function disableInstallation(req, res, next) {
   try {
-    const result = await GitHubAppAuthService.disableProject(
-      Number(req.params.projectId)
+    const projectId = Number(req.params.projectId);
+    await requireProjectAccess(
+      req,
+      projectId,
+      'Only the project owner or a super admin can disable GitHub access'
     );
+    const result = await GitHubAppAuthService.disableProject(projectId);
     res.json({ success: true, data: result });
   } catch (error) {
     next(error);

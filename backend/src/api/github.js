@@ -34,7 +34,7 @@ router.get('/:projectId/repo', verifyToken, githubController.getRepoStatus);
  * /github/{projectId}/repo/agent:
  *   get:
  *     tags: [GitHub]
- *     summary: Get repository connection for agent (with decrypted PAT)
+ *     summary: Get repository connection for the agent (App mode returns no token)
  *     parameters:
  *       - in: path
  *         name: projectId
@@ -44,7 +44,7 @@ router.get('/:projectId/repo', verifyToken, githubController.getRepoStatus);
  *       - apiKeyAuth: []
  *     responses:
  *       200:
- *         description: Repository config with decrypted access token
+ *         description: Repository config; `accessToken` is present only in explicit PAT mode
  */
 router.get('/:projectId/repo/agent', verifyTokenOrAgent, githubController.getRepoForAgent);
 

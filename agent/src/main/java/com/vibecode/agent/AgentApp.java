@@ -94,8 +94,13 @@ public class AgentApp {
     }
 
     private GitHubTokenProvider createGitHubTokenProvider() {
+        GitHubTokenSource legacyFallback = null;
+        if ("pat".equals(config.getGitHubAuthMode()) && config.isAllowPat()) {
+            legacyFallback = this::fetchLegacyPat;
+        }
         return new GitHubTokenProvider(
-            () -> apiService.requestGitHubToken(config.getProjectId()));
+            () -> apiService.requestGitHubToken(config.getProjectId()),
+            legacyFallback);
     }
 
     private String fetchGitHubToken(GitHubTokenProvider provider) {
@@ -104,16 +109,10 @@ public class AgentApp {
             log.info("Fetched GitHub credential from backend (mode={})", provider.getMode());
             return token;
         } catch (Exception e) {
-            log.warn("Could not fetch a GitHub App installation token: {}", e.getMessage());
+            // Never log the exception message: a mapping error can include a
+            // source snippet from the token response.
+            log.warn("No GitHub credential available — publishing will fail closed");
         }
-
-        // The explicit PAT fallback is opt-in on both sides and only valid in
-        // pat mode. Never fall back to a broader or ambient credential in app mode.
-        if ("pat".equals(config.getGitHubAuthMode()) && config.isAllowPat()) {
-            return fetchLegacyPat();
-        }
-
-        log.warn("No GitHub credential available — publishing will fail closed");
         return null;
     }
 
@@ -129,7 +128,7 @@ public class AgentApp {
                 }
             }
         } catch (Exception e) {
-            log.debug("Could not fetch GitHub PAT from backend: {}", e.getMessage());
+            log.debug("Could not fetch GitHub PAT from the backend");
         }
 
         String envToken = config.getGitHubToken();
