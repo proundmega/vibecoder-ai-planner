@@ -5,55 +5,76 @@
 
 ## Plan
 
-- [ ] Create/register the GitHub App and define required permissions
-- [ ] Define installation-per-project mapping and repo allowlist
-- [ ] Implement token minting, caching and expiry handling
-- [ ] Use the token without persisting it in the workspace or process args
-- [ ] Add rotation/revocation and audit events
-- [ ] Add a dev-only PAT fallback behind a flag
-- [ ] Add tests for expiry, scope, leakage and multi-repo isolation
-- [ ] Document GitHub Enterprise support and migration from PATs
+- [x] Create/register the GitHub App and define required permissions (documented in `05_RUNBOOK.md`)
+- [x] Define installation-per-project mapping and repo allowlist
+- [x] Implement token minting, caching and expiry handling
+- [x] Use the token without persisting it in the workspace or process args
+- [x] Add rotation/revocation and audit events
+- [x] Add a dev-only PAT fallback behind a flag
+- [x] Add tests for expiry, scope, leakage and multi-repo isolation
+- [x] Document GitHub Enterprise support and migration from PATs
 
 ## Per-file changes
 
-To be filled in when implementation starts.
-
 | File | Action | Change |
 |---|---|---|
-| | | |
+| `backend/src/migrations/049_project_github_installations.sql` | CREATE | `project_id` → installation id, repo allowlist, `disabled_at`, timestamps. |
+| `backend/src/migrations/049_project_github_installations_rollback.sql` | CREATE | Drops the mapping table. |
+| `backend/src/migrations/apply.js` | MODIFY | Register migration 049. |
+| `backend/src/services/GitHubAppAuthService.js` | CREATE | App JWT, installation-token mint/cache, repo scope/allowlist, PAT fallback, audit, disable/revoke. |
+| `backend/src/services/GitHubService.js` | MODIFY | App mode never returns the stored PAT; backend branch/PR/diff operations use a minted token. |
+| `backend/src/controllers/githubController.js` | MODIFY | Token request plus installation status/upsert/disable handlers. |
+| `backend/src/api/github.js` | MODIFY | Token and installation routes with agent/owner guards. |
+| `backend/src/validators/github.js` | MODIFY | Installation and token-request schemas. |
+| `agent/src/main/java/com/vibecode/agent/service/GitHubTokenSource.java` | CREATE | Token supplier contract with optional invalidation. |
+| `agent/src/main/java/com/vibecode/agent/service/GitHubTokenProvider.java` | CREATE | Per-run token fetch, expiry-aware refresh, in-memory cache and known-token set. |
+| `agent/src/main/java/com/vibecode/agent/service/ApiService.java` | MODIFY | `requestGitHubToken(projectId)`. |
+| `agent/src/main/java/com/vibecode/agent/service/GitHubService.java` | MODIFY | Use a token source; fail closed when no credential is available. |
+| `agent/src/main/java/com/vibecode/agent/service/WorkspaceManager.java` | MODIFY | Askpass uses the current token source; all observed tokens are redacted. |
+| `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java` | MODIFY | Workspace factory uses the token source. |
+| `agent/src/main/java/com/vibecode/agent/service/TicketProcessor.java` | MODIFY | Legacy path accepts a token source. |
+| `agent/src/main/java/com/vibecode/agent/AgentApp.java` | MODIFY | Build the provider, fail closed in app mode, keep explicit PAT fallback. |
+| `agent/src/main/java/com/vibecode/agent/config/AgentConfig.java` | MODIFY | `GITHUB_AUTH_MODE`/`ALLOW_PAT` parsing and validation. |
+| `backend/src/__tests__/githubAppAuthService.test.js` | CREATE | Mint/cache/scope/allowlist/disable/PAT/fail-closed/audit coverage. |
+| `backend/src/__tests__/githubAppController.test.js` | CREATE | Owner/super-admin authorization and installation handlers. |
+| `backend/src/__tests__/githubAppAuthWiring.test.js` | CREATE | Route ordering/guards and migration registration. |
+| `backend/src/__tests__/githubService.test.js` | MODIFY | App-mode repo config and minted-token PR path. |
+| `agent/src/test/java/com/vibecode/agent/service/GitHubTokenProviderTest.java` | CREATE | Cache, refresh, invalidation, expiry parsing and fail-closed fetch. |
+| `agent/src/test/java/com/vibecode/agent/service/GitHubServiceTest.java` | MODIFY | Latest-token supplier and missing-credential failure. |
+| `agent/src/test/java/com/vibecode/agent/config/AgentConfigTest.java` | MODIFY | Auth-mode/flag parsing. |
+| `planning/fg-35-github-app-credentials/05_RUNBOOK.md` | CREATE | App registration, installation mapping, rotation/revocation, PAT fallback, migration and rollback. |
 
 ## Dependencies
 
-- fg-30
+- fg-30 (merged).
 
 ## Verification matrix (canonical)
 
-One row per requirement from `01`. A requirement with no row is not done.
-
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
-| FR1 | | | | |
-| FR2 | | | | |
-| FR3 | | | | |
-| FR4 | | | | |
-| FR5 | | | | |
-| FR6 | | | | |
-| FR7 | | | | |
-| FR8 | | | | |
-| FR9 | | | | |
-| FR10 | | | | |
+| FR1 | Docs | `05_RUNBOOK.md`; `githubAppAuthWiring.test.js` | `documents the minimum GitHub App permissions and no admin scope` | `cd backend && npx jest src/__tests__/githubAppAuthWiring.test.js --runInBand` |
+| FR2 | Backend | `githubAppAuthService.test.js` | `upserts an installation mapping and normalizes the allowlist`; `requires an installation mapping unless the single-tenant env fallback is set` | `cd backend && npx jest src/__tests__/githubAppAuthService.test.js --runInBand` |
+| FR3 | Backend | `githubAppAuthService.test.js` | `mints a repo-scoped installation token with the minimum permissions`; `reuses the cached token until shortly before expiry`; `caps the client-side lifetime at GITHUB_TOKEN_TTL_SECONDS` | `cd backend && npx jest src/__tests__/githubAppAuthService.test.js --runInBand` |
+| FR4 | Agent | `GitHubTokenProviderTest.java`; `githubAppController.test.js` | `cachesUntilShortlyBeforeExpiryThenRefreshes`; `returns a scoped token to the project owner agent` | `cd agent && mvn -Dtest=GitHubTokenProviderTest test`; `cd backend && npx jest src/__tests__/githubAppController.test.js --runInBand` |
+| FR5 | Agent | `WorkspaceManagerTest.java`; `GitHubServiceTest.java` | `stripCredentialsRemovesGitHubToken`; `pruneTempDirectoriesOnlyRemovesKnownStalePrefixes`; `usesTheLatestTokenFromTheSource` | `cd agent && mvn -Dtest=WorkspaceManagerTest,GitHubServiceTest test` |
+| FR6 | Backend/Agent | `githubService.test.js`; `GitHubServiceTest.java` | `uses a minted installation token for backend PR operations`; `usesTheLatestTokenFromTheSource` | `cd backend && npx jest src/__tests__/githubService.test.js --runInBand`; `cd agent && mvn -Dtest=GitHubServiceTest test` |
+| FR7 | Backend | `githubAppAuthService.test.js` | `disables access and revokes installation tokens`; `keeps the project disabled even when revocation fails` | `cd backend && npx jest src/__tests__/githubAppAuthService.test.js --runInBand` |
+| FR8 | Backend | `githubAppAuthService.test.js` | `mints a repo-scoped installation token with the minimum permissions` asserts the audit payload and no token | `cd backend && npx jest src/__tests__/githubAppAuthService.test.js --runInBand` |
+| FR9 | Backend/Agent | `githubAppAuthService.test.js`; `AgentConfigTest.java` | `requires ALLOW_PAT before returning a stored PAT`; `returns the stored PAT only when explicitly allowed`; `testGitHubAuthModeIsExplicitAndValid` | `cd backend && npx jest src/__tests__/githubAppAuthService.test.js --runInBand`; `cd agent && mvn -Dtest=AgentConfigTest test` |
+| FR10 | Backend/Agent | `githubAppAuthService.test.js`; `GitHubTokenProviderTest.java` | `rejects a project whose installation is disabled`; `fails closed when App credentials are missing`; `failsClosedWhenTheBackendReturnsNoToken` | `cd backend && npx jest src/__tests__/githubAppAuthService.test.js --runInBand`; `cd agent && mvn -Dtest=GitHubTokenProviderTest test` |
+| NFR1 | Backend/Agent | `githubAppAuthService.test.js`; `GitHubTokenProviderTest.java`; `WorkspaceManagerTest.java` | Audit payload excludes the token; provider holds tokens in memory only; stale askpass directories are removed | commands above |
+| NFR2 | Backend | `githubAppAuthService.test.js` | Disabled, missing config, rejected mint and scope mismatch fail closed | `cd backend && npx jest src/__tests__/githubAppAuthService.test.js --runInBand` |
+| NFR3 | All | This matrix | Fake GitHub/backend; no live API | `cd backend && npm test`; `cd agent && mvn test` |
+| NFR4 | Docs | `05_RUNBOOK.md` | Registration, mapping, rotation, revocation, fallback, rollback | `node planning/check-planning.js` |
 
-## Review checklist
+## Review record
 
-- [ ] Every `FR*`/`NFR*` has a passing row in the matrix
-- [ ] Error paths and edge cases are covered, not only the happy path
-- [ ] Migration has a rollback and is registered in `apply.js`
-- [ ] API contract matches `02`; OpenAPI/types regenerated if it changed
-- [ ] No secret, `.env`, `Jenkinsfile`, or unrelated file touched
-- [ ] `04` (if present) matches what was actually built
+| Round | Reviewer | Blocking findings | Resolution | Re-review |
+|---|---|---|---|---|
+| 0 | author | none | Implementation plan and verification matrix | n/a |
 
 ## Results
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| | | | |
+| 2026-11-14 | `feat/fg-35-github-app-credentials` | `cd backend && npm test` (131 suites, 1611 tests) + `cd agent && mvn test` (529 tests, 5 skipped) + `node planning/check-planning.js` + `git diff --check` | Pass. Backend mints/caches/revokes installation tokens, exposes the token and mapping routes, and fails closed; App mode no longer returns the stored PAT. The agent refreshes the token through a provider and git/PR calls consume it from a token source. PAT fallback is explicit on both sides. |

@@ -1,14 +1,14 @@
 ---
 id: "fg-35"
 title: "GitHub App Credentials and Least Privilege"
-status: planned
+status: in_progress
 priority: "P0"
 effort: "Large"
 scope: "Both"
 created: "2026-10-31"
-updated: "2026-11-03"
+updated: "2026-11-14"
 pr: null
-branch: null
+branch: "feat/fg-35-github-app-credentials"
 depends_on: ["fg-30"]
 ---
 
@@ -22,6 +22,14 @@ depends_on: ["fg-30"]
 ## Why this ticket exists
 
 Publishing currently uses a long-lived GitHub PAT. We removed it from `.git/config` and process arguments (askpass/header handling), but it still lives in memory/environment with broad access across every repo the user can see. A production coding agent should use a GitHub App installation token scoped to one repository and a short TTL.
+
+## Status evidence
+
+| Claim | Evidence | Checked |
+|---|---|---|
+| Plan merged | PR #105, follow-up consistency fix #106 | ☑ |
+| Implementation started | `feat/fg-35-github-app-credentials`; backend migration, mint/cache service, token endpoint, agent token provider and tests | ☑ |
+| Verification results | `03` → Results: backend 1611 tests, agent 529 tests (5 skipped), planning check and `git diff --check` | ☑ |
 
 ## Deferred register (canonical)
 

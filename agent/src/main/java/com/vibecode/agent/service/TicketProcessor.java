@@ -45,7 +45,15 @@ public class TicketProcessor implements TicketWorker {
         return currentStep;
     }
 
-    public TicketProcessor(AgentConfig config, ApiService apiService, AiProvider aiProvider, GitHubService gitHubService, String githubToken) {
+    public TicketProcessor(
+        AgentConfig config, ApiService apiService, AiProvider aiProvider,
+        GitHubService gitHubService, String githubToken) {
+        this(config, apiService, aiProvider, gitHubService, () -> githubToken);
+    }
+
+    public TicketProcessor(
+        AgentConfig config, ApiService apiService, AiProvider aiProvider,
+        GitHubService gitHubService, GitHubTokenSource tokenSource) {
         this.config = config;
         this.apiService = apiService;
         this.aiProvider = aiProvider;
@@ -54,7 +62,8 @@ public class TicketProcessor implements TicketWorker {
             config.getRepoCloneDir(),
             config.getRepoName(),
             config.isDryRun(),
-            githubToken
+            null,
+            tokenSource
         );
         this.objectMapper = new ObjectMapper();
         this.planningDocFetcher = new PlanningDocFetcher(apiService, config);

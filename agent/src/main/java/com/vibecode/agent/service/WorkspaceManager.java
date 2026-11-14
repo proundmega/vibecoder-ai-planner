@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -73,7 +74,8 @@ public class WorkspaceManager {
     private Path repoDir;
     private final String gitBinary;
     private final boolean dryRun;
-    private final String githubToken;
+    private final GitHubTokenSource tokenSource;
+    private final Set<String> redactionTokens = new LinkedHashSet<>();
     private final Path credentialHelperScript;
     private final String repoCloneDir;
     private final Path cloneRoot;
@@ -86,12 +88,18 @@ public class WorkspaceManager {
     private Path askPassScript;
 
     public WorkspaceManager(String repoCloneDir, String repoName, boolean dryRun, String githubToken) {
+        this(repoCloneDir, repoName, dryRun, githubToken, null);
+    }
+
+    public WorkspaceManager(
+        String repoCloneDir, String repoName, boolean dryRun,
+        String githubToken, GitHubTokenSource tokenSource) {
         this.repoCloneDir = repoCloneDir;
         this.cloneRoot = Paths.get(repoCloneDir).toAbsolutePath().normalize();
         this.repoName = repoName;
         this.gitBinary = "git";
         this.dryRun = dryRun;
-        this.githubToken = githubToken;
+        this.tokenSource = tokenSource != null ? tokenSource : () -> githubToken;
         this.credentialHelperScript = null;
         this.repoDir = null;
     }
@@ -143,10 +151,11 @@ public class WorkspaceManager {
         // Clone without authentication first (works for public repos) or with
         // a transient askpass helper for private repos. The token never appears
         // in a command line or in .git/config.
-        boolean authenticate = githubToken != null && !githubToken.isBlank()
+        String token = currentToken();
+        boolean authenticate = token != null && !token.isBlank()
             && repoUrl.startsWith("https://github.com/");
         if (authenticate) {
-            ensureAskPass();
+            ensureAskPass(token);
         }
         try {
             runGitAt(repoDir.getParent(), Map.of(), "clone", repoUrl, repoDir.toString());
@@ -241,9 +250,10 @@ public class WorkspaceManager {
         // remote-tracking ref, but an explicit lease is still used so a retry
         // can overwrite a branch only if the remote has not moved.
         String pushTarget = "origin";
-        boolean authenticate = githubToken != null && !githubToken.isBlank();
+        String token = currentToken();
+        boolean authenticate = token != null && !token.isBlank();
         if (authenticate) {
-            ensureAskPass();
+            ensureAskPass(token);
         }
         try {
             String remoteSha = remoteBranchSha(pushTarget, branchName);
@@ -704,14 +714,14 @@ public class WorkspaceManager {
      * (visible in {@code ps}) and out of .git/config; the script is deleted as
      * soon as the clone/push finishes.
      */
-    private void ensureAskPass() throws IOException {
+    private void ensureAskPass(String rawToken) throws IOException {
         if (askPassScript != null && Files.isRegularFile(askPassScript)) {
             return;
         }
         cleanupAskPass();
         askPassDirectory = Files.createTempDirectory("vibecode-askpass-");
         askPassScript = askPassDirectory.resolve("askpass.sh");
-        String token = shellSingleQuote(githubToken == null ? "" : githubToken);
+        String token = shellSingleQuote(rawToken == null ? "" : rawToken);
         String script = "#!/bin/sh\n"
             + "case \"$1\" in\n"
             + "  *Username*) printf '%s\\n' 'oauth2' ;;\n"
@@ -778,14 +788,23 @@ public class WorkspaceManager {
         return url.replaceFirst("https://[^/@]+@github\\.com/", "https://github.com/");
     }
 
+    private String currentToken() throws IOException {
+        String token = tokenSource.get();
+        if (token != null && !token.isBlank()) {
+            redactionTokens.add(token);
+        }
+        return token;
+    }
+
     private String redact(String value) {
         if (value == null) {
             return "";
         }
-        if (githubToken != null && !githubToken.isBlank()) {
-            return value.replace(githubToken, "[REDACTED]");
+        String redacted = value;
+        for (String token : redactionTokens) {
+            redacted = redacted.replace(token, "[REDACTED]");
         }
-        return value;
+        return redacted;
     }
 
     private void captureTrustedGitConfig() throws IOException {

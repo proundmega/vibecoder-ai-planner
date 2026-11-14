@@ -4,6 +4,7 @@ const User = require('../models/user');
 const { pool } = require('../db');
 const PermissionService = require('../services/PermissionService');
 const { GitHubProvider } = require('../providers/github');
+const GitHubAppAuthService = require('./GitHubAppAuthService');
 const { encrypt, decrypt } = require('../utils/crypto');
 const { NotFoundError, ForbiddenError, ValidationError } = require('../errors/HttpError');
 const logger = require('../utils/logger');
@@ -78,10 +79,47 @@ class GitHubService {
     if (result.rows.length === 0) return null;
 
     const row = result.rows[0];
+    const mode = GitHubAppAuthService.getAuthMode();
+    if (mode === 'app') {
+      // App mode never returns a stored PAT; agents request a scoped token from
+      // POST /github/:projectId/token instead.
+      return { repoUrl: row.repo_url, accessToken: null, authMode: 'app' };
+    }
+    if (!GitHubAppAuthService.isPatAllowed()) {
+      throw new ForbiddenError(
+        'PAT fallback is disabled; configure a GitHub App or set ALLOW_PAT=true for local development'
+      );
+    }
+    if (!row.access_token_encrypted) {
+      return { repoUrl: row.repo_url, accessToken: null, authMode: 'pat' };
+    }
     return {
       repoUrl: row.repo_url,
       accessToken: decrypt(row.access_token_encrypted),
+      authMode: 'pat',
     };
+  }
+
+  /**
+   * Build a GitHub provider for backend-initiated operations. App mode mints a
+   * repo-scoped installation token; PAT mode requires the explicit fallback
+   * flag and uses the stored PAT.
+   */
+  async _createProvider(projectId) {
+    if (GitHubAppAuthService.getAuthMode() === 'app') {
+      const token = await GitHubAppAuthService.mintToken(projectId, {
+        operation: 'backend',
+      });
+      return new GitHubProvider(token.token);
+    }
+    if (!GitHubAppAuthService.isPatAllowed()) {
+      throw new ForbiddenError(
+        'PAT fallback is disabled; configure a GitHub App or set ALLOW_PAT=true for local development'
+      );
+    }
+    const repo = await this.getProjectRepo(projectId);
+    if (!repo) throw new ValidationError('No repository connected to this project');
+    return new GitHubProvider(decrypt(repo.accessTokenEncrypted));
   }
 
   async getProjectRepos(projectId) {
@@ -104,7 +142,7 @@ class GitHubService {
       throw new ValidationError('Ticket does not belong to this project');
     }
 
-    const provider = new GitHubProvider(decrypt(repo.accessTokenEncrypted));
+    const provider = await this._createProvider(projectId);
     const branchName = await provider.createBranch(repo, ticket.id, ticket.title);
 
     
@@ -129,7 +167,7 @@ class GitHubService {
       throw new ValidationError('No branch created for this ticket yet');
     }
 
-    const provider = new GitHubProvider(decrypt(repo.accessTokenEncrypted));
+    const provider = await this._createProvider(projectId);
     const pr = await provider.createPR(
       repo, ticket.id, ticket.title, ticket.branchName, description || ticket.description
     );
@@ -151,7 +189,7 @@ class GitHubService {
     if (!ticket) throw new NotFoundError('Ticket not found');
     if (!ticket.branchName) return { success: true, message: 'No branch to delete' };
 
-    const provider = new GitHubProvider(decrypt(repo.accessTokenEncrypted));
+    const provider = await this._createProvider(projectId);
     try {
       await provider.deleteBranch(repo, ticket.branchName);
     } catch (error) {
@@ -171,7 +209,7 @@ class GitHubService {
     const repo = await this.getProjectRepo(projectId);
     if (!repo) throw new ValidationError('No repository connected to this project');
 
-    const provider = new GitHubProvider(decrypt(repo.accessTokenEncrypted));
+    const provider = await this._createProvider(projectId);
     return provider.listBranches(repo);
   }
 
@@ -179,7 +217,7 @@ class GitHubService {
     const repo = await this.getProjectRepo(projectId);
     if (!repo) throw new ValidationError('No repository connected to this project');
 
-    const provider = new GitHubProvider(decrypt(repo.accessTokenEncrypted));
+    const provider = await this._createProvider(projectId);
     return provider.listPRs(repo);
   }
 
@@ -192,7 +230,7 @@ class GitHubService {
     if (!ticket.prUrl) throw new ValidationError('No PR linked to this ticket');
 
     const prNumber = this._extractPRNumber(ticket.prUrl);
-    const provider = new GitHubProvider(decrypt(repo.accessTokenEncrypted));
+    const provider = await this._createProvider(projectId);
     return provider.getPRDiff(repo, prNumber);
   }
 

@@ -20,7 +20,7 @@ public class GitHubService {
     private static final Logger log = LoggerFactory.getLogger(GitHubService.class);
     private static final String DEFAULT_API_BASE = "https://api.github.com";
 
-    private final String authToken;
+    private final GitHubTokenSource tokenSource;
     private final String owner;
     private final String repo;
     private final String apiBase;
@@ -28,12 +28,21 @@ public class GitHubService {
     private final ObjectMapper objectMapper;
 
     public GitHubService(String authToken, String owner, String repo) {
-        this(authToken, owner, repo, DEFAULT_API_BASE);
+        this(() -> authToken, owner, repo, DEFAULT_API_BASE);
     }
 
     /** Package-visible so contract tests can target a local HTTP server. */
     GitHubService(String authToken, String owner, String repo, String apiBase) {
-        this.authToken = authToken;
+        this(() -> authToken, owner, repo, apiBase);
+    }
+
+    public GitHubService(GitHubTokenSource tokenSource, String owner, String repo) {
+        this(tokenSource, owner, repo, DEFAULT_API_BASE);
+    }
+
+    /** Package-visible so contract tests can target a local HTTP server. */
+    GitHubService(GitHubTokenSource tokenSource, String owner, String repo, String apiBase) {
+        this.tokenSource = tokenSource;
         this.owner = owner;
         this.repo = repo;
         this.apiBase = apiBase;
@@ -42,6 +51,14 @@ public class GitHubService {
             .readTimeout(60, TimeUnit.SECONDS)
             .build();
         this.objectMapper = new ObjectMapper();
+    }
+
+    private String token() throws IOException {
+        String value = tokenSource.get();
+        if (value == null || value.isBlank()) {
+            throw new IOException("No GitHub credential is available");
+        }
+        return value;
     }
 
     /**
@@ -61,7 +78,7 @@ public class GitHubService {
 
         Request request = new Request.Builder()
             .url(apiBase + "/repos/" + owner + "/" + repo + "/git/refs")
-            .header("Authorization", "token " + authToken)
+            .header("Authorization", "token " + token())
             .header("Accept", "application/vnd.github+json")
             .post(body)
             .build();
@@ -102,7 +119,7 @@ public class GitHubService {
 
         Request request = new Request.Builder()
             .url(apiBase + "/repos/" + owner + "/" + repo + "/git/commits")
-            .header("Authorization", "token " + authToken)
+            .header("Authorization", "token " + token())
             .header("Accept", "application/vnd.github+json")
             .post(body)
             .build();
@@ -145,7 +162,7 @@ public class GitHubService {
 
         Request httpRequest = new Request.Builder()
             .url(apiBase + "/repos/" + owner + "/" + repo + "/pulls")
-            .header("Authorization", "token " + authToken)
+            .header("Authorization", "token " + token())
             .header("Accept", "application/vnd.github+json")
             .post(request)
             .build();
@@ -172,7 +189,7 @@ public class GitHubService {
     private String detectDefaultBranch() throws IOException {
         Request request = new Request.Builder()
             .url(apiBase + "/repos/" + owner + "/" + repo)
-            .header("Authorization", "token " + authToken)
+            .header("Authorization", "token " + token())
             .header("Accept", "application/vnd.github+json")
             .get()
             .build();
@@ -213,7 +230,7 @@ public class GitHubService {
 
         Request request = new Request.Builder()
             .url(url)
-            .header("Authorization", "token " + authToken)
+            .header("Authorization", "token " + token())
             .header("Accept", "application/vnd.github+json")
             .get()
             .build();
@@ -237,7 +254,7 @@ public class GitHubService {
     private String getBranchSha(String branchName) throws IOException {
         Request request = new Request.Builder()
             .url(apiBase + "/repos/" + owner + "/" + repo + "/branches/" + branchName)
-            .header("Authorization", "token " + authToken)
+            .header("Authorization", "token " + token())
             .header("Accept", "application/vnd.github+json")
             .get()
             .build();
@@ -267,7 +284,7 @@ public class GitHubService {
 
         Request request = new Request.Builder()
             .url(apiBase + "/repos/" + owner + "/" + repo + "/git/trees")
-            .header("Authorization", "token " + authToken)
+            .header("Authorization", "token " + token())
             .header("Accept", "application/vnd.github+json")
             .post(body)
             .build();

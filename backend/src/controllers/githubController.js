@@ -1,5 +1,7 @@
+const Project = require('../models/project');
 const GitHubService = require('../services/GitHubService');
-const { NotFoundError } = require('../errors/HttpError');
+const GitHubAppAuthService = require('../services/GitHubAppAuthService');
+const { NotFoundError, ForbiddenError } = require('../errors/HttpError');
 
 async function connectRepo(req, res, next) {
   try {
@@ -121,7 +123,72 @@ async function getRepoForAgent(req, res, next) {
       return;
     }
     
-    res.json({ success: true, data: { repoUrl: repo.repoUrl, accessToken: repo.accessToken } });
+    res.json({
+      success: true,
+      data: {
+        repoUrl: repo.repoUrl,
+        accessToken: repo.accessToken,
+        authMode: repo.authMode,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function requestToken(req, res, next) {
+  try {
+    const projectId = Number(req.params.projectId);
+    const project = await Project.findById(projectId);
+    if (!project) throw new NotFoundError('Project not found');
+
+    const requesterId = req.agent ? req.agent.owner_id : req.user?.userId;
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    if (!isSuperAdmin && parseInt(requesterId, 10) !== project.ownerId) {
+      throw new ForbiddenError('Only the project owner or a super admin can request a GitHub token');
+    }
+
+    const token = await GitHubAppAuthService.mintToken(projectId, {
+      operation: req.body?.operation || 'agent',
+      repo: req.body?.repo,
+    });
+    res.json({ success: true, data: token });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function getInstallationStatus(req, res, next) {
+  try {
+    const installation = await GitHubAppAuthService.getInstallationStatus(
+      Number(req.params.projectId)
+    );
+    res.json({ success: true, data: installation });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function setInstallation(req, res, next) {
+  try {
+    const { installationId, repoAllowlist } = req.body;
+    const installation = await GitHubAppAuthService.setInstallation(
+      Number(req.params.projectId),
+      installationId,
+      repoAllowlist
+    );
+    res.json({ success: true, data: installation });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function disableInstallation(req, res, next) {
+  try {
+    const result = await GitHubAppAuthService.disableProject(
+      Number(req.params.projectId)
+    );
+    res.json({ success: true, data: result });
   } catch (error) {
     next(error);
   }
@@ -137,4 +204,8 @@ module.exports = {
   deleteBranch,
   listBranches,
   listPRs,
+  requestToken,
+  getInstallationStatus,
+  setInstallation,
+  disableInstallation,
 };

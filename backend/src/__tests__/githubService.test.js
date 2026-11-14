@@ -26,8 +26,26 @@ jest.mock('../db', () => ({
 
 const Project = require('../models/project');
 const User = require('../models/user');
+const Ticket = require('../models/ticket');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
+const GitHubAppAuthService = require('../services/GitHubAppAuthService');
+
+const savedEnv = {};
+
+beforeAll(() => {
+  for (const key of ['GITHUB_AUTH_MODE', 'ALLOW_PAT']) savedEnv[key] = process.env[key];
+  process.env.GITHUB_AUTH_MODE = 'pat';
+  process.env.ALLOW_PAT = 'true';
+});
+
+afterAll(() => {
+  for (const [key, value] of Object.entries(savedEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  jest.restoreAllMocks();
+});
 
 describe('GitHubService', () => {
   beforeEach(() => {
@@ -155,6 +173,65 @@ describe('GitHubService', () => {
       const result = await GitHubService.getProjectRepo(1);
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('agent repo config and App mode (fg-35 FR4/FR5)', () => {
+    const originalProviderImpl = GitHubProvider.getMockImplementation();
+    afterEach(() => {
+      GitHubProvider.mockImplementation(originalProviderImpl);
+    });
+
+    it('does not return the stored PAT in App mode', async () => {
+      pool.query.mockResolvedValue({
+        rows: [{
+          repo_url: 'https://github.com/owner/repo',
+          access_token_encrypted: 'encrypted-token',
+        }],
+      });
+      jest.spyOn(GitHubAppAuthService, 'getAuthMode').mockReturnValue('app');
+
+      const result = await GitHubService.getProjectRepoForAgent(1);
+
+      expect(result).toEqual({
+        repoUrl: 'https://github.com/owner/repo',
+        accessToken: null,
+        authMode: 'app',
+      });
+    });
+
+    it('uses a minted installation token for backend PR operations', async () => {
+      GitHubProvider.parseRepoUrl = jest.fn(() => ({ owner: 'owner', repo: 'repo' }));
+      const provider = { createPR: jest.fn().mockResolvedValue({ url: 'https://github.com/owner/repo/pull/1', state: 'open' }) };
+      GitHubProvider.mockImplementation(() => provider);
+      jest.spyOn(GitHubAppAuthService, 'getAuthMode').mockReturnValue('app');
+      const mint = jest.spyOn(GitHubAppAuthService, 'mintToken').mockResolvedValue({ token: 'ghs_scoped' });
+      pool.query.mockResolvedValue({
+        rows: [{
+          id: 1,
+          project_id: 1,
+          provider: 'github',
+          repo_url: 'https://github.com/owner/repo',
+          access_token_encrypted: 'encrypted-token',
+          default_branch: 'main',
+          is_active: true,
+          created_at: new Date(),
+          updated_at: new Date(),
+        }],
+      });
+      Ticket.findById.mockResolvedValue({
+        id: 5,
+        projectId: 1,
+        title: 'Ticket',
+        branchName: 'vibecode/ticket-5',
+        prUrl: null,
+      });
+
+      await GitHubService.createTicketPR(1, 5, 'body');
+
+      expect(mint).toHaveBeenCalledWith(1, { operation: 'backend' });
+      expect(GitHubProvider).toHaveBeenCalledWith('ghs_scoped');
+      expect(provider.createPR).toHaveBeenCalled();
     });
   });
 

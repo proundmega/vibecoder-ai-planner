@@ -42,6 +42,7 @@ public class AgentApp {
     private final ApiService apiService;
     private final ProviderSettings providerSettings;
     private final GitHubService gitHubService;
+    private final GitHubTokenProvider githubTokenProvider;
     private final TicketWorker ticketWorker;
     private final ReviewProcessor reviewProcessor;
     private ScheduledExecutorService heartbeatScheduler;
@@ -54,15 +55,17 @@ public class AgentApp {
         this.apiService = new ApiService(config);
         this.providerSettings = resolveProviderSettings();
         AiProvider aiProvider = createAiProvider(providerSettings);
-        this.githubAccessToken = fetchGitHubToken();
-        this.gitHubService = new GitHubService(githubAccessToken, config.getRepoOwner(), config.getRepoName());
+        this.githubTokenProvider = createGitHubTokenProvider();
+        this.githubAccessToken = fetchGitHubToken(githubTokenProvider);
+        this.gitHubService = new GitHubService(
+            githubTokenProvider::get, config.getRepoOwner(), config.getRepoName());
 
         HarnessConfig harnessConfig = config.getHarnessConfig();
         if (harnessConfig.isEnabled()) {
             harnessConfig.validate();
             this.ticketWorker = new HarnessTicketProcessor(
                 config, apiService, providerSettings, gitHubService,
-                githubAccessToken, harnessConfig);
+                githubTokenProvider::get, githubAccessToken, harnessConfig);
             log.info("Harness mode: opencode (binary={}, model={})",
                 harnessConfig.binary(),
                 harnessConfig.modelOverride() != null
@@ -70,7 +73,8 @@ public class AgentApp {
                     : providerSettings.model());
         } else {
             this.ticketWorker = new TicketProcessor(
-                config, apiService, aiProvider, gitHubService, githubAccessToken);
+                config, apiService, aiProvider, gitHubService,
+                githubTokenProvider::get);
             log.info("Harness mode: legacy");
         }
 
@@ -89,15 +93,38 @@ public class AgentApp {
         return !openCode || (settings.baseUrl() != null && !settings.baseUrl().isBlank());
     }
 
-    private String fetchGitHubToken() {
-        // Priority 1: Backend API (decrypted PAT from project_repos)
+    private GitHubTokenProvider createGitHubTokenProvider() {
+        return new GitHubTokenProvider(
+            () -> apiService.requestGitHubToken(config.getProjectId()));
+    }
+
+    private String fetchGitHubToken(GitHubTokenProvider provider) {
+        try {
+            String token = provider.get();
+            log.info("Fetched GitHub credential from backend (mode={})", provider.getMode());
+            return token;
+        } catch (Exception e) {
+            log.warn("Could not fetch a GitHub App installation token: {}", e.getMessage());
+        }
+
+        // The explicit PAT fallback is opt-in on both sides and only valid in
+        // pat mode. Never fall back to a broader or ambient credential in app mode.
+        if ("pat".equals(config.getGitHubAuthMode()) && config.isAllowPat()) {
+            return fetchLegacyPat();
+        }
+
+        log.warn("No GitHub credential available — publishing will fail closed");
+        return null;
+    }
+
+    private String fetchLegacyPat() {
         try {
             Map<String, Object> repoConfig = apiService.getRepoConfig(config.getProjectId());
             Object accessToken = repoConfig.get("accessToken");
             if (accessToken instanceof String) {
                 String token = (String) accessToken;
                 if (token != null && !token.isBlank()) {
-                    log.info("Fetched GitHub PAT from backend");
+                    log.info("Fetched GitHub PAT from backend (explicit fallback)");
                     return token;
                 }
             }
@@ -105,16 +132,14 @@ public class AgentApp {
             log.debug("Could not fetch GitHub PAT from backend: {}", e.getMessage());
         }
 
-        // Priority 2: GITHUB_TOKEN env var
         String envToken = config.getGitHubToken();
         if (envToken != null && !envToken.isBlank()) {
-            log.info("Using GitHub token from GITHUB_TOKEN env var");
+            log.warn("Using GITHUB_TOKEN env fallback (explicit pat mode)");
             return envToken;
         }
 
-        // Priority 3: Fallback to agent API key (will fail for GitHub, but preserves existing behavior)
-        log.warn("No GitHub PAT available — agent GitHub operations will fail for private repos");
-        return config.getAgentApiKey();
+        log.warn("No GitHub PAT available in explicit pat mode");
+        return null;
     }
 
     /**

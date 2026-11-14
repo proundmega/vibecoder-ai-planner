@@ -43,6 +43,36 @@ Scrubbing `.git/config` (fg-30) was necessary but not sufficient. A compromised 
 - **FR9 - Fallback:** `GITHUB_AUTH_MODE=app|pat`, with `pat` allowed only when `ALLOW_PAT=true`.
 - **FR10 - Failure:** expired/revoked token fails closed with a clear error; never silently use a broader credential.
 
+## Non-functional requirements
+
+- **NFR1 - Secret containment:** the installation token must never be written to the workspace, `.git/config`, a persisted remote URL, process arguments, logs, error messages, ticket messages or the model prompt. The existing transient `GIT_ASKPASS` flow remains the delivery mechanism.
+- **NFR2 - Fail closed:** a missing App configuration, missing/disabled installation, repo mismatch, expired/revoked token or unknown `GITHUB_AUTH_MODE` must stop publishing with a clear error. The agent must never widen scope or fall back to an ambient credential in `app` mode.
+- **NFR3 - Deterministic verification:** every requirement has a fake-GitHub/fake-backend test; no live GitHub call is needed for the regression suite.
+- **NFR4 - Operational clarity:** App registration permissions, installation mapping, rotation, revocation, PAT fallback and rollback are documented in a runbook.
+
+## Assumptions
+
+| ID | Assumption | Impact if wrong | Validation / evidence |
+|---|---|---|---|
+| A1 | One GitHub App with a per-project installation mapping is enough for the current single-tenant deployment. | Multi-tenant or per-tenant Apps need a new credential-owner model. | Decision 2026-11-14; `project_github_installations` keyed by project. |
+| A2 | The agent can request a token with its existing `X-API-Key`, and the project owner owns the agent. | Token delivery needs a different auth mechanism. | `POST /github/:projectId/token` uses `verifyTokenOrAgent` plus owner check; tests cover owner mismatch. |
+| A3 | GitHub installation tokens are valid for at most one hour; `GITHUB_TOKEN_TTL_SECONDS` can only shorten the client-side cache, not the server expiry. | A longer TTL would require a different GitHub auth model. | The service caps `expiresAt` at the configured TTL and refreshes five minutes early. |
+| A4 | The stored PAT remains only for explicit local/dev fallback and for the existing connect/validation flow. | Removing it entirely would block repo connection until an App installation UI exists. | `GITHUB_AUTH_MODE=pat` + `ALLOW_PAT=true` gated on both backend and agent; App mode never returns the stored PAT. |
+| A5 | A project's connected repo in `project_repos` is authoritative for token scope. | A per-run repo override needs a different mapping. | Token requests may name a repo only if it matches the connected repo; allowlist checked. |
+| A6 | GitHub's App JWT (RS256, 10-minute) exchange endpoint is reachable from the backend. | Air-gapped/GHES deployments need an API base override. | API base is the public GitHub endpoint today; GHES is a documented non-goal in `02`. |
+
+## Change impact
+
+| Area | Impact | Evidence / owner |
+|---|---|---|
+| Database | New `project_github_installations` table with a rollback. | `049_project_github_installations.sql` |
+| Backend API | New token endpoint and installation mapping/status/disable routes; `GET /repo/agent` stops returning a PAT in App mode. | `api/github.js`, `githubController.js` |
+| Backend services | New `GitHubAppAuthService` mints, caches and revokes tokens; backend PR/branch operations use the same scoped credential. | `GitHubAppAuthService.js`, `GitHubService.js` |
+| Agent | Requests a short-lived token, refreshes before expiry, and feeds it to git/PR calls through a token source; no disk persistence. | `GitHubTokenProvider`, `WorkspaceManager`, `GitHubService`, `AgentApp` |
+| Config | `GITHUB_AUTH_MODE`, `ALLOW_PAT`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_TOKEN_TTL_SECONDS`. | env docs and runbook |
+| Security | Token scope and TTL shrink; cross-project cache isolation; fail-closed mode. | tests and `02` |
+| Rollback | Set `GITHUB_AUTH_MODE=pat` + `ALLOW_PAT=true`, or disable the App routes; the mapping table can be dropped after reverting the code. | runbook |
+
 ## Safety requirements
 
 - A token for project A must not work for project B.

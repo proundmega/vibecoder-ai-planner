@@ -42,4 +42,26 @@ const createPRSchema = Joi.object({
   description: Joi.string().max(10000).allow('').optional(),
 });
 
-module.exports = { connectRepoSchema, createBranchSchema, createPRSchema };
+const installationSchema = Joi.object({
+  installationId: Joi.number().integer().positive().required().messages({
+    'number.base': 'installationId must be a number',
+    'any.required': 'installationId is required',
+  }),
+  repoAllowlist: Joi.array()
+    .items(Joi.string().pattern(/^([\w.-]+\/)?[\w.-]+$/))
+    .max(100)
+    .default([]),
+});
+
+const tokenRequestSchema = Joi.object({
+  operation: Joi.string().max(64).optional(),
+  repo: Joi.string().max(200).optional(),
+});
+
+module.exports = {
+  connectRepoSchema,
+  createBranchSchema,
+  createPRSchema,
+  installationSchema,
+  tokenRequestSchema,
+};
