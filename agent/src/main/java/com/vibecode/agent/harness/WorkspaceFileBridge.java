@@ -27,8 +27,11 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -54,10 +57,12 @@ final class WorkspaceFileBridge implements AutoCloseable {
     private static final int MAX_GREP_LINE_CHARS = 500;
     private static final int DEFAULT_READ_LINES = 2000;
     private static final String TOKEN_HEADER = "X-Workspace-Token";
+    private static final long FILE_LOCK_TIMEOUT_MS = 5_000L;
 
     private final Path workspaceReal;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String token = randomHex(32);
+    private final Map<Path, ReentrantLock> fileLocks = new ConcurrentHashMap<>();
 
     private HttpServer server;
     private ExecutorService executor;
@@ -220,9 +225,18 @@ final class WorkspaceFileBridge implements AutoCloseable {
             try {
                 Path target = WorkspacePathPolicy.resolveWritable(
                     workspaceReal, root.path("path").asText(""));
-                WorkspaceSecureFile.writeString(workspaceReal, target, content, true);
-                sendText(exchange, 200, "Wrote " + payload.length + " bytes to "
-                    + workspaceReal.relativize(target).toString().replace('\\', '/'));
+                if (!tryLockFile(target)) {
+                    sendJson(exchange, 409,
+                        Map.of("error", "file is busy; retry the write"));
+                    return;
+                }
+                try {
+                    WorkspaceSecureFile.writeString(workspaceReal, target, content, true);
+                    sendText(exchange, 200, "Wrote " + payload.length + " bytes to "
+                        + workspaceReal.relativize(target).toString().replace('\\', '/'));
+                } finally {
+                    unlockFile(target);
+                }
             } catch (IOException e) {
                 sendJson(exchange, 403, Map.of("error", safeMessage(e)));
             }
@@ -256,6 +270,12 @@ final class WorkspaceFileBridge implements AutoCloseable {
             try {
                 Path target = WorkspacePathPolicy.resolveWritable(
                     workspaceReal, root.path("path").asText(""));
+                if (!tryLockFile(target)) {
+                    sendJson(exchange, 409,
+                        Map.of("error", "file is busy; retry the edit"));
+                    return;
+                }
+                try {
                 try (SeekableByteChannel channel =
                          WorkspaceSecureFile.openReadWrite(workspaceReal, target)) {
                     long size = channel.size();
@@ -317,6 +337,9 @@ final class WorkspaceFileBridge implements AutoCloseable {
                     channel.truncate(0);
                     channel.position(0);
                     WorkspaceSecureFile.writeFully(channel, payload);
+                }
+                } finally {
+                    unlockFile(target);
                 }
                 sendText(exchange, 200, "Edited "
                     + workspaceReal.relativize(target).toString().replace('\\', '/'));
@@ -506,6 +529,32 @@ final class WorkspaceFileBridge implements AutoCloseable {
         } catch (IOException e) {
             // A single unreadable file must not abort the whole search.
         }
+    }
+
+    private boolean tryLockFile(Path target) throws IOException {
+        ReentrantLock lock = fileLocks.computeIfAbsent(
+            target.toAbsolutePath().normalize(), key -> new ReentrantLock());
+        try {
+            return lock.tryLock(FILE_LOCK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("interrupted while waiting for the file lock");
+        }
+    }
+
+    private void unlockFile(Path target) {
+        ReentrantLock lock = fileLocks.get(target.toAbsolutePath().normalize());
+        if (lock != null && lock.isHeldByCurrentThread()) {
+            lock.unlock();
+        }
+    }
+
+    boolean tryLockForTesting(Path target) throws IOException {
+        return tryLockFile(target);
+    }
+
+    void unlockForTesting(Path target) {
+        unlockFile(target);
     }
 
     private boolean authorized(HttpExchange exchange) throws IOException {

@@ -44,6 +44,23 @@ class WorkspaceSecureFileTest {
     }
 
     @Test
+    void refusesToWriteOrReadAFifo() throws Exception {
+        Path fifo = workspace.resolve("pipe");
+        try {
+            Process process = new ProcessBuilder("mkfifo", fifo.toString()).start();
+            assertEquals(0, process.waitFor());
+        } catch (IOException e) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false,
+                "mkfifo is unavailable: " + e.getMessage());
+        }
+
+        assertThrows(IOException.class,
+            () -> WorkspaceSecureFile.writeString(workspace, fifo, "pwned", true));
+        assertThrows(IOException.class,
+            () -> WorkspaceSecureFile.readString(workspace, fifo, 1024));
+    }
+
+    @Test
     void refusesAFinalComponentSymlinkForReadAndWrite() throws Exception {
         Path outside = Files.writeString(tempDir.resolve("outside.txt"), "super-secret");
         Path link = workspace.resolve("final-link.txt");

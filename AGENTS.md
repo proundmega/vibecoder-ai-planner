@@ -175,7 +175,8 @@ and model-driven shell commands), `SANDBOX_IMAGE`, `SANDBOX_PROXY_IMAGE`,
 `SANDBOX_ENV`, `SANDBOX_USER`, `SANDBOX_ALLOW_ROOT`,
 `SANDBOX_EXEC_TIMEOUT_SECONDS`, `SANDBOX_ARTIFACT_MAX_BYTES`,
 `SANDBOX_SECCOMP_PROFILE`, `SANDBOX_APPARMOR_PROFILE`,
-`SANDBOX_CONTAINER_WORKSPACE_ROOT`, `SANDBOX_HOST_WORKSPACE_ROOT`.
+`SANDBOX_CONTAINER_WORKSPACE_ROOT`, `SANDBOX_HOST_WORKSPACE_ROOT`,
+`SANDBOX_REQUIRE_SECURE_FILE_ACCESS`.
 Docker mode needs a daemon connection and a host-visible workspace; the
 PoolManager/compose wiring is deferred to fg-34 D8. OpenCode still runs in the
 supervisor, but the built-in `bash`/`shell` tool is disabled and the

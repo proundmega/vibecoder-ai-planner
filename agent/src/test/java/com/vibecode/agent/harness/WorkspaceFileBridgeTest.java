@@ -196,6 +196,43 @@ class WorkspaceFileBridgeTest {
     }
 
     @Test
+    void rejectsAConcurrentWriteToTheSameFile() throws Exception {
+        Files.writeString(workspace.resolve("locked.txt"), "old");
+        Path target = workspace.resolve("locked.txt").toRealPath();
+        assertTrue(bridge.tryLockForTesting(target));
+        try {
+            HttpResponse<String> response = post(
+                "/write", "{\"path\":\"locked.txt\",\"content\":\"new\"}", true);
+            assertEquals(409, response.statusCode());
+            assertTrue(response.body().contains("file is busy"), response.body());
+        } finally {
+            bridge.unlockForTesting(target);
+        }
+
+        HttpResponse<String> retry = post(
+            "/write", "{\"path\":\"locked.txt\",\"content\":\"new\"}", true);
+        assertEquals(200, retry.statusCode());
+        assertEquals("new", Files.readString(workspace.resolve("locked.txt")));
+    }
+
+    @Test
+    void rejectsAConcurrentEditToTheSameFile() throws Exception {
+        Files.writeString(workspace.resolve("locked-edit.txt"), "old value");
+        Path target = workspace.resolve("locked-edit.txt").toRealPath();
+        assertTrue(bridge.tryLockForTesting(target));
+        try {
+            HttpResponse<String> response = post(
+                "/edit",
+                "{\"path\":\"locked-edit.txt\",\"oldString\":\"old\",\"newString\":\"new\"}",
+                true);
+            assertEquals(409, response.statusCode());
+            assertTrue(response.body().contains("file is busy"), response.body());
+        } finally {
+            bridge.unlockForTesting(target);
+        }
+    }
+
+    @Test
     void writesAndEditsFilesInsideTheWorkspace() throws Exception {
         HttpResponse<String> write = post(
             "/write", "{\"path\":\"App.java\",\"content\":\"class App {}\"}", true);

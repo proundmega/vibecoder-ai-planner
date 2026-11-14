@@ -226,6 +226,14 @@ class OpenCodeClientTest {
     }
 
     @Test
+    void secureFileAccessCanBeRequiredExplicitlyInHostMode() {
+        assertTrue(OpenCodeClient.requireSecureFileAccess(true, null));
+        assertFalse(OpenCodeClient.requireSecureFileAccess(false, null));
+        assertFalse(OpenCodeClient.requireSecureFileAccess(false, "false"));
+        assertTrue(OpenCodeClient.requireSecureFileAccess(false, "true"));
+    }
+
+    @Test
     void injectsTheWorkspaceBridgeUrlAndToken() throws Exception {
         Path home = tempDir.resolve("workspace-env-home");
         Path workspace = Files.createDirectories(tempDir.resolve("workspace-env"));

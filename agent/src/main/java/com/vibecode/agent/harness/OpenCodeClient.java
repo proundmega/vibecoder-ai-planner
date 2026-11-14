@@ -140,7 +140,10 @@ public final class OpenCodeClient implements HarnessClient {
         Files.createDirectories(home.resolve(".cache"));
 
         closeWorkspaceBridge();
-        WorkspaceFileBridge createdBridge = new WorkspaceFileBridge(workspace, bridge != null);
+        boolean requireSecureFileAccess = requireSecureFileAccess(
+            bridge != null, System.getenv("SANDBOX_REQUIRE_SECURE_FILE_ACCESS"));
+        WorkspaceFileBridge createdBridge = new WorkspaceFileBridge(
+            workspace, requireSecureFileAccess);
         createdBridge.start();
         this.workspaceBridge = createdBridge;
         try {
@@ -724,6 +727,10 @@ public final class OpenCodeClient implements HarnessClient {
      * config; these wrappers forward to the loopback workspace bridge, which
      * resolves paths with {@code toRealPath()} and rejects escapes.
      */
+    static boolean requireSecureFileAccess(boolean sandboxBridge, String configured) {
+        return sandboxBridge || Boolean.parseBoolean(configured);
+    }
+
     static Path writeWorkspaceTools(Path home) throws IOException {
         Path tools = Files.createDirectories(home.resolve(".config/opencode/tools"));
         Files.writeString(tools.resolve("sandbox_read.ts"),
