@@ -338,7 +338,7 @@ describe('GitHubService', () => {
       const Ticket = require('../models/ticket');
       Ticket.findById.mockResolvedValue({
         id: 42,
-        projectId: 1,
+        projectId: '1',
         title: 'Fix authentication bug',
         branchName: 'vibecode/ticket-42-fix-authentication-bug',
         description: 'Fix the auth bug',
@@ -357,7 +357,7 @@ describe('GitHubService', () => {
       GitHubProvider.mockReturnValue(mockProvider);
       pool.query.mockResolvedValue({ rows: [] });
 
-      const result = await GitHubService.createTicketPR(1, 42, null);
+      const result = await GitHubService.createTicketPR('1', 42, null);
 
       expect(result.url).toBe('https://github.com/owner/repo/pull/1');
       expect(result.state).toBe('open');

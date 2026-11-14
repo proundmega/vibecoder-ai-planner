@@ -23,7 +23,7 @@
 | `backend/src/migrations/apply.js` | MODIFY | Register migration 049. |
 | `backend/src/services/GitHubAppAuthService.js` | CREATE | App JWT, installation-token mint/cache, repo scope/allowlist, PAT fallback, audit, disable/revoke. |
 | `backend/src/services/GitHubService.js` | MODIFY | App mode never returns the stored PAT; backend branch/PR/diff operations use a minted token. |
-| `backend/src/controllers/githubController.js` | MODIFY | Token request plus installation status/upsert/disable handlers. |
+| `backend/src/controllers/githubController.js` | MODIFY | Token request plus installation status/upsert/disable handlers; owner checks; body-less branch/PR project resolution. |
 | `backend/src/api/github.js` | MODIFY | Token and installation routes with agent/owner guards. |
 | `backend/src/validators/github.js` | MODIFY | Installation and token-request schemas. |
 | `agent/src/main/java/com/vibecode/agent/service/GitHubTokenSource.java` | CREATE | Token supplier contract with optional invalidation. |
@@ -36,7 +36,7 @@
 | `agent/src/main/java/com/vibecode/agent/AgentApp.java` | MODIFY | Build the provider, fail closed in app mode, keep explicit PAT fallback. |
 | `agent/src/main/java/com/vibecode/agent/config/AgentConfig.java` | MODIFY | `GITHUB_AUTH_MODE`/`ALLOW_PAT` parsing and validation. |
 | `backend/src/__tests__/githubAppAuthService.test.js` | CREATE | Mint/cache/scope/allowlist/disable/PAT/fail-closed/audit coverage. |
-| `backend/src/__tests__/githubAppController.test.js` | CREATE | Owner/super-admin authorization and installation handlers. |
+| `backend/src/__tests__/githubAppController.test.js` | CREATE | Owner/super-admin authorization, installation handlers and body-less branch/PR resolution. |
 | `backend/src/__tests__/githubAppAuthWiring.test.js` | CREATE | Route ordering/guards and migration registration. |
 | `backend/src/__tests__/githubService.test.js` | MODIFY | App-mode repo config and minted-token PR path. |
 | `agent/src/test/java/com/vibecode/agent/service/GitHubTokenProviderTest.java` | CREATE | Cache, refresh, invalidation, expiry parsing and fail-closed fetch. |
@@ -75,9 +75,10 @@
 |---|---|---|---|---|
 | 0 | author | none | Implementation plan and verification matrix | n/a |
 | 1 | independent reviewer | B1 numeric/string owner comparison rejected real owners; B2 revocation called a nonexistent GitHub endpoint; B3 `/repo/agent` returned PATs to any agent key; B4 the PAT/env fallback was fetched but not wired into the credential source; B5 PAT mode ignored `disabled_at`. | Fixed string-safe ownership checks and tests; revocation now uses `DELETE /installation/token` with the cached token and reports `revoked`/`cachedTokens`; `/repo/agent` applies the owner check; the token provider takes an explicit PAT fallback source; PAT mode and backend operations honor `disabled_at`. | pending |
+| 2 | independent reviewer (re-review) | R1 `createTicketBranch`/`createTicketPR` compared `ticket.projectId` numerically and would reject pg BIGINT strings; R2 `const projectId` was reassigned in the branch/PR/delete controllers when the body omitted it. Both pre-existing, but they block the FR6 backend path. | Both comparisons are string-safe; `let projectId` in all three controllers; regressions cover a string ticket project id and body-less createPR/deleteBranch. | pass |
 
 ## Results
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-14 | `793bcd5` (PR #143) | `cd backend && npm test` (131 suites, 1622 tests) + `cd agent && mvn test` (531 tests, 5 skipped) + `node planning/check-planning.js` + `git diff --check` | Pass. Backend mints/caches/revokes installation tokens, exposes the token and mapping routes, and fails closed; App mode no longer returns the stored PAT. The agent refreshes the token through a provider and git/PR calls consume it from a token source. PAT fallback is explicit and wired through the provider. Review round 1 findings B1-B5 are resolved with regression tests. |
+| 2026-11-14 | `793bcd5` (PR #143) | `cd backend && npm test` (131 suites, 1624 tests) + `cd agent && mvn test` (531 tests, 5 skipped) + `node planning/check-planning.js` + `git diff --check` | Pass. Backend mints/caches/revokes installation tokens, exposes the token and mapping routes, and fails closed; App mode no longer returns the stored PAT. The agent refreshes the token through a provider and git/PR calls consume it from a token source. PAT fallback is explicit and wired through the provider. Review round 1 findings B1-B5 are resolved with regression tests. |

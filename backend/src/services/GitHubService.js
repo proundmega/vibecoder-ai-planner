@@ -140,7 +140,7 @@ class GitHubService {
 
     const ticket = await Ticket.findById(ticketId);
     if (!ticket) throw new NotFoundError('Ticket not found');
-    if (ticket.projectId !== parseInt(projectId)) {
+    if (String(ticket.projectId) !== String(projectId)) {
       throw new ValidationError('Ticket does not belong to this project');
     }
 
@@ -162,7 +162,7 @@ class GitHubService {
 
     const ticket = await Ticket.findById(ticketId);
     if (!ticket) throw new NotFoundError('Ticket not found');
-    if (ticket.projectId !== parseInt(projectId)) {
+    if (String(ticket.projectId) !== String(projectId)) {
       throw new ValidationError('Ticket does not belong to this project');
     }
     if (!ticket.branchName) {

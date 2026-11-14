@@ -104,7 +104,10 @@ ALLOW_PAT=true
 
 Set both on the backend and the agent. The backend returns the stored PAT from
 `project_repos` and the agent logs a warning. `ALLOW_PAT=true` with `app` mode
-has no effect. Do not enable this in production.
+has no effect. Do not enable this in production. The agent's `GITHUB_TOKEN`
+env fallback is a local override: in `pat` mode it is not subject to the
+project's `disabled_at` flag, so do not rely on disabling a project to stop a
+developer's local env token.
 
 ## 8. Migration from PATs
 

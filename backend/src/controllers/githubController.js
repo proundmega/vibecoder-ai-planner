@@ -49,7 +49,7 @@ async function getRepoStatus(req, res, next) {
 async function createBranch(req, res, next) {
   try {
     const { ticketId } = req.params;
-    const projectId = req.body.projectId || req.project?.id;
+    let projectId = req.body.projectId || req.project?.id;
 
     if (!projectId) {
       const Ticket = require('../models/ticket');
@@ -69,7 +69,7 @@ async function createPR(req, res, next) {
   try {
     const { ticketId } = req.params;
     const { description } = req.body;
-    const projectId = req.body.projectId;
+    let projectId = req.body.projectId;
 
     if (!projectId) {
       const Ticket = require('../models/ticket');
@@ -88,7 +88,7 @@ async function createPR(req, res, next) {
 async function deleteBranch(req, res, next) {
   try {
     const { ticketId } = req.params;
-    const projectId = req.body.projectId;
+    let projectId = req.body.projectId;
 
     if (!projectId) {
       const Ticket = require('../models/ticket');

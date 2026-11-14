@@ -32,7 +32,7 @@ class SecretRedactorTest {
     void redactsKnownCredentialFormats() {
         List<String> secrets = List.of(
             "ghp_abcdefghijklmnopqrstuvwxyz012345",
-            "ghs_abcdefghijklmnopqrstuvwxyz0123456789ABCD",
+            "ghs_123456.abcdefghijklmnopqrstuvwxyz_0123456789",
             "github_pat_abcdefghijklmnopqrstuvwxyz012345",
             "sk-abcdefghijklmnopqrstuvwxyz012345",
             "AKIAIOSFODNN7EXAMPLE",

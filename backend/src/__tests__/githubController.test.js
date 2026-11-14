@@ -1,5 +1,6 @@
 const githubController = require('../controllers/githubController');
 const GitHubService = require('../services/GitHubService');
+const Ticket = require('../models/ticket');
 
 jest.mock('../services/GitHubService');
 jest.mock('../models/ticket');
@@ -117,6 +118,20 @@ describe('GitHub Controller', () => {
       expect(mockRes.status).toHaveBeenCalledWith(201);
       expect(mockRes.json).toHaveBeenCalledWith({ success: true, data: result });
     });
+
+    it('resolves the project from the ticket when the body omits projectId', async () => {
+      GitHubService.createTicketPR.mockResolvedValue({ url: 'https://github.com/o/r/pull/1' });
+      Ticket.findById.mockResolvedValue({ id: '42', projectId: '1' });
+
+      mockReq.params.ticketId = '42';
+      mockReq.body = {};
+
+      await githubController.createPR(mockReq, mockRes, nextFn);
+
+      expect(Ticket.findById).toHaveBeenCalledWith('42');
+      expect(GitHubService.createTicketPR).toHaveBeenCalledWith('1', '42', undefined);
+      expect(nextFn).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteBranch', () => {
@@ -132,6 +147,19 @@ describe('GitHub Controller', () => {
         success: true,
         data: { success: true },
       });
+    });
+
+    it('resolves the project from the ticket when the body omits projectId', async () => {
+      GitHubService.deleteTicketBranch.mockResolvedValue({ success: true });
+      Ticket.findById.mockResolvedValue({ id: '42', projectId: '1' });
+
+      mockReq.params.ticketId = '42';
+      mockReq.body = {};
+
+      await githubController.deleteBranch(mockReq, mockRes, nextFn);
+
+      expect(GitHubService.deleteTicketBranch).toHaveBeenCalledWith('1', '42');
+      expect(nextFn).not.toHaveBeenCalled();
     });
   });
 
