@@ -159,3 +159,8 @@ local env token.
 GitHub Enterprise Server is not supported in this iteration; the API base is
 the public GitHub endpoint. GitHub rate limits are reported as
 `GITHUB_RATE_LIMITED`; retry after the reset window.
+
+Automatic git/PR retries match 401 and authentication-specific messages only.
+A 403 (protected branch or permission) is not retried. If a deployment's GitHub
+proxy ever surfaces an expired credential as 403, retry the operation manually
+or restart the agent so it mints a fresh token.
