@@ -101,25 +101,36 @@ Neither can be fixed by parsing more of the unmodified TLS stream. The chosen re
 2. The proxy replies `200 Connection Established`, then reads and validates the first ClientHello exactly as today (single SNI, no ECH, no extra handshake, SNI equals the CONNECT host). The validated bytes are replayed into a server-side TLS socket; a replay duplex is used because the ClientHello was already consumed.
 3. The proxy presents a leaf certificate for that SNI, signed by a per-run CA. ALPN advertises **only `http/1.1`**. A client that offers only `h2` fails closed; clients that offer both fall back to HTTP/1.1.
 4. The proxy opens a fresh TLS connection to the resolved origin address with `servername` set to the SNI, normal certificate/hostname verification, and ALPN `http/1.1`. Origin certificate failure closes the tunnel.
-5. Each HTTP/1.1 request is parsed by the proxy. The `Host` header must equal the CONNECT/SNI authority after normalisation (case-insensitive, trailing dot removed, no port or port 443 only). Absolute-form request targets, nested `CONNECT`, `Upgrade`/WebSocket, duplicate or missing `Host`, and conflicting `Content-Length`/`Transfer-Encoding` are rejected. Hop-by-hop headers are removed before forwarding; bodies stream in both directions with the existing idle timeout and bounded header size.
-6. The proxy forwards the request with `https.request` to the same pinned address and SNI, streams the response, and keeps per-tunnel keep-alive with one upstream socket. No second name resolution happens after validation.
-7. Denials are logged as today (`host`, `reason`), never with `Authorization`, cookies, bodies, or URL query strings.
+5. The proxy parses each request with Node's strict HTTP/1.1 parser and **constructs a canonical request**; it never forwards the raw header block or raw bytes. The `Host` header must equal the CONNECT/SNI authority after normalisation: trim optional whitespace, lowercase, strip one trailing dot, accept and strip an explicit `:443`, and reject any other port, userinfo, or bracket form. Missing, duplicate, or different `Host` is rejected.
+6. Framing is made unambiguous before forwarding. The proxy rejects:
+   - any request with both `Transfer-Encoding` and `Content-Length`;
+   - duplicate `Content-Length` headers, even with identical values, and comma-separated or otherwise non-canonical values;
+   - a `Content-Length` that is not a plain non-negative decimal (including signs, whitespace, overflow, or leading `+`);
+   - any `Transfer-Encoding` other than exactly one `chunked` token, multiple `Transfer-Encoding` headers, or unsupported transfer codings;
+   - invalid chunked framing (bad chunk size, missing CRLF, premature EOF, or overflow);
+   - absolute-form targets, `*`, nested `CONNECT`, `Upgrade`/WebSocket, `Connection: upgrade`, `Expect` values other than `100-continue`, and HTTP/1.0 without `Host`.
+
+   The forwarded request has exactly one framing (a single `Content-Length` or chunked, never both), one `Host` set to the validated SNI, and no hop-by-hop headers. Bodies stream in both directions with the existing idle timeout and bounded header size/count.
+7. Responses are parsed and re-serialized too. A `101 Switching Protocols`, any `Upgrade` header, or a `Connection: upgrade` token from the origin is rejected and the tunnel closed; the proxy never switches to raw piping. Other `1xx` responses are rejected except `100 Continue` and `103 Early Hints`. Hop-by-hop headers are stripped and the body is streamed according to the parser.
+8. Denials are logged as today (`host`, `reason`), never with `Authorization`, cookies, bodies, or URL query strings.
 
 #### Per-run CA and trust injection
 
-- The proxy generates an ECDSA P-256 CA at startup in its `/tmp` tmpfs (24-hour validity, random CN containing the proxy suffix). The CA private key never leaves the proxy container and is never passed through `docker inspect`; it is not part of the sandbox.
-- Leaf certificates are minted on demand for the validated SNI, cached per tunnel/host, and contain only `subjectAltName=DNS:<sni>` plus `serverAuth` EKU. They are signed by the per-run CA and expire with it.
+- The proxy generates an ECDSA P-256 CA at startup in its `/tmp` tmpfs (24-hour validity, random CN containing the proxy suffix). The CA private key never leaves the proxy container and is never passed through `docker inspect`; it is not part of the sandbox. Private-key files are mode `0600`; CA/leaf certificates are `0644`.
+- Leaf certificates are minted on demand for the validated SNI and cached per host. They contain `subjectAltName=DNS:<sni>` only, `basicConstraints=critical,CA:FALSE`, `keyUsage=critical,digitalSignature`, `extendedKeyUsage=serverAuth`, and subject/authority key identifiers. They are signed by the per-run CA and never outlive it. The leaf cache is bounded (for example, 256 entries with LRU eviction) so a wildcard allowlist cannot generate unbounded certificates.
 - The proxy image gains `openssl` and `ca-certificates` (the latter for origin verification). The base image stays digest-pinned, and the added packages are covered by the existing SBOM/vulnerability scan.
-- Once the proxy reports ready, the supervisor reads the CA certificate with a bounded `docker exec <proxy> cat /tmp/vibecode-egress-ca/ca.crt`, writes it into the sandbox as a read-only 0444 file at `/tmp/vibecode-egress-ca.crt` (streamed with `docker cp`, so it does not depend on a host-visible path or D8), and only then returns the sandbox handle. Any failure in generation, retrieval, or copy fails sandbox creation closed.
-- The sandbox receives the CA certificate path through the toolchain-specific variables:
+- At startup the proxy verifies that its Node/OpenSSL runtime exposes `SSL_OP_NO_RENEGOTIATION`; if it does not, the proxy refuses to start.
+- Once the proxy reports ready, the supervisor copies the CA certificate out with `docker cp <proxy>:/tmp/vibecode-egress-ca/ca.crt <supervisor-temp-file>` and into the sandbox with `docker cp <supervisor-temp-file> <sandbox>:/tmp/vibecode-egress-ca.crt`. Both directions stream through the daemon, so they do not depend on a host-visible path or D8; the supervisor temp file is removed immediately. It verifies the copy is a readable PEM, makes it 0444, builds a combined bundle at `/tmp/vibecode-ca-bundle.crt` from the image's `/etc/ssl/certs/ca-certificates.crt` plus the per-run CA, and only then returns the sandbox handle. A CA copy failure fails sandbox creation closed; if the system bundle is missing, the supervisor logs a warning and uses the CA-only file.
+- The sandbox receives the paths through the toolchain-specific variables:
   `NODE_EXTRA_CA_CERTS`, `npm_config_cafile`, `SSL_CERT_FILE`, `GIT_SSL_CAINFO`, `CURL_CA_BUNDLE`, `PIP_CERT`, `REQUESTS_CA_BUNDLE`, `CARGO_HTTP_CAINFO`.
-  `NODE_EXTRA_CA_CERTS` appends to Node's bundled roots; the OpenSSL-style variables point at the CA-only file. That is sufficient because the sandbox has no direct egress: every TLS connection it can make is terminated by the proxy and presents a leaf from this CA. The copy is root-owned and world-readable (0444); even if the sandbox user replaces it in writable `/tmp`, it can only make that sandbox distrust its own proxy.
+  `NODE_EXTRA_CA_CERTS` appends to Node's bundled roots. The OpenSSL-style variables point at the combined system-roots + per-run-CA bundle, so loopback/same-container TLS that uses a public root still works. The combined bundle does not make the proxy optional: all non-loopback egress still has no route except through the proxy. A repo's own self-signed loopback certificate is not trusted by this bundle; a local test must trust its own test CA or disable verification in that test. The copy is root-owned and world-readable; even if the sandbox user replaces it in writable `/tmp`, it can only affect that sandbox.
 - The CA certificate and any cached leaves are removed with the proxy container. Nothing is written to the workspace or to the supervisor's HOME.
 
 #### Compatibility and rollout
 
-- This is intentionally HTTP/1.1-only. HTTP/2-only origins are unsupported in terminate mode; clients that support both fall back. Implementations that pin a certificate or use mTLS fail closed and are documented as unsupported.
+- This is intentionally HTTP/1.1-only. HTTP/2-only origins are unsupported in terminate mode; clients that support both fall back. Implementations that pin a certificate, use mTLS, or require a protocol switch fail closed and are documented as unsupported.
 - Common sandbox toolchains (`npm`/Node, `pip`/Python, `git`, `curl`, Go, Cargo) honour at least one of the injected variables. Tools that ship and pin their own bundle, or ignore the variables, fail closed rather than silently bypassing the proxy.
+- **Java/Maven/Gradle are unsupported in terminate mode for now.** The sandbox base image has no JDK; if a repo installs one, Java uses `$JAVA_HOME/lib/security/cacerts`, ignores the variables above, and fails closed. The future approach (issue #149 / D28) is to copy `cacerts`, import the per-run CA with `keytool`, and set `JAVA_TOOL_OPTIONS` when a JDK is present; without a JDK/keytool the failure stays explicit.
 - `SANDBOX_EGRESS_TLS_MODE` selects `terminate` or `sni-only`; values are parsed strictly and an invalid value fails startup. `terminate` is **opt-in for now**; the default stays `sni-only` until the optional "enforce successful integration cycle before merge" control is decided/available (issue #146) and the terminate integration suite has passed. `sni-only` is explicit and loudly logged, and leaves D16 open.
 - The new variable is forwarded by the root Compose API environment, the agent Compose file, `agent/.env.example`, and `PoolManager`, following the D22 pattern. Proxy image rebuilding and scanning are part of the same slice.
 - Rollout: (1) implement termination behind the flag and keep `sni-only` as the default; (2) run the real-Docker integration suite with `terminate`, including npm/pip/git/curl; (3) decide/implement the optional integration-cycle merge control (#146), then flip the default for allowlist mode and update `00`, `01`, `03`, and `AGENTS.md`; (4) keep `sni-only` only as a documented escape hatch, never as a silent fallback, and decide its long-term retention (#147). D16 closes only after step 3 is verified, not when the code first lands.
@@ -128,29 +139,40 @@ Neither can be fixed by parsing more of the unmodified TLS stream. The chosen re
 
 | Failure | Behaviour |
 |---|---|
-| `openssl`/CA generation fails, or the proxy cannot start | Sandbox creation fails; no direct-egress fallback |
+| `openssl`/CA generation fails, the runtime lacks `SSL_OP_NO_RENEGOTIATION`, or the proxy cannot start | Sandbox creation fails; no direct-egress fallback |
 | CA retrieval or copy into the sandbox fails | Sandbox creation fails closed |
+| System trust bundle is missing | Sandbox creation proceeds with the CA-only file and logs a warning; public-root loopback TLS may fail |
 | Client does not trust the injected CA | TLS handshake fails; the command fails and the denial is logged |
 | Origin certificate invalid, expired, or hostname mismatch | Tunnel closed; denial logged |
 | `Host` missing, duplicated, absolute-form, or different from SNI | Request denied and tunnel closed |
+| CL+TE, duplicate/ambiguous `Content-Length`, unsupported/multiple `Transfer-Encoding`, or malformed chunked framing | Request denied and tunnel closed; no raw forwarding |
+| Origin returns `101`, `Upgrade`, `Connection: upgrade`, or an unexpected `1xx` | Response rejected and tunnel closed; no raw piping |
 | Client offers only `h2` or a non-HTTP protocol | ALPN/handshake or HTTP parse fails closed |
-| Origin attempts renegotiation or mTLS | Connection fails closed |
-| Header or connection flood | Bounded headers, idle timeout, capped concurrent tunnels; proxy remains within its memory/PID limits |
+| Client or origin attempts renegotiation or mTLS | Connection fails closed |
+| Header or connection flood | Bounded headers plus an explicit cap of 32 concurrent CONNECT tunnels and one active request per tunnel; excess gets `503`/close and a denial log |
+| Leaf cache reaches its bound | LRU eviction keeps the cache at 256 entries; no unbounded growth |
 | Proxy crashes or is removed | Sandbox loses all egress; it does not fall back to an unfiltered route |
 
 #### Security considerations
 
+- Request smuggling cannot reopen the Host bypass because the proxy never forwards raw headers: it rejects ambiguous framing and re-serializes exactly one canonical request with one `Host` and one framing. A second request on the same shared-CDN connection is parsed and checked separately.
+- Protocol switches cannot bypass the check: `101`, `Upgrade`, and `Connection: upgrade` are rejected on both sides, and the proxy never enters a raw pipe after the handshake.
 - The per-run CA key is scoped to the proxy container and the run; it cannot sign anything outside that sandbox's egress and cannot be read by the sandbox. A proxy compromise is equivalent to a host compromise, as with the current trusted proxy.
-- Trust-store injection does not widen the sandbox's reach: the sandbox still has no route, no external DNS, and only port 443 through CONNECT. The CA only lets the sandbox complete the proxy's own certificate.
+- Trust-store injection does not widen the sandbox's reach: the sandbox still has no route, no external DNS, and only port 443 through CONNECT. The combined bundle keeps public roots for loopback/local test servers but does not create a route to any origin.
 - Host equality is enforced on the parsed HTTP/1.1 request, not on a byte pattern, so header folding, duplicate headers, absolute-form targets, and `CONNECT` aliases cannot bypass it. HTTP/2 is not offered, eliminating `:authority` variants.
 - The proxy never logs credentials, request bodies, or query strings. It logs only the denied host and reason, unchanged from the current rate-limited denial stream.
 - This does not defend against a malicious Docker daemon, a compromised proxy image, or an operator who explicitly selects `sni-only`. Those are deployment-trust boundaries, not sandbox escapes.
 
 #### Test plan
 
-- Proxy script tests: leaf SAN/EKU and CA signature; `Host == SNI` allow; missing/duplicate/other `Host`, absolute-form, nested `CONNECT`, `Upgrade`, and HTTP/1.0-without-Host deny; ALPN-only-`h2` deny; origin certificate failure; CA generation and mode parsing; existing SNI/ECH/extra-handshake tests remain green.
-- Java tests: strict `SANDBOX_EGRESS_TLS_MODE` parsing; proxy args include the mode; terminate mode adds the trust variables and sni-only does not; CA retrieval/copy failure fails sandbox creation; `sni-only` keeps the current behaviour.
+- Proxy script tests: leaf SAN/EKU/keyUsage/basicConstraints and CA signature; private-key modes; bounded leaf cache; `Host == SNI` allow; missing/duplicate/other `Host`; case, trailing-dot and `:443` normalisation; other-port reject; absolute-form, nested `CONNECT`, `Upgrade`, and HTTP/1.0-without-Host deny; ALPN-only-`h2` deny; origin certificate failure; CA generation, mode parsing, and the `SSL_OP_NO_RENEGOTIATION` startup check; existing SNI/ECH/extra-handshake tests remain green.
+- Framing tests: CL+TE, duplicate identical `Content-Length`, comma-separated `Content-Length`, non-decimal/overflow `Content-Length`, multiple/unsupported `Transfer-Encoding`, and malformed chunked bodies all deny; a valid request followed by a second request on the same tunnel with a different `Host` is denied.
+- Response tests: origin `101`, `Upgrade`, `Connection: upgrade`, and unexpected `1xx` are rejected; no bytes are raw-piped after the handshake.
+- Renegotiation test: a TLS 1.2 client attempts a second handshake; the proxy/origin leg fails closed. The startup check fails if `SSL_OP_NO_RENEGOTIATION` is unavailable.
+- Java tests: strict `SANDBOX_EGRESS_TLS_MODE` parsing; proxy args include the mode; terminate mode adds the trust variables and sni-only does not; CA retrieval/copy failure fails sandbox creation; combined-bundle creation and the missing-system-bundle warning; `sni-only` keeps the current behaviour.
 - Real-Docker integration: an HTTPS origin with a test CA and a shared-CDN simulation (same SNI, different `Host`) proves the allowed request succeeds and the tenant switch is denied; a TLS 1.2 client is terminated and still Host-checked; an `h2`-only client is denied; bodies stream without buffering.
+- Bounds tests: more than 32 concurrent tunnels and a wildcard allowlist that exceeds the leaf cache both stay bounded; excess requests are denied/logged.
+- Java/Maven/Gradle: terminate mode fails closed with a clear error when a JDK has no injected truststore; the future keytool path is tracked by #149.
 - CI: the sandbox integration stage runs terminate mode; the image security script scans the updated proxy image.
 
 #### Decisions
@@ -160,6 +182,9 @@ Neither can be fixed by parsing more of the unmodified TLS stream. The chosen re
 3. **Authority:** exact `Host == SNI` equality only; no per-host authority overrides. Assume every approved target uses the CONNECT/SNI name.
 4. **Private registries and pinned CAs:** reject them now and fail closed; support is a future feature tracked by issue #148.
 5. **`sni-only`:** keep it explicit and logged; the decision to keep or remove it is tracked by issue #147.
+6. **Java/Maven/Gradle:** unsupported in terminate mode for now because Java uses its own truststore; the keytool-based injection path is tracked by issue #149 / D28, and the current behavior fails closed.
+7. **mTLS and pinned CAs:** rejected now and tracked together by issue #148 / D27.
+8. **Request framing and protocol switches:** the proxy re-serializes one canonical request, rejects ambiguous framing, and rejects `101`/`Upgrade` on both sides; there is no raw pipe after the TLS handshake.
 
 ## Secrets
 
