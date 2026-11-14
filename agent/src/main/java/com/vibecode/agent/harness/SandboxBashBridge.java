@@ -201,7 +201,7 @@ final class SandboxBashBridge implements AutoCloseable {
                 send(exchange, 400, Map.of("error", "invalid requestId"));
                 return;
             }
-            String fingerprint = rewritten + "\u0000" + cwd + "\u0000" + timeout.toSeconds();
+            String fingerprint = fingerprint(rewritten, cwd, timeout);
             Flight flight = null;
             boolean owner = false;
             boolean conflict = false;
@@ -265,6 +265,20 @@ final class SandboxBashBridge implements AutoCloseable {
             send(exchange, 500, Map.of("error", "sandbox exec failed: " + safeMessage(e)));
         } finally {
             exchange.close();
+        }
+    }
+
+    private static String fingerprint(String command, String cwd, Duration timeout) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(command.getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+            digest.update(String.valueOf(cwd).getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+            digest.update(Long.toString(timeout.toSeconds()).getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest.digest());
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
         }
     }
 
