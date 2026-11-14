@@ -355,6 +355,8 @@ class WorkspaceManagerTest {
             + "if [ \"$cmd\" = \"clone\" ]; then\n"
             + "  if [ ! -f '" + failedOnce + "' ]; then\n"
             + "    touch '" + failedOnce + "'\n"
+            + "    mkdir -p \"$2/.git\"\n"
+            + "    echo partial > \"$2/.git/partial-clone\"\n"
             + "    echo 'fatal: Authentication failed for repo' >&2\n"
             + "    exit 1\n"
             + "  fi\n"
@@ -390,6 +392,24 @@ class WorkspaceManagerTest {
 
         assertEquals(1, refreshes[0]);
         assertTrue(Files.readString(capturedAskpass).contains("ghs_refreshed"));
+        assertFalse(Files.exists(wm.getRepoDir().resolve(".git/partial-clone")),
+            "a partial clone destination was not removed before retrying");
+    }
+
+    @Test
+    void authenticationFailureMatchingIsNarrow() {
+        assertTrue(WorkspaceManager.isAuthenticationFailure(
+            "fatal: Authentication failed for 'https://github.com/o/r.git/'"));
+        assertTrue(WorkspaceManager.isAuthenticationFailure(
+            "fatal: could not read Username for 'https://github.com': terminal prompts disabled"));
+        assertTrue(WorkspaceManager.isAuthenticationFailure(
+            "remote: HTTP 401"));
+        assertFalse(WorkspaceManager.isAuthenticationFailure(
+            "remote: HTTP 403"));
+        assertFalse(WorkspaceManager.isAuthenticationFailure(
+            "! [remote rejected] feature (protected branch hook declined)"));
+        assertFalse(WorkspaceManager.isAuthenticationFailure(
+            "fatal: repository not found"));
     }
 
     @Test

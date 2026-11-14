@@ -167,6 +167,7 @@ public class WorkspaceManager {
                 }
                 String refreshed = refreshToken(first);
                 cleanupAskPass();
+                removePartialClone();
                 ensureAskPass(refreshed);
                 try {
                     runGitAt(repoDir.getParent(), Map.of(), "clone", repoUrl, repoDir.toString());
@@ -809,6 +810,20 @@ public class WorkspaceManager {
         return url.replaceFirst("https://[^/@]+@github\\.com/", "https://github.com/");
     }
 
+    private void removePartialClone() throws IOException {
+        if (!Files.exists(repoDir, LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
+        assertSafeToDelete(repoDir);
+        try {
+            deletePath(repoDir);
+        } catch (IOException error) {
+            throw new IOException(
+                "A failed clone left a destination that could not be removed: "
+                    + repoDir, error);
+        }
+    }
+
     private void pushWithLease(
         String pushTarget, String commitSha, String branchName) throws IOException {
         String remoteSha = remoteBranchSha(pushTarget, branchName);
@@ -843,9 +858,7 @@ public class WorkspaceManager {
             || lower.contains("could not read username")
             || lower.contains("invalid username or password")
             || lower.contains("http 401")
-            || lower.contains("http 403")
-            || lower.contains("returned error: 401")
-            || lower.contains("returned error: 403");
+            || lower.contains("returned error: 401");
     }
 
     private String currentToken() throws IOException {
