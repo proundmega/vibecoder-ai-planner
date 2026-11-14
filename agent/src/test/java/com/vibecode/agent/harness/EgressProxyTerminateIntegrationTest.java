@@ -104,6 +104,8 @@ class EgressProxyTerminateIntegrationTest {
             String wrongPort = request(context, proxyPort, originPort, "localhost.test:444");
             assertTrue(wrongPort.contains("403") || wrongPort.isEmpty(), wrongPort);
             assertDenied(context, proxyPort, originPort,
+                "GET / HTTP/1.1\r\nHost: localhost.test\r\nHost: localhost.test\r\n\r\n");
+            assertDenied(context, proxyPort, originPort,
                 "OPTIONS * HTTP/1.1\r\nHost: localhost.test\r\n\r\n");
             assertDenied(context, proxyPort, originPort,
                 "GET / HTTP/1.0\r\n\r\n");
