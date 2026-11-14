@@ -120,9 +120,9 @@ Neither can be fixed by parsing more of the unmodified TLS stream. The chosen re
 
 - This is intentionally HTTP/1.1-only. HTTP/2-only origins are unsupported in terminate mode; clients that support both fall back. Implementations that pin a certificate or use mTLS fail closed and are documented as unsupported.
 - Common sandbox toolchains (`npm`/Node, `pip`/Python, `git`, `curl`, Go, Cargo) honour at least one of the injected variables. Tools that ship and pin their own bundle, or ignore the variables, fail closed rather than silently bypassing the proxy.
-- `SANDBOX_EGRESS_TLS_MODE` selects `terminate` or `sni-only`; values are parsed strictly and an invalid value fails startup. The recommendation is to make `terminate` the default for `SANDBOX_NETWORK=allowlist` once the integration suite passes, with `sni-only` an explicit, loudly logged compatibility escape hatch that leaves D16 open.
+- `SANDBOX_EGRESS_TLS_MODE` selects `terminate` or `sni-only`; values are parsed strictly and an invalid value fails startup. `terminate` is **opt-in for now**; the default stays `sni-only` until the optional "enforce successful integration cycle before merge" control is decided/available (issue #146) and the terminate integration suite has passed. `sni-only` is explicit and loudly logged, and leaves D16 open.
 - The new variable is forwarded by the root Compose API environment, the agent Compose file, `agent/.env.example`, and `PoolManager`, following the D22 pattern. Proxy image rebuilding and scanning are part of the same slice.
-- Rollout: (1) implement termination behind the flag and keep `sni-only`; (2) run the real-Docker integration suite with `terminate`, including npm/pip/git/curl; (3) flip the default for allowlist mode and update `00`, `01`, `03`, and `AGENTS.md`; (4) keep `sni-only` only as a documented escape hatch, never as a silent fallback. D16 closes only after step 3 is verified, not when the code first lands.
+- Rollout: (1) implement termination behind the flag and keep `sni-only` as the default; (2) run the real-Docker integration suite with `terminate`, including npm/pip/git/curl; (3) decide/implement the optional integration-cycle merge control (#146), then flip the default for allowlist mode and update `00`, `01`, `03`, and `AGENTS.md`; (4) keep `sni-only` only as a documented escape hatch, never as a silent fallback, and decide its long-term retention (#147). D16 closes only after step 3 is verified, not when the code first lands.
 
 #### Failure modes
 
@@ -153,13 +153,13 @@ Neither can be fixed by parsing more of the unmodified TLS stream. The chosen re
 - Real-Docker integration: an HTTPS origin with a test CA and a shared-CDN simulation (same SNI, different `Host`) proves the allowed request succeeds and the tenant switch is denied; a TLS 1.2 client is terminated and still Host-checked; an `h2`-only client is denied; bodies stream without buffering.
 - CI: the sandbox integration stage runs terminate mode; the image security script scans the updated proxy image.
 
-#### Open questions
+#### Decisions
 
-1. Flip the default to `terminate` in the same change or after one integration cycle? The design recommends after the suite passes, but before claiming D16 closed.
-2. Is rejecting HTTP/2-only origins acceptable for the first slice, or is an HTTP/2 request parser required? Rejecting is smaller and safer; clients fall back.
-3. Do any approved registries require an authority different from the CONNECT/SNI name? No such case is known; the first slice uses exact equality and a per-host override can be added later if evidence appears.
-4. Should private registries with a pinned CA be supported by adding that CA to the proxy's origin trust? Fail closed for now; a profile-supplied origin CA is a later extension.
-5. Keep `sni-only` indefinitely as an escape hatch, or remove it after one release? Keep it explicit and logged; removing it is a separate decision.
+1. **Default:** `terminate` is opt-in for now. `sni-only` remains the default until the optional integration-cycle merge control is decided/available (issue #146) and the terminate suite passes. D16 stays open by default until then.
+2. **HTTP/2-only origins:** reject them for the first slice; clients that offer both fall back to HTTP/1.1. Revisit only if testing shows a real need.
+3. **Authority:** exact `Host == SNI` equality only; no per-host authority overrides. Assume every approved target uses the CONNECT/SNI name.
+4. **Private registries and pinned CAs:** reject them now and fail closed; support is a future feature tracked by issue #148.
+5. **`sni-only`:** keep it explicit and logged; the decision to keep or remove it is tracked by issue #147.
 
 ## Secrets
 
