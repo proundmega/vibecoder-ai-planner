@@ -32,6 +32,7 @@ public record SandboxConfig(
     String egressProxy,
     String egressUpstreamNetwork,
     long egressProbeTimeoutMs,
+    EgressTlsMode egressTlsMode,
     Map<String, String> runEnv,
     String user,
     boolean requireSandbox,
@@ -49,6 +50,7 @@ public record SandboxConfig(
     public static final String DEFAULT_USER = "1000:1000";
     public static final String DEFAULT_CONTAINER_WORKSPACE_ROOT = "/repos";
     public static final String DEFAULT_EGRESS_UPSTREAM_NETWORK = "bridge";
+    public static final String DEFAULT_EGRESS_TLS_MODE = "sni-only";
     public static final String NETWORK_NONE = "none";
     public static final String NETWORK_ALLOWLIST = "allowlist";
     public static final Duration DEFAULT_EXEC_TIMEOUT = Duration.ofMinutes(15);
@@ -113,6 +115,7 @@ public record SandboxConfig(
             value(env, "SANDBOX_EGRESS_PROXY", ""),
             value(env, "SANDBOX_EGRESS_UPSTREAM_NETWORK", DEFAULT_EGRESS_UPSTREAM_NETWORK),
             longValue(env, "SANDBOX_EGRESS_PROBE_TIMEOUT_MS", 5_000L, 100L),
+            EgressTlsMode.from(value(env, "SANDBOX_EGRESS_TLS_MODE", DEFAULT_EGRESS_TLS_MODE)),
             parseEnv(value(env, "SANDBOX_ENV", "")),
             value(env, "SANDBOX_USER", defaultUser()),
             booleanValue(env, "SANDBOX_REQUIRE", false),
@@ -187,6 +190,12 @@ public record SandboxConfig(
                 throw new IllegalStateException(
                     "SANDBOX_EGRESS_UPSTREAM_NETWORK must be a Docker network name");
             }
+            if (egressTlsMode == null) {
+                throw new IllegalStateException("SANDBOX_EGRESS_TLS_MODE is required");
+            }
+        } else if (egressTlsMode == EgressTlsMode.TERMINATE) {
+            throw new IllegalStateException(
+                "SANDBOX_EGRESS_TLS_MODE=terminate requires SANDBOX_NETWORK=allowlist");
         }
 
         requireText(containerWorkspaceRoot, "SANDBOX_CONTAINER_WORKSPACE_ROOT");
@@ -276,6 +285,7 @@ public record SandboxConfig(
             egressProxy,
             egressUpstreamNetwork,
             egressProbeTimeoutMs,
+            egressTlsMode,
             withSafeDefaults(runEnv),
             user,
             seccompProfile,

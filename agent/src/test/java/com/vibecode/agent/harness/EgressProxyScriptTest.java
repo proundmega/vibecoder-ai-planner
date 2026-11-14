@@ -3,18 +3,25 @@ package com.vibecode.agent.harness;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -22,6 +29,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The script is also exercised end-to-end by the opt-in integration suite.
  */
 class EgressProxyScriptTest {
+
+    @TempDir
+    Path tempDir;
 
     private static Path script;
 
@@ -129,6 +139,67 @@ class EgressProxyScriptTest {
         Result result = checkHello(concat(first, second));
         assertEquals(1, result.exitCode, result.output);
         assertTrue(result.output.contains("multiple TLS handshakes"), result.output);
+    }
+
+    @Test
+    void terminateModeCreatesAPerRunCaTrustAnchor() throws Exception {
+        Path caDir = tempDir.resolve("ca");
+        Result result = run("--check-tls-init", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_CA_DIR", caDir.toString()));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains("CA "), result.output);
+        X509Certificate ca = certificate(Files.readString(caDir.resolve("ca.crt")));
+        assertTrue(ca.getBasicConstraints() >= 0);
+        boolean[] usage = ca.getKeyUsage();
+        assertTrue(usage[5], "keyCertSign");
+        assertTrue(usage[6], "cRLSign");
+        assertTrue(Files.getPosixFilePermissions(caDir.resolve("ca.key"))
+            .contains(PosixFilePermission.OWNER_READ));
+        assertFalse(Files.getPosixFilePermissions(caDir.resolve("ca.key"))
+            .contains(PosixFilePermission.GROUP_READ));
+    }
+
+    @Test
+    void terminateModeMintsALeafForTheValidatedSni() throws Exception {
+        Path caDir = tempDir.resolve("leaf-ca");
+        Result result = run("--check-leaf", "registry.npmjs.org", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_CA_DIR", caDir.toString()));
+
+        assertEquals(0, result.exitCode, result.output);
+        X509Certificate leaf = certificate(result.output);
+        assertEquals(-1, leaf.getBasicConstraints());
+        Collection<List<?>> names = leaf.getSubjectAlternativeNames();
+        assertTrue(names.stream().anyMatch(entry ->
+            Integer.valueOf(2).equals(entry.get(0))
+                && "registry.npmjs.org".equals(entry.get(1))));
+    }
+
+    @Test
+    void terminateModeRejectsAnInvalidSni() throws Exception {
+        Result result = run("--check-leaf", "bad/sni", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_CA_DIR", tempDir.resolve("bad-ca").toString()));
+
+        assertEquals(1, result.exitCode, result.output);
+        assertTrue(result.output.contains("invalid SNI"), result.output);
+    }
+
+    @Test
+    void rejectsUnknownTlsModes() throws Exception {
+        Result result = run("--check-allow", "registry.npmjs.org:443", Map.of(
+            "EGRESS_TLS_MODE", "mitm"));
+
+        assertEquals(1, result.exitCode, result.output);
+        assertTrue(result.output.contains("sni-only, terminate"), result.output);
+    }
+
+    private static X509Certificate certificate(String pem) throws Exception {
+        return (X509Certificate) CertificateFactory.getInstance("X.509")
+            .generateCertificate(new ByteArrayInputStream(
+                pem.getBytes(StandardCharsets.US_ASCII)));
     }
 
     private void assertDenied(String target) throws Exception {

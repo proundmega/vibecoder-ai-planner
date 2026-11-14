@@ -3,19 +3,27 @@ package com.vibecode.agent.harness;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.PosixFilePermission;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collection;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -128,6 +136,13 @@ public final class DockerSandboxRunner implements SandboxRunner {
         if (!"true".equals(inspect.output().trim())) {
             destroyByName(name);
             throw new IOException("Sandbox '" + name + "' is not running: " + inspect.output());
+        }
+
+        try {
+            provisionEgressTrust(name, egressRuntime, spec);
+        } catch (IOException | RuntimeException e) {
+            destroyByName(name);
+            throw e instanceof IOException io ? io : new IOException(e);
         }
 
         created.add(name);
@@ -1216,6 +1231,196 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
     }
 
+    /**
+     * Install the per-run CA and combined trust bundle into a terminate-mode
+     * sandbox. Both source files are fetched as bounded tar streams so a
+     * hostile repo image cannot make the supervisor read a host symlink or
+     * write an unbounded file.
+     */
+    private void provisionEgressTrust(
+        String sandbox,
+        EgressRuntime egress,
+        SandboxSpec spec
+    ) throws IOException {
+        if (egress == null || spec.egressTlsMode() != EgressTlsMode.TERMINATE) {
+            return;
+        }
+        byte[] ca = readContainerFile(
+            egress.proxyName(),
+            "/tmp/vibecode-egress-ca/ca.crt",
+            64 * 1024,
+            COPY_TIMEOUT
+        );
+        validateCaCertificates(ca, 1);
+
+        byte[] systemBundle = null;
+        try {
+            systemBundle = readContainerFile(
+                sandbox,
+                "/etc/ssl/certs/ca-certificates.crt",
+                4 * 1024 * 1024,
+                COPY_TIMEOUT
+            );
+            validateCaCertificates(systemBundle, Integer.MAX_VALUE);
+        } catch (NoSuchFileException missing) {
+            log.warn("Sandbox {} has no system CA bundle; using the per-run CA only",
+                sandbox);
+        }
+
+        byte[] combined = systemBundle == null ? ca : concat(systemBundle, ca);
+        writeContainerFile(sandbox, "/tmp/vibecode-egress-ca.crt", ca);
+        writeContainerFile(sandbox, "/tmp/vibecode-ca-bundle.crt", combined);
+    }
+
+    private byte[] readContainerFile(
+        String container,
+        String remotePath,
+        int maxBytes,
+        Duration timeout
+    ) throws IOException {
+        List<String> command = List.of(
+            config.dockerBinary(), "cp", "-L", container + ":" + remotePath, "-");
+        ProcessBuilder builder = new ProcessBuilder(ProcessGroup.wrap(command));
+        builder.redirectErrorStream(false);
+        EnvironmentSanitizer.sanitize(builder.environment());
+        copyDockerEnvironment(builder.environment());
+
+        BoundedTailBuffer stderr = new BoundedTailBuffer(8_192);
+        Process process;
+        try {
+            process = builder.start();
+        } catch (IOException e) {
+            throw new IOException("Could not run docker cp for " + remotePath, e);
+        }
+        Thread errorReader = new Thread(() -> {
+            try (InputStream input = process.getErrorStream()) {
+                input.transferTo(stderr);
+            } catch (IOException ignored) {
+                // The failure is classified from the exit status and stdout.
+            }
+        }, "sandbox-docker-cp-error");
+        errorReader.setDaemon(true);
+        errorReader.start();
+
+        byte[][] bytes = new byte[1][];
+        Throwable[] failure = new Throwable[1];
+        Thread outputReader = new Thread(() -> {
+            try {
+                bytes[0] = BoundedTarFileReader.read(
+                    process.getInputStream(), maxBytes, maxBytes + 8_192);
+            } catch (Throwable error) {
+                failure[0] = error;
+                ProcessGroup.kill(process);
+            }
+        }, "sandbox-docker-cp-output");
+        outputReader.setDaemon(true);
+        outputReader.start();
+
+        try {
+            boolean finished = process.waitFor(
+                Math.max(1, timeout.toMillis()), TimeUnit.MILLISECONDS);
+            if (!finished) {
+                ProcessGroup.kill(process);
+                outputReader.join(2_000);
+                throw new IOException("docker cp timed out for " + remotePath);
+            }
+            outputReader.join(2_000);
+            errorReader.join(1_000);
+            String errorOutput = stderr.text().trim();
+            if (failure[0] != null) {
+                if (isMissingFile(errorOutput)) {
+                    throw new NoSuchFileException(remotePath);
+                }
+                throw new IOException(
+                    "Could not read " + remotePath + ": " + errorOutput, failure[0]);
+            }
+            if (process.exitValue() != 0) {
+                if (isMissingFile(errorOutput)) {
+                    throw new NoSuchFileException(remotePath);
+                }
+                throw new IOException("Could not read " + remotePath + ": " + errorOutput);
+            }
+            if (bytes[0] == null) {
+                throw new IOException("Could not read " + remotePath + ": empty archive");
+            }
+            return bytes[0];
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            ProcessGroup.kill(process);
+            throw new IOException("Interrupted while reading " + remotePath, e);
+        }
+    }
+
+    private static boolean isMissingFile(String output) {
+        String lower = output == null ? "" : output.toLowerCase();
+        return lower.contains("could not find the file")
+            || lower.contains("no such file")
+            || lower.contains("not found");
+    }
+
+    private static void validateCaCertificates(byte[] bytes, int maxCertificates)
+        throws IOException {
+        if (bytes == null || bytes.length == 0) {
+            throw new IOException("CA bundle is empty");
+        }
+        try {
+            CertificateFactory factory = CertificateFactory.getInstance("X.509");
+            Collection<? extends Certificate> certificates =
+                factory.generateCertificates(new ByteArrayInputStream(bytes));
+            if (certificates.isEmpty()) {
+                throw new IOException("CA bundle contains no X.509 certificates");
+            }
+            if (certificates.size() > maxCertificates) {
+                throw new IOException("CA bundle contains too many certificates");
+            }
+            for (Certificate certificate : certificates) {
+                X509Certificate x509 = (X509Certificate) certificate;
+                if (x509.getBasicConstraints() < 0 && x509.getVersion() != 1) {
+                    throw new IOException("CA bundle contains a non-CA certificate");
+                }
+            }
+        } catch (java.security.cert.CertificateException e) {
+            throw new IOException("CA bundle is not valid X.509", e);
+        }
+    }
+
+    private static byte[] concat(byte[] first, byte[] second) throws IOException {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream(
+            first.length + second.length + 1);
+        out.writeBytes(first);
+        out.write('\n');
+        out.writeBytes(second);
+        return out.toByteArray();
+    }
+
+    private void writeContainerFile(String container, String remotePath, byte[] bytes)
+        throws IOException {
+        Path temp = Files.createTempFile("vibecode-egress-", ".pem");
+        try {
+            Files.write(temp, bytes);
+            try {
+                Files.setPosixFilePermissions(temp,
+                    EnumSet.of(PosixFilePermission.OWNER_READ,
+                        PosixFilePermission.GROUP_READ,
+                        PosixFilePermission.OTHERS_READ));
+            } catch (UnsupportedOperationException ignored) {
+                // Windows hosts have no POSIX mode; docker cp keeps the bytes.
+            }
+            DockerResult copied = runDocker(
+                List.of(config.dockerBinary(), "cp", temp.toString(),
+                    container + ":" + remotePath),
+                COPY_TIMEOUT,
+                CONTROL_OUTPUT_BYTES
+            );
+            if (copied.timedOut() || copied.exitCode() != 0) {
+                throw new IOException("Could not write " + remotePath + " into the sandbox: "
+                    + (copied.timedOut() ? "docker cp timed out" : copied.output()));
+            }
+        } finally {
+            Files.deleteIfExists(temp);
+        }
+    }
+
     /** Build the hardened proxy container arguments. Package-visible for tests. */
     static List<String> buildProxyRunArgs(SandboxSpec spec, String proxyName, String network) {
         List<String> args = new ArrayList<>();
@@ -1253,12 +1458,18 @@ public final class DockerSandboxRunner implements SandboxRunner {
         args.add("EGRESS_ALLOWED_HOSTS=" + String.join(",", spec.allowedHosts()));
         args.add("-e");
         args.add("EGRESS_TUNNEL_PROBE_TIMEOUT_MS=" + spec.egressProbeTimeoutMs());
+        args.add("-e");
+        args.add("EGRESS_TLS_MODE=" + spec.egressTlsMode().value());
         // Never inherit a test seam from the proxy image. The resolver override
         // is only honored when EGRESS_TEST_MODE=1, which the supervisor clears.
         args.add("-e");
         args.add("EGRESS_TEST_MODE=0");
         args.add("-e");
         args.add("EGRESS_TEST_RESOLVE_IP=");
+        args.add("-e");
+        args.add("EGRESS_TEST_ALLOW_LOOPBACK=0");
+        args.add("-e");
+        args.add("EGRESS_TEST_CONNECT_PORT=0");
         args.add("--entrypoint");
         args.add("node");
         args.add(spec.proxyImage());
@@ -1519,6 +1730,18 @@ public final class DockerSandboxRunner implements SandboxRunner {
             }
             env.putIfAbsent("NO_PROXY", "localhost,127.0.0.1,::1");
             env.putIfAbsent("no_proxy", "localhost,127.0.0.1,::1");
+            if (spec.egressTlsMode() == EgressTlsMode.TERMINATE) {
+                String ca = "/tmp/vibecode-egress-ca.crt";
+                String bundle = "/tmp/vibecode-ca-bundle.crt";
+                env.putIfAbsent("NODE_EXTRA_CA_CERTS", ca);
+                env.putIfAbsent("npm_config_cafile", bundle);
+                env.putIfAbsent("SSL_CERT_FILE", bundle);
+                env.putIfAbsent("GIT_SSL_CAINFO", bundle);
+                env.putIfAbsent("CURL_CA_BUNDLE", bundle);
+                env.putIfAbsent("PIP_CERT", bundle);
+                env.putIfAbsent("REQUESTS_CA_BUNDLE", bundle);
+                env.putIfAbsent("CARGO_HTTP_CAINFO", bundle);
+            }
         }
         SandboxSecurity.validateEnv(env, "sandbox environment");
         return env;

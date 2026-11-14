@@ -24,6 +24,7 @@ public record SandboxSpec(
     String egressProxy,
     String egressUpstreamNetwork,
     long egressProbeTimeoutMs,
+    EgressTlsMode egressTlsMode,
     Map<String, String> env,
     String user,
     String seccompProfile,
@@ -52,6 +53,7 @@ public record SandboxSpec(
         if (egressProbeTimeoutMs <= 0) {
             egressProbeTimeoutMs = 5_000L;
         }
+        egressTlsMode = egressTlsMode == null ? EgressTlsMode.SNI_ONLY : egressTlsMode;
         env = env == null ? Map.of() : Map.copyOf(env);
         user = user == null || user.isBlank() ? SandboxConfig.DEFAULT_USER : user;
         seccompProfile = blankToNull(seccompProfile);
