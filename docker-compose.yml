@@ -75,6 +75,7 @@ services:
       - GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY:-}
       - GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID:-}
       - GITHUB_TOKEN_TTL_SECONDS=${GITHUB_TOKEN_TTL_SECONDS:-3600}
+      - SANDBOX_REQUIRE_SECURE_FILE_ACCESS=${SANDBOX_REQUIRE_SECURE_FILE_ACCESS:-false}
       - REDIS_URL=redis://redis:6379
     # Optional GitHub App private key: set
     # GITHUB_APP_PRIVATE_KEY=file:/run/secrets/github-app.pem and mount the file:

@@ -140,7 +140,10 @@ public final class OpenCodeClient implements HarnessClient {
         Files.createDirectories(home.resolve(".cache"));
 
         closeWorkspaceBridge();
-        WorkspaceFileBridge createdBridge = new WorkspaceFileBridge(workspace, bridge != null);
+        boolean requireSecureFileAccess = requireSecureFileAccess(
+            bridge != null, System.getenv("SANDBOX_REQUIRE_SECURE_FILE_ACCESS"));
+        WorkspaceFileBridge createdBridge = new WorkspaceFileBridge(
+            workspace, requireSecureFileAccess);
         createdBridge.start();
         this.workspaceBridge = createdBridge;
         try {
@@ -735,6 +738,15 @@ public final class OpenCodeClient implements HarnessClient {
         Files.writeString(tools.resolve("sandbox_edit.ts"),
             workspaceEditToolSource(), StandardCharsets.UTF_8);
         return tools;
+    }
+
+    /**
+     * Sandbox bridges always require secure file access. Host mode can opt in
+     * with SANDBOX_REQUIRE_SECURE_FILE_ACCESS=true (strict true/1, false/0).
+     */
+    static boolean requireSecureFileAccess(boolean sandboxBridge, String configured) {
+        return sandboxBridge || SandboxConfig.booleanValue(
+            name -> configured, "SANDBOX_REQUIRE_SECURE_FILE_ACCESS", false);
     }
 
     static String workspaceReadToolSource() {
