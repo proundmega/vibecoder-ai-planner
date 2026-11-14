@@ -7,8 +7,8 @@ effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
 updated: "2026-11-14"
-pr: 144
-branch: "feat/fg-34-d21-d23"
+pr: 145
+branch: "docs/fg-34-d16-design"
 depends_on: ["fg-30"]
 ---
 
