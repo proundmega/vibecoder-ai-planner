@@ -4,7 +4,13 @@ const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
 const githubController = require('../controllers/githubController');
-const { connectRepoSchema, createBranchSchema, createPRSchema } = require('../validators/github');
+const {
+  connectRepoSchema,
+  createBranchSchema,
+  createPRSchema,
+  installationSchema,
+  tokenRequestSchema,
+} = require('../validators/github');
 
 /**
  * @openapi
@@ -28,7 +34,7 @@ router.get('/:projectId/repo', verifyToken, githubController.getRepoStatus);
  * /github/{projectId}/repo/agent:
  *   get:
  *     tags: [GitHub]
- *     summary: Get repository connection for agent (with decrypted PAT)
+ *     summary: Get repository connection for the agent (App mode returns no token)
  *     parameters:
  *       - in: path
  *         name: projectId
@@ -38,9 +44,81 @@ router.get('/:projectId/repo', verifyToken, githubController.getRepoStatus);
  *       - apiKeyAuth: []
  *     responses:
  *       200:
- *         description: Repository config with decrypted access token
+ *         description: Repository config; `accessToken` is present only in explicit PAT mode
  */
 router.get('/:projectId/repo/agent', verifyTokenOrAgent, githubController.getRepoForAgent);
+
+/**
+ * @openapi
+ * /github/{projectId}/token:
+ *   post:
+ *     tags: [GitHub]
+ *     summary: Mint a short-lived, repo-scoped GitHub token for the agent
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     security:
+ *       - apiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: GitHub token and expiry
+ *       403:
+ *         description: GitHub access is disabled or not configured
+ */
+router.post('/:projectId/token', verifyTokenOrAgent, validate(tokenRequestSchema), githubController.requestToken);
+
+/**
+ * @openapi
+ * /github/{projectId}/installation:
+ *   get:
+ *     tags: [GitHub]
+ *     summary: Get the GitHub App installation mapping for a project
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Installation mapping or null
+ */
+router.get('/:projectId/installation', verifyToken, githubController.getInstallationStatus);
+
+/**
+ * @openapi
+ * /github/{projectId}/installation:
+ *   put:
+ *     tags: [GitHub]
+ *     summary: Map a project to a GitHub App installation and repo allowlist
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Updated installation mapping
+ */
+router.put('/:projectId/installation', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), validate(installationSchema), githubController.setInstallation);
+
+/**
+ * @openapi
+ * /github/{projectId}/installation:
+ *   delete:
+ *     tags: [GitHub]
+ *     summary: Disable GitHub App access and revoke cached tokens for a project
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Access disabled
+ */
+router.delete('/:projectId/installation', verifyToken, requireAnyPermission('PROJECT_MANAGE_MEMBERS'), githubController.disableInstallation);
 
 /**
  * @openapi

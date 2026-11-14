@@ -90,13 +90,51 @@ The token service looks up `project_github_installations` first and falls back t
 - PAT fallback requires the flag;
 - GitHub 401/403/rate-limit handling.
 
-## Open questions
+## Resolved decisions (2026-11-14)
 
-1. Do we need one app per tenant or one app with per-project installations?
-2. Should the agent talk to GitHub directly or always through a backend proxy?
-3. How do we support GitHub Enterprise Server?
-4. Phase 1 reviews are COMMENT-only; Phase 2 needs a separate reviewer App/identity. Confirm whether that is one app with two installations or a distinct app.
-5. What is the minimum permission set for checks and merge queue later?
+1. **One App with per-project installations.** `project_github_installations` maps each project to an installation id and repo allowlist. `GITHUB_APP_INSTALLATION_ID` is a single-tenant/dev fallback only when no row exists.
+2. **Direct agent use.** The backend mints a repo-scoped installation token; the agent uses it ephemerally for clone/push/PR and refreshes it before expiry. No git proxy in this slice.
+3. **GHES is deferred.** The API base is the public GitHub endpoint; an override is a follow-up.
+4. **Reviewer identity stays separate.** Publishing uses this App; COMMENT-only reviews remain in fg-31 Phase 1. A distinct reviewer App/identity is a Phase 2 item, not this ticket.
+5. **Minimum permissions.** `contents:write`, `pull_requests:write`, `checks:read`, `metadata:read`; no `administration`, `actions` or `workflows` write. Merge-queue permissions are a later ticket (D3).
+
+## Cache and failure behavior
+
+- Cache key: `projectId + installationId + owner/repo`. A token is never returned for a different project even when the installation is shared.
+- The mint response is verified: `repositories` must contain exactly the project's connected `owner/repo`; a mismatched or missing list rejects and revokes the new token before caching. This blocks the same-repo-name collision across installations.
+- `forceRefresh: true` on the token request bypasses and revokes the cached token; the agent uses it after a GitHub 401 instead of retrying a revoked token. The provider object itself is passed to the git/PR clients so `refresh()` reaches the provider rather than falling through to the interface default.
+- Git clone and push retry once with a refreshed askpass credential after an authentication failure (401/auth messages only, not a permission 403); a failed clone's partial destination is removed before the retry. Backend branch/PR calls retry once after a 401 with a freshly minted token.
+- Client-side expiry: `min(GitHub expires_at, now + GITHUB_TOKEN_TTL_SECONDS)`; refresh five minutes before expiry. GitHub still enforces the one-hour server expiry.
+- `GITHUB_AUTH_MODE=app` never reads or returns `project_repos.access_token_encrypted`. `GET /repo/agent` returns `accessToken: null`; agents use `POST /github/:projectId/token`.
+- `GITHUB_AUTH_MODE=pat` requires `ALLOW_PAT=true` on the backend and agent. It returns the stored PAT for local development only and logs a warning. The agent validates the response `mode` against its own configuration and rejects a mismatch, so one side cannot silently downgrade to a PAT.
+- Changing a project's installation mapping revokes the project's cached tokens before the new mapping is used.
+- Disabling a project sets `disabled_at`, clears cached tokens and revokes each cached installation token with `DELETE /installation/token`. Token minting then fails with `GITHUB_ACCESS_DISABLED`. If the backend has no cached token (for example after a restart), the already-issued token remains valid until GitHub's one-hour expiry or until the installation is uninstalled/suspended; the runbook records this.
+
+## Failure modes and recovery
+
+| Failure | Behavior | Recovery |
+|---|---|---|
+| App id/private key missing | Token request fails `GITHUB_APP_NOT_CONFIGURED`; publishing stops. | Set both values, restart the backend, retry. |
+| Installation mapping missing | Token request fails `GITHUB_INSTALLATION_NOT_CONFIGURED`. | Create the mapping with `PUT /github/:projectId/installation` or set the single-tenant env fallback. |
+| Project disabled | Token request fails `GITHUB_ACCESS_DISABLED`. | Re-enable by upserting the mapping, then retry. |
+| Repo outside allowlist / mismatch | `GITHUB_REPO_NOT_ALLOWED` / `GITHUB_REPO_SCOPE_MISMATCH`; no token is minted. | Fix the allowlist or connected repo. |
+| GitHub 401/403/404 on mint | `GITHUB_INSTALLATION_REJECTED`; no fallback. | Check App permissions, installation suspension and key rotation. |
+| GitHub 5xx/timeout | `GITHUB_TOKEN_MINT_FAILED`; no fallback. | Retry the run; check backend egress. |
+| GitHub rate limit | `GITHUB_RATE_LIMITED`; no fallback. | Retry after the reset window. |
+| GitHub 401 on a PR call | The agent force-refreshes the token once and retries; a second 401 fails the run. | Check the installation and token scope. |
+| Backend returns a different mode | The agent rejects the credential (`mode mismatch`). | Align `GITHUB_AUTH_MODE`/`ALLOW_PAT` on both sides. |
+| Token expires mid-run | The agent refreshes through the provider before the next git/PR call. | None; if GitHub rejects it, the run fails closed and the next attempt mints again. |
+| Revocation/disable during a run | Cached tokens are revoked immediately; a token not in the cache stays valid until GitHub expiry. The next mint fails and the next run stops. | Re-enable or reinstall, then retry. |
+| Backend unreachable | In explicit `pat` + `ALLOW_PAT` mode the agent may use the local PAT fallback; otherwise publishing stops. | Restore the backend. A definitive backend rejection (for example app mode without App credentials) never uses the fallback. |
+
+## Security considerations
+
+- The token is repo-scoped, permission-limited and short-lived; the App private key stays server-side and is never sent to the agent.
+- The token is delivered in an authenticated JSON response, held in memory, and written only to the transient askpass script (mode `0700`, deleted immediately).
+- The token is never in `.git/config`, `remote -v`, argv, the model prompt, ticket messages, run errors or logs. GitHub App audit events log project, installation, repo, the granted permission object and expiry only.
+- Cross-project isolation is enforced by the mapping/allowlist, a project-scoped cache key and post-mint `repositories` verification. A request for a different repo is rejected before minting; a token minted for a different repo is rejected and revoked.
+- The backend still stores a PAT for legacy connection validation; in `app` mode it is neither returned to agents nor used for operations.
+- `ALLOW_PAT` is false by default. Enabling it is an explicit local-development decision and is logged. Docker Compose forwards the App variables to the API; local Compose defaults to `pat` + `ALLOW_PAT=true` until an App is registered, and pool agents inherit the same mode flags.
 
 ## Deferred scope
 

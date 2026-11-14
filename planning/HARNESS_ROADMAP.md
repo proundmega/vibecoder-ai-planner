@@ -27,7 +27,7 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-50 | `fg-50-planning-template-hygiene` | Planned | Move completed suites to `DONE/`, `00`–`04` repo/product template drift test (risk sections + lightweight `00`), retired-wording checks for migrated active suites/root templates (legacy reported), index validation, execution-only `04` | fg-48, fg-49 |
 | fg-51 | `fg-51-requirement-traceability` | Planned | Requirement → code → test → verification evidence, per-requirement gap report, gate before human approval/merge, scoped waivers; consumed by `fg-32` fix requests and the `fg-36` stale-SHA merge gate | fg-31, fg-32, fg-36, fg-45, fg-48 |
 | fg-52 | `fg-52-spec-review-auto-merge` | Plan merged (#136); implementation pending | Spec review, effort/risk/confidence scoring, per-project autonomy tiers, deterministic gates and policy-gated auto-approve/auto-merge (single autonomy-policy owner; supersedes fg-30 Phase 3 policy/auto-merge) | bp-134, fg-31, fg-32, fg-36, fg-37, fg-41, fg-45, fg-51 |
-| fg-35 | `fg-35-github-app-credentials` | Planned | GitHub App installation tokens, least privilege | fg-30 Phase 1 |
+| fg-35 | `fg-35-github-app-credentials` | In review (#143) | GitHub App installation tokens, least privilege | fg-30 Phase 1 |
 | fg-36 | `fg-36-merge-lifecycle` | Planned | Base branch, conflicts, CI gate, merge queue, rollback | fg-31, fg-32 |
 | fg-37 | `fg-37-agent-evaluation-harness` | Planned | Golden corpus, grading, metrics, A/B, reviewer calibration | fg-30/31/32 |
 | fg-38 | `fg-38-harness-budgets-routing` | Planned | Live budgets, hard stops, quotas, model routing/fallback | fg-30 Phase 1 |

@@ -56,6 +56,17 @@ class AgentConfigTest {
     }
 
     @Test
+    void testGitHubAuthModeIsExplicitAndValid() {
+        AgentConfig config = new AgentConfig();
+
+        assertTrue(config.getGitHubAuthMode().equals("app")
+            || config.getGitHubAuthMode().equals("pat"));
+        assertEquals(
+            "true".equalsIgnoreCase(System.getenv("ALLOW_PAT")),
+            config.isAllowPat());
+    }
+
+    @Test
     void testToStringNeverIncludesSecrets() {
         AgentConfig config = new AgentConfig();
         String text = config.toString();

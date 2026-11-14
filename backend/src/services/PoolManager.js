@@ -181,13 +181,29 @@ class PoolManager {
       providerConfig = await this.autoSelectProvider();
     }
 
-    // Create a DB agent record so heartbeat/auth flow works the same as manual agents
+    // Create a DB agent record so heartbeat/auth flow works the same as manual
+    // agents. Own the agent by the project owner so project-scoped credential
+    // and repo endpoints authorize it correctly.
+    let ownerId = 0;
+    try {
+      const ownerResult = await pool.query(
+        'SELECT owner_id FROM projects WHERE id = $1',
+        [projectId]
+      );
+      if (ownerResult?.rows?.[0]?.owner_id != null) {
+        ownerId = ownerResult.rows[0].owner_id;
+      }
+    } catch {
+      // Keep the legacy system owner if the lookup fails; the token endpoint
+      // will fail closed for an unauthorized owner.
+    }
+
     let dbAgent;
     try {
       dbAgent = await AgentService.create(
         `pool-${agentId}`,
         apiKey,
-        0,
+        ownerId,
         { rateLimit: 1000, maxActionsPerDay: 10000, keyExpiryDays: 1 }
       );
     } catch (err) {
@@ -226,6 +242,15 @@ class PoolManager {
 
     // Harness configuration is operator-controlled. Pass it through so pool
     // agents can run the OpenCode harness exactly like manually started ones.
+    // Agent-side GitHub auth mode must agree with the backend. The agent
+    // fetches the actual token/PAT from the backend, so no token is put in the
+    // container environment.
+    for (const name of ['GITHUB_AUTH_MODE', 'ALLOW_PAT']) {
+      if (process.env[name]) {
+        env.push(`${name}=${process.env[name]}`);
+      }
+    }
+
     for (const name of [
       'HARNESS_MODE', 'HARNESS_BIN', 'HARNESS_STARTUP_TIMEOUT_MS',
       'HARNESS_MAX_DURATION_MINUTES',

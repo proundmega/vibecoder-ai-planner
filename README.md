@@ -95,6 +95,12 @@ Required for `docker compose up`:
 | `ALLOWED_ORIGINS` | CORS origins (comma-separated) | `http://localhost:3000,http://localhost:3002` |
 | `DOCKER_API_URL` | Docker socket URL | `http://docker-proxy:2375` |
 | `ENCRYPTION_KEY` | 64 hex chars for AES-256 | _(required)_ |
+| `GITHUB_AUTH_MODE` | `app` (GitHub App installation tokens) or `pat` | `app` |
+| `GITHUB_APP_ID` | GitHub App id | _(app mode)_ |
+| `GITHUB_APP_PRIVATE_KEY` | PEM value, `\n`-escaped PEM, or `file:/path/to/key.pem` | _(app mode)_ |
+| `GITHUB_APP_INSTALLATION_ID` | Single-tenant/dev installation fallback | _(none)_ |
+| `GITHUB_TOKEN_TTL_SECONDS` | Client-side cap for installation tokens (60–3600) | `3600` |
+| `ALLOW_PAT` | Enables the stored-PAT fallback in `pat` mode | `false` |
 | `REDIS_URL` | Redis connection | `redis://localhost:6379` |
 | `REDIS_PREFIX` | Redis key prefix | `vibecode:` |
 | `METRICS_TOKEN` | Auth token for `/metrics` endpoint | _(none = no auth)_ |
@@ -355,6 +361,18 @@ resources.
 project, shared volumes or the shared `:ci` image aliases. See
 `planning/DONE/bp-135-ci-docker-resource-cleanup/05_RUNBOOK.md` for provisioning,
 the one-time legacy inventory and rollback.
+
+### GitHub App credentials (fg-35)
+
+Publishing uses a repo-scoped GitHub App installation token by default. The
+agent requests it from `POST /api/v1/github/:projectId/token`, keeps it in
+memory and refreshes it before expiry; it is never written to `.git/config`,
+argv, logs or the model prompt. Projects are mapped to an installation with
+`PUT /api/v1/github/:projectId/installation`. The stored PAT is only used when
+both the backend and agent set `GITHUB_AUTH_MODE=pat` and `ALLOW_PAT=true`
+(local development). See
+`planning/fg-35-github-app-credentials/05_RUNBOOK.md` for registration,
+rotation, revocation and rollback.
 
 ## Planning
 

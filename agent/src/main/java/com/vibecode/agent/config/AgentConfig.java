@@ -27,7 +27,9 @@ import java.time.Duration;
  *   AI_API_KEY          - AI provider API key (falls back to env if not in DB)
  *   AI_ENDPOINT_URL     - OpenAI-compatible endpoint URL (e.g., http://localhost:11434/v1)
  *   AI_MAX_TOKENS       - Max tokens for AI responses (default: 4096)
- *   GITHUB_TOKEN        - GitHub Personal Access Token (falls back to backend API)
+ *   GITHUB_AUTH_MODE    - GitHub credential mode: app (default) or pat
+ *   ALLOW_PAT           - Must be true to use the PAT fallback in pat mode
+ *   GITHUB_TOKEN        - Dev-only PAT fallback (never used in app mode)
  *   DRY_RUN             - If "true", don't create branches/PRs (default: false)
  *   MAX_TICKETS         - Max tickets to process per cycle (default: 1)
  *   REPO_CLONE_DIR      - Directory to clone repos into (default: /tmp/repos)
@@ -51,6 +53,8 @@ public class AgentConfig {
     private final int maxTicketsPerCycle;
     private final String repoCloneDir;
     private final String githubToken;
+    private final String githubAuthMode;
+    private final boolean allowPat;
     private final HarnessConfig harnessConfig;
     private final SandboxConfig sandboxConfig;
 
@@ -69,6 +73,12 @@ public class AgentConfig {
         this.aiEndpointUrl = getEnv("AI_ENDPOINT_URL", "");
         this.aiMaxTokens = getIntEnv("AI_MAX_TOKENS", 4096);
         this.githubToken = getEnv("GITHUB_TOKEN", null);
+        this.githubAuthMode = getEnv("GITHUB_AUTH_MODE", "app").toLowerCase();
+        if (!"app".equals(this.githubAuthMode) && !"pat".equals(this.githubAuthMode)) {
+            throw new IllegalStateException(
+                "GITHUB_AUTH_MODE must be 'app' or 'pat' (got '" + this.githubAuthMode + "')");
+        }
+        this.allowPat = "true".equalsIgnoreCase(getEnv("ALLOW_PAT", "false"));
         this.dryRun = "true".equalsIgnoreCase(getEnv("DRY_RUN", "false"));
         this.maxTicketsPerCycle = getIntEnv("MAX_TICKETS", 1);
         this.repoCloneDir = getEnv("REPO_CLONE_DIR", "/tmp/repos");
@@ -117,6 +127,8 @@ public class AgentConfig {
     public int getMaxTicketsPerCycle() { return maxTicketsPerCycle; }
     public String getRepoCloneDir() { return repoCloneDir; }
     public String getGitHubToken() { return githubToken; }
+    public String getGitHubAuthMode() { return githubAuthMode; }
+    public boolean isAllowPat() { return allowPat; }
 
     public HarnessConfig getHarnessConfig() { return harnessConfig; }
     public SandboxConfig getSandboxConfig() { return sandboxConfig; }

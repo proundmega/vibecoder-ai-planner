@@ -20,7 +20,7 @@ public class GitHubService {
     private static final Logger log = LoggerFactory.getLogger(GitHubService.class);
     private static final String DEFAULT_API_BASE = "https://api.github.com";
 
-    private final String authToken;
+    private final GitHubTokenSource tokenSource;
     private final String owner;
     private final String repo;
     private final String apiBase;
@@ -28,12 +28,21 @@ public class GitHubService {
     private final ObjectMapper objectMapper;
 
     public GitHubService(String authToken, String owner, String repo) {
-        this(authToken, owner, repo, DEFAULT_API_BASE);
+        this(() -> authToken, owner, repo, DEFAULT_API_BASE);
     }
 
     /** Package-visible so contract tests can target a local HTTP server. */
     GitHubService(String authToken, String owner, String repo, String apiBase) {
-        this.authToken = authToken;
+        this(() -> authToken, owner, repo, apiBase);
+    }
+
+    public GitHubService(GitHubTokenSource tokenSource, String owner, String repo) {
+        this(tokenSource, owner, repo, DEFAULT_API_BASE);
+    }
+
+    /** Package-visible so contract tests can target a local HTTP server. */
+    GitHubService(GitHubTokenSource tokenSource, String owner, String repo, String apiBase) {
+        this.tokenSource = tokenSource;
         this.owner = owner;
         this.repo = repo;
         this.apiBase = apiBase;
@@ -42,6 +51,30 @@ public class GitHubService {
             .readTimeout(60, TimeUnit.SECONDS)
             .build();
         this.objectMapper = new ObjectMapper();
+    }
+
+    private Response executeWithAuth(Request request) throws IOException {
+        Response response = httpClient.newCall(request).execute();
+        if (response.code() != 401) {
+            return response;
+        }
+        response.close();
+        String refreshed = tokenSource.refresh();
+        if (refreshed == null || refreshed.isBlank()) {
+            throw new IOException("No GitHub credential is available after a 401");
+        }
+        Request retry = request.newBuilder()
+            .header("Authorization", "token " + refreshed)
+            .build();
+        return httpClient.newCall(retry).execute();
+    }
+
+    private String token() throws IOException {
+        String value = tokenSource.get();
+        if (value == null || value.isBlank()) {
+            throw new IOException("No GitHub credential is available");
+        }
+        return value;
     }
 
     /**
@@ -61,12 +94,12 @@ public class GitHubService {
 
         Request request = new Request.Builder()
             .url(apiBase + "/repos/" + owner + "/" + repo + "/git/refs")
-            .header("Authorization", "token " + authToken)
+            .header("Authorization", "token " + token())
             .header("Accept", "application/vnd.github+json")
             .post(body)
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = executeWithAuth(request)) {
             if (!response.isSuccessful()) {
                 String errorBody = response.body() != null ? response.body().string() : "";
                 // Branch might already exist
@@ -102,12 +135,12 @@ public class GitHubService {
 
         Request request = new Request.Builder()
             .url(apiBase + "/repos/" + owner + "/" + repo + "/git/commits")
-            .header("Authorization", "token " + authToken)
+            .header("Authorization", "token " + token())
             .header("Accept", "application/vnd.github+json")
             .post(body)
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = executeWithAuth(request)) {
             if (!response.isSuccessful()) {
                 String errorBody = response.body() != null ? response.body().string() : "";
                 throw new IOException("Failed to create commit: " + errorBody);
@@ -145,12 +178,12 @@ public class GitHubService {
 
         Request httpRequest = new Request.Builder()
             .url(apiBase + "/repos/" + owner + "/" + repo + "/pulls")
-            .header("Authorization", "token " + authToken)
+            .header("Authorization", "token " + token())
             .header("Accept", "application/vnd.github+json")
             .post(request)
             .build();
 
-        try (Response response = httpClient.newCall(httpRequest).execute()) {
+        try (Response response = executeWithAuth(httpRequest)) {
             if (!response.isSuccessful()) {
                 String errorBody = response.body() != null ? response.body().string() : "";
                 if (response.code() == 422 && errorBody.contains("A pull request already exists")) {
@@ -172,12 +205,12 @@ public class GitHubService {
     private String detectDefaultBranch() throws IOException {
         Request request = new Request.Builder()
             .url(apiBase + "/repos/" + owner + "/" + repo)
-            .header("Authorization", "token " + authToken)
+            .header("Authorization", "token " + token())
             .header("Accept", "application/vnd.github+json")
             .get()
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = executeWithAuth(request)) {
             if (response.isSuccessful()) {
                 JsonNode root = objectMapper.readTree(response.body().string());
                 String defaultBranch = root.path("default_branch").asText();
@@ -213,12 +246,12 @@ public class GitHubService {
 
         Request request = new Request.Builder()
             .url(url)
-            .header("Authorization", "token " + authToken)
+            .header("Authorization", "token " + token())
             .header("Accept", "application/vnd.github+json")
             .get()
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = executeWithAuth(request)) {
             if (response.isSuccessful()) {
                 JsonNode pulls = objectMapper.readTree(response.body().string());
                 if (pulls.isArray() && pulls.size() > 0) {
@@ -237,12 +270,12 @@ public class GitHubService {
     private String getBranchSha(String branchName) throws IOException {
         Request request = new Request.Builder()
             .url(apiBase + "/repos/" + owner + "/" + repo + "/branches/" + branchName)
-            .header("Authorization", "token " + authToken)
+            .header("Authorization", "token " + token())
             .header("Accept", "application/vnd.github+json")
             .get()
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = executeWithAuth(request)) {
             if (!response.isSuccessful()) {
                 throw new IOException("Failed to get branch " + branchName + ": " + response.code());
             }
@@ -267,12 +300,12 @@ public class GitHubService {
 
         Request request = new Request.Builder()
             .url(apiBase + "/repos/" + owner + "/" + repo + "/git/trees")
-            .header("Authorization", "token " + authToken)
+            .header("Authorization", "token " + token())
             .header("Accept", "application/vnd.github+json")
             .post(body)
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = executeWithAuth(request)) {
             if (!response.isSuccessful()) {
                 throw new IOException("Failed to create tree: " + response.code());
             }

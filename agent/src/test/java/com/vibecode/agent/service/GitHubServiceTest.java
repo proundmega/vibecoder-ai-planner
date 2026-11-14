@@ -5,14 +5,17 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GitHubServiceTest {
@@ -20,16 +23,30 @@ class GitHubServiceTest {
     private HttpServer server;
     private GitHubService service;
     private final List<String> queries = Collections.synchronizedList(new ArrayList<>());
+    private final List<String> authHeaders = Collections.synchronizedList(new ArrayList<>());
     private volatile String responseBody = "[]";
+    private volatile String postResponseBody = "{}";
+    private volatile int unauthorizedRequests = 0;
+    private volatile boolean unauthorizedOnPostOnly = false;
 
     @BeforeEach
     void startServer() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
             queries.add(exchange.getRequestURI().getQuery());
-            byte[] body = responseBody.getBytes(StandardCharsets.UTF_8);
+            authHeaders.add(exchange.getRequestHeaders().getFirst("Authorization"));
+            boolean isPost = "POST".equalsIgnoreCase(exchange.getRequestMethod());
+            boolean unauthorized = unauthorizedRequests > 0
+                && (!unauthorizedOnPostOnly || isPost);
+            if (unauthorized) {
+                unauthorizedRequests -= 1;
+            }
+            String payload = unauthorized
+                ? "{}"
+                : (isPost ? postResponseBody : responseBody);
+            byte[] body = payload.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, body.length);
+            exchange.sendResponseHeaders(unauthorized ? 401 : 200, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
         });
@@ -58,6 +75,125 @@ class GitHubServiceTest {
         String query = queries.get(0);
         assertTrue(query.contains("state=open"));
         assertTrue(query.contains("head=owner:vibecode/ticket-1"));
+    }
+
+    @Test
+    void usesTheLatestTokenFromTheSource() throws Exception {
+        authHeaders.clear();
+        String[] token = {"ghs_first"};
+        GitHubService dynamic = new GitHubService(
+            () -> token[0], "owner", "repo",
+            "http://127.0.0.1:" + server.getAddress().getPort()
+        );
+
+        dynamic.findPullRequestUrl("vibecode/ticket-1");
+        token[0] = "ghs_second";
+        dynamic.findPullRequestUrl("vibecode/ticket-1");
+
+        assertEquals(List.of("token ghs_first", "token ghs_second"),
+            new ArrayList<>(authHeaders));
+    }
+
+    @Test
+    void refreshesAndRetriesOnceAfterA401() throws Exception {
+        unauthorizedRequests = 1;
+        authHeaders.clear();
+        responseBody = "[{\"number\":9,\"html_url\":\"https://github.com/owner/repo/pull/9\"}]";
+        final int[] refreshes = {0};
+        GitHubTokenSource source = new GitHubTokenSource() {
+            @Override
+            public String get() {
+                return "ghs_" + (refreshes[0] + 1);
+            }
+
+            @Override
+            public String refresh() {
+                refreshes[0] += 1;
+                return "ghs_" + (refreshes[0] + 1);
+            }
+        };
+        GitHubService retrying = new GitHubService(
+            source, "owner", "repo",
+            "http://127.0.0.1:" + server.getAddress().getPort()
+        );
+
+        String url = retrying.findPullRequestUrl("vibecode/ticket-9");
+
+        assertEquals("https://github.com/owner/repo/pull/9", url);
+        assertEquals(1, refreshes[0]);
+        assertEquals(List.of("token ghs_1", "token ghs_2"),
+            new ArrayList<>(authHeaders));
+    }
+
+    @Test
+    void refreshesThroughARealTokenProvider() throws Exception {
+        unauthorizedRequests = 1;
+        authHeaders.clear();
+        responseBody = "[{\"number\":12,\"html_url\":\"https://github.com/owner/repo/pull/12\"}]";
+        final int[] fetches = {0};
+        final int[] forced = {0};
+        GitHubTokenProvider provider = new GitHubTokenProvider(force -> {
+            fetches[0] += 1;
+            if (force) forced[0] += 1;
+            return Map.of("token", "ghs_" + fetches[0], "mode", "app");
+        });
+        GitHubService retrying = new GitHubService(
+            provider, "owner", "repo",
+            "http://127.0.0.1:" + server.getAddress().getPort()
+        );
+
+        String url = retrying.findPullRequestUrl("vibecode/ticket-12");
+
+        assertEquals("https://github.com/owner/repo/pull/12", url);
+        assertEquals(1, forced[0], "provider.refresh() must force a backend refresh");
+        assertEquals(List.of("token ghs_1", "token ghs_2"),
+            new ArrayList<>(authHeaders));
+    }
+
+    @Test
+    void refreshesAndRetriesOnceWhenPullRequestCreationReturns401() throws Exception {
+        unauthorizedRequests = 1;
+        unauthorizedOnPostOnly = true;
+        authHeaders.clear();
+        responseBody = "{\"object\":{\"sha\":\"abc123\"}}";
+        postResponseBody = "{\"html_url\":\"https://github.com/owner/repo/pull/11\"}";
+        final int[] refreshes = {0};
+        GitHubTokenSource source = new GitHubTokenSource() {
+            private String current = "ghs_1";
+
+            @Override
+            public String get() {
+                return current;
+            }
+
+            @Override
+            public String refresh() {
+                refreshes[0] += 1;
+                current = "ghs_" + (refreshes[0] + 1);
+                return current;
+            }
+        };
+        GitHubService retrying = new GitHubService(
+            source, "owner", "repo",
+            "http://127.0.0.1:" + server.getAddress().getPort()
+        );
+
+        String url = retrying.createPullRequest("title", "body", "feature", "main");
+
+        assertEquals("https://github.com/owner/repo/pull/11", url);
+        assertEquals(1, refreshes[0]);
+        assertEquals("token ghs_2", authHeaders.get(authHeaders.size() - 1));
+    }
+
+    @Test
+    void failsClosedWithoutACredential() {
+        GitHubService unauthenticated = new GitHubService(
+            () -> null, "owner", "repo",
+            "http://127.0.0.1:" + server.getAddress().getPort()
+        );
+
+        assertThrows(IOException.class,
+            () -> unauthenticated.findPullRequestUrl("vibecode/ticket-1"));
     }
 
     @Test

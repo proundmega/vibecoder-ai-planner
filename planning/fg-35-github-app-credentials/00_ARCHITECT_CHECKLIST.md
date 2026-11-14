@@ -1,14 +1,14 @@
 ---
 id: "fg-35"
 title: "GitHub App Credentials and Least Privilege"
-status: planned
+status: in_review
 priority: "P0"
 effort: "Large"
 scope: "Both"
 created: "2026-10-31"
-updated: "2026-11-03"
-pr: null
-branch: null
+updated: "2026-11-14"
+pr: 143
+branch: "feat/fg-35-github-app-credentials"
 depends_on: ["fg-30"]
 ---
 
@@ -23,6 +23,15 @@ depends_on: ["fg-30"]
 
 Publishing currently uses a long-lived GitHub PAT. We removed it from `.git/config` and process arguments (askpass/header handling), but it still lives in memory/environment with broad access across every repo the user can see. A production coding agent should use a GitHub App installation token scoped to one repository and a short TTL.
 
+## Status evidence
+
+| Claim | Evidence | Checked |
+|---|---|---|
+| Plan merged | PR #105, follow-up consistency fix #106 | ☑ |
+| Implementation started | `feat/fg-35-github-app-credentials`; backend migration, mint/cache service, token endpoint, agent token provider and tests | ☑ |
+| Implementation in review | PR #143, implementation head `dc355fc`; review rounds B1-B5, R1-R2 and R3-R5 resolved | ☑ |
+| Verification results | `03` → Results: backend 1638 tests, agent 543 tests (5 skipped), planning check and `git diff --check` | ☑ |
+
 ## Deferred register (canonical)
 
 Every deliberate omission and follow-up lives here exactly once. Status and
@@ -35,3 +44,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D3 | Merge queue permissions | fg-36 | Delivery | fg-36-merge-lifecycle | open |
 | D4 | Credential audit events | fg-41 | Observability | fg-41-harness-observability | open |
 | D5 | Secret scanning/redaction | fg-42 | Privacy | fg-42-harness-privacy | open |
+| D6 | Bind every refreshed token from `GitHubTokenProvider.knownTokens()` into the harness redactor/leak guard. The current pattern rules cover `ghs_` tokens, but dynamic binding would make redaction independent of the format. | fg-35 | Privacy | fg-42 / follow-up | open |

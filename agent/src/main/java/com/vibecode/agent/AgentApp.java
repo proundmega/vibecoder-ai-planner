@@ -42,6 +42,7 @@ public class AgentApp {
     private final ApiService apiService;
     private final ProviderSettings providerSettings;
     private final GitHubService gitHubService;
+    private final GitHubTokenProvider githubTokenProvider;
     private final TicketWorker ticketWorker;
     private final ReviewProcessor reviewProcessor;
     private ScheduledExecutorService heartbeatScheduler;
@@ -54,23 +55,22 @@ public class AgentApp {
         this.apiService = new ApiService(config);
         this.providerSettings = resolveProviderSettings();
         AiProvider aiProvider = createAiProvider(providerSettings);
-        this.githubAccessToken = fetchGitHubToken();
-        this.gitHubService = new GitHubService(githubAccessToken, config.getRepoOwner(), config.getRepoName());
+        this.githubTokenProvider = createGitHubTokenProvider();
+        this.githubAccessToken = fetchGitHubToken(githubTokenProvider);
+        GitHubWiring wiring = createGitHubWiring(
+            config, apiService, providerSettings, aiProvider,
+            githubTokenProvider, githubAccessToken, config.getHarnessConfig());
+        this.gitHubService = wiring.gitHubService();
+        this.ticketWorker = wiring.ticketWorker();
 
         HarnessConfig harnessConfig = config.getHarnessConfig();
         if (harnessConfig.isEnabled()) {
-            harnessConfig.validate();
-            this.ticketWorker = new HarnessTicketProcessor(
-                config, apiService, providerSettings, gitHubService,
-                githubAccessToken, harnessConfig);
             log.info("Harness mode: opencode (binary={}, model={})",
                 harnessConfig.binary(),
                 harnessConfig.modelOverride() != null
                     ? harnessConfig.modelOverride()
                     : providerSettings.model());
         } else {
-            this.ticketWorker = new TicketProcessor(
-                config, apiService, aiProvider, gitHubService, githubAccessToken);
             log.info("Harness mode: legacy");
         }
 
@@ -83,38 +83,92 @@ public class AgentApp {
         }
     }
 
+    /**
+     * Builds the GitHub clients from the provider object itself. The parameter
+     * type is GitHubTokenProvider (not GitHubTokenSource) so a method reference
+     * cannot silently drop the provider's refresh() override.
+     */
+    record GitHubWiring(GitHubService gitHubService, TicketWorker ticketWorker) {
+    }
+
+    static GitHubWiring createGitHubWiring(
+        AgentConfig config,
+        ApiService apiService,
+        ProviderSettings providerSettings,
+        AiProvider aiProvider,
+        GitHubTokenProvider tokenProvider,
+        String githubToken,
+        HarnessConfig harnessConfig
+    ) {
+        GitHubService gitHubService = new GitHubService(
+            tokenProvider, config.getRepoOwner(), config.getRepoName());
+        TicketWorker ticketWorker;
+        if (harnessConfig.isEnabled()) {
+            harnessConfig.validate();
+            ticketWorker = new HarnessTicketProcessor(
+                config, apiService, providerSettings, gitHubService,
+                tokenProvider, githubToken, harnessConfig);
+        } else {
+            ticketWorker = new TicketProcessor(
+                config, apiService, aiProvider, gitHubService, tokenProvider);
+        }
+        return new GitHubWiring(gitHubService, ticketWorker);
+    }
+
     private static boolean supportsLegacyProvider(ProviderSettings settings) {
         String type = settings.normalizedType();
         boolean openCode = type.equals("opencode") || type.equals("opencode-go");
         return !openCode || (settings.baseUrl() != null && !settings.baseUrl().isBlank());
     }
 
-    private String fetchGitHubToken() {
-        // Priority 1: Backend API (decrypted PAT from project_repos)
+    private GitHubTokenProvider createGitHubTokenProvider() {
+        GitHubTokenSource legacyFallback = null;
+        if ("pat".equals(config.getGitHubAuthMode()) && config.isAllowPat()) {
+            legacyFallback = this::fetchLegacyPat;
+        }
+        return new GitHubTokenProvider(
+            force -> apiService.requestGitHubToken(config.getProjectId(), force),
+            legacyFallback,
+            config.getGitHubAuthMode(),
+            config.isAllowPat());
+    }
+
+    private String fetchGitHubToken(GitHubTokenProvider provider) {
+        try {
+            String token = provider.get();
+            log.info("Fetched GitHub credential from backend (mode={})", provider.getMode());
+            return token;
+        } catch (Exception e) {
+            // Never log the exception message: a mapping error can include a
+            // source snippet from the token response.
+            log.warn("No GitHub credential available — publishing will fail closed");
+        }
+        return null;
+    }
+
+    private String fetchLegacyPat() {
         try {
             Map<String, Object> repoConfig = apiService.getRepoConfig(config.getProjectId());
             Object accessToken = repoConfig.get("accessToken");
             if (accessToken instanceof String) {
                 String token = (String) accessToken;
                 if (token != null && !token.isBlank()) {
-                    log.info("Fetched GitHub PAT from backend");
+                    log.info("Fetched GitHub PAT from backend (explicit fallback)");
                     return token;
                 }
             }
         } catch (Exception e) {
-            log.debug("Could not fetch GitHub PAT from backend: {}", e.getMessage());
+            log.debug("Could not fetch GitHub PAT from the backend");
         }
 
-        // Priority 2: GITHUB_TOKEN env var
         String envToken = config.getGitHubToken();
         if (envToken != null && !envToken.isBlank()) {
-            log.info("Using GitHub token from GITHUB_TOKEN env var");
+            log.warn("Using GITHUB_TOKEN env fallback (explicit pat mode)");
             return envToken;
         }
 
-        // Priority 3: Fallback to agent API key (will fail for GitHub, but preserves existing behavior)
-        log.warn("No GitHub PAT available — agent GitHub operations will fail for private repos");
-        return config.getAgentApiKey();
+        log.warn("No GitHub PAT available in explicit pat mode");
+        return null;
     }
 
     /**

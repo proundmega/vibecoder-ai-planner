@@ -5,6 +5,7 @@ import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
 import com.vibecode.agent.service.ApiService;
 import com.vibecode.agent.service.GitHubService;
+import com.vibecode.agent.service.GitHubTokenSource;
 import com.vibecode.agent.service.TicketWorker;
 import com.vibecode.agent.service.WorkspaceManager;
 import org.slf4j.Logger;
@@ -118,6 +119,18 @@ public final class HarnessTicketProcessor implements TicketWorker {
         String githubToken,
         HarnessConfig harnessConfig
     ) {
+        this(config, apiService, provider, gitHubService, () -> githubToken, githubToken, harnessConfig);
+    }
+
+    public HarnessTicketProcessor(
+        AgentConfig config,
+        ApiService apiService,
+        ProviderSettings provider,
+        GitHubService gitHubService,
+        GitHubTokenSource tokenSource,
+        String githubToken,
+        HarnessConfig harnessConfig
+    ) {
         this(
             config,
             apiService,
@@ -126,7 +139,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             githubToken,
             harnessConfig,
             repoName -> new WorkspaceManager(
-                config.getRepoCloneDir(), repoName, config.isDryRun(), githubToken),
+                config.getRepoCloneDir(), repoName, config.isDryRun(), githubToken, tokenSource),
             (tempDir, bridge) -> new OpenCodeClient(harnessConfig, provider, tempDir, bridge),
             new PlanningDocFetcher(apiService, config),
             new VerificationRunner(harnessConfig),
