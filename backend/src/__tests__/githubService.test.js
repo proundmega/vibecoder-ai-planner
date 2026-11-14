@@ -363,6 +363,33 @@ describe('GitHubService', () => {
       expect(result.state).toBe('open');
     });
 
+    it('refuses backend PAT operations for a disabled project', async () => {
+      const repo = {
+        id: 1,
+        projectId: 1,
+        provider: 'github',
+        repoUrl: 'owner/repo',
+        defaultBranch: 'main',
+        isActive: true,
+        accessTokenEncrypted: 'encrypted-token',
+      };
+      jest.spyOn(GitHubService, 'getProjectRepo').mockResolvedValue(repo);
+      Ticket.findById.mockResolvedValue({
+        id: 42,
+        projectId: '1',
+        title: 'Fix',
+        branchName: 'vibecode/ticket-42',
+      });
+      pool.query.mockImplementation(async (sql) => (
+        sql.includes('FROM project_github_installations')
+          ? { rows: [{ disabled_at: new Date() }] }
+          : { rows: [] }
+      ));
+
+      await expect(GitHubService.createTicketPR('1', 42, null))
+        .rejects.toMatchObject({ code: 'GITHUB_ACCESS_DISABLED' });
+    });
+
     it('should throw ValidationError if no branch exists', async () => {
       const repo = {
         id: 1,
