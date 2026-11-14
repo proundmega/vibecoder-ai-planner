@@ -45,3 +45,9 @@
 - **PR**: #142
 - **Date**: 2026-11-14
 - **Description**: Scoped CI Docker cleanup: build-scoped teardown before `cleanWs()`, CI labels/build tags, a scheduled positively labelled and age-scoped GC with dry-run defaults, and a one-time manual legacy cleanup.
+
+## fg-35: GitHub App Credentials and Least Privilege
+- **PR**: #143
+- **Merge**: `871271f`
+- **Date**: 2026-11-14
+- **Description**: Replaced long-lived PATs with repo-scoped GitHub App installation tokens: per-project installation mapping, mint/cache/revoke service, token endpoint, agent refresh/retry, scoped fallback and deployment wiring.

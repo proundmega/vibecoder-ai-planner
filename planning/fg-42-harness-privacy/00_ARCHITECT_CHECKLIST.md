@@ -31,6 +31,6 @@ deferred scope are owned by this document; `01`–`04` link here.
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
 | D1 | Sandbox network/secret boundary | fg-34 | Security | fg-34-harness-sandbox | open |
-| D2 | Scoped credentials | fg-35 | Security | fg-35-github-app-credentials | open |
+| D2 | Scoped credentials | fg-35 | Security | fg-35-github-app-credentials | resolved (#143) |
 | D3 | Provider routing | fg-38 | Billing | fg-38-harness-budgets-routing | open |
 | D4 | Event redaction/retention | fg-41 | Observability | fg-41-harness-observability | open |

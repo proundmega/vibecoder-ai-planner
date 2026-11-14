@@ -25,7 +25,7 @@ describe('GitHub App auth route wiring (fg-35 FR2/FR4/FR7)', () => {
 
   it('documents the minimum GitHub App permissions and no admin scope', () => {
     const runbook = fs.readFileSync(
-      path.join(__dirname, '../../../planning/fg-35-github-app-credentials/05_RUNBOOK.md'),
+      path.join(__dirname, '../../../planning/DONE/fg-35-github-app-credentials/05_RUNBOOK.md'),
       'utf8'
     );
     for (const permission of ['contents: write', 'pull_requests: write', 'checks: read', 'metadata: read']) {

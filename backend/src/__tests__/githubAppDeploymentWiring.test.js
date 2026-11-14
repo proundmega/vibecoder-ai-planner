@@ -46,7 +46,7 @@ describe('GitHub App deployment wiring (fg-35 FR1/FR9)', () => {
   });
 
   it('documents the private-key file mount and mapping-change revocation', () => {
-    const runbook = read('planning/fg-35-github-app-credentials/05_RUNBOOK.md');
+    const runbook = read('planning/DONE/fg-35-github-app-credentials/05_RUNBOOK.md');
     expect(runbook).toContain('file:/run/secrets/github-app.pem');
     expect(runbook).toContain('revoke');
   });

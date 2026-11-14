@@ -371,7 +371,7 @@ argv, logs or the model prompt. Projects are mapped to an installation with
 `PUT /api/v1/github/:projectId/installation`. The stored PAT is only used when
 both the backend and agent set `GITHUB_AUTH_MODE=pat` and `ALLOW_PAT=true`
 (local development). See
-`planning/fg-35-github-app-credentials/05_RUNBOOK.md` for registration,
+`planning/DONE/fg-35-github-app-credentials/05_RUNBOOK.md` for registration,
 rotation, revocation and rollback.
 
 ## Planning

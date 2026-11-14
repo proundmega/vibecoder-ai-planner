@@ -91,3 +91,4 @@
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
 | 2026-11-14 | `dc355fc` (PR #143) | `cd backend && npm test` (132 suites, 1638 tests) + `cd agent && mvn test` (543 tests, 5 skipped) + `node planning/check-planning.js` + `git diff --check` + compose config | Pass. Backend mints/caches/revokes installation tokens, exposes the token and mapping routes, and fails closed; App mode no longer returns the stored PAT. The agent refreshes the token through a provider and git/PR calls consume it from a token source. PAT fallback is explicit and wired through the provider. Review findings across rounds 1-5 are resolved with regression tests. |
+| 2026-11-14 | `871271f` | PR #143 merged into `master`; closeout verification (`node planning/check-planning.js`, `git diff --check`, targeted deployment-wiring test) | Merged. Suite moved to `planning/DONE/`; status set to `done`. The implementation and all review-round fixes are on `master`. |
