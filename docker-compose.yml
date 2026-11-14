@@ -1,3 +1,8 @@
+x-ci-labels: &ci-labels
+  com.vibecode.ci: "${VIBECODE_CI:-false}"
+  com.vibecode.ci.job: "${VIBECODE_CI_JOB:-}"
+  com.vibecode.ci.build: "${VIBECODE_CI_BUILD:-}"
+
 services:
   docker-proxy:
     image: tecnativa/docker-socket-proxy:latest
@@ -27,6 +32,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      labels: *ci-labels
     restart: "no"
     networks:
       - default
@@ -50,6 +56,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      labels: *ci-labels
     restart: unless-stopped
     environment:
       - NODE_ENV=${NODE_ENV:-development}
@@ -98,6 +105,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      labels: *ci-labels
     restart: unless-stopped
     networks:
       - default
@@ -178,8 +186,12 @@ services:
 networks:
   default:
     driver: bridge
+    labels: *ci-labels
 
 volumes:
   postgres_data:
+    labels: *ci-labels
   uploads_data:
+    labels: *ci-labels
   vibecode_repos:
+    labels: *ci-labels

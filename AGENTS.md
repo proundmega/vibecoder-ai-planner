@@ -109,8 +109,11 @@ cypress: docker compose (e2e overlay) → cypress/included runs e2e + component
 integration job: docker compose up → Jest integration tests → bash integration tests
 agent job: mvn test → package → agent image build
 sandbox job: build sandbox/proxy images → Docker integration suite
+cleanup job: Jenkinsfile.cleanup → label/age-scoped orphan GC (dedicated host)
 ```
 The full pipeline runs on every build; no stages are skipped by change detection. Backend CI uses a real PostgreSQL service container. Integration tests run in a dedicated `docker-compose.test.yml` test container. When Jenkins runs in a container, `agent/scripts/sandbox-ci-env.sh` maps its workspace to the Docker host path; set `JENKINS_HOST_HOME` if the mount cannot be discovered automatically (identity fallback warns). `JENKINS_HOST_HOME` only maps a workspace under `JENKINS_HOME`; a workspace outside that root is left unchanged.
+
+BP-135 cleanup is scoped: the pipeline tears down its own Compose project before `cleanWs()` and removes only its job/build image tag; Compose project names include the branch, job and build, and post cleanup requires `CI_JOB` plus the build ID because build numbers are unique only within a job. `Jenkinsfile.cleanup` runs on the dedicated `vibecode-ci-docker` node, is job-agnostic, and removes only positively labelled, age-scoped resources. Never add a broad `docker system prune`, a name-prefix-only selector, or removal of `vibecoder-ai-planner`, the shared `postgres_data`/`uploads_data`/`vibecode_repos` volumes or the shared `:ci` aliases. Retention is `CI_IMAGE_GRACE_HOURS` (24), `CI_CONTAINER_GRACE_HOURS` (2) and `CI_BUILD_GRACE_HOURS` (6); see the bp-135 runbook.
 
 ### Bug fix protocol
 Every fix **must** include a regression test.

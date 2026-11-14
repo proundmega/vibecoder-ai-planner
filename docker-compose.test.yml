@@ -1,3 +1,8 @@
+x-ci-labels: &ci-labels
+  com.vibecode.ci: "${VIBECODE_CI:-false}"
+  com.vibecode.ci.job: "${VIBECODE_CI_JOB:-}"
+  com.vibecode.ci.build: "${VIBECODE_CI_BUILD:-}"
+
 services:
   api:
     environment:
@@ -13,6 +18,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile.test
+      labels: *ci-labels
     restart: "no"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -47,3 +53,4 @@ services:
 networks:
   default:
     driver: bridge
+    labels: *ci-labels

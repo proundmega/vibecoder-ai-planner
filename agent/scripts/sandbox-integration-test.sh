@@ -15,20 +15,40 @@
 #   SANDBOX_IT_NETWORK        "1" also runs the egress allowlist test (default: 0)
 #   SANDBOX_IT_NETWORK_IMAGE  sandbox image for the egress test (default: SANDBOX_IT_IMAGE)
 #   SANDBOX_IT_BUILD          "0" skips the image builds
+#   SANDBOX_IT_BUILD_TAG      optional build-unique tag (defaults to VIBECODE_CI_BUILD)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE="${SANDBOX_IT_IMAGE:-vibecode-agent-sandbox:ci}"
 PROXY_IMAGE="${SANDBOX_IT_PROXY_IMAGE:-vibecode-sandbox-proxy:ci}"
+BUILD_TAG="${SANDBOX_IT_BUILD_TAG:-${VIBECODE_CI_BUILD:-}}"
+CI_LABEL="${VIBECODE_CI:-false}"
+CI_JOB="${VIBECODE_CI_JOB:-}"
+CI_BUILD="${VIBECODE_CI_BUILD:-}"
+
+build_image() {
+    local dockerfile="$1"
+    local image="$2"
+    local args=(--load -f "${ROOT}/${dockerfile}" -t "${image}")
+    if [[ -n "${BUILD_TAG}" ]]; then
+        args+=(-t "${image%:*}:${BUILD_TAG}")
+    fi
+    args+=(
+        --label "com.vibecode.ci=${CI_LABEL}"
+        --label "com.vibecode.ci.job=${CI_JOB}"
+        --label "com.vibecode.ci.build=${CI_BUILD}"
+    )
+    docker build "${args[@]}" "${ROOT}"
+}
 
 if [[ "${SANDBOX_IT_BUILD:-1}" != "0" ]]; then
     # Docker's buildx docker-container driver keeps the result in the build
     # cache unless --load is requested; the integration tests need the tag in
     # the local image store. This requires a buildx-capable CLI (Docker 23+).
     echo "Building sandbox image ${IMAGE}"
-    docker build --load -f "${ROOT}/sandbox.Dockerfile" -t "${IMAGE}" "${ROOT}"
+    build_image sandbox.Dockerfile "${IMAGE}"
     echo "Building sandbox proxy image ${PROXY_IMAGE}"
-    docker build --load -f "${ROOT}/sandbox-proxy.Dockerfile" -t "${PROXY_IMAGE}" "${ROOT}"
+    build_image sandbox-proxy.Dockerfile "${PROXY_IMAGE}"
     for image in "${IMAGE}" "${PROXY_IMAGE}"; do
         if ! docker image inspect "${image}" >/dev/null 2>&1; then
             echo "error: ${image} is not present after the build" >&2

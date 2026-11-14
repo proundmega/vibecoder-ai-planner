@@ -18,33 +18,63 @@
 SANDBOX_CI_ORIGINAL_DOCKER_HOST="${DOCKER_HOST:-}"
 SANDBOX_CI_ORIGINAL_DOCKER_HOST_FALLBACK="${DOCKER_HOST_FALLBACK:-}"
 SANDBOX_CI_INSPECT_DOCKER_HOST="$SANDBOX_CI_ORIGINAL_DOCKER_HOST"
+SANDBOX_CI_DOCKER_HOST_MODE="${SANDBOX_CI_DOCKER_HOST_MODE:-auto}"
 
-if DOCKER_HOST=unix:///var/run/docker.sock docker info >/dev/null 2>&1; then
-    export DOCKER_HOST=unix:///var/run/docker.sock
-    echo "Using the local Docker socket" >&2
-else
-    echo "Local Docker socket unavailable; using Jenkins DOCKER_HOST=$SANDBOX_CI_ORIGINAL_DOCKER_HOST" >&2
-    case "$SANDBOX_CI_ORIGINAL_DOCKER_HOST" in
-        tcp://*)
-            host="${SANDBOX_CI_ORIGINAL_DOCKER_HOST#tcp://}"
-            port="${host##*:}"
-            host="${host%:*}"
-            ip="$(getent hosts "$host" 2>/dev/null | awk '{print $1}')"
-            if [ -n "$ip" ]; then
-                SANDBOX_CI_INSPECT_DOCKER_HOST="tcp://$ip:$port"
-                export DOCKER_HOST="$SANDBOX_CI_INSPECT_DOCKER_HOST"
-            elif [ -n "$SANDBOX_CI_ORIGINAL_DOCKER_HOST_FALLBACK" ]; then
-                SANDBOX_CI_INSPECT_DOCKER_HOST="$SANDBOX_CI_ORIGINAL_DOCKER_HOST_FALLBACK"
-                export DOCKER_HOST="$SANDBOX_CI_INSPECT_DOCKER_HOST"
-            else
-                export DOCKER_HOST="$SANDBOX_CI_ORIGINAL_DOCKER_HOST"
-            fi
-            ;;
-        *)
-            export DOCKER_HOST="$SANDBOX_CI_ORIGINAL_DOCKER_HOST"
-            ;;
-    esac
-fi
+case "$SANDBOX_CI_DOCKER_HOST_MODE" in
+    explicit)
+        if [ -z "$SANDBOX_CI_ORIGINAL_DOCKER_HOST" ]; then
+            echo "error: explicit Docker mode requires DOCKER_HOST" >&2
+            return 1
+        fi
+        case "$SANDBOX_CI_ORIGINAL_DOCKER_HOST" in
+            tcp://*)
+                host="${SANDBOX_CI_ORIGINAL_DOCKER_HOST#tcp://}"
+                port="${host##*:}"
+                host="${host%:*}"
+                ip="$(getent hosts "$host" 2>/dev/null | awk '{print $1}')"
+                if [ -n "$ip" ]; then
+                    SANDBOX_CI_INSPECT_DOCKER_HOST="tcp://$ip:$port"
+                elif [ -n "$SANDBOX_CI_ORIGINAL_DOCKER_HOST_FALLBACK" ]; then
+                    SANDBOX_CI_INSPECT_DOCKER_HOST="$SANDBOX_CI_ORIGINAL_DOCKER_HOST_FALLBACK"
+                fi
+                ;;
+        esac
+        export DOCKER_HOST="$SANDBOX_CI_INSPECT_DOCKER_HOST"
+        echo "Using explicit Docker host $DOCKER_HOST" >&2
+        ;;
+    auto)
+        if DOCKER_HOST=unix:///var/run/docker.sock docker info >/dev/null 2>&1; then
+            export DOCKER_HOST=unix:///var/run/docker.sock
+            echo "Using the local Docker socket" >&2
+        else
+            echo "Local Docker socket unavailable; using Jenkins DOCKER_HOST=$SANDBOX_CI_ORIGINAL_DOCKER_HOST" >&2
+            case "$SANDBOX_CI_ORIGINAL_DOCKER_HOST" in
+                tcp://*)
+                    host="${SANDBOX_CI_ORIGINAL_DOCKER_HOST#tcp://}"
+                    port="${host##*:}"
+                    host="${host%:*}"
+                    ip="$(getent hosts "$host" 2>/dev/null | awk '{print $1}')"
+                    if [ -n "$ip" ]; then
+                        SANDBOX_CI_INSPECT_DOCKER_HOST="tcp://$ip:$port"
+                        export DOCKER_HOST="$SANDBOX_CI_INSPECT_DOCKER_HOST"
+                    elif [ -n "$SANDBOX_CI_ORIGINAL_DOCKER_HOST_FALLBACK" ]; then
+                        SANDBOX_CI_INSPECT_DOCKER_HOST="$SANDBOX_CI_ORIGINAL_DOCKER_HOST_FALLBACK"
+                        export DOCKER_HOST="$SANDBOX_CI_INSPECT_DOCKER_HOST"
+                    else
+                        export DOCKER_HOST="$SANDBOX_CI_ORIGINAL_DOCKER_HOST"
+                    fi
+                    ;;
+                *)
+                    export DOCKER_HOST="$SANDBOX_CI_ORIGINAL_DOCKER_HOST"
+                    ;;
+            esac
+        fi
+        ;;
+    *)
+        echo "error: SANDBOX_CI_DOCKER_HOST_MODE must be auto or explicit" >&2
+        return 1
+        ;;
+esac
 export SANDBOX_CI_INSPECT_DOCKER_HOST
 
 JENKINS_HOME_DIR="${JENKINS_HOME:-/var/jenkins_home}"

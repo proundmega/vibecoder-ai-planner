@@ -3,6 +3,11 @@
 Operational procedure for the two-layer CI Docker cleanup. The pipeline teardown
 is the primary path; the scheduled Jenkins job is the safety net.
 
+The current implementation uses the **local-socket variant** for the build/test
+stages: the Agent, Sandbox, Supply Chain and Integration Tests stages share the
+helper-selected daemon, and post cleanup uses the pipeline-captured host/ID.
+The explicit-all-stages variant remains gated by the FR5 daemon check.
+
 ## Provisioning prerequisite
 
 Adding `Jenkinsfile.cleanup` to the repository does **not** create the scheduled
@@ -19,14 +24,31 @@ job. Before the safety net exists, a Jenkins administrator must:
    ```bash
    DOCKER_HOST="$CI_DOCKER_HOST" docker info --format '{{.ID}}'
    ```
-4. Run the job once manually with `DRY_RUN=true`. Review the listed resources,
-   then run it again with `DRY_RUN=false`.
-5. Enable the cron trigger (`H */6 * * *`). For more than one Docker daemon,
-   create one job per host with its own expected daemon ID (D5).
+4. Run the job once manually with `DRY_RUN=true` (the default). Review the
+   listed resources, then set `ENABLE_DESTRUCTIVE_CLEANUP=true` and
+   `DRY_RUN=false` for the next run.
+5. Confirm the cron trigger (`H */6 * * *`) is active. The cron uses the
+   Jenkinsfile defaults (`DRY_RUN=true`, `ENABLE_DESTRUCTIVE_CLEANUP=false`),
+   so it stays read-only. Only after the manual destructive run is approved
+   should an administrator deliberately change those defaults/job parameters.
+   For more than one Docker daemon, create one job per host with its own
+   expected daemon ID (D5).
 
-Before enabling the cron, run the daemon compatibility gate in `03`. The
-scheduled job itself only needs cleanup permissions; the build/test suite may
-need the local socket or a less restricted proxy.
+Scheduled builds use the Jenkinsfile parameter defaults, not the values from
+the last manual run. This repository's local Jenkins defaults are
+`CI_DOCKER_HOST=tcp://docker-socket-proxy:2375` and the daemon ID
+`8e9f6b90-dc42-4bd5-a209-ee8aa81501e2`, so the cron starts successfully. The
+cron remains read-only because `DRY_RUN=true` and
+`ENABLE_DESTRUCTIVE_CLEANUP=false`; a manual destructive run does not change
+the scheduled defaults. To enable scheduled deletion, change both defaults
+after the dry-run review. For another daemon, override both values or use a
+deployment-specific job.
+
+Before provisioning the job or relying on the schedule, run the daemon
+compatibility gate in `03`. The cron is active as soon as the job is
+provisioned; the `DRY_RUN=true` default keeps that first scheduled run
+read-only. The scheduled job itself only needs cleanup permissions; the
+build/test suite may need the local socket or a less restricted proxy.
 
 ## Retention and parameters
 
@@ -34,14 +56,34 @@ need the local socket or a less restricted proxy.
 |---|---|---|
 | `CI_IMAGE_GRACE_HOURS` | `24` | Minimum age of a labelled CI image before the GC may remove it. |
 | `CI_CONTAINER_GRACE_HOURS` | `2` | Minimum age of an orphan sandbox container/network before removal. |
-| `CI_BUILD_GRACE_HOURS` | `6` | Minimum age of a stopped Compose project/build identifier before removal. |
+| `CI_BUILD_GRACE_HOURS` | `6` | Minimum age of a Compose project/build identifier before removal. |
 | `CI_DOCKER_HOST` | required | Explicit daemon for the scheduled job. No local-socket fallback. |
 | `CI_DOCKER_DAEMON_ID` | required | Expected `docker info --format '{{.ID}}'`; a mismatch aborts before deletion. |
-| `DRY_RUN` | `false` in cron, use `true` for the first manual run | Report actions without changing resources. |
+| `DRY_RUN` | `true` | Report actions without changing resources. |
+| `ENABLE_DESTRUCTIVE_CLEANUP` | `false` | Required with `DRY_RUN=false` after the dry-run review. |
+| `CI_CURRENT_BUILD_ID` | unset | Optional extra guard that preserves one build ID; no pipeline sets it, so the grace periods remain the primary protection. |
 
 Grace periods are longer than the 60-minute pipeline timeout, so a concurrent
-build is outside the deletion window. The GC also skips the current build ID,
-images referenced by a running container, and the shared `:ci` aliases.
+build is outside the deletion window. Running containers/networks/projects
+older than the grace period are treated as hard-kill orphans and removed. The
+post-build cleanup is scoped to the Jenkins job (`CI_JOB` plus the build ID)
+because build numbers are unique only within a job; the scheduled GC is
+intentionally job-agnostic. Old CI images lose their `:<build>` tag and any
+Compose project image tag whose repository embeds `-<build>-`; `:ci` and
+unrelated aliases such as `:latest` are preserved, and an image is removed by
+ID only when no tags remain. A failed tag inspect is skipped rather than
+assumed to be tagless. A project whose network `.Created` is missing or
+`<no value>` is aged from the volume's `.CreatedAt`; this is available on
+Docker 29, but an older daemon may return `<no value>` for both, in which case
+the GC skips the project with a warning and it must be reviewed manually.
+Timestamps are normalized for both BusyBox and GNU `date`; RFC3339 `Z`/offset
+forms are supported, a bare zone abbreviation without an offset fails closed,
+and an unparseable timestamp is skipped even with a grace period of `0`. The GC always skips the shared `:ci` aliases and, if
+the optional `CI_CURRENT_BUILD_ID` guard is supplied, that build ID. No
+pipeline sets the guard; the grace periods are the primary concurrency
+protection. Image removal fails safely if Docker still reports the image in
+use. Genuine Docker listing/removal errors make `--orphans` exit non-zero,
+while resource-level in-use/not-found races are logged and tolerated.
 
 The cleanup daemon is captured by the Integration Tests stage with
 `sh(returnStdout: true)` into the Jenkins pipeline variables `CI_DOCKER_HOST`
@@ -121,7 +163,7 @@ Classify candidates using the old names and tags. `vibecode-agent:ci`,
 shared aliases — do not remove them**. The same applies to any image carrying a
 `:ci` tag. Legacy removal candidates are only build-unique old tags such as
 `vibecode-agent:<build>`, `vibecode-agent-sandbox:<build>` and
-`vibecode-sandbox-proxy:<build>`, plus old `vibecode-<branch>-<build>` Compose
+`vibecode-sandbox-proxy:<build>`, plus old `vibecode-<branch>-ci-<job>-<hash>-<build>` Compose
 projects and their unique images. Exclude `vibecoder-ai-planner`, the exact
 shared volumes `postgres_data`, `uploads_data` and `vibecode_repos`, and
 anything whose ownership is unclear. Leave a project alone if it has a running
@@ -178,12 +220,16 @@ remove. It must not issue a delete, prune or `compose down` command.
 ## Recover
 
 1. If the scheduled job fails, read the log for `daemon mismatch`, `DOCKER_HOST
-   is required` or a Docker API error. Do not bypass the daemon check.
+   is required`, `Docker operation(s) failed` or a Docker API error. A
+   non-zero exit on a listing/removal error is intentional: the safety net
+   must not report success while doing nothing. Do not bypass the daemon
+   check.
 2. Verify the host and ID:
    ```bash
    DOCKER_HOST="$CI_DOCKER_HOST" docker info --format '{{.ID}}'
    ```
-3. Re-run with `DRY_RUN=true`, inspect the list, then run with `DRY_RUN=false`.
+3. Re-run with `DRY_RUN=true`, inspect the list, then run with
+   `ENABLE_DESTRUCTIVE_CLEANUP=true` and `DRY_RUN=false`.
 4. If a build's `post` cleanup failed, the next scheduled GC is the recovery
    path. If the pipeline's `CI_DOCKER_HOST`/`CI_DOCKER_DAEMON_ID` variables are
    missing, post cleanup falls back to the explicit Jenkins `DOCKER_HOST` only
@@ -221,7 +267,9 @@ remove. It must not issue a delete, prune or `compose down` command.
 
 - Run `docker system prune -a` or any broad prune on the shared daemon.
 - Pass an arbitrary `--compose-project`; only the strict
-  `vibecode-<branch>-<build>` pattern is accepted.
+  `vibecode-<branch>-ci-<job>-<hash>-<build>` pattern is accepted.
+- Run post-build cleanup without `--job`/`CI_JOB`; the script refuses it so one
+  job cannot delete another job's build tags on a shared daemon.
 - Target `vibecoder-ai-planner` or remove `postgres_data`, `uploads_data` or
   `vibecode_repos` outside a validated build-scoped project.
 - Run the scheduled job on an agent without an explicit, verified daemon ID.
