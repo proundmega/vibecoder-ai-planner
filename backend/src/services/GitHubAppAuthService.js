@@ -185,16 +185,17 @@ class GitHubAppAuthService {
        RETURNING project_id, installation_id, repo_allowlist, disabled_at, created_at, updated_at`,
       [projectId, installationId, nextAllowlist]
     );
-    this.clearCacheForProject(projectId);
-
     let revoked = 0;
-    for (const token of cachedTokens) {
-      if (await this.revokeToken(token, {
-        projectId,
-        installationId: Number(installationId),
-      })) revoked += 1;
+    if (changed) {
+      this.clearCacheForProject(projectId);
+      for (const token of cachedTokens) {
+        if (await this.revokeToken(token, {
+          projectId,
+          installationId: Number(installationId),
+        })) revoked += 1;
+      }
     }
-    if (cachedTokens.size > 0) {
+    if (changed && cachedTokens.size > 0) {
       this.log.info('github_app_mapping_changed', {
         projectId,
         installationId: Number(installationId),

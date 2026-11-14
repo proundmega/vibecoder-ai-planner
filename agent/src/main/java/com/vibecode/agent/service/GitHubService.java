@@ -183,7 +183,7 @@ public class GitHubService {
             .post(request)
             .build();
 
-        try (Response response = httpClient.newCall(httpRequest).execute()) {
+        try (Response response = executeWithAuth(httpRequest)) {
             if (!response.isSuccessful()) {
                 String errorBody = response.body() != null ? response.body().string() : "";
                 if (response.code() == 422 && errorBody.contains("A pull request already exists")) {

@@ -516,13 +516,28 @@ describe('GitHubAppAuthService installation management (fg-35 FR2/FR7)', () => {
   });
 
   it('does not revoke tokens when the mapping is unchanged', async () => {
-    const db = makeDb({ installations: { 1: { installation_id: 42, repo_allowlist: [] } } });
+    const db = makeDb({
+      repos: { 1: { repo_url: REPO_URL, access_token_encrypted: 'encrypted' } },
+      installations: { 1: { installation_id: 42, repo_allowlist: [] } },
+    });
     const { service, request } = makeService({ db });
+    await service.mintToken(1, { operation: 'clone' });
 
     const result = await service.setInstallation(1, 42, []);
 
     expect(result.revoked).toBe(0);
-    expect(request).not.toHaveBeenCalled();
+    expect(request.mock.calls.filter((call) => call[0] === 'DELETE')).toHaveLength(0);
+
+    // The cached token must remain revocable after a no-op PUT.
+    const disabled = await service.disableProject(1);
+    expect(disabled).toEqual({ disabled: true, revoked: 1, cachedTokens: 1 });
+    expect(request).toHaveBeenCalledWith(
+      'DELETE',
+      'https://api.github.com/installation/token',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer ghs_test_token' }),
+      })
+    );
   });
 
   it('normalizes bare repo names and case in the allowlist', async () => {

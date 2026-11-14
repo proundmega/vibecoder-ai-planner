@@ -24,7 +24,9 @@ class GitHubServiceTest {
     private final List<String> queries = Collections.synchronizedList(new ArrayList<>());
     private final List<String> authHeaders = Collections.synchronizedList(new ArrayList<>());
     private volatile String responseBody = "[]";
+    private volatile String postResponseBody = "{}";
     private volatile int unauthorizedRequests = 0;
+    private volatile boolean unauthorizedOnPostOnly = false;
 
     @BeforeEach
     void startServer() throws Exception {
@@ -32,12 +34,16 @@ class GitHubServiceTest {
         server.createContext("/", exchange -> {
             queries.add(exchange.getRequestURI().getQuery());
             authHeaders.add(exchange.getRequestHeaders().getFirst("Authorization"));
-            boolean unauthorized = unauthorizedRequests > 0;
+            boolean isPost = "POST".equalsIgnoreCase(exchange.getRequestMethod());
+            boolean unauthorized = unauthorizedRequests > 0
+                && (!unauthorizedOnPostOnly || isPost);
             if (unauthorized) {
                 unauthorizedRequests -= 1;
             }
-            byte[] body = (unauthorized ? "{}" : responseBody)
-                .getBytes(StandardCharsets.UTF_8);
+            String payload = unauthorized
+                ? "{}"
+                : (isPost ? postResponseBody : responseBody);
+            byte[] body = payload.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(unauthorized ? 401 : 200, body.length);
             exchange.getResponseBody().write(body);
@@ -116,6 +122,41 @@ class GitHubServiceTest {
         assertEquals(1, refreshes[0]);
         assertEquals(List.of("token ghs_1", "token ghs_2"),
             new ArrayList<>(authHeaders));
+    }
+
+    @Test
+    void refreshesAndRetriesOnceWhenPullRequestCreationReturns401() throws Exception {
+        unauthorizedRequests = 1;
+        unauthorizedOnPostOnly = true;
+        authHeaders.clear();
+        responseBody = "{\"object\":{\"sha\":\"abc123\"}}";
+        postResponseBody = "{\"html_url\":\"https://github.com/owner/repo/pull/11\"}";
+        final int[] refreshes = {0};
+        GitHubTokenSource source = new GitHubTokenSource() {
+            private String current = "ghs_1";
+
+            @Override
+            public String get() {
+                return current;
+            }
+
+            @Override
+            public String refresh() {
+                refreshes[0] += 1;
+                current = "ghs_" + (refreshes[0] + 1);
+                return current;
+            }
+        };
+        GitHubService retrying = new GitHubService(
+            source, "owner", "repo",
+            "http://127.0.0.1:" + server.getAddress().getPort()
+        );
+
+        String url = retrying.createPullRequest("title", "body", "feature", "main");
+
+        assertEquals("https://github.com/owner/repo/pull/11", url);
+        assertEquals(1, refreshes[0]);
+        assertEquals("token ghs_2", authHeaders.get(authHeaders.size() - 1));
     }
 
     @Test
