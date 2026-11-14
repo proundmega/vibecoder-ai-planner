@@ -727,10 +727,6 @@ public final class OpenCodeClient implements HarnessClient {
      * config; these wrappers forward to the loopback workspace bridge, which
      * resolves paths with {@code toRealPath()} and rejects escapes.
      */
-    static boolean requireSecureFileAccess(boolean sandboxBridge, String configured) {
-        return sandboxBridge || Boolean.parseBoolean(configured);
-    }
-
     static Path writeWorkspaceTools(Path home) throws IOException {
         Path tools = Files.createDirectories(home.resolve(".config/opencode/tools"));
         Files.writeString(tools.resolve("sandbox_read.ts"),
@@ -742,6 +738,15 @@ public final class OpenCodeClient implements HarnessClient {
         Files.writeString(tools.resolve("sandbox_edit.ts"),
             workspaceEditToolSource(), StandardCharsets.UTF_8);
         return tools;
+    }
+
+    /**
+     * Sandbox bridges always require secure file access. Host mode can opt in
+     * with SANDBOX_REQUIRE_SECURE_FILE_ACCESS=true (strict true/1, false/0).
+     */
+    static boolean requireSecureFileAccess(boolean sandboxBridge, String configured) {
+        return sandboxBridge || SandboxConfig.booleanValue(
+            name -> configured, "SANDBOX_REQUIRE_SECURE_FILE_ACCESS", false);
     }
 
     static String workspaceReadToolSource() {

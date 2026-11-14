@@ -63,16 +63,23 @@ final class WorkspaceFileBridge implements AutoCloseable {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String token = randomHex(32);
     private final Map<Path, ReentrantLock> fileLocks = new ConcurrentHashMap<>();
+    private final long fileLockTimeoutMs;
 
     private HttpServer server;
     private ExecutorService executor;
     private String baseUrl;
 
     WorkspaceFileBridge(Path workspace) throws IOException {
-        this(workspace, false);
+        this(workspace, false, FILE_LOCK_TIMEOUT_MS);
     }
 
     WorkspaceFileBridge(Path workspace, boolean requireSecureFileAccess) throws IOException {
+        this(workspace, requireSecureFileAccess, FILE_LOCK_TIMEOUT_MS);
+    }
+
+    WorkspaceFileBridge(
+        Path workspace, boolean requireSecureFileAccess, long fileLockTimeoutMs
+    ) throws IOException {
         if (workspace == null) {
             throw new IllegalArgumentException("Workspace is required");
         }
@@ -82,6 +89,7 @@ final class WorkspaceFileBridge implements AutoCloseable {
             throw new IOException(
                 "secure directory streams are required in sandbox mode");
         }
+        this.fileLockTimeoutMs = Math.max(1L, fileLockTimeoutMs);
     }
 
     synchronized void start() throws IOException {
@@ -276,68 +284,68 @@ final class WorkspaceFileBridge implements AutoCloseable {
                     return;
                 }
                 try {
-                try (SeekableByteChannel channel =
-                         WorkspaceSecureFile.openReadWrite(workspaceReal, target)) {
-                    long size = channel.size();
-                    if (size > MAX_READ_FILE_BYTES) {
-                        throw new IOException("file is too large to edit");
-                    }
-                    ByteBuffer buffer = ByteBuffer.allocate((int) size);
-                    while (buffer.hasRemaining()) {
-                        int read = channel.read(buffer);
-                        if (read < 0) {
-                            break;
+                    try (SeekableByteChannel channel =
+                             WorkspaceSecureFile.openReadWrite(workspaceReal, target)) {
+                        long size = channel.size();
+                        if (size > MAX_READ_FILE_BYTES) {
+                            throw new IOException("file is too large to edit");
                         }
-                    }
-                    String raw = WorkspaceSecureFile.decodeUtf8(buffer.array());
-                    boolean bom = raw.startsWith("\uFEFF");
-                    String body = bom ? raw.substring(1) : raw;
-                    boolean crlf = body.contains("\r\n");
-                    String normalized = normalizeNewlines(body, crlf);
-                    String oldString = normalizeNewlines(rawOldString, crlf);
-                    String newString = normalizeNewlines(rawNewString, crlf);
-                    if (oldString.isEmpty()) {
-                        sendJson(exchange, 400, Map.of("error", "oldString is required"));
-                        return;
-                    }
+                        ByteBuffer buffer = ByteBuffer.allocate((int) size);
+                        while (buffer.hasRemaining()) {
+                            int read = channel.read(buffer);
+                            if (read < 0) {
+                                break;
+                            }
+                        }
+                        String raw = WorkspaceSecureFile.decodeUtf8(buffer.array());
+                        boolean bom = raw.startsWith("\uFEFF");
+                        String body = bom ? raw.substring(1) : raw;
+                        boolean crlf = body.contains("\r\n");
+                        String normalized = normalizeNewlines(body, crlf);
+                        String oldString = normalizeNewlines(rawOldString, crlf);
+                        String newString = normalizeNewlines(rawNewString, crlf);
+                        if (oldString.isEmpty()) {
+                            sendJson(exchange, 400, Map.of("error", "oldString is required"));
+                            return;
+                        }
 
-                    int occurrences = countOccurrences(normalized, oldString);
-                    if (occurrences == 0) {
-                        sendJson(exchange, 400, Map.of("error", "oldString not found"));
-                        return;
-                    }
-                    if (occurrences > 1 && !replaceAll) {
-                        sendJson(exchange, 400,
-                            Map.of("error", "oldString is not unique; set replaceAll"));
-                        return;
-                    }
-                    long projected = normalized.length()
-                        - (long) occurrences * oldString.length()
-                        + (long) occurrences * newString.length();
-                    if (projected > MAX_WRITE_BYTES || projected < 0) {
-                        sendJson(exchange, 413,
-                            Map.of("error", "write exceeds " + MAX_WRITE_BYTES + " bytes"));
-                        return;
-                    }
+                        int occurrences = countOccurrences(normalized, oldString);
+                        if (occurrences == 0) {
+                            sendJson(exchange, 400, Map.of("error", "oldString not found"));
+                            return;
+                        }
+                        if (occurrences > 1 && !replaceAll) {
+                            sendJson(exchange, 400,
+                                Map.of("error", "oldString is not unique; set replaceAll"));
+                            return;
+                        }
+                        long projected = normalized.length()
+                            - (long) occurrences * oldString.length()
+                            + (long) occurrences * newString.length();
+                        if (projected > MAX_WRITE_BYTES || projected < 0) {
+                            sendJson(exchange, 413,
+                                Map.of("error", "write exceeds " + MAX_WRITE_BYTES + " bytes"));
+                            return;
+                        }
 
-                    String updatedNormalized = replaceAll
-                        ? normalized.replace(oldString, newString)
-                        : normalized.substring(0, normalized.indexOf(oldString))
-                            + newString
-                            + normalized.substring(
-                                normalized.indexOf(oldString) + oldString.length());
-                    String updatedBody = restoreNewlines(updatedNormalized, crlf);
-                    String updated = bom ? "\uFEFF" + updatedBody : updatedBody;
-                    byte[] payload = updated.getBytes(StandardCharsets.UTF_8);
-                    if (payload.length > MAX_WRITE_BYTES) {
-                        sendJson(exchange, 413,
-                            Map.of("error", "write exceeds " + MAX_WRITE_BYTES + " bytes"));
-                        return;
+                        String updatedNormalized = replaceAll
+                            ? normalized.replace(oldString, newString)
+                            : normalized.substring(0, normalized.indexOf(oldString))
+                                + newString
+                                + normalized.substring(
+                                    normalized.indexOf(oldString) + oldString.length());
+                        String updatedBody = restoreNewlines(updatedNormalized, crlf);
+                        String updated = bom ? "\uFEFF" + updatedBody : updatedBody;
+                        byte[] payload = updated.getBytes(StandardCharsets.UTF_8);
+                        if (payload.length > MAX_WRITE_BYTES) {
+                            sendJson(exchange, 413,
+                                Map.of("error", "write exceeds " + MAX_WRITE_BYTES + " bytes"));
+                            return;
+                        }
+                        channel.truncate(0);
+                        channel.position(0);
+                        WorkspaceSecureFile.writeFully(channel, payload);
                     }
-                    channel.truncate(0);
-                    channel.position(0);
-                    WorkspaceSecureFile.writeFully(channel, payload);
-                }
                 } finally {
                     unlockFile(target);
                 }
@@ -535,7 +543,7 @@ final class WorkspaceFileBridge implements AutoCloseable {
         ReentrantLock lock = fileLocks.computeIfAbsent(
             target.toAbsolutePath().normalize(), key -> new ReentrantLock());
         try {
-            return lock.tryLock(FILE_LOCK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            return lock.tryLock(fileLockTimeoutMs, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("interrupted while waiting for the file lock");

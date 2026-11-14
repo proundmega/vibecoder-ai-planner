@@ -230,7 +230,11 @@ class OpenCodeClientTest {
         assertTrue(OpenCodeClient.requireSecureFileAccess(true, null));
         assertFalse(OpenCodeClient.requireSecureFileAccess(false, null));
         assertFalse(OpenCodeClient.requireSecureFileAccess(false, "false"));
+        assertFalse(OpenCodeClient.requireSecureFileAccess(false, "0"));
         assertTrue(OpenCodeClient.requireSecureFileAccess(false, "true"));
+        assertTrue(OpenCodeClient.requireSecureFileAccess(false, "1"));
+        assertThrows(IllegalStateException.class,
+            () -> OpenCodeClient.requireSecureFileAccess(false, "yes"));
     }
 
     @Test

@@ -30,7 +30,7 @@ class WorkspaceFileBridgeTest {
     @BeforeEach
     void setUp() throws IOException {
         workspace = Files.createDirectories(tempDir.resolve("workspace")).toRealPath();
-        bridge = new WorkspaceFileBridge(workspace);
+        bridge = new WorkspaceFileBridge(workspace, false, 100L);
         bridge.start();
     }
 

@@ -468,7 +468,7 @@ public record SandboxConfig(
         }
     }
 
-    private static boolean booleanValue(
+    static boolean booleanValue(
         Function<String, String> env,
         String name,
         boolean fallback

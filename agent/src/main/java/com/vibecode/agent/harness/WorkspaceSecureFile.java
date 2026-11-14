@@ -184,8 +184,8 @@ final class WorkspaceSecureFile {
             // LinkOption.NOFOLLOW_LINKS is in `options`, so a final-component
             // swap to a symlink is rejected at open time. A swap to a FIFO can
             // still block the open: Java NIO has no O_NONBLOCK/secure-open
-            // primitive. That is a bounded availability risk, not a path escape
-            // (D23).
+            // primitive. That is an availability risk that can block until a peer opens
+            // it, not a path escape (D23).
             return directory.newByteChannel(name, options);
         }
         try (SecureDirectoryStream<Path> child = directory.newDirectoryStream(
@@ -218,7 +218,7 @@ final class WorkspaceSecureFile {
             throw new IOException("not a regular file");
         }
         // See the secure path above: a FIFO swapped in after the attribute
-        // check can still block this open (D23 residual availability race).
+        // check can still block this open until a peer opens the FIFO (D23 residual).
         return Files.newByteChannel(resolved, options);
     }
 
