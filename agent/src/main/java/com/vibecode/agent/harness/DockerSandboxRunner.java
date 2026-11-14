@@ -1276,7 +1276,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
         writeContainerFileViaExec(sandbox, "/tmp/vibecode-ca-bundle.crt", combined);
     }
 
-    private enum ContainerPathState {
+    enum ContainerPathState {
         FILE,
         MISSING,
         BROKEN_SYMLINK,
@@ -1284,7 +1284,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
         UNKNOWN
     }
 
-    private ContainerPathState containerPathState(String container, String path)
+    ContainerPathState containerPathState(String container, String path)
         throws IOException {
         String script = "p=$1; "
             + "if [ -L \"$p\" ] && [ ! -e \"$p\" ]; then echo BROKEN; "
@@ -1500,32 +1500,41 @@ public final class DockerSandboxRunner implements SandboxRunner {
         String remotePath,
         byte[] bytes
     ) throws IOException {
+        writeContainerFileViaExec(container, remotePath, bytes, COPY_TIMEOUT);
+    }
+
+    /**
+     * Write a validated file into the sandbox tmpfs through {@code docker exec
+     * -i}. Stdin comes from a temp file, so a shell that ignores stdin cannot
+     * block the supervisor's caller thread; the process is still bounded by
+     * the supplied timeout.
+     */
+    void writeContainerFileViaExec(
+        String container,
+        String remotePath,
+        byte[] bytes,
+        Duration timeout
+    ) throws IOException {
         String script = "cat > " + shellQuote(remotePath)
             + " && chmod 0444 " + shellQuote(remotePath);
         List<String> command = List.of(
             config.dockerBinary(), "exec", "-i", container, "/bin/sh", "-c", script);
-        ProcessBuilder builder = new ProcessBuilder(ProcessGroup.wrap(command));
-        builder.redirectErrorStream(false);
-        EnvironmentSanitizer.sanitize(builder.environment());
-        copyDockerEnvironment(builder.environment());
-
+        Path temp = Files.createTempFile("vibecode-egress-write-", ".pem");
+        Process process = null;
         BoundedTailBuffer stderr = new BoundedTailBuffer(8_192);
-        Process process;
         try {
+            Files.write(temp, bytes);
+            ProcessBuilder builder = new ProcessBuilder(ProcessGroup.wrap(command));
+            builder.redirectErrorStream(false);
+            builder.redirectInput(temp.toFile());
+            builder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            EnvironmentSanitizer.sanitize(builder.environment());
+            copyDockerEnvironment(builder.environment());
             process = builder.start();
-        } catch (IOException e) {
-            throw new IOException("Could not run docker exec write for " + remotePath, e);
-        }
-        Thread errReader = reader(process.getErrorStream(), stderr, "sandbox-exec-err");
-        try (var stdin = process.getOutputStream()) {
-            stdin.write(bytes);
-        } catch (IOException e) {
-            ProcessGroup.kill(process);
-            throw new IOException("Could not write " + remotePath + " into the sandbox", e);
-        }
-        try {
+            Thread errReader = reader(process.getErrorStream(), stderr, "sandbox-exec-err");
+
             boolean finished = process.waitFor(
-                Math.max(1, COPY_TIMEOUT.toMillis()), TimeUnit.MILLISECONDS);
+                Math.max(1, timeout.toMillis()), TimeUnit.MILLISECONDS);
             if (!finished) {
                 ProcessGroup.kill(process);
                 errReader.join(2_000);
@@ -1538,8 +1547,12 @@ public final class DockerSandboxRunner implements SandboxRunner {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            ProcessGroup.kill(process);
+            if (process != null) {
+                ProcessGroup.kill(process);
+            }
             throw new IOException("Interrupted while writing " + remotePath, e);
+        } finally {
+            Files.deleteIfExists(temp);
         }
     }
 

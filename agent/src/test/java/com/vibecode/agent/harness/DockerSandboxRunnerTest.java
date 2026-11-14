@@ -199,6 +199,60 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void writeContainerFileViaExecTimesOutWhenTheShellIgnoresStdin() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path script = fakeDocker(tempDir.resolve("docker.log"), """
+            case "$1" in
+              exec) sleep 30 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            long started = System.nanoTime();
+            IOException error = assertThrows(IOException.class,
+                () -> runner.writeContainerFileViaExec(
+                    "sandbox-1", "/tmp/vibecode-ca-bundle.crt",
+                    new byte[512 * 1024], Duration.ofMillis(300)));
+            long elapsed = Duration.ofNanos(System.nanoTime() - started).toMillis();
+            assertTrue(error.getMessage().contains("timed out"), error.getMessage());
+            assertTrue(elapsed < 5_000, "write timeout took " + elapsed + "ms");
+        }
+    }
+
+    @Test
+    void classifiesContainerPathStates() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path script = fakeDocker(tempDir.resolve("docker.log"), """
+            case "$1" in
+              exec)
+                case "$*" in
+                  *"/missing"*) echo MISSING ;;
+                  *"/broken"*) echo BROKEN ;;
+                  *"/dir"*) echo NOTFILE ;;
+                  *"/file"*) echo FILE ;;
+                  *) echo UNKNOWN ;;
+                esac
+                ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            assertEquals(DockerSandboxRunner.ContainerPathState.FILE,
+                runner.containerPathState("sandbox-1", "/file"));
+            assertEquals(DockerSandboxRunner.ContainerPathState.MISSING,
+                runner.containerPathState("sandbox-1", "/missing"));
+            assertEquals(DockerSandboxRunner.ContainerPathState.BROKEN_SYMLINK,
+                runner.containerPathState("sandbox-1", "/broken"));
+            assertEquals(DockerSandboxRunner.ContainerPathState.NOT_A_FILE,
+                runner.containerPathState("sandbox-1", "/dir"));
+            assertEquals(DockerSandboxRunner.ContainerPathState.UNKNOWN,
+                runner.containerPathState("sandbox-1", "/other"));
+        }
+    }
+
+    @Test
     void createStartsAndDestroysTheEgressProxyAndNetwork() throws IOException {
         Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
         Path log = tempDir.resolve("docker.log");
