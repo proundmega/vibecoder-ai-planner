@@ -32,7 +32,9 @@ socket is not passed to pool agents because they do not mount it.
 
 The repo volume is explicitly named `vibecode_repos` in Compose so the API
 mount, `REPO_VOLUME`, and the inspected mountpoint are the same volume even
-with project-prefix naming. `PoolManager` creates a missing named volume before
+with project-prefix naming. An installation that previously used a
+project-prefixed volume can copy it once into `vibecode_repos`; the old
+compose prefix otherwise leaves that data unused. `PoolManager` creates a missing named volume before
 inspecting it, maps the mountpoint to `SANDBOX_HOST_WORKSPACE_ROOT`, and uses
 `/repos` as the container root; a host-path `REPO_VOLUME` is used directly and
 an explicit root wins. The root Compose proxy enables

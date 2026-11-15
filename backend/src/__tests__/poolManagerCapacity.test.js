@@ -348,6 +348,35 @@ describe('PoolManager max capacity (BP-61)', () => {
     }
   });
 
+  it('rejects a non-internal sandbox control network', async () => {
+    pm.pool.clear();
+    const { pool } = require('../db');
+    pool.query.mockResolvedValue({
+      rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+    });
+    pm.docker.createContainer = jest.fn();
+    pm.docker.getNetwork = jest.fn().mockReturnValue({
+      inspect: jest.fn().mockResolvedValue({ Internal: false }),
+    });
+
+    const previous = {
+      SANDBOX_MODE: process.env.SANDBOX_MODE,
+      SANDBOX_HOST_WORKSPACE_ROOT: process.env.SANDBOX_HOST_WORKSPACE_ROOT,
+    };
+    process.env.SANDBOX_MODE = 'docker';
+    process.env.SANDBOX_HOST_WORKSPACE_ROOT = '/srv/repos';
+    try {
+      await expect(pm.requestAgent('proj-public-network')).rejects.toThrow(
+        /must be internal/);
+      expect(pm.docker.createContainer).not.toHaveBeenCalled();
+    } finally {
+      for (const [name, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
   it('fails closed when Docker mode has no host-visible workspace', async () => {
     pm.pool.clear();
     const { pool } = require('../db');

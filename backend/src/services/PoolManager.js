@@ -197,7 +197,11 @@ class PoolManager {
       throw new Error('Docker daemon is required for SANDBOX_MODE=docker');
     }
     try {
-      await this.docker.getNetwork(SANDBOX_CONTROL_NETWORK).inspect();
+      const info = await this.docker.getNetwork(SANDBOX_CONTROL_NETWORK).inspect();
+      if (info && info.Internal === false) {
+        throw new Error(
+          `SANDBOX_CONTROL_NETWORK ${SANDBOX_CONTROL_NETWORK} must be internal`);
+      }
       return;
     } catch (err) {
       if (err.statusCode !== 404) {
