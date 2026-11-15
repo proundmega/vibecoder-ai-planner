@@ -42,6 +42,11 @@ describe('PoolManager max capacity (BP-61)', () => {
     Docker = require('dockerode');
     mockDocker = Docker();
     mockDocker.ping.mockResolvedValue(undefined);
+    mockDocker.getNetwork = jest.fn().mockReturnValue({
+      inspect: jest.fn().mockResolvedValue({}),
+    });
+    mockDocker.createNetwork = jest.fn().mockResolvedValue({});
+    mockDocker.createVolume = jest.fn().mockResolvedValue({});
     
     const { pool } = require('../db');
     pool.query.mockReset();
@@ -208,9 +213,11 @@ describe('PoolManager max capacity (BP-61)', () => {
       'SANDBOX_HOST_WORKSPACE_ROOT=/var/lib/docker/volumes/vibecode_repos/_data');
     expect(createOpts.Env).toContain('DOCKER_HOST=tcp://docker-proxy:2375');
     expect(pm.docker.getVolume).toHaveBeenCalledWith('vibecode_repos');
+    expect(createOpts.NetworkingConfig.EndpointsConfig).toHaveProperty(
+      'vibecode-sandbox-control');
   });
 
-  it('honours an explicit AGENT_DOCKER_HOST', async () => {
+  it('honours an explicit AGENT_DOCKER_HOST in Docker mode', async () => {
     pm.pool.clear();
     const { pool } = require('../db');
     pool.query.mockResolvedValue({
@@ -219,17 +226,95 @@ describe('PoolManager max capacity (BP-61)', () => {
     const mockContainer = { id: 'container-proxy', start: jest.fn().mockResolvedValue(undefined) };
     pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
 
-    const previous = process.env.AGENT_DOCKER_HOST;
+    const previous = {
+      AGENT_DOCKER_HOST: process.env.AGENT_DOCKER_HOST,
+      SANDBOX_MODE: process.env.SANDBOX_MODE,
+      SANDBOX_HOST_WORKSPACE_ROOT: process.env.SANDBOX_HOST_WORKSPACE_ROOT,
+    };
     process.env.AGENT_DOCKER_HOST = 'tcp://proxy.internal:2375';
+    process.env.SANDBOX_MODE = 'DOCKER';
+    process.env.SANDBOX_HOST_WORKSPACE_ROOT = '/srv/repos';
     try {
       await pm.requestAgent('proj-proxy');
-    } finally {
-      if (previous === undefined) delete process.env.AGENT_DOCKER_HOST;
-      else process.env.AGENT_DOCKER_HOST = previous;
-    }
 
-    const createOpts = pm.docker.createContainer.mock.calls[0][0];
-    expect(createOpts.Env).toContain('DOCKER_HOST=tcp://proxy.internal:2375');
+      const createOpts = pm.docker.createContainer.mock.calls[0][0];
+      expect(createOpts.Env).toContain('DOCKER_HOST=tcp://proxy.internal:2375');
+      expect(createOpts.Env).toContain('SANDBOX_HOST_WORKSPACE_ROOT=/srv/repos');
+    } finally {
+      for (const [name, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
+  it('does not pass DOCKER_HOST or the control network to host-mode agents', async () => {
+    pm.pool.clear();
+    const { pool } = require('../db');
+    pool.query.mockResolvedValue({
+      rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+    });
+    const mockContainer = { id: 'container-host', start: jest.fn().mockResolvedValue(undefined) };
+    pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
+
+    const previous = process.env.SANDBOX_MODE;
+    delete process.env.SANDBOX_MODE;
+    try {
+      await pm.requestAgent('proj-host');
+
+      const createOpts = pm.docker.createContainer.mock.calls[0][0];
+      expect(createOpts.Env).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/^DOCKER_HOST=/)]));
+      expect(createOpts.NetworkingConfig).toBeUndefined();
+      expect(pm.docker.getNetwork).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.SANDBOX_MODE;
+      else process.env.SANDBOX_MODE = previous;
+    }
+  });
+
+  it('creates a fresh repo volume before resolving the host workspace root', async () => {
+    pm.pool.clear();
+    const { pool } = require('../db');
+    pool.query.mockResolvedValue({
+      rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+    });
+    const mockContainer = { id: 'container-fresh-volume', start: jest.fn().mockResolvedValue(undefined) };
+    pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
+    const inspect = jest.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('no such volume'), { statusCode: 404 }))
+      .mockResolvedValue({ Mountpoint: '/var/lib/docker/volumes/vibecode_repos/_data' });
+    pm.docker.getVolume = jest.fn().mockReturnValue({ inspect });
+    pm.docker.getNetwork = jest.fn()
+      .mockReturnValueOnce({ inspect: jest.fn().mockRejectedValue(
+        Object.assign(new Error('no such network'), { statusCode: 404 })) })
+      .mockReturnValue({ inspect: jest.fn().mockResolvedValue({}) });
+
+    const previous = {
+      SANDBOX_MODE: process.env.SANDBOX_MODE,
+      SANDBOX_HOST_WORKSPACE_ROOT: process.env.SANDBOX_HOST_WORKSPACE_ROOT,
+    };
+    process.env.SANDBOX_MODE = 'docker';
+    delete process.env.SANDBOX_HOST_WORKSPACE_ROOT;
+    try {
+      await pm.requestAgent('proj-fresh-volume');
+
+      const createOpts = pm.docker.createContainer.mock.calls[0][0];
+      expect(pm.docker.createVolume).toHaveBeenCalledWith({ Name: 'vibecode_repos' });
+      expect(pm.docker.createNetwork).toHaveBeenCalledWith(expect.objectContaining({
+        Name: 'vibecode-sandbox-control',
+        Internal: true,
+      }));
+      expect(createOpts.Env).toContain(
+        'SANDBOX_HOST_WORKSPACE_ROOT=/var/lib/docker/volumes/vibecode_repos/_data');
+      expect(createOpts.NetworkingConfig.EndpointsConfig).toHaveProperty(
+        'vibecode-sandbox-control');
+    } finally {
+      for (const [name, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
   });
 
   it('uses an explicit SANDBOX_HOST_WORKSPACE_ROOT without inspecting the volume', async () => {
@@ -263,32 +348,27 @@ describe('PoolManager max capacity (BP-61)', () => {
     }
   });
 
-  it('does not guess a host workspace root when the volume cannot be inspected', async () => {
+  it('fails closed when Docker mode has no host-visible workspace', async () => {
     pm.pool.clear();
     const { pool } = require('../db');
     pool.query.mockResolvedValue({
       rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
     });
+    const AgentService = require('../services/AgentService');
     const mockContainer = { id: 'container-no-volume', start: jest.fn().mockResolvedValue(undefined) };
     pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
     delete pm.docker.getVolume;
 
     const previous = process.env.SANDBOX_MODE;
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     process.env.SANDBOX_MODE = 'docker';
     try {
-      await pm.requestAgent('proj-no-volume');
-
-      const createOpts = pm.docker.createContainer.mock.calls[0][0];
-      expect(createOpts.Env).toContain('SANDBOX_MODE=docker');
-      expect(createOpts.Env).not.toEqual(
-        expect.arrayContaining([expect.stringMatching(/^SANDBOX_HOST_WORKSPACE_ROOT=./)]));
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining(
-        'Pool sandbox workspace root is unresolved'));
+      await expect(pm.requestAgent('proj-no-volume')).rejects.toThrow(
+        /host-visible repo workspace/);
+      expect(pm.docker.createContainer).not.toHaveBeenCalled();
+      expect(AgentService.create).not.toHaveBeenCalled();
     } finally {
       if (previous === undefined) delete process.env.SANDBOX_MODE;
       else process.env.SANDBOX_MODE = previous;
-      warn.mockRestore();
     }
   });
 

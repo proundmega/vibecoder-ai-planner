@@ -23,8 +23,11 @@ services:
       ALLOW_RESTARTS: 1
       ALLOW_PAUSE: 1
       ALLOW_UNPAUSE: 1
+    # Only the API and Docker-mode pool agents join this internal control
+    # network. Host-mode agents and internet-facing services cannot reach the
+    # expanded Docker API proxy.
     networks:
-      - default
+      - sandbox-control
     healthcheck:
       # tecnativa/docker-socket-proxy serves Docker API on :2375; /version is a lightweight GET
       # that returns JSON (no redirect), so wget --spider succeeds on TCP+HTTP 200
@@ -116,6 +119,7 @@ services:
       - SANDBOX_APPARMOR_PROFILE=${SANDBOX_APPARMOR_PROFILE:-}
       - SANDBOX_CONTAINER_WORKSPACE_ROOT=${SANDBOX_CONTAINER_WORKSPACE_ROOT:-/repos}
       - SANDBOX_HOST_WORKSPACE_ROOT=${SANDBOX_HOST_WORKSPACE_ROOT:-}
+      - SANDBOX_CONTROL_NETWORK=${SANDBOX_CONTROL_NETWORK:-vibecode-sandbox-control}
       - REDIS_URL=redis://redis:6379
     # Optional GitHub App private key: set
     # GITHUB_APP_PRIVATE_KEY=file:/run/secrets/github-app.pem and mount the file:
@@ -125,6 +129,7 @@ services:
       - vibecode_repos:/repos
     networks:
       - default
+      - sandbox-control
     depends_on:
       docker-proxy:
         condition: service_healthy
@@ -237,11 +242,21 @@ networks:
   default:
     driver: bridge
     labels: *ci-labels
+  # Dedicated control plane for the restricted Docker socket proxy. Pool
+  # agents join it only when SANDBOX_MODE=docker.
+  sandbox-control:
+    name: ${SANDBOX_CONTROL_NETWORK:-vibecode-sandbox-control}
+    driver: bridge
+    internal: true
+    labels: *ci-labels
 
 volumes:
   postgres_data:
     labels: *ci-labels
   uploads_data:
     labels: *ci-labels
+  # Fixed name: PoolManager must inspect the same volume the API binds at
+  # /repos. Compose would otherwise prefix it with the project name.
   vibecode_repos:
+    name: vibecode_repos
     labels: *ci-labels

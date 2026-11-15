@@ -8,6 +8,8 @@ const AGENT_IMAGE = process.env.AGENT_IMAGE || 'vibecode-agent';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:3001';
 const IDLE_TIMEOUT_MS = parseInt(process.env.AGENT_IDLE_TIMEOUT_MS) || 300000;
 const CONTAINER_NETWORK = process.env.CONTAINER_NETWORK || 'vibecode_default';
+const SANDBOX_CONTROL_NETWORK = process.env.SANDBOX_CONTROL_NETWORK
+  || 'vibecode-sandbox-control';
 const REPO_VOLUME = process.env.REPO_VOLUME || 'vibecode_repos';
 const REPO_MOUNT = '/repos';
 let _maxPoolSize = parseInt(process.env.MAX_POOL_SIZE) || 50;
@@ -71,10 +73,16 @@ function agentDockerHost() {
   if (url.startsWith('tcp://')) {
     return url;
   }
-  if (url.startsWith('/')) {
-    return `unix://${url}`;
-  }
+  // A unix socket in the API container is not mounted into pool agents. Do
+  // not hand them an unreachable address; Docker mode requires an explicit
+  // AGENT_DOCKER_HOST (normally the socket proxy) in that setup.
   return '';
+}
+
+function dockerSandboxRequested() {
+  const mode = String(process.env.SANDBOX_MODE || '').trim().toLowerCase();
+  const requireSandbox = String(process.env.SANDBOX_REQUIRE || '').trim().toLowerCase();
+  return mode === 'docker' || requireSandbox === 'true' || requireSandbox === '1';
 }
 
 function setMaxPoolSize(size) {
@@ -155,7 +163,19 @@ class PoolManager {
       return null;
     }
     try {
-      const info = await this.docker.getVolume(REPO_VOLUME).inspect();
+      let info;
+      try {
+        info = await this.docker.getVolume(REPO_VOLUME).inspect();
+      } catch (err) {
+        // A fresh host has no volume until the agent bind creates it. Create
+        // the named volume first so the inspected mountpoint is the same one
+        // the agent will bind, rather than an empty unprefixed volume.
+        if (err.statusCode !== 404 || typeof this.docker.createVolume !== 'function') {
+          throw err;
+        }
+        await this.docker.createVolume({ Name: REPO_VOLUME });
+        info = await this.docker.getVolume(REPO_VOLUME).inspect();
+      }
       const mountpoint = info?.Mountpoint || info?.mountpoint;
       if (mountpoint && mountpoint.startsWith('/')) {
         return mountpoint;
@@ -165,6 +185,40 @@ class PoolManager {
         `Could not resolve repo volume ${REPO_VOLUME} for sandbox mounts: ${err.message}`);
     }
     return null;
+  }
+
+  /**
+   * The control network is the only path from a Docker-mode pool agent to the
+   * socket proxy. Host-mode agents stay on the normal network and never
+   * receive DOCKER_HOST, so repo code cannot reach the daemon.
+   */
+  async _ensureSandboxControlNetwork() {
+    if (!this.docker || typeof this.docker.getNetwork !== 'function') {
+      throw new Error('Docker daemon is required for SANDBOX_MODE=docker');
+    }
+    try {
+      await this.docker.getNetwork(SANDBOX_CONTROL_NETWORK).inspect();
+      return;
+    } catch (err) {
+      if (err.statusCode !== 404) {
+        throw err;
+      }
+    }
+    try {
+      await this.docker.createNetwork({
+        Name: SANDBOX_CONTROL_NETWORK,
+        Driver: 'bridge',
+        Internal: true,
+        CheckDuplicate: true,
+      });
+    } catch (err) {
+      // A concurrent request may have created it; verify before failing.
+      try {
+        await this.docker.getNetwork(SANDBOX_CONTROL_NETWORK).inspect();
+      } catch {
+        throw err;
+      }
+    }
   }
 
   async resolveProviderConfig(providerId) {
@@ -276,6 +330,30 @@ class PoolManager {
       providerConfig = await this.autoSelectProvider();
     }
 
+    // Resolve Docker sandbox prerequisites before creating a DB agent or a
+    // container. A Docker-mode agent without a host-visible workspace would
+    // silently bind an empty directory, so fail the request instead.
+    const dockerSandbox = dockerSandboxRequested();
+    let sandboxDockerHost = '';
+    let sandboxHostWorkspaceRoot = null;
+    if (dockerSandbox) {
+      sandboxDockerHost = agentDockerHost();
+      if (!sandboxDockerHost) {
+        throw new Error(
+          'SANDBOX_MODE=docker requires AGENT_DOCKER_HOST pointing at a '
+          + 'reachable socket proxy; the API unix socket is not available to '
+          + 'pool agents');
+      }
+      sandboxHostWorkspaceRoot = await this._sandboxHostWorkspaceRoot();
+      if (!sandboxHostWorkspaceRoot) {
+        throw new Error(
+          `SANDBOX_MODE=docker requires a host-visible repo workspace for `
+          + `volume ${REPO_VOLUME}; set SANDBOX_HOST_WORKSPACE_ROOT or make `
+          + 'REPO_VOLUME a host path');
+      }
+      await this._ensureSandboxControlNetwork();
+    }
+
     // Create a DB agent record so heartbeat/auth flow works the same as manual
     // agents. Own the agent by the project owner so project-scoped credential
     // and repo endpoints authorize it correctly.
@@ -352,24 +430,12 @@ class PoolManager {
       }
     }
 
-    const dockerHost = agentDockerHost();
-    if (dockerHost) {
-      sandboxEnv.set('DOCKER_HOST', dockerHost);
+    if (dockerSandbox) {
+      sandboxEnv.set('DOCKER_HOST', sandboxDockerHost);
+      sandboxEnv.set('SANDBOX_HOST_WORKSPACE_ROOT', sandboxHostWorkspaceRoot);
     }
     if (!sandboxEnv.has('SANDBOX_CONTAINER_WORKSPACE_ROOT')) {
       sandboxEnv.set('SANDBOX_CONTAINER_WORKSPACE_ROOT', REPO_MOUNT);
-    }
-    const requireSandbox = sandboxEnv.get('SANDBOX_REQUIRE');
-    if (sandboxEnv.get('SANDBOX_MODE') === 'docker'
-        || requireSandbox === 'true' || requireSandbox === '1') {
-      const hostWorkspaceRoot = await this._sandboxHostWorkspaceRoot();
-      if (hostWorkspaceRoot) {
-        sandboxEnv.set('SANDBOX_HOST_WORKSPACE_ROOT', hostWorkspaceRoot);
-      } else {
-        console.warn(
-          `Pool sandbox workspace root is unresolved for volume ${REPO_VOLUME}; `
-          + 'set SANDBOX_HOST_WORKSPACE_ROOT or make REPO_VOLUME a host path');
-      }
     }
     for (const [name, value] of sandboxEnv) {
       env.push(`${name}=${value}`);
@@ -390,12 +456,12 @@ class PoolManager {
     }
 
     try {
-      const container = await this.docker.createContainer({
+      const createOptions = {
         Image: AGENT_IMAGE,
         name: `agent-${agentId}`,
         Env: env,
         HostConfig: {
-          Binds: [`${REPO_VOLUME}:/repos`],
+          Binds: [`${REPO_VOLUME}:${REPO_MOUNT}`],
           NetworkMode: CONTAINER_NETWORK,
           AutoRemove: true,
           Memory: 2 * 1024 * 1024 * 1024,
@@ -405,8 +471,17 @@ class PoolManager {
         AttachStderr: false,
         OpenStdin: false,
         StdinOnce: false,
-      });
+      };
+      if (dockerSandbox) {
+        createOptions.NetworkingConfig = {
+          EndpointsConfig: {
+            [CONTAINER_NETWORK]: {},
+            [SANDBOX_CONTROL_NETWORK]: {},
+          },
+        };
+      }
 
+      const container = await this.docker.createContainer(createOptions);
       await container.start();
 
       this.pool.set(agentId, {
