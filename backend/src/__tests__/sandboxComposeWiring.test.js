@@ -27,8 +27,35 @@ describe('sandbox compose wiring', () => {
   const composeAgent = findCompose('agent/docker-compose.yml');
   const composeAgentSandbox = findCompose('agent/docker-compose.sandbox.yml');
   let root = null;
+  let rootOverride = null;
   let agentHost = null;
   let agentSandbox = null;
+
+  const deploymentEnvNames = [
+    'DOCKER_HOST',
+    'REPO_VOLUME',
+    'BACKEND_URL',
+    'VIBECODE_NETWORK',
+    'SANDBOX_CONTROL_NETWORK',
+    'SANDBOX_MODE',
+    'SANDBOX_HOST_WORKSPACE_ROOT',
+    'AGENT_DOCKER_HOST',
+    'REPO_HOST_PATH',
+    'COMPOSE_PROJECT_NAME',
+    'ROOT_COMPOSE_PROJECT',
+  ];
+
+  // Render with a fixed deployment environment so a developer shell cannot
+  // change DOCKER_HOST, REPO_VOLUME, BACKEND_URL or the network names.
+  const composeEnv = (overrides = {}) => {
+    const env = { ...process.env };
+    for (const name of deploymentEnvNames) {
+      delete env[name];
+    }
+    env.COMPOSE_PROJECT_NAME = 'vibecode';
+    env.ROOT_COMPOSE_PROJECT = 'vibecode';
+    return { ...env, ...overrides };
+  };
 
   const render = (files, cwd, env) => {
     const args = ['compose'];
@@ -56,16 +83,34 @@ describe('sandbox compose wiring', () => {
       ].filter(Boolean).join(', ');
       throw new Error(`Could not locate compose files: ${missing}`);
     }
-    const env = {
-      ...process.env,
-      COMPOSE_PROJECT_NAME: 'vibecode',
-      ROOT_COMPOSE_PROJECT: 'vibecode',
+
+    // Pollute the ambient environment to prove the renderer ignores it.
+    const previous = {
+      DOCKER_HOST: process.env.DOCKER_HOST,
+      REPO_VOLUME: process.env.REPO_VOLUME,
+      BACKEND_URL: process.env.BACKEND_URL,
+      VIBECODE_NETWORK: process.env.VIBECODE_NETWORK,
     };
-    root = render([composeRoot], path.dirname(composeRoot), env);
-    agentHost = render([composeAgent], path.dirname(composeAgent), env);
-    agentSandbox = render(
-      [composeAgent, composeAgentSandbox], path.dirname(composeAgent), env);
-    const failure = [root, agentHost, agentSandbox].find((result) => result.error);
+    process.env.DOCKER_HOST = 'tcp://example.invalid:2375';
+    process.env.REPO_VOLUME = '/tmp/ambient-repo';
+    process.env.BACKEND_URL = 'http://ambient.invalid:1';
+    process.env.VIBECODE_NETWORK = 'ambient_default';
+    try {
+      root = render([composeRoot], path.dirname(composeRoot), composeEnv());
+      rootOverride = render(
+        [composeRoot], path.dirname(composeRoot), composeEnv({ REPO_VOLUME: 'alt_repos' }));
+      agentHost = render([composeAgent], path.dirname(composeAgent), composeEnv());
+      agentSandbox = render(
+        [composeAgent, composeAgentSandbox], path.dirname(composeAgent), composeEnv());
+    } finally {
+      for (const [name, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+
+    const failure = [root, rootOverride, agentHost, agentSandbox]
+      .find((result) => result.error);
     if (failure) {
       if (process.env.CI) {
         throw new Error(
@@ -77,11 +122,12 @@ describe('sandbox compose wiring', () => {
   });
 
   const rendered = (name, check) => test(name, () => {
-    if (!root || !root.config || !agentHost || !agentHost.config
+    if (!root || !root.config || !rootOverride || !rootOverride.config
+        || !agentHost || !agentHost.config
         || !agentSandbox || !agentSandbox.config) {
       return;
     }
-    check(root.config, agentHost.config, agentSandbox.config);
+    check(root.config, agentHost.config, agentSandbox.config, rootOverride.config);
   });
 
   rendered('binds the same repo volume that PoolManager inspects', (rootConfig) => {
@@ -92,7 +138,21 @@ describe('sandbox compose wiring', () => {
     const repoMount = rootConfig.services.api.volumes.find(
       (volume) => volume.target === '/repos');
     expect(repoMount).toBeDefined();
-    expect(repoMount.source).toBe(volumeName);
+    const resolved = rootConfig.volumes[repoMount.source]?.name || repoMount.source;
+    expect(resolved).toBe(volumeName);
+  });
+
+  rendered('keeps a custom REPO_VOLUME consistent with the API mount', (
+    rootConfig, hostConfig, sandboxConfig, overrideConfig
+  ) => {
+    const volumeName = overrideConfig.volumes.vibecode_repos.name;
+    expect(volumeName).toBe('alt_repos');
+    expect(overrideConfig.services.api.environment.REPO_VOLUME).toBe(volumeName);
+    const repoMount = overrideConfig.services.api.volumes.find(
+      (volume) => volume.target === '/repos');
+    expect(repoMount).toBeDefined();
+    const resolved = overrideConfig.volumes[repoMount.source]?.name || repoMount.source;
+    expect(resolved).toBe(volumeName);
   });
 
   rendered('gives pool agents a resolvable backend URL', (rootConfig, agentConfig) => {
@@ -108,11 +168,11 @@ describe('sandbox compose wiring', () => {
     expect(rootConfig.services.api.networks).toHaveProperty('default');
   });
 
-  rendered('puts the proxy and PoolManager on the same internal control network', (rootConfig) => {
+  rendered('puts the proxy and PoolManager on the same internal project network', (rootConfig) => {
     const control = rootConfig.networks['sandbox-control'];
     expect(control.name).toBe(
       rootConfig.services.api.environment.SANDBOX_CONTROL_NETWORK);
-    expect(control.name).toMatch(/-sandbox-control$/);
+    expect(control.name).toBe('vibecode-sandbox-control');
     expect(control.internal).toBe(true);
   });
 
@@ -130,6 +190,7 @@ describe('sandbox compose wiring', () => {
   rendered('keeps standalone host mode off the proxy network', (rootConfig, hostConfig) => {
     const service = hostConfig.services.agent;
     expect(service.environment.SANDBOX_MODE).toBe('host');
+    expect(service.environment.DOCKER_HOST).toBeUndefined();
     expect(service.networks).toHaveProperty('vibecode');
     expect(service.networks).not.toHaveProperty('sandbox-control');
   });

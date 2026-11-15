@@ -42,7 +42,6 @@ services:
       # the absolute host path mounted at /repos below (REPO_HOST_PATH). Do not
       # mount /var/run/docker.sock into the sandbox itself; only the supervisor
       # talks to the daemon.
-      - DOCKER_HOST=${DOCKER_HOST:-}
       - SANDBOX_MODE=${SANDBOX_MODE:-host}
       - SANDBOX_IMAGE=${SANDBOX_IMAGE:-vibecode-agent-sandbox:latest}
       - SANDBOX_PROXY_IMAGE=${SANDBOX_PROXY_IMAGE:-vibecode-sandbox-proxy:latest}

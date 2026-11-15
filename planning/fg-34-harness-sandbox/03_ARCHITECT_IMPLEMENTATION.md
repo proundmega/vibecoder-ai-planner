@@ -38,8 +38,11 @@ The control network name is project-scoped by default
 `SANDBOX_CONTROL_NETWORK`; this keeps Compose projects and CI jobs on separate
 Docker API proxies. The repo volume is explicitly named `vibecode_repos` in
 Compose so the API mount, `REPO_VOLUME`, and the inspected mountpoint are the
-same volume even with project-prefix naming. An installation that previously used a
-project-prefixed volume can copy it once into `vibecode_repos`; the old
+same volume even with project-prefix naming. A `REPO_VOLUME` override changes the actual
+Compose volume name and is resolved consistently by the API mount and
+PoolManager; in Compose it must remain a volume name, not a host path (host
+paths are supported by the non-Compose runner). An installation that previously
+used a project-prefixed volume can copy it once into `vibecode_repos`; the old
 compose prefix otherwise leaves that data unused. `PoolManager` creates a missing named volume before
 inspecting it, maps the mountpoint to `SANDBOX_HOST_WORKSPACE_ROOT`, and uses
 `/repos` as the container root; a host-path `REPO_VOLUME` is used directly and

@@ -257,10 +257,12 @@ volumes:
   uploads_data:
     labels: *ci-labels
   # Fixed name: PoolManager must inspect the same volume the API binds at
-  # /repos. Compose would otherwise prefix it with the project name. Existing
-  # installs can copy a project-prefixed volume once with:
+  # /repos. Compose would otherwise prefix it with the project name. In
+  # Compose, REPO_VOLUME must be a volume name (not a host path), and it keeps
+  # the API mount and PoolManager's agent bind consistent. Existing installs
+  # can copy a project-prefixed volume once with:
   #   docker run --rm -v <project>_vibecode_repos:/from -v vibecode_repos:/to \
   #     alpine sh -c 'cp -a /from/. /to/'
   vibecode_repos:
-    name: vibecode_repos
+    name: ${REPO_VOLUME:-vibecode_repos}
     labels: *ci-labels

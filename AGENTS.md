@@ -187,7 +187,9 @@ receive neither `DOCKER_HOST` nor that network, so repo code cannot reach the
 proxy. `AGENT_DOCKER_HOST` overrides the proxy address; if only the API's unix
 socket is configured, Docker mode fails closed and requires an explicit proxy.
 Pool agents receive `BACKEND_URL=http://api:3001` by default; the root Compose
-API sets it explicitly. `SANDBOX_REQUIRE=true` is rejected by the API unless
+API sets it explicitly. In Compose, `REPO_VOLUME` names the repo volume and
+keeps the API mount and PoolManager bind aligned; use the non-Compose runner
+for a host-path workspace. `SANDBOX_REQUIRE=true` is rejected by the API unless
 `SANDBOX_MODE=docker`, before any DB agent or container is created, and a
 failed create/attach removes the container and DB agent record.
 
