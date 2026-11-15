@@ -322,20 +322,16 @@ public final class DockerSandboxRunner implements SandboxRunner {
         Path temp = Files.createTempFile(
             parent == null ? Path.of(".") : parent, ".sandbox-download-", ".tmp");
         try {
-            DockerResult result = runDocker(
-                List.of(config.dockerBinary(), "cp",
-                    handle.id() + ":" + source, temp.toString()),
-                COPY_TIMEOUT,
-                CONTROL_OUTPUT_BYTES
-            );
-            if (result.exitCode() != 0 || result.timedOut()) {
-                throw new IOException("Could not download " + source + " to " + local + ": "
-                    + result.output());
-            }
-            if (limit > 0 && Files.size(temp) > limit) {
+            int maxBytes = limit > 0
+                ? (int) Math.min(limit, Integer.MAX_VALUE - 16_384L)
+                : 64 * 1024 * 1024;
+            byte[] content = readContainerFile(
+                handle.id(), source, maxBytes, COPY_TIMEOUT, false);
+            if (limit > 0 && content.length > limit) {
                 throw new IOException("Downloaded artifact " + source
                     + " exceeds SANDBOX_ARTIFACT_MAX_BYTES=" + limit);
             }
+            Files.write(temp, content);
             Files.move(temp, local, StandardCopyOption.REPLACE_EXISTING);
         } finally {
             Files.deleteIfExists(temp);
@@ -1384,8 +1380,19 @@ public final class DockerSandboxRunner implements SandboxRunner {
         int maxBytes,
         Duration timeout
     ) throws IOException {
-        List<String> command = List.of(
-            config.dockerBinary(), "cp", "-L", container + ":" + remotePath, "-");
+        return readContainerFile(container, remotePath, maxBytes, timeout, true);
+    }
+
+    private byte[] readContainerFile(
+        String container,
+        String remotePath,
+        int maxBytes,
+        Duration timeout,
+        boolean followLinks
+    ) throws IOException {
+        List<String> command = followLinks
+            ? List.of(config.dockerBinary(), "cp", "-L", container + ":" + remotePath, "-")
+            : List.of(config.dockerBinary(), "cp", container + ":" + remotePath, "-");
         ProcessBuilder builder = new ProcessBuilder(ProcessGroup.wrap(command));
         builder.redirectErrorStream(false);
         EnvironmentSanitizer.sanitize(builder.environment());

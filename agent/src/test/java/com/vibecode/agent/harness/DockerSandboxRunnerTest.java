@@ -535,6 +535,17 @@ class DockerSandboxRunnerTest {
             case "$1" in
               run) exit 0 ;;
               inspect) echo true ;;
+              cp)
+                case "$*" in
+                  *" -")
+                    tmp=$(mktemp -d)
+                    printf 'hello' > "$tmp/upload.txt"
+                    tar -C "$tmp" -cf - upload.txt
+                    rm -rf "$tmp"
+                    ;;
+                  *) exit 0 ;;
+                esac
+                ;;
               exec)
                 case "$*" in
                   *"/proc/"*) echo OK ;;
