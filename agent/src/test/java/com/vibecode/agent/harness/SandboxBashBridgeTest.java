@@ -327,8 +327,10 @@ class SandboxBashBridgeTest {
 
     @Test
     void returns504WhenAnInFlightDuplicateExceedsTheWaitGrace() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         when(runner.exec(any(), any())).thenAnswer(invocation -> {
+            started.countDown();
             release.await(5, TimeUnit.SECONDS);
             return new ExecResult("command", 0, "ok", false, false);
         });
@@ -354,7 +356,7 @@ class SandboxBashBridgeTest {
                         throw new RuntimeException(e);
                     }
                 }, executor);
-            Thread.sleep(100);
+            assertTrue(started.await(5, TimeUnit.SECONDS));
             CompletableFuture<HttpResponse<String>> second = CompletableFuture.supplyAsync(
                 () -> {
                     try {
@@ -371,6 +373,61 @@ class SandboxBashBridgeTest {
             executor.shutdownNow();
             impatient.close();
         }
+    }
+
+    @Test
+    void toolRetryUsesTheBridgeCacheAfterALostResponse() throws Exception {
+        Path dir = Files.createDirectories(tempDir.resolve("tool-bridge-retry"));
+        Files.writeString(dir.resolve("tool.mjs"), OpenCodeClient.sandboxToolSource());
+        Path plugin = Files.createDirectories(
+            dir.resolve("node_modules/@opencode-ai/plugin"));
+        Files.writeString(plugin.resolve("package.json"),
+            "{\"type\":\"module\",\"exports\":\"./index.js\"}");
+        Files.writeString(plugin.resolve("index.js"), """
+            const schema = () => ({
+              describe: () => schema(),
+              int: () => schema(),
+              positive: () => schema(),
+              optional: () => schema(),
+            });
+            export const tool = (definition) => definition;
+            tool.schema = { string: schema, number: schema };
+            """);
+        Path harness = dir.resolve("run.mjs");
+        Files.writeString(harness, """
+            const { default: tool } = await import("./tool.mjs");
+            const realFetch = globalThis.fetch;
+            let calls = 0;
+            const ids = [];
+            globalThis.fetch = async (url, options) => {
+              calls++;
+              ids.push(JSON.parse(options.body).requestId);
+              const response = await realFetch(url, options);
+              if (calls === 1) {
+                throw new Error("response lost");
+              }
+              return response;
+            };
+            const result = await tool.execute(
+              { command: "echo hi", timeoutSeconds: 5 },
+              { directory: "/workspace" });
+            console.log(JSON.stringify({ calls, ids, result }));
+            """);
+
+        ProcessBuilder builder = new ProcessBuilder("node", harness.toString())
+            .redirectErrorStream(true);
+        builder.environment().put("VIBECODE_SANDBOX_BRIDGE_URL", bridge.baseUrl());
+        builder.environment().put("VIBECODE_SANDBOX_BRIDGE_TOKEN", bridge.token());
+        Process process = builder.start();
+        String output = new String(process.getInputStream().readAllBytes(),
+            StandardCharsets.UTF_8);
+        assertEquals(0, process.waitFor(), output);
+        JsonNode json = objectMapper.readTree(output.trim());
+        assertEquals(2, json.path("calls").asInt(), output);
+        assertEquals(json.path("ids").get(0).asText(),
+            json.path("ids").get(1).asText(), output);
+        assertEquals("ok", json.path("result").asText(), output);
+        verify(runner, times(1)).exec(any(), any());
     }
 
     private HttpResponse<String> exec(SandboxBashBridge target, Map<String, ?> body)

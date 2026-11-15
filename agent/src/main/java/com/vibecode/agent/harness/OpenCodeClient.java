@@ -960,7 +960,10 @@ public final class OpenCodeClient implements HarnessClient {
                     if (response.ok) {
                       const body = JSON.parse(text)
                       if (body.timedOut) {
-                        throw new Error("sandbox command timed out\\n" + (body.output || ""))
+                        const timedOut = new Error(
+                          "sandbox command timed out\\n" + (body.output || ""))
+                        timedOut.nonRetryable = true
+                        throw timedOut
                       }
                       const output = body.output || ""
                       return body.exitCode === 0

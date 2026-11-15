@@ -332,6 +332,91 @@ class OpenCodeClientTest {
     }
 
     @Test
+    void generatedSandboxToolDoesNotRetryTimedOutResults() throws Exception {
+        JsonNode json = runToolFetchStub("timeout");
+        assertEquals(1, json.path("calls").asInt(), json.toString());
+        assertTrue(json.path("error").asText().contains("timed out"), json.toString());
+    }
+
+    @Test
+    void generatedSandboxToolDoesNotRetryNonRetryableStatuses() throws Exception {
+        JsonNode json = runToolFetchStub("403");
+        assertEquals(1, json.path("calls").asInt(), json.toString());
+        assertTrue(json.path("error").asText().contains("rejected"), json.toString());
+    }
+
+    @Test
+    void generatedSandboxToolStopsAfterAllAttemptsFail() throws Exception {
+        JsonNode json = runToolFetchStub("network");
+        assertEquals(3, json.path("calls").asInt(), json.toString());
+        assertTrue(json.path("error").asText().contains("network down"), json.toString());
+    }
+
+    private JsonNode runToolFetchStub(String mode) throws Exception {
+        Path dir = Files.createDirectories(tempDir.resolve("stub-" + mode));
+        Files.writeString(dir.resolve("tool.mjs"), OpenCodeClient.sandboxToolSource());
+        Path plugin = Files.createDirectories(
+            dir.resolve("node_modules/@opencode-ai/plugin"));
+        Files.writeString(plugin.resolve("package.json"),
+            "{\"type\":\"module\",\"exports\":\"./index.js\"}");
+        Files.writeString(plugin.resolve("index.js"), """
+            const schema = () => ({
+              describe: () => schema(),
+              int: () => schema(),
+              positive: () => schema(),
+              optional: () => schema(),
+            });
+            export const tool = (definition) => definition;
+            tool.schema = { string: schema, number: schema };
+            """);
+        Path harness = dir.resolve("run.mjs");
+        Files.writeString(harness, """
+            process.env.VIBECODE_SANDBOX_BRIDGE_URL = "http://127.0.0.1:9";
+            process.env.VIBECODE_SANDBOX_BRIDGE_TOKEN = "test-token";
+            const { default: tool } = await import("./tool.mjs");
+            let calls = 0;
+            globalThis.fetch = async () => {
+              calls++;
+              const mode = process.env.STUB_MODE;
+              if (mode === "timeout") {
+                return {
+                  ok: true,
+                  status: 200,
+                  text: async () => JSON.stringify({
+                    exitCode: 0,
+                    output: "slow",
+                    timedOut: true,
+                    truncated: false,
+                  }),
+                };
+              }
+              if (mode === "403") {
+                return { ok: false, status: 403, text: async () => "denied" };
+              }
+              throw new Error("network down");
+            };
+            let error = null;
+            try {
+              await tool.execute(
+                { command: "echo hi", timeoutSeconds: 5 },
+                { directory: "/workspace" });
+            } catch (caught) {
+              error = caught.message;
+            }
+            console.log(JSON.stringify({ calls, error }));
+            """);
+
+        ProcessBuilder builder = new ProcessBuilder("node", harness.toString())
+            .redirectErrorStream(true);
+        builder.environment().put("STUB_MODE", mode);
+        Process process = builder.start();
+        String output = new String(process.getInputStream().readAllBytes(),
+            java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals(0, process.waitFor(), output);
+        return new ObjectMapper().readTree(output.trim());
+    }
+
+    @Test
     void generatedSandboxToolIsSyntacticallyValid() throws Exception {
         Path home = tempDir.resolve("syntax-home");
         Path tool = OpenCodeClient.writeSandboxTool(home);
