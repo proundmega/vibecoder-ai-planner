@@ -53,10 +53,13 @@ supervisor agent talks to the restricted proxy. `SANDBOX_MODE` remains `host`
 by default, so Docker mode is opt-in. The proxy can manage
 containers/networks/volumes beyond one pool agent's own resources, so the
 daemon/proxy is a deployment trust boundary, not a multi-tenant boundary; pool
-replacement cleanup is D30. A standalone `agent/docker-compose.yml` run needs a
-host bind at `/repos` (`REPO_HOST_PATH`) writable by the agent user
-(uid 100/gid 101), `VIBECODE_NETWORK` set to the root project's default network,
-`DOCKER_HOST`, and a matching absolute `SANDBOX_HOST_WORKSPACE_ROOT`.
+replacement cleanup is D30. The standalone `agent/docker-compose.yml` stays on
+the API network in host mode and needs a host bind at `/repos`
+(`REPO_HOST_PATH`) writable by the agent user (uid 100/gid 101), plus
+`ROOT_COMPOSE_PROJECT` (or the explicit `VIBECODE_NETWORK`/
+`SANDBOX_CONTROL_NETWORK`) matching the root project. Docker mode uses the
+`agent/docker-compose.sandbox.yml` overlay, which adds the restricted proxy
+network and `DOCKER_HOST`; host mode never joins that network.
 
 OpenCode still runs in the supervisor in slice 1. Only supervisor-driven
 install/verification commands go through the sandbox; a prompt-injected

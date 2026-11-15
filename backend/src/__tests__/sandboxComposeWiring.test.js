@@ -5,8 +5,9 @@ const path = require('path');
 /**
  * Compose wiring is the only place that knows the real volume/network names
  * after project-prefix interpolation. These assertions run the same renderer
- * Docker uses so a fresh host cannot bind an empty, differently named volume
- * and the pool agent receives a resolvable backend URL.
+ * Docker uses so a fresh host cannot bind an empty, differently named volume,
+ * the pool agent receives a resolvable backend URL, and standalone host mode
+ * cannot reach the Docker proxy by default.
  */
 describe('sandbox compose wiring', () => {
   const findCompose = (relative) => {
@@ -24,15 +25,18 @@ describe('sandbox compose wiring', () => {
   };
   const composeRoot = findCompose('docker-compose.yml');
   const composeAgent = findCompose('agent/docker-compose.yml');
+  const composeAgentSandbox = findCompose('agent/docker-compose.sandbox.yml');
   let root = null;
-  let agent = null;
+  let agentHost = null;
+  let agentSandbox = null;
 
-  const render = (file) => {
-    const result = spawnSync(
-      'docker',
-      ['compose', '-f', file, 'config', '--format', 'json'],
-      { cwd: path.dirname(file), encoding: 'utf8' }
-    );
+  const render = (files, cwd, env) => {
+    const args = ['compose'];
+    for (const file of files) {
+      args.push('-f', file);
+    }
+    args.push('config', '--format', 'json');
+    const result = spawnSync('docker', args, { cwd, env, encoding: 'utf8' });
     if (result.error || result.status !== 0) {
       return { error: result.error || new Error(result.stderr || 'compose failed') };
     }
@@ -44,32 +48,40 @@ describe('sandbox compose wiring', () => {
   };
 
   beforeAll(() => {
-    if (!composeRoot || !composeAgent) {
+    if (!composeRoot || !composeAgent || !composeAgentSandbox) {
       const missing = [
         !composeRoot && 'docker-compose.yml',
         !composeAgent && 'agent/docker-compose.yml',
+        !composeAgentSandbox && 'agent/docker-compose.sandbox.yml',
       ].filter(Boolean).join(', ');
       throw new Error(`Could not locate compose files: ${missing}`);
     }
-    root = render(composeRoot);
-    agent = render(composeAgent);
-    if (root.error || agent.error) {
-      const detail = [
-        root.error && `root: ${root.error.message}`,
-        agent.error && `agent: ${agent.error.message}`,
-      ].filter(Boolean).join('; ');
+    const env = {
+      ...process.env,
+      COMPOSE_PROJECT_NAME: 'vibecode',
+      ROOT_COMPOSE_PROJECT: 'vibecode',
+    };
+    root = render([composeRoot], path.dirname(composeRoot), env);
+    agentHost = render([composeAgent], path.dirname(composeAgent), env);
+    agentSandbox = render(
+      [composeAgent, composeAgentSandbox], path.dirname(composeAgent), env);
+    const failure = [root, agentHost, agentSandbox].find((result) => result.error);
+    if (failure) {
       if (process.env.CI) {
-        throw new Error(`docker compose is required in CI for sandbox wiring: ${detail}`);
+        throw new Error(
+          `docker compose is required in CI for sandbox wiring: ${failure.error.message}`);
       }
-      console.warn(`docker compose unavailable locally; skipping wiring assertions: ${detail}`);
+      console.warn(
+        `docker compose unavailable locally; skipping wiring assertions: ${failure.error.message}`);
     }
   });
 
   const rendered = (name, check) => test(name, () => {
-    if (!root || !root.config || !agent || !agent.config) {
+    if (!root || !root.config || !agentHost || !agentHost.config
+        || !agentSandbox || !agentSandbox.config) {
       return;
     }
-    check(root.config, agent.config);
+    check(root.config, agentHost.config, agentSandbox.config);
   });
 
   rendered('binds the same repo volume that PoolManager inspects', (rootConfig) => {
@@ -115,15 +127,33 @@ describe('sandbox compose wiring', () => {
     }
   });
 
-  rendered('renders a standalone agent with a host-visible repo bind', (rootConfig, agentConfig) => {
-    const service = agentConfig.services.agent;
-    expect(service.environment.REPO_CLONE_DIR).toBe('/repos');
+  rendered('keeps standalone host mode off the proxy network', (rootConfig, hostConfig) => {
+    const service = hostConfig.services.agent;
     expect(service.environment.SANDBOX_MODE).toBe('host');
+    expect(service.networks).toHaveProperty('vibecode');
+    expect(service.networks).not.toHaveProperty('sandbox-control');
+  });
+
+  rendered('adds the proxy network only through the Docker-mode overlay', (
+    rootConfig, hostConfig, sandboxConfig
+  ) => {
+    const service = sandboxConfig.services.agent;
+    expect(service.environment.SANDBOX_MODE).toBe('docker');
+    expect(service.environment.DOCKER_HOST).toBe('tcp://docker-proxy:2375');
     expect(service.networks).toHaveProperty('vibecode');
     expect(service.networks).toHaveProperty('sandbox-control');
 
     const repoMount = service.volumes.find((volume) => volume.target === '/repos');
     expect(repoMount).toBeDefined();
     expect(repoMount.type).toBe('bind');
+  });
+
+  rendered('matches the standalone networks to the root project', (
+    rootConfig, hostConfig, sandboxConfig
+  ) => {
+    expect(sandboxConfig.networks['sandbox-control'].name).toBe(
+      rootConfig.networks['sandbox-control'].name);
+    expect(hostConfig.networks.vibecode.name).toBe(
+      rootConfig.networks.default.name);
   });
 });

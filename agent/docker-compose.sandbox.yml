@@ -1,0 +1,21 @@
+# Docker-mode overlay for the standalone agent Compose file.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.sandbox.yml up
+#
+# The base file keeps host mode on the API network only. This overlay adds the
+# restricted socket-proxy network and enables Docker sandboxing. Set
+# SANDBOX_HOST_WORKSPACE_ROOT to the absolute host path mounted at /repos.
+services:
+  agent:
+    environment:
+      - SANDBOX_MODE=docker
+      - DOCKER_HOST=${DOCKER_HOST:-tcp://docker-proxy:2375}
+    networks:
+      - vibecode
+      - sandbox-control
+
+networks:
+  # Match the root project's project-scoped control network.
+  sandbox-control:
+    external: true
+    name: ${SANDBOX_CONTROL_NETWORK:-${ROOT_COMPOSE_PROJECT:-vibecode}-sandbox-control}

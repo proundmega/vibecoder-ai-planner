@@ -191,11 +191,13 @@ API sets it explicitly. `SANDBOX_REQUIRE=true` is rejected by the API unless
 `SANDBOX_MODE=docker`, before any DB agent or container is created, and a
 failed create/attach removes the container and DB agent record.
 
-The standalone agent Compose file needs `VIBECODE_NETWORK` set to the root
-project's default network (for example `vibecoder-ai-planner_default`),
-`DOCKER_HOST`, a host bind at `/repos` (`REPO_HOST_PATH`) writable by the agent
-user (uid 100, gid 101), and `SANDBOX_HOST_WORKSPACE_ROOT` set to the same
-absolute host path. OpenCode still runs in the
+The standalone agent Compose file keeps host mode on the API network only. Set
+`ROOT_COMPOSE_PROJECT` (or `VIBECODE_NETWORK`/`SANDBOX_CONTROL_NETWORK`) to the
+root project's actual networks. Docker mode also uses
+`-f agent/docker-compose.sandbox.yml`, which adds the restricted proxy network
+and sets `DOCKER_HOST`; host mode never joins that network. The run also needs
+a host bind at `/repos` (`REPO_HOST_PATH`) writable by the agent user (uid 100,
+gid 101) and `SANDBOX_HOST_WORKSPACE_ROOT` set to the same absolute host path. OpenCode still runs in the
 supervisor, but the built-in `bash`/`shell` tool is disabled and the
 `sandbox_bash` tool forwards commands to the sandbox bridge. The sandbox has
 no direct egress or external DNS; `SANDBOX_NETWORK=allowlist` routes traffic

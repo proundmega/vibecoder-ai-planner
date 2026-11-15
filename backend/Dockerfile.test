@@ -20,4 +20,5 @@ COPY docker-compose.yml ./compose/docker-compose.yml
 COPY docker-compose.test.yml ./compose/docker-compose.test.yml
 COPY docker-compose.override.yml ./compose/docker-compose.override.yml
 COPY agent/docker-compose.yml ./compose/agent/docker-compose.yml
+COPY agent/docker-compose.sandbox.yml ./compose/agent/docker-compose.sandbox.yml
 EXPOSE 3001
