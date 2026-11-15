@@ -2,6 +2,8 @@ package com.vibecode.agent;
 
 import com.vibecode.agent.config.AgentConfig;
 import com.vibecode.agent.harness.HarnessTicketProcessor;
+import com.vibecode.agent.harness.ProviderSettings;
+import com.vibecode.agent.harness.RedactionRegistry;
 import com.vibecode.agent.service.ApiService;
 import com.vibecode.agent.service.GitHubService;
 import com.vibecode.agent.service.GitHubTokenProvider;
@@ -14,6 +16,7 @@ import java.lang.reflect.Field;
 import java.util.Map;
 import java.util.function.Function;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -39,6 +42,29 @@ class AgentAppWiringTest {
         Function<String, WorkspaceManager> factory =
             (Function<String, WorkspaceManager>) field(worker, "workspaceFactory");
         return factory.apply("wiring-test");
+    }
+
+    @Test
+    void registersProviderAndGitHubSecretsForRedaction() {
+        RedactionRegistry.reset();
+        AgentConfig config = new AgentConfig();
+        ApiService apiService = new ApiService(config);
+        GitHubTokenProvider provider = new GitHubTokenProvider(
+            force -> Map.of("token", "custom-github-token-123456", "mode", "app"));
+        try {
+            AgentApp.createGitHubWiring(
+                config, apiService,
+                new ProviderSettings("generic", "custom-provider-key-123456",
+                    null, "model", 1024),
+                null, provider, "custom-github-token-123456", config.getHarnessConfig());
+
+            assertEquals("[REDACTED]",
+                RedactionRegistry.redact("custom-provider-key-123456"));
+            assertEquals("[REDACTED]",
+                RedactionRegistry.redact("custom-github-token-123456"));
+        } finally {
+            RedactionRegistry.reset();
+        }
     }
 
     @Test

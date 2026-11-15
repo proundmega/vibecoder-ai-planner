@@ -232,7 +232,7 @@ Neither can be fixed by parsing more of the unmodified TLS stream. The chosen re
 
 - Compute the diff inside the sandbox but validate it outside against the expected branch/base.
 - Copy test output and logs through a bounded artifact directory.
-- Redact configured secrets and high-confidence credential formats before persistence (branch names, ticket messages, run errors, commit/PR titles and PR bodies); scope is the OpenCode supervisor path (legacy processors and external log shipping are D19). Treat redaction as a storage guard, not a sandbox boundary.
+- Redact configured secrets and high-confidence credential formats before persistence (branch names, ticket messages, run errors, commit/PR titles and PR bodies). A process-wide registry receives the resolved provider key and runtime GitHub App tokens, so the legacy processors, PR/commit clients and the logback encoder share the same known-secret set; the pattern rules remain the fallback. Treat redaction as a storage guard, not a sandbox boundary.
 - Verify no symlinks or paths escape the workspace.
 - Destroy the sandbox even on failure; retain only artifacts.
 

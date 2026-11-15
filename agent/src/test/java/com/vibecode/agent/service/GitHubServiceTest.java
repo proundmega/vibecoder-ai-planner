@@ -1,6 +1,7 @@
 package com.vibecode.agent.service;
 
 import com.sun.net.httpserver.HttpServer;
+import com.vibecode.agent.harness.RedactionRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -69,6 +70,7 @@ class GitHubServiceTest {
         if (server != null) {
             server.stop(0);
         }
+        RedactionRegistry.reset();
     }
 
     @Test
@@ -195,7 +197,8 @@ class GitHubServiceTest {
     @Test
     void redactsCredentialsInPullRequestTitleAndBody() throws Exception {
         postResponseBody = "{\"html_url\":\"https://github.com/owner/repo/pull/12\"}";
-        String token = "ghp_123456789012345678901234567890123456";
+        String token = "custom-provider-key-123456";
+        RedactionRegistry.register(token);
 
         service.createPullRequest("title " + token, "body " + token, "feature", "main");
 

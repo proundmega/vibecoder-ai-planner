@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.LoggingEvent;
+import com.vibecode.agent.harness.RedactionRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -22,7 +23,8 @@ class RedactingPatternLayoutEncoderTest {
         encoder.setPattern("%msg");
         encoder.start();
         try {
-            String token = "ghp_123456789012345678901234567890123456";
+            String token = "custom-provider-key-123456";
+            RedactionRegistry.register(token);
             LoggingEvent event = new LoggingEvent(
                 "test", logger, Level.INFO, "token=" + token, null, null);
 
@@ -32,6 +34,7 @@ class RedactingPatternLayoutEncoderTest {
             assertTrue(output.contains("[REDACTED]"), output);
         } finally {
             encoder.stop();
+            RedactionRegistry.reset();
         }
     }
 }

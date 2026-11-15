@@ -2,11 +2,10 @@ package com.vibecode.agent.config;
 
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import com.vibecode.agent.harness.SecretRedactor;
+import com.vibecode.agent.harness.RedactionRegistry;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 
 /**
  * Logback encoder that redacts high-confidence credential patterns and the
@@ -16,11 +15,6 @@ import java.util.Arrays;
  */
 public class RedactingPatternLayoutEncoder extends PatternLayoutEncoder {
 
-    private static final SecretRedactor REDACTOR = new SecretRedactor(Arrays.asList(
-        System.getenv("AGENT_API_KEY"),
-        System.getenv("AI_API_KEY"),
-        System.getenv("GITHUB_TOKEN")));
-
     @Override
     public byte[] encode(ILoggingEvent event) {
         byte[] encoded = super.encode(event);
@@ -28,7 +22,7 @@ public class RedactingPatternLayoutEncoder extends PatternLayoutEncoder {
             return encoded;
         }
         Charset charset = getCharset() == null ? StandardCharsets.UTF_8 : getCharset();
-        String redacted = REDACTOR.redact(new String(encoded, charset));
+        String redacted = RedactionRegistry.redact(new String(encoded, charset));
         return redacted.getBytes(charset);
     }
 }

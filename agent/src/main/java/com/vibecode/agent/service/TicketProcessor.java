@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vibecode.agent.config.AgentConfig;
 import com.vibecode.agent.harness.PlanningDocFetcher;
+import com.vibecode.agent.harness.RedactionRegistry;
 import com.vibecode.agent.model.FileOperation;
 import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
@@ -111,7 +112,8 @@ public class TicketProcessor implements TicketWorker {
             log.info("Fetched {} planning documents", planningDocs.size());
 
             // Step 3: Clone repo first (needed for file context)
-            String branchName = config.getGitHubBranchName(pickedUp.getId(), pickedUp.getTitle());
+            String redactedTitle = RedactionRegistry.redact(pickedUp.getTitle());
+            String branchName = config.getGitHubBranchName(pickedUp.getId(), redactedTitle);
             if (!config.isDryRun()) {
                 workspaceManager.cloneRepo(
                     "https://github.com/" + config.getRepoOwner() + "/" + config.getRepoName() + ".git",
@@ -156,7 +158,7 @@ public class TicketProcessor implements TicketWorker {
             // Step 7: Commit and push (if not dry run)
             String commitSha = null;
             if (!config.isDryRun() && !fileOperations.isEmpty()) {
-                String commitMessage = "feat: " + pickedUp.getTitle();
+                String commitMessage = "feat: " + redactedTitle;
                 commitSha = workspaceManager.commitAndPush(commitMessage, branchName);
                 log.info("Committed and pushed: {}", commitSha);
             } else {
@@ -166,7 +168,7 @@ public class TicketProcessor implements TicketWorker {
             // Step 9: Create PR (if not dry run)
             String prUrl = null;
             if (!config.isDryRun()) {
-                String prTitle = "feat: " + pickedUp.getTitle();
+                String prTitle = "feat: " + redactedTitle;
                 String prBody = buildPrBody(pickedUp, branchName, commitSha, fileOperations);
                 prUrl = gitHubService.createPullRequest(prTitle, prBody, branchName, "main");
                 log.info("Created PR: {}", prUrl);
