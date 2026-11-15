@@ -936,30 +936,59 @@ public final class OpenCodeClient implements HarnessClient {
                 if (!url || !token) {
                   throw new Error("sandbox bridge is not configured")
                 }
-                const response = await fetch(url + "/exec", {
-                  method: "POST",
-                  headers: {
-                    "content-type": "application/json",
-                    "x-sandbox-token": token,
-                  },
-                  body: JSON.stringify({
-                    command: args.command,
-                    cwd: context.directory,
-                    timeoutSeconds: args.timeout,
-                  }),
-                })
-                const text = await response.text()
-                if (!response.ok) {
-                  throw new Error("sandbox command rejected: " + text)
+                const requestId = typeof globalThis.crypto?.randomUUID === "function"
+                  ? globalThis.crypto.randomUUID()
+                  : "req-" + Date.now() + "-" + Math.random().toString(16).slice(2)
+                const maxAttempts = 3
+                let lastError = null
+                for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                  try {
+                    const response = await fetch(url + "/exec", {
+                      method: "POST",
+                      headers: {
+                        "content-type": "application/json",
+                        "x-sandbox-token": token,
+                      },
+                      body: JSON.stringify({
+                        requestId,
+                        command: args.command,
+                        cwd: context.directory,
+                        timeoutSeconds: args.timeout,
+                      }),
+                    })
+                    const text = await response.text()
+                    if (response.ok) {
+                      const body = JSON.parse(text)
+                      if (body.timedOut) {
+                        const timedOut = new Error(
+                          "sandbox command timed out\\n" + (body.output || ""))
+                        timedOut.nonRetryable = true
+                        throw timedOut
+                      }
+                      const output = body.output || ""
+                      return body.exitCode === 0
+                        ? output
+                        : output + "\\n\\n(exit code " + body.exitCode + ")"
+                    }
+                    if (response.status === 502 || response.status === 503
+                        || response.status === 504) {
+                      lastError = new Error("sandbox bridge unavailable: " + text)
+                    } else {
+                      const rejected = new Error("sandbox command rejected: " + text)
+                      rejected.nonRetryable = true
+                      throw rejected
+                    }
+                  } catch (error) {
+                    if (error && error.nonRetryable) {
+                      throw error
+                    }
+                    lastError = error
+                  }
+                  if (attempt < maxAttempts) {
+                    await new Promise((resolve) => setTimeout(resolve, 250 * attempt))
+                  }
                 }
-                const body = JSON.parse(text)
-                if (body.timedOut) {
-                  throw new Error("sandbox command timed out\\n" + (body.output || ""))
-                }
-                const output = body.output || ""
-                return body.exitCode === 0
-                  ? output
-                  : output + "\\n\\n(exit code " + body.exitCode + ")"
+                throw lastError
               },
             })
             """;

@@ -14,11 +14,17 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Loopback control channel that lets the OpenCode bash tool run commands in the
@@ -33,13 +39,28 @@ final class SandboxBashBridge implements AutoCloseable {
 
     static final int MAX_BODY_BYTES = 256 * 1024;
     private static final String TOKEN_HEADER = "X-Sandbox-Token";
+    private static final int CACHE_MAX_ENTRIES = 64;
+    private static final long CACHE_TTL_MILLIS = 10 * 60 * 1000L;
+    private static final int MAX_REQUEST_ID_LENGTH = 128;
 
     private final SandboxRunner runner;
     private final SandboxHandle handle;
     private final List<Path> workspaceAliases;
     private final Duration maxTimeout;
+    private final long cacheTtlMillis;
+    private final long cacheWaitGraceMillis;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String token = randomHex(32);
+
+    private final Object cacheLock = new Object();
+    private final Map<String, Flight> inFlight = new HashMap<>();
+    private final LinkedHashMap<String, Completed> completed =
+        new LinkedHashMap<>(16, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, Completed> eldest) {
+                return size() > CACHE_MAX_ENTRIES;
+            }
+        };
 
     private HttpServer server;
     private ExecutorService executor;
@@ -50,6 +71,17 @@ final class SandboxBashBridge implements AutoCloseable {
         SandboxHandle handle,
         Path supervisorWorkspace,
         Duration maxTimeout
+    ) {
+        this(runner, handle, supervisorWorkspace, maxTimeout, CACHE_TTL_MILLIS, 5_000L);
+    }
+
+    SandboxBashBridge(
+        SandboxRunner runner,
+        SandboxHandle handle,
+        Path supervisorWorkspace,
+        Duration maxTimeout,
+        long cacheTtlMillis,
+        long cacheWaitGraceMillis
     ) {
         if (runner == null) {
             throw new IllegalArgumentException("Sandbox runner is required");
@@ -69,6 +101,8 @@ final class SandboxBashBridge implements AutoCloseable {
         this.maxTimeout = maxTimeout == null || maxTimeout.isNegative() || maxTimeout.isZero()
             ? SandboxConfig.DEFAULT_EXEC_TIMEOUT
             : maxTimeout;
+        this.cacheTtlMillis = Math.max(1L, cacheTtlMillis);
+        this.cacheWaitGraceMillis = Math.max(0L, cacheWaitGraceMillis);
     }
 
     synchronized void start() throws IOException {
@@ -157,29 +191,164 @@ final class SandboxBashBridge implements AutoCloseable {
             }
 
             String rewritten = rewritePaths(command);
-            ExecResult result;
-            try {
-                result = runner.exec(handle, new ExecRequest(
-                    rewritten,
-                    cwd,
-                    requestedTimeout(root.path("timeoutSeconds")),
-                    ExecRequest.DEFAULT_MAX_OUTPUT_BYTES,
-                    Map.of()
-                ));
-            } catch (IOException e) {
-                send(exchange, 500, Map.of("error", "sandbox exec failed: " + safeMessage(e)));
+            Duration timeout = requestedTimeout(root.path("timeoutSeconds"));
+            String requestId = root.path("requestId").asText("").trim();
+            if (requestId.isEmpty()) {
+                send(exchange, execute(rewritten, cwd, timeout));
                 return;
             }
-            send(exchange, 200, Map.of(
+            if (!requestId.matches("[A-Za-z0-9._:-]{1," + MAX_REQUEST_ID_LENGTH + "}")) {
+                send(exchange, 400, Map.of("error", "invalid requestId"));
+                return;
+            }
+            String fingerprint = fingerprint(rewritten, cwd, timeout);
+            Flight flight = null;
+            boolean owner = false;
+            boolean conflict = false;
+            CachedResponse cached = null;
+            synchronized (cacheLock) {
+                purgeExpired();
+                Completed done = completed.get(requestId);
+                if (done != null) {
+                    if (!done.fingerprint.equals(fingerprint)) {
+                        conflict = true;
+                    } else {
+                        cached = done.response;
+                    }
+                } else {
+                    Flight existing = inFlight.get(requestId);
+                    if (existing != null) {
+                        if (!existing.fingerprint.equals(fingerprint)) {
+                            conflict = true;
+                        } else {
+                            flight = existing;
+                        }
+                    } else {
+                        flight = new Flight(fingerprint);
+                        inFlight.put(requestId, flight);
+                        owner = true;
+                    }
+                }
+            }
+            if (conflict) {
+                send(exchange, 409, Map.of(
+                    "error", "requestId was already used with a different request"));
+                return;
+            }
+            if (cached != null) {
+                send(exchange, cached);
+                return;
+            }
+            if (!owner) {
+                awaitCached(exchange, flight, timeout);
+                return;
+            }
+            try {
+                CachedResponse response = execute(rewritten, cwd, timeout);
+                if (response.status == 200) {
+                    long expiresAt = System.currentTimeMillis() + cacheTtlMillis;
+                    synchronized (cacheLock) {
+                        completed.put(requestId, new Completed(fingerprint, response, expiresAt));
+                    }
+                }
+                flight.future.complete(response);
+                send(exchange, response);
+            } catch (RuntimeException e) {
+                flight.future.completeExceptionally(e);
+                throw e;
+            } finally {
+                synchronized (cacheLock) {
+                    inFlight.remove(requestId, flight);
+                }
+            }
+        } catch (RuntimeException e) {
+            send(exchange, 500, Map.of("error", "sandbox exec failed: " + safeMessage(e)));
+        } finally {
+            exchange.close();
+        }
+    }
+
+    private static String fingerprint(String command, String cwd, Duration timeout) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(command.getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+            digest.update(String.valueOf(cwd).getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+            digest.update(Long.toString(timeout.toSeconds()).getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest.digest());
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    private CachedResponse execute(
+        String rewritten,
+        String cwd,
+        Duration timeout
+    ) {
+        try {
+            ExecResult result = runner.exec(handle, new ExecRequest(
+                rewritten,
+                cwd,
+                timeout,
+                ExecRequest.DEFAULT_MAX_OUTPUT_BYTES,
+                Map.of()
+            ));
+            return new CachedResponse(200, Map.of(
                 "exitCode", result.exitCode(),
                 "output", result.output(),
                 "timedOut", result.timedOut(),
                 "truncated", result.truncated()
             ));
-        } catch (RuntimeException e) {
-            send(exchange, 500, Map.of("error", "sandbox exec failed: " + safeMessage(e)));
-        } finally {
-            exchange.close();
+        } catch (IOException e) {
+            return new CachedResponse(500,
+                Map.of("error", "sandbox exec failed: " + safeMessage(e)));
+        }
+    }
+
+    private void awaitCached(HttpExchange exchange, Flight flight, Duration timeout)
+        throws IOException {
+        try {
+            CachedResponse response = flight.future.get(
+                timeout.toMillis() + cacheWaitGraceMillis, TimeUnit.MILLISECONDS);
+            send(exchange, response);
+        } catch (TimeoutException e) {
+            send(exchange, 504, Map.of("error", "duplicate request is still running"));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            send(exchange, 500, Map.of("error", "interrupted while waiting for the request"));
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            send(exchange, 500, Map.of("error", "sandbox exec failed: "
+                + (cause == null ? "unknown" : safeMessage(cause))));
+        }
+    }
+
+    private void purgeExpired() {
+        long now = System.currentTimeMillis();
+        completed.entrySet().removeIf(entry -> entry.getValue().expiresAt <= now);
+    }
+
+    private static String safeMessage(Throwable e) {
+        String message = e == null ? null : e.getMessage();
+        return message == null || message.isBlank()
+            ? (e == null ? "unknown" : e.getClass().getSimpleName())
+            : message;
+    }
+
+    private record CachedResponse(int status, Map<String, Object> body) {
+    }
+
+    private record Completed(String fingerprint, CachedResponse response, long expiresAt) {
+    }
+
+    private static final class Flight {
+        private final String fingerprint;
+        private final CompletableFuture<CachedResponse> future = new CompletableFuture<>();
+
+        private Flight(String fingerprint) {
+            this.fingerprint = fingerprint;
         }
     }
 
@@ -235,6 +404,10 @@ final class SandboxBashBridge implements AutoCloseable {
             }
         }
         return rewritten;
+    }
+
+    private void send(HttpExchange exchange, CachedResponse response) throws IOException {
+        send(exchange, response.status, response.body);
     }
 
     private void send(HttpExchange exchange, int status, Map<String, ?> body) throws IOException {
