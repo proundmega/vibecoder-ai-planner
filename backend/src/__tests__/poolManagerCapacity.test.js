@@ -44,6 +44,7 @@ describe('PoolManager max capacity (BP-61)', () => {
     mockDocker.ping.mockResolvedValue(undefined);
     mockDocker.getNetwork = jest.fn().mockReturnValue({
       inspect: jest.fn().mockResolvedValue({}),
+      connect: jest.fn().mockResolvedValue(undefined),
     });
     mockDocker.createNetwork = jest.fn().mockResolvedValue({});
     mockDocker.createVolume = jest.fn().mockResolvedValue({});
@@ -213,8 +214,8 @@ describe('PoolManager max capacity (BP-61)', () => {
       'SANDBOX_HOST_WORKSPACE_ROOT=/var/lib/docker/volumes/vibecode_repos/_data');
     expect(createOpts.Env).toContain('DOCKER_HOST=tcp://docker-proxy:2375');
     expect(pm.docker.getVolume).toHaveBeenCalledWith('vibecode_repos');
-    expect(createOpts.NetworkingConfig.EndpointsConfig).toHaveProperty(
-      'vibecode-sandbox-control');
+    const control = pm.docker.getNetwork.mock.results[0].value;
+    expect(control.connect).toHaveBeenCalledWith({ Container: 'container-sandbox' });
   });
 
   it('honours an explicit AGENT_DOCKER_HOST in Docker mode', async () => {
@@ -285,10 +286,14 @@ describe('PoolManager max capacity (BP-61)', () => {
       .mockRejectedValueOnce(Object.assign(new Error('no such volume'), { statusCode: 404 }))
       .mockResolvedValue({ Mountpoint: '/var/lib/docker/volumes/vibecode_repos/_data' });
     pm.docker.getVolume = jest.fn().mockReturnValue({ inspect });
-    pm.docker.getNetwork = jest.fn()
-      .mockReturnValueOnce({ inspect: jest.fn().mockRejectedValue(
-        Object.assign(new Error('no such network'), { statusCode: 404 })) })
-      .mockReturnValue({ inspect: jest.fn().mockResolvedValue({}) });
+    const controlNetwork = {
+      inspect: jest.fn()
+        .mockRejectedValueOnce(Object.assign(
+          new Error('no such network'), { statusCode: 404 }))
+        .mockResolvedValue({ Internal: true }),
+      connect: jest.fn().mockResolvedValue(undefined),
+    };
+    pm.docker.getNetwork = jest.fn().mockReturnValue(controlNetwork);
 
     const previous = {
       SANDBOX_MODE: process.env.SANDBOX_MODE,
@@ -307,8 +312,9 @@ describe('PoolManager max capacity (BP-61)', () => {
       }));
       expect(createOpts.Env).toContain(
         'SANDBOX_HOST_WORKSPACE_ROOT=/var/lib/docker/volumes/vibecode_repos/_data');
-      expect(createOpts.NetworkingConfig.EndpointsConfig).toHaveProperty(
-        'vibecode-sandbox-control');
+      expect(controlNetwork.connect).toHaveBeenCalledWith({
+        Container: 'container-fresh-volume',
+      });
     } finally {
       for (const [name, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[name];

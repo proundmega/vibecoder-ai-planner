@@ -476,16 +476,27 @@ class PoolManager {
         OpenStdin: false,
         StdinOnce: false,
       };
-      if (dockerSandbox) {
-        createOptions.NetworkingConfig = {
-          EndpointsConfig: {
-            [CONTAINER_NETWORK]: {},
-            [SANDBOX_CONTROL_NETWORK]: {},
-          },
-        };
-      }
 
       const container = await this.docker.createContainer(createOptions);
+      if (dockerSandbox) {
+        // Docker rejects multiple EndpointsConfig entries at create time.
+        // Attach the internal control network before starting so the agent
+        // never runs without proxy access.
+        try {
+          await this.docker.getNetwork(SANDBOX_CONTROL_NETWORK)
+            .connect({ Container: container.id });
+        } catch (err) {
+          try {
+            if (typeof container.remove === 'function') {
+              await container.remove({ force: true });
+            }
+          } catch {
+            // Best effort; the create itself failed the request.
+          }
+          throw new Error(
+            `Could not attach pool agent to ${SANDBOX_CONTROL_NETWORK}: ${err.message}`);
+        }
+      }
       await container.start();
 
       this.pool.set(agentId, {
