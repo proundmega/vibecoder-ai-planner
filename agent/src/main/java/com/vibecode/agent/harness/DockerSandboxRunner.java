@@ -1586,7 +1586,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 List.of(config.dockerBinary(), "network", "ls", "-q", "--filter", filter),
                 List.of(config.dockerBinary(), "network", "rm"));
         } catch (RuntimeException e) {
-            log.warn("Could not reap orphaned sandbox resources: {}", e.toString());
+            log.warn("Could not reap orphaned sandbox resources: {}",
+                LOG_REDACTOR.redact(e.toString()));
         }
     }
 
@@ -1617,7 +1618,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 }
             }
         } catch (RuntimeException e) {
-            log.warn("Could not reap orphaned sandbox {}: {}", kind, e.toString());
+            log.warn("Could not reap orphaned sandbox {}: {}", kind,
+                LOG_REDACTOR.redact(e.toString()));
         }
     }
 

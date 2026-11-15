@@ -92,6 +92,8 @@ class SandboxRunnerFactoryTest {
 
     @Test
     void reapingFailuresDoNotBlockFactoryStartup() throws Exception {
+        Assumptions.assumeFalse(System.getProperty("os.name", "").toLowerCase().contains("win"),
+            "fake docker script relies on POSIX sh");
         Path log = tempDir.resolve("docker-fail.log");
         Path script = fakeDocker(log, """
             case "$1" in
