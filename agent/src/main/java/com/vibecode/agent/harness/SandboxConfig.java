@@ -214,7 +214,9 @@ public record SandboxConfig(
         if (artifactMaxBytes <= 0) {
             throw new IllegalStateException("SANDBOX_ARTIFACT_MAX_BYTES must be positive");
         }
-        if (owner != null && !owner.isBlank()
+        // AGENT_ID is only used for Docker owner labels/reaping. Host mode
+        // keeps accepting legacy values instead of failing at startup.
+        if (mode == SandboxMode.DOCKER && owner != null && !owner.isBlank()
             && !owner.matches("[A-Za-z0-9_.-]{1,128}")) {
             throw new IllegalStateException(
                 "AGENT_ID must be a safe Docker label value (letters, digits, _ . -)");

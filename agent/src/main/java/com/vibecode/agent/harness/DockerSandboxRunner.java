@@ -1577,35 +1577,47 @@ public final class DockerSandboxRunner implements SandboxRunner {
         if (owner == null || owner.isBlank()) {
             return;
         }
-        String filter = "label=vibecode.sandbox.owner=" + owner;
-        reap("containers",
-            List.of(config.dockerBinary(), "ps", "-aq", "--filter", filter),
-            List.of(config.dockerBinary(), "rm", "-f"));
-        reap("networks",
-            List.of(config.dockerBinary(), "network", "ls", "-q", "--filter", filter),
-            List.of(config.dockerBinary(), "network", "rm"));
+        try {
+            String filter = "label=vibecode.sandbox.owner=" + owner;
+            reap("containers",
+                List.of(config.dockerBinary(), "ps", "-aq", "--filter", filter),
+                List.of(config.dockerBinary(), "rm", "-f"));
+            reap("networks",
+                List.of(config.dockerBinary(), "network", "ls", "-q", "--filter", filter),
+                List.of(config.dockerBinary(), "network", "rm"));
+        } catch (RuntimeException e) {
+            log.warn("Could not reap orphaned sandbox resources: {}", e.toString());
+        }
     }
 
     private void reap(String kind, List<String> listCommand, List<String> removePrefix) {
-        DockerResult listed = runDocker(listCommand, INSPECT_TIMEOUT, CONTROL_OUTPUT_BYTES);
-        if (listed.timedOut() || listed.exitCode() != 0) {
-            log.warn("Could not list orphaned sandbox {} for reaping: {}",
-                kind, LOG_REDACTOR.redact(listed.output()));
-            return;
-        }
-        for (String id : listed.output().split("\\s+")) {
-            if (!id.matches("[a-fA-F0-9]{12,64}")) {
-                continue;
+        try {
+            DockerResult listed = runDocker(listCommand, INSPECT_TIMEOUT, 256 * 1024);
+            if (listed.timedOut() || listed.exitCode() != 0) {
+                log.warn("Could not list orphaned sandbox {} for reaping: {}",
+                    kind, LOG_REDACTOR.redact(listed.output()));
+                return;
             }
-            List<String> command = new ArrayList<>(removePrefix);
-            command.add(id);
-            DockerResult removed = runDocker(command, CONTROL_TIMEOUT, CONTROL_OUTPUT_BYTES);
-            if (removed.timedOut() || removed.exitCode() != 0) {
-                log.warn("Could not reap orphaned sandbox {} {}: {}",
-                    kind, id, LOG_REDACTOR.redact(removed.output()));
-            } else {
-                log.info("Reaped orphaned sandbox {} {}", kind, id);
+            if (listed.truncated()) {
+                log.warn("Orphaned sandbox {} listing was truncated; remaining IDs "
+                    + "will be reaped on the next start", kind);
             }
+            for (String id : listed.output().split("\\s+")) {
+                if (!id.matches("[a-fA-F0-9]{12,64}")) {
+                    continue;
+                }
+                List<String> command = new ArrayList<>(removePrefix);
+                command.add(id);
+                DockerResult removed = runDocker(command, CONTROL_TIMEOUT, CONTROL_OUTPUT_BYTES);
+                if (removed.timedOut() || removed.exitCode() != 0) {
+                    log.warn("Could not reap orphaned sandbox {} {}: {}",
+                        kind, id, LOG_REDACTOR.redact(removed.output()));
+                } else {
+                    log.info("Reaped orphaned sandbox {} {}", kind, id);
+                }
+            }
+        } catch (RuntimeException e) {
+            log.warn("Could not reap orphaned sandbox {}: {}", kind, e.toString());
         }
     }
 

@@ -343,7 +343,8 @@ class DockerSandboxRunnerTest {
             "SANDBOX_DOCKER_BIN", script.toString(),
             "SANDBOX_USER", "1000:1000",
             "SANDBOX_NETWORK", "allowlist",
-            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org"
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org",
+            "AGENT_ID", "agent-42"
         )::get);
 
         try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
@@ -355,6 +356,10 @@ class DockerSandboxRunnerTest {
         String logText = Files.readString(log);
         assertTrue(logText.contains("network create --driver bridge --internal"), logText);
         assertTrue(logText.contains("--network vibecode-egress-"), logText);
+        assertTrue(logText.contains(
+            "network create --driver bridge --internal --label "
+                + "vibecode.sandbox.managed=true --label "
+                + "vibecode.sandbox.owner=agent-42"), logText);
         assertTrue(logText.contains("network connect bridge vibecode-egress-proxy-"), logText);
         assertTrue(logText.contains("logs --tail 200 vibecode-egress-proxy-"), logText);
         assertTrue(logText.contains("rm -f vibecode-egress-proxy-"), logText);
