@@ -7,6 +7,7 @@ import com.vibecode.agent.config.AgentConfig;
 import com.vibecode.agent.model.ApiResponse;
 import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
+import com.vibecode.agent.harness.SecretRedactor;
 import okhttp3.*;
 
 import java.io.IOException;
@@ -25,10 +26,14 @@ public class ApiService {
     private final ObjectMapper objectMapper;
     private final AgentConfig config;
     private final String baseUrl;
+    private final SecretRedactor redactor;
 
     public ApiService(AgentConfig config) {
         this.config = config;
         this.baseUrl = config.getApiUrl();
+        this.redactor = new SecretRedactor(java.util.Arrays.asList(
+            config.getAgentApiKey(), config.getAiApiKey(),
+            System.getenv("GITHUB_TOKEN")));
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
         this.httpClient = new OkHttpClient.Builder()
@@ -410,10 +415,11 @@ public class ApiService {
     /**
      * Post a message on a ticket.
      */
-    public TicketMessage postMessage(Long ticketId, String messageType, String content) throws IOException {        String url = baseUrl + "/tickets/" + ticketId + "/messages";
+    public TicketMessage postMessage(Long ticketId, String messageType, String content) throws IOException {
+        String url = baseUrl + "/tickets/" + ticketId + "/messages";
         Map<String, Object> body = Map.of(
             "messageType", messageType,
-            "content", content
+            "content", redactor.redact(content)
         );
         ApiResponse<TicketMessage> response = executePost(url, body, new TypeReference<ApiResponse<TicketMessage>>() {});
         

@@ -95,6 +95,18 @@ class ApiServiceHarnessTest {
     }
 
     @Test
+    void redactsCredentialsBeforePostingTicketMessages() throws Exception {
+        respond("/api/v1/tickets/1/messages", 200, ok("{}"));
+        String token = "ghp_123456789012345678901234567890123456";
+
+        api.postMessage(1L, "update", "token=" + token);
+
+        RecordedRequest request = lastRequest();
+        assertFalse(request.body().contains(token), request.body());
+        assertTrue(request.body().contains("[REDACTED]"), request.body());
+    }
+
+    @Test
     void startsARunWithTheExpectedPathBodyAndAuth() throws Exception {
         respond("/api/v1/harness/runs", 201, ok("{\"id\":\"run-1\"}"));
 

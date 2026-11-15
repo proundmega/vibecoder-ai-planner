@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -24,6 +25,7 @@ class GitHubServiceTest {
     private GitHubService service;
     private final List<String> queries = Collections.synchronizedList(new ArrayList<>());
     private final List<String> authHeaders = Collections.synchronizedList(new ArrayList<>());
+    private final List<String> postBodies = Collections.synchronizedList(new ArrayList<>());
     private volatile String responseBody = "[]";
     private volatile String postResponseBody = "{}";
     private volatile int unauthorizedRequests = 0;
@@ -36,6 +38,11 @@ class GitHubServiceTest {
             queries.add(exchange.getRequestURI().getQuery());
             authHeaders.add(exchange.getRequestHeaders().getFirst("Authorization"));
             boolean isPost = "POST".equalsIgnoreCase(exchange.getRequestMethod());
+            String requestBody = new String(
+                exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            if (isPost) {
+                postBodies.add(requestBody);
+            }
             boolean unauthorized = unauthorizedRequests > 0
                 && (!unauthorizedOnPostOnly || isPost);
             if (unauthorized) {
@@ -183,6 +190,18 @@ class GitHubServiceTest {
         assertEquals("https://github.com/owner/repo/pull/11", url);
         assertEquals(1, refreshes[0]);
         assertEquals("token ghs_2", authHeaders.get(authHeaders.size() - 1));
+    }
+
+    @Test
+    void redactsCredentialsInPullRequestTitleAndBody() throws Exception {
+        postResponseBody = "{\"html_url\":\"https://github.com/owner/repo/pull/12\"}";
+        String token = "ghp_123456789012345678901234567890123456";
+
+        service.createPullRequest("title " + token, "body " + token, "feature", "main");
+
+        String body = postBodies.get(postBodies.size() - 1);
+        assertFalse(body.contains(token), body);
+        assertTrue(body.contains("[REDACTED]"), body);
     }
 
     @Test

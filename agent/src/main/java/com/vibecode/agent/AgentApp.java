@@ -2,6 +2,7 @@ package com.vibecode.agent;
 
 import com.vibecode.agent.config.AgentConfig;
 import com.vibecode.agent.harness.HarnessConfig;
+import com.vibecode.agent.harness.SecretRedactor;
 import com.vibecode.agent.harness.HarnessTicketProcessor;
 import com.vibecode.agent.harness.ProviderSettings;
 import com.vibecode.agent.model.Ticket;
@@ -101,7 +102,10 @@ public class AgentApp {
         HarnessConfig harnessConfig
     ) {
         GitHubService gitHubService = new GitHubService(
-            tokenProvider, config.getRepoOwner(), config.getRepoName());
+            tokenProvider, config.getRepoOwner(), config.getRepoName(),
+            new SecretRedactor(java.util.Arrays.asList(
+                config.getAgentApiKey(), config.getAiApiKey(),
+                System.getenv("GITHUB_TOKEN"))));
         TicketWorker ticketWorker;
         if (harnessConfig.isEnabled()) {
             harnessConfig.validate();

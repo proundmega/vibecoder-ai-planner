@@ -2,6 +2,7 @@ package com.vibecode.agent.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vibecode.agent.harness.SecretRedactor;
 import okhttp3.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,22 +27,43 @@ public class GitHubService {
     private final String apiBase;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final SecretRedactor redactor;
 
     public GitHubService(String authToken, String owner, String repo) {
-        this(() -> authToken, owner, repo, DEFAULT_API_BASE);
+        this(() -> authToken, owner, repo, DEFAULT_API_BASE, SecretRedactor.patternsOnly());
     }
 
     /** Package-visible so contract tests can target a local HTTP server. */
     GitHubService(String authToken, String owner, String repo, String apiBase) {
-        this(() -> authToken, owner, repo, apiBase);
+        this(() -> authToken, owner, repo, apiBase, SecretRedactor.patternsOnly());
     }
 
     public GitHubService(GitHubTokenSource tokenSource, String owner, String repo) {
-        this(tokenSource, owner, repo, DEFAULT_API_BASE);
+        this(tokenSource, owner, repo, DEFAULT_API_BASE, SecretRedactor.patternsOnly());
+    }
+
+    public GitHubService(
+        GitHubTokenSource tokenSource,
+        String owner,
+        String repo,
+        SecretRedactor redactor
+    ) {
+        this(tokenSource, owner, repo, DEFAULT_API_BASE, redactor);
     }
 
     /** Package-visible so contract tests can target a local HTTP server. */
     GitHubService(GitHubTokenSource tokenSource, String owner, String repo, String apiBase) {
+        this(tokenSource, owner, repo, apiBase, SecretRedactor.patternsOnly());
+    }
+
+    /** Package-visible so contract tests can target a local HTTP server. */
+    GitHubService(
+        GitHubTokenSource tokenSource,
+        String owner,
+        String repo,
+        String apiBase,
+        SecretRedactor redactor
+    ) {
         this.tokenSource = tokenSource;
         this.owner = owner;
         this.repo = repo;
@@ -51,6 +73,7 @@ public class GitHubService {
             .readTimeout(60, TimeUnit.SECONDS)
             .build();
         this.objectMapper = new ObjectMapper();
+        this.redactor = redactor == null ? SecretRedactor.patternsOnly() : redactor;
     }
 
     private Response executeWithAuth(Request request) throws IOException {
@@ -167,8 +190,8 @@ public class GitHubService {
         }
         
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("title", title);
-        requestBody.put("body", body);
+        requestBody.put("title", redactor.redact(title));
+        requestBody.put("body", redactor.redact(body));
         requestBody.put("head", headBranch);
         requestBody.put("base", actualBase);
         requestBody.put("draft", false);
