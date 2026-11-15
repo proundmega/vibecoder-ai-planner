@@ -1158,6 +1158,57 @@ class DockerSandboxRunnerTest {
             """);
     }
 
+    @Test
+    void getFileFailsWhenTheTarReaderDoesNotSeeEof() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec)
+                case "$*" in
+                  *"wc -c"*) echo "OK 0" ;;
+                  *"mkdir -p"*) echo OK ;;
+                  *) exit 0 ;;
+                esac
+                ;;
+              cp)
+                last=""
+                for a in "$@"; do last="$a"; done
+                if [ "$last" = "-" ]; then
+                  tmp=$(mktemp -d)
+                  printf 'hello' > "$tmp/file.txt"
+                  tar -C "$tmp" -cf "$tmp/archive.tar" file.txt
+                  # Emit only the header and data block so the reader must wait
+                  # for another header, then hold the pipe open after exit.
+                  dd if="$tmp/archive.tar" bs=512 count=2 2>/dev/null
+                  rm -rf "$tmp"
+                  (sleep 10) &
+                fi
+                ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+        Path local = Files.writeString(tempDir.resolve("existing.txt"), "keep");
+
+        IOException error;
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            error = assertThrows(IOException.class,
+                () -> runner.getFile(handle, "/workspace/file.txt", local));
+        }
+
+        assertTrue(error.getMessage().contains("output reader did not finish"),
+            error.getMessage());
+        assertEquals("keep", Files.readString(local));
+        try (var listing = Files.list(tempDir)) {
+            assertFalse(listing.anyMatch(path -> path.getFileName().toString()
+                .startsWith(".sandbox-download-")));
+        }
+    }
+
     private void assertTarEntryRejected(String emitTar) throws IOException {
         Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
         Path log = tempDir.resolve("docker.log");

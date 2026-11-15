@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -1438,6 +1439,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
         byte[][] bytes = new byte[1][];
         Throwable[] failure = new Throwable[1];
+        CountDownLatch outputDone = new CountDownLatch(1);
         int maxTarBytes = maxBytes > Integer.MAX_VALUE - 8_192
             ? Integer.MAX_VALUE : maxBytes + 8_192;
         Thread outputReader = new Thread(() -> {
@@ -1456,6 +1458,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
             } catch (Throwable error) {
                 failure[0] = error;
                 ProcessGroup.kill(process);
+            } finally {
+                outputDone.countDown();
             }
         }, "sandbox-docker-cp-output");
         outputReader.setDaemon(true);
@@ -1478,6 +1482,11 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 }
                 throw new IOException(
                     "Could not read " + remotePath + ": " + errorOutput, failure[0]);
+            }
+            if (outputDone.getCount() != 0) {
+                ProcessGroup.kill(process);
+                throw new IOException(
+                    "docker cp output reader did not finish for " + remotePath);
             }
             if (process.exitValue() != 0) {
                 if (isMissingFile(errorOutput)) {
