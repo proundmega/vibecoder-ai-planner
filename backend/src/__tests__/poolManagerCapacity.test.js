@@ -232,6 +232,37 @@ describe('PoolManager max capacity (BP-61)', () => {
     expect(createOpts.Env).toContain('DOCKER_HOST=tcp://proxy.internal:2375');
   });
 
+  it('uses an explicit SANDBOX_HOST_WORKSPACE_ROOT without inspecting the volume', async () => {
+    pm.pool.clear();
+    const { pool } = require('../db');
+    pool.query.mockResolvedValue({
+      rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+    });
+    const mockContainer = { id: 'container-explicit-root', start: jest.fn().mockResolvedValue(undefined) };
+    pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
+    pm.docker.getVolume = jest.fn();
+
+    const previous = {
+      SANDBOX_MODE: process.env.SANDBOX_MODE,
+      SANDBOX_HOST_WORKSPACE_ROOT: process.env.SANDBOX_HOST_WORKSPACE_ROOT,
+    };
+    process.env.SANDBOX_MODE = 'docker';
+    process.env.SANDBOX_HOST_WORKSPACE_ROOT = '/srv/repos';
+    try {
+      await pm.requestAgent('proj-explicit-root');
+
+      const createOpts = pm.docker.createContainer.mock.calls[0][0];
+      expect(createOpts.Env).toContain('SANDBOX_HOST_WORKSPACE_ROOT=/srv/repos');
+      expect(pm.docker.getVolume).not.toHaveBeenCalled();
+    } finally {
+      for (const [name, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      delete pm.docker.getVolume;
+    }
+  });
+
   it('does not guess a host workspace root when the volume cannot be inspected', async () => {
     pm.pool.clear();
     const { pool } = require('../db');

@@ -359,7 +359,9 @@ class PoolManager {
     if (!sandboxEnv.has('SANDBOX_CONTAINER_WORKSPACE_ROOT')) {
       sandboxEnv.set('SANDBOX_CONTAINER_WORKSPACE_ROOT', REPO_MOUNT);
     }
-    if (sandboxEnv.get('SANDBOX_MODE') === 'docker') {
+    const requireSandbox = sandboxEnv.get('SANDBOX_REQUIRE');
+    if (sandboxEnv.get('SANDBOX_MODE') === 'docker'
+        || requireSandbox === 'true' || requireSandbox === '1') {
       const hostWorkspaceRoot = await this._sandboxHostWorkspaceRoot();
       if (hostWorkspaceRoot) {
         sandboxEnv.set('SANDBOX_HOST_WORKSPACE_ROOT', hostWorkspaceRoot);
