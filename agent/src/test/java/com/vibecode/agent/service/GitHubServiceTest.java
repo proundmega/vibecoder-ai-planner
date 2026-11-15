@@ -211,9 +211,9 @@ class GitHubServiceTest {
     void registersRefreshedTokensForRedaction() throws Exception {
         unauthorizedRequests = 1;
         postResponseBody = "{\"html_url\":\"https://github.com/owner/repo/pull/13\"}";
-        String refreshed = "ghs_" + "b".repeat(20);
+        String refreshed = "custom-refreshed-token-123456";
         GitHubTokenSource source = new GitHubTokenSource() {
-            private String current = "ghs_" + "a".repeat(20);
+            private String current = "custom-initial-token-123456";
 
             @Override
             public String get() {
