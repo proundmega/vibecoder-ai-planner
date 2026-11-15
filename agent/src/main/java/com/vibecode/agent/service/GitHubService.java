@@ -89,6 +89,7 @@ public class GitHubService {
         if (refreshed == null || refreshed.isBlank()) {
             throw new IOException("No GitHub credential is available after a 401");
         }
+        RedactionRegistry.register(refreshed);
         Request retry = request.newBuilder()
             .header("Authorization", "token " + refreshed)
             .build();

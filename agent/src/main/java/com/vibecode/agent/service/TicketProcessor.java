@@ -112,8 +112,8 @@ public class TicketProcessor implements TicketWorker {
             log.info("Fetched {} planning documents", planningDocs.size());
 
             // Step 3: Clone repo first (needed for file context)
-            String redactedTitle = RedactionRegistry.redact(pickedUp.getTitle());
-            String branchName = config.getGitHubBranchName(pickedUp.getId(), redactedTitle);
+            String safeTitle = redactedTitle(pickedUp.getTitle());
+            String branchName = config.getGitHubBranchName(pickedUp.getId(), safeTitle);
             if (!config.isDryRun()) {
                 workspaceManager.cloneRepo(
                     "https://github.com/" + config.getRepoOwner() + "/" + config.getRepoName() + ".git",
@@ -158,7 +158,7 @@ public class TicketProcessor implements TicketWorker {
             // Step 7: Commit and push (if not dry run)
             String commitSha = null;
             if (!config.isDryRun() && !fileOperations.isEmpty()) {
-                String commitMessage = "feat: " + redactedTitle;
+                String commitMessage = "feat: " + safeTitle;
                 commitSha = workspaceManager.commitAndPush(commitMessage, branchName);
                 log.info("Committed and pushed: {}", commitSha);
             } else {
@@ -168,7 +168,7 @@ public class TicketProcessor implements TicketWorker {
             // Step 9: Create PR (if not dry run)
             String prUrl = null;
             if (!config.isDryRun()) {
-                String prTitle = "feat: " + redactedTitle;
+                String prTitle = "feat: " + safeTitle;
                 String prBody = buildPrBody(pickedUp, branchName, commitSha, fileOperations);
                 prUrl = gitHubService.createPullRequest(prTitle, prBody, branchName, "main");
                 log.info("Created PR: {}", prUrl);
@@ -216,6 +216,10 @@ public class TicketProcessor implements TicketWorker {
             // Always cleanup workspace
             workspaceManager.cleanup();
         }
+    }
+
+    static String redactedTitle(String title) {
+        return RedactionRegistry.redact(title);
     }
 
     private Ticket pickUpTicket(Long ticketId) {

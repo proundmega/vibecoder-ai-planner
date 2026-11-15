@@ -208,6 +208,34 @@ class GitHubServiceTest {
     }
 
     @Test
+    void registersRefreshedTokensForRedaction() throws Exception {
+        unauthorizedRequests = 1;
+        postResponseBody = "{\"html_url\":\"https://github.com/owner/repo/pull/13\"}";
+        String refreshed = "ghs_" + "b".repeat(20);
+        GitHubTokenSource source = new GitHubTokenSource() {
+            private String current = "ghs_" + "a".repeat(20);
+
+            @Override
+            public String get() {
+                return current;
+            }
+
+            @Override
+            public String refresh() {
+                current = refreshed;
+                return current;
+            }
+        };
+        GitHubService dynamic = new GitHubService(
+            source, "owner", "repo",
+            "http://127.0.0.1:" + server.getAddress().getPort());
+
+        dynamic.createPullRequest("title", "body", "feature", "main");
+
+        assertEquals("[REDACTED]", RedactionRegistry.redact(refreshed));
+    }
+
+    @Test
     void failsClosedWithoutACredential() {
         GitHubService unauthenticated = new GitHubService(
             () -> null, "owner", "repo",

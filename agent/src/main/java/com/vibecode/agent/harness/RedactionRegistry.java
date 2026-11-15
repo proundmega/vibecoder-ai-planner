@@ -19,6 +19,11 @@ public final class RedactionRegistry {
     private static final Set<String> SECRETS = new LinkedHashSet<>();
     private static volatile SecretRedactor redactor = SecretRedactor.patternsOnly();
 
+    static {
+        register(System.getenv("AGENT_API_KEY"), System.getenv("AI_API_KEY"),
+            System.getenv("GITHUB_TOKEN"));
+    }
+
     private RedactionRegistry() {
     }
 

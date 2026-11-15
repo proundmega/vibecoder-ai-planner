@@ -1,5 +1,7 @@
 package com.vibecode.agent.service;
 
+import com.vibecode.agent.config.AgentConfig;
+import com.vibecode.agent.harness.RedactionRegistry;
 import com.vibecode.agent.model.FileOperation;
 import org.junit.jupiter.api.Test;
 
@@ -88,5 +90,20 @@ class TicketProcessorTest {
         );
         String stage = TicketProcessor.inferPlanningStage(docs);
         assertEquals("validation", stage);
+    }
+
+    @Test
+    void redactedTitleDoesNotLeakACustomSecretIntoTheBranchName() {
+        RedactionRegistry.register("custom-provider-key-123456");
+        try {
+            String safe = TicketProcessor.redactedTitle(
+                "fix custom-provider-key-123456 in login");
+            assertTrue(safe.contains("[REDACTED]"));
+            assertFalse(safe.contains("custom-provider-key-123456"));
+            String branch = new AgentConfig().getGitHubBranchName(7L, safe);
+            assertFalse(branch.contains("custom-provider-key-123456"));
+        } finally {
+            RedactionRegistry.reset();
+        }
     }
 }
