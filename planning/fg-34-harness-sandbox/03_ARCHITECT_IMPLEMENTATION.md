@@ -18,14 +18,51 @@ Slice 1 deliberately keeps `SANDBOX_MODE=host` as the default so the Phase 1
 harness is unchanged until the Docker path is validated. Docker mode is
 opt-in and fails closed; it never falls back to host execution.
 
-## Deployment boundary (slice 1)
+## Deployment boundary (D8)
 
-Docker mode currently requires an agent that runs on, or shares a workspace
-path with, the Docker host. `PoolManager` still launches agents with only the
-`HARNESS_*` environment and a named repo volume, and `agent/docker-compose.yml`
-does not mount a daemon socket. Pool-launched agents therefore stay in host
-mode until the deployment wiring lands. This is **D8** in the `00` deferred
-register; it is not claimed as delivered here.
+Docker mode requires a daemon the agent can reach and a workspace path the
+daemon can bind-mount. `PoolManager` forwards the operator `SANDBOX_*` settings
+to each pool agent, sets `BACKEND_URL=http://api:3001` (the root Compose service
+name), resolves Docker prerequisites **before** creating the DB agent or
+container, and fails the request when `DOCKER_HOST` or a host-visible workspace
+root is unresolved. `SANDBOX_REQUIRE=true` without `SANDBOX_MODE=docker` is
+rejected by the API at the same point, and a failed create/attach removes the
+container and DB agent record. Only Docker-mode agents receive `DOCKER_HOST`
+(from `AGENT_DOCKER_HOST` or a TCP `DOCKER_API_URL`) and are attached to an
+internal control network shared with the restricted socket proxy; host-mode
+agents receive neither and cannot reach the proxy by name. A bare API unix
+socket is not passed to pool agents because they do not mount it.
+
+The control network name is project-scoped by default
+(`${COMPOSE_PROJECT_NAME}-sandbox-control`) and can be overridden with
+`SANDBOX_CONTROL_NETWORK`; this keeps Compose projects and CI jobs on separate
+Docker API proxies. The repo volume is explicitly named `vibecode_repos` in
+Compose so the API mount, `REPO_VOLUME`, and the inspected mountpoint are the
+same volume even with project-prefix naming. A `REPO_VOLUME` override changes the actual
+Compose volume name and is resolved consistently by the API mount and
+PoolManager; in Compose it must remain a volume name, not a host path (host
+paths are supported by the non-Compose runner). An installation that previously
+used a project-prefixed volume can copy it once into `vibecode_repos`; the old
+compose prefix otherwise leaves that data unused. `PoolManager` creates a missing named volume before
+inspecting it, maps the mountpoint to `SANDBOX_HOST_WORKSPACE_ROOT`, and uses
+`/repos` as the container root; a host-path `REPO_VOLUME` is used directly and
+an explicit root wins. The root Compose proxy enables
+create/exec/copy/network/volume/pause operations but is reachable only from the
+API and Docker-mode pool agents on the internal control network, not from the
+frontend, database, cache, host-mode agents, or the sandbox itself.
+
+The sandbox still receives no Docker socket or `DOCKER_HOST`; only the
+supervisor agent talks to the restricted proxy. `SANDBOX_MODE` remains `host`
+by default, so Docker mode is opt-in. The proxy can manage
+containers/networks/volumes beyond one pool agent's own resources, so the
+daemon/proxy is a deployment trust boundary, not a multi-tenant boundary; pool
+replacement cleanup is D30. The standalone `agent/docker-compose.yml` stays on
+the API network in host mode and needs a host bind at `/repos`
+(`REPO_HOST_PATH`) writable by the agent user (uid 100/gid 101), plus
+`ROOT_COMPOSE_PROJECT` (or the explicit `VIBECODE_NETWORK`/
+`SANDBOX_CONTROL_NETWORK`) matching the root project. Docker mode uses the
+`agent/docker-compose.sandbox.yml` overlay, which adds the restricted proxy
+network and `DOCKER_HOST`; host mode never joins that network.
 
 OpenCode still runs in the supervisor in slice 1. Only supervisor-driven
 install/verification commands go through the sandbox; a prompt-injected
@@ -42,6 +79,7 @@ bridge. Operator docs state this explicitly.
 - [x] Harden prompt-injection handling for repo docs, issues and PR text (slice 3a)
 - [x] Add malicious-repo and escape-attempt tests (guard-failure fail-closed with non-zero exit codes, symlink/FIFO copy, background persistence, download-cap pre-check, destroy-failure publish stop, secret, read-only, no-socket, disk quota, non-root, egress allow/deny and direct-egress-blocked integration coverage)
 - [x] Bridge the OpenCode bash tool into the sandbox (slice 2: `sandbox_bash` global tool + loopback per-run-token bridge; built-in bash disabled)
+- [x] Wire Docker sandboxes into pool deployments (D8): forward `SANDBOX_*`, derive `DOCKER_HOST` from the restricted socket proxy, and resolve the repo volume mountpoint for host-visible bind mounts
 - [x] Add image scanning, SBOM and signed base images (slice 3b: digest-pinned Dockerfiles, `agent/scripts/sandbox-image-security.sh`, CI pin gate, optional syft/trivy/grype/cosign)
 - [x] Redact sandbox/verification output before storage (slice 3c: configured secrets plus high-confidence credential formats at capture and at message/run/PR boundaries)
 - [x] Define the fallback for local Windows development (`SANDBOX_MODE=host`, loud warning, production guard)
@@ -144,7 +182,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 - The OpenCode bash bridge binds to 127.0.0.1 with a per-run random token and is closed after the prompt. The sandbox has no route to the host loopback. In Docker mode the built-in `bash` and `shell` tools are denied and the global `sandbox_bash` tool forwards to the bridge; this is fail-closed if the custom tool fails to load. The bridge enforces the supervisor command policy and maps supervisor workspace paths to `/workspace`. Host mode keeps the built-in bash tool. Exec requests carry a client request ID and use a bounded 64-entry/10-minute result cache; duplicate IDs return the cached result, conflicting payloads get 409, and missing IDs retain legacy behavior. The `sandbox_bash` client retries a lost response and 502/503/504 with the same ID (three attempts, short backoff) while 400/403/409/500 are not retried. Tests cover in-flight duplicates, 504, TTL expiry, LRU eviction, cwd/timeout fingerprint conflicts, uncached 500s and the 128/129 ID boundary.
 - Hostile install/test containment is covered by the real-Docker background-writer, postinstall-like lifecycle, forking-writer and sequential-exec regressions. The post-exec sweep runs five kill passes, then freezes the container, reads the init host PID with `docker inspect`, and verifies the frozen table contains nothing else before thawing. PID 1 is a childless `exec sleep`, so it cannot respawn a child, and execs are serialized per sandbox so one sweep cannot freeze another command. A survivor or unverifiable freeze/table/destroy destroys the sandbox, marks the handle compromised, and fails the exec even after cleanup; `destroy()` then refuses to report the handle as clean for the rest of the runner's lifetime, so the pre-publish gate blocks publishing even when no verification commands ran (D14, #139). CI builds the sandbox image and runs this suite against it (D13); a real npm lifecycle fixture remains future integration coverage.
 - `--init` is intentionally not used: PID 1 is `exec sleep 2147483647`, a single childless process, so the frozen quiescence check can preserve exactly the init host PID reported by `docker inspect`. Zombies (which cannot fork) are ignored only when `docker top` provides a state column; any other live process stops the sandbox (D14).
-- The integration tests are opt-in locally (`SANDBOX_IT_IMAGE`, plus `SANDBOX_IT_NETWORK`/`SANDBOX_IT_NETWORK_IMAGE` for egress); CI builds the sandbox and proxy images and runs `DockerSandboxRunnerIntegrationTest` against them in the `Sandbox Integration` stage (D13); `PoolManager` wiring is D8.
+- The integration tests are opt-in locally (`SANDBOX_IT_IMAGE`, plus `SANDBOX_IT_NETWORK`/`SANDBOX_IT_NETWORK_IMAGE` for egress); CI builds the sandbox and proxy images and runs `DockerSandboxRunnerIntegrationTest` against them in the `Sandbox Integration` stage (D13). `PoolManager` wiring is D8: it forwards the sandbox environment, derives `DOCKER_HOST` from the socket proxy, and resolves the repo volume mountpoint for host-visible bind mounts.
 - NFR5 (redaction before storage): `VerificationRunner` pattern-redacts captured output (including exception messages) before truncation, and `HarnessTicketProcessor` redacts configured secrets plus high-confidence credential formats before deriving a branch name, posting ticket messages, finishing a durable run with an error, or creating a commit/PR title or PR body. The key/value rule first requires a credential keyword in the identifier via a lookahead, then matches the identifier once with a possessive quantifier. The lookahead prevents a non-credential assignment such as `{"message": "password=supersecret"}` from consuming the nested credential, and the single possessive match keeps repeated keywords linear on hostile input (64 KB/128 KB regressions). An unquoted value is redacted through end-of-line, stopping only at a quote or newline, so `password=supersecret phrase`, `password=super)secret` and non-Bearer authorization schemes are fully redacted; over-redacting adjacent text is preferred to a partial value. Multi-line private-key blocks are redacted before key/value processing so `password=-----BEGIN...` does not leave the block body unredacted. A BEGIN without an END redacts the remaining output. Credential values shorter than eight characters are not redacted by the pattern rules (and configured secrets shorter than eight characters are ignored) to avoid corrupting ordinary output. The publish gate (`SecretLeakGuard`) checks known secrets plus GitHub/OpenAI/AWS (including `ASIA`)/Slack (including `xoxc`/`xoxd`)/Google/JWT tokens and PEM/PGP/SSH2 private-key blocks; Bearer/Basic, URL-userinfo and key/value forms such as `passphrase=` are redaction-only patterns, not publish-gate formats. This is a storage guard, not a sandbox boundary; encoded, split or transformed credentials can still evade pattern matching, and provider-side telemetry is outside this slice. Legacy `TicketProcessor`/`ReviewProcessor` messages are redacted by `ApiService.postMessage`, branch/commit/PR titles by `TicketProcessor` and `GitHubService`, and shipped supervisor log lines by `RedactingPatternLayoutEncoder`. All three read the process-wide `RedactionRegistry`, which receives the resolved provider key and runtime GitHub App tokens (plus env secrets) so a backend-fetched custom key is covered even though it matches no pattern (D19). The FR11 streaming part remains D15.
 
 ## Review checklist
@@ -204,3 +242,11 @@ One row per requirement from `01`. A requirement with no row is not done.
 | 2026-11-15 | `a0c9237` | `cd agent && mvn test` (603 tests, 7 skipped) + `SANDBOX_IT_IMAGE=vibecode-agent-sandbox:latest SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:d16 mvn test -Dtest=DockerSandboxRunnerIntegrationTest#runsCommandsAsANonRootUserInADisposableSandbox` + `node planning/check-planning.js` + `git diff --check` | D10 review follow-up: the output reader signals completion through a latch; a `docker cp` result whose reader has not finished after the join window is killed and rejected instead of returning a possibly truncated file. Regression test holds stdout open after a partial tar and asserts the fail-closed error and preserved local file. |
 | 2026-11-15 | `8f55db1` | `cd agent && mvn test` (605 tests, 7 skipped) + `SANDBOX_IT_IMAGE=vibecode-agent-sandbox:latest SANDBOX_IT_PROXY_IMAGE=vibecode-sandbox-proxy:d16 mvn test -Dtest=DockerSandboxRunnerIntegrationTest#runsCommandsAsANonRootUserInADisposableSandbox` + `node planning/check-planning.js` + `git diff --check` | D10 review follow-up: the completion latch is awaited before reading the reader failure, and the failure publishes through an `AtomicReference`; a late-failing reader can no longer be observed as a stale success. Ordering tests assert the failure is not read while unfinished and is returned after completion. |
 | 2026-11-15 | `5b3ee26` (#155) | merge; no additional test run | D10 merged: artifact downloads use the bounded no-follow tar reader, stream validated bytes to the temp file, and fail closed if the reader is unfinished or fails late. No-follow remains final-component only; intermediate directory symlinks stay a documented sandbox-container-only limitation. |
+| 2026-11-15 | `9e2cc9c` (#156) | `cd backend && npm test -- --runInBand` (132 suites, 1644 tests) + `docker compose -f docker-compose.yml config --quiet` + `docker compose config --quiet` + `node planning/check-planning.js` + `git diff --check` | D8 in review: pool agents receive the sandbox env, `DOCKER_HOST` from `AGENT_DOCKER_HOST`/the socket proxy, and a resolved repo-volume `SANDBOX_HOST_WORKSPACE_ROOT`; Compose enables the proxy API sections needed for sandbox lifecycle. Tests cover forwarding, proxy derivation, explicit and volume-resolved host roots, and the unresolved-root warning. |
+| 2026-11-15 | `507baf6` | `cd backend && npm test -- --runInBand` (133 suites, 1650 tests) + `docker compose -f docker-compose.yml config --quiet` + `docker compose config --quiet` + `docker compose -f agent/docker-compose.yml config --quiet` + `node planning/check-planning.js` + `git diff --check` | D8 review follow-up: explicit `vibecode_repos` volume name, create-before-inspect for fresh hosts, fail-closed Docker-mode requests when `DOCKER_HOST` or the host root is unresolved, `DOCKER_HOST`/control-network attachment only in Docker mode, proxy moved off the default network onto an internal control network, rendered-Compose wiring tests, standalone agent compose fixed with a `/repos` host bind, and deployment docs updated. |
+| 2026-11-15 | `572cf95` | `cd backend && npm test -- --runInBand` (133 suites, 1651 tests) + `docker compose -f docker-compose.yml config --quiet` + `docker compose config --quiet` + `docker compose -f agent/docker-compose.yml config --quiet` + `node planning/check-planning.js` + `git diff --check` | D8 review follow-up: an existing `SANDBOX_CONTROL_NETWORK` must be internal or Docker mode fails closed, with a regression test; documented the one-time copy from a previous project-prefixed repo volume. |
+| 2026-11-15 | `baa8133` | `cd backend && npm test -- --runInBand` (133 suites, 1651 tests) + `docker compose -f docker-compose.yml config --quiet` + `docker compose config --quiet` + `docker compose -f agent/docker-compose.yml config --quiet` + `node planning/check-planning.js` + `git diff --check` | D8 review follow-up: Docker rejects multiple `NetworkingConfig` endpoints at create time, so the pool agent is created on the default network, the internal control network is connected before start, and the container is removed if the attach fails. Tests assert the attach and fresh-volume network creation. |
+| 2026-11-15 | `d1e8f2d` | `cd backend && npm test -- --runInBand` (133 suites, 1655 tests) + `docker compose -f docker-compose.yml config --quiet` + `docker compose config --quiet` + `docker compose -f agent/docker-compose.yml config --quiet` + `node planning/check-planning.js` + `git diff --check` | D8 review follow-up: pool agents receive the reachable `BACKEND_URL=http://api:3001`; `SANDBOX_REQUIRE=true` without Docker mode is rejected before DB/container creation; create/attach failures remove the container and DB agent record; the control network is project-scoped; Compose tests render root and standalone files and assert the backend URL, volume bind, network isolation and proxy permissions. |
+| 2026-11-15 | `de0110c` | `cd backend && npm test -- --runInBand` (133 suites, 1655 tests) + `docker compose config --quiet` + `docker compose -f agent/docker-compose.yml config --quiet` + `node planning/check-planning.js` + `git diff --check` | D8 review follow-up: the Compose wiring test locates the files in both a checkout and the backend test image, renders the root and standalone files, and fails when they are missing; the test image now copies the agent Compose file, and standalone network defaults are documented. |
+| 2026-11-15 | `57bc881` | `cd backend && npm test -- --runInBand` (133 suites, 1657 tests) + `docker compose config --quiet` + `docker compose -f agent/docker-compose.yml config --quiet` + `docker compose -f agent/docker-compose.yml -f agent/docker-compose.sandbox.yml config --quiet` + `node planning/check-planning.js` + `git diff --check` | D8 review follow-up: standalone host mode joins only the API network; Docker mode uses a separate overlay for the proxy network and `DOCKER_HOST`. Network defaults derive from `ROOT_COMPOSE_PROJECT`, and the Compose test compares standalone names to the rendered root project, including host-only and overlay cases. |
+| 2026-11-15 | `aa654c5` | `cd backend && npm test -- --runInBand` (133 suites, 1658 tests) + `docker compose config --quiet` + `docker compose -f agent/docker-compose.yml config --quiet` + `docker compose -f agent/docker-compose.yml -f agent/docker-compose.sandbox.yml config --quiet` + `node planning/check-planning.js` + `git diff --check` | D8 review follow-up: the rendered-Compose test clears ambient `DOCKER_HOST`/`REPO_VOLUME`/`BACKEND_URL`/network variables and renders with fixed project values; standalone host mode no longer declares `DOCKER_HOST`; a custom `REPO_VOLUME` is asserted to resolve to the same actual volume as the API mount. |

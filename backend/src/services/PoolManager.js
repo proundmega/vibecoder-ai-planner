@@ -1,15 +1,93 @@
 const crypto = require('crypto');
-const { docker } = require('../utils/docker');
+const { docker, DOCKER_URL } = require('../utils/docker');
 const AgentService = require('./AgentService');
 const { pool } = require('../db');
 const { decrypt } = require('../utils/crypto');
 
 const AGENT_IMAGE = process.env.AGENT_IMAGE || 'vibecode-agent';
-const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:3001';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://api:3001';
 const IDLE_TIMEOUT_MS = parseInt(process.env.AGENT_IDLE_TIMEOUT_MS) || 300000;
 const CONTAINER_NETWORK = process.env.CONTAINER_NETWORK || 'vibecode_default';
+const SANDBOX_CONTROL_NETWORK = process.env.SANDBOX_CONTROL_NETWORK
+  || 'vibecode-sandbox-control';
 const REPO_VOLUME = process.env.REPO_VOLUME || 'vibecode_repos';
+const REPO_MOUNT = '/repos';
 let _maxPoolSize = parseInt(process.env.MAX_POOL_SIZE) || 50;
+
+// Operator-controlled sandbox settings. The agent container receives the same
+// values as the API container so a pool agent can build a Docker sandbox. No
+// credential or workspace secret is included; the sandbox receives only the
+// explicit SANDBOX_ENV allowlist from the agent.
+const SANDBOX_ENV_NAMES = [
+  'SANDBOX_MODE',
+  'SANDBOX_IMAGE',
+  'SANDBOX_PROXY_IMAGE',
+  'SANDBOX_DOCKER_BIN',
+  'SANDBOX_REQUIRE',
+  'SANDBOX_REQUIRE_SECURE_FILE_ACCESS',
+  'SANDBOX_CPUS',
+  'SANDBOX_MEMORY_MB',
+  'SANDBOX_PIDS',
+  'SANDBOX_DISK_MB',
+  'SANDBOX_DISK_CHECK_INTERVAL_SECONDS',
+  'SANDBOX_DISK_ENFORCE',
+  'SANDBOX_NOFILE',
+  'SANDBOX_TMPFS_MB',
+  'SANDBOX_NETWORK',
+  'SANDBOX_ALLOWED_HOSTS',
+  'SANDBOX_EGRESS_PROXY',
+  'SANDBOX_EGRESS_UPSTREAM_NETWORK',
+  'SANDBOX_EGRESS_PROBE_TIMEOUT_MS',
+  'SANDBOX_EGRESS_TLS_MODE',
+  'SANDBOX_ENV',
+  'SANDBOX_USER',
+  'SANDBOX_ALLOW_ROOT',
+  'SANDBOX_EXEC_TIMEOUT_SECONDS',
+  'SANDBOX_ARTIFACT_MAX_BYTES',
+  'SANDBOX_SECCOMP_PROFILE',
+  'SANDBOX_APPARMOR_PROFILE',
+  'SANDBOX_CONTAINER_WORKSPACE_ROOT',
+  'SANDBOX_HOST_WORKSPACE_ROOT',
+];
+
+/**
+ * Docker CLI address for pool agents. The API can reach the daemon through
+ * DOCKER_API_URL, but the agent's docker CLI needs a DOCKER_HOST. Prefer an
+ * explicit AGENT_DOCKER_HOST, then derive a TCP address from the HTTP socket
+ * proxy used by the backend.
+ */
+function agentDockerHost() {
+  const configured = process.env.AGENT_DOCKER_HOST;
+  if (configured) {
+    return configured;
+  }
+  const url = DOCKER_URL || '';
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    try {
+      const parsed = new URL(url);
+      return `tcp://${parsed.hostname}:${parsed.port || 2375}`;
+    } catch {
+      return '';
+    }
+  }
+  if (url.startsWith('tcp://')) {
+    return url;
+  }
+  // A unix socket in the API container is not mounted into pool agents. Do
+  // not hand them an unreachable address; Docker mode requires an explicit
+  // AGENT_DOCKER_HOST (normally the socket proxy) in that setup.
+  return '';
+}
+
+function sandboxModeIntent() {
+  const mode = String(process.env.SANDBOX_MODE || '').trim().toLowerCase();
+  const requireSandbox = String(process.env.SANDBOX_REQUIRE || '').trim().toLowerCase();
+  const required = requireSandbox === 'true' || requireSandbox === '1';
+  if (required && mode !== 'docker') {
+    throw new Error('SANDBOX_REQUIRE=true requires SANDBOX_MODE=docker');
+  }
+  return { docker: mode === 'docker', mode, required };
+}
 
 function setMaxPoolSize(size) {
   _maxPoolSize = size;
@@ -70,6 +148,97 @@ class PoolManager {
 
   _generateApiKey() {
     return 'pool-' + crypto.randomBytes(24).toString('hex');
+  }
+
+  /**
+   * Host path the Docker daemon can bind-mount for the repo volume. A bind
+   * path is already daemon-visible; a named volume is resolved through the
+   * daemon. Returns null when the operator must configure the path explicitly.
+   */
+  async _sandboxHostWorkspaceRoot() {
+    const configured = process.env.SANDBOX_HOST_WORKSPACE_ROOT;
+    if (configured) {
+      return configured;
+    }
+    if (REPO_VOLUME.startsWith('/')) {
+      return REPO_VOLUME;
+    }
+    if (!this.docker || typeof this.docker.getVolume !== 'function') {
+      return null;
+    }
+    try {
+      let info;
+      try {
+        info = await this.docker.getVolume(REPO_VOLUME).inspect();
+      } catch (err) {
+        // A fresh host has no volume until the agent bind creates it. Create
+        // the named volume first so the inspected mountpoint is the same one
+        // the agent will bind, rather than an empty unprefixed volume.
+        if (err.statusCode !== 404 || typeof this.docker.createVolume !== 'function') {
+          throw err;
+        }
+        await this.docker.createVolume({ Name: REPO_VOLUME });
+        info = await this.docker.getVolume(REPO_VOLUME).inspect();
+      }
+      const mountpoint = info?.Mountpoint || info?.mountpoint;
+      if (mountpoint && mountpoint.startsWith('/')) {
+        return mountpoint;
+      }
+    } catch (err) {
+      console.warn(
+        `Could not resolve repo volume ${REPO_VOLUME} for sandbox mounts: ${err.message}`);
+    }
+    return null;
+  }
+
+  /**
+   * The control network is the only path from a Docker-mode pool agent to the
+   * socket proxy. Host-mode agents stay on the normal network and never
+   * receive DOCKER_HOST, so repo code cannot reach the daemon.
+   */
+  async _ensureSandboxControlNetwork() {
+    if (!this.docker || typeof this.docker.getNetwork !== 'function') {
+      throw new Error('Docker daemon is required for SANDBOX_MODE=docker');
+    }
+    try {
+      const info = await this.docker.getNetwork(SANDBOX_CONTROL_NETWORK).inspect();
+      if (info && info.Internal === false) {
+        throw new Error(
+          `SANDBOX_CONTROL_NETWORK ${SANDBOX_CONTROL_NETWORK} must be internal`);
+      }
+      return;
+    } catch (err) {
+      if (err.statusCode !== 404) {
+        throw err;
+      }
+    }
+    try {
+      await this.docker.createNetwork({
+        Name: SANDBOX_CONTROL_NETWORK,
+        Driver: 'bridge',
+        Internal: true,
+        CheckDuplicate: true,
+      });
+    } catch (err) {
+      // A concurrent request may have created it; verify before failing.
+      try {
+        await this.docker.getNetwork(SANDBOX_CONTROL_NETWORK).inspect();
+      } catch {
+        throw err;
+      }
+    }
+  }
+
+  async _deletePoolAgentRecord(dbAgentId) {
+    if (!dbAgentId) {
+      return;
+    }
+    try {
+      await pool.query('DELETE FROM agents WHERE id = $1', [dbAgentId]);
+    } catch (err) {
+      console.warn(
+        `Could not delete DB record for failed pool agent ${dbAgentId}: ${err.message}`);
+    }
   }
 
   async resolveProviderConfig(providerId) {
@@ -181,6 +350,31 @@ class PoolManager {
       providerConfig = await this.autoSelectProvider();
     }
 
+    // Resolve Docker sandbox prerequisites before creating a DB agent or a
+    // container. A Docker-mode agent without a host-visible workspace would
+    // silently bind an empty directory, so fail the request instead.
+    const sandboxIntent = sandboxModeIntent();
+    const dockerSandbox = sandboxIntent.docker;
+    let sandboxDockerHost = '';
+    let sandboxHostWorkspaceRoot = null;
+    if (dockerSandbox) {
+      sandboxDockerHost = agentDockerHost();
+      if (!sandboxDockerHost) {
+        throw new Error(
+          'SANDBOX_MODE=docker requires AGENT_DOCKER_HOST pointing at a '
+          + 'reachable socket proxy; the API unix socket is not available to '
+          + 'pool agents');
+      }
+      sandboxHostWorkspaceRoot = await this._sandboxHostWorkspaceRoot();
+      if (!sandboxHostWorkspaceRoot) {
+        throw new Error(
+          `SANDBOX_MODE=docker requires a host-visible repo workspace for `
+          + `volume ${REPO_VOLUME}; set SANDBOX_HOST_WORKSPACE_ROOT or make `
+          + 'REPO_VOLUME a host path');
+      }
+      await this._ensureSandboxControlNetwork();
+    }
+
     // Create a DB agent record so heartbeat/auth flow works the same as manual
     // agents. Own the agent by the project owner so project-scoped credential
     // and repo endpoints authorize it correctly.
@@ -250,12 +444,22 @@ class PoolManager {
         env.push(`${name}=${process.env[name]}`);
       }
     }
-    if (process.env.SANDBOX_REQUIRE_SECURE_FILE_ACCESS) {
-      env.push(`SANDBOX_REQUIRE_SECURE_FILE_ACCESS=${
-        process.env.SANDBOX_REQUIRE_SECURE_FILE_ACCESS}`);
+    const sandboxEnv = new Map();
+    for (const name of SANDBOX_ENV_NAMES) {
+      if (process.env[name] !== undefined && process.env[name] !== '') {
+        sandboxEnv.set(name, process.env[name]);
+      }
     }
-    if (process.env.SANDBOX_EGRESS_TLS_MODE) {
-      env.push(`SANDBOX_EGRESS_TLS_MODE=${process.env.SANDBOX_EGRESS_TLS_MODE}`);
+
+    if (dockerSandbox) {
+      sandboxEnv.set('DOCKER_HOST', sandboxDockerHost);
+      sandboxEnv.set('SANDBOX_HOST_WORKSPACE_ROOT', sandboxHostWorkspaceRoot);
+    }
+    if (!sandboxEnv.has('SANDBOX_CONTAINER_WORKSPACE_ROOT')) {
+      sandboxEnv.set('SANDBOX_CONTAINER_WORKSPACE_ROOT', REPO_MOUNT);
+    }
+    for (const [name, value] of sandboxEnv) {
+      env.push(`${name}=${value}`);
     }
 
     for (const name of [
@@ -272,13 +476,14 @@ class PoolManager {
       }
     }
 
+    let container;
     try {
-      const container = await this.docker.createContainer({
+      const createOptions = {
         Image: AGENT_IMAGE,
         name: `agent-${agentId}`,
         Env: env,
         HostConfig: {
-          Binds: [`${REPO_VOLUME}:/repos`],
+          Binds: [`${REPO_VOLUME}:${REPO_MOUNT}`],
           NetworkMode: CONTAINER_NETWORK,
           AutoRemove: true,
           Memory: 2 * 1024 * 1024 * 1024,
@@ -288,8 +493,28 @@ class PoolManager {
         AttachStderr: false,
         OpenStdin: false,
         StdinOnce: false,
-      });
+      };
 
+      container = await this.docker.createContainer(createOptions);
+      if (dockerSandbox) {
+        // Docker rejects multiple EndpointsConfig entries at create time.
+        // Attach the internal control network before starting so the agent
+        // never runs without proxy access.
+        try {
+          await this.docker.getNetwork(SANDBOX_CONTROL_NETWORK)
+            .connect({ Container: container.id });
+        } catch (err) {
+          try {
+            if (typeof container.remove === 'function') {
+              await container.remove({ force: true });
+            }
+          } catch {
+            // Best effort; the create itself failed the request.
+          }
+          throw new Error(
+            `Could not attach pool agent to ${SANDBOX_CONTROL_NETWORK}: ${err.message}`);
+        }
+      }
       await container.start();
 
       this.pool.set(agentId, {
@@ -308,6 +533,14 @@ class PoolManager {
 
       return { agentId, containerId: container.id, reused: false, dbAgentId: dbAgent.id };
     } catch (err) {
+      try {
+        if (container && typeof container.remove === 'function') {
+          await container.remove({ force: true });
+        }
+      } catch {
+        // Best effort; the request already failed.
+      }
+      await this._deletePoolAgentRecord(dbAgent.id);
       if (err.message && err.message.includes('No such image')) {
         throw new Error(`Agent image '${AGENT_IMAGE}' not found. Run: cd agent && docker build -t ${AGENT_IMAGE} .`);
       }

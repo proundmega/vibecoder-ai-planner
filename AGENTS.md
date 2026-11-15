@@ -177,9 +177,29 @@ and model-driven shell commands), `SANDBOX_IMAGE`, `SANDBOX_PROXY_IMAGE`,
 `SANDBOX_EXEC_TIMEOUT_SECONDS`, `SANDBOX_ARTIFACT_MAX_BYTES`,
 `SANDBOX_SECCOMP_PROFILE`, `SANDBOX_APPARMOR_PROFILE`,
 `SANDBOX_CONTAINER_WORKSPACE_ROOT`, `SANDBOX_HOST_WORKSPACE_ROOT`,
-`SANDBOX_REQUIRE_SECURE_FILE_ACCESS`.
-Docker mode needs a daemon connection and a host-visible workspace; the
-PoolManager/compose wiring is deferred to fg-34 D8. OpenCode still runs in the
+`SANDBOX_REQUIRE_SECURE_FILE_ACCESS`, `SANDBOX_CONTROL_NETWORK`.
+Docker mode needs a daemon connection and a host-visible workspace. PoolManager
+forwards the operator `SANDBOX_*` settings to pool agents, sets `DOCKER_HOST`
+only when Docker mode is enabled, resolves the repo volume mountpoint as
+`SANDBOX_HOST_WORKSPACE_ROOT`, and attaches Docker-mode agents to an internal
+control network shared only with the restricted socket proxy. Host-mode agents
+receive neither `DOCKER_HOST` nor that network, so repo code cannot reach the
+proxy. `AGENT_DOCKER_HOST` overrides the proxy address; if only the API's unix
+socket is configured, Docker mode fails closed and requires an explicit proxy.
+Pool agents receive `BACKEND_URL=http://api:3001` by default; the root Compose
+API sets it explicitly. In Compose, `REPO_VOLUME` names the repo volume and
+keeps the API mount and PoolManager bind aligned; use the non-Compose runner
+for a host-path workspace. `SANDBOX_REQUIRE=true` is rejected by the API unless
+`SANDBOX_MODE=docker`, before any DB agent or container is created, and a
+failed create/attach removes the container and DB agent record.
+
+The standalone agent Compose file keeps host mode on the API network only. Set
+`ROOT_COMPOSE_PROJECT` (or `VIBECODE_NETWORK`/`SANDBOX_CONTROL_NETWORK`) to the
+root project's actual networks. Docker mode also uses
+`-f agent/docker-compose.sandbox.yml`, which adds the restricted proxy network
+and sets `DOCKER_HOST`; host mode never joins that network. The run also needs
+a host bind at `/repos` (`REPO_HOST_PATH`) writable by the agent user (uid 100,
+gid 101) and `SANDBOX_HOST_WORKSPACE_ROOT` set to the same absolute host path. OpenCode still runs in the
 supervisor, but the built-in `bash`/`shell` tool is disabled and the
 `sandbox_bash` tool forwards commands to the sandbox bridge. The sandbox has
 no direct egress or external DNS; `SANDBOX_NETWORK=allowlist` routes traffic

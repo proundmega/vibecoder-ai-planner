@@ -7,6 +7,9 @@ services:
       - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3002,http://127.0.0.1:3000,http://127.0.0.1:3002
       - ALLOW_PRIVATE_HOSTS=1
       - DOCKER_API_URL=/var/run/docker.sock
+      # Pool agents still use the restricted proxy; the direct socket is only
+      # for the API container in local development.
+      - AGENT_DOCKER_HOST=${AGENT_DOCKER_HOST:-tcp://docker-proxy:2375}
       - ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       - INTEGRATION_TESTS=1
       # Local development defaults to the explicit PAT fallback until an App is configured.

@@ -9,6 +9,7 @@ services:
       - PROJECT_ID=${PROJECT_ID:-1}
       - REPO_OWNER=${REPO_OWNER}
       - REPO_NAME=${REPO_NAME}
+      - REPO_CLONE_DIR=${REPO_CLONE_DIR:-/repos}
       - AI_PROVIDER=${AI_PROVIDER:-claude}
       - AI_MODEL=${AI_MODEL:-claude-sonnet-4-20250514}
       - AI_API_KEY=${AI_API_KEY}
@@ -32,11 +33,15 @@ services:
       - HARNESS_RETRY_MAX_DELAY_MS=${HARNESS_RETRY_MAX_DELAY_MS:-3600000}
       # fg-34 sandbox. Slice 2 sandboxes supervisor-driven install/verification
       # commands and bridges the OpenCode bash tool into the same sandbox.
-      # Docker mode needs a daemon connection (DOCKER_HOST or a socket proxy)
-      # and a workspace path the daemon can bind-mount; PoolManager/compose
-      # wiring is deferred to D8.
-      # Do not mount /var/run/docker.sock into the sandbox itself; only the
-      # supervisor talks to the daemon.
+      # Docker mode needs a daemon connection (DOCKER_HOST pointing at a
+      # restricted socket proxy) and SANDBOX_HOST_WORKSPACE_ROOT set to the
+      # host path the daemon can bind-mount. PoolManager derives both for pool
+      # agents; this standalone compose file requires them explicitly. For
+      # Docker mode, also use agent/docker-compose.sandbox.yml so the agent
+      # joins the restricted proxy network. Set SANDBOX_HOST_WORKSPACE_ROOT to
+      # the absolute host path mounted at /repos below (REPO_HOST_PATH). Do not
+      # mount /var/run/docker.sock into the sandbox itself; only the supervisor
+      # talks to the daemon.
       - SANDBOX_MODE=${SANDBOX_MODE:-host}
       - SANDBOX_IMAGE=${SANDBOX_IMAGE:-vibecode-agent-sandbox:latest}
       - SANDBOX_PROXY_IMAGE=${SANDBOX_PROXY_IMAGE:-vibecode-sandbox-proxy:latest}
@@ -66,11 +71,16 @@ services:
       - SANDBOX_APPARMOR_PROFILE=${SANDBOX_APPARMOR_PROFILE:-}
       - SANDBOX_CONTAINER_WORKSPACE_ROOT=${SANDBOX_CONTAINER_WORKSPACE_ROOT:-/repos}
       - SANDBOX_HOST_WORKSPACE_ROOT=${SANDBOX_HOST_WORKSPACE_ROOT:-}
-    depends_on:
-      api:
-        condition: service_healthy
+    volumes:
+      # Host-visible workspace: the daemon resolves this bind, not the agent
+      # container. SANDBOX_HOST_WORKSPACE_ROOT must match its absolute path.
+      # The bind is host-owned; make it writable by the agent user (uid 100,
+      # gid 101), for example: mkdir -p repos && chown 100:101 repos
+      - ${REPO_HOST_PATH:-./repos}:/repos
     restart: unless-stopped
     networks:
+      # Host mode joins only the API network. Docker mode adds the restricted
+      # proxy network through agent/docker-compose.sandbox.yml.
       - vibecode
     deploy:
       resources:
@@ -79,10 +89,10 @@ services:
           memory: 2G
           cpus: '2.0'
 
-  api:
-    external: true
-    name: vibecode-api
-
 networks:
+  # The API's Compose network, so BACKEND_URL=http://api:3001 resolves.
+  # ROOT_COMPOSE_PROJECT is the root project name; override VIBECODE_NETWORK
+  # when the actual network differs, e.g. VIBECODE_NETWORK=myproj_default.
   vibecode:
-    driver: bridge
+    external: true
+    name: ${VIBECODE_NETWORK:-${ROOT_COMPOSE_PROJECT:-vibecode}_default}
