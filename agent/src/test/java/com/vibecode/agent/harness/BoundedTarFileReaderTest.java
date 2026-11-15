@@ -25,6 +25,17 @@ class BoundedTarFileReaderTest {
     }
 
     @Test
+    void copyStreamsASingleRegularFile() throws IOException {
+        byte[] file = "streamed".getBytes(StandardCharsets.US_ASCII);
+        byte[] tar = tar(file, (byte) '0', "artifact");
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        BoundedTarFileReader.copy(new ByteArrayInputStream(tar), output, 1024, 4096);
+
+        assertArrayEquals(file, output.toByteArray());
+    }
+
+    @Test
     void rejectsSymlinkEntries() {
         byte[] tar = tar(new byte[0], (byte) '2', "ca.crt");
 

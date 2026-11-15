@@ -4,8 +4,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -325,13 +327,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
             int maxBytes = limit > 0
                 ? (int) Math.min(limit, Integer.MAX_VALUE - 16_384L)
                 : 64 * 1024 * 1024;
-            byte[] content = readContainerFile(
-                handle.id(), source, maxBytes, COPY_TIMEOUT, false);
-            if (limit > 0 && content.length > limit) {
-                throw new IOException("Downloaded artifact " + source
-                    + " exceeds SANDBOX_ARTIFACT_MAX_BYTES=" + limit);
-            }
-            Files.write(temp, content);
+            copyContainerFile(handle.id(), source, temp, maxBytes, COPY_TIMEOUT);
             Files.move(temp, local, StandardCopyOption.REPLACE_EXISTING);
         } finally {
             Files.deleteIfExists(temp);
@@ -1380,12 +1376,37 @@ public final class DockerSandboxRunner implements SandboxRunner {
         int maxBytes,
         Duration timeout
     ) throws IOException {
-        return readContainerFile(container, remotePath, maxBytes, timeout, true);
+        return transferContainerFile(
+            container, remotePath, null, maxBytes, timeout, true);
     }
 
-    private byte[] readContainerFile(
+    /**
+     * Stream a container file into {@code target} through the bounded tar
+     * reader. Used for artifacts, so the tar stream is the authority for the
+     * entry type and size and no artifact bytes are buffered in memory.
+     *
+     * <p>{@code docker cp} without {@code -L} does not follow the final path
+     * component but still resolves intermediate directory symlinks. The
+     * pre-copy {@code readlink -f} guard normally rejects those; a racing
+     * same-container process can therefore still redirect an intermediate
+     * component. Everything reachable that way is inside the sandbox
+     * container (the only host mount is {@code /workspace}), so this is a
+     * final-component-only no-follow guarantee, not a host-secret boundary.</p>
+     */
+    private void copyContainerFile(
         String container,
         String remotePath,
+        Path target,
+        int maxBytes,
+        Duration timeout
+    ) throws IOException {
+        transferContainerFile(container, remotePath, target, maxBytes, timeout, false);
+    }
+
+    private byte[] transferContainerFile(
+        String container,
+        String remotePath,
+        Path target,
         int maxBytes,
         Duration timeout,
         boolean followLinks
@@ -1417,10 +1438,21 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
         byte[][] bytes = new byte[1][];
         Throwable[] failure = new Throwable[1];
+        int maxTarBytes = maxBytes > Integer.MAX_VALUE - 8_192
+            ? Integer.MAX_VALUE : maxBytes + 8_192;
         Thread outputReader = new Thread(() -> {
             try {
-                bytes[0] = BoundedTarFileReader.read(
-                    process.getInputStream(), maxBytes, maxBytes + 8_192);
+                if (target == null) {
+                    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                    BoundedTarFileReader.copy(
+                        process.getInputStream(), buffer, maxBytes, maxTarBytes);
+                    bytes[0] = buffer.toByteArray();
+                } else {
+                    try (OutputStream output = Files.newOutputStream(target)) {
+                        BoundedTarFileReader.copy(
+                            process.getInputStream(), output, maxBytes, maxTarBytes);
+                    }
+                }
             } catch (Throwable error) {
                 failure[0] = error;
                 ProcessGroup.kill(process);
@@ -1453,10 +1485,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 }
                 throw new IOException("Could not read " + remotePath + ": " + errorOutput);
             }
-            if (bytes[0] == null) {
+            if (target == null && bytes[0] == null) {
                 throw new IOException("Could not read " + remotePath + ": empty archive");
             }
-            return bytes[0];
+            return target == null ? bytes[0] : null;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             ProcessGroup.kill(process);

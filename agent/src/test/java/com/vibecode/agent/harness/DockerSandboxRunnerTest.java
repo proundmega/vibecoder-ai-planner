@@ -577,6 +577,8 @@ class DockerSandboxRunnerTest {
         assertTrue(logText.contains("inspect -f {{.State.Running}}"), logText);
         assertTrue(logText.contains("exec -w /workspace"), logText);
         assertTrue(logText.contains("cp"), logText);
+        assertTrue(logText.contains(":/workspace/upload.txt -"), logText);
+        assertFalse(logText.contains("cp -L"), logText);
         assertTrue(logText.contains("rm -f"), logText);
     }
 
@@ -1103,10 +1105,12 @@ class DockerSandboxRunnerTest {
               cp)
                 last=""
                 for a in "$@"; do last="$a"; done
-                case "$last" in
-                  *:*) : ;;
-                  *) head -c 100 /dev/zero > "$last" ;;
-                esac
+                if [ "$last" = "-" ]; then
+                  tmp=$(mktemp -d)
+                  head -c 100 /dev/zero > "$tmp/big"
+                  tar -C "$tmp" -cf - big
+                  rm -rf "$tmp"
+                fi
                 ;;
               *) exit 0 ;;
             esac
@@ -1135,6 +1139,79 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void getFileRejectsASymlinkTarEntryDespiteAPassingGuard() throws IOException {
+        assertTarEntryRejected("""
+            tmp=$(mktemp -d)
+            ln -s /etc/passwd "$tmp/leak"
+            tar -C "$tmp" -cf - leak
+            rm -rf "$tmp"
+            """);
+    }
+
+    @Test
+    void getFileRejectsAFifoTarEntryDespiteAPassingGuard() throws IOException {
+        assertTarEntryRejected("""
+            tmp=$(mktemp -d)
+            mkfifo "$tmp/fifo"
+            tar -C "$tmp" -cf - fifo
+            rm -rf "$tmp"
+            """);
+    }
+
+    private void assertTarEntryRejected(String emitTar) throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        String body = """
+            case "$1" in
+              run) exit 0 ;;
+              inspect) echo true ;;
+              exec)
+                case "$*" in
+                  *"wc -c"*) echo "OK 0" ;;
+                  *"mkdir -p"*) echo OK ;;
+                  *) exit 0 ;;
+                esac
+                ;;
+              cp)
+                last=""
+                for a in "$@"; do last="$a"; done
+                if [ "$last" = "-" ]; then
+                  @@EMIT_TAR@@
+                fi
+                ;;
+              *) exit 0 ;;
+            esac
+            """;
+        Path script = fakeDocker(log, body.replace("@@EMIT_TAR@@", emitTar));
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_ARTIFACT_MAX_BYTES", "10"
+        )::get);
+        Path local = Files.writeString(tempDir.resolve("existing.txt"), "keep");
+
+        IOException error;
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace()));
+            error = assertThrows(IOException.class,
+                () -> runner.getFile(handle, "/workspace/file.txt", local));
+        }
+
+        assertTrue(error.getCause() != null
+                && error.getCause().getMessage().contains("not a regular file"),
+            String.valueOf(error.getCause()));
+        assertEquals("keep", Files.readString(local));
+        assertTrue(Files.readString(log).contains(":/workspace/file.txt -"),
+            Files.readString(log));
+        try (var listing = Files.list(tempDir)) {
+            assertFalse(listing.anyMatch(path -> path.getFileName().toString()
+                .startsWith(".sandbox-download-")));
+        }
+    }
+
+    @Test
     void getFileOverflowPreservesAnExistingLocalFile() throws IOException {
         Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
         Path log = tempDir.resolve("docker.log");
@@ -1152,10 +1229,12 @@ class DockerSandboxRunnerTest {
               cp)
                 last=""
                 for a in "$@"; do last="$a"; done
-                case "$last" in
-                  *:*) : ;;
-                  *) head -c 100 /dev/zero > "$last" ;;
-                esac
+                if [ "$last" = "-" ]; then
+                  tmp=$(mktemp -d)
+                  head -c 100 /dev/zero > "$tmp/big"
+                  tar -C "$tmp" -cf - big
+                  rm -rf "$tmp"
+                fi
                 ;;
               *) exit 0 ;;
             esac
@@ -1169,12 +1248,16 @@ class DockerSandboxRunnerTest {
         )::get);
         Path local = Files.writeString(tempDir.resolve("existing.txt"), "keep");
 
+        IOException error;
         try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
             SandboxHandle handle = runner.create(config.specFor(workspace()));
-            assertThrows(IOException.class,
+            error = assertThrows(IOException.class,
                 () -> runner.getFile(handle, "/workspace/file.txt", local));
         }
 
+        assertTrue(error.getCause() != null
+                && error.getCause().getMessage().contains("size bound"),
+            String.valueOf(error.getCause()));
         assertEquals("keep", Files.readString(local));
         try (var listing = Files.list(tempDir)) {
             assertFalse(listing.anyMatch(path -> path.getFileName().toString()
