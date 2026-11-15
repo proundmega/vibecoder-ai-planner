@@ -29,7 +29,9 @@ public final class SandboxRunnerFactory {
         }
         log.info("Sandbox mode: docker (image {}, network {})",
             config.image(), config.networkEnabled() ? "allowlist" : "none");
-        return new DockerSandboxRunner(config);
+        DockerSandboxRunner runner = new DockerSandboxRunner(config);
+        runner.reapOrphans();
+        return runner;
     }
 
     /** Host-only runner for the legacy/test path; never logs a production warning. */

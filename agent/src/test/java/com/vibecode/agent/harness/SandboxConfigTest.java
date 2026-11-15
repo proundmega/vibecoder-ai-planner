@@ -148,6 +148,27 @@ class SandboxConfigTest {
         SandboxConfig config = SandboxConfig.from(name -> null);
 
         assertEquals(EgressTlsMode.SNI_ONLY, config.egressTlsMode());
+        assertEquals("", config.owner());
+    }
+
+    @Test
+    void parsesTheAgentOwnerForOrphanReaping() {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "AGENT_ID", "agent-42"
+        )::get);
+
+        assertEquals("agent-42", config.owner());
+    }
+
+    @Test
+    void rejectsUnsafeAgentOwnerLabels() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "AGENT_ID", "agent with spaces"
+            )::get));
+        assertTrue(error.getMessage().contains("AGENT_ID"));
     }
 
     @Test

@@ -178,6 +178,64 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void carriesTheAgentOwnerLabelOnSandboxesAndProxies() throws IOException {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_USER", "1000:1000",
+            "AGENT_ID", "agent-42",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org"
+        )::get);
+        SandboxSpec spec = config.specFor(workspace());
+
+        String create = String.join(" ",
+            DockerSandboxRunner.buildCreateArgs(spec, "sandbox-1"));
+        String proxy = String.join(" ",
+            DockerSandboxRunner.buildProxyRunArgs(spec, "proxy-1", "internal-1"));
+
+        assertTrue(create.contains("vibecode.sandbox.owner=agent-42"), create);
+        assertTrue(proxy.contains("vibecode.sandbox.owner=agent-42"), proxy);
+    }
+
+    @Test
+    void reapsContainersAndNetworksForTheSameAgentOwner() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              ps) echo abcdef123456 ;;
+              network)
+                case "$2" in
+                  ls) echo 1234567890ab ;;
+                esac
+                ;;
+              rm) exit 0 ;;
+              network_rm_placeholder) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "AGENT_ID", "agent-42"
+        )::get);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            runner.reapOrphans();
+        }
+
+        String commands = Files.readString(log);
+        assertTrue(commands.contains("ps -aq --filter label=vibecode.sandbox.owner=agent-42"),
+            commands);
+        assertTrue(commands.contains("rm -f abcdef123456"), commands);
+        assertTrue(commands.contains(
+            "network ls -q --filter label=vibecode.sandbox.owner=agent-42"), commands);
+        assertTrue(commands.contains("network rm 1234567890ab"), commands);
+    }
+
+    @Test
     void proxyArgsClearTheTestSeamAndUseTheConfiguredImage() throws IOException {
         SandboxConfig config = SandboxConfig.from(env(
             "SANDBOX_MODE", "docker",
@@ -438,7 +496,7 @@ class DockerSandboxRunnerTest {
             spec.image(), spec.proxyImage(), spec.workspace(), spec.mountSource(), spec.maxDuration(),
             spec.limits(), spec.networkEnabled(), spec.allowedHosts(), spec.egressProxy(),
             spec.egressUpstreamNetwork(), spec.egressProbeTimeoutMs(), spec.egressTlsMode(),
-            Map.of("OPENAI_KEY", "sk-secret"), spec.user(), spec.seccompProfile(),
+            spec.owner(), Map.of("OPENAI_KEY", "sk-secret"), spec.user(), spec.seccompProfile(),
             spec.apparmorProfile(), spec.artifactMaxBytes());
 
         assertThrows(IllegalArgumentException.class,
