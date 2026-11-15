@@ -7,8 +7,8 @@ effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
 updated: "2026-11-14"
-pr: 153
-branch: null
+pr: 154
+branch: "feat/fg-34-d9-orphan-reaper"
 depends_on: ["fg-30"]
 ---
 
@@ -51,7 +51,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D6 | Prompt-injection classification, output scanning and instruction precedence (FR8) | fg-34 | Security | fg-34 slice 3a | done (#128) |
 | D7 | SBOM, image scanning and digest-pinned base images (FR9) | fg-34 | Supply chain | fg-34 slice 3b | done (#129) |
 | D8 | Docker sandbox deployment wiring: `PoolManager` env, socket proxy/DOCKER_HOST and a host-visible repo volume | fg-34 | Infrastructure | fg-34 slice 2 / fg-43 | open |
-| D9 | Startup reaper for sandbox containers left by a killed agent (the slice-1 shutdown hook covers graceful exit only) | fg-34 | Reliability | fg-34 slice 2 | open |
+| D9 | Startup reaper for sandbox containers left by a killed agent (the slice-1 shutdown hook covers graceful exit only) | fg-34 | Reliability | fg-34 slice 2 | in review (#154): `AGENT_ID` owner labels on sandboxes/proxies/networks; `SandboxRunnerFactory` reaps same-owner containers and networks at startup, logging failures without blocking. Scope is same-`AGENT_ID` restarts; a replacement pool agent gets a new ID, so pool cleanup and pre-#154 unlabeled resources remain D30. One live process per `AGENT_ID` is required |
 | D10 | Race-free artifact copy: the Docker file channel rejects failures by exit code, but `docker cp` and the reported size remain untrusted; a same-container swap/spoof is possible | fg-34 | Security | fg-34 slice 2 | open |
 | D11 | Redaction before storage (NFR5): sandbox/verification output is redacted for configured secrets and high-confidence credential formats before ticket messages, run errors and PR bodies are stored | fg-34 | Privacy | fg-34 slice 3c | done (#130) |
 | D12 | True disk quota: the supervisor walk cannot see unlinked-but-open files; a quota-enabled volume/filesystem is the durable fix | fg-34 | Reliability | fg-34 slice 2 | open |
@@ -72,3 +72,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D27 | Support repo-provided origin CAs for private registries or certificate-pinning clients in `terminate` mode; scope per allowlisted host and still enforce `Host == SNI`; currently rejected/fail-closed | fg-34 D16 | Compatibility | issue #148 | open |
 | D28 | Inject a Java/Maven/Gradle truststore (copy `cacerts`, import the per-run CA with `keytool`, set `JAVA_TOOL_OPTIONS`) when a JDK is present; until then Java toolchains fail closed in `terminate` mode | fg-34 D16 | Compatibility | issue #149 | open |
 | D29 | Support scoped client-certificate mTLS for named allowlisted hosts in `terminate` mode; keep the key in the proxy, never send it to another host, and audit its use | fg-34 D16 | Compatibility | issue #150 | open |
+| D30 | Pool-agent replacement cleanup: `PoolManager` assigns a new `AGENT_ID` to each replacement container, so same-owner reaping cannot find the previous container's resources; pre-#154 resources have no owner label. Use a stable `SANDBOX_OWNER`/lease or a safe stale-resource sweep, and document a one-time upgrade cleanup | fg-34 D9 | Reliability | fg-34 D8 / fg-43 | open |

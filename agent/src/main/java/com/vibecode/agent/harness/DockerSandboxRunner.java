@@ -1158,9 +1158,13 @@ public final class DockerSandboxRunner implements SandboxRunner {
         String network = "vibecode-egress-" + suffix;
         String proxy = "vibecode-egress-proxy-" + suffix;
         try {
+            List<String> networkCommand = new ArrayList<>(List.of(
+                config.dockerBinary(), "network", "create",
+                "--driver", "bridge", "--internal", "--label", LABEL));
+            addOwnerLabel(networkCommand, spec.owner());
+            networkCommand.add(network);
             DockerResult created = runDocker(
-                List.of(config.dockerBinary(), "network", "create",
-                    "--driver", "bridge", "--internal", "--label", LABEL, network),
+                networkCommand,
                 CREATE_TIMEOUT,
                 CONTROL_OUTPUT_BYTES
             );
@@ -1556,6 +1560,69 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
     }
 
+    private static void addOwnerLabel(List<String> args, String owner) {
+        if (owner != null && !owner.isBlank()) {
+            args.add("--label");
+            args.add("vibecode.sandbox.owner=" + owner);
+        }
+    }
+
+    /**
+     * Remove containers, proxies and networks left by a previous agent process
+     * with the same {@code AGENT_ID}. Called once at startup before any new
+     * sandbox exists; a failure is logged but does not block startup.
+     */
+    public void reapOrphans() {
+        String owner = config.owner();
+        if (owner == null || owner.isBlank()) {
+            return;
+        }
+        try {
+            String filter = "label=vibecode.sandbox.owner=" + owner;
+            reap("containers",
+                List.of(config.dockerBinary(), "ps", "-aq", "--filter", filter),
+                List.of(config.dockerBinary(), "rm", "-f"));
+            reap("networks",
+                List.of(config.dockerBinary(), "network", "ls", "-q", "--filter", filter),
+                List.of(config.dockerBinary(), "network", "rm"));
+        } catch (RuntimeException e) {
+            log.warn("Could not reap orphaned sandbox resources: {}",
+                LOG_REDACTOR.redact(e.toString()));
+        }
+    }
+
+    private void reap(String kind, List<String> listCommand, List<String> removePrefix) {
+        try {
+            DockerResult listed = runDocker(listCommand, INSPECT_TIMEOUT, 256 * 1024);
+            if (listed.timedOut() || listed.exitCode() != 0) {
+                log.warn("Could not list orphaned sandbox {} for reaping: {}",
+                    kind, LOG_REDACTOR.redact(listed.output()));
+                return;
+            }
+            if (listed.truncated()) {
+                log.warn("Orphaned sandbox {} listing was truncated; remaining IDs "
+                    + "will be reaped on the next start", kind);
+            }
+            for (String id : listed.output().split("\\s+")) {
+                if (!id.matches("[a-fA-F0-9]{12,64}")) {
+                    continue;
+                }
+                List<String> command = new ArrayList<>(removePrefix);
+                command.add(id);
+                DockerResult removed = runDocker(command, CONTROL_TIMEOUT, CONTROL_OUTPUT_BYTES);
+                if (removed.timedOut() || removed.exitCode() != 0) {
+                    log.warn("Could not reap orphaned sandbox {} {}: {}",
+                        kind, id, LOG_REDACTOR.redact(removed.output()));
+                } else {
+                    log.info("Reaped orphaned sandbox {} {}", kind, id);
+                }
+            }
+        } catch (RuntimeException e) {
+            log.warn("Could not reap orphaned sandbox {}: {}", kind,
+                LOG_REDACTOR.redact(e.toString()));
+        }
+    }
+
     /** Build the hardened proxy container arguments. Package-visible for tests. */
     static List<String> buildProxyRunArgs(SandboxSpec spec, String proxyName, String network) {
         List<String> args = new ArrayList<>();
@@ -1565,6 +1632,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
         args.add(proxyName);
         args.add("--label");
         args.add(LABEL);
+        addOwnerLabel(args, spec.owner());
         args.add("--read-only");
         args.add("--tmpfs");
         args.add("/tmp:rw,nosuid,nodev,size="
@@ -1719,6 +1787,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
         args.add(name);
         args.add("--label");
         args.add(LABEL);
+        addOwnerLabel(args, spec.owner());
 
         // The base image is immutable; only the workspace (and /tmp) is writable.
         args.add("--read-only");

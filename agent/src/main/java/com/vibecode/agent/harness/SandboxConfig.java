@@ -33,6 +33,7 @@ public record SandboxConfig(
     String egressUpstreamNetwork,
     long egressProbeTimeoutMs,
     EgressTlsMode egressTlsMode,
+    String owner,
     Map<String, String> runEnv,
     String user,
     boolean requireSandbox,
@@ -116,6 +117,7 @@ public record SandboxConfig(
             value(env, "SANDBOX_EGRESS_UPSTREAM_NETWORK", DEFAULT_EGRESS_UPSTREAM_NETWORK),
             longValue(env, "SANDBOX_EGRESS_PROBE_TIMEOUT_MS", 5_000L, 100L),
             EgressTlsMode.from(value(env, "SANDBOX_EGRESS_TLS_MODE", DEFAULT_EGRESS_TLS_MODE)),
+            value(env, "AGENT_ID", ""),
             parseEnv(value(env, "SANDBOX_ENV", "")),
             value(env, "SANDBOX_USER", defaultUser()),
             booleanValue(env, "SANDBOX_REQUIRE", false),
@@ -212,6 +214,13 @@ public record SandboxConfig(
         if (artifactMaxBytes <= 0) {
             throw new IllegalStateException("SANDBOX_ARTIFACT_MAX_BYTES must be positive");
         }
+        // AGENT_ID is only used for Docker owner labels/reaping. Host mode
+        // keeps accepting legacy values instead of failing at startup.
+        if (mode == SandboxMode.DOCKER && owner != null && !owner.isBlank()
+            && !owner.matches("[A-Za-z0-9_.-]{1,128}")) {
+            throw new IllegalStateException(
+                "AGENT_ID must be a safe Docker label value (letters, digits, _ . -)");
+        }
     }
 
     private void validateLimits() {
@@ -286,6 +295,7 @@ public record SandboxConfig(
             egressUpstreamNetwork,
             egressProbeTimeoutMs,
             egressTlsMode,
+            owner,
             withSafeDefaults(runEnv),
             user,
             seccompProfile,
