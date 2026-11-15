@@ -2019,7 +2019,19 @@ public final class DockerSandboxRunner implements SandboxRunner {
             merged.putAll(requested);
         }
         if (base != null) {
-            merged.putAll(base);
+            for (Map.Entry<String, String> entry : base.entrySet()) {
+                String name = entry.getKey();
+                String value = entry.getValue();
+                if ("JAVA_TOOL_OPTIONS".equals(name)) {
+                    // Preserve caller JVM options and append the truststore.
+                    merged.merge(name, value, (caller, trust) ->
+                        caller == null || caller.isBlank() || caller.contains(trust)
+                            ? (caller == null || caller.isBlank() ? trust : caller)
+                            : caller + " " + trust);
+                } else {
+                    merged.put(name, value);
+                }
+            }
         }
         return Map.copyOf(merged);
     }

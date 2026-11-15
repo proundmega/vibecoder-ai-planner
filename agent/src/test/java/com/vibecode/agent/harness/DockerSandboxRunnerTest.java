@@ -519,9 +519,13 @@ class DockerSandboxRunnerTest {
             Map.of("JAVA_TOOL_OPTIONS", "-Djavax.net.ssl.trustStore=/tmp/trust"),
             Map.of("FEATURE_FLAG", "on", "JAVA_TOOL_OPTIONS", "-Duser.override=true"));
 
-        assertEquals("-Djavax.net.ssl.trustStore=/tmp/trust",
+        assertEquals("-Duser.override=true -Djavax.net.ssl.trustStore=/tmp/trust",
             merged.get("JAVA_TOOL_OPTIONS"));
         assertEquals("on", merged.get("FEATURE_FLAG"));
+        assertEquals("-Djavax.net.ssl.trustStore=/tmp/trust",
+            DockerSandboxRunner.mergeExecEnvironment(
+                Map.of("JAVA_TOOL_OPTIONS", "-Djavax.net.ssl.trustStore=/tmp/trust"),
+                Map.of()).get("JAVA_TOOL_OPTIONS"));
         assertTrue(DockerSandboxRunner.mergeExecEnvironment(null, null).isEmpty());
     }
 

@@ -17,7 +17,11 @@ import java.util.Map;
  *
  * <p>The truststore and CA live only in the sandbox tmpfs, never in the
  * workspace. {@code changeit} is the public default cacerts password, not a
- * secret; the truststore path and password are not logged.</p>
+ * secret; the truststore path and password are not logged. This assumes a
+ * standard JDK cacerts store using that default password; a custom store
+ * password fails sandbox creation closed. The truststore is mode 0444 and
+ * owned by the sandbox user, so sandbox code can replace it. It is not a host
+ * boundary.</p>
  */
 final class JavaTrustProvisioner {
 
