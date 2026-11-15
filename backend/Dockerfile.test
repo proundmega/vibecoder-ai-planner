@@ -15,8 +15,9 @@ COPY backend/src ./src
 COPY backend/integration-test ./integration-test
 COPY backend/jest.config.js ./jest.config.js
 COPY backend/jest.integration.config.js ./jest.integration.config.js
-RUN mkdir -p /app/compose
+RUN mkdir -p /app/compose/agent
 COPY docker-compose.yml ./compose/docker-compose.yml
 COPY docker-compose.test.yml ./compose/docker-compose.test.yml
 COPY docker-compose.override.yml ./compose/docker-compose.override.yml
+COPY agent/docker-compose.yml ./compose/agent/docker-compose.yml
 EXPOSE 3001

@@ -1,4 +1,5 @@
 const { spawnSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 /**
@@ -8,9 +9,21 @@ const path = require('path');
  * and the pool agent receives a resolvable backend URL.
  */
 describe('sandbox compose wiring', () => {
-  const repoRoot = path.resolve(__dirname, '../../..');
-  const composeRoot = path.join(repoRoot, 'docker-compose.yml');
-  const composeAgent = path.join(repoRoot, 'agent/docker-compose.yml');
+  const findCompose = (relative) => {
+    for (const base of [
+      path.resolve(__dirname, '../../..'),
+      process.cwd(),
+      path.join(process.cwd(), 'compose'),
+    ]) {
+      const candidate = path.join(base, relative);
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  };
+  const composeRoot = findCompose('docker-compose.yml');
+  const composeAgent = findCompose('agent/docker-compose.yml');
   let root = null;
   let agent = null;
 
@@ -31,6 +44,13 @@ describe('sandbox compose wiring', () => {
   };
 
   beforeAll(() => {
+    if (!composeRoot || !composeAgent) {
+      const missing = [
+        !composeRoot && 'docker-compose.yml',
+        !composeAgent && 'agent/docker-compose.yml',
+      ].filter(Boolean).join(', ');
+      throw new Error(`Could not locate compose files: ${missing}`);
+    }
     root = render(composeRoot);
     agent = render(composeAgent);
     if (root.error || agent.error) {
