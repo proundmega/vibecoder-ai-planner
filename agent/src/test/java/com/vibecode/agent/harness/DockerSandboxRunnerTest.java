@@ -514,6 +514,18 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void perHandleTrustEnvironmentOverridesCommandEnvironment() {
+        Map<String, String> merged = DockerSandboxRunner.mergeExecEnvironment(
+            Map.of("JAVA_TOOL_OPTIONS", "-Djavax.net.ssl.trustStore=/tmp/trust"),
+            Map.of("FEATURE_FLAG", "on", "JAVA_TOOL_OPTIONS", "-Duser.override=true"));
+
+        assertEquals("-Djavax.net.ssl.trustStore=/tmp/trust",
+            merged.get("JAVA_TOOL_OPTIONS"));
+        assertEquals("on", merged.get("FEATURE_FLAG"));
+        assertTrue(DockerSandboxRunner.mergeExecEnvironment(null, null).isEmpty());
+    }
+
+    @Test
     void execArgsMapTheWorkspaceAndEnvironment() throws IOException {
         SandboxHandle handle = new SandboxHandle("sandbox-1", workspace(), false, null);
         ExecRequest request = new ExecRequest(

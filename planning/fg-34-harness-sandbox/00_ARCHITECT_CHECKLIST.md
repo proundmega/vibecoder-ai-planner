@@ -8,7 +8,7 @@ scope: "Agent"
 created: "2026-10-31"
 updated: "2026-11-14"
 pr: null
-branch: null
+branch: "feat/fg-34-d28-java-truststore"
 depends_on: ["fg-30"]
 ---
 
@@ -70,6 +70,6 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D25 | Flip the default egress mode to `terminate` only after the optional "enforce successful integration cycle before merge" control is decided/available and the terminate integration suite passes. Until then `sni-only` stays the default and D16 stays open | fg-34 D16 | Rollout | issue #146 | open |
 | D26 | Decide whether to keep or remove the explicit `SANDBOX_EGRESS_TLS_MODE=sni-only` escape hatch after terminate mode has been the verified default for an integration cycle | fg-34 D16 | Security | issue #147 | open |
 | D27 | Support repo-provided origin CAs for private registries or certificate-pinning clients in `terminate` mode; scope per allowlisted host and still enforce `Host == SNI`; currently rejected/fail-closed | fg-34 D16 | Compatibility | issue #148 | open |
-| D28 | Inject a Java/Maven/Gradle truststore (copy `cacerts`, import the per-run CA with `keytool`, set `JAVA_TOOL_OPTIONS`) when a JDK is present; until then Java toolchains fail closed in `terminate` mode | fg-34 D16 | Compatibility | issue #149 | open |
+| D28 | Inject a Java/Maven/Gradle truststore (copy `cacerts`, import the per-run CA with `keytool`, set `JAVA_TOOL_OPTIONS`) when a JDK is present; until then Java toolchains fail closed in `terminate` mode | fg-34 D16 | Compatibility | issue #149 | in review: at sandbox creation, a JDK with readable `cacerts` gets a tmpfs truststore (system roots + per-run CA), `JAVA_HOME` and `JAVA_TOOL_OPTIONS` for every exec; a missing keytool leaves Java unsupported and TLS fails closed, and a JDK installed by a later setup command is not auto-detected |
 | D29 | Support scoped client-certificate mTLS for named allowlisted hosts in `terminate` mode; keep the key in the proxy, never send it to another host, and audit its use | fg-34 D16 | Compatibility | issue #150 | open |
 | D30 | Pool-agent replacement cleanup: `PoolManager` assigns a new `AGENT_ID` to each replacement container, so same-owner reaping cannot find the previous container's resources; pre-#154 resources have no owner label. Use a stable `SANDBOX_OWNER`/lease or a safe stale-resource sweep, and document a one-time upgrade cleanup | fg-34 D9 | Reliability | fg-34 D8 / fg-43 | open |

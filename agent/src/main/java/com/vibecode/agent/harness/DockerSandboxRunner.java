@@ -66,6 +66,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
     private final Set<String> created = ConcurrentHashMap.newKeySet();
     private final Map<String, Duration> maxDurations = new ConcurrentHashMap<>();
     private final Map<String, Long> artifactLimits = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, String>> execEnvironments =
+        new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean> quotaFlags = new ConcurrentHashMap<>();
     private final Map<String, ScheduledExecutorService> watchdogs = new ConcurrentHashMap<>();
     private final Map<String, Process> runningProcesses = new ConcurrentHashMap<>();
@@ -145,6 +147,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
             provisionEgressTrust(name, egressRuntime, spec);
         } catch (IOException | RuntimeException e) {
             destroyByName(name);
+            execEnvironments.remove(name);
             throw e instanceof IOException io ? io : new IOException(e);
         }
 
@@ -170,6 +173,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
             active.remove(name);
             maxDurations.remove(name);
             artifactLimits.remove(name);
+            execEnvironments.remove(name);
             quotaFlags.remove(name);
             throw new IOException("Could not start the sandbox watchdog", e);
         }
@@ -224,7 +228,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
         ExecRequest effective = new ExecRequest(
             request.command(), request.cwd(), timeout,
-            request.maxOutputBytes(), request.env());
+            request.maxOutputBytes(),
+            mergeExecEnvironment(execEnvironments.get(handle.id()), request.env()));
 
         List<String> command = new ArrayList<>();
         command.add(config.dockerBinary());
@@ -378,6 +383,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
         created.remove(handle.id());
         maxDurations.remove(handle.id());
         artifactLimits.remove(handle.id());
+        execEnvironments.remove(handle.id());
         quotaFlags.remove(handle.id());
         runningProcesses.remove(handle.id());
         forgetExecLock(handle.id());
@@ -410,6 +416,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
         active.clear();
         maxDurations.clear();
         artifactLimits.clear();
+        execEnvironments.clear();
         quotaFlags.clear();
         watchdogs.clear();
         runningProcesses.clear();
@@ -1273,6 +1280,41 @@ public final class DockerSandboxRunner implements SandboxRunner {
         byte[] combined = systemBundle == null ? ca : concat(systemBundle, ca);
         writeContainerFileViaExec(sandbox, "/tmp/vibecode-egress-ca.crt", ca);
         writeContainerFileViaExec(sandbox, "/tmp/vibecode-ca-bundle.crt", combined);
+
+        Map<String, String> javaEnvironment = provisionJavaTrust(sandbox, ca);
+        if (javaEnvironment.isEmpty()) {
+            log.info("Sandbox {} has no JDK/keytool; Java/Maven/Gradle will not "
+                + "trust the per-run CA", sandbox);
+        } else {
+            execEnvironments.put(sandbox, javaEnvironment);
+            log.info("Installed the per-run Java truststore for sandbox {}", sandbox);
+        }
+    }
+
+    private Map<String, String> provisionJavaTrust(String sandbox, byte[] ca)
+        throws IOException {
+        JavaTrustProvisioner.Executor executor = new JavaTrustProvisioner.Executor() {
+            @Override
+            public JavaTrustProvisioner.Result exec(
+                String script,
+                Duration timeout,
+                int maxOutputBytes
+            ) throws IOException {
+                DockerResult result = runDocker(
+                    List.of(config.dockerBinary(), "exec", sandbox, "/bin/sh", "-c", script),
+                    timeout,
+                    maxOutputBytes
+                );
+                return new JavaTrustProvisioner.Result(
+                    result.exitCode(), result.output(), result.timedOut());
+            }
+
+            @Override
+            public void write(String path, byte[] bytes) throws IOException {
+                writeContainerFileViaExec(sandbox, path, bytes, COPY_TIMEOUT);
+            }
+        };
+        return JavaTrustProvisioner.provision(executor, ca, COPY_TIMEOUT);
     }
 
     enum ContainerPathState {
@@ -1959,6 +2001,27 @@ public final class DockerSandboxRunner implements SandboxRunner {
         // Use a numeric duration so BusyBox and GNU sleep both accept it.
         args.add("exec sleep 2147483647");
         return args;
+    }
+
+    /**
+     * Per-handle trust environment (currently the Java truststore) is applied
+     * after the caller's env so a command cannot accidentally bypass it.
+     */
+    static Map<String, String> mergeExecEnvironment(
+        Map<String, String> base,
+        Map<String, String> requested
+    ) {
+        if ((base == null || base.isEmpty()) && (requested == null || requested.isEmpty())) {
+            return Map.of();
+        }
+        Map<String, String> merged = new LinkedHashMap<>();
+        if (requested != null) {
+            merged.putAll(requested);
+        }
+        if (base != null) {
+            merged.putAll(base);
+        }
+        return Map.copyOf(merged);
     }
 
     /** Build the argument list after the docker binary for one exec. */
