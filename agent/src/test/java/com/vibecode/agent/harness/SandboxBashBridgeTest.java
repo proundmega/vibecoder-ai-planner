@@ -3,6 +3,7 @@ package com.vibecode.agent.harness;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -377,6 +378,7 @@ class SandboxBashBridgeTest {
 
     @Test
     void toolRetryUsesTheBridgeCacheAfterALostResponse() throws Exception {
+        Assumptions.assumeTrue(nodeAvailable(), "node is required");
         Path dir = Files.createDirectories(tempDir.resolve("tool-bridge-retry"));
         Files.writeString(dir.resolve("tool.mjs"), OpenCodeClient.sandboxToolSource());
         Path plugin = Files.createDirectories(
@@ -452,5 +454,17 @@ class SandboxBashBridgeTest {
             builder.header("X-Sandbox-Token", token);
         }
         return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static boolean nodeAvailable() {
+        try {
+            Process process = new ProcessBuilder("node", "--version")
+                .redirectErrorStream(true)
+                .start();
+            process.getInputStream().readAllBytes();
+            return process.waitFor() == 0;
+        } catch (IOException | InterruptedException e) {
+            return false;
+        }
     }
 }

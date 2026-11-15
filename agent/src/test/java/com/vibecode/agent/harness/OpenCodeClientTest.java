@@ -2,6 +2,7 @@ package com.vibecode.agent.harness;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -271,6 +272,7 @@ class OpenCodeClientTest {
 
     @Test
     void generatedSandboxToolRetriesWithTheSameRequestIdAfterALostResponse() throws Exception {
+        Assumptions.assumeTrue(nodeAvailable(), "node is required");
         Path dir = Files.createDirectories(tempDir.resolve("retry-tool"));
         Files.writeString(dir.resolve("tool.mjs"), OpenCodeClient.sandboxToolSource());
         Path plugin = Files.createDirectories(
@@ -353,6 +355,7 @@ class OpenCodeClientTest {
     }
 
     private JsonNode runToolFetchStub(String mode) throws Exception {
+        Assumptions.assumeTrue(nodeAvailable(), "node is required");
         Path dir = Files.createDirectories(tempDir.resolve("stub-" + mode));
         Files.writeString(dir.resolve("tool.mjs"), OpenCodeClient.sandboxToolSource());
         Path plugin = Files.createDirectories(
@@ -483,5 +486,17 @@ class OpenCodeClientTest {
         assertTrue(error.getMessage().contains("exited")
             || error.getMessage().contains("healthy"));
         client.close();
+    }
+
+    private static boolean nodeAvailable() {
+        try {
+            Process process = new ProcessBuilder("node", "--version")
+                .redirectErrorStream(true)
+                .start();
+            process.getInputStream().readAllBytes();
+            return process.waitFor() == 0;
+        } catch (IOException | InterruptedException e) {
+            return false;
+        }
     }
 }
