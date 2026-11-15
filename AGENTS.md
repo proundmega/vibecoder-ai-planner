@@ -186,9 +186,16 @@ control network shared only with the restricted socket proxy. Host-mode agents
 receive neither `DOCKER_HOST` nor that network, so repo code cannot reach the
 proxy. `AGENT_DOCKER_HOST` overrides the proxy address; if only the API's unix
 socket is configured, Docker mode fails closed and requires an explicit proxy.
-The standalone agent Compose file needs `DOCKER_HOST`, a host bind at `/repos`
-(`REPO_HOST_PATH`), and `SANDBOX_HOST_WORKSPACE_ROOT` set to the same absolute
-host path. OpenCode still runs in the
+Pool agents receive `BACKEND_URL=http://api:3001` by default; the root Compose
+API sets it explicitly. `SANDBOX_REQUIRE=true` is rejected by the API unless
+`SANDBOX_MODE=docker`, before any DB agent or container is created, and a
+failed create/attach removes the container and DB agent record.
+
+The standalone agent Compose file needs `VIBECODE_NETWORK` set to the root
+project's default network (for example `vibecoder-ai-planner_default`),
+`DOCKER_HOST`, a host bind at `/repos` (`REPO_HOST_PATH`) writable by the agent
+user (uid 100, gid 101), and `SANDBOX_HOST_WORKSPACE_ROOT` set to the same
+absolute host path. OpenCode still runs in the
 supervisor, but the built-in `bash`/`shell` tool is disabled and the
 `sandbox_bash` tool forwards commands to the sandbox bridge. The sandbox has
 no direct egress or external DNS; `SANDBOX_NETWORK=allowlist` routes traffic

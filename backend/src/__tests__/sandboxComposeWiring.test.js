@@ -4,63 +4,88 @@ const path = require('path');
 /**
  * Compose wiring is the only place that knows the real volume/network names
  * after project-prefix interpolation. These assertions run the same renderer
- * Docker uses so a fresh host cannot bind an empty, differently named volume.
+ * Docker uses so a fresh host cannot bind an empty, differently named volume
+ * and the pool agent receives a resolvable backend URL.
  */
 describe('sandbox compose wiring', () => {
   const repoRoot = path.resolve(__dirname, '../../..');
-  const composeFile = path.join(repoRoot, 'docker-compose.yml');
-  let config = null;
+  const composeRoot = path.join(repoRoot, 'docker-compose.yml');
+  const composeAgent = path.join(repoRoot, 'agent/docker-compose.yml');
+  let root = null;
+  let agent = null;
 
-  beforeAll(() => {
+  const render = (file) => {
     const result = spawnSync(
       'docker',
-      ['compose', '-f', composeFile, 'config', '--format', 'json'],
-      { cwd: repoRoot, encoding: 'utf8' }
+      ['compose', '-f', file, 'config', '--format', 'json'],
+      { cwd: path.dirname(file), encoding: 'utf8' }
     );
     if (result.error || result.status !== 0) {
-      // Keep the unit suite usable on hosts without Docker Compose; CI and
-      // deployment checks still exercise the real configuration.
-      console.warn('docker compose is unavailable; skipping compose wiring assertions');
-      return;
+      return { error: result.error || new Error(result.stderr || 'compose failed') };
     }
-    config = JSON.parse(result.stdout);
+    try {
+      return { config: JSON.parse(result.stdout) };
+    } catch (error) {
+      return { error };
+    }
+  };
+
+  beforeAll(() => {
+    root = render(composeRoot);
+    agent = render(composeAgent);
+    if (root.error || agent.error) {
+      const detail = [
+        root.error && `root: ${root.error.message}`,
+        agent.error && `agent: ${agent.error.message}`,
+      ].filter(Boolean).join('; ');
+      if (process.env.CI) {
+        throw new Error(`docker compose is required in CI for sandbox wiring: ${detail}`);
+      }
+      console.warn(`docker compose unavailable locally; skipping wiring assertions: ${detail}`);
+    }
   });
 
   const rendered = (name, check) => test(name, () => {
-    if (!config) {
+    if (!root || !root.config || !agent || !agent.config) {
       return;
     }
-    check();
+    check(root.config, agent.config);
   });
 
-  rendered('binds the same repo volume that PoolManager inspects', () => {
-    const volumeName = config.volumes.vibecode_repos.name;
+  rendered('binds the same repo volume that PoolManager inspects', (rootConfig) => {
+    const volumeName = rootConfig.volumes.vibecode_repos.name;
     expect(volumeName).toBe('vibecode_repos');
-    expect(config.services.api.environment.REPO_VOLUME).toBe(volumeName);
+    expect(rootConfig.services.api.environment.REPO_VOLUME).toBe(volumeName);
 
-    const repoMount = config.services.api.volumes.find(
+    const repoMount = rootConfig.services.api.volumes.find(
       (volume) => volume.target === '/repos');
     expect(repoMount).toBeDefined();
     expect(repoMount.source).toBe(volumeName);
   });
 
-  rendered('keeps the Docker API proxy off the default network', () => {
-    expect(Object.keys(config.services['docker-proxy'].networks)).toEqual([
-      'sandbox-control',
-    ]);
-    expect(config.services.api.networks).toHaveProperty('sandbox-control');
-    expect(config.services.api.networks).toHaveProperty('default');
+  rendered('gives pool agents a resolvable backend URL', (rootConfig, agentConfig) => {
+    expect(rootConfig.services.api.environment.BACKEND_URL).toBe('http://api:3001');
+    expect(agentConfig.services.agent.environment.BACKEND_URL).toBe('http://api:3001');
   });
 
-  rendered('puts the proxy and PoolManager on the same internal control network', () => {
-    const control = config.networks['sandbox-control'];
+  rendered('keeps the Docker API proxy off the default network', (rootConfig) => {
+    expect(Object.keys(rootConfig.services['docker-proxy'].networks)).toEqual([
+      'sandbox-control',
+    ]);
+    expect(rootConfig.services.api.networks).toHaveProperty('sandbox-control');
+    expect(rootConfig.services.api.networks).toHaveProperty('default');
+  });
+
+  rendered('puts the proxy and PoolManager on the same internal control network', (rootConfig) => {
+    const control = rootConfig.networks['sandbox-control'];
     expect(control.name).toBe(
-      config.services.api.environment.SANDBOX_CONTROL_NETWORK);
+      rootConfig.services.api.environment.SANDBOX_CONTROL_NETWORK);
+    expect(control.name).toMatch(/-sandbox-control$/);
     expect(control.internal).toBe(true);
   });
 
-  rendered('enables the proxy API sections required for sandbox lifecycle', () => {
-    const proxyEnv = config.services['docker-proxy'].environment;
+  rendered('enables the proxy API sections required for sandbox lifecycle', (rootConfig) => {
+    const proxyEnv = rootConfig.services['docker-proxy'].environment;
     for (const name of [
       'POST', 'CONTAINERS', 'EXEC', 'IMAGES', 'NETWORKS', 'VOLUMES',
       'ALLOW_START', 'ALLOW_STOP', 'ALLOW_RESTARTS', 'ALLOW_PAUSE',
@@ -68,5 +93,17 @@ describe('sandbox compose wiring', () => {
     ]) {
       expect(proxyEnv[name]).toBe('1');
     }
+  });
+
+  rendered('renders a standalone agent with a host-visible repo bind', (rootConfig, agentConfig) => {
+    const service = agentConfig.services.agent;
+    expect(service.environment.REPO_CLONE_DIR).toBe('/repos');
+    expect(service.environment.SANDBOX_MODE).toBe('host');
+    expect(service.networks).toHaveProperty('vibecode');
+    expect(service.networks).toHaveProperty('sandbox-control');
+
+    const repoMount = service.volumes.find((volume) => volume.target === '/repos');
+    expect(repoMount).toBeDefined();
+    expect(repoMount.type).toBe('bind');
   });
 });

@@ -74,6 +74,7 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - PORT=3001
+      - BACKEND_URL=${BACKEND_URL:-http://api:3001}
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@postgres:5432/vibecode
       - JWT_SECRET=${JWT_SECRET}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3002,http://127.0.0.1:3000,http://127.0.0.1:3002}
@@ -119,7 +120,7 @@ services:
       - SANDBOX_APPARMOR_PROFILE=${SANDBOX_APPARMOR_PROFILE:-}
       - SANDBOX_CONTAINER_WORKSPACE_ROOT=${SANDBOX_CONTAINER_WORKSPACE_ROOT:-/repos}
       - SANDBOX_HOST_WORKSPACE_ROOT=${SANDBOX_HOST_WORKSPACE_ROOT:-}
-      - SANDBOX_CONTROL_NETWORK=${SANDBOX_CONTROL_NETWORK:-vibecode-sandbox-control}
+      - SANDBOX_CONTROL_NETWORK=${SANDBOX_CONTROL_NETWORK:-${COMPOSE_PROJECT_NAME:-vibecode}-sandbox-control}
       - REDIS_URL=redis://redis:6379
     # Optional GitHub App private key: set
     # GITHUB_APP_PRIVATE_KEY=file:/run/secrets/github-app.pem and mount the file:
@@ -245,7 +246,7 @@ networks:
   # Dedicated control plane for the restricted Docker socket proxy. Pool
   # agents join it only when SANDBOX_MODE=docker.
   sandbox-control:
-    name: ${SANDBOX_CONTROL_NETWORK:-vibecode-sandbox-control}
+    name: ${SANDBOX_CONTROL_NETWORK:-${COMPOSE_PROJECT_NAME:-vibecode}-sandbox-control}
     driver: bridge
     internal: true
     labels: *ci-labels

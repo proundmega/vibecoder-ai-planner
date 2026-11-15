@@ -5,7 +5,7 @@ const { pool } = require('../db');
 const { decrypt } = require('../utils/crypto');
 
 const AGENT_IMAGE = process.env.AGENT_IMAGE || 'vibecode-agent';
-const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:3001';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://api:3001';
 const IDLE_TIMEOUT_MS = parseInt(process.env.AGENT_IDLE_TIMEOUT_MS) || 300000;
 const CONTAINER_NETWORK = process.env.CONTAINER_NETWORK || 'vibecode_default';
 const SANDBOX_CONTROL_NETWORK = process.env.SANDBOX_CONTROL_NETWORK
@@ -79,10 +79,14 @@ function agentDockerHost() {
   return '';
 }
 
-function dockerSandboxRequested() {
+function sandboxModeIntent() {
   const mode = String(process.env.SANDBOX_MODE || '').trim().toLowerCase();
   const requireSandbox = String(process.env.SANDBOX_REQUIRE || '').trim().toLowerCase();
-  return mode === 'docker' || requireSandbox === 'true' || requireSandbox === '1';
+  const required = requireSandbox === 'true' || requireSandbox === '1';
+  if (required && mode !== 'docker') {
+    throw new Error('SANDBOX_REQUIRE=true requires SANDBOX_MODE=docker');
+  }
+  return { docker: mode === 'docker', mode, required };
 }
 
 function setMaxPoolSize(size) {
@@ -225,6 +229,18 @@ class PoolManager {
     }
   }
 
+  async _deletePoolAgentRecord(dbAgentId) {
+    if (!dbAgentId) {
+      return;
+    }
+    try {
+      await pool.query('DELETE FROM agents WHERE id = $1', [dbAgentId]);
+    } catch (err) {
+      console.warn(
+        `Could not delete DB record for failed pool agent ${dbAgentId}: ${err.message}`);
+    }
+  }
+
   async resolveProviderConfig(providerId) {
     const result = await pool.query(
       `SELECT provider_type, api_key_encrypted, base_url, model, max_tokens, temperature
@@ -337,7 +353,8 @@ class PoolManager {
     // Resolve Docker sandbox prerequisites before creating a DB agent or a
     // container. A Docker-mode agent without a host-visible workspace would
     // silently bind an empty directory, so fail the request instead.
-    const dockerSandbox = dockerSandboxRequested();
+    const sandboxIntent = sandboxModeIntent();
+    const dockerSandbox = sandboxIntent.docker;
     let sandboxDockerHost = '';
     let sandboxHostWorkspaceRoot = null;
     if (dockerSandbox) {
@@ -459,6 +476,7 @@ class PoolManager {
       }
     }
 
+    let container;
     try {
       const createOptions = {
         Image: AGENT_IMAGE,
@@ -477,7 +495,7 @@ class PoolManager {
         StdinOnce: false,
       };
 
-      const container = await this.docker.createContainer(createOptions);
+      container = await this.docker.createContainer(createOptions);
       if (dockerSandbox) {
         // Docker rejects multiple EndpointsConfig entries at create time.
         // Attach the internal control network before starting so the agent
@@ -515,6 +533,14 @@ class PoolManager {
 
       return { agentId, containerId: container.id, reused: false, dbAgentId: dbAgent.id };
     } catch (err) {
+      try {
+        if (container && typeof container.remove === 'function') {
+          await container.remove({ force: true });
+        }
+      } catch {
+        // Best effort; the request already failed.
+      }
+      await this._deletePoolAgentRecord(dbAgent.id);
       if (err.message && err.message.includes('No such image')) {
         throw new Error(`Agent image '${AGENT_IMAGE}' not found. Run: cd agent && docker build -t ${AGENT_IMAGE} .`);
       }

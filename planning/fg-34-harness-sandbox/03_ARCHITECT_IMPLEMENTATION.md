@@ -22,17 +22,23 @@ opt-in and fails closed; it never falls back to host execution.
 
 Docker mode requires a daemon the agent can reach and a workspace path the
 daemon can bind-mount. `PoolManager` forwards the operator `SANDBOX_*` settings
-to each pool agent, resolves Docker prerequisites **before** creating the DB
-agent or container, and fails the request when `DOCKER_HOST` or a host-visible
-workspace root is unresolved. Only Docker-mode agents receive `DOCKER_HOST`
+to each pool agent, sets `BACKEND_URL=http://api:3001` (the root Compose service
+name), resolves Docker prerequisites **before** creating the DB agent or
+container, and fails the request when `DOCKER_HOST` or a host-visible workspace
+root is unresolved. `SANDBOX_REQUIRE=true` without `SANDBOX_MODE=docker` is
+rejected by the API at the same point, and a failed create/attach removes the
+container and DB agent record. Only Docker-mode agents receive `DOCKER_HOST`
 (from `AGENT_DOCKER_HOST` or a TCP `DOCKER_API_URL`) and are attached to an
 internal control network shared with the restricted socket proxy; host-mode
 agents receive neither and cannot reach the proxy by name. A bare API unix
 socket is not passed to pool agents because they do not mount it.
 
-The repo volume is explicitly named `vibecode_repos` in Compose so the API
-mount, `REPO_VOLUME`, and the inspected mountpoint are the same volume even
-with project-prefix naming. An installation that previously used a
+The control network name is project-scoped by default
+(`${COMPOSE_PROJECT_NAME}-sandbox-control`) and can be overridden with
+`SANDBOX_CONTROL_NETWORK`; this keeps Compose projects and CI jobs on separate
+Docker API proxies. The repo volume is explicitly named `vibecode_repos` in
+Compose so the API mount, `REPO_VOLUME`, and the inspected mountpoint are the
+same volume even with project-prefix naming. An installation that previously used a
 project-prefixed volume can copy it once into `vibecode_repos`; the old
 compose prefix otherwise leaves that data unused. `PoolManager` creates a missing named volume before
 inspecting it, maps the mountpoint to `SANDBOX_HOST_WORKSPACE_ROOT`, and uses
@@ -48,8 +54,9 @@ by default, so Docker mode is opt-in. The proxy can manage
 containers/networks/volumes beyond one pool agent's own resources, so the
 daemon/proxy is a deployment trust boundary, not a multi-tenant boundary; pool
 replacement cleanup is D30. A standalone `agent/docker-compose.yml` run needs a
-host bind at `/repos` (`REPO_HOST_PATH`), `DOCKER_HOST`, and a matching absolute
-`SANDBOX_HOST_WORKSPACE_ROOT`.
+host bind at `/repos` (`REPO_HOST_PATH`) writable by the agent user
+(uid 100/gid 101), `VIBECODE_NETWORK` set to the root project's default network,
+`DOCKER_HOST`, and a matching absolute `SANDBOX_HOST_WORKSPACE_ROOT`.
 
 OpenCode still runs in the supervisor in slice 1. Only supervisor-driven
 install/verification commands go through the sandbox; a prompt-injected

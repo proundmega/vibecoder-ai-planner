@@ -205,6 +205,7 @@ describe('PoolManager max capacity (BP-61)', () => {
     }
 
     const createOpts = pm.docker.createContainer.mock.calls[0][0];
+    expect(createOpts.Env).toContain('BACKEND_URL=http://api:3001');
     expect(createOpts.Env).toContain('SANDBOX_MODE=docker');
     expect(createOpts.Env).toContain('SANDBOX_IMAGE=sandbox@sha256:abc');
     expect(createOpts.Env).toContain('SANDBOX_NETWORK=allowlist');
@@ -351,6 +352,72 @@ describe('PoolManager max capacity (BP-61)', () => {
         else process.env[name] = value;
       }
       delete pm.docker.getVolume;
+    }
+  });
+
+  it('rejects SANDBOX_REQUIRE=true when the mode is not docker', async () => {
+    pm.pool.clear();
+    const { pool } = require('../db');
+    pool.query.mockResolvedValue({
+      rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+    });
+    const AgentService = require('../services/AgentService');
+    pm.docker.createContainer = jest.fn();
+
+    const previous = {
+      SANDBOX_MODE: process.env.SANDBOX_MODE,
+      SANDBOX_REQUIRE: process.env.SANDBOX_REQUIRE,
+    };
+    process.env.SANDBOX_MODE = 'host';
+    process.env.SANDBOX_REQUIRE = 'true';
+    try {
+      await expect(pm.requestAgent('proj-bad-require')).rejects.toThrow(
+        /SANDBOX_REQUIRE=true requires SANDBOX_MODE=docker/);
+      expect(pm.docker.createContainer).not.toHaveBeenCalled();
+      expect(AgentService.create).not.toHaveBeenCalled();
+    } finally {
+      for (const [name, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
+  it('removes the container and DB record when the control-network attach fails', async () => {
+    pm.pool.clear();
+    const { pool } = require('../db');
+    pool.query.mockResolvedValue({
+      rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+    });
+    const mockContainer = {
+      id: 'container-attach-fail',
+      start: jest.fn().mockResolvedValue(undefined),
+      remove: jest.fn().mockResolvedValue(undefined),
+    };
+    pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
+    pm.docker.getNetwork = jest.fn().mockReturnValue({
+      inspect: jest.fn().mockResolvedValue({ Internal: true }),
+      connect: jest.fn().mockRejectedValue(new Error('attach failed')),
+    });
+
+    const previous = {
+      SANDBOX_MODE: process.env.SANDBOX_MODE,
+      SANDBOX_HOST_WORKSPACE_ROOT: process.env.SANDBOX_HOST_WORKSPACE_ROOT,
+    };
+    process.env.SANDBOX_MODE = 'docker';
+    process.env.SANDBOX_HOST_WORKSPACE_ROOT = '/srv/repos';
+    try {
+      await expect(pm.requestAgent('proj-attach-fail')).rejects.toThrow(
+        /Could not attach pool agent/);
+      expect(mockContainer.start).not.toHaveBeenCalled();
+      expect(mockContainer.remove).toHaveBeenCalledWith({ force: true });
+      expect(pool.query).toHaveBeenCalledWith(
+        'DELETE FROM agents WHERE id = $1', ['agent-1']);
+    } finally {
+      for (const [name, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
     }
   });
 

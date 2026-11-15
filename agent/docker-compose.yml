@@ -73,6 +73,8 @@ services:
     volumes:
       # Host-visible workspace: the daemon resolves this bind, not the agent
       # container. SANDBOX_HOST_WORKSPACE_ROOT must match its absolute path.
+      # The bind is host-owned; make it writable by the agent user (uid 100,
+      # gid 101), for example: mkdir -p repos && chown 100:101 repos
       - ${REPO_HOST_PATH:-./repos}:/repos
     restart: unless-stopped
     networks:
@@ -87,10 +89,13 @@ services:
 
 networks:
   # The API's Compose network, so BACKEND_URL=http://api:3001 resolves.
+  # Set VIBECODE_NETWORK when the root project name is not "vibecode", e.g.
+  # VIBECODE_NETWORK=vibecoder-ai-planner_default.
   vibecode:
     external: true
     name: ${VIBECODE_NETWORK:-vibecode_default}
   # The restricted Docker socket proxy network. Required only for Docker mode.
+  # Match the root project's SANDBOX_CONTROL_NETWORK (project-scoped by default).
   sandbox-control:
     external: true
     name: ${SANDBOX_CONTROL_NETWORK:-vibecode-sandbox-control}
