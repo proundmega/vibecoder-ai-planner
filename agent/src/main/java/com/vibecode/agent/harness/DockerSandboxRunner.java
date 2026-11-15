@@ -2023,10 +2023,12 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 String name = entry.getKey();
                 String value = entry.getValue();
                 if ("JAVA_TOOL_OPTIONS".equals(name)) {
-                    // Preserve caller JVM options and append the truststore.
+                    // Preserve caller JVM options and append the truststore
+                    // last, so a caller-provided conflicting trustStore cannot
+                    // win over the per-run CA.
                     merged.merge(name, value, (caller, trust) ->
-                        caller == null || caller.isBlank() || caller.contains(trust)
-                            ? (caller == null || caller.isBlank() ? trust : caller)
+                        caller == null || caller.isBlank()
+                            ? trust
                             : caller + " " + trust);
                 } else {
                     merged.put(name, value);
