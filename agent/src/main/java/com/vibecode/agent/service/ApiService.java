@@ -7,6 +7,7 @@ import com.vibecode.agent.config.AgentConfig;
 import com.vibecode.agent.model.ApiResponse;
 import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
+import com.vibecode.agent.harness.RedactionRegistry;
 import okhttp3.*;
 
 import java.io.IOException;
@@ -410,10 +411,11 @@ public class ApiService {
     /**
      * Post a message on a ticket.
      */
-    public TicketMessage postMessage(Long ticketId, String messageType, String content) throws IOException {        String url = baseUrl + "/tickets/" + ticketId + "/messages";
+    public TicketMessage postMessage(Long ticketId, String messageType, String content) throws IOException {
+        String url = baseUrl + "/tickets/" + ticketId + "/messages";
         Map<String, Object> body = Map.of(
             "messageType", messageType,
-            "content", content
+            "content", RedactionRegistry.redact(content)
         );
         ApiResponse<TicketMessage> response = executePost(url, body, new TypeReference<ApiResponse<TicketMessage>>() {});
         

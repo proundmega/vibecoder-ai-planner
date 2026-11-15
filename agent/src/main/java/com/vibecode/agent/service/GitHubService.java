@@ -2,6 +2,8 @@ package com.vibecode.agent.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vibecode.agent.harness.RedactionRegistry;
+import com.vibecode.agent.harness.SecretRedactor;
 import okhttp3.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,22 +28,45 @@ public class GitHubService {
     private final String apiBase;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final java.util.function.UnaryOperator<String> redactor;
 
     public GitHubService(String authToken, String owner, String repo) {
-        this(() -> authToken, owner, repo, DEFAULT_API_BASE);
+        this(() -> authToken, owner, repo, DEFAULT_API_BASE, RedactionRegistry::redact);
     }
 
     /** Package-visible so contract tests can target a local HTTP server. */
     GitHubService(String authToken, String owner, String repo, String apiBase) {
-        this(() -> authToken, owner, repo, apiBase);
+        this(() -> authToken, owner, repo, apiBase, RedactionRegistry::redact);
     }
 
     public GitHubService(GitHubTokenSource tokenSource, String owner, String repo) {
-        this(tokenSource, owner, repo, DEFAULT_API_BASE);
+        this(tokenSource, owner, repo, DEFAULT_API_BASE, RedactionRegistry::redact);
+    }
+
+    /** Package-visible so contract tests can inject a deterministic redactor. */
+    GitHubService(
+        GitHubTokenSource tokenSource,
+        String owner,
+        String repo,
+        SecretRedactor redactor
+    ) {
+        this(tokenSource, owner, repo, DEFAULT_API_BASE,
+            redactor == null ? RedactionRegistry::redact : redactor::redact);
     }
 
     /** Package-visible so contract tests can target a local HTTP server. */
     GitHubService(GitHubTokenSource tokenSource, String owner, String repo, String apiBase) {
+        this(tokenSource, owner, repo, apiBase, RedactionRegistry::redact);
+    }
+
+    /** Package-visible so contract tests can target a local HTTP server. */
+    GitHubService(
+        GitHubTokenSource tokenSource,
+        String owner,
+        String repo,
+        String apiBase,
+        java.util.function.UnaryOperator<String> redactor
+    ) {
         this.tokenSource = tokenSource;
         this.owner = owner;
         this.repo = repo;
@@ -51,6 +76,7 @@ public class GitHubService {
             .readTimeout(60, TimeUnit.SECONDS)
             .build();
         this.objectMapper = new ObjectMapper();
+        this.redactor = redactor == null ? RedactionRegistry::redact : redactor;
     }
 
     private Response executeWithAuth(Request request) throws IOException {
@@ -63,6 +89,7 @@ public class GitHubService {
         if (refreshed == null || refreshed.isBlank()) {
             throw new IOException("No GitHub credential is available after a 401");
         }
+        RedactionRegistry.register(refreshed);
         Request retry = request.newBuilder()
             .header("Authorization", "token " + refreshed)
             .build();
@@ -74,6 +101,7 @@ public class GitHubService {
         if (value == null || value.isBlank()) {
             throw new IOException("No GitHub credential is available");
         }
+        RedactionRegistry.register(value);
         return value;
     }
 
@@ -126,7 +154,7 @@ public class GitHubService {
 
         // Create the commit
         Map<String, Object> commitBody = new HashMap<>();
-        commitBody.put("message", message);
+        commitBody.put("message", redactor.apply(message));
         commitBody.put("tree", treeSha);
         commitBody.put("parent", parentSha);
 
@@ -167,8 +195,8 @@ public class GitHubService {
         }
         
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("title", title);
-        requestBody.put("body", body);
+        requestBody.put("title", redactor.apply(title));
+        requestBody.put("body", redactor.apply(body));
         requestBody.put("head", headBranch);
         requestBody.put("base", actualBase);
         requestBody.put("draft", false);

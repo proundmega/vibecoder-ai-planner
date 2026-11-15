@@ -1,6 +1,7 @@
 package com.vibecode.agent.service;
 
 import com.sun.net.httpserver.HttpServer;
+import com.vibecode.agent.harness.RedactionRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -24,6 +26,7 @@ class GitHubServiceTest {
     private GitHubService service;
     private final List<String> queries = Collections.synchronizedList(new ArrayList<>());
     private final List<String> authHeaders = Collections.synchronizedList(new ArrayList<>());
+    private final List<String> postBodies = Collections.synchronizedList(new ArrayList<>());
     private volatile String responseBody = "[]";
     private volatile String postResponseBody = "{}";
     private volatile int unauthorizedRequests = 0;
@@ -36,6 +39,11 @@ class GitHubServiceTest {
             queries.add(exchange.getRequestURI().getQuery());
             authHeaders.add(exchange.getRequestHeaders().getFirst("Authorization"));
             boolean isPost = "POST".equalsIgnoreCase(exchange.getRequestMethod());
+            String requestBody = new String(
+                exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            if (isPost) {
+                postBodies.add(requestBody);
+            }
             boolean unauthorized = unauthorizedRequests > 0
                 && (!unauthorizedOnPostOnly || isPost);
             if (unauthorized) {
@@ -62,6 +70,7 @@ class GitHubServiceTest {
         if (server != null) {
             server.stop(0);
         }
+        RedactionRegistry.reset();
     }
 
     @Test
@@ -183,6 +192,47 @@ class GitHubServiceTest {
         assertEquals("https://github.com/owner/repo/pull/11", url);
         assertEquals(1, refreshes[0]);
         assertEquals("token ghs_2", authHeaders.get(authHeaders.size() - 1));
+    }
+
+    @Test
+    void redactsCredentialsInPullRequestTitleAndBody() throws Exception {
+        postResponseBody = "{\"html_url\":\"https://github.com/owner/repo/pull/12\"}";
+        String token = "custom-provider-key-123456";
+        RedactionRegistry.register(token);
+
+        service.createPullRequest("title " + token, "body " + token, "feature", "main");
+
+        String body = postBodies.get(postBodies.size() - 1);
+        assertFalse(body.contains(token), body);
+        assertTrue(body.contains("[REDACTED]"), body);
+    }
+
+    @Test
+    void registersRefreshedTokensForRedaction() throws Exception {
+        unauthorizedRequests = 1;
+        postResponseBody = "{\"html_url\":\"https://github.com/owner/repo/pull/13\"}";
+        String refreshed = "custom-refreshed-token-123456";
+        GitHubTokenSource source = new GitHubTokenSource() {
+            private String current = "custom-initial-token-123456";
+
+            @Override
+            public String get() {
+                return current;
+            }
+
+            @Override
+            public String refresh() {
+                current = refreshed;
+                return current;
+            }
+        };
+        GitHubService dynamic = new GitHubService(
+            source, "owner", "repo",
+            "http://127.0.0.1:" + server.getAddress().getPort());
+
+        dynamic.createPullRequest("title", "body", "feature", "main");
+
+        assertEquals("[REDACTED]", RedactionRegistry.redact(refreshed));
     }
 
     @Test

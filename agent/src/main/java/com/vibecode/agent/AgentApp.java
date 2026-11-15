@@ -2,6 +2,7 @@ package com.vibecode.agent;
 
 import com.vibecode.agent.config.AgentConfig;
 import com.vibecode.agent.harness.HarnessConfig;
+import com.vibecode.agent.harness.RedactionRegistry;
 import com.vibecode.agent.harness.HarnessTicketProcessor;
 import com.vibecode.agent.harness.ProviderSettings;
 import com.vibecode.agent.model.Ticket;
@@ -54,9 +55,13 @@ public class AgentApp {
         this.config = config;
         this.apiService = new ApiService(config);
         this.providerSettings = resolveProviderSettings();
+        RedactionRegistry.register(config.getAgentApiKey(), config.getAiApiKey(),
+            providerSettings.apiKey(), System.getenv("GITHUB_TOKEN"));
         AiProvider aiProvider = createAiProvider(providerSettings);
         this.githubTokenProvider = createGitHubTokenProvider();
         this.githubAccessToken = fetchGitHubToken(githubTokenProvider);
+        RedactionRegistry.register(githubAccessToken);
+        RedactionRegistry.register(githubTokenProvider.knownTokens());
         GitHubWiring wiring = createGitHubWiring(
             config, apiService, providerSettings, aiProvider,
             githubTokenProvider, githubAccessToken, config.getHarnessConfig());
@@ -100,6 +105,14 @@ public class AgentApp {
         String githubToken,
         HarnessConfig harnessConfig
     ) {
+        RedactionRegistry.register(config.getAgentApiKey(), config.getAiApiKey(),
+            System.getenv("GITHUB_TOKEN"), githubToken);
+        if (providerSettings != null) {
+            RedactionRegistry.register(providerSettings.apiKey());
+        }
+        if (tokenProvider != null) {
+            RedactionRegistry.register(tokenProvider.knownTokens());
+        }
         GitHubService gitHubService = new GitHubService(
             tokenProvider, config.getRepoOwner(), config.getRepoName());
         TicketWorker ticketWorker;
@@ -445,7 +458,7 @@ public class AgentApp {
             app.start();
         } catch (IllegalStateException e) {
             log.error("Configuration error: {}", e.getMessage());
-            System.err.println("Error: " + e.getMessage());
+            System.err.println("Error: " + RedactionRegistry.redact(e.getMessage()));
             System.err.println("Required env vars: AGENT_API_KEY, BACKEND_URL, PROJECT_ID");
             System.err.println("For ticket processing: also set REPO_OWNER, REPO_NAME");
             System.err.println("For review mode: omit REPO_OWNER/REPO_NAME");
