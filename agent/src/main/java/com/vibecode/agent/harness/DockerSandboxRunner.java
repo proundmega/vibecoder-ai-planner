@@ -4,8 +4,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -28,12 +30,15 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 
 /**
  * Disposable Docker sandbox for repo-controlled commands.
@@ -322,20 +327,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
         Path temp = Files.createTempFile(
             parent == null ? Path.of(".") : parent, ".sandbox-download-", ".tmp");
         try {
-            DockerResult result = runDocker(
-                List.of(config.dockerBinary(), "cp",
-                    handle.id() + ":" + source, temp.toString()),
-                COPY_TIMEOUT,
-                CONTROL_OUTPUT_BYTES
-            );
-            if (result.exitCode() != 0 || result.timedOut()) {
-                throw new IOException("Could not download " + source + " to " + local + ": "
-                    + result.output());
-            }
-            if (limit > 0 && Files.size(temp) > limit) {
-                throw new IOException("Downloaded artifact " + source
-                    + " exceeds SANDBOX_ARTIFACT_MAX_BYTES=" + limit);
-            }
+            int maxBytes = limit > 0
+                ? (int) Math.min(limit, Integer.MAX_VALUE - 16_384L)
+                : 64 * 1024 * 1024;
+            copyContainerFile(handle.id(), source, temp, maxBytes, COPY_TIMEOUT);
             Files.move(temp, local, StandardCopyOption.REPLACE_EXISTING);
         } finally {
             Files.deleteIfExists(temp);
@@ -1384,8 +1379,44 @@ public final class DockerSandboxRunner implements SandboxRunner {
         int maxBytes,
         Duration timeout
     ) throws IOException {
-        List<String> command = List.of(
-            config.dockerBinary(), "cp", "-L", container + ":" + remotePath, "-");
+        return transferContainerFile(
+            container, remotePath, null, maxBytes, timeout, true);
+    }
+
+    /**
+     * Stream a container file into {@code target} through the bounded tar
+     * reader. Used for artifacts, so the tar stream is the authority for the
+     * entry type and size and no artifact bytes are buffered in memory.
+     *
+     * <p>{@code docker cp} without {@code -L} does not follow the final path
+     * component but still resolves intermediate directory symlinks. The
+     * pre-copy {@code readlink -f} guard normally rejects those; a racing
+     * same-container process can therefore still redirect an intermediate
+     * component. Everything reachable that way is inside the sandbox
+     * container (the only host mount is {@code /workspace}), so this is a
+     * final-component-only no-follow guarantee, not a host-secret boundary.</p>
+     */
+    private void copyContainerFile(
+        String container,
+        String remotePath,
+        Path target,
+        int maxBytes,
+        Duration timeout
+    ) throws IOException {
+        transferContainerFile(container, remotePath, target, maxBytes, timeout, false);
+    }
+
+    private byte[] transferContainerFile(
+        String container,
+        String remotePath,
+        Path target,
+        int maxBytes,
+        Duration timeout,
+        boolean followLinks
+    ) throws IOException {
+        List<String> command = followLinks
+            ? List.of(config.dockerBinary(), "cp", "-L", container + ":" + remotePath, "-")
+            : List.of(config.dockerBinary(), "cp", container + ":" + remotePath, "-");
         ProcessBuilder builder = new ProcessBuilder(ProcessGroup.wrap(command));
         builder.redirectErrorStream(false);
         EnvironmentSanitizer.sanitize(builder.environment());
@@ -1408,15 +1439,29 @@ public final class DockerSandboxRunner implements SandboxRunner {
         errorReader.setDaemon(true);
         errorReader.start();
 
-        byte[][] bytes = new byte[1][];
-        Throwable[] failure = new Throwable[1];
+        AtomicReference<byte[]> bytes = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        CountDownLatch outputDone = new CountDownLatch(1);
+        int maxTarBytes = maxBytes > Integer.MAX_VALUE - 8_192
+            ? Integer.MAX_VALUE : maxBytes + 8_192;
         Thread outputReader = new Thread(() -> {
             try {
-                bytes[0] = BoundedTarFileReader.read(
-                    process.getInputStream(), maxBytes, maxBytes + 8_192);
+                if (target == null) {
+                    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                    BoundedTarFileReader.copy(
+                        process.getInputStream(), buffer, maxBytes, maxTarBytes);
+                    bytes.set(buffer.toByteArray());
+                } else {
+                    try (OutputStream output = Files.newOutputStream(target)) {
+                        BoundedTarFileReader.copy(
+                            process.getInputStream(), output, maxBytes, maxTarBytes);
+                    }
+                }
             } catch (Throwable error) {
-                failure[0] = error;
+                failure.set(error);
                 ProcessGroup.kill(process);
+            } finally {
+                outputDone.countDown();
             }
         }, "sandbox-docker-cp-output");
         outputReader.setDaemon(true);
@@ -1433,12 +1478,14 @@ public final class DockerSandboxRunner implements SandboxRunner {
             outputReader.join(2_000);
             errorReader.join(1_000);
             String errorOutput = stderr.text().trim();
-            if (failure[0] != null) {
+            Throwable readerFailure = awaitReaderFailure(
+                outputDone, failure::get, () -> ProcessGroup.kill(process), remotePath);
+            if (readerFailure != null) {
                 if (isMissingFile(errorOutput)) {
                     throw new NoSuchFileException(remotePath);
                 }
                 throw new IOException(
-                    "Could not read " + remotePath + ": " + errorOutput, failure[0]);
+                    "Could not read " + remotePath + ": " + errorOutput, readerFailure);
             }
             if (process.exitValue() != 0) {
                 if (isMissingFile(errorOutput)) {
@@ -1446,15 +1493,39 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 }
                 throw new IOException("Could not read " + remotePath + ": " + errorOutput);
             }
-            if (bytes[0] == null) {
+            if (target == null && bytes.get() == null) {
                 throw new IOException("Could not read " + remotePath + ": empty archive");
             }
-            return bytes[0];
+            return target == null ? bytes.get() : null;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             ProcessGroup.kill(process);
             throw new IOException("Interrupted while reading " + remotePath, e);
         }
+    }
+
+    /**
+     * Read the tar reader's failure only after it has signalled completion.
+     *
+     * <p>Checking the completion latch first provides the happens-before edge
+     * from the reader thread. Reading the failure first would allow a reader
+     * that fails just after the join window to be observed as a stale null and
+     * a partial temp file to be treated as a success.</p>
+     *
+     * @param onUnfinished invoked when the reader is still running
+     */
+    static Throwable awaitReaderFailure(
+        CountDownLatch done,
+        Supplier<Throwable> failure,
+        Runnable onUnfinished,
+        String remotePath
+    ) throws IOException, InterruptedException {
+        if (!done.await(0, TimeUnit.MILLISECONDS)) {
+            onUnfinished.run();
+            throw new IOException(
+                "docker cp output reader did not finish for " + remotePath);
+        }
+        return failure.get();
     }
 
     private static boolean isMissingFile(String output) {

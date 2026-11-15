@@ -5,6 +5,7 @@ import java.io.EOFException;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
@@ -33,13 +34,31 @@ final class BoundedTarFileReader {
      */
     static byte[] read(InputStream input, int maxFileBytes, int maxTarBytes)
         throws IOException {
+        ByteArrayOutputStream content = new ByteArrayOutputStream();
+        copy(input, content, maxFileBytes, maxTarBytes);
+        return content.toByteArray();
+    }
+
+    /**
+     * Stream the single regular file into {@code output} without buffering it
+     * in memory. Bytes are written only after the entry type and size pass
+     * validation; a malformed or oversized stream may leave a partial prefix
+     * in {@code output}, so callers must treat the output as disposable.
+     *
+     * @param input        tar stream from {@code docker cp}
+     * @param output       sink for the validated file bytes
+     * @param maxFileBytes maximum accepted file size
+     * @param maxTarBytes  hard cap on the complete stream
+     * @throws IOException on malformed, missing, non-regular or oversized input
+     */
+    static void copy(InputStream input, OutputStream output, int maxFileBytes, int maxTarBytes)
+        throws IOException {
         if (maxFileBytes <= 0 || maxTarBytes < maxFileBytes) {
             throw new IllegalArgumentException("invalid tar bounds");
         }
         CountingInputStream counting = new CountingInputStream(input, maxTarBytes);
         byte[] header = new byte[BLOCK];
         boolean found = false;
-        byte[] content = null;
 
         while (true) {
             int read = readFully(counting, header);
@@ -71,19 +90,14 @@ final class BoundedTarFileReader {
             if (size > maxFileBytes) {
                 throw new IOException("tar entry exceeds the size bound");
             }
-            content = new byte[(int) size];
-            int actual = readFully(counting, content);
-            if (actual != content.length) {
-                throw new EOFException("truncated tar entry");
-            }
+            copyFully(counting, output, size);
             skip(counting, padding(size));
             found = true;
         }
 
-        if (!found || content == null) {
+        if (!found) {
             throw new IOException("tar stream did not contain a regular file");
         }
-        return content;
     }
 
     private static int readFully(InputStream input, byte[] target) throws IOException {
@@ -96,6 +110,20 @@ final class BoundedTarFileReader {
             offset += read;
         }
         return offset;
+    }
+
+    private static void copyFully(InputStream input, OutputStream output, long bytes)
+        throws IOException {
+        byte[] scratch = new byte[BLOCK * 8];
+        long remaining = bytes;
+        while (remaining > 0) {
+            int read = input.read(scratch, 0, (int) Math.min(scratch.length, remaining));
+            if (read < 0) {
+                throw new EOFException("truncated tar entry");
+            }
+            output.write(scratch, 0, read);
+            remaining -= read;
+        }
     }
 
     private static void skip(InputStream input, long bytes) throws IOException {
