@@ -12,13 +12,18 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -1207,6 +1212,39 @@ class DockerSandboxRunnerTest {
             assertFalse(listing.anyMatch(path -> path.getFileName().toString()
                 .startsWith(".sandbox-download-")));
         }
+    }
+
+    @Test
+    void tarReaderFailureIsNotReadBeforeCompletion() throws Exception {
+        CountDownLatch done = new CountDownLatch(1);
+        AtomicInteger aborted = new AtomicInteger();
+        AtomicBoolean read = new AtomicBoolean();
+        Supplier<Throwable> failure = () -> {
+            read.set(true);
+            throw new AssertionError("failure read before the reader finished");
+        };
+
+        IOException error = assertThrows(IOException.class,
+            () -> DockerSandboxRunner.awaitReaderFailure(
+                done, failure, aborted::incrementAndGet, "/workspace/file.txt"));
+
+        assertTrue(error.getMessage().contains("did not finish"), error.getMessage());
+        assertEquals(1, aborted.get());
+        assertFalse(read.get());
+    }
+
+    @Test
+    void tarReaderFailureIsReadAfterCompletion() throws Exception {
+        CountDownLatch done = new CountDownLatch(1);
+        AtomicInteger aborted = new AtomicInteger();
+        IOException marker = new IOException("tar entry is not a regular file");
+        done.countDown();
+
+        Throwable result = DockerSandboxRunner.awaitReaderFailure(
+            done, () -> marker, aborted::incrementAndGet, "/workspace/file.txt");
+
+        assertSame(marker, result);
+        assertEquals(0, aborted.get());
     }
 
     private void assertTarEntryRejected(String emitTar) throws IOException {

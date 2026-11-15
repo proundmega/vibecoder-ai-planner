@@ -36,7 +36,9 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 
 /**
  * Disposable Docker sandbox for repo-controlled commands.
@@ -1437,8 +1439,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
         errorReader.setDaemon(true);
         errorReader.start();
 
-        byte[][] bytes = new byte[1][];
-        Throwable[] failure = new Throwable[1];
+        AtomicReference<byte[]> bytes = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
         CountDownLatch outputDone = new CountDownLatch(1);
         int maxTarBytes = maxBytes > Integer.MAX_VALUE - 8_192
             ? Integer.MAX_VALUE : maxBytes + 8_192;
@@ -1448,7 +1450,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     ByteArrayOutputStream buffer = new ByteArrayOutputStream();
                     BoundedTarFileReader.copy(
                         process.getInputStream(), buffer, maxBytes, maxTarBytes);
-                    bytes[0] = buffer.toByteArray();
+                    bytes.set(buffer.toByteArray());
                 } else {
                     try (OutputStream output = Files.newOutputStream(target)) {
                         BoundedTarFileReader.copy(
@@ -1456,7 +1458,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     }
                 }
             } catch (Throwable error) {
-                failure[0] = error;
+                failure.set(error);
                 ProcessGroup.kill(process);
             } finally {
                 outputDone.countDown();
@@ -1476,17 +1478,14 @@ public final class DockerSandboxRunner implements SandboxRunner {
             outputReader.join(2_000);
             errorReader.join(1_000);
             String errorOutput = stderr.text().trim();
-            if (failure[0] != null) {
+            Throwable readerFailure = awaitReaderFailure(
+                outputDone, failure::get, () -> ProcessGroup.kill(process), remotePath);
+            if (readerFailure != null) {
                 if (isMissingFile(errorOutput)) {
                     throw new NoSuchFileException(remotePath);
                 }
                 throw new IOException(
-                    "Could not read " + remotePath + ": " + errorOutput, failure[0]);
-            }
-            if (outputDone.getCount() != 0) {
-                ProcessGroup.kill(process);
-                throw new IOException(
-                    "docker cp output reader did not finish for " + remotePath);
+                    "Could not read " + remotePath + ": " + errorOutput, readerFailure);
             }
             if (process.exitValue() != 0) {
                 if (isMissingFile(errorOutput)) {
@@ -1494,15 +1493,39 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 }
                 throw new IOException("Could not read " + remotePath + ": " + errorOutput);
             }
-            if (target == null && bytes[0] == null) {
+            if (target == null && bytes.get() == null) {
                 throw new IOException("Could not read " + remotePath + ": empty archive");
             }
-            return target == null ? bytes[0] : null;
+            return target == null ? bytes.get() : null;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             ProcessGroup.kill(process);
             throw new IOException("Interrupted while reading " + remotePath, e);
         }
+    }
+
+    /**
+     * Read the tar reader's failure only after it has signalled completion.
+     *
+     * <p>Checking the completion latch first provides the happens-before edge
+     * from the reader thread. Reading the failure first would allow a reader
+     * that fails just after the join window to be observed as a stale null and
+     * a partial temp file to be treated as a success.</p>
+     *
+     * @param onUnfinished invoked when the reader is still running
+     */
+    static Throwable awaitReaderFailure(
+        CountDownLatch done,
+        Supplier<Throwable> failure,
+        Runnable onUnfinished,
+        String remotePath
+    ) throws IOException, InterruptedException {
+        if (!done.await(0, TimeUnit.MILLISECONDS)) {
+            onUnfinished.run();
+            throw new IOException(
+                "docker cp output reader did not finish for " + remotePath);
+        }
+        return failure.get();
     }
 
     private static boolean isMissingFile(String output) {
