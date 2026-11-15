@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { docker } = require('../utils/docker');
+const { docker, DOCKER_URL } = require('../utils/docker');
 const AgentService = require('./AgentService');
 const { pool } = require('../db');
 const { decrypt } = require('../utils/crypto');
@@ -9,7 +9,73 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://backend:3001';
 const IDLE_TIMEOUT_MS = parseInt(process.env.AGENT_IDLE_TIMEOUT_MS) || 300000;
 const CONTAINER_NETWORK = process.env.CONTAINER_NETWORK || 'vibecode_default';
 const REPO_VOLUME = process.env.REPO_VOLUME || 'vibecode_repos';
+const REPO_MOUNT = '/repos';
 let _maxPoolSize = parseInt(process.env.MAX_POOL_SIZE) || 50;
+
+// Operator-controlled sandbox settings. The agent container receives the same
+// values as the API container so a pool agent can build a Docker sandbox. No
+// credential or workspace secret is included; the sandbox receives only the
+// explicit SANDBOX_ENV allowlist from the agent.
+const SANDBOX_ENV_NAMES = [
+  'SANDBOX_MODE',
+  'SANDBOX_IMAGE',
+  'SANDBOX_PROXY_IMAGE',
+  'SANDBOX_DOCKER_BIN',
+  'SANDBOX_REQUIRE',
+  'SANDBOX_REQUIRE_SECURE_FILE_ACCESS',
+  'SANDBOX_CPUS',
+  'SANDBOX_MEMORY_MB',
+  'SANDBOX_PIDS',
+  'SANDBOX_DISK_MB',
+  'SANDBOX_DISK_CHECK_INTERVAL_SECONDS',
+  'SANDBOX_DISK_ENFORCE',
+  'SANDBOX_NOFILE',
+  'SANDBOX_TMPFS_MB',
+  'SANDBOX_NETWORK',
+  'SANDBOX_ALLOWED_HOSTS',
+  'SANDBOX_EGRESS_PROXY',
+  'SANDBOX_EGRESS_UPSTREAM_NETWORK',
+  'SANDBOX_EGRESS_PROBE_TIMEOUT_MS',
+  'SANDBOX_EGRESS_TLS_MODE',
+  'SANDBOX_ENV',
+  'SANDBOX_USER',
+  'SANDBOX_ALLOW_ROOT',
+  'SANDBOX_EXEC_TIMEOUT_SECONDS',
+  'SANDBOX_ARTIFACT_MAX_BYTES',
+  'SANDBOX_SECCOMP_PROFILE',
+  'SANDBOX_APPARMOR_PROFILE',
+  'SANDBOX_CONTAINER_WORKSPACE_ROOT',
+  'SANDBOX_HOST_WORKSPACE_ROOT',
+];
+
+/**
+ * Docker CLI address for pool agents. The API can reach the daemon through
+ * DOCKER_API_URL, but the agent's docker CLI needs a DOCKER_HOST. Prefer an
+ * explicit AGENT_DOCKER_HOST, then derive a TCP address from the HTTP socket
+ * proxy used by the backend.
+ */
+function agentDockerHost() {
+  const configured = process.env.AGENT_DOCKER_HOST;
+  if (configured) {
+    return configured;
+  }
+  const url = DOCKER_URL || '';
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    try {
+      const parsed = new URL(url);
+      return `tcp://${parsed.hostname}:${parsed.port || 2375}`;
+    } catch {
+      return '';
+    }
+  }
+  if (url.startsWith('tcp://')) {
+    return url;
+  }
+  if (url.startsWith('/')) {
+    return `unix://${url}`;
+  }
+  return '';
+}
 
 function setMaxPoolSize(size) {
   _maxPoolSize = size;
@@ -70,6 +136,35 @@ class PoolManager {
 
   _generateApiKey() {
     return 'pool-' + crypto.randomBytes(24).toString('hex');
+  }
+
+  /**
+   * Host path the Docker daemon can bind-mount for the repo volume. A bind
+   * path is already daemon-visible; a named volume is resolved through the
+   * daemon. Returns null when the operator must configure the path explicitly.
+   */
+  async _sandboxHostWorkspaceRoot() {
+    const configured = process.env.SANDBOX_HOST_WORKSPACE_ROOT;
+    if (configured) {
+      return configured;
+    }
+    if (REPO_VOLUME.startsWith('/')) {
+      return REPO_VOLUME;
+    }
+    if (!this.docker || typeof this.docker.getVolume !== 'function') {
+      return null;
+    }
+    try {
+      const info = await this.docker.getVolume(REPO_VOLUME).inspect();
+      const mountpoint = info?.Mountpoint || info?.mountpoint;
+      if (mountpoint && mountpoint.startsWith('/')) {
+        return mountpoint;
+      }
+    } catch (err) {
+      console.warn(
+        `Could not resolve repo volume ${REPO_VOLUME} for sandbox mounts: ${err.message}`);
+    }
+    return null;
   }
 
   async resolveProviderConfig(providerId) {
@@ -250,12 +345,32 @@ class PoolManager {
         env.push(`${name}=${process.env[name]}`);
       }
     }
-    if (process.env.SANDBOX_REQUIRE_SECURE_FILE_ACCESS) {
-      env.push(`SANDBOX_REQUIRE_SECURE_FILE_ACCESS=${
-        process.env.SANDBOX_REQUIRE_SECURE_FILE_ACCESS}`);
+    const sandboxEnv = new Map();
+    for (const name of SANDBOX_ENV_NAMES) {
+      if (process.env[name] !== undefined && process.env[name] !== '') {
+        sandboxEnv.set(name, process.env[name]);
+      }
     }
-    if (process.env.SANDBOX_EGRESS_TLS_MODE) {
-      env.push(`SANDBOX_EGRESS_TLS_MODE=${process.env.SANDBOX_EGRESS_TLS_MODE}`);
+
+    const dockerHost = agentDockerHost();
+    if (dockerHost) {
+      sandboxEnv.set('DOCKER_HOST', dockerHost);
+    }
+    if (!sandboxEnv.has('SANDBOX_CONTAINER_WORKSPACE_ROOT')) {
+      sandboxEnv.set('SANDBOX_CONTAINER_WORKSPACE_ROOT', REPO_MOUNT);
+    }
+    if (sandboxEnv.get('SANDBOX_MODE') === 'docker') {
+      const hostWorkspaceRoot = await this._sandboxHostWorkspaceRoot();
+      if (hostWorkspaceRoot) {
+        sandboxEnv.set('SANDBOX_HOST_WORKSPACE_ROOT', hostWorkspaceRoot);
+      } else {
+        console.warn(
+          `Pool sandbox workspace root is unresolved for volume ${REPO_VOLUME}; `
+          + 'set SANDBOX_HOST_WORKSPACE_ROOT or make REPO_VOLUME a host path');
+      }
+    }
+    for (const [name, value] of sandboxEnv) {
+      env.push(`${name}=${value}`);
     }
 
     for (const name of [

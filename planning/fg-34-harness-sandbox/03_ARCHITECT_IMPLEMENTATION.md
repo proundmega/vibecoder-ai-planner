@@ -18,14 +18,26 @@ Slice 1 deliberately keeps `SANDBOX_MODE=host` as the default so the Phase 1
 harness is unchanged until the Docker path is validated. Docker mode is
 opt-in and fails closed; it never falls back to host execution.
 
-## Deployment boundary (slice 1)
+## Deployment boundary (D8)
 
-Docker mode currently requires an agent that runs on, or shares a workspace
-path with, the Docker host. `PoolManager` still launches agents with only the
-`HARNESS_*` environment and a named repo volume, and `agent/docker-compose.yml`
-does not mount a daemon socket. Pool-launched agents therefore stay in host
-mode until the deployment wiring lands. This is **D8** in the `00` deferred
-register; it is not claimed as delivered here.
+Docker mode requires a daemon the agent can reach and a workspace path the
+daemon can bind-mount. `PoolManager` now forwards the operator `SANDBOX_*`
+settings to each pool agent, sets `DOCKER_HOST` from `AGENT_DOCKER_HOST` or the
+backend's `DOCKER_API_URL` socket proxy, and resolves the repo volume mountpoint
+into `SANDBOX_HOST_WORKSPACE_ROOT` (with `/repos` as the container root). A
+host-path `REPO_VOLUME` is used directly; a named volume is inspected through
+the daemon. An explicit root wins. The root Compose proxy enables
+create/exec/copy/network/volume/pause operations, and the API container receives
+the sandbox settings so they reach `process.env`.
+
+The sandbox itself still receives no Docker socket or `DOCKER_HOST`; only the
+supervisor agent talks to the restricted proxy. `SANDBOX_MODE` remains `host`
+by default, so pool agents stay on host mode until an operator opts in. The
+proxy can manage containers/networks/volumes beyond one pool agent's own
+resources, so the daemon/proxy is a deployment trust boundary, not a
+multi-tenant boundary; pool replacement cleanup is D30. A standalone
+`agent/docker-compose.yml` run needs `DOCKER_HOST` and
+`SANDBOX_HOST_WORKSPACE_ROOT` set explicitly.
 
 OpenCode still runs in the supervisor in slice 1. Only supervisor-driven
 install/verification commands go through the sandbox; a prompt-injected
@@ -42,6 +54,7 @@ bridge. Operator docs state this explicitly.
 - [x] Harden prompt-injection handling for repo docs, issues and PR text (slice 3a)
 - [x] Add malicious-repo and escape-attempt tests (guard-failure fail-closed with non-zero exit codes, symlink/FIFO copy, background persistence, download-cap pre-check, destroy-failure publish stop, secret, read-only, no-socket, disk quota, non-root, egress allow/deny and direct-egress-blocked integration coverage)
 - [x] Bridge the OpenCode bash tool into the sandbox (slice 2: `sandbox_bash` global tool + loopback per-run-token bridge; built-in bash disabled)
+- [x] Wire Docker sandboxes into pool deployments (D8): forward `SANDBOX_*`, derive `DOCKER_HOST` from the restricted socket proxy, and resolve the repo volume mountpoint for host-visible bind mounts
 - [x] Add image scanning, SBOM and signed base images (slice 3b: digest-pinned Dockerfiles, `agent/scripts/sandbox-image-security.sh`, CI pin gate, optional syft/trivy/grype/cosign)
 - [x] Redact sandbox/verification output before storage (slice 3c: configured secrets plus high-confidence credential formats at capture and at message/run/PR boundaries)
 - [x] Define the fallback for local Windows development (`SANDBOX_MODE=host`, loud warning, production guard)
@@ -144,7 +157,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 - The OpenCode bash bridge binds to 127.0.0.1 with a per-run random token and is closed after the prompt. The sandbox has no route to the host loopback. In Docker mode the built-in `bash` and `shell` tools are denied and the global `sandbox_bash` tool forwards to the bridge; this is fail-closed if the custom tool fails to load. The bridge enforces the supervisor command policy and maps supervisor workspace paths to `/workspace`. Host mode keeps the built-in bash tool. Exec requests carry a client request ID and use a bounded 64-entry/10-minute result cache; duplicate IDs return the cached result, conflicting payloads get 409, and missing IDs retain legacy behavior. The `sandbox_bash` client retries a lost response and 502/503/504 with the same ID (three attempts, short backoff) while 400/403/409/500 are not retried. Tests cover in-flight duplicates, 504, TTL expiry, LRU eviction, cwd/timeout fingerprint conflicts, uncached 500s and the 128/129 ID boundary.
 - Hostile install/test containment is covered by the real-Docker background-writer, postinstall-like lifecycle, forking-writer and sequential-exec regressions. The post-exec sweep runs five kill passes, then freezes the container, reads the init host PID with `docker inspect`, and verifies the frozen table contains nothing else before thawing. PID 1 is a childless `exec sleep`, so it cannot respawn a child, and execs are serialized per sandbox so one sweep cannot freeze another command. A survivor or unverifiable freeze/table/destroy destroys the sandbox, marks the handle compromised, and fails the exec even after cleanup; `destroy()` then refuses to report the handle as clean for the rest of the runner's lifetime, so the pre-publish gate blocks publishing even when no verification commands ran (D14, #139). CI builds the sandbox image and runs this suite against it (D13); a real npm lifecycle fixture remains future integration coverage.
 - `--init` is intentionally not used: PID 1 is `exec sleep 2147483647`, a single childless process, so the frozen quiescence check can preserve exactly the init host PID reported by `docker inspect`. Zombies (which cannot fork) are ignored only when `docker top` provides a state column; any other live process stops the sandbox (D14).
-- The integration tests are opt-in locally (`SANDBOX_IT_IMAGE`, plus `SANDBOX_IT_NETWORK`/`SANDBOX_IT_NETWORK_IMAGE` for egress); CI builds the sandbox and proxy images and runs `DockerSandboxRunnerIntegrationTest` against them in the `Sandbox Integration` stage (D13); `PoolManager` wiring is D8.
+- The integration tests are opt-in locally (`SANDBOX_IT_IMAGE`, plus `SANDBOX_IT_NETWORK`/`SANDBOX_IT_NETWORK_IMAGE` for egress); CI builds the sandbox and proxy images and runs `DockerSandboxRunnerIntegrationTest` against them in the `Sandbox Integration` stage (D13). `PoolManager` wiring is D8: it forwards the sandbox environment, derives `DOCKER_HOST` from the socket proxy, and resolves the repo volume mountpoint for host-visible bind mounts.
 - NFR5 (redaction before storage): `VerificationRunner` pattern-redacts captured output (including exception messages) before truncation, and `HarnessTicketProcessor` redacts configured secrets plus high-confidence credential formats before deriving a branch name, posting ticket messages, finishing a durable run with an error, or creating a commit/PR title or PR body. The key/value rule first requires a credential keyword in the identifier via a lookahead, then matches the identifier once with a possessive quantifier. The lookahead prevents a non-credential assignment such as `{"message": "password=supersecret"}` from consuming the nested credential, and the single possessive match keeps repeated keywords linear on hostile input (64 KB/128 KB regressions). An unquoted value is redacted through end-of-line, stopping only at a quote or newline, so `password=supersecret phrase`, `password=super)secret` and non-Bearer authorization schemes are fully redacted; over-redacting adjacent text is preferred to a partial value. Multi-line private-key blocks are redacted before key/value processing so `password=-----BEGIN...` does not leave the block body unredacted. A BEGIN without an END redacts the remaining output. Credential values shorter than eight characters are not redacted by the pattern rules (and configured secrets shorter than eight characters are ignored) to avoid corrupting ordinary output. The publish gate (`SecretLeakGuard`) checks known secrets plus GitHub/OpenAI/AWS (including `ASIA`)/Slack (including `xoxc`/`xoxd`)/Google/JWT tokens and PEM/PGP/SSH2 private-key blocks; Bearer/Basic, URL-userinfo and key/value forms such as `passphrase=` are redaction-only patterns, not publish-gate formats. This is a storage guard, not a sandbox boundary; encoded, split or transformed credentials can still evade pattern matching, and provider-side telemetry is outside this slice. Legacy `TicketProcessor`/`ReviewProcessor` messages are redacted by `ApiService.postMessage`, branch/commit/PR titles by `TicketProcessor` and `GitHubService`, and shipped supervisor log lines by `RedactingPatternLayoutEncoder`. All three read the process-wide `RedactionRegistry`, which receives the resolved provider key and runtime GitHub App tokens (plus env secrets) so a backend-fetched custom key is covered even though it matches no pattern (D19). The FR11 streaming part remains D15.
 
 ## Review checklist

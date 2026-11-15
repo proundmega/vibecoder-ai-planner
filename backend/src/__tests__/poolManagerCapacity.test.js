@@ -159,6 +159,108 @@ describe('PoolManager max capacity (BP-61)', () => {
     expect(createOpts.Env).toContain('SANDBOX_REQUIRE_SECURE_FILE_ACCESS=true');
   });
 
+  it('forwards the sandbox deployment environment to pool agents', async () => {
+    pm.pool.clear();
+    const { pool } = require('../db');
+    pool.query.mockResolvedValue({
+      rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+    });
+    const mockContainer = {
+      id: 'container-sandbox',
+      start: jest.fn().mockResolvedValue(undefined),
+      stop: jest.fn().mockResolvedValue(undefined),
+      remove: jest.fn().mockResolvedValue(undefined),
+    };
+    pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
+    pm.docker.getVolume = jest.fn().mockReturnValue({
+      inspect: jest.fn().mockResolvedValue({
+        Mountpoint: '/var/lib/docker/volumes/vibecode_repos/_data',
+      }),
+    });
+
+    const previous = {};
+    const values = {
+      SANDBOX_MODE: 'docker',
+      SANDBOX_IMAGE: 'sandbox@sha256:abc',
+      SANDBOX_NETWORK: 'allowlist',
+      SANDBOX_ALLOWED_HOSTS: 'registry.npmjs.org',
+    };
+    for (const [name, value] of Object.entries(values)) {
+      previous[name] = process.env[name];
+      process.env[name] = value;
+    }
+    try {
+      await pm.requestAgent('proj-sandbox');
+    } finally {
+      for (const name of Object.keys(values)) {
+        if (previous[name] === undefined) delete process.env[name];
+        else process.env[name] = previous[name];
+      }
+    }
+
+    const createOpts = pm.docker.createContainer.mock.calls[0][0];
+    expect(createOpts.Env).toContain('SANDBOX_MODE=docker');
+    expect(createOpts.Env).toContain('SANDBOX_IMAGE=sandbox@sha256:abc');
+    expect(createOpts.Env).toContain('SANDBOX_NETWORK=allowlist');
+    expect(createOpts.Env).toContain('SANDBOX_ALLOWED_HOSTS=registry.npmjs.org');
+    expect(createOpts.Env).toContain('SANDBOX_CONTAINER_WORKSPACE_ROOT=/repos');
+    expect(createOpts.Env).toContain(
+      'SANDBOX_HOST_WORKSPACE_ROOT=/var/lib/docker/volumes/vibecode_repos/_data');
+    expect(createOpts.Env).toContain('DOCKER_HOST=tcp://docker-proxy:2375');
+    expect(pm.docker.getVolume).toHaveBeenCalledWith('vibecode_repos');
+  });
+
+  it('honours an explicit AGENT_DOCKER_HOST', async () => {
+    pm.pool.clear();
+    const { pool } = require('../db');
+    pool.query.mockResolvedValue({
+      rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+    });
+    const mockContainer = { id: 'container-proxy', start: jest.fn().mockResolvedValue(undefined) };
+    pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
+
+    const previous = process.env.AGENT_DOCKER_HOST;
+    process.env.AGENT_DOCKER_HOST = 'tcp://proxy.internal:2375';
+    try {
+      await pm.requestAgent('proj-proxy');
+    } finally {
+      if (previous === undefined) delete process.env.AGENT_DOCKER_HOST;
+      else process.env.AGENT_DOCKER_HOST = previous;
+    }
+
+    const createOpts = pm.docker.createContainer.mock.calls[0][0];
+    expect(createOpts.Env).toContain('DOCKER_HOST=tcp://proxy.internal:2375');
+  });
+
+  it('does not guess a host workspace root when the volume cannot be inspected', async () => {
+    pm.pool.clear();
+    const { pool } = require('../db');
+    pool.query.mockResolvedValue({
+      rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+    });
+    const mockContainer = { id: 'container-no-volume', start: jest.fn().mockResolvedValue(undefined) };
+    pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
+    delete pm.docker.getVolume;
+
+    const previous = process.env.SANDBOX_MODE;
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    process.env.SANDBOX_MODE = 'docker';
+    try {
+      await pm.requestAgent('proj-no-volume');
+
+      const createOpts = pm.docker.createContainer.mock.calls[0][0];
+      expect(createOpts.Env).toContain('SANDBOX_MODE=docker');
+      expect(createOpts.Env).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/^SANDBOX_HOST_WORKSPACE_ROOT=./)]));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(
+        'Pool sandbox workspace root is unresolved'));
+    } finally {
+      if (previous === undefined) delete process.env.SANDBOX_MODE;
+      else process.env.SANDBOX_MODE = previous;
+      warn.mockRestore();
+    }
+  });
+
   it('forwards SANDBOX_EGRESS_TLS_MODE to pool agents', async () => {
     pm.pool.clear();
     const { pool } = require('../db');
