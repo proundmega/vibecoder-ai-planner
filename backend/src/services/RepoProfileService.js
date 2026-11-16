@@ -75,6 +75,19 @@ function normalizeProfile(profile, repo) {
   return candidate;
 }
 
+function assertRepoMatches(profile, repo) {
+  if (!profile.repo_url || !repo?.repoUrl) return;
+  const normalize = (value) => String(value)
+    .trim()
+    .replace(/\.git$/, '')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+  if (normalize(profile.repo_url) !== normalize(repo.repoUrl)) {
+    throw new ValidationError(
+      'profile repo_url must match the repository connected to the project');
+  }
+}
+
 async function readOptionalFile(projectId, path) {
   try {
     return await GitHubService.readRepoFile(projectId, path);
@@ -293,7 +306,9 @@ class RepoProfileService {
   async create(projectId, payload, user) {
     const project = await assertCanWrite(projectId, user);
     const repo = await GitHubService.getProjectRepo(projectId);
-    const result = validateRepoProfile(normalizeProfile(payload, repo));
+    const normalized = normalizeProfile(payload, repo);
+    assertRepoMatches(normalized, repo);
+    const result = validateRepoProfile(normalized);
     if (result.error) {
       const details = result.error.details || [];
       throw new ValidationError(
@@ -328,7 +343,9 @@ class RepoProfileService {
   async update(projectId, profileId, payload, user) {
     await assertCanWrite(projectId, user);
     const repo = await GitHubService.getProjectRepo(projectId);
-    const result = validateRepoProfile(normalizeProfile(payload, repo));
+    const normalized = normalizeProfile(payload, repo);
+    assertRepoMatches(normalized, repo);
+    const result = validateRepoProfile(normalized);
     if (result.error) {
       const details = result.error.details || [];
       throw new ValidationError(

@@ -132,6 +132,17 @@ describe('RepoProfileService', () => {
       expect(client.release).toHaveBeenCalled();
     });
 
+    it('rejects a repo_url that does not match the connected repository', async () => {
+      await expect(
+        RepoProfileService.create(
+          1,
+          validProfile({ repo_url: 'https://github.com/other/repo' }),
+          owner()
+        )
+      ).rejects.toThrow(/must match the repository connected/);
+      expect(pool.connect).not.toHaveBeenCalled();
+    });
+
     it('rejects a missing verify list before opening a transaction', async () => {
       await expect(
         RepoProfileService.create(1, validProfile({ verify: [] }), owner())
