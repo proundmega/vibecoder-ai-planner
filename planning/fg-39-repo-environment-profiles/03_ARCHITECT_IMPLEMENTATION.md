@@ -12,17 +12,17 @@
 - [x] Backend `RepoProfileService`: versioned create/update/activate, active
       lookup, GitHub-manifest detection, agent read.
 - [x] Backend `RepoProfileValidationService`: queued dry runs, atomic claim,
-      finish, 60-minute stale reap.
+      finish, profile-budget stale reap.
 - [x] Backend Joi schema + OpenAPI routes + project owner/super-admin boundary.
 - [x] Agent `RepoProfile` model: re-validate schema, image digest, env secrets,
-      commands, cache names and origin CA bundle.
+      commands, cache rejection and origin CA bundle.
 - [x] Agent profile fetch + runtime use: base branch, setup/verify, timeouts,
-      env, image, cache volume, run profile columns.
+      env, image, max-round deadline, run profile columns.
 - [x] Agent `ProfileValidationProcessor`: clone → sandbox → setup → verify →
       report; no model session, no publish.
 - [x] fg-34/D27 profile origin CA: only allowlisted exact hosts, terminate mode
       only, audited through the existing supervisor/proxy logs.
-- [x] Tests for schema/API/detection/dry-run/runtime/cache/D27 paths.
+- [x] Tests for schema/API/detection/dry-run/runtime/repo-binding/activation/D27 paths.
 - [x] Update `PENDING.txt`, `HARNESS_ROADMAP.md`, fg-34 D27 status.
 
 ## Per-file changes
@@ -34,7 +34,7 @@
 | `backend/src/migrations/apply.js` | edit | Register `050` |
 | `backend/src/validators/repoProfiles.js` | add | Profile schema, secret/env/host/CA validation |
 | `backend/src/services/RepoProfileService.js` | add | Versioning, activation, detection, agent read |
-| `backend/src/services/RepoProfileValidationService.js` | add | Dry-run queue/claim/finish/stale reap |
+| `backend/src/services/RepoProfileValidationService.js` | add | Dry-run queue/claim/finish/profile-budget stale reap |
 | `backend/src/api/repoProfiles.js` | add | Project/agent routes, OpenAPI JSDoc |
 | `backend/src/api/v1/index.js` | edit | Mount router before `/projects` |
 | `backend/src/providers/github/api.js` | edit | Bounded repository file-content read |
@@ -42,21 +42,22 @@
 | `backend/src/services/GitHubService.js` | edit | Project-scoped manifest read helper |
 | `backend/src/__tests__/repoProfileService.test.js` | add | Version/activation/validation/detection |
 | `backend/src/__tests__/repoProfileValidationService.test.js` | add | Queue/claim/finish/stale/permission |
+| `backend/src/__tests__/integration/repoProfiles.test.js` | add | Real-Postgres migration/service/dry-run/activation |
 | `backend/src/__tests__/repoProfilesApi.test.js` | add | Route auth/contract/error paths |
-| `agent/.../harness/RepoProfile.java` | add | Validated profile model + env/cache mapping |
+| `agent/.../harness/RepoProfile.java` | add | Validated profile model + env mapping + cache rejection |
 | `agent/.../harness/RepoProfileFetcher.java` | add | Agent profile fetch, fallback warning |
 | `agent/.../harness/ProfileValidationProcessor.java` | add | Dry-run execution and reporting |
 | `agent/.../service/ApiService.java` | edit | Profile/validation endpoints |
 | `agent/.../service/WorkspaceManager.java` | edit | Base-branch checkout overload |
-| `agent/.../harness/SandboxConfig.java` | edit | Profile image/env/cache/CA derivation |
+| `agent/.../harness/SandboxConfig.java` | edit | Profile image/env/CA derivation |
 | `agent/.../harness/SandboxSpec.java` | edit | Cache volume field |
 | `agent/.../harness/DockerSandboxRunner.java` | edit | Cache mount/init, profile spec |
 | `agent/.../harness/VerificationRunner.java` | edit | Host-mode profile env |
 | `agent/.../harness/HarnessTicketProcessor.java` | edit | Fetch/use profile, run columns, PR base |
 | `agent/.../AgentApp.java` | edit | Poll dry-run validation queue |
-| `agent/src/test/java/.../RepoProfileTest.java` | add | Model validation/env/cache/CA |
+| `agent/src/test/java/.../RepoProfileTest.java` | add | Model validation/env/cache-rejection/CA |
 | `agent/src/test/java/.../ProfileValidationProcessorTest.java` | add | Success/failure/cleanup/claim |
-| `agent/src/test/java/.../SandboxConfigTest.java` | edit | Profile image/env/cache/CA |
+| `agent/src/test/java/.../SandboxConfigTest.java` | edit | Profile image/env/CA |
 | `agent/src/test/java/.../DockerSandboxRunnerTest.java` | edit | Cache mount/init |
 | `agent/src/test/java/.../WorkspaceManagerTest.java` | edit | Base branch + failure |
 | `agent/src/test/java/.../HarnessTicketProcessorTest.java` | edit | Profile-driven run |
@@ -72,17 +73,17 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
-| FR1 | Backend | `repoProfileService.test.js` | Create/update/activate versions; reject missing verify, secret env, unpinned image, unknown fields | `cd backend && npx jest repoProfileService --runInBand` |
+| FR1 | Backend | `repoProfileService.test.js`, `repoProfiles.test.js` | Create/update/activate versions; reject missing verify, secret env, unpinned image, unknown fields; require an active connected repo with a matching URL at every transition; activation requires a successful exact-content dry run | `cd backend && npx jest repoProfileService --runInBand`; integration test with real Postgres |
 | FR1 | Agent | `RepoProfileTest.java` | Parse/validate v1 fields; reject unknown/invalid security fields | `cd agent && mvn -Dtest=RepoProfileTest test` |
 | FR2 | Backend | `repoProfileService.test.js` | Detect Node/Python/Java/Go/monorepo manifests and propose commands | same |
 | FR3 | Backend/Agent | `repoProfileService.test.js`, `SandboxConfigTest.java` | Image override only with `@sha256`; profile image reaches `SandboxSpec` | both |
-| FR4 | Agent | `SandboxConfigTest.java`, `DockerSandboxRunnerTest.java` | Cache volume name/env and mount/init for declared caches; no cross-project name | `cd agent && mvn -Dtest=SandboxConfigTest,DockerSandboxRunnerTest test` |
+| FR4 | Backend/Agent | `repoProfileService.test.js`, `RepoProfileTest.java` | Non-empty caches are rejected until D9/fg-44 (no unbounded volume); cache quota/GC is deferred | both |
 | FR5 | Backend | `repoProfileService.test.js` | Non-empty `services` is rejected until slice 2 (fail closed) | `cd backend && npx jest repoProfileService --runInBand` |
-| FR6 | Agent | `HarnessTicketProcessorTest.java`, `ProfileValidationProcessorTest.java` | Setup then verify; per-command timeout budget; failure stops publish | `cd agent && mvn -Dtest=HarnessTicketProcessorTest,ProfileValidationProcessorTest test` |
+| FR6 | Agent | `HarnessTicketProcessorTest.java`, `ProfileValidationProcessorTest.java` | Setup then verify; per-command timeout budget capped by `max_round_minutes`; failure stops publish | `cd agent && mvn -Dtest=HarnessTicketProcessorTest,ProfileValidationProcessorTest test` |
 | FR7 | Backend/Agent | `repoProfileService.test.js`, `RepoProfileTest.java` | Non-secret env accepted; secret-like key/value rejected | both |
 | FR8 | Backend | `repoProfileService.test.js` | Non-empty `flaky_tests` is rejected until slice 3 (never silently ignored) | `cd backend && npx jest repoProfileService --runInBand` |
-| FR9 | Backend/Agent | `repoProfileValidationService.test.js`, `ProfileValidationProcessorTest.java` | Queue/claim/finish; success/failure result; stale reap | both |
-| FR10 | Agent | `HarnessTicketProcessorTest.java` | Missing/failed profile fetch warns and keeps autodetection | `cd agent && mvn -Dtest=HarnessTicketProcessorTest test` |
+| FR9 | Backend/Agent | `repoProfileValidationService.test.js`, `ProfileValidationProcessorTest.java` | Queue/claim/finish; success/failure result; profile-budget stale reap (>60-minute regression); activation requires the successful exact `profile_hash`; dry runs run after ticket work | both |
+| FR10 | Agent | `HarnessTicketProcessorTest.java` | Missing/failed profile fetch warns and keeps autodetection; a profile for another repo is rejected before run start | `cd agent && mvn -Dtest=HarnessTicketProcessorTest test` |
 | D27 | Backend/Agent | `repoProfileService.test.js`, `SandboxConfigTest.java` | CA bundle shape validated; host must be allowlisted; `sni-only` mismatch fails closed | both |
 
 ## Review checklist
@@ -98,4 +99,5 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-16 | `5af3d48` | Backend 137 suites / 1707 tests; agent 678 tests / 9 skipped | Pass. `node planning/check-planning.js`, backend lint (0 errors), `git diff --check`, root and agent Compose configs pass. Slice 1 covers FR1-FR4, FR6, FR7, FR9, FR10 and the D27 profile handoff; FR5/FR8 fail closed until their slices. |
+| 2026-11-16 | `5af3d48` | Backend 137 suites / 1707 tests; agent 678 tests / 9 skipped | Pass. `node planning/check-planning.js`, backend lint (0 errors), `git diff --check`, root and agent Compose configs pass. Slice 1 covers FR1-FR3, FR6, FR7, FR9, FR10 and the D27 profile handoff; FR4/FR5/FR8 fail closed until their slices. |
+| 2026-11-16 | review fixes | Backend 137 suites; agent 682 tests / 9 skipped; real-Postgres integration 4 tests | Review hardening: repo binding required at create/update/activate/validate and on the agent; exact-content `profile_hash` required for activation; `max_round_minutes` caps ticket/dry-run budgets and the stale threshold; persistent caches deferred; canonical base64; harness-run profile project/version check; host-mode warning aligned. |

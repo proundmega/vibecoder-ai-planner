@@ -32,8 +32,7 @@ public record SandboxSpec(
     String apparmorProfile,
     long artifactMaxBytes,
     List<String> egressOriginCaHosts,
-    String egressOriginCaPem,
-    String cacheVolume
+    String egressOriginCaPem
 ) {
 
     public SandboxSpec {
@@ -73,7 +72,6 @@ public record SandboxSpec(
             throw new IllegalArgumentException(
                 "Origin CA hosts and PEM must be configured together");
         }
-        cacheVolume = cacheVolume == null || cacheVolume.isBlank() ? null : cacheVolume;
     }
 
     private static String blankToNull(String value) {

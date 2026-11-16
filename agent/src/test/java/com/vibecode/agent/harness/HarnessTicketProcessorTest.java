@@ -497,6 +497,31 @@ class HarnessTicketProcessorTest {
         return ticket;
     }
 
+
+    @Test
+    void profilePointingAtAnotherRepositoryIsRejectedBeforeRunStart() throws Exception {
+        RepoProfileSnapshot snapshot = new ObjectMapper().readValue("""
+            {
+              "id": "11111111-1111-4111-8111-111111111111",
+              "version": 7,
+              "status": "active",
+              "profile": {
+                "schema_version": 1,
+                "repo_url": "https://github.com/other/repo",
+                "verify": ["npm test"]
+              }
+            }
+            """, RepoProfileSnapshot.class);
+        snapshot.validate();
+
+        processorWithProfile(() -> snapshot).processTicket(ticket());
+
+        verify(apiService, never()).startHarnessRun(
+            any(), anyString(), any(), any(), any(), anyInt());
+        verify(workspace, never()).cloneRepo(anyString(), anyString());
+        verify(apiService).releaseTicket(1L);
+    }
+
     @Test
     void profileDrivesBaseBranchCommandsEnvironmentAndRunEvidence() throws Exception {
         String branch = "vibecode/ticket-1-add-filtering";
@@ -529,6 +554,38 @@ class HarnessTicketProcessorTest {
             anyString(), anyString(), anyString(), eq("develop"));
         verify(apiService).startHarnessRun(
             1L, branch, null, "opencode-go", "beam-free", 1, snapshot.id(), 7);
+    }
+
+
+    @Test
+    void profileMaxRoundMinutesCapsTheVerificationBudget() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        RepoProfileSnapshot snapshot = new ObjectMapper().readValue("""
+            {
+              "id": "11111111-1111-4111-8111-111111111111",
+              "version": 7,
+              "status": "active",
+              "profile": {
+                "schema_version": 1,
+                "repo_url": "https://github.com/owner/repo",
+                "verify": ["npm test"],
+                "max_round_minutes": 1
+              }
+            }
+            """, RepoProfileSnapshot.class);
+        snapshot.validate();
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1, snapshot.id(), 7))
+            .thenReturn(Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+
+        processorWithProfile(() -> snapshot).processTicket(ticket());
+
+        ArgumentCaptor<Duration> timeout = ArgumentCaptor.forClass(Duration.class);
+        verify(verificationRunner).run(any(Path.class), anyList(), timeout.capture());
+        assertTrue(timeout.getValue().toMillis() <= 60_000,
+            "verification budget exceeded the profile max_round_minutes: " + timeout.getValue());
     }
 
     @Test

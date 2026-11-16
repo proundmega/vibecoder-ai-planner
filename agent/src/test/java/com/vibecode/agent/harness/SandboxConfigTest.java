@@ -716,7 +716,7 @@ class SandboxConfigTest {
     }
 
     @Test
-    void repoProfileAppliesPinnedImageEnvAndCacheVolume() throws IOException {
+    void repoProfileAppliesPinnedImageAndEnv() throws IOException {
         SandboxConfig config = SandboxConfig.from(env(
             "SANDBOX_MODE", "docker",
             "SANDBOX_IMAGE", "operator/default:latest",
@@ -729,7 +729,6 @@ class SandboxConfigTest {
               "schema_version": 1,
               "image": "node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               "verify": ["npm test"],
-              "caches": ["npm", "maven"],
               "env": {"NODE_ENV": "test"}
             }
             """);
@@ -741,9 +740,6 @@ class SandboxConfigTest {
         assertEquals("node@sha256:" + "a".repeat(64), effective.image());
         assertEquals("test", spec.env().get("NODE_ENV"));
         assertEquals("on", spec.env().get("OPERATOR_FLAG"));
-        assertEquals("/cache/npm", spec.env().get("NPM_CONFIG_CACHE"));
-        assertTrue(spec.env().get("MAVEN_OPTS").contains("-Dmaven.repo.local=/cache/maven"));
-        assertEquals("vibecode-repo-cache-42-7", spec.cacheVolume());
         assertEquals(config.allowedHosts(), effective.allowedHosts(),
             "a profile must not widen the egress allowlist");
     }

@@ -54,8 +54,7 @@ public record SandboxConfig(
     String containerWorkspaceRoot,
     String hostWorkspaceRoot,
     List<String> egressOriginCaHosts,
-    String egressOriginCaPem,
-    String cacheVolume
+    String egressOriginCaPem
 ) {
 
     public static final String DEFAULT_IMAGE = "vibecode-agent-sandbox:latest";
@@ -154,8 +153,7 @@ public record SandboxConfig(
             value(env, "SANDBOX_CONTAINER_WORKSPACE_ROOT", DEFAULT_CONTAINER_WORKSPACE_ROOT),
             value(env, "SANDBOX_HOST_WORKSPACE_ROOT", ""),
             originCaHosts,
-            originCaPem,
-            null
+            originCaPem
         );
         config.validate();
         return config;
@@ -382,8 +380,7 @@ public record SandboxConfig(
             apparmorProfile,
             artifactMaxBytes,
             egressOriginCaHosts,
-            egressOriginCaPem,
-            cacheVolume
+            egressOriginCaPem
         );
     }
 
@@ -418,10 +415,6 @@ public record SandboxConfig(
             effectiveCaHosts = profile.egress().originCaHosts();
             effectiveCaPem = profile.egress().originCaPem();
         }
-        String effectiveCache = profile.caches().isEmpty()
-            ? null
-            : profile.cacheVolumeName(projectId == null ? "unknown" : projectId, profileVersion);
-
         return new SandboxConfig(
             mode,
             effectiveImage,
@@ -449,8 +442,7 @@ public record SandboxConfig(
             containerWorkspaceRoot,
             hostWorkspaceRoot,
             effectiveCaHosts,
-            effectiveCaPem,
-            effectiveCache
+            effectiveCaPem
         );
     }
 

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { pool } = require('../db');
 const Project = require('../models/project');
 const GitHubService = require('./GitHubService');
@@ -50,12 +51,32 @@ async function assertAgentProjectAccess(projectId, agent) {
   throw new ForbiddenError('Only the project owner or a super admin can access agent repo profiles');
 }
 
+function canonicalize(value) {
+  if (Array.isArray(value)) {
+    return value.map(canonicalize);
+  }
+  if (value && typeof value === 'object') {
+    return Object.keys(value).sort().reduce((result, key) => {
+      result[key] = canonicalize(value[key]);
+      return result;
+    }, {});
+  }
+  return value;
+}
+
+function profileHash(profile) {
+  return crypto.createHash('sha256')
+    .update(JSON.stringify(canonicalize(profile)))
+    .digest('hex');
+}
+
 function format(row) {
   return {
     id: row.id,
     project_id: row.project_id,
     version: row.version,
     profile: row.profile,
+    profile_hash: row.profile_hash,
     status: row.status,
     created_by: row.created_by,
     created_at: row.created_at,
@@ -75,17 +96,32 @@ function normalizeProfile(profile, repo) {
   return candidate;
 }
 
-function assertRepoMatches(profile, repo) {
-  if (!profile.repo_url || !repo?.repoUrl) return;
-  const normalize = (value) => String(value)
+function compareRepoUrl(profileRepoUrl, connectedRepoUrl) {
+  const normalize = (value) => String(value || '')
     .trim()
     .replace(/\.git$/, '')
     .replace(/\/+$/, '')
     .toLowerCase();
-  if (normalize(profile.repo_url) !== normalize(repo.repoUrl)) {
+  return normalize(profileRepoUrl) === normalize(connectedRepoUrl);
+}
+
+function assertRepoMatches(profile, repo) {
+  if (!repo?.repoUrl) {
+    throw new ValidationError(
+      'Connect an active repository before creating or editing a repo profile');
+  }
+  if (!profile.repo_url) {
+    throw new ValidationError('profile repo_url is required');
+  }
+  if (!compareRepoUrl(profile.repo_url, repo.repoUrl)) {
     throw new ValidationError(
       'profile repo_url must match the repository connected to the project');
   }
+}
+
+async function assertProfileRepoBinding(projectId, profile) {
+  const repo = await GitHubService.getProjectRepo(projectId);
+  assertRepoMatches(profile, repo);
 }
 
 async function readOptionalFile(projectId, path) {
@@ -121,7 +157,6 @@ function nodeVerifyCommands(pkg, prefix) {
 async function detectNodeSubpackages(projectId, warnings) {
   const setup = [];
   const verify = [];
-  const caches = [];
   for (const dir of ['backend', 'frontend']) {
     const content = await readOptionalFile(projectId, `${dir}/package.json`);
     if (!content) continue;
@@ -137,15 +172,13 @@ async function detectNodeSubpackages(projectId, warnings) {
       ? `cd ${dir} && npm ci --no-audit --no-fund`
       : `cd ${dir} && npm install --no-package-lock --no-audit --no-fund`);
     verify.push(...nodeVerifyCommands(pkg, dir));
-    if (!caches.includes('npm')) caches.push('npm');
   }
-  return { setup, verify, caches };
+  return { setup, verify };
 }
 
 async function detectNode(projectId, warnings) {
   const setup = [];
   const verify = [];
-  const caches = [];
   const rootPkg = await readOptionalFile(projectId, 'package.json');
   if (rootPkg) {
     let pkg;
@@ -153,7 +186,7 @@ async function detectNode(projectId, warnings) {
       pkg = JSON.parse(rootPkg);
     } catch {
       warnings.push('package.json is not valid JSON; Node commands were not proposed');
-      return { setup, verify, caches };
+      return { setup, verify };
     }
     const hasLock = Boolean(await readOptionalFile(projectId, 'package-lock.json'))
       || Boolean(await readOptionalFile(projectId, 'npm-shrinkwrap.json'));
@@ -161,16 +194,14 @@ async function detectNode(projectId, warnings) {
       ? 'npm ci --no-audit --no-fund'
       : 'npm install --no-package-lock --no-audit --no-fund');
     verify.push(...nodeVerifyCommands(pkg, ''));
-    caches.push('npm');
-    if (verify.length === 0) {
+    if (!hasScript(pkg, 'test')) {
       // A workspace root often has no test script of its own; propose the
       // per-package commands instead of silently returning no verification.
       const sub = await detectNodeSubpackages(projectId, warnings);
       setup.push(...sub.setup);
       verify.push(...sub.verify);
-      for (const cache of sub.caches) if (!caches.includes(cache)) caches.push(cache);
     }
-    return { setup, verify, caches };
+    return { setup, verify };
   }
 
   return detectNodeSubpackages(projectId, warnings);
@@ -185,20 +216,17 @@ async function detectStack(projectId) {
   const languages = [];
   const setup = [];
   const verify = [];
-  const caches = [];
 
   const node = await detectNode(projectId, warnings);
   if (node.verify.length > 0) languages.push('node');
   setup.push(...node.setup);
   verify.push(...node.verify);
-  for (const cache of node.caches) if (!caches.includes(cache)) caches.push(cache);
 
   const pom = await readOptionalFile(projectId, 'pom.xml');
   if (pom) {
     languages.push('java');
     const wrapper = await readOptionalFile(projectId, 'mvnw');
     verify.push(wrapper ? './mvnw test -q' : 'mvn test -q');
-    if (!caches.includes('maven')) caches.push('maven');
   }
 
   const gradle = await readOptionalFile(projectId, 'build.gradle')
@@ -209,7 +237,6 @@ async function detectStack(projectId) {
   if (gradle) {
     const wrapper = await readOptionalFile(projectId, 'gradlew');
     verify.push(wrapper ? './gradlew test' : 'gradle test');
-    if (!caches.includes('gradle')) caches.push('gradle');
   }
 
   const pyproject = await readOptionalFile(projectId, 'pyproject.toml');
@@ -219,7 +246,6 @@ async function detectStack(projectId) {
     if (requirements) setup.push('pip install -r requirements.txt');
     else setup.push('pip install -e .');
     verify.push('pytest -q');
-    if (!caches.includes('pip')) caches.push('pip');
   }
 
   const goMod = await readOptionalFile(projectId, 'go.mod');
@@ -227,7 +253,6 @@ async function detectStack(projectId) {
     languages.push('go');
     setup.push('go mod download');
     verify.push('go test ./...');
-    if (!caches.includes('go')) caches.push('go');
   }
 
   const makefile = await readOptionalFile(projectId, 'Makefile');
@@ -242,7 +267,7 @@ async function detectStack(projectId) {
     languages: [...new Set(languages)],
     setup: [...new Set(setup)],
     verify: [...new Set(verify)],
-    caches: [...new Set(caches)],
+    caches: [],
     env: {},
     timeouts: { setup_minutes: 15, verify_minutes: 20 },
     max_round_minutes: 45,
@@ -325,10 +350,17 @@ class RepoProfileService {
         [projectId]
       );
       const inserted = await client.query(
-        `INSERT INTO repo_profiles (project_id, version, profile, status, created_by)
-         VALUES ($1, $2, $3, 'draft', $4)
+        `INSERT INTO repo_profiles
+           (project_id, version, profile, profile_hash, status, created_by)
+         VALUES ($1, $2, $3, $4, 'draft', $5)
          RETURNING *`,
-        [projectId, next.rows[0].version, JSON.stringify(result.value), user.userId || user.id]
+        [
+          projectId,
+          next.rows[0].version,
+          JSON.stringify(result.value),
+          profileHash(result.value),
+          user.userId || user.id,
+        ]
       );
       await client.query('COMMIT');
       return format(inserted.rows[0]);
@@ -364,10 +396,10 @@ class RepoProfileService {
 
     const updated = await pool.query(
       `UPDATE repo_profiles
-       SET profile = $1, updated_at = NOW()
-       WHERE id = $2 AND project_id = $3 AND status = 'draft'
+       SET profile = $1, profile_hash = $2, updated_at = NOW()
+       WHERE id = $3 AND project_id = $4 AND status = 'draft'
        RETURNING *`,
-      [JSON.stringify(result.value), profileId, projectId]
+      [JSON.stringify(result.value), profileHash(result.value), profileId, projectId]
     );
     if (updated.rows.length === 0) {
       throw new ValidationError('Only draft profiles can be edited; create a new version');
@@ -385,9 +417,24 @@ class RepoProfileService {
         [profileId, projectId]
       );
       if (target.rows.length === 0) throw new NotFoundError('Repo profile not found');
+      await assertProfileRepoBinding(projectId, target.rows[0].profile);
       if (target.rows[0].status === 'active') {
         await client.query('COMMIT');
         return format(target.rows[0]);
+      }
+      if (!target.rows[0].profile_hash) {
+        throw new ValidationError(
+          'The profile has no content hash; save a new draft version and validate it');
+      }
+      const validated = await client.query(
+        `SELECT 1 FROM repo_profile_validations
+         WHERE profile_id = $1 AND status = 'succeeded' AND profile_hash = $2
+         LIMIT 1`,
+        [profileId, target.rows[0].profile_hash]
+      );
+      if (validated.rows.length === 0) {
+        throw new ValidationError(
+          'A successful dry run is required for this exact profile content');
       }
       await client.query(
         `UPDATE repo_profiles
@@ -427,3 +474,5 @@ module.exports.assertAgentProjectAccess = assertAgentProjectAccess;
 module.exports.assertProjectExists = assertProjectExists;
 module.exports.format = format;
 module.exports.detectStack = detectStack;
+module.exports.assertProfileRepoBinding = assertProfileRepoBinding;
+module.exports.profileHash = profileHash;

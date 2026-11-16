@@ -112,6 +112,10 @@ class HarnessRunService {
     const normalisedAgentId = positiveInteger(agentId, 'agentId');
     const normalisedBranch = requiredString(branch, 'branch');
     const normalisedAttempt = positiveInteger(attempt, 'attempt');
+    if ((repoProfileId == null) !== (repoProfileVersion == null)) {
+      throw new ValidationError(
+        'repoProfileId and repoProfileVersion must be provided together');
+    }
     const normalisedProfileId = repoProfileId == null
       ? null
       : requiredUuid(repoProfileId, 'repoProfileId');
@@ -146,6 +150,21 @@ class HarnessRunService {
           lock: true,
           action: 'durable_start',
         });
+      }
+
+      if (normalisedProfileId) {
+        const profile = await client.query(
+          `SELECT rp.id, rp.version
+           FROM repo_profiles rp
+           JOIN tickets t ON t.project_id = rp.project_id
+           WHERE rp.id = $1 AND t.id = $2`,
+          [normalisedProfileId, normalisedTicketId]
+        );
+        if (profile.rows.length === 0
+            || Number(profile.rows[0].version) !== normalisedProfileVersion) {
+          throw new ValidationError(
+            "repo profile does not belong to the ticket's project or version does not match");
+        }
       }
 
       const result = await client.query(

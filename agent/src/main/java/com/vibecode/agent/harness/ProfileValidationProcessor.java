@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -102,7 +103,14 @@ public class ProfileValidationProcessor {
 
     private void runValidation(String projectId, RepoProfileValidation validation) {
         RepoProfile profile = validation.profile();
-        String repoUrl = resolveRepoUrl(profile);
+        String repoUrl;
+        try {
+            repoUrl = resolveRepoUrl(profile);
+        } catch (RuntimeException e) {
+            reportFailed(projectId, validation,
+                "Profile repository binding failed: " + e.getMessage());
+            return;
+        }
         if (repoUrl == null || repoUrl.isBlank()) {
             reportFailed(projectId, validation,
                 "No repo_url in the profile and REPO_OWNER/REPO_NAME are not configured");
@@ -112,6 +120,7 @@ public class ProfileValidationProcessor {
         WorkspaceManager workspace = null;
         SandboxHandle sandbox = null;
         long started = System.nanoTime();
+        Instant deadline = Instant.now().plus(Duration.ofMinutes(profile.maxRoundMinutes()));
         try {
             workspace = workspaceFactory.apply(repoName(repoUrl));
             String branch = "vibecode/profile-validate-" + validation.id()
@@ -123,9 +132,10 @@ public class ProfileValidationProcessor {
                 effective = sandboxConfig.withRepoProfile(
                     profile, projectId, validation.profileVersion());
                 sandbox = sandboxRunner.create(effective.specFor(workspace.getRepoDir()));
-            } else if (!profile.caches().isEmpty()) {
-                log.warn("Profile caches are ignored in host mode; "
-                    + "enable SANDBOX_MODE=docker to use the cache volume");
+            } else if (profile.image() != null || !profile.caches().isEmpty()
+                || profile.egress() != null) {
+                log.warn("Repo profile image/caches/egress are ignored in host mode; "
+                    + "enable SANDBOX_MODE=docker to use them");
             }
 
             Map<String, String> environment = effective.isDocker()
@@ -134,12 +144,12 @@ public class ProfileValidationProcessor {
             List<Map<String, Object>> commands = new ArrayList<>();
             boolean succeeded = runPhase(
                 workspace, sandbox, "setup", profile.setup(),
-                Duration.ofMinutes(profile.timeouts().setupMinutes()),
+                phaseTimeout(profile.timeouts().setupMinutes(), deadline),
                 environment, commands);
             if (succeeded) {
                 succeeded = runPhase(
                     workspace, sandbox, "verify", profile.verify(),
-                    Duration.ofMinutes(profile.timeouts().verifyMinutes()),
+                    phaseTimeout(profile.timeouts().verifyMinutes(), deadline),
                     environment, commands);
             } else {
                 commands.add(Map.of(
@@ -151,7 +161,6 @@ public class ProfileValidationProcessor {
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("sandboxMode", effective.mode().value());
-            result.put("cacheVolume", effective.cacheVolume() == null ? "" : effective.cacheVolume());
             result.put("durationMs", Duration.ofNanos(System.nanoTime() - started).toMillis());
             if (workspace.getBaseCommit() != null) {
                 result.put("baseSha", workspace.getBaseCommit());
@@ -178,6 +187,15 @@ public class ProfileValidationProcessor {
                 }
             }
         }
+    }
+
+    private static Duration phaseTimeout(int requestedMinutes, Instant deadline) {
+        long remainingMs = Duration.between(Instant.now(), deadline).toMillis();
+        if (remainingMs <= 0) {
+            return Duration.ZERO;
+        }
+        return Duration.ofMillis(Math.min(
+            Math.max(1, requestedMinutes) * 60_000L, remainingMs));
     }
 
     private boolean runPhase(
@@ -250,15 +268,28 @@ public class ProfileValidationProcessor {
     }
 
     private String resolveRepoUrl(RepoProfile profile) {
-        if (profile.repoUrl() != null && !profile.repoUrl().isBlank()) {
+        String configured = null;
+        if (config.getRepoOwner() != null && !config.getRepoOwner().isBlank()
+            && config.getRepoName() != null && !config.getRepoName().isBlank()) {
+            configured = "https://github.com/" + config.getRepoOwner() + "/"
+                + config.getRepoName() + ".git";
+        }
+        if (configured == null) {
             return profile.repoUrl();
         }
-        if (config.getRepoOwner() == null || config.getRepoOwner().isBlank()
-            || config.getRepoName() == null || config.getRepoName().isBlank()) {
-            return null;
+        if (profile.repoUrl() != null && !profile.repoUrl().isBlank()
+            && !normalizeRepoUrl(profile.repoUrl()).equals(normalizeRepoUrl(configured))) {
+            throw new IllegalArgumentException(
+                "profile repo_url does not match REPO_OWNER/REPO_NAME");
         }
-        return "https://github.com/" + config.getRepoOwner() + "/"
-            + config.getRepoName() + ".git";
+        return configured;
+    }
+
+    private static String normalizeRepoUrl(String value) {
+        return String.valueOf(value).trim()
+            .replaceAll("\\.git$", "")
+            .replaceAll("/+$", "")
+            .toLowerCase(java.util.Locale.ROOT);
     }
 
     private static String repoName(String repoUrl) {

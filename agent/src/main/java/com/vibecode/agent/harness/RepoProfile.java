@@ -11,12 +11,10 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -51,8 +49,6 @@ public class RepoProfile {
         Pattern.compile("\\bxox[abcdepr]-[A-Za-z0-9-]{10,}\\b"),
         Pattern.compile("https?://[^\\s/@]+:[^\\s/@]+@")
     );
-    private static final Set<String> CACHES = Set.of(
-        "npm", "maven", "gradle", "pip", "go", "cargo");
     private static final int MAX_CA_BYTES = 64 * 1024;
     private static final int MAX_CA_CERTIFICATES = 16;
 
@@ -188,37 +184,9 @@ public class RepoProfile {
         return egress;
     }
 
-    /**
-     * Environment applied to the sandbox/verification process. Cache paths are
-     * fixed under /cache so a profile cannot point a package manager at the
-     * supervisor or a host path.
-     */
+    /** Environment applied to the sandbox/verification process. */
     public Map<String, String> environment() {
-        Map<String, String> result = new LinkedHashMap<>(env());
-        for (String cache : caches()) {
-            switch (cache) {
-                case "npm" -> result.put("NPM_CONFIG_CACHE", "/cache/npm");
-                case "maven" -> {
-                    String existing = result.getOrDefault("MAVEN_OPTS", "").trim();
-                    String option = "-Dmaven.repo.local=/cache/maven";
-                    result.put("MAVEN_OPTS", existing.isEmpty() ? option : existing + " " + option);
-                }
-                case "gradle" -> result.put("GRADLE_USER_HOME", "/cache/gradle");
-                case "pip" -> result.put("PIP_CACHE_DIR", "/cache/pip");
-                case "go" -> {
-                    result.put("GOPATH", "/cache/go");
-                    result.put("GOMODCACHE", "/cache/go/pkg/mod");
-                    result.put("GOCACHE", "/cache/go-build");
-                }
-                case "cargo" -> result.put("CARGO_HOME", "/cache/cargo");
-                default -> throw new IllegalArgumentException("unsupported cache: " + cache);
-            }
-        }
-        return Map.copyOf(result);
-    }
-
-    public String cacheVolumeName(String projectId, int profileVersion) {
-        return "vibecode-repo-cache-" + projectId + "-" + profileVersion;
+        return Map.copyOf(env());
     }
 
     public void validate() {
@@ -240,14 +208,9 @@ public class RepoProfile {
         if (verify == null || verify.isEmpty()) {
             throw new IllegalArgumentException("profile verify must contain at least one command");
         }
-        Set<String> seen = new LinkedHashSet<>();
-        for (String cache : caches()) {
-            if (!CACHES.contains(cache)) {
-                throw new IllegalArgumentException("unsupported profile cache: " + cache);
-            }
-            if (!seen.add(cache)) {
-                throw new IllegalArgumentException("duplicate profile cache: " + cache);
-            }
+        if (!caches().isEmpty()) {
+            throw new IllegalArgumentException(
+                "profile caches are not implemented until D9/fg-44");
         }
         for (Map.Entry<String, String> entry : env().entrySet()) {
             if (!ENV_KEY.matcher(entry.getKey()).matches()) {

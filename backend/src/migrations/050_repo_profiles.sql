@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS repo_profiles (
   project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   version INTEGER NOT NULL,
   profile JSONB NOT NULL,
+  profile_hash TEXT,
   status TEXT NOT NULL DEFAULT 'draft',
   created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -32,6 +33,7 @@ CREATE TABLE IF NOT EXISTS repo_profile_validations (
   profile_id UUID NOT NULL REFERENCES repo_profiles(id) ON DELETE CASCADE,
   profile_version INTEGER NOT NULL,
   profile JSONB NOT NULL,
+  profile_hash TEXT,
   status TEXT NOT NULL DEFAULT 'queued',
   requested_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
   agent_id BIGINT REFERENCES agents(id) ON DELETE SET NULL,
@@ -48,6 +50,9 @@ CREATE TABLE IF NOT EXISTS repo_profile_validations (
 
 CREATE INDEX IF NOT EXISTS idx_repo_profile_validations_project_status
   ON repo_profile_validations(project_id, status, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_repo_profile_validations_profile_hash
+  ON repo_profile_validations(profile_id, profile_hash, status);
 
 -- Do not queue the same profile revision twice while one is queued/running.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_repo_profile_validations_pending

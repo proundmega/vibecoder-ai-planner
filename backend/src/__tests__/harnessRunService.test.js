@@ -77,12 +77,18 @@ describe('HarnessRunService', () => {
       ]);
     });
 
-    it('persists the repo profile revision when provided', async () => {
+    it('persists a project-scoped repo profile revision when provided', async () => {
       const row = { id: RUN_ID, ticket_id: 42, agent_id: 7, status: 'running' };
-      const client = clientWith(
-        [{ status: 'in_progress', assigned_agent_id: '7' }],
-        { rows: [row] }
-      );
+      const client = {
+        query: jest.fn()
+          .mockResolvedValueOnce({}) // BEGIN
+          .mockResolvedValueOnce({ rows: [{ status: 'in_progress', assigned_agent_id: '7' }] })
+          .mockResolvedValueOnce({ rows: [{ id: '11111111-1111-4111-8111-111111111111', version: 3 }] })
+          .mockResolvedValueOnce({ rows: [row] }) // INSERT
+          .mockResolvedValueOnce({}), // COMMIT
+        release: jest.fn(),
+      };
+      pool.connect.mockResolvedValueOnce(client);
 
       await HarnessRunService.startRun({
         ticketId: 42,
@@ -92,10 +98,42 @@ describe('HarnessRunService', () => {
         repoProfileVersion: 3,
       });
 
-      expect(client.query.mock.calls[2][1].slice(-2)).toEqual([
+      expect(client.query.mock.calls[2][0]).toContain('FROM repo_profiles');
+      expect(client.query.mock.calls[3][1].slice(-2)).toEqual([
         '11111111-1111-4111-8111-111111111111',
         3,
       ]);
+    });
+
+    it('rejects a repo profile from another project or with a mismatched version', async () => {
+      const client = {
+        query: jest.fn()
+          .mockResolvedValueOnce({}) // BEGIN
+          .mockResolvedValueOnce({ rows: [{ status: 'in_progress', assigned_agent_id: '7' }] })
+          .mockResolvedValueOnce({ rows: [] }), // no matching profile
+        release: jest.fn(),
+      };
+      pool.connect.mockResolvedValueOnce(client);
+
+      await expect(HarnessRunService.startRun({
+        ticketId: 42,
+        agentId: 7,
+        branch: 'feat/fg-39',
+        repoProfileId: '11111111-1111-4111-8111-111111111111',
+        repoProfileVersion: 3,
+      })).rejects.toThrow(/does not belong/);
+      expect(client.query.mock.calls.some((call) => String(call[0]).includes('INSERT INTO harness_runs')))
+        .toBe(false);
+    });
+
+    it('requires the profile id and version together', async () => {
+      await expect(HarnessRunService.startRun({
+        ticketId: 42,
+        agentId: 7,
+        branch: 'feat/fg-39',
+        repoProfileId: '11111111-1111-4111-8111-111111111111',
+      })).rejects.toThrow(/provided together/);
+      expect(pool.connect).not.toHaveBeenCalled();
     });
 
     it('rejects a missing ticket id', async () => {

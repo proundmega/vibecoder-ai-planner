@@ -53,7 +53,6 @@ function validProfile(overrides = {}) {
     languages: ['node'],
     setup: ['npm ci'],
     verify: ['npm test'],
-    caches: ['npm'],
     env: { NODE_ENV: 'test' },
     timeouts: { setup_minutes: 15, verify_minutes: 20 },
     max_round_minutes: 45,
@@ -132,6 +131,19 @@ describe('RepoProfileService', () => {
       expect(client.release).toHaveBeenCalled();
     });
 
+
+    it('requires an active connected repository for create and update', async () => {
+      GitHubService.getProjectRepo.mockResolvedValue(null);
+
+      await expect(
+        RepoProfileService.create(1, validProfile(), owner())
+      ).rejects.toThrow(/Connect an active repository/);
+      await expect(
+        RepoProfileService.update(1, 'p1', validProfile(), owner())
+      ).rejects.toThrow(/Connect an active repository/);
+      expect(pool.connect).not.toHaveBeenCalled();
+    });
+
     it('rejects a repo_url that does not match the connected repository', async () => {
       await expect(
         RepoProfileService.create(
@@ -181,7 +193,7 @@ describe('RepoProfileService', () => {
       ).rejects.toThrow(/looks like a credential/);
     });
 
-    it('rejects unknown fields and unimplemented services/flaky tests', async () => {
+    it('rejects unknown fields and unimplemented services/caches/flaky tests', async () => {
       await expect(
         RepoProfileService.create(1, validProfile({ wat: true }), owner())
       ).rejects.toThrow(/unknown profile field/);
@@ -191,12 +203,27 @@ describe('RepoProfileService', () => {
       ).rejects.toThrow(/slice 2/);
 
       await expect(
+        RepoProfileService.create(1, validProfile({ caches: ['npm'] }), owner())
+      ).rejects.toThrow(/D9\/fg-44/);
+
+      await expect(
         RepoProfileService.create(1, validProfile({ flaky_tests: ['test/flaky.js'] }), owner())
       ).rejects.toThrow(/slice 3/);
     });
   });
 
   describe('update and activate', () => {
+
+    it('hashes profile content canonically so edits invalidate prior validations', () => {
+      const first = RepoProfileService.profileHash({ b: 2, a: 1 });
+      const reordered = RepoProfileService.profileHash({ a: 1, b: 2 });
+      const edited = RepoProfileService.profileHash({ a: 1, b: 3 });
+
+      expect(first).toBe(reordered);
+      expect(first).not.toBe(edited);
+      expect(first).toMatch(/^[a-f0-9]{64}$/);
+    });
+
     it('updates only a draft profile', async () => {
       pool.query
         .mockResolvedValueOnce({ rows: [{ id: 'p1', status: 'active', profile: {} }] });
@@ -206,14 +233,37 @@ describe('RepoProfileService', () => {
       ).rejects.toThrow(/Only draft profiles/);
     });
 
-    it('activates a profile and deactivates the previous active row', async () => {
+
+    it('refuses to activate a profile after the project repo changes or disconnects', async () => {
       const target = {
         id: 'p2', project_id: 1, version: 2, profile: validProfile(), status: 'draft',
+      };
+      const client = clientWith([
+        {}, // BEGIN
+        { rows: [target] }, // target lock
+        {}, // ROLLBACK
+      ]);
+      GitHubService.getProjectRepo.mockResolvedValue({
+        repoUrl: 'https://github.com/acme/other.git',
+        defaultBranch: 'main',
+      });
+
+      await expect(RepoProfileService.activate(1, 'p2', owner()))
+        .rejects.toThrow(/must match the repository connected/);
+      expect(client.query.mock.calls[2][0]).toBe('ROLLBACK');
+      expect(client.release).toHaveBeenCalled();
+    });
+
+    it('activates a validated profile and deactivates the previous active row', async () => {
+      const target = {
+        id: 'p2', project_id: 1, version: 2, profile: validProfile(),
+        profile_hash: 'h1', status: 'draft',
       };
       const activated = { ...target, status: 'active' };
       const client = clientWith([
         {}, // BEGIN
         { rows: [target] }, // target lock
+        { rows: [{ exists: true }] }, // exact-content validation
         { rows: [] }, // deactivate old
         { rows: [activated] }, // activate target
         {}, // COMMIT
@@ -222,8 +272,27 @@ describe('RepoProfileService', () => {
       const result = await RepoProfileService.activate(1, 'p2', owner());
 
       expect(result.status).toBe('active');
-      expect(client.query.mock.calls[2][0]).toContain("status = 'inactive'");
-      expect(client.query.mock.calls[3][0]).toContain("status = 'active'");
+      expect(client.query.mock.calls[2][0]).toContain("status = 'succeeded'");
+      expect(client.query.mock.calls[3][0]).toContain("status = 'inactive'");
+      expect(client.query.mock.calls[4][0]).toContain("status = 'active'");
+      expect(client.release).toHaveBeenCalled();
+    });
+
+    it('refuses to activate a profile without a successful exact-content validation', async () => {
+      const target = {
+        id: 'p2', project_id: 1, version: 2, profile: validProfile(),
+        profile_hash: 'h1', status: 'draft',
+      };
+      const client = clientWith([
+        {}, // BEGIN
+        { rows: [target] }, // target lock
+        { rows: [] }, // no matching successful validation
+        {}, // ROLLBACK
+      ]);
+
+      await expect(RepoProfileService.activate(1, 'p2', owner()))
+        .rejects.toThrow(/successful dry run/);
+      expect(client.query.mock.calls[3][0]).toBe('ROLLBACK');
       expect(client.release).toHaveBeenCalled();
     });
   });
@@ -263,7 +332,6 @@ describe('RepoProfileService', () => {
       expect(result.profile.languages).toEqual(['node']);
       expect(result.profile.setup).toEqual(['npm ci --no-audit --no-fund']);
       expect(result.profile.verify).toEqual(['npm test -- --run', 'npm run lint']);
-      expect(result.profile.caches).toEqual(['npm']);
     });
 
     it('does not add --run when the vitest script already runs once', async () => {
@@ -278,6 +346,26 @@ describe('RepoProfileService', () => {
       const result = await RepoProfileService.detectStack(1);
 
       expect(result.profile.verify).toEqual(['npm test']);
+    });
+
+
+    it('merges subpackage tests when the root only has lint/typecheck', async () => {
+      const files = {
+        'package.json': JSON.stringify({ scripts: { lint: 'eslint .' } }),
+        'package-lock.json': '{}',
+        'backend/package.json': JSON.stringify({ scripts: { test: 'jest' } }),
+        'backend/package-lock.json': '{}',
+      };
+      GitHubService.readRepoFile.mockImplementation(
+        (projectId, file) => Promise.resolve(files[file] ?? null)
+      );
+
+      const result = await RepoProfileService.detectStack(1);
+
+      expect(result.profile.verify).toEqual([
+        'npm run lint',
+        'cd backend && npm test',
+      ]);
     });
 
     it('detects backend/frontend monorepo packages', async () => {
@@ -347,7 +435,6 @@ describe('RepoProfileService', () => {
         'pytest -q',
         'go test ./...',
       ]));
-      expect(result.profile.caches).toEqual(expect.arrayContaining(['maven', 'pip', 'go']));
     });
 
     it('warns instead of silently skipping verification when nothing is detected', async () => {
@@ -414,6 +501,27 @@ describe('RepoProfileService', () => {
           origin_ca_b64: privateKey,
         },
       }), owner())).rejects.toThrow(/private key/);
+    });
+
+
+    it('rejects non-canonical base64 (whitespace or URL-safe characters)', async () => {
+      const ca = fs.readFileSync(caPath).toString('base64');
+      const wrapped = ca.slice(0, 20) + '\n' + ca.slice(20);
+      await expect(RepoProfileService.create(1, validProfile({
+        egress: {
+          tls_mode: 'terminate',
+          origin_ca_hosts: ['registry.example.com'],
+          origin_ca_b64: wrapped,
+        },
+      }), owner())).rejects.toThrow(/canonical base64/);
+
+      await expect(RepoProfileService.create(1, validProfile({
+        egress: {
+          tls_mode: 'terminate',
+          origin_ca_hosts: ['registry.example.com'],
+          origin_ca_b64: 'YWJj-_==',
+        },
+      }), owner())).rejects.toThrow(/canonical base64/);
     });
 
     it('rejects wildcard, internal and IP hosts', async () => {

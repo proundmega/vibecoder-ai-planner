@@ -32,7 +32,7 @@ environment failures, not coding failures.
 
 | Slice | Scope | State |
 |---|---|---|
-| 1 | Versioned profile schema/API, GitHub-manifest stack detection, profile-driven base branch/setup/verify/env/timeouts, digest-pinned image override, per-project dependency cache volume, dry-run validation queue + agent worker, fg-34/D27 profile origin-CA plumbing | in review |
+| 1 | Versioned profile schema/API, GitHub-manifest stack detection, profile-driven base branch/setup/verify/env/timeouts, digest-pinned image override, dry-run validation queue + agent worker, activation only after an exact-content successful dry run, fg-34/D27 profile origin-CA plumbing | in review |
 | 2 | Service containers (Postgres/Redis) with health checks, ephemeral data and connection env | planned |
 | 3 | Flaky-test retry policy, test-data hooks and known-failure semantics | planned |
 | 4 | Prebuilt per-stack images/devcontainers, lockfile-keyed cache generations and cache-write sanitization | planned |
@@ -63,8 +63,9 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D6 | Flaky-test retry policy and test-data hooks (slice 3) | fg-39 FR8 | Reliability | fg-39 slice 3 | open |
 | D7 | Prebuilt per-stack images/devcontainers and pinned toolchains (slice 4) | fg-39 FR3 | Infrastructure | fg-39 slice 4 | open |
 | D8 | Project settings profile editor (slice 5) | fg-39 FR2 | UX | fg-39 slice 5 | open |
-| D9 | Lockfile-keyed cache generations and sanitized cache writes | fg-39 FR4 | Security | fg-39 slice 4 | open |
+| D9 | Persistent dependency caches: size quota/watchdog, volume GC, lockfile-keyed generations and sanitized cache writes | fg-39 FR4 | Security | fg-39 slice 4 | open |
 | D10 | Profile change event log beyond version rows/`created_by` timestamps | fg-39 safety | Audit | fg-41 | open |
+| D11 | Real-Docker/real-repo profile dry-run e2e and cache-volume real-Docker coverage | fg-39 slice 1 review | Testing | bt-60 / fg-39 slice 4 | open |
 
 ## User decisions
 

@@ -717,6 +717,25 @@ public final class HarnessTicketProcessor implements TicketWorker {
             return;
         }
 
+        if (profileSnapshot != null) {
+            Duration profileBudget = Duration.ofMinutes(
+                profileSnapshot.profile().maxRoundMinutes());
+            if (profileBudget.compareTo(maxDuration()) < 0) {
+                deadline = Instant.now().plus(profileBudget);
+            }
+        }
+
+        if (profileSnapshot != null
+            && !profileRepoMatchesConfigured(profileSnapshot.profile())) {
+            postMessage(pickedUp.getId(), "update",
+                "The active repo profile points at a different repository than "
+                    + "REPO_OWNER/REPO_NAME. No run was started.");
+            release(pickedUp.getId());
+            currentTicketId = null;
+            currentStep = null;
+            return;
+        }
+
         if (!startDurableRun(pickedUp, branchName, profileSnapshot)) {
             // A live lease or published evidence means this ticket must not be
             // run again automatically. Leave recovery to the operator/reaper.
@@ -1173,6 +1192,26 @@ public final class HarnessTicketProcessor implements TicketWorker {
      * HARNESS_DURABILITY_REQUIRED=true). Once a run exists, every lease/auth
      * failure fails closed: the harness must not publish without the lease.
      */
+    private boolean profileRepoMatchesConfigured(RepoProfile profile) {
+        if (profile == null || profile.repoUrl() == null || profile.repoUrl().isBlank()) {
+            return true;
+        }
+        if (config.getRepoOwner() == null || config.getRepoOwner().isBlank()
+            || config.getRepoName() == null || config.getRepoName().isBlank()) {
+            return true;
+        }
+        String configured = "https://github.com/" + config.getRepoOwner() + "/"
+            + config.getRepoName();
+        return normalizeRepoUrl(profile.repoUrl()).equals(normalizeRepoUrl(configured));
+    }
+
+    private static String normalizeRepoUrl(String value) {
+        return String.valueOf(value).trim()
+            .replaceAll("\\.git$", "")
+            .replaceAll("/+$", "")
+            .toLowerCase(java.util.Locale.ROOT);
+    }
+
     private boolean startDurableRun(
         Ticket ticket,
         String branchName,

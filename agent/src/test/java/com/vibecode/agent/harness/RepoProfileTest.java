@@ -33,7 +33,6 @@ class RepoProfileTest {
               "image": "node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               "setup": ["npm ci"],
               "verify": ["npm test"],
-              "caches": ["npm"],
               "env": {"NODE_ENV": "test"},
               "timeouts": {"setup_minutes": 5, "verify_minutes": 6},
               "max_round_minutes": 30
@@ -43,9 +42,7 @@ class RepoProfileTest {
         assertEquals("https://github.com/acme/app", profile.repoUrl());
         assertEquals("develop", profile.baseBranch());
         assertEquals("node@sha256:" + "a".repeat(64), profile.image());
-        assertEquals(Map.of("NODE_ENV", "test", "NPM_CONFIG_CACHE", "/cache/npm"),
-            profile.environment());
-        assertEquals("vibecode-repo-cache-42-7", profile.cacheVolumeName("42", 7));
+        assertEquals(Map.of("NODE_ENV", "test"), profile.environment());
     }
 
     @Test
@@ -73,7 +70,7 @@ class RepoProfileTest {
             {"schema_version":1,"verify":[]}
             """));
         assertThrows(IllegalArgumentException.class, () -> parse("""
-            {"schema_version":1,"verify":["npm test"],"caches":["bun"]}
+            {"schema_version":1,"verify":["npm test"],"caches":["npm"]}
             """));
     }
 
@@ -128,6 +125,21 @@ class RepoProfileTest {
               "tls_mode":"terminate","origin_ca_hosts":["registry.example.com"],
               "origin_ca_b64":"%s"}}
             """.formatted(privateKey)));
+    }
+
+
+    @Test
+    void rejectsNonCanonicalBase64ForOriginCa() {
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"egress":{
+              "tls_mode":"terminate","origin_ca_hosts":["registry.example.com"],
+              "origin_ca_b64":"YWJj\\nZA=="}}
+            """));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"egress":{
+              "tls_mode":"terminate","origin_ca_hosts":["registry.example.com"],
+              "origin_ca_b64":"YWJj-_=="}}
+            """));
     }
 
     @Test

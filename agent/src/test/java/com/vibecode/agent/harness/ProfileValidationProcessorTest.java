@@ -116,7 +116,7 @@ class ProfileValidationProcessorTest {
         processor(SandboxConfig.defaults()).pollOnce();
 
         verify(workspace).cloneRepo(
-            "https://github.com/acme/app", "vibecode/profile-validate-22222222", "main");
+            "https://github.com/acme/app.git", "vibecode/profile-validate-22222222", "main");
         ArgumentCaptor<Map<String, Object>> result = ArgumentCaptor.forClass(Map.class);
         verify(apiService).finishRepoProfileValidation(
             eq("1"),
@@ -152,6 +152,22 @@ class ProfileValidationProcessorTest {
         verify(verificationRunner).run(any(Path.class), anyList(), any(Duration.class), anyMap());
     }
 
+
+    @Test
+    void rejectsAProfileThatDoesNotMatchTheConfiguredRepository() throws Exception {
+        when(apiService.claimRepoProfileValidation("1")).thenReturn(validation("""
+            {"schema_version":1,"repo_url":"https://github.com/other/repo",
+             "verify":["npm test"]}
+            """));
+
+        processor(SandboxConfig.defaults()).pollOnce();
+
+        verify(workspace, never()).cloneRepo(anyString(), anyString(), any());
+        verify(apiService).finishRepoProfileValidation(
+            eq("1"), anyString(), eq("failed"), anyMap(),
+            org.mockito.ArgumentMatchers.contains("does not match"));
+    }
+
     @Test
     void invalidProfileFailsWithoutCloning() throws Exception {
         when(apiService.claimRepoProfileValidation("1"))
@@ -165,6 +181,28 @@ class ProfileValidationProcessorTest {
             eq("1"), anyString(), eq("failed"), anyMap(),
             org.mockito.ArgumentMatchers.contains("Invalid repo profile"));
         verify(workspace, never()).cloneRepo(anyString(), anyString(), any());
+    }
+
+
+    @Test
+    void maxRoundMinutesCapsTheSetupAndVerifyTimeouts() throws Exception {
+        when(apiService.claimRepoProfileValidation("1")).thenReturn(validation("""
+            {"schema_version":1,"repo_url":"https://github.com/acme/app",
+             "setup":["npm ci"],"verify":["npm test"],
+             "timeouts":{"setup_minutes":60,"verify_minutes":60},
+             "max_round_minutes":1}
+            """));
+        when(verificationRunner.run(any(Path.class), anyList(), any(Duration.class), anyMap()))
+            .thenAnswer(invocation -> List.of(new VerificationResult(
+                invocation.<List<String>>getArgument(1).get(0), 0, "ok", false)));
+
+        processor(SandboxConfig.defaults()).pollOnce();
+
+        ArgumentCaptor<Duration> timeouts = ArgumentCaptor.forClass(Duration.class);
+        verify(verificationRunner, org.mockito.Mockito.times(2)).run(
+            any(Path.class), anyList(), timeouts.capture(), anyMap());
+        assertTrue(timeouts.getAllValues().get(0).toMillis() <= 60_000);
+        assertTrue(timeouts.getAllValues().get(1).toMillis() <= 60_000);
     }
 
     @Test
@@ -182,7 +220,7 @@ class ProfileValidationProcessorTest {
             "sbx-1", repoDir, false, Instant.now());
         when(sandboxRunner.create(any(SandboxSpec.class))).thenReturn(handle);
         when(apiService.claimRepoProfileValidation("1")).thenReturn(validation(
-            profileJson(",\"caches\":[\"npm\"],\"image\":\"node@sha256:"
+            profileJson(",\"image\":\"node@sha256:"
                 + "a".repeat(64) + "\"")));
         when(verificationRunner.run(
             eq(sandboxRunner), eq(handle), anyList(), any(Duration.class)))
@@ -193,7 +231,6 @@ class ProfileValidationProcessorTest {
         ArgumentCaptor<SandboxSpec> spec = ArgumentCaptor.forClass(SandboxSpec.class);
         verify(sandboxRunner).create(spec.capture());
         assertEquals("node@sha256:" + "a".repeat(64), spec.getValue().image());
-        assertEquals("vibecode-repo-cache-1-3", spec.getValue().cacheVolume());
         verify(sandboxRunner).destroy(handle);
         verify(workspace).cleanup();
     }

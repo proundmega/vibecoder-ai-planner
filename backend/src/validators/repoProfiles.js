@@ -12,6 +12,7 @@ const BRANCH = /^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*\/$)(?!.*\.$)[A-Za-z0-9._/-]{1,25
 const IMAGE = /^[A-Za-z0-9][A-Za-z0-9._/:@-]*@sha256:[a-f0-9]{64}$/;
 const ENV_KEY = /^[A-Z_][A-Z0-9_]*$/;
 const COMMAND = /^[^\0\r\n]+$/;
+const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
 const SECRET_VALUE_PATTERNS = [
   /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/,
@@ -85,7 +86,11 @@ function normalizeExactHost(host) {
 function caBundleIssue(b64) {
   let pem;
   try {
-    const raw = Buffer.from(String(b64), 'base64');
+    const value = String(b64);
+    if (!BASE64.test(value) || value.length % 4 !== 0) {
+      return 'egress.origin_ca_b64 must be canonical base64 without whitespace or URL-safe characters';
+    }
+    const raw = Buffer.from(value, 'base64');
     if (raw.length === 0 || raw.length > MAX_CA_BYTES) {
       return 'egress.origin_ca_b64 must decode to 1-64 KiB';
     }
@@ -173,6 +178,9 @@ function validateRepoProfile(value) {
   }
   if (Array.isArray(validated.flaky_tests) && validated.flaky_tests.length > 0) {
     issues.push('profile flaky_tests are not implemented until fg-39 slice 3');
+  }
+  if (Array.isArray(validated.caches) && validated.caches.length > 0) {
+    issues.push('profile caches are not implemented until D9/fg-44');
   }
   const envError = envIssue(validated.env);
   if (envError) issues.push(envError);

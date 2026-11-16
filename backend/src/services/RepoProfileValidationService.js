@@ -2,8 +2,15 @@ const { pool } = require('../db');
 const RepoProfileService = require('./RepoProfileService');
 const { NotFoundError, ForbiddenError, ValidationError, ConflictError } = require('../errors/HttpError');
 
-const STALE_AFTER = '60 minutes';
+const STALE_FLOOR_MINUTES = 60;
+const STALE_BUFFER_MINUTES = 5;
 const MAX_RESULT_BYTES = 1024 * 1024;
+
+function staleMinutesFor(profile) {
+  const configured = Number(profile && profile.max_round_minutes);
+  const budget = Number.isFinite(configured) && configured > 0 ? configured : 45;
+  return Math.max(STALE_FLOOR_MINUTES, budget) + STALE_BUFFER_MINUTES;
+}
 
 function format(row) {
   return {
@@ -12,6 +19,7 @@ function format(row) {
     profile_id: row.profile_id,
     profile_version: row.profile_version,
     profile: row.profile,
+    profile_hash: row.profile_hash,
     status: row.status,
     requested_by: row.requested_by,
     agent_id: row.agent_id,
@@ -46,17 +54,22 @@ class RepoProfileValidationService {
       throw new NotFoundError('Repo profile not found');
     }
     const profile = profileResult.rows[0];
+    await RepoProfileService.assertProfileRepoBinding(projectId, profile.profile);
+    const profileHash = profile.profile_hash
+      || RepoProfileService.profileHash(profile.profile);
     try {
       const inserted = await pool.query(
         `INSERT INTO repo_profile_validations
-           (project_id, profile_id, profile_version, profile, status, requested_by)
-         VALUES ($1, $2, $3, $4, 'queued', $5)
+           (project_id, profile_id, profile_version, profile, profile_hash,
+            status, requested_by)
+         VALUES ($1, $2, $3, $4, $5, 'queued', $6)
          RETURNING *`,
         [
           projectId,
           profileId,
           profile.version,
           JSON.stringify(profile.profile),
+          profileHash,
           user.userId || user.id,
         ]
       );
@@ -96,16 +109,25 @@ class RepoProfileValidationService {
   async claimNext(projectId, agent) {
     await RepoProfileService.assertAgentProjectAccess(projectId, agent);
 
-    await pool.query(
-      `UPDATE repo_profile_validations
-       SET status = 'failed',
-           error = 'validation timed out after 60 minutes',
-           finished_at = NOW()
-       WHERE project_id = $1
-         AND status = 'running'
-         AND started_at < NOW() - INTERVAL '${STALE_AFTER}'`,
+    const now = Date.now();
+    const stale = await pool.query(
+      `SELECT id, profile, started_at
+       FROM repo_profile_validations
+       WHERE project_id = $1 AND status = 'running'`,
       [projectId]
     );
+    for (const row of stale.rows) {
+      const minutes = staleMinutesFor(row.profile);
+      const started = row.started_at ? new Date(row.started_at).getTime() : 0;
+      if (started > 0 && now - started >= minutes * 60_000) {
+        await pool.query(
+          `UPDATE repo_profile_validations
+           SET status = 'failed', error = $2, finished_at = NOW()
+           WHERE id = $1 AND status = 'running'`,
+          [row.id, `validation exceeded its ${minutes}-minute stale budget`]
+        );
+      }
+    }
 
     const claimed = await pool.query(
       `WITH candidate AS (
@@ -176,3 +198,4 @@ class RepoProfileValidationService {
 
 module.exports = new RepoProfileValidationService();
 module.exports.format = format;
+module.exports.staleMinutesFor = staleMinutesFor;
