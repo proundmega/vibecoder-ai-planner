@@ -954,10 +954,22 @@ public final class OpenCodeClient implements HarnessClient {
                         command: args.command,
                         cwd: context.directory,
                         timeoutSeconds: args.timeout,
+                        stream: true,
                       }),
                     })
-                    const text = await response.text()
-                    if (response.ok) {
+                    if (!response.ok) {
+                      const text = await response.text()
+                      if (response.status === 502 || response.status === 503
+                          || response.status === 504) {
+                        lastError = new Error("sandbox bridge unavailable: " + text)
+                      } else {
+                        const rejected = new Error("sandbox command rejected: " + text)
+                        rejected.nonRetryable = true
+                        throw rejected
+                      }
+                    } else if (!response.body
+                        || typeof response.body.getReader !== "function") {
+                      const text = await response.text()
                       const body = JSON.parse(text)
                       if (body.timedOut) {
                         const timedOut = new Error(
@@ -969,14 +981,59 @@ public final class OpenCodeClient implements HarnessClient {
                       return body.exitCode === 0
                         ? output
                         : output + "\\n\\n(exit code " + body.exitCode + ")"
-                    }
-                    if (response.status === 502 || response.status === 503
-                        || response.status === 504) {
-                      lastError = new Error("sandbox bridge unavailable: " + text)
                     } else {
-                      const rejected = new Error("sandbox command rejected: " + text)
-                      rejected.nonRetryable = true
-                      throw rejected
+                      const reader = response.body.getReader()
+                      const decoder = new TextDecoder()
+                      let buffer = ""
+                      let final = null
+                      let lastProgress = 0
+                      while (true) {
+                        const piece = await reader.read()
+                        buffer += decoder.decode(
+                          piece.value || new Uint8Array(), { stream: !piece.done })
+                        let index
+                        while ((index = buffer.indexOf("\\n")) >= 0) {
+                          const line = buffer.slice(0, index).trim()
+                          buffer = buffer.slice(index + 1)
+                          if (!line) continue
+                          const event = JSON.parse(line)
+                          if (event.type === "chunk") {
+                            const now = Date.now()
+                            if (now - lastProgress >= 1000
+                                && typeof context.metadata === "function") {
+                              lastProgress = now
+                              context.metadata({
+                                title: "Sandbox command running",
+                                metadata: {
+                                  output: String(event.data || "").slice(-400),
+                                },
+                              })
+                            }
+                          } else if (event.type === "result") {
+                            final = event
+                          } else if (event.type === "error") {
+                            const failed = new Error(
+                              event.error || "sandbox command failed")
+                            failed.nonRetryable = event.retryable !== true
+                            throw failed
+                          }
+                        }
+                        if (piece.done) break
+                      }
+                      if (!final) {
+                        throw new Error(
+                          "sandbox bridge stream ended without a result")
+                      }
+                      if (final.timedOut) {
+                        const timedOut = new Error(
+                          "sandbox command timed out\\n" + (final.output || ""))
+                        timedOut.nonRetryable = true
+                        throw timedOut
+                      }
+                      const output = final.output || ""
+                      return final.exitCode === 0
+                        ? output
+                        : output + "\\n\\n(exit code " + final.exitCode + ")"
                     }
                   } catch (error) {
                     if (error && error.nonRetryable) {

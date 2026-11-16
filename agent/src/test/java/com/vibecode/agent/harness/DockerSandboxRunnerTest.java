@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -783,6 +784,12 @@ class DockerSandboxRunnerTest {
             ExecResult result = runner.exec(handle, ExecRequest.of("echo hi", Duration.ofSeconds(5)));
             assertEquals(0, result.exitCode());
             assertEquals("fake-output", result.output().trim());
+
+            List<String> chunks = new ArrayList<>();
+            ExecResult streamed = runner.execStreaming(
+                handle, ExecRequest.of("echo hi", Duration.ofSeconds(5)), chunks::add);
+            assertEquals(0, streamed.exitCode());
+            assertEquals("fake-output", String.join("", chunks).trim());
 
             Path local = Files.writeString(tempDir.resolve("upload.txt"), "hello");
             runner.putFile(handle, local, "/workspace/upload.txt");

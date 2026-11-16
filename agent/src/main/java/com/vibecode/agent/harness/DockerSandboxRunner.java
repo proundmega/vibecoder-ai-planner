@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -188,7 +189,16 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
     @Override
     public ExecResult exec(SandboxHandle handle, ExecRequest request) throws IOException {
-        return withHandleLock(handle, () -> execSerialized(handle, request));
+        return withHandleLock(handle, () -> execSerialized(handle, request, null));
+    }
+
+    @Override
+    public ExecResult execStreaming(
+        SandboxHandle handle,
+        ExecRequest request,
+        Consumer<String> listener
+    ) throws IOException {
+        return withHandleLock(handle, () -> execSerialized(handle, request, listener));
     }
 
     @FunctionalInterface
@@ -220,8 +230,11 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
     }
 
-    private ExecResult execSerialized(SandboxHandle handle, ExecRequest request)
-        throws IOException {
+    private ExecResult execSerialized(
+        SandboxHandle handle,
+        ExecRequest request,
+        Consumer<String> listener
+    ) throws IOException {
         Duration timeout = request.timeout();
         Duration maxDuration = maxDurations.get(handle.id());
         if (maxDuration != null && timeout.compareTo(maxDuration) > 0) {
@@ -239,8 +252,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
         AtomicBoolean quotaExceeded =
             quotaFlags.getOrDefault(handle.id(), new AtomicBoolean(false));
         try {
-            DockerResult result = runDocker(
-                command, effective.timeout(), effective.maxOutputBytes(), handle.id());
+            DockerResult result = runDockerStreaming(
+                command, effective.timeout(), effective.maxOutputBytes(), handle.id(), listener);
             if (quotaExceeded.get()) {
                 // The watchdog stops the container, but verify it here too so
                 // the post-exec sweep never runs against a half-stopped
@@ -1075,6 +1088,16 @@ public final class DockerSandboxRunner implements SandboxRunner {
         int maxOutputBytes,
         String sandboxId
     ) {
+        return runDockerStreaming(command, timeout, maxOutputBytes, sandboxId, null);
+    }
+
+    private DockerResult runDockerStreaming(
+        List<String> command,
+        Duration timeout,
+        int maxOutputBytes,
+        String sandboxId,
+        Consumer<String> listener
+    ) {
         ProcessBuilder builder = new ProcessBuilder(ProcessGroup.wrap(command));
         builder.redirectErrorStream(true);
         EnvironmentSanitizer.sanitize(builder.environment());
@@ -1090,7 +1113,20 @@ public final class DockerSandboxRunner implements SandboxRunner {
             Process running = process;
             Thread reader = new Thread(() -> {
                 try (InputStream input = running.getInputStream()) {
-                    input.transferTo(output);
+                    byte[] chunk = new byte[8_192];
+                    int read;
+                    while ((read = input.read(chunk)) >= 0) {
+                        output.write(chunk, 0, read);
+                        if (listener != null) {
+                            try {
+                                listener.accept(new String(
+                                    chunk, 0, read, java.nio.charset.StandardCharsets.UTF_8));
+                            } catch (RuntimeException e) {
+                                log.debug("Sandbox streaming listener stopped: {}",
+                                    e.getMessage());
+                            }
+                        }
+                    }
                 } catch (IOException e) {
                     log.debug("Docker output reader stopped: {}", e.getMessage());
                 }

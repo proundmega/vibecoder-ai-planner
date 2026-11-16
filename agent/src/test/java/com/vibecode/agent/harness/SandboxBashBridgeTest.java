@@ -29,6 +29,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -52,6 +54,12 @@ class SandboxBashBridgeTest {
         runner = mock(SandboxRunner.class);
         when(runner.exec(any(), any()))
             .thenReturn(new ExecResult("command", 0, "ok", false, false));
+        doAnswer(invocation -> {
+            java.util.function.Consumer<String> listener = invocation.getArgument(2);
+            listener.accept("first");
+            listener.accept("second");
+            return new ExecResult("command", 0, "ok", false, false);
+        }).when(runner).execStreaming(any(), any(), any());
         bridge = new SandboxBashBridge(
             runner,
             new SandboxHandle("sandbox-1", workspace, false, null),
@@ -84,6 +92,68 @@ class SandboxBashBridgeTest {
         assertEquals("npm test", request.command());
         assertEquals("/workspace/backend", request.cwd());
         assertEquals(Duration.ofSeconds(30), request.timeout());
+    }
+
+    @Test
+    void streamsChunksAndTheFinalResult() throws Exception {
+        HttpResponse<String> response = exec(Map.of(
+            "command", "npm install",
+            "stream", true
+        ), bridge.token());
+
+        assertEquals(200, response.statusCode());
+        assertTrue(response.headers().firstValue("Content-Type").orElse("")
+            .startsWith("application/x-ndjson"));
+        var events = events(response.body());
+        assertEquals(3, events.size(), response.body());
+        assertEquals("chunk", events.get(0).path("type").asText());
+        assertEquals("first", events.get(0).path("data").asText());
+        assertEquals("chunk", events.get(1).path("type").asText());
+        assertEquals("second", events.get(1).path("data").asText());
+        assertEquals("result", events.get(2).path("type").asText());
+        assertEquals(0, events.get(2).path("exitCode").asInt());
+        assertEquals("ok", events.get(2).path("output").asText());
+        verify(runner, times(1)).execStreaming(any(), any(), any());
+    }
+
+    @Test
+    void streamsACachedRequestIdAsASingleResult() throws Exception {
+        Map<String, Object> body = Map.of(
+            "command", "npm install",
+            "requestId", "req-stream-1",
+            "stream", true
+        );
+
+        HttpResponse<String> first = exec(body, bridge.token());
+        assertEquals(200, first.statusCode());
+        assertEquals(3, events(first.body()).size(), first.body());
+
+        HttpResponse<String> second = exec(body, bridge.token());
+        assertEquals(200, second.statusCode());
+        var cached = events(second.body());
+        assertEquals(1, cached.size(), second.body());
+        assertEquals("result", cached.get(0).path("type").asText());
+        assertEquals("ok", cached.get(0).path("output").asText());
+        verify(runner, times(1)).execStreaming(any(), any(), any());
+    }
+
+    @Test
+    void streamsExecutionFailuresAsErrorEvents() throws Exception {
+        doThrow(new IOException("sandbox broke"))
+            .when(runner).execStreaming(any(), any(), any());
+
+        HttpResponse<String> response = exec(Map.of(
+            "command", "npm install",
+            "stream", true
+        ), bridge.token());
+
+        assertEquals(200, response.statusCode());
+        var events = events(response.body());
+        assertEquals(1, events.size(), response.body());
+        assertEquals("error", events.get(0).path("type").asText());
+        assertTrue(events.get(0).path("error").asText().contains("sandbox broke"),
+            response.body());
+        assertFalse(events.get(0).path("retryable").asBoolean(true));
     }
 
     @Test
@@ -429,7 +499,17 @@ class SandboxBashBridgeTest {
         assertEquals(json.path("ids").get(0).asText(),
             json.path("ids").get(1).asText(), output);
         assertEquals("ok", json.path("result").asText(), output);
-        verify(runner, times(1)).exec(any(), any());
+        verify(runner, times(1)).execStreaming(any(), any(), any());
+    }
+
+    private java.util.List<JsonNode> events(String body) throws IOException {
+        java.util.List<JsonNode> events = new java.util.ArrayList<>();
+        for (String line : body.split("\\R")) {
+            if (!line.isBlank()) {
+                events.add(objectMapper.readTree(line));
+            }
+        }
+        return events;
     }
 
     private HttpResponse<String> exec(SandboxBashBridge target, Map<String, ?> body)
