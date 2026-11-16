@@ -58,6 +58,7 @@ class HarnessPayloadRedactorTest {
     }
 
     @Test
+<<<<<<< HEAD
     void keepsTokenCountFieldsVisible() {
         Map<String, Object> safe = HarnessPayloadRedactor.redact(Map.of(
             "inputTokens", 1200,
@@ -78,6 +79,8 @@ class HarnessPayloadRedactorTest {
     }
 
     @Test
+=======
+>>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
     void truncatesLongStringsAndCapsCollections() {
         Map<String, Object> safe = HarnessPayloadRedactor.redact(Map.of(
             "note", "x".repeat(5000),

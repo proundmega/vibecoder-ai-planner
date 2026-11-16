@@ -264,6 +264,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         this.secretLeakGuard = new SecretLeakGuard(knownSecrets(provider, githubToken));
         this.redactor = new SecretRedactor(redactionSecrets(provider, githubToken));
         this.eventSink = new HttpHarnessEventSink(apiService);
+<<<<<<< HEAD
     }
 
     public SandboxConfig sandboxConfig() {
@@ -272,6 +273,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
     public SandboxRunner sandboxRunner() {
         return sandboxRunner;
+=======
+>>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
     }
 
     private static List<String> knownSecrets(ProviderSettings provider, String githubToken) {
@@ -879,7 +882,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
             currentStep = "implementing";
             String prompt = promptBuilder.build(
                 pickedUp, planningDocs, commands, bridge != null,
+<<<<<<< HEAD
                 effectiveSandboxConfig.networkEnabled());
+=======
+                sandboxConfig.networkEnabled());
+>>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
             emitPromptSent(prompt, planningDocs, commands);
             subscribeHarnessEvents(harness, sessionId);
             try {

@@ -19,10 +19,13 @@ public final class HarnessPayloadRedactor {
     private static final int MAX_STRING = 4096;
     private static final int PREVIEW_LENGTH = 1000;
     private static final int MAX_DEPTH = 20;
+<<<<<<< HEAD
     private static final java.util.Set<String> TOKEN_COUNT_KEYS = java.util.Set.of(
         "tokens", "inputtokens", "outputtokens", "cachedtokens",
         "reasoningtokens", "maxtokens", "tokencount", "tokencounts",
         "totaltokens", "prompttokens", "completiontokens", "tokensin", "tokensout");
+=======
+>>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
 
     private HarnessPayloadRedactor() {
     }
@@ -117,9 +120,12 @@ public final class HarnessPayloadRedactor {
 
     private static boolean isSensitiveKey(String key) {
         String value = key.toLowerCase(Locale.ROOT);
+<<<<<<< HEAD
         if (TOKEN_COUNT_KEYS.contains(value.replace("_", "").replace("-", ""))) {
             return false;
         }
+=======
+>>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
         return value.contains("password")
             || value.contains("passwd")
             || value.contains("passphrase")

@@ -139,6 +139,7 @@ describe('Harness event API (fg-41 slice 1)', () => {
       expect(res.statusCode).toBe(403);
     });
 
+<<<<<<< HEAD
     it('falls back to the ticket project when an older run has no project_id', async () => {
       HarnessRunService.getRun.mockResolvedValue({
         ...RUN, project_id: null,
@@ -156,6 +157,8 @@ describe('Harness event API (fg-41 slice 1)', () => {
       expect(res.body.data).toHaveLength(1);
     });
 
+=======
+>>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
     it('returns project events to a member', async () => {
       pool.query.mockResolvedValueOnce({
         rows: [{ owner_id: 'owner-1', is_member: true }],

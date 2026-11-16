@@ -186,8 +186,12 @@ public class ApiService {
      * handling, because observability must never abort a ticket.
      */
     public void emitHarnessEvent(Map<String, Object> event) throws IOException {
+<<<<<<< HEAD
         ApiResponse<Map<String, Object>> response = executePostWithClient(
             eventHttpClient,
+=======
+        ApiResponse<Map<String, Object>> response = executePost(
+>>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
             baseUrl + "/harness/events",
             event,
             new TypeReference<ApiResponse<Map<String, Object>>>() {}

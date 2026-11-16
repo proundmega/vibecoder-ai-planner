@@ -13,7 +13,10 @@ jest.mock('../services/HarnessRunService', () => ({
 const { pool } = require('../db');
 const HarnessRunService = require('../services/HarnessRunService');
 const HarnessEventService = require('../services/HarnessEventService');
+<<<<<<< HEAD
 const HarnessMetrics = require('../services/HarnessMetrics');
+=======
+>>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
 const EVENT_ID = '22222222-2222-4222-8222-222222222222';
@@ -66,8 +69,11 @@ describe('HarnessEventService', () => {
       expect(insert[1].slice(0, 7)).toEqual([
         EVENT_ID, TRACE_ID, RUN_ID, 42, 7, 9, 'ses_test',
       ]);
+<<<<<<< HEAD
       expect(insert[0]).toContain('event_timestamp');
       expect(Number.isNaN(Date.parse(insert[1][10]))).toBe(false);
+=======
+>>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
       expect(JSON.parse(insert[1][9])).toEqual(expect.objectContaining({
         tool: 'bash',
         token: '[REDACTED]',
@@ -100,7 +106,10 @@ describe('HarnessEventService', () => {
     });
 
     it('returns the existing row for a duplicate event id', async () => {
+<<<<<<< HEAD
       HarnessMetrics.counters.eventsDuplicates.reset();
+=======
+>>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
       const existing = { event_id: EVENT_ID, type: 'run.started' };
       pool.query
         .mockResolvedValueOnce({ rows: [RUN] })
@@ -118,6 +127,7 @@ describe('HarnessEventService', () => {
 
       expect(result.duplicate).toBe(true);
       expect(result.event).toEqual(existing);
+<<<<<<< HEAD
       const duplicateCounter = await HarnessMetrics.counters.eventsDuplicates.get();
       expect(duplicateCounter.values[0].value).toBe(1);
     });
@@ -159,6 +169,8 @@ describe('HarnessEventService', () => {
         timestamp: 'not-a-time',
         requireRunOwnership: true,
       })).rejects.toThrow('timestamp must be a valid timestamp');
+=======
+>>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
     });
 
     it('rejects an event without a project when it has no run', async () => {
@@ -171,6 +183,7 @@ describe('HarnessEventService', () => {
   });
 
   describe('timeline', () => {
+<<<<<<< HEAD
     it('requires both cursor parts for keyset pagination', async () => {
       await expect(HarnessEventService.listForRun(RUN_ID, {
         before: new Date().toISOString(),
@@ -180,6 +193,8 @@ describe('HarnessEventService', () => {
       })).rejects.toThrow('beforeId requires before');
     });
 
+=======
+>>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
     it('orders events and extracts replay artifacts', async () => {
       const events = [
         {
