@@ -75,6 +75,7 @@ describe('repo profile migration upgrade path', () => {
       ]);
     } finally {
       await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => {});
+      await client.query('SET search_path TO public').catch(() => {});
       client.release();
     }
   });
