@@ -48,18 +48,20 @@ CREATE TABLE IF NOT EXISTS repo_profile_validations (
   CONSTRAINT repo_profile_validations_version_check CHECK (profile_version > 0)
 );
 
+-- The migration was extended during review; keep it idempotent for databases
+-- that applied an earlier draft before this branch merged. These ALTERs must
+-- run before any index that references profile_hash.
+ALTER TABLE repo_profiles
+  ADD COLUMN IF NOT EXISTS profile_hash TEXT;
+ALTER TABLE repo_profile_validations
+  ADD COLUMN IF NOT EXISTS profile_hash TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_repo_profile_validations_project_status
   ON repo_profile_validations(project_id, status, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_repo_profile_validations_profile_hash
   ON repo_profile_validations(profile_id, profile_hash, status);
 
--- The migration was extended during review; keep it idempotent for databases
--- that applied an earlier draft before this branch merged.
-ALTER TABLE repo_profiles
-  ADD COLUMN IF NOT EXISTS profile_hash TEXT;
-ALTER TABLE repo_profile_validations
-  ADD COLUMN IF NOT EXISTS profile_hash TEXT;
 
 -- Do not queue the same profile revision twice while one is queued/running.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_repo_profile_validations_pending

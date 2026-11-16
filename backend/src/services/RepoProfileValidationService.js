@@ -57,6 +57,16 @@ class RepoProfileValidationService {
     await RepoProfileService.assertProfileRepoBinding(projectId, profile.profile);
     const profileHash = profile.profile_hash
       || RepoProfileService.profileHash(profile.profile);
+    if (!profile.profile_hash) {
+      // Legacy rows from the earlier migration draft have no content hash.
+      // Persist it now so activation and run evidence can use the same value.
+      await pool.query(
+        `UPDATE repo_profiles
+         SET profile_hash = $1, updated_at = NOW()
+         WHERE id = $2 AND project_id = $3`,
+        [profileHash, profileId, projectId]
+      );
+    }
     try {
       const inserted = await pool.query(
         `INSERT INTO repo_profile_validations

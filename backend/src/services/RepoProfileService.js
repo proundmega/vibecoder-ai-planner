@@ -422,15 +422,21 @@ class RepoProfileService {
         await client.query('COMMIT');
         return format(target.rows[0]);
       }
-      if (!target.rows[0].profile_hash) {
-        throw new ValidationError(
-          'The profile has no content hash; save a new draft version and validate it');
+      let contentHash = target.rows[0].profile_hash;
+      if (!contentHash) {
+        contentHash = profileHash(target.rows[0].profile);
+        await client.query(
+          `UPDATE repo_profiles
+           SET profile_hash = $1, updated_at = NOW()
+           WHERE id = $2 AND project_id = $3`,
+          [contentHash, profileId, projectId]
+        );
       }
       const validated = await client.query(
         `SELECT 1 FROM repo_profile_validations
          WHERE profile_id = $1 AND status = 'succeeded' AND profile_hash = $2
          LIMIT 1`,
-        [profileId, target.rows[0].profile_hash]
+        [profileId, contentHash]
       );
       if (validated.rows.length === 0) {
         throw new ValidationError(

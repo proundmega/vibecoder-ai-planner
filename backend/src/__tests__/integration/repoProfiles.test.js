@@ -133,6 +133,40 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
     await pool.query('DELETE FROM repo_profiles WHERE project_id = $1', [projectId]);
   });
 
+
+  test('a legacy profile without a hash can be validated and activated', async () => {
+    const draft = await RepoProfileService.create(projectId, profile(), {
+      userId: ownerId, role: 'project_admin',
+    });
+    await pool.query(
+      'UPDATE repo_profiles SET profile_hash = NULL WHERE id = $1',
+      [draft.id]
+    );
+
+    const queued = await RepoProfileValidationService.request(projectId, draft.id, {
+      userId: ownerId, role: 'project_admin',
+    });
+    expect(queued.profile_hash).toMatch(/^[a-f0-9]{64}$/);
+
+    const persisted = await pool.query(
+      'SELECT profile_hash FROM repo_profiles WHERE id = $1',
+      [draft.id]
+    );
+    expect(persisted.rows[0].profile_hash).toBe(queued.profile_hash);
+
+    const claimed = await RepoProfileValidationService.claimNext(projectId, agent);
+    await RepoProfileValidationService.finish(projectId, claimed.id, agent, {
+      status: 'succeeded',
+      result: { commands: [] },
+    });
+
+    const active = await RepoProfileService.activate(projectId, draft.id, {
+      userId: ownerId, role: 'project_admin',
+    });
+    expect(active.status).toBe('active');
+    await pool.query('DELETE FROM repo_profiles WHERE project_id = $1', [projectId]);
+  });
+
   test('a project without an active repository cannot create a profile', async () => {
     await expect(RepoProfileService.create(noRepoProjectId, profile(), {
       userId: ownerId, role: 'project_admin',

@@ -278,6 +278,32 @@ describe('RepoProfileService', () => {
       expect(client.release).toHaveBeenCalled();
     });
 
+
+    it('persists a legacy profile hash before checking for validation evidence', async () => {
+      const target = {
+        id: 'p2', project_id: 1, version: 2, profile: validProfile(),
+        profile_hash: null, status: 'draft',
+      };
+      const activated = { ...target, profile_hash: 'computed', status: 'active' };
+      const client = clientWith([
+        {}, // BEGIN
+        { rows: [target] }, // target lock
+        {}, // profile hash update
+        { rows: [{ exists: true }] }, // exact-content validation
+        { rows: [] }, // deactivate old
+        { rows: [activated] }, // activate target
+        {}, // COMMIT
+      ]);
+
+      const result = await RepoProfileService.activate(1, 'p2', owner());
+
+      expect(result.status).toBe('active');
+      expect(client.query.mock.calls[2][0]).toContain('SET profile_hash = $1');
+      expect(client.query.mock.calls[2][1][0]).toMatch(/^[a-f0-9]{64}$/);
+      expect(client.query.mock.calls[2][1][2]).toBe(1);
+      expect(client.query.mock.calls[3][0]).toContain("status = 'succeeded'");
+    });
+
     it('refuses to activate a profile without a successful exact-content validation', async () => {
       const target = {
         id: 'p2', project_id: 1, version: 2, profile: validProfile(),

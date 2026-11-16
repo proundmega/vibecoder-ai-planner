@@ -804,7 +804,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
             String repoUrl = "https://github.com/" + config.getRepoOwner() + "/"
                 + config.getRepoName() + ".git";
-            Duration cloneTimeout = remaining(deadline, CLONE_TIMEOUT);
+            Duration cloneCap = profile == null
+                ? CLONE_TIMEOUT
+                : Duration.ofMinutes(profile.timeouts().setupMinutes());
+            Duration cloneTimeout = remaining(deadline, cloneCap);
             if (profile == null) {
                 workspace.cloneRepo(repoUrl, branchName, null, cloneTimeout);
             } else {

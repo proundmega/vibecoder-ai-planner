@@ -22,6 +22,8 @@ describe('repo profile migration (fg-39)', () => {
     expect(sql).toContain('uq_repo_profile_validations_pending');
     expect(sql).toContain('profile_hash');
     expect(sql).toContain('ADD COLUMN IF NOT EXISTS profile_hash');
+    expect(sql.indexOf('ADD COLUMN IF NOT EXISTS profile_hash'))
+      .toBeLessThan(sql.indexOf('idx_repo_profile_validations_profile_hash'));
     expect(sql).toContain('ADD COLUMN IF NOT EXISTS repo_profile_id');
     expect(sql).toContain('ADD COLUMN IF NOT EXISTS repo_profile_version');
   });

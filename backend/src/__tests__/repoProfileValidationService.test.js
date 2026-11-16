@@ -81,6 +81,23 @@ describe('RepoProfileValidationService', () => {
     ]);
   });
 
+
+  it('persists a legacy profile hash when queuing validation', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [profileRow({ profile_hash: null })] })
+      .mockResolvedValueOnce({ rows: [] }) // profile hash update
+      .mockResolvedValueOnce({ rows: [validationRow({ profile_hash: 'hash' })] });
+
+    const result = await RepoProfileValidationService.request(
+      1, PROFILE_ID, { userId: 7, role: 'project_admin' }
+    );
+
+    expect(result.profile_hash).toBe('hash');
+    expect(pool.query.mock.calls[1][0]).toContain('UPDATE repo_profiles');
+    expect(pool.query.mock.calls[1][1]).toEqual(['hash', PROFILE_ID, 1]);
+    expect(pool.query.mock.calls[2][0]).toContain('INSERT INTO repo_profile_validations');
+  });
+
   it('requires the profile to still match the connected repository', async () => {
     pool.query.mockResolvedValueOnce({ rows: [profileRow()] });
     RepoProfileService.assertProfileRepoBinding.mockRejectedValueOnce(
