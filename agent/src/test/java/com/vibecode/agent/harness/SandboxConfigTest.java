@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +85,148 @@ class SandboxConfigTest {
         assertEquals("1000:1000", config.user());
         assertEquals(Map.of("CI", "1", "FEATURE_FLAG", "on"), config.runEnv());
         assertTrue(config.requireSandbox());
+    }
+
+    @Test
+    void parsesAScopedOriginCaForTerminateMode() throws IOException {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "*.example.com",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate",
+            "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "registry.example.com",
+            "SANDBOX_EGRESS_ORIGIN_CA_B64", originCaBase64("egress-origin-ca.pem")
+        )::get);
+
+        assertEquals(List.of("registry.example.com"), config.egressOriginCaHosts());
+        assertTrue(config.egressOriginCaPem().contains("BEGIN CERTIFICATE"));
+        assertTrue(config.egressOriginCaPem().endsWith("\n"));
+        assertFalse(config.egressOriginCaPem().contains("PRIVATE KEY"));
+    }
+
+    @Test
+    void rejectsAHalfConfiguredOriginCa() throws IOException {
+        IllegalStateException hostsOnly = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_IMAGE", "test:img",
+                "SANDBOX_NETWORK", "allowlist",
+                "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_TLS_MODE", "terminate",
+                "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "registry.example.com"
+            )::get));
+        assertTrue(hostsOnly.getMessage().contains("must be set together"),
+            hostsOnly.getMessage());
+
+        IllegalStateException caOnly = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_IMAGE", "test:img",
+                "SANDBOX_NETWORK", "allowlist",
+                "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_TLS_MODE", "terminate",
+                "SANDBOX_EGRESS_ORIGIN_CA_B64", originCaBase64("egress-origin-ca.pem")
+            )::get));
+        assertTrue(caOnly.getMessage().contains("must be set together"),
+            caOnly.getMessage());
+    }
+
+    @Test
+    void rejectsAnOriginCaOutsideTheAllowlist() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_IMAGE", "test:img",
+                "SANDBOX_NETWORK", "allowlist",
+                "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_TLS_MODE", "terminate",
+                "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "other.example.com",
+                "SANDBOX_EGRESS_ORIGIN_CA_B64", originCaBase64("egress-origin-ca.pem")
+            )::get));
+
+        assertTrue(error.getMessage().contains("not in SANDBOX_ALLOWED_HOSTS"),
+            error.getMessage());
+    }
+
+    @Test
+    void rejectsWildcardAndApexOriginCaScopes() {
+        IllegalStateException wildcard = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_IMAGE", "test:img",
+                "SANDBOX_NETWORK", "allowlist",
+                "SANDBOX_ALLOWED_HOSTS", "*.example.com",
+                "SANDBOX_EGRESS_TLS_MODE", "terminate",
+                "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "*.example.com",
+                "SANDBOX_EGRESS_ORIGIN_CA_B64", originCaBase64("egress-origin-ca.pem")
+            )::get));
+        assertTrue(wildcard.getMessage().contains("exact hosts"), wildcard.getMessage());
+
+        IllegalStateException apex = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_IMAGE", "test:img",
+                "SANDBOX_NETWORK", "allowlist",
+                "SANDBOX_ALLOWED_HOSTS", "*.example.com",
+                "SANDBOX_EGRESS_TLS_MODE", "terminate",
+                "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "example.com",
+                "SANDBOX_EGRESS_ORIGIN_CA_B64", originCaBase64("egress-origin-ca.pem")
+            )::get));
+        assertTrue(apex.getMessage().contains("not in SANDBOX_ALLOWED_HOSTS"),
+            apex.getMessage());
+    }
+
+    @Test
+    void rejectsOriginCaOutsideTerminateMode() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_IMAGE", "test:img",
+                "SANDBOX_NETWORK", "allowlist",
+                "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_TLS_MODE", "sni-only",
+                "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_ORIGIN_CA_B64", originCaBase64("egress-origin-ca.pem")
+            )::get));
+
+        assertTrue(error.getMessage().contains("requires SANDBOX_EGRESS_TLS_MODE=terminate"),
+            error.getMessage());
+    }
+
+    @Test
+    void rejectsNonCaCertificatesAndPrivateKeys() {
+        IllegalStateException leaf = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_IMAGE", "test:img",
+                "SANDBOX_NETWORK", "allowlist",
+                "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_TLS_MODE", "terminate",
+                "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_ORIGIN_CA_B64", originCaBase64("egress-origin-leaf.pem")
+            )::get));
+        assertTrue(leaf.getMessage().contains("CA certificates only"), leaf.getMessage());
+
+        String privateKey = Base64.getEncoder().encodeToString(
+            "-----BEGIN PRIVATE KEY-----\nnot-a-key\n-----END PRIVATE KEY-----\n"
+                .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        IllegalStateException key = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_IMAGE", "test:img",
+                "SANDBOX_NETWORK", "allowlist",
+                "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_TLS_MODE", "terminate",
+                "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_ORIGIN_CA_B64", privateKey
+            )::get));
+        assertTrue(key.getMessage().contains("certificates only"), key.getMessage());
+    }
+
+    private static String originCaBase64(String resource) throws IOException {
+        return Base64.getEncoder().encodeToString(
+            Files.readAllBytes(Path.of("src/test/resources", resource)));
     }
 
     @Test

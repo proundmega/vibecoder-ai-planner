@@ -188,6 +188,52 @@ class EgressProxyScriptTest {
     }
 
     @Test
+    void acceptsAScopedOriginCa() throws Exception {
+        Result result = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "EGRESS_ORIGIN_CA_PEM_B64", originCaBase64("egress-origin-ca.pem")));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains("ORIGIN_CA registry.npmjs.org"), result.output);
+    }
+
+    @Test
+    void rejectsAnUnscopedOrInvalidOriginCa() throws Exception {
+        Result outside = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ORIGIN_CA_HOSTS", "other.example.com",
+            "EGRESS_ORIGIN_CA_PEM_B64", originCaBase64("egress-origin-ca.pem")));
+        assertEquals(1, outside.exitCode, outside.output);
+        assertTrue(outside.output.contains("not in the allowlist"), outside.output);
+
+        Result leaf = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "EGRESS_ORIGIN_CA_PEM_B64", originCaBase64("egress-origin-leaf.pem")));
+        assertEquals(1, leaf.exitCode, leaf.output);
+        assertTrue(leaf.output.contains("CA certificates only"), leaf.output);
+
+        Result missing = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org"));
+        assertEquals(1, missing.exitCode, missing.output);
+        assertTrue(missing.output.contains("must be set together"), missing.output);
+
+        Result sniOnly = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "sni-only",
+            "EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "EGRESS_ORIGIN_CA_PEM_B64", originCaBase64("egress-origin-ca.pem")));
+        assertEquals(1, sniOnly.exitCode, sniOnly.output);
+        assertTrue(sniOnly.output.contains("terminate"), sniOnly.output);
+    }
+
+    private static String originCaBase64(String resource) throws IOException {
+        return Base64.getEncoder().encodeToString(
+            Files.readAllBytes(Path.of("src/test/resources", resource)));
+    }
+
+    @Test
     void rejectsUnknownTlsModes() throws Exception {
         Result result = run("--check-allow", "registry.npmjs.org:443", Map.of(
             "EGRESS_TLS_MODE", "mitm"));

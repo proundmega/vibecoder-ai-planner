@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -159,6 +160,8 @@ class DockerSandboxRunnerTest {
         assertTrue(joined.contains("EGRESS_ALLOWED_HOSTS=registry.npmjs.org,*.githubusercontent.com"));
         assertTrue(joined.contains("EGRESS_TUNNEL_PROBE_TIMEOUT_MS=5000"));
         assertTrue(joined.contains("EGRESS_TLS_MODE=sni-only"));
+        assertTrue(joined.contains("EGRESS_ORIGIN_CA_HOSTS= "));
+        assertTrue(joined.contains("EGRESS_ORIGIN_CA_PEM_B64= "));
         assertTrue(joined.contains("--entrypoint node"));
         assertTrue(joined.contains("Buffer.from("));
         assertFalse(joined.contains("--privileged"));
@@ -181,6 +184,33 @@ class DockerSandboxRunnerTest {
             DockerSandboxRunner.buildProxyRunArgs(spec, "proxy-1", "internal-1"));
 
         assertTrue(joined.contains("EGRESS_TLS_MODE=terminate"));
+    }
+
+    @Test
+    void proxyArgsCarryTheScopedOriginCa() throws IOException {
+        String ca = Base64.getEncoder().encodeToString(
+            Files.readAllBytes(Path.of("src/test/resources/egress-origin-ca.pem")));
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate",
+            "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "SANDBOX_EGRESS_ORIGIN_CA_B64", ca
+        )::get);
+        SandboxSpec spec = config.specFor(workspace());
+
+        List<String> args = DockerSandboxRunner.buildProxyRunArgs(
+            spec, "proxy-1", "internal-1");
+        String joined = String.join(" ", args);
+
+        assertTrue(joined.contains("EGRESS_ORIGIN_CA_HOSTS=registry.npmjs.org"), joined);
+        assertTrue(joined.contains("EGRESS_ORIGIN_CA_PEM_B64="), joined);
+        assertFalse(joined.contains("PRIVATE KEY"), joined);
+        assertEquals(List.of("registry.npmjs.org"), spec.egressOriginCaHosts());
+        assertTrue(spec.egressOriginCaPem().contains("BEGIN CERTIFICATE"));
     }
 
     @Test
@@ -697,7 +727,8 @@ class DockerSandboxRunnerTest {
             spec.limits(), spec.networkEnabled(), spec.allowedHosts(), spec.egressProxy(),
             spec.egressUpstreamNetwork(), spec.egressProbeTimeoutMs(), spec.egressTlsMode(),
             spec.owner(), Map.of("OPENAI_KEY", "sk-secret"), spec.user(), spec.seccompProfile(),
-            spec.apparmorProfile(), spec.artifactMaxBytes());
+            spec.apparmorProfile(), spec.artifactMaxBytes(), spec.egressOriginCaHosts(),
+            spec.egressOriginCaPem());
 
         assertThrows(IllegalArgumentException.class,
             () -> DockerSandboxRunner.containerEnvironment(poisoned));

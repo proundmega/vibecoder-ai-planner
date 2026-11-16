@@ -1989,6 +1989,14 @@ public final class DockerSandboxRunner implements SandboxRunner {
         args.add("EGRESS_TUNNEL_PROBE_TIMEOUT_MS=" + spec.egressProbeTimeoutMs());
         args.add("-e");
         args.add("EGRESS_TLS_MODE=" + spec.egressTlsMode().value());
+        // The extra origin trust is scoped to these allowlisted hosts. Always
+        // clear the variables so a proxy image cannot inherit a trust override.
+        args.add("-e");
+        args.add("EGRESS_ORIGIN_CA_HOSTS=" + String.join(",", spec.egressOriginCaHosts()));
+        args.add("-e");
+        args.add("EGRESS_ORIGIN_CA_PEM_B64="
+            + Base64.getEncoder().encodeToString(
+                spec.egressOriginCaPem().getBytes(StandardCharsets.UTF_8)));
         // Never inherit a test seam from the proxy image. The resolver override
         // is only honored when EGRESS_TEST_MODE=1, which the supervisor clears.
         args.add("-e");

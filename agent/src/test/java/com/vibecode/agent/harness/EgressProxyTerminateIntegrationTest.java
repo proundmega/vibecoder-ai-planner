@@ -25,6 +25,7 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -197,6 +198,83 @@ class EgressProxyTerminateIntegrationTest {
         }
     }
 
+    @Test
+    @Timeout(90)
+    void usesAConfiguredOriginCaOnlyForItsScopedHost() throws Exception {
+        Assumptions.assumeTrue(nodeAvailable(), "node is required");
+        Assumptions.assumeTrue(opensslAvailable(), "openssl is required");
+
+        Path caCert = tempDir.resolve("origin-ca.crt");
+        Path caKey = tempDir.resolve("origin-ca.key");
+        Path serverCert = tempDir.resolve("origin-server.crt");
+        Path serverKey = tempDir.resolve("origin-server.key");
+        Path serverCsr = tempDir.resolve("origin-server.csr");
+        Path serverExt = tempDir.resolve("origin-server.ext");
+        generateCertificates(caCert, caKey, serverCert, serverKey, serverCsr, serverExt);
+
+        int originPort = freePort();
+        Path log = tempDir.resolve("origin.log");
+        Process origin = startNodeOrigin(originPort, serverCert, serverKey, log);
+        try {
+            awaitPort(originPort);
+            String caPem = Files.readString(caCert);
+            String caBase64 = java.util.Base64.getEncoder().encodeToString(
+                caPem.getBytes(StandardCharsets.US_ASCII));
+
+            int scopedPort = freePort();
+            Path scopedCaDir = tempDir.resolve("proxy-ca-scoped");
+            Process scoped = startProxyWithEnv(scopedPort, scopedCaDir, originPort, Map.of(
+                "EGRESS_ALLOWED_HOSTS", "localhost.test",
+                "EGRESS_ORIGIN_CA_HOSTS", "localhost.test",
+                "EGRESS_ORIGIN_CA_PEM_B64", caBase64
+            ));
+            try {
+                BlockingQueue<String> scopedLogs = awaitListening(scoped);
+                awaitPort(scopedPort);
+                SSLContext context = trust(readCertificate(scopedCaDir.resolve("ca.crt")));
+                String allowed = request(context, scopedPort, originPort, "localhost.test");
+                assertTrue(allowed.contains("200"), allowed);
+                awaitLog(scopedLogs, "egress origin CA used");
+            } finally {
+                stop(scoped);
+            }
+
+            int wrongPort = freePort();
+            Path wrongCaDir = tempDir.resolve("proxy-ca-wrong");
+            Process wrong = startProxyWithEnv(wrongPort, wrongCaDir, originPort, Map.of(
+                "EGRESS_ALLOWED_HOSTS", "localhost.test,other.test",
+                "EGRESS_ORIGIN_CA_HOSTS", "other.test",
+                "EGRESS_ORIGIN_CA_PEM_B64", caBase64
+            ));
+            try {
+                awaitListening(wrong);
+                awaitPort(wrongPort);
+                SSLContext context = trust(readCertificate(wrongCaDir.resolve("ca.crt")));
+                String denied = request(context, wrongPort, originPort, "localhost.test");
+                assertTrue(denied.contains("502") || denied.isEmpty(), denied);
+            } finally {
+                stop(wrong);
+            }
+
+            int untrustedPort = freePort();
+            Path untrustedCaDir = tempDir.resolve("proxy-ca-untrusted");
+            Process untrusted = startProxyWithEnv(untrustedPort, untrustedCaDir, originPort, Map.of(
+                "EGRESS_ALLOWED_HOSTS", "localhost.test"
+            ));
+            try {
+                awaitListening(untrusted);
+                awaitPort(untrustedPort);
+                SSLContext context = trust(readCertificate(untrustedCaDir.resolve("ca.crt")));
+                String denied = request(context, untrustedPort, originPort, "localhost.test");
+                assertTrue(denied.contains("502") || denied.isEmpty(), denied);
+            } finally {
+                stop(untrusted);
+            }
+        } finally {
+            stop(origin);
+        }
+    }
+
     private static Process startNodeOrigin(
         int port,
         Path cert,
@@ -218,10 +296,20 @@ class EgressProxyTerminateIntegrationTest {
         int originPort,
         Path originCa
     ) throws Exception {
+        return startProxyWithEnv(proxyPort, caDir, originPort, Map.of(
+            "NODE_EXTRA_CA_CERTS", originCa.toString()));
+    }
+
+    private static Process startProxyWithEnv(
+        int proxyPort,
+        Path caDir,
+        int originPort,
+        Map<String, String> extra
+    ) throws Exception {
         ProcessBuilder builder = new ProcessBuilder(
             "node", Path.of("src/main/resources/sandbox/egress-proxy.js").toString());
         builder.redirectErrorStream(true);
-        builder.environment().putAll(java.util.Map.of(
+        Map<String, String> env = new java.util.HashMap<>(Map.of(
             "EGRESS_ALLOWED_HOSTS", "localhost.test",
             "EGRESS_TLS_MODE", "terminate",
             "EGRESS_PORT", String.valueOf(proxyPort),
@@ -229,10 +317,28 @@ class EgressProxyTerminateIntegrationTest {
             "EGRESS_TEST_MODE", "1",
             "EGRESS_TEST_RESOLVE_IP", "127.0.0.1",
             "EGRESS_TEST_ALLOW_LOOPBACK", "1",
-            "EGRESS_TEST_CONNECT_PORT", String.valueOf(originPort),
-            "NODE_EXTRA_CA_CERTS", originCa.toString()
+            "EGRESS_TEST_CONNECT_PORT", String.valueOf(originPort)
         ));
+        env.putAll(extra);
+        builder.environment().putAll(env);
+        // Never inherit the JVM's trust override; the scoped CA must be the
+        // only reason the private origin is trusted.
+        if (!env.containsKey("NODE_EXTRA_CA_CERTS")) {
+            builder.environment().remove("NODE_EXTRA_CA_CERTS");
+        }
         return builder.start();
+    }
+
+    private static void awaitLog(BlockingQueue<String> lines, String message)
+        throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+        while (System.nanoTime() < deadline) {
+            String line = lines.poll(200, TimeUnit.MILLISECONDS);
+            if (line != null && line.contains(message)) {
+                return;
+            }
+        }
+        throw new AssertionError("proxy did not log: " + message);
     }
 
     private static void awaitMessage(Process process, String message) throws Exception {

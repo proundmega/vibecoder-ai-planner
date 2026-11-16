@@ -537,6 +537,33 @@ describe('PoolManager max capacity (BP-61)', () => {
     expect(createOpts.Env).toContain('SANDBOX_EGRESS_TLS_MODE=terminate');
   });
 
+  it('forwards the scoped origin CA to pool agents', async () => {
+    pm.pool.clear();
+    const { pool } = require('../db');
+    pool.query.mockResolvedValue({
+      rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+    });
+    const mockContainer = { id: 'container-origin-ca', start: jest.fn().mockResolvedValue(undefined) };
+    pm.docker.createContainer = jest.fn().mockResolvedValue(mockContainer);
+
+    const previousHosts = process.env.SANDBOX_EGRESS_ORIGIN_CA_HOSTS;
+    const previousCa = process.env.SANDBOX_EGRESS_ORIGIN_CA_B64;
+    process.env.SANDBOX_EGRESS_ORIGIN_CA_HOSTS = 'registry.example.com';
+    process.env.SANDBOX_EGRESS_ORIGIN_CA_B64 = 'Y2E=';
+    try {
+      await pm.requestAgent('proj-origin-ca');
+    } finally {
+      if (previousHosts === undefined) delete process.env.SANDBOX_EGRESS_ORIGIN_CA_HOSTS;
+      else process.env.SANDBOX_EGRESS_ORIGIN_CA_HOSTS = previousHosts;
+      if (previousCa === undefined) delete process.env.SANDBOX_EGRESS_ORIGIN_CA_B64;
+      else process.env.SANDBOX_EGRESS_ORIGIN_CA_B64 = previousCa;
+    }
+
+    const createOpts = pm.docker.createContainer.mock.calls[0][0];
+    expect(createOpts.Env).toContain('SANDBOX_EGRESS_ORIGIN_CA_HOSTS=registry.example.com');
+    expect(createOpts.Env).toContain('SANDBOX_EGRESS_ORIGIN_CA_B64=Y2E=');
+  });
+
   it('releases capacity when agent is released', async () => {
     pm.setMaxPoolSize(2);
     pm.pool.clear();
