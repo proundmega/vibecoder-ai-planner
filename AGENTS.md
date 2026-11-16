@@ -30,7 +30,7 @@ backend/src/
   services/         → ~28 services
   controllers/      → ~12 controllers
   models/           → approval, project, ticket, user
-  migrations/       → 49 .sql files + 2 data migrations; apply.js runs in array order (not numeric)
+  migrations/       → 51 .sql files + 2 data migrations; apply.js runs in array order (not numeric)
   middleware/       → ~15 files (auth, permissions, validate (Joi), cors, rate limiter, CSP, requestId, error handler, timeout, apiVersion, multer)
   validators/       → 15 Joi schemas
   db.js             → pg Pool (DATABASE_URL env)
@@ -163,9 +163,21 @@ closed), `HARNESS_PROTECTED_PATHS`, `HARNESS_MODEL`, `HARNESS_MAX_FILES`,
 `HARNESS_LEASE_SECONDS`, `HARNESS_HEARTBEAT_SECONDS`,
 `HARNESS_DURABILITY_REQUIRED`, `HARNESS_RESUME_MODE`,
 `HARNESS_REAPER_INTERVAL_SECONDS`, `HARNESS_WORKSPACE_RETENTION_HOURS`.
-Event store (fg-41): `HARNESS_EVENT_MAX_STRING`, `HARNESS_EVENT_RETENTION_DAYS`
-(30), `HARNESS_AUDIT_RETENTION_DAYS` (365). `harness_events` is append-only;
-only the retention purge may delete rows.
+Budgets/routing (fg-38): `HARNESS_DEFAULT_MAX_DURATION_MINUTES`,
+`HARNESS_DEFAULT_MAX_INPUT_TOKENS`, `HARNESS_DEFAULT_MAX_OUTPUT_TOKENS`,
+`HARNESS_DEFAULT_MAX_COST_USD`, `HARNESS_DEFAULT_MAX_TOOL_CALLS`,
+`HARNESS_DEFAULT_MAX_RETRIES`, `HARNESS_DEFAULT_DAILY_COST_USD`,
+`HARNESS_DEFAULT_PROJECT_MAX_CONCURRENT_RUNS`,
+`HARNESS_DEFAULT_AGENT_MAX_CONCURRENT_RUNS`, `HARNESS_DEFAULT_WARN_RATIO`,
+`HARNESS_DEFAULT_ROUTING_POLICY`, `HARNESS_FREE_MODEL`, `HARNESS_PAID_MODEL`,
+`HARNESS_COMPLEXITY_THRESHOLD`. Observability (fg-41):
+`HARNESS_EVENT_MAX_STRING`, `HARNESS_STUCK_MINUTES`,
+`HARNESS_DIFF_ALERT_BYTES`, `HARNESS_REPEATED_FAILURES`,
+`HARNESS_FAILURE_RATE_WINDOW_MINUTES`, `HARNESS_EVENT_RETENTION_DAYS` (30),
+`HARNESS_AUDIT_RETENTION_DAYS` (365). A breach stops the session with run
+status `budget_exceeded`, never publishes, and releases the ticket; the global
+or project kill switch blocks new runs and withdraws leases from active ones.
+`harness_events` is append-only; only the retention purge may delete rows.
 Sandbox: `SANDBOX_MODE` (`host` legacy, `docker` sandboxes install/verification
 and model-driven shell commands), `SANDBOX_IMAGE`, `SANDBOX_PROXY_IMAGE`,
 `SANDBOX_REQUIRE`, `SANDBOX_CPUS`,
@@ -285,11 +297,16 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 
 **Ticket status transitions**: `backlog→in_progress`, `in_progress→review|backlog`, `review→done|backlog`. `done` has no outgoing transitions.
 
-**Harness events**: agents append to `POST /harness/events`; operators read
-`GET /harness/runs/:runId/events` or `GET /harness/projects/:projectId/events`.
-Agent events are run-scoped and cannot write `audit.*`.
+**Harness observability/budgets**: agent writes go to `POST /harness/events` and
+`POST /harness/runs/:runId/usage`; operators use
+`GET /harness/runs/:runId/events|timeline|usage`,
+`GET /harness/projects/:projectId/runs|events|audit|dashboard|usage`,
+`GET|PUT /harness/projects/:projectId/budget-policy|kill-switch`,
+`GET /harness/projects/:projectId/kill-switch/audit` and
+`GET|PUT /harness/kill-switch` (global, super_admin). Agent events are run-scoped
+and cannot write `audit.*`.
 
-**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 49 SQL files + 2 data migrations (`migrate_provider_api_keys.js`, `backfill_agent_key_hashes.js`). Notable non-numeric entries: 011/012 after 014; 020 after 018 (no 019); 031 has two files. The `029_data_migrate_provider_api_keys.sql` and `030` rollback files exist on disk but are **not** in the apply array. Each SQL has a `_rollback.sql` counterpart.
+**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 51 SQL files + 2 data migrations (`migrate_provider_api_keys.js`, `backfill_agent_key_hashes.js`). Notable non-numeric entries: 011/012 after 014; 020 after 018 (no 019); 031 has two files. The `029_data_migrate_provider_api_keys.sql` and `030` rollback files exist on disk but are **not** in the apply array. Each SQL has a `_rollback.sql` counterpart.
 
 **Frontend auth**: 3 localStorage keys — `vibecode_token`, `vibecode_user`, `vibecode_permissions`. Route guards read localStorage directly (no Pinia dependency).
 

@@ -98,6 +98,13 @@ async function handleTabSwitch(tabId) {
           <span class="quick-link-desc">Manage document templates</span>
         </div>
       </router-link>
+      <router-link :to="`/projects/${projectId}/harness`" class="quick-link-card">
+        <span class="quick-link-icon">📈</span>
+        <div class="quick-link-info">
+          <span class="quick-link-title">Harness Observability</span>
+          <span class="quick-link-desc">Budgets, replay, alerts and audit</span>
+        </div>
+      </router-link>
     </div>
 
     <div class="tabs">

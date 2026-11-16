@@ -419,6 +419,9 @@ describe('HarnessRunService', () => {
       });
 
       expect(result).toEqual(row);
+      expect(HarnessEventService.ensureTerminalEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ runId: RUN_ID, status: 'succeeded' })
+      );
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain("FROM finished");
       expect(sql).toContain('DELETE FROM harness_leases');

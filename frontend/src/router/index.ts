@@ -151,6 +151,12 @@ const routes = [
         component: () => import('../views/ProjectMilestones.vue'),
         meta: { requiresAuth: true },
       },
+      {
+        path: 'harness',
+        name: 'ProjectHarness',
+        component: () => import('../views/HarnessObservability.vue'),
+        meta: { requiresAuth: true, requiredPermission: 'DASHBOARD_READ' },
+      },
     ],
   },
 
