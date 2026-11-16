@@ -31,7 +31,7 @@ const { spawnSync } = require("child_process");
 const PORT = Number(process.env.EGRESS_PORT || "3128");
 const ALLOW = String(process.env.EGRESS_ALLOWED_HOSTS || "")
   .split(",")
-  .map((value) => value.trim().toLowerCase())
+  .map((value) => normaliseHost(value))
   .filter(Boolean);
 const CONNECT_TIMEOUT_MS = 10_000;
 const IDLE_TIMEOUT_MS = 120_000;
@@ -49,6 +49,13 @@ if (TLS_MODE !== "sni-only" && TLS_MODE !== "terminate") {
   process.exit(1);
 }
 const CA_DIR = process.env.EGRESS_CA_DIR || "/tmp/vibecode-egress-ca";
+const ORIGIN_CA_HOSTS = String(process.env.EGRESS_ORIGIN_CA_HOSTS || "")
+  .split(",")
+  .map((value) => normaliseHost(value))
+  .filter(Boolean);
+const ORIGIN_CA_PEM_B64 = String(process.env.EGRESS_ORIGIN_CA_PEM_B64 || "").trim();
+const MAX_ORIGIN_CA_BYTES = 64 * 1024;
+const MAX_ORIGIN_CA_CERTIFICATES = 16;
 const MAX_TUNNELS = 32;
 const MAX_LEAF_CERTS = 256;
 const MAX_RESPONSE_HEADER_BYTES = 32 * 1024;
@@ -120,6 +127,107 @@ function runOpenssl(args, timeoutMs) {
 let caCertPath = null;
 let caKeyPath = null;
 const leafCache = new Map();
+const originCaByHost = new Map();
+const originCaUsed = new Set();
+let originCaInitialized = false;
+let originCaSha256 = null;
+
+function splitPemCertificates(pem) {
+  return pem.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+}
+
+function originCaHostError(host) {
+  if (!host || host.length > 253) {
+    return "has an invalid host";
+  }
+  if (host.includes("*")) {
+    return "wildcards are not allowed";
+  }
+  if (isIpLiteral(host)) {
+    return "must list hostnames, not IP literals";
+  }
+  const blocked = isBlockedName(host);
+  if (blocked) {
+    return "must not allow internal or metadata hosts: " + blocked;
+  }
+  if (!/^[a-z0-9.-]+$/.test(host)) {
+    return "has an invalid host";
+  }
+  if (!matchesAllowlist(host)) {
+    return "is not in the allowlist";
+  }
+  return null;
+}
+
+function markOriginCaUsed(host) {
+  const value = normaliseHost(host);
+  if (!originCaByHost.has(value) || originCaUsed.has(value)) {
+    return;
+  }
+  originCaUsed.add(value);
+  log("info", "egress origin CA used", {
+    host: value,
+    sha256: originCaSha256,
+  });
+}
+
+/**
+ * Load the opt-in, per-host origin CA bundle. The bundle is public
+ * certificate material and applies only to the named allowlisted hosts; the
+ * rest of the proxy's origin verification is unchanged.
+ */
+function initOriginCAs() {
+  if (originCaInitialized) {
+    return;
+  }
+  const configured = ORIGIN_CA_HOSTS.length > 0 || ORIGIN_CA_PEM_B64.length > 0;
+  if (!configured) {
+    originCaInitialized = true;
+    return;
+  }
+  if (ORIGIN_CA_HOSTS.length === 0 || !ORIGIN_CA_PEM_B64) {
+    throw new Error("EGRESS_ORIGIN_CA_HOSTS and EGRESS_ORIGIN_CA_PEM_B64 must be set together");
+  }
+  if (TLS_MODE !== "terminate") {
+    throw new Error("origin CAs require EGRESS_TLS_MODE=terminate");
+  }
+  const decoded = Buffer.from(ORIGIN_CA_PEM_B64, "base64");
+  if (decoded.length === 0 || decoded.length > MAX_ORIGIN_CA_BYTES) {
+    throw new Error("EGRESS_ORIGIN_CA_PEM_B64 must decode to a non-empty bounded bundle");
+  }
+  const pem = decoded.toString("utf8");
+  if (/PRIVATE KEY/i.test(pem)) {
+    throw new Error("EGRESS_ORIGIN_CA_PEM_B64 must contain certificates only");
+  }
+  const fingerprint = crypto.createHash("sha256").update(pem, "utf8").digest("hex");
+  const blocks = splitPemCertificates(pem);
+  if (blocks.length === 0 || blocks.length > MAX_ORIGIN_CA_CERTIFICATES) {
+    throw new Error(
+      "EGRESS_ORIGIN_CA_PEM_B64 must contain 1-" + MAX_ORIGIN_CA_CERTIFICATES + " certificates"
+    );
+  }
+  const certificates = blocks.map((block) => new crypto.X509Certificate(block));
+  for (const certificate of certificates) {
+    if (!certificate.ca) {
+      throw new Error("EGRESS_ORIGIN_CA_PEM_B64 must contain CA certificates only");
+    }
+  }
+  const canonical = certificates.map((certificate) => certificate.toString());
+  for (const host of ORIGIN_CA_HOSTS) {
+    const reason = originCaHostError(host);
+    if (reason) {
+      throw new Error("origin CA host " + reason + ": " + host);
+    }
+    originCaByHost.set(host, canonical);
+  }
+  originCaSha256 = fingerprint;
+  log("info", "egress origin CA configured", {
+    hosts: Array.from(originCaByHost.keys()),
+    certificates: canonical.length,
+    sha256: originCaSha256,
+  });
+  originCaInitialized = true;
+}
 
 function initTerminateMode() {
   if (TLS_MODE !== "terminate") {
@@ -407,6 +515,9 @@ function handleTunneledRequest(request, response, host, address, port, agent, tl
     maxHeaderSize: MAX_RESPONSE_HEADER_BYTES,
     timeout: IDLE_TIMEOUT_MS,
   }, (upstreamResponse) => {
+    // Only record the CA as used after the origin TLS handshake and response
+    // succeeded; a failed connection must not produce an audit "used" entry.
+    markOriginCaUsed(host);
     const status = upstreamResponse.statusCode || 502;
     if (status === 101 || (status >= 100 && status < 200)) {
       upstreamResponse.destroy();
@@ -587,7 +698,14 @@ function startTerminateTunnel(clientSocket, host, address, port, initial) {
       minVersion: "TLSv1.2",
       secureOptions: crypto.constants.SSL_OP_NO_RENEGOTIATION,
     });
-    const agent = new https.Agent({ keepAlive: true, maxSockets: 1, maxFreeSockets: 1 });
+    const originHost = normaliseHost(host);
+    const agentOptions = { keepAlive: true, maxSockets: 1, maxFreeSockets: 1 };
+    const originCas = originCaByHost.get(originHost);
+    if (originCas) {
+      // Keep the bundled public roots and add the scoped CA only for this host.
+      agentOptions.ca = [...tls.rootCertificates, ...originCas];
+    }
+    const agent = new https.Agent(agentOptions);
     let server = null;
     tlsSocket.on("error", (error) => {
       logDenied({
@@ -1216,6 +1334,11 @@ function runProxy() {
       failStartup(error.message);
     }
   }
+  try {
+    initOriginCAs();
+  } catch (error) {
+    failStartup(error.message);
+  }
 
   const server = http.createServer(handleRequest);
   server.on("connect", handleConnect);
@@ -1261,6 +1384,16 @@ if (process.argv.includes("--check-hello")) {
     const sni = process.argv[process.argv.indexOf("--check-leaf") + 1];
     const entry = leafFor(String(sni || ""));
     console.log(entry.certPem);
+    process.exit(0);
+  } catch (error) {
+    console.error(`ERROR ${error.message}`);
+    process.exit(1);
+  }
+} else if (process.argv.includes("--check-origin-ca")) {
+  try {
+    initOriginCAs();
+    console.log("ORIGIN_CA " + Array.from(originCaByHost.keys()).join(",")
+      + " sha256=" + originCaSha256);
     process.exit(0);
   } catch (error) {
     console.error(`ERROR ${error.message}`);

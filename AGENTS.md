@@ -172,6 +172,8 @@ and model-driven shell commands), `SANDBOX_IMAGE`, `SANDBOX_PROXY_IMAGE`,
 `SANDBOX_NETWORK` (`none` or `allowlist`), `SANDBOX_ALLOWED_HOSTS`,
 `SANDBOX_EGRESS_UPSTREAM_NETWORK`, `SANDBOX_EGRESS_PROBE_TIMEOUT_MS`,
 `SANDBOX_EGRESS_TLS_MODE` (`sni-only` default; `terminate` opts into D16 TLS termination),
+`SANDBOX_EGRESS_ORIGIN_CA_HOSTS`/`SANDBOX_EGRESS_ORIGIN_CA_B64` (opt-in,
+per-host origin CA bundle for `terminate` mode),
 `SANDBOX_EGRESS_PROXY` (reserved; rejected),
 `SANDBOX_ENV`, `SANDBOX_USER`, `SANDBOX_ALLOW_ROOT`,
 `SANDBOX_EXEC_TIMEOUT_SECONDS`, `SANDBOX_ARTIFACT_MAX_BYTES`,
@@ -221,7 +223,15 @@ no direct egress or external DNS; `SANDBOX_NETWORK=allowlist` routes traffic
 through a hardened proxy attached to an internal Docker network that validates
 the first CONNECT ClientHello SNI and rejects multiple SNI names/extra
 handshakes and CONNECT :80. TLS renegotiation and the encrypted inner Host are
-D16. Do not enable Docker mode for untrusted repos until D14 (the
+D16. In `terminate` mode, `SANDBOX_EGRESS_ORIGIN_CA_HOSTS` plus a
+base64-encoded PEM bundle in `SANDBOX_EGRESS_ORIGIN_CA_B64` add an opt-in
+origin CA for exact allowlisted hosts (private registries/pinned CAs, D27).
+The bundle must contain public certificate material only, never a private key,
+is scoped to those hosts, and does not relax `Host == SNI` or any other D16
+check. The supervisor logs the trusted hosts and a SHA-256 fingerprint and
+surfaces the proxy's configured/used audit lines when the sandbox is destroyed;
+"used" is recorded only after an origin response. Do not enable Docker
+mode for untrusted repos until D14 (the
 descendant-sweep fork race) is closed, and do not treat the allowlist as a
 hard host boundary until D16 is closed.
 Verification and harness children receive proxy/registry variables only after

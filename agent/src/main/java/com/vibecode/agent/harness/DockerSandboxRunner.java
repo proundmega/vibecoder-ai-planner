@@ -22,6 +22,8 @@ import java.nio.charset.CoderResult;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -30,6 +32,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -65,6 +68,12 @@ public final class DockerSandboxRunner implements SandboxRunner {
     private static final Duration COPY_TIMEOUT = Duration.ofSeconds(60);
     private static final Duration CONTROL_TIMEOUT = Duration.ofSeconds(30);
     private static final int CONTROL_OUTPUT_BYTES = 16_384;
+    // The proxy's per-use audit line can be older than 200 denial lines, so
+    // read a much larger bounded window at teardown. The creation-time trust
+    // log remains the durable record if this window is ever exceeded.
+    private static final int PROXY_LOG_TAIL = 10_000;
+    private static final int PROXY_LOG_OUTPUT_BYTES = 4 * 1024 * 1024;
+    private static final int PROXY_DENIAL_WARN_LIMIT = 200;
     private static final String LABEL = "vibecode.sandbox.managed=true";
 
     private final SandboxConfig config;
@@ -1274,6 +1283,13 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     + inspect.output());
             }
             awaitProxyReady(proxy);
+            if (!spec.egressOriginCaHosts().isEmpty()) {
+                // Durable supervisor-side record of the trust decision, even
+                // if the proxy container is removed before its logs are read.
+                log.info("Egress proxy origin CA trust: hosts={} sha256={}",
+                    String.join(",", spec.egressOriginCaHosts()),
+                    originCaSha256(spec.egressOriginCaPem()));
+            }
 
             // The proxy is attached to the internal network at start. Give it
             // the upstream network only after it is healthy so a broken proxy
@@ -1989,6 +2005,14 @@ public final class DockerSandboxRunner implements SandboxRunner {
         args.add("EGRESS_TUNNEL_PROBE_TIMEOUT_MS=" + spec.egressProbeTimeoutMs());
         args.add("-e");
         args.add("EGRESS_TLS_MODE=" + spec.egressTlsMode().value());
+        // The extra origin trust is scoped to these allowlisted hosts. Always
+        // clear the variables so a proxy image cannot inherit a trust override.
+        args.add("-e");
+        args.add("EGRESS_ORIGIN_CA_HOSTS=" + String.join(",", spec.egressOriginCaHosts()));
+        args.add("-e");
+        args.add("EGRESS_ORIGIN_CA_PEM_B64="
+            + Base64.getEncoder().encodeToString(
+                spec.egressOriginCaPem().getBytes(StandardCharsets.UTF_8)));
         // Never inherit a test seam from the proxy image. The resolver override
         // is only honored when EGRESS_TEST_MODE=1, which the supervisor clears.
         args.add("-e");
@@ -2009,6 +2033,17 @@ public final class DockerSandboxRunner implements SandboxRunner {
             throw new IllegalStateException("Could not load the egress proxy script", e);
         }
         return args;
+    }
+
+    /** Stable audit fingerprint of the canonical origin CA bundle. */
+    static String originCaSha256(String pem) {
+        try {
+            return HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256")
+                    .digest(pem.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
     }
 
     private static String proxyCommand() throws IOException {
@@ -2054,18 +2089,34 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
     }
 
-    private void stopEgress(String network, String proxyName) {
-        // Surface denials before the container is removed. The proxy logs one
-        // JSON line per decision.
+    void stopEgress(String network, String proxyName) {
+        // Surface denials and the origin-CA audit trail before the container is
+        // removed. The proxy logs one JSON line per decision/audit entry.
         DockerResult logs = runDocker(
-            List.of(config.dockerBinary(), "logs", "--tail", "200", proxyName),
+            List.of(config.dockerBinary(), "logs", "--tail",
+                String.valueOf(PROXY_LOG_TAIL), proxyName),
             CONTROL_TIMEOUT,
-            CONTROL_OUTPUT_BYTES
+            PROXY_LOG_OUTPUT_BYTES
         );
+        int denialsForwarded = 0;
+        int denialsSuppressed = 0;
         for (String line : logs.output().split("\n")) {
-            if (line.contains("\"decision\":\"deny\"")) {
-                log.warn("Sandbox egress denied: {}", line.trim());
+            String trimmed = line.trim();
+            if (trimmed.contains("\"decision\":\"deny\"")) {
+                if (denialsForwarded < PROXY_DENIAL_WARN_LIMIT) {
+                    log.warn("Sandbox egress denied: {}", trimmed);
+                    denialsForwarded++;
+                } else {
+                    denialsSuppressed++;
+                }
+            } else if (trimmed.contains("\"message\":\"egress origin CA")
+                || trimmed.contains("\"message\": \"egress origin CA")) {
+                log.info("Sandbox egress audit: {}", trimmed);
             }
+        }
+        if (denialsSuppressed > 0) {
+            log.warn("Sandbox egress denial summary: {} line(s) suppressed; {} forwarded",
+                denialsSuppressed, denialsForwarded);
         }
         DockerResult proxyRemoved = runDocker(
             List.of(config.dockerBinary(), "rm", "-f", proxyName),

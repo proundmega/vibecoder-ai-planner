@@ -30,7 +30,9 @@ public record SandboxSpec(
     String user,
     String seccompProfile,
     String apparmorProfile,
-    long artifactMaxBytes
+    long artifactMaxBytes,
+    List<String> egressOriginCaHosts,
+    String egressOriginCaPem
 ) {
 
     public SandboxSpec {
@@ -62,6 +64,13 @@ public record SandboxSpec(
         apparmorProfile = blankToNull(apparmorProfile);
         if (artifactMaxBytes <= 0) {
             artifactMaxBytes = SandboxConfig.DEFAULT_ARTIFACT_MAX_BYTES;
+        }
+        egressOriginCaHosts = egressOriginCaHosts == null
+            ? List.of() : List.copyOf(egressOriginCaHosts);
+        egressOriginCaPem = egressOriginCaPem == null ? "" : egressOriginCaPem;
+        if (egressOriginCaHosts.isEmpty() != egressOriginCaPem.isBlank()) {
+            throw new IllegalArgumentException(
+                "Origin CA hosts and PEM must be configured together");
         }
     }
 

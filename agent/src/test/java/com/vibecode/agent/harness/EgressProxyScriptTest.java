@@ -188,6 +188,148 @@ class EgressProxyScriptTest {
     }
 
     @Test
+    void acceptsAScopedOriginCa() throws Exception {
+        Result result = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "EGRESS_ORIGIN_CA_PEM_B64", originCaBase64("egress-origin-ca.pem")));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains("ORIGIN_CA registry.npmjs.org"), result.output);
+    }
+
+    @Test
+    void supervisorAndProxyFingerprintsMatch() throws Exception {
+        SandboxConfig config = SandboxConfig.from(Map.of(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate",
+            "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "SANDBOX_EGRESS_ORIGIN_CA_B64", originCaBase64("egress-origin-ca.pem")
+        )::get);
+        String canonical = config.egressOriginCaPem();
+        String encoded = Base64.getEncoder().encodeToString(
+            canonical.getBytes(StandardCharsets.US_ASCII));
+
+        Result result = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "EGRESS_ORIGIN_CA_PEM_B64", encoded));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains(
+            "sha256=" + DockerSandboxRunner.originCaSha256(canonical)), result.output);
+    }
+
+    @Test
+    void rejectsAnUnscopedOrInvalidOriginCa() throws Exception {
+        Result outside = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ORIGIN_CA_HOSTS", "other.example.com",
+            "EGRESS_ORIGIN_CA_PEM_B64", originCaBase64("egress-origin-ca.pem")));
+        assertEquals(1, outside.exitCode, outside.output);
+        assertTrue(outside.output.contains("not in the allowlist"), outside.output);
+
+        Result leaf = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "EGRESS_ORIGIN_CA_PEM_B64", originCaBase64("egress-origin-leaf.pem")));
+        assertEquals(1, leaf.exitCode, leaf.output);
+        assertTrue(leaf.output.contains("CA certificates only"), leaf.output);
+
+        Result missing = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org"));
+        assertEquals(1, missing.exitCode, missing.output);
+        assertTrue(missing.output.contains("must be set together"), missing.output);
+
+        Result sniOnly = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "sni-only",
+            "EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "EGRESS_ORIGIN_CA_PEM_B64", originCaBase64("egress-origin-ca.pem")));
+        assertEquals(1, sniOnly.exitCode, sniOnly.output);
+        assertTrue(sniOnly.output.contains("terminate"), sniOnly.output);
+    }
+
+    @Test
+    void rejectsWildcardBlockedAndOversizedOriginCaScopesAtTheProxy() throws Exception {
+        String ca = originCaBase64("egress-origin-ca.pem");
+        Result wildcard = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ALLOWED_HOSTS", "*.example.com",
+            "EGRESS_ORIGIN_CA_HOSTS", "*.example.com",
+            "EGRESS_ORIGIN_CA_PEM_B64", ca));
+        assertEquals(1, wildcard.exitCode, wildcard.output);
+        assertTrue(wildcard.output.contains("wildcards"), wildcard.output);
+
+        Result blocked = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ALLOWED_HOSTS", "metadata.google.internal",
+            "EGRESS_ORIGIN_CA_HOSTS", "metadata.google.internal",
+            "EGRESS_ORIGIN_CA_PEM_B64", ca));
+        assertEquals(1, blocked.exitCode, blocked.output);
+        assertTrue(blocked.output.contains("internal or metadata"), blocked.output);
+
+        Result ip = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ALLOWED_HOSTS", "127.0.0.1",
+            "EGRESS_ORIGIN_CA_HOSTS", "127.0.0.1",
+            "EGRESS_ORIGIN_CA_PEM_B64", ca));
+        assertEquals(1, ip.exitCode, ip.output);
+        assertTrue(ip.output.contains("IP literals"), ip.output);
+
+        Result tooMany = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "EGRESS_ORIGIN_CA_PEM_B64", Base64.getEncoder().encodeToString(
+                Files.readString(Path.of("src/test/resources/egress-origin-ca.pem"))
+                    .repeat(17).getBytes(StandardCharsets.US_ASCII))));
+        assertEquals(1, tooMany.exitCode, tooMany.output);
+        assertTrue(tooMany.output.contains("1-16"), tooMany.output);
+
+        Result tooLarge = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "EGRESS_ORIGIN_CA_PEM_B64", Base64.getEncoder().encodeToString(
+                new byte[64 * 1024 + 1])));
+        assertEquals(1, tooLarge.exitCode, tooLarge.output);
+        assertTrue(tooLarge.output.contains("bounded"), tooLarge.output);
+    }
+
+    @Test
+    void normalizesATrailingDotOriginCaHost() throws Exception {
+        Result result = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ALLOWED_HOSTS", "registry.npmjs.org",
+            "EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org.",
+            "EGRESS_ORIGIN_CA_PEM_B64", originCaBase64("egress-origin-ca.pem")));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains("ORIGIN_CA registry.npmjs.org"), result.output);
+    }
+
+    @Test
+    void rejectsPrivateKeyMaterialInTheProxy() throws Exception {
+        String key = Base64.getEncoder().encodeToString(
+            "-----BEGIN PRIVATE KEY-----\nnot-a-key\n-----END PRIVATE KEY-----\n"
+                .getBytes(StandardCharsets.US_ASCII));
+        Result result = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "EGRESS_ORIGIN_CA_PEM_B64", key));
+
+        assertEquals(1, result.exitCode, result.output);
+        assertTrue(result.output.contains("certificates only"), result.output);
+    }
+
+    private static String originCaBase64(String resource) throws IOException {
+        return Base64.getEncoder().encodeToString(
+            Files.readAllBytes(Path.of("src/test/resources", resource)));
+    }
+
+    @Test
     void rejectsUnknownTlsModes() throws Exception {
         Result result = run("--check-allow", "registry.npmjs.org:443", Map.of(
             "EGRESS_TLS_MODE", "mitm"));
@@ -301,6 +443,9 @@ class EgressProxyScriptTest {
     private Result run(String mode, String target, Map<String, String> extra) throws Exception {
         ProcessBuilder builder = new ProcessBuilder(
             List.of("node", script.toString(), mode, target));
+        builder.environment().remove("EGRESS_ORIGIN_CA_HOSTS");
+        builder.environment().remove("EGRESS_ORIGIN_CA_PEM_B64");
+        builder.environment().remove("NODE_EXTRA_CA_CERTS");
         builder.environment().put("EGRESS_ALLOWED_HOSTS",
             "registry.npmjs.org,*.githubusercontent.com,"
                 + "localtest.me,169.254.169.254.nip.io");
