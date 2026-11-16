@@ -106,6 +106,41 @@ class SandboxConfigTest {
     }
 
     @Test
+    void normalizesTrailingDotsForAllowlistsAndOriginCaHosts() throws IOException {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.example.com.",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate",
+            "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "registry.example.com.",
+            "SANDBOX_EGRESS_ORIGIN_CA_B64", originCaBase64("egress-origin-ca.pem")
+        )::get);
+
+        assertEquals(List.of("registry.example.com"), config.allowedHosts());
+        assertEquals(List.of("registry.example.com"), config.egressOriginCaHosts());
+    }
+
+    @Test
+    void reportsOriginCaHostValidationAgainstItsOwnVariable() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_IMAGE", "test:img",
+                "SANDBOX_NETWORK", "allowlist",
+                "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_TLS_MODE", "terminate",
+                "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "bad host",
+                "SANDBOX_EGRESS_ORIGIN_CA_B64", originCaBase64("egress-origin-ca.pem")
+            )::get));
+
+        assertTrue(error.getMessage().contains("SANDBOX_EGRESS_ORIGIN_CA_HOSTS"),
+            error.getMessage());
+        assertFalse(error.getMessage().contains("SANDBOX_ALLOWED_HOSTS"),
+            error.getMessage());
+    }
+
+    @Test
     void rejectsAHalfConfiguredOriginCa() throws IOException {
         IllegalStateException hostsOnly = assertThrows(IllegalStateException.class,
             () -> SandboxConfig.from(env(

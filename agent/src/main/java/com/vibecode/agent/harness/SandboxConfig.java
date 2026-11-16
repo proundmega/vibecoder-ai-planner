@@ -434,7 +434,7 @@ public record SandboxConfig(
         }
         List<String> hosts = new ArrayList<>();
         for (String part : value.split("[;,]")) {
-            String host = part.trim().toLowerCase(Locale.ROOT);
+            String host = stripTrailingDot(part.trim().toLowerCase(Locale.ROOT));
             if (host.isEmpty()) {
                 continue;
             }
@@ -452,7 +452,7 @@ public record SandboxConfig(
                 "SANDBOX_EGRESS_ORIGIN_CA_HOSTS must list exact hosts, not wildcards: "
                     + host);
         }
-        validateHostPattern(host);
+        validateHostPattern(host, "SANDBOX_EGRESS_ORIGIN_CA_HOSTS");
     }
 
     /**
@@ -556,7 +556,7 @@ public record SandboxConfig(
         }
         List<String> hosts = new ArrayList<>();
         for (String part : value.split("[;,]")) {
-            String host = part.trim().toLowerCase(Locale.ROOT);
+            String host = stripTrailingDot(part.trim().toLowerCase(Locale.ROOT));
             if (host.isEmpty()) {
                 continue;
             }
@@ -566,28 +566,35 @@ public record SandboxConfig(
         return List.copyOf(hosts);
     }
 
+    private static String stripTrailingDot(String host) {
+        return host.endsWith(".") ? host.substring(0, host.length() - 1) : host;
+    }
+
     private static void validateHostPattern(String pattern) {
+        validateHostPattern(pattern, "SANDBOX_ALLOWED_HOSTS");
+    }
+
+    private static void validateHostPattern(String pattern, String name) {
         String host = pattern;
         if (host.startsWith("*.")) {
             host = host.substring(2);
             if (host.isEmpty() || !host.contains(".")) {
                 throw new IllegalStateException(
-                    "SANDBOX_ALLOWED_HOSTS wildcard must be *.domain.tld: " + pattern);
+                    name + " wildcard must be *.domain.tld: " + pattern);
             }
         } else if (host.contains("*")) {
             throw new IllegalStateException(
-                "SANDBOX_ALLOWED_HOSTS only supports a leading *.: " + pattern);
+                name + " only supports a leading *.: " + pattern);
         }
         if (host.isEmpty() || host.length() > 253) {
-            throw new IllegalStateException("SANDBOX_ALLOWED_HOSTS has an invalid host: " + pattern);
+            throw new IllegalStateException(name + " has an invalid host: " + pattern);
         }
         if (!host.matches("[a-z0-9.-]+")) {
-            throw new IllegalStateException(
-                "SANDBOX_ALLOWED_HOSTS has an invalid host: " + pattern);
+            throw new IllegalStateException(name + " has an invalid host: " + pattern);
         }
         if (isIpLiteral(host)) {
             throw new IllegalStateException(
-                "SANDBOX_ALLOWED_HOSTS must list hostnames, not IP literals: " + pattern);
+                name + " must list hostnames, not IP literals: " + pattern);
         }
         if (host.equals("localhost") || host.endsWith(".localhost")
             || host.equals("0.0.0.0") || host.equals("::") || host.equals("::1")
@@ -597,7 +604,7 @@ public record SandboxConfig(
             || host.equals("host.docker.internal")
             || host.equals("gateway.docker.internal")) {
             throw new IllegalStateException(
-                "SANDBOX_ALLOWED_HOSTS must not allow internal or metadata hosts: " + pattern);
+                name + " must not allow internal or metadata hosts: " + pattern);
         }
     }
 

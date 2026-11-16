@@ -226,8 +226,11 @@ handshakes and CONNECT :80. TLS renegotiation and the encrypted inner Host are
 D16. In `terminate` mode, `SANDBOX_EGRESS_ORIGIN_CA_HOSTS` plus a
 base64-encoded PEM bundle in `SANDBOX_EGRESS_ORIGIN_CA_B64` add an opt-in
 origin CA for exact allowlisted hosts (private registries/pinned CAs, D27).
-The bundle must contain public CA certificates only, is scoped to those hosts,
-and does not relax `Host == SNI` or any other D16 check. Do not enable Docker
+The bundle must contain public certificate material only, never a private key,
+is scoped to those hosts, and does not relax `Host == SNI` or any other D16
+check. The supervisor logs the trusted hosts and a SHA-256 fingerprint and
+surfaces the proxy's configured/used audit lines when the sandbox is destroyed;
+"used" is recorded only after an origin response. Do not enable Docker
 mode for untrusted repos until D14 (the
 descendant-sweep fork race) is closed, and do not treat the allowlist as a
 hard host boundary until D16 is closed.

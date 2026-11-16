@@ -72,6 +72,9 @@ class EgressProxyTerminateIntegrationTest {
         ProcessBuilder proxyBuilder = new ProcessBuilder(
             "node", Path.of("src/main/resources/sandbox/egress-proxy.js").toString());
         proxyBuilder.redirectErrorStream(true);
+        proxyBuilder.environment().remove("EGRESS_ORIGIN_CA_HOSTS");
+        proxyBuilder.environment().remove("EGRESS_ORIGIN_CA_PEM_B64");
+        proxyBuilder.environment().remove("NODE_EXTRA_CA_CERTS");
         proxyBuilder.environment().putAll(java.util.Map.of(
             "EGRESS_ALLOWED_HOSTS", "localhost.test",
             "EGRESS_TLS_MODE", "terminate",
@@ -270,6 +273,25 @@ class EgressProxyTerminateIntegrationTest {
             } finally {
                 stop(untrusted);
             }
+
+            int failedOriginPort = freePort();
+            int failedPort = freePort();
+            Path failedCaDir = tempDir.resolve("proxy-ca-failed-origin");
+            Process failed = startProxyWithEnv(failedPort, failedCaDir, failedOriginPort, Map.of(
+                "EGRESS_ALLOWED_HOSTS", "localhost.test",
+                "EGRESS_ORIGIN_CA_HOSTS", "localhost.test",
+                "EGRESS_ORIGIN_CA_PEM_B64", caBase64
+            ));
+            try {
+                BlockingQueue<String> failedLogs = awaitListening(failed);
+                awaitPort(failedPort);
+                SSLContext context = trust(readCertificate(failedCaDir.resolve("ca.crt")));
+                String denied = request(context, failedPort, failedOriginPort, "localhost.test");
+                assertTrue(denied.contains("502") || denied.isEmpty(), denied);
+                assertFalse(hasLog(failedLogs, "egress origin CA used", 1000));
+            } finally {
+                stop(failed);
+            }
         } finally {
             stop(origin);
         }
@@ -320,6 +342,9 @@ class EgressProxyTerminateIntegrationTest {
             "EGRESS_TEST_CONNECT_PORT", String.valueOf(originPort)
         ));
         env.putAll(extra);
+        builder.environment().remove("EGRESS_ORIGIN_CA_HOSTS");
+        builder.environment().remove("EGRESS_ORIGIN_CA_PEM_B64");
+        builder.environment().remove("NODE_EXTRA_CA_CERTS");
         builder.environment().putAll(env);
         // Never inherit the JVM's trust override; the scoped CA must be the
         // only reason the private origin is trusted.
@@ -339,6 +364,21 @@ class EgressProxyTerminateIntegrationTest {
             }
         }
         throw new AssertionError("proxy did not log: " + message);
+    }
+
+    private static boolean hasLog(
+        BlockingQueue<String> lines,
+        String message,
+        long timeoutMs
+    ) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofMillis(timeoutMs).toNanos();
+        while (System.nanoTime() < deadline) {
+            String line = lines.poll(100, TimeUnit.MILLISECONDS);
+            if (line != null && line.contains(message)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void awaitMessage(Process process, String message) throws Exception {

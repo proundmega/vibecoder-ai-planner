@@ -1,10 +1,15 @@
 package com.vibecode.agent.harness;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -207,10 +212,47 @@ class DockerSandboxRunnerTest {
         String joined = String.join(" ", args);
 
         assertTrue(joined.contains("EGRESS_ORIGIN_CA_HOSTS=registry.npmjs.org"), joined);
-        assertTrue(joined.contains("EGRESS_ORIGIN_CA_PEM_B64="), joined);
+        String encoded = args.stream()
+            .filter(argument -> argument.startsWith("EGRESS_ORIGIN_CA_PEM_B64="))
+            .findFirst()
+            .orElseThrow()
+            .substring("EGRESS_ORIGIN_CA_PEM_B64=".length());
+        assertEquals(spec.egressOriginCaPem(),
+            new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8));
         assertFalse(joined.contains("PRIVATE KEY"), joined);
         assertEquals(List.of("registry.npmjs.org"), spec.egressOriginCaHosts());
         assertTrue(spec.egressOriginCaPem().contains("BEGIN CERTIFICATE"));
+        assertTrue(DockerSandboxRunner.originCaSha256(spec.egressOriginCaPem())
+            .matches("[0-9a-f]{64}"));
+    }
+
+    @Test
+    void originCaNeverReachesTheSandboxContainer() throws IOException {
+        String ca = Base64.getEncoder().encodeToString(
+            Files.readAllBytes(Path.of("src/test/resources/egress-origin-ca.pem")));
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate",
+            "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "SANDBOX_EGRESS_ORIGIN_CA_B64", ca
+        )::get);
+        SandboxSpec spec = config.specFor(workspace());
+        DockerSandboxRunner.EgressRuntime egress = new DockerSandboxRunner.EgressRuntime(
+            "internal-1", "proxy-1", "172.19.0.2", "http://172.19.0.2:3128");
+
+        String create = String.join(" ",
+            DockerSandboxRunner.buildCreateArgs(spec, "sandbox-1"));
+        Map<String, String> env = DockerSandboxRunner.containerEnvironment(spec, egress);
+
+        assertFalse(create.contains("EGRESS_ORIGIN_CA"), create);
+        assertFalse(env.keySet().stream().anyMatch(key -> key.startsWith("EGRESS_ORIGIN_CA")),
+            env.toString());
+        assertFalse(env.values().stream().anyMatch(value ->
+            value.contains("BEGIN CERTIFICATE") || value.contains(ca)), env.toString());
     }
 
     @Test
@@ -589,6 +631,43 @@ class DockerSandboxRunnerTest {
         assertTrue(logText.contains("logs --tail 200 vibecode-egress-proxy-"), logText);
         assertTrue(logText.contains("rm -f vibecode-egress-proxy-"), logText);
         assertTrue(logText.contains("network rm vibecode-egress-"), logText);
+    }
+
+    @Test
+    void surfacesOriginCaAuditLinesBeforeRemovingTheProxy() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker-audit.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              logs)
+                echo '{"level":"info","message":"egress origin CA configured","hosts":["registry.npmjs.org"],"sha256":"abc123"}'
+                echo '{"level":"info","message":"egress origin CA used","host":"registry.npmjs.org","sha256":"abc123"}'
+                echo '{"level":"warn","message":"egress denied","decision":"deny","host":"evil.test","reason":"not in allowlist"}'
+                exit 0
+                ;;
+              rm) exit 0 ;;
+              network) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+
+        Logger logger = (Logger) LoggerFactory.getLogger(DockerSandboxRunner.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            runner.stopEgress("internal-1", "proxy-1");
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        String messages = appender.list.stream()
+            .map(ILoggingEvent::getFormattedMessage)
+            .collect(java.util.stream.Collectors.joining("\n"));
+        assertTrue(messages.contains("egress origin CA configured"), messages);
+        assertTrue(messages.contains("egress origin CA used"), messages);
+        assertTrue(messages.contains("abc123"), messages);
+        assertTrue(messages.contains("egress denied"), messages);
     }
 
     @Test

@@ -31,7 +31,7 @@ const { spawnSync } = require("child_process");
 const PORT = Number(process.env.EGRESS_PORT || "3128");
 const ALLOW = String(process.env.EGRESS_ALLOWED_HOSTS || "")
   .split(",")
-  .map((value) => value.trim().toLowerCase())
+  .map((value) => normaliseHost(value))
   .filter(Boolean);
 const CONNECT_TIMEOUT_MS = 10_000;
 const IDLE_TIMEOUT_MS = 120_000;
@@ -130,9 +130,45 @@ const leafCache = new Map();
 const originCaByHost = new Map();
 const originCaUsed = new Set();
 let originCaInitialized = false;
+let originCaSha256 = null;
 
 function splitPemCertificates(pem) {
   return pem.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+}
+
+function originCaHostError(host) {
+  if (!host || host.length > 253) {
+    return "has an invalid host";
+  }
+  if (host.includes("*")) {
+    return "wildcards are not allowed";
+  }
+  if (isIpLiteral(host)) {
+    return "must list hostnames, not IP literals";
+  }
+  const blocked = isBlockedName(host);
+  if (blocked) {
+    return "must not allow internal or metadata hosts: " + blocked;
+  }
+  if (!/^[a-z0-9.-]+$/.test(host)) {
+    return "has an invalid host";
+  }
+  if (!matchesAllowlist(host)) {
+    return "is not in the allowlist";
+  }
+  return null;
+}
+
+function markOriginCaUsed(host) {
+  const value = normaliseHost(host);
+  if (!originCaByHost.has(value) || originCaUsed.has(value)) {
+    return;
+  }
+  originCaUsed.add(value);
+  log("info", "egress origin CA used", {
+    host: value,
+    sha256: originCaSha256,
+  });
 }
 
 /**
@@ -163,6 +199,7 @@ function initOriginCAs() {
   if (/PRIVATE KEY/i.test(pem)) {
     throw new Error("EGRESS_ORIGIN_CA_PEM_B64 must contain certificates only");
   }
+  const fingerprint = crypto.createHash("sha256").update(pem, "utf8").digest("hex");
   const blocks = splitPemCertificates(pem);
   if (blocks.length === 0 || blocks.length > MAX_ORIGIN_CA_CERTIFICATES) {
     throw new Error(
@@ -177,14 +214,17 @@ function initOriginCAs() {
   }
   const canonical = certificates.map((certificate) => certificate.toString());
   for (const host of ORIGIN_CA_HOSTS) {
-    if (!matchesAllowlist(host)) {
-      throw new Error("origin CA host is not in the allowlist: " + host);
+    const reason = originCaHostError(host);
+    if (reason) {
+      throw new Error("origin CA host " + reason + ": " + host);
     }
     originCaByHost.set(host, canonical);
   }
+  originCaSha256 = fingerprint;
   log("info", "egress origin CA configured", {
     hosts: Array.from(originCaByHost.keys()),
     certificates: canonical.length,
+    sha256: originCaSha256,
   });
   originCaInitialized = true;
 }
@@ -475,6 +515,9 @@ function handleTunneledRequest(request, response, host, address, port, agent, tl
     maxHeaderSize: MAX_RESPONSE_HEADER_BYTES,
     timeout: IDLE_TIMEOUT_MS,
   }, (upstreamResponse) => {
+    // Only record the CA as used after the origin TLS handshake and response
+    // succeeded; a failed connection must not produce an audit "used" entry.
+    markOriginCaUsed(host);
     const status = upstreamResponse.statusCode || 502;
     if (status === 101 || (status >= 100 && status < 200)) {
       upstreamResponse.destroy();
@@ -661,10 +704,6 @@ function startTerminateTunnel(clientSocket, host, address, port, initial) {
     if (originCas) {
       // Keep the bundled public roots and add the scoped CA only for this host.
       agentOptions.ca = [...tls.rootCertificates, ...originCas];
-      if (!originCaUsed.has(originHost)) {
-        originCaUsed.add(originHost);
-        log("info", "egress origin CA used", { host: originHost });
-      }
     }
     const agent = new https.Agent(agentOptions);
     let server = null;
