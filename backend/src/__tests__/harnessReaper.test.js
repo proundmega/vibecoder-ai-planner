@@ -2,10 +2,22 @@ jest.mock('../services/HarnessRunService', () => ({
   reapExpiredLeases: jest.fn(),
   listTerminalRunsForReconcile: jest.fn(),
   reconcileRun: jest.fn(),
+  getRun: jest.fn(),
+  markArtifactsFinalized: jest.fn(),
+}));
+
+jest.mock('../services/HarnessEventService', () => ({
+  ensureTerminalEvent: jest.fn(),
+}));
+
+jest.mock('../services/HarnessUsageService', () => ({
+  flushRunToUsageLogs: jest.fn(),
 }));
 
 const HarnessReaper = require('../services/HarnessReaper');
 const HarnessRunService = require('../services/HarnessRunService');
+const HarnessEventService = require('../services/HarnessEventService');
+const HarnessUsageService = require('../services/HarnessUsageService');
 
 const RUN_A = '11111111-1111-4111-8111-111111111111';
 const RUN_B = '22222222-2222-4222-8222-222222222222';
@@ -18,6 +30,12 @@ describe('HarnessReaper', () => {
     HarnessRunService.reconcileRun.mockResolvedValue({
       run_id: RUN_A, ticket_id: 1, adopted: false, released: false, marked: true,
     });
+    HarnessRunService.getRun.mockResolvedValue({
+      id: RUN_A, status: 'failed', error: 'lease expired', head_sha: null, pr_url: null,
+    });
+    HarnessEventService.ensureTerminalEvent.mockResolvedValue(null);
+    HarnessUsageService.flushRunToUsageLogs.mockResolvedValue({ inserted: 0 });
+    HarnessRunService.markArtifactsFinalized.mockResolvedValue({ id: RUN_A });
   });
 
   it('reconciles reaped runs and pending terminal runs', async () => {
@@ -38,6 +56,9 @@ describe('HarnessReaper', () => {
     expect(HarnessRunService.reapExpiredLeases).toHaveBeenCalledWith(10, 60);
     expect(HarnessRunService.listTerminalRunsForReconcile).toHaveBeenCalledWith(10);
     expect(HarnessRunService.reconcileRun).toHaveBeenCalledTimes(2);
+    expect(HarnessEventService.ensureTerminalEvent).toHaveBeenCalledTimes(2);
+    expect(HarnessUsageService.flushRunToUsageLogs).toHaveBeenCalledTimes(2);
+    expect(HarnessRunService.markArtifactsFinalized).toHaveBeenCalledTimes(2);
     expect(summary).toEqual({
       reaped: 1,
       released: 1,
@@ -96,6 +117,18 @@ describe('HarnessReaper', () => {
     const second = await HarnessReaper.runOnce();
     expect(second.released).toBe(1);
     expect(second.skipped).toEqual([]);
+  });
+
+  it('does not mark artifacts finalized when one backfill step fails', async () => {
+    HarnessRunService.reapExpiredLeases.mockResolvedValue([
+      { ticket_id: 1, run_id: RUN_A, agent_id: 7, run_failed: true },
+    ]);
+    HarnessEventService.ensureTerminalEvent.mockRejectedValueOnce(new Error('event store down'));
+
+    await HarnessReaper.runOnce();
+
+    expect(HarnessUsageService.flushRunToUsageLogs).toHaveBeenCalledWith(RUN_A);
+    expect(HarnessRunService.markArtifactsFinalized).not.toHaveBeenCalled();
   });
 
   it('keeps sweeping when pending terminal runs cannot be listed', async () => {

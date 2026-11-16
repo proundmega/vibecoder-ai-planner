@@ -13,9 +13,14 @@ jest.mock('../services/HarnessEventService', () => ({
   ensureTerminalEvent: jest.fn().mockResolvedValue(null),
 }));
 
+jest.mock('../services/HarnessBudgetService', () => ({
+  assertCanStart: jest.fn().mockResolvedValue({}),
+}));
+
 const HarnessRunService = require('../services/HarnessRunService');
 const DependencyService = require('../services/DependencyService');
 const HarnessEventService = require('../services/HarnessEventService');
+const HarnessBudgetService = require('../services/HarnessBudgetService');
 const { pool } = require('../db');
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
@@ -26,6 +31,7 @@ describe('HarnessRunService', () => {
     pool.query.mockResolvedValue({ rows: [] });
     DependencyService.assertReady.mockResolvedValue({ ready: true });
     HarnessEventService.ensureTerminalEvent.mockResolvedValue(null);
+    HarnessBudgetService.assertCanStart.mockResolvedValue({ reservedCostUsd: 2 });
   });
 
   describe('startRun', () => {
@@ -63,6 +69,7 @@ describe('HarnessRunService', () => {
       });
 
       expect(result).toEqual(row);
+      expect(result.budget_policy).toEqual({ reservedCostUsd: 2 });
       expect(DependencyService.assertReady).toHaveBeenCalledWith(42, {
         client,
         lock: true,
@@ -70,7 +77,7 @@ describe('HarnessRunService', () => {
       });
       expect(client.query.mock.calls[2][0]).toContain('INSERT INTO harness_runs');
       expect(client.query.mock.calls[2][0]).toContain('project_id');
-      expect(client.query.mock.calls[2][0]).toContain('t.project_id');
+      expect(client.query.mock.calls[2][0]).toContain('budget_reserved_usd');
       expect(client.query.mock.calls[2][1]).toEqual([
         42,
         7,
@@ -83,6 +90,7 @@ describe('HarnessRunService', () => {
         1,
         null,
         null,
+        2,
       ]);
     });
 
@@ -110,9 +118,10 @@ describe('HarnessRunService', () => {
       expect(client.query.mock.calls[2][0]).toContain('FROM repo_profiles');
       expect(client.query.mock.calls[2][0]).toContain("rp.status = 'active'");
       expect(client.query.mock.calls[2][0]).toContain('v.profile_hash = rp.profile_hash');
-      expect(client.query.mock.calls[3][1].slice(-2)).toEqual([
+      expect(client.query.mock.calls[3][1].slice(-3)).toEqual([
         '11111111-1111-4111-8111-111111111111',
         3,
+        2,
       ]);
     });
 
@@ -267,6 +276,27 @@ describe('HarnessRunService', () => {
       expect(sql).toContain('ticket_status');
       expect(sql).toContain('lease_expires_at');
       expect(sql).toContain('LEFT JOIN LATERAL');
+    });
+
+    it('lists recent project runs for replay with a bounded limit', async () => {
+      const rows = [{ id: RUN_ID, ticket_title: 'Smoke' }];
+      pool.query.mockResolvedValueOnce({ rows });
+
+      await expect(
+        HarnessRunService.listRunsForProject(7, { limit: 10 })
+      ).resolves.toEqual(rows);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain('COALESCE(r.project_id, t.project_id) = $1');
+      expect(sql).toContain('ORDER BY r.started_at DESC');
+      expect(sql).toContain('ticket_title');
+      expect(params).toEqual([7, 10]);
+    });
+
+    it('rejects an out-of-range project run limit', async () => {
+      await expect(
+        HarnessRunService.listRunsForProject(7, { limit: 500 })
+      ).rejects.toThrow('limit must be an integer between 1 and 200');
     });
 
     it('lists checkpoints in creation order', async () => {
@@ -584,7 +614,7 @@ describe('HarnessRunService', () => {
       ).resolves.toEqual(ticket);
 
       const [sql, params] = pool.query.mock.calls[0];
-      expect(sql).toContain("r.status = 'failed'");
+      expect(sql).toContain("r.status IN ('failed', 'budget_exceeded')");
       expect(sql).toContain("NULLIF(BTRIM(r.pr_url), '') IS NULL");
       expect(sql).toContain("NULLIF(BTRIM(r.head_sha), '') IS NULL");
       expect(sql).toContain("t.status = 'in_progress'");
@@ -602,7 +632,9 @@ describe('HarnessRunService', () => {
       ).resolves.toEqual(ticket);
 
       const [sql, params] = pool.query.mock.calls[0];
-      expect(sql).toContain("r.status IN ('failed', 'dead_letter')");
+      expect(sql).toContain(
+        "r.status IN ('failed', 'dead_letter', 'budget_exceeded')"
+      );
       expect(params).toEqual([RUN_ID, null]);
     });
 

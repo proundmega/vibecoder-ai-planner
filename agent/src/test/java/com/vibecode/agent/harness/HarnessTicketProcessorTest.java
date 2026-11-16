@@ -7,6 +7,7 @@ import com.vibecode.agent.model.TicketMessage;
 import com.vibecode.agent.service.ApiService;
 import com.vibecode.agent.service.GitHubService;
 import com.vibecode.agent.service.WorkspaceManager;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -43,6 +45,7 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -1565,6 +1568,47 @@ class HarnessTicketProcessorTest {
     }
 
     @Test
+    void stopsAtAHardBudgetLimitWithoutPublishingAndReturnsTheTicket() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.startHarnessRun(any(), anyString(), any(), any(), any(), anyInt()))
+            .thenReturn(Map.of("id", "run-1", "project_id", 7L));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.getLastBudgetPolicy()).thenReturn(Map.of(
+            "limits", Map.of(
+                "maxDurationSeconds", 3600,
+                "maxInputTokens", 1,
+                "maxOutputTokens", 1000,
+                "maxCostUsd", 5,
+                "maxToolCalls", 100,
+                "maxRetries", 2,
+                "warnRatio", 0.8),
+            "routing", Map.of(
+                "policy", "free_only",
+                "freeModel", "beam-free",
+                "complexityThreshold", 3)));
+        when(apiService.finishHarnessRun(
+            eq("run-1"), eq("budget_exceeded"), anyString(), isNull(), isNull()))
+            .thenReturn("budget_exceeded");
+        when(apiService.releaseHarnessTicket("run-1")).thenReturn(true);
+        doAnswer(invocation -> {
+            Consumer<HarnessEvent> listener = invocation.getArgument(1);
+            listener.accept(tokenEvent(100));
+            return null;
+        }).when(harness).subscribe(anyString(), any());
+
+        processor.processTicket(ticket());
+
+        verify(harness, atLeastOnce()).close();
+        verify(apiService).finishHarnessRun(
+            eq("run-1"), eq("budget_exceeded"), anyString(), isNull(), isNull());
+        verify(apiService).releaseHarnessTicket("run-1");
+        verify(workspace, never()).stageFreshDiff();
+        verify(gitHubService, never()).createPullRequest(
+            anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
     void emitsACompleteCorrelatedTimelineForASuccessfulRun() throws Exception {
         when(config.getAgentId()).thenReturn("7");
         when(apiService.startHarnessRun(any(), anyString(), any(), any(), any(), anyInt()))
@@ -1581,25 +1625,140 @@ class HarnessTicketProcessorTest {
             .map(event -> String.valueOf(event.get("type")))
             .toList();
         assertTrue(types.contains("run.started"), types.toString());
+        assertTrue(types.contains("routing.decided"), types.toString());
         assertTrue(types.contains("prompt.sent"), types.toString());
         assertTrue(types.contains("verification.result"), types.toString());
         assertTrue(types.contains("diff.collected"), types.toString());
         assertTrue(types.contains("publish.started"), types.toString());
         assertTrue(types.contains("pr.opened"), types.toString());
         assertTrue(types.contains("run.succeeded"), types.toString());
+        assertEquals(1, types.stream().filter("prompt.sent"::equals).count());
+        verify(harness, times(1)).subscribe(anyString(), any());
 
         Map<String, Object> started = events.getAllValues().stream()
             .filter(event -> "run.started".equals(event.get("type")))
             .findFirst()
             .orElseThrow();
-        assertEquals(UUID.nameUUIDFromBytes(
-                "run-1".getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString(),
-            started.get("runId"));
         assertEquals(started.get("traceId"), events.getAllValues().stream()
             .filter(event -> "run.succeeded".equals(event.get("type")))
             .findFirst()
             .orElseThrow()
             .get("traceId"));
+        assertEquals(UUID.nameUUIDFromBytes("run-1".getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                .toString(),
+            started.get("runId"));
+    }
+
+    @Test
+    void retriesOnceWithTheFallbackModelOnATransientProviderFailure() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.startHarnessRun(any(), anyString(), any(), any(), any(), anyInt()))
+            .thenReturn(Map.of("id", "run-1", "project_id", 7L));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.getLastBudgetPolicy()).thenReturn(Map.of(
+            "limits", Map.of(
+                "maxDurationSeconds", 3600,
+                "maxInputTokens", 100000,
+                "maxOutputTokens", 100000,
+                "maxCostUsd", 5,
+                "maxToolCalls", 100,
+                "maxRetries", 2,
+                "warnRatio", 0.8),
+            "routing", Map.of(
+                "policy", "free_then_paid",
+                "freeModel", "beam-free",
+                "paidModel", "gpt-4o",
+                "complexityThreshold", 3),
+            "prices", Map.of(
+                "beam-free", Map.of(
+                    "inputPerMillion", 0, "outputPerMillion", 0, "cachedPerMillion", 0),
+                "gpt-4o", Map.of(
+                    "inputPerMillion", 2.5, "outputPerMillion", 10, "cachedPerMillion", 1.25))));
+        doThrow(new IOException("503 provider unavailable"))
+            .doNothing()
+            .when(harness).sendPrompt(anyString(), anyString());
+
+        processor.processTicket(ticket());
+
+        verify(harness, times(2)).sendPrompt(eq("ses_test"), anyString());
+        verify(apiService).finishHarnessRun(
+            eq("run-1"), eq("succeeded"), isNull(), eq("abc1234"),
+            eq("https://github.com/owner/repo/pull/7"));
+
+        ArgumentCaptor<Map<String, Object>> events =
+            ArgumentCaptor.forClass(Map.class);
+        verify(apiService, atLeastOnce()).emitHarnessEvent(events.capture());
+        boolean fellBack = events.getAllValues().stream()
+            .filter(event -> "routing.decided".equals(event.get("type")))
+            .anyMatch(event -> {
+                Object payload = event.get("payload");
+                return payload instanceof Map<?, ?> map
+                    && "gpt-4o".equals(map.get("selected"));
+            });
+        assertTrue(fellBack, "expected a routing.decided event selecting the fallback model");
+    }
+
+    @Test
+    void stopsMidRunWhenTheProjectDailyBudgetIsExhausted() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.startHarnessRun(any(), anyString(), any(), any(), any(), anyInt()))
+            .thenReturn(Map.of("id", "run-1", "project_id", 7L));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.getLastBudgetPolicy()).thenReturn(Map.of(
+            "limits", Map.of(
+                "maxDurationSeconds", 3600,
+                "maxInputTokens", 100000,
+                "maxOutputTokens", 100000,
+                "maxCostUsd", 5,
+                "maxToolCalls", 100,
+                "maxRetries", 2,
+                "warnRatio", 0.8),
+            "quotas", Map.of("dailyCostUsd", 10),
+            "dailySpendUsd", 9.99,
+            "routing", Map.of(
+                "policy", "free_only",
+                "freeModel", "beam-free",
+                "complexityThreshold", 3)));
+        when(apiService.finishHarnessRun(
+            eq("run-1"), eq("budget_exceeded"), anyString(), isNull(), isNull()))
+            .thenReturn("budget_exceeded");
+        when(apiService.releaseHarnessTicket("run-1")).thenReturn(true);
+        doAnswer(invocation -> {
+            Consumer<HarnessEvent> listener = invocation.getArgument(1);
+            listener.accept(costEvent(0.25));
+            return null;
+        }).when(harness).subscribe(anyString(), any());
+
+        processor.processTicket(ticket());
+
+        verify(apiService).finishHarnessRun(
+            eq("run-1"), eq("budget_exceeded"), anyString(), isNull(), isNull());
+        verify(workspace, never()).stageFreshDiff();
+    }
+
+    private HarnessEvent costEvent(double costUsd) {
+        try {
+            return new HarnessEvent("message.updated", new ObjectMapper().readTree(
+                "{\"type\":\"message.updated\",\"properties\":{\"info\":{"
+                    + "\"id\":\"msg-cost\",\"cost\":" + costUsd
+                    + ",\"tokens\":{\"input\":1,\"output\":1}}}}"),
+                System.currentTimeMillis());
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private HarnessEvent tokenEvent(int inputTokens) {
+        try {
+            return new HarnessEvent("message.updated", new ObjectMapper().readTree(
+                "{\"type\":\"message.updated\",\"properties\":{\"info\":{"
+                    + "\"id\":\"msg-1\",\"tokens\":{\"input\":" + inputTokens
+                    + ",\"output\":1}}}}"), System.currentTimeMillis());
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private HarnessTicketProcessor dockerProcessor(SandboxRunner sandboxRunner) {

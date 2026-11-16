@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const HarnessRunService = require('../services/HarnessRunService');
+const HarnessBudgetService = require('../services/HarnessBudgetService');
+const HarnessAuditService = require('../services/HarnessAuditService');
+const HarnessUsageService = require('../services/HarnessUsageService');
+const HarnessEventService = require('../services/HarnessEventService');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
 const { verifyTokenOrAgent } = require('../middleware/auth');
@@ -139,7 +143,37 @@ router.post('/runs', verifyTokenOrAgent, async (req, res, next) => {
       repoProfileVersion,
     });
 
-    res.status(201).json({ success: true, data: run });
+    // The supervisor needs the budget/routing policy before it creates the
+    // session. Prefer the policy resolved inside the start transaction; only
+    // fall back to a second read for legacy callers/rows.
+    let budgetPolicy = run.budget_policy || null;
+    const { budget_policy: _startPolicy, ...runData } = run;
+    if (!budgetPolicy) {
+      try {
+        budgetPolicy = await HarnessBudgetService.getPolicy(run.project_id, {
+          ticketId: run.ticket_id,
+          agentId,
+          extraModels: run.model ? [run.model] : [],
+        });
+      } catch (policyError) {
+        logger.warn(`Could not load harness budget policy for run ${run.id}: ${policyError.message}`);
+      }
+    }
+    const reserved = Number(run.budget_reserved_usd) || 0;
+    if (budgetPolicy) {
+      budgetPolicy = { ...budgetPolicy, reservedCostUsd: reserved };
+    } else {
+      // Fail closed enough to finish locally: keep the reservation cap and a
+      // free-only routing hint rather than silently using unconstrained defaults.
+      budgetPolicy = {
+        source: 'reservation_only',
+        reservedCostUsd: reserved,
+        routing: { policy: 'free_only' },
+        ...(reserved > 0 ? { limits: { maxCostUsd: reserved } } : {}),
+      };
+    }
+
+    res.status(201).json({ success: true, data: runData, budgetPolicy });
   } catch (error) {
     logger.error('POST /harness/runs failed:', error);
     next(error);
@@ -198,6 +232,23 @@ router.post('/runs/:runId/publish', verifyTokenOrAgent, async (req, res, next) =
       agentId,
       { headSha: req.body?.headSha, prUrl: req.body?.prUrl }
     );
+
+    try {
+      await HarnessAuditService.recordPublish({
+        runId: updated.id,
+        projectId: updated.project_id,
+        ticketId: updated.ticket_id,
+        agentId,
+        headSha: updated.head_sha,
+        prUrl: updated.pr_url,
+        actorType: 'agent',
+        actorId: agentId,
+      });
+    } catch (auditError) {
+      // Publishing evidence is already durable; an audit write failure is
+      // logged but must not make the agent retry a successful push/PR.
+      logger.warn(`Harness publish audit failed for run ${updated.id}: ${auditError.message}`);
+    }
 
     res.json({ success: true, data: updated });
   } catch (error) {
@@ -360,6 +411,53 @@ router.post('/runs/:runId/finish', verifyTokenOrAgent, async (req, res, next) =>
       headSha: req.body?.headSha,
       prUrl: req.body?.prUrl,
     });
+
+    try {
+      if (finished.head_sha || finished.pr_url) {
+        await HarnessAuditService.recordPublish({
+          runId: finished.id,
+          projectId: finished.project_id,
+          ticketId: finished.ticket_id,
+          agentId: finished.agent_id,
+          headSha: finished.head_sha,
+          prUrl: finished.pr_url,
+          actorType: 'agent',
+          actorId: finished.agent_id,
+          reason: `run finished as ${finished.status}`,
+        });
+      }
+    } catch (auditError) {
+      logger.warn(`Harness finish audit failed for run ${finished.id}: ${auditError.message}`);
+    }
+
+    let artifactsComplete = true;
+    try {
+      await HarnessEventService.ensureTerminalEvent({
+        runId: finished.id,
+        status: finished.status,
+        error: finished.error,
+        headSha: finished.head_sha,
+        prUrl: finished.pr_url,
+      });
+    } catch (eventError) {
+      artifactsComplete = false;
+      logger.warn(`Harness terminal event failed for run ${finished.id}: ${eventError.message}`);
+    }
+
+    try {
+      await HarnessUsageService.flushRunToUsageLogs(finished.id);
+    } catch (usageError) {
+      artifactsComplete = false;
+      logger.warn(`Harness usage flush failed for run ${finished.id}: ${usageError.message}`);
+    }
+
+    if (artifactsComplete) {
+      try {
+        await HarnessRunService.markArtifactsFinalized(finished.id);
+      } catch (markError) {
+        logger.warn(`Harness run ${finished.id} could not be marked finalized: ${markError.message}`);
+      }
+    }
 
     res.json({ success: true, data: finished });
   } catch (error) {

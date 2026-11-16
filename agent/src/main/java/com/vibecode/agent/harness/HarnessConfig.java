@@ -73,6 +73,14 @@ public record HarnessConfig(
         return "opencode".equalsIgnoreCase(mode);
     }
 
+    /** Apply a routed model without mutating the configured default. */
+    public HarnessConfig withModel(String model) {
+        return new HarnessConfig(
+            mode, binary, startupTimeout, maxDuration, verificationCommands,
+            protectedPaths, model == null || model.isBlank() ? modelOverride : model.trim(),
+            resumeMode);
+    }
+
     public void validate() {
         if (binary == null || binary.isBlank()) {
             throw new IllegalStateException("HARNESS_BIN must not be blank");

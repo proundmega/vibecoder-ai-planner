@@ -3048,6 +3048,65 @@
         }
       }
     },
+    "/harness/runs/{runId}/usage": {
+      "post": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Report a cumulative usage snapshot for a harness run",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Usage stored (greatest value wins on retries)"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Read per-model usage for a harness run",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usage rows and totals"
+          }
+        }
+      }
+    },
     "/harness/runs/{runId}/events": {
       "get": {
         "tags": [
@@ -3107,6 +3166,59 @@
         }
       }
     },
+    "/harness/runs/{runId}/timeline": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Replay timeline for a harness run (events, checkpoints, artifacts)",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/harness/projects/{projectId}/runs": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "List recent harness runs for a project (replay picker)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent runs"
+          }
+        }
+      }
+    },
     "/harness/projects/{projectId}/events": {
       "get": {
         "tags": [
@@ -3138,6 +3250,210 @@
         "responses": {
           "200": {
             "description": "Events"
+          }
+        }
+      }
+    },
+    "/harness/projects/{projectId}/audit": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "List immutable publish/review audit records",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit events"
+          }
+        }
+      }
+    },
+    "/harness/projects/{projectId}/usage": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Harness token/cost usage grouped by model",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usage summary"
+          }
+        }
+      }
+    },
+    "/harness/projects/{projectId}/budget-policy": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Read the effective budget and routing policy",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Effective policy"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Update the project budget and routing policy",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated policy"
+          },
+          "403": {
+            "description": "Project admin required"
+          }
+        }
+      }
+    },
+    "/harness/projects/{projectId}/kill-switch": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Read the project kill switch",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active project/global kill switch or null"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Enable or disable the project kill switch",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated switch"
+          }
+        }
+      }
+    },
+    "/harness/kill-switch": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Read the global harness kill switch",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active global switch or null"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Enable or disable the global harness kill switch",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated switch"
+          },
+          "403": {
+            "description": "super_admin required"
           }
         }
       }
