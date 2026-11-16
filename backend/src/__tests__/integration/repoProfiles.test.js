@@ -172,11 +172,11 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
 
   test('mTLS credential material round-trips through storage and the exact profile revision', async () => {
     const cert = fs.readFileSync(
-      path.join(__dirname, '../../../../agent/src/test/resources/egress-client-cert.pem'),
+      path.join(__dirname, 'fixtures/egress-client-cert.pem'),
       'utf8'
     );
     const key = fs.readFileSync(
-      path.join(__dirname, '../../../../agent/src/test/resources/egress-client-key.pem'),
+      path.join(__dirname, 'fixtures/egress-client-key.pem'),
       'utf8'
     );
     const credential = await RepoProfileService.createMtlsCredential(projectId, {
