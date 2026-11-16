@@ -61,6 +61,22 @@ class GitHubAPI {
     });
   }
 
+  async getFileContent(owner, repo, path, ref) {
+    return this.retryWithBackoff(async () => {
+      const { data } = await this.octokit.repos.getContent({
+        owner,
+        repo,
+        path,
+        ...(ref ? { ref } : {}),
+      });
+      if (Array.isArray(data) || data.type !== 'file') return null;
+      if (Number(data.size) > 1024 * 1024) {
+        throw new Error(`Repository file ${path} exceeds the 1 MiB detection limit`);
+      }
+      return Buffer.from(data.content || '', data.encoding || 'base64').toString('utf8');
+    });
+  }
+
   async createBranch(owner, repo, branchName, fromRef) {
     return this.retryWithBackoff(async () => {
       const { data } = await this.octokit.git.getRef({

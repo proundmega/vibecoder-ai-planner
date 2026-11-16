@@ -1,5 +1,6 @@
 package com.vibecode.agent.harness;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vibecode.agent.config.AgentConfig;
 import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
@@ -35,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -125,6 +127,42 @@ class HarnessTicketProcessorTest {
             verificationRunner,
             new PublishingGuard(harnessConfig.protectedPaths())
         );
+    }
+
+    private HarnessTicketProcessor processorWithProfile(RepoProfileSource source) {
+        return new HarnessTicketProcessor(
+            config, apiService, provider, gitHubService, "ghp_token",
+            harnessConfig,
+            repoName -> workspace,
+            (ignored, bridge) -> harness,
+            planningDocFetcher,
+            source,
+            verificationRunner,
+            new PublishingGuard(harnessConfig.protectedPaths()),
+            SandboxConfig.defaults(),
+            SandboxRunnerFactory.hostOnly()
+        );
+    }
+
+    private RepoProfileSnapshot profileSnapshot() throws Exception {
+        RepoProfileSnapshot snapshot = new ObjectMapper().readValue("""
+            {
+              "id": "11111111-1111-4111-8111-111111111111",
+              "version": 7,
+              "status": "active",
+              "profile": {
+                "schema_version": 1,
+                "repo_url": "https://github.com/owner/repo",
+                "base_branch": "develop",
+                "image": "node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "setup": ["profile-setup"],
+                "verify": ["profile-verify"],
+                "env": {"PROFILE_FLAG": "on"}
+              }
+            }
+            """, RepoProfileSnapshot.class);
+        snapshot.validate();
+        return snapshot;
     }
 
     private HarnessTicketProcessor processorWithResumeMode() {
@@ -457,6 +495,60 @@ class HarnessTicketProcessorTest {
         ticket.setTitle("Add filtering");
         ticket.setDescription("Filter tickets by status.");
         return ticket;
+    }
+
+    @Test
+    void profileDrivesBaseBranchCommandsEnvironmentAndRunEvidence() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        RepoProfileSnapshot snapshot = profileSnapshot();
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1, snapshot.id(), 7))
+            .thenReturn(Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(verificationRunner.run(any(Path.class), anyList(), any(Duration.class), anyMap()))
+            .thenAnswer(invocation -> {
+                List<String> commands = invocation.getArgument(1);
+                return commands.stream()
+                    .map(command -> new VerificationResult(command, 0, "ok", false))
+                    .toList();
+            });
+
+        processorWithProfile(() -> snapshot).processTicket(ticket());
+
+        verify(workspace).cloneRepo(
+            "https://github.com/owner/repo.git", branch, "develop");
+        ArgumentCaptor<List<String>> commands = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<Map<String, String>> environment = ArgumentCaptor.forClass(Map.class);
+        verify(verificationRunner, times(2)).run(
+            any(Path.class), commands.capture(), any(Duration.class), environment.capture());
+        assertEquals(List.of("profile-setup"), commands.getAllValues().get(0));
+        assertEquals(List.of("profile-verify"), commands.getAllValues().get(1));
+        assertEquals("on", environment.getAllValues().get(0).get("PROFILE_FLAG"));
+        verify(gitHubService).createPullRequest(
+            anyString(), anyString(), anyString(), eq("develop"));
+        verify(apiService).startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1, snapshot.id(), 7);
+    }
+
+    @Test
+    void profileFetchFailureFallsBackToAutodetection() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1))
+            .thenReturn(Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+
+        processorWithProfile(() -> {
+            throw new IOException("backend down");
+        }).processTicket(ticket());
+
+        verify(workspace).cloneRepo(
+            "https://github.com/owner/repo.git", branch);
+        verify(verificationRunner).resolveCommands(any());
+        verify(gitHubService).createPullRequest(
+            anyString(), anyString(), anyString(), eq("main"));
     }
 
     @Test

@@ -72,6 +72,29 @@ describe('HarnessRunService', () => {
         'anthropic',
         'claude',
         1,
+        null,
+        null,
+      ]);
+    });
+
+    it('persists the repo profile revision when provided', async () => {
+      const row = { id: RUN_ID, ticket_id: 42, agent_id: 7, status: 'running' };
+      const client = clientWith(
+        [{ status: 'in_progress', assigned_agent_id: '7' }],
+        { rows: [row] }
+      );
+
+      await HarnessRunService.startRun({
+        ticketId: 42,
+        agentId: 7,
+        branch: 'feat/fg-39',
+        repoProfileId: '11111111-1111-4111-8111-111111111111',
+        repoProfileVersion: 3,
+      });
+
+      expect(client.query.mock.calls[2][1].slice(-2)).toEqual([
+        '11111111-1111-4111-8111-111111111111',
+        3,
       ]);
     });
 

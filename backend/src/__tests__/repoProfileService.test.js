@@ -1,0 +1,421 @@
+const fs = require('fs');
+const path = require('path');
+
+jest.mock('../db', () => ({
+  pool: {
+    query: jest.fn(),
+    connect: jest.fn(),
+  },
+}));
+
+jest.mock('../models/project', () => ({
+  findById: jest.fn(),
+}));
+
+jest.mock('../services/GitHubService', () => ({
+  getProjectRepo: jest.fn(),
+  readRepoFile: jest.fn(),
+}));
+
+const RepoProfileService = require('../services/RepoProfileService');
+const Project = require('../models/project');
+const GitHubService = require('../services/GitHubService');
+const { pool } = require('../db');
+const { ForbiddenError } = require('../errors/HttpError');
+
+const REPO = {
+  repoUrl: 'https://github.com/acme/app.git',
+  defaultBranch: 'main',
+};
+
+function owner() {
+  return { userId: 7, id: 7, role: 'project_admin' };
+}
+
+function superAdmin() {
+  return { userId: 99, id: 99, role: 'super_admin' };
+}
+
+function clientWith(responses) {
+  const client = { query: jest.fn(), release: jest.fn() };
+  for (const response of responses) {
+    client.query.mockResolvedValueOnce(response);
+  }
+  pool.connect.mockResolvedValueOnce(client);
+  return client;
+}
+
+function validProfile(overrides = {}) {
+  return {
+    schema_version: 1,
+    repo_url: 'https://github.com/acme/app',
+    base_branch: 'main',
+    languages: ['node'],
+    setup: ['npm ci'],
+    verify: ['npm test'],
+    caches: ['npm'],
+    env: { NODE_ENV: 'test' },
+    timeouts: { setup_minutes: 15, verify_minutes: 20 },
+    max_round_minutes: 45,
+    services: [],
+    flaky_tests: [],
+    ...overrides,
+  };
+}
+
+describe('RepoProfileService', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 7 });
+    GitHubService.getProjectRepo.mockResolvedValue(REPO);
+    GitHubService.readRepoFile.mockResolvedValue(null);
+    pool.query.mockResolvedValue({ rows: [] });
+  });
+
+  describe('access control', () => {
+    it('allows the project owner and members to read', async () => {
+      Project.findById.mockResolvedValue({ id: 1, ownerId: 7 });
+      await expect(RepoProfileService.assertCanRead(1, owner())).resolves.toBeTruthy();
+
+      Project.findById.mockResolvedValue({ id: 1, ownerId: 7 });
+      pool.query.mockResolvedValueOnce({ rows: [{ user_id: 8 }] });
+      await expect(RepoProfileService.assertCanRead(1, { userId: 8, role: 'member' }))
+        .resolves.toBeTruthy();
+    });
+
+    it('rejects a non-member read', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [] });
+      await expect(RepoProfileService.assertCanRead(1, { userId: 8, role: 'member' }))
+        .rejects.toThrow(ForbiddenError);
+    });
+
+    it('allows only the owner or super admin to write', async () => {
+      await expect(RepoProfileService.assertCanWrite(1, owner())).resolves.toBeTruthy();
+      await expect(RepoProfileService.assertCanWrite(1, superAdmin())).resolves.toBeTruthy();
+      await expect(RepoProfileService.assertCanWrite(1, { userId: 8, role: 'member' }))
+        .rejects.toThrow(ForbiddenError);
+    });
+
+    it('requires the agent owner for agent reads', async () => {
+      await expect(RepoProfileService.assertAgentProjectAccess(1, { id: 3, owner_id: 7 }))
+        .resolves.toBeTruthy();
+      await expect(RepoProfileService.assertAgentProjectAccess(1, { id: 3, owner_id: 8 }))
+        .rejects.toThrow(ForbiddenError);
+    });
+  });
+
+  describe('create', () => {
+    it('creates the next draft version and stores the validated profile', async () => {
+      const stored = {
+        id: 'p1',
+        project_id: 1,
+        version: 2,
+        profile: validProfile(),
+        status: 'draft',
+      };
+      const client = clientWith([
+        {}, // BEGIN
+        { rows: [{ id: 1 }] }, // project lock
+        { rows: [{ version: 2 }] }, // max version
+        { rows: [stored] }, // INSERT
+        {}, // COMMIT
+      ]);
+
+      const result = await RepoProfileService.create(1, validProfile(), owner());
+
+      expect(result).toEqual(expect.objectContaining({ id: 'p1', version: 2, status: 'draft' }));
+      expect(client.query.mock.calls[3][0]).toContain('INSERT INTO repo_profiles');
+      expect(client.query.mock.calls[3][1][1]).toBe(2);
+      expect(JSON.parse(client.query.mock.calls[3][1][2])).toEqual(
+        expect.objectContaining({ verify: ['npm test'] })
+      );
+      expect(client.release).toHaveBeenCalled();
+    });
+
+    it('rejects a missing verify list before opening a transaction', async () => {
+      await expect(
+        RepoProfileService.create(1, validProfile({ verify: [] }), owner())
+      ).rejects.toThrow(/verify/);
+      expect(pool.connect).not.toHaveBeenCalled();
+    });
+
+    it('rejects an image without a digest', async () => {
+      await expect(
+        RepoProfileService.create(1, validProfile({ image: 'node:24-alpine' }), owner())
+      ).rejects.toThrow(/sha256/);
+    });
+
+    it('rejects unsafe base branch names', async () => {
+      for (const branch of ['-main', 'feature//x', 'feature/', 'main..x', 'main.']) {
+        await expect(
+          RepoProfileService.create(1, validProfile({ base_branch: branch }), owner())
+        ).rejects.toThrow(/base_branch/);
+      }
+    });
+
+    it('rejects secret-like env keys and values', async () => {
+      await expect(
+        RepoProfileService.create(1, validProfile({ env: { GITHUB_TOKEN: 'x' } }), owner())
+      ).rejects.toThrow(/looks secret/);
+      await expect(
+        RepoProfileService.create(1, validProfile({ env: { MY_KEY: 'x' } }), owner())
+      ).rejects.toThrow(/looks secret/);
+
+      await expect(
+        RepoProfileService.create(
+          1,
+          validProfile({ env: { NODE_ENV: 'https://user:pass@example.test' } }),
+          owner()
+        )
+      ).rejects.toThrow(/looks like a credential/);
+    });
+
+    it('rejects unknown fields and unimplemented services/flaky tests', async () => {
+      await expect(
+        RepoProfileService.create(1, validProfile({ wat: true }), owner())
+      ).rejects.toThrow(/unknown profile field/);
+
+      await expect(
+        RepoProfileService.create(1, validProfile({ services: [{ name: 'postgres' }] }), owner())
+      ).rejects.toThrow(/slice 2/);
+
+      await expect(
+        RepoProfileService.create(1, validProfile({ flaky_tests: ['test/flaky.js'] }), owner())
+      ).rejects.toThrow(/slice 3/);
+    });
+  });
+
+  describe('update and activate', () => {
+    it('updates only a draft profile', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ id: 'p1', status: 'active', profile: {} }] });
+
+      await expect(
+        RepoProfileService.update(1, 'p1', validProfile(), owner())
+      ).rejects.toThrow(/Only draft profiles/);
+    });
+
+    it('activates a profile and deactivates the previous active row', async () => {
+      const target = {
+        id: 'p2', project_id: 1, version: 2, profile: validProfile(), status: 'draft',
+      };
+      const activated = { ...target, status: 'active' };
+      const client = clientWith([
+        {}, // BEGIN
+        { rows: [target] }, // target lock
+        { rows: [] }, // deactivate old
+        { rows: [activated] }, // activate target
+        {}, // COMMIT
+      ]);
+
+      const result = await RepoProfileService.activate(1, 'p2', owner());
+
+      expect(result.status).toBe('active');
+      expect(client.query.mock.calls[2][0]).toContain("status = 'inactive'");
+      expect(client.query.mock.calls[3][0]).toContain("status = 'active'");
+      expect(client.release).toHaveBeenCalled();
+    });
+  });
+
+  describe('getCurrent', () => {
+    it('returns the active profile and version history', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          { id: 'a', version: 2, status: 'active', profile: validProfile() },
+          { id: 'b', version: 1, status: 'inactive', profile: validProfile() },
+        ],
+      });
+
+      const result = await RepoProfileService.getCurrent(1, owner());
+
+      expect(result.active.id).toBe('a');
+      expect(result.latest.id).toBe('a');
+      expect(result.versions).toHaveLength(2);
+    });
+  });
+
+  describe('stack detection', () => {
+    it('proposes a Node profile with a lockfile and non-watch vitest command', async () => {
+      const files = {
+        'package.json': JSON.stringify({
+          scripts: { test: 'vitest', lint: 'eslint .' },
+        }),
+        'package-lock.json': '{}',
+      };
+      GitHubService.readRepoFile.mockImplementation(
+        (projectId, file) => Promise.resolve(files[file] ?? null)
+      );
+
+      const result = await RepoProfileService.detectStack(1);
+
+      expect(result.detected).toBe(true);
+      expect(result.profile.languages).toEqual(['node']);
+      expect(result.profile.setup).toEqual(['npm ci --no-audit --no-fund']);
+      expect(result.profile.verify).toEqual(['npm test -- --run', 'npm run lint']);
+      expect(result.profile.caches).toEqual(['npm']);
+    });
+
+    it('does not add --run when the vitest script already runs once', async () => {
+      const files = {
+        'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }),
+        'package-lock.json': '{}',
+      };
+      GitHubService.readRepoFile.mockImplementation(
+        (projectId, file) => Promise.resolve(files[file] ?? null)
+      );
+
+      const result = await RepoProfileService.detectStack(1);
+
+      expect(result.profile.verify).toEqual(['npm test']);
+    });
+
+    it('detects backend/frontend monorepo packages', async () => {
+      const files = {
+        'backend/package.json': JSON.stringify({ scripts: { test: 'jest' } }),
+        'backend/package-lock.json': '{}',
+        'frontend/package.json': JSON.stringify({ scripts: { test: 'vitest run' } }),
+      };
+      GitHubService.readRepoFile.mockImplementation(
+        (projectId, file) => Promise.resolve(files[file] ?? null)
+      );
+
+      const result = await RepoProfileService.detectStack(1);
+
+      expect(result.profile.languages).toEqual(['node']);
+      expect(result.profile.setup).toEqual([
+        'cd backend && npm ci --no-audit --no-fund',
+        'cd frontend && npm install --no-package-lock --no-audit --no-fund',
+      ]);
+      expect(result.profile.verify).toEqual([
+        'cd backend && npm test',
+        'cd frontend && npm test',
+      ]);
+    });
+
+    it('falls back to workspace subpackages when the root package has no scripts', async () => {
+      const files = {
+        'package.json': JSON.stringify({ workspaces: ['backend'] }),
+        'package-lock.json': '{}',
+        'backend/package.json': JSON.stringify({ scripts: { test: 'jest' } }),
+        'backend/package-lock.json': '{}',
+      };
+      GitHubService.readRepoFile.mockImplementation(
+        (projectId, file) => Promise.resolve(files[file] ?? null)
+      );
+
+      const result = await RepoProfileService.detectStack(1);
+
+      expect(result.detected).toBe(true);
+      expect(result.profile.verify).toEqual(['cd backend && npm test']);
+      expect(result.profile.setup).toEqual([
+        'npm ci --no-audit --no-fund',
+        'cd backend && npm ci --no-audit --no-fund',
+      ]);
+    });
+
+    it('detects Java, Python and Go manifests', async () => {
+      const files = {
+        'pom.xml': '<project/>',
+        'mvnw': '#!/bin/sh',
+        'requirements.txt': 'pytest',
+        'go.mod': 'module example',
+      };
+      GitHubService.readRepoFile.mockImplementation(
+        (projectId, file) => Promise.resolve(files[file] ?? null)
+      );
+
+      const result = await RepoProfileService.detectStack(1);
+
+      expect(result.profile.languages).toEqual(expect.arrayContaining(['java', 'python', 'go']));
+      expect(result.profile.setup).toEqual(expect.arrayContaining([
+        'pip install -r requirements.txt',
+        'go mod download',
+      ]));
+      expect(result.profile.verify).toEqual(expect.arrayContaining([
+        './mvnw test -q',
+        'pytest -q',
+        'go test ./...',
+      ]));
+      expect(result.profile.caches).toEqual(expect.arrayContaining(['maven', 'pip', 'go']));
+    });
+
+    it('warns instead of silently skipping verification when nothing is detected', async () => {
+      const result = await RepoProfileService.detectStack(1);
+
+      expect(result.detected).toBe(false);
+      expect(result.profile.verify).toEqual([]);
+      expect(result.warnings.join(' ')).toMatch(/add verify commands manually/);
+    });
+
+    it('requires a connected repository', async () => {
+      GitHubService.getProjectRepo.mockResolvedValue(null);
+      await expect(RepoProfileService.detectStack(1)).rejects.toThrow(/Connect a GitHub repository/);
+    });
+  });
+
+  describe('origin CA validation', () => {
+    const caPath = path.join(
+      __dirname, '../../../agent/src/test/resources/egress-origin-ca.pem'
+    );
+    const leafPath = path.join(
+      __dirname, '../../../agent/src/test/resources/egress-origin-leaf.pem'
+    );
+
+    it('accepts a CA bundle for exact hosts', async () => {
+      const ca = fs.readFileSync(caPath);
+      pool.connect.mockResolvedValueOnce({
+        query: jest.fn()
+          .mockResolvedValueOnce({})
+          .mockResolvedValueOnce({ rows: [{ id: 1 }] })
+          .mockResolvedValueOnce({ rows: [{ version: 1 }] })
+          .mockResolvedValueOnce({ rows: [{ id: 'p1', version: 1, status: 'draft', profile: {} }] })
+          .mockResolvedValueOnce({}),
+        release: jest.fn(),
+      });
+
+      const profile = validProfile({
+        egress: {
+          tls_mode: 'terminate',
+          origin_ca_hosts: ['registry.example.com'],
+          origin_ca_b64: ca.toString('base64'),
+        },
+      });
+
+      await expect(RepoProfileService.create(1, profile, owner())).resolves.toBeTruthy();
+    });
+
+    it('rejects a non-CA leaf certificate and private-key material', async () => {
+      const leaf = fs.readFileSync(leafPath);
+      await expect(RepoProfileService.create(1, validProfile({
+        egress: {
+          tls_mode: 'terminate',
+          origin_ca_hosts: ['registry.example.com'],
+          origin_ca_b64: leaf.toString('base64'),
+        },
+      }), owner())).rejects.toThrow(/CA certificates only/);
+
+      const privateKey = Buffer.from('-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----')
+        .toString('base64');
+      await expect(RepoProfileService.create(1, validProfile({
+        egress: {
+          tls_mode: 'terminate',
+          origin_ca_hosts: ['registry.example.com'],
+          origin_ca_b64: privateKey,
+        },
+      }), owner())).rejects.toThrow(/private key/);
+    });
+
+    it('rejects wildcard, internal and IP hosts', async () => {
+      const ca = fs.readFileSync(caPath).toString('base64');
+      for (const host of ['*.example.com', 'localhost', '10.0.0.1', 'metadata.google.internal']) {
+        await expect(RepoProfileService.create(1, validProfile({
+          egress: {
+            tls_mode: 'terminate',
+            origin_ca_hosts: [host],
+            origin_ca_b64: ca,
+          },
+        }), owner())).rejects.toThrow(/origin_ca_hosts/);
+      }
+    });
+  });
+});

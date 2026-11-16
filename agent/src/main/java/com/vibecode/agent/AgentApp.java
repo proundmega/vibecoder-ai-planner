@@ -4,6 +4,7 @@ import com.vibecode.agent.config.AgentConfig;
 import com.vibecode.agent.harness.HarnessConfig;
 import com.vibecode.agent.harness.RedactionRegistry;
 import com.vibecode.agent.harness.HarnessTicketProcessor;
+import com.vibecode.agent.harness.ProfileValidationProcessor;
 import com.vibecode.agent.harness.ProviderSettings;
 import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.service.*;
@@ -46,6 +47,7 @@ public class AgentApp {
     private final GitHubTokenProvider githubTokenProvider;
     private final TicketWorker ticketWorker;
     private final ReviewProcessor reviewProcessor;
+    private final ProfileValidationProcessor profileValidationProcessor;
     private ScheduledExecutorService heartbeatScheduler;
     private String githubAccessToken;
     private volatile boolean shuttingDown = false;
@@ -67,6 +69,13 @@ public class AgentApp {
             githubTokenProvider, githubAccessToken, config.getHarnessConfig());
         this.gitHubService = wiring.gitHubService();
         this.ticketWorker = wiring.ticketWorker();
+        if (ticketWorker instanceof HarnessTicketProcessor harnessWorker) {
+            this.profileValidationProcessor = new ProfileValidationProcessor(
+                config, apiService, harnessWorker.sandboxConfig(),
+                harnessWorker.sandboxRunner(), githubTokenProvider, githubAccessToken);
+        } else {
+            this.profileValidationProcessor = null;
+        }
 
         HarnessConfig harnessConfig = config.getHarnessConfig();
         if (harnessConfig.isEnabled()) {
@@ -399,6 +408,14 @@ public class AgentApp {
 
     private void processCycle() throws IOException {
         recoverStartupOnce();
+
+        if (profileValidationProcessor != null) {
+            try {
+                profileValidationProcessor.pollOnce();
+            } catch (RuntimeException e) {
+                log.warn("Repo profile validation cycle failed: {}", e.getMessage());
+            }
+        }
 
         // Check if this is a review agent (no REPO_OWNER/REPO_NAME means review mode)
         if (config.getRepoOwner() == null || config.getRepoOwner().isBlank()) {

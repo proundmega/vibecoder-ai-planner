@@ -97,6 +97,8 @@ async function assertCanReadRun(req, run) {
  *               provider: { type: string, nullable: true }
  *               model: { type: string, nullable: true }
  *               attempt: { type: integer, minimum: 1 }
+ *               repoProfileId: { type: string, pattern: '^[0-9a-fA-F-]{36}$', nullable: true }
+ *               repoProfileVersion: { type: integer, minimum: 1, nullable: true }
  *     responses:
  *       201:
  *         description: Harness run created
@@ -119,6 +121,8 @@ router.post('/runs', verifyTokenOrAgent, async (req, res, next) => {
       provider,
       model,
       attempt,
+      repoProfileId,
+      repoProfileVersion,
     } = req.body || {};
 
     const run = await HarnessRunService.startRun({
@@ -131,6 +135,8 @@ router.post('/runs', verifyTokenOrAgent, async (req, res, next) => {
       provider,
       model,
       attempt,
+      repoProfileId,
+      repoProfileVersion,
     });
 
     res.status(201).json({ success: true, data: run });

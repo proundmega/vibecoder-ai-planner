@@ -710,6 +710,127 @@ class SandboxConfigTest {
         assertThrows(IOException.class, () -> config.specFor(workspace));
     }
 
+    private static RepoProfile profile(String json) throws IOException {
+        return new com.fasterxml.jackson.databind.ObjectMapper()
+            .readValue(json, RepoProfile.class);
+    }
+
+    @Test
+    void repoProfileAppliesPinnedImageEnvAndCacheVolume() throws IOException {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "operator/default:latest",
+            "SANDBOX_ENV", "OPERATOR_FLAG=on",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.example.com"
+        )::get);
+        RepoProfile profile = profile("""
+            {
+              "schema_version": 1,
+              "image": "node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "verify": ["npm test"],
+              "caches": ["npm", "maven"],
+              "env": {"NODE_ENV": "test"}
+            }
+            """);
+
+        SandboxConfig effective = config.withRepoProfile(profile, "42", 7);
+        SandboxSpec spec = effective.specFor(
+            Files.createDirectories(tempDir.resolve("profile-workspace")));
+
+        assertEquals("node@sha256:" + "a".repeat(64), effective.image());
+        assertEquals("test", spec.env().get("NODE_ENV"));
+        assertEquals("on", spec.env().get("OPERATOR_FLAG"));
+        assertEquals("/cache/npm", spec.env().get("NPM_CONFIG_CACHE"));
+        assertTrue(spec.env().get("MAVEN_OPTS").contains("-Dmaven.repo.local=/cache/maven"));
+        assertEquals("vibecode-repo-cache-42-7", spec.cacheVolume());
+        assertEquals(config.allowedHosts(), effective.allowedHosts(),
+            "a profile must not widen the egress allowlist");
+    }
+
+    @Test
+    void repoProfileOriginCaRequiresTerminateMode() throws IOException {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+            "SANDBOX_EGRESS_TLS_MODE", "sni-only"
+        )::get);
+        String ca = Base64.getEncoder().encodeToString(
+            Files.readAllBytes(Path.of("src/test/resources/egress-origin-ca.pem")));
+        RepoProfile profile = profile("""
+            {
+              "schema_version": 1,
+              "verify": ["npm test"],
+              "egress": {
+                "tls_mode": "terminate",
+                "origin_ca_hosts": ["registry.example.com"],
+                "origin_ca_b64": "%s"
+              }
+            }
+            """.formatted(ca));
+
+        assertThrows(IllegalStateException.class,
+            () -> config.withRepoProfile(profile, "1", 1));
+    }
+
+    @Test
+    void repoProfileOriginCaHostMustBeAllowlisted() throws IOException {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "other.example.com",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate"
+        )::get);
+        String ca = Base64.getEncoder().encodeToString(
+            Files.readAllBytes(Path.of("src/test/resources/egress-origin-ca.pem")));
+        RepoProfile profile = profile("""
+            {
+              "schema_version": 1,
+              "verify": ["npm test"],
+              "egress": {
+                "tls_mode": "terminate",
+                "origin_ca_hosts": ["registry.example.com"],
+                "origin_ca_b64": "%s"
+              }
+            }
+            """.formatted(ca));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> config.withRepoProfile(profile, "1", 1));
+        assertTrue(error.getMessage().contains("not covered by SANDBOX_ALLOWED_HOSTS"));
+    }
+
+    @Test
+    void repoProfileOriginCaAcceptsAValidWildcardCoveredHost() throws IOException {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "*.example.com",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate"
+        )::get);
+        String ca = Base64.getEncoder().encodeToString(
+            Files.readAllBytes(Path.of("src/test/resources/egress-origin-ca.pem")));
+        RepoProfile profile = profile("""
+            {
+              "schema_version": 1,
+              "verify": ["npm test"],
+              "egress": {
+                "tls_mode": "terminate",
+                "origin_ca_hosts": ["registry.example.com"],
+                "origin_ca_b64": "%s"
+              }
+            }
+            """.formatted(ca));
+
+        SandboxConfig effective = config.withRepoProfile(profile, "1", 1);
+        SandboxSpec spec = effective.specFor(
+            Files.createDirectories(tempDir.resolve("ca-workspace")));
+
+        assertEquals(List.of("registry.example.com"), spec.egressOriginCaHosts());
+        assertTrue(spec.egressOriginCaPem().contains("BEGIN CERTIFICATE"));
+    }
+
     @Test
     void specAddsNonSecretVerificationDefaults() throws IOException {
         Path workspace = Files.createDirectories(tempDir.resolve("workspace"));

@@ -129,6 +129,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
         String name = "vibecode-sandbox-" + UUID.randomUUID().toString()
             .replace("-", "").substring(0, 12);
 
+        ensureCacheVolume(spec);
+
         EgressRuntime egressRuntime = null;
         if (spec.networkEnabled()) {
             egressRuntime = startEgress(name, spec);
@@ -2142,6 +2144,75 @@ public final class DockerSandboxRunner implements SandboxRunner {
     }
 
     /**
+     * Create and initialize a profile dependency-cache volume. A newly
+     * created volume is root-owned; the one-shot init container chowns it to
+     * the unprivileged sandbox uid/gid before the sandbox mounts it.
+     */
+    private void ensureCacheVolume(SandboxSpec spec) throws IOException {
+        String volume = spec.cacheVolume();
+        if (volume == null) {
+            return;
+        }
+        DockerResult inspected = runDocker(
+            List.of(config.dockerBinary(), "volume", "inspect", volume),
+            CONTROL_TIMEOUT,
+            CONTROL_OUTPUT_BYTES
+        );
+        if (!inspected.timedOut() && inspected.exitCode() == 0) {
+            return;
+        }
+
+        List<String> create = new ArrayList<>();
+        create.add(config.dockerBinary());
+        create.add("volume");
+        create.add("create");
+        create.add("--label");
+        create.add("vibecode.sandbox.cache=true");
+        if (spec.owner() != null && !spec.owner().isBlank()) {
+            create.add("--label");
+            create.add("vibecode.agent.owner=" + spec.owner());
+        }
+        create.add(volume);
+        DockerResult created = runDocker(create, CONTROL_TIMEOUT, CONTROL_OUTPUT_BYTES);
+        if (created.timedOut() || created.exitCode() != 0) {
+            throw new IOException("Could not create profile cache volume '" + volume + "': "
+                + (created.timedOut() ? "docker volume create timed out" : created.output()));
+        }
+
+        String[] user = spec.user().split(":", 2);
+        String uid = user[0];
+        String gid = user.length > 1 ? user[1] : user[0];
+        if ("0".equals(uid)) {
+            return;
+        }
+        List<String> chown = List.of(
+            config.dockerBinary(), "run", "--rm", "--network", "none",
+            "--user", "0:0",
+            "--cap-drop", "ALL",
+            "--cap-add", "CHOWN",
+            "--security-opt", "no-new-privileges",
+            "-v", volume + ":/cache",
+            "--entrypoint", "/bin/sh",
+            spec.image(),
+            "-c", "chown -R " + uid + ":" + gid + " /cache"
+        );
+        DockerResult initialized = runDocker(chown, CONTROL_TIMEOUT, CONTROL_OUTPUT_BYTES);
+        if (initialized.timedOut() || initialized.exitCode() != 0) {
+            // Do not leave a root-owned volume that would be mistaken for an
+            // initialized cache on the next run.
+            runDocker(
+                List.of(config.dockerBinary(), "volume", "rm", "-f", volume),
+                CONTROL_TIMEOUT,
+                CONTROL_OUTPUT_BYTES
+            );
+            throw new IOException("Could not initialize profile cache volume '" + volume
+                + "': " + (initialized.timedOut()
+                    ? "cache ownership init timed out"
+                    : initialized.output()));
+        }
+    }
+
+    /**
      * Build the argument list after the docker binary. Package-visible so tests
      * can assert the hardening flags without a daemon.
      */
@@ -2183,6 +2254,13 @@ public final class DockerSandboxRunner implements SandboxRunner {
             && !Files.isSymbolicLink(supervisorGit)) {
             args.add("-v");
             args.add(mountGit + ":" + SandboxPaths.CONTAINER_WORKSPACE + "/.git:ro");
+        }
+
+        // Per-project/profile dependency cache (fg-39). The volume is created
+        // and chowned before the unprivileged sandbox starts.
+        if (spec.cacheVolume() != null) {
+            args.add("-v");
+            args.add(spec.cacheVolume() + ":/cache:rw");
         }
 
         args.add("-w");

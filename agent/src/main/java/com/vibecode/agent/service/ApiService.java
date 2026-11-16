@@ -8,6 +8,8 @@ import com.vibecode.agent.model.ApiResponse;
 import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
 import com.vibecode.agent.harness.RedactionRegistry;
+import com.vibecode.agent.harness.RepoProfileSnapshot;
+import com.vibecode.agent.harness.RepoProfileValidation;
 import okhttp3.*;
 
 import java.io.IOException;
@@ -120,6 +122,20 @@ public class ApiService {
         String model,
         int attempt
     ) throws IOException {
+        return startHarnessRun(ticketId, branch, workspacePath, provider, model, attempt,
+            null, null);
+    }
+
+    public Map<String, Object> startHarnessRun(
+        Long ticketId,
+        String branch,
+        String workspacePath,
+        String provider,
+        String model,
+        int attempt,
+        String repoProfileId,
+        Integer repoProfileVersion
+    ) throws IOException {
         Map<String, Object> body = new HashMap<>();
         body.put("ticketId", ticketId);
         body.put("branch", branch);
@@ -132,6 +148,12 @@ public class ApiService {
         }
         if (model != null && !model.isBlank()) {
             body.put("model", model);
+        }
+        if (repoProfileId != null && !repoProfileId.isBlank()) {
+            body.put("repoProfileId", repoProfileId);
+            if (repoProfileVersion != null && repoProfileVersion > 0) {
+                body.put("repoProfileVersion", repoProfileVersion);
+            }
         }
 
         ApiResponse<Map<String, Object>> response = executePost(
@@ -587,6 +609,70 @@ public class ApiService {
         }
         
         return response.getData();
+    }
+
+    /**
+     * Fetch the project's active repo profile (fg-39). Returns null when the
+     * project has no active profile.
+     */
+    public RepoProfileSnapshot getRepoProfile(String projectId) throws IOException {
+        String url = baseUrl + "/projects/" + projectId + "/repo-profile/agent";
+        ApiResponse<Map<String, Object>> response = executeGet(
+            url, new TypeReference<ApiResponse<Map<String, Object>>>() {});
+        if (response.hasError()) {
+            throw new IOException("Failed to get repo profile: " + response.getError());
+        }
+        if (response.getData() == null) {
+            return null;
+        }
+        return objectMapper.convertValue(response.getData(), RepoProfileSnapshot.class);
+    }
+
+    /**
+     * Claim the next queued repo-profile dry run for this project. Returns
+     * null when the queue is empty.
+     */
+    public RepoProfileValidation claimRepoProfileValidation(String projectId) throws IOException {
+        String url = baseUrl + "/projects/" + projectId
+            + "/repo-profile/validations/claim";
+        ApiResponse<Map<String, Object>> response = executePost(
+            url, Map.of(), new TypeReference<ApiResponse<Map<String, Object>>>() {});
+        if (response.hasError()) {
+            throw new IOException("Failed to claim repo profile validation: " + response.getError());
+        }
+        if (response.getData() == null) {
+            return null;
+        }
+        return objectMapper.convertValue(response.getData(), RepoProfileValidation.class);
+    }
+
+    /**
+     * Report a repo-profile dry-run result. Retried calls return the first
+     * terminal result, so a lost response is safe.
+     */
+    public RepoProfileValidation finishRepoProfileValidation(
+        String projectId,
+        String validationId,
+        String status,
+        Map<String, Object> result,
+        String error
+    ) throws IOException {
+        String url = baseUrl + "/projects/" + projectId
+            + "/repo-profile/validations/" + validationId + "/finish";
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", status);
+        body.put("result", result == null ? Map.of() : result);
+        if (error != null && !error.isBlank()) {
+            body.put("error", error);
+        }
+        ApiResponse<Map<String, Object>> response = executePost(
+            url, body, new TypeReference<ApiResponse<Map<String, Object>>>() {});
+        if (response.hasError()) {
+            throw new IOException("Failed to finish repo profile validation: " + response.getError());
+        }
+        return response.getData() == null
+            ? null
+            : objectMapper.convertValue(response.getData(), RepoProfileValidation.class);
     }
 
     /**

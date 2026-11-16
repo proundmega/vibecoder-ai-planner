@@ -818,7 +818,7 @@ class DockerSandboxRunnerTest {
             spec.egressUpstreamNetwork(), spec.egressProbeTimeoutMs(), spec.egressTlsMode(),
             spec.owner(), Map.of("OPENAI_KEY", "sk-secret"), spec.user(), spec.seccompProfile(),
             spec.apparmorProfile(), spec.artifactMaxBytes(), spec.egressOriginCaHosts(),
-            spec.egressOriginCaPem());
+            spec.egressOriginCaPem(), spec.cacheVolume());
 
         assertThrows(IllegalArgumentException.class,
             () -> DockerSandboxRunner.containerEnvironment(poisoned));
@@ -2025,6 +2025,53 @@ class DockerSandboxRunnerTest {
             index += token.length();
         }
         return count;
+    }
+
+    @Test
+    void createInitializesAProfileCacheVolumeAndMountsIt() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("cache-docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              volume)
+                case "$2" in
+                  inspect) exit 1 ;;
+                  create) exit 0 ;;
+                  *) exit 1 ;;
+                esac
+                ;;
+              run) exit 0 ;;
+              inspect) echo true ;;
+              rm) exit 0 ;;
+              network) exit 0 ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+        RepoProfile profile = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+            {
+              "schema_version": 1,
+              "image": "node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "verify": ["npm test"],
+              "caches": ["npm"],
+              "env": {"NODE_ENV": "test"}
+            }
+            """, RepoProfile.class);
+        SandboxConfig effective = config.withRepoProfile(profile, "7", 2);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(effective)) {
+            SandboxHandle handle = runner.create(effective.specFor(workspace()));
+            runner.destroy(handle);
+        }
+
+        String calls = Files.readString(log);
+        assertTrue(calls.contains("volume inspect vibecode-repo-cache-7-2"), calls);
+        assertTrue(calls.contains("volume create --label vibecode.sandbox.cache=true"), calls);
+        assertTrue(calls.contains("vibecode-repo-cache-7-2"), calls);
+        assertTrue(calls.contains("chown -R 1000:1000 /cache"), calls);
+        assertTrue(calls.contains("-v vibecode-repo-cache-7-2:/cache:rw"), calls);
+        assertTrue(calls.contains("-e NPM_CONFIG_CACHE=/cache/npm"), calls);
+        assertTrue(calls.contains("-e NODE_ENV=test"), calls);
     }
 
     private Path fakeDocker(Path log, String body) throws IOException {

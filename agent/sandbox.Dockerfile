@@ -24,6 +24,11 @@ RUN apk add --no-cache \
 
 WORKDIR /workspace
 
+# Optional per-repo dependency cache mount (fg-39). Creating the mountpoint in
+# the image also works with a read-only rootfs on runtimes that do not create
+# volume mountpoints themselves.
+RUN mkdir -p /cache && chown 1000:1000 /cache
+
 # The official node image already provides uid/gid 1000; the runner overrides
 # --user to match the workspace owner.
 USER 1000:1000

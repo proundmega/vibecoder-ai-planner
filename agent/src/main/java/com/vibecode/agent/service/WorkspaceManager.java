@@ -123,6 +123,14 @@ public class WorkspaceManager {
      * Clone a repository to a unique workspace directory.
      */
     public void cloneRepo(String repoUrl, String branchName) throws IOException {
+        cloneRepo(repoUrl, branchName, null);
+    }
+
+    /**
+     * Clone and create the ticket branch from an explicit base branch. A null
+     * or blank base branch keeps the legacy clone-HEAD behavior.
+     */
+    public void cloneRepo(String repoUrl, String branchName, String baseBranch) throws IOException {
         this.repoDir = generateRepoDir();
         log.info("Cloning repo from {} to {}", repoUrl, repoDir);
         if (dryRun) {
@@ -181,8 +189,19 @@ public class WorkspaceManager {
             cleanupAskPass();
         }
 
-        // Create and checkout the target branch
-        runGit("checkout", "-b", branchName);
+        // Create and checkout the target branch. An explicit profile base
+        // branch must resolve as a remote-tracking ref; failing closed is safer
+        // than silently branching from the clone default.
+        String checkoutBase = baseBranch == null ? null : baseBranch.trim();
+        if (checkoutBase != null && !checkoutBase.isEmpty()) {
+            if (checkoutBase.startsWith("-") || checkoutBase.contains("..")) {
+                throw new IOException("Invalid base branch: " + baseBranch);
+            }
+            runGit("rev-parse", "--verify", "origin/" + checkoutBase);
+            runGit("checkout", "-b", branchName, "origin/" + checkoutBase);
+        } else {
+            runGit("checkout", "-b", branchName);
+        }
 
         // Pin the clone-time base commit before the harness starts. Every
         // subsequent read-tree/diff/tree/commit must use this SHA explicitly;

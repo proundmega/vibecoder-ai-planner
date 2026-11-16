@@ -148,6 +148,20 @@ class GitHubService {
     return new GitHubProvider(decrypt(repo.accessTokenEncrypted));
   }
 
+  /**
+   * Read one repository file through the project's GitHub credential.
+   * Used by repo-profile stack detection (fg-39). Missing files surface as a
+   * GitHub 404 so the caller can treat them as absent.
+   */
+  async readRepoFile(projectId, path, ref = null) {
+    const repo = await this.getProjectRepo(projectId);
+    if (!repo) throw new ValidationError('No repository connected to this project');
+    return this._withProvider(
+      projectId,
+      (provider) => provider.getFileContent(repo, path, ref)
+    );
+  }
+
   async getProjectRepos(projectId) {
     
     const result = await pool.query(

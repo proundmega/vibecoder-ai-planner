@@ -777,6 +777,42 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void cloneRepoChecksOutAnExplicitBaseBranchAndPinsIt() throws Exception {
+        Path source = initRepo("base-source");
+        Path bare = initBare("base-remote.git");
+        runGit(source, "remote", "add", "origin", bare.toString());
+        runGit(source, "push", "origin", "HEAD:refs/heads/main");
+        runGit(source, "checkout", "-b", "develop");
+        Files.writeString(source.resolve("DEVELOP.md"), "from develop\n");
+        runGit(source, "add", "DEVELOP.md");
+        runGit(source, "commit", "-m", "develop commit");
+        runGit(source, "push", "origin", "HEAD:refs/heads/develop");
+        runGit(bare, "symbolic-ref", "HEAD", "refs/heads/main");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "base", false, null);
+        wm.cloneRepo(bare.toString(), "vibecode/ticket-1-base", "develop");
+
+        assertEquals("from develop",
+            Files.readString(wm.getRepoDir().resolve("DEVELOP.md")).trim());
+        assertEquals(gitOutput(bare, "rev-parse", "refs/heads/develop"),
+            wm.getBaseCommit());
+    }
+
+    @Test
+    void cloneRepoFailsClosedWhenTheProfileBaseBranchIsMissing() throws Exception {
+        Path source = initRepo("missing-base-source");
+        Path bare = initBare("missing-base-remote.git");
+        runGit(source, "remote", "add", "origin", bare.toString());
+        runGit(source, "push", "origin", "HEAD:refs/heads/main");
+        runGit(bare, "symbolic-ref", "HEAD", "refs/heads/main");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "base", false, null);
+
+        assertThrows(IOException.class,
+            () -> wm.cloneRepo(bare.toString(), "vibecode/ticket-1-base", "does-not-exist"));
+    }
+
+    @Test
     void commitAndPushCanUpdateAPreExistingRemoteBranch() throws Exception {
         Path repoDir = initRepo("existing-branch");
         Path bare = initBare("existing-branch.git");

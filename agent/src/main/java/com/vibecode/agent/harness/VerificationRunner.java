@@ -166,6 +166,19 @@ public class VerificationRunner {
     }
 
     public List<VerificationResult> run(Path workspace, List<String> commands, Duration timeout) {
+        return run(workspace, commands, timeout, Map.of());
+    }
+
+    /**
+     * Host-mode verification with profile environment. Docker mode gets the
+     * profile environment from the container spec instead.
+     */
+    public List<VerificationResult> run(
+        Path workspace,
+        List<String> commands,
+        Duration timeout,
+        Map<String, String> extraEnv
+    ) {
         List<VerificationResult> results = new ArrayList<>();
         if (commands == null || workspace == null) {
             return results;
@@ -182,7 +195,7 @@ public class VerificationRunner {
                     command.trim(), -1, "verification budget exhausted", true));
                 continue;
             }
-            results.add(runOne(workspace, command.trim(), Duration.ofMillis(remainingMs)));
+            results.add(runOne(workspace, command.trim(), Duration.ofMillis(remainingMs), extraEnv));
         }
         return results;
     }
@@ -252,7 +265,12 @@ public class VerificationRunner {
         return REDACTOR.redact(failure == null ? "" : failure.getMessage());
     }
 
-    private VerificationResult runOne(Path workspace, String command, Duration timeout) {
+    private VerificationResult runOne(
+        Path workspace,
+        String command,
+        Duration timeout,
+        Map<String, String> extraEnv
+    ) {
         boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
         List<String> processCommand = windows
             ? List.of("cmd.exe", "/c", command)
@@ -261,6 +279,10 @@ public class VerificationRunner {
         builder.directory(workspace.toFile());
         builder.redirectErrorStream(true);
         sanitizeEnvironment(builder.environment());
+        if (extraEnv != null && !extraEnv.isEmpty()) {
+            SandboxSecurity.validateEnv(extraEnv, "profile environment");
+            builder.environment().putAll(extraEnv);
+        }
 
         Process process = null;
         try {

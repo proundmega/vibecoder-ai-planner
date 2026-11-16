@@ -54,7 +54,8 @@ public record SandboxConfig(
     String containerWorkspaceRoot,
     String hostWorkspaceRoot,
     List<String> egressOriginCaHosts,
-    String egressOriginCaPem
+    String egressOriginCaPem,
+    String cacheVolume
 ) {
 
     public static final String DEFAULT_IMAGE = "vibecode-agent-sandbox:latest";
@@ -153,7 +154,8 @@ public record SandboxConfig(
             value(env, "SANDBOX_CONTAINER_WORKSPACE_ROOT", DEFAULT_CONTAINER_WORKSPACE_ROOT),
             value(env, "SANDBOX_HOST_WORKSPACE_ROOT", ""),
             originCaHosts,
-            originCaPem
+            originCaPem,
+            null
         );
         config.validate();
         return config;
@@ -380,7 +382,75 @@ public record SandboxConfig(
             apparmorProfile,
             artifactMaxBytes,
             egressOriginCaHosts,
-            egressOriginCaPem
+            egressOriginCaPem,
+            cacheVolume
+        );
+    }
+
+    /**
+     * Derive the per-run configuration from an admin-approved repo profile.
+     * The profile may select a pinned image, add non-secret environment and
+     * request a dependency cache. It may not widen egress or weaken TLS mode.
+     */
+    public SandboxConfig withRepoProfile(RepoProfile profile, String projectId, int profileVersion) {
+        if (profile == null) {
+            return this;
+        }
+        String effectiveImage = profile.image() != null ? profile.image() : image;
+        Map<String, String> effectiveEnv = new LinkedHashMap<>(runEnv);
+        effectiveEnv.putAll(profile.environment());
+
+        List<String> effectiveCaHosts = egressOriginCaHosts;
+        String effectiveCaPem = egressOriginCaPem;
+        if (profile.egress() != null) {
+            if (egressTlsMode != EgressTlsMode.TERMINATE) {
+                throw new IllegalStateException(
+                    "repo profile requests an origin CA, but SANDBOX_EGRESS_TLS_MODE is "
+                        + egressTlsMode.value() + "; set it to terminate explicitly");
+            }
+            for (String host : profile.egress().originCaHosts()) {
+                if (!matchesAllowlist(host, allowedHosts)) {
+                    throw new IllegalStateException(
+                        "repo profile origin CA host " + host
+                            + " is not covered by SANDBOX_ALLOWED_HOSTS");
+                }
+            }
+            effectiveCaHosts = profile.egress().originCaHosts();
+            effectiveCaPem = profile.egress().originCaPem();
+        }
+        String effectiveCache = profile.caches().isEmpty()
+            ? null
+            : profile.cacheVolumeName(projectId == null ? "unknown" : projectId, profileVersion);
+
+        return new SandboxConfig(
+            mode,
+            effectiveImage,
+            proxyImage,
+            dockerBinary,
+            execTimeout,
+            limits,
+            diskCheckInterval,
+            networkEnabled,
+            allowedHosts,
+            egressProxy,
+            egressUpstreamNetwork,
+            egressProbeTimeoutMs,
+            egressTlsMode,
+            owner,
+            poolAgent,
+            daemonId,
+            Map.copyOf(effectiveEnv),
+            user,
+            requireSandbox,
+            allowRoot,
+            seccompProfile,
+            apparmorProfile,
+            artifactMaxBytes,
+            containerWorkspaceRoot,
+            hostWorkspaceRoot,
+            effectiveCaHosts,
+            effectiveCaPem,
+            effectiveCache
         );
     }
 

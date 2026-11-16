@@ -21,6 +21,11 @@ class GitHubProvider {
     return parseRepoUrl(repoUrl);
   }
 
+  async getFileContent(projectRepo, path, ref) {
+    const parsed = this.constructor.parseRepoUrl(projectRepo.repoUrl);
+    return this.api.getFileContent(parsed.owner, parsed.repo, path, ref);
+  }
+
   async createBranch(projectRepo, ticketId, ticketTitle) {
     return createTicketBranch(this.api, projectRepo, ticketId, ticketTitle);
   }
