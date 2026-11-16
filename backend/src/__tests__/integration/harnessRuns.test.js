@@ -423,6 +423,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     expect(ticket.rows[0].status).toBe('backlog');
     expect(ticket.rows[0].assigned_agent_id).toBeNull();
 
+    await HarnessRunService.markArtifactsFinalized(run.id);
     const after = await HarnessRunService.listTerminalRunsForReconcile(50);
     expect(after).not.toContain(run.id);
   });

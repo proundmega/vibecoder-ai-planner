@@ -18,6 +18,7 @@ function mockQueries({
   projectRuns = 0,
   agentRuns = 0,
   reserved = 0,
+  activeRun = false,
   upserted = { id: 1 },
   killSwitchRow = { id: 1, scope: 'project', enabled: true },
   auditFails = false,
@@ -42,6 +43,12 @@ function mockQueries({
     }
     if (sql.includes('SUM(r.budget_reserved_usd)')) {
       return { rows: [{ reserved }] };
+    }
+    if (sql.includes('FROM harness_runs')
+        && sql.includes('ticket_id = $1')
+        && sql.includes('LIMIT 1')
+        && sql.includes("status = 'running'")) {
+      return { rows: activeRun ? [{}] : [] };
     }
     if (sql.includes('JOIN tickets') && sql.includes('COUNT(*)')) {
       return { rows: [{ count: projectRuns }] };
@@ -173,6 +180,13 @@ describe('HarnessBudgetService', () => {
       await expect(HarnessBudgetService.assertCanStart({
         projectId: 7, ticketId: 42, agentId: 9,
       })).rejects.toThrow('Harness agent concurrency limit reached');
+    });
+
+    it('blocks a second start for a ticket that already has a running run', async () => {
+      mockQueries({ activeRun: true });
+      await expect(HarnessBudgetService.assertCanStart({
+        projectId: 7, ticketId: 42, agentId: 9,
+      })).rejects.toThrow('Ticket already has an active harness run');
     });
 
     it('allocates the run cost cap from spend plus active reservations', async () => {

@@ -313,6 +313,17 @@ class HarnessBudgetService {
         `Harness retry limit reached (${policy.limits.maxRetries} retries)`
       );
     }
+
+    const activeTicketRun = await client.query(
+      `SELECT 1 FROM harness_runs
+       WHERE ticket_id = $1 AND status = 'running'
+       LIMIT 1`,
+      [positiveInteger(ticketId, 'ticketId')]
+    );
+    if (activeTicketRun.rows.length > 0) {
+      throw new ConflictError('Ticket already has an active harness run');
+    }
+
     if (Number(policy.quotas.dailyCostUsd) > 0
       && policy.dailySpendUsd >= Number(policy.quotas.dailyCostUsd)) {
       throw new ConflictError(
