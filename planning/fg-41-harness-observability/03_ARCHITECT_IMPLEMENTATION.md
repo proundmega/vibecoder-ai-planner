@@ -80,4 +80,4 @@ observability operations.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-16 | stacked PRs #163/#164/#165 | fg-41 slices 1-2 | Implemented; backend 140/140 suites (1753 tests), agent 695 tests and frontend 571 tests green; pending review/merge |
+| 2026-11-16 | stacked PRs #163/#164/#165 | fg-41 slices 1-2 | Implemented; backend 144/144 suites (1814 tests), agent 728 tests and frontend 571 tests green; pending review/merge |
