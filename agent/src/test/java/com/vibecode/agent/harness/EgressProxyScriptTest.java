@@ -199,6 +199,31 @@ class EgressProxyScriptTest {
     }
 
     @Test
+    void supervisorAndProxyFingerprintsMatch() throws Exception {
+        SandboxConfig config = SandboxConfig.from(Map.of(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate",
+            "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "SANDBOX_EGRESS_ORIGIN_CA_B64", originCaBase64("egress-origin-ca.pem")
+        )::get);
+        String canonical = config.egressOriginCaPem();
+        String encoded = Base64.getEncoder().encodeToString(
+            canonical.getBytes(StandardCharsets.US_ASCII));
+
+        Result result = run("--check-origin-ca", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ORIGIN_CA_HOSTS", "registry.npmjs.org",
+            "EGRESS_ORIGIN_CA_PEM_B64", encoded));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains(
+            "sha256=" + DockerSandboxRunner.originCaSha256(canonical)), result.output);
+    }
+
+    @Test
     void rejectsAnUnscopedOrInvalidOriginCa() throws Exception {
         Result outside = run("--check-origin-ca", "", Map.of(
             "EGRESS_TLS_MODE", "terminate",

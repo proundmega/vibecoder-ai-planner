@@ -1392,7 +1392,8 @@ if (process.argv.includes("--check-hello")) {
 } else if (process.argv.includes("--check-origin-ca")) {
   try {
     initOriginCAs();
-    console.log("ORIGIN_CA " + Array.from(originCaByHost.keys()).join(","));
+    console.log("ORIGIN_CA " + Array.from(originCaByHost.keys()).join(",")
+      + " sha256=" + originCaSha256);
     process.exit(0);
   } catch (error) {
     console.error(`ERROR ${error.message}`);

@@ -68,6 +68,11 @@ public final class DockerSandboxRunner implements SandboxRunner {
     private static final Duration COPY_TIMEOUT = Duration.ofSeconds(60);
     private static final Duration CONTROL_TIMEOUT = Duration.ofSeconds(30);
     private static final int CONTROL_OUTPUT_BYTES = 16_384;
+    // The proxy's per-use audit line can be older than 200 denial lines, so
+    // read a much larger bounded window at teardown. The creation-time trust
+    // log remains the durable record if this window is ever exceeded.
+    private static final int PROXY_LOG_TAIL = 10_000;
+    private static final int PROXY_LOG_OUTPUT_BYTES = 4 * 1024 * 1024;
     private static final String LABEL = "vibecode.sandbox.managed=true";
 
     private final SandboxConfig config;
@@ -2087,9 +2092,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
         // Surface denials and the origin-CA audit trail before the container is
         // removed. The proxy logs one JSON line per decision/audit entry.
         DockerResult logs = runDocker(
-            List.of(config.dockerBinary(), "logs", "--tail", "200", proxyName),
+            List.of(config.dockerBinary(), "logs", "--tail",
+                String.valueOf(PROXY_LOG_TAIL), proxyName),
             CONTROL_TIMEOUT,
-            CONTROL_OUTPUT_BYTES
+            PROXY_LOG_OUTPUT_BYTES
         );
         for (String line : logs.output().split("\n")) {
             String trimmed = line.trim();

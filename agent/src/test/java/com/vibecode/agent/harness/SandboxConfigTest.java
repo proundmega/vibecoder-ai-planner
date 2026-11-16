@@ -259,6 +259,61 @@ class SandboxConfigTest {
         assertTrue(key.getMessage().contains("certificates only"), key.getMessage());
     }
 
+    @Test
+    void rejectsTooManyOriginCaCertificates() throws IOException {
+        String repeated = Files.readString(
+            Path.of("src/test/resources/egress-origin-ca.pem")).repeat(17);
+        String encoded = Base64.getEncoder().encodeToString(
+            repeated.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_IMAGE", "test:img",
+                "SANDBOX_NETWORK", "allowlist",
+                "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_TLS_MODE", "terminate",
+                "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_ORIGIN_CA_B64", encoded
+            )::get));
+
+        assertTrue(error.getMessage().contains("1-16"), error.getMessage());
+    }
+
+    @Test
+    void rejectsAnOversizedOriginCaBundle() {
+        String encoded = Base64.getEncoder().encodeToString(new byte[64 * 1024 + 1]);
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_IMAGE", "test:img",
+                "SANDBOX_NETWORK", "allowlist",
+                "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_TLS_MODE", "terminate",
+                "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_ORIGIN_CA_B64", encoded
+            )::get));
+
+        assertTrue(error.getMessage().contains("no larger than 65536"),
+            error.getMessage());
+    }
+
+    @Test
+    void rejectsInvalidBase64ForTheOriginCa() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_IMAGE", "test:img",
+                "SANDBOX_NETWORK", "allowlist",
+                "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_TLS_MODE", "terminate",
+                "SANDBOX_EGRESS_ORIGIN_CA_HOSTS", "registry.example.com",
+                "SANDBOX_EGRESS_ORIGIN_CA_B64", "%%%%"
+            )::get));
+
+        assertTrue(error.getMessage().contains("SANDBOX_EGRESS_ORIGIN_CA_B64"),
+            error.getMessage());
+    }
+
     private static String originCaBase64(String resource) throws IOException {
         return Base64.getEncoder().encodeToString(
             Files.readAllBytes(Path.of("src/test/resources", resource)));

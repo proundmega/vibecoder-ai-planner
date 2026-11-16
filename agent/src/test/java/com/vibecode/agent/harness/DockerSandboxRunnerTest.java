@@ -628,7 +628,7 @@ class DockerSandboxRunnerTest {
                 + "vibecode.sandbox.managed=true --label "
                 + "vibecode.sandbox.owner=agent-42"), logText);
         assertTrue(logText.contains("network connect bridge vibecode-egress-proxy-"), logText);
-        assertTrue(logText.contains("logs --tail 200 vibecode-egress-proxy-"), logText);
+        assertTrue(logText.contains("logs --tail 10000 vibecode-egress-proxy-"), logText);
         assertTrue(logText.contains("rm -f vibecode-egress-proxy-"), logText);
         assertTrue(logText.contains("network rm vibecode-egress-"), logText);
     }
@@ -642,7 +642,11 @@ class DockerSandboxRunnerTest {
               logs)
                 echo '{"level":"info","message":"egress origin CA configured","hosts":["registry.npmjs.org"],"sha256":"abc123"}'
                 echo '{"level":"info","message":"egress origin CA used","host":"registry.npmjs.org","sha256":"abc123"}'
-                echo '{"level":"warn","message":"egress denied","decision":"deny","host":"evil.test","reason":"not in allowlist"}'
+                i=0
+                while [ "$i" -lt 300 ]; do
+                  echo '{"level":"warn","message":"egress denied","decision":"deny","host":"evil.test","reason":"not in allowlist"}'
+                  i=$((i + 1))
+                done
                 exit 0
                 ;;
               rm) exit 0 ;;
