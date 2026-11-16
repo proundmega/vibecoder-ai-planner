@@ -163,12 +163,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             harnessConfig,
             repoName -> new WorkspaceManager(
                 config.getRepoCloneDir(), repoName, config.isDryRun(), githubToken, tokenSource),
-<<<<<<< HEAD
             (tempDir, bridge, effectiveConfig) ->
                 new OpenCodeClient(effectiveConfig, provider, tempDir, bridge),
-=======
-            null,
->>>>>>> 6f8681b (feat(fg-38): harness budgets, quotas, model routing and kill switch)
             new PlanningDocFetcher(apiService, config),
             new VerificationRunner(harnessConfig),
             new PublishingGuard(harnessConfig.protectedPaths()),
@@ -271,8 +267,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
         this.workspaceFactory = workspaceFactory;
         this.harnessFactory = harnessFactory != null
             ? harnessFactory
-            : (tempDir, bridge) -> new OpenCodeClient(
-                activeHarnessConfig(), provider, tempDir, bridge);
+            : (tempDir, bridge, effectiveConfig) -> new OpenCodeClient(
+                effectiveConfig, provider, tempDir, bridge);
         this.planningDocFetcher = planningDocFetcher;
         this.repoProfileSource = repoProfileSource == null
             ? () -> null
@@ -282,7 +278,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
         this.secretLeakGuard = new SecretLeakGuard(knownSecrets(provider, githubToken));
         this.redactor = new SecretRedactor(redactionSecrets(provider, githubToken));
         this.eventSink = new HttpHarnessEventSink(apiService);
-<<<<<<< HEAD
+    }
+
+    private HarnessConfig activeHarnessConfig() {
+        HarnessConfig active = activeHarnessConfig;
+        return active == null ? harnessConfig : active;
     }
 
     public SandboxConfig sandboxConfig() {
@@ -291,13 +291,6 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
     public SandboxRunner sandboxRunner() {
         return sandboxRunner;
-=======
->>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
-    }
-
-    private HarnessConfig activeHarnessConfig() {
-        HarnessConfig active = activeHarnessConfig;
-        return active == null ? harnessConfig : active;
     }
 
     private static List<String> knownSecrets(ProviderSettings provider, String githubToken) {
@@ -777,6 +770,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         if (effectiveHarnessConfig != null && effectiveHarnessConfig.maxDuration() != null) {
             deadline = Instant.now().plus(effectiveHarnessConfig.maxDuration());
         }
+        activeHarnessConfig = effectiveHarnessConfig;
 
         if (profileSnapshot != null
             && !profileRepoMatchesConfigured(profileSnapshot.profile())) {
@@ -901,12 +895,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
 
             tempDir = Files.createTempDirectory("opencode-harness-");
-<<<<<<< HEAD
-            harness = harnessFactory.create(tempDir, bridge, effectiveHarnessConfig);
-=======
-            harness = harnessFactory.create(tempDir, bridge);
+            harness = harnessFactory.create(tempDir, bridge, activeHarnessConfig());
             activeHarness = harness;
->>>>>>> 6f8681b (feat(fg-38): harness budgets, quotas, model routing and kill switch)
 
             currentStep = "starting-harness";
             harness.start(workspace.getRepoDir());
@@ -919,11 +909,9 @@ public final class HarnessTicketProcessor implements TicketWorker {
             currentStep = "implementing";
             String prompt = promptBuilder.build(
                 pickedUp, planningDocs, commands, bridge != null,
-<<<<<<< HEAD
                 effectiveSandboxConfig.networkEnabled());
-=======
-                sandboxConfig.networkEnabled());
->>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
+            emitPromptSent(prompt, planningDocs, commands);
+            subscribeHarnessEvents(harness, sessionId);
             emitPromptSent(prompt, planningDocs, commands);
             subscribeHarnessEvents(harness, sessionId);
             try {
@@ -977,13 +965,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
 
             currentStep = "verifying";
-<<<<<<< HEAD
+            ensureBudgetAllows("before verification");
             Duration verifyTimeout = profile == null
                 ? VERIFICATION_TIMEOUT
                 : Duration.ofMinutes(profile.timeouts().verifyMinutes());
-=======
-            ensureBudgetAllows("before verification");
->>>>>>> 6f8681b (feat(fg-38): harness budgets, quotas, model routing and kill switch)
             List<VerificationResult> verifyResults = runVerification(
                 sandbox, workspace, commands, remaining(deadline, verifyTimeout), profileEnv);
             verification.addAll(verifyResults);
@@ -1196,10 +1181,19 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
         routingDecision = decision;
 
-        if (harnessConfig != null) {
-            activeHarnessConfig = harnessConfig
+        HarnessConfig baseConfig = activeHarnessConfig != null
+            ? activeHarnessConfig
+            : harnessConfig;
+        if (baseConfig != null) {
+            Duration baseDuration = baseConfig.maxDuration();
+            Duration budgetDuration = effectiveLimits.maxDuration();
+            Duration routedDuration = baseDuration != null
+                && baseDuration.compareTo(budgetDuration) < 0
+                ? baseDuration
+                : budgetDuration;
+            activeHarnessConfig = baseConfig
                 .withModel(decision.model())
-                .withMaxDuration(effectiveLimits.maxDuration());
+                .withMaxDuration(routedDuration);
         }
 
         Map<String, Object> routingPayload = new LinkedHashMap<>();
@@ -1283,7 +1277,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         closeQuietly(primary);
         Path retryDir = Files.createTempDirectory("opencode-harness-fallback-");
-        HarnessClient retry = harnessFactory.create(retryDir, bridge);
+        HarnessClient retry = harnessFactory.create(retryDir, bridge, activeHarnessConfig());
         activeHarness = retry;
         try {
             currentStep = "starting-harness";

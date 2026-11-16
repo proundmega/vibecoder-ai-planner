@@ -58,10 +58,6 @@ class HarnessPayloadRedactorTest {
     }
 
     @Test
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> c0eee13 (fix(fg-41): renumber migrations and close review blocking gaps)
     void keepsTokenCountFieldsVisible() {
         Map<String, Object> safe = HarnessPayloadRedactor.redact(Map.of(
             "inputTokens", 1200,
@@ -82,11 +78,6 @@ class HarnessPayloadRedactorTest {
     }
 
     @Test
-<<<<<<< HEAD
-=======
->>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
-=======
->>>>>>> c0eee13 (fix(fg-41): renumber migrations and close review blocking gaps)
     void truncatesLongStringsAndCapsCollections() {
         Map<String, Object> safe = HarnessPayloadRedactor.redact(Map.of(
             "note", "x".repeat(5000),
