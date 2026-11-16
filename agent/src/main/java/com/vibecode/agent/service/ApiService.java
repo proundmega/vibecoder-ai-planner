@@ -719,13 +719,16 @@ public class ApiService {
         Map<String, Object> data = response.getData();
         Object versionValue = data.get("profile_version");
         if (!String.valueOf(profileId).equals(String.valueOf(data.get("profile_id")))
-            || !(versionValue instanceof Number versionNumber)
-            || versionNumber.intValue() != profileVersion) {
+            || !String.valueOf(profileVersion).equals(String.valueOf(versionValue))) {
             throw new IllegalArgumentException(
                 "repo profile mTLS response is for a different profile revision");
         }
-        if (!(data.get("credential_id") instanceof Number credentialId)
-            || credentialId.longValue() != expectedCredentialId) {
+        // pg returns BIGSERIAL ids as strings. Compare as strings so large ids
+        // keep their exact value and a JSON string does not fail the check.
+        Object credentialValue = data.get("credential_id");
+        if (credentialValue == null
+            || !String.valueOf(expectedCredentialId)
+                .equals(String.valueOf(credentialValue))) {
             throw new IllegalArgumentException(
                 "repo profile mTLS response is for a different credential");
         }

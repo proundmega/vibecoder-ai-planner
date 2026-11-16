@@ -351,8 +351,10 @@ class EgressProxyTerminateIntegrationTest {
             SSLContext withClient = trust(readCertificate(proxyCaDir.resolve("ca.crt")));
             String allowed = request(withClient, proxyPort, originPort, "localhost.test");
             assertTrue(allowed.contains("200"), allowed + "\n" + String.join("\n", logs));
-            assertTrue(hasLog(logs, "egress mTLS used", 5_000),
-                "proxy did not audit the mTLS use");
+            assertTrue(hasLog(logs, "egress mTLS host reached", 5_000),
+                "proxy did not audit the configured mTLS host");
+            assertFalse(hasLog(logs, "egress mTLS used", 500),
+                "proxy falsely claimed the client certificate was used");
 
             SSLContext withoutClient = trust(
                 readCertificate(noMtlsCaDir.resolve("ca.crt")));
@@ -362,6 +364,52 @@ class EgressProxyTerminateIntegrationTest {
         } finally {
             stop(proxy);
             stop(noMtls);
+            stop(origin);
+        }
+    }
+
+
+    @Test
+    @Timeout(90)
+    void doesNotClaimMtlsUseWhenTheOriginDoesNotRequestAClientCertificate() throws Exception {
+        Assumptions.assumeTrue(nodeAvailable(), "node is required");
+        Assumptions.assumeTrue(opensslAvailable(), "openssl is required");
+
+        Path caCert = tempDir.resolve("no-request-ca.crt");
+        Path caKey = tempDir.resolve("no-request-ca.key");
+        Path serverCert = tempDir.resolve("no-request-server.crt");
+        Path serverKey = tempDir.resolve("no-request-server.key");
+        Path serverCsr = tempDir.resolve("no-request-server.csr");
+        Path serverExt = tempDir.resolve("no-request-server.ext");
+        generateCertificates(caCert, caKey, serverCert, serverKey, serverCsr, serverExt);
+
+        int originPort = freePort();
+        Path originLog = tempDir.resolve("no-request-origin.log");
+        Process origin = startNodeOrigin(originPort, serverCert, serverKey, originLog);
+        int proxyPort = freePort();
+        Path proxyCaDir = tempDir.resolve("no-request-proxy-ca");
+        Process proxy = startProxyWithEnv(proxyPort, proxyCaDir, originPort, Map.of(
+            "NODE_EXTRA_CA_CERTS", caCert.toString(),
+            "EGRESS_MTLS_HOSTS", "localhost.test",
+            "EGRESS_MTLS_CERT_PEM_B64", base64(
+                Path.of("src/test/resources/egress-client-cert.pem")),
+            "EGRESS_MTLS_KEY_PEM_B64", base64(
+                Path.of("src/test/resources/egress-client-key.pem"))));
+
+        try {
+            BlockingQueue<String> logs = awaitListening(proxy);
+            awaitPort(originPort);
+            awaitPort(proxyPort);
+            SSLContext context = trust(readCertificate(proxyCaDir.resolve("ca.crt")));
+
+            String response = request(context, proxyPort, originPort, "localhost.test");
+            assertTrue(response.contains("200"), response + "\n" + String.join("\n", logs));
+            assertTrue(hasLog(logs, "egress mTLS host reached", 5_000),
+                "proxy did not record the configured mTLS host");
+            assertFalse(hasLog(logs, "egress mTLS used", 500),
+                "proxy falsely claimed the client certificate was used");
+        } finally {
+            stop(proxy);
             stop(origin);
         }
     }

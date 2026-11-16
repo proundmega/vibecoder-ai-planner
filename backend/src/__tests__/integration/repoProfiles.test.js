@@ -202,6 +202,7 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
 
     expect(material.profile_id).toBe(draft.id);
     expect(material.profile_version).toBe(draft.version);
+    expect(typeof material.credential_id).toBe('string');
     expect(material.credential_id).toBe(credential.id);
     expect(material.hosts).toEqual(['registry.example.com']);
     expect(material.cert_b64).toBe(Buffer.from(cert).toString('base64'));

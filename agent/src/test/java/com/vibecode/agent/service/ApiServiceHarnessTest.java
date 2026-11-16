@@ -331,7 +331,7 @@ class ApiServiceHarnessTest {
         EgressMtlsMaterial expected = new EgressMtlsMaterial(
             List.of("registry.example.com"), cert, key);
         String body = "{\"profile_id\":\"11111111-1111-4111-8111-111111111111\","
-            + "\"profile_version\":3,\"credential_id\":5,"
+            + "\"profile_version\":3,\"credential_id\":\"5\","
             + "\"cert_sha256\":\"" + expected.certSha256() + "\","
             + "\"hosts\":[\"registry.example.com\"],"
             + "\"cert_b64\":\"" + java.util.Base64.getEncoder()

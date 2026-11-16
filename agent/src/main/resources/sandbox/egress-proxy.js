@@ -139,7 +139,6 @@ const originCaUsed = new Set();
 let originCaInitialized = false;
 let originCaSha256 = null;
 const mtlsByHost = new Map();
-const mtlsUsed = new Set();
 const mtlsReached = new Set();
 let mtlsInitialized = false;
 let mtlsCertSha256 = null;
@@ -262,31 +261,6 @@ function mtlsHostError(host) {
     return "is not in the allowlist";
   }
   return null;
-}
-
-function presentedClientCertificate(socket) {
-  try {
-    const certificate = socket && typeof socket.getCertificate === "function"
-      ? socket.getCertificate()
-      : null;
-    if (!certificate) return false;
-    if (certificate.raw) return true;
-    return Object.keys(certificate).length > 0;
-  } catch (error) {
-    return false;
-  }
-}
-
-function markMtlsUsed(host) {
-  const value = normaliseHost(host);
-  if (!mtlsByHost.has(value) || mtlsUsed.has(value)) {
-    return;
-  }
-  mtlsUsed.add(value);
-  log("info", "egress mTLS used", {
-    host: value,
-    sha256: mtlsCertSha256,
-  });
 }
 
 function markMtlsReached(host) {
@@ -658,15 +632,14 @@ function handleTunneledRequest(request, response, host, address, port, agent, tl
     maxHeaderSize: MAX_RESPONSE_HEADER_BYTES,
     timeout: IDLE_TIMEOUT_MS,
   }, (upstreamResponse) => {
-    // Only record trust material as used after the origin TLS handshake and
-    // response succeeded; a failed connection must not produce an audit entry.
+    // Only record trust material after the origin TLS handshake and response
+    // succeeded. Node's public TLS API does not expose whether the origin sent
+    // a CertificateRequest; getCertificate() reports the locally configured
+    // certificate even when none was requested. Log "host reached" rather than
+    // claiming the certificate was used.
     markOriginCaUsed(host);
     if (mtlsByHost.has(normaliseHost(host))) {
-      if (presentedClientCertificate(upstreamResponse.socket)) {
-        markMtlsUsed(host);
-      } else {
-        markMtlsReached(host);
-      }
+      markMtlsReached(host);
     }
     const status = upstreamResponse.statusCode || 502;
     if (status === 101 || (status >= 100 && status < 200)) {
