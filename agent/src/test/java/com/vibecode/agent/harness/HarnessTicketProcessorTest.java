@@ -1632,6 +1632,8 @@ class HarnessTicketProcessorTest {
         assertTrue(types.contains("publish.started"), types.toString());
         assertTrue(types.contains("pr.opened"), types.toString());
         assertTrue(types.contains("run.succeeded"), types.toString());
+        assertEquals(1, types.stream().filter("prompt.sent"::equals).count());
+        verify(harness, times(1)).subscribe(anyString(), any());
 
         Map<String, Object> started = events.getAllValues().stream()
             .filter(event -> "run.started".equals(event.get("type")))

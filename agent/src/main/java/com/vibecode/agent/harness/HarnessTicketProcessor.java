@@ -912,8 +912,6 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 effectiveSandboxConfig.networkEnabled());
             emitPromptSent(prompt, planningDocs, commands);
             subscribeHarnessEvents(harness, sessionId);
-            emitPromptSent(prompt, planningDocs, commands);
-            subscribeHarnessEvents(harness, sessionId);
             try {
                 ensureBudgetAllows("before prompt");
                 try {
