@@ -37,6 +37,10 @@ CREATE INDEX IF NOT EXISTS idx_harness_events_type_created
   ON harness_events(type, event_timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_harness_events_created_at
   ON harness_events(type, created_at DESC);
+-- Dashboard/alert predicates use GREATEST(event_timestamp, created_at) so a
+-- backdated event cannot be hidden from the current window.
+CREATE INDEX IF NOT EXISTS idx_harness_events_project_alert_time
+  ON harness_events(project_id, GREATEST(event_timestamp, created_at) DESC);
 CREATE INDEX IF NOT EXISTS idx_harness_events_payload
   ON harness_events USING GIN (payload jsonb_path_ops);
 

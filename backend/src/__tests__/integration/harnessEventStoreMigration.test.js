@@ -62,6 +62,13 @@ describe('Migration 051 harness event store (real DB, transactional)', () => {
       );
       expect(projectIndex.rows).toHaveLength(1);
 
+      const alertIndex = await client.query(
+        `SELECT indexname FROM pg_indexes
+         WHERE schemaname = $1 AND indexname = 'idx_harness_events_project_alert_time'`,
+        [schema]
+      );
+      expect(alertIndex.rows).toHaveLength(1);
+
       await client.query(
         `INSERT INTO harness_events
            (event_id, trace_id, run_id, ticket_id, project_id, agent_id, type, payload)
