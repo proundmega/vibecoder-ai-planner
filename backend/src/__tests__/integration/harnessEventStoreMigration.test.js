@@ -71,11 +71,16 @@ describe('Migration 051 harness event store (real DB, transactional)', () => {
             (SELECT id FROM harness_runs LIMIT 1), 42, 7, 9, 'run.started', '{}'::jsonb)`
       );
 
+      await client.query('SAVEPOINT append_only_update');
       await expect(client.query(
         "UPDATE harness_events SET type = 'tampered'"
       )).rejects.toThrow(/append-only/);
+      await client.query('ROLLBACK TO SAVEPOINT append_only_update');
+
+      await client.query('SAVEPOINT append_only_delete');
       await expect(client.query('DELETE FROM harness_events'))
         .rejects.toThrow(/retention/);
+      await client.query('ROLLBACK TO SAVEPOINT append_only_delete');
 
       await client.query("SET LOCAL harness.allow_event_purge = 'on'");
       const purged = await client.query('DELETE FROM harness_events');

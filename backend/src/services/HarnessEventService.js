@@ -186,6 +186,9 @@ class HarnessEventService {
       if (Number.isNaN(eventTimestamp.getTime())) {
         throw new ValidationError('timestamp must be a valid timestamp');
       }
+      if (eventTimestamp.getTime() > Date.now() + 5 * 60 * 1000) {
+        throw new ValidationError('timestamp must not be more than 5 minutes in the future');
+      }
     }
     if (!normalisedPayloadInput._emitted_at) {
       normalisedPayloadInput._emitted_at = eventTimestamp.toISOString();

@@ -122,6 +122,19 @@ describe('HarnessEventService', () => {
       expect(duplicateCounter.values[0].value).toBe(1);
     });
 
+    it('rejects a timestamp too far in the future', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [RUN] });
+      await expect(HarnessEventService.emit({
+        eventId: EVENT_ID,
+        traceId: TRACE_ID,
+        runId: RUN_ID,
+        agentId: 9,
+        type: 'run.started',
+        timestamp: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        requireRunOwnership: true,
+      })).rejects.toThrow('timestamp must not be more than 5 minutes in the future');
+    });
+
     it('rejects an invalid event timestamp', async () => {
       pool.query.mockResolvedValueOnce({ rows: [RUN] });
       await expect(HarnessEventService.emit({
