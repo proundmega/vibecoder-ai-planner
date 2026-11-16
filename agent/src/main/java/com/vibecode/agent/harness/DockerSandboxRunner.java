@@ -73,6 +73,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
     // log remains the durable record if this window is ever exceeded.
     private static final int PROXY_LOG_TAIL = 10_000;
     private static final int PROXY_LOG_OUTPUT_BYTES = 4 * 1024 * 1024;
+    private static final int PROXY_DENIAL_WARN_LIMIT = 200;
     private static final String LABEL = "vibecode.sandbox.managed=true";
 
     private final SandboxConfig config;
@@ -2097,14 +2098,25 @@ public final class DockerSandboxRunner implements SandboxRunner {
             CONTROL_TIMEOUT,
             PROXY_LOG_OUTPUT_BYTES
         );
+        int denialsForwarded = 0;
+        int denialsSuppressed = 0;
         for (String line : logs.output().split("\n")) {
             String trimmed = line.trim();
             if (trimmed.contains("\"decision\":\"deny\"")) {
-                log.warn("Sandbox egress denied: {}", trimmed);
+                if (denialsForwarded < PROXY_DENIAL_WARN_LIMIT) {
+                    log.warn("Sandbox egress denied: {}", trimmed);
+                    denialsForwarded++;
+                } else {
+                    denialsSuppressed++;
+                }
             } else if (trimmed.contains("\"message\":\"egress origin CA")
                 || trimmed.contains("\"message\": \"egress origin CA")) {
                 log.info("Sandbox egress audit: {}", trimmed);
             }
+        }
+        if (denialsSuppressed > 0) {
+            log.warn("Sandbox egress denial summary: {} line(s) suppressed; {} forwarded",
+                denialsSuppressed, denialsForwarded);
         }
         DockerResult proxyRemoved = runDocker(
             List.of(config.dockerBinary(), "rm", "-f", proxyName),

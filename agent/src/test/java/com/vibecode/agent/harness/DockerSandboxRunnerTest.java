@@ -671,7 +671,14 @@ class DockerSandboxRunnerTest {
         assertTrue(messages.contains("egress origin CA configured"), messages);
         assertTrue(messages.contains("egress origin CA used"), messages);
         assertTrue(messages.contains("abc123"), messages);
-        assertTrue(messages.contains("egress denied"), messages);
+        long forwarded = appender.list.stream()
+            .map(ILoggingEvent::getFormattedMessage)
+            .filter(message -> message.startsWith("Sandbox egress denied: "))
+            .count();
+        assertEquals(200, forwarded);
+        assertTrue(messages.contains(
+            "Sandbox egress denial summary: 100 line(s) suppressed; 200 forwarded"),
+            messages);
     }
 
     @Test
