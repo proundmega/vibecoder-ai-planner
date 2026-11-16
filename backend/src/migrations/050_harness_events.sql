@@ -37,6 +37,20 @@ CREATE INDEX IF NOT EXISTS idx_harness_events_type_created
 CREATE INDEX IF NOT EXISTS idx_harness_events_payload
   ON harness_events USING GIN (payload jsonb_path_ops);
 
+-- Event correlation needs the ticket's project on the run itself. This is
+-- applied before 051 on fresh installs and is idempotent when 051 runs later.
+ALTER TABLE harness_runs
+  ADD COLUMN IF NOT EXISTS project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL;
+
+UPDATE harness_runs r
+SET project_id = t.project_id
+FROM tickets t
+WHERE t.id = r.ticket_id
+  AND r.project_id IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_harness_runs_project_started
+  ON harness_runs(project_id, started_at DESC);
+
 -- Append-only enforcement. Retention is the only delete path and must opt in
 -- inside its own transaction, so a bug or a compromised API cannot rewrite or
 -- erase history silently.
