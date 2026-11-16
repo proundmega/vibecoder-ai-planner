@@ -81,16 +81,6 @@ public record HarnessConfig(
             resumeMode);
     }
 
-    /** Apply the effective run budget as the prompt/session timeout. */
-    public HarnessConfig withMaxDuration(Duration duration) {
-        Duration effective = duration == null || duration.isNegative() || duration.isZero()
-            ? maxDuration
-            : duration;
-        return new HarnessConfig(
-            mode, binary, startupTimeout, effective, verificationCommands,
-            protectedPaths, modelOverride, resumeMode);
-    }
-
     public void validate() {
         if (binary == null || binary.isBlank()) {
             throw new IllegalStateException("HARNESS_BIN must not be blank");
