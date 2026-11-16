@@ -1,6 +1,5 @@
 const { pool } = require('../db');
 const HarnessMetrics = require('./HarnessMetrics');
-const logger = require('../utils/logger');
 const {
   ValidationError,
   ConflictError,
@@ -419,8 +418,10 @@ class HarnessBudgetService {
         policy.agentMaxConcurrentRuns, 'agentMaxConcurrentRuns'),
       warn_ratio: warnRatio,
       routing_policy: policy.routingPolicy || null,
-      free_model: policy.freeModel || null,
-      paid_model: policy.paidModel || null,
+      free_model: policy.freeModel === undefined ? null : (policy.freeModel || null),
+      paid_model: policy.paidModel === undefined ? null : (policy.paidModel || null),
+      clear_free_model: policy.freeModel === null || policy.freeModel === '',
+      clear_paid_model: policy.paidModel === null || policy.paidModel === '',
       complexity_threshold: optionalNonNegative(
         policy.complexityThreshold, 'complexityThreshold'),
     };
@@ -449,8 +450,10 @@ class HarnessBudgetService {
              $12, harness_budget_policies.agent_max_concurrent_runs),
            warn_ratio = COALESCE($13, harness_budget_policies.warn_ratio),
            routing_policy = COALESCE($14, harness_budget_policies.routing_policy),
-           free_model = COALESCE($15, harness_budget_policies.free_model),
-           paid_model = COALESCE($16, harness_budget_policies.paid_model),
+           free_model = CASE WHEN $19 THEN NULL
+                             ELSE COALESCE($15, harness_budget_policies.free_model) END,
+           paid_model = CASE WHEN $20 THEN NULL
+                             ELSE COALESCE($16, harness_budget_policies.paid_model) END,
            complexity_threshold = COALESCE(
              $17, harness_budget_policies.complexity_threshold),
            updated_by = COALESCE($18, harness_budget_policies.updated_by),
@@ -475,6 +478,8 @@ class HarnessBudgetService {
         fields.paid_model,
         fields.complexity_threshold,
         updatedBy,
+        fields.clear_free_model,
+        fields.clear_paid_model,
       ]
     );
     if (result.rows.length === 0) {
@@ -494,30 +499,37 @@ class HarnessBudgetService {
     if (typeof enabled !== 'boolean') {
       throw new ValidationError('enabled must be a boolean');
     }
-    const result = await pool.query(
-      `INSERT INTO harness_kill_switches (scope, project_id, enabled, reason, updated_by, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
-       ON CONFLICT (scope, (COALESCE(project_id, 0))) DO UPDATE
-       SET enabled = EXCLUDED.enabled,
-           reason = EXCLUDED.reason,
-           updated_by = EXCLUDED.updated_by,
-           updated_at = NOW()
-       RETURNING *`,
-      [scope, project, enabled, reason, updatedBy]
-    );
-    HarnessMetrics.setKillSwitch(scope, enabled);
+
+    const client = await pool.connect();
     try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        `INSERT INTO harness_kill_switches (scope, project_id, enabled, reason, updated_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (scope, (COALESCE(project_id, 0))) DO UPDATE
+         SET enabled = EXCLUDED.enabled,
+             reason = EXCLUDED.reason,
+             updated_by = EXCLUDED.updated_by,
+             updated_at = NOW()
+         RETURNING *`,
+        [scope, project, enabled, reason, updatedBy]
+      );
       await this.recordKillSwitchAudit({
         scope,
         projectId: project,
         enabled,
         reason,
         actorId: updatedBy,
-      });
-    } catch (auditError) {
-      logger.warn(`Could not append kill-switch audit: ${auditError.message}`);
+      }, client);
+      await client.query('COMMIT');
+      HarnessMetrics.setKillSwitch(scope, enabled);
+      return result.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-    return result.rows[0];
   }
 
   async recordKillSwitchAudit({
@@ -526,8 +538,8 @@ class HarnessBudgetService {
     enabled,
     reason = null,
     actorId = null,
-  }) {
-    const result = await pool.query(
+  }, client = pool) {
+    const result = await client.query(
       `INSERT INTO harness_kill_switch_audit
          (scope, project_id, enabled, reason, actor_id)
        VALUES ($1, $2, $3, $4, $5)
@@ -535,6 +547,23 @@ class HarnessBudgetService {
       [scope, projectId, enabled, reason, actorId]
     );
     return result.rows[0];
+  }
+
+  async listKillSwitchAudit(projectId, { limit = 50 } = {}) {
+    const id = positiveInteger(projectId, 'projectId');
+    const parsedLimit = Number(limit);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 200) {
+      throw new ValidationError('limit must be an integer between 1 and 200');
+    }
+    const result = await pool.query(
+      `SELECT * FROM harness_kill_switch_audit
+       WHERE scope = 'global'
+          OR (scope = 'project' AND project_id = $1)
+       ORDER BY created_at DESC, id DESC
+       LIMIT $2`,
+      [id, parsedLimit]
+    );
+    return result.rows;
   }
 }
 

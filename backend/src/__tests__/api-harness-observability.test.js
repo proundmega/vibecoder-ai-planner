@@ -46,6 +46,7 @@ jest.mock('../services/HarnessBudgetService', () => ({
   upsertPolicy: jest.fn(),
   getKillSwitch: jest.fn(),
   setKillSwitch: jest.fn(),
+  listKillSwitchAudit: jest.fn(),
 }));
 
 jest.mock('../services/HarnessAuditService', () => ({
@@ -404,6 +405,23 @@ describe('Harness observability API', () => {
         .set('Authorization', 'Bearer mock-token');
       expect(res.statusCode).toBe(200);
       expect(res.body.data).toHaveLength(1);
+    });
+
+    it('returns kill-switch history to a member', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ owner_id: 'owner-1', is_member: true }],
+      });
+      HarnessBudgetService.listKillSwitchAudit.mockResolvedValue([
+        { scope: 'project', enabled: true, reason: 'incident' },
+      ]);
+      const res = await request(app)
+        .get('/api/v1/harness/projects/5/kill-switch/audit')
+        .set('Authorization', 'Bearer mock-token');
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data).toHaveLength(1);
+      expect(HarnessBudgetService.listKillSwitchAudit).toHaveBeenCalledWith(5, {
+        limit: undefined,
+      });
     });
 
     it('rejects an invalid project id', async () => {

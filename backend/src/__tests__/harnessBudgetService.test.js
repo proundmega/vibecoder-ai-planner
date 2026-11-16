@@ -20,8 +20,9 @@ function mockQueries({
   reserved = 0,
   upserted = { id: 1 },
   killSwitchRow = { id: 1, scope: 'project', enabled: true },
+  auditFails = false,
 } = {}) {
-  pool.query.mockImplementation(async (sql) => {
+  const impl = async (sql) => {
     if (sql.includes('pg_advisory_xact_lock')) return { rows: [] };
     if (sql.includes('FROM harness_budget_policies')) return { rows: policies };
     if (sql.includes('FROM model_prices')) {
@@ -35,6 +36,9 @@ function mockQueries({
     }
     if (sql.includes('FROM harness_kill_switches')) {
       return { rows: killSwitch ? [killSwitch] : [] };
+    }
+    if (sql.includes('FROM harness_kill_switch_audit')) {
+      return { rows: [] };
     }
     if (sql.includes('SUM(r.budget_reserved_usd)')) {
       return { rows: [{ reserved }] };
@@ -51,8 +55,19 @@ function mockQueries({
     if (sql.includes('INSERT INTO harness_kill_switches')) {
       return { rows: [killSwitchRow] };
     }
+    if (sql.includes('INSERT INTO harness_kill_switch_audit')) {
+      if (auditFails) throw new Error('audit unavailable');
+      return { rows: [{ id: 1 }] };
+    }
     return { rows: [] };
-  });
+  };
+  pool.query.mockImplementation(impl);
+  const client = {
+    query: jest.fn(impl),
+    release: jest.fn(),
+  };
+  pool.connect.mockResolvedValue(client);
+  return client;
 }
 
 const PRICE = {
@@ -272,8 +287,10 @@ describe('HarnessBudgetService', () => {
       expect(pool.query.mock.calls[0][0]).toContain('INSERT INTO harness_budget_policies');
     });
 
-    it('sets and reports a project kill switch', async () => {
-      mockQueries({ killSwitchRow: { scope: 'project', project_id: 7, enabled: true } });
+    it('sets and reports a project kill switch atomically with its audit row', async () => {
+      const client = mockQueries({
+        killSwitchRow: { scope: 'project', project_id: 7, enabled: true },
+      });
       const row = await HarnessBudgetService.setKillSwitch({
         projectId: 7,
         enabled: true,
@@ -281,11 +298,38 @@ describe('HarnessBudgetService', () => {
         updatedBy: 1,
       });
       expect(row.scope).toBe('project');
-      expect(pool.query.mock.calls.some(
+      expect(client.query.mock.calls.some(
         (call) => String(call[0]).includes('INSERT INTO harness_kill_switch_audit')
       )).toBe(true);
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
       const gauge = await HarnessMetrics.gauges.killSwitch.get();
       expect(gauge.values.find((v) => v.labels.scope === 'project').value).toBe(1);
+    });
+
+    it('rolls back the switch when the audit insert fails', async () => {
+      const client = mockQueries({ auditFails: true });
+
+      await expect(HarnessBudgetService.setKillSwitch({
+        projectId: 7,
+        enabled: true,
+        reason: 'audit must be durable',
+        updatedBy: 1,
+      })).rejects.toThrow('audit unavailable');
+
+      expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(client.query).not.toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('lists project and global kill-switch history', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ scope: 'global', enabled: true }],
+      });
+      const rows = await HarnessBudgetService.listKillSwitchAudit(7, { limit: 10 });
+      expect(rows).toHaveLength(1);
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain("scope = 'global'");
+      expect(sql).toContain('scope = \'project\'');
+      expect(params).toEqual([7, 10]);
     });
 
     it('rejects a non-boolean kill switch value', async () => {

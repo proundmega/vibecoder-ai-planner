@@ -546,6 +546,37 @@ router.put('/projects/:projectId/budget-policy', verifyTokenOrAgent, async (req,
 
 /**
  * @openapi
+ * /harness/projects/{projectId}/kill-switch/audit:
+ *   get:
+ *     tags: [Harness]
+ *     summary: List immutable kill-switch history for a project (including global)
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Kill-switch audit rows
+ */
+router.get('/projects/:projectId/kill-switch/audit', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const projectId = projectIdParam(req.params.projectId);
+    await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
+    const rows = await HarnessBudgetService.listKillSwitchAudit(projectId, {
+      limit: req.query.limit,
+    });
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    logger.error('GET /harness/projects/:projectId/kill-switch/audit failed:', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
  * /harness/projects/{projectId}/kill-switch:
  *   get:
  *     tags: [Harness]

@@ -60,5 +60,18 @@ describe('Harness budget policy partial updates (real DB)', () => {
     expect(Number(routed.max_cost_usd)).toBe(10);
     expect(Number(routed.warn_ratio)).toBe(0.7);
     expect(routed.routing_policy).toBe('free_only');
+
+    const withPaid = await HarnessBudgetService.upsertPolicy({
+      projectId,
+      policy: { paidModel: 'gpt-4o' },
+    });
+    expect(withPaid.paid_model).toBe('gpt-4o');
+
+    const cleared = await HarnessBudgetService.upsertPolicy({
+      projectId,
+      policy: { paidModel: null },
+    });
+    expect(cleared.paid_model).toBeNull();
+    expect(Number(cleared.max_cost_usd)).toBe(10);
   });
 });

@@ -22,6 +22,10 @@ jest.mock('../services/PermissionService', () => ({
   hasPermission: jest.fn().mockResolvedValue(true),
 }));
 
+jest.mock('../services/HarnessBudgetService', () => ({
+  getPolicy: jest.fn(),
+}));
+
 jest.mock('../services/HarnessRunService', () => ({
   startRun: jest.fn(),
   getRun: jest.fn(),
@@ -43,6 +47,7 @@ jest.mock('../services/HarnessRunService', () => ({
 }));
 
 const HarnessRunService = require('../services/HarnessRunService');
+const HarnessBudgetService = require('../services/HarnessBudgetService');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
 const jwt = require('jsonwebtoken');
@@ -56,6 +61,9 @@ describe('Harness run API', () => {
       userId: 'user-1', id: 'user-1', email: 'user@test.com', role: 'project_admin',
     });
     PermissionService.hasPermission.mockResolvedValue(true);
+    HarnessBudgetService.getPolicy.mockResolvedValue({
+      limits: { maxCostUsd: 5 }, reservedCostUsd: 0,
+    });
     pool.query.mockResolvedValue({ rows: [] });
   });
 
@@ -80,6 +88,26 @@ describe('Harness run API', () => {
           model: 'claude',
         })
       );
+    });
+
+    it('returns a reservation-only policy if the full policy read fails', async () => {
+      HarnessRunService.startRun.mockResolvedValue({
+        id: RUN_ID, agent_id: 7, project_id: 5, ticket_id: 42,
+        budget_reserved_usd: 3,
+      });
+      HarnessBudgetService.getPolicy.mockRejectedValueOnce(new Error('db blip'));
+
+      const res = await request(app)
+        .post('/api/v1/harness/runs')
+        .set('X-API-Key', 'agent-key')
+        .send({ ticketId: 42, branch: 'feat/fg-38' });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.body.budgetPolicy).toEqual(expect.objectContaining({
+        source: 'reservation_only',
+        reservedCostUsd: 3,
+        limits: { maxCostUsd: 3 },
+      }));
     });
 
     it('rejects a JWT caller because runs are agent-owned', async () => {

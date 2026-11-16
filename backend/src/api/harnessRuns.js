@@ -159,6 +159,15 @@ router.post('/runs', verifyTokenOrAgent, async (req, res, next) => {
       };
     } catch (policyError) {
       logger.warn(`Could not load harness budget policy for run ${run.id}: ${policyError.message}`);
+      const reserved = Number(run.budget_reserved_usd) || 0;
+      // Fail closed enough to finish locally: keep the reservation cap and a
+      // free-only routing hint rather than silently using unconstrained defaults.
+      budgetPolicy = {
+        source: 'reservation_only',
+        reservedCostUsd: reserved,
+        routing: { policy: 'free_only' },
+        ...(reserved > 0 ? { limits: { maxCostUsd: reserved } } : {}),
+      };
     }
 
     res.status(201).json({ success: true, data: run, budgetPolicy });

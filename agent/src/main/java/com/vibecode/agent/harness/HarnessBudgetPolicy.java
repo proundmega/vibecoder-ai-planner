@@ -83,8 +83,9 @@ public record HarnessBudgetPolicy(
             warn > 0 && warn <= 1 ? warn : fallback.limits().warnRatio()
         );
         double reserved = number(raw.get("reservedCostUsd"), -1);
-        if (reserved >= 0) {
-            double cap = Math.min(parsedLimits.maxCostUsd(), Math.max(0.000001, reserved));
+        if (reserved > 0) {
+            double baseCap = parsedLimits.maxCostUsd();
+            double cap = baseCap > 0 ? Math.min(baseCap, reserved) : reserved;
             parsedLimits = new BudgetLimits(
                 parsedLimits.maxDuration(),
                 parsedLimits.maxInputTokens(),
