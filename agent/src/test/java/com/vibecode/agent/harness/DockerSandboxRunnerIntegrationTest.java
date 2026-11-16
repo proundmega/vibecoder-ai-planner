@@ -447,6 +447,65 @@ class DockerSandboxRunnerIntegrationTest {
     }
 
     @Test
+    void terminateModeJavaTruststoreReachesAnAllowlistedHost() throws Exception {
+        String image = System.getenv("SANDBOX_IT_JAVA_IMAGE");
+        String proxyImage = System.getenv("SANDBOX_IT_PROXY_IMAGE");
+        String host = System.getenv("SANDBOX_IT_JAVA_HOST");
+        if (host == null || host.isBlank()) {
+            host = "repo.maven.apache.org";
+        }
+        Assumptions.assumeTrue(image != null && !image.isBlank(),
+            "SANDBOX_IT_JAVA_IMAGE is not set; skipping the Java truststore test");
+        Assumptions.assumeTrue(proxyImage != null && !proxyImage.isBlank(),
+            "SANDBOX_IT_PROXY_IMAGE is not set; skipping the Java truststore test");
+
+        SandboxConfig config = integrationConfig(image, Map.of(
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", host,
+            "SANDBOX_EGRESS_TLS_MODE", "terminate",
+            "SANDBOX_PROXY_IMAGE", proxyImage
+        ));
+        Path workspace = Files.createDirectories(tempDir.resolve("java-trust-workspace"));
+        Files.setPosixFilePermissions(workspace,
+            PosixFilePermissions.fromString("rwxrwxrwx"));
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            SandboxHandle handle = runner.create(config.specFor(workspace));
+            try {
+                String command = "cat > /tmp/JavaTrustCheck.java <<'EOF'\n"
+                    + "import java.net.URI;\n"
+                    + "import java.net.http.HttpClient;\n"
+                    + "import java.net.http.HttpRequest;\n"
+                    + "import java.net.http.HttpResponse;\n"
+                    + "public class JavaTrustCheck {\n"
+                    + "  public static void main(String[] args) throws Exception {\n"
+                    + "    var client = HttpClient.newHttpClient();\n"
+                    + "    var request = HttpRequest.newBuilder(URI.create(args[0])).build();\n"
+                    + "    var response = client.send(request, HttpResponse.BodyHandlers.ofString());\n"
+                    + "    System.out.println(response.statusCode());\n"
+                    + "  }\n"
+                    + "}\n"
+                    + "EOF\n"
+                    + "\"$JAVA_HOME/bin/javac\" -d /tmp /tmp/JavaTrustCheck.java\n"
+                    + "\"$JAVA_HOME/bin/java\" -cp /tmp JavaTrustCheck https://" + host + "/maven2/\n"
+                    + "test -s /tmp/vibecode-java-truststore\n"
+                    + "printenv JAVA_TOOL_OPTIONS\n"
+                    + "echo JAVA_TRUST_OK";
+                ExecResult result = runner.exec(handle,
+                    ExecRequest.of(command, Duration.ofSeconds(45)));
+                assertTrue(result.passed(), result.output());
+                assertTrue(result.output().contains("JAVA_TRUST_OK"), result.output());
+                assertTrue(result.output().matches("(?s).*\\b[23][0-9][0-9]\\b.*"),
+                    result.output());
+                assertTrue(result.output().contains(
+                    "trustStore=/tmp/vibecode-java-truststore"), result.output());
+            } finally {
+                runner.destroy(handle);
+            }
+        }
+    }
+
+    @Test
     void terminateModeReachesAnAllowlistedHostAndRejectsAHostMismatch() throws Exception {
         String image = System.getenv("SANDBOX_IT_IMAGE");
         String proxyImage = System.getenv("SANDBOX_IT_PROXY_IMAGE");

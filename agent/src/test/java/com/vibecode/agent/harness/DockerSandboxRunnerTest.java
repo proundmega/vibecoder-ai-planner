@@ -514,6 +514,31 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void perHandleTrustEnvironmentOverridesCommandEnvironment() {
+        Map<String, String> merged = DockerSandboxRunner.mergeExecEnvironment(
+            Map.of("JAVA_TOOL_OPTIONS", "-Djavax.net.ssl.trustStore=/tmp/trust"),
+            Map.of("FEATURE_FLAG", "on", "JAVA_TOOL_OPTIONS", "-Duser.override=true"));
+
+        assertEquals("-Duser.override=true -Djavax.net.ssl.trustStore=/tmp/trust",
+            merged.get("JAVA_TOOL_OPTIONS"));
+        assertEquals("on", merged.get("FEATURE_FLAG"));
+
+        String conflicting = DockerSandboxRunner.mergeExecEnvironment(
+            Map.of("JAVA_TOOL_OPTIONS", "-Djavax.net.ssl.trustStore=/tmp/trust"),
+            Map.of("JAVA_TOOL_OPTIONS", "-Djavax.net.ssl.trustStore=/tmp/caller"))
+            .get("JAVA_TOOL_OPTIONS");
+        assertTrue(conflicting.endsWith("-Djavax.net.ssl.trustStore=/tmp/trust"),
+            conflicting);
+        assertTrue(conflicting.indexOf("/tmp/caller")
+            < conflicting.lastIndexOf("/tmp/trust"), conflicting);
+        assertEquals("-Djavax.net.ssl.trustStore=/tmp/trust",
+            DockerSandboxRunner.mergeExecEnvironment(
+                Map.of("JAVA_TOOL_OPTIONS", "-Djavax.net.ssl.trustStore=/tmp/trust"),
+                Map.of()).get("JAVA_TOOL_OPTIONS"));
+        assertTrue(DockerSandboxRunner.mergeExecEnvironment(null, null).isEmpty());
+    }
+
+    @Test
     void execArgsMapTheWorkspaceAndEnvironment() throws IOException {
         SandboxHandle handle = new SandboxHandle("sandbox-1", workspace(), false, null);
         ExecRequest request = new ExecRequest(
