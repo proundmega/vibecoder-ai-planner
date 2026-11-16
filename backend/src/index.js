@@ -172,11 +172,30 @@ if (process.env.NODE_ENV !== 'test') {
     logger.info('Harness reaper disabled (HARNESS_REAPER_INTERVAL_SECONDS=0)');
   }
 
+  // Bounded retention for the append-only event store (fg-41 FR5). Retention
+  // is the only delete path and opts in to the trigger guard inside the
+  // service transaction. Audit events keep a longer window.
+  const HarnessEventService = require('./services/HarnessEventService');
+  const eventRetentionDays = Number(process.env.HARNESS_EVENT_RETENTION_DAYS) || 30;
+  const auditRetentionDays = Number(process.env.HARNESS_AUDIT_RETENTION_DAYS) || 365;
+  const purgeTick = () => {
+    HarnessEventService.purgeExpired({
+      eventDays: eventRetentionDays,
+      auditDays: auditRetentionDays,
+    }).catch(err => {
+      logger.error('Harness event retention failed:', err.message);
+    });
+  };
+  const eventRetentionInterval = setInterval(purgeTick, 6 * 60 * 60 * 1000);
+  eventRetentionInterval.unref();
+  purgeTick();
+
   gracefulShutdown(server, pool, [
     () => clearInterval(cleanupInterval),
     () => {
       if (reaperInterval) clearInterval(reaperInterval);
     },
+    () => clearInterval(eventRetentionInterval),
   ]);
 }
 

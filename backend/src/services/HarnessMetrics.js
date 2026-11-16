@@ -35,6 +35,72 @@ const lastSuccess = createGauge(
   'Unix timestamp of the last complete harness reaper sweep'
 );
 
+// fg-41: event stream and audit health.
+const eventsIngested = createCounter(
+  'harness_events_ingested_total',
+  'Harness events accepted for storage, by type',
+  ['type']
+);
+const eventsRejected = createCounter(
+  'harness_events_rejected_total',
+  'Harness events rejected before storage, by reason',
+  ['reason']
+);
+const eventsPurged = createCounter(
+  'harness_events_purged_total',
+  'Harness events removed by the retention policy',
+  []
+);
+const eventsSecretFlagged = createCounter(
+  'harness_events_secret_flagged_total',
+  'Harness events whose payload contained a redacted credential pattern',
+  []
+);
+const eventsDuplicates = createCounter(
+  'harness_events_duplicate_total',
+  'Harness events ignored because the event id was already stored',
+  []
+);
+const stuckRuns = createGauge(
+  'harness_runs_stuck',
+  'Running harness runs whose heartbeat is older than the stuck threshold'
+);
+
+// fg-38: budgets and routing.
+const budgetWarnings = createCounter(
+  'harness_budget_warnings_total',
+  'Harness budget soft warnings emitted',
+  []
+);
+const budgetBreaches = createCounter(
+  'harness_budget_breaches_total',
+  'Harness runs stopped by a hard budget limit',
+  []
+);
+const usageCostTotal = createCounter(
+  'harness_usage_cost_usd_total',
+  'Cumulative reported harness usage cost in USD',
+  []
+);
+const usageTokens = createCounter(
+  'harness_usage_tokens_total',
+  'Cumulative reported harness tokens by direction',
+  ['direction']
+);
+const killSwitch = createGauge(
+  'harness_kill_switch_enabled',
+  'Whether a harness kill switch is enabled (1) or not (0), by scope',
+  ['scope']
+);
+
+const OBSERVED_EVENT_TYPES = new Set([
+  'run.started', 'step.changed', 'prompt.sent', 'tool.called', 'file.edited',
+  'verification.result', 'diff.collected', 'publish.started', 'pr.opened',
+  'review.result', 'fix.requested', 'budget.warning', 'budget.breach',
+  'run.failed', 'run.succeeded', 'routing.decided', 'usage.recorded',
+  'audit.publish', 'audit.review', 'audit.merge', 'audit.rollback',
+]);
+
 function recordSweep(summary, { complete = true } = {}) {
   if (summary.reaped > 0) reaped.inc(summary.reaped);
   if (summary.reconciled > 0) reconciled.inc(summary.reconciled);
@@ -52,9 +118,70 @@ function recordSweepFailure() {
   sweepFailures.inc();
 }
 
+function recordEvent(type, { secretFlagged = false, duplicate = false } = {}) {
+  eventsIngested.inc({ type: OBSERVED_EVENT_TYPES.has(type) ? type : 'other' });
+  if (duplicate) eventsDuplicates.inc();
+  if (secretFlagged) eventsSecretFlagged.inc();
+}
+
+function recordEventRejected(reason) {
+  eventsRejected.inc({ reason: reason || 'unknown' });
+}
+
+function recordEventsPurged(count) {
+  if (count > 0) eventsPurged.inc(count);
+}
+
+function recordBudgetWarning() {
+  budgetWarnings.inc();
+}
+
+function recordBudgetBreach() {
+  budgetBreaches.inc();
+}
+
+function recordUsage({ inputTokens, outputTokens, costUsd }) {
+  if (inputTokens > 0) usageTokens.inc({ direction: 'input' }, inputTokens);
+  if (outputTokens > 0) usageTokens.inc({ direction: 'output' }, outputTokens);
+  if (costUsd > 0) usageCostTotal.inc(costUsd);
+}
+
+function setStuckRuns(count) {
+  stuckRuns.set(Math.max(0, Number(count) || 0));
+}
+
+function setKillSwitch(scope, enabled) {
+  killSwitch.set({ scope }, enabled ? 1 : 0);
+}
+
 module.exports = {
   recordSweep,
   recordSweepFailure,
-  counters: { reaped, reconciled, released, adopted, needsOperator, sweepFailures },
+  recordEvent,
+  recordEventRejected,
+  recordEventsPurged,
+  recordBudgetWarning,
+  recordBudgetBreach,
+  recordUsage,
+  setStuckRuns,
+  setKillSwitch,
+  counters: {
+    reaped,
+    reconciled,
+    released,
+    adopted,
+    needsOperator,
+    sweepFailures,
+    eventsIngested,
+    eventsRejected,
+    eventsPurged,
+    eventsSecretFlagged,
+    eventsDuplicates,
+    budgetWarnings,
+    budgetBreaches,
+    usageCostTotal,
+    usageTokens,
+  },
+  gauges: { stuckRuns, killSwitch },
   lastSuccess,
 };

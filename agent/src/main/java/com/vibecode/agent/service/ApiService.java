@@ -172,6 +172,21 @@ public class ApiService {
         return response.getData();
     }
 
+    /**
+     * Append a structured harness event. Best effort: the caller owns failure
+     * handling, because observability must never abort a ticket.
+     */
+    public void emitHarnessEvent(Map<String, Object> event) throws IOException {
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/events",
+            event,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+        if (response.hasError()) {
+            throw new IOException("Failed to emit harness event: " + response.getError());
+        }
+    }
+
     public void checkpointHarnessRun(
         String runId,
         String step,

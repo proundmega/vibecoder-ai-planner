@@ -63,13 +63,27 @@ describe('OpenAPI ticket contract (bp-124)', () => {
 describe('OpenAPI path/body id contract (bp-133 FR2)', () => {
   const numericId = { $ref: '#/components/schemas/NumericId' };
 
-  test('only milestoneId is documented as a UUID in paths and request bodies', () => {
+  test('only genuine UUID ids are documented as UUIDs in paths and request bodies', () => {
     const uuidFields = [];
     walkSchemas(specs.paths, (key, value) => {
-      if (value && value.format === 'uuid') uuidFields.push(key);
+      if (value && value.format === 'uuid' && key !== 'schema') uuidFields.push(key);
     });
 
-    expect(uuidFields).toEqual(['milestoneId']);
+    // milestoneId is the only ticket/domain id stored as UUID. Harness event
+    // correlation ids (fg-41) are genuinely UUIDs and are intentionally new.
+    const allowed = new Set(['milestoneId', 'eventId', 'traceId', 'runId']);
+    expect(uuidFields.filter((field) => !allowed.has(field))).toEqual([]);
+    expect(uuidFields).toEqual(expect.arrayContaining(['milestoneId', 'eventId']));
+
+    const pathUuidParams = [];
+    for (const operation of Object.values(specs.paths)) {
+      for (const method of Object.values(operation)) {
+        for (const parameter of method?.parameters || []) {
+          if (parameter?.schema?.format === 'uuid') pathUuidParams.push(parameter.name);
+        }
+      }
+    }
+    expect(pathUuidParams).toEqual(expect.arrayContaining(['runId']));
   });
 
   test.each([

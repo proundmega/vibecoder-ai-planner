@@ -3,10 +3,10 @@ const client = require('prom-client');
 const register = new client.Registry();
 const createdMetrics = new Map();
 
-function createGauge(name, help) {
-  const key = `gauge:${name}`;
+function createGauge(name, help, labelNames = []) {
+  const key = `gauge:${name}:${labelNames.join(',')}`;
   if (createdMetrics.has(key)) return createdMetrics.get(key);
-  const metric = new client.Gauge({ name, help });
+  const metric = new client.Gauge({ name, help, labelNames });
   register.registerMetric(metric);
   createdMetrics.set(key, metric);
   return metric;
