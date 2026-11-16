@@ -32,6 +32,10 @@ jest.mock('../services/RepoProfileService', () => ({
   activate: jest.fn(),
   detect: jest.fn(),
   getActiveForAgent: jest.fn(),
+  createMtlsCredential: jest.fn(),
+  listMtlsCredentials: jest.fn(),
+  deleteMtlsCredential: jest.fn(),
+  getMtlsMaterialForAgent: jest.fn(),
 }));
 
 jest.mock('../services/RepoProfileValidationService', () => ({
@@ -187,6 +191,60 @@ describe('Repo profile API', () => {
       '1', VALIDATION_ID, expect.objectContaining({ id: 7 }),
       { status: 'succeeded', result: { ok: true } }
     );
+  });
+
+
+  it('stores, lists and deactivates repo-profile mTLS credentials', async () => {
+    RepoProfileService.createMtlsCredential.mockResolvedValue({
+      id: 5, name: 'registry-client', hosts: ['registry.example.com'],
+    });
+    RepoProfileService.listMtlsCredentials.mockResolvedValue([{ id: 5 }]);
+    RepoProfileService.deleteMtlsCredential.mockResolvedValue({ id: 5, is_active: false });
+
+    const created = await request(app)
+      .post('/api/v1/projects/1/repo-profile/credentials/mtls')
+      .set('Authorization', 'Bearer mock-token')
+      .send({ name: 'registry-client', hosts: ['registry.example.com'] });
+    expect(created.statusCode).toBe(201);
+    expect(RepoProfileService.createMtlsCredential).toHaveBeenCalledWith(
+      '1', expect.objectContaining({ name: 'registry-client' }),
+      expect.objectContaining({ userId: 'user-1' })
+    );
+
+    const listed = await request(app)
+      .get('/api/v1/projects/1/repo-profile/credentials/mtls')
+      .set('Authorization', 'Bearer mock-token');
+    expect(listed.statusCode).toBe(200);
+
+    const deleted = await request(app)
+      .delete('/api/v1/projects/1/repo-profile/credentials/mtls/5')
+      .set('Authorization', 'Bearer mock-token');
+    expect(deleted.statusCode).toBe(200);
+    expect(RepoProfileService.deleteMtlsCredential).toHaveBeenCalledWith(
+      '1', '5', expect.objectContaining({ userId: 'user-1' }));
+  });
+
+  it('serves mTLS material only to an agent key', async () => {
+    RepoProfileService.getMtlsMaterialForAgent.mockResolvedValue({
+      hosts: ['registry.example.com'],
+      cert_b64: 'Y2VydA==',
+      key_b64: 'a2V5',
+      cert_sha256: 'abc',
+    });
+
+    const res = await request(app)
+      .get('/api/v1/projects/1/repo-profile/agent/mtls')
+      .set('X-API-Key', 'agent-key');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.hosts).toEqual(['registry.example.com']);
+    expect(RepoProfileService.getMtlsMaterialForAgent).toHaveBeenCalledWith(
+      '1', expect.objectContaining({ id: 7, owner_id: 1 }));
+
+    const jwtOnly = await request(app)
+      .get('/api/v1/projects/1/repo-profile/agent/mtls')
+      .set('Authorization', 'Bearer mock-token');
+    expect(jwtOnly.statusCode).toBe(403);
   });
 
   it('requires authentication', async () => {

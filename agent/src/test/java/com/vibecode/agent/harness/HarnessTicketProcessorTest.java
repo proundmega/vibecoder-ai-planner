@@ -24,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -82,6 +83,7 @@ class HarnessTicketProcessorTest {
         when(config.getRepoName()).thenReturn("repo");
         when(config.getRepoOwner()).thenReturn("owner");
         when(config.getRepoCloneDir()).thenReturn(tempDir.toString());
+        when(config.getProjectId()).thenReturn("1");
         when(config.isDryRun()).thenReturn(false);
         when(config.getGitHubBranchName(1L, "Add filtering"))
             .thenReturn("vibecode/ticket-1-add-filtering");
@@ -185,6 +187,25 @@ class HarnessTicketProcessorTest {
             """, RepoProfileSnapshot.class);
         snapshot.validate();
         return snapshot;
+    }
+
+    private HarnessTicketProcessor processorWithSandbox(
+        RepoProfileSource source,
+        SandboxConfig sandboxConfig,
+        SandboxRunner sandboxRunner
+    ) {
+        return new HarnessTicketProcessor(
+            config, apiService, provider, gitHubService, "ghp_token",
+            harnessConfig,
+            repoName -> workspace,
+            (ignored, bridge) -> harness,
+            planningDocFetcher,
+            source,
+            verificationRunner,
+            new PublishingGuard(harnessConfig.protectedPaths()),
+            sandboxConfig,
+            sandboxRunner
+        );
     }
 
     private HarnessTicketProcessor processorWithResumeMode() {
@@ -616,6 +637,67 @@ class HarnessTicketProcessorTest {
         verify(verificationRunner).run(any(Path.class), anyList(), timeout.capture());
         assertTrue(timeout.getValue().toMillis() <= 60_000,
             "verification budget exceeded the profile max_round_minutes: " + timeout.getValue());
+    }
+
+    @Test
+    void profileMtlsMaterialIsFetchedAndAttachedToTheSandbox() throws Exception {
+        Path repoDir = java.nio.file.Files.createDirectories(tempDir.resolve("mtls-run"));
+        java.nio.file.Files.createDirectories(repoDir.resolve(".git"));
+        when(workspace.getRepoDir()).thenReturn(repoDir);
+        String branch = "vibecode/ticket-1-add-filtering";
+        RepoProfileSnapshot snapshot = new ObjectMapper().readValue("""
+            {
+              "id": "11111111-1111-4111-8111-111111111111",
+              "version": 7,
+              "status": "active",
+              "profile": {
+                "schema_version": 1,
+                "repo_url": "https://github.com/owner/repo",
+                "verify": ["npm test"],
+                "egress": {
+                  "tls_mode": "terminate",
+                  "mtls": {
+                    "credential_id": 5,
+                    "hosts": ["registry.example.com"]
+                  }
+                }
+              }
+            }
+            """, RepoProfileSnapshot.class);
+        snapshot.validate();
+        EgressMtlsMaterial material = new EgressMtlsMaterial(
+            List.of("registry.example.com"),
+            java.nio.file.Files.readString(
+                Path.of("src/test/resources/egress-client-cert.pem")),
+            java.nio.file.Files.readString(
+                Path.of("src/test/resources/egress-client-key.pem")));
+        SandboxConfig docker = SandboxConfig.from(new HashMap<>(Map.of(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate"
+        ))::get);
+        SandboxRunner runner = mock(SandboxRunner.class);
+        SandboxHandle handle = new SandboxHandle("sbx", repoDir, false, Instant.now());
+        when(runner.create(any(SandboxSpec.class))).thenReturn(handle);
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1, snapshot.id(), 7))
+            .thenReturn(Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.getRepoProfileMtls("1")).thenReturn(material);
+        when(verificationRunner.run(eq(runner), eq(handle), anyList(), any(Duration.class)))
+            .thenReturn(List.of(new VerificationResult("npm test", 0, "ok", false)));
+
+        processorWithSandbox(() -> snapshot, docker, runner).processTicket(ticket());
+
+        ArgumentCaptor<SandboxSpec> spec = ArgumentCaptor.forClass(SandboxSpec.class);
+        verify(runner).create(spec.capture());
+        assertEquals(List.of("registry.example.com"), spec.getValue().egressMtls().hosts());
+        assertFalse(spec.getValue().toString().contains("PRIVATE KEY"));
+        verify(apiService).getRepoProfileMtls("1");
+        verify(runner).destroy(handle);
     }
 
     @Test

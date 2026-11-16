@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -215,14 +216,23 @@ class ProfileValidationProcessorTest {
         SandboxConfig docker = SandboxConfig.from(new HashMap<>(Map.of(
             "SANDBOX_MODE", "docker",
             "SANDBOX_IMAGE", "operator/default:latest",
-            "SANDBOX_ALLOWED_HOSTS", "registry.example.com"
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate"
         ))::get);
         SandboxHandle handle = new SandboxHandle(
             "sbx-1", repoDir, false, Instant.now());
         when(sandboxRunner.create(any(SandboxSpec.class))).thenReturn(handle);
         when(apiService.claimRepoProfileValidation("1")).thenReturn(validation(
             profileJson(",\"image\":\"node@sha256:"
-                + "a".repeat(64) + "\"")));
+                + "a".repeat(64) + "\",\"egress\":{\"tls_mode\":\"terminate\","
+                + "\"mtls\":{\"credential_id\":5,"
+                + "\"hosts\":[\"registry.example.com\"]}}")));
+        EgressMtlsMaterial material = new EgressMtlsMaterial(
+            List.of("registry.example.com"),
+            Files.readString(Path.of("src/test/resources/egress-client-cert.pem")),
+            Files.readString(Path.of("src/test/resources/egress-client-key.pem")));
+        when(apiService.getRepoProfileMtls("1")).thenReturn(material);
         when(verificationRunner.run(
             eq(sandboxRunner), eq(handle), anyList(), any(Duration.class)))
             .thenReturn(List.of(new VerificationResult("npm ci", 0, "ok", false)));
@@ -232,6 +242,8 @@ class ProfileValidationProcessorTest {
         ArgumentCaptor<SandboxSpec> spec = ArgumentCaptor.forClass(SandboxSpec.class);
         verify(sandboxRunner).create(spec.capture());
         assertEquals("node@sha256:" + "a".repeat(64), spec.getValue().image());
+        assertEquals(List.of("registry.example.com"), spec.getValue().egressMtls().hosts());
+        assertFalse(spec.getValue().toString().contains("PRIVATE KEY"));
         verify(sandboxRunner).destroy(handle);
         verify(workspace).cleanup();
     }

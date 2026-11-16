@@ -827,6 +827,47 @@ class SandboxConfigTest {
         assertTrue(spec.egressOriginCaPem().contains("BEGIN CERTIFICATE"));
     }
 
+
+    private static EgressMtlsMaterial mtlsMaterial() throws IOException {
+        return new EgressMtlsMaterial(
+            List.of("registry.example.com"),
+            Files.readString(Path.of("src/test/resources/egress-client-cert.pem")),
+            Files.readString(Path.of("src/test/resources/egress-client-key.pem")));
+    }
+
+    @Test
+    void repoProfileMtlsIsScopedToTerminateModeAndTheAllowlist() throws IOException {
+        SandboxConfig terminate = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate"
+        )::get);
+
+        SandboxSpec spec = terminate.withEgressMtls(mtlsMaterial()).specFor(
+            Files.createDirectories(tempDir.resolve("mtls-workspace")));
+        assertEquals(List.of("registry.example.com"), spec.egressMtls().hosts());
+        assertFalse(spec.toString().contains("PRIVATE KEY"));
+
+        SandboxConfig sniOnly = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "registry.example.com",
+            "SANDBOX_EGRESS_TLS_MODE", "sni-only"
+        )::get);
+        assertThrows(IllegalStateException.class,
+            () -> sniOnly.withEgressMtls(mtlsMaterial()));
+
+        SandboxConfig otherHost = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_NETWORK", "allowlist",
+            "SANDBOX_ALLOWED_HOSTS", "other.example.com",
+            "SANDBOX_EGRESS_TLS_MODE", "terminate"
+        )::get);
+        assertThrows(IllegalStateException.class,
+            () -> otherHost.withEgressMtls(mtlsMaterial()));
+    }
+
     @Test
     void specAddsNonSecretVerificationDefaults() throws IOException {
         Path workspace = Files.createDirectories(tempDir.resolve("workspace"));

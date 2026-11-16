@@ -303,6 +303,114 @@ router.get('/:projectId/repo-profile/agent', verifyTokenOrAgent, async (req, res
   }
 });
 
+
+/**
+ * @openapi
+ * /projects/{projectId}/repo-profile/credentials/mtls:
+ *   post:
+ *     tags: [Repo Profiles]
+ *     summary: Store a scoped mTLS client certificate/key for repo-profile egress
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       201:
+ *         description: Credential metadata (never the private key)
+ */
+router.post('/:projectId/repo-profile/credentials/mtls', verifyToken, async (req, res, next) => {
+  try {
+    const data = await RepoProfileService.createMtlsCredential(
+      req.params.projectId, req.body, operator(req));
+    res.status(201).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /projects/{projectId}/repo-profile/credentials/mtls:
+ *   get:
+ *     tags: [Repo Profiles]
+ *     summary: List repo-profile mTLS client credentials
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Credential metadata (never private keys)
+ */
+router.get('/:projectId/repo-profile/credentials/mtls', verifyToken, async (req, res, next) => {
+  try {
+    const data = await RepoProfileService.listMtlsCredentials(
+      req.params.projectId, operator(req));
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /projects/{projectId}/repo-profile/credentials/mtls/{credentialId}:
+ *   delete:
+ *     tags: [Repo Profiles]
+ *     summary: Deactivate a repo-profile mTLS client credential
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *       - in: path
+ *         name: credentialId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Deactivated credential metadata
+ */
+router.delete('/:projectId/repo-profile/credentials/mtls/:credentialId', verifyToken, async (req, res, next) => {
+  try {
+    const data = await RepoProfileService.deleteMtlsCredential(
+      req.params.projectId, req.params.credentialId, operator(req));
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /projects/{projectId}/repo-profile/agent/mtls:
+ *   get:
+ *     tags: [Repo Profiles]
+ *     summary: Get the active profile's scoped mTLS client material for the agent
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Client certificate/key material or null
+ */
+router.get('/:projectId/repo-profile/agent/mtls', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const agent = requireAgent(req);
+    const data = await RepoProfileService.getMtlsMaterialForAgent(
+      req.params.projectId, agent);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
 /**
  * @openapi
  * /projects/{projectId}/repo-profile/validations/claim:

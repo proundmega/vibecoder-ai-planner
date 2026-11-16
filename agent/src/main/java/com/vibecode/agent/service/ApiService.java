@@ -8,11 +8,15 @@ import com.vibecode.agent.model.ApiResponse;
 import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
 import com.vibecode.agent.harness.RedactionRegistry;
+import com.vibecode.agent.harness.EgressMtlsMaterial;
 import com.vibecode.agent.harness.RepoProfileSnapshot;
 import com.vibecode.agent.harness.RepoProfileValidation;
 import okhttp3.*;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -688,6 +692,41 @@ public class ApiService {
             return null;
         }
         return objectMapper.convertValue(response.getData(), RepoProfileSnapshot.class);
+    }
+
+
+    /**
+     * Fetch the active profile's scoped client-certificate material. The
+     * private key is returned only to the agent and is never part of the
+     * profile JSON or ordinary profile responses.
+     */
+    public EgressMtlsMaterial getRepoProfileMtls(String projectId) throws IOException {
+        String url = baseUrl + "/projects/" + projectId + "/repo-profile/agent/mtls";
+        ApiResponse<Map<String, Object>> response = executeGet(
+            url, new TypeReference<ApiResponse<Map<String, Object>>>() {});
+        if (response.hasError()) {
+            throw new IOException("Failed to get repo profile mTLS material: " + response.getError());
+        }
+        if (response.getData() == null) {
+            return null;
+        }
+        Map<String, Object> data = response.getData();
+        Object hostsValue = data.get("hosts");
+        if (!(hostsValue instanceof List<?> rawHosts)) {
+            throw new IllegalArgumentException("repo profile mTLS response has no hosts");
+        }
+        List<String> hosts = new ArrayList<>();
+        for (Object host : rawHosts) {
+            hosts.add(String.valueOf(host));
+        }
+        String certB64 = data.get("cert_b64") == null ? null : String.valueOf(data.get("cert_b64"));
+        String keyB64 = data.get("key_b64") == null ? null : String.valueOf(data.get("key_b64"));
+        if (certB64 == null || keyB64 == null) {
+            throw new IllegalArgumentException("repo profile mTLS response has no certificate/key");
+        }
+        String certPem = new String(Base64.getDecoder().decode(certB64), StandardCharsets.UTF_8);
+        String keyPem = new String(Base64.getDecoder().decode(keyB64), StandardCharsets.UTF_8);
+        return new EgressMtlsMaterial(hosts, certPem, keyPem);
     }
 
     /**

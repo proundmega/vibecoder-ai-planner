@@ -143,6 +143,38 @@ class RepoProfileTest {
     }
 
     @Test
+    void parsesMtlsOnlyEgress() throws Exception {
+        RepoProfile profile = parse("""
+            {"schema_version":1,"verify":["npm test"],"egress":{
+              "tls_mode":"terminate","mtls":{
+                "credential_id":5,"hosts":["Registry.Example.com."]}}}
+            """);
+
+        assertEquals(5, profile.egress().mtls().credentialId());
+        assertEquals(java.util.List.of("registry.example.com"),
+            profile.egress().mtls().hosts());
+    }
+
+    @Test
+    void rejectsInvalidMtlsEgress() {
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"egress":{
+              "tls_mode":"terminate","mtls":{"credential_id":0,"hosts":["registry.example.com"]}}}
+            """));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"egress":{
+              "tls_mode":"terminate","mtls":{"credential_id":5,"hosts":[]}}}
+            """));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"egress":{
+              "tls_mode":"terminate","mtls":{"credential_id":5,"hosts":["*.example.com"]}}}
+            """));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"egress":{"tls_mode":"terminate"}}
+            """));
+    }
+
+    @Test
     void acceptsAValidCaBundle() throws Exception {
         RepoProfile profile = parse("""
             {"schema_version":1,"verify":["npm test"],"egress":{

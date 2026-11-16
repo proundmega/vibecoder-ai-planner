@@ -320,6 +320,34 @@ class ApiServiceHarnessTest {
         assertFalse(request.body().contains("\"error\""), request.body());
     }
 
+
+    @Test
+    void fetchesScopedMtlsMaterialForTheAgent() throws Exception {
+        String cert = java.nio.file.Files.readString(
+            java.nio.file.Path.of("src/test/resources/egress-client-cert.pem"));
+        String key = java.nio.file.Files.readString(
+            java.nio.file.Path.of("src/test/resources/egress-client-key.pem"));
+        String body = "{\"hosts\":[\"registry.example.com\"],"
+            + "\"cert_b64\":\"" + java.util.Base64.getEncoder()
+                .encodeToString(cert.getBytes(java.nio.charset.StandardCharsets.UTF_8)) + "\","
+            + "\"key_b64\":\"" + java.util.Base64.getEncoder()
+                .encodeToString(key.getBytes(java.nio.charset.StandardCharsets.UTF_8)) + "\"}";
+        respond("/api/v1/projects/1/repo-profile/agent/mtls", 200, ok(body));
+
+        var material = api.getRepoProfileMtls("1");
+
+        assertEquals(List.of("registry.example.com"), material.hosts());
+        assertTrue(material.certSha256().matches("[a-f0-9]{64}"));
+        assertTrue(material.toString().contains("key=<redacted>"));
+        RecordedRequest request = lastRequest();
+        assertEquals("GET", request.method());
+        assertEquals("/api/v1/projects/1/repo-profile/agent/mtls", request.path());
+        assertEquals("test-agent-key", request.apiKey());
+
+        respond("/api/v1/projects/1/repo-profile/agent/mtls", 200, ok("null"));
+        assertEquals(null, api.getRepoProfileMtls("1"));
+    }
+
     @Test
     void guardedTicketReleaseReturnsTheBackendBoolean() throws Exception {
         respond("/api/v1/harness/runs/run-1/release-ticket", 200,

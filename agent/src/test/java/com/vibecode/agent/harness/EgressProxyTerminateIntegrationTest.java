@@ -297,6 +297,79 @@ class EgressProxyTerminateIntegrationTest {
         }
     }
 
+
+    @Test
+    @Timeout(90)
+    void presentsTheScopedClientCertificateToTheOrigin() throws Exception {
+        Assumptions.assumeTrue(nodeAvailable(), "node is required");
+        Assumptions.assumeTrue(opensslAvailable(), "openssl is required");
+
+        Path caCert = tempDir.resolve("mtls-ca.crt");
+        Path caKey = tempDir.resolve("mtls-ca.key");
+        Path serverCert = tempDir.resolve("mtls-server.crt");
+        Path serverKey = tempDir.resolve("mtls-server.key");
+        Path serverCsr = tempDir.resolve("mtls-server.csr");
+        Path serverExt = tempDir.resolve("mtls-server.ext");
+        generateCertificates(caCert, caKey, serverCert, serverKey, serverCsr, serverExt);
+
+        Path clientCa = Path.of("src/test/resources/egress-client-ca.pem");
+        Path clientCert = Path.of("src/test/resources/egress-client-cert.pem");
+        Path clientKey = Path.of("src/test/resources/egress-client-key.pem");
+
+        int originPort = freePort();
+        Process origin = new ProcessBuilder(
+            "openssl", "s_server", "-www", "-quiet",
+            "-accept", "127.0.0.1:" + originPort,
+            "-cert", serverCert.toString(),
+            "-key", serverKey.toString(),
+            "-Verify", "1",
+            "-verify_return_error",
+            "-CAfile", clientCa.toString())
+            .redirectErrorStream(true)
+            .start();
+
+        int proxyPort = freePort();
+        Path proxyCaDir = tempDir.resolve("mtls-proxy-ca");
+        Process proxy = startProxyWithEnv(proxyPort, proxyCaDir, originPort, Map.of(
+            "NODE_EXTRA_CA_CERTS", caCert.toString(),
+            "EGRESS_MTLS_HOSTS", "localhost.test",
+            "EGRESS_MTLS_CERT_PEM_B64", base64(clientCert),
+            "EGRESS_MTLS_KEY_PEM_B64", base64(clientKey)));
+
+        int noMtlsPort = freePort();
+        Path noMtlsCaDir = tempDir.resolve("mtls-proxy-no-client-cert");
+        Process noMtls = startProxyWithEnv(noMtlsPort, noMtlsCaDir, originPort, Map.of(
+            "NODE_EXTRA_CA_CERTS", caCert.toString()));
+
+        try {
+            BlockingQueue<String> logs = awaitListening(proxy);
+            awaitListening(noMtls);
+            awaitPort(originPort);
+            awaitPort(proxyPort);
+            awaitPort(noMtlsPort);
+
+            SSLContext withClient = trust(readCertificate(proxyCaDir.resolve("ca.crt")));
+            String allowed = request(withClient, proxyPort, originPort, "localhost.test");
+            assertTrue(allowed.contains("200"), allowed + "\n" + String.join("\n", logs));
+            assertTrue(hasLog(logs, "egress mTLS used", 5_000),
+                "proxy did not audit the mTLS use");
+
+            SSLContext withoutClient = trust(
+                readCertificate(noMtlsCaDir.resolve("ca.crt")));
+            String denied = request(withoutClient, noMtlsPort, originPort, "localhost.test");
+            assertFalse(denied.contains("200"),
+                "origin accepted a connection without the client certificate: " + denied);
+        } finally {
+            stop(proxy);
+            stop(noMtls);
+            stop(origin);
+        }
+    }
+
+    private static String base64(Path path) throws Exception {
+        return java.util.Base64.getEncoder().encodeToString(Files.readAllBytes(path));
+    }
+
     private static Process startNodeOrigin(
         int port,
         Path cert,
@@ -344,6 +417,9 @@ class EgressProxyTerminateIntegrationTest {
         env.putAll(extra);
         builder.environment().remove("EGRESS_ORIGIN_CA_HOSTS");
         builder.environment().remove("EGRESS_ORIGIN_CA_PEM_B64");
+        builder.environment().remove("EGRESS_MTLS_HOSTS");
+        builder.environment().remove("EGRESS_MTLS_CERT_PEM_B64");
+        builder.environment().remove("EGRESS_MTLS_KEY_PEM_B64");
         builder.environment().remove("NODE_EXTRA_CA_CERTS");
         builder.environment().putAll(env);
         // Never inherit the JVM's trust override; the scoped CA must be the

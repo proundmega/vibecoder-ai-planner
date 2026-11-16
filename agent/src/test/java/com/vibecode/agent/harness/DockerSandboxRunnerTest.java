@@ -818,7 +818,7 @@ class DockerSandboxRunnerTest {
             spec.egressUpstreamNetwork(), spec.egressProbeTimeoutMs(), spec.egressTlsMode(),
             spec.owner(), Map.of("OPENAI_KEY", "sk-secret"), spec.user(), spec.seccompProfile(),
             spec.apparmorProfile(), spec.artifactMaxBytes(), spec.egressOriginCaHosts(),
-            spec.egressOriginCaPem());
+            spec.egressOriginCaPem(), spec.egressMtls());
 
         assertThrows(IllegalArgumentException.class,
             () -> DockerSandboxRunner.containerEnvironment(poisoned));
@@ -2026,6 +2026,7 @@ class DockerSandboxRunnerTest {
         }
         return count;
     }
+
 
     private Path fakeDocker(Path log, String body) throws IOException {
         return fakeDocker(log, body, "4242");

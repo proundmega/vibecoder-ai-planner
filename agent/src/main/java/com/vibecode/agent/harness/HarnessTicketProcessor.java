@@ -816,7 +816,22 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 try {
                     effectiveSandboxConfig = sandboxConfig.withRepoProfile(
                         profile, config.getProjectId(), profileSnapshot.version());
-                } catch (RuntimeException e) {
+                    if (profile.egress() != null && profile.egress().mtls() != null) {
+                        EgressMtlsMaterial material =
+                            apiService.getRepoProfileMtls(config.getProjectId());
+                        if (material == null) {
+                            throw new IllegalStateException(
+                                "the active profile requires client-certificate mTLS, "
+                                    + "but no active mTLS credential is configured");
+                        }
+                        if (!new java.util.HashSet<>(material.hosts())
+                            .equals(new java.util.HashSet<>(profile.egress().mtls().hosts()))) {
+                            throw new IllegalStateException(
+                                "the active profile mTLS hosts do not match the credential scope");
+                        }
+                        effectiveSandboxConfig = effectiveSandboxConfig.withEgressMtls(material);
+                    }
+                } catch (IOException | RuntimeException e) {
                     failAndRelease(pickedUp.getId(),
                         "The active repo profile cannot be applied: " + e.getMessage());
                     return;
