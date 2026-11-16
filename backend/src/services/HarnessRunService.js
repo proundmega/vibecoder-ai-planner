@@ -157,7 +157,14 @@ class HarnessRunService {
           `SELECT rp.id, rp.version
            FROM repo_profiles rp
            JOIN tickets t ON t.project_id = rp.project_id
-           WHERE rp.id = $1 AND t.id = $2`,
+           WHERE rp.id = $1 AND t.id = $2
+             AND rp.status = 'active'
+             AND EXISTS (
+               SELECT 1 FROM repo_profile_validations v
+               WHERE v.profile_id = rp.id
+                 AND v.status = 'succeeded'
+                 AND v.profile_hash = rp.profile_hash
+             )`,
           [normalisedProfileId, normalisedTicketId]
         );
         if (profile.rows.length === 0

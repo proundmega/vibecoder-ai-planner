@@ -99,6 +99,8 @@ describe('HarnessRunService', () => {
       });
 
       expect(client.query.mock.calls[2][0]).toContain('FROM repo_profiles');
+      expect(client.query.mock.calls[2][0]).toContain("rp.status = 'active'");
+      expect(client.query.mock.calls[2][0]).toContain('v.profile_hash = rp.profile_hash');
       expect(client.query.mock.calls[3][1].slice(-2)).toEqual([
         '11111111-1111-4111-8111-111111111111',
         3,

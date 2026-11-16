@@ -54,6 +54,13 @@ CREATE INDEX IF NOT EXISTS idx_repo_profile_validations_project_status
 CREATE INDEX IF NOT EXISTS idx_repo_profile_validations_profile_hash
   ON repo_profile_validations(profile_id, profile_hash, status);
 
+-- The migration was extended during review; keep it idempotent for databases
+-- that applied an earlier draft before this branch merged.
+ALTER TABLE repo_profiles
+  ADD COLUMN IF NOT EXISTS profile_hash TEXT;
+ALTER TABLE repo_profile_validations
+  ADD COLUMN IF NOT EXISTS profile_hash TEXT;
+
 -- Do not queue the same profile revision twice while one is queued/running.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_repo_profile_validations_pending
   ON repo_profile_validations(profile_id)

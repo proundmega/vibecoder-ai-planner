@@ -65,7 +65,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D8 | Project settings profile editor (slice 5) | fg-39 FR2 | UX | fg-39 slice 5 | open |
 | D9 | Persistent dependency caches: size quota/watchdog, volume GC, lockfile-keyed generations and sanitized cache writes | fg-39 FR4 | Security | fg-39 slice 4 | open |
 | D10 | Profile change event log beyond version rows/`created_by` timestamps | fg-39 safety | Audit | fg-41 | open |
-| D11 | Real-Docker/real-repo profile dry-run e2e and cache-volume real-Docker coverage | fg-39 slice 1 review | Testing | bt-60 / fg-39 slice 4 | open |
+| D11 | Real-Docker/real-repo profile dry-run e2e (cache real-Docker coverage moves with D9) | fg-39 slice 1 review | Testing | bt-60 / fg-39 slice 4 | open |
 
 ## User decisions
 

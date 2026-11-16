@@ -125,13 +125,28 @@ public class ProfileValidationProcessor {
             workspace = workspaceFactory.apply(repoName(repoUrl));
             String branch = "vibecode/profile-validate-" + validation.id()
                 .replace("-", "").substring(0, 8);
-            workspace.cloneRepo(repoUrl, branch, profile.baseBranch());
+            Duration cloneTimeout = phaseTimeout(profile.timeouts().setupMinutes(), deadline);
+            if (cloneTimeout.isZero()) {
+                reportFailed(projectId, validation,
+                    "The profile validation budget was exhausted before clone");
+                return;
+            }
+            workspace.cloneRepo(repoUrl, branch, profile.baseBranch(), cloneTimeout);
+            if (Instant.now().isAfter(deadline)) {
+                reportFailed(projectId, validation,
+                    "The profile validation budget was exhausted after clone");
+                return;
+            }
 
             SandboxConfig effective = sandboxConfig;
             if (sandboxConfig.isDocker()) {
                 effective = sandboxConfig.withRepoProfile(
                     profile, projectId, validation.profileVersion());
                 sandbox = sandboxRunner.create(effective.specFor(workspace.getRepoDir()));
+                if (Instant.now().isAfter(deadline)) {
+                    throw new IllegalStateException(
+                        "The profile validation budget was exhausted during sandbox setup");
+                }
             } else if (profile.image() != null || !profile.caches().isEmpty()
                 || profile.egress() != null) {
                 log.warn("Repo profile image/caches/egress are ignored in host mode; "

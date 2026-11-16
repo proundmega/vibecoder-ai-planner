@@ -100,7 +100,7 @@ class ProfileValidationProcessorTest {
 
         processor(SandboxConfig.defaults()).pollOnce();
 
-        verify(workspace, never()).cloneRepo(anyString(), anyString(), any());
+        verify(workspace, never()).cloneRepo(anyString(), anyString(), any(), any());
         verify(apiService, never()).finishRepoProfileValidation(
             anyString(), anyString(), anyString(), anyMap(), any());
     }
@@ -116,7 +116,8 @@ class ProfileValidationProcessorTest {
         processor(SandboxConfig.defaults()).pollOnce();
 
         verify(workspace).cloneRepo(
-            "https://github.com/acme/app.git", "vibecode/profile-validate-22222222", "main");
+            eq("https://github.com/acme/app.git"), eq("vibecode/profile-validate-22222222"),
+            eq("main"), any(Duration.class));
         ArgumentCaptor<Map<String, Object>> result = ArgumentCaptor.forClass(Map.class);
         verify(apiService).finishRepoProfileValidation(
             eq("1"),
@@ -162,7 +163,7 @@ class ProfileValidationProcessorTest {
 
         processor(SandboxConfig.defaults()).pollOnce();
 
-        verify(workspace, never()).cloneRepo(anyString(), anyString(), any());
+        verify(workspace, never()).cloneRepo(anyString(), anyString(), any(), any());
         verify(apiService).finishRepoProfileValidation(
             eq("1"), anyString(), eq("failed"), anyMap(),
             org.mockito.ArgumentMatchers.contains("does not match"));
@@ -180,7 +181,7 @@ class ProfileValidationProcessorTest {
         verify(apiService).finishRepoProfileValidation(
             eq("1"), anyString(), eq("failed"), anyMap(),
             org.mockito.ArgumentMatchers.contains("Invalid repo profile"));
-        verify(workspace, never()).cloneRepo(anyString(), anyString(), any());
+        verify(workspace, never()).cloneRepo(anyString(), anyString(), any(), any());
     }
 
 

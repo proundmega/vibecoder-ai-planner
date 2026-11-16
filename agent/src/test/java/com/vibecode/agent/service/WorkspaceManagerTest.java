@@ -776,6 +776,24 @@ class WorkspaceManagerTest {
             .filter(file -> file.path().equals("feature.txt")).count());
     }
 
+
+    @Test
+    void cloneRepoHonorsAnExplicitCloneTimeout() throws Exception {
+        assumePosix();
+        Path git = tempDir.resolve("slow-git.sh");
+        Files.writeString(git, "#!/bin/sh\nsleep 30\n");
+        Files.setPosixFilePermissions(git,
+            java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "timeout", false, null);
+        setField(wm, "gitBinary", git.toString());
+
+        IOException error = assertThrows(IOException.class, () -> wm.cloneRepo(
+            "https://example.invalid/repo.git", "feature", null, Duration.ofMillis(300)));
+
+        assertTrue(error.getMessage().contains("timed out"), error.getMessage());
+    }
+
     @Test
     void cloneRepoChecksOutAnExplicitBaseBranchAndPinsIt() throws Exception {
         Path source = initRepo("base-source");

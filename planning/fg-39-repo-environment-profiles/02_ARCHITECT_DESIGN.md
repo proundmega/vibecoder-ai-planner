@@ -82,7 +82,7 @@ Profiles are validated against a JSON schema; unknown fields are rejected or war
 2. create sandbox with the profile image;
 3. run setup;
 4. run verify;
-5. return pass/fail, timings, logs and cache hit/miss.
+5. return pass/fail, timings and logs.
 
 This is an admin operation, not model-driven.
 
@@ -154,11 +154,16 @@ existing GitHub agent config route.
 1. An admin queues a validation; the backend snapshots the profile JSON and
    version so later edits cannot change a running validation.
 2. Any agent serving the project claims it with `FOR UPDATE SKIP LOCKED`.
-3. The agent clones `repo_url` at `base_branch`, creates the same sandbox the
-   ticket path would use (image, env, cache, egress CA), runs `setup` and then
-   `verify`, and reports per-command exit code, duration and redacted output.
+3. The agent clones `repo_url` at `base_branch` with an explicit clone timeout,
+   creates the same sandbox the ticket path would use (image, env, egress CA),
+   runs `setup` and then `verify`, and reports per-command exit code, duration
+   and redacted output. Clone, sandbox setup and both phases share one overall
+   deadline.
 4. The agent applies an overall deadline of `profile.max_round_minutes` (the
    setup and verify caps are taken within that deadline, not added on top).
+   A ticket run also passes `min(HARNESS_MAX_DURATION_MINUTES,
+   profile.max_round_minutes)` to the OpenCode client, so the model session is
+   bounded too, not only post-model verification.
 5. The backend stores the result; a `running` validation is stale after
    `max(60, profile.max_round_minutes) + 5` minutes, so a valid long dry run is
    not reaped while it is still within its accepted budget.
@@ -195,7 +200,6 @@ Verification still uses the existing ephemeral `/tmp` cache defaults.
 | Activation without a successful exact-content dry run | Activation fails; editing a draft changes `profile_hash` and invalidates older successes. |
 | Profile verify list empty | Validation rejects the profile; no profile falls back to autodetection. |
 | Profile image lacks a digest | Validation rejects the profile. |
-| Cache volume init fails | Sandbox creation fails; no publish. |
 | Origin CA host not allowlisted, or mode mismatch | Sandbox creation fails before the container starts. |
 | Dry-run clone/setup/verify fails | Validation is `failed` with per-command output; no ticket/run is created. |
 | Agent dies during a dry run | Validation remains `running` until the profile-budget stale reap. |
@@ -208,8 +212,8 @@ Verification still uses the existing ephemeral `/tmp` cache defaults.
   and the agent, so a profile cannot smuggle credentials into the sandbox.
 - A profile cannot widen `SANDBOX_ALLOWED_HOSTS`, change `sni-only` to
   `terminate`, bypass `Host == SNI`, or supply a private key instead of a CA.
-- Cache volumes are project/profile scoped; slice 1 does not make cache writes
-  trustworthy for cross-run supply-chain integrity (D9).
+- Persistent caches are deferred; slice 1 does not expose a writable host
+  cache volume (D9/fg-44).
 - Dry-run results include bounded, redacted output only; the profile snapshot
   is stored with the validation for audit.
 
@@ -266,7 +270,6 @@ fg-36's shared resolver; slice 1 uses it directly for checkout and the PR base.
 
 - detect Node/Python/Java/Go/monorepo profiles;
 - setup/verify success and failure;
-- cache reuse and isolation;
 - service startup/health/cleanup;
 - flaky retry behavior;
 - invalid profile validation;

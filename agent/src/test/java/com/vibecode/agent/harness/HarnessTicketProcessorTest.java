@@ -122,7 +122,7 @@ class HarnessTicketProcessorTest {
             config, apiService, provider, gitHubService, "ghp_token",
             harnessConfig,
             repoName -> workspace,
-            (ignored, bridge) -> harness,
+            (ignored, bridge, effectiveConfig) -> harness,
             planningDocFetcher,
             verificationRunner,
             new PublishingGuard(harnessConfig.protectedPaths())
@@ -134,7 +134,25 @@ class HarnessTicketProcessorTest {
             config, apiService, provider, gitHubService, "ghp_token",
             harnessConfig,
             repoName -> workspace,
-            (ignored, bridge) -> harness,
+            (ignored, bridge, effectiveConfig) -> harness,
+            planningDocFetcher,
+            source,
+            verificationRunner,
+            new PublishingGuard(harnessConfig.protectedPaths()),
+            SandboxConfig.defaults(),
+            SandboxRunnerFactory.hostOnly()
+        );
+    }
+
+    private HarnessTicketProcessor processorWithProfileAndFactory(
+        RepoProfileSource source,
+        HarnessTicketProcessor.HarnessClientFactory factory
+    ) {
+        return new HarnessTicketProcessor(
+            config, apiService, provider, gitHubService, "ghp_token",
+            harnessConfig,
+            repoName -> workspace,
+            factory,
             planningDocFetcher,
             source,
             verificationRunner,
@@ -174,7 +192,7 @@ class HarnessTicketProcessorTest {
             config, apiService, provider, gitHubService, "ghp_token",
             resumeConfig,
             repoName -> workspace,
-            (ignored, bridge) -> harness,
+            (ignored, bridge, effectiveConfig) -> harness,
             planningDocFetcher,
             verificationRunner,
             new PublishingGuard(resumeConfig.protectedPaths())
@@ -518,7 +536,7 @@ class HarnessTicketProcessorTest {
 
         verify(apiService, never()).startHarnessRun(
             any(), anyString(), any(), any(), any(), anyInt());
-        verify(workspace, never()).cloneRepo(anyString(), anyString());
+        verify(workspace, never()).cloneRepo(anyString(), anyString(), any(), any());
         verify(apiService).releaseTicket(1L);
     }
 
@@ -542,7 +560,7 @@ class HarnessTicketProcessorTest {
         processorWithProfile(() -> snapshot).processTicket(ticket());
 
         verify(workspace).cloneRepo(
-            "https://github.com/owner/repo.git", branch, "develop");
+            eq("https://github.com/owner/repo.git"), eq(branch), eq("develop"), any(Duration.class));
         ArgumentCaptor<List<String>> commands = ArgumentCaptor.forClass(List.class);
         ArgumentCaptor<Map<String, String>> environment = ArgumentCaptor.forClass(Map.class);
         verify(verificationRunner, times(2)).run(
@@ -580,8 +598,16 @@ class HarnessTicketProcessorTest {
         when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
         when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
 
-        processorWithProfile(() -> snapshot).processTicket(ticket());
+        AtomicReference<HarnessConfig> seen = new AtomicReference<>();
+        processorWithProfileAndFactory(
+            () -> snapshot,
+            (temp, bridge, effectiveConfig) -> {
+                seen.set(effectiveConfig);
+                return harness;
+            }
+        ).processTicket(ticket());
 
+        assertEquals(Duration.ofMinutes(1), seen.get().maxDuration());
         ArgumentCaptor<Duration> timeout = ArgumentCaptor.forClass(Duration.class);
         verify(verificationRunner).run(any(Path.class), anyList(), timeout.capture());
         assertTrue(timeout.getValue().toMillis() <= 60_000,
@@ -602,7 +628,7 @@ class HarnessTicketProcessorTest {
         }).processTicket(ticket());
 
         verify(workspace).cloneRepo(
-            "https://github.com/owner/repo.git", branch);
+            eq("https://github.com/owner/repo.git"), eq(branch), isNull(), any(Duration.class));
         verify(verificationRunner).resolveCommands(any());
         verify(gitHubService).createPullRequest(
             anyString(), anyString(), anyString(), eq("main"));
@@ -1117,7 +1143,7 @@ class HarnessTicketProcessorTest {
 
         processor.processTicket(ticket());
 
-        verify(workspace, never()).cloneRepo(anyString(), anyString());
+        verify(workspace, never()).cloneRepo(anyString(), anyString(), any(), any());
         verify(apiService).finishHarnessRun(
             eq("run-1"), eq("failed"), contains("leased by another"), isNull(), isNull());
         verify(apiService, never()).releaseTicket(1L);
@@ -1172,7 +1198,7 @@ class HarnessTicketProcessorTest {
 
         processor.processTicket(ticket());
 
-        verify(workspace, never()).cloneRepo(anyString(), anyString());
+        verify(workspace, never()).cloneRepo(anyString(), anyString(), any(), any());
         verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
         verify(apiService).finishHarnessRun(
             eq("run-1"), eq("failed"), contains("lease claim failed"), isNull(), isNull());
@@ -1248,7 +1274,7 @@ class HarnessTicketProcessorTest {
 
         processor.processTicket(ticket());
 
-        verify(workspace, never()).cloneRepo(anyString(), anyString());
+        verify(workspace, never()).cloneRepo(anyString(), anyString(), any(), any());
         verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
         verify(apiService, never()).claimHarnessLease(any(), anyString(), org.mockito.ArgumentMatchers.anyInt());
         verify(apiService, never()).releaseTicket(1L);
@@ -1518,7 +1544,7 @@ class HarnessTicketProcessorTest {
             config, apiService, provider, gitHubService, "ghp_token",
             harnessConfig,
             repoName -> workspace,
-            (ignored, bridge) -> {
+            (ignored, bridge, effectiveConfig) -> {
                 captured.set(bridge);
                 assertNotNull(bridge, "docker mode must route bash through a sandbox bridge");
                 assertNotNull(bridge.baseUrl(), "the bridge must be listening before the harness starts");
@@ -1547,7 +1573,7 @@ class HarnessTicketProcessorTest {
             config, apiService, provider, gitHubService, "ghp_token",
             harnessConfig,
             repoName -> workspace,
-            (ignored, bridge) -> harness,
+            (ignored, bridge, effectiveConfig) -> harness,
             planningDocFetcher,
             verificationRunner,
             new PublishingGuard(harnessConfig.protectedPaths()),

@@ -50,15 +50,12 @@
 | `agent/.../service/ApiService.java` | edit | Profile/validation endpoints |
 | `agent/.../service/WorkspaceManager.java` | edit | Base-branch checkout overload |
 | `agent/.../harness/SandboxConfig.java` | edit | Profile image/env/CA derivation |
-| `agent/.../harness/SandboxSpec.java` | edit | Cache volume field |
-| `agent/.../harness/DockerSandboxRunner.java` | edit | Cache mount/init, profile spec |
 | `agent/.../harness/VerificationRunner.java` | edit | Host-mode profile env |
 | `agent/.../harness/HarnessTicketProcessor.java` | edit | Fetch/use profile, run columns, PR base |
 | `agent/.../AgentApp.java` | edit | Poll dry-run validation queue |
 | `agent/src/test/java/.../RepoProfileTest.java` | add | Model validation/env/cache-rejection/CA |
 | `agent/src/test/java/.../ProfileValidationProcessorTest.java` | add | Success/failure/cleanup/claim |
 | `agent/src/test/java/.../SandboxConfigTest.java` | edit | Profile image/env/CA |
-| `agent/src/test/java/.../DockerSandboxRunnerTest.java` | edit | Cache mount/init |
 | `agent/src/test/java/.../WorkspaceManagerTest.java` | edit | Base branch + failure |
 | `agent/src/test/java/.../HarnessTicketProcessorTest.java` | edit | Profile-driven run |
 
@@ -79,7 +76,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR3 | Backend/Agent | `repoProfileService.test.js`, `SandboxConfigTest.java` | Image override only with `@sha256`; profile image reaches `SandboxSpec` | both |
 | FR4 | Backend/Agent | `repoProfileService.test.js`, `RepoProfileTest.java` | Non-empty caches are rejected until D9/fg-44 (no unbounded volume); cache quota/GC is deferred | both |
 | FR5 | Backend | `repoProfileService.test.js` | Non-empty `services` is rejected until slice 2 (fail closed) | `cd backend && npx jest repoProfileService --runInBand` |
-| FR6 | Agent | `HarnessTicketProcessorTest.java`, `ProfileValidationProcessorTest.java` | Setup then verify; per-command timeout budget capped by `max_round_minutes`; failure stops publish | `cd agent && mvn -Dtest=HarnessTicketProcessorTest,ProfileValidationProcessorTest test` |
+| FR6 | Agent | `HarnessTicketProcessorTest.java`, `ProfileValidationProcessorTest.java`, `WorkspaceManagerTest.java` | Model session and setup/verify share the `max_round_minutes` cap; clone has a bounded timeout; failure stops publish | `cd agent && mvn -Dtest=HarnessTicketProcessorTest,ProfileValidationProcessorTest,WorkspaceManagerTest test` |
 | FR7 | Backend/Agent | `repoProfileService.test.js`, `RepoProfileTest.java` | Non-secret env accepted; secret-like key/value rejected | both |
 | FR8 | Backend | `repoProfileService.test.js` | Non-empty `flaky_tests` is rejected until slice 3 (never silently ignored) | `cd backend && npx jest repoProfileService --runInBand` |
 | FR9 | Backend/Agent | `repoProfileValidationService.test.js`, `ProfileValidationProcessorTest.java` | Queue/claim/finish; success/failure result; profile-budget stale reap (>60-minute regression); activation requires the successful exact `profile_hash`; dry runs run after ticket work | both |

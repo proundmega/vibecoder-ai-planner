@@ -43,13 +43,18 @@ public final class HarnessTicketProcessor implements TicketWorker {
     /** Creates the harness client, optionally wired to the sandbox bash bridge. */
     @FunctionalInterface
     interface HarnessClientFactory {
-        HarnessClient create(Path tempDir, SandboxBashBridge bridge) throws IOException;
+        HarnessClient create(
+            Path tempDir,
+            SandboxBashBridge bridge,
+            HarnessConfig effectiveConfig
+        ) throws IOException;
     }
 
     private static final Logger log = LoggerFactory.getLogger(HarnessTicketProcessor.class);
     private static final int MAX_MESSAGE_CHARS = 8_192;
     private static final Duration VERIFICATION_TIMEOUT = Duration.ofMinutes(10);
     private static final Duration INSTALL_TIMEOUT = Duration.ofMinutes(10);
+    private static final Duration CLONE_TIMEOUT = Duration.ofMinutes(5);
     private static final int DEFAULT_MAX_ATTEMPTS = 3;
     private static final long DEFAULT_RETRY_BASE_DELAY_MS = 60_000L;
     private static final long DEFAULT_RETRY_MAX_DELAY_MS = 60L * 60_000L;
@@ -141,7 +146,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             harnessConfig,
             repoName -> new WorkspaceManager(
                 config.getRepoCloneDir(), repoName, config.isDryRun(), githubToken, tokenSource),
-            (tempDir, bridge) -> new OpenCodeClient(harnessConfig, provider, tempDir, bridge),
+            (tempDir, bridge, effectiveConfig) ->
+                new OpenCodeClient(effectiveConfig, provider, tempDir, bridge),
             new PlanningDocFetcher(apiService, config),
             new VerificationRunner(harnessConfig),
             new PublishingGuard(harnessConfig.protectedPaths()),
@@ -717,12 +723,17 @@ public final class HarnessTicketProcessor implements TicketWorker {
             return;
         }
 
+        HarnessConfig effectiveHarnessConfig = harnessConfig;
         if (profileSnapshot != null) {
             Duration profileBudget = Duration.ofMinutes(
                 profileSnapshot.profile().maxRoundMinutes());
-            if (profileBudget.compareTo(maxDuration()) < 0) {
-                deadline = Instant.now().plus(profileBudget);
+            if (harnessConfig != null && harnessConfig.maxDuration() != null
+                && profileBudget.compareTo(harnessConfig.maxDuration()) < 0) {
+                effectiveHarnessConfig = harnessConfig.withMaxDuration(profileBudget);
             }
+        }
+        if (effectiveHarnessConfig != null && effectiveHarnessConfig.maxDuration() != null) {
+            deadline = Instant.now().plus(effectiveHarnessConfig.maxDuration());
         }
 
         if (profileSnapshot != null
@@ -793,10 +804,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
             String repoUrl = "https://github.com/" + config.getRepoOwner() + "/"
                 + config.getRepoName() + ".git";
+            Duration cloneTimeout = remaining(deadline, CLONE_TIMEOUT);
             if (profile == null) {
-                workspace.cloneRepo(repoUrl, branchName);
+                workspace.cloneRepo(repoUrl, branchName, null, cloneTimeout);
             } else {
-                workspace.cloneRepo(repoUrl, branchName, profile.baseBranch());
+                workspace.cloneRepo(repoUrl, branchName, profile.baseBranch(), cloneTimeout);
             }
             java.util.Map<String, Object> cloned = new java.util.HashMap<>();
             cloned.put("workspacePath", String.valueOf(workspace.getRepoDir()));
@@ -842,7 +854,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
 
             tempDir = Files.createTempDirectory("opencode-harness-");
-            harness = harnessFactory.create(tempDir, bridge);
+            harness = harnessFactory.create(tempDir, bridge, effectiveHarnessConfig);
 
             currentStep = "starting-harness";
             harness.start(workspace.getRepoDir());

@@ -2,10 +2,12 @@ package com.vibecode.agent.service;
 
 import com.vibecode.agent.harness.DiffSummary;
 import com.vibecode.agent.harness.EnvironmentSanitizer;
+import com.vibecode.agent.harness.ProcessGroup;
 import com.vibecode.agent.model.FileOperation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -31,6 +33,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -123,14 +126,25 @@ public class WorkspaceManager {
      * Clone a repository to a unique workspace directory.
      */
     public void cloneRepo(String repoUrl, String branchName) throws IOException {
-        cloneRepo(repoUrl, branchName, null);
+        cloneRepo(repoUrl, branchName, null, null);
+    }
+
+    public void cloneRepo(String repoUrl, String branchName, String baseBranch)
+        throws IOException {
+        cloneRepo(repoUrl, branchName, baseBranch, null);
     }
 
     /**
      * Clone and create the ticket branch from an explicit base branch. A null
-     * or blank base branch keeps the legacy clone-HEAD behavior.
+     * or blank base branch keeps the legacy clone-HEAD behavior. A non-null
+     * timeout bounds the network clone so a hung remote cannot hold the run.
      */
-    public void cloneRepo(String repoUrl, String branchName, String baseBranch) throws IOException {
+    public void cloneRepo(
+        String repoUrl,
+        String branchName,
+        String baseBranch,
+        Duration cloneTimeout
+    ) throws IOException {
         this.repoDir = generateRepoDir();
         log.info("Cloning repo from {} to {}", repoUrl, repoDir);
         if (dryRun) {
@@ -168,7 +182,7 @@ public class WorkspaceManager {
         }
         try {
             try {
-                runGitAt(repoDir.getParent(), Map.of(), "clone", repoUrl, repoDir.toString());
+                runGitClone(repoUrl, cloneTimeout);
             } catch (IOException first) {
                 if (!authenticate || !isAuthenticationFailure(first.getMessage())) {
                     throw new IOException("Git clone failed: " + redact(first.getMessage()), first);
@@ -178,7 +192,7 @@ public class WorkspaceManager {
                 removePartialClone();
                 ensureAskPass(refreshed);
                 try {
-                    runGitAt(repoDir.getParent(), Map.of(), "clone", repoUrl, repoDir.toString());
+                    runGitClone(repoUrl, cloneTimeout);
                 } catch (IOException second) {
                     throw new IOException(
                         "Git clone failed after credential refresh: "
@@ -670,6 +684,65 @@ public class WorkspaceManager {
             throw new IOException("No supervisor index is active");
         }
         return runGitAt(repoDir, Map.of("GIT_INDEX_FILE", supervisorIndex.toString()), args);
+    }
+
+    private String runGitClone(String repoUrl, Duration cloneTimeout) throws IOException {
+        if (cloneTimeout == null || cloneTimeout.isZero() || cloneTimeout.isNegative()) {
+            return runGitAt(repoDir.getParent(), Map.of(), "clone", repoUrl, repoDir.toString());
+        }
+        return runGitAtWithTimeout(
+            repoDir.getParent(), Map.of(), cloneTimeout,
+            "clone", repoUrl, repoDir.toString());
+    }
+
+    private String runGitAtWithTimeout(
+        Path directory,
+        Map<String, String> extraEnvironment,
+        Duration timeout,
+        String... args
+    ) throws IOException {
+        Process process = startGit(directory, extraEnvironment, args);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        Thread reader = new Thread(() -> {
+            try (InputStream input = process.getInputStream()) {
+                input.transferTo(output);
+            } catch (IOException ignored) {
+                // The process result below carries the failure.
+            }
+        }, "git-clone-output");
+        reader.setDaemon(true);
+        reader.start();
+        boolean finished;
+        try {
+            finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            ProcessGroup.kill(process);
+            throw new IOException("Git command interrupted", e);
+        }
+        if (!finished) {
+            ProcessGroup.kill(process);
+            process.destroyForcibly();
+            try {
+                reader.join(1_000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            throw new IOException("git " + redact(String.join(" ", args))
+                + " timed out after " + timeout.toSeconds() + "s");
+        }
+        try {
+            reader.join(5_000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Git output reader interrupted", e);
+        }
+        String text = output.toString(StandardCharsets.UTF_8);
+        if (process.exitValue() != 0) {
+            throw new IOException("git " + redact(String.join(" ", args))
+                + " failed: " + redact(text));
+        }
+        return text.stripTrailing();
     }
 
     private String runGitAt(

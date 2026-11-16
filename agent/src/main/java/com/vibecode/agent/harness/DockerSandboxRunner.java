@@ -129,7 +129,6 @@ public final class DockerSandboxRunner implements SandboxRunner {
         String name = "vibecode-sandbox-" + UUID.randomUUID().toString()
             .replace("-", "").substring(0, 12);
 
-
         EgressRuntime egressRuntime = null;
         if (spec.networkEnabled()) {
             egressRuntime = startEgress(name, spec);
