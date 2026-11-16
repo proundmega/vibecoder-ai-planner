@@ -1701,13 +1701,45 @@ public final class DockerSandboxRunner implements SandboxRunner {
             reap("networks",
                 List.of(config.dockerBinary(), "network", "ls", "-q", "--filter", filter),
                 List.of(config.dockerBinary(), "network", "rm"));
-            if (owner.startsWith("pool-")) {
+            if (owner.startsWith("pool-") && daemonMatchesForStaleSweep()) {
                 reapStalePoolResources(owner);
             }
         } catch (RuntimeException e) {
             log.warn("Could not reap orphaned sandbox resources: {}",
                 LOG_REDACTOR.redact(e.toString()));
         }
+    }
+
+    /**
+     * The agent-container owner label is created by the API client, while the
+     * stale sweep runs through the agent's Docker client. Do not guess when
+     * the two clients may point at different daemons; skip the sweep unless
+     * both report the same daemon ID.
+     */
+    private boolean daemonMatchesForStaleSweep() {
+        if (!config.poolAgent() || config.daemonId() == null
+            || config.daemonId().isBlank()) {
+            log.warn("Skipping stale pool sweep: SANDBOX_DAEMON_ID is not configured");
+            return false;
+        }
+        DockerResult info = runDocker(
+            List.of(config.dockerBinary(), "info", "--format", "{{.ID}}"),
+            INSPECT_TIMEOUT,
+            1_024
+        );
+        if (info.timedOut() || info.exitCode() != 0) {
+            log.warn("Could not read the agent Docker daemon ID; "
+                + "skipping the stale pool sweep: {}",
+                LOG_REDACTOR.redact(info.output()));
+            return false;
+        }
+        String actual = info.output().trim();
+        if (!config.daemonId().equals(actual)) {
+            log.warn("Agent Docker daemon {} does not match the API daemon {}; "
+                + "skipping the stale pool sweep", actual, config.daemonId());
+            return false;
+        }
+        return true;
     }
 
     private void reapStalePoolResources(String currentOwner) {

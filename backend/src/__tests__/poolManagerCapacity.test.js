@@ -42,6 +42,7 @@ describe('PoolManager max capacity (BP-61)', () => {
     Docker = require('dockerode');
     mockDocker = Docker();
     mockDocker.ping.mockResolvedValue(undefined);
+    mockDocker.info = jest.fn().mockResolvedValue({ ID: 'daemon-1' });
     mockDocker.getNetwork = jest.fn().mockReturnValue({
       inspect: jest.fn().mockResolvedValue({}),
       connect: jest.fn().mockResolvedValue(undefined),
@@ -207,6 +208,8 @@ describe('PoolManager max capacity (BP-61)', () => {
     const createOpts = pm.docker.createContainer.mock.calls[0][0];
     expect(createOpts.Env).toContain('BACKEND_URL=http://api:3001');
     expect(createOpts.Env).toContain('SANDBOX_OWNER=pool-agent-1');
+    expect(createOpts.Env).toContain('SANDBOX_POOL_AGENT=true');
+    expect(createOpts.Env).toContain('SANDBOX_DAEMON_ID=daemon-1');
     expect(createOpts.Labels['vibecode.agent.owner']).toBe('pool-agent-1');
     expect(createOpts.Env).toContain('SANDBOX_MODE=docker');
     expect(createOpts.Env).toContain('SANDBOX_IMAGE=sandbox@sha256:abc');
@@ -269,6 +272,13 @@ describe('PoolManager max capacity (BP-61)', () => {
       const createOpts = pm.docker.createContainer.mock.calls[0][0];
       expect(createOpts.Env).not.toEqual(
         expect.arrayContaining([expect.stringMatching(/^DOCKER_HOST=/)]));
+      expect(createOpts.Env).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/^SANDBOX_OWNER=/)]));
+      expect(createOpts.Env).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/^SANDBOX_POOL_AGENT=/)]));
+      expect(createOpts.Env).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/^SANDBOX_DAEMON_ID=/)]));
+      expect(createOpts.Labels).toBeUndefined();
       expect(createOpts.NetworkingConfig).toBeUndefined();
       expect(pm.docker.getNetwork).not.toHaveBeenCalled();
     } finally {
@@ -444,6 +454,35 @@ describe('PoolManager max capacity (BP-61)', () => {
       await expect(pm.requestAgent('proj-public-network')).rejects.toThrow(
         /must be internal/);
       expect(pm.docker.createContainer).not.toHaveBeenCalled();
+    } finally {
+      for (const [name, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
+  it('fails closed when the Docker daemon ID cannot be read', async () => {
+    pm.pool.clear();
+    const { pool } = require('../db');
+    pool.query.mockResolvedValue({
+      rows: [{ id: 'worker-1', provider_type: 'claude', api_key_encrypted: 'enc1', base_url: 'https://api.com', model: 'claude-sonnet-4-20250514', max_tokens: 4096 }],
+    });
+    const AgentService = require('../services/AgentService');
+    pm.docker.createContainer = jest.fn();
+    pm.docker.info = jest.fn().mockRejectedValue(new Error('info failed'));
+
+    const previous = {
+      SANDBOX_MODE: process.env.SANDBOX_MODE,
+      SANDBOX_HOST_WORKSPACE_ROOT: process.env.SANDBOX_HOST_WORKSPACE_ROOT,
+    };
+    process.env.SANDBOX_MODE = 'docker';
+    process.env.SANDBOX_HOST_WORKSPACE_ROOT = '/srv/repos';
+    try {
+      await expect(pm.requestAgent('proj-no-daemon')).rejects.toThrow(
+        /Docker daemon ID/);
+      expect(pm.docker.createContainer).not.toHaveBeenCalled();
+      expect(AgentService.create).not.toHaveBeenCalled();
     } finally {
       for (const [name, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[name];

@@ -34,6 +34,8 @@ public record SandboxConfig(
     long egressProbeTimeoutMs,
     EgressTlsMode egressTlsMode,
     String owner,
+    boolean poolAgent,
+    String daemonId,
     Map<String, String> runEnv,
     String user,
     boolean requireSandbox,
@@ -103,6 +105,8 @@ public record SandboxConfig(
         String owner = firstNonBlank(
             value(env, "SANDBOX_OWNER", ""),
             value(env, "AGENT_ID", ""));
+        boolean poolAgent = booleanValue(env, "SANDBOX_POOL_AGENT", false);
+        String daemonId = value(env, "SANDBOX_DAEMON_ID", "");
 
         SandboxConfig config = new SandboxConfig(
             mode,
@@ -121,6 +125,8 @@ public record SandboxConfig(
             longValue(env, "SANDBOX_EGRESS_PROBE_TIMEOUT_MS", 5_000L, 100L),
             EgressTlsMode.from(value(env, "SANDBOX_EGRESS_TLS_MODE", DEFAULT_EGRESS_TLS_MODE)),
             owner,
+            poolAgent,
+            daemonId,
             parseEnv(value(env, "SANDBOX_ENV", "")),
             value(env, "SANDBOX_USER", defaultUser()),
             booleanValue(env, "SANDBOX_REQUIRE", false),
@@ -224,6 +230,21 @@ public record SandboxConfig(
             throw new IllegalStateException(
                 "SANDBOX_OWNER/AGENT_ID must be a safe Docker label value "
                     + "(letters, digits, _ . -)");
+        }
+        if (poolAgent) {
+            if (owner == null || !owner.startsWith("pool-")) {
+                throw new IllegalStateException(
+                    "SANDBOX_POOL_AGENT=true requires SANDBOX_OWNER=pool-*");
+            }
+            if (daemonId == null || daemonId.isBlank()
+                || !daemonId.matches("[A-Za-z0-9_.:-]{1,128}")) {
+                throw new IllegalStateException(
+                    "SANDBOX_POOL_AGENT=true requires a valid SANDBOX_DAEMON_ID");
+            }
+        } else if (owner != null && owner.startsWith("pool-")) {
+            throw new IllegalStateException(
+                "SANDBOX_OWNER=pool-* is reserved for PoolManager; "
+                    + "set SANDBOX_POOL_AGENT=true only for a managed pool agent");
         }
     }
 

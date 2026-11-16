@@ -166,10 +166,14 @@ class SandboxConfigTest {
         SandboxConfig config = SandboxConfig.from(env(
             "SANDBOX_MODE", "docker",
             "AGENT_ID", "42",
-            "SANDBOX_OWNER", "pool-7"
+            "SANDBOX_OWNER", "pool-7",
+            "SANDBOX_POOL_AGENT", "true",
+            "SANDBOX_DAEMON_ID", "daemon-1"
         )::get);
 
         assertEquals("pool-7", config.owner());
+        assertTrue(config.poolAgent());
+        assertEquals("daemon-1", config.daemonId());
     }
 
     @Test
@@ -180,6 +184,39 @@ class SandboxConfigTest {
                 "AGENT_ID", "agent with spaces"
             )::get));
         assertTrue(error.getMessage().contains("SANDBOX_OWNER/AGENT_ID"));
+    }
+
+    @Test
+    void reservesPoolOwnersForManagedAgents() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_OWNER", "pool-7"
+            )::get));
+        assertTrue(error.getMessage().contains("reserved for PoolManager"));
+    }
+
+    @Test
+    void poolAgentsRequireADaemonId() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_OWNER", "pool-7",
+                "SANDBOX_POOL_AGENT", "true"
+            )::get));
+        assertTrue(error.getMessage().contains("SANDBOX_DAEMON_ID"));
+    }
+
+    @Test
+    void poolAgentsRequireAPoolOwner() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_OWNER", "agent-7",
+                "SANDBOX_POOL_AGENT", "true",
+                "SANDBOX_DAEMON_ID", "daemon-1"
+            )::get));
+        assertTrue(error.getMessage().contains("SANDBOX_OWNER=pool-"));
     }
 
     @Test

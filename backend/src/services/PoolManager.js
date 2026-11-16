@@ -357,6 +357,7 @@ class PoolManager {
     const dockerSandbox = sandboxIntent.docker;
     let sandboxDockerHost = '';
     let sandboxHostWorkspaceRoot = null;
+    let sandboxDaemonId = '';
     if (dockerSandbox) {
       sandboxDockerHost = agentDockerHost();
       if (!sandboxDockerHost) {
@@ -373,6 +374,20 @@ class PoolManager {
           + 'REPO_VOLUME a host path');
       }
       await this._ensureSandboxControlNetwork();
+      let daemon;
+      try {
+        daemon = await this.docker.info();
+      } catch (err) {
+        throw new Error(
+          'SANDBOX_MODE=docker could not read the Docker daemon ID required '
+          + `for safe stale-resource cleanup: ${err.message}`);
+      }
+      sandboxDaemonId = daemon?.ID || '';
+      if (!sandboxDaemonId) {
+        throw new Error(
+          'SANDBOX_MODE=docker could not read the Docker daemon ID required '
+          + 'for safe stale-resource cleanup');
+      }
     }
 
     // Create a DB agent record so heartbeat/auth flow works the same as manual
@@ -408,12 +423,17 @@ class PoolManager {
       `BACKEND_URL=${BACKEND_URL}`,
       `AGENT_API_KEY=${apiKey}`,
       `AGENT_ID=${dbAgent.id}`,
-      `SANDBOX_OWNER=pool-${dbAgent.id}`,
       `PROJECT_ID=${projectId}`,
       `REPO_CLONE_DIR=/repos`,
       `AI_PROVIDER=${providerConfig.provider_type}`,
       `AI_MAX_TOKENS=${providerConfig.max_tokens}`,
     ];
+
+    if (dockerSandbox) {
+      env.push(`SANDBOX_OWNER=pool-${dbAgent.id}`);
+      env.push('SANDBOX_POOL_AGENT=true');
+      env.push(`SANDBOX_DAEMON_ID=${sandboxDaemonId}`);
+    }
 
     if (providerConfig.model) {
       env.push(`AI_MODEL=${providerConfig.model}`);
@@ -483,9 +503,6 @@ class PoolManager {
         Image: AGENT_IMAGE,
         name: `agent-${agentId}`,
         Env: env,
-        Labels: {
-          'vibecode.agent.owner': `pool-${dbAgent.id}`,
-        },
         HostConfig: {
           Binds: [`${REPO_VOLUME}:${REPO_MOUNT}`],
           NetworkMode: CONTAINER_NETWORK,
@@ -498,6 +515,11 @@ class PoolManager {
         OpenStdin: false,
         StdinOnce: false,
       };
+      if (dockerSandbox) {
+        createOptions.Labels = {
+          'vibecode.agent.owner': `pool-${dbAgent.id}`,
+        };
+      }
 
       container = await this.docker.createContainer(createOptions);
       if (dockerSandbox) {

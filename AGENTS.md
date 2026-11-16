@@ -177,7 +177,8 @@ and model-driven shell commands), `SANDBOX_IMAGE`, `SANDBOX_PROXY_IMAGE`,
 `SANDBOX_EXEC_TIMEOUT_SECONDS`, `SANDBOX_ARTIFACT_MAX_BYTES`,
 `SANDBOX_SECCOMP_PROFILE`, `SANDBOX_APPARMOR_PROFILE`,
 `SANDBOX_CONTAINER_WORKSPACE_ROOT`, `SANDBOX_HOST_WORKSPACE_ROOT`,
-`SANDBOX_REQUIRE_SECURE_FILE_ACCESS`, `SANDBOX_CONTROL_NETWORK`.
+`SANDBOX_REQUIRE_SECURE_FILE_ACCESS`, `SANDBOX_CONTROL_NETWORK`,
+`SANDBOX_OWNER`, `SANDBOX_POOL_AGENT`, `SANDBOX_DAEMON_ID`.
 Docker mode needs a daemon connection and a host-visible workspace. PoolManager
 forwards the operator `SANDBOX_*` settings to pool agents, sets `DOCKER_HOST`
 only when Docker mode is enabled, resolves the repo volume mountpoint as
@@ -192,6 +193,16 @@ keeps the API mount and PoolManager bind aligned; use the non-Compose runner
 for a host-path workspace. `SANDBOX_REQUIRE=true` is rejected by the API unless
 `SANDBOX_MODE=docker`, before any DB agent or container is created, and a
 failed create/attach removes the container and DB agent record.
+
+Pool Docker reaping reserves `SANDBOX_OWNER=pool-*` for PoolManager. A managed
+agent also receives `SANDBOX_POOL_AGENT=true` and `SANDBOX_DAEMON_ID` (the API
+daemon ID) and labels its own container `vibecode.agent.owner=<owner>`. A pool
+agent sweeps another `pool-` owner's managed resources only when no agent
+container carries that label and both Docker clients report the same daemon;
+a daemon mismatch or unknown ID skips the sweep safely. Manual agents must not
+use `pool-` owners. Numeric-owner resources from #154–#157 and pre-#154
+unlabeled resources need a one-time operator cleanup. A stopped agent container
+counts as live, so its owner's resources wait until the container is removed.
 
 The standalone agent Compose file keeps host mode on the API network only. Set
 `ROOT_COMPOSE_PROJECT` (or `VIBECODE_NETWORK`/`SANDBOX_CONTROL_NETWORK`) to the

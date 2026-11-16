@@ -16,6 +16,7 @@ services:
       CONTAINERS: 1
       EXEC: 1
       IMAGES: 1
+      INFO: 1
       NETWORKS: 1
       VOLUMES: 1
       ALLOW_START: 1
