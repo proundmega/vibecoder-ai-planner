@@ -140,6 +140,9 @@ describe('Harness event API (fg-41 slice 1)', () => {
     });
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> c0eee13 (fix(fg-41): renumber migrations and close review blocking gaps)
     it('falls back to the ticket project when an older run has no project_id', async () => {
       HarnessRunService.getRun.mockResolvedValue({
         ...RUN, project_id: null,
@@ -157,8 +160,11 @@ describe('Harness event API (fg-41 slice 1)', () => {
       expect(res.body.data).toHaveLength(1);
     });
 
+<<<<<<< HEAD
 =======
 >>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
+=======
+>>>>>>> c0eee13 (fix(fg-41): renumber migrations and close review blocking gaps)
     it('returns project events to a member', async () => {
       pool.query.mockResolvedValueOnce({
         rows: [{ owner_id: 'owner-1', is_member: true }],

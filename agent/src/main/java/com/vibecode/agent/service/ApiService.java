@@ -187,11 +187,16 @@ public class ApiService {
      */
     public void emitHarnessEvent(Map<String, Object> event) throws IOException {
 <<<<<<< HEAD
+<<<<<<< HEAD
         ApiResponse<Map<String, Object>> response = executePostWithClient(
             eventHttpClient,
 =======
         ApiResponse<Map<String, Object>> response = executePost(
 >>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
+=======
+        ApiResponse<Map<String, Object>> response = executePostWithClient(
+            eventHttpClient,
+>>>>>>> c0eee13 (fix(fg-41): renumber migrations and close review blocking gaps)
             baseUrl + "/harness/events",
             event,
             new TypeReference<ApiResponse<Map<String, Object>>>() {}

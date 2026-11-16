@@ -62,6 +62,7 @@ describe('Migration 051 harness event store (real DB, transactional)', () => {
       );
       expect(projectIndex.rows).toHaveLength(1);
 
+<<<<<<< HEAD
       const alertIndex = await client.query(
         `SELECT indexname FROM pg_indexes
          WHERE schemaname = $1 AND indexname = 'idx_harness_events_project_alert_time'`,
@@ -69,6 +70,8 @@ describe('Migration 051 harness event store (real DB, transactional)', () => {
       );
       expect(alertIndex.rows).toHaveLength(1);
 
+=======
+>>>>>>> c0eee13 (fix(fg-41): renumber migrations and close review blocking gaps)
       await client.query(
         `INSERT INTO harness_events
            (event_id, trace_id, run_id, ticket_id, project_id, agent_id, type, payload)
@@ -78,6 +81,7 @@ describe('Migration 051 harness event store (real DB, transactional)', () => {
             (SELECT id FROM harness_runs LIMIT 1), 42, 7, 9, 'run.started', '{}'::jsonb)`
       );
 
+<<<<<<< HEAD
       await client.query('SAVEPOINT append_only_update');
       await expect(client.query(
         "UPDATE harness_events SET type = 'tampered'"
@@ -88,6 +92,13 @@ describe('Migration 051 harness event store (real DB, transactional)', () => {
       await expect(client.query('DELETE FROM harness_events'))
         .rejects.toThrow(/retention/);
       await client.query('ROLLBACK TO SAVEPOINT append_only_delete');
+=======
+      await expect(client.query(
+        "UPDATE harness_events SET type = 'tampered'"
+      )).rejects.toThrow(/append-only/);
+      await expect(client.query('DELETE FROM harness_events'))
+        .rejects.toThrow(/retention/);
+>>>>>>> c0eee13 (fix(fg-41): renumber migrations and close review blocking gaps)
 
       await client.query("SET LOCAL harness.allow_event_purge = 'on'");
       const purged = await client.query('DELETE FROM harness_events');
