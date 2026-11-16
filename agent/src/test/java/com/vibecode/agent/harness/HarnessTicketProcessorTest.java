@@ -198,7 +198,7 @@ class HarnessTicketProcessorTest {
             config, apiService, provider, gitHubService, "ghp_token",
             harnessConfig,
             repoName -> workspace,
-            (ignored, bridge) -> harness,
+            (ignored, bridge, effectiveConfig) -> harness,
             planningDocFetcher,
             source,
             verificationRunner,
