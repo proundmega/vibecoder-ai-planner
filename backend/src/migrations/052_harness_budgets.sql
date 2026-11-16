@@ -5,6 +5,13 @@
 CREATE INDEX IF NOT EXISTS idx_harness_runs_ticket_started
   ON harness_runs(ticket_id, started_at DESC);
 
+-- Quota reservation and durable artifact finalization (fg-38/41). A run holds
+-- its remaining potential spend while active; the reaper clears it on finish.
+ALTER TABLE harness_runs
+  ADD COLUMN IF NOT EXISTS budget_reserved_usd NUMERIC(12, 6) NOT NULL DEFAULT 0;
+ALTER TABLE harness_runs
+  ADD COLUMN IF NOT EXISTS artifacts_finalized_at TIMESTAMPTZ;
+
 -- Versioned price table. Rows are append-only by convention: a price change is
 -- a new effective_from row, never an update of history.
 CREATE TABLE IF NOT EXISTS model_prices (
@@ -137,7 +144,37 @@ CREATE TABLE IF NOT EXISTS harness_kill_switches (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_harness_kill_switches_scope_project
   ON harness_kill_switches(scope, COALESCE(project_id, 0));
 
+-- Immutable kill-switch history. The current switch row is mutable, but every
+-- toggle is appended here with actor and reason.
+CREATE TABLE IF NOT EXISTS harness_kill_switch_audit (
+  id BIGSERIAL PRIMARY KEY,
+  scope TEXT NOT NULL,
+  project_id BIGINT,
+  enabled BOOLEAN NOT NULL,
+  reason TEXT,
+  actor_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT harness_kill_switch_audit_scope_check
+    CHECK (scope IN ('global', 'project'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_harness_kill_switch_audit_created
+  ON harness_kill_switch_audit(scope, project_id, created_at DESC);
+
+CREATE OR REPLACE FUNCTION harness_kill_switch_audit_append_only() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION '% is append-only', TG_TABLE_NAME;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_harness_kill_switch_audit_append_only
+  ON harness_kill_switch_audit;
+CREATE TRIGGER trg_harness_kill_switch_audit_append_only
+  BEFORE UPDATE OR DELETE ON harness_kill_switch_audit
+  FOR EACH ROW EXECUTE FUNCTION harness_kill_switch_audit_append_only();
+
 COMMENT ON TABLE harness_usage IS 'Per-run/model token and cost attribution (fg-38).';
 COMMENT ON TABLE harness_budget_policies IS 'Per-project harness budget and routing policy (fg-38).';
 COMMENT ON TABLE harness_kill_switches IS 'Global/project harness kill switches (fg-38).';
+COMMENT ON TABLE harness_kill_switch_audit IS 'Append-only kill-switch history (fg-38).';
 COMMENT ON TABLE model_prices IS 'Versioned per-million model prices (fg-38).';

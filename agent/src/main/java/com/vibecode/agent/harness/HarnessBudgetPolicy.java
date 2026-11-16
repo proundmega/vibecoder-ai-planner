@@ -82,6 +82,19 @@ public record HarnessBudgetPolicy(
             (int) number(limits.get("maxRetries"), fallback.limits().maxRetries()),
             warn > 0 && warn <= 1 ? warn : fallback.limits().warnRatio()
         );
+        double reserved = number(raw.get("reservedCostUsd"), -1);
+        if (reserved >= 0) {
+            double cap = Math.min(parsedLimits.maxCostUsd(), Math.max(0.000001, reserved));
+            parsedLimits = new BudgetLimits(
+                parsedLimits.maxDuration(),
+                parsedLimits.maxInputTokens(),
+                parsedLimits.maxOutputTokens(),
+                cap,
+                parsedLimits.maxToolCalls(),
+                parsedLimits.maxRetries(),
+                parsedLimits.warnRatio()
+            );
+        }
 
         String policy = string(routing.get("policy"));
         if (policy == null

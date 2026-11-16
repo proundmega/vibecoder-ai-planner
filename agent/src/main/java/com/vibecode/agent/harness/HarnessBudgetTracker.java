@@ -34,7 +34,7 @@ public final class HarnessBudgetTracker {
     }
 
     private final BudgetLimits limits;
-    private final ModelPrice price;
+    private ModelPrice price;
     private final Instant startedAt;
     private final Supplier<Instant> clock;
     private final Consumer<BudgetWarning> onWarning;
@@ -209,6 +209,21 @@ public final class HarnessBudgetTracker {
 
     public synchronized boolean breached() {
         return breached;
+    }
+
+    /** Force a breach from a backend quota response. */
+    public synchronized void forceBreach(String reason) {
+        if (breached) {
+            return;
+        }
+        breach(reason == null || reason.isBlank() ? "budget exhausted" : reason);
+    }
+
+    /** Switch pricing when routing falls back to another model. */
+    public synchronized void updatePrice(ModelPrice next) {
+        if (next != null) {
+            this.price = next;
+        }
     }
 
     public synchronized String breachReason() {

@@ -1,5 +1,6 @@
 const { pool } = require('../db');
 const HarnessMetrics = require('./HarnessMetrics');
+const logger = require('../utils/logger');
 const {
   ValidationError,
   ConflictError,
@@ -313,11 +314,36 @@ class HarnessBudgetService {
         `Harness retry limit reached (${policy.limits.maxRetries} retries)`
       );
     }
-    if (policy.dailySpendUsd >= Number(policy.quotas.dailyCostUsd)) {
+    if (Number(policy.quotas.dailyCostUsd) > 0
+      && policy.dailySpendUsd >= Number(policy.quotas.dailyCostUsd)) {
       throw new ConflictError(
         `Harness daily project budget exhausted (${policy.dailySpendUsd.toFixed(2)} / `
           + `${Number(policy.quotas.dailyCostUsd).toFixed(2)} USD)`
       );
+    }
+
+    let reservedCostUsd = Number(policy.limits.maxCostUsd);
+    const dailyLimit = Number(policy.quotas.dailyCostUsd);
+    if (dailyLimit > 0) {
+      const reservedResult = await client.query(
+        `SELECT COALESCE(SUM(r.budget_reserved_usd), 0) AS reserved
+         FROM harness_runs r
+         JOIN tickets t ON t.id = r.ticket_id
+         WHERE COALESCE(r.project_id, t.project_id) = $1 AND r.status = 'running'`,
+        [project]
+      );
+      const reserved = Number(reservedResult.rows?.[0]?.reserved || 0);
+      const available = dailyLimit - policy.dailySpendUsd - reserved;
+      if (available <= 0) {
+        throw new ConflictError(
+          `Harness daily project budget is fully reserved `
+            + `(${reserved.toFixed(2)} reserved / ${dailyLimit.toFixed(2)} USD)`
+        );
+      }
+      const runCap = Number(policy.limits.maxCostUsd) > 0
+        ? Number(policy.limits.maxCostUsd)
+        : available;
+      reservedCostUsd = Math.min(runCap, available);
     }
 
     const projectRuns = await client.query(
@@ -345,7 +371,7 @@ class HarnessBudgetService {
       );
     }
 
-    return policy;
+    return { ...policy, reservedCostUsd };
   }
 
   /**
@@ -480,6 +506,34 @@ class HarnessBudgetService {
       [scope, project, enabled, reason, updatedBy]
     );
     HarnessMetrics.setKillSwitch(scope, enabled);
+    try {
+      await this.recordKillSwitchAudit({
+        scope,
+        projectId: project,
+        enabled,
+        reason,
+        actorId: updatedBy,
+      });
+    } catch (auditError) {
+      logger.warn(`Could not append kill-switch audit: ${auditError.message}`);
+    }
+    return result.rows[0];
+  }
+
+  async recordKillSwitchAudit({
+    scope,
+    projectId = null,
+    enabled,
+    reason = null,
+    actorId = null,
+  }) {
+    const result = await pool.query(
+      `INSERT INTO harness_kill_switch_audit
+         (scope, project_id, enabled, reason, actor_id)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [scope, projectId, enabled, reason, actorId]
+    );
     return result.rows[0];
   }
 }

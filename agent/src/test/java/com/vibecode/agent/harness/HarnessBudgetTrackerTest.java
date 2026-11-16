@@ -132,6 +132,46 @@ class HarnessBudgetTrackerTest {
     }
 
     @Test
+    void priceUpdatesApplyToTokensAfterAFallback() {
+        HarnessBudgetTracker tracker = new HarnessBudgetTracker(
+            new BudgetLimits(Duration.ofHours(1), 10_000_000, 10_000_000, 20, 100, 2, 0.8),
+            ModelPrice.free("beam-free"),
+            Instant.now(),
+            Instant::now,
+            warning -> { },
+            reason -> { });
+
+        tracker.accept(event("{\"type\":\"message.updated\",\"properties\":{\"info\":{"
+            + "\"id\":\"msg-1\",\"tokens\":{\"input\":1000000,\"output\":0}}}}"));
+        assertEquals(0.0, tracker.snapshot().costUsd(), 0.0001);
+
+        tracker.updatePrice(new ModelPrice("gpt-4o", 2.5, 10, 1.25));
+        tracker.accept(event("{\"type\":\"message.updated\",\"properties\":{\"info\":{"
+            + "\"id\":\"msg-2\",\"tokens\":{\"input\":1000000,\"output\":0}}}}"));
+
+        assertEquals(2.5, tracker.snapshot().costUsd(), 0.0001);
+    }
+
+    @Test
+    void forceBreachStopsTheRunOnce() {
+        List<String> breaches = new ArrayList<>();
+        HarnessBudgetTracker tracker = new HarnessBudgetTracker(
+            BudgetLimits.defaults(Duration.ofHours(1)),
+            ModelPrice.free("beam-free"),
+            Instant.now(),
+            Instant::now,
+            warning -> { },
+            breaches::add);
+
+        tracker.forceBreach("project daily budget exhausted");
+        tracker.forceBreach("duplicate");
+
+        assertTrue(tracker.breached());
+        assertEquals("project daily budget exhausted", tracker.breachReason());
+        assertEquals(List.of("project daily budget exhausted"), breaches);
+    }
+
+    @Test
     void watchdogStyleChecksBreachOnWallClock() {
         AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-11-16T10:00:00Z"));
         HarnessBudgetTracker tracker = new HarnessBudgetTracker(

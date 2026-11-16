@@ -68,15 +68,29 @@ describe('Migration 052 harness budgets (real DB, transactional)', () => {
         `SELECT table_name FROM information_schema.tables
          WHERE table_schema = $1
            AND table_name IN ('harness_usage','model_prices',
-                              'harness_budget_policies','harness_kill_switches')
+                              'harness_budget_policies','harness_kill_switches',
+                              'harness_kill_switch_audit')
          ORDER BY table_name`,
         [schema]
       );
       expect(tables.rows.map((row) => row.table_name)).toEqual([
         'harness_budget_policies',
+        'harness_kill_switch_audit',
         'harness_kill_switches',
         'harness_usage',
         'model_prices',
+      ]);
+
+      const runColumns = await client.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = $1 AND table_name = 'harness_runs'
+           AND column_name IN ('budget_reserved_usd','artifacts_finalized_at')
+         ORDER BY column_name`,
+        [schema]
+      );
+      expect(runColumns.rows.map((row) => row.column_name)).toEqual([
+        'artifacts_finalized_at',
+        'budget_reserved_usd',
       ]);
 
       await client.query(
@@ -118,13 +132,25 @@ describe('Migration 052 harness budgets (real DB, transactional)', () => {
       )).rejects.toThrow(/duplicate key/);
       await client.query('ROLLBACK TO SAVEPOINT duplicate_switch');
 
+      await client.query(
+        `INSERT INTO harness_kill_switch_audit
+           (scope, project_id, enabled, reason, actor_id)
+         VALUES ('project', 7, TRUE, 'test', 1)`
+      );
+      await client.query('SAVEPOINT audit_update');
+      await expect(client.query(
+        "UPDATE harness_kill_switch_audit SET reason = 'tampered'"
+      )).rejects.toThrow(/append-only/);
+      await client.query('ROLLBACK TO SAVEPOINT audit_update');
+
       await client.query(fs.readFileSync(ROLLBACK_SQL, 'utf8'));
 
       const remaining = await client.query(
         `SELECT table_name FROM information_schema.tables
          WHERE table_schema = $1
            AND table_name IN ('harness_usage','model_prices',
-                              'harness_budget_policies','harness_kill_switches')`,
+                              'harness_budget_policies','harness_kill_switches',
+                              'harness_kill_switch_audit')`,
         [schema]
       );
       expect(remaining.rows).toHaveLength(0);

@@ -1276,6 +1276,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
         if (activeHarnessConfig != null) {
             activeHarnessConfig = activeHarnessConfig.withModel(fallback);
         }
+        HarnessBudgetTracker tracker = budgetTracker;
+        if (tracker != null && budgetPolicy != null) {
+            tracker.updatePrice(budgetPolicy.priceFor(fallback));
+        }
 
         closeQuietly(primary);
         Path retryDir = Files.createTempDirectory("opencode-harness-fallback-");
@@ -1523,9 +1527,15 @@ public final class HarnessTicketProcessor implements TicketWorker {
         body.put("toolCalls", snapshot.toolCalls());
         body.put("durationMs", snapshot.durationMs());
         try {
-            apiService.recordHarnessUsage(runId, body);
+            boolean quotaExceeded = apiService.recordHarnessUsage(runId, body);
             lastUsageReportAt = now;
             emitEvent("usage.recorded", body);
+            if (quotaExceeded) {
+                HarnessBudgetTracker trackerNow = budgetTracker;
+                if (trackerNow != null) {
+                    trackerNow.forceBreach("project daily budget exhausted");
+                }
+            }
         } catch (IOException | RuntimeException e) {
             log.debug("Could not report harness usage for run {}: {}", runId,
                 redactWithProvider(String.valueOf(e.getMessage())));

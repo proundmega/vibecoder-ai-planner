@@ -17,6 +17,7 @@ function mockQueries({
   killSwitch = null,
   projectRuns = 0,
   agentRuns = 0,
+  reserved = 0,
   upserted = { id: 1 },
   killSwitchRow = { id: 1, scope: 'project', enabled: true },
 } = {}) {
@@ -34,6 +35,9 @@ function mockQueries({
     }
     if (sql.includes('FROM harness_kill_switches')) {
       return { rows: killSwitch ? [killSwitch] : [] };
+    }
+    if (sql.includes('SUM(r.budget_reserved_usd)')) {
+      return { rows: [{ reserved }] };
     }
     if (sql.includes('JOIN tickets') && sql.includes('COUNT(*)')) {
       return { rows: [{ count: projectRuns }] };
@@ -156,6 +160,38 @@ describe('HarnessBudgetService', () => {
       })).rejects.toThrow('Harness agent concurrency limit reached');
     });
 
+    it('allocates the run cost cap from spend plus active reservations', async () => {
+      mockQueries({
+        spend: 8,
+        reserved: 0,
+        policies: [{ scope: 'project', daily_cost_usd: 10 }],
+      });
+      const first = await HarnessBudgetService.assertCanStart({
+        projectId: 7, ticketId: 42, agentId: 9,
+      });
+      expect(first.reservedCostUsd).toBe(2);
+
+      mockQueries({
+        spend: 8,
+        reserved: 2,
+        policies: [{ scope: 'project', daily_cost_usd: 10 }],
+      });
+      await expect(HarnessBudgetService.assertCanStart({
+        projectId: 7, ticketId: 43, agentId: 10,
+      })).rejects.toThrow('Harness daily project budget is fully reserved');
+    });
+
+    it('treats dailyCostUsd=0 as unlimited', async () => {
+      mockQueries({
+        policies: [{ scope: 'project', daily_cost_usd: 0, max_cost_usd: 5 }],
+      });
+      const policy = await HarnessBudgetService.assertCanStart({
+        projectId: 7, ticketId: 42, agentId: 9,
+      });
+      expect(policy.quotas.dailyCostUsd).toBe(0);
+      expect(policy.reservedCostUsd).toBe(5);
+    });
+
     it('takes the project advisory lock and allows a compliant start', async () => {
       const policy = await HarnessBudgetService.assertCanStart({
         projectId: 7, ticketId: 42, agentId: 9, attempt: 1, lock: true,
@@ -245,6 +281,9 @@ describe('HarnessBudgetService', () => {
         updatedBy: 1,
       });
       expect(row.scope).toBe('project');
+      expect(pool.query.mock.calls.some(
+        (call) => String(call[0]).includes('INSERT INTO harness_kill_switch_audit')
+      )).toBe(true);
       const gauge = await HarnessMetrics.gauges.killSwitch.get();
       expect(gauge.values.find((v) => v.labels.scope === 'project').value).toBe(1);
     });

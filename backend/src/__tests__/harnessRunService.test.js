@@ -31,7 +31,7 @@ describe('HarnessRunService', () => {
     pool.query.mockResolvedValue({ rows: [] });
     DependencyService.assertReady.mockResolvedValue({ ready: true });
     HarnessEventService.ensureTerminalEvent.mockResolvedValue(null);
-    HarnessBudgetService.assertCanStart.mockResolvedValue({});
+    HarnessBudgetService.assertCanStart.mockResolvedValue({ reservedCostUsd: 2 });
   });
 
   describe('startRun', () => {
@@ -76,7 +76,7 @@ describe('HarnessRunService', () => {
       });
       expect(client.query.mock.calls[2][0]).toContain('INSERT INTO harness_runs');
       expect(client.query.mock.calls[2][0]).toContain('project_id');
-      expect(client.query.mock.calls[2][0]).toContain('t.project_id');
+      expect(client.query.mock.calls[2][0]).toContain('budget_reserved_usd');
       expect(client.query.mock.calls[2][1]).toEqual([
         42,
         7,
@@ -89,6 +89,7 @@ describe('HarnessRunService', () => {
         1,
         null,
         null,
+        2,
       ]);
     });
 
@@ -116,9 +117,10 @@ describe('HarnessRunService', () => {
       expect(client.query.mock.calls[2][0]).toContain('FROM repo_profiles');
       expect(client.query.mock.calls[2][0]).toContain("rp.status = 'active'");
       expect(client.query.mock.calls[2][0]).toContain('v.profile_hash = rp.profile_hash');
-      expect(client.query.mock.calls[3][1].slice(-2)).toEqual([
+      expect(client.query.mock.calls[3][1].slice(-3)).toEqual([
         '11111111-1111-4111-8111-111111111111',
         3,
+        2,
       ]);
     });
 

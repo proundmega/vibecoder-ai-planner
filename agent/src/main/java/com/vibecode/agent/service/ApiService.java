@@ -220,7 +220,7 @@ public class ApiService {
      * Report a cumulative usage snapshot for a run. The backend prices it from
      * the versioned table and keeps the greatest value.
      */
-    public void recordHarnessUsage(String runId, Map<String, Object> usage) throws IOException {
+    public boolean recordHarnessUsage(String runId, Map<String, Object> usage) throws IOException {
         ApiResponse<Map<String, Object>> response = executePost(
             baseUrl + "/harness/runs/" + runId + "/usage",
             usage,
@@ -229,6 +229,10 @@ public class ApiService {
         if (response.hasError()) {
             throw new IOException("Failed to record harness usage: " + response.getError());
         }
+        Object exceeded = response.getData() == null
+            ? null
+            : response.getData().get("quotaExceeded");
+        return Boolean.TRUE.equals(exceeded) || "true".equals(String.valueOf(exceeded));
     }
 
     public void checkpointHarnessRun(

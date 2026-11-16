@@ -156,7 +156,10 @@ class HarnessUsageService {
     if (result.rows.length === 0) {
       throw new NotFoundError('Harness usage could not be stored');
     }
-    return result.rows[0];
+    const reservedUsd = Number(run.budget_reserved_usd || 0);
+    const quotaExceeded = reservedUsd > 0
+      && costUsd > reservedUsd + 0.000001;
+    return { ...result.rows[0], quotaExceeded };
   }
 
   async listForRun(runId) {

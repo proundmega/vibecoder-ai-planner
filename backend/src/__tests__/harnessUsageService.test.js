@@ -56,7 +56,7 @@ describe('HarnessUsageService', () => {
         durationMs: 1200,
       });
 
-      expect(result).toEqual(row);
+      expect(result).toEqual({ ...row, quotaExceeded: false });
       expect(HarnessBudgetService.computeCost).toHaveBeenCalledWith({
         model: 'gpt-4o',
         inputTokens: 100,
@@ -71,6 +71,23 @@ describe('HarnessUsageService', () => {
       ]);
       expect(params[8]).toBe(100);
       expect(params[11]).toBe(0.42);
+    });
+
+    it('flags usage that exceeds the run budget reservation', async () => {
+      HarnessRunService.getRun.mockResolvedValue({ ...RUN, budget_reserved_usd: 0.1 });
+      pool.query
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ id: 'usage-1' }] });
+
+      const row = await HarnessUsageService.recordUsage({
+        runId: RUN_ID,
+        agentId: 9,
+        model: 'gpt-4o',
+        inputTokens: 100,
+        outputTokens: 50,
+      });
+
+      expect(row.quotaExceeded).toBe(true);
     });
 
     it('records only usage deltas in Prometheus metrics', async () => {

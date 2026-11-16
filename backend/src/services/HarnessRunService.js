@@ -142,6 +142,7 @@ class HarnessRunService {
         [normalisedTicketId]
       );
       const ownedTicket = ownership.rows[0];
+      let reservedCostUsd = 0;
       if (
         ownedTicket
         && ownedTicket.status === 'in_progress'
@@ -152,11 +153,10 @@ class HarnessRunService {
           lock: true,
           action: 'durable_start',
         });
-        // fg-38: kill switch, retry cap and project/agent concurrency are
-        // checked in the same transaction as the run insert. The advisory lock
-        // serialises concurrent starts so the last quota slot cannot be taken
-        // twice.
-        await HarnessBudgetService.assertCanStart({
+        // fg-38: kill switch, retry cap, concurrency and the daily-budget
+        // reservation are checked in the same transaction as the run insert.
+        // The advisory lock serialises concurrent starts.
+        const budget = await HarnessBudgetService.assertCanStart({
           projectId: ownedTicket.project_id,
           ticketId: normalisedTicketId,
           agentId: normalisedAgentId,
@@ -164,6 +164,7 @@ class HarnessRunService {
           client,
           lock: true,
         });
+        reservedCostUsd = Number(budget?.reservedCostUsd) || 0;
       }
 
       if (normalisedProfileId) {
@@ -192,8 +193,8 @@ class HarnessRunService {
         `INSERT INTO harness_runs
            (ticket_id, agent_id, project_id, branch, base_sha, workspace_path,
             session_id, provider, model, attempt, repo_profile_id,
-            repo_profile_version)
-         SELECT $1, $2, t.project_id, $3, $4, $5, $6, $7, $8, $9, $10, $11
+            repo_profile_version, budget_reserved_usd)
+         SELECT $1, $2, t.project_id, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
          FROM tickets t
          JOIN agents a ON a.id = $2
          WHERE t.id = $1
@@ -221,6 +222,7 @@ class HarnessRunService {
           normalisedAttempt,
           normalisedProfileId,
           normalisedProfileVersion,
+          reservedCostUsd,
         ]
       );
 
@@ -467,6 +469,7 @@ class HarnessRunService {
              error = $3,
              head_sha = COALESCE(NULLIF(BTRIM($4), ''), head_sha),
              pr_url = COALESCE(NULLIF(BTRIM($5), ''), pr_url),
+             budget_reserved_usd = 0,
              heartbeat_at = NOW(),
              finished_at = NOW()
          WHERE id = $1 AND status = 'running'
@@ -514,6 +517,25 @@ class HarnessRunService {
     } catch (eventError) {
       logger.warn(`Could not persist terminal event for run ${run.id}: ${eventError.message}`);
     }
+  }
+
+  /**
+   * Mark the terminal event and billing backfill as durable so the reaper stops
+   * retrying this run. Set only after both artifact steps succeed.
+   */
+  async markArtifactsFinalized(runId) {
+    const id = requiredUuid(runId, 'runId');
+    const result = await pool.query(
+      `UPDATE harness_runs
+       SET artifacts_finalized_at = NOW()
+       WHERE id = $1
+       RETURNING id, artifacts_finalized_at`,
+      [id]
+    );
+    if (result.rows.length === 0) {
+      throw new NotFoundError('Harness run not found');
+    }
+    return result.rows[0];
   }
 
   /**
@@ -834,7 +856,8 @@ class HarnessRunService {
     const result = await pool.query(
       `SELECT DISTINCT ON (ticket_id) id
        FROM harness_runs
-       WHERE status <> 'running' AND reconciled_at IS NULL
+       WHERE status <> 'running'
+         AND (reconciled_at IS NULL OR artifacts_finalized_at IS NULL)
        ORDER BY ticket_id, started_at DESC, id DESC
        LIMIT $1`,
       [parsedLimit]
@@ -859,6 +882,7 @@ class HarnessRunService {
          UPDATE harness_runs
          SET status = 'dead_letter',
              error = $2,
+             budget_reserved_usd = 0,
              finished_at = COALESCE(finished_at, NOW()),
              reconciled_at = NULL
          WHERE id = $1
@@ -1078,6 +1102,7 @@ class HarnessRunService {
                WHEN NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN 'succeeded'
                ELSE 'failed'
              END,
+             budget_reserved_usd = 0,
              finished_at = NOW(),
              error = CASE
                WHEN NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN r.error
@@ -1104,6 +1129,7 @@ class HarnessRunService {
                WHEN NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN 'succeeded'
                ELSE 'failed'
              END,
+             budget_reserved_usd = 0,
              finished_at = NOW(),
              error = CASE
                WHEN NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN r.error

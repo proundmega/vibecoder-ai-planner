@@ -95,8 +95,16 @@ class HarnessReaper {
 }
 
 async function finalizeRunArtifacts(runId) {
+  let run;
   try {
-    const run = await HarnessRunService.getRun(runId);
+    run = await HarnessRunService.getRun(runId);
+  } catch (error) {
+    logger.warn(`Could not load harness run ${runId} for finalization: ${error.message}`);
+    return;
+  }
+
+  let complete = true;
+  try {
     await HarnessEventService.ensureTerminalEvent({
       runId,
       status: run.status,
@@ -104,11 +112,27 @@ async function finalizeRunArtifacts(runId) {
       headSha: run.head_sha,
       prUrl: run.pr_url,
     });
+  } catch (error) {
+    complete = false;
+    logger.warn(`Could not persist terminal event for run ${runId}: ${error.message}`);
+  }
+
+  try {
     await HarnessUsageService.flushRunToUsageLogs(runId);
   } catch (error) {
-    // Reconciliation stays durable even if observability/billing backfill
-    // fails; the next sweep retries the terminal run until it is marked.
-    logger.warn(`Could not finalize harness run ${runId}: ${error.message}`);
+    complete = false;
+    logger.warn(`Could not flush usage for run ${runId}: ${error.message}`);
+  }
+
+  if (!complete) {
+    // Leave artifacts_finalized_at NULL so the next sweep retries both
+    // idempotent steps independently.
+    return;
+  }
+  try {
+    await HarnessRunService.markArtifactsFinalized(runId);
+  } catch (error) {
+    logger.warn(`Could not mark artifacts finalized for run ${runId}: ${error.message}`);
   }
 }
 

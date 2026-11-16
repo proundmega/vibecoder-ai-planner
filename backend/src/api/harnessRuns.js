@@ -153,6 +153,10 @@ router.post('/runs', verifyTokenOrAgent, async (req, res, next) => {
         agentId,
         extraModels: run.model ? [run.model] : [],
       });
+      budgetPolicy = {
+        ...budgetPolicy,
+        reservedCostUsd: Number(run.budget_reserved_usd) || 0,
+      };
     } catch (policyError) {
       logger.warn(`Could not load harness budget policy for run ${run.id}: ${policyError.message}`);
     }
@@ -414,6 +418,7 @@ router.post('/runs/:runId/finish', verifyTokenOrAgent, async (req, res, next) =>
       logger.warn(`Harness finish audit failed for run ${finished.id}: ${auditError.message}`);
     }
 
+    let artifactsComplete = true;
     try {
       await HarnessEventService.ensureTerminalEvent({
         runId: finished.id,
@@ -423,13 +428,23 @@ router.post('/runs/:runId/finish', verifyTokenOrAgent, async (req, res, next) =>
         prUrl: finished.pr_url,
       });
     } catch (eventError) {
+      artifactsComplete = false;
       logger.warn(`Harness terminal event failed for run ${finished.id}: ${eventError.message}`);
     }
 
     try {
       await HarnessUsageService.flushRunToUsageLogs(finished.id);
     } catch (usageError) {
+      artifactsComplete = false;
       logger.warn(`Harness usage flush failed for run ${finished.id}: ${usageError.message}`);
+    }
+
+    if (artifactsComplete) {
+      try {
+        await HarnessRunService.markArtifactsFinalized(finished.id);
+      } catch (markError) {
+        logger.warn(`Harness run ${finished.id} could not be marked finalized: ${markError.message}`);
+      }
     }
 
     res.json({ success: true, data: finished });

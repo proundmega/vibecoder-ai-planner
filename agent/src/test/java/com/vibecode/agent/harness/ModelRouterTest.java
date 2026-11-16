@@ -151,6 +151,19 @@ class ModelRouterTest {
     }
 
     @Test
+    void backendBudgetReservationCapsTheRun() {
+        HarnessBudgetPolicy parsed = HarnessBudgetPolicy.from(
+            Map.of(
+                "reservedCostUsd", 2,
+                "limits", Map.of("maxCostUsd", 5),
+                "quotas", Map.of("dailyCostUsd", 10),
+                "routing", Map.of("policy", "free_only", "freeModel", "beam-free")),
+            Duration.ofMinutes(45), provider);
+
+        assertEquals(2.0, parsed.limits().maxCostUsd(), 0.0001);
+    }
+
+    @Test
     void budgetsDefaultToEnvIndependentLimits() {
         HarnessBudgetPolicy policy = HarnessBudgetPolicy.defaults(
             Duration.ofMinutes(30), provider);
