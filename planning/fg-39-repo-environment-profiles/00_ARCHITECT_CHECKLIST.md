@@ -1,13 +1,13 @@
 ---
 id: "fg-39"
 title: "Repository Onboarding and Environment Profiles"
-status: in_progress
+status: in_review
 priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-10-31"
 updated: "2026-11-16"
-pr: null
+pr: 161
 branch: "feat/fg-39-repo-profiles"
 depends_on: ["fg-30", "fg-34"]
 ---
@@ -45,7 +45,7 @@ rather than accepting configuration it does not execute.
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Slice 1 implementation | `feat/fg-39-repo-profiles`, commit `1ef01f7` | ☑ |
+| Slice 1 implementation | `feat/fg-39-repo-profiles`, commit `1ef01f7`, PR #161 | ☑ |
 | Verification results | `03` → Results | ☑ |
 
 ## Deferred register (canonical)
