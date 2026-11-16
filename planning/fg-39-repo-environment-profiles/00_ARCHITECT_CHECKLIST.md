@@ -32,7 +32,7 @@ environment failures, not coding failures.
 
 | Slice | Scope | State |
 |---|---|---|
-| 1 | Versioned profile schema/API, GitHub-manifest stack detection, profile-driven base branch/setup/verify/env/timeouts, digest-pinned image override, per-project dependency cache volume, dry-run validation queue + agent worker, fg-34/D27 profile origin-CA plumbing | in progress |
+| 1 | Versioned profile schema/API, GitHub-manifest stack detection, profile-driven base branch/setup/verify/env/timeouts, digest-pinned image override, per-project dependency cache volume, dry-run validation queue + agent worker, fg-34/D27 profile origin-CA plumbing | in review |
 | 2 | Service containers (Postgres/Redis) with health checks, ephemeral data and connection env | planned |
 | 3 | Flaky-test retry policy, test-data hooks and known-failure semantics | planned |
 | 4 | Prebuilt per-stack images/devcontainers, lockfile-keyed cache generations and cache-write sanitization | planned |
@@ -45,8 +45,8 @@ rather than accepting configuration it does not execute.
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Slice 1 implementation | This branch and PR | ☐ |
-| Verification results | `03` → Results | ☐ |
+| Slice 1 implementation | `feat/fg-39-repo-profiles`, commit `1ef01f7` | ☑ |
+| Verification results | `03` → Results | ☑ |
 
 ## Deferred register (canonical)
 

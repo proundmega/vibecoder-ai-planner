@@ -7,23 +7,23 @@
 
 ### Slice 1 — schema, detection, runtime, dry run
 
-- [ ] Migration `050_repo_profiles.sql` + rollback: profiles, validations,
+- [x] Migration `050_repo_profiles.sql` + rollback: profiles, validations,
       nullable `harness_runs` profile columns.
-- [ ] Backend `RepoProfileService`: versioned create/update/activate, active
+- [x] Backend `RepoProfileService`: versioned create/update/activate, active
       lookup, GitHub-manifest detection, agent read.
-- [ ] Backend `RepoProfileValidationService`: queued dry runs, atomic claim,
+- [x] Backend `RepoProfileValidationService`: queued dry runs, atomic claim,
       finish, 60-minute stale reap.
-- [ ] Backend Joi schema + OpenAPI routes + project owner/super-admin boundary.
-- [ ] Agent `RepoProfile` model: re-validate schema, image digest, env secrets,
+- [x] Backend Joi schema + OpenAPI routes + project owner/super-admin boundary.
+- [x] Agent `RepoProfile` model: re-validate schema, image digest, env secrets,
       commands, cache names and origin CA bundle.
-- [ ] Agent profile fetch + runtime use: base branch, setup/verify, timeouts,
+- [x] Agent profile fetch + runtime use: base branch, setup/verify, timeouts,
       env, image, cache volume, run profile columns.
-- [ ] Agent `ProfileValidationProcessor`: clone → sandbox → setup → verify →
+- [x] Agent `ProfileValidationProcessor`: clone → sandbox → setup → verify →
       report; no model session, no publish.
-- [ ] fg-34/D27 profile origin CA: only allowlisted exact hosts, terminate mode
+- [x] fg-34/D27 profile origin CA: only allowlisted exact hosts, terminate mode
       only, audited through the existing supervisor/proxy logs.
-- [ ] Tests for schema/API/detection/dry-run/runtime/cache/D27 paths.
-- [ ] Update `PENDING.txt`, `HARNESS_ROADMAP.md`, fg-34 D27 status.
+- [x] Tests for schema/API/detection/dry-run/runtime/cache/D27 paths.
+- [x] Update `PENDING.txt`, `HARNESS_ROADMAP.md`, fg-34 D27 status.
 
 ## Per-file changes
 
@@ -98,4 +98,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| | | | |
+| 2026-11-16 | `1ef01f7` | Backend 137 suites / 1706 tests; agent 678 tests / 9 skipped | Pass. `node planning/check-planning.js`, backend lint (0 errors), `git diff --check`, root and agent Compose configs pass. Slice 1 covers FR1-FR4, FR6, FR7, FR9, FR10 and the D27 profile handoff; FR5/FR8 fail closed until their slices. |
