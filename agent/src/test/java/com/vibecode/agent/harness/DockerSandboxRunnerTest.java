@@ -382,6 +382,33 @@ class DockerSandboxRunnerTest {
         assertFalse(commands.contains("network rm "), commands);
     }
 
+    @Test
+    void skipsTheStaleSweepWhenTheAgentDaemonIdCannotBeRead() throws IOException {
+        String commands = runPoolReap("""
+            case "$1" in
+              info) exit 1 ;;
+              ps)
+                case "$*" in
+                  *"sandbox.owner=pool-2"*) : ;;
+                  *"sandbox.managed=true"*)
+                    printf 'bbbbbbbbbbbb pool-1\n' ;;
+                  *) : ;;
+                esac
+                ;;
+              network)
+                case "$*" in
+                  *"ls -q --filter label=vibecode.sandbox.owner=pool-2"*) : ;;
+                esac
+                ;;
+              rm) exit 0 ;;
+            esac
+            """);
+
+        assertTrue(commands.contains("info --format {{.ID}}"), commands);
+        assertFalse(commands.contains("label=vibecode.sandbox.managed=true"), commands);
+        assertFalse(commands.contains("rm -f bbbbbbbbbbbb"), commands);
+    }
+
     private String runPoolReap(String body) throws IOException {
         Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
         Path log = tempDir.resolve("docker.log");

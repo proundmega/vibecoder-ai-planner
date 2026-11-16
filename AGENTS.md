@@ -199,10 +199,14 @@ agent also receives `SANDBOX_POOL_AGENT=true` and `SANDBOX_DAEMON_ID` (the API
 daemon ID) and labels its own container `vibecode.agent.owner=<owner>`. A pool
 agent sweeps another `pool-` owner's managed resources only when no agent
 container carries that label and both Docker clients report the same daemon;
-a daemon mismatch or unknown ID skips the sweep safely. Manual agents must not
-use `pool-` owners. Numeric-owner resources from #154–#157 and pre-#154
-unlabeled resources need a one-time operator cleanup. A stopped agent container
-counts as live, so its owner's resources wait until the container is removed.
+a daemon mismatch or unknown ID skips the sweep safely. Custom Docker socket
+proxies must also enable `INFO=1` (the root Compose proxy does). `pool-` owners
+and `SANDBOX_POOL_AGENT=true` are PoolManager-only; a manual agent must use a
+numeric/non-pool owner. A manual agent that opts in without the matching agent
+container label is unsupported and can still be treated as stale. Numeric-owner
+resources from #154–#157 and pre-#154 unlabeled resources need a one-time
+operator cleanup. A stopped agent container counts as live, so its owner's
+resources wait until the container is removed.
 
 The standalone agent Compose file keeps host mode on the API network only. Set
 `ROOT_COMPOSE_PROJECT` (or `VIBECODE_NETWORK`/`SANDBOX_CONTROL_NETWORK`) to the
