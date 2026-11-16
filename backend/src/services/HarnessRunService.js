@@ -1,5 +1,6 @@
 const { pool } = require('../db');
 const DependencyService = require('./DependencyService');
+const HarnessBudgetService = require('./HarnessBudgetService');
 const logger = require('../utils/logger');
 const {
   NotFoundError,
@@ -134,7 +135,7 @@ class HarnessRunService {
       await client.query('BEGIN');
 
       const ownership = await client.query(
-        `SELECT status, assigned_agent_id
+        `SELECT status, assigned_agent_id, project_id
          FROM tickets
          WHERE id = $1 AND deleted_at IS NULL
          FOR UPDATE`,
@@ -150,6 +151,18 @@ class HarnessRunService {
           client,
           lock: true,
           action: 'durable_start',
+        });
+        // fg-38: kill switch, retry cap and project/agent concurrency are
+        // checked in the same transaction as the run insert. The advisory lock
+        // serialises concurrent starts so the last quota slot cannot be taken
+        // twice.
+        await HarnessBudgetService.assertCanStart({
+          projectId: ownedTicket.project_id,
+          ticketId: normalisedTicketId,
+          agentId: normalisedAgentId,
+          attempt: normalisedAttempt,
+          client,
+          lock: true,
         });
       }
 
@@ -285,6 +298,44 @@ class HarnessRunService {
       [id]
     );
     return result.rows[0] || null;
+  }
+
+  /**
+   * Recent runs for an operator dashboard and replay picker (fg-41). Tenant
+   * scoping is by the ticket's project, with the copied run column as the
+   * indexed fast path.
+   */
+  async listRunsForProject(projectId, { limit = 50, since = null, until = null } = {}) {
+    const id = positiveInteger(projectId, 'projectId');
+    const parsedLimit = Number(limit);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 200) {
+      throw new ValidationError('limit must be an integer between 1 and 200');
+    }
+    const params = [id];
+    const clauses = ['COALESCE(r.project_id, t.project_id) = $1'];
+    if (since) {
+      const date = new Date(since);
+      if (Number.isNaN(date.getTime())) throw new ValidationError('since must be a timestamp');
+      params.push(date.toISOString());
+      clauses.push(`r.started_at >= $${params.length}`);
+    }
+    if (until) {
+      const date = new Date(until);
+      if (Number.isNaN(date.getTime())) throw new ValidationError('until must be a timestamp');
+      params.push(date.toISOString());
+      clauses.push(`r.started_at <= $${params.length}`);
+    }
+    params.push(parsedLimit);
+    const result = await pool.query(
+      `SELECT r.*, t.title AS ticket_title
+       FROM harness_runs r
+       JOIN tickets t ON t.id = r.ticket_id
+       WHERE ${clauses.join(' AND ')}
+       ORDER BY r.started_at DESC, r.id DESC
+       LIMIT $${params.length}`,
+      params
+    );
+    return result.rows;
   }
 
   /**
@@ -517,8 +568,8 @@ class HarnessRunService {
       ? null
       : positiveInteger(agentId, 'agentId');
     const statusPredicate = allowDeadLetter
-      ? "r.status IN ('failed', 'dead_letter')"
-      : "r.status = 'failed'";
+      ? "r.status IN ('failed', 'dead_letter', 'budget_exceeded')"
+      : "r.status IN ('failed', 'budget_exceeded')";
 
     const result = await pool.query(
       `WITH run AS (
@@ -608,13 +659,13 @@ class HarnessRunService {
          UPDATE harness_runs
          SET reconciled_at = NOW(),
              status = CASE
-               WHEN status IN ('failed', 'dead_letter')
+               WHEN status IN ('failed', 'dead_letter', 'budget_exceeded')
                  AND NULLIF(BTRIM(pr_url), '') IS NOT NULL
                THEN 'succeeded'
                ELSE status
              END,
              finished_at = CASE
-               WHEN status IN ('failed', 'dead_letter')
+               WHEN status IN ('failed', 'dead_letter', 'budget_exceeded')
                  AND NULLIF(BTRIM(pr_url), '') IS NOT NULL
                THEN COALESCE(finished_at, NOW())
                ELSE finished_at
@@ -628,13 +679,13 @@ class HarnessRunService {
          UPDATE harness_runs old
          SET reconciled_at = NOW(),
              status = CASE
-               WHEN old.status IN ('failed', 'dead_letter')
+               WHEN old.status IN ('failed', 'dead_letter', 'budget_exceeded')
                  AND NULLIF(BTRIM(old.pr_url), '') IS NOT NULL
                THEN 'succeeded'
                ELSE old.status
              END,
              finished_at = CASE
-               WHEN old.status IN ('failed', 'dead_letter')
+               WHEN old.status IN ('failed', 'dead_letter', 'budget_exceeded')
                  AND NULLIF(BTRIM(old.pr_url), '') IS NOT NULL
                THEN COALESCE(old.finished_at, NOW())
                ELSE old.finished_at
@@ -679,7 +730,7 @@ class HarnessRunService {
          FROM run, marked
          WHERE marked.id = run.id
            AND run.is_latest
-           AND run.status = 'failed'
+           AND run.status IN ('failed', 'budget_exceeded')
            AND run.pr_url IS NULL
            AND run.head_sha IS NULL
            AND t.id = run.ticket_id
@@ -707,7 +758,7 @@ class HarnessRunService {
               (
                 marked.id IS NOT NULL
                 AND run.pr_url IS NOT NULL
-                AND run.status IN ('failed', 'dead_letter')
+                AND run.status IN ('failed', 'dead_letter', 'budget_exceeded')
               ) AS promoted,
               (adopted.id IS NOT NULL) AS adopted,
               (released.id IS NOT NULL) AS released,
@@ -906,6 +957,12 @@ class HarnessRunService {
            AND r.status = 'running'
            AND t.status = 'in_progress'
            AND t.assigned_agent_id = a.id
+           AND NOT EXISTS (
+             SELECT 1 FROM harness_kill_switches k
+             WHERE k.enabled = TRUE
+               AND (k.scope = 'global'
+                    OR (k.scope = 'project' AND k.project_id = t.project_id))
+           )
        )
        ON CONFLICT (ticket_id) DO UPDATE
        SET run_id = EXCLUDED.run_id,
@@ -944,6 +1001,12 @@ class HarnessRunService {
          AND r.status = 'running'
          AND t.status = 'in_progress'
          AND t.assigned_agent_id = a.id
+         AND NOT EXISTS (
+           SELECT 1 FROM harness_kill_switches k
+           WHERE k.enabled = TRUE
+             AND (k.scope = 'global'
+                  OR (k.scope = 'project' AND k.project_id = t.project_id))
+         )
        RETURNING l.*`,
       [normalisedTicketId, normalisedRunId, normalisedAgentId, ttl]
     );

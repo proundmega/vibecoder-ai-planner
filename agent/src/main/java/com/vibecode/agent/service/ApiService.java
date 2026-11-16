@@ -29,6 +29,7 @@ public class ApiService {
     private final ObjectMapper objectMapper;
     private final AgentConfig config;
     private final String baseUrl;
+    private volatile Map<String, Object> lastBudgetPolicy;
 
     public ApiService(AgentConfig config) {
         this.config = config;
@@ -178,7 +179,16 @@ public class ApiService {
             }
             throw new IOException("Failed to start harness run: " + response.getError());
         }
+        this.lastBudgetPolicy = response.getBudgetPolicy();
         return response.getData();
+    }
+
+    /**
+     * Budget/routing policy returned with the most recent run start, or null
+     * when the backend did not include one.
+     */
+    public Map<String, Object> getLastBudgetPolicy() {
+        return lastBudgetPolicy;
     }
 
     /**
@@ -203,6 +213,21 @@ public class ApiService {
         );
         if (response.hasError()) {
             throw new IOException("Failed to emit harness event: " + response.getError());
+        }
+    }
+
+    /**
+     * Report a cumulative usage snapshot for a run. The backend prices it from
+     * the versioned table and keeps the greatest value.
+     */
+    public void recordHarnessUsage(String runId, Map<String, Object> usage) throws IOException {
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/usage",
+            usage,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+        if (response.hasError()) {
+            throw new IOException("Failed to record harness usage: " + response.getError());
         }
     }
 

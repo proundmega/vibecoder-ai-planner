@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const HarnessRunService = require('../services/HarnessRunService');
 const HarnessEventService = require('../services/HarnessEventService');
+const HarnessUsageService = require('../services/HarnessUsageService');
+const HarnessBudgetService = require('../services/HarnessBudgetService');
+const HarnessAuditService = require('../services/HarnessAuditService');
 const HarnessMetrics = require('../services/HarnessMetrics');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
@@ -14,14 +17,14 @@ const {
 const logger = require('../utils/logger');
 
 /**
- * Harness event API (fg-41 slice 1).
+ * Harness observability, replay, budget and audit API (fg-41 / fg-38).
  *
- * Agent events are scoped to the agent's own run. Operator reads are
- * project-scoped. The store itself is append-only; this router never updates
- * or deletes an event.
+ * Agent events and usage are scoped to the agent's own run. Operator reads are
+ * project-scoped; policy and kill-switch writes need PROJECT_UPDATE.
  */
 
 const OPERATOR_ROLES = new Set(['super_admin', 'project_admin', 'member']);
+const POLICY_WRITE_ROLES = new Set(['super_admin', 'project_admin']);
 
 function requireAgent(req) {
   if (!req.agent || !req.agent.id) {
@@ -45,7 +48,7 @@ async function assertPermission(role, permission) {
   }
 }
 
-async function assertProjectAccess(projectId, req, permission = 'TICKET_READ') {
+async function assertProjectAccess(projectId, req, permission = 'DASHBOARD_READ') {
   if (req.agent) {
     throw new ForbiddenError('Operator JWT required');
   }
@@ -74,7 +77,7 @@ async function assertProjectAccess(projectId, req, permission = 'TICKET_READ') {
   }
 }
 
-async function assertRunAccess(runId, req) {
+async function assertRunAccess(runId, req, permission = 'TICKET_READ') {
   const run = await HarnessRunService.getRun(runId);
   if (req.agent) {
     if (String(run.agent_id) !== String(req.agent.id)) {
@@ -83,7 +86,7 @@ async function assertRunAccess(runId, req) {
     return run;
   }
   const { role } = operatorIdentity(req);
-  await assertPermission(role, 'TICKET_READ');
+  await assertPermission(role, permission);
   if (role === 'super_admin') {
     return run;
   }
@@ -98,7 +101,7 @@ async function assertRunAccess(runId, req) {
   if (!projectId) {
     throw new NotFoundError('Harness run project not found');
   }
-  await assertProjectAccess(projectId, req, 'TICKET_READ');
+  await assertProjectAccess(projectId, req, permission);
   return run;
 }
 
@@ -163,6 +166,24 @@ router.post('/events', verifyTokenOrAgent, async (req, res, next) => {
     if (result.event.type === 'budget.warning') HarnessMetrics.recordBudgetWarning();
     if (result.event.type === 'budget.breach') HarnessMetrics.recordBudgetBreach();
 
+    if (result.event.type === 'review.result' || result.event.type === 'fix.requested') {
+      try {
+        await HarnessAuditService.recordReview({
+          runId: result.event.run_id,
+          projectId: result.event.project_id,
+          ticketId: result.event.ticket_id,
+          agentId: result.event.agent_id,
+          result: result.event.type === 'review.result' ? 'review_result' : 'fix_requested',
+          reason: result.event.payload?.summary || result.event.type,
+          eventId: result.event.event_id,
+          actorType: 'agent',
+          actorId: agentId,
+        });
+      } catch (auditError) {
+        logger.warn(`Harness review audit failed: ${auditError.message}`);
+      }
+    }
+
     res.status(result.duplicate ? 200 : 201).json({
       success: true,
       data: result.event,
@@ -175,6 +196,79 @@ router.post('/events', verifyTokenOrAgent, async (req, res, next) => {
       );
     }
     logger.error('POST /harness/events failed:', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /harness/runs/{runId}/usage:
+ *   post:
+ *     tags: [Harness]
+ *     summary: Report a cumulative usage snapshot for a harness run
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: runId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       201:
+ *         description: Usage stored (greatest value wins on retries)
+ */
+router.post('/runs/:runId/usage', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const agentId = requireAgent(req);
+    const body = req.body || {};
+    const row = await HarnessUsageService.recordUsage({
+      runId: req.params.runId,
+      agentId,
+      model: body.model,
+      promptVersion: body.promptVersion,
+      configHash: body.configHash,
+      routingReason: body.routingReason,
+      inputTokens: body.inputTokens ?? body.tokensIn,
+      outputTokens: body.outputTokens ?? body.tokensOut,
+      cachedTokens: body.cachedTokens,
+      toolCalls: body.toolCalls,
+      durationMs: body.durationMs,
+    });
+    res.status(201).json({ success: true, data: row });
+  } catch (error) {
+    logger.error('POST /harness/runs/:runId/usage failed:', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /harness/runs/{runId}/usage:
+ *   get:
+ *     tags: [Harness]
+ *     summary: Read per-model usage for a harness run
+ *     security:
+ *       - ApiKeyAuth: []
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: runId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Usage rows and totals
+ */
+router.get('/runs/:runId/usage', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    await assertRunAccess(req.params.runId, req);
+    const [rows, totals] = await Promise.all([
+      HarnessUsageService.listForRun(req.params.runId),
+      HarnessUsageService.getRunTotals(req.params.runId),
+    ]);
+    res.json({ success: true, data: { models: rows, totals } });
+  } catch (error) {
+    logger.error('GET /harness/runs/:runId/usage failed:', error);
     next(error);
   }
 });
@@ -225,6 +319,63 @@ router.get('/runs/:runId/events', verifyTokenOrAgent, async (req, res, next) => 
 
 /**
  * @openapi
+ * /harness/runs/{runId}/timeline:
+ *   get:
+ *     tags: [Harness]
+ *     summary: Replay timeline for a harness run (events, checkpoints, artifacts)
+ *     security:
+ *       - ApiKeyAuth: []
+ *       - BearerAuth: []
+ */
+router.get('/runs/:runId/timeline', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    await assertRunAccess(req.params.runId, req);
+    const timeline = await HarnessEventService.getTimeline(req.params.runId);
+    res.json({ success: true, data: timeline });
+  } catch (error) {
+    logger.error('GET /harness/runs/:runId/timeline failed:', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /harness/projects/{projectId}/runs:
+ *   get:
+ *     tags: [Harness]
+ *     summary: List recent harness runs for a project (replay picker)
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, minimum: 1, maximum: 200 }
+ *     responses:
+ *       200:
+ *         description: Recent runs
+ */
+router.get('/projects/:projectId/runs', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const projectId = projectIdParam(req.params.projectId);
+    await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
+    const runs = await HarnessRunService.listRunsForProject(projectId, {
+      limit: req.query.limit,
+      since: req.query.since,
+      until: req.query.until,
+    });
+    res.json({ success: true, data: runs });
+  } catch (error) {
+    logger.error('GET /harness/projects/:projectId/runs failed:', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
  * /harness/projects/{projectId}/events:
  *   get:
  *     tags: [Harness]
@@ -257,6 +408,259 @@ router.get('/projects/:projectId/events', verifyTokenOrAgent, async (req, res, n
     res.json({ success: true, data: events });
   } catch (error) {
     logger.error('GET /harness/projects/:projectId/events failed:', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /harness/projects/{projectId}/audit:
+ *   get:
+ *     tags: [Harness]
+ *     summary: List immutable publish/review audit records
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Audit events
+ */
+router.get('/projects/:projectId/audit', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const projectId = projectIdParam(req.params.projectId);
+    await assertProjectAccess(projectId, req, 'TICKET_READ');
+    const events = await HarnessEventService.listAudit(projectId, {
+      since: req.query.since,
+      until: req.query.until,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+    res.json({ success: true, data: events });
+  } catch (error) {
+    logger.error('GET /harness/projects/:projectId/audit failed:', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /harness/projects/{projectId}/usage:
+ *   get:
+ *     tags: [Harness]
+ *     summary: Harness token/cost usage grouped by model
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Usage summary
+ */
+router.get('/projects/:projectId/usage', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const projectId = projectIdParam(req.params.projectId);
+    await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
+    const usage = await HarnessUsageService.summarizeProject(projectId, {
+      since: req.query.since,
+      until: req.query.until,
+    });
+    res.json({ success: true, data: usage });
+  } catch (error) {
+    logger.error('GET /harness/projects/:projectId/usage failed:', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /harness/projects/{projectId}/budget-policy:
+ *   get:
+ *     tags: [Harness]
+ *     summary: Read the effective budget and routing policy
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Effective policy
+ *   put:
+ *     tags: [Harness]
+ *     summary: Update the project budget and routing policy
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Updated policy
+ *       403:
+ *         description: Project admin required
+ */
+router.get('/projects/:projectId/budget-policy', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const projectId = projectIdParam(req.params.projectId);
+    await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
+    const policy = await HarnessBudgetService.getPolicy(projectId);
+    res.json({ success: true, data: policy });
+  } catch (error) {
+    logger.error('GET /harness/projects/:projectId/budget-policy failed:', error);
+    next(error);
+  }
+});
+
+router.put('/projects/:projectId/budget-policy', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const projectId = projectIdParam(req.params.projectId);
+    await assertProjectAccess(projectId, req, 'PROJECT_UPDATE');
+    if (!POLICY_WRITE_ROLES.has(req.user?.role)) {
+      throw new ForbiddenError('Project admin permission required');
+    }
+    const body = req.body || {};
+    await HarnessBudgetService.upsertPolicy({
+      projectId,
+      scope: 'project',
+      policy: body,
+      updatedBy: req.user?.userId || req.user?.id,
+    });
+    const policy = await HarnessBudgetService.getPolicy(projectId);
+    res.json({ success: true, data: policy });
+  } catch (error) {
+    logger.error('PUT /harness/projects/:projectId/budget-policy failed:', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /harness/projects/{projectId}/kill-switch:
+ *   get:
+ *     tags: [Harness]
+ *     summary: Read the project kill switch
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Active project/global kill switch or null
+ *   put:
+ *     tags: [Harness]
+ *     summary: Enable or disable the project kill switch
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Updated switch
+ */
+router.get('/projects/:projectId/kill-switch', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const projectId = projectIdParam(req.params.projectId);
+    await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
+    const killSwitch = await HarnessBudgetService.getKillSwitch(projectId);
+    res.json({ success: true, data: killSwitch });
+  } catch (error) {
+    logger.error('GET /harness/projects/:projectId/kill-switch failed:', error);
+    next(error);
+  }
+});
+
+router.put('/projects/:projectId/kill-switch', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const projectId = projectIdParam(req.params.projectId);
+    await assertProjectAccess(projectId, req, 'PROJECT_UPDATE');
+    if (!POLICY_WRITE_ROLES.has(req.user?.role)) {
+      throw new ForbiddenError('Project admin permission required');
+    }
+    const body = req.body || {};
+    const row = await HarnessBudgetService.setKillSwitch({
+      projectId,
+      enabled: body.enabled,
+      reason: body.reason,
+      updatedBy: req.user?.userId || req.user?.id,
+    });
+    res.json({ success: true, data: row });
+  } catch (error) {
+    logger.error('PUT /harness/projects/:projectId/kill-switch failed:', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /harness/kill-switch:
+ *   get:
+ *     tags: [Harness]
+ *     summary: Read the global harness kill switch
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Active global switch or null
+ *   put:
+ *     tags: [Harness]
+ *     summary: Enable or disable the global harness kill switch
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Updated switch
+ *       403:
+ *         description: super_admin required
+ */
+router.get('/kill-switch', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    if (req.agent) throw new ForbiddenError('Operator JWT required');
+    const { role } = operatorIdentity(req);
+    if (role !== 'super_admin') {
+      throw new ForbiddenError('super_admin required');
+    }
+    const row = await HarnessBudgetService.getKillSwitch(null);
+    res.json({ success: true, data: row });
+  } catch (error) {
+    logger.error('GET /harness/kill-switch failed:', error);
+    next(error);
+  }
+});
+
+router.put('/kill-switch', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    if (req.agent) throw new ForbiddenError('Operator JWT required');
+    const { role, userId } = operatorIdentity(req);
+    if (role !== 'super_admin') {
+      throw new ForbiddenError('super_admin required');
+    }
+    const body = req.body || {};
+    const row = await HarnessBudgetService.setKillSwitch({
+      projectId: null,
+      enabled: body.enabled,
+      reason: body.reason,
+      updatedBy: userId,
+    });
+    res.json({ success: true, data: row });
+  } catch (error) {
+    logger.error('PUT /harness/kill-switch failed:', error);
     next(error);
   }
 });

@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -254,7 +255,6 @@ class ApiServiceHarnessTest {
     }
 
     @Test
-<<<<<<< HEAD
     void startRunIncludesTheRepoProfileRevisionWhenProvided() throws Exception {
         respond("/api/v1/harness/runs", 201, ok("{\"id\":\"run-1\"}"));
 
@@ -327,20 +327,10 @@ class ApiServiceHarnessTest {
         assertTrue(api.releaseHarnessTicket("run-1"));
         assertEquals(
             "/api/v1/harness/runs/run-1/release-ticket", lastRequest().path());
-=======
-    void emitsHarnessEventsThroughTheAppendOnlyEndpoint() throws Exception {
-        respond("/api/v1/harness/events", 201, ok("{\"event_id\":\"event-1\"}"));
->>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
 
-        api.emitHarnessEvent(Map.of(
-            "eventId", "event-1",
-            "traceId", "trace-1",
-            "runId", "run-1",
-            "type", "tool.called"));
-
-        RecordedRequest request = lastRequest();
-        assertEquals("/api/v1/harness/events", request.path());
-        assertTrue(request.body().contains("\"type\":\"tool.called\""));
+        respond("/api/v1/harness/runs/run-1/release-ticket", 200,
+            ok("{\"released\":false}"));
+        assertFalse(api.releaseHarnessTicket("run-1"));
     }
 
     @Test
@@ -356,5 +346,38 @@ class ApiServiceHarnessTest {
         RecordedRequest request = lastRequest();
         assertEquals("/api/v1/harness/events", request.path());
         assertTrue(request.body().contains("\"type\":\"tool.called\""));
+    }
+
+    @Test
+    void capturesTheBudgetPolicyFromTheStartResponse() throws Exception {
+        respond("/api/v1/harness/runs", 201,
+            "{\"success\":true,\"data\":{\"id\":\"run-1\"},"
+                + "\"budgetPolicy\":{\"limits\":{\"maxCostUsd\":5},"
+                + "\"routing\":{\"policy\":\"free_then_paid\"}}}");
+
+        Map<String, Object> run = api.startHarnessRun(
+            42L, "feat/fg-38", null, "opencode-go", "beam-free", 1);
+
+        assertEquals("run-1", run.get("id"));
+        Map<String, Object> policy = api.getLastBudgetPolicy();
+        assertNotNull(policy);
+        assertEquals("free_then_paid",
+            ((Map<?, ?>) policy.get("routing")).get("policy"));
+    }
+
+    @Test
+    void recordsUsageSnapshotsOnTheRunScopedEndpoint() throws Exception {
+        respond("/api/v1/harness/runs/run-1/usage", 201, ok("{}"));
+
+        api.recordHarnessUsage("run-1", Map.of(
+            "model", "gpt-4o", "inputTokens", 100, "outputTokens", 20));
+
+        RecordedRequest request = lastRequest();
+        assertEquals("/api/v1/harness/runs/run-1/usage", request.path());
+        assertTrue(request.body().contains("\"inputTokens\":100"));
+
+        respond("/api/v1/harness/runs/run-1/usage", 201,
+            ok("{\"quotaExceeded\":true}"));
+        assertTrue(api.recordHarnessUsage("run-1", Map.of("model", "gpt-4o")));
     }
 }

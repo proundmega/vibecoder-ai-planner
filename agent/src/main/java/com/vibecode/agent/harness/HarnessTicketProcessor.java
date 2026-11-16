@@ -80,6 +80,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private final PromptBuilder promptBuilder = new PromptBuilder();
     private final Map<Long, FailureState> failures = new ConcurrentHashMap<>();
     private final HarnessEventSink eventSink;
+    private final ProviderHealth providerHealth = new ProviderHealth();
+    private final ModelRouter modelRouter = new ModelRouter(providerHealth);
     private final int maxAttempts = intEnv(
         "HARNESS_RETRY_PIN_ATTEMPTS",
         intEnv("HARNESS_MAX_ATTEMPTS", DEFAULT_MAX_ATTEMPTS));
@@ -111,7 +113,16 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private volatile boolean releaseAfterTerminalFinish;
 
     private volatile HarnessEventContext eventContext;
+    private volatile HarnessBudgetTracker budgetTracker;
+    private volatile HarnessBudgetPolicy budgetPolicy;
+    private volatile ModelRouter.RoutingDecision routingDecision;
+    private volatile HarnessConfig activeHarnessConfig;
+    private volatile HarnessClient activeHarness;
+    private volatile ScheduledExecutorService budgetExecutor;
+    private volatile boolean budgetBreached;
     private volatile boolean terminalEventEmitted;
+    private volatile Instant runStartedAt;
+    private volatile long lastUsageReportAt;
 
     public HarnessTicketProcessor(
         AgentConfig config,
@@ -152,8 +163,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
             harnessConfig,
             repoName -> new WorkspaceManager(
                 config.getRepoCloneDir(), repoName, config.isDryRun(), githubToken, tokenSource),
+<<<<<<< HEAD
             (tempDir, bridge, effectiveConfig) ->
                 new OpenCodeClient(effectiveConfig, provider, tempDir, bridge),
+=======
+            null,
+>>>>>>> 6f8681b (feat(fg-38): harness budgets, quotas, model routing and kill switch)
             new PlanningDocFetcher(apiService, config),
             new VerificationRunner(harnessConfig),
             new PublishingGuard(harnessConfig.protectedPaths()),
@@ -254,7 +269,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
         this.sandboxConfig = sandboxConfig == null ? SandboxConfig.defaults() : sandboxConfig;
         this.sandboxRunner = sandboxRunner == null ? SandboxRunnerFactory.hostOnly() : sandboxRunner;
         this.workspaceFactory = workspaceFactory;
-        this.harnessFactory = harnessFactory;
+        this.harnessFactory = harnessFactory != null
+            ? harnessFactory
+            : (tempDir, bridge) -> new OpenCodeClient(
+                activeHarnessConfig(), provider, tempDir, bridge);
         this.planningDocFetcher = planningDocFetcher;
         this.repoProfileSource = repoProfileSource == null
             ? () -> null
@@ -275,6 +293,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
         return sandboxRunner;
 =======
 >>>>>>> 8422e0f (feat(fg-41): append-only harness event stream, sink and redaction)
+    }
+
+    private HarnessConfig activeHarnessConfig() {
+        HarnessConfig active = activeHarnessConfig;
+        return active == null ? harnessConfig : active;
     }
 
     private static List<String> knownSecrets(ProviderSettings provider, String githubToken) {
@@ -707,8 +730,15 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         currentTicketId = String.valueOf(pickedUp.getId());
         currentStep = "processing";
-        eventContext = null;
+        budgetBreached = false;
+        budgetTracker = null;
+        budgetPolicy = null;
+        routingDecision = null;
+        activeHarnessConfig = harnessConfig;
+        activeHarness = null;
         terminalEventEmitted = false;
+        runStartedAt = Instant.now();
+        lastUsageReportAt = 0;
         Instant deadline = Instant.now().plus(maxDuration());
 
         postMessage(pickedUp.getId(), "update", "Started working on: " + pickedUp.getTitle());
@@ -814,6 +844,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 return;
             }
 
+            configureRoutingAndBudget(pickedUp, planningDocs);
+
             String repoUrl = "https://github.com/" + config.getRepoOwner() + "/"
                 + config.getRepoName() + ".git";
             Duration cloneCap = profile == null
@@ -869,7 +901,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
 
             tempDir = Files.createTempDirectory("opencode-harness-");
+<<<<<<< HEAD
             harness = harnessFactory.create(tempDir, bridge, effectiveHarnessConfig);
+=======
+            harness = harnessFactory.create(tempDir, bridge);
+            activeHarness = harness;
+>>>>>>> 6f8681b (feat(fg-38): harness budgets, quotas, model routing and kill switch)
 
             currentStep = "starting-harness";
             harness.start(workspace.getRepoDir());
@@ -890,13 +927,25 @@ public final class HarnessTicketProcessor implements TicketWorker {
             emitPromptSent(prompt, planningDocs, commands);
             subscribeHarnessEvents(harness, sessionId);
             try {
-                harness.sendPrompt(sessionId, prompt);
+                ensureBudgetAllows("before prompt");
+                try {
+                    harness.sendPrompt(sessionId, prompt);
+                } catch (IOException promptFailure) {
+                    harness = retryPromptWithFallback(
+                        promptFailure, prompt, pickedUp, workspace, bridge, harness);
+                }
+                ensureBudgetAllows("after prompt");
+                if (routingDecision != null) {
+                    providerHealth.recordSuccess(routingDecision.model());
+                }
+                reportUsage(true);
             } finally {
                 // The prompt is blocking. Close the harness before verification
                 // and publishing so no background process can keep editing the
                 // workspace while the supervisor stages and guards the tree.
                 closeQuietly(harness);
                 harness = null;
+                activeHarness = null;
                 closeBridge(bridge);
                 bridge = null;
             }
@@ -912,6 +961,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 ? INSTALL_TIMEOUT
                 : Duration.ofMinutes(profile.timeouts().setupMinutes());
             if (!installCommands.isEmpty()) {
+                ensureBudgetAllows("before dependency installation");
                 List<VerificationResult> installResults = runVerification(
                     sandbox, workspace, installCommands, remaining(deadline, installTimeout),
                     profileEnv);
@@ -927,13 +977,19 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
 
             currentStep = "verifying";
+<<<<<<< HEAD
             Duration verifyTimeout = profile == null
                 ? VERIFICATION_TIMEOUT
                 : Duration.ofMinutes(profile.timeouts().verifyMinutes());
+=======
+            ensureBudgetAllows("before verification");
+>>>>>>> 6f8681b (feat(fg-38): harness budgets, quotas, model routing and kill switch)
             List<VerificationResult> verifyResults = runVerification(
                 sandbox, workspace, commands, remaining(deadline, verifyTimeout), profileEnv);
             verification.addAll(verifyResults);
             emitVerificationResults(verifyResults, "verify");
+            reportUsage(false);
+            ensureBudgetAllows("after verification");
             recordCheckpoint("verifying", Map.of());
             if (!verification.isEmpty()) {
                 postMessage(pickedUp.getId(), "update", verificationSummary(verification));
@@ -982,6 +1038,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     return;
                 }
                 ensureWithinDeadline(deadline);
+                ensureBudgetAllows("before publish");
                 if (!assertLeaseHeld(pickedUp.getId())) {
                     return;
                 }
@@ -1031,6 +1088,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 pendingHeadSha = commitSha;
                 pendingPrUrl = prUrl;
                 releaseAfterTerminalFinish = false;
+                reportUsage(true);
                 emitTerminalEvent("succeeded", null, commitSha, prUrl);
                 finishDurableRun("succeeded", null, commitSha, prUrl);
                 this.failures.remove(pickedUp.getId());
@@ -1047,11 +1105,13 @@ public final class HarnessTicketProcessor implements TicketWorker {
             handleFailure(pickedUp.getId(), failure);
         } finally {
             stopHeartbeat();
+            stopBudgetWatchdog();
             String terminalStatus = pendingTerminalStatus == null ? "failed" : pendingTerminalStatus;
             if (!terminalEventEmitted) {
                 emitTerminalEvent(terminalStatus, pendingTerminalMessage,
                     pendingHeadSha, pendingPrUrl);
             }
+            reportUsage(true);
             if (currentRunId != null) {
                 String status = pendingTerminalStatus == null ? "failed" : pendingTerminalStatus;
                 String message = pendingTerminalMessage;
@@ -1100,8 +1160,65 @@ public final class HarnessTicketProcessor implements TicketWorker {
             pendingPrUrl = null;
             releaseAfterTerminalFinish = false;
             eventContext = null;
+            budgetTracker = null;
+            routingDecision = null;
+            budgetBreached = false;
             terminalEventEmitted = false;
         }
+    }
+
+    /**
+     * Pick a model from policy and start live metering. Runs before the
+     * OpenCode session exists so the router decision is recorded even if the
+     * provider then fails.
+     */
+    private void configureRoutingAndBudget(Ticket ticket, List<String> planningDocs) {
+        HarnessBudgetPolicy policy = budgetPolicy != null
+            ? budgetPolicy
+            : HarnessBudgetPolicy.defaults(maxDuration(), provider);
+        budgetPolicy = policy;
+
+        String explicit = harnessConfig == null ? null : harnessConfig.modelOverride();
+        ModelRouter.RoutingDecision decision;
+        try {
+            decision = modelRouter.select(
+                policy,
+                ticket,
+                planningDocs,
+                provider,
+                policy.limits().maxCostUsd(),
+                1,
+                explicit
+            );
+        } catch (IOException e) {
+            throw new IllegalStateException(e.getMessage(), e);
+        }
+        routingDecision = decision;
+
+        if (harnessConfig != null) {
+            activeHarnessConfig = harnessConfig
+                .withModel(decision.model())
+                .withMaxDuration(policy.limits().maxDuration());
+        }
+
+        Map<String, Object> routingPayload = new LinkedHashMap<>();
+        routingPayload.put("selected", decision.model());
+        routingPayload.put("fallback", decision.fallbackModel());
+        routingPayload.put("reason", decision.reason());
+        routingPayload.put("policy", policy.routingPolicy());
+        routingPayload.put("complexity", decision.complexity());
+        routingPayload.put("budgetRemainingUsd", decision.budgetRemainingUsd());
+        routingPayload.put("dailySpendUsd", policy.dailySpendUsd());
+        emitEvent("routing.decided", routingPayload);
+
+        budgetTracker = new HarnessBudgetTracker(
+            policy.limits(),
+            policy.priceFor(decision.model()),
+            runStartedAt == null ? Instant.now() : runStartedAt,
+            this::onBudgetWarning,
+            this::handleBudgetBreach
+        );
+        startBudgetWatchdog();
     }
 
     private void subscribeHarnessEvents(HarnessClient harness, String sessionId) throws IOException {
@@ -1109,20 +1226,189 @@ public final class HarnessTicketProcessor implements TicketWorker {
             if (event.isToolEvent()) {
                 currentStep = "implementing";
             }
-            OpenCodeUsage.ToolCall tool = OpenCodeUsage.toolCall(event.payload());
-            if (tool != null) {
-                emitToolEvent(tool);
+            HarnessBudgetTracker tracker = budgetTracker;
+            if (tracker != null) {
+                tracker.accept(event).ifPresent(this::emitToolEvent);
             }
         });
     }
 
+    /**
+     * One bounded fallback retry for a transient provider failure (fg-38 FR7).
+     * The circuit breaker records the primary failure, the fallback model is
+     * used only when policy provided one, and the same run/budget is kept.
+     */
+    private HarnessClient retryPromptWithFallback(
+        IOException failure,
+        String prompt,
+        Ticket ticket,
+        WorkspaceManager workspace,
+        SandboxBashBridge bridge,
+        HarnessClient primary
+    ) throws IOException {
+        ModelRouter.RoutingDecision decision = routingDecision;
+        String fallback = decision == null ? null : decision.fallbackModel();
+        if (decision == null
+            || fallback == null
+            || fallback.isBlank()
+            || fallback.equals(decision.model())
+            || budgetBreached
+            || !providerHealth.isTransient(failure)) {
+            throw failure;
+        }
+
+        providerHealth.recordFailure(decision.model(), failure);
+        Map<String, Object> routingPayload = new LinkedHashMap<>();
+        routingPayload.put("selected", fallback);
+        routingPayload.put("fallback", decision.model());
+        routingPayload.put("reason", "transient provider failure; one fallback retry");
+        routingPayload.put("policy", budgetPolicy == null ? null : budgetPolicy.routingPolicy());
+        emitEvent("routing.decided", routingPayload);
+
+        routingDecision = new ModelRouter.RoutingDecision(
+            fallback,
+            decision.model(),
+            "transient provider failure; one fallback retry",
+            decision.budgetRemainingUsd(),
+            decision.complexity()
+        );
+        if (activeHarnessConfig != null) {
+            activeHarnessConfig = activeHarnessConfig.withModel(fallback);
+        }
+
+        closeQuietly(primary);
+        Path retryDir = Files.createTempDirectory("opencode-harness-fallback-");
+        HarnessClient retry = harnessFactory.create(retryDir, bridge);
+        activeHarness = retry;
+        try {
+            currentStep = "starting-harness";
+            retry.start(workspace.getRepoDir());
+            String sessionId = retry.createSession("ticket-" + ticket.getId());
+            if (eventContext != null) {
+                eventContext = eventContext.withSessionId(sessionId);
+            }
+            subscribeHarnessEvents(retry, sessionId);
+            ensureBudgetAllows("before fallback prompt");
+            retry.sendPrompt(sessionId, prompt);
+            ensureBudgetAllows("after fallback prompt");
+            providerHealth.recordSuccess(fallback);
+            reportUsage(true);
+            return retry;
+        } catch (IOException | RuntimeException retryFailure) {
+            closeQuietly(retry);
+            activeHarness = null;
+            throw retryFailure;
+        }
+    }
+
+    private void startBudgetWatchdog() {
+        stopBudgetWatchdog();
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "harness-budget");
+            thread.setDaemon(true);
+            return thread;
+        });
+        budgetExecutor = executor;
+        executor.scheduleAtFixedRate(() -> {
+            HarnessBudgetTracker tracker = budgetTracker;
+            if (tracker == null) {
+                return;
+            }
+            try {
+                tracker.check();
+            } catch (RuntimeException e) {
+                log.debug("Harness budget check failed: {}", e.getMessage());
+            }
+        }, 1, 2, TimeUnit.SECONDS);
+    }
+
+    private void stopBudgetWatchdog() {
+        ScheduledExecutorService executor = budgetExecutor;
+        budgetExecutor = null;
+        if (executor != null) {
+            executor.shutdownNow();
+        }
+    }
+
+    private void onBudgetWarning(HarnessBudgetTracker.BudgetWarning warning) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("dimension", warning.dimension());
+        payload.put("used", warning.used());
+        payload.put("limit", warning.limit());
+        payload.put("ratio", warning.ratio());
+        emitEvent("budget.warning", payload);
+        Long ticketId = ticketIdForEvents();
+        if (ticketId != null) {
+            postMessage(ticketId, "update", String.format(
+                "Harness budget warning: %s at %.0f%% of its limit. The run continues.",
+                warning.dimension(), warning.ratio() * 100));
+        }
+    }
+
+    /**
+     * A hard budget breach kills the session before it can publish. The run is
+     * finished as budget_exceeded and the ticket is returned for a clean retry.
+     */
+    private void handleBudgetBreach(String reason) {
+        if (budgetBreached) {
+            return;
+        }
+        budgetBreached = true;
+        currentStep = "budget-exceeded";
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("reason", reason);
+        HarnessBudgetTracker tracker = budgetTracker;
+        if (tracker != null) {
+            payload.put("usage", tracker.snapshot());
+        }
+        emitEvent("budget.breach", payload);
+        Long ticketId = ticketIdForEvents();
+        if (ticketId != null) {
+            postMessage(ticketId, "status",
+                "Harness budget exceeded (" + reason + "). The session was stopped "
+                    + "before publishing and the ticket was returned for a clean retry.");
+        }
+        HarnessClient harness = activeHarness;
+        if (harness != null) {
+            closeQuietly(harness);
+        }
+        stopBudgetWatchdog();
+    }
+
+    private void ensureBudgetAllows(String stage) throws IOException {
+        HarnessBudgetTracker tracker = budgetTracker;
+        if (tracker == null) {
+            if (budgetBreached) {
+                throw new IOException("Harness budget exceeded " + stage);
+            }
+            return;
+        }
+        tracker.check();
+        if (tracker.breached() || budgetBreached) {
+            throw new IOException(
+                "Harness budget exceeded (" + budgetReason() + ") " + stage
+                    + "; refusing to continue or publish");
+        }
+    }
+
     private void emitRunStarted(Ticket ticket, String branchName, int attempt) {
+        HarnessBudgetPolicy policy = budgetPolicy;
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("branch", branchName);
         payload.put("attempt", attempt);
         payload.put("provider", provider == null ? null : provider.type());
         payload.put("model", provider == null ? null : provider.model());
         payload.put("ticketId", ticket == null ? null : ticket.getId());
+        if (policy != null) {
+            payload.put("routingPolicy", policy.routingPolicy());
+            payload.put("limits", Map.of(
+                "maxDurationSeconds", policy.limits().maxDuration().toSeconds(),
+                "maxInputTokens", policy.limits().maxInputTokens(),
+                "maxOutputTokens", policy.limits().maxOutputTokens(),
+                "maxCostUsd", policy.limits().maxCostUsd(),
+                "maxToolCalls", policy.limits().maxToolCalls(),
+                "maxRetries", policy.limits().maxRetries()));
+        }
         emitEvent("run.started", payload);
     }
 
@@ -1133,7 +1419,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         payload.put("sha256", HarnessDigest.sha256(prompt));
         payload.put("planningDocs", planningDocs == null ? 0 : planningDocs.size());
         payload.put("verificationCommands", commands == null ? List.of() : commands);
-        payload.put("model", provider == null ? null : provider.model());
+        payload.put("model", routingDecision == null ? null : routingDecision.model());
         emitEvent("prompt.sent", payload);
     }
 
@@ -1204,7 +1490,50 @@ public final class HarnessTicketProcessor implements TicketWorker {
         payload.put("error", message);
         payload.put("headSha", headSha);
         payload.put("prUrl", prUrl);
+        payload.put("budgetExceeded", budgetBreached);
+        HarnessBudgetTracker tracker = budgetTracker;
+        if (tracker != null) {
+            payload.put("usage", tracker.snapshot());
+        }
         emitEvent("succeeded".equals(status) ? "run.succeeded" : "run.failed", payload);
+    }
+
+    private void reportUsage(boolean force) {
+        HarnessBudgetTracker tracker = budgetTracker;
+        String runId = currentRunId;
+        ModelRouter.RoutingDecision decision = routingDecision;
+        if (tracker == null || runId == null || decision == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (!force && now - lastUsageReportAt < 30_000L) {
+            return;
+        }
+        HarnessBudgetTracker.UsageSnapshot snapshot = tracker.snapshot();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", decision.model());
+        body.put("promptVersion", "v1");
+        body.put("configHash", HarnessDigest.sha256(
+            decision.model() + "|" + decision.reason()));
+        body.put("routingReason", decision.reason());
+        body.put("inputTokens", snapshot.inputTokens());
+        body.put("outputTokens", snapshot.outputTokens());
+        body.put("cachedTokens", snapshot.cachedTokens());
+        body.put("toolCalls", snapshot.toolCalls());
+        body.put("durationMs", snapshot.durationMs());
+        try {
+            apiService.recordHarnessUsage(runId, body);
+            lastUsageReportAt = now;
+            emitEvent("usage.recorded", body);
+        } catch (IOException | RuntimeException e) {
+            log.debug("Could not report harness usage for run {}: {}", runId,
+                redactWithProvider(String.valueOf(e.getMessage())));
+        }
+    }
+
+    private Long ticketIdForEvents() {
+        HarnessEventContext context = eventContext;
+        return context == null ? null : context.ticketId();
     }
 
     private void emitEvent(String type, Map<String, Object> payload) {
@@ -1231,8 +1560,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
     }
 
-    private Ticket pickUpTicket(Long ticketId) {
-        try {
+    private Ticket pickUpTicket(Long ticketId) {        try {
             return apiService.pickUpTicket(ticketId);
         } catch (IOException e) {
             log.warn("Could not pick up ticket {}: {}", ticketId, e.getMessage());
@@ -1321,6 +1649,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
     }
 
     private Duration maxDuration() {
+        HarnessBudgetPolicy policy = budgetPolicy;
+        if (policy != null && policy.limits() != null && policy.limits().maxDuration() != null) {
+            return policy.limits().maxDuration();
+        }
         return harnessConfig == null || harnessConfig.maxDuration() == null
             ? Duration.ofMinutes(45)
             : harnessConfig.maxDuration();
@@ -1342,17 +1674,29 @@ public final class HarnessTicketProcessor implements TicketWorker {
     }
 
     private void handleFailure(Long ticketId, Throwable failure) {
-        String message = redactWithProvider(failure.getMessage() == null
-            ? failure.getClass().getSimpleName()
-            : failure.getMessage());
+        if (!budgetBreached && routingDecision != null) {
+            providerHealth.recordFailure(routingDecision.model(), failure);
+        }
+        String message = budgetBreached
+            ? "Harness budget exceeded: " + budgetReason()
+            : redactWithProvider(failure.getMessage() == null
+                ? failure.getClass().getSimpleName()
+                : failure.getMessage());
         log.error("Harness failed for ticket {}: {}", ticketId, message);
-        if (log.isDebugEnabled()) {
+        if (log.isDebugEnabled() && !budgetBreached) {
             // The throwable is not passed to SLF4J: its message and causes are
             // another persisted-log boundary and must be redacted too.
             log.debug("Harness failure stack for ticket {}:\n{}", ticketId,
                 redactWithProvider(stackTrace(failure)));
         }
-        failAndRelease(ticketId, "Harness failed: " + message);
+        failAndRelease(ticketId, budgetBreached ? message : "Harness failed: " + message);
+    }
+
+    private String budgetReason() {
+        HarnessBudgetTracker tracker = budgetTracker;
+        return tracker == null || tracker.breachReason() == null
+            ? "hard limit reached"
+            : tracker.breachReason();
     }
 
     private static String stackTrace(Throwable failure) {
@@ -1403,6 +1747,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
         pendingHeadSha = null;
         pendingPrUrl = null;
         releaseAfterTerminalFinish = false;
+        eventContext = null;
+        budgetPolicy = null;
+        terminalEventEmitted = false;
+        runStartedAt = Instant.now();
         if (config.isDryRun()) {
             return true;
         }
@@ -1479,13 +1827,16 @@ public final class HarnessTicketProcessor implements TicketWorker {
             agentId,
             null
         );
+        budgetPolicy = HarnessBudgetPolicy.from(
+            apiService.getLastBudgetPolicy(), maxDuration(), provider);
         emitRunStarted(ticket, branchName, attempt);
-
         try {
             boolean leased = apiService.claimHarnessLease(
                 ticket.getId(), currentRunId, leaseTtlSeconds);
             if (!leased) {
                 log.warn("Ticket {} is leased by another active harness run", ticket.getId());
+                emitTerminalEvent("failed", "Ticket is leased by another active harness run",
+                    null, null);
                 finishDurableRun("failed",
                     "Ticket is leased by another active harness run", null, null);
                 currentRunId = null;
@@ -1494,6 +1845,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
         } catch (IOException | RuntimeException e) {
             log.warn("Could not claim the harness lease for ticket {}: {}",
                 ticket.getId(), e.getMessage());
+            emitTerminalEvent("failed", "Harness lease claim failed: " + e.getMessage(),
+                null, null);
             finishDurableRun("failed",
                 "Harness lease claim failed: " + e.getMessage(), null, null);
             currentRunId = null;
@@ -1512,12 +1865,18 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
         emitEvent("step.changed", eventPayload);
 
+        HarnessBudgetTracker tracker = budgetTracker;
+        if (tracker != null) {
+            tracker.check();
+        }
+
         String runId = currentRunId;
         if (runId == null) {
             return;
         }
         try {
             apiService.checkpointHarnessRun(runId, step, payload);
+            reportUsage(false);
         } catch (ApiService.RunGoneException e) {
             // The run was reaped or finished elsewhere: stop before publishing.
             leaseLost = true;
@@ -1628,6 +1987,13 @@ public final class HarnessTicketProcessor implements TicketWorker {
         try {
             if (!apiService.renewHarnessLease(ticketId, runId, leaseTtlSeconds)) {
                 leaseLost = true;
+                HarnessClient active = activeHarness;
+                if (active != null) {
+                    // A kill switch or another owner withdraws the lease. Stop
+                    // the session now so it cannot keep spending budget until
+                    // the next publish gate.
+                    closeQuietly(active);
+                }
                 log.warn("Harness lease for ticket {} is no longer held; stopping heartbeats",
                     ticketId);
                 return false;
@@ -1660,6 +2026,44 @@ public final class HarnessTicketProcessor implements TicketWorker {
      * another multi-minute harness.
      */
     private void failAndRelease(Long ticketId, String message) {
+        if (budgetBreached) {
+            // fg-38 FR3: a breached run stops with budget_exceeded, never
+            // publishes partial work, and returns the ticket for a clean retry.
+            pendingTerminalStatus = "budget_exceeded";
+            pendingTerminalMessage = message;
+            pendingHeadSha = publishedHeadSha;
+            pendingPrUrl = publishedPrUrl;
+            releaseAfterTerminalFinish = false;
+            reportUsage(true);
+            String runId = currentRunId;
+            String actualStatus = finishDurableRun(
+                "budget_exceeded", message, publishedHeadSha, publishedPrUrl);
+            if (actualStatus == null) {
+                log.warn("Could not confirm the budget-exceeded finish for ticket {}; "
+                    + "leaving the run active for recovery", ticketId);
+                return;
+            }
+            if (!"budget_exceeded".equals(actualStatus)) {
+                log.warn("Refusing to release ticket {}: run {} is {}",
+                    ticketId, runId, actualStatus);
+                return;
+            }
+            if (published) {
+                log.warn("Budget exceeded after publish for ticket {}; leaving the ticket "
+                    + "for operator review", ticketId);
+                return;
+            }
+            if (runId != null) {
+                if (!releaseRecoveredTicket(runId)) {
+                    log.warn("Ticket {} was not released after a budget breach; "
+                        + "the reaper will reconcile the terminal run", ticketId);
+                }
+            } else {
+                release(ticketId);
+            }
+            return;
+        }
+
         // Failures that already published work are never retried automatically,
         // so keep their terminal status failed and let publish evidence win.
         boolean terminal = !published
