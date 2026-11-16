@@ -143,6 +143,7 @@ class HarnessRunService {
       );
       const ownedTicket = ownership.rows[0];
       let reservedCostUsd = 0;
+      let startPolicy = null;
       if (
         ownedTicket
         && ownedTicket.status === 'in_progress'
@@ -164,6 +165,7 @@ class HarnessRunService {
           client,
           lock: true,
         });
+        startPolicy = budget;
         reservedCostUsd = Number(budget?.reservedCostUsd) || 0;
       }
 
@@ -267,7 +269,12 @@ class HarnessRunService {
       }
 
       await client.query('COMMIT');
-      return result.rows[0];
+      const run = result.rows[0];
+      if (startPolicy) {
+        // Internal hand-off only; the API strips this before responding.
+        run.budget_policy = startPolicy;
+      }
+      return run;
     } catch (error) {
       await client.query('ROLLBACK');
       // The partial unique index on (ticket_id) WHERE status='running' is the

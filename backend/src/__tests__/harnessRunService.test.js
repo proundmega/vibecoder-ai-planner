@@ -69,6 +69,7 @@ describe('HarnessRunService', () => {
       });
 
       expect(result).toEqual(row);
+      expect(result.budget_policy).toEqual({ reservedCostUsd: 2 });
       expect(DependencyService.assertReady).toHaveBeenCalledWith(42, {
         client,
         lock: true,

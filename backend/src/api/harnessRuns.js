@@ -144,22 +144,25 @@ router.post('/runs', verifyTokenOrAgent, async (req, res, next) => {
     });
 
     // The supervisor needs the budget/routing policy before it creates the
-    // session. A policy read failure must not undo an accepted run; the agent
-    // then falls back to local defaults and still enforces hard limits.
-    let budgetPolicy = null;
-    try {
-      budgetPolicy = await HarnessBudgetService.getPolicy(run.project_id, {
-        ticketId: run.ticket_id,
-        agentId,
-        extraModels: run.model ? [run.model] : [],
-      });
-      budgetPolicy = {
-        ...budgetPolicy,
-        reservedCostUsd: Number(run.budget_reserved_usd) || 0,
-      };
-    } catch (policyError) {
-      logger.warn(`Could not load harness budget policy for run ${run.id}: ${policyError.message}`);
-      const reserved = Number(run.budget_reserved_usd) || 0;
+    // session. Prefer the policy resolved inside the start transaction; only
+    // fall back to a second read for legacy callers/rows.
+    let budgetPolicy = run.budget_policy || null;
+    const { budget_policy: _startPolicy, ...runData } = run;
+    if (!budgetPolicy) {
+      try {
+        budgetPolicy = await HarnessBudgetService.getPolicy(run.project_id, {
+          ticketId: run.ticket_id,
+          agentId,
+          extraModels: run.model ? [run.model] : [],
+        });
+      } catch (policyError) {
+        logger.warn(`Could not load harness budget policy for run ${run.id}: ${policyError.message}`);
+      }
+    }
+    const reserved = Number(run.budget_reserved_usd) || 0;
+    if (budgetPolicy) {
+      budgetPolicy = { ...budgetPolicy, reservedCostUsd: reserved };
+    } else {
       // Fail closed enough to finish locally: keep the reservation cap and a
       // free-only routing hint rather than silently using unconstrained defaults.
       budgetPolicy = {
@@ -170,7 +173,7 @@ router.post('/runs', verifyTokenOrAgent, async (req, res, next) => {
       };
     }
 
-    res.status(201).json({ success: true, data: run, budgetPolicy });
+    res.status(201).json({ success: true, data: runData, budgetPolicy });
   } catch (error) {
     logger.error('POST /harness/runs failed:', error);
     next(error);

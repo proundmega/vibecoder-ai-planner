@@ -90,6 +90,34 @@ describe('Harness run API', () => {
       );
     });
 
+    it('returns the policy resolved inside the start transaction', async () => {
+      HarnessRunService.startRun.mockResolvedValue({
+        id: RUN_ID,
+        agent_id: 7,
+        project_id: 5,
+        ticket_id: 42,
+        budget_reserved_usd: 4,
+        budget_policy: {
+          limits: { maxCostUsd: 5 },
+          routing: { policy: 'free_only' },
+          reservedCostUsd: 4,
+        },
+      });
+
+      const res = await request(app)
+        .post('/api/v1/harness/runs')
+        .set('X-API-Key', 'agent-key')
+        .send({ ticketId: 42, branch: 'feat/fg-38' });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.body.data.budget_policy).toBeUndefined();
+      expect(res.body.budgetPolicy).toEqual(expect.objectContaining({
+        limits: { maxCostUsd: 5 },
+        reservedCostUsd: 4,
+      }));
+      expect(HarnessBudgetService.getPolicy).not.toHaveBeenCalled();
+    });
+
     it('returns a reservation-only policy if the full policy read fails', async () => {
       HarnessRunService.startRun.mockResolvedValue({
         id: RUN_ID, agent_id: 7, project_id: 5, ticket_id: 42,
