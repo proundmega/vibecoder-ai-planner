@@ -148,6 +148,26 @@ class SandboxBashBridgeTest {
     }
 
     @Test
+    void clearsTheFlightWhenTheStreamCannotStart() throws Exception {
+        String requestId = "req-start-failure";
+        HttpExchange exchange = mock(HttpExchange.class);
+        when(exchange.getResponseHeaders()).thenReturn(new Headers());
+        doThrow(new IOException("client disconnected before headers"))
+            .when(exchange).sendResponseHeaders(anyInt(), anyLong());
+
+        var future = bridge.executeStreamForTest(
+            exchange, requestId, "fingerprint-start-failure",
+            "npm install", null, Duration.ofSeconds(1));
+
+        assertTrue(future.isDone());
+        assertEquals(500, future.get().status());
+        assertFalse(bridge.inFlightForTest(requestId),
+            "a failed stream start must not leave a stale in-flight entry");
+        verify(exchange, times(1)).sendResponseHeaders(anyInt(), anyLong());
+        verify(runner, times(0)).execStreaming(any(), any(), any());
+    }
+
+    @Test
     void cachesAndCompletesBeforeAFailingFinalStreamWrite() throws Exception {
         doAnswer(invocation -> {
             Consumer<String> listener = invocation.getArgument(2);

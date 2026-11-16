@@ -291,7 +291,7 @@ final class SandboxBashBridge implements AutoCloseable {
     }
 
     /** Test seam: run the owned streaming lifecycle with a supplied exchange. */
-    void executeStreamForTest(
+    java.util.concurrent.CompletableFuture<CachedResponse> executeStreamForTest(
         HttpExchange exchange,
         String requestId,
         String fingerprint,
@@ -304,6 +304,7 @@ final class SandboxBashBridge implements AutoCloseable {
             inFlight.put(requestId, flight);
         }
         executeStreamOwned(exchange, flight, requestId, fingerprint, command, cwd, timeout);
+        return flight.future;
     }
 
     /** Test seam: the cached response for a completed request, if any. */
@@ -377,21 +378,17 @@ final class SandboxBashBridge implements AutoCloseable {
         String cwd,
         Duration timeout
     ) {
+        CachedResponse response = new CachedResponse(500,
+            Map.of("error", "sandbox exec failed: unknown"));
+        boolean started = false;
         try {
-            startStream(exchange);
-        } catch (IOException e) {
-            return;
-        }
-        CachedResponse response = null;
-        try {
-            response = streamExecute(exchange, rewritten, cwd, timeout);
-        } catch (RuntimeException e) {
-            response = new CachedResponse(500,
-                Map.of("error", "sandbox exec failed: " + safeMessage(e)));
-        } finally {
-            if (response == null) {
+            try {
+                startStream(exchange);
+                started = true;
+                response = streamExecute(exchange, rewritten, cwd, timeout);
+            } catch (IOException | RuntimeException e) {
                 response = new CachedResponse(500,
-                    Map.of("error", "sandbox exec failed: unknown"));
+                    Map.of("error", "sandbox exec failed: " + safeMessage(e)));
             }
             if (response.status == 200) {
                 long expiresAt = System.currentTimeMillis() + cacheTtlMillis;
@@ -399,12 +396,18 @@ final class SandboxBashBridge implements AutoCloseable {
                     completed.put(requestId, new Completed(fingerprint, response, expiresAt));
                 }
             }
-            // Publish the result before the best-effort final event. A client
-            // disconnect must not lose the successful result for a retry.
+        } finally {
+            // Complete and remove the flight even when response headers could
+            // not be sent, so a retry never waits on a stale future.
             flight.future.complete(response);
-            writeStreamResultQuietly(exchange, response);
-            synchronized (cacheLock) {
-                inFlight.remove(requestId, flight);
+            try {
+                if (started) {
+                    writeStreamResultQuietly(exchange, response);
+                }
+            } finally {
+                synchronized (cacheLock) {
+                    inFlight.remove(requestId, flight);
+                }
             }
         }
     }
