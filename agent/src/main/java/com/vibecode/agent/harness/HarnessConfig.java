@@ -29,6 +29,16 @@ public record HarnessConfig(
     public static final String DEFAULT_PROTECTED_PATHS =
         ".env*;**/.env*;Jenkinsfile;**/Jenkinsfile;.github/**;**/.github/**;**/secrets/**";
 
+
+    /** Return a copy with a shorter overall budget for one profile round. */
+    public HarnessConfig withMaxDuration(Duration budget) {
+        if (budget == null || budget.isNegative() || budget.isZero()) {
+            return this;
+        }
+        return new HarnessConfig(mode, binary, startupTimeout, budget,
+            verificationCommands, protectedPaths, modelOverride, resumeMode);
+    }
+
     public static HarnessConfig fromEnvironment() {
         return from(System::getenv);
     }

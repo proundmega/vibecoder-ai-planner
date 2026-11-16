@@ -82,24 +82,191 @@ Profiles are validated against a JSON schema; unknown fields are rejected or war
 2. create sandbox with the profile image;
 3. run setup;
 4. run verify;
-5. return pass/fail, timings, logs and cache hit/miss.
+5. return pass/fail, timings and logs.
 
 This is an admin operation, not model-driven.
+
+## Slice 1 schema (v1)
+
+```json
+{
+  "schema_version": 1,
+  "repo_url": "https://github.com/org/repo",
+  "base_branch": "main",
+  "languages": ["node", "java"],
+  "image": "registry.example.com/node24-java17@sha256:...",
+  "setup": ["npm ci", "cd backend && npm ci"],
+  "verify": ["cd backend && npm test"],
+  "caches": [],
+  "env": { "NODE_ENV": "test" },
+  "timeouts": { "setup_minutes": 15, "verify_minutes": 20 },
+  "max_round_minutes": 45,
+  "services": [],
+  "flaky_tests": [],
+  "egress": {
+    "tls_mode": "terminate",
+    "origin_ca_hosts": ["registry.example.com"],
+    "origin_ca_b64": "<base64 PEM CA bundle>"
+  }
+}
+```
+
+- `schema_version` must be `1`; unknown fields are rejected.
+- `image` is optional; when present it must be digest-pinned (`@sha256:`).
+- `setup` and `verify` are bounded shell command lists. `verify` must contain
+  at least one command.
+- `env` keys must look like environment names and may not be secret-like
+  (`*_TOKEN`, `*_KEY`, `PASSWORD`, `SECRET`, private-key material). Secret
+  values are rejected by the same high-confidence checks as `SANDBOX_ENV`.
+- `caches` must be empty in slice 1. Persistent cache volumes need a quota,
+  watchdog and GC (D9/fg-44); accepting the field without those would let a
+  repo fill the host disk across runs.
+- `services` and `flaky_tests` must be empty in slice 1; non-empty values fail
+  validation with an explicit "not implemented yet" error.
+- `egress` is optional and only valid with `tls_mode: "terminate"`. Its exact
+  hosts must already be covered by the agent's `SANDBOX_ALLOWED_HOSTS`; the
+  backend validates the PEM bundle shape and CA constraints, and the agent
+  re-validates before sandbox creation.
+
+## Profile API (slice 1)
+
+| Method / path | Auth | Purpose |
+|---|---|---|
+| `GET /projects/:id/repo-profile` | project member | Active profile plus latest draft |
+| `GET /projects/:id/repo-profile/versions` | project member | Version history |
+| `POST /projects/:id/repo-profile` | owner/super admin | Create a draft version |
+| `PUT /projects/:id/repo-profile/:profileId` | owner/super admin | Edit a draft |
+| `POST /projects/:id/repo-profile/:profileId/activate` | owner/super admin | Activate one version after a successful dry run of the exact `profile_hash` |
+| `POST /projects/:id/repo-profile/detect` | owner/super admin | Propose a profile from GitHub manifests |
+| `POST /projects/:id/repo-profile/:profileId/validate` | owner/super admin | Queue a dry run |
+| `GET /projects/:id/repo-profile/validations` | project member | Dry-run history |
+| `GET /projects/:id/repo-profile/validations/:validationId` | project member | Dry-run status/result |
+| `GET /projects/:id/repo-profile/agent` | agent API key | Active profile for the agent |
+| `POST /projects/:id/repo-profile/validations/claim` | agent API key | Claim the next queued dry run |
+| `POST /projects/:id/repo-profile/validations/:validationId/finish` | agent API key | Report the dry-run result |
+
+The project owner (or super admin) is the write boundary, matching project
+update. The agent routes also require the owner relationship used by the
+existing GitHub agent config route.
+
+## Dry-run worker (slice 1)
+
+1. An admin queues a validation; the backend snapshots the profile JSON and
+   version so later edits cannot change a running validation.
+2. Any agent serving the project claims it with `FOR UPDATE SKIP LOCKED`.
+3. The agent clones `repo_url` at `base_branch` with an explicit clone timeout,
+   creates the same sandbox the ticket path would use (image, env, egress CA),
+   runs `setup` and then `verify`, and reports per-command exit code, duration
+   and redacted output. Clone, sandbox setup and both phases share one overall
+   deadline.
+4. The agent applies an overall deadline of `profile.max_round_minutes` (the
+   setup and verify caps are taken within that deadline, not added on top).
+   A ticket run also passes `min(HARNESS_MAX_DURATION_MINUTES,
+   profile.max_round_minutes)` to the OpenCode client, so the model session is
+   bounded too, not only post-model verification.
+5. The backend stores the result; a `running` validation is stale after
+   `max(60, profile.max_round_minutes) + 5` minutes, so a valid long dry run is
+   not reaped while it is still within its accepted budget.
+6. The worker runs after the ticket loop, so a long dry run cannot starve the
+   build queue in the same poll cycle.
+7. The worker does not start a model session and does not publish anything.
+
+## Persistent caches (deferred)
+
+Persistent cache mounts are **not** part of slice 1. A writable Docker volume
+without a quota/GC lets a hostile repo fill the host disk across runs and
+bypasses the workspace disk watchdog. The profile schema keeps the `caches`
+field reserved but rejects non-empty values until D9/fg-44 adds a size limit,
+watchdog, volume GC, lockfile-keyed generations and sanitized writes.
+Verification still uses the existing ephemeral `/tmp` cache defaults.
+
+## fg-34/D27 profile handoff (slice 1)
+
+- Profile `egress.origin_ca_*` is applied only when the operator already chose
+  `terminate` mode and every named host is in `SANDBOX_ALLOWED_HOSTS`.
+- The effective `SandboxSpec` carries the profile's CA pair. The supervisor
+  creation log and proxy `configured`/`used` audit lines remain unchanged.
+- `sni-only` remains the default; a profile that requests `terminate` while the
+  operator left the default fails closed with a clear error.
+
+## Failure modes
+
+| Failure | Behavior |
+|---|---|
+| No active profile | Warning; existing autodetection and verification path. |
+| Profile fetch fails/transient backend error | Warning; existing path. Admin config errors are not hidden. |
+| Invalid profile JSON | Run fails before clone with the validation message. |
+| No active project repo, or profile `repo_url` differs from it | Create/update/activate/validate fail; the agent also rejects a profile that differs from `REPO_OWNER/REPO_NAME`. |
+| Activation without a successful exact-content dry run | Activation fails; editing a draft changes `profile_hash` and invalidates older successes. |
+| Profile verify list empty | Validation rejects the profile; no profile falls back to autodetection. |
+| Profile image lacks a digest | Validation rejects the profile. |
+| Origin CA host not allowlisted, or mode mismatch | Sandbox creation fails before the container starts. |
+| Dry-run clone/setup/verify fails | Validation is `failed` with per-command output; no ticket/run is created. |
+| Agent dies during a dry run | Validation remains `running` until the profile-budget stale reap. |
+
+## Security considerations
+
+- Profiles are admin configuration, but their commands still run as untrusted
+  repo code in the sandbox; host mode remains explicitly not a boundary.
+- Profile env is validated against secret-like keys/values on both the backend
+  and the agent, so a profile cannot smuggle credentials into the sandbox.
+- A profile cannot widen `SANDBOX_ALLOWED_HOSTS`, change `sni-only` to
+  `terminate`, bypass `Host == SNI`, or supply a private key instead of a CA.
+- Persistent caches are deferred; slice 1 does not expose a writable host
+  cache volume (D9/fg-44).
+- Dry-run results include bounded, redacted output only; the profile snapshot
+  is stored with the validation for audit.
 
 ## Data model
 
 ```sql
 CREATE TABLE repo_profiles (
-  id UUID PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   version INT NOT NULL,
   profile JSONB NOT NULL,
-  status TEXT NOT NULL, -- draft, active, inactive
+  profile_hash TEXT,
+  status TEXT NOT NULL CHECK (status IN ('draft', 'active', 'inactive')),
   created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  activated_at TIMESTAMPTZ,
   UNIQUE (project_id, version)
 );
+
+CREATE UNIQUE INDEX uq_repo_profiles_active
+  ON repo_profiles(project_id) WHERE status = 'active';
+
+CREATE TABLE repo_profile_validations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  profile_id UUID NOT NULL REFERENCES repo_profiles(id) ON DELETE CASCADE,
+  profile_version INT NOT NULL,
+  profile JSONB NOT NULL,
+  profile_hash TEXT,
+  status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
+  requested_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  agent_id BIGINT REFERENCES agents(id) ON DELETE SET NULL,
+  result JSONB NOT NULL DEFAULT '{}',
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  started_at TIMESTAMPTZ,
+  finished_at TIMESTAMPTZ
+);
 ```
+
+`harness_runs` gains nullable `repo_profile_id UUID REFERENCES
+repo_profiles(id) ON DELETE SET NULL` and `repo_profile_version INT` so each
+run records the profile it used. `HarnessRunService.startRun` joins the profile
+to the ticket's project and checks the revision, so an agent cannot record a
+false profile revision. `profile_hash` is the SHA-256 of a canonicalized
+profile JSON; activation requires a successful validation row with the same
+hash. A legacy row with a null hash gets one persisted when validation is
+requested (and again on activation), so existing profiles can be revalidated
+without a manual re-save. The validation-request update is conditional on
+`profile_hash IS NULL`; if a concurrent edit wins, the request fails with a
+conflict instead of overwriting the newer hash or queuing a stale snapshot. `profile.base_branch` is the first source in
+fg-36's shared resolver; slice 1 uses it directly for checkout and the PR base.
 
 `profile.base_branch` is the most specific source. fg-36's `BaseBranchResolver` uses: active profile > project setting > GitHub repo default > `main`, then `master`. Do not duplicate this order elsewhere.
 
@@ -107,7 +274,6 @@ CREATE TABLE repo_profiles (
 
 - detect Node/Python/Java/Go/monorepo profiles;
 - setup/verify success and failure;
-- cache reuse and isolation;
 - service startup/health/cleanup;
 - flaky retry behavior;
 - invalid profile validation;
@@ -118,7 +284,7 @@ CREATE TABLE repo_profiles (
 1. Add the schema and a static profile for the planner repo.
 2. Dry-run validation.
 3. Use profiles for new tickets; fall back to autodetection for others.
-4. Add caches and services.
+4. Add cached dependencies and services after their quota/GC slices.
 5. Onboard real projects one by one.
 
 ## Open questions

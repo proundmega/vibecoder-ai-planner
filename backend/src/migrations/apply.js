@@ -52,6 +52,7 @@ const SQL_FILES = [
   path.join(__dirname, './047_harness_checkpoint_publish_evidence.sql'),
   path.join(__dirname, './048_ticket_assigned_agent_fk.sql'),
   path.join(__dirname, './049_project_github_installations.sql'),
+  path.join(__dirname, './050_repo_profiles.sql'),
 ];
 
 const DATA_MIGRATIONS = [

@@ -1,5 +1,6 @@
 package com.vibecode.agent.harness;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vibecode.agent.config.AgentConfig;
 import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
@@ -35,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -120,11 +122,65 @@ class HarnessTicketProcessorTest {
             config, apiService, provider, gitHubService, "ghp_token",
             harnessConfig,
             repoName -> workspace,
-            (ignored, bridge) -> harness,
+            (ignored, bridge, effectiveConfig) -> harness,
             planningDocFetcher,
             verificationRunner,
             new PublishingGuard(harnessConfig.protectedPaths())
         );
+    }
+
+    private HarnessTicketProcessor processorWithProfile(RepoProfileSource source) {
+        return new HarnessTicketProcessor(
+            config, apiService, provider, gitHubService, "ghp_token",
+            harnessConfig,
+            repoName -> workspace,
+            (ignored, bridge, effectiveConfig) -> harness,
+            planningDocFetcher,
+            source,
+            verificationRunner,
+            new PublishingGuard(harnessConfig.protectedPaths()),
+            SandboxConfig.defaults(),
+            SandboxRunnerFactory.hostOnly()
+        );
+    }
+
+    private HarnessTicketProcessor processorWithProfileAndFactory(
+        RepoProfileSource source,
+        HarnessTicketProcessor.HarnessClientFactory factory
+    ) {
+        return new HarnessTicketProcessor(
+            config, apiService, provider, gitHubService, "ghp_token",
+            harnessConfig,
+            repoName -> workspace,
+            factory,
+            planningDocFetcher,
+            source,
+            verificationRunner,
+            new PublishingGuard(harnessConfig.protectedPaths()),
+            SandboxConfig.defaults(),
+            SandboxRunnerFactory.hostOnly()
+        );
+    }
+
+    private RepoProfileSnapshot profileSnapshot() throws Exception {
+        RepoProfileSnapshot snapshot = new ObjectMapper().readValue("""
+            {
+              "id": "11111111-1111-4111-8111-111111111111",
+              "version": 7,
+              "status": "active",
+              "profile": {
+                "schema_version": 1,
+                "repo_url": "https://github.com/owner/repo",
+                "base_branch": "develop",
+                "image": "node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "setup": ["profile-setup"],
+                "verify": ["profile-verify"],
+                "env": {"PROFILE_FLAG": "on"}
+              }
+            }
+            """, RepoProfileSnapshot.class);
+        snapshot.validate();
+        return snapshot;
     }
 
     private HarnessTicketProcessor processorWithResumeMode() {
@@ -136,7 +192,7 @@ class HarnessTicketProcessorTest {
             config, apiService, provider, gitHubService, "ghp_token",
             resumeConfig,
             repoName -> workspace,
-            (ignored, bridge) -> harness,
+            (ignored, bridge, effectiveConfig) -> harness,
             planningDocFetcher,
             verificationRunner,
             new PublishingGuard(resumeConfig.protectedPaths())
@@ -457,6 +513,125 @@ class HarnessTicketProcessorTest {
         ticket.setTitle("Add filtering");
         ticket.setDescription("Filter tickets by status.");
         return ticket;
+    }
+
+
+    @Test
+    void profilePointingAtAnotherRepositoryIsRejectedBeforeRunStart() throws Exception {
+        RepoProfileSnapshot snapshot = new ObjectMapper().readValue("""
+            {
+              "id": "11111111-1111-4111-8111-111111111111",
+              "version": 7,
+              "status": "active",
+              "profile": {
+                "schema_version": 1,
+                "repo_url": "https://github.com/other/repo",
+                "verify": ["npm test"]
+              }
+            }
+            """, RepoProfileSnapshot.class);
+        snapshot.validate();
+
+        processorWithProfile(() -> snapshot).processTicket(ticket());
+
+        verify(apiService, never()).startHarnessRun(
+            any(), anyString(), any(), any(), any(), anyInt());
+        verify(workspace, never()).cloneRepo(anyString(), anyString(), any(), any());
+        verify(apiService).releaseTicket(1L);
+    }
+
+    @Test
+    void profileDrivesBaseBranchCommandsEnvironmentAndRunEvidence() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        RepoProfileSnapshot snapshot = profileSnapshot();
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1, snapshot.id(), 7))
+            .thenReturn(Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(verificationRunner.run(any(Path.class), anyList(), any(Duration.class), anyMap()))
+            .thenAnswer(invocation -> {
+                List<String> commands = invocation.getArgument(1);
+                return commands.stream()
+                    .map(command -> new VerificationResult(command, 0, "ok", false))
+                    .toList();
+            });
+
+        processorWithProfile(() -> snapshot).processTicket(ticket());
+
+        verify(workspace).cloneRepo(
+            eq("https://github.com/owner/repo.git"), eq(branch), eq("develop"), any(Duration.class));
+        ArgumentCaptor<List<String>> commands = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<Map<String, String>> environment = ArgumentCaptor.forClass(Map.class);
+        verify(verificationRunner, times(2)).run(
+            any(Path.class), commands.capture(), any(Duration.class), environment.capture());
+        assertEquals(List.of("profile-setup"), commands.getAllValues().get(0));
+        assertEquals(List.of("profile-verify"), commands.getAllValues().get(1));
+        assertEquals("on", environment.getAllValues().get(0).get("PROFILE_FLAG"));
+        verify(gitHubService).createPullRequest(
+            anyString(), anyString(), anyString(), eq("develop"));
+        verify(apiService).startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1, snapshot.id(), 7);
+    }
+
+
+    @Test
+    void profileMaxRoundMinutesCapsTheVerificationBudget() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        RepoProfileSnapshot snapshot = new ObjectMapper().readValue("""
+            {
+              "id": "11111111-1111-4111-8111-111111111111",
+              "version": 7,
+              "status": "active",
+              "profile": {
+                "schema_version": 1,
+                "repo_url": "https://github.com/owner/repo",
+                "verify": ["npm test"],
+                "max_round_minutes": 1
+              }
+            }
+            """, RepoProfileSnapshot.class);
+        snapshot.validate();
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1, snapshot.id(), 7))
+            .thenReturn(Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+
+        AtomicReference<HarnessConfig> seen = new AtomicReference<>();
+        processorWithProfileAndFactory(
+            () -> snapshot,
+            (temp, bridge, effectiveConfig) -> {
+                seen.set(effectiveConfig);
+                return harness;
+            }
+        ).processTicket(ticket());
+
+        assertEquals(Duration.ofMinutes(1), seen.get().maxDuration());
+        ArgumentCaptor<Duration> timeout = ArgumentCaptor.forClass(Duration.class);
+        verify(verificationRunner).run(any(Path.class), anyList(), timeout.capture());
+        assertTrue(timeout.getValue().toMillis() <= 60_000,
+            "verification budget exceeded the profile max_round_minutes: " + timeout.getValue());
+    }
+
+    @Test
+    void profileFetchFailureFallsBackToAutodetection() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1))
+            .thenReturn(Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+
+        processorWithProfile(() -> {
+            throw new IOException("backend down");
+        }).processTicket(ticket());
+
+        verify(workspace).cloneRepo(
+            eq("https://github.com/owner/repo.git"), eq(branch), isNull(), any(Duration.class));
+        verify(verificationRunner).resolveCommands(any());
+        verify(gitHubService).createPullRequest(
+            anyString(), anyString(), anyString(), eq("main"));
     }
 
     @Test
@@ -968,7 +1143,7 @@ class HarnessTicketProcessorTest {
 
         processor.processTicket(ticket());
 
-        verify(workspace, never()).cloneRepo(anyString(), anyString());
+        verify(workspace, never()).cloneRepo(anyString(), anyString(), any(), any());
         verify(apiService).finishHarnessRun(
             eq("run-1"), eq("failed"), contains("leased by another"), isNull(), isNull());
         verify(apiService, never()).releaseTicket(1L);
@@ -1023,7 +1198,7 @@ class HarnessTicketProcessorTest {
 
         processor.processTicket(ticket());
 
-        verify(workspace, never()).cloneRepo(anyString(), anyString());
+        verify(workspace, never()).cloneRepo(anyString(), anyString(), any(), any());
         verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
         verify(apiService).finishHarnessRun(
             eq("run-1"), eq("failed"), contains("lease claim failed"), isNull(), isNull());
@@ -1099,7 +1274,7 @@ class HarnessTicketProcessorTest {
 
         processor.processTicket(ticket());
 
-        verify(workspace, never()).cloneRepo(anyString(), anyString());
+        verify(workspace, never()).cloneRepo(anyString(), anyString(), any(), any());
         verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
         verify(apiService, never()).claimHarnessLease(any(), anyString(), org.mockito.ArgumentMatchers.anyInt());
         verify(apiService, never()).releaseTicket(1L);
@@ -1369,7 +1544,7 @@ class HarnessTicketProcessorTest {
             config, apiService, provider, gitHubService, "ghp_token",
             harnessConfig,
             repoName -> workspace,
-            (ignored, bridge) -> {
+            (ignored, bridge, effectiveConfig) -> {
                 captured.set(bridge);
                 assertNotNull(bridge, "docker mode must route bash through a sandbox bridge");
                 assertNotNull(bridge.baseUrl(), "the bridge must be listening before the harness starts");
@@ -1398,7 +1573,7 @@ class HarnessTicketProcessorTest {
             config, apiService, provider, gitHubService, "ghp_token",
             harnessConfig,
             repoName -> workspace,
-            (ignored, bridge) -> harness,
+            (ignored, bridge, effectiveConfig) -> harness,
             planningDocFetcher,
             verificationRunner,
             new PublishingGuard(harnessConfig.protectedPaths()),

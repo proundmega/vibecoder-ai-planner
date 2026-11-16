@@ -4,6 +4,7 @@ import com.vibecode.agent.config.AgentConfig;
 import com.vibecode.agent.harness.HarnessConfig;
 import com.vibecode.agent.harness.RedactionRegistry;
 import com.vibecode.agent.harness.HarnessTicketProcessor;
+import com.vibecode.agent.harness.ProfileValidationProcessor;
 import com.vibecode.agent.harness.ProviderSettings;
 import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.service.*;
@@ -46,6 +47,7 @@ public class AgentApp {
     private final GitHubTokenProvider githubTokenProvider;
     private final TicketWorker ticketWorker;
     private final ReviewProcessor reviewProcessor;
+    private final ProfileValidationProcessor profileValidationProcessor;
     private ScheduledExecutorService heartbeatScheduler;
     private String githubAccessToken;
     private volatile boolean shuttingDown = false;
@@ -67,6 +69,13 @@ public class AgentApp {
             githubTokenProvider, githubAccessToken, config.getHarnessConfig());
         this.gitHubService = wiring.gitHubService();
         this.ticketWorker = wiring.ticketWorker();
+        if (ticketWorker instanceof HarnessTicketProcessor harnessWorker) {
+            this.profileValidationProcessor = new ProfileValidationProcessor(
+                config, apiService, harnessWorker.sandboxConfig(),
+                harnessWorker.sandboxRunner(), githubTokenProvider, githubAccessToken);
+        } else {
+            this.profileValidationProcessor = null;
+        }
 
         HarnessConfig harnessConfig = config.getHarnessConfig();
         if (harnessConfig.isEnabled()) {
@@ -405,9 +414,11 @@ public class AgentApp {
             log.warn("REPO_OWNER is not set — running in review mode only. Ticket processing is disabled. Set REPO_OWNER and REPO_NAME to enable build mode.");
             if (reviewProcessor == null) {
                 log.warn("Review cycle skipped: the configured provider is not usable by the legacy review path");
+                pollProfileValidation();
                 return;
             }
             reviewProcessor.processReviewCycle();
+            pollProfileValidation();
             return;
         }
         
@@ -432,6 +443,21 @@ public class AgentApp {
             log.info("No tickets to process this cycle");
         } else {
             log.info("Processed {} ticket(s) this cycle", processed);
+        }
+
+        // Dry runs run after ticket work so a long profile validation cannot
+        // starve the build queue in the same poll cycle.
+        pollProfileValidation();
+    }
+
+    private void pollProfileValidation() {
+        if (profileValidationProcessor == null) {
+            return;
+        }
+        try {
+            profileValidationProcessor.pollOnce();
+        } catch (RuntimeException e) {
+            log.warn("Repo profile validation cycle failed: {}", e.getMessage());
         }
     }
 

@@ -43,13 +43,18 @@ public final class HarnessTicketProcessor implements TicketWorker {
     /** Creates the harness client, optionally wired to the sandbox bash bridge. */
     @FunctionalInterface
     interface HarnessClientFactory {
-        HarnessClient create(Path tempDir, SandboxBashBridge bridge) throws IOException;
+        HarnessClient create(
+            Path tempDir,
+            SandboxBashBridge bridge,
+            HarnessConfig effectiveConfig
+        ) throws IOException;
     }
 
     private static final Logger log = LoggerFactory.getLogger(HarnessTicketProcessor.class);
     private static final int MAX_MESSAGE_CHARS = 8_192;
     private static final Duration VERIFICATION_TIMEOUT = Duration.ofMinutes(10);
     private static final Duration INSTALL_TIMEOUT = Duration.ofMinutes(10);
+    private static final Duration CLONE_TIMEOUT = Duration.ofMinutes(5);
     private static final int DEFAULT_MAX_ATTEMPTS = 3;
     private static final long DEFAULT_RETRY_BASE_DELAY_MS = 60_000L;
     private static final long DEFAULT_RETRY_MAX_DELAY_MS = 60L * 60_000L;
@@ -65,6 +70,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private final Function<String, WorkspaceManager> workspaceFactory;
     private final HarnessClientFactory harnessFactory;
     private final PlanningDocFetcher planningDocFetcher;
+    private final RepoProfileSource repoProfileSource;
     private final VerificationRunner verificationRunner;
     private final PublishingGuard publishingGuard;
     private final SecretLeakGuard secretLeakGuard;
@@ -140,7 +146,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             harnessConfig,
             repoName -> new WorkspaceManager(
                 config.getRepoCloneDir(), repoName, config.isDryRun(), githubToken, tokenSource),
-            (tempDir, bridge) -> new OpenCodeClient(harnessConfig, provider, tempDir, bridge),
+            (tempDir, bridge, effectiveConfig) ->
+                new OpenCodeClient(effectiveConfig, provider, tempDir, bridge),
             new PlanningDocFetcher(apiService, config),
             new VerificationRunner(harnessConfig),
             new PublishingGuard(harnessConfig.protectedPaths()),
@@ -198,6 +205,40 @@ public final class HarnessTicketProcessor implements TicketWorker {
         SandboxConfig sandboxConfig,
         SandboxRunner sandboxRunner
     ) {
+        this(
+            config,
+            apiService,
+            provider,
+            gitHubService,
+            githubToken,
+            harnessConfig,
+            workspaceFactory,
+            harnessFactory,
+            planningDocFetcher,
+            new RepoProfileFetcher(apiService, config),
+            verificationRunner,
+            publishingGuard,
+            sandboxConfig,
+            sandboxRunner
+        );
+    }
+
+    HarnessTicketProcessor(
+        AgentConfig config,
+        ApiService apiService,
+        ProviderSettings provider,
+        GitHubService gitHubService,
+        String githubToken,
+        HarnessConfig harnessConfig,
+        Function<String, WorkspaceManager> workspaceFactory,
+        HarnessClientFactory harnessFactory,
+        PlanningDocFetcher planningDocFetcher,
+        RepoProfileSource repoProfileSource,
+        VerificationRunner verificationRunner,
+        PublishingGuard publishingGuard,
+        SandboxConfig sandboxConfig,
+        SandboxRunner sandboxRunner
+    ) {
         this.config = config;
         this.apiService = apiService;
         this.provider = provider;
@@ -209,10 +250,21 @@ public final class HarnessTicketProcessor implements TicketWorker {
         this.workspaceFactory = workspaceFactory;
         this.harnessFactory = harnessFactory;
         this.planningDocFetcher = planningDocFetcher;
+        this.repoProfileSource = repoProfileSource == null
+            ? () -> null
+            : repoProfileSource;
         this.verificationRunner = verificationRunner;
         this.publishingGuard = publishingGuard;
         this.secretLeakGuard = new SecretLeakGuard(knownSecrets(provider, githubToken));
         this.redactor = new SecretRedactor(redactionSecrets(provider, githubToken));
+    }
+
+    public SandboxConfig sandboxConfig() {
+        return sandboxConfig;
+    }
+
+    public SandboxRunner sandboxRunner() {
+        return sandboxRunner;
     }
 
     private static List<String> knownSecrets(ProviderSettings provider, String githubToken) {
@@ -655,7 +707,47 @@ public final class HarnessTicketProcessor implements TicketWorker {
         // backend, pushed and logged, so it must not carry the raw title.
         String branchName = config.getGitHubBranchName(
             pickedUp.getId(), redactor.redact(pickedUp.getTitle()));
-        if (!startDurableRun(pickedUp, branchName)) {
+
+        RepoProfileSnapshot profileSnapshot = null;
+        try {
+            profileSnapshot = repoProfileSource.fetch();
+        } catch (IOException e) {
+            log.warn("Could not fetch the repo profile; using autodetection: {}", e.getMessage());
+        } catch (IllegalArgumentException e) {
+            postMessage(pickedUp.getId(), "update",
+                "The active repo profile is invalid: " + e.getMessage()
+                    + ". No run was started.");
+            release(pickedUp.getId());
+            currentTicketId = null;
+            currentStep = null;
+            return;
+        }
+
+        HarnessConfig effectiveHarnessConfig = harnessConfig;
+        if (profileSnapshot != null) {
+            Duration profileBudget = Duration.ofMinutes(
+                profileSnapshot.profile().maxRoundMinutes());
+            if (harnessConfig != null && harnessConfig.maxDuration() != null
+                && profileBudget.compareTo(harnessConfig.maxDuration()) < 0) {
+                effectiveHarnessConfig = harnessConfig.withMaxDuration(profileBudget);
+            }
+        }
+        if (effectiveHarnessConfig != null && effectiveHarnessConfig.maxDuration() != null) {
+            deadline = Instant.now().plus(effectiveHarnessConfig.maxDuration());
+        }
+
+        if (profileSnapshot != null
+            && !profileRepoMatchesConfigured(profileSnapshot.profile())) {
+            postMessage(pickedUp.getId(), "update",
+                "The active repo profile points at a different repository than "
+                    + "REPO_OWNER/REPO_NAME. No run was started.");
+            release(pickedUp.getId());
+            currentTicketId = null;
+            currentStep = null;
+            return;
+        }
+
+        if (!startDurableRun(pickedUp, branchName, profileSnapshot)) {
             // A live lease or published evidence means this ticket must not be
             // run again automatically. Leave recovery to the operator/reaper.
             String detail = startFailureReason;
@@ -682,6 +774,25 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
             log.info("Fetched {} planning documents", planningDocs.size());
 
+            RepoProfile profile = profileSnapshot == null ? null : profileSnapshot.profile();
+            SandboxConfig effectiveSandboxConfig = sandboxConfig;
+            if (profile != null && sandboxConfig.isDocker()) {
+                try {
+                    effectiveSandboxConfig = sandboxConfig.withRepoProfile(
+                        profile, config.getProjectId(), profileSnapshot.version());
+                } catch (RuntimeException e) {
+                    failAndRelease(pickedUp.getId(),
+                        "The active repo profile cannot be applied: " + e.getMessage());
+                    return;
+                }
+            } else if (profile != null) {
+                if (!profile.caches().isEmpty() || profile.image() != null
+                    || profile.egress() != null) {
+                    log.warn("Repo profile image/caches/egress are ignored in host mode; "
+                        + "enable SANDBOX_MODE=docker to use them");
+                }
+            }
+
             workspace = workspaceFactory.apply(config.getRepoName());
 
             if (config.isDryRun()) {
@@ -693,15 +804,27 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
             String repoUrl = "https://github.com/" + config.getRepoOwner() + "/"
                 + config.getRepoName() + ".git";
-            workspace.cloneRepo(repoUrl, branchName);
+            Duration cloneCap = profile == null
+                ? CLONE_TIMEOUT
+                : Duration.ofMinutes(profile.timeouts().setupMinutes());
+            Duration cloneTimeout = remaining(deadline, cloneCap);
+            if (profile == null) {
+                workspace.cloneRepo(repoUrl, branchName, null, cloneTimeout);
+            } else {
+                workspace.cloneRepo(repoUrl, branchName, profile.baseBranch(), cloneTimeout);
+            }
             java.util.Map<String, Object> cloned = new java.util.HashMap<>();
             cloned.put("workspacePath", String.valueOf(workspace.getRepoDir()));
             if (workspace.getBaseCommit() != null) {
                 cloned.put("baseSha", workspace.getBaseCommit());
             }
+            if (profileSnapshot != null) {
+                cloned.put("repoProfileId", profileSnapshot.id());
+                cloned.put("repoProfileVersion", profileSnapshot.version());
+            }
             recordCheckpoint("cloned", cloned);
 
-            List<String> commands = safeResolveCommands(workspace);
+            List<String> commands = safeResolveCommands(workspace, profile);
             if (commands.isEmpty()) {
                 failAndRelease(pickedUp.getId(),
                     "No verification commands were detected and HARNESS_VERIFY_COMMANDS is empty. "
@@ -712,9 +835,9 @@ public final class HarnessTicketProcessor implements TicketWorker {
             // Create the sandbox before the model runs. In Docker mode a
             // create failure is fatal: repo code must never fall back to the
             // supervisor filesystem.
-            if (sandboxConfig.isDocker()) {
+            if (effectiveSandboxConfig.isDocker()) {
                 currentStep = "sandbox";
-                sandbox = createSandbox(workspace);
+                sandbox = createSandbox(workspace, effectiveSandboxConfig);
                 recordCheckpoint("sandbox_ready", Map.of("sandbox", sandbox.id()));
 
                 // Route model-driven bash calls into the same sandbox. A bridge
@@ -722,7 +845,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 // repo commands on the supervisor filesystem.
                 currentStep = "sandbox-bridge";
                 bridge = new SandboxBashBridge(
-                    sandboxRunner, sandbox, workspace.getRepoDir(), sandboxConfig.execTimeout());
+                    sandboxRunner, sandbox, workspace.getRepoDir(),
+                    effectiveSandboxConfig.execTimeout());
                 try {
                     bridge.start();
                 } catch (IOException e) {
@@ -733,7 +857,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
 
             tempDir = Files.createTempDirectory("opencode-harness-");
-            harness = harnessFactory.create(tempDir, bridge);
+            harness = harnessFactory.create(tempDir, bridge, effectiveHarnessConfig);
 
             currentStep = "starting-harness";
             harness.start(workspace.getRepoDir());
@@ -743,7 +867,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             currentStep = "implementing";
             String prompt = promptBuilder.build(
                 pickedUp, planningDocs, commands, bridge != null,
-                sandboxConfig.networkEnabled());
+                effectiveSandboxConfig.networkEnabled());
             harness.subscribe(sessionId, event -> {
                 if (event.isToolEvent()) {
                     currentStep = "implementing";
@@ -764,10 +888,17 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
             currentStep = "installing";
             List<VerificationResult> verification = new ArrayList<>();
-            List<String> installCommands = safeResolveInstallCommands(workspace);
+            List<String> installCommands = safeResolveInstallCommands(workspace, profile);
+            Map<String, String> profileEnv = profile == null
+                ? Map.of()
+                : (effectiveSandboxConfig.isDocker() ? profile.environment() : profile.env());
+            Duration installTimeout = profile == null
+                ? INSTALL_TIMEOUT
+                : Duration.ofMinutes(profile.timeouts().setupMinutes());
             if (!installCommands.isEmpty()) {
                 List<VerificationResult> installResults = runVerification(
-                    sandbox, workspace, installCommands, remaining(deadline, INSTALL_TIMEOUT));
+                    sandbox, workspace, installCommands, remaining(deadline, installTimeout),
+                    profileEnv);
                 verification.addAll(installResults);
                 List<VerificationResult> installFailures = failures(installResults);
                 if (!installFailures.isEmpty()) {
@@ -779,8 +910,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
 
             currentStep = "verifying";
+            Duration verifyTimeout = profile == null
+                ? VERIFICATION_TIMEOUT
+                : Duration.ofMinutes(profile.timeouts().verifyMinutes());
             List<VerificationResult> verifyResults = runVerification(
-                sandbox, workspace, commands, remaining(deadline, VERIFICATION_TIMEOUT));
+                sandbox, workspace, commands, remaining(deadline, verifyTimeout), profileEnv);
             verification.addAll(verifyResults);
             recordCheckpoint("verifying", Map.of());
             if (!verification.isEmpty()) {
@@ -840,11 +974,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 if (!assertLeaseHeld(pickedUp.getId())) {
                     return;
                 }
+                String prBase = profile == null ? "main" : profile.baseBranchOr("main");
                 String prUrl = gitHubService.createPullRequest(
                     publishTitle,
                     buildPrBody(pickedUp, branchName, commitSha, diff, verification),
                     branchName,
-                    "main"
+                    prBase
                 );
                 publishedPrUrl = prUrl;
                 recordPublishSafely(null, prUrl);
@@ -944,7 +1079,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
     }
 
-    private List<String> safeResolveCommands(WorkspaceManager workspace) {
+    private List<String> safeResolveCommands(WorkspaceManager workspace, RepoProfile profile) {
+        if (profile != null && !profile.verify().isEmpty()) {
+            return profile.verify();
+        }
         try {
             Path repoDir = workspace.getRepoDir();
             if (repoDir == null) {
@@ -958,7 +1096,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
     }
 
-    private List<String> safeResolveInstallCommands(WorkspaceManager workspace) {
+    private List<String> safeResolveInstallCommands(WorkspaceManager workspace, RepoProfile profile) {
+        if (profile != null && !profile.setup().isEmpty()) {
+            return profile.setup();
+        }
         try {
             Path repoDir = workspace.getRepoDir();
             if (repoDir == null) {
@@ -976,13 +1117,16 @@ public final class HarnessTicketProcessor implements TicketWorker {
      * Create the per-run sandbox. Any failure is fatal in Docker mode: the
      * harness must not fall back to running repo code on the supervisor.
      */
-    private SandboxHandle createSandbox(WorkspaceManager workspace) throws IOException {
+    private SandboxHandle createSandbox(
+        WorkspaceManager workspace,
+        SandboxConfig effectiveConfig
+    ) throws IOException {
         try {
-            SandboxSpec spec = sandboxConfig.specFor(workspace.getRepoDir());
+            SandboxSpec spec = effectiveConfig.specFor(workspace.getRepoDir());
             return sandboxRunner.create(spec);
         } catch (IOException | RuntimeException e) {
             throw new IOException(
-                "Sandbox creation failed (" + sandboxConfig.mode() + "): " + e.getMessage()
+                "Sandbox creation failed (" + effectiveConfig.mode() + "): " + e.getMessage()
                     + ". Refusing to run repo code without the requested sandbox.", e);
         }
     }
@@ -995,12 +1139,17 @@ public final class HarnessTicketProcessor implements TicketWorker {
         SandboxHandle sandbox,
         WorkspaceManager workspace,
         List<String> commands,
-        Duration timeout
+        Duration timeout,
+        Map<String, String> environment
     ) {
         if (sandbox != null) {
             return verificationRunner.run(sandboxRunner, sandbox, commands, timeout);
         }
-        return verificationRunner.run(workspace.getRepoDir(), commands, timeout);
+        if (environment == null || environment.isEmpty()) {
+            return verificationRunner.run(workspace.getRepoDir(), commands, timeout);
+        }
+        return verificationRunner.run(
+            workspace.getRepoDir(), commands, timeout, environment);
     }
 
     private static List<VerificationResult> failures(List<VerificationResult> results) {
@@ -1058,7 +1207,31 @@ public final class HarnessTicketProcessor implements TicketWorker {
      * HARNESS_DURABILITY_REQUIRED=true). Once a run exists, every lease/auth
      * failure fails closed: the harness must not publish without the lease.
      */
-    private boolean startDurableRun(Ticket ticket, String branchName) {
+    private boolean profileRepoMatchesConfigured(RepoProfile profile) {
+        if (profile == null || profile.repoUrl() == null || profile.repoUrl().isBlank()) {
+            return true;
+        }
+        if (config.getRepoOwner() == null || config.getRepoOwner().isBlank()
+            || config.getRepoName() == null || config.getRepoName().isBlank()) {
+            return true;
+        }
+        String configured = "https://github.com/" + config.getRepoOwner() + "/"
+            + config.getRepoName();
+        return normalizeRepoUrl(profile.repoUrl()).equals(normalizeRepoUrl(configured));
+    }
+
+    private static String normalizeRepoUrl(String value) {
+        return String.valueOf(value).trim()
+            .replaceAll("\\.git$", "")
+            .replaceAll("/+$", "")
+            .toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private boolean startDurableRun(
+        Ticket ticket,
+        String branchName,
+        RepoProfileSnapshot profile
+    ) {
         leaseLost = false;
         startFailureReason = null;
         published = false;
@@ -1078,14 +1251,27 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         Map<String, Object> run;
         try {
-            run = apiService.startHarnessRun(
-                ticket.getId(),
-                branchName,
-                null,
-                provider == null ? null : provider.type(),
-                provider == null ? null : provider.model(),
-                attempt
-            );
+            if (profile == null) {
+                run = apiService.startHarnessRun(
+                    ticket.getId(),
+                    branchName,
+                    null,
+                    provider == null ? null : provider.type(),
+                    provider == null ? null : provider.model(),
+                    attempt
+                );
+            } else {
+                run = apiService.startHarnessRun(
+                    ticket.getId(),
+                    branchName,
+                    null,
+                    provider == null ? null : provider.type(),
+                    provider == null ? null : provider.model(),
+                    attempt,
+                    profile.id(),
+                    profile.version()
+                );
+            }
         } catch (ApiService.FatalRunException e) {
             // The backend explicitly refused the run (another active run,
             // unauthorized ticket, invalid payload). Never publish anyway.

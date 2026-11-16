@@ -5,27 +5,64 @@
 
 ## Plan
 
-- [ ] Define the repo profile schema
-- [ ] Add onboarding detection and a project settings UI/API
-- [ ] Define per-stack sandbox images and cached dependencies
-- [ ] Support service dependencies (Postgres, Redis, etc.)
-- [ ] Define setup/verify/test-data commands and timeouts
-- [ ] Inject non-secret env vars safely
-- [ ] Handle flaky tests and known failures
-- [ ] Add profile validation/dry-run
-- [ ] Test Node, Python, Java and monorepo profiles
+### Slice 1 — schema, detection, runtime, dry run
+
+- [x] Migration `050_repo_profiles.sql` + rollback: profiles, validations,
+      nullable `harness_runs` profile columns.
+- [x] Backend `RepoProfileService`: versioned create/update/activate, active
+      lookup, GitHub-manifest detection, agent read.
+- [x] Backend `RepoProfileValidationService`: queued dry runs, atomic claim,
+      finish, profile-budget stale reap.
+- [x] Backend Joi schema + OpenAPI routes + project owner/super-admin boundary.
+- [x] Agent `RepoProfile` model: re-validate schema, image digest, env secrets,
+      commands, cache rejection and origin CA bundle.
+- [x] Agent profile fetch + runtime use: base branch, setup/verify, timeouts,
+      env, image, max-round deadline, run profile columns.
+- [x] Agent `ProfileValidationProcessor`: clone → sandbox → setup → verify →
+      report; no model session, no publish.
+- [x] fg-34/D27 profile origin CA: only allowlisted exact hosts, terminate mode
+      only, audited through the existing supervisor/proxy logs.
+- [x] Tests for schema/API/detection/dry-run/runtime/repo-binding/activation/D27 paths.
+- [x] Update `PENDING.txt`, `HARNESS_ROADMAP.md`, fg-34 D27 status.
 
 ## Per-file changes
 
-To be filled in when implementation starts.
-
 | File | Action | Change |
 |---|---|---|
-| | | |
+| `backend/src/migrations/050_repo_profiles.sql` | add | Profile/validation tables and harness-run profile columns |
+| `backend/src/migrations/050_repo_profiles_rollback.sql` | add | Drop new tables/columns |
+| `backend/src/migrations/apply.js` | edit | Register `050` |
+| `backend/src/validators/repoProfiles.js` | add | Profile schema, secret/env/host/CA validation |
+| `backend/src/services/RepoProfileService.js` | add | Versioning, activation, detection, agent read |
+| `backend/src/services/RepoProfileValidationService.js` | add | Dry-run queue/claim/finish/profile-budget stale reap |
+| `backend/src/api/repoProfiles.js` | add | Project/agent routes, OpenAPI JSDoc |
+| `backend/src/api/v1/index.js` | edit | Mount router before `/projects` |
+| `backend/src/providers/github/api.js` | edit | Bounded repository file-content read |
+| `backend/src/providers/github/index.js` | edit | Expose file-content read |
+| `backend/src/services/GitHubService.js` | edit | Project-scoped manifest read helper |
+| `backend/src/__tests__/repoProfileService.test.js` | add | Version/activation/validation/detection |
+| `backend/src/__tests__/repoProfileValidationService.test.js` | add | Queue/claim/finish/stale/permission |
+| `backend/src/__tests__/integration/repoProfiles.test.js` | add | Real-Postgres migration/service/dry-run/activation |
+| `backend/src/__tests__/repoProfilesApi.test.js` | add | Route auth/contract/error paths |
+| `agent/.../harness/RepoProfile.java` | add | Validated profile model + env mapping + cache rejection |
+| `agent/.../harness/RepoProfileFetcher.java` | add | Agent profile fetch, fallback warning |
+| `agent/.../harness/ProfileValidationProcessor.java` | add | Dry-run execution and reporting |
+| `agent/.../service/ApiService.java` | edit | Profile/validation endpoints |
+| `agent/.../service/WorkspaceManager.java` | edit | Base-branch checkout overload |
+| `agent/.../harness/SandboxConfig.java` | edit | Profile image/env/CA derivation |
+| `agent/.../harness/VerificationRunner.java` | edit | Host-mode profile env |
+| `agent/.../harness/HarnessTicketProcessor.java` | edit | Fetch/use profile, run columns, PR base |
+| `agent/.../AgentApp.java` | edit | Poll dry-run validation queue |
+| `agent/src/test/java/.../RepoProfileTest.java` | add | Model validation/env/cache-rejection/CA |
+| `agent/src/test/java/.../ProfileValidationProcessorTest.java` | add | Success/failure/cleanup/claim |
+| `agent/src/test/java/.../SandboxConfigTest.java` | edit | Profile image/env/CA |
+| `agent/src/test/java/.../WorkspaceManagerTest.java` | edit | Base branch + failure |
+| `agent/src/test/java/.../HarnessTicketProcessorTest.java` | edit | Profile-driven run |
 
 ## Dependencies
 
-- fg-30, fg-34
+- fg-30 Phase 1, fg-34 (merged sandbox/egress/D27 runtime).
+- fg-36 will consume `profile.base_branch`; slice 1 uses it locally.
 
 ## Verification matrix (canonical)
 
@@ -33,16 +70,18 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
-| FR1 | | | | |
-| FR2 | | | | |
-| FR3 | | | | |
-| FR4 | | | | |
-| FR5 | | | | |
-| FR6 | | | | |
-| FR7 | | | | |
-| FR8 | | | | |
-| FR9 | | | | |
-| FR10 | | | | |
+| FR1 | Backend | `repoProfileService.test.js`, `repoProfiles.test.js` | Create/update/activate versions; reject missing verify, secret env, unpinned image, unknown fields; require an active connected repo with a matching URL at every transition; activation requires a successful exact-content dry run | `cd backend && npx jest repoProfileService --runInBand`; integration test with real Postgres |
+| FR1 | Agent | `RepoProfileTest.java` | Parse/validate v1 fields; reject unknown/invalid security fields | `cd agent && mvn -Dtest=RepoProfileTest test` |
+| FR2 | Backend | `repoProfileService.test.js` | Detect Node/Python/Java/Go/monorepo manifests and propose commands | same |
+| FR3 | Backend/Agent | `repoProfileService.test.js`, `SandboxConfigTest.java` | Image override only with `@sha256`; profile image reaches `SandboxSpec` | both |
+| FR4 | Backend/Agent | `repoProfileService.test.js`, `RepoProfileTest.java` | Non-empty caches are rejected until D9/fg-44 (no unbounded volume); cache quota/GC is deferred | both |
+| FR5 | Backend | `repoProfileService.test.js` | Non-empty `services` is rejected until slice 2 (fail closed) | `cd backend && npx jest repoProfileService --runInBand` |
+| FR6 | Agent | `HarnessTicketProcessorTest.java`, `ProfileValidationProcessorTest.java`, `WorkspaceManagerTest.java` | Model session and setup/verify share the `max_round_minutes` cap; clone has a bounded timeout; failure stops publish | `cd agent && mvn -Dtest=HarnessTicketProcessorTest,ProfileValidationProcessorTest,WorkspaceManagerTest test` |
+| FR7 | Backend/Agent | `repoProfileService.test.js`, `RepoProfileTest.java` | Non-secret env accepted; secret-like key/value rejected | both |
+| FR8 | Backend | `repoProfileService.test.js` | Non-empty `flaky_tests` is rejected until slice 3 (never silently ignored) | `cd backend && npx jest repoProfileService --runInBand` |
+| FR9 | Backend/Agent | `repoProfileValidationService.test.js`, `ProfileValidationProcessorTest.java` | Queue/claim/finish; success/failure result; profile-budget stale reap (>60-minute regression); activation requires the successful exact `profile_hash`; dry runs run after ticket work | both |
+| FR10 | Agent | `HarnessTicketProcessorTest.java` | Missing/failed profile fetch warns and keeps autodetection; a profile for another repo is rejected before run start | `cd agent && mvn -Dtest=HarnessTicketProcessorTest test` |
+| D27 | Backend/Agent | `repoProfileService.test.js`, `SandboxConfigTest.java` | CA bundle shape validated; host must be allowlisted; `sni-only` mismatch fails closed | both |
 
 ## Review checklist
 
@@ -57,4 +96,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| | | | |
+| 2026-11-16 | `5af3d48` | Backend 137 suites / 1707 tests; agent 678 tests / 9 skipped | Pass. `node planning/check-planning.js`, backend lint (0 errors), `git diff --check`, root and agent Compose configs pass. Slice 1 covers FR1-FR3, FR6, FR7, FR9, FR10 and the D27 profile handoff; FR4/FR5/FR8 fail closed until their slices. |
+| 2026-11-16 | `cdb6d13` | Backend 137 suites / 1717 tests; agent 683 tests / 9 skipped; real-Postgres integration 4 tests | Final review cleanup: `max_round_minutes` is passed to the OpenCode client so the model session is bounded; dry-run clone/sandbox setup share the overall deadline and clone has an explicit timeout; harness-run profile evidence requires an active profile with a matching successful validation; migration 050 adds idempotent `profile_hash` columns; cache documentation drift removed. |
+| 2026-11-16 | `32ce869` | Backend 137 suites / 1719 tests; agent 683 tests / 9 skipped; integration 6 tests | Upgrade-safe migration: `profile_hash` ALTERs run before the index that references them; a real-Postgres test creates the earlier draft schema and applies 050. Legacy null profile hashes are persisted when queuing validation or activating, so existing profiles can be validated and activated. Runtime clone timeout now follows the profile setup budget. |
+| 2026-11-16 | `97fcc99` | Backend 137 suites / 1721 tests | Closed the legacy-hash race: the validation request only backfills `profile_hash` when it is still null, re-reads on a lost update and fails with a conflict if the profile changed. Activation also backfills an already-active legacy row. Added unit regressions for both paths. |

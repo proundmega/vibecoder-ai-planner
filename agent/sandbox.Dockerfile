@@ -24,6 +24,7 @@ RUN apk add --no-cache \
 
 WORKDIR /workspace
 
+
 # The official node image already provides uid/gid 1000; the runner overrides
 # --user to match the workspace owner.
 USER 1000:1000

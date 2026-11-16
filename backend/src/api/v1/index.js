@@ -4,6 +4,7 @@ const router = express.Router();
 const userRouter = require('../user');
 const usersManagementRouter = require('../users');
 const projectsRouter = require('../projects');
+const repoProfilesRouter = require('../repoProfiles');
 const ticketsRouter = require('../tickets');
 const pricingRouter = require('../pricing');
 const agentsRouter = require('../agents');
@@ -193,6 +194,8 @@ router.use('/compute-nodes', computeNodesRouter);
 // Mount all route modules under /v1
 router.use('/users-management', userRouter);
 router.use('/users', usersManagementRouter);
+// Repo-profile routes must be mounted before the generic /projects router.
+router.use('/projects', repoProfilesRouter);
 router.use('/projects', projectsRouter);
 router.use('/tickets', ticketsRouter);
 router.use('/pricing', pricingRouter);

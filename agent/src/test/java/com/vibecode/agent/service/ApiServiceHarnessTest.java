@@ -254,6 +254,72 @@ class ApiServiceHarnessTest {
     }
 
     @Test
+    void startRunIncludesTheRepoProfileRevisionWhenProvided() throws Exception {
+        respond("/api/v1/harness/runs", 201, ok("{\"id\":\"run-1\"}"));
+
+        api.startHarnessRun(
+            42L, "feat/fg-39", null, "anthropic", "claude", 2,
+            "11111111-1111-4111-8111-111111111111", 3);
+
+        RecordedRequest request = lastRequest();
+        assertTrue(request.body().contains(
+            "\"repoProfileId\":\"11111111-1111-4111-8111-111111111111\""), request.body());
+        assertTrue(request.body().contains("\"repoProfileVersion\":3"), request.body());
+    }
+
+    @Test
+    void fetchesTheActiveRepoProfileForTheAgent() throws Exception {
+        respond("/api/v1/projects/1/repo-profile/agent", 200, ok("""
+            {"id":"11111111-1111-4111-8111-111111111111","version":3,"status":"active",
+             "profile":{"schema_version":1,"verify":["npm test"],"env":{"NODE_ENV":"test"}}}
+            """));
+
+        var snapshot = api.getRepoProfile("1");
+
+        assertEquals("11111111-1111-4111-8111-111111111111", snapshot.id());
+        assertEquals(3, snapshot.version());
+        assertEquals(List.of("npm test"), snapshot.profile().verify());
+        RecordedRequest request = lastRequest();
+        assertEquals("GET", request.method());
+        assertEquals("/api/v1/projects/1/repo-profile/agent", request.path());
+        assertEquals("test-agent-key", request.apiKey());
+    }
+
+    @Test
+    void returnsNullWhenTheProjectHasNoActiveProfile() throws Exception {
+        respond("/api/v1/projects/1/repo-profile/agent", 200, ok("null"));
+        assertEquals(null, api.getRepoProfile("1"));
+    }
+
+    @Test
+    void claimsAndFinishesRepoProfileValidations() throws Exception {
+        respond("/api/v1/projects/1/repo-profile/validations/claim", 200, ok("""
+            {"id":"22222222-2222-4222-8222-222222222222","profile_version":3,
+             "status":"running","profile":{"schema_version":1,"verify":["npm test"]}}
+            """));
+        var claimed = api.claimRepoProfileValidation("1");
+        assertEquals("22222222-2222-4222-8222-222222222222", claimed.id());
+        assertEquals("POST", lastRequest().method());
+        assertEquals("/api/v1/projects/1/repo-profile/validations/claim",
+            lastRequest().path());
+
+        respond("/api/v1/projects/1/repo-profile/validations/22222222-2222-4222-8222-222222222222/finish",
+            200, ok("""
+            {"id":"22222222-2222-4222-8222-222222222222","status":"succeeded"}
+            """));
+        var finished = api.finishRepoProfileValidation(
+            "1", "22222222-2222-4222-8222-222222222222", "succeeded",
+            Map.of("commands", List.of()), null);
+        assertEquals("succeeded", finished.status());
+        RecordedRequest request = lastRequest();
+        assertEquals(
+            "/api/v1/projects/1/repo-profile/validations/22222222-2222-4222-8222-222222222222/finish",
+            request.path());
+        assertTrue(request.body().contains("\"status\":\"succeeded\""), request.body());
+        assertFalse(request.body().contains("\"error\""), request.body());
+    }
+
+    @Test
     void guardedTicketReleaseReturnsTheBackendBoolean() throws Exception {
         respond("/api/v1/harness/runs/run-1/release-ticket", 200,
             ok("{\"released\":true}"));

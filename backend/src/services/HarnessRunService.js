@@ -105,11 +105,23 @@ class HarnessRunService {
     provider = null,
     model = null,
     attempt = 1,
+    repoProfileId = null,
+    repoProfileVersion = null,
   } = {}) {
     const normalisedTicketId = positiveInteger(ticketId, 'ticketId');
     const normalisedAgentId = positiveInteger(agentId, 'agentId');
     const normalisedBranch = requiredString(branch, 'branch');
     const normalisedAttempt = positiveInteger(attempt, 'attempt');
+    if ((repoProfileId == null) !== (repoProfileVersion == null)) {
+      throw new ValidationError(
+        'repoProfileId and repoProfileVersion must be provided together');
+    }
+    const normalisedProfileId = repoProfileId == null
+      ? null
+      : requiredUuid(repoProfileId, 'repoProfileId');
+    const normalisedProfileVersion = repoProfileVersion == null
+      ? null
+      : positiveInteger(repoProfileVersion, 'repoProfileVersion');
 
     // bp-134: a new durable start must not bypass dependency readiness. Lock
     // the target first so a concurrent dependency reopen cannot slip between
@@ -140,11 +152,33 @@ class HarnessRunService {
         });
       }
 
+      if (normalisedProfileId) {
+        const profile = await client.query(
+          `SELECT rp.id, rp.version
+           FROM repo_profiles rp
+           JOIN tickets t ON t.project_id = rp.project_id
+           WHERE rp.id = $1 AND t.id = $2
+             AND rp.status = 'active'
+             AND EXISTS (
+               SELECT 1 FROM repo_profile_validations v
+               WHERE v.profile_id = rp.id
+                 AND v.status = 'succeeded'
+                 AND v.profile_hash = rp.profile_hash
+             )`,
+          [normalisedProfileId, normalisedTicketId]
+        );
+        if (profile.rows.length === 0
+            || Number(profile.rows[0].version) !== normalisedProfileVersion) {
+          throw new ValidationError(
+            "repo profile does not belong to the ticket's project or version does not match");
+        }
+      }
+
       const result = await client.query(
         `INSERT INTO harness_runs
            (ticket_id, agent_id, branch, base_sha, workspace_path, session_id,
-            provider, model, attempt)
-         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
+            provider, model, attempt, repo_profile_id, repo_profile_version)
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
          FROM tickets t
          JOIN agents a ON a.id = $2
          WHERE t.id = $1
@@ -170,6 +204,8 @@ class HarnessRunService {
           provider,
           model,
           normalisedAttempt,
+          normalisedProfileId,
+          normalisedProfileVersion,
         ]
       );
 

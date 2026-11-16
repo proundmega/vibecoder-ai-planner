@@ -12,6 +12,10 @@ public enum SandboxMode {
     /** Run commands in a disposable, hardened Docker container. */
     DOCKER;
 
+    public String value() {
+        return name().toLowerCase(Locale.ROOT);
+    }
+
     public static SandboxMode from(String value) {
         if (value == null || value.isBlank()) {
             return HOST;
