@@ -241,6 +241,195 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void reapsStalePoolAgentResourcesWhenNoAgentOwnerIsLive() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              ps)
+                case "$*" in
+                  *"label=vibecode.sandbox.owner=pool-2"*) echo aaaaaaaaaaaa ;;
+                  *"label=vibecode.agent.owner=pool-1"*) : ;;
+                  *"label=vibecode.agent.owner=pool-3"*) echo eeeeeeeeeeee ;;
+                  *"label=vibecode.sandbox.managed=true"*)
+                    printf 'bbbbbbbbbbbb pool-1\ncccccccccccc pool-3\n' ;;
+                  *) : ;;
+                esac
+                ;;
+              network)
+                case "$*" in
+                  *"ls -q --filter label=vibecode.sandbox.owner=pool-2"*)
+                    echo 111111111111 ;;
+                  *"ls"*"label=vibecode.sandbox.managed=true"*)
+                    printf '222222222222 pool-1\n333333333333 pool-3\n' ;;
+                esac
+                ;;
+              info) echo daemon-1 ;;
+              rm) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "AGENT_ID", "2",
+            "SANDBOX_OWNER", "pool-2",
+            "SANDBOX_POOL_AGENT", "true",
+            "SANDBOX_DAEMON_ID", "daemon-1"
+        )::get);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            runner.reapOrphans();
+        }
+
+        String commands = Files.readString(log);
+        assertTrue(commands.contains(
+            "ps -aq --filter label=vibecode.sandbox.owner=pool-2"), commands);
+        assertTrue(commands.contains("info --format {{.ID}}"), commands);
+        assertTrue(commands.contains(
+            "ps -a --filter label=vibecode.sandbox.managed=true --format"), commands);
+        assertTrue(commands.contains(
+            "ps -aq --filter label=vibecode.agent.owner=pool-1"), commands);
+        assertTrue(commands.contains(
+            "ps -aq --filter label=vibecode.agent.owner=pool-3"), commands);
+        assertTrue(commands.contains("rm -f aaaaaaaaaaaa"), commands);
+        assertTrue(commands.contains("rm -f bbbbbbbbbbbb"), commands);
+        assertTrue(commands.contains("network rm 111111111111"), commands);
+        assertTrue(commands.contains("network rm 222222222222"), commands);
+        assertFalse(commands.contains("rm -f cccccccccccc"), commands);
+        assertFalse(commands.contains("network rm 333333333333"), commands);
+    }
+
+    @Test
+    void skipsTheStaleSweepWhenTheAgentAndApiDaemonsDiffer() throws IOException {
+        String commands = runPoolReap("""
+            case "$1" in
+              info) echo daemon-2 ;;
+              ps)
+                case "$*" in
+                  *"sandbox.owner=pool-2"*) : ;;
+                  *"sandbox.managed=true"*)
+                    printf 'bbbbbbbbbbbb pool-1\n' ;;
+                  *) : ;;
+                esac
+                ;;
+              network)
+                case "$*" in
+                  *"ls -q --filter label=vibecode.sandbox.owner=pool-2"*) : ;;
+                esac
+                ;;
+              rm) exit 0 ;;
+            esac
+            """);
+
+        assertTrue(commands.contains("info --format {{.ID}}"), commands);
+        assertFalse(commands.contains("label=vibecode.sandbox.managed=true"), commands);
+        assertFalse(commands.contains("rm -f bbbbbbbbbbbb"), commands);
+    }
+
+    @Test
+    void skipsTheStaleOwnerWhenAgentLivenessCannotBeChecked() throws IOException {
+        String commands = runPoolReap("""
+            case "$1" in
+              info) echo daemon-1 ;;
+              ps)
+                case "$*" in
+                  *"sandbox.owner=pool-2"*) : ;;
+                  *"agent.owner=pool-1"*) exit 1 ;;
+                  *"sandbox.managed=true"*)
+                    printf 'bbbbbbbbbbbb pool-1\n' ;;
+                  *) : ;;
+                esac
+                ;;
+              network)
+                case "$*" in
+                  *"ls -q --filter label=vibecode.sandbox.owner=pool-2"*) : ;;
+                esac
+                ;;
+              rm) exit 0 ;;
+            esac
+            """);
+
+        assertTrue(commands.contains("agent.owner=pool-1"), commands);
+        assertFalse(commands.contains("rm -f bbbbbbbbbbbb"), commands);
+    }
+
+    @Test
+    void ignoresNumericOwnersAndManagedListFailures() throws IOException {
+        String commands = runPoolReap("""
+            case "$1" in
+              info) echo daemon-1 ;;
+              ps)
+                case "$*" in
+                  *"sandbox.owner=pool-2"*) : ;;
+                  *"sandbox.managed=true"*)
+                    printf 'bbbbbbbbbbbb 123\n' ;;
+                  *) : ;;
+                esac
+                ;;
+              network)
+                case "$*" in
+                  *"ls -q --filter label=vibecode.sandbox.owner=pool-2"*) : ;;
+                  *"label=vibecode.sandbox.managed=true"*) exit 1 ;;
+                esac
+                ;;
+              rm) exit 0 ;;
+            esac
+            """);
+
+        assertFalse(commands.contains("rm -f bbbbbbbbbbbb"), commands);
+        assertFalse(commands.contains("network rm "), commands);
+    }
+
+    @Test
+    void skipsTheStaleSweepWhenTheAgentDaemonIdCannotBeRead() throws IOException {
+        String commands = runPoolReap("""
+            case "$1" in
+              info) exit 1 ;;
+              ps)
+                case "$*" in
+                  *"sandbox.owner=pool-2"*) : ;;
+                  *"sandbox.managed=true"*)
+                    printf 'bbbbbbbbbbbb pool-1\n' ;;
+                  *) : ;;
+                esac
+                ;;
+              network)
+                case "$*" in
+                  *"ls -q --filter label=vibecode.sandbox.owner=pool-2"*) : ;;
+                esac
+                ;;
+              rm) exit 0 ;;
+            esac
+            """);
+
+        assertTrue(commands.contains("info --format {{.ID}}"), commands);
+        assertFalse(commands.contains("label=vibecode.sandbox.managed=true"), commands);
+        assertFalse(commands.contains("rm -f bbbbbbbbbbbb"), commands);
+    }
+
+    private String runPoolReap(String body) throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, body);
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "AGENT_ID", "2",
+            "SANDBOX_OWNER", "pool-2",
+            "SANDBOX_POOL_AGENT", "true",
+            "SANDBOX_DAEMON_ID", "daemon-1"
+        )::get);
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            runner.reapOrphans();
+        }
+        return Files.readString(log);
+    }
+
+    @Test
     void proxyArgsClearTheTestSeamAndUseTheConfiguredImage() throws IOException {
         SandboxConfig config = SandboxConfig.from(env(
             "SANDBOX_MODE", "docker",

@@ -179,7 +179,7 @@ describe('sandbox compose wiring', () => {
   rendered('enables the proxy API sections required for sandbox lifecycle', (rootConfig) => {
     const proxyEnv = rootConfig.services['docker-proxy'].environment;
     for (const name of [
-      'POST', 'CONTAINERS', 'EXEC', 'IMAGES', 'NETWORKS', 'VOLUMES',
+      'POST', 'CONTAINERS', 'EXEC', 'IMAGES', 'INFO', 'NETWORKS', 'VOLUMES',
       'ALLOW_START', 'ALLOW_STOP', 'ALLOW_RESTARTS', 'ALLOW_PAUSE',
       'ALLOW_UNPAUSE',
     ]) {

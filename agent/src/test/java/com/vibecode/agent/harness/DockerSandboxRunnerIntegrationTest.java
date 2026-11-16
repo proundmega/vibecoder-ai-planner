@@ -15,10 +15,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -401,6 +405,148 @@ class DockerSandboxRunnerIntegrationTest {
             } finally {
                 runner.destroy(handle);
             }
+        }
+    }
+
+    @Test
+    void reapsOnlyStalePoolOwnersAgainstRealDocker() throws Exception {
+        String image = System.getenv("SANDBOX_IT_IMAGE");
+        Assumptions.assumeTrue(image != null && !image.isBlank(),
+            "SANDBOX_IT_IMAGE is not set; skipping the real-Docker reaper test");
+
+        String token = UUID.randomUUID().toString().replace("-", "").substring(0, 10);
+        String staleOwner = "pool-it-stale-" + token;
+        String liveOwner = "pool-it-live-" + token;
+        String currentOwner = "pool-it-current-" + token;
+        String numericOwner = "numeric-" + token;
+        List<String> containers = new ArrayList<>();
+        List<String> networks = new ArrayList<>();
+
+        try {
+            String staleContainer = createManagedContainer(image, staleOwner);
+            containers.add(staleContainer);
+            String staleNetwork = createManagedNetwork(staleOwner);
+            networks.add(staleNetwork);
+            String liveContainer = createManagedContainer(image, liveOwner);
+            containers.add(liveContainer);
+            String liveNetwork = createManagedNetwork(liveOwner);
+            networks.add(liveNetwork);
+            String numericContainer = createManagedContainer(image, numericOwner);
+            containers.add(numericContainer);
+            String liveAgent = createAgentContainer(image, liveOwner);
+            containers.add(liveAgent);
+
+            String daemonId = dockerCommand("info", "--format", "{{.ID}}").trim();
+            SandboxConfig config = integrationConfig(image, Map.of(
+                "SANDBOX_NETWORK", "none",
+                "SANDBOX_OWNER", currentOwner,
+                "SANDBOX_POOL_AGENT", "true",
+                "SANDBOX_DAEMON_ID", daemonId
+            ));
+            try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+                runner.reapOrphans();
+            }
+
+            assertFalse(dockerSucceeds("inspect", staleContainer),
+                "a stale pool container should be reaped");
+            assertFalse(dockerSucceeds("network", "inspect", staleNetwork),
+                "a stale pool network should be reaped");
+            assertTrue(dockerSucceeds("inspect", liveContainer),
+                "a live owner's container must be kept");
+            assertTrue(dockerSucceeds("network", "inspect", liveNetwork),
+                "a live owner's network must be kept");
+            assertTrue(dockerSucceeds("inspect", numericContainer),
+                "a numeric owner's resource must not be swept");
+            assertTrue(dockerSucceeds("inspect", liveAgent),
+                "the live agent container must remain");
+        } finally {
+            for (String id : containers) {
+                dockerCommandAllowFailure("rm", "-f", id);
+            }
+            for (String id : networks) {
+                dockerCommandAllowFailure("network", "rm", id);
+            }
+        }
+    }
+
+    private static String createManagedContainer(String image, String owner) throws Exception {
+        return dockerCommand(
+            "create",
+            "--label", "vibecode.sandbox.managed=true",
+            "--label", "vibecode.sandbox.owner=" + owner,
+            "--entrypoint", "/bin/sh",
+            image, "-c", "true"
+        ).trim();
+    }
+
+    private static String createAgentContainer(String image, String owner) throws Exception {
+        return dockerCommand(
+            "create",
+            "--label", "vibecode.agent.owner=" + owner,
+            "--entrypoint", "/bin/sh",
+            image, "-c", "true"
+        ).trim();
+    }
+
+    private static String createManagedNetwork(String owner) throws Exception {
+        return dockerCommand(
+            "network", "create",
+            "--label", "vibecode.sandbox.managed=true",
+            "--label", "vibecode.sandbox.owner=" + owner,
+            "d30-it-" + owner
+        ).trim();
+    }
+
+    private static boolean dockerSucceeds(String... args) {
+        try {
+            dockerCommand(args);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static String dockerCommand(String... args) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add("docker");
+        command.addAll(List.of(args));
+        ProcessBuilder builder = new ProcessBuilder(command);
+        builder.redirectErrorStream(true);
+        Process process = builder.start();
+
+        AtomicReference<String> output = new AtomicReference<>("");
+        AtomicReference<IOException> readFailure = new AtomicReference<>();
+        Thread reader = new Thread(() -> {
+            try (var input = process.getInputStream()) {
+                output.set(new String(input.readAllBytes()));
+            } catch (IOException e) {
+                readFailure.set(e);
+            }
+        }, "docker-test-reader");
+        reader.setDaemon(true);
+        reader.start();
+
+        if (!process.waitFor(60, TimeUnit.SECONDS)) {
+            process.destroyForcibly();
+            reader.join(2_000);
+            throw new IOException("docker command timed out: " + String.join(" ", command));
+        }
+        reader.join(2_000);
+        if (readFailure.get() != null) {
+            throw readFailure.get();
+        }
+        if (process.exitValue() != 0) {
+            throw new IOException("docker command failed (" + process.exitValue() + "): "
+                + output.get());
+        }
+        return output.get();
+    }
+
+    private static void dockerCommandAllowFailure(String... args) {
+        try {
+            dockerCommand(args);
+        } catch (Exception ignored) {
+            // Best-effort cleanup.
         }
     }
 
