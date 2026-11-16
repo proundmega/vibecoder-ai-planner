@@ -25,6 +25,7 @@ import java.util.Map;
 public class ApiService {
 
     private final OkHttpClient httpClient;
+    private final OkHttpClient eventHttpClient;
     private final ObjectMapper objectMapper;
     private final AgentConfig config;
     private final String baseUrl;
@@ -38,6 +39,14 @@ public class ApiService {
             .connectTimeout(java.time.Duration.ofSeconds(10))
             .readTimeout(java.time.Duration.ofSeconds(30))
             .writeTimeout(java.time.Duration.ofSeconds(30))
+            .build();
+        // Event emission runs on the supervisor's tool-event path. Use a short,
+        // event-specific timeout so a slow observability backend cannot stall
+        // the harness itself.
+        this.eventHttpClient = new OkHttpClient.Builder()
+            .connectTimeout(java.time.Duration.ofSeconds(2))
+            .readTimeout(java.time.Duration.ofSeconds(3))
+            .writeTimeout(java.time.Duration.ofSeconds(3))
             .build();
     }
 
@@ -170,6 +179,22 @@ public class ApiService {
             throw new IOException("Failed to start harness run: " + response.getError());
         }
         return response.getData();
+    }
+
+    /**
+     * Append a structured harness event. Best effort: the caller owns failure
+     * handling, because observability must never abort a ticket.
+     */
+    public void emitHarnessEvent(Map<String, Object> event) throws IOException {
+        ApiResponse<Map<String, Object>> response = executePostWithClient(
+            eventHttpClient,
+            baseUrl + "/harness/events",
+            event,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+        if (response.hasError()) {
+            throw new IOException("Failed to emit harness event: " + response.getError());
+        }
     }
 
     public void checkpointHarnessRun(
@@ -490,6 +515,14 @@ public class ApiService {
     }
 
     private <T> ApiResponse<T> executePost(String url, Object body, TypeReference<ApiResponse<T>> typeRef) throws IOException {
+        return executePostWithClient(httpClient, url, body, typeRef);
+    }
+
+    private <T> ApiResponse<T> executePostWithClient(
+            OkHttpClient client,
+            String url,
+            Object body,
+            TypeReference<ApiResponse<T>> typeRef) throws IOException {
         String json = body != null ? objectMapper.writeValueAsString(body) : "{}";
         RequestBody requestBody = RequestBody.create(json, MediaType.get("application/json"));
 
@@ -500,7 +533,7 @@ public class ApiService {
             .post(requestBody)
             .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = client.newCall(request).execute()) {
             String responseBody = response.body() != null ? response.body().string() : "";
             return objectMapper.readValue(responseBody, typeRef);
         }

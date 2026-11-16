@@ -22,8 +22,10 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -77,6 +79,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private final SecretRedactor redactor;
     private final PromptBuilder promptBuilder = new PromptBuilder();
     private final Map<Long, FailureState> failures = new ConcurrentHashMap<>();
+    private final HarnessEventSink eventSink;
     private final int maxAttempts = intEnv(
         "HARNESS_RETRY_PIN_ATTEMPTS",
         intEnv("HARNESS_MAX_ATTEMPTS", DEFAULT_MAX_ATTEMPTS));
@@ -106,6 +109,9 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private volatile String pendingHeadSha;
     private volatile String pendingPrUrl;
     private volatile boolean releaseAfterTerminalFinish;
+
+    private volatile HarnessEventContext eventContext;
+    private volatile boolean terminalEventEmitted;
 
     public HarnessTicketProcessor(
         AgentConfig config,
@@ -257,6 +263,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         this.publishingGuard = publishingGuard;
         this.secretLeakGuard = new SecretLeakGuard(knownSecrets(provider, githubToken));
         this.redactor = new SecretRedactor(redactionSecrets(provider, githubToken));
+        this.eventSink = new HttpHarnessEventSink(apiService);
     }
 
     public SandboxConfig sandboxConfig() {
@@ -697,6 +704,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         currentTicketId = String.valueOf(pickedUp.getId());
         currentStep = "processing";
+        eventContext = null;
+        terminalEventEmitted = false;
         Instant deadline = Instant.now().plus(maxDuration());
 
         postMessage(pickedUp.getId(), "update", "Started working on: " + pickedUp.getTitle());
@@ -862,17 +871,17 @@ public final class HarnessTicketProcessor implements TicketWorker {
             currentStep = "starting-harness";
             harness.start(workspace.getRepoDir());
             String sessionId = harness.createSession("ticket-" + pickedUp.getId());
+            if (eventContext != null) {
+                eventContext = eventContext.withSessionId(sessionId);
+            }
             recordCheckpoint("session_ready", Map.of("sessionId", sessionId));
 
             currentStep = "implementing";
             String prompt = promptBuilder.build(
                 pickedUp, planningDocs, commands, bridge != null,
                 effectiveSandboxConfig.networkEnabled());
-            harness.subscribe(sessionId, event -> {
-                if (event.isToolEvent()) {
-                    currentStep = "implementing";
-                }
-            });
+            emitPromptSent(prompt, planningDocs, commands);
+            subscribeHarnessEvents(harness, sessionId);
             try {
                 harness.sendPrompt(sessionId, prompt);
             } finally {
@@ -900,6 +909,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     sandbox, workspace, installCommands, remaining(deadline, installTimeout),
                     profileEnv);
                 verification.addAll(installResults);
+                emitVerificationResults(installResults, "install");
                 List<VerificationResult> installFailures = failures(installResults);
                 if (!installFailures.isEmpty()) {
                     failAndRelease(pickedUp.getId(),
@@ -916,6 +926,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             List<VerificationResult> verifyResults = runVerification(
                 sandbox, workspace, commands, remaining(deadline, verifyTimeout), profileEnv);
             verification.addAll(verifyResults);
+            emitVerificationResults(verifyResults, "verify");
             recordCheckpoint("verifying", Map.of());
             if (!verification.isEmpty()) {
                 postMessage(pickedUp.getId(), "update", verificationSummary(verification));
@@ -955,6 +966,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             // worktree are never trusted.
             try {
                 DiffSummary diff = workspace.stageFreshDiff();
+                emitDiffCollected(diff);
                 try {
                     publishingGuard.assertPublishable(diff);
                     secretLeakGuard.assertClean(workspace.guardedChangedBlobs());
@@ -967,6 +979,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     return;
                 }
                 String publishTitle = redactor.redact("feat: " + pickedUp.getTitle());
+                emitEvent("publish.started", Map.of(
+                    "branch", branchName,
+                    "changedFiles", diff.changedFileCount(),
+                    "changedLines", diff.changedLines()));
                 String commitSha = workspace.commitAndPushStaged(publishTitle, branchName);
                 published = true;
                 publishedHeadSha = commitSha;
@@ -983,6 +999,9 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 );
                 publishedPrUrl = prUrl;
                 recordPublishSafely(null, prUrl);
+                emitEvent("pr.opened", Map.of(
+                    "headSha", commitSha,
+                    "prUrl", prUrl == null ? "" : prUrl));
 
                 // Post-publish bookkeeping must never discard a successful push/PR.
                 if (prUrl != null && !prUrl.isBlank()) {
@@ -1005,6 +1024,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 pendingHeadSha = commitSha;
                 pendingPrUrl = prUrl;
                 releaseAfterTerminalFinish = false;
+                emitTerminalEvent("succeeded", null, commitSha, prUrl);
                 finishDurableRun("succeeded", null, commitSha, prUrl);
                 this.failures.remove(pickedUp.getId());
                 log.info("Ticket {} completed; PR: {}", pickedUp.getId(), prUrl);
@@ -1020,6 +1040,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
             handleFailure(pickedUp.getId(), failure);
         } finally {
             stopHeartbeat();
+            String terminalStatus = pendingTerminalStatus == null ? "failed" : pendingTerminalStatus;
+            if (!terminalEventEmitted) {
+                emitTerminalEvent(terminalStatus, pendingTerminalMessage,
+                    pendingHeadSha, pendingPrUrl);
+            }
             if (currentRunId != null) {
                 String status = pendingTerminalStatus == null ? "failed" : pendingTerminalStatus;
                 String message = pendingTerminalMessage;
@@ -1067,6 +1092,135 @@ public final class HarnessTicketProcessor implements TicketWorker {
             pendingHeadSha = null;
             pendingPrUrl = null;
             releaseAfterTerminalFinish = false;
+            eventContext = null;
+            terminalEventEmitted = false;
+        }
+    }
+
+    private void subscribeHarnessEvents(HarnessClient harness, String sessionId) throws IOException {
+        harness.subscribe(sessionId, event -> {
+            if (event.isToolEvent()) {
+                currentStep = "implementing";
+            }
+            OpenCodeUsage.ToolCall tool = OpenCodeUsage.toolCall(event.payload());
+            if (tool != null) {
+                emitToolEvent(tool);
+            }
+        });
+    }
+
+    private void emitRunStarted(Ticket ticket, String branchName, int attempt) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("branch", branchName);
+        payload.put("attempt", attempt);
+        payload.put("provider", provider == null ? null : provider.type());
+        payload.put("model", provider == null ? null : provider.model());
+        payload.put("ticketId", ticket == null ? null : ticket.getId());
+        emitEvent("run.started", payload);
+    }
+
+    private void emitPromptSent(String prompt, List<String> planningDocs, List<String> commands) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("promptVersion", "v1");
+        payload.put("length", prompt == null ? 0 : prompt.length());
+        payload.put("sha256", HarnessDigest.sha256(prompt));
+        payload.put("planningDocs", planningDocs == null ? 0 : planningDocs.size());
+        payload.put("verificationCommands", commands == null ? List.of() : commands);
+        payload.put("model", provider == null ? null : provider.model());
+        emitEvent("prompt.sent", payload);
+    }
+
+    private void emitToolEvent(OpenCodeUsage.ToolCall tool) {
+        if (tool == null) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("tool", tool.tool());
+        payload.put("callId", tool.callId());
+        payload.put("failed", tool.failed());
+        if (tool.command() != null) {
+            payload.put("commandHash", HarnessDigest.sha256(tool.command()));
+            payload.put("commandLength", tool.command().length());
+        }
+        emitEvent("tool.called", payload);
+
+        if (tool.editsFile()) {
+            Map<String, Object> edit = new LinkedHashMap<>();
+            edit.put("tool", tool.tool());
+            edit.put("path", tool.filePath());
+            edit.put("callId", tool.callId());
+            emitEvent("file.edited", edit);
+        }
+    }
+
+    private void emitVerificationResults(List<VerificationResult> results, String phase) {
+        if (results == null) {
+            return;
+        }
+        for (VerificationResult result : results) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("phase", phase);
+            payload.put("command", result.command());
+            payload.put("exitCode", result.exitCode());
+            payload.put("passed", result.passed());
+            payload.put("timedOut", result.timedOut());
+            payload.put("output", result.output());
+            emitEvent("verification.result", payload);
+        }
+    }
+
+    private void emitDiffCollected(DiffSummary diff) {
+        if (diff == null) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("changedFiles", diff.changedFileCount());
+        payload.put("additions", diff.additions());
+        payload.put("deletions", diff.deletions());
+        payload.put("changedBytes", diff.changedBytes());
+        if (diff.files() != null) {
+            payload.put("files", diff.files().stream()
+                .limit(100)
+                .map(DiffSummary.ChangedFile::path)
+                .toList());
+        }
+        emitEvent("diff.collected", payload);
+    }
+
+    private void emitTerminalEvent(String status, String message, String headSha, String prUrl) {
+        if (terminalEventEmitted) {
+            return;
+        }
+        terminalEventEmitted = true;
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("status", status);
+        payload.put("error", message);
+        payload.put("headSha", headSha);
+        payload.put("prUrl", prUrl);
+        emitEvent("succeeded".equals(status) ? "run.succeeded" : "run.failed", payload);
+    }
+
+    private void emitEvent(String type, Map<String, Object> payload) {
+        HarnessEventSink sink = eventSink;
+        HarnessEventContext context = eventContext;
+        if (sink == null || context == null) {
+            return;
+        }
+        try {
+            sink.emit(context, type, payload);
+        } catch (RuntimeException e) {
+            log.debug("Harness event emission failed for {}: {}", type, e.getMessage());
+        }
+    }
+
+    private static UUID uuidValue(String value) {
+        if (value == null || value.isBlank()) {
+            return UUID.randomUUID();
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException e) {
+            return UUID.nameUUIDFromBytes(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         }
     }
 
@@ -1302,6 +1456,24 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         currentRunId = String.valueOf(run.get("id"));
 
+        Long projectId = longValue(run.get("project_id"));
+        if (projectId == null) {
+            projectId = longValue(run.get("ticket_project_id"));
+        }
+        if (projectId == null && ticket != null) {
+            projectId = ticket.getProjectId();
+        }
+        Long agentId = longValue(config.getAgentId());
+        eventContext = new HarnessEventContext(
+            UUID.randomUUID(),
+            uuidValue(currentRunId),
+            ticket == null ? null : ticket.getId(),
+            projectId,
+            agentId,
+            null
+        );
+        emitRunStarted(ticket, branchName, attempt);
+
         try {
             boolean leased = apiService.claimHarnessLease(
                 ticket.getId(), currentRunId, leaseTtlSeconds);
@@ -1326,6 +1498,13 @@ public final class HarnessTicketProcessor implements TicketWorker {
     }
 
     private void recordCheckpoint(String step, Map<String, Object> payload) {
+        Map<String, Object> eventPayload = new LinkedHashMap<>();
+        eventPayload.put("step", step);
+        if (payload != null) {
+            eventPayload.putAll(payload);
+        }
+        emitEvent("step.changed", eventPayload);
+
         String runId = currentRunId;
         if (runId == null) {
             return;

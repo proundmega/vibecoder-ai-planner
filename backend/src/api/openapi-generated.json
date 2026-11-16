@@ -2982,6 +2982,166 @@
         }
       }
     },
+    "/harness/events": {
+      "post": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Append a structured harness event",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "eventId",
+                  "traceId",
+                  "runId",
+                  "type"
+                ],
+                "properties": {
+                  "eventId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "traceId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "runId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "timestamp": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "payload": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Event stored (or an existing idempotent duplicate)"
+          }
+        }
+      }
+    },
+    "/harness/runs/{runId}/events": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "List the ordered events for a harness run",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "description": "Keyset cursor timestamp; requires beforeId",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "in": "query",
+            "name": "beforeId",
+            "description": "Keyset cursor event id for the same timestamp",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ordered events"
+          }
+        }
+      }
+    },
+    "/harness/projects/{projectId}/events": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Query project-scoped harness events",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events"
+          }
+        }
+      }
+    },
     "/github/{projectId}/repo": {
       "get": {
         "tags": [
@@ -3031,7 +3191,7 @@
         "tags": [
           "GitHub"
         ],
-        "summary": "Get repository connection for agent (with decrypted PAT)",
+        "summary": "Get repository connection for the agent (App mode returns no token)",
         "parameters": [
           {
             "in": "path",
@@ -3049,7 +3209,103 @@
         ],
         "responses": {
           "200": {
-            "description": "Repository config with decrypted access token"
+            "description": "Repository config; `accessToken` is present only in explicit PAT mode"
+          }
+        }
+      }
+    },
+    "/github/{projectId}/token": {
+      "post": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Mint a short-lived, repo-scoped GitHub token for the agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "GitHub token and expiry"
+          },
+          "403": {
+            "description": "GitHub access is disabled or not configured"
+          }
+        }
+      }
+    },
+    "/github/{projectId}/installation": {
+      "get": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Get the GitHub App installation mapping for a project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Installation mapping or null"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Map a project to a GitHub App installation and repo allowlist",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated installation mapping"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Disable GitHub App access and revoke cached tokens for a project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Access disabled"
           }
         }
       }

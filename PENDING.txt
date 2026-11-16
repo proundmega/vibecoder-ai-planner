@@ -143,7 +143,7 @@ Cross-cutting plans for the autonomous coding harness. See `planning/HARNESS_ROA
 | **fg-38** | `fg-38-harness-budgets-routing` | P1 | fg-30 Phase 1 | Live token/time/cost/tool metering, hard stops, quotas, free/paid routing, fallback and kill switch. |
 | **fg-39** | `fg-39-repo-environment-profiles` | P1 | fg-34 | **In review (#161, Slice 1)** — versioned profile API/detection/dry-run queue, profile-driven base branch/setup/verify/env/timeouts, digest-pinned image override, exact-content validation before activation, repo binding and D27 profile origin-CA handoff. Persistent caches, services, flaky-test retry, prebuilt per-stack images and the settings editor remain. |
 | **fg-40** | `fg-40-multi-agent-orchestration` | P2 | fg-33/36/38/39 | Roles, task graph, worktrees, handoff schema, scheduler, conflict avoidance, integrator, per-agent budgets. |
-| **fg-41** | `fg-41-harness-observability` | P1 | fg-33 | Structured events, trace correlation, replay, dashboards, alerts, immutable publish/review/merge audit. |
+| **fg-41** | `fg-41-harness-observability` | P1 | fg-33 | **In progress (PR #163)** — append-only `harness_events` with event-time ordering, trace/run correlation, emission/ingest redaction, retention and terminal-event fallback. Replay, dashboards/alerts and publish/review audit are in the stacked follow-up #165; merge/rollback audit waits for fg-36. |
 | **fg-42** | `fg-42-harness-privacy` | P1 | fg-34, fg-41 | Data classification, secret/PII redaction, provider policy, tenant isolation, retention/deletion, local model option. |
 
 ## Agent Deployment (fg-43..fg-44)

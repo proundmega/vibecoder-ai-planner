@@ -331,4 +331,19 @@ class ApiServiceHarnessTest {
             ok("{\"released\":false}"));
         assertFalse(api.releaseHarnessTicket("run-1"));
     }
+
+    @Test
+    void emitsHarnessEventsThroughTheAppendOnlyEndpoint() throws Exception {
+        respond("/api/v1/harness/events", 201, ok("{\"event_id\":\"event-1\"}"));
+
+        api.emitHarnessEvent(Map.of(
+            "eventId", "event-1",
+            "traceId", "trace-1",
+            "runId", "run-1",
+            "type", "tool.called"));
+
+        RecordedRequest request = lastRequest();
+        assertEquals("/api/v1/harness/events", request.path());
+        assertTrue(request.body().contains("\"type\":\"tool.called\""));
+    }
 }

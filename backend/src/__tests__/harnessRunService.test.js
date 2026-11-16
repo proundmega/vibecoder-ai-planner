@@ -9,8 +9,13 @@ jest.mock('../services/DependencyService', () => ({
   assertReady: jest.fn().mockResolvedValue({ ready: true }),
 }));
 
+jest.mock('../services/HarnessEventService', () => ({
+  ensureTerminalEvent: jest.fn().mockResolvedValue(null),
+}));
+
 const HarnessRunService = require('../services/HarnessRunService');
 const DependencyService = require('../services/DependencyService');
+const HarnessEventService = require('../services/HarnessEventService');
 const { pool } = require('../db');
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
@@ -19,6 +24,8 @@ describe('HarnessRunService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     pool.query.mockResolvedValue({ rows: [] });
+    DependencyService.assertReady.mockResolvedValue({ ready: true });
+    HarnessEventService.ensureTerminalEvent.mockResolvedValue(null);
   });
 
   describe('startRun', () => {
@@ -62,6 +69,8 @@ describe('HarnessRunService', () => {
         action: 'durable_start',
       });
       expect(client.query.mock.calls[2][0]).toContain('INSERT INTO harness_runs');
+      expect(client.query.mock.calls[2][0]).toContain('project_id');
+      expect(client.query.mock.calls[2][0]).toContain('t.project_id');
       expect(client.query.mock.calls[2][1]).toEqual([
         42,
         7,

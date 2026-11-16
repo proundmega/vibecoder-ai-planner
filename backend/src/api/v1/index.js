@@ -26,6 +26,7 @@ const { requireAnyPermission } = require('../../middleware/permissions');
 const { pool } = require('../../db');
 const agentHeartbeatRouter = require('./agentHeartbeat');
 const harnessRunsRouter = require('../harnessRuns');
+const harnessObservabilityRouter = require('../harnessObservability');
 const cspViolationsRouter = require('../csp-violations');
 const computeNodesRouter = require('../compute-nodes');
 const milestonesRouter = require('../milestones');
@@ -210,6 +211,7 @@ router.use('/billing', billingRouter);
 router.use('/memory', memoryRouter);
 router.use('/tickets', reviewRouter);
 router.use('/agents-status', agentHeartbeatRouter);
+router.use('/harness', harnessObservabilityRouter);
 router.use('/harness', harnessRunsRouter);
 router.use('/csp-violations', cspViolationsRouter);
 

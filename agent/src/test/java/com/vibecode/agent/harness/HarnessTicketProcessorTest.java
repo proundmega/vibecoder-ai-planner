@@ -25,6 +25,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -1561,6 +1562,44 @@ class HarnessTicketProcessorTest {
 
         assertNotNull(captured.get());
         assertNull(captured.get().baseUrl(), "the bridge must be closed after the prompt");
+    }
+
+    @Test
+    void emitsACompleteCorrelatedTimelineForASuccessfulRun() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.startHarnessRun(any(), anyString(), any(), any(), any(), anyInt()))
+            .thenReturn(Map.of("id", "run-1", "project_id", 7L));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+
+        processor.processTicket(ticket());
+
+        ArgumentCaptor<Map<String, Object>> events =
+            ArgumentCaptor.forClass(Map.class);
+        verify(apiService, atLeastOnce()).emitHarnessEvent(events.capture());
+        List<String> types = events.getAllValues().stream()
+            .map(event -> String.valueOf(event.get("type")))
+            .toList();
+        assertTrue(types.contains("run.started"), types.toString());
+        assertTrue(types.contains("prompt.sent"), types.toString());
+        assertTrue(types.contains("verification.result"), types.toString());
+        assertTrue(types.contains("diff.collected"), types.toString());
+        assertTrue(types.contains("publish.started"), types.toString());
+        assertTrue(types.contains("pr.opened"), types.toString());
+        assertTrue(types.contains("run.succeeded"), types.toString());
+
+        Map<String, Object> started = events.getAllValues().stream()
+            .filter(event -> "run.started".equals(event.get("type")))
+            .findFirst()
+            .orElseThrow();
+        assertEquals(UUID.nameUUIDFromBytes(
+                "run-1".getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString(),
+            started.get("runId"));
+        assertEquals(started.get("traceId"), events.getAllValues().stream()
+            .filter(event -> "run.succeeded".equals(event.get("type")))
+            .findFirst()
+            .orElseThrow()
+            .get("traceId"));
     }
 
     private HarnessTicketProcessor dockerProcessor(SandboxRunner sandboxRunner) {

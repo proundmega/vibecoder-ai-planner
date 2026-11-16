@@ -2,6 +2,8 @@ package com.vibecode.agent.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+import java.util.Map;
+
 /**
  * Wrapper for all backend API responses.
  * Format: { success: true, data: ... }
@@ -11,6 +13,7 @@ public class ApiResponse<T> {
     private boolean success;
     private T data;
     private Error error;
+    private Map<String, Object> budgetPolicy;
 
     public boolean isSuccess() { return success; }
     public void setSuccess(boolean success) { this.success = success; }
@@ -20,6 +23,9 @@ public class ApiResponse<T> {
 
     public Error getError() { return error; }
     public void setError(Error error) { this.error = error; }
+
+    public Map<String, Object> getBudgetPolicy() { return budgetPolicy; }
+    public void setBudgetPolicy(Map<String, Object> budgetPolicy) { this.budgetPolicy = budgetPolicy; }
 
     public boolean hasError() { return !success || error != null; }
 

@@ -1,12 +1,12 @@
 ---
 id: "fg-41"
 title: "Harness Observability, Replay and Audit"
-status: planned
+status: in_progress
 priority: "P1"
 effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
-updated: "2026-11-03"
+updated: "2026-11-16"
 pr: null
 branch: null
 depends_on: ["fg-30", "fg-33"]
@@ -34,3 +34,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D2 | Durable run/checkpoint state | fg-33 | Reliability | fg-33-durable-harness-execution | open |
 | D3 | Budget metrics and alerts | fg-38 | Billing | fg-38-harness-budgets-routing | open |
 | D4 | Retention/redaction policy | fg-42 | Privacy | fg-42-harness-privacy | open |
+| D5 | Merge/rollback audit events | fg-36 | Audit | fg-36-merge-lifecycle | open |
