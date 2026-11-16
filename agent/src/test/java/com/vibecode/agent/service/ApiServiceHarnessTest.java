@@ -254,7 +254,6 @@ class ApiServiceHarnessTest {
     }
 
     @Test
-    @Test
     void startRunIncludesTheRepoProfileRevisionWhenProvided() throws Exception {
         respond("/api/v1/harness/runs", 201, ok("{\"id\":\"run-1\"}"));
 
