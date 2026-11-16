@@ -189,6 +189,9 @@ class HarnessEventService {
       if (eventTimestamp.getTime() > Date.now() + 5 * 60 * 1000) {
         throw new ValidationError('timestamp must not be more than 5 minutes in the future');
       }
+      if (eventTimestamp.getTime() < Date.now() - 30 * 24 * 60 * 60 * 1000) {
+        throw new ValidationError('timestamp must not be more than 30 days in the past');
+      }
     }
     if (!normalisedPayloadInput._emitted_at) {
       normalisedPayloadInput._emitted_at = eventTimestamp.toISOString();
@@ -250,7 +253,7 @@ class HarnessEventService {
     return result.rows[0];
   }
 
-  async listForRun(runId, { limit, before } = {}) {
+  async listForRun(runId, { limit, before, beforeId } = {}) {
     const id = requiredUuid(runId, 'runId');
     const max = limitValue(limit);
     const params = [id, max];
@@ -260,13 +263,16 @@ class HarnessEventService {
       if (Number.isNaN(beforeDate.getTime())) {
         throw new ValidationError('before must be a timestamp');
       }
-      params.push(beforeDate.toISOString());
-      cursor = 'AND event_timestamp < $3';
+      const cursorId = requiredUuid(beforeId, 'beforeId');
+      params.push(beforeDate.toISOString(), cursorId);
+      cursor = 'AND (event_timestamp, event_id) < ($3::timestamptz, $4::uuid)';
+    } else if (beforeId !== undefined && beforeId !== null && beforeId !== '') {
+      throw new ValidationError('beforeId requires before');
     }
     const result = await pool.query(
       `SELECT * FROM harness_events
        WHERE run_id = $1 ${cursor}
-       ORDER BY event_timestamp ASC, created_at ASC, event_id ASC
+       ORDER BY event_timestamp ASC, event_id ASC
        LIMIT $2`,
       params
     );
@@ -395,6 +401,7 @@ class HarnessEventService {
       diff,
       promptSummary: prompt,
       replayable: Boolean(run && run.status !== 'running'),
+      truncated: events.length >= MAX_LIMIT,
     };
   }
 

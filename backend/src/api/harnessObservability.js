@@ -206,6 +206,7 @@ router.get('/runs/:runId/events', verifyTokenOrAgent, async (req, res, next) => 
     const events = await HarnessEventService.listForRun(req.params.runId, {
       limit: req.query.limit,
       before: req.query.before,
+      beforeId: req.query.beforeId,
     });
     res.json({ success: true, data: events });
   } catch (error) {

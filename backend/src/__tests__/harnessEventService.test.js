@@ -135,6 +135,19 @@ describe('HarnessEventService', () => {
       })).rejects.toThrow('timestamp must not be more than 5 minutes in the future');
     });
 
+    it('rejects a timestamp too far in the past', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [RUN] });
+      await expect(HarnessEventService.emit({
+        eventId: EVENT_ID,
+        traceId: TRACE_ID,
+        runId: RUN_ID,
+        agentId: 9,
+        type: 'run.started',
+        timestamp: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
+        requireRunOwnership: true,
+      })).rejects.toThrow('timestamp must not be more than 30 days in the past');
+    });
+
     it('rejects an invalid event timestamp', async () => {
       pool.query.mockResolvedValueOnce({ rows: [RUN] });
       await expect(HarnessEventService.emit({
@@ -158,6 +171,15 @@ describe('HarnessEventService', () => {
   });
 
   describe('timeline', () => {
+    it('requires both cursor parts for keyset pagination', async () => {
+      await expect(HarnessEventService.listForRun(RUN_ID, {
+        before: new Date().toISOString(),
+      })).rejects.toThrow('beforeId must be a UUID');
+      await expect(HarnessEventService.listForRun(RUN_ID, {
+        beforeId: EVENT_ID,
+      })).rejects.toThrow('beforeId requires before');
+    });
+
     it('orders events and extracts replay artifacts', async () => {
       const events = [
         {
