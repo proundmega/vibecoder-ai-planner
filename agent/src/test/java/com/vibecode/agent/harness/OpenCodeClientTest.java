@@ -305,11 +305,18 @@ class OpenCodeClientTest {
               return {
                 ok: true,
                 status: 200,
-                text: async () => JSON.stringify({
-                  exitCode: 0,
-                  output: "ok",
-                  timedOut: false,
-                  truncated: false,
+                body: new ReadableStream({
+                  start(controller) {
+                    controller.enqueue(new TextEncoder().encode(
+                      JSON.stringify({
+                        type: "result",
+                        exitCode: 0,
+                        output: "ok",
+                        timedOut: false,
+                        truncated: false,
+                      }) + "\\n"));
+                    controller.close();
+                  },
                 }),
               };
             };
@@ -385,11 +392,18 @@ class OpenCodeClientTest {
                 return {
                   ok: true,
                   status: 200,
-                  text: async () => JSON.stringify({
-                    exitCode: 0,
-                    output: "slow",
-                    timedOut: true,
-                    truncated: false,
+                  body: new ReadableStream({
+                    start(controller) {
+                      controller.enqueue(new TextEncoder().encode(
+                        JSON.stringify({
+                          type: "result",
+                          exitCode: 0,
+                          output: "slow",
+                          timedOut: true,
+                          truncated: false,
+                        }) + "\\n"));
+                      controller.close();
+                    },
                   }),
                 };
               }

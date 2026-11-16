@@ -15,6 +15,12 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
@@ -39,6 +45,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -188,7 +195,16 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
     @Override
     public ExecResult exec(SandboxHandle handle, ExecRequest request) throws IOException {
-        return withHandleLock(handle, () -> execSerialized(handle, request));
+        return withHandleLock(handle, () -> execSerialized(handle, request, null));
+    }
+
+    @Override
+    public ExecResult execStreaming(
+        SandboxHandle handle,
+        ExecRequest request,
+        Consumer<String> listener
+    ) throws IOException {
+        return withHandleLock(handle, () -> execSerialized(handle, request, listener));
     }
 
     @FunctionalInterface
@@ -220,8 +236,11 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
     }
 
-    private ExecResult execSerialized(SandboxHandle handle, ExecRequest request)
-        throws IOException {
+    private ExecResult execSerialized(
+        SandboxHandle handle,
+        ExecRequest request,
+        Consumer<String> listener
+    ) throws IOException {
         Duration timeout = request.timeout();
         Duration maxDuration = maxDurations.get(handle.id());
         if (maxDuration != null && timeout.compareTo(maxDuration) > 0) {
@@ -239,8 +258,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
         AtomicBoolean quotaExceeded =
             quotaFlags.getOrDefault(handle.id(), new AtomicBoolean(false));
         try {
-            DockerResult result = runDocker(
-                command, effective.timeout(), effective.maxOutputBytes(), handle.id());
+            DockerResult result = runDockerStreaming(
+                command, effective.timeout(), effective.maxOutputBytes(), handle.id(), listener);
             if (quotaExceeded.get()) {
                 // The watchdog stops the container, but verify it here too so
                 // the post-exec sweep never runs against a half-stopped
@@ -1075,6 +1094,16 @@ public final class DockerSandboxRunner implements SandboxRunner {
         int maxOutputBytes,
         String sandboxId
     ) {
+        return runDockerStreaming(command, timeout, maxOutputBytes, sandboxId, null);
+    }
+
+    private DockerResult runDockerStreaming(
+        List<String> command,
+        Duration timeout,
+        int maxOutputBytes,
+        String sandboxId,
+        Consumer<String> listener
+    ) {
         ProcessBuilder builder = new ProcessBuilder(ProcessGroup.wrap(command));
         builder.redirectErrorStream(true);
         EnvironmentSanitizer.sanitize(builder.environment());
@@ -1089,8 +1118,58 @@ public final class DockerSandboxRunner implements SandboxRunner {
             }
             Process running = process;
             Thread reader = new Thread(() -> {
+                CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPLACE)
+                    .onUnmappableCharacter(CodingErrorAction.REPLACE);
+                ByteBuffer carry = ByteBuffer.allocate(4);
                 try (InputStream input = running.getInputStream()) {
-                    input.transferTo(output);
+                    byte[] chunk = new byte[8_192];
+                    int read;
+                    while ((read = input.read(chunk)) >= 0) {
+                        output.write(chunk, 0, read);
+                        if (listener != null) {
+                            try {
+                                ByteBuffer bytes = ByteBuffer.allocate(
+                                    carry.position() + read);
+                                carry.flip();
+                                bytes.put(carry);
+                                bytes.put(chunk, 0, read);
+                                bytes.flip();
+                                CharBuffer chars = CharBuffer.allocate(
+                                    (int) (bytes.remaining() * decoder.maxCharsPerByte()) + 1);
+                                CoderResult result = decoder.decode(bytes, chars, false);
+                                chars.flip();
+                                if (chars.hasRemaining()) {
+                                    listener.accept(chars.toString());
+                                }
+                                carry.clear();
+                                if (result.isOverflow()) {
+                                    carry.put(bytes);
+                                } else if (bytes.hasRemaining()) {
+                                    carry.put(bytes);
+                                }
+                            } catch (RuntimeException e) {
+                                log.debug("Sandbox streaming listener stopped: {}",
+                                    e.getMessage());
+                            }
+                        }
+                    }
+                    if (listener != null) {
+                        try {
+                            ByteBuffer bytes = carry;
+                            bytes.flip();
+                            CharBuffer chars = CharBuffer.allocate(8);
+                            decoder.decode(bytes, chars, true);
+                            decoder.flush(chars);
+                            chars.flip();
+                            if (chars.hasRemaining()) {
+                                listener.accept(chars.toString());
+                            }
+                        } catch (RuntimeException e) {
+                            log.debug("Sandbox streaming listener stopped: {}",
+                                e.getMessage());
+                        }
+                    }
                 } catch (IOException e) {
                     log.debug("Docker output reader stopped: {}", e.getMessage());
                 }

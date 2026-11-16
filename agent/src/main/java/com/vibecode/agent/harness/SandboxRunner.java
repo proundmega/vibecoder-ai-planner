@@ -2,6 +2,7 @@ package com.vibecode.agent.harness;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.function.Consumer;
 
 /**
  * Creates disposable sandboxes and runs repo-controlled commands in them.
@@ -14,6 +15,23 @@ public interface SandboxRunner extends AutoCloseable {
     SandboxHandle create(SandboxSpec spec) throws IOException;
 
     ExecResult exec(SandboxHandle handle, ExecRequest request) throws IOException;
+
+    /**
+     * Execute and emit output chunks as they arrive. Implementations that
+     * cannot stream may fall back to one chunk after completion; host mode is
+     * not a security boundary and is allowed to buffer.
+     */
+    default ExecResult execStreaming(
+        SandboxHandle handle,
+        ExecRequest request,
+        Consumer<String> listener
+    ) throws IOException {
+        ExecResult result = exec(handle, request);
+        if (listener != null && !result.output().isEmpty()) {
+            listener.accept(result.output());
+        }
+        return result;
+    }
 
     void putFile(SandboxHandle handle, Path local, String remote) throws IOException;
 

@@ -2,6 +2,8 @@ package com.vibecode.agent.harness;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.Headers;
+import com.sun.net.httpserver.HttpExchange;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,7 +11,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -18,17 +22,26 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -52,6 +65,12 @@ class SandboxBashBridgeTest {
         runner = mock(SandboxRunner.class);
         when(runner.exec(any(), any()))
             .thenReturn(new ExecResult("command", 0, "ok", false, false));
+        doAnswer(invocation -> {
+            java.util.function.Consumer<String> listener = invocation.getArgument(2);
+            listener.accept("first");
+            listener.accept("second");
+            return new ExecResult("command", 0, "ok", false, false);
+        }).when(runner).execStreaming(any(), any(), any());
         bridge = new SandboxBashBridge(
             runner,
             new SandboxHandle("sandbox-1", workspace, false, null),
@@ -84,6 +103,146 @@ class SandboxBashBridgeTest {
         assertEquals("npm test", request.command());
         assertEquals("/workspace/backend", request.cwd());
         assertEquals(Duration.ofSeconds(30), request.timeout());
+    }
+
+    @Test
+    void streamsChunksAndTheFinalResult() throws Exception {
+        HttpResponse<String> response = exec(Map.of(
+            "command", "npm install",
+            "stream", true
+        ), bridge.token());
+
+        assertEquals(200, response.statusCode());
+        assertTrue(response.headers().firstValue("Content-Type").orElse("")
+            .startsWith("application/x-ndjson"));
+        var events = events(response.body());
+        assertEquals(3, events.size(), response.body());
+        assertEquals("chunk", events.get(0).path("type").asText());
+        assertEquals("first", events.get(0).path("data").asText());
+        assertEquals("chunk", events.get(1).path("type").asText());
+        assertEquals("second", events.get(1).path("data").asText());
+        assertEquals("result", events.get(2).path("type").asText());
+        assertEquals(0, events.get(2).path("exitCode").asInt());
+        assertEquals("ok", events.get(2).path("output").asText());
+        verify(runner, times(1)).execStreaming(any(), any(), any());
+    }
+
+    @Test
+    void streamsACachedRequestIdAsASingleResult() throws Exception {
+        Map<String, Object> body = Map.of(
+            "command", "npm install",
+            "requestId", "req-stream-1",
+            "stream", true
+        );
+
+        HttpResponse<String> first = exec(body, bridge.token());
+        assertEquals(200, first.statusCode());
+        assertEquals(3, events(first.body()).size(), first.body());
+        HttpResponse<String> second = exec(body, bridge.token());
+        assertEquals(200, second.statusCode());
+        var cached = events(second.body());
+        assertEquals(1, cached.size(), second.body());
+        assertEquals("result", cached.get(0).path("type").asText());
+        assertEquals("ok", cached.get(0).path("output").asText());
+        verify(runner, times(1)).execStreaming(any(), any(), any());
+    }
+
+    @Test
+    void clearsTheFlightWhenTheStreamCannotStart() throws Exception {
+        String requestId = "req-start-failure";
+        HttpExchange exchange = mock(HttpExchange.class);
+        when(exchange.getResponseHeaders()).thenReturn(new Headers());
+        doThrow(new IOException("client disconnected before headers"))
+            .when(exchange).sendResponseHeaders(anyInt(), anyLong());
+
+        var future = bridge.executeStreamForTest(
+            exchange, requestId, "fingerprint-start-failure",
+            "npm install", null, Duration.ofSeconds(1));
+
+        assertTrue(future.isDone());
+        assertEquals(500, future.get().status());
+        assertFalse(bridge.inFlightForTest(requestId),
+            "a failed stream start must not leave a stale in-flight entry");
+        verify(exchange, times(1)).sendResponseHeaders(anyInt(), anyLong());
+        verify(runner, times(0)).execStreaming(any(), any(), any());
+    }
+
+    @Test
+    void cachesAndCompletesBeforeAFailingFinalStreamWrite() throws Exception {
+        doAnswer(invocation -> {
+            Consumer<String> listener = invocation.getArgument(2);
+            listener.accept("first");
+            return new ExecResult("command", 0, "ok", false, false);
+        }).when(runner).execStreaming(any(), any(), any());
+
+        String requestId = "req-disconnect";
+        String fingerprint = "fingerprint-disconnect";
+        AtomicBoolean cachedAtFinalWrite = new AtomicBoolean(false);
+        AtomicBoolean flightCompletedAtFinalWrite = new AtomicBoolean(false);
+        AtomicBoolean resultWriteSeen = new AtomicBoolean(false);
+        OutputStream responseBody = new OutputStream() {
+            @Override
+            public void write(int value) throws IOException {
+                write(new byte[]{(byte) value}, 0, 1);
+            }
+
+            @Override
+            public void write(byte[] bytes, int offset, int length) throws IOException {
+                String payload = new String(bytes, offset, length, StandardCharsets.UTF_8);
+                if (payload.contains("\"type\":\"result\"")) {
+                    resultWriteSeen.set(true);
+                    cachedAtFinalWrite.set(
+                        bridge.completedForTest(requestId) != null);
+                    flightCompletedAtFinalWrite.set(
+                        bridge.flightCompletedForTest(requestId));
+                    throw new IOException("client disconnected");
+                }
+            }
+        };
+
+        HttpExchange exchange = mock(HttpExchange.class);
+        Map<String, Object> attributes = new HashMap<>();
+        when(exchange.getResponseHeaders()).thenReturn(new Headers());
+        when(exchange.getAttribute(anyString()))
+            .thenAnswer(invocation -> attributes.get(invocation.getArgument(0)));
+        doAnswer(invocation -> {
+            attributes.put(invocation.getArgument(0), invocation.getArgument(1));
+            return null;
+        }).when(exchange).setAttribute(anyString(), any());
+        doNothing().when(exchange).sendResponseHeaders(anyInt(), anyLong());
+        when(exchange.getResponseBody()).thenReturn(responseBody);
+
+        bridge.executeStreamForTest(
+            exchange, requestId, fingerprint, "npm install", null, Duration.ofSeconds(1));
+
+        assertEquals("ok", bridge.completedForTest(requestId).body().get("output"));
+        assertFalse(bridge.inFlightForTest(requestId),
+            "the request must leave the in-flight map even when the final write fails");
+        assertTrue(resultWriteSeen.get(), "the final result write should be attempted");
+        assertTrue(cachedAtFinalWrite.get(),
+            "the result must be cached before the final write");
+        assertTrue(flightCompletedAtFinalWrite.get(),
+            "a waiting duplicate must complete before the final write");
+        verify(exchange, times(1)).sendResponseHeaders(anyInt(), anyLong());
+    }
+
+    @Test
+    void streamsExecutionFailuresAsErrorEvents() throws Exception {
+        doThrow(new IOException("sandbox broke"))
+            .when(runner).execStreaming(any(), any(), any());
+
+        HttpResponse<String> response = exec(Map.of(
+            "command", "npm install",
+            "stream", true
+        ), bridge.token());
+
+        assertEquals(200, response.statusCode());
+        var events = events(response.body());
+        assertEquals(1, events.size(), response.body());
+        assertEquals("error", events.get(0).path("type").asText());
+        assertTrue(events.get(0).path("error").asText().contains("sandbox broke"),
+            response.body());
+        assertFalse(events.get(0).path("retryable").asBoolean(true));
     }
 
     @Test
@@ -429,7 +588,17 @@ class SandboxBashBridgeTest {
         assertEquals(json.path("ids").get(0).asText(),
             json.path("ids").get(1).asText(), output);
         assertEquals("ok", json.path("result").asText(), output);
-        verify(runner, times(1)).exec(any(), any());
+        verify(runner, times(1)).execStreaming(any(), any(), any());
+    }
+
+    private java.util.List<JsonNode> events(String body) throws IOException {
+        java.util.List<JsonNode> events = new java.util.ArrayList<>();
+        for (String line : body.split("\\R")) {
+            if (!line.isBlank()) {
+                events.add(objectMapper.readTree(line));
+            }
+        }
+        return events;
     }
 
     private HttpResponse<String> exec(SandboxBashBridge target, Map<String, ?> body)

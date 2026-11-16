@@ -8,6 +8,7 @@ import com.sun.net.httpserver.HttpServer;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -38,6 +39,7 @@ import java.util.concurrent.TimeoutException;
 final class SandboxBashBridge implements AutoCloseable {
 
     static final int MAX_BODY_BYTES = 256 * 1024;
+    private static final int MAX_STREAM_BYTES = 1024 * 1024;
     private static final String TOKEN_HEADER = "X-Sandbox-Token";
     private static final int CACHE_MAX_ENTRIES = 64;
     private static final long CACHE_TTL_MILLIS = 10 * 60 * 1000L;
@@ -192,9 +194,16 @@ final class SandboxBashBridge implements AutoCloseable {
 
             String rewritten = rewritePaths(command);
             Duration timeout = requestedTimeout(root.path("timeoutSeconds"));
+            boolean stream = root.path("stream").asBoolean(false);
             String requestId = root.path("requestId").asText("").trim();
             if (requestId.isEmpty()) {
-                send(exchange, execute(rewritten, cwd, timeout));
+                if (stream) {
+                    startStream(exchange);
+                    CachedResponse response = streamExecute(exchange, rewritten, cwd, timeout);
+                    writeStreamResultQuietly(exchange, response);
+                } else {
+                    send(exchange, execute(rewritten, cwd, timeout));
+                }
                 return;
             }
             if (!requestId.matches("[A-Za-z0-9._:-]{1," + MAX_REQUEST_ID_LENGTH + "}")) {
@@ -236,11 +245,24 @@ final class SandboxBashBridge implements AutoCloseable {
                 return;
             }
             if (cached != null) {
-                send(exchange, cached);
+                if (stream) {
+                    sendStreamResult(exchange, cached);
+                } else {
+                    send(exchange, cached);
+                }
                 return;
             }
             if (!owner) {
-                awaitCached(exchange, flight, timeout);
+                if (stream) {
+                    awaitCachedStream(exchange, flight, timeout);
+                } else {
+                    awaitCached(exchange, flight, timeout);
+                }
+                return;
+            }
+            if (stream) {
+                executeStreamOwned(exchange, flight, requestId, fingerprint,
+                    rewritten, cwd, timeout);
                 return;
             }
             try {
@@ -265,6 +287,46 @@ final class SandboxBashBridge implements AutoCloseable {
             send(exchange, 500, Map.of("error", "sandbox exec failed: " + safeMessage(e)));
         } finally {
             exchange.close();
+        }
+    }
+
+    /** Test seam: run the owned streaming lifecycle with a supplied exchange. */
+    java.util.concurrent.CompletableFuture<CachedResponse> executeStreamForTest(
+        HttpExchange exchange,
+        String requestId,
+        String fingerprint,
+        String command,
+        String cwd,
+        Duration timeout
+    ) {
+        Flight flight = new Flight(fingerprint);
+        synchronized (cacheLock) {
+            inFlight.put(requestId, flight);
+        }
+        executeStreamOwned(exchange, flight, requestId, fingerprint, command, cwd, timeout);
+        return flight.future;
+    }
+
+    /** Test seam: the cached response for a completed request, if any. */
+    CachedResponse completedForTest(String requestId) {
+        synchronized (cacheLock) {
+            Completed completedResponse = completed.get(requestId);
+            return completedResponse == null ? null : completedResponse.response;
+        }
+    }
+
+    /** Test seam: whether a request is still tracked as in flight. */
+    boolean inFlightForTest(String requestId) {
+        synchronized (cacheLock) {
+            return inFlight.containsKey(requestId);
+        }
+    }
+
+    /** Test seam: whether a waiting duplicate's future is already complete. */
+    boolean flightCompletedForTest(String requestId) {
+        synchronized (cacheLock) {
+            Flight flight = inFlight.get(requestId);
+            return flight != null && flight.future.isDone();
         }
     }
 
@@ -307,6 +369,182 @@ final class SandboxBashBridge implements AutoCloseable {
         }
     }
 
+    private void executeStreamOwned(
+        HttpExchange exchange,
+        Flight flight,
+        String requestId,
+        String fingerprint,
+        String rewritten,
+        String cwd,
+        Duration timeout
+    ) {
+        CachedResponse response = new CachedResponse(500,
+            Map.of("error", "sandbox exec failed: unknown"));
+        boolean started = false;
+        try {
+            try {
+                startStream(exchange);
+                started = true;
+                response = streamExecute(exchange, rewritten, cwd, timeout);
+            } catch (IOException | RuntimeException e) {
+                response = new CachedResponse(500,
+                    Map.of("error", "sandbox exec failed: " + safeMessage(e)));
+            }
+            if (response.status == 200) {
+                long expiresAt = System.currentTimeMillis() + cacheTtlMillis;
+                synchronized (cacheLock) {
+                    completed.put(requestId, new Completed(fingerprint, response, expiresAt));
+                }
+            }
+        } finally {
+            // Complete and remove the flight even when response headers could
+            // not be sent, so a retry never waits on a stale future.
+            flight.future.complete(response);
+            try {
+                if (started) {
+                    writeStreamResultQuietly(exchange, response);
+                }
+            } finally {
+                synchronized (cacheLock) {
+                    inFlight.remove(requestId, flight);
+                }
+            }
+        }
+    }
+
+    private CachedResponse streamExecute(
+        HttpExchange exchange,
+        String rewritten,
+        String cwd,
+        Duration timeout
+    ) {
+        int[] sent = {0};
+        boolean[] truncated = {false};
+        try {
+            ExecResult result = runner.execStreaming(handle, new ExecRequest(
+                rewritten,
+                cwd,
+                timeout,
+                ExecRequest.DEFAULT_MAX_OUTPUT_BYTES,
+                Map.of()
+            ), chunk -> {
+                if (chunk == null || chunk.isEmpty()) {
+                    return;
+                }
+                sent[0] += chunk.getBytes(StandardCharsets.UTF_8).length;
+                if (sent[0] > MAX_STREAM_BYTES) {
+                    if (!truncated[0]) {
+                        truncated[0] = true;
+                        writeStreamEventQuietly(exchange, Map.of("type", "truncated"));
+                    }
+                    return;
+                }
+                writeStreamEventQuietly(exchange, Map.of(
+                    "type", "chunk",
+                    "data", chunk
+                ));
+            });
+            return new CachedResponse(200, Map.of(
+                "exitCode", result.exitCode(),
+                "output", result.output(),
+                "timedOut", result.timedOut(),
+                "truncated", result.truncated()
+            ));
+        } catch (IOException e) {
+            return new CachedResponse(500,
+                Map.of("error", "sandbox exec failed: " + safeMessage(e)));
+        }
+    }
+
+    private void awaitCachedStream(HttpExchange exchange, Flight flight, Duration timeout)
+        throws IOException {
+        try {
+            CachedResponse response = flight.future.get(
+                timeout.toMillis() + cacheWaitGraceMillis, TimeUnit.MILLISECONDS);
+            sendStreamResult(exchange, response);
+        } catch (TimeoutException e) {
+            streamError(exchange, "duplicate request is still running", true);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            streamError(exchange, "interrupted while waiting for the request", false);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            streamError(exchange, "sandbox exec failed: "
+                + (cause == null ? "unknown" : safeMessage(cause)), false);
+        }
+    }
+
+    private void sendStreamResult(HttpExchange exchange, CachedResponse response)
+        throws IOException {
+        startStream(exchange);
+        if (response.status != 200) {
+            writeStreamEvent(exchange, Map.of(
+                "type", "error",
+                "error", response.body.getOrDefault("error", "sandbox exec failed"),
+                "retryable", false
+            ));
+            return;
+        }
+        writeStreamEvent(exchange, resultEvent(response.body));
+    }
+
+    private static Map<String, Object> resultEvent(Map<String, Object> body) {
+        Map<String, Object> event = new LinkedHashMap<>(body);
+        event.put("type", "result");
+        return event;
+    }
+
+    private void streamError(HttpExchange exchange, String message, boolean retryable)
+        throws IOException {
+        startStream(exchange);
+        writeStreamEvent(exchange, Map.of(
+            "type", "error",
+            "error", message,
+            "retryable", retryable
+        ));
+    }
+
+    private void startStream(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().set("Content-Type", "application/x-ndjson");
+        // A streaming request owns its connection for the duration of the
+        // command; do not let a client pool it for a retry.
+        exchange.getResponseHeaders().set("Connection", "close");
+        exchange.sendResponseHeaders(200, 0);
+    }
+
+    private void writeStreamResultQuietly(HttpExchange exchange, CachedResponse response) {
+        try {
+            if (response.status == 200) {
+                writeStreamEvent(exchange, resultEvent(response.body));
+            } else {
+                writeStreamEvent(exchange, Map.of(
+                    "type", "error",
+                    "error", response.body.getOrDefault("error", "sandbox exec failed"),
+                    "retryable", false
+                ));
+            }
+        } catch (IOException ignored) {
+            // The client disconnected after the result was cached.
+        }
+    }
+
+    private void writeStreamEvent(HttpExchange exchange, Map<String, ?> event)
+        throws IOException {
+        byte[] payload = objectMapper.writeValueAsBytes(event);
+        OutputStream output = exchange.getResponseBody();
+        output.write(payload);
+        output.write('\n');
+        output.flush();
+    }
+
+    private void writeStreamEventQuietly(HttpExchange exchange, Map<String, ?> event) {
+        try {
+            writeStreamEvent(exchange, event);
+        } catch (IOException ignored) {
+            // The client disconnected; the command still runs to completion.
+        }
+    }
+
     private void awaitCached(HttpExchange exchange, Flight flight, Duration timeout)
         throws IOException {
         try {
@@ -337,7 +575,7 @@ final class SandboxBashBridge implements AutoCloseable {
             : message;
     }
 
-    private record CachedResponse(int status, Map<String, Object> body) {
+    record CachedResponse(int status, Map<String, Object> body) {
     }
 
     private record Completed(String fingerprint, CachedResponse response, long expiresAt) {

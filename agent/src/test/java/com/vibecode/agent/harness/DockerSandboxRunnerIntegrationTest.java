@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -104,6 +105,24 @@ class DockerSandboxRunnerIntegrationTest {
                 ExecResult whoami = runner.exec(handle,
                     ExecRequest.of("id -u", Duration.ofSeconds(20)));
                 assertEquals("1000", whoami.output().trim());
+
+                List<String> streamed = new ArrayList<>();
+                AtomicLong firstChunkNanos = new AtomicLong();
+                ExecResult streaming = runner.execStreaming(handle,
+                    ExecRequest.of("printf first; sleep 1; printf second",
+                        Duration.ofSeconds(10)),
+                    chunk -> {
+                        firstChunkNanos.compareAndSet(0, System.nanoTime());
+                        streamed.add(chunk);
+                    });
+                long streamEndedNanos = System.nanoTime();
+                assertEquals(0, streaming.exitCode(), streaming.output());
+                assertTrue(String.join("", streamed).contains("firstsecond"),
+                    streamed.toString());
+                assertTrue(streamed.size() >= 2,
+                    "output should arrive in more than one chunk: " + streamed);
+                assertTrue(firstChunkNanos.get() < streamEndedNanos - 500_000_000L,
+                    "the first chunk should arrive before the command exits");
 
                 ExecResult read = runner.exec(handle,
                     ExecRequest.of("cat hello.txt", Duration.ofSeconds(20)));
