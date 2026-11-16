@@ -4,6 +4,7 @@ const HarnessRunService = require('../services/HarnessRunService');
 const HarnessEventService = require('../services/HarnessEventService');
 const HarnessUsageService = require('../services/HarnessUsageService');
 const HarnessBudgetService = require('../services/HarnessBudgetService');
+const HarnessDashboardService = require('../services/HarnessDashboardService');
 const HarnessAuditService = require('../services/HarnessAuditService');
 const HarnessMetrics = require('../services/HarnessMetrics');
 const PermissionService = require('../services/PermissionService');
@@ -442,6 +443,44 @@ router.get('/projects/:projectId/audit', verifyTokenOrAgent, async (req, res, ne
     res.json({ success: true, data: events });
   } catch (error) {
     logger.error('GET /harness/projects/:projectId/audit failed:', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /harness/projects/{projectId}/dashboard:
+ *   get:
+ *     tags: [Harness]
+ *     summary: Harness runs, cost, review/fix rounds and alerts for a project
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *       - in: query
+ *         name: since
+ *         schema: { type: string, format: date-time }
+ *       - in: query
+ *         name: until
+ *         schema: { type: string, format: date-time }
+ *     responses:
+ *       200:
+ *         description: Dashboard data
+ */
+router.get('/projects/:projectId/dashboard', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const projectId = projectIdParam(req.params.projectId);
+    await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
+    const dashboard = await HarnessDashboardService.getDashboard(projectId, {
+      since: req.query.since,
+      until: req.query.until,
+    });
+    res.json({ success: true, data: dashboard });
+  } catch (error) {
+    logger.error('GET /harness/projects/:projectId/dashboard failed:', error);
     next(error);
   }
 });

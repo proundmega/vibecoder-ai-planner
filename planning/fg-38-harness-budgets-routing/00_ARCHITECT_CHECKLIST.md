@@ -1,12 +1,12 @@
 ---
 id: "fg-38"
 title: "Harness Budgets and Model Routing"
-status: planned
+status: in_progress
 priority: "P1"
 effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
-updated: "2026-11-03"
+updated: "2026-11-16"
 pr: null
 branch: null
 depends_on: ["fg-30"]
@@ -34,3 +34,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D2 | Durable usage checkpoints | fg-33 | Reliability | fg-33-durable-harness-execution | open |
 | D3 | Use eval quality to inform routing | fg-37 | Evaluation | fg-37-agent-evaluation-harness | open |
 | D4 | Budget/token dashboards | fg-41 | Observability | fg-41-harness-observability | open |
+| D5 | Price-table change ownership | fg-38 | Billing | operator runbook | open |

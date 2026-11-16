@@ -49,6 +49,10 @@ jest.mock('../services/HarnessBudgetService', () => ({
   listKillSwitchAudit: jest.fn(),
 }));
 
+jest.mock('../services/HarnessDashboardService', () => ({
+  getDashboard: jest.fn(),
+}));
+
 jest.mock('../services/HarnessAuditService', () => ({
   recordReview: jest.fn(),
   recordPublish: jest.fn(),
@@ -58,6 +62,7 @@ const HarnessRunService = require('../services/HarnessRunService');
 const HarnessEventService = require('../services/HarnessEventService');
 const HarnessUsageService = require('../services/HarnessUsageService');
 const HarnessBudgetService = require('../services/HarnessBudgetService');
+const HarnessDashboardService = require('../services/HarnessDashboardService');
 const HarnessAuditService = require('../services/HarnessAuditService');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
@@ -281,7 +286,30 @@ describe('Harness observability API', () => {
     });
   });
 
-  describe('project policies and usage', () => {
+  describe('project dashboards and policies', () => {
+    it('returns the dashboard to a project member', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ owner_id: 'owner-1', is_member: true }],
+      });
+      HarnessDashboardService.getDashboard.mockResolvedValue({
+        projectId: 5, runs: { total: 1 }, alerts: [],
+      });
+      const res = await request(app)
+        .get('/api/v1/harness/projects/5/dashboard')
+        .set('Authorization', 'Bearer mock-token');
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data.runs.total).toBe(1);
+    });
+
+    it('denies the dashboard to a non-member', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ owner_id: 'other', is_member: false }],
+      });
+      const res = await request(app)
+        .get('/api/v1/harness/projects/5/dashboard')
+        .set('Authorization', 'Bearer mock-token');
+      expect(res.statusCode).toBe(403);
+    });
 
     it('returns a project member the recent runs for replay', async () => {
       pool.query.mockResolvedValueOnce({
@@ -417,7 +445,7 @@ describe('Harness observability API', () => {
 
     it('rejects an invalid project id', async () => {
       const res = await request(app)
-        .get('/api/v1/harness/projects/not-a-number/budget-policy')
+        .get('/api/v1/harness/projects/not-a-number/dashboard')
         .set('Authorization', 'Bearer mock-token');
       expect(res.statusCode).toBe(400);
     });
