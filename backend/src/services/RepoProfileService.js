@@ -390,7 +390,7 @@ async function assertMtlsReference(projectId, egress) {
   if (!mtls) return;
   const result = await pool.query(
     `SELECT * FROM project_credentials
-     WHERE id = $1 AND project_id = $2`,
+     WHERE id = $1 AND project_id = $2 AND credential_type = 'custom'`,
     [mtls.credential_id, projectId]
   );
   if (result.rows.length === 0) {
@@ -610,7 +610,7 @@ class RepoProfileService {
     const metadata = {
       kind: MTLS_KIND,
       hosts,
-      cert_b64: material.certPem,
+      cert_b64: Buffer.from(material.certPem, 'utf8').toString('base64'),
       cert_sha256: material.certSha256,
     };
     const inserted = await pool.query(
@@ -647,6 +647,18 @@ class RepoProfileService {
 
   async deleteMtlsCredential(projectId, credentialId, user) {
     await assertCanWrite(projectId, user);
+    const inUse = await pool.query(
+      `SELECT 1 FROM repo_profiles
+       WHERE project_id = $1
+         AND status IN ('draft', 'active')
+         AND profile->'egress'->'mtls'->>'credential_id' = $2
+       LIMIT 1`,
+      [projectId, String(credentialId)]
+    );
+    if (inUse.rows.length > 0) {
+      throw new ValidationError(
+        'mTLS credential is still referenced by a draft or active repo profile');
+    }
     const result = await pool.query(
       `UPDATE project_credentials
        SET is_active = FALSE, updated_at = NOW()
@@ -663,14 +675,30 @@ class RepoProfileService {
     return mtlsCredentialView(result.rows[0]);
   }
 
-  async getMtlsMaterialForAgent(projectId, agent) {
+  async getMtlsMaterialForAgent(projectId, agent, profileId = null, profileVersion = null) {
     await assertAgentProjectAccess(projectId, agent);
-    const active = await this.getActive(projectId);
-    const mtls = active?.profile?.egress?.mtls;
+    let profile;
+    if (profileId != null || profileVersion != null) {
+      if (profileId == null || profileVersion == null) {
+        throw new ValidationError('profileId and profileVersion must be provided together');
+      }
+      const profileResult = await pool.query(
+        `SELECT * FROM repo_profiles
+         WHERE id = $1 AND project_id = $2 AND version = $3`,
+        [profileId, projectId, profileVersion]
+      );
+      if (profileResult.rows.length === 0) {
+        throw new NotFoundError('Repo profile not found');
+      }
+      profile = profileResult.rows[0];
+    } else {
+      profile = await this.getActive(projectId);
+    }
+    const mtls = profile?.profile?.egress?.mtls;
     if (!mtls) return null;
     const result = await pool.query(
       `SELECT * FROM project_credentials
-       WHERE id = $1 AND project_id = $2`,
+       WHERE id = $1 AND project_id = $2 AND credential_type = 'custom'`,
       [mtls.credential_id, projectId]
     );
     if (result.rows.length === 0 || !result.rows[0].is_active) {
@@ -682,16 +710,20 @@ class RepoProfileService {
       throw new ValidationError('Active repo profile mTLS credential is invalid');
     }
     const allowed = new Set(normalizeMtlsHosts(metadata.hosts || []));
-    for (const host of normalizeMtlsHosts(mtls.hosts)) {
+    const effectiveHosts = normalizeMtlsHosts(mtls.hosts);
+    for (const host of effectiveHosts) {
       if (!allowed.has(host)) {
         throw new ValidationError(
-          `Active repo profile mTLS host ${host} is not scoped to its credential`);
+          `Profile mTLS host ${host} is not scoped to its credential`);
       }
     }
-    logger.info('Released repo-profile mTLS material for project {} credential {} hosts={} certSha256={}',
-      projectId, row.id, metadata.hosts.join(','), metadata.cert_sha256 || '');
+    logger.info('Released repo-profile mTLS material for project {} profile {} credential {} hosts={} certSha256={}',
+      projectId, profile.id, row.id, effectiveHosts.join(','), metadata.cert_sha256 || '');
     return {
-      hosts: metadata.hosts,
+      profile_id: profile.id,
+      profile_version: profile.version,
+      credential_id: row.id,
+      hosts: effectiveHosts,
       cert_b64: metadata.cert_b64,
       key_b64: Buffer.from(decrypt(row.key_encrypted), 'utf8').toString('base64'),
       cert_sha256: metadata.cert_sha256 || null,

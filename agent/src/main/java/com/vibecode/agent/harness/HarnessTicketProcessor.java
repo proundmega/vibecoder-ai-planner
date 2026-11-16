@@ -817,8 +817,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     effectiveSandboxConfig = sandboxConfig.withRepoProfile(
                         profile, config.getProjectId(), profileSnapshot.version());
                     if (profile.egress() != null && profile.egress().mtls() != null) {
-                        EgressMtlsMaterial material =
-                            apiService.getRepoProfileMtls(config.getProjectId());
+                        EgressMtlsMaterial material = apiService.getRepoProfileMtls(
+                            config.getProjectId(),
+                            profileSnapshot.id(),
+                            profileSnapshot.version(),
+                            profile.egress().mtls().credentialId());
                         if (material == null) {
                             throw new IllegalStateException(
                                 "the active profile requires client-certificate mTLS, "

@@ -232,17 +232,25 @@ describe('Repo profile API', () => {
       cert_sha256: 'abc',
     });
 
+    const missing = await request(app)
+      .get('/api/v1/projects/1/repo-profile/agent/mtls')
+      .set('X-API-Key', 'agent-key');
+    expect(missing.statusCode).toBe(400);
+
     const res = await request(app)
       .get('/api/v1/projects/1/repo-profile/agent/mtls')
+      .query({ profileId: '11111111-1111-4111-8111-111111111111', profileVersion: 3 })
       .set('X-API-Key', 'agent-key');
 
     expect(res.statusCode).toBe(200);
     expect(res.body.data.hosts).toEqual(['registry.example.com']);
     expect(RepoProfileService.getMtlsMaterialForAgent).toHaveBeenCalledWith(
-      '1', expect.objectContaining({ id: 7, owner_id: 1 }));
+      '1', expect.objectContaining({ id: 7, owner_id: 1 }),
+      '11111111-1111-4111-8111-111111111111', 3);
 
     const jwtOnly = await request(app)
       .get('/api/v1/projects/1/repo-profile/agent/mtls')
+      .query({ profileId: '11111111-1111-4111-8111-111111111111', profileVersion: 3 })
       .set('Authorization', 'Bearer mock-token');
     expect(jwtOnly.statusCode).toBe(403);
   });

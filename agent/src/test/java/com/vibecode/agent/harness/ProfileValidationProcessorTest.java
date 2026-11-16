@@ -232,7 +232,8 @@ class ProfileValidationProcessorTest {
             List.of("registry.example.com"),
             Files.readString(Path.of("src/test/resources/egress-client-cert.pem")),
             Files.readString(Path.of("src/test/resources/egress-client-key.pem")));
-        when(apiService.getRepoProfileMtls("1")).thenReturn(material);
+        when(apiService.getRepoProfileMtls("1", "11111111-1111-4111-8111-111111111111", 3, 5))
+            .thenReturn(material);
         when(verificationRunner.run(
             eq(sandboxRunner), eq(handle), anyList(), any(Duration.class)))
             .thenReturn(List.of(new VerificationResult("npm ci", 0, "ok", false)));

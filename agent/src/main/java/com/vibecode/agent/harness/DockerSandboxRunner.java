@@ -1353,20 +1353,29 @@ public final class DockerSandboxRunner implements SandboxRunner {
     private Path writeMtlsEnvFile(EgressMtlsMaterial material) throws IOException {
         Path file = Files.createTempFile("vibecode-egress-mtls-", ".env");
         try {
-            Files.setPosixFilePermissions(file,
-                PosixFilePermissions.fromString("rw-------"));
-        } catch (UnsupportedOperationException ignored) {
-            // Non-POSIX filesystems still get the process umask.
+            try {
+                Files.setPosixFilePermissions(file,
+                    PosixFilePermissions.fromString("rw-------"));
+            } catch (UnsupportedOperationException ignored) {
+                // Non-POSIX filesystems still get the process umask.
+            }
+            String content = "EGRESS_MTLS_HOSTS=" + String.join(",", material.hosts()) + "\n"
+                + "EGRESS_MTLS_CERT_PEM_B64="
+                + Base64.getEncoder().encodeToString(
+                    material.certPem().getBytes(StandardCharsets.UTF_8)) + "\n"
+                + "EGRESS_MTLS_KEY_PEM_B64="
+                + Base64.getEncoder().encodeToString(
+                    material.keyPem().getBytes(StandardCharsets.UTF_8)) + "\n";
+            Files.writeString(file, content, StandardCharsets.UTF_8);
+            return file;
+        } catch (IOException | RuntimeException e) {
+            try {
+                Files.deleteIfExists(file);
+            } catch (IOException ignored) {
+                // Preserve the original write failure.
+            }
+            throw e;
         }
-        String content = "EGRESS_MTLS_HOSTS=" + String.join(",", material.hosts()) + "\n"
-            + "EGRESS_MTLS_CERT_PEM_B64="
-            + Base64.getEncoder().encodeToString(
-                material.certPem().getBytes(StandardCharsets.UTF_8)) + "\n"
-            + "EGRESS_MTLS_KEY_PEM_B64="
-            + Base64.getEncoder().encodeToString(
-                material.keyPem().getBytes(StandardCharsets.UTF_8)) + "\n";
-        Files.writeString(file, content, StandardCharsets.UTF_8);
-        return file;
     }
 
     /**

@@ -696,12 +696,18 @@ public class ApiService {
 
 
     /**
-     * Fetch the active profile's scoped client-certificate material. The
-     * private key is returned only to the agent and is never part of the
+     * Fetch one exact profile revision's scoped client-certificate material.
+     * The private key is returned only to the agent and is never part of the
      * profile JSON or ordinary profile responses.
      */
-    public EgressMtlsMaterial getRepoProfileMtls(String projectId) throws IOException {
-        String url = baseUrl + "/projects/" + projectId + "/repo-profile/agent/mtls";
+    public EgressMtlsMaterial getRepoProfileMtls(
+        String projectId,
+        String profileId,
+        int profileVersion,
+        long expectedCredentialId
+    ) throws IOException {
+        String url = baseUrl + "/projects/" + projectId + "/repo-profile/agent/mtls"
+            + "?profileId=" + profileId + "&profileVersion=" + profileVersion;
         ApiResponse<Map<String, Object>> response = executeGet(
             url, new TypeReference<ApiResponse<Map<String, Object>>>() {});
         if (response.hasError()) {
@@ -711,6 +717,18 @@ public class ApiService {
             return null;
         }
         Map<String, Object> data = response.getData();
+        Object versionValue = data.get("profile_version");
+        if (!String.valueOf(profileId).equals(String.valueOf(data.get("profile_id")))
+            || !(versionValue instanceof Number versionNumber)
+            || versionNumber.intValue() != profileVersion) {
+            throw new IllegalArgumentException(
+                "repo profile mTLS response is for a different profile revision");
+        }
+        if (!(data.get("credential_id") instanceof Number credentialId)
+            || credentialId.longValue() != expectedCredentialId) {
+            throw new IllegalArgumentException(
+                "repo profile mTLS response is for a different credential");
+        }
         Object hostsValue = data.get("hosts");
         if (!(hostsValue instanceof List<?> rawHosts)) {
             throw new IllegalArgumentException("repo profile mTLS response has no hosts");
@@ -726,7 +744,13 @@ public class ApiService {
         }
         String certPem = new String(Base64.getDecoder().decode(certB64), StandardCharsets.UTF_8);
         String keyPem = new String(Base64.getDecoder().decode(keyB64), StandardCharsets.UTF_8);
-        return new EgressMtlsMaterial(hosts, certPem, keyPem);
+        EgressMtlsMaterial material = new EgressMtlsMaterial(hosts, certPem, keyPem);
+        if (data.get("cert_sha256") != null
+            && !material.certSha256().equals(String.valueOf(data.get("cert_sha256")))) {
+            throw new IllegalArgumentException(
+                "repo profile mTLS certificate fingerprint does not match the response");
+        }
+        return material;
     }
 
     /**

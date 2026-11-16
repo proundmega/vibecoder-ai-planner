@@ -140,6 +140,7 @@ let originCaInitialized = false;
 let originCaSha256 = null;
 const mtlsByHost = new Map();
 const mtlsUsed = new Set();
+const mtlsReached = new Set();
 let mtlsInitialized = false;
 let mtlsCertSha256 = null;
 
@@ -263,6 +264,19 @@ function mtlsHostError(host) {
   return null;
 }
 
+function presentedClientCertificate(socket) {
+  try {
+    const certificate = socket && typeof socket.getCertificate === "function"
+      ? socket.getCertificate()
+      : null;
+    if (!certificate) return false;
+    if (certificate.raw) return true;
+    return Object.keys(certificate).length > 0;
+  } catch (error) {
+    return false;
+  }
+}
+
 function markMtlsUsed(host) {
   const value = normaliseHost(host);
   if (!mtlsByHost.has(value) || mtlsUsed.has(value)) {
@@ -270,6 +284,18 @@ function markMtlsUsed(host) {
   }
   mtlsUsed.add(value);
   log("info", "egress mTLS used", {
+    host: value,
+    sha256: mtlsCertSha256,
+  });
+}
+
+function markMtlsReached(host) {
+  const value = normaliseHost(host);
+  if (!mtlsByHost.has(value) || mtlsReached.has(value)) {
+    return;
+  }
+  mtlsReached.add(value);
+  log("info", "egress mTLS host reached", {
     host: value,
     sha256: mtlsCertSha256,
   });
@@ -635,7 +661,13 @@ function handleTunneledRequest(request, response, host, address, port, agent, tl
     // Only record trust material as used after the origin TLS handshake and
     // response succeeded; a failed connection must not produce an audit entry.
     markOriginCaUsed(host);
-    markMtlsUsed(host);
+    if (mtlsByHost.has(normaliseHost(host))) {
+      if (presentedClientCertificate(upstreamResponse.socket)) {
+        markMtlsUsed(host);
+      } else {
+        markMtlsReached(host);
+      }
+    }
     const status = upstreamResponse.statusCode || 502;
     if (status === 101 || (status >= 100 && status < 200)) {
       upstreamResponse.destroy();

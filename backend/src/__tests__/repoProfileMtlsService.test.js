@@ -108,7 +108,7 @@ describe('RepoProfile mTLS credentials (D29)', () => {
     const metadata = JSON.parse(params[4]);
     expect(metadata.kind).toBe('mtls-client');
     expect(metadata.hosts).toEqual(['registry.example.com']);
-    expect(metadata.cert_b64).toBe(CERT);
+    expect(metadata.cert_b64).toBe(Buffer.from(CERT).toString('base64'));
     expect(metadata.cert_sha256).toMatch(/^[a-f0-9]{64}$/);
   });
 
@@ -166,6 +166,39 @@ describe('RepoProfile mTLS credentials (D29)', () => {
     })).resolves.toBeUndefined();
   });
 
+  it('scopes material to the exact profile revision and its effective hosts', async () => {
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'profile-1',
+          project_id: 1,
+          version: 3,
+          profile: {
+            egress: { mtls: { credential_id: 5, hosts: ['registry.example.com'] } },
+          },
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [credentialRow({
+          metadata: {
+            kind: 'mtls-client',
+            hosts: ['registry.example.com', 'other.example.com'],
+            cert_b64: Buffer.from(CERT).toString('base64'),
+            cert_sha256: 'abc123',
+          },
+        })],
+      });
+
+    const material = await RepoProfileService.getMtlsMaterialForAgent(
+      1, { id: 9, owner_id: 7 }, 'profile-1', 3);
+
+    expect(material.profile_id).toBe('profile-1');
+    expect(material.profile_version).toBe(3);
+    expect(material.credential_id).toBe(5);
+    expect(material.hosts).toEqual(['registry.example.com']);
+    expect(pool.query.mock.calls[1][0]).toContain("credential_type = 'custom'");
+  });
+
   it('releases scoped material to the project-owner agent only', async () => {
     jest.spyOn(RepoProfileService, 'getActive').mockResolvedValue({
       id: 'profile-1',
@@ -202,9 +235,18 @@ describe('RepoProfile mTLS credentials (D29)', () => {
     expect(listed[0].id).toBe(5);
     expect(listed[0].key_encrypted).toBeUndefined();
 
-    pool.query.mockResolvedValueOnce({ rows: [credentialRow({ is_active: false })] });
+    pool.query
+      .mockResolvedValueOnce({ rows: [] }) // not referenced by a profile
+      .mockResolvedValueOnce({ rows: [credentialRow({ is_active: false })] });
     const deleted = await RepoProfileService.deleteMtlsCredential(1, 5, OWNER);
     expect(deleted.is_active).toBe(false);
-    expect(pool.query.mock.calls[1][0]).toContain('SET is_active = FALSE');
+    expect(pool.query.mock.calls[2][0]).toContain('SET is_active = FALSE');
+  });
+
+  it('refuses to deactivate a credential referenced by a profile', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [{ exists: true }] });
+
+    await expect(RepoProfileService.deleteMtlsCredential(1, 5, OWNER))
+      .rejects.toThrow(/still referenced/);
   });
 });

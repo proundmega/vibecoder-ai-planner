@@ -3,7 +3,7 @@ const router = express.Router();
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const RepoProfileService = require('../services/RepoProfileService');
 const RepoProfileValidationService = require('../services/RepoProfileValidationService');
-const { ForbiddenError } = require('../errors/HttpError');
+const { ForbiddenError, ValidationError } = require('../errors/HttpError');
 
 function requireAgent(req) {
   if (!req.agent || !req.agent.id) {
@@ -388,12 +388,20 @@ router.delete('/:projectId/repo-profile/credentials/mtls/:credentialId', verifyT
  * /projects/{projectId}/repo-profile/agent/mtls:
  *   get:
  *     tags: [Repo Profiles]
- *     summary: Get the active profile's scoped mTLS client material for the agent
+ *     summary: Get one exact profile revision's scoped mTLS client material for the agent
  *     parameters:
  *       - in: path
  *         name: projectId
  *         required: true
  *         schema: { $ref: '#/components/schemas/NumericId' }
+ *       - in: query
+ *         name: profileId
+ *         required: true
+ *         schema: { type: string, pattern: '^[0-9a-fA-F-]{36}$' }
+ *       - in: query
+ *         name: profileVersion
+ *         required: true
+ *         schema: { type: integer, minimum: 1 }
  *     security:
  *       - ApiKeyAuth: []
  *     responses:
@@ -403,8 +411,15 @@ router.delete('/:projectId/repo-profile/credentials/mtls/:credentialId', verifyT
 router.get('/:projectId/repo-profile/agent/mtls', verifyTokenOrAgent, async (req, res, next) => {
   try {
     const agent = requireAgent(req);
+    if (!req.query.profileId || req.query.profileVersion == null) {
+      throw new ValidationError('profileId and profileVersion query parameters are required');
+    }
     const data = await RepoProfileService.getMtlsMaterialForAgent(
-      req.params.projectId, agent);
+      req.params.projectId,
+      agent,
+      req.query.profileId,
+      Number(req.query.profileVersion)
+    );
     res.json({ success: true, data });
   } catch (error) {
     next(error);

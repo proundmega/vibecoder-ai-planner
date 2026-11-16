@@ -143,7 +143,11 @@ public class ProfileValidationProcessor {
                 effective = sandboxConfig.withRepoProfile(
                     profile, projectId, validation.profileVersion());
                 if (profile.egress() != null && profile.egress().mtls() != null) {
-                    EgressMtlsMaterial material = apiService.getRepoProfileMtls(projectId);
+                    EgressMtlsMaterial material = apiService.getRepoProfileMtls(
+                        projectId,
+                        validation.profileId(),
+                        validation.profileVersion(),
+                        profile.egress().mtls().credentialId());
                     if (material == null) {
                         throw new IllegalStateException(
                             "the active profile requires client-certificate mTLS, "

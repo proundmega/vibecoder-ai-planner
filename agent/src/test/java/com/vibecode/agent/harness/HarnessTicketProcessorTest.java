@@ -686,7 +686,7 @@ class HarnessTicketProcessorTest {
             .thenReturn(Map.of("id", "run-1"));
         when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
         when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
-        when(apiService.getRepoProfileMtls("1")).thenReturn(material);
+        when(apiService.getRepoProfileMtls("1", snapshot.id(), 7, 5)).thenReturn(material);
         when(verificationRunner.run(eq(runner), eq(handle), anyList(), any(Duration.class)))
             .thenReturn(List.of(new VerificationResult("npm test", 0, "ok", false)));
 
@@ -696,7 +696,7 @@ class HarnessTicketProcessorTest {
         verify(runner).create(spec.capture());
         assertEquals(List.of("registry.example.com"), spec.getValue().egressMtls().hosts());
         assertFalse(spec.getValue().toString().contains("PRIVATE KEY"));
-        verify(apiService).getRepoProfileMtls("1");
+        verify(apiService).getRepoProfileMtls("1", snapshot.id(), 7, 5);
         verify(runner).destroy(handle);
     }
 
