@@ -261,7 +261,9 @@ run records the profile it used. `HarnessRunService.startRun` joins the profile
 to the ticket's project and checks the revision, so an agent cannot record a
 false profile revision. `profile_hash` is the SHA-256 of a canonicalized
 profile JSON; activation requires a successful validation row with the same
-hash. `profile.base_branch` is the first source in
+hash. A legacy row with a null hash gets one persisted when validation is
+requested (and again on activation), so existing profiles can be revalidated
+without a manual re-save. `profile.base_branch` is the first source in
 fg-36's shared resolver; slice 1 uses it directly for checkout and the PR base.
 
 `profile.base_branch` is the most specific source. fg-36's `BaseBranchResolver` uses: active profile > project setting > GitHub repo default > `main`, then `master`. Do not duplicate this order elsewhere.
