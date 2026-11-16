@@ -33,7 +33,7 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-38 | `fg-38-harness-budgets-routing` | Planned | Live budgets, hard stops, quotas, model routing/fallback | fg-30 Phase 1 |
 | fg-39 | `fg-39-repo-environment-profiles` | In review (#161, Slice 1) | Repo onboarding, versioned profiles, detection, dry-run, setup/verify, pinned image, repo binding and exact-content activation; caches/services/flaky/per-stack images planned | fg-34 |
 | fg-40 | `fg-40-multi-agent-orchestration` | Planned | Roles, task graph, worktrees, handoffs, integrator | fg-33, fg-36, fg-38, fg-39 |
-| fg-41 | `fg-41-harness-observability` | Planned | Event stream, traces, replay, dashboards, audit | fg-33 |
+| fg-41 | `fg-41-harness-observability` | In progress (PR #163) | Append-only event stream, correlation, redaction and retention; replay/dashboards/audit in #165 | fg-33 |
 | fg-42 | `fg-42-harness-privacy` | Planned | Classification, redaction, provider policy, retention | fg-34, fg-41 |
 
 fg-30 Phases 2-4 (human loop, autonomy, hardening) remain part of the fg-30 implementation plan; the cross-cutting tickets above fill the gaps that were not specified there.

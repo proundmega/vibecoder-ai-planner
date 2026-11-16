@@ -17,6 +17,22 @@ const DEFAULT_MAX_KEYS = 200;
 const SENSITIVE_KEY_PATTERN =
   /(pass(word|wd|phrase)?|secret|token|api[_-]?key|private[_-]?key|authorization|credential|cookie|session[_-]?key|access[_-]?key)/i;
 
+const TOKEN_COUNT_KEYS = new Set([
+  'tokens',
+  'inputtokens',
+  'outputtokens',
+  'cachedtokens',
+  'reasoningtokens',
+  'maxtokens',
+  'tokencount',
+  'tokencounts',
+  'totaltokens',
+  'prompttokens',
+  'completiontokens',
+  'tokensin',
+  'tokensout',
+]);
+
 const HASH_CONTENT_KEYS = new Set([
   'content',
   'filecontent',
@@ -116,11 +132,15 @@ function digestContent(value) {
   };
 }
 
+function isTokenCountKey(key) {
+  return TOKEN_COUNT_KEYS.has(String(key).toLowerCase().replace(/[_-]/g, ''));
+}
+
 function redactString(value, key, ctx) {
   if (typeof value !== 'string') {
     return value;
   }
-  if (key && SENSITIVE_KEY_PATTERN.test(key)) {
+  if (key && !isTokenCountKey(key) && SENSITIVE_KEY_PATTERN.test(key)) {
     ctx.redactedFields.add(key);
     ctx.secretFlagged = true;
     return '[REDACTED]';
@@ -253,4 +273,5 @@ module.exports = {
   containsSecret,
   sha256,
   SENSITIVE_KEY_PATTERN,
+  TOKEN_COUNT_KEYS,
 };

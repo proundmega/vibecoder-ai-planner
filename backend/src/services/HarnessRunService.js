@@ -1,5 +1,6 @@
 const { pool } = require('../db');
 const DependencyService = require('./DependencyService');
+const logger = require('../utils/logger');
 const {
   NotFoundError,
   ValidationError,
@@ -176,9 +177,10 @@ class HarnessRunService {
 
       const result = await client.query(
         `INSERT INTO harness_runs
-           (ticket_id, agent_id, branch, base_sha, workspace_path, session_id,
-            provider, model, attempt, repo_profile_id, repo_profile_version)
-         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+           (ticket_id, agent_id, project_id, branch, base_sha, workspace_path,
+            session_id, provider, model, attempt, repo_profile_id,
+            repo_profile_version)
+         SELECT $1, $2, t.project_id, $3, $4, $5, $6, $7, $8, $9, $10, $11
          FROM tickets t
          JOIN agents a ON a.id = $2
          WHERE t.id = $1
@@ -427,14 +429,40 @@ class HarnessRunService {
     );
 
     if (result.rows.length > 0) {
+      await this.recordTerminalEvent(result.rows[0]);
       return result.rows[0];
     }
 
     const existing = await this.getRun(id);
     if (TERMINAL_RUN_STATUSES.includes(existing.status)) {
+      await this.recordTerminalEvent(existing);
       return existing;
     }
     throw new ConflictError('Harness run is not active');
+  }
+
+  /**
+   * Best-effort terminal event for a finished run (fg-41). The supervisor
+   * usually emits it first; this closes the timeline when the process died or
+   * the event was lost. The service deduplicates by (run_id, type).
+   */
+  async recordTerminalEvent(run) {
+    if (!run || !run.id) {
+      return;
+    }
+    try {
+      // Lazy require avoids the HarnessEventService -> HarnessRunService cycle.
+      const HarnessEventService = require('./HarnessEventService');
+      await HarnessEventService.ensureTerminalEvent({
+        runId: run.id,
+        status: run.status,
+        error: run.error,
+        headSha: run.head_sha,
+        prUrl: run.pr_url,
+      });
+    } catch (eventError) {
+      logger.warn(`Could not persist terminal event for run ${run.id}: ${eventError.message}`);
+    }
   }
 
   /**

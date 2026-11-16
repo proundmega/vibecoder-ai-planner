@@ -30,7 +30,7 @@ backend/src/
   services/         → ~28 services
   controllers/      → ~12 controllers
   models/           → approval, project, ticket, user
-  migrations/       → 47 .sql files + 2 data migrations; apply.js runs in array order (not numeric)
+  migrations/       → 49 .sql files + 2 data migrations; apply.js runs in array order (not numeric)
   middleware/       → ~15 files (auth, permissions, validate (Joi), cors, rate limiter, CSP, requestId, error handler, timeout, apiVersion, multer)
   validators/       → 15 Joi schemas
   db.js             → pg Pool (DATABASE_URL env)
@@ -163,6 +163,9 @@ closed), `HARNESS_PROTECTED_PATHS`, `HARNESS_MODEL`, `HARNESS_MAX_FILES`,
 `HARNESS_LEASE_SECONDS`, `HARNESS_HEARTBEAT_SECONDS`,
 `HARNESS_DURABILITY_REQUIRED`, `HARNESS_RESUME_MODE`,
 `HARNESS_REAPER_INTERVAL_SECONDS`, `HARNESS_WORKSPACE_RETENTION_HOURS`.
+Event store (fg-41): `HARNESS_EVENT_MAX_STRING`, `HARNESS_EVENT_RETENTION_DAYS`
+(30), `HARNESS_AUDIT_RETENTION_DAYS` (365). `harness_events` is append-only;
+only the retention purge may delete rows.
 Sandbox: `SANDBOX_MODE` (`host` legacy, `docker` sandboxes install/verification
 and model-driven shell commands), `SANDBOX_IMAGE`, `SANDBOX_PROXY_IMAGE`,
 `SANDBOX_REQUIRE`, `SANDBOX_CPUS`,
@@ -282,7 +285,11 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 
 **Ticket status transitions**: `backlog→in_progress`, `in_progress→review|backlog`, `review→done|backlog`. `done` has no outgoing transitions.
 
-**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 47 SQL files + 2 data migrations (`migrate_provider_api_keys.js`, `backfill_agent_key_hashes.js`). Notable non-numeric entries: 011/012 after 014; 020 after 018 (no 019); 031 has two files. The `029_data_migrate_provider_api_keys.sql` and `030` rollback files exist on disk but are **not** in the apply array. Each SQL has a `_rollback.sql` counterpart.
+**Harness events**: agents append to `POST /harness/events`; operators read
+`GET /harness/runs/:runId/events` or `GET /harness/projects/:projectId/events`.
+Agent events are run-scoped and cannot write `audit.*`.
+
+**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 49 SQL files + 2 data migrations (`migrate_provider_api_keys.js`, `backfill_agent_key_hashes.js`). Notable non-numeric entries: 011/012 after 014; 020 after 018 (no 019); 031 has two files. The `029_data_migrate_provider_api_keys.sql` and `030` rollback files exist on disk but are **not** in the apply array. Each SQL has a `_rollback.sql` counterpart.
 
 **Frontend auth**: 3 localStorage keys — `vibecode_token`, `vibecode_user`, `vibecode_permissions`. Route guards read localStorage directly (no Pinia dependency).
 

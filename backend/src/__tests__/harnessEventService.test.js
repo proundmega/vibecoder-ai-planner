@@ -13,6 +13,7 @@ jest.mock('../services/HarnessRunService', () => ({
 const { pool } = require('../db');
 const HarnessRunService = require('../services/HarnessRunService');
 const HarnessEventService = require('../services/HarnessEventService');
+const HarnessMetrics = require('../services/HarnessMetrics');
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
 const EVENT_ID = '22222222-2222-4222-8222-222222222222';
@@ -65,6 +66,8 @@ describe('HarnessEventService', () => {
       expect(insert[1].slice(0, 7)).toEqual([
         EVENT_ID, TRACE_ID, RUN_ID, 42, 7, 9, 'ses_test',
       ]);
+      expect(insert[0]).toContain('event_timestamp');
+      expect(Number.isNaN(Date.parse(insert[1][10]))).toBe(false);
       expect(JSON.parse(insert[1][9])).toEqual(expect.objectContaining({
         tool: 'bash',
         token: '[REDACTED]',
@@ -97,6 +100,7 @@ describe('HarnessEventService', () => {
     });
 
     it('returns the existing row for a duplicate event id', async () => {
+      HarnessMetrics.counters.eventsDuplicates.reset();
       const existing = { event_id: EVENT_ID, type: 'run.started' };
       pool.query
         .mockResolvedValueOnce({ rows: [RUN] })
@@ -114,6 +118,21 @@ describe('HarnessEventService', () => {
 
       expect(result.duplicate).toBe(true);
       expect(result.event).toEqual(existing);
+      const duplicateCounter = await HarnessMetrics.counters.eventsDuplicates.get();
+      expect(duplicateCounter.values[0].value).toBe(1);
+    });
+
+    it('rejects an invalid event timestamp', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [RUN] });
+      await expect(HarnessEventService.emit({
+        eventId: EVENT_ID,
+        traceId: TRACE_ID,
+        runId: RUN_ID,
+        agentId: 9,
+        type: 'run.started',
+        timestamp: 'not-a-time',
+        requireRunOwnership: true,
+      })).rejects.toThrow('timestamp must be a valid timestamp');
     });
 
     it('rejects an event without a project when it has no run', async () => {

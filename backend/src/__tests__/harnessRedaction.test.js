@@ -71,6 +71,27 @@ describe('harnessRedaction', () => {
     expect(result.truncated).toBe(true);
   });
 
+  it('keeps token-count fields visible', () => {
+    const result = redactPayload({
+      inputTokens: 1200,
+      outputTokens: 300,
+      cachedTokens: 50,
+      input_tokens: 1200,
+      output_tokens: 300,
+      token_count: 1800,
+      access_token: 'ghp_abcdefghijklmnopqrstuvwxyz012345',
+    });
+
+    expect(result.payload.inputTokens).toBe(1200);
+    expect(result.payload.outputTokens).toBe(300);
+    expect(result.payload.cachedTokens).toBe(50);
+    expect(result.payload.input_tokens).toBe(1200);
+    expect(result.payload.output_tokens).toBe(300);
+    expect(result.payload.token_count).toBe(1800);
+    expect(result.payload.access_token).toBe('[REDACTED]');
+    expect(result.secretFlagged).toBe(true);
+  });
+
   it('never returns raw secret values to containsSecret callers', () => {
     expect(containsSecret('token=abcdefghijklmnop')).toBe(true);
     expect(containsSecret('an ordinary sentence')).toBe(false);

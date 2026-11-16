@@ -180,16 +180,23 @@ class HarnessEventService {
       : (sessionId || null);
 
     const normalisedPayloadInput = normalisePayload(payload);
-    if (timestamp && !normalisedPayloadInput._emitted_at) {
-      normalisedPayloadInput._emitted_at = String(timestamp);
+    let eventTimestamp = new Date();
+    if (timestamp !== null && timestamp !== undefined && timestamp !== '') {
+      eventTimestamp = new Date(timestamp);
+      if (Number.isNaN(eventTimestamp.getTime())) {
+        throw new ValidationError('timestamp must be a valid timestamp');
+      }
+    }
+    if (!normalisedPayloadInput._emitted_at) {
+      normalisedPayloadInput._emitted_at = eventTimestamp.toISOString();
     }
     const safe = redactPayload(normalisedPayloadInput);
 
     const result = await pool.query(
       `INSERT INTO harness_events
          (event_id, trace_id, run_id, ticket_id, project_id, agent_id,
-          session_id, type, version, payload)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+          session_id, type, version, payload, event_timestamp)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
        ON CONFLICT (event_id) DO NOTHING
        RETURNING *`,
       [
@@ -203,6 +210,7 @@ class HarnessEventService {
         normalisedType,
         normalisedVersion,
         JSON.stringify(safe.payload),
+        eventTimestamp.toISOString(),
       ]
     );
 
@@ -220,6 +228,10 @@ class HarnessEventService {
     if (existing.rows.length === 0) {
       throw new NotFoundError('Event could not be stored');
     }
+    HarnessMetrics.recordEvent(normalisedType, {
+      secretFlagged: safe.secretFlagged,
+      duplicate: true,
+    });
     return { event: existing.rows[0], duplicate: true, redaction: safe };
   }
 
@@ -246,12 +258,12 @@ class HarnessEventService {
         throw new ValidationError('before must be a timestamp');
       }
       params.push(beforeDate.toISOString());
-      cursor = 'AND created_at < $3';
+      cursor = 'AND event_timestamp < $3';
     }
     const result = await pool.query(
       `SELECT * FROM harness_events
        WHERE run_id = $1 ${cursor}
-       ORDER BY created_at ASC, event_id ASC
+       ORDER BY event_timestamp ASC, created_at ASC, event_id ASC
        LIMIT $2`,
       params
     );
@@ -275,19 +287,19 @@ class HarnessEventService {
       const date = new Date(since);
       if (Number.isNaN(date.getTime())) throw new ValidationError('since must be a timestamp');
       params.push(date.toISOString());
-      clauses.push(`created_at >= $${params.length}`);
+      clauses.push(`event_timestamp >= $${params.length}`);
     }
     if (until) {
       const date = new Date(until);
       if (Number.isNaN(date.getTime())) throw new ValidationError('until must be a timestamp');
       params.push(date.toISOString());
-      clauses.push(`created_at <= $${params.length}`);
+      clauses.push(`event_timestamp <= $${params.length}`);
     }
     params.push(max, parsedOffset);
     const result = await pool.query(
       `SELECT * FROM harness_events
        WHERE ${clauses.join(' AND ')}
-       ORDER BY created_at DESC, event_id DESC
+       ORDER BY event_timestamp DESC, created_at DESC, event_id DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
@@ -307,19 +319,19 @@ class HarnessEventService {
       const date = new Date(since);
       if (Number.isNaN(date.getTime())) throw new ValidationError('since must be a timestamp');
       params.push(date.toISOString());
-      clauses.push(`created_at >= $${params.length}`);
+      clauses.push(`event_timestamp >= $${params.length}`);
     }
     if (until) {
       const date = new Date(until);
       if (Number.isNaN(date.getTime())) throw new ValidationError('until must be a timestamp');
       params.push(date.toISOString());
-      clauses.push(`created_at <= $${params.length}`);
+      clauses.push(`event_timestamp <= $${params.length}`);
     }
     params.push(max, parsedOffset);
     const result = await pool.query(
       `SELECT * FROM harness_events
        WHERE ${clauses.join(' AND ')}
-       ORDER BY created_at DESC, event_id DESC
+       ORDER BY event_timestamp DESC, created_at DESC, event_id DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
@@ -392,7 +404,7 @@ class HarnessEventService {
     const id = requiredUuid(runId, 'runId');
     const type = status === 'succeeded' ? 'run.succeeded' : 'run.failed';
     const existing = await pool.query(
-      'SELECT * FROM harness_events WHERE run_id = $1 AND type = $2 ORDER BY created_at ASC LIMIT 1',
+      'SELECT * FROM harness_events WHERE run_id = $1 AND type = $2 ORDER BY event_timestamp ASC LIMIT 1',
       [id, type]
     );
     if (existing.rows.length > 0) {
@@ -400,7 +412,7 @@ class HarnessEventService {
     }
     const trace = await pool.query(
       `SELECT trace_id FROM harness_events WHERE run_id = $1
-       ORDER BY created_at ASC LIMIT 1`,
+       ORDER BY event_timestamp ASC LIMIT 1`,
       [id]
     );
     const traceId = trace.rows[0]?.trace_id || crypto.randomUUID();

@@ -58,6 +58,26 @@ class HarnessPayloadRedactorTest {
     }
 
     @Test
+    void keepsTokenCountFieldsVisible() {
+        Map<String, Object> safe = HarnessPayloadRedactor.redact(Map.of(
+            "inputTokens", 1200,
+            "outputTokens", 300,
+            "cachedTokens", 50,
+            "input_tokens", 1200,
+            "output_tokens", 300,
+            "token_count", 1800,
+            "access_token", "ghp_abcdefghijklmnopqrstuvwxyz012345"));
+
+        assertEquals(1200, safe.get("inputTokens"));
+        assertEquals(300, safe.get("outputTokens"));
+        assertEquals(50, safe.get("cachedTokens"));
+        assertEquals(1200, safe.get("input_tokens"));
+        assertEquals(300, safe.get("output_tokens"));
+        assertEquals(1800, safe.get("token_count"));
+        assertEquals("[REDACTED]", safe.get("access_token"));
+    }
+
+    @Test
     void truncatesLongStringsAndCapsCollections() {
         Map<String, Object> safe = HarnessPayloadRedactor.redact(Map.of(
             "note", "x".repeat(5000),

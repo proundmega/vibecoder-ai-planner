@@ -139,6 +139,23 @@ describe('Harness event API (fg-41 slice 1)', () => {
       expect(res.statusCode).toBe(403);
     });
 
+    it('falls back to the ticket project when an older run has no project_id', async () => {
+      HarnessRunService.getRun.mockResolvedValue({
+        ...RUN, project_id: null,
+      });
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ project_id: 5 }] })
+        .mockResolvedValueOnce({ rows: [{ owner_id: 'owner-1', is_member: true }] });
+      HarnessEventService.listForRun.mockResolvedValue([{ event_id: EVENT_ID }]);
+
+      const res = await request(app)
+        .get(`/api/v1/harness/runs/${RUN_ID}/events`)
+        .set('Authorization', 'Bearer mock-token');
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.data).toHaveLength(1);
+    });
+
     it('returns project events to a member', async () => {
       pool.query.mockResolvedValueOnce({
         rows: [{ owner_id: 'owner-1', is_member: true }],

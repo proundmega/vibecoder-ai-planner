@@ -87,7 +87,18 @@ async function assertRunAccess(runId, req) {
   if (role === 'super_admin') {
     return run;
   }
-  await assertProjectAccess(run.project_id, req, 'TICKET_READ');
+  let projectId = run.project_id;
+  if (!projectId && run.ticket_id) {
+    const ticket = await pool.query(
+      'SELECT project_id FROM tickets WHERE id = $1',
+      [run.ticket_id]
+    );
+    projectId = ticket.rows?.[0]?.project_id || null;
+  }
+  if (!projectId) {
+    throw new NotFoundError('Harness run project not found');
+  }
+  await assertProjectAccess(projectId, req, 'TICKET_READ');
   return run;
 }
 

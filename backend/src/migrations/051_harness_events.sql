@@ -1,4 +1,4 @@
--- Migration: 050_harness_events.sql
+-- Migration: 051_harness_events.sql
 -- Append-only structured harness event store (fg-41 slice 1).
 -- Events are emitted by the supervisor, redacted at emission and again at
 -- ingest, and correlated by trace/run/ticket/project/agent.
@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS harness_events (
   type TEXT NOT NULL,
   version INTEGER NOT NULL DEFAULT 1,
   payload JSONB NOT NULL DEFAULT '{}',
+  event_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT harness_events_version_check CHECK (version > 0),
   CONSTRAINT harness_events_type_check CHECK (length(type) BETWEEN 1 AND 120)
@@ -25,14 +26,16 @@ CREATE TABLE IF NOT EXISTS harness_events (
 -- Tenant-scoped reads lead with project_id; run and ticket lookups are the
 -- operator/debug paths. Audit events share the same append-only store.
 CREATE INDEX IF NOT EXISTS idx_harness_events_project_created
-  ON harness_events(project_id, created_at DESC, event_id);
+  ON harness_events(project_id, event_timestamp DESC, event_id);
 CREATE INDEX IF NOT EXISTS idx_harness_events_run_created
-  ON harness_events(run_id, created_at ASC, event_id);
+  ON harness_events(run_id, event_timestamp ASC, event_id);
 CREATE INDEX IF NOT EXISTS idx_harness_events_ticket_created
-  ON harness_events(ticket_id, created_at DESC);
+  ON harness_events(ticket_id, event_timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_harness_events_trace
-  ON harness_events(trace_id, created_at ASC);
+  ON harness_events(trace_id, event_timestamp ASC);
 CREATE INDEX IF NOT EXISTS idx_harness_events_type_created
+  ON harness_events(type, event_timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_harness_events_created_at
   ON harness_events(type, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_harness_events_payload
   ON harness_events USING GIN (payload jsonb_path_ops);
