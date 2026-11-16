@@ -98,4 +98,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-16 | `1ef01f7` | Backend 137 suites / 1706 tests; agent 678 tests / 9 skipped | Pass. `node planning/check-planning.js`, backend lint (0 errors), `git diff --check`, root and agent Compose configs pass. Slice 1 covers FR1-FR4, FR6, FR7, FR9, FR10 and the D27 profile handoff; FR5/FR8 fail closed until their slices. |
+| 2026-11-16 | `5af3d48` | Backend 137 suites / 1707 tests; agent 678 tests / 9 skipped | Pass. `node planning/check-planning.js`, backend lint (0 errors), `git diff --check`, root and agent Compose configs pass. Slice 1 covers FR1-FR4, FR6, FR7, FR9, FR10 and the D27 profile handoff; FR5/FR8 fail closed until their slices. |

@@ -45,7 +45,7 @@ rather than accepting configuration it does not execute.
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Slice 1 implementation | `feat/fg-39-repo-profiles`, commit `1ef01f7`, PR #161 | ☑ |
+| Slice 1 implementation | `feat/fg-39-repo-profiles`, commits `1ef01f7..5af3d48`, PR #161 | ☑ |
 | Verification results | `03` → Results | ☑ |
 
 ## Deferred register (canonical)
