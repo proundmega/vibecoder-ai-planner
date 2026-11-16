@@ -1179,6 +1179,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         budgetPolicy = policy;
 
         String explicit = harnessConfig == null ? null : harnessConfig.modelOverride();
+        BudgetLimits effectiveLimits = policy.effectiveRunLimits();
         ModelRouter.RoutingDecision decision;
         try {
             decision = modelRouter.select(
@@ -1186,7 +1187,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 ticket,
                 planningDocs,
                 provider,
-                policy.limits().maxCostUsd(),
+                effectiveLimits.maxCostUsd(),
                 1,
                 explicit
             );
@@ -1198,7 +1199,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         if (harnessConfig != null) {
             activeHarnessConfig = harnessConfig
                 .withModel(decision.model())
-                .withMaxDuration(policy.limits().maxDuration());
+                .withMaxDuration(effectiveLimits.maxDuration());
         }
 
         Map<String, Object> routingPayload = new LinkedHashMap<>();
@@ -1212,7 +1213,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         emitEvent("routing.decided", routingPayload);
 
         budgetTracker = new HarnessBudgetTracker(
-            policy.limits(),
+            effectiveLimits,
             policy.priceFor(decision.model()),
             runStartedAt == null ? Instant.now() : runStartedAt,
             this::onBudgetWarning,

@@ -348,6 +348,11 @@ class HarnessBudgetService {
     return policy;
   }
 
+  /**
+   * Upsert a policy. Omitted fields preserve the existing value on update and
+   * fall back to the column default on insert; this keeps partial API updates
+   * from disabling limits or resetting routing accidentally.
+   */
   async upsertPolicy({
     projectId,
     scope = 'project',
@@ -401,24 +406,28 @@ class HarnessBudgetService {
           daily_cost_usd, project_max_concurrent_runs, agent_max_concurrent_runs,
           warn_ratio, routing_policy, free_model, paid_model, complexity_threshold,
           updated_by, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-               COALESCE($14, 'free_then_paid'), $15, $16, COALESCE($17, 3), $18, NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+               COALESCE($13, 0.8), COALESCE($14, 'free_then_paid'), $15, $16,
+               COALESCE($17, 3), $18, NOW())
        ON CONFLICT (project_id, scope, (COALESCE(scope_id, 0))) DO UPDATE
-       SET max_duration_seconds = EXCLUDED.max_duration_seconds,
-           max_input_tokens = EXCLUDED.max_input_tokens,
-           max_output_tokens = EXCLUDED.max_output_tokens,
-           max_cost_usd = EXCLUDED.max_cost_usd,
-           max_tool_calls = EXCLUDED.max_tool_calls,
-           max_retries = EXCLUDED.max_retries,
-           daily_cost_usd = EXCLUDED.daily_cost_usd,
-           project_max_concurrent_runs = EXCLUDED.project_max_concurrent_runs,
-           agent_max_concurrent_runs = EXCLUDED.agent_max_concurrent_runs,
-           warn_ratio = COALESCE(EXCLUDED.warn_ratio, harness_budget_policies.warn_ratio),
-           routing_policy = EXCLUDED.routing_policy,
-           free_model = EXCLUDED.free_model,
-           paid_model = EXCLUDED.paid_model,
-           complexity_threshold = EXCLUDED.complexity_threshold,
-           updated_by = EXCLUDED.updated_by,
+       SET max_duration_seconds = COALESCE($4, harness_budget_policies.max_duration_seconds),
+           max_input_tokens = COALESCE($5, harness_budget_policies.max_input_tokens),
+           max_output_tokens = COALESCE($6, harness_budget_policies.max_output_tokens),
+           max_cost_usd = COALESCE($7, harness_budget_policies.max_cost_usd),
+           max_tool_calls = COALESCE($8, harness_budget_policies.max_tool_calls),
+           max_retries = COALESCE($9, harness_budget_policies.max_retries),
+           daily_cost_usd = COALESCE($10, harness_budget_policies.daily_cost_usd),
+           project_max_concurrent_runs = COALESCE(
+             $11, harness_budget_policies.project_max_concurrent_runs),
+           agent_max_concurrent_runs = COALESCE(
+             $12, harness_budget_policies.agent_max_concurrent_runs),
+           warn_ratio = COALESCE($13, harness_budget_policies.warn_ratio),
+           routing_policy = COALESCE($14, harness_budget_policies.routing_policy),
+           free_model = COALESCE($15, harness_budget_policies.free_model),
+           paid_model = COALESCE($16, harness_budget_policies.paid_model),
+           complexity_threshold = COALESCE(
+             $17, harness_budget_policies.complexity_threshold),
+           updated_by = COALESCE($18, harness_budget_policies.updated_by),
            updated_at = NOW()
        RETURNING *`,
       [

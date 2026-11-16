@@ -100,6 +100,17 @@ class HarnessUsageService {
       projectId = ticket.rows?.[0]?.project_id || null;
     }
 
+    const previousResult = await pool.query(
+      `SELECT input_tokens, output_tokens, cached_tokens, cost_usd, tool_calls
+       FROM harness_usage
+       WHERE run_id = $1 AND model = $2`,
+      [id, normalisedModel]
+    );
+    const previous = previousResult.rows?.[0] || {};
+    const inputDelta = Math.max(0, input - Number(previous.input_tokens || 0));
+    const outputDelta = Math.max(0, output - Number(previous.output_tokens || 0));
+    const costDelta = Math.max(0, costUsd - Number(previous.cost_usd || 0));
+
     const result = await pool.query(
       `INSERT INTO harness_usage
          (run_id, ticket_id, project_id, agent_id, model, prompt_version,
@@ -137,9 +148,9 @@ class HarnessUsageService {
     );
 
     HarnessMetrics.recordUsage({
-      inputTokens: input,
-      outputTokens: output,
-      costUsd,
+      inputTokens: inputDelta,
+      outputTokens: outputDelta,
+      costUsd: costDelta,
     });
 
     if (result.rows.length === 0) {

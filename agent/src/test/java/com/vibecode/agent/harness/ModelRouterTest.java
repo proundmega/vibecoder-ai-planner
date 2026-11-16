@@ -135,6 +135,22 @@ class ModelRouterTest {
     }
 
     @Test
+    void effectiveLimitsCapTheRunCostByTheRemainingDailyBudget() {
+        BudgetLimits limits = BudgetLimits.defaults(Duration.ofMinutes(45));
+        HarnessBudgetPolicy nearLimit = new HarnessBudgetPolicy(
+            limits, 10, 4, 1, HarnessBudgetPolicy.FREE_ONLY,
+            "beam-free", "gpt-4o", 3, Map.of(), 9.99, null);
+        HarnessBudgetPolicy exhausted = new HarnessBudgetPolicy(
+            limits, 10, 4, 1, HarnessBudgetPolicy.FREE_ONLY,
+            "beam-free", "gpt-4o", 3, Map.of(), 10, null);
+
+        assertEquals(0.01, nearLimit.effectiveRunLimits().maxCostUsd(), 0.000001);
+        assertEquals(0.01, nearLimit.remainingDailyCostUsd(), 0.000001);
+        assertTrue(exhausted.effectiveRunLimits().maxCostUsd() > 0);
+        assertTrue(exhausted.effectiveRunLimits().maxCostUsd() < 0.00001);
+    }
+
+    @Test
     void budgetsDefaultToEnvIndependentLimits() {
         HarnessBudgetPolicy policy = HarnessBudgetPolicy.defaults(
             Duration.ofMinutes(30), provider);

@@ -17,6 +17,7 @@ const { pool } = require('../db');
 const HarnessRunService = require('../services/HarnessRunService');
 const HarnessBudgetService = require('../services/HarnessBudgetService');
 const HarnessUsageService = require('../services/HarnessUsageService');
+const HarnessMetrics = require('../services/HarnessMetrics');
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -38,7 +39,9 @@ describe('HarnessUsageService', () => {
   describe('recordUsage', () => {
     it('stores a cumulative snapshot with backend-priced cost', async () => {
       const row = { id: 'usage-1', run_id: RUN_ID, model: 'gpt-4o' };
-      pool.query.mockResolvedValueOnce({ rows: [row] });
+      pool.query
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [row] });
 
       const result = await HarnessUsageService.recordUsage({
         runId: RUN_ID,
@@ -60,7 +63,7 @@ describe('HarnessUsageService', () => {
         outputTokens: 50,
         cachedTokens: 10,
       });
-      const [sql, params] = pool.query.mock.calls[0];
+      const [sql, params] = pool.query.mock.calls[1];
       expect(sql).toContain('ON CONFLICT (run_id, model)');
       expect(sql).toContain('GREATEST');
       expect(params.slice(0, 8)).toEqual([
@@ -68,6 +71,40 @@ describe('HarnessUsageService', () => {
       ]);
       expect(params[8]).toBe(100);
       expect(params[11]).toBe(0.42);
+    });
+
+    it('records only usage deltas in Prometheus metrics', async () => {
+      const recordUsage = jest.spyOn(HarnessMetrics, 'recordUsage')
+        .mockImplementation(() => {});
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{
+            input_tokens: '80',
+            output_tokens: '40',
+            cached_tokens: '0',
+            cost_usd: '0.30',
+            tool_calls: '2',
+          }],
+        })
+        .mockResolvedValueOnce({ rows: [{ id: 'usage-1' }] });
+
+      await HarnessUsageService.recordUsage({
+        runId: RUN_ID,
+        agentId: 9,
+        model: 'gpt-4o',
+        inputTokens: 100,
+        outputTokens: 50,
+        cachedTokens: 0,
+        toolCalls: 3,
+        durationMs: 1200,
+      });
+
+      expect(recordUsage).toHaveBeenCalledWith({
+        inputTokens: 20,
+        outputTokens: 10,
+        costUsd: 0.12,
+      });
+      recordUsage.mockRestore();
     });
 
     it('rejects usage for another agent’s run', async () => {

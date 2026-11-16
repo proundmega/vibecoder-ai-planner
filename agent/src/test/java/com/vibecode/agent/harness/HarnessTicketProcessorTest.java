@@ -1697,6 +1697,57 @@ class HarnessTicketProcessorTest {
         assertTrue(fellBack, "expected a routing.decided event selecting the fallback model");
     }
 
+    @Test
+    void stopsMidRunWhenTheProjectDailyBudgetIsExhausted() throws Exception {
+        when(config.getAgentId()).thenReturn("7");
+        when(apiService.startHarnessRun(any(), anyString(), any(), any(), any(), anyInt()))
+            .thenReturn(Map.of("id", "run-1", "project_id", 7L));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.getLastBudgetPolicy()).thenReturn(Map.of(
+            "limits", Map.of(
+                "maxDurationSeconds", 3600,
+                "maxInputTokens", 100000,
+                "maxOutputTokens", 100000,
+                "maxCostUsd", 5,
+                "maxToolCalls", 100,
+                "maxRetries", 2,
+                "warnRatio", 0.8),
+            "quotas", Map.of("dailyCostUsd", 10),
+            "dailySpendUsd", 9.99,
+            "routing", Map.of(
+                "policy", "free_only",
+                "freeModel", "beam-free",
+                "complexityThreshold", 3)));
+        when(apiService.finishHarnessRun(
+            eq("run-1"), eq("budget_exceeded"), anyString(), isNull(), isNull()))
+            .thenReturn("budget_exceeded");
+        when(apiService.releaseHarnessTicket("run-1")).thenReturn(true);
+        doAnswer(invocation -> {
+            Consumer<HarnessEvent> listener = invocation.getArgument(1);
+            listener.accept(costEvent(0.25));
+            return null;
+        }).when(harness).subscribe(anyString(), any());
+
+        processor.processTicket(ticket());
+
+        verify(apiService).finishHarnessRun(
+            eq("run-1"), eq("budget_exceeded"), anyString(), isNull(), isNull());
+        verify(workspace, never()).stageFreshDiff();
+    }
+
+    private HarnessEvent costEvent(double costUsd) {
+        try {
+            return new HarnessEvent("message.updated", new ObjectMapper().readTree(
+                "{\"type\":\"message.updated\",\"properties\":{\"info\":{"
+                    + "\"id\":\"msg-cost\",\"cost\":" + costUsd
+                    + ",\"tokens\":{\"input\":1,\"output\":1}}}}"),
+                System.currentTimeMillis());
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private HarnessEvent tokenEvent(int inputTokens) {
         try {
             return new HarnessEvent("message.updated", new ObjectMapper().readTree(

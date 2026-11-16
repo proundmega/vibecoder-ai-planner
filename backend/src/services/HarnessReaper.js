@@ -1,5 +1,7 @@
 const HarnessRunService = require('./HarnessRunService');
 const HarnessMetrics = require('./HarnessMetrics');
+const HarnessEventService = require('./HarnessEventService');
+const HarnessUsageService = require('./HarnessUsageService');
 const logger = require('../utils/logger');
 
 const DEFAULT_RECONCILE_LIMIT = 50;
@@ -19,8 +21,7 @@ const DEFAULT_RECONCILE_LIMIT = 50;
  * ticket PR and no newer active run may be returned to backlog.
  */
 class HarnessReaper {
-  async runOnce({ limit, orphanAfterSeconds } = {}) {
-    let reaped;
+  async runOnce({ limit, orphanAfterSeconds } = {}) {    let reaped;
     try {
       reaped = await HarnessRunService.reapExpiredLeases(limit, orphanAfterSeconds);
     } catch (error) {
@@ -54,6 +55,7 @@ class HarnessReaper {
         if (result.adopted) summary.adopted += 1;
         if (result.marked) summary.reconciled += 1;
         if (result.needs_operator) summary.needsOperator += 1;
+        await finalizeRunArtifacts(runId);
       } catch (error) {
         complete = false;
         summary.skipped.push({ ticketId, runId, reason: 'reconcile_failed' });
@@ -92,6 +94,25 @@ class HarnessReaper {
   }
 }
 
-module.exports = new HarnessReaper();
+async function finalizeRunArtifacts(runId) {
+  try {
+    const run = await HarnessRunService.getRun(runId);
+    await HarnessEventService.ensureTerminalEvent({
+      runId,
+      status: run.status,
+      error: run.error,
+      headSha: run.head_sha,
+      prUrl: run.pr_url,
+    });
+    await HarnessUsageService.flushRunToUsageLogs(runId);
+  } catch (error) {
+    // Reconciliation stays durable even if observability/billing backfill
+    // fails; the next sweep retries the terminal run until it is marked.
+    logger.warn(`Could not finalize harness run ${runId}: ${error.message}`);
+  }
+}
+
+const instance = new HarnessReaper();
+module.exports = instance;
 module.exports.HarnessReaper = HarnessReaper;
 module.exports.DEFAULT_RECONCILE_LIMIT = DEFAULT_RECONCILE_LIMIT;

@@ -117,6 +117,38 @@ public record HarnessBudgetPolicy(
         return price != null ? price : ModelPrice.free(key);
     }
 
+    /**
+     * Per-run limits capped by the remaining project daily budget. A run that
+     * starts near the daily limit must stop mid-run rather than spend its full
+     * per-run budget past the project quota.
+     */
+    public BudgetLimits effectiveRunLimits() {
+        if (dailyCostLimitUsd <= 0) {
+            return limits;
+        }
+        double remaining = Math.max(0, dailyCostLimitUsd - dailySpendUsd);
+        double cap = Math.min(limits.maxCostUsd(), Math.max(0.000001, remaining));
+        if (cap >= limits.maxCostUsd()) {
+            return limits;
+        }
+        return new BudgetLimits(
+            limits.maxDuration(),
+            limits.maxInputTokens(),
+            limits.maxOutputTokens(),
+            cap,
+            limits.maxToolCalls(),
+            limits.maxRetries(),
+            limits.warnRatio()
+        );
+    }
+
+    public double remainingDailyCostUsd() {
+        if (dailyCostLimitUsd <= 0) {
+            return Double.MAX_VALUE;
+        }
+        return Math.max(0, dailyCostLimitUsd - dailySpendUsd);
+    }
+
     private static Map<String, ModelPrice> parsePrices(Map<String, Object> raw) {
         if (raw == null || raw.isEmpty()) {
             return Map.of();
