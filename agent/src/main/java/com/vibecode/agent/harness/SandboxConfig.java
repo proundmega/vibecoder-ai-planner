@@ -100,6 +100,9 @@ public record SandboxConfig(
         boolean networkEnabled = NETWORK_ALLOWLIST.equals(network);
 
         String sandboxImage = value(env, "SANDBOX_IMAGE", DEFAULT_IMAGE);
+        String owner = firstNonBlank(
+            value(env, "SANDBOX_OWNER", ""),
+            value(env, "AGENT_ID", ""));
 
         SandboxConfig config = new SandboxConfig(
             mode,
@@ -117,7 +120,7 @@ public record SandboxConfig(
             value(env, "SANDBOX_EGRESS_UPSTREAM_NETWORK", DEFAULT_EGRESS_UPSTREAM_NETWORK),
             longValue(env, "SANDBOX_EGRESS_PROBE_TIMEOUT_MS", 5_000L, 100L),
             EgressTlsMode.from(value(env, "SANDBOX_EGRESS_TLS_MODE", DEFAULT_EGRESS_TLS_MODE)),
-            value(env, "AGENT_ID", ""),
+            owner,
             parseEnv(value(env, "SANDBOX_ENV", "")),
             value(env, "SANDBOX_USER", defaultUser()),
             booleanValue(env, "SANDBOX_REQUIRE", false),
@@ -214,12 +217,13 @@ public record SandboxConfig(
         if (artifactMaxBytes <= 0) {
             throw new IllegalStateException("SANDBOX_ARTIFACT_MAX_BYTES must be positive");
         }
-        // AGENT_ID is only used for Docker owner labels/reaping. Host mode
-        // keeps accepting legacy values instead of failing at startup.
+        // SANDBOX_OWNER (or AGENT_ID when unset) is only used for Docker
+        // owner labels/reaping. Host mode keeps accepting legacy values.
         if (mode == SandboxMode.DOCKER && owner != null && !owner.isBlank()
             && !owner.matches("[A-Za-z0-9_.-]{1,128}")) {
             throw new IllegalStateException(
-                "AGENT_ID must be a safe Docker label value (letters, digits, _ . -)");
+                "SANDBOX_OWNER/AGENT_ID must be a safe Docker label value "
+                    + "(letters, digits, _ . -)");
         }
     }
 
@@ -465,6 +469,13 @@ public record SandboxConfig(
 
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        return second == null ? "" : second;
     }
 
     private static long longValue(

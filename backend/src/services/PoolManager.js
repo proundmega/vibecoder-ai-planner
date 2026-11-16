@@ -408,6 +408,7 @@ class PoolManager {
       `BACKEND_URL=${BACKEND_URL}`,
       `AGENT_API_KEY=${apiKey}`,
       `AGENT_ID=${dbAgent.id}`,
+      `SANDBOX_OWNER=pool-${dbAgent.id}`,
       `PROJECT_ID=${projectId}`,
       `REPO_CLONE_DIR=/repos`,
       `AI_PROVIDER=${providerConfig.provider_type}`,
@@ -482,6 +483,9 @@ class PoolManager {
         Image: AGENT_IMAGE,
         name: `agent-${agentId}`,
         Env: env,
+        Labels: {
+          'vibecode.agent.owner': `pool-${dbAgent.id}`,
+        },
         HostConfig: {
           Binds: [`${REPO_VOLUME}:${REPO_MOUNT}`],
           NetworkMode: CONTAINER_NETWORK,

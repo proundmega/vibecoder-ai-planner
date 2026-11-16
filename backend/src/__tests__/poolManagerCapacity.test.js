@@ -206,6 +206,8 @@ describe('PoolManager max capacity (BP-61)', () => {
 
     const createOpts = pm.docker.createContainer.mock.calls[0][0];
     expect(createOpts.Env).toContain('BACKEND_URL=http://api:3001');
+    expect(createOpts.Env).toContain('SANDBOX_OWNER=pool-agent-1');
+    expect(createOpts.Labels['vibecode.agent.owner']).toBe('pool-agent-1');
     expect(createOpts.Env).toContain('SANDBOX_MODE=docker');
     expect(createOpts.Env).toContain('SANDBOX_IMAGE=sandbox@sha256:abc');
     expect(createOpts.Env).toContain('SANDBOX_NETWORK=allowlist');

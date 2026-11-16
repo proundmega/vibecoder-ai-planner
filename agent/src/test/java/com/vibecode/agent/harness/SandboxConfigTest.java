@@ -162,13 +162,34 @@ class SandboxConfigTest {
     }
 
     @Test
+    void prefersTheStableSandboxOwnerOverAgentId() {
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "AGENT_ID", "42",
+            "SANDBOX_OWNER", "pool-7"
+        )::get);
+
+        assertEquals("pool-7", config.owner());
+    }
+
+    @Test
     void rejectsUnsafeAgentOwnerLabels() {
         IllegalStateException error = assertThrows(IllegalStateException.class,
             () -> SandboxConfig.from(env(
                 "SANDBOX_MODE", "docker",
                 "AGENT_ID", "agent with spaces"
             )::get));
-        assertTrue(error.getMessage().contains("AGENT_ID"));
+        assertTrue(error.getMessage().contains("SANDBOX_OWNER/AGENT_ID"));
+    }
+
+    @Test
+    void rejectsUnsafeSandboxOwnerLabels() {
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+            () -> SandboxConfig.from(env(
+                "SANDBOX_MODE", "docker",
+                "SANDBOX_OWNER", "pool/bad"
+            )::get));
+        assertTrue(error.getMessage().contains("SANDBOX_OWNER/AGENT_ID"));
     }
 
     @Test

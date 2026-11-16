@@ -8,7 +8,7 @@ scope: "Agent"
 created: "2026-10-31"
 updated: "2026-11-14"
 pr: null
-branch: null
+branch: "feat/fg-34-d30-pool-reaper"
 depends_on: ["fg-30"]
 ---
 
@@ -72,4 +72,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D27 | Support repo-provided origin CAs for private registries or certificate-pinning clients in `terminate` mode; scope per allowlisted host and still enforce `Host == SNI`; currently rejected/fail-closed | fg-34 D16 | Compatibility | issue #148 | open |
 | D28 | Inject a Java/Maven/Gradle truststore (copy `cacerts`, import the per-run CA with `keytool`, set `JAVA_TOOL_OPTIONS`) when a JDK is present; until then Java toolchains fail closed in `terminate` mode | fg-34 D16 | Compatibility | issue #149 | done (#157): at sandbox creation, a JDK with readable `cacerts` gets a tmpfs truststore (system roots + per-run CA), `JAVA_HOME` and `JAVA_TOOL_OPTIONS` for every exec; caller JVM options are preserved and trust flags appended last. A missing keytool leaves Java unsupported and TLS fails closed, and a JDK installed by a later setup command is not auto-detected. Assumes a standard `changeit` cacerts store; a custom password fails creation, and the sandbox-owned 0444 truststore is not a host boundary |
 | D29 | Support scoped client-certificate mTLS for named allowlisted hosts in `terminate` mode; keep the key in the proxy, never send it to another host, and audit its use | fg-34 D16 | Compatibility | issue #150 | open |
-| D30 | Pool-agent replacement cleanup: `PoolManager` assigns a new `AGENT_ID` to each replacement container, so same-owner reaping cannot find the previous container's resources; pre-#154 resources have no owner label. Use a stable `SANDBOX_OWNER`/lease or a safe stale-resource sweep, and document a one-time upgrade cleanup | fg-34 D9 | Reliability | fg-34 D8 / fg-43 | open |
+| D30 | Pool-agent replacement cleanup: `PoolManager` assigns a new `AGENT_ID` to each replacement container, so same-owner reaping cannot find the previous container's resources; pre-#154 resources have no owner label. Use a stable `SANDBOX_OWNER`/lease or a safe stale-resource sweep, and document a one-time upgrade cleanup | fg-34 D9 | Reliability | fg-34 D8 / fg-43 | in review: pool agents use `SANDBOX_OWNER=pool-<dbAgentId>` and label their own container `vibecode.agent.owner=pool-<dbAgentId>`; startup reaps same-owner resources, then a pool agent sweeps managed resources for other `pool-` owners only when no agent container carries that owner label. Pre-#154 unlabeled resources remain a one-time manual cleanup |

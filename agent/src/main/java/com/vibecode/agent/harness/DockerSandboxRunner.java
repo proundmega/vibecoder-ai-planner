@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -1682,8 +1683,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
     /**
      * Remove containers, proxies and networks left by a previous agent process
-     * with the same {@code AGENT_ID}. Called once at startup before any new
-     * sandbox exists; a failure is logged but does not block startup.
+     * with the same owner. A pool agent also sweeps resources owned by a
+     * replaced pool agent when no running agent container carries that owner
+     * label. Called once at startup before any new sandbox exists; a failure is
+     * logged but does not block startup.
      */
     public void reapOrphans() {
         String owner = config.owner();
@@ -1698,9 +1701,108 @@ public final class DockerSandboxRunner implements SandboxRunner {
             reap("networks",
                 List.of(config.dockerBinary(), "network", "ls", "-q", "--filter", filter),
                 List.of(config.dockerBinary(), "network", "rm"));
+            if (owner.startsWith("pool-")) {
+                reapStalePoolResources(owner);
+            }
         } catch (RuntimeException e) {
             log.warn("Could not reap orphaned sandbox resources: {}",
                 LOG_REDACTOR.redact(e.toString()));
+        }
+    }
+
+    private void reapStalePoolResources(String currentOwner) {
+        Map<String, List<String>> containers = listManagedResources("containers",
+            List.of(config.dockerBinary(), "ps", "-a",
+                "--filter", "label=" + LABEL,
+                "--format", "{{.ID}} {{.Label \"vibecode.sandbox.owner\"}}"));
+        Map<String, List<String>> networks = listManagedResources("networks",
+            List.of(config.dockerBinary(), "network", "ls",
+                "--filter", "label=" + LABEL,
+                "--format", "{{.ID}} {{.Label \"vibecode.sandbox.owner\"}}"));
+
+        Set<String> owners = new LinkedHashSet<>();
+        owners.addAll(containers.keySet());
+        owners.addAll(networks.keySet());
+        for (String owner : owners) {
+            if (owner.equals(currentOwner) || !owner.startsWith("pool-")) {
+                continue;
+            }
+            if (agentOwnerLive(owner)) {
+                continue;
+            }
+            List<String> containerIds = containers.getOrDefault(owner, List.of());
+            for (String id : containerIds) {
+                removeResource("containers", id,
+                    List.of(config.dockerBinary(), "rm", "-f"));
+            }
+            List<String> networkIds = networks.getOrDefault(owner, List.of());
+            for (String id : networkIds) {
+                removeResource("networks", id,
+                    List.of(config.dockerBinary(), "network", "rm"));
+            }
+            if (!containerIds.isEmpty() || !networkIds.isEmpty()) {
+                log.info("Reaped stale pool sandbox resources for owner {} "
+                    + "({} container(s), {} network(s))",
+                    owner, containerIds.size(), networkIds.size());
+            }
+        }
+    }
+
+    private Map<String, List<String>> listManagedResources(
+        String kind,
+        List<String> command
+    ) {
+        DockerResult listed = runDocker(command, INSPECT_TIMEOUT, 256 * 1024);
+        if (listed.timedOut() || listed.exitCode() != 0) {
+            log.warn("Could not list managed sandbox {} for a stale sweep: {}",
+                kind, LOG_REDACTOR.redact(listed.output()));
+            return Map.of();
+        }
+        if (listed.truncated()) {
+            log.warn("Managed sandbox {} listing was truncated; remaining resources "
+                + "will be reaped on the next start", kind);
+        }
+        Map<String, List<String>> byOwner = new LinkedHashMap<>();
+        for (String line : listed.output().split("\r?\n")) {
+            String[] parts = line.trim().split("\\s+", 2);
+            if (parts.length < 2) {
+                continue;
+            }
+            String id = parts[0];
+            String owner = parts[1].trim();
+            if (!id.matches("[a-fA-F0-9]{12,64}") || owner.isBlank()
+                || !owner.startsWith("pool-")) {
+                continue;
+            }
+            byOwner.computeIfAbsent(owner, ignored -> new ArrayList<>()).add(id);
+        }
+        return byOwner;
+    }
+
+    private boolean agentOwnerLive(String owner) {
+        DockerResult result = runDocker(
+            List.of(config.dockerBinary(), "ps", "-aq",
+                "--filter", "label=vibecode.agent.owner=" + owner),
+            INSPECT_TIMEOUT,
+            CONTROL_OUTPUT_BYTES
+        );
+        if (result.timedOut() || result.exitCode() != 0) {
+            log.warn("Could not check whether pool owner {} is live; "
+                + "skipping its stale resources", owner);
+            return true;
+        }
+        return !result.output().isBlank();
+    }
+
+    private void removeResource(String kind, String id, List<String> removePrefix) {
+        List<String> command = new ArrayList<>(removePrefix);
+        command.add(id);
+        DockerResult removed = runDocker(command, CONTROL_TIMEOUT, CONTROL_OUTPUT_BYTES);
+        if (removed.timedOut() || removed.exitCode() != 0) {
+            log.warn("Could not reap stale sandbox {} {}: {}",
+                kind, id, LOG_REDACTOR.redact(removed.output()));
+        } else {
+            log.info("Reaped stale sandbox {} {}", kind, id);
         }
     }
 

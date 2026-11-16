@@ -241,6 +241,63 @@ class DockerSandboxRunnerTest {
     }
 
     @Test
+    void reapsStalePoolAgentResourcesWhenNoAgentOwnerIsLive() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("docker.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              ps)
+                case "$*" in
+                  *"label=vibecode.sandbox.owner=pool-2"*) echo aaaaaaaaaaaa ;;
+                  *"label=vibecode.agent.owner=pool-1"*) : ;;
+                  *"label=vibecode.agent.owner=pool-3"*) echo eeeeeeeeeeee ;;
+                  *"label=vibecode.sandbox.managed=true"*)
+                    printf 'bbbbbbbbbbbb pool-1\ncccccccccccc pool-3\n' ;;
+                  *) : ;;
+                esac
+                ;;
+              network)
+                case "$*" in
+                  *"ls -q --filter label=vibecode.sandbox.owner=pool-2"*)
+                    echo 111111111111 ;;
+                  *"ls"*"label=vibecode.sandbox.managed=true"*)
+                    printf '222222222222 pool-1\n333333333333 pool-3\n' ;;
+                esac
+                ;;
+              rm) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "AGENT_ID", "2",
+            "SANDBOX_OWNER", "pool-2"
+        )::get);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            runner.reapOrphans();
+        }
+
+        String commands = Files.readString(log);
+        assertTrue(commands.contains(
+            "ps -aq --filter label=vibecode.sandbox.owner=pool-2"), commands);
+        assertTrue(commands.contains(
+            "ps -a --filter label=vibecode.sandbox.managed=true --format"), commands);
+        assertTrue(commands.contains(
+            "ps -aq --filter label=vibecode.agent.owner=pool-1"), commands);
+        assertTrue(commands.contains(
+            "ps -aq --filter label=vibecode.agent.owner=pool-3"), commands);
+        assertTrue(commands.contains("rm -f aaaaaaaaaaaa"), commands);
+        assertTrue(commands.contains("rm -f bbbbbbbbbbbb"), commands);
+        assertTrue(commands.contains("network rm 111111111111"), commands);
+        assertTrue(commands.contains("network rm 222222222222"), commands);
+        assertFalse(commands.contains("rm -f cccccccccccc"), commands);
+        assertFalse(commands.contains("network rm 333333333333"), commands);
+    }
+
+    @Test
     void proxyArgsClearTheTestSeamAndUseTheConfiguredImage() throws IOException {
         SandboxConfig config = SandboxConfig.from(env(
             "SANDBOX_MODE", "docker",
