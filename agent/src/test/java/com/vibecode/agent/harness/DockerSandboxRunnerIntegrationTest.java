@@ -21,6 +21,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -511,12 +513,33 @@ class DockerSandboxRunnerIntegrationTest {
         ProcessBuilder builder = new ProcessBuilder(command);
         builder.redirectErrorStream(true);
         Process process = builder.start();
-        String output = new String(process.getInputStream().readAllBytes());
-        int exit = process.waitFor();
-        if (exit != 0) {
-            throw new IOException("docker command failed (" + exit + "): " + output);
+
+        AtomicReference<String> output = new AtomicReference<>("");
+        AtomicReference<IOException> readFailure = new AtomicReference<>();
+        Thread reader = new Thread(() -> {
+            try (var input = process.getInputStream()) {
+                output.set(new String(input.readAllBytes()));
+            } catch (IOException e) {
+                readFailure.set(e);
+            }
+        }, "docker-test-reader");
+        reader.setDaemon(true);
+        reader.start();
+
+        if (!process.waitFor(60, TimeUnit.SECONDS)) {
+            process.destroyForcibly();
+            reader.join(2_000);
+            throw new IOException("docker command timed out: " + String.join(" ", command));
         }
-        return output;
+        reader.join(2_000);
+        if (readFailure.get() != null) {
+            throw readFailure.get();
+        }
+        if (process.exitValue() != 0) {
+            throw new IOException("docker command failed (" + process.exitValue() + "): "
+                + output.get());
+        }
+        return output.get();
     }
 
     private static void dockerCommandAllowFailure(String... args) {
