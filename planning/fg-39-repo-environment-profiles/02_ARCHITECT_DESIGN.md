@@ -263,7 +263,9 @@ false profile revision. `profile_hash` is the SHA-256 of a canonicalized
 profile JSON; activation requires a successful validation row with the same
 hash. A legacy row with a null hash gets one persisted when validation is
 requested (and again on activation), so existing profiles can be revalidated
-without a manual re-save. `profile.base_branch` is the first source in
+without a manual re-save. The validation-request update is conditional on
+`profile_hash IS NULL`; if a concurrent edit wins, the request fails with a
+conflict instead of overwriting the newer hash or queuing a stale snapshot. `profile.base_branch` is the first source in
 fg-36's shared resolver; slice 1 uses it directly for checkout and the PR base.
 
 `profile.base_branch` is the most specific source. fg-36's `BaseBranchResolver` uses: active profile > project setting > GitHub repo default > `main`, then `master`. Do not duplicate this order elsewhere.

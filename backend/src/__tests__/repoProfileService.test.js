@@ -279,6 +279,27 @@ describe('RepoProfileService', () => {
     });
 
 
+
+    it('backfills an already-active legacy profile hash without re-validating', async () => {
+      const target = {
+        id: 'p2', project_id: 1, version: 2, profile: validProfile(),
+        profile_hash: null, status: 'active',
+      };
+      const client = clientWith([
+        {}, // BEGIN
+        { rows: [target] }, // target lock
+        { rows: [] }, // hash update
+        {}, // COMMIT
+      ]);
+
+      const result = await RepoProfileService.activate(1, 'p2', owner());
+
+      expect(result.status).toBe('active');
+      expect(result.profile_hash).toMatch(/^[a-f0-9]{64}$/);
+      expect(client.query.mock.calls[2][0]).toContain('SET profile_hash = $1');
+      expect(client.query.mock.calls[3][0]).toBe('COMMIT');
+    });
+
     it('persists a legacy profile hash before checking for validation evidence', async () => {
       const target = {
         id: 'p2', project_id: 1, version: 2, profile: validProfile(),

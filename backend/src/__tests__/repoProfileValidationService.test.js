@@ -85,7 +85,7 @@ describe('RepoProfileValidationService', () => {
   it('persists a legacy profile hash when queuing validation', async () => {
     pool.query
       .mockResolvedValueOnce({ rows: [profileRow({ profile_hash: null })] })
-      .mockResolvedValueOnce({ rows: [] }) // profile hash update
+      .mockResolvedValueOnce({ rows: [{ profile_hash: 'hash' }] }) // profile hash update
       .mockResolvedValueOnce({ rows: [validationRow({ profile_hash: 'hash' })] });
 
     const result = await RepoProfileValidationService.request(
@@ -96,6 +96,20 @@ describe('RepoProfileValidationService', () => {
     expect(pool.query.mock.calls[1][0]).toContain('UPDATE repo_profiles');
     expect(pool.query.mock.calls[1][1]).toEqual(['hash', PROFILE_ID, 1]);
     expect(pool.query.mock.calls[2][0]).toContain('INSERT INTO repo_profile_validations');
+  });
+
+  it('fails closed if the profile changes while queuing a legacy validation', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [profileRow({ profile_hash: null })] })
+      .mockResolvedValueOnce({ rows: [] }) // conditional hash update did not apply
+      .mockResolvedValueOnce({ rows: [{ profile_hash: 'newer-hash' }] }); // re-read
+
+    await expect(
+      RepoProfileValidationService.request(1, PROFILE_ID, { userId: 7 })
+    ).rejects.toThrow(/changed while queuing/);
+    expect(pool.query.mock.calls.some(
+      (call) => String(call[0]).includes('INSERT INTO repo_profile_validations')
+    )).toBe(false);
   });
 
   it('requires the profile to still match the connected repository', async () => {

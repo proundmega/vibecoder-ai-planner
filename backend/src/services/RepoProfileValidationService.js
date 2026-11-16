@@ -59,13 +59,25 @@ class RepoProfileValidationService {
       || RepoProfileService.profileHash(profile.profile);
     if (!profile.profile_hash) {
       // Legacy rows from the earlier migration draft have no content hash.
-      // Persist it now so activation and run evidence can use the same value.
-      await pool.query(
+      // Persist it only if it is still null: a concurrent edit must not have
+      // its newer hash overwritten by this stale snapshot.
+      const persisted = await pool.query(
         `UPDATE repo_profiles
          SET profile_hash = $1, updated_at = NOW()
-         WHERE id = $2 AND project_id = $3`,
+         WHERE id = $2 AND project_id = $3 AND profile_hash IS NULL
+         RETURNING profile_hash`,
         [profileHash, profileId, projectId]
       );
+      if (persisted.rows.length === 0) {
+        const latest = await pool.query(
+          'SELECT profile_hash FROM repo_profiles WHERE id = $1 AND project_id = $2',
+          [profileId, projectId]
+        );
+        if (!latest.rows[0] || latest.rows[0].profile_hash !== profileHash) {
+          throw new ConflictError(
+            'Repo profile changed while queuing validation; reload and retry');
+        }
+      }
     }
     try {
       const inserted = await pool.query(

@@ -418,10 +418,6 @@ class RepoProfileService {
       );
       if (target.rows.length === 0) throw new NotFoundError('Repo profile not found');
       await assertProfileRepoBinding(projectId, target.rows[0].profile);
-      if (target.rows[0].status === 'active') {
-        await client.query('COMMIT');
-        return format(target.rows[0]);
-      }
       let contentHash = target.rows[0].profile_hash;
       if (!contentHash) {
         contentHash = profileHash(target.rows[0].profile);
@@ -431,6 +427,10 @@ class RepoProfileService {
            WHERE id = $2 AND project_id = $3`,
           [contentHash, profileId, projectId]
         );
+      }
+      if (target.rows[0].status === 'active') {
+        await client.query('COMMIT');
+        return format({ ...target.rows[0], profile_hash: contentHash });
       }
       const validated = await client.query(
         `SELECT 1 FROM repo_profile_validations
