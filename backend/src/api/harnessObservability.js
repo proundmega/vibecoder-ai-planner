@@ -196,6 +196,14 @@ router.post('/events', verifyTokenOrAgent, async (req, res, next) => {
  *       - in: query
  *         name: limit
  *         schema: { type: integer, minimum: 1, maximum: 1000 }
+ *       - in: query
+ *         name: before
+ *         description: Keyset cursor timestamp; requires beforeId
+ *         schema: { type: string, format: date-time }
+ *       - in: query
+ *         name: beforeId
+ *         description: Keyset cursor event id for the same timestamp
+ *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
  *         description: Ordered events
