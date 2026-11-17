@@ -13,6 +13,7 @@ describe('repo-profile redaction', () => {
       'mysqladmin -u root -psecret ping',
       'mysqldump -u root -psecret db',
       'redis-cli -a secret',
+      'REDIS-CLI -a secret',
       'REDISCLI_AUTH=secret redis-cli ping',
       'PGPASSWORD=hunter2 psql',
       'DB_PASS=secret',

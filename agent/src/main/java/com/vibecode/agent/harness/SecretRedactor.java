@@ -80,7 +80,7 @@ public final class SecretRedactor {
         "(\\b" + CLIENT_NAME + "\\b[^\\n;&|]*?\\s-p)(?:\\s*=\\s*|\\s*)"
             + "(\"[^\"]*\"|'[^']*'|[^\\s;&|]+)");
     private static final Pattern SHORT_REDIS = Pattern.compile(
-        "(\\bredis-cli\\b[^\\n;&|]*?\\s-a)(?:\\s*=\\s*|\\s*)"
+        "(\\b[Rr][Ee][Dd][Ii][Ss]-[Cc][Ll][Ii]\\b[^\\n;&|]*?\\s-a)(?:\\s*=\\s*|\\s*)"
             + "(\"[^\"]*\"|'[^']*'|[^\\s;&|]+)");
 
     /**

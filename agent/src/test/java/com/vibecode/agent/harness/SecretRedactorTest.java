@@ -122,6 +122,7 @@ class SecretRedactorTest {
             "mysqladmin -u root -psecret ping",
             "mysqldump -u root -psecret db",
             "redis-cli -a secret",
+            "REDIS-CLI -a secret",
             "REDISCLI_AUTH=secret redis-cli ping",
             "DB_PASS=secret",
             "PGPASS=secret",

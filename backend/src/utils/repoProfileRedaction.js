@@ -3,7 +3,7 @@ const REDACTED = '[REDACTED]';
 const URL_USERINFO = /([a-z][a-z0-9+.-]*:\/\/)([^/\s:@]*):(?!\$\{password\})[^/\s@]+@/gi;
 const CLIENT_NAME = '(?:[Mm][Yy][Ss][Qq][Ll]|[Mm][Aa][Rr][Ii][Aa][Dd][Bb]|[Mm][Yy][Ss][Qq][Ll][Aa][Dd][Mm][Ii][Nn]|[Mm][Yy][Ss][Qq][Ll][Dd][Uu][Mm][Pp]|[Mm][Aa][Rr][Ii][Aa][Dd][Bb]-[Aa][Dd][Mm][Ii][Nn]|[Mm][Aa][Rr][Ii][Aa][Dd][Bb]-[Dd][Uu][Mm][Pp])';
 const SHORT_MYSQL = new RegExp('(\\b' + CLIENT_NAME + '\\b[^\\n;&|]*?\\s-p)(?:\\s*=\\s*|\\s*)("[^"]*"|\'[^\']*\'|[^\\s;&|]+)', 'g');
-const SHORT_REDIS = /(\bredis-cli\b[^\n;&|]*?\s-a)(?:\s*=\s*|\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/g;
+const SHORT_REDIS = /(\b[Rr][Ee][Dd][Ii][Ss]-[Cc][Ll][Ii]\b[^\n;&|]*?\s-a)(?:\s*=\s*|\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/g;
 const REDISCLI_AUTH = /(\bREDISCLI_AUTH\b\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/g;
 const KEY_VALUE = /(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)(\s*(?::|=(?!=))\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/g;
 const PRIVATE_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*/gi;

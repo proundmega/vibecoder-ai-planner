@@ -331,6 +331,7 @@ describe('RepoProfileService', () => {
         'mysql -uroot -psecret',
         'mysql -u root -p hunter2',
         'redis-cli -a secret',
+        'REDIS-CLI -a secret',
         'REDISCLI_AUTH=secret redis-cli ping',
       ]) {
         await expect(RepoProfileService.create(1, validProfile({
@@ -375,6 +376,7 @@ describe('RepoProfileService', () => {
         'mysqladmin -u root -psecret ping',
         'mysqldump -u root -psecret db',
         'redis-cli -a secret',
+        'REDIS-CLI -a secret',
         'REDISCLI_AUTH=secret redis-cli ping',
       ]) {
         const result = validateRepoProfile(validProfile({
