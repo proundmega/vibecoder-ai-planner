@@ -383,6 +383,12 @@ any ticket, read the deferred registers** of previously committed tickets (in
 When you create a new ticket, record relevant follow-ups in its own deferred
 register — do not copy the whole backlog into every document.
 
+Unplanned defects and flow changes found while testing live in `FUTURE_IDEAS.txt`
+under the **Ticket lifecycle, phase flow & defects (intake)** section. Promote an
+item into a planning suite (or attach it to the owning suite) before implementing
+it, then remove/update the intake row instead of duplicating it. Quality-gate and
+Definition-of-Ready enforcement is owned by `planning/fg-45-ticket-quality-gates/`.
+
 ## Gotchas
 
 - Backend ESLint uses **flat config** (`eslint.config.js`), not `.eslintrc*`.
