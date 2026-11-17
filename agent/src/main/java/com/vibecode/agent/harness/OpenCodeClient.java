@@ -1099,7 +1099,7 @@ public final class OpenCodeClient implements HarnessClient {
         if (bridge != null && bridge.token() != null && !bridge.token().isBlank()) {
             redacted = redacted.replace(bridge.token(), "[REDACTED]");
         }
-        return redacted;
+        return HarnessPrivacyGuard.forStorage(redacted);
     }
 
     private Duration startupTimeout() {

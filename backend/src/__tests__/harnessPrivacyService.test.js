@@ -143,6 +143,30 @@ describe('HarnessPrivacyService', () => {
         provider: 'opencode-go',
       })).rejects.toThrow('policy store unavailable');
     });
+
+    it('uses backend provider config as the authoritative endpoint and region', async () => {
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [policyRow({
+            local_only: true,
+            local_endpoint: 'http://ollama:11434/v1',
+            data_residency: 'eu',
+            allowed_providers: [],
+          })],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ base_url: 'http://ollama:11434/v1', region: 'eu' }],
+        });
+
+      const policy = await HarnessPrivacyService.assertProviderAllowed({
+        projectId: PROJECT,
+        agentId: 7,
+        provider: 'generic',
+      });
+
+      expect(policy.resolvedProviderBaseUrl).toBe('http://ollama:11434/v1');
+      expect(policy.resolvedProviderRegion).toBe('eu');
+    });
   });
 
   describe('upsertPolicy', () => {
@@ -337,7 +361,12 @@ describe('HarnessPrivacyService', () => {
           .mockResolvedValueOnce({ rows: [{ id: 'u1' }] })
           .mockResolvedValueOnce({ rows: [{ id: 'r1' }] })
           .mockResolvedValueOnce({ rows: [{ id: 'c1' }] })
-          .mockResolvedValueOnce({ rows: [{ id: 'm1' }] })
+          .mockResolvedValueOnce({
+            rows: [{
+              id: 'm1',
+              content: 'mail alice@example.com token ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+            }],
+          })
           .mockResolvedValueOnce({ rows: [{ id: 'l1' }] })
           .mockResolvedValueOnce({}), // COMMIT
         release: jest.fn(),
@@ -353,8 +382,39 @@ describe('HarnessPrivacyService', () => {
       expect(data.messages).toHaveLength(1);
       expect(data.usageLogs).toHaveLength(1);
       expect(data.hasMore).toBe(false);
+      expect(data.nextOffset).toBeNull();
+      expect(data.messages[0].content).toContain('[REDACTED_EMAIL]');
+      expect(data.messages[0].content).not.toContain('alice@example.com');
+      expect(data.messages[0].content).not.toContain('ghp_');
       expect(client.query).toHaveBeenCalledWith('COMMIT');
       expect(client.release).toHaveBeenCalled();
+    });
+
+    it('paginates with an offset and nextOffset', async () => {
+      const client = {
+        query: jest.fn()
+          .mockResolvedValueOnce({}) // BEGIN
+          .mockResolvedValueOnce({ rows: [policyRow()] })
+          .mockResolvedValueOnce({ rows: [{ event_id: 'e1' }, { event_id: 'e2' }] })
+          .mockResolvedValueOnce({ rows: [] })
+          .mockResolvedValueOnce({ rows: [] })
+          .mockResolvedValueOnce({ rows: [] })
+          .mockResolvedValueOnce({ rows: [] })
+          .mockResolvedValueOnce({ rows: [] })
+          .mockResolvedValueOnce({}), // COMMIT
+        release: jest.fn(),
+      };
+      pool.connect.mockResolvedValueOnce(client);
+
+      const data = await HarnessPrivacyService.exportProjectData(PROJECT, {
+        limit: 1,
+        offset: 2,
+      });
+
+      expect(data.events).toHaveLength(1);
+      expect(data.hasMore).toBe(true);
+      expect(data.nextOffset).toBe(3);
+      expect(client.query.mock.calls[2][1]).toEqual([PROJECT, 2, 2]);
     });
   });
 });

@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { pool } = require('../db');
-const { redactPayload } = require('../utils/harnessRedaction');
+const { redactPayload, redactText } = require('../utils/harnessRedaction');
 const {
   ValidationError,
   ConflictError,
@@ -132,6 +132,29 @@ function rowToPolicy(row, source) {
     policyVersion: Number(row.policy_version),
     updatedAt: row.updated_at || null,
   };
+}
+
+function redactExportValue(value) {
+  if (typeof value === 'string') {
+    return redactText(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(redactExportValue);
+  }
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, redactExportValue(child)])
+    );
+  }
+  return value;
+}
+
+function redactExportRow(row) {
+  return row ? redactExportValue(row) : row;
+}
+
+function redactExportRows(rows) {
+  return (rows || []).map(redactExportRow);
 }
 
 class HarnessPrivacyService {
@@ -347,6 +370,8 @@ class HarnessPrivacyService {
           allowedProviders: policy.allowedProviders,
           requireNoTraining: policy.requireNoTraining,
           localOnly: policy.localOnly,
+          localEndpoint: policy.localEndpoint,
+          localModel: policy.localModel,
           dataResidency: policy.dataResidency,
           blockOnSecret: policy.blockOnSecret,
           blockOnPii: policy.blockOnPii,
@@ -518,68 +543,73 @@ class HarnessPrivacyService {
     }
   }
 
-  async exportProjectData(projectId, { limit = 1000 } = {}) {
+  async exportProjectData(projectId, { limit = 1000, offset = 0 } = {}) {
     const id = positiveInteger(projectId, 'projectId');
     const parsedLimit = Number(limit);
     if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 5000) {
       throw new ValidationError('limit must be an integer between 1 and 5000');
     }
+    const parsedOffset = Number(offset);
+    if (!Number.isInteger(parsedOffset) || parsedOffset < 0) {
+      throw new ValidationError('offset must be a non-negative integer');
+    }
     const client = await pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       const fetchLimit = parsedLimit + 1;
-      const [policy, events, usage, runs, checkpoints, messages, usageLogs] =
-        await Promise.all([
-          this.getPolicy(id, { client }),
-          client.query(
-            `SELECT * FROM harness_events WHERE project_id = $1
-             ORDER BY event_timestamp ASC, event_id ASC LIMIT $2`,
-            [id, fetchLimit]
-          ),
-          client.query(
-            `SELECT * FROM harness_usage WHERE project_id = $1
-             ORDER BY created_at ASC LIMIT $2`,
-            [id, fetchLimit]
-          ),
-          client.query(
-            `SELECT * FROM harness_runs WHERE project_id = $1
-             ORDER BY started_at ASC LIMIT $2`,
-            [id, fetchLimit]
-          ),
-          client.query(
-            `SELECT hc.* FROM harness_checkpoints hc
-             JOIN harness_runs r ON r.id = hc.run_id
-             WHERE r.project_id = $1
-             ORDER BY hc.created_at ASC LIMIT $2`,
-            [id, fetchLimit]
-          ),
-          client.query(
-            `SELECT tm.* FROM ticket_messages tm
-             JOIN tickets t ON t.id = tm.ticket_id
-             WHERE t.project_id = $1
-             ORDER BY tm.created_at ASC LIMIT $2`,
-            [id, fetchLimit]
-          ),
-          client.query(
-            `SELECT * FROM usage_logs WHERE project_id = $1
-             ORDER BY created_at ASC LIMIT $2`,
-            [id, fetchLimit]
-          ),
-        ]);
+      // Queries are sequential: one pg client must not execute concurrent
+      // queries, and the repeatable-read snapshot keeps pages consistent.
+      const policy = await this.getPolicy(id, { client });
+      const events = await client.query(
+        `SELECT * FROM harness_events WHERE project_id = $1
+         ORDER BY event_timestamp ASC, event_id ASC LIMIT $2 OFFSET $3`,
+        [id, fetchLimit, parsedOffset]
+      );
+      const usage = await client.query(
+        `SELECT * FROM harness_usage WHERE project_id = $1
+         ORDER BY created_at ASC LIMIT $2 OFFSET $3`,
+        [id, fetchLimit, parsedOffset]
+      );
+      const runs = await client.query(
+        `SELECT * FROM harness_runs WHERE project_id = $1
+         ORDER BY started_at ASC LIMIT $2 OFFSET $3`,
+        [id, fetchLimit, parsedOffset]
+      );
+      const checkpoints = await client.query(
+        `SELECT hc.* FROM harness_checkpoints hc
+         JOIN harness_runs r ON r.id = hc.run_id
+         WHERE r.project_id = $1
+         ORDER BY hc.created_at ASC LIMIT $2 OFFSET $3`,
+        [id, fetchLimit, parsedOffset]
+      );
+      const messages = await client.query(
+        `SELECT tm.* FROM ticket_messages tm
+         JOIN tickets t ON t.id = tm.ticket_id
+         WHERE t.project_id = $1
+         ORDER BY tm.created_at ASC LIMIT $2 OFFSET $3`,
+        [id, fetchLimit, parsedOffset]
+      );
+      const usageLogs = await client.query(
+        `SELECT * FROM usage_logs WHERE project_id = $1
+         ORDER BY created_at ASC LIMIT $2 OFFSET $3`,
+        [id, fetchLimit, parsedOffset]
+      );
       await client.query('COMMIT');
-      const trim = (result) => result.rows.slice(0, parsedLimit);
+      const results = [events, usage, runs, checkpoints, messages, usageLogs];
+      const trim = (result) => redactExportRows(result.rows.slice(0, parsedLimit));
+      const hasMore = results.some((result) => result.rows.length > parsedLimit);
       return {
         projectId: id,
         exportedAt: new Date().toISOString(),
-        policy,
+        policy: redactExportRow(policy),
         events: trim(events),
         usage: trim(usage),
         runs: trim(runs),
         checkpoints: trim(checkpoints),
         messages: trim(messages),
         usageLogs: trim(usageLogs),
-        hasMore: [events, usage, runs, checkpoints, messages, usageLogs]
-          .some((result) => result.rows.length > parsedLimit),
+        hasMore,
+        nextOffset: hasMore ? parsedOffset + parsedLimit : null,
       };
     } catch (error) {
       await client.query('ROLLBACK');

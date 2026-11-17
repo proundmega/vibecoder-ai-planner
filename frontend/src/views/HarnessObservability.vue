@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import {
   deleteHarnessProjectData,
   exportHarnessProjectData,
@@ -23,7 +24,11 @@ import {
 } from '@/api/harnessObservability'
 
 const route = useRoute()
+const authStore = useAuthStore()
 const projectId = computed(() => String(route.params.id || ''))
+const canManagePrivacy = computed(
+  () => authStore.isSuperAdmin() || authStore.isProjectAdmin()
+)
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -174,9 +179,21 @@ async function loadPolicy(): Promise<void> {
 }
 
 async function loadPrivacy(): Promise<void> {
-  if (!projectId.value) return
-  privacy.value = await getHarnessPrivacyPolicy(projectId.value)
-  applyPrivacyForm(privacy.value)
+  if (!projectId.value || !canManagePrivacy.value) {
+    privacy.value = null
+    return
+  }
+  try {
+    privacy.value = await getHarnessPrivacyPolicy(projectId.value)
+    applyPrivacyForm(privacy.value)
+  } catch (err) {
+    privacy.value = null
+    // The policy endpoint is admin-only; a stale role must not break the
+    // whole observability page for a member.
+    if (!(err instanceof Error && /\b403\b|forbidden/i.test(err.message))) {
+      throw err
+    }
+  }
 }
 
 async function loadAudit(): Promise<void> {
@@ -281,7 +298,36 @@ async function exportProjectData(): Promise<void> {
   exportingPrivacy.value = true
   privacyStatus.value = null
   try {
-    const data = await exportHarnessProjectData(projectId.value)
+    const first = await exportHarnessProjectData(projectId.value, {
+      limit: '5000',
+      offset: '0',
+    })
+    const data = {
+      ...first,
+      events: [...first.events],
+      usage: [...first.usage],
+      runs: [...first.runs],
+      checkpoints: [...first.checkpoints],
+      messages: [...first.messages],
+      usageLogs: [...first.usageLogs],
+    }
+    let nextOffset = first.nextOffset
+    let pages = 1
+    while (nextOffset !== null && pages < 100) {
+      const page = await exportHarnessProjectData(projectId.value, {
+        limit: '5000',
+        offset: String(nextOffset),
+      })
+      data.events.push(...page.events)
+      data.usage.push(...page.usage)
+      data.runs.push(...page.runs)
+      data.checkpoints.push(...page.checkpoints)
+      data.messages.push(...page.messages)
+      data.usageLogs.push(...page.usageLogs)
+      nextOffset = page.nextOffset
+      pages += 1
+    }
+    data.hasMore = nextOffset !== null
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: 'application/json',
     })
@@ -295,7 +341,7 @@ async function exportProjectData(): Promise<void> {
       `Exported ${data.events.length} event(s), ${data.usage.length} usage row(s), ` +
       `${data.runs.length} run(s), ${data.checkpoints.length} checkpoint(s), ` +
       `${data.messages.length} message(s) and ${data.usageLogs.length} billing log(s).` +
-      (data.hasMore ? ' More data is available; narrow the export.' : '')
+      (data.hasMore ? ' Export stopped at the page cap; contact an operator.' : '')
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to export project data'
   } finally {
@@ -555,7 +601,7 @@ watch(projectId, loadAll)
         </form>
       </section>
 
-      <section class="panel">
+      <section v-if="canManagePrivacy" class="panel">
         <div class="panel-header">
           <h2>Privacy &amp; data governance</h2>
           <span v-if="privacy" class="badge">{{ privacy.maxDataClass }}</span>

@@ -89,10 +89,10 @@ describe('harness observability API', () => {
     )
   })
 
-  it('exports project data with an optional limit', async () => {
-    await harness.exportHarnessProjectData(7, { limit: '500' })
+  it('exports project data with an optional limit and offset', async () => {
+    await harness.exportHarnessProjectData(7, { limit: '500', offset: '1000' })
     expect(client.get).toHaveBeenCalledWith(
-      '/api/v1/harness/projects/7/privacy/export?limit=500'
+      '/api/v1/harness/projects/7/privacy/export?limit=500&offset=1000'
     )
   })
 })

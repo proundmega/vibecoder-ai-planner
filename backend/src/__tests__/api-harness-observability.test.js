@@ -528,6 +528,30 @@ describe('Harness observability API', () => {
       );
     });
 
+    it('fails an export when the audit record cannot be written', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ owner_id: 'user-1', is_member: false }],
+      });
+      HarnessPrivacyService.exportProjectData.mockResolvedValue({
+        projectId: 5,
+        events: [],
+        usage: [],
+        runs: [],
+        checkpoints: [],
+        messages: [],
+        usageLogs: [],
+        hasMore: false,
+        nextOffset: null,
+      });
+      HarnessAuditService.recordPrivacy.mockRejectedValueOnce(new Error('event store down'));
+
+      const res = await request(app)
+        .get('/api/v1/harness/projects/5/privacy/export')
+        .set('Authorization', 'Bearer mock-token');
+      expect(res.statusCode).toBe(500);
+      expect(HarnessPrivacyService.exportProjectData).toHaveBeenCalled();
+    });
+
     it('denies a plain member the privacy policy write', async () => {
       jwt.verify.mockReturnValue({
         userId: 'user-2', id: 'user-2', email: 'm@test.com', role: 'member',

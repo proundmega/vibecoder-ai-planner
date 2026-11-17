@@ -160,6 +160,7 @@ class HarnessAuditService {
     reason = null,
     actorType = 'user',
     actorId = null,
+    dedupeKey = null,
     payload = {},
   } = {}) {
     return this.record({
@@ -171,6 +172,7 @@ class HarnessAuditService {
       actorType,
       actorId,
       reason,
+      dedupeKey,
       payload: { action, ...payload },
     });
   }

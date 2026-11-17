@@ -2,7 +2,7 @@ package com.vibecode.agent.config;
 
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import com.vibecode.agent.harness.RedactionRegistry;
+import com.vibecode.agent.harness.HarnessPrivacyGuard;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -22,7 +22,7 @@ public class RedactingPatternLayoutEncoder extends PatternLayoutEncoder {
             return encoded;
         }
         Charset charset = getCharset() == null ? StandardCharsets.UTF_8 : getCharset();
-        String redacted = RedactionRegistry.redact(new String(encoded, charset));
+        String redacted = HarnessPrivacyGuard.forStorage(new String(encoded, charset));
         return redacted.getBytes(charset);
     }
 }

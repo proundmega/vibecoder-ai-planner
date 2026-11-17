@@ -107,6 +107,33 @@ describe('HarnessRunService', () => {
       ]);
     });
 
+    it('audits a provider-policy start rejection without creating a run', async () => {
+      const client = clientWith(
+        [{ status: 'in_progress', assigned_agent_id: '7', project_id: 5 }],
+        { rows: [] }
+      );
+      HarnessPrivacyService.assertProviderAllowed.mockRejectedValueOnce(
+        new Error("Provider 'anthropic' is not allowed by the project privacy policy")
+      );
+
+      await expect(HarnessRunService.startRun({
+        ticketId: 42,
+        agentId: 7,
+        branch: 'feat/fg-42',
+        provider: 'anthropic',
+      })).rejects.toThrow('not allowed by the project privacy policy');
+
+      expect(HarnessAuditService.recordPrivacy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: expect.anything(),
+          action: 'start_blocked',
+          ticketId: 42,
+          agentId: 7,
+        })
+      );
+      expect(client.release).toHaveBeenCalled();
+    });
+
     it('persists a project-scoped repo profile revision when provided', async () => {
       const row = { id: RUN_ID, ticket_id: 42, agent_id: 7, status: 'running' };
       const client = {
@@ -354,6 +381,20 @@ describe('HarnessRunService', () => {
       await HarnessRunService.recordCheckpoint(RUN_ID, 'cloned');
 
       expect(pool.query.mock.calls[0][1][2]).toBe('{}');
+    });
+
+    it('redacts PII from checkpoint payloads before storage', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [{ id: 'cp-1' }] });
+
+      await HarnessRunService.recordCheckpoint(RUN_ID, 'cloned', {
+        note: 'mail alice@example.com',
+        workspacePath: '/tmp/ws',
+      });
+
+      const json = pool.query.mock.calls[0][1][2];
+      expect(json).not.toContain('alice@example.com');
+      expect(json).toContain('[REDACTED_EMAIL]');
+      expect(json).toContain('/tmp/ws');
     });
 
     it('rejects a non-object payload', async () => {

@@ -199,6 +199,7 @@ export interface HarnessPrivacyExport {
   messages: Array<Record<string, unknown>>
   usageLogs: Array<Record<string, unknown>>
   hasMore: boolean
+  nextOffset: number | null
 }
 
 function query(params: Record<string, string | undefined>): string {
@@ -315,7 +316,7 @@ export function deleteHarnessProjectData(
 
 export function exportHarnessProjectData(
   projectId: number | string,
-  params: { limit?: string } = {}
+  params: { limit?: string; offset?: string } = {}
 ): Promise<HarnessPrivacyExport> {
   return get<HarnessPrivacyExport>(
     `/api/v1/harness/projects/${projectId}/privacy/export${query(params)}`

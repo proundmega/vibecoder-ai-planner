@@ -39,7 +39,8 @@
 | `agent/src/main/java/com/vibecode/agent/harness/WorkspaceFileBridge.java` | edit | Redacts/blocks secrets and PII before returning `sandbox_read`/`sandbox_grep` content. |
 | `agent/src/main/java/com/vibecode/agent/harness/SandboxBashBridge.java` | edit | Redacts/blocks secrets and PII in `sandbox_bash` output, including streamed chunks. |
 | `agent/src/main/java/com/vibecode/agent/harness/SecretRedactor.java` | edit | Adds a conservative high-entropy token rule beside the known credential formats. |
-| `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java` | edit | Loads the policy, redacts before prompting, enforces local-only/model, scans verification output and PR text, emits `privacy.decision`. |
+| `agent/src/main/java/com/vibecode/agent/config/RedactingPatternLayoutEncoder.java` | edit | Applies the storage privacy boundary (secrets + PII) to every log line. |
+| `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java` | edit | Loads the policy, redacts before prompting, enforces local-only/model, scans verification output and PR text, emits `privacy.decision`, and redacts logs/messages/run errors. |
 | `agent/src/main/java/com/vibecode/agent/service/ApiService.java` | edit | Sends provider endpoint/region and captures `privacyPolicy`. |
 | `agent/src/main/java/com/vibecode/agent/model/ApiResponse.java` | edit | Maps `privacyPolicy`. |
 | `frontend/src/api/harnessObservability.ts` | edit | Privacy policy, deletion and export API functions/types. |
@@ -56,7 +57,9 @@
 | `agent/src/test/java/com/vibecode/agent/harness/HarnessPrivacyPipelineTest.java` | add | Pre/post-flight redaction, blocking and policy ceilings. |
 | `agent/src/test/java/com/vibecode/agent/harness/HarnessTicketProcessorTest.java` | edit | Prompt redaction and `privacy.decision` without leaking the token/PII. |
 | `agent/src/test/java/com/vibecode/agent/service/ApiServiceHarnessTest.java` | edit | Provider context and privacy policy capture. |
-| `frontend/src/__tests__/harnessObservabilityApi.test.ts` | edit | Privacy policy, deletion and export calls. |
+| `frontend/src/__tests__/harnessObservabilityApi.test.ts` | edit | Privacy policy, deletion and export calls (limit/offset). |
+| `frontend/src/__tests__/harnessObservabilityMember.test.js` | add | Member rendering hides the admin-only privacy panel and does not fail the page on a 403. |
+| `backend/src/__tests__/integration/harnessPrivacyExport.test.js` | add | Real-Postgres export redaction and offset pagination. |
 
 ## Dependencies
 
@@ -93,4 +96,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-17 | `4c031d6` (#166) | Backend 146 suites / 1853 tests; Agent 787 tests (9 skipped); Frontend 61 files / 574 tests; real-Postgres integration 16 suites / 157 tests | Implementation updated after review; PR open for re-review. Database deletion covers events, usage, runs, checkpoints, messages and billing logs; on-disk workspace/artifact retention is deferred in `00` D8. |
+| 2026-11-17 | `4c031d6` (#166) | Backend 146 suites / 1858 tests; Agent 788 tests (9 skipped); Frontend 62 files / 575 tests; real-Postgres integration 17 suites / 159 tests | Review fixes: redacted/paginated export, member-safe privacy panel, PII log redaction, transactional/full-snapshot policy audit, provider-start audit, dead-letter/checkpoint redaction. Database deletion covers events, usage, runs, checkpoints, messages and billing logs; on-disk workspace/artifact retention is deferred in `00` D8. |

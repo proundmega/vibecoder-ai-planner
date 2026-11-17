@@ -717,7 +717,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
 
         log.info("Harness processing ticket: {} - {}",
-            ticket.getId(), redactor.redact(ticket.getTitle()));
+            ticket.getId(), redactWithProvider(ticket.getTitle()));
 
         Ticket pickedUp = pickUpTicket(ticket.getId());
         if (pickedUp == null) {

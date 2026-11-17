@@ -1,7 +1,7 @@
 const { pool } = require('../db');
 const DependencyService = require('./DependencyService');
 const HarnessBudgetService = require('./HarnessBudgetService');
-const { redactText } = require('../utils/harnessRedaction');
+const { redactText, redactPayload } = require('../utils/harnessRedaction');
 const logger = require('../utils/logger');
 const {
   NotFoundError,
@@ -91,7 +91,7 @@ function checkpointPayload(payload) {
   if (typeof payload !== 'object' || Array.isArray(payload)) {
     throw new ValidationError('payload must be a JSON object');
   }
-  return JSON.stringify(payload);
+  return JSON.stringify(redactPayload(payload).payload);
 }
 
 class HarnessRunService {
@@ -176,14 +176,32 @@ class HarnessRunService {
         // the same transaction. A policy read error aborts the start (fail
         // closed) rather than sending data to an unapproved provider.
         const HarnessPrivacyService = require('./HarnessPrivacyService');
-        privacyPolicy = await HarnessPrivacyService.assertProviderAllowed({
-          projectId: ownedTicket.project_id,
-          provider,
-          providerBaseUrl,
-          providerRegion,
-          agentId: normalisedAgentId,
-          client,
-        });
+        try {
+          privacyPolicy = await HarnessPrivacyService.assertProviderAllowed({
+            projectId: ownedTicket.project_id,
+            provider,
+            providerBaseUrl,
+            providerRegion,
+            agentId: normalisedAgentId,
+            client,
+          });
+        } catch (error) {
+          try {
+            const HarnessAuditService = require('./HarnessAuditService');
+            await HarnessAuditService.recordPrivacy({
+              projectId: ownedTicket.project_id,
+              ticketId: normalisedTicketId,
+              agentId: normalisedAgentId,
+              action: 'start_blocked',
+              reason: redactText(String(error.message || error)),
+              actorType: 'agent',
+              payload: { provider: provider || null },
+            });
+          } catch (auditError) {
+            logger.warn(`Privacy start-block audit failed: ${auditError.message}`);
+          }
+          throw error;
+        }
       }
 
       if (normalisedProfileId) {
@@ -529,7 +547,7 @@ class HarnessRunService {
   }
 
   async recordPrivacyBlock(run) {
-    if (!run || run.status !== 'failed' || !run.error) {
+    if (!run || !['failed', 'dead_letter'].includes(run.status) || !run.error) {
       return;
     }
     if (!/privacy|secret pattern|pii pattern|data class|local\/self-hosted|not allowed by the project privacy policy/i
@@ -547,6 +565,7 @@ class HarnessRunService {
         action: 'run_blocked',
         reason: redactText(String(run.error)),
         actorType: 'agent',
+        dedupeKey: `privacy:run_blocked:${run.id}`,
       });
     } catch (error) {
       logger.warn(`Privacy block audit failed for run ${run.id}: ${error.message}`);
@@ -933,7 +952,7 @@ class HarnessRunService {
     const id = requiredUuid(runId, 'runId');
     const reason = error === null || error === undefined
       ? 'dead-lettered by operator'
-      : requiredString(error, 'error');
+      : redactText(requiredString(error, 'error'));
 
     const result = await pool.query(
       `WITH updated AS (

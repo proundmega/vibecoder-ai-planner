@@ -37,4 +37,29 @@ class RedactingPatternLayoutEncoderTest {
             RedactionRegistry.reset();
         }
     }
+
+    @Test
+    void redactsPiiBeforeALogLineLeavesTheProcess() {
+        LoggerContext context = new LoggerContext();
+        Logger logger = context.getLogger("pii-redaction-test");
+        RedactingPatternLayoutEncoder encoder = new RedactingPatternLayoutEncoder();
+        encoder.setContext(context);
+        encoder.setPattern("%msg");
+        encoder.start();
+        try {
+            LoggingEvent event = new LoggingEvent(
+                "test", logger, Level.INFO,
+                "contact alice@example.com or (415) 555-2671", null, null);
+
+            String output = new String(encoder.encode(event), StandardCharsets.UTF_8);
+
+            assertFalse(output.contains("alice@example.com"), output);
+            assertFalse(output.contains("415) 555-2671"), output);
+            assertTrue(output.contains("[REDACTED_EMAIL]"), output);
+            assertTrue(output.contains("[REDACTED_PHONE]"), output);
+        } finally {
+            encoder.stop();
+            RedactionRegistry.reset();
+        }
+    }
 }

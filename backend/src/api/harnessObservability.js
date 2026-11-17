@@ -685,6 +685,12 @@ router.post('/projects/:projectId/privacy/delete', verifyTokenOrAgent, async (re
  *         name: projectId
  *         required: true
  *         schema: { $ref: '#/components/schemas/NumericId' }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, minimum: 1, maximum: 5000 }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer, minimum: 0 }
  *     responses:
  *       200:
  *         description: Redacted project run data export
@@ -699,6 +705,7 @@ router.get('/projects/:projectId/privacy/export', verifyTokenOrAgent, async (req
     const actorId = req.user?.userId || req.user?.id;
     const data = await HarnessPrivacyService.exportProjectData(projectId, {
       limit: req.query.limit,
+      offset: req.query.offset,
     });
     try {
       await HarnessAuditService.recordPrivacy({
@@ -715,10 +722,12 @@ router.get('/projects/:projectId/privacy/export', verifyTokenOrAgent, async (req
           messages: data.messages.length,
           usageLogs: data.usageLogs.length,
           hasMore: data.hasMore,
+          nextOffset: data.nextOffset,
         },
       });
     } catch (auditError) {
-      logger.warn(`Privacy export audit failed: ${auditError.message}`);
+      logger.error(`Privacy export audit failed: ${auditError.message}`);
+      throw auditError;
     }
     res.json({ success: true, data });
   } catch (error) {
