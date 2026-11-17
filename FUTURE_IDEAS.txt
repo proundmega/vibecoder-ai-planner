@@ -34,6 +34,7 @@ duplicating its scope.
 
 - PR #168: missing `fetchPhaseHistory` import in `PhaseFlow.vue`; planning Edit button uses `VButton` and `.success` is styled; creating a ticket opens `TicketDetail?edit=1` (and a failed create keeps the modal open with an error); in-progress deletion is blocked in the service and disabled in the UI with a visible hint; delete failures show a banner and the 409 is documented in OpenAPI.
 - PR #171: ProjectDetail renders every child route (Manage GitHub, approvals, templates, harness); direct child loads highlight the right tab; GitHub branch/PR shapes normalized; branch-create `ReferenceError` and external PR links fixed.
+- PR #172: Create Agent refreshes both agent tables immediately, moves the submit state into the parent so it cannot latch on "Creating...", and resets the modal form when hidden.
 
 ## Infrastructure
 
