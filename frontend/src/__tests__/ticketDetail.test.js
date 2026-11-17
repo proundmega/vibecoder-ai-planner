@@ -111,7 +111,8 @@ describe('TicketDetail', () => {
 
     expect(deleteButton).toBeTruthy()
     expect(deleteButton.attributes('disabled')).toBeDefined()
-    expect(deleteButton.attributes('title')).toContain('Backlog')
+    expect(wrapper.find('.delete-ticket-action').attributes('title')).toContain('Backlog')
+    expect(wrapper.find('.delete-hint').text()).toContain('Move this ticket to Backlog')
   })
 
   it('allows deleting a backlog ticket', async () => {
@@ -120,6 +121,25 @@ describe('TicketDetail', () => {
 
     expect(deleteButton).toBeTruthy()
     expect(deleteButton.attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('.delete-hint').exists()).toBe(false)
+  })
+
+  it('shows the delete failure without reopening the confirmation modal', async () => {
+    ticketsApi.deleteTicket.mockRejectedValue(
+      new Error('Cannot delete a ticket that is in progress. Move it to backlog first.')
+    )
+
+    const wrapper = await mountDetail(baseTicket())
+    await findButton(wrapper, 'Delete Ticket').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.delete-confirm').exists()).toBe(true)
+    await wrapper.find('.delete-confirm .btn-submit').trigger('click')
+    await flushPromises()
+
+    expect(ticketsApi.deleteTicket).toHaveBeenCalledWith('t1')
+    expect(wrapper.find('.delete-confirm').exists()).toBe(false)
+    expect(wrapper.find('.error-banner').text()).toContain('Move it to backlog first')
   })
 
   it('renders the planning file Edit action with the styled VButton and shows the saved message', async () => {

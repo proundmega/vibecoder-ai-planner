@@ -157,6 +157,12 @@ router.put('/:ticketId', verifyTokenOrAgent, requireAnyPermission('TICKET_UPDATE
  *     responses:
  *       200:
  *         description: Ticket deleted
+ *       409:
+ *         description: Ticket is in progress and must be moved to backlog before deletion
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete('/:ticketId', verifyToken, validatePathParams({ ticketId: pathParams.ticketId }), ticketController.deleteTicket);
 

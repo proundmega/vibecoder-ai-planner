@@ -24,6 +24,7 @@ const comments = ref([])
 const showEditModal = ref(route.query.edit === '1')
 const showDeleteConfirm = ref(false)
 const deleting = ref(false)
+const deleteError = ref(null)
 const attachments = ref([])
 const uploading = ref(false)
 const uploadError = ref('')
@@ -178,15 +179,17 @@ async function handleEditSaved(updates) {
 async function handleDelete() {
   deleting.value = true
   showDeleteConfirm.value = false
-  
+  deleteError.value = null
+
   try {
     await deleteTicket(ticket.value.id)
     router.push(`/projects/${route.params.id}/tickets`)
   } catch (err) {
     console.error('Failed to delete ticket:', err)
-    error.value = 'Failed to delete ticket: ' + err.message
+    // Keep the confirmation closed and surface the failure in the page, rather
+    // than reopening the modal over the error.
+    deleteError.value = 'Failed to delete ticket: ' + err.message
     deleting.value = false
-    showDeleteConfirm.value = true
   }
 }
 
@@ -399,15 +402,24 @@ async function handleShowTemplateSelect() {
       <button @click="router.back()" class="back-btn">← Back</button>
       <div class="action-buttons">
         <button v-if="canUpdate()" @click="showEditModal = true" class="btn-edit">Edit Ticket</button>
-        <button
+        <span
           v-if="canDelete()"
-          @click="showDeleteConfirm = true"
-          class="btn-delete"
-          :disabled="ticket?.status === 'in_progress'"
+          class="delete-ticket-action"
           :title="ticket?.status === 'in_progress' ? 'Move this ticket to Backlog before deleting it' : ''"
-        >Delete Ticket</button>
+        >
+          <button
+            @click="showDeleteConfirm = true"
+            class="btn-delete"
+            :disabled="ticket?.status === 'in_progress'"
+          >Delete Ticket</button>
+        </span>
       </div>
     </div>
+
+    <p v-if="ticket?.status === 'in_progress' && canDelete()" class="delete-hint">
+      Move this ticket to Backlog before deleting it.
+    </p>
+    <div v-if="deleteError" class="error-banner">{{ deleteError }}</div>
 
     <h1>Ticket #{{ ticketId }}</h1>
 
@@ -739,6 +751,26 @@ async function handleShowTemplateSelect() {
 .action-buttons {
   display: flex;
   gap: 10px;
+}
+
+.delete-ticket-action {
+  display: inline-flex;
+}
+
+.delete-hint {
+  margin: -8px 0 12px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.error-banner {
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 13px;
 }
 
 .btn-edit {
