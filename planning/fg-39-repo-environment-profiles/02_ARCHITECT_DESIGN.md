@@ -335,10 +335,11 @@ Verification still uses the existing ephemeral `/tmp` cache defaults.
   receive the scrubbed profile. Legacy validation results are scrubbed for
   readers; a one-time storage scrub remains D15.
 - The scrub uses the same `isSecretKey` rule as the validators (so
-  `DB_PASS`, `PGPASS`, `DBPASS`, `PASS`, `AUTH`/`AUTHORIZATION`,
-  `REDISCLI_AUTH`, ... are covered), preserves quoted or unquoted `$ENV`
-  references and `${password}` placeholders, and does not redact `sha256:`
-  image digests.
+  `DB_PASS`, `PGPASS`, `DBPASS`, `PASS`, exact `AUTH`/`AUTHORIZATION`/
+  `BASIC_AUTH`, `REDISCLI_AUTH`, ... are covered), preserves quoted or
+  unquoted `$ENV` references and `${password}` placeholders, does not redact
+  `AUTH_MODE`/`AUTH_TYPE`-style configuration keys, and does not redact
+  `sha256:` image digests.
 - Service `env`, `password_env` and `connection_env` are validated again in the
   agent, and the env-file writer rejects newline/NUL injection.
 - Each generated service password is registered in `RedactionRegistry` before
