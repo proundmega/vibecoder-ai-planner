@@ -4,6 +4,7 @@ import * as client from '@/api/client'
 
 vi.mock('@/api/client', () => ({
   get: vi.fn(),
+  post: vi.fn(),
   put: vi.fn(),
 }))
 
@@ -58,6 +59,40 @@ describe('harness observability API', () => {
     await harness.getHarnessKillSwitchAudit(7, { limit: '25' })
     expect(client.get).toHaveBeenCalledWith(
       '/api/v1/harness/projects/7/kill-switch/audit?limit=25'
+    )
+  })
+
+  it('loads and updates the privacy policy', async () => {
+    await harness.getHarnessPrivacyPolicy(7)
+    expect(client.get).toHaveBeenCalledWith(
+      '/api/v1/harness/projects/7/privacy-policy'
+    )
+
+    await harness.updateHarnessPrivacyPolicy(7, {
+      maxDataClass: 'internal',
+      localOnly: true,
+    })
+    expect(client.put).toHaveBeenCalledWith(
+      '/api/v1/harness/projects/7/privacy-policy',
+      { maxDataClass: 'internal', localOnly: true }
+    )
+  })
+
+  it('deletes stored project data through the privacy endpoint', async () => {
+    await harness.deleteHarnessProjectData(7, {
+      dataClasses: ['events', 'usage'],
+      reason: 'subject request',
+    })
+    expect(client.post).toHaveBeenCalledWith(
+      '/api/v1/harness/projects/7/privacy/delete',
+      { dataClasses: ['events', 'usage'], reason: 'subject request' }
+    )
+  })
+
+  it('exports project data with an optional limit and offset', async () => {
+    await harness.exportHarnessProjectData(7, { limit: '500', offset: '1000' })
+    expect(client.get).toHaveBeenCalledWith(
+      '/api/v1/harness/projects/7/privacy/export?limit=500&offset=1000'
     )
   })
 })

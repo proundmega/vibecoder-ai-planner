@@ -1,4 +1,4 @@
-import { get, put } from './client'
+import { get, post, put } from './client'
 
 export interface HarnessRunSummary {
   total: number
@@ -158,6 +158,50 @@ export interface HarnessKillSwitchAudit {
   created_at: string
 }
 
+export type HarnessDataClass = 'public' | 'internal' | 'confidential' | 'secret'
+
+export interface HarnessPrivacyPolicy {
+  projectId: number | null
+  source: string
+  maxDataClass: HarnessDataClass
+  allowedProviders: string[]
+  requireNoTraining: boolean
+  localOnly: boolean
+  localEndpoint: string | null
+  localModel: string | null
+  dataResidency: string | null
+  blockOnSecret: boolean
+  blockOnPii: boolean
+  redactPii: boolean
+  eventRetentionDays: number
+  artifactRetentionDays: number
+  policyVersion: number
+  updatedAt: string | null
+}
+
+export interface HarnessPrivacyDeleteResult {
+  events: number
+  usage: number
+  messages: number
+  checkpoints: number
+  runs: number
+  usageLogs: number
+}
+
+export interface HarnessPrivacyExport {
+  projectId: number
+  exportedAt: string
+  policy: HarnessPrivacyPolicy
+  events: HarnessEvent[]
+  usage: Array<Record<string, unknown>>
+  runs: Array<Record<string, unknown>>
+  checkpoints: Array<Record<string, unknown>>
+  messages: Array<Record<string, unknown>>
+  usageLogs: Array<Record<string, unknown>>
+  hasMore: boolean
+  nextOffset: number | null
+}
+
 function query(params: Record<string, string | undefined>): string {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -239,5 +283,42 @@ export function getHarnessAudit(
 ): Promise<HarnessEvent[]> {
   return get<HarnessEvent[]>(
     `/api/v1/harness/projects/${projectId}/audit${query(params)}`
+  )
+}
+
+export function getHarnessPrivacyPolicy(
+  projectId: number | string
+): Promise<HarnessPrivacyPolicy> {
+  return get<HarnessPrivacyPolicy>(
+    `/api/v1/harness/projects/${projectId}/privacy-policy`
+  )
+}
+
+export function updateHarnessPrivacyPolicy(
+  projectId: number | string,
+  policy: Record<string, unknown>
+): Promise<HarnessPrivacyPolicy> {
+  return put<HarnessPrivacyPolicy>(
+    `/api/v1/harness/projects/${projectId}/privacy-policy`,
+    policy
+  )
+}
+
+export function deleteHarnessProjectData(
+  projectId: number | string,
+  payload: { dataClasses?: string[]; before?: string | null; reason?: string | null }
+): Promise<HarnessPrivacyDeleteResult> {
+  return post<HarnessPrivacyDeleteResult>(
+    `/api/v1/harness/projects/${projectId}/privacy/delete`,
+    payload
+  )
+}
+
+export function exportHarnessProjectData(
+  projectId: number | string,
+  params: { limit?: string; offset?: string } = {}
+): Promise<HarnessPrivacyExport> {
+  return get<HarnessPrivacyExport>(
+    `/api/v1/harness/projects/${projectId}/privacy/export${query(params)}`
   )
 }

@@ -92,6 +92,17 @@ public final class SecretRedactor {
             + "|'((?:[^'\\\\]|\\\\.){8,})'"
             + "|([^\"'\\r\\n]{8,}))");
 
+    /**
+     * Generic high-entropy tokens that do not match a known provider prefix.
+     * The candidate must contain lower, upper and digit characters, must not be
+     * a pure hex digest (commit ids, sha256), and must not look like a path.
+     * That keeps ordinary code identifiers and repository paths out while
+     * catching random base64/base64url credentials.
+     */
+    private static final Pattern HIGH_ENTROPY = Pattern.compile(
+        "(?<![A-Za-z0-9+/=_-])[A-Za-z0-9+/=_-]{32,128}(?![A-Za-z0-9+/=_-])");
+    private static final double MIN_ENTROPY = 4.5;
+
     private final List<String> knownSecrets;
 
     public SecretRedactor(Collection<String> knownSecrets) {
@@ -137,7 +148,66 @@ public final class SecretRedactor {
             redacted = rule.pattern().matcher(redacted).replaceAll(rule.replacement());
         }
         redacted = redactKeyValues(redacted);
-        return redacted;
+        return redactHighEntropy(redacted);
+    }
+
+    private static String redactHighEntropy(String value) {
+        Matcher matcher = HIGH_ENTROPY.matcher(value);
+        StringBuilder out = new StringBuilder(value.length());
+        while (matcher.find()) {
+            String candidate = matcher.group();
+            if (isHighEntropySecret(candidate)) {
+                matcher.appendReplacement(out, REDACTED);
+            } else {
+                matcher.appendReplacement(out, Matcher.quoteReplacement(candidate));
+            }
+        }
+        matcher.appendTail(out);
+        return out.toString();
+    }
+
+    static boolean isHighEntropySecret(String candidate) {
+        if (candidate == null || candidate.length() < 32 || candidate.length() > 128) {
+            return false;
+        }
+        // Pure hex is a digest or a commit id, not a credential.
+        if (candidate.matches("[0-9a-fA-F]+")) {
+            return false;
+        }
+        // A slash-separated string without base64 markers is a path.
+        if (candidate.indexOf('/') >= 0
+            && candidate.indexOf('+') < 0
+            && candidate.indexOf('=') < 0) {
+            return false;
+        }
+        boolean lower = false;
+        boolean upper = false;
+        boolean digit = false;
+        for (int i = 0; i < candidate.length(); i++) {
+            char c = candidate.charAt(i);
+            if (Character.isLowerCase(c)) lower = true;
+            else if (Character.isUpperCase(c)) upper = true;
+            else if (Character.isDigit(c)) digit = true;
+        }
+        if (!lower || !upper || !digit) {
+            return false;
+        }
+        return shannonEntropy(candidate) >= MIN_ENTROPY;
+    }
+
+    private static double shannonEntropy(String value) {
+        int[] counts = new int[128];
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c < counts.length) counts[c]++;
+        }
+        double entropy = 0;
+        for (int count : counts) {
+            if (count == 0) continue;
+            double probability = (double) count / value.length();
+            entropy -= probability * (Math.log(probability) / Math.log(2));
+        }
+        return entropy;
     }
 
     private static String redactKeyValues(String value) {

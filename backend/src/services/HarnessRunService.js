@@ -1,6 +1,7 @@
 const { pool } = require('../db');
 const DependencyService = require('./DependencyService');
 const HarnessBudgetService = require('./HarnessBudgetService');
+const { redactText, redactPayload } = require('../utils/harnessRedaction');
 const logger = require('../utils/logger');
 const {
   NotFoundError,
@@ -90,7 +91,7 @@ function checkpointPayload(payload) {
   if (typeof payload !== 'object' || Array.isArray(payload)) {
     throw new ValidationError('payload must be a JSON object');
   }
-  return JSON.stringify(payload);
+  return JSON.stringify(redactPayload(payload).payload);
 }
 
 class HarnessRunService {
@@ -106,6 +107,8 @@ class HarnessRunService {
     sessionId = null,
     provider = null,
     model = null,
+    providerBaseUrl = null,
+    providerRegion = null,
     attempt = 1,
     repoProfileId = null,
     repoProfileVersion = null,
@@ -144,6 +147,7 @@ class HarnessRunService {
       const ownedTicket = ownership.rows[0];
       let reservedCostUsd = 0;
       let startPolicy = null;
+      let privacyPolicy = null;
       if (
         ownedTicket
         && ownedTicket.status === 'in_progress'
@@ -167,6 +171,38 @@ class HarnessRunService {
         });
         startPolicy = budget;
         reservedCostUsd = Number(budget?.reservedCostUsd) || 0;
+
+        // fg-42: provider/residency/no-training/local-only policy is checked in
+        // the same transaction. A policy read error aborts the start (fail
+        // closed) rather than sending data to an unapproved provider.
+        const HarnessPrivacyService = require('./HarnessPrivacyService');
+        try {
+          privacyPolicy = await HarnessPrivacyService.assertProviderAllowed({
+            projectId: ownedTicket.project_id,
+            provider,
+            providerBaseUrl,
+            providerRegion,
+            agentId: normalisedAgentId,
+            client,
+          });
+        } catch (error) {
+          try {
+            const HarnessAuditService = require('./HarnessAuditService');
+            await HarnessAuditService.recordPrivacy({
+              projectId: ownedTicket.project_id,
+              ticketId: normalisedTicketId,
+              agentId: normalisedAgentId,
+              action: 'start_blocked',
+              reason: redactText(String(error.message || error)),
+              actorType: 'agent',
+              dedupeKey: `privacy:start_blocked:${normalisedTicketId}:${provider || 'none'}`,
+              payload: { provider: provider || null },
+            });
+          } catch (auditError) {
+            logger.warn(`Privacy start-block audit failed: ${auditError.message}`);
+          }
+          throw error;
+        }
       }
 
       if (normalisedProfileId) {
@@ -195,8 +231,10 @@ class HarnessRunService {
         `INSERT INTO harness_runs
            (ticket_id, agent_id, project_id, branch, base_sha, workspace_path,
             session_id, provider, model, attempt, repo_profile_id,
-            repo_profile_version, budget_reserved_usd)
-         SELECT $1, $2, t.project_id, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+            repo_profile_version, budget_reserved_usd, provider_base_url,
+            provider_region)
+         SELECT $1, $2, t.project_id, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                $12, $13, $14
          FROM tickets t
          JOIN agents a ON a.id = $2
          WHERE t.id = $1
@@ -225,6 +263,8 @@ class HarnessRunService {
           normalisedProfileId,
           normalisedProfileVersion,
           reservedCostUsd,
+          privacyPolicy?.resolvedProviderBaseUrl ?? providerBaseUrl ?? null,
+          privacyPolicy?.resolvedProviderRegion ?? providerRegion ?? null,
         ]
       );
 
@@ -273,6 +313,9 @@ class HarnessRunService {
       if (startPolicy) {
         // Internal hand-off only; the API strips this before responding.
         run.budget_policy = startPolicy;
+      }
+      if (privacyPolicy) {
+        run.privacy_policy = privacyPolicy;
       }
       return run;
     } catch (error) {
@@ -486,20 +529,48 @@ class HarnessRunService {
          DELETE FROM harness_leases WHERE run_id = $1
        )
        SELECT * FROM finished`,
-      [id, status, error, headSha, prUrl]
+      [id, status, error == null ? null : redactText(String(error)), headSha, prUrl]
     );
 
     if (result.rows.length > 0) {
       await this.recordTerminalEvent(result.rows[0]);
+      await this.recordPrivacyBlock(result.rows[0]);
       return result.rows[0];
     }
 
     const existing = await this.getRun(id);
     if (TERMINAL_RUN_STATUSES.includes(existing.status)) {
       await this.recordTerminalEvent(existing);
+      await this.recordPrivacyBlock(existing);
       return existing;
     }
     throw new ConflictError('Harness run is not active');
+  }
+
+  async recordPrivacyBlock(run) {
+    if (!run || !['failed', 'dead_letter'].includes(run.status) || !run.error) {
+      return;
+    }
+    if (!/privacy|secret pattern|pii pattern|data class|local\/self-hosted|not allowed by the project privacy policy/i
+      .test(String(run.error))) {
+      return;
+    }
+    try {
+      // Lazy require avoids the HarnessAuditService -> HarnessRunService cycle.
+      const HarnessAuditService = require('./HarnessAuditService');
+      await HarnessAuditService.recordPrivacy({
+        projectId: run.project_id,
+        runId: run.id,
+        ticketId: run.ticket_id,
+        agentId: run.agent_id,
+        action: 'run_blocked',
+        reason: redactText(String(run.error)),
+        actorType: 'agent',
+        dedupeKey: `privacy:run_blocked:${run.id}`,
+      });
+    } catch (error) {
+      logger.warn(`Privacy block audit failed for run ${run.id}: ${error.message}`);
+    }
   }
 
   /**
@@ -882,7 +953,7 @@ class HarnessRunService {
     const id = requiredUuid(runId, 'runId');
     const reason = error === null || error === undefined
       ? 'dead-lettered by operator'
-      : requiredString(error, 'error');
+      : redactText(requiredString(error, 'error'));
 
     const result = await pool.query(
       `WITH updated AS (

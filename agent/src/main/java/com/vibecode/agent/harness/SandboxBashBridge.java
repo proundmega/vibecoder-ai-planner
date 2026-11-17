@@ -357,9 +357,15 @@ final class SandboxBashBridge implements AutoCloseable {
                 ExecRequest.DEFAULT_MAX_OUTPUT_BYTES,
                 Map.of()
             ));
+            String output;
+            try {
+                output = HarnessPrivacyGuard.forModel(result.output());
+            } catch (HarnessPrivacyPipeline.PrivacyViolationException e) {
+                return new CachedResponse(403, Map.of("error", "blocked by privacy policy"));
+            }
             return new CachedResponse(200, Map.of(
                 "exitCode", result.exitCode(),
-                "output", result.output(),
+                "output", output,
                 "timedOut", result.timedOut(),
                 "truncated", result.truncated()
             ));
@@ -439,14 +445,26 @@ final class SandboxBashBridge implements AutoCloseable {
                     }
                     return;
                 }
+                String safeChunk;
+                try {
+                    safeChunk = HarnessPrivacyGuard.forModel(chunk);
+                } catch (HarnessPrivacyPipeline.PrivacyViolationException e) {
+                    safeChunk = "[BLOCKED BY PRIVACY POLICY]";
+                }
                 writeStreamEventQuietly(exchange, Map.of(
                     "type", "chunk",
-                    "data", chunk
+                    "data", safeChunk
                 ));
             });
+            String output;
+            try {
+                output = HarnessPrivacyGuard.forModel(result.output());
+            } catch (HarnessPrivacyPipeline.PrivacyViolationException e) {
+                return new CachedResponse(403, Map.of("error", "blocked by privacy policy"));
+            }
             return new CachedResponse(200, Map.of(
                 "exitCode", result.exitCode(),
-                "output", result.output(),
+                "output", output,
                 "timedOut", result.timedOut(),
                 "truncated", result.truncated()
             ));

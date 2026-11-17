@@ -235,6 +235,7 @@ describe('HarnessEventService', () => {
         "SET LOCAL harness.allow_event_purge = 'on'"
       );
       expect(client.query.mock.calls[2][0]).toContain("type NOT LIKE 'audit.%'");
+      expect(client.query.mock.calls[2][0]).toContain('harness_privacy_policies');
       expect(client.query.mock.calls[3][0]).toContain("type LIKE 'audit.%'");
       expect(client.release).toHaveBeenCalled();
     });

@@ -125,4 +125,25 @@ describe('HarnessAuditService', () => {
     const types = HarnessEventService.emit.mock.calls.map((call) => call[0].type);
     expect(types).toEqual(['audit.merge', 'audit.rollback']);
   });
+
+  it('records privacy policy decisions with a dedupe key', async () => {
+    await HarnessAuditService.recordPrivacy({
+      projectId: 7,
+      action: 'policy_updated',
+      actorId: 1,
+      payload: { policyVersion: 3, maxDataClass: 'internal' },
+    });
+
+    expect(HarnessEventService.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'audit.privacy',
+        projectId: 7,
+        payload: expect.objectContaining({
+          action: 'policy_updated',
+          policyVersion: 3,
+          maxDataClass: 'internal',
+        }),
+      })
+    );
+  });
 });

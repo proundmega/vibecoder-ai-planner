@@ -118,6 +118,27 @@ describe('Harness run API', () => {
       expect(HarnessBudgetService.getPolicy).not.toHaveBeenCalled();
     });
 
+    it('returns the privacy policy resolved with the run', async () => {
+      HarnessRunService.startRun.mockResolvedValue({
+        id: RUN_ID, agent_id: 7, project_id: 5, ticket_id: 42,
+        budget_reserved_usd: 0,
+        privacy_policy: {
+          maxDataClass: 'internal',
+          allowedProviders: ['opencode-go'],
+          policyVersion: 1,
+        },
+      });
+
+      const res = await request(app)
+        .post('/api/v1/harness/runs')
+        .set('X-API-Key', 'agent-key')
+        .send({ ticketId: 42, branch: 'feat/fg-42' });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.body.data.privacy_policy).toBeUndefined();
+      expect(res.body.privacyPolicy.maxDataClass).toBe('internal');
+    });
+
     it('returns a reservation-only policy if the full policy read fails', async () => {
       HarnessRunService.startRun.mockResolvedValue({
         id: RUN_ID, agent_id: 7, project_id: 5, ticket_id: 42,

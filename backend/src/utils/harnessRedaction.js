@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { redactPii } = require('./piiRedaction');
 
 /**
  * Defense-in-depth redaction for harness events (fg-41 FR4, fg-42 groundwork).
@@ -157,6 +158,13 @@ function redactString(value, key, ctx) {
     ctx.redactedFields.add(key || 'value');
   }
 
+  const pii = redactPii(output);
+  if (pii.count > 0) {
+    ctx.piiFlagged = true;
+    ctx.redactedFields.add(key || 'value');
+    output = pii.text;
+  }
+
   if (key && PREVIEW_CONTENT_KEYS.has(key.toLowerCase())) {
     const limit = Math.min(maxStringLength(), 2000);
     if (output.length > limit) {
@@ -229,6 +237,7 @@ function redactPayload(payload, options = {}) {
     maxArray: positiveInt(options.maxArray, DEFAULT_MAX_ARRAY),
     maxKeys: positiveInt(options.maxKeys, DEFAULT_MAX_KEYS),
     secretFlagged: false,
+    piiFlagged: false,
     redactedFields: new Set(),
     hashedFields: new Set(),
     truncated: false,
@@ -248,6 +257,7 @@ function redactPayload(payload, options = {}) {
     safePayload._redaction = {
       version: 1,
       secret_flagged: ctx.secretFlagged,
+      pii_flagged: ctx.piiFlagged,
       redacted_fields: Array.from(ctx.redactedFields).sort(),
       hashed_fields: Array.from(ctx.hashedFields).sort(),
       truncated: ctx.truncated,
@@ -257,6 +267,7 @@ function redactPayload(payload, options = {}) {
   return {
     payload: safePayload,
     secretFlagged: ctx.secretFlagged,
+    piiFlagged: ctx.piiFlagged,
     redactedFields: Array.from(ctx.redactedFields).sort(),
     hashedFields: Array.from(ctx.hashedFields).sort(),
     truncated: ctx.truncated,
@@ -268,8 +279,21 @@ function containsSecret(value) {
   return result.secretFlagged;
 }
 
+/**
+ * Redact a standalone persisted/published string without hashing or
+ * truncating it. Used for agent messages, run errors and branch text.
+ */
+function redactText(value) {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  const redacted = redactPatterns(value).value;
+  return redactPii(redacted).text;
+}
+
 module.exports = {
   redactPayload,
+  redactText,
   containsSecret,
   sha256,
   SENSITIVE_KEY_PATTERN,

@@ -98,7 +98,9 @@ const OBSERVED_EVENT_TYPES = new Set([
   'verification.result', 'diff.collected', 'publish.started', 'pr.opened',
   'review.result', 'fix.requested', 'budget.warning', 'budget.breach',
   'run.failed', 'run.succeeded', 'routing.decided', 'usage.recorded',
+  'privacy.decision',
   'audit.publish', 'audit.review', 'audit.merge', 'audit.rollback',
+  'audit.privacy',
 ]);
 
 function recordSweep(summary, { complete = true } = {}) {

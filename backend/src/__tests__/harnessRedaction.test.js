@@ -27,6 +27,18 @@ describe('harnessRedaction', () => {
     expect(result.payload.log).not.toContain('abcdefghijklmnopqrstuvwxyz012345');
   });
 
+  it('redacts PII inside event strings at ingest', () => {
+    const result = redactPayload({
+      message: 'mail alice@example.com, call (415) 555-2671, id 1234567890',
+    });
+
+    expect(result.piiFlagged).toBe(true);
+    expect(result.payload.message).toContain('[REDACTED_EMAIL]');
+    expect(result.payload.message).toContain('[REDACTED_PHONE]');
+    expect(result.payload.message).toContain('1234567890');
+    expect(result.payload._redaction.pii_flagged).toBe(true);
+  });
+
   it('redacts URL userinfo', () => {
     const result = redactPayload({
       url: 'postgresql://user:hunter2@db.internal:5432/app',

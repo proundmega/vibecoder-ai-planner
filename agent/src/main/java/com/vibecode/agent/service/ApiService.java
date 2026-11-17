@@ -8,6 +8,7 @@ import com.vibecode.agent.model.ApiResponse;
 import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
 import com.vibecode.agent.harness.RedactionRegistry;
+import com.vibecode.agent.harness.HarnessPrivacyGuard;
 import com.vibecode.agent.harness.EgressMtlsMaterial;
 import com.vibecode.agent.harness.RepoProfileSnapshot;
 import com.vibecode.agent.harness.RepoProfileValidation;
@@ -34,6 +35,9 @@ public class ApiService {
     private final AgentConfig config;
     private final String baseUrl;
     private volatile Map<String, Object> lastBudgetPolicy;
+    private volatile Map<String, Object> lastPrivacyPolicy;
+    private volatile String providerBaseUrlContext;
+    private volatile String providerRegionContext;
 
     public ApiService(AgentConfig config) {
         this.config = config;
@@ -150,6 +154,33 @@ public class ApiService {
         String repoProfileId,
         Integer repoProfileVersion
     ) throws IOException {
+        return startHarnessRun(ticketId, branch, workspacePath, provider, model,
+            attempt, repoProfileId, repoProfileVersion,
+            providerBaseUrlContext, providerRegionContext);
+    }
+
+    /**
+     * Provider metadata for the next run start (fg-42). The supervisor sets it
+     * from the resolved provider settings so the backend can enforce
+     * residency/local-only policy before the model is called.
+     */
+    public void setProviderContext(String baseUrl, String region) {
+        this.providerBaseUrlContext = baseUrl;
+        this.providerRegionContext = region;
+    }
+
+    public Map<String, Object> startHarnessRun(
+        Long ticketId,
+        String branch,
+        String workspacePath,
+        String provider,
+        String model,
+        int attempt,
+        String repoProfileId,
+        Integer repoProfileVersion,
+        String providerBaseUrl,
+        String providerRegion
+    ) throws IOException {
         Map<String, Object> body = new HashMap<>();
         body.put("ticketId", ticketId);
         body.put("branch", branch);
@@ -162,6 +193,12 @@ public class ApiService {
         }
         if (model != null && !model.isBlank()) {
             body.put("model", model);
+        }
+        if (providerBaseUrl != null && !providerBaseUrl.isBlank()) {
+            body.put("providerBaseUrl", providerBaseUrl);
+        }
+        if (providerRegion != null && !providerRegion.isBlank()) {
+            body.put("providerRegion", providerRegion);
         }
         if (repoProfileId != null && !repoProfileId.isBlank()) {
             body.put("repoProfileId", repoProfileId);
@@ -184,6 +221,7 @@ public class ApiService {
             throw new IOException("Failed to start harness run: " + response.getError());
         }
         this.lastBudgetPolicy = response.getBudgetPolicy();
+        this.lastPrivacyPolicy = response.getPrivacyPolicy();
         return response.getData();
     }
 
@@ -193,6 +231,13 @@ public class ApiService {
      */
     public Map<String, Object> getLastBudgetPolicy() {
         return lastBudgetPolicy;
+    }
+
+    /**
+     * Privacy/data-governance policy returned with the most recent run start.
+     */
+    public Map<String, Object> getLastPrivacyPolicy() {
+        return lastPrivacyPolicy;
     }
 
     /**
@@ -495,7 +540,7 @@ public class ApiService {
         String url = baseUrl + "/tickets/" + ticketId + "/messages";
         Map<String, Object> body = Map.of(
             "messageType", messageType,
-            "content", RedactionRegistry.redact(content)
+            "content", HarnessPrivacyGuard.forStorage(content)
         );
         ApiResponse<TicketMessage> response = executePost(url, body, new TypeReference<ApiResponse<TicketMessage>>() {});
         

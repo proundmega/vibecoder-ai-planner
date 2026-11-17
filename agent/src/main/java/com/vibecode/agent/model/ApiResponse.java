@@ -14,6 +14,7 @@ public class ApiResponse<T> {
     private T data;
     private Error error;
     private Map<String, Object> budgetPolicy;
+    private Map<String, Object> privacyPolicy;
 
     public boolean isSuccess() { return success; }
     public void setSuccess(boolean success) { this.success = success; }
@@ -26,6 +27,11 @@ public class ApiResponse<T> {
 
     public Map<String, Object> getBudgetPolicy() { return budgetPolicy; }
     public void setBudgetPolicy(Map<String, Object> budgetPolicy) { this.budgetPolicy = budgetPolicy; }
+
+    public Map<String, Object> getPrivacyPolicy() { return privacyPolicy; }
+    public void setPrivacyPolicy(Map<String, Object> privacyPolicy) {
+        this.privacyPolicy = privacyPolicy;
+    }
 
     public boolean hasError() { return !success || error != null; }
 
