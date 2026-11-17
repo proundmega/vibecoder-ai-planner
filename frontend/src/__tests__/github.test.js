@@ -59,14 +59,31 @@ describe('github API', () => {
   })
 
   describe('listBranches', () => {
-    it('sends GET request to correct URL', async () => {
+    it('normalizes backend branch names and extracts ticket ids', async () => {
       const { get } = await import('../api/client')
-      get.mockResolvedValue([{ name: 'main' }, { name: 'develop' }])
+      get.mockResolvedValue([
+        'vibecode/ticket-42-fix-login',
+        'vibecode/ticket-7',
+        'feature/other',
+      ])
 
       const result = await github.listBranches('proj-123')
 
       expect(get).toHaveBeenCalledWith('/api/v1/github/proj-123/branches')
-      expect(result).toEqual([{ name: 'main' }, { name: 'develop' }])
+      expect(result).toEqual([
+        { name: 'vibecode/ticket-42-fix-login', ticketId: '42' },
+        { name: 'vibecode/ticket-7', ticketId: '7' },
+        { name: 'feature/other', ticketId: null },
+      ])
+    })
+
+    it('also accepts object rows', async () => {
+      const { get } = await import('../api/client')
+      get.mockResolvedValue([{ name: 'vibecode/ticket-9-fix' }])
+
+      const result = await github.listBranches('proj-123')
+
+      expect(result).toEqual([{ name: 'vibecode/ticket-9-fix', ticketId: '9' }])
     })
 
     it('returns empty array on error', async () => {
@@ -106,14 +123,50 @@ describe('github API', () => {
   })
 
   describe('listPRs', () => {
-    it('sends GET request to correct URL', async () => {
+    it('normalizes the backend pull request shape', async () => {
       const { get } = await import('../api/client')
-      get.mockResolvedValue([{ id: 'pr-1', title: 'Fix bug' }])
+      get.mockResolvedValue([{
+        id: 1,
+        number: 7,
+        title: 'Fix bug',
+        state: 'open',
+        url: 'https://github.com/org/repo/pull/7',
+        head: 'vibecode/ticket-1-fix',
+        base: 'main',
+      }])
 
       const result = await github.listPRs('proj-123')
 
       expect(get).toHaveBeenCalledWith('/api/v1/github/proj-123/prs')
-      expect(result).toEqual([{ id: 'pr-1', title: 'Fix bug' }])
+      expect(result).toEqual([{
+        id: 1,
+        number: 7,
+        title: 'Fix bug',
+        state: 'open',
+        url: 'https://github.com/org/repo/pull/7',
+        head: 'vibecode/ticket-1-fix',
+        base: 'main',
+      }])
+    })
+
+    it('accepts nested head/base shapes', async () => {
+      const { get } = await import('../api/client')
+      get.mockResolvedValue([{
+        id: 2,
+        title: 'Nested',
+        state: 'closed',
+        html_url: 'https://github.com/org/repo/pull/8',
+        head: { ref: 'vibecode/ticket-2-fix' },
+        base: { ref: 'main' },
+      }])
+
+      const result = await github.listPRs('proj-123')
+
+      expect(result[0]).toMatchObject({
+        url: 'https://github.com/org/repo/pull/8',
+        head: 'vibecode/ticket-2-fix',
+        base: 'main',
+      })
     })
 
     it('returns empty array on error', async () => {

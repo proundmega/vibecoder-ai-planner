@@ -39,13 +39,13 @@ describe('useGitHub', () => {
       repo_url: 'a/b',
       default_branch: 'main',
     })
-    mockListBranches.mockResolvedValue([{ name: 'main', is_default: true }])
+    mockListBranches.mockResolvedValue([{ name: 'vibecode/ticket-1-fix', ticketId: '1' }])
     mockListPRs.mockResolvedValue([])
 
     await github.load()
     expect(github.loading.value).toBe(false)
     expect(github.repo.value).toEqual({ connected: true, repo_url: 'a/b', default_branch: 'main' })
-    expect(github.branches.value).toEqual([{ name: 'main', is_default: true }])
+    expect(github.branches.value).toEqual([{ name: 'vibecode/ticket-1-fix', ticketId: '1' }])
     expect(github.error.value).toBeNull()
   })
 

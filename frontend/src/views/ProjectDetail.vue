@@ -57,30 +57,59 @@ const {
   handleUpdate: memoryHandleUpdate, handleDelete: memoryHandleDelete,
 } = memoryObj
 
+const ROUTE_TAB_MAP = {
+  ProjectTickets: 'tickets',
+  TicketDetail: 'tickets',
+  PhaseFlow: 'tickets',
+  CodeReview: 'tickets',
+  ProjectMilestones: 'tickets',
+  ProjectTemplates: 'tickets',
+  ProjectHarness: 'tickets',
+  AIAssistant: 'ai',
+  ProjectApprovals: 'approvals',
+  ProjectGitHub: 'github',
+}
+
+// Keep the selected tab in sync when a child route is opened directly or
+// navigated to from a tab.
+watch(() => route.name, (name) => {
+  const tabId = ROUTE_TAB_MAP[name]
+  if (tabId) activeTab.value = tabId
+}, { immediate: true })
+
 const loadedTabs = new Set()
 
-watch(activeTab, (tabId) => {
+function ensureTabData(tabId) {
   if (loadedTabs.has(tabId)) return
   loadedTabs.add(tabId)
   if (tabId === 'github') githubLoad()
   else if (tabId === 'usage') { usageLoadUsage(); usageLoadBilling() }
   else if (tabId === 'memory') memoryLoad()
+}
+
+watch(activeTab, (tabId) => {
+  if (isChildRoute.value) return
+  ensureTabData(tabId)
 })
 
 onMounted(() => {
   if (isChildRoute.value) return
-  githubLoad(); loadedTabs.add('github')
-  usageLoadUsage(); usageLoadBilling(); loadedTabs.add('usage')
-  memoryLoad(); loadedTabs.add('memory')
+  ensureTabData('github')
+  ensureTabData('usage')
+  ensureTabData('memory')
 })
 
 async function handleTabSwitch(tabId) {
-  if (activeTab.value === tabId) return
+  if (activeTab.value === tabId && !isChildRoute.value) return
   activeTab.value = tabId
   if (tabId === 'tickets') {
     router.push(`/projects/${projectId}/tickets`)
   } else if (tabId === 'ai') {
     router.push(`/projects/${projectId}/ai`)
+  } else {
+    // Inline tabs live on the parent route; leave any child route first.
+    if (isChildRoute.value) await router.push(`/projects/${projectId}`)
+    ensureTabData(tabId)
   }
 }
 
@@ -121,9 +150,12 @@ async function handleTabSwitch(tabId) {
     </div>
 
     <div class="tab-content">
+      <!-- Child routes (tickets, GitHub, approvals, templates, ...) render here
+           regardless of which tab is selected. -->
+      <router-view v-if="isChildRoute" />
+      <div v-else class="tab-panels">
       <div v-if="activeTab === 'tickets'" class="tab-panel">
-        <router-view v-if="isChildRoute" />
-        <router-link v-else :to="`/projects/${projectId}/tickets`" class="btn-primary">
+        <router-link :to="`/projects/${projectId}/tickets`" class="btn-primary">
           View Kanban Board
         </router-link>
       </div>
@@ -135,8 +167,7 @@ async function handleTabSwitch(tabId) {
       </div>
 
       <div v-if="activeTab === 'ai'" class="tab-panel">
-        <router-view v-if="isChildRoute" />
-        <AIAssistant v-else />
+        <AIAssistant />
       </div>
 
       <div v-if="activeTab === 'github'" class="tab-panel">
@@ -191,9 +222,8 @@ async function handleTabSwitch(tabId) {
                 <h4>Branches</h4>
                 <div v-if="githubBranches.length === 0" class="empty">No branches yet</div>
                 <ul v-else class="branch-list">
-                  <li v-for="branch in githubBranches" :key="branch.name" :class="{ default: branch.is_default }">
+                  <li v-for="branch in githubBranches" :key="branch.name">
                     <span>{{ branch.name }}</span>
-                    <span v-if="branch.is_default" class="badge">default</span>
                   </li>
                 </ul>
                 <div class="create-branch">
@@ -209,7 +239,7 @@ async function handleTabSwitch(tabId) {
                 <div v-if="githubPrs.length === 0" class="empty">No PRs yet</div>
                 <ul v-else class="pr-list">
                   <li v-for="pr in githubPrs" :key="pr.id">
-                    <a :href="pr.html_url" target="_blank" rel="noopener">{{ pr.title }}</a>
+                    <a :href="pr.url" target="_blank" rel="noopener">{{ pr.title }}</a>
                     <span :class="['pr-state', pr.state]">{{ pr.state }}</span>
                   </li>
                 </ul>
@@ -404,7 +434,7 @@ async function handleTabSwitch(tabId) {
           </div>
         </div>
       </div>
-
+      </div>
     </div>
   </div>
 </template>
