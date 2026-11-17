@@ -49,6 +49,13 @@ jest.mock('../services/HarnessBudgetService', () => ({
   listKillSwitchAudit: jest.fn(),
 }));
 
+jest.mock('../services/HarnessPrivacyService', () => ({
+  getPolicy: jest.fn(),
+  upsertPolicy: jest.fn(),
+  deleteProjectData: jest.fn(),
+  exportProjectData: jest.fn(),
+}));
+
 jest.mock('../services/HarnessDashboardService', () => ({
   getDashboard: jest.fn(),
 }));
@@ -56,12 +63,14 @@ jest.mock('../services/HarnessDashboardService', () => ({
 jest.mock('../services/HarnessAuditService', () => ({
   recordReview: jest.fn(),
   recordPublish: jest.fn(),
+  recordPrivacy: jest.fn(),
 }));
 
 const HarnessRunService = require('../services/HarnessRunService');
 const HarnessEventService = require('../services/HarnessEventService');
 const HarnessUsageService = require('../services/HarnessUsageService');
 const HarnessBudgetService = require('../services/HarnessBudgetService');
+const HarnessPrivacyService = require('../services/HarnessPrivacyService');
 const HarnessDashboardService = require('../services/HarnessDashboardService');
 const HarnessAuditService = require('../services/HarnessAuditService');
 const PermissionService = require('../services/PermissionService');
@@ -441,6 +450,105 @@ describe('Harness observability API', () => {
       expect(HarnessBudgetService.listKillSwitchAudit).toHaveBeenCalledWith(5, {
         limit: undefined,
       });
+    });
+
+    it('reads and updates the privacy policy for a project admin', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ owner_id: 'user-1', is_member: false }] })
+        .mockResolvedValueOnce({ rows: [{ owner_id: 'user-1', is_member: false }] });
+      HarnessPrivacyService.getPolicy.mockResolvedValue({
+        projectId: 5, maxDataClass: 'confidential', policyVersion: 1,
+      });
+      HarnessPrivacyService.upsertPolicy.mockResolvedValue({
+        projectId: 5, maxDataClass: 'internal', policyVersion: 2,
+      });
+
+      const read = await request(app)
+        .get('/api/v1/harness/projects/5/privacy-policy')
+        .set('Authorization', 'Bearer mock-token');
+      expect(read.statusCode).toBe(200);
+      expect(read.body.data.maxDataClass).toBe('confidential');
+
+      const updated = await request(app)
+        .put('/api/v1/harness/projects/5/privacy-policy')
+        .set('Authorization', 'Bearer mock-token')
+        .send({ maxDataClass: 'internal' });
+      expect(updated.statusCode).toBe(200);
+      expect(updated.body.data.policyVersion).toBe(2);
+      expect(HarnessPrivacyService.upsertPolicy).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: 5, updatedBy: 'user-1' })
+      );
+      expect(HarnessAuditService.recordPrivacy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: 5,
+          action: 'policy_updated',
+          payload: expect.objectContaining({ policyVersion: 2 }),
+        })
+      );
+    });
+
+    it('lets a project admin delete and export run data', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ owner_id: 'user-1', is_member: false }] })
+        .mockResolvedValueOnce({ rows: [{ owner_id: 'user-1', is_member: false }] });
+      HarnessPrivacyService.deleteProjectData.mockResolvedValue({ events: 3, usage: 1 });
+      HarnessPrivacyService.exportProjectData.mockResolvedValue({
+        projectId: 5, events: [], usage: [], runs: [],
+      });
+
+      const deleted = await request(app)
+        .post('/api/v1/harness/projects/5/privacy/delete')
+        .set('Authorization', 'Bearer mock-token')
+        .send({ dataClasses: ['events', 'usage'], reason: 'request' });
+      expect(deleted.statusCode).toBe(200);
+      expect(deleted.body.data.events).toBe(3);
+
+      const exported = await request(app)
+        .get('/api/v1/harness/projects/5/privacy/export')
+        .set('Authorization', 'Bearer mock-token');
+      expect(exported.statusCode).toBe(200);
+      expect(exported.body.data.projectId).toBe(5);
+    });
+
+    it('denies a plain member the privacy policy write', async () => {
+      jwt.verify.mockReturnValue({
+        userId: 'user-2', id: 'user-2', email: 'm@test.com', role: 'member',
+      });
+      pool.query.mockResolvedValueOnce({
+        rows: [{ owner_id: 'owner-1', is_member: true }],
+      });
+      const res = await request(app)
+        .put('/api/v1/harness/projects/5/privacy-policy')
+        .set('Authorization', 'Bearer mock-token')
+        .send({ maxDataClass: 'internal' });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('denies privacy reads, exports and deletes to a non-member', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ owner_id: 'other', is_member: false }] })
+        .mockResolvedValueOnce({ rows: [{ owner_id: 'other', is_member: false }] })
+        .mockResolvedValueOnce({ rows: [{ owner_id: 'other', is_member: false }] });
+
+      const read = await request(app)
+        .get('/api/v1/harness/projects/5/privacy-policy')
+        .set('Authorization', 'Bearer mock-token');
+      expect(read.statusCode).toBe(403);
+
+      const exported = await request(app)
+        .get('/api/v1/harness/projects/5/privacy/export')
+        .set('Authorization', 'Bearer mock-token');
+      expect(exported.statusCode).toBe(403);
+
+      const deleted = await request(app)
+        .post('/api/v1/harness/projects/5/privacy/delete')
+        .set('Authorization', 'Bearer mock-token')
+        .send({ dataClasses: ['events'] });
+      expect(deleted.statusCode).toBe(403);
+
+      expect(HarnessPrivacyService.getPolicy).not.toHaveBeenCalled();
+      expect(HarnessPrivacyService.exportProjectData).not.toHaveBeenCalled();
+      expect(HarnessPrivacyService.deleteProjectData).not.toHaveBeenCalled();
     });
 
     it('rejects an invalid project id', async () => {

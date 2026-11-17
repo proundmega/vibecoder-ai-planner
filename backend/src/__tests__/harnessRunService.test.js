@@ -17,10 +17,15 @@ jest.mock('../services/HarnessBudgetService', () => ({
   assertCanStart: jest.fn().mockResolvedValue({}),
 }));
 
+jest.mock('../services/HarnessPrivacyService', () => ({
+  assertProviderAllowed: jest.fn().mockResolvedValue({ source: 'default' }),
+}));
+
 const HarnessRunService = require('../services/HarnessRunService');
 const DependencyService = require('../services/DependencyService');
 const HarnessEventService = require('../services/HarnessEventService');
 const HarnessBudgetService = require('../services/HarnessBudgetService');
+const HarnessPrivacyService = require('../services/HarnessPrivacyService');
 const { pool } = require('../db');
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
@@ -32,6 +37,7 @@ describe('HarnessRunService', () => {
     DependencyService.assertReady.mockResolvedValue({ ready: true });
     HarnessEventService.ensureTerminalEvent.mockResolvedValue(null);
     HarnessBudgetService.assertCanStart.mockResolvedValue({ reservedCostUsd: 2 });
+    HarnessPrivacyService.assertProviderAllowed.mockResolvedValue({ source: 'default' });
   });
 
   describe('startRun', () => {

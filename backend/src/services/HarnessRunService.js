@@ -106,6 +106,8 @@ class HarnessRunService {
     sessionId = null,
     provider = null,
     model = null,
+    providerBaseUrl = null,
+    providerRegion = null,
     attempt = 1,
     repoProfileId = null,
     repoProfileVersion = null,
@@ -144,6 +146,7 @@ class HarnessRunService {
       const ownedTicket = ownership.rows[0];
       let reservedCostUsd = 0;
       let startPolicy = null;
+      let privacyPolicy = null;
       if (
         ownedTicket
         && ownedTicket.status === 'in_progress'
@@ -167,6 +170,18 @@ class HarnessRunService {
         });
         startPolicy = budget;
         reservedCostUsd = Number(budget?.reservedCostUsd) || 0;
+
+        // fg-42: provider/residency/no-training/local-only policy is checked in
+        // the same transaction. A policy read error aborts the start (fail
+        // closed) rather than sending data to an unapproved provider.
+        const HarnessPrivacyService = require('./HarnessPrivacyService');
+        privacyPolicy = await HarnessPrivacyService.assertProviderAllowed({
+          projectId: ownedTicket.project_id,
+          provider,
+          providerBaseUrl,
+          providerRegion,
+          client,
+        });
       }
 
       if (normalisedProfileId) {
@@ -273,6 +288,9 @@ class HarnessRunService {
       if (startPolicy) {
         // Internal hand-off only; the API strips this before responding.
         run.budget_policy = startPolicy;
+      }
+      if (privacyPolicy) {
+        run.privacy_policy = privacyPolicy;
       }
       return run;
     } catch (error) {

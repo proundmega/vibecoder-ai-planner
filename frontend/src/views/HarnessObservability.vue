@@ -2,17 +2,22 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
+  deleteHarnessProjectData,
+  exportHarnessProjectData,
   getHarnessAudit,
   getHarnessBudgetPolicy,
   getHarnessDashboard,
   getHarnessKillSwitchAudit,
+  getHarnessPrivacyPolicy,
   getHarnessTimeline,
   updateHarnessBudgetPolicy,
   updateHarnessKillSwitch,
+  updateHarnessPrivacyPolicy,
   type HarnessBudgetPolicy,
   type HarnessDashboard,
   type HarnessEvent,
   type HarnessKillSwitchAudit,
+  type HarnessPrivacyPolicy,
   type HarnessRunRow,
   type HarnessTimeline,
 } from '@/api/harnessObservability'
@@ -24,6 +29,7 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const dashboard = ref<HarnessDashboard | null>(null)
 const policy = ref<HarnessBudgetPolicy | null>(null)
+const privacy = ref<HarnessPrivacyPolicy | null>(null)
 const audit = ref<HarnessEvent[]>([])
 const killSwitchAudit = ref<HarnessKillSwitchAudit[]>([])
 const timeline = ref<HarnessTimeline | null>(null)
@@ -32,6 +38,10 @@ const timelineLoading = ref(false)
 const timelineError = ref<string | null>(null)
 const savingPolicy = ref(false)
 const savingKillSwitch = ref(false)
+const savingPrivacy = ref(false)
+const exportingPrivacy = ref(false)
+const privacyStatus = ref<string | null>(null)
+const privacyDeleteBefore = ref('')
 
 const policyForm = ref({
   maxDurationSeconds: 2700,
@@ -48,6 +58,21 @@ const policyForm = ref({
   freeModel: 'beam-free',
   paidModel: '',
   complexityThreshold: 3,
+})
+
+const privacyForm = ref({
+  maxDataClass: 'confidential' as HarnessPrivacyPolicy['maxDataClass'],
+  allowedProviders: '',
+  requireNoTraining: false,
+  localOnly: false,
+  localEndpoint: '',
+  localModel: '',
+  dataResidency: '',
+  blockOnSecret: false,
+  blockOnPii: false,
+  redactPii: true,
+  eventRetentionDays: 30,
+  artifactRetentionDays: 7,
 })
 
 const successRate = computed(() => {
@@ -122,6 +147,23 @@ function applyPolicyForm(value: HarnessBudgetPolicy): void {
   }
 }
 
+function applyPrivacyForm(value: HarnessPrivacyPolicy): void {
+  privacyForm.value = {
+    maxDataClass: value.maxDataClass,
+    allowedProviders: (value.allowedProviders || []).join(', '),
+    requireNoTraining: value.requireNoTraining,
+    localOnly: value.localOnly,
+    localEndpoint: value.localEndpoint || '',
+    localModel: value.localModel || '',
+    dataResidency: value.dataResidency || '',
+    blockOnSecret: value.blockOnSecret,
+    blockOnPii: value.blockOnPii,
+    redactPii: value.redactPii,
+    eventRetentionDays: value.eventRetentionDays,
+    artifactRetentionDays: value.artifactRetentionDays,
+  }
+}
+
 async function loadDashboard(): Promise<void> {
   if (!projectId.value) return
   dashboard.value = await getHarnessDashboard(projectId.value)
@@ -131,6 +173,12 @@ async function loadPolicy(): Promise<void> {
   if (!projectId.value) return
   policy.value = await getHarnessBudgetPolicy(projectId.value)
   applyPolicyForm(policy.value)
+}
+
+async function loadPrivacy(): Promise<void> {
+  if (!projectId.value) return
+  privacy.value = await getHarnessPrivacyPolicy(projectId.value)
+  applyPrivacyForm(privacy.value)
 }
 
 async function loadAudit(): Promise<void> {
@@ -147,7 +195,7 @@ async function loadAll(): Promise<void> {
   loading.value = true
   error.value = null
   try {
-    await Promise.all([loadDashboard(), loadPolicy(), loadAudit()])
+    await Promise.all([loadDashboard(), loadPolicy(), loadPrivacy(), loadAudit()])
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to load harness observability'
   } finally {
@@ -170,6 +218,83 @@ async function savePolicy(): Promise<void> {
     error.value = err instanceof Error ? err.message : 'Failed to save policy'
   } finally {
     savingPolicy.value = false
+  }
+}
+
+async function savePrivacy(): Promise<void> {
+  if (!projectId.value) return
+  savingPrivacy.value = true
+  privacyStatus.value = null
+  try {
+    privacy.value = await updateHarnessPrivacyPolicy(projectId.value, {
+      maxDataClass: privacyForm.value.maxDataClass,
+      allowedProviders: privacyForm.value.allowedProviders
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean),
+      requireNoTraining: privacyForm.value.requireNoTraining,
+      localOnly: privacyForm.value.localOnly,
+      localEndpoint: privacyForm.value.localEndpoint || null,
+      localModel: privacyForm.value.localModel || null,
+      dataResidency: privacyForm.value.dataResidency || null,
+      blockOnSecret: privacyForm.value.blockOnSecret,
+      blockOnPii: privacyForm.value.blockOnPii,
+      redactPii: privacyForm.value.redactPii,
+      eventRetentionDays: privacyForm.value.eventRetentionDays,
+      artifactRetentionDays: privacyForm.value.artifactRetentionDays,
+    })
+    applyPrivacyForm(privacy.value)
+    privacyStatus.value = `Saved policy v${privacy.value.policyVersion}.`
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Failed to save privacy policy'
+  } finally {
+    savingPrivacy.value = false
+  }
+}
+
+async function deleteProjectData(): Promise<void> {
+  if (!projectId.value) return
+  const scope = privacyDeleteBefore.value ? 'older data' : 'all stored run data'
+  if (!window.confirm(`Delete ${scope} for this project? Audit records are kept.`)) {
+    return
+  }
+  privacyStatus.value = null
+  try {
+    const result = await deleteHarnessProjectData(projectId.value, {
+      dataClasses: ['events', 'usage'],
+      before: privacyDeleteBefore.value || null,
+      reason: 'operator deletion from harness dashboard',
+    })
+    privacyStatus.value =
+      `Deleted ${result.events} event(s) and ${result.usage} usage row(s).`
+    await Promise.all([loadDashboard(), loadAudit()])
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Failed to delete project data'
+  }
+}
+
+async function exportProjectData(): Promise<void> {
+  if (!projectId.value) return
+  exportingPrivacy.value = true
+  privacyStatus.value = null
+  try {
+    const data = await exportHarnessProjectData(projectId.value)
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `harness-privacy-export-${data.projectId}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+    privacyStatus.value =
+      `Exported ${data.events.length} event(s), ${data.usage.length} usage row(s) ` +
+      `and ${data.runs.length} run(s).`
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Failed to export project data'
+  } finally {
+    exportingPrivacy.value = false
   }
 }
 
@@ -423,6 +548,111 @@ watch(projectId, loadAll)
             <span v-if="policy" class="muted">Source: {{ policy.source }}</span>
           </div>
         </form>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Privacy &amp; data governance</h2>
+          <span v-if="privacy" class="badge">{{ privacy.maxDataClass }}</span>
+          <span v-if="privacy" class="muted">
+            {{ privacy.source }} policy · v{{ privacy.policyVersion }}
+          </span>
+        </div>
+        <form class="policy-grid" @submit.prevent="savePrivacy">
+          <label>
+            <span>Max data class</span>
+            <select v-model="privacyForm.maxDataClass">
+              <option value="public">public</option>
+              <option value="internal">internal</option>
+              <option value="confidential">confidential</option>
+              <option value="secret">secret (local model only)</option>
+            </select>
+          </label>
+          <label>
+            <span>Allowed providers</span>
+            <input
+              v-model="privacyForm.allowedProviders"
+              type="text"
+              placeholder="comma separated; empty = no allowlist"
+            />
+          </label>
+          <label>
+            <span>Local endpoint</span>
+            <input
+              v-model="privacyForm.localEndpoint"
+              type="url"
+              placeholder="http://ollama:11434/v1"
+            />
+          </label>
+          <label>
+            <span>Local model</span>
+            <input v-model="privacyForm.localModel" type="text" placeholder="optional" />
+          </label>
+          <label>
+            <span>Data residency</span>
+            <input v-model="privacyForm.dataResidency" type="text" placeholder="e.g. eu" />
+          </label>
+          <label>
+            <span>Event retention (days)</span>
+            <input
+              v-model.number="privacyForm.eventRetentionDays"
+              type="number"
+              min="1"
+              max="3650"
+            />
+          </label>
+          <label>
+            <span>Artifact retention (days)</span>
+            <input
+              v-model.number="privacyForm.artifactRetentionDays"
+              type="number"
+              min="1"
+              max="3650"
+            />
+          </label>
+          <label class="checkbox-label">
+            <input v-model="privacyForm.redactPii" type="checkbox" />
+            <span>Redact PII patterns</span>
+          </label>
+          <label class="checkbox-label">
+            <input v-model="privacyForm.blockOnSecret" type="checkbox" />
+            <span>Block on secret pattern</span>
+          </label>
+          <label class="checkbox-label">
+            <input v-model="privacyForm.blockOnPii" type="checkbox" />
+            <span>Block on PII pattern</span>
+          </label>
+          <label class="checkbox-label">
+            <input v-model="privacyForm.requireNoTraining" type="checkbox" />
+            <span>Require no-training attestation</span>
+          </label>
+          <label class="checkbox-label">
+            <input v-model="privacyForm.localOnly" type="checkbox" />
+            <span>Local/self-hosted model only</span>
+          </label>
+          <div class="policy-actions">
+            <button type="submit" class="btn-primary" :disabled="savingPrivacy">
+              {{ savingPrivacy ? 'Saving…' : 'Save privacy policy' }}
+            </button>
+          </div>
+        </form>
+        <div class="privacy-actions">
+          <label class="privacy-delete">
+            <span>Delete data before (optional)</span>
+            <input v-model="privacyDeleteBefore" type="datetime-local" />
+          </label>
+          <button
+            class="btn-secondary"
+            :disabled="exportingPrivacy"
+            @click="exportProjectData"
+          >
+            {{ exportingPrivacy ? 'Exporting…' : 'Export project data' }}
+          </button>
+          <button class="btn-secondary" @click="deleteProjectData">
+            Delete stored data
+          </button>
+        </div>
+        <p v-if="privacyStatus" class="muted">{{ privacyStatus }}</p>
       </section>
 
       <section class="panel">
@@ -748,6 +978,41 @@ h1 {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.checkbox-label {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.checkbox-label input {
+  width: auto;
+}
+
+.privacy-actions {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.privacy-delete {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.privacy-delete input {
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
 }
 
 .timeline-form {

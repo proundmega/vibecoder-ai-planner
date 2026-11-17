@@ -39,12 +39,14 @@ const KNOWN_EVENT_TYPES = Object.freeze(new Set([
   'run.succeeded',
   'routing.decided',
   'usage.recorded',
+  'privacy.decision',
 ]));
 const AUDIT_TYPES = Object.freeze(new Set([
   'audit.publish',
   'audit.review',
   'audit.merge',
   'audit.rollback',
+  'audit.privacy',
 ]));
 const DEFAULT_RETENTION_DAYS = 30;
 const DEFAULT_AUDIT_RETENTION_DAYS = 365;
@@ -456,9 +458,17 @@ class HarnessEventService {
       await client.query('BEGIN');
       await client.query("SET LOCAL harness.allow_event_purge = 'on'");
       const normal = await client.query(
-        `DELETE FROM harness_events
-         WHERE type NOT LIKE 'audit.%'
-           AND created_at < NOW() - ($1::int * INTERVAL '1 day')`,
+        `DELETE FROM harness_events e
+         USING (
+           SELECT scoped.event_id,
+                  COALESCE(policy.event_retention_days, $1::int) AS days
+           FROM harness_events scoped
+           LEFT JOIN harness_privacy_policies policy
+             ON policy.project_id = scoped.project_id
+           WHERE scoped.type NOT LIKE 'audit.%'
+         ) target
+         WHERE e.event_id = target.event_id
+           AND e.created_at < NOW() - (target.days * INTERVAL '1 day')`,
         [normalDays]
       );
       const audit = await client.query(

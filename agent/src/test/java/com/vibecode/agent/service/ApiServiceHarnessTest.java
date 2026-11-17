@@ -402,6 +402,28 @@ class ApiServiceHarnessTest {
     }
 
     @Test
+    void sendsProviderContextAndCapturesThePrivacyPolicy() throws Exception {
+        respond("/api/v1/harness/runs", 201,
+            "{\"success\":true,\"data\":{\"id\":\"run-1\"},"
+                + "\"privacyPolicy\":{\"maxDataClass\":\"internal\","
+                + "\"allowedProviders\":[\"opencode-go\"],\"policyVersion\":2}}");
+
+        api.setProviderContext("https://api.example.com/v1", "eu");
+        Map<String, Object> run = api.startHarnessRun(
+            42L, "feat/fg-42", null, "generic", "local-model", 1);
+
+        assertEquals("run-1", run.get("id"));
+        RecordedRequest request = lastRequest();
+        assertTrue(request.body().contains(
+            "\"providerBaseUrl\":\"https://api.example.com/v1\""), request.body());
+        assertTrue(request.body().contains("\"providerRegion\":\"eu\""), request.body());
+        Map<String, Object> privacy = api.getLastPrivacyPolicy();
+        assertNotNull(privacy);
+        assertEquals("internal", privacy.get("maxDataClass"));
+        assertEquals(2, privacy.get("policyVersion"));
+    }
+
+    @Test
     void recordsUsageSnapshotsOnTheRunScopedEndpoint() throws Exception {
         respond("/api/v1/harness/runs/run-1/usage", 201, ok("{}"));
 

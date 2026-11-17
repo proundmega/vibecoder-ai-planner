@@ -124,6 +124,8 @@ router.post('/runs', verifyTokenOrAgent, async (req, res, next) => {
       sessionId,
       provider,
       model,
+      providerBaseUrl,
+      providerRegion,
       attempt,
       repoProfileId,
       repoProfileVersion,
@@ -138,6 +140,8 @@ router.post('/runs', verifyTokenOrAgent, async (req, res, next) => {
       sessionId,
       provider,
       model,
+      providerBaseUrl,
+      providerRegion,
       attempt,
       repoProfileId,
       repoProfileVersion,
@@ -147,7 +151,12 @@ router.post('/runs', verifyTokenOrAgent, async (req, res, next) => {
     // session. Prefer the policy resolved inside the start transaction; only
     // fall back to a second read for legacy callers/rows.
     let budgetPolicy = run.budget_policy || null;
-    const { budget_policy: _startPolicy, ...runData } = run;
+    let privacyPolicy = run.privacy_policy || null;
+    const {
+      budget_policy: _startPolicy,
+      privacy_policy: _startPrivacyPolicy,
+      ...runData
+    } = run;
     if (!budgetPolicy) {
       try {
         budgetPolicy = await HarnessBudgetService.getPolicy(run.project_id, {
@@ -173,7 +182,12 @@ router.post('/runs', verifyTokenOrAgent, async (req, res, next) => {
       };
     }
 
-    res.status(201).json({ success: true, data: runData, budgetPolicy });
+    res.status(201).json({
+      success: true,
+      data: runData,
+      budgetPolicy,
+      privacyPolicy,
+    });
   } catch (error) {
     logger.error('POST /harness/runs failed:', error);
     next(error);

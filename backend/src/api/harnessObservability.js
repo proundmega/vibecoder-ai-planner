@@ -5,6 +5,7 @@ const HarnessEventService = require('../services/HarnessEventService');
 const HarnessUsageService = require('../services/HarnessUsageService');
 const HarnessBudgetService = require('../services/HarnessBudgetService');
 const HarnessDashboardService = require('../services/HarnessDashboardService');
+const HarnessPrivacyService = require('../services/HarnessPrivacyService');
 const HarnessAuditService = require('../services/HarnessAuditService');
 const HarnessMetrics = require('../services/HarnessMetrics');
 const PermissionService = require('../services/PermissionService');
@@ -513,6 +514,158 @@ router.get('/projects/:projectId/usage', verifyTokenOrAgent, async (req, res, ne
     res.json({ success: true, data: usage });
   } catch (error) {
     logger.error('GET /harness/projects/:projectId/usage failed:', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /harness/projects/{projectId}/privacy-policy:
+ *   get:
+ *     tags: [Harness]
+ *     summary: Read the project harness privacy and data-governance policy
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Effective privacy policy
+ *   put:
+ *     tags: [Harness]
+ *     summary: Update the project privacy policy
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Updated privacy policy
+ */
+router.get('/projects/:projectId/privacy-policy', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const projectId = projectIdParam(req.params.projectId);
+    await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
+    const policy = await HarnessPrivacyService.getPolicy(projectId);
+    res.json({ success: true, data: policy });
+  } catch (error) {
+    logger.error('GET /harness/projects/:projectId/privacy-policy failed:', error);
+    next(error);
+  }
+});
+
+router.put('/projects/:projectId/privacy-policy', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const projectId = projectIdParam(req.params.projectId);
+    await assertProjectAccess(projectId, req, 'PROJECT_UPDATE');
+    if (!POLICY_WRITE_ROLES.has(req.user?.role)) {
+      throw new ForbiddenError('Project admin permission required');
+    }
+    const actorId = req.user?.userId || req.user?.id;
+    const policy = await HarnessPrivacyService.upsertPolicy({
+      projectId,
+      policy: req.body || {},
+      updatedBy: actorId,
+    });
+    try {
+      await HarnessAuditService.recordPrivacy({
+        projectId,
+        action: 'policy_updated',
+        reason: 'privacy policy updated',
+        actorType: 'user',
+        actorId,
+        payload: {
+          policyVersion: policy.policyVersion,
+          maxDataClass: policy.maxDataClass,
+          allowedProviders: policy.allowedProviders,
+          localOnly: policy.localOnly,
+          requireNoTraining: policy.requireNoTraining,
+          dataResidency: policy.dataResidency,
+        },
+      });
+    } catch (auditError) {
+      logger.warn(`Privacy policy audit failed: ${auditError.message}`);
+    }
+    res.json({ success: true, data: policy });
+  } catch (error) {
+    logger.error('PUT /harness/projects/:projectId/privacy-policy failed:', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /harness/projects/{projectId}/privacy/delete:
+ *   post:
+ *     tags: [Harness]
+ *     summary: Delete project-scoped run data (audit tombstone retained)
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Deletion counts
+ */
+router.post('/projects/:projectId/privacy/delete', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const projectId = projectIdParam(req.params.projectId);
+    await assertProjectAccess(projectId, req, 'PROJECT_UPDATE');
+    if (!POLICY_WRITE_ROLES.has(req.user?.role)) {
+      throw new ForbiddenError('Project admin permission required');
+    }
+    const actorId = req.user?.userId || req.user?.id;
+    const result = await HarnessPrivacyService.deleteProjectData({
+      projectId,
+      dataClasses: req.body?.dataClasses || ['events'],
+      before: req.body?.before || null,
+      reason: req.body?.reason || null,
+      actorType: 'user',
+      actorId,
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    logger.error('POST /harness/projects/:projectId/privacy/delete failed:', error);
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /harness/projects/{projectId}/privacy/export:
+ *   get:
+ *     tags: [Harness]
+ *     summary: Export project harness run data
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Redacted project run data export
+ */
+router.get('/projects/:projectId/privacy/export', verifyTokenOrAgent, async (req, res, next) => {
+  try {
+    const projectId = projectIdParam(req.params.projectId);
+    await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
+    const data = await HarnessPrivacyService.exportProjectData(projectId, {
+      limit: req.query.limit,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    logger.error('GET /harness/projects/:projectId/privacy/export failed:', error);
     next(error);
   }
 });

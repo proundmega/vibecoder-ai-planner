@@ -16,6 +16,7 @@ const AUDIT_TYPES = Object.freeze(new Set([
   'audit.review',
   'audit.merge',
   'audit.rollback',
+  'audit.privacy',
 ]));
 
 async function traceIdForRun(runId) {
@@ -148,6 +149,31 @@ class HarnessAuditService {
 
   async recordRollback(options = {}) {
     return this.record({ ...options, type: 'audit.rollback' });
+  }
+
+  async recordPrivacy({
+    projectId,
+    runId = null,
+    ticketId = null,
+    agentId = null,
+    action = 'policy',
+    reason = null,
+    actorType = 'user',
+    actorId = null,
+    payload = {},
+  } = {}) {
+    return this.record({
+      type: 'audit.privacy',
+      projectId,
+      runId,
+      ticketId,
+      agentId,
+      actorType,
+      actorId,
+      reason,
+      dedupeKey: `privacy:${action}:${runId || projectId}:${Date.now()}`,
+      payload: { action, ...payload },
+    });
   }
 }
 

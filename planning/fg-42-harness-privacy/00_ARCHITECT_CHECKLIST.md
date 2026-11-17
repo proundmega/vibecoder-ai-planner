@@ -1,14 +1,14 @@
 ---
 id: "fg-42"
 title: "Harness Privacy and Data Governance"
-status: planned
+status: in_progress
 priority: "P1"
 effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
-updated: "2026-11-03"
+updated: "2026-11-17"
 pr: null
-branch: null
+branch: "feat/fg-42-harness-privacy"
 depends_on: ["fg-30", "fg-34", "fg-41"]
 ---
 
@@ -34,3 +34,6 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D2 | Scoped credentials | fg-35 | Security | fg-35-github-app-credentials | resolved (#143) |
 | D3 | Provider routing | fg-38 | Billing | fg-38-harness-budgets-routing | open |
 | D4 | Event redaction/retention | fg-41 | Observability | fg-41-harness-observability | open |
+| D5 | Legal hold and consent workflow | fg-42 | Compliance | separate privacy/legal workflow ticket | open |
+| D6 | Prompt/result cache isolation | fg-42 | Security | extend when a cross-run model cache exists | open |
+| D7 | Entropy-threshold tuning per provider | fg-42 | Security | revisit if false positives appear in real repos | open |

@@ -901,6 +901,45 @@ class HarnessTicketProcessorTest {
     }
 
     @Test
+    void redactsSecretsAndPiiBeforePromptingAndEmitsAPrivacyDecision() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        String token = "ghp_abcdefghijklmnopqrstuvwxyz012345";
+        Ticket ticket = ticket();
+        ticket.setTitle("Add filtering " + token);
+        ticket.setDescription("Contact alice@example.com for details.");
+        when(apiService.pickUpTicket(1L)).thenReturn(ticket);
+        when(config.getGitHubBranchName(1L, "Add filtering [REDACTED]"))
+            .thenReturn(branch);
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+
+        processor.processTicket(ticket);
+
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(harness).sendPrompt(eq("ses_test"), prompt.capture());
+        assertFalse(prompt.getValue().contains(token), prompt.getValue());
+        assertFalse(prompt.getValue().contains("alice@example.com"), prompt.getValue());
+        assertTrue(prompt.getValue().contains("[REDACTED]"), prompt.getValue());
+        assertTrue(prompt.getValue().contains("[REDACTED_EMAIL]"), prompt.getValue());
+
+        ArgumentCaptor<Map<String, Object>> events = ArgumentCaptor.forClass(Map.class);
+        verify(apiService, atLeastOnce()).emitHarnessEvent(events.capture());
+        Map<String, Object> decision = events.getAllValues().stream()
+            .filter(event -> "privacy.decision".equals(event.get("type")))
+            .findFirst()
+            .orElseThrow();
+        Map<?, ?> payload = (Map<?, ?>) decision.get("payload");
+        assertEquals("secret", payload.get("level"));
+        assertEquals(true, payload.get("sensitive"));
+        assertEquals(true, payload.get("pii"));
+        assertFalse(decision.toString().contains(token), decision.toString());
+        assertFalse(decision.toString().contains("alice@example.com"), decision.toString());
+    }
+
+    @Test
     void durableRunErrorIsRedactedBeforeFinishing() throws Exception {
         String branch = "vibecode/ticket-1-add-filtering";
         String token = "ghp_abcdefghijklmnopqrstuvwxyz012345";

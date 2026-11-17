@@ -115,6 +115,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private volatile HarnessEventContext eventContext;
     private volatile HarnessBudgetTracker budgetTracker;
     private volatile HarnessBudgetPolicy budgetPolicy;
+    private volatile HarnessPrivacyPolicy privacyPolicy;
+    private final HarnessPrivacyPipeline privacyPipeline = new HarnessPrivacyPipeline();
     private volatile ModelRouter.RoutingDecision routingDecision;
     private volatile HarnessConfig activeHarnessConfig;
     private volatile HarnessClient activeHarness;
@@ -726,6 +728,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         budgetBreached = false;
         budgetTracker = null;
         budgetPolicy = null;
+        privacyPolicy = null;
         routingDecision = null;
         activeHarnessConfig = harnessConfig;
         activeHarness = null;
@@ -928,6 +931,17 @@ public final class HarnessTicketProcessor implements TicketWorker {
             String prompt = promptBuilder.build(
                 pickedUp, planningDocs, commands, bridge != null,
                 effectiveSandboxConfig.networkEnabled());
+            HarnessPrivacyPolicy effectivePrivacy = privacyPolicy == null
+                ? HarnessPrivacyPolicy.defaults()
+                : privacyPolicy;
+            String ticketText = (pickedUp.getTitle() == null ? "" : pickedUp.getTitle())
+                + "\n" + (pickedUp.getDescription() == null ? "" : pickedUp.getDescription());
+            HarnessDataClassifier.Classification classification = privacyPipeline.classify(
+                ticketText, planningDocs, List.of("repository"));
+            HarnessPrivacyPipeline.PreflightResult preflight = privacyPipeline.preflight(
+                prompt, classification, effectivePrivacy);
+            prompt = preflight.prompt();
+            emitPrivacyDecision(preflight, effectivePrivacy);
             emitPromptSent(prompt, planningDocs, commands);
             subscribeHarnessEvents(harness, sessionId);
             try {
@@ -1044,6 +1058,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     return;
                 }
                 String publishTitle = redactor.redact("feat: " + pickedUp.getTitle());
+                publishTitle = privacyPipeline.postflight(publishTitle, privacyPolicy).text();
                 emitEvent("publish.started", Map.of(
                     "branch", branchName,
                     "changedFiles", diff.changedFileCount(),
@@ -1056,9 +1071,13 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     return;
                 }
                 String prBase = profile == null ? "main" : profile.baseBranchOr("main");
+                String prBody = privacyPipeline.postflight(
+                    buildPrBody(pickedUp, branchName, commitSha, diff, verification),
+                    privacyPolicy
+                ).text();
                 String prUrl = gitHubService.createPullRequest(
                     publishTitle,
-                    buildPrBody(pickedUp, branchName, commitSha, diff, verification),
+                    prBody,
                     branchName,
                     prBase
                 );
@@ -1195,6 +1214,23 @@ public final class HarnessTicketProcessor implements TicketWorker {
         } catch (IOException e) {
             throw new IllegalStateException(e.getMessage(), e);
         }
+        if (privacyPolicy != null && privacyPolicy.requiresLocalEndpoint()) {
+            if (!sameEndpoint(provider == null ? null : provider.baseUrl(),
+                privacyPolicy.localEndpoint())) {
+                throw new IllegalStateException(
+                    "Project privacy policy requires the configured local/self-hosted endpoint");
+            }
+            String localModel = privacyPolicy.localModel();
+            if (localModel != null && !localModel.isBlank()) {
+                decision = new ModelRouter.RoutingDecision(
+                    localModel,
+                    null,
+                    "privacy policy requires local model",
+                    decision.budgetRemainingUsd(),
+                    decision.complexity()
+                );
+            }
+        }
         routingDecision = decision;
 
         HarnessConfig baseConfig = activeHarnessConfig != null
@@ -1230,6 +1266,22 @@ public final class HarnessTicketProcessor implements TicketWorker {
             this::handleBudgetBreach
         );
         startBudgetWatchdog();
+    }
+
+    private void emitPrivacyDecision(
+        HarnessPrivacyPipeline.PreflightResult preflight,
+        HarnessPrivacyPolicy policy
+    ) {
+        emitEvent("privacy.decision", preflight.eventPayload(policy));
+    }
+
+    private static boolean sameEndpoint(String providerBaseUrl, String localEndpoint) {
+        if (providerBaseUrl == null || localEndpoint == null) {
+            return false;
+        }
+        String base = providerBaseUrl.trim().replaceAll("/+$", "");
+        String local = localEndpoint.trim().replaceAll("/+$", "");
+        return !base.isEmpty() && (base.equals(local) || base.startsWith(local + "/"));
     }
 
     private void subscribeHarnessEvents(HarnessClient harness, String sessionId) throws IOException {
@@ -1461,18 +1513,21 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
     }
 
-    private void emitVerificationResults(List<VerificationResult> results, String phase) {
+    private void emitVerificationResults(List<VerificationResult> results, String phase)
+        throws IOException {
         if (results == null) {
             return;
         }
         for (VerificationResult result : results) {
+            HarnessPrivacyPipeline.PostflightResult filtered = privacyPipeline.postflight(
+                result.output(), privacyPolicy);
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("phase", phase);
             payload.put("command", result.command());
             payload.put("exitCode", result.exitCode());
             payload.put("passed", result.passed());
             payload.put("timedOut", result.timedOut());
-            payload.put("output", result.output());
+            payload.put("output", filtered.text());
             emitEvent("verification.result", payload);
         }
     }
@@ -1770,6 +1825,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         releaseAfterTerminalFinish = false;
         eventContext = null;
         budgetPolicy = null;
+        privacyPolicy = null;
         terminalEventEmitted = false;
         runStartedAt = Instant.now();
         if (config.isDryRun()) {
@@ -1781,6 +1837,9 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         Map<String, Object> run;
         try {
+            apiService.setProviderContext(
+                provider == null ? null : provider.baseUrl(),
+                System.getenv("AI_REGION"));
             if (profile == null) {
                 run = apiService.startHarnessRun(
                     ticket.getId(),
@@ -1850,6 +1909,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         );
         budgetPolicy = HarnessBudgetPolicy.from(
             apiService.getLastBudgetPolicy(), maxDuration(), provider);
+        privacyPolicy = HarnessPrivacyPolicy.from(apiService.getLastPrivacyPolicy());
         emitRunStarted(ticket, branchName, attempt);
         try {
             boolean leased = apiService.claimHarnessLease(

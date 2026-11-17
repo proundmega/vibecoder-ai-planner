@@ -15,6 +15,32 @@ class SecretRedactorTest {
     private final SecretRedactor redactor = new SecretRedactor(List.of("configured-secret-value"));
 
     @Test
+    void redactsHighEntropyTokensWithoutAKnownPrefix() {
+        String token = "Q2xhc3NpZjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm9w";
+
+        String redacted = redactor.redact("value=" + token);
+
+        assertFalse(redacted.contains(token), redacted);
+        assertTrue(redacted.contains("[REDACTED]"), redacted);
+    }
+
+    @Test
+    void leavesHexDigestsAndRepositoryPathsAlone() {
+        String digest = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+        String path = "src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor";
+
+        assertEquals(digest, redactor.redact(digest));
+        assertEquals(path, redactor.redact(path));
+    }
+
+    @Test
+    void leavesMixedCaseIdentifiersWithoutDigitsAlone() {
+        String identifier = "HarnessPrivacyPipelineWorkspaceManager";
+
+        assertEquals(identifier, redactor.redact(identifier));
+    }
+
+    @Test
     void replacesConfiguredSecrets() {
         String redacted = redactor.redact("before configured-secret-value after");
 
