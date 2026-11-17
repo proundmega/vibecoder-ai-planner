@@ -1,7 +1,8 @@
 const REDACTED = '[REDACTED]';
 
 const URL_USERINFO = /([a-z][a-z0-9+.-]*:\/\/)([^/\s:@]*):(?!\$\{password\})[^/\s@]+@/gi;
-const SHORT_MYSQL = /(\b(?:mysql|mariadb|mysqladmin|mysqldump|mariadb-admin|mariadb-dump)\b[^\n;&|]*?\s-p)(?:\s*=\s*|\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/g;
+const CLIENT_NAME = '(?:[Mm][Yy][Ss][Qq][Ll]|[Mm][Aa][Rr][Ii][Aa][Dd][Bb]|[Mm][Yy][Ss][Qq][Ll][Aa][Dd][Mm][Ii][Nn]|[Mm][Yy][Ss][Qq][Ll][Dd][Uu][Mm][Pp]|[Mm][Aa][Rr][Ii][Aa][Dd][Bb]-[Aa][Dd][Mm][Ii][Nn]|[Mm][Aa][Rr][Ii][Aa][Dd][Bb]-[Dd][Uu][Mm][Pp])';
+const SHORT_MYSQL = new RegExp('(\\b' + CLIENT_NAME + '\\b[^\\n;&|]*?\\s-p)(?:\\s*=\\s*|\\s*)("[^"]*"|\'[^\']*\'|[^\\s;&|]+)', 'g');
 const SHORT_REDIS = /(\bredis-cli\b[^\n;&|]*?\s-a)(?:\s*=\s*|\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/g;
 const REDISCLI_AUTH = /(\bREDISCLI_AUTH\b\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/g;
 const KEY_VALUE = /(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)(\s*(?::|=(?!=))\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/g;
@@ -10,8 +11,8 @@ const GENERATED_PASSWORD = /(?<!sha256:)\b[0-9a-f]{64}\b/gi;
 const LONG_TOKEN = /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b|\bsk-[A-Za-z0-9_-]{20,}\b|\bxox[abpcrsd]-[A-Za-z0-9-]{10,}\b|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/gi;
 const BEARER = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{20,}/gi;
 
-const SECRET_KEY_PRIMARY = /(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|token|credential|pass(?:word|wd|phrase)|rediscli[_-]?auth)/i;
-const SECRET_KEY_SEGMENT = /(?:^|_)(?:key|pass|pwd)(?:$|_)/i;
+const SECRET_KEY_PRIMARY = /(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|token|credential|pass(?:word|wd|phrase)|rediscli[_-]?auth|authorization)/i;
+const SECRET_KEY_SEGMENT = /(?:^|_)(?:key|pass|pwd|auth)(?:$|_)/i;
 const SECRET_KEY_SUFFIX = /(?:pass|pwd)$/i;
 
 function isSecretKey(name) {

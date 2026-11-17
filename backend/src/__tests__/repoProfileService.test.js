@@ -359,7 +359,9 @@ describe('RepoProfileService', () => {
     it('distinguishes mysql port/prompt flags from client passwords', () => {
       for (const command of [
         'mysql -P 3306 -h db -u root',
+        'MYSQL -P 3306 -h db -u root',
         'mysql -p -h db -u root',
+        'mysql -p "$MYSQL_PWD" -h db -u root',
       ]) {
         const result = validateRepoProfile(validProfile({
           services: [validService({ healthcheck: { command } })],
@@ -368,6 +370,7 @@ describe('RepoProfileService', () => {
       }
       for (const command of [
         'mysql -uroot -psecret',
+        'MYSQL -psecret',
         'mysql -u root -p hunter2',
         'mysqladmin -u root -psecret ping',
         'mysqldump -u root -psecret db',
@@ -381,6 +384,8 @@ describe('RepoProfileService', () => {
       }
       for (const env of [
         { REDISCLI_AUTH: 'secret' },
+        { AUTHORIZATION: 'secret' },
+        { AUTH: 'secret' },
         { DB_PASS: 'secret' },
         { PGPASS: 'secret' },
         { PASS: 'secret' },

@@ -63,18 +63,25 @@ public final class SecretRedactor {
         // every position.
         new Rule("(?i)(?<![A-Za-z0-9+.-])"
             + "([a-z][a-z0-9+.-]*+://)([^/\\s:@]*+):([^/\\s@]++)@",
-            "$1" + REDACTED + "@"),
-        // Short client password flags. The client name is case-insensitive but
-        // the flag is not: mysql -P is the port. A value starting with '-' is a
-        // prompt/another option, and a '$' value is an environment reference.
-        new Rule("((?i:(?:mysql|mariadb|mysqladmin|mysqldump|mariadb-admin|mariadb-dump))"
-                + "\\b[^\\n;&|]*?\\s-p(?:\\s*=\\s*|\\s*))(?![-$])"
-                + "(\"[^\"]*\"|'[^']*'|[^\\s;&|]+)",
-            "$1" + REDACTED),
-        new Rule("((?i:redis-cli)\\b[^\\n;&|]*?\\s-a(?:\\s*=\\s*|\\s*))(?![-$])"
-                + "(\"[^\"]*\"|'[^']*'|[^\\s;&|]+)",
-            "$1" + REDACTED)
+            "$1" + REDACTED + "@")
     );
+
+    private static final String CLIENT_NAME =
+        "(?:[Mm][Yy][Ss][Qq][Ll]|[Mm][Aa][Rr][Ii][Aa][Dd][Bb]"
+            + "|[Mm][Yy][Ss][Qq][Ll][Aa][Dd][Mm][Ii][Nn]"
+            + "|[Mm][Yy][Ss][Qq][Ll][Dd][Uu][Mm][Pp]"
+            + "|[Mm][Aa][Rr][Ii][Aa][Dd][Bb]-[Aa][Dd][Mm][Ii][Nn]"
+            + "|[Mm][Aa][Rr][Ii][Aa][Dd][Bb]-[Dd][Uu][Mm][Pp])";
+
+    // Short client password flags. The client name is case-insensitive but the
+    // flag is not: mysql -P is the port. A value starting with '-' is a
+    // prompt/another option, and a '$' value is an environment reference.
+    private static final Pattern SHORT_MYSQL = Pattern.compile(
+        "(\\b" + CLIENT_NAME + "\\b[^\\n;&|]*?\\s-p)(?:\\s*=\\s*|\\s*)"
+            + "(\"[^\"]*\"|'[^']*'|[^\\s;&|]+)");
+    private static final Pattern SHORT_REDIS = Pattern.compile(
+        "(\\bredis-cli\\b[^\\n;&|]*?\\s-a)(?:\\s*=\\s*|\\s*)"
+            + "(\"[^\"]*\"|'[^']*'|[^\\s;&|]+)");
 
     /**
      * Credential key/value forms. The lookahead requires a credential keyword
@@ -168,6 +175,7 @@ public final class SecretRedactor {
         }
         redacted = redactKeyValues(redacted);
         redacted = redactShortPassKeyValues(redacted);
+        redacted = redactShortClientPasswords(redacted);
         return redactHighEntropy(redacted);
     }
 
@@ -230,6 +238,29 @@ public final class SecretRedactor {
         return entropy;
     }
 
+    private static String redactShortClientPasswords(String value) {
+        String output = redactShortClient(value, SHORT_MYSQL);
+        return redactShortClient(output, SHORT_REDIS);
+    }
+
+    private static String redactShortClient(String value, Pattern pattern) {
+        Matcher matcher = pattern.matcher(value);
+        StringBuilder out = new StringBuilder(value.length());
+        while (matcher.find()) {
+            String token = matcher.group(2);
+            String literal = token.replaceAll("^[\"']|[\"']$", "");
+            if (literal.isEmpty() || literal.startsWith("-") || isEnvReference(literal)) {
+                matcher.appendReplacement(out, Matcher.quoteReplacement(matcher.group(0)));
+                continue;
+            }
+            String quote = token.startsWith("\"") ? "\"" : (token.startsWith("'") ? "'" : "");
+            String replacement = matcher.group(1) + " " + quote + REDACTED + quote;
+            matcher.appendReplacement(out, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(out);
+        return out.toString();
+    }
+
     private static boolean isShortPassKey(String key) {
         if (key == null || key.isEmpty()) {
             return false;
@@ -238,7 +269,8 @@ public final class SecretRedactor {
             return false;
         }
         return key.matches("(?i).*(?:PASS|PWD)$")
-            || key.matches("(?i)REDISCLI[_-]?AUTH");
+            || key.matches("(?i)REDISCLI[_-]?AUTH")
+            || key.matches("(?i)(?:AUTH|AUTHORIZATION|BASIC_AUTH)");
     }
 
     private static boolean isEnvReference(String value) {

@@ -9,8 +9,8 @@ const MAX_CA_CERTIFICATES = 16;
 // Keep this in sync with the agent's SandboxSecurity.isSecretKey. Names that
 // embed a credential word (PGPASS, DBPASS, DB_PASS, DB_PWD, PASSWD, ...) are
 // rejected, as are the underscore-delimited forms (API_KEY, KEY, ...).
-const SECRET_KEY_PRIMARY = /(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|token|credential|pass(?:word|wd|phrase)|rediscli[_-]?auth)/i;
-const SECRET_KEY_SEGMENT = /(?:^|_)(?:key|pass|pwd)(?:$|_)/i;
+const SECRET_KEY_PRIMARY = /(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|token|credential|pass(?:word|wd|phrase)|rediscli[_-]?auth|authorization)/i;
+const SECRET_KEY_SEGMENT = /(?:^|_)(?:key|pass|pwd|auth)(?:$|_)/i;
 const SECRET_KEY_SUFFIX = /(?:pass|pwd)$/i;
 const GITHUB_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?$/;
 const BRANCH = /^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*\/$)(?!.*\.$)[A-Za-z0-9._/-]{1,255}$/;
@@ -57,7 +57,8 @@ const RESERVED_ENV = new Set([
 const ENV_REFERENCE = /^\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)$/;
 const ASSIGNMENT = /(?:^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)\s*(?::|=(?!=))\s*(?:"([^"]*)"|'([^']*)'|([^\s;&|)`"']+))/g;
 const SECRET_FLAG = /(?:^|\s)--?(?:password|passwd|pwd|token|secret|api[_-]?key|passphrase)(?:=|\s+)(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/gi;
-const MYSQL_PASSWORD = /\b(?:mysql|mariadb|mysqladmin|mysqldump|mariadb-admin|mariadb-dump)\b[^\n;&|]*?\s-p(?:\s*=\s*|\s*)(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/g;
+const CLIENT_NAME = '(?:[Mm][Yy][Ss][Qq][Ll]|[Mm][Aa][Rr][Ii][Aa][Dd][Bb]|[Mm][Yy][Ss][Qq][Ll][Aa][Dd][Mm][Ii][Nn]|[Mm][Yy][Ss][Qq][Ll][Dd][Uu][Mm][Pp]|[Mm][Aa][Rr][Ii][Aa][Dd][Bb]-[Aa][Dd][Mm][Ii][Nn]|[Mm][Aa][Rr][Ii][Aa][Dd][Bb]-[Dd][Uu][Mm][Pp])';
+const MYSQL_PASSWORD = new RegExp('\\b' + CLIENT_NAME + '\\b[^\\n;&|]*?\\s-p(?:\\s*=\\s*|\\s*)(?:"([^"]*)"|\'([^\']*)\'|([^\\s;&|]+))', 'g');
 const REDIS_PASSWORD = /\bredis-cli\b[^\n;&|]*?\s-a(?:\s*=\s*|\s*)(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/g;
 const REDISCLI_AUTH = /\bREDISCLI_AUTH\b\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/g;
 const CREDENTIAL_LIKE = /[a-f0-9]{32,}/i;

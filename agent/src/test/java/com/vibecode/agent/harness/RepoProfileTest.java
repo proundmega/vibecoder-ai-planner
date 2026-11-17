@@ -188,6 +188,7 @@ class RepoProfileTest {
         }
         for (String command : new String[]{
             "mysql -uroot -psecret",
+            "MYSQL -psecret",
             "mysql -u root -p hunter2",
             "mysqladmin -u root -psecret ping",
             "mysqldump -u root -psecret db",
@@ -223,11 +224,18 @@ class RepoProfileTest {
             "mysql -P 3306 -h db -u root")));
         assertDoesNotThrow(() -> parse(base.formatted(image,
             "postgresql://vibecode:${password}@${host}:5432/test",
+            "MYSQL -P 3306 -h db -u root")));
+        assertDoesNotThrow(() -> parse(base.formatted(image,
+            "postgresql://vibecode:${password}@${host}:5432/test",
+            "mysql -p '$MYSQL_PWD' -h db -u root")));
+        assertDoesNotThrow(() -> parse(base.formatted(image,
+            "postgresql://vibecode:${password}@${host}:5432/test",
             "mysql -p -h db -u root")));
         assertThrows(IllegalArgumentException.class, () -> parse("""
             {"schema_version":1,"verify":["npm test"],"services":[{
               "name":"postgres","image":"%s",
-              "env":{"REDISCLI_AUTH":"secret"},"connection_env":"DATABASE_URL",
+              "env":{"REDISCLI_AUTH":"secret","AUTHORIZATION":"secret",
+              "AUTH":"secret"},"connection_env":"DATABASE_URL",
               "connection_url":"postgresql://vibecode@${host}:5432/test",
               "healthcheck":{"command":"pg_isready"}
             }]}

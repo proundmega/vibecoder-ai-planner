@@ -8,6 +8,7 @@ describe('repo-profile redaction', () => {
   test('redacts literal client passwords in commands', () => {
     for (const command of [
       'mysql -uroot -psecret',
+      'MYSQL -psecret',
       'mysql -u root -p hunter2',
       'mysqladmin -u root -psecret ping',
       'mysqldump -u root -psecret db',
@@ -18,6 +19,8 @@ describe('repo-profile redaction', () => {
       'PGPASS=secret',
       'DBPASS=secret',
       'PASS=secret',
+      'AUTH=secret',
+      'AUTHORIZATION=secret',
     ]) {
       const redacted = redactText(command);
       expect(redacted).not.toContain('secret');
@@ -28,7 +31,9 @@ describe('repo-profile redaction', () => {
 
   test('keeps environment references, ports, prompts and placeholders intact', () => {
     expect(redactText('mysql -P 3306 -u root')).toBe('mysql -P 3306 -u root');
+    expect(redactText('MYSQL -P 3306 -u root')).toBe('MYSQL -P 3306 -u root');
     expect(redactText('mysql -p -h db -u root')).toBe('mysql -p -h db -u root');
+    expect(redactText('mysql -p "$MYSQL_PWD"')).toBe('mysql -p "$MYSQL_PWD"');
     expect(redactText(
       'docker pull node@sha256:' + 'a'.repeat(64),
     )).toBe('docker pull node@sha256:' + 'a'.repeat(64));

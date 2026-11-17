@@ -322,9 +322,10 @@ Verification still uses the existing ephemeral `/tmp` cache defaults.
   `connection_url` userinfo must be exactly the literal `${password}`; literal
   userinfo/query/path credentials, generated-password-shaped 32+ hex values in
   query/path/fragment positions, credential-shaped healthcheck/commands
-  (including the case-sensitive lowercase `mysql/mariadb/mysqladmin/mysqldump
-  -p` password flag, `redis-cli -a` and `REDISCLI_AUTH`; uppercase `-P` is a
-  port and `-p -h host` is a prompt),
+  (including the lowercase `mysql/mariadb/mysqladmin/mysqldump -p` password
+  flag, `redis-cli -a` and `REDISCLI_AUTH`; client names are matched
+  case-insensitively while the flag stays case-sensitive, so uppercase `-P` is
+  a port and `-p -h host` is a prompt),
   percent-encoded placeholders, newlines/NUL and reserved env names
   (`PATH`, `HOME`, `LD_PRELOAD`, `HTTP_PROXY`, ...) are rejected in profile and
   service env.
@@ -334,9 +335,10 @@ Verification still uses the existing ephemeral `/tmp` cache defaults.
   receive the scrubbed profile. Legacy validation results are scrubbed for
   readers; a one-time storage scrub remains D15.
 - The scrub uses the same `isSecretKey` rule as the validators (so
-  `DB_PASS`, `PGPASS`, `DBPASS`, `PASS`, `REDISCLI_AUTH`, ... are covered),
-  preserves `$ENV` references and `${password}` placeholders, and does not
-  redact `sha256:` image digests.
+  `DB_PASS`, `PGPASS`, `DBPASS`, `PASS`, `AUTH`/`AUTHORIZATION`,
+  `REDISCLI_AUTH`, ... are covered), preserves quoted or unquoted `$ENV`
+  references and `${password}` placeholders, and does not redact `sha256:`
+  image digests.
 - Service `env`, `password_env` and `connection_env` are validated again in the
   agent, and the env-file writer rejects newline/NUL injection.
 - Each generated service password is registered in `RedactionRegistry` before

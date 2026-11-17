@@ -644,7 +644,16 @@ public class RepoProfile {
     }
 
     private static boolean isEnvReference(String value) {
-        return value != null && ENV_REFERENCE.matcher(value.trim()).matches();
+        if (value == null) {
+            return false;
+        }
+        String text = value.trim();
+        if (text.length() >= 2
+            && ((text.startsWith("\"") && text.endsWith("\""))
+                || (text.startsWith("'") && text.endsWith("'")))) {
+            text = text.substring(1, text.length() - 1).trim();
+        }
+        return ENV_REFERENCE.matcher(text).matches();
     }
 
     private static boolean containsSecretValue(String value) {

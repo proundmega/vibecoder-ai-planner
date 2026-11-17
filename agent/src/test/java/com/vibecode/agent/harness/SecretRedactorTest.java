@@ -117,6 +117,7 @@ class SecretRedactorTest {
     void redactsShortClientPasswordsAndBarePassKeys() {
         for (String line : List.of(
             "mysql -uroot -psecret",
+            "MYSQL -psecret",
             "mysql -u root -p hunter2",
             "mysqladmin -u root -psecret ping",
             "mysqldump -u root -psecret db",
@@ -125,7 +126,9 @@ class SecretRedactorTest {
             "DB_PASS=secret",
             "PGPASS=secret",
             "DBPASS=secret",
-            "PASS=secret"
+            "PASS=secret",
+            "AUTH=secret",
+            "AUTHORIZATION=secret"
         )) {
             String redacted = redactor.redact(line);
             assertFalse(redacted.contains("secret"), redacted);
@@ -138,6 +141,10 @@ class SecretRedactorTest {
     void keepsPortFlagsPromptsAndDigests() {
         assertEquals("mysql -P 3306 -u root",
             redactor.redact("mysql -P 3306 -u root"));
+        assertEquals("MYSQL -P 3306 -u root",
+            redactor.redact("MYSQL -P 3306 -u root"));
+        assertEquals("mysql -p \"$MYSQL_PWD\"",
+            redactor.redact("mysql -p \"$MYSQL_PWD\""));
         assertEquals("mysql -p -h db -u root",
             redactor.redact("mysql -p -h db -u root"));
         String image = "docker pull node@sha256:" + "a".repeat(64);
