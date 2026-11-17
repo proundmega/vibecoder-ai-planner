@@ -1,13 +1,13 @@
 ---
 id: "fg-42"
 title: "Harness Privacy and Data Governance"
-status: in_progress
+status: in_review
 priority: "P1"
 effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
 updated: "2026-11-17"
-pr: null
+pr: 166
 branch: "feat/fg-42-harness-privacy"
 depends_on: ["fg-30", "fg-34", "fg-41"]
 ---

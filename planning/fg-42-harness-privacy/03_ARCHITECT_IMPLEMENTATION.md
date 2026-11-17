@@ -88,4 +88,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-17 | pending PR | Backend 146 suites / 1847 tests; Agent 772 tests (9 skipped); Frontend 61 files / 574 tests; real-Postgres integration 15 suites / 156 tests | Implementation complete on `feat/fg-42-harness-privacy`; PR opened for review |
+| 2026-11-17 | `aa701b0` (#166) | Backend 146 suites / 1847 tests; Agent 772 tests (9 skipped); Frontend 61 files / 574 tests; real-Postgres integration 15 suites / 156 tests | Implementation complete on `feat/fg-42-harness-privacy`; PR opened for review |
