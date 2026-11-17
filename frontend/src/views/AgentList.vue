@@ -10,6 +10,7 @@ const loading = ref(true)
 const error = ref(null)
 const showCreateModal = ref(false)
 const createError = ref(null)
+const creatingAgent = ref(false)
 const activeTab = ref('heartbeat')
 const agentsData = ref([])
 const loadingAgents = ref(false)
@@ -69,12 +70,18 @@ function formatCost(cost) {
 }
 
 async function handleCreate(name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays) {
+  creatingAgent.value = true
+  createError.value = null
   try {
     await createAgent({ name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays })
     showCreateModal.value = false
-    createError.value = null
+    // Refresh both tables immediately instead of waiting for the poll or a
+    // tab switch.
+    await Promise.all([loadAgents(), loadCrudAgents()])
   } catch (err) {
     createError.value = err.message || 'Failed to create agent'
+  } finally {
+    creatingAgent.value = false
   }
 }
 
@@ -130,7 +137,13 @@ function formatDate(dateStr) {
         Create Agent
       </button>
     </div>
-    <AgentModal v-model:show="showCreateModal" :providers="providers" v-model:selectedProvider="selectedProviderId" @created="handleCreate" />
+    <AgentModal
+      v-model:show="showCreateModal"
+      :providers="providers"
+      :creating="creatingAgent"
+      v-model:selectedProvider="selectedProviderId"
+      @created="handleCreate"
+    />
     <div v-if="createError" class="error">{{ createError }}</div>
 
     <div class="tabs">

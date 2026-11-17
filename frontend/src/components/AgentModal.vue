@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import VModal from '@/components/VModal.vue'
 import VButton from '@/components/VButton.vue'
 import VInput from '@/components/VInput.vue'
@@ -8,13 +8,15 @@ const props = defineProps({
   show: Boolean,
   providers: { type: Array, default: () => [] },
   selectedProvider: { type: String, default: null },
+  // Parent-owned submit state: the modal must not latch "Creating..." after
+  // the event, because the parent performs the async create.
+  creating: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:show', 'created', 'update:selectedProvider'])
 
 const name = ref('')
 const error = ref('')
-const loading = ref(false)
 const rateLimit = ref(100)
 const maxActionsPerDay = ref(1000)
 const keyExpiryDays = ref(30)
@@ -24,8 +26,7 @@ const providerOptions = computed(() => props.providers.map(p => ({
   label: `${p.name} (${p.providerType})`,
 })))
 
-function close() {
-  emit('update:show', false)
+function resetForm() {
   name.value = ''
   error.value = ''
   rateLimit.value = 100
@@ -33,6 +34,17 @@ function close() {
   keyExpiryDays.value = 30
   emit('update:selectedProvider', null)
 }
+
+function close() {
+  emit('update:show', false)
+  resetForm()
+}
+
+// The parent closes the modal on success without going through close(), so
+// clear the form whenever it is hidden.
+watch(() => props.show, (isOpen) => {
+  if (!isOpen) resetForm()
+})
 
 async function submit() {
   if (!name.value.trim()) {
@@ -43,7 +55,6 @@ async function submit() {
     error.value = 'Name must be 100 characters or less'
     return
   }
-  loading.value = true
   error.value = ''
   emit('created', name.value.trim(), props.selectedProvider, rateLimit.value, maxActionsPerDay.value, keyExpiryDays.value)
 }
@@ -56,13 +67,13 @@ async function submit() {
         v-model="name"
         label="Agent Name"
         placeholder="e.g., Code Reviewer"
-        :disabled="loading"
+        :disabled="creating"
         :error="error"
         autofocus
       />
       <div class="form-group">
         <label>AI Provider</label>
-        <select v-model="props.selectedProvider" @change="emit('update:selectedProvider', $event.target.value)" :disabled="loading">
+        <select v-model="props.selectedProvider" @change="emit('update:selectedProvider', $event.target.value)" :disabled="creating">
           <option :value="null">Select a provider...</option>
           <option v-for="opt in providerOptions" :key="opt.value" :value="opt.value">
             {{ opt.label }}
@@ -75,22 +86,22 @@ async function submit() {
       <div class="form-row">
         <div class="form-group">
           <label>Rate Limit (req/min)</label>
-          <input type="number" v-model.number="rateLimit" min="1" max="10000" :disabled="loading" />
+          <input type="number" v-model.number="rateLimit" min="1" max="10000" :disabled="creating" />
         </div>
         <div class="form-group">
           <label>Max Actions/Day</label>
-          <input type="number" v-model.number="maxActionsPerDay" min="1" max="100000" :disabled="loading" />
+          <input type="number" v-model.number="maxActionsPerDay" min="1" max="100000" :disabled="creating" />
         </div>
       </div>
       <div class="form-group">
         <label>API Key Expiry (days)</label>
-        <input type="number" v-model.number="keyExpiryDays" min="1" max="365" :disabled="loading" />
+        <input type="number" v-model.number="keyExpiryDays" min="1" max="365" :disabled="creating" />
       </div>
       <div class="modal-actions">
-        <VButton type="submit" variant="primary" :loading="loading" :disabled="!name.trim()">
-          {{ loading ? 'Creating...' : 'Create' }}
+        <VButton type="submit" variant="primary" :loading="creating" :disabled="!name.trim()">
+          {{ creating ? 'Creating...' : 'Create' }}
         </VButton>
-        <VButton variant="secondary" @click="close" :disabled="loading">Cancel</VButton>
+        <VButton variant="secondary" @click="close" :disabled="creating">Cancel</VButton>
       </div>
     </form>
   </VModal>

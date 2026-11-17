@@ -69,12 +69,33 @@ describe('AgentModal', () => {
     expect(wrapper.emitted('update:show')[0]).toEqual([false])
   })
 
-  it('disables submit button when loading', async () => {
+  it('disables submit button while the parent is creating', async () => {
+    const wrapper = mount(AgentModal, { ...mountOptions, props: { show: true }, attachTo: container })
+    await wrapper.find('input').setValue('Agent')
+    await wrapper.setProps({ creating: true })
+    const btn = wrapper.find('button[type="submit"]')
+    expect(btn.attributes('disabled')).toBeDefined()
+    expect(btn.text()).toContain('Creating...')
+  })
+
+  it('does not latch Creating... after submitting', async () => {
     const wrapper = mount(AgentModal, { ...mountOptions, props: { show: true }, attachTo: container })
     await wrapper.find('input').setValue('Agent')
     await wrapper.find('form').trigger('submit')
+
     const btn = wrapper.find('button[type="submit"]')
-    expect(btn.attributes('disabled')).toBeDefined()
+    expect(wrapper.emitted('created')).toBeTruthy()
+    expect(btn.text()).toBe('Create')
+    expect(btn.attributes('disabled')).toBeUndefined()
+  })
+
+  it('resets the form when the modal is hidden', async () => {
+    const wrapper = mount(AgentModal, { ...mountOptions, props: { show: true }, attachTo: container })
+    await wrapper.find('input').setValue('Agent')
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.find('input').element.value).toBe('')
   })
 
   it('disables submit button when name is empty', async () => {
