@@ -245,6 +245,28 @@ describe('RepoProfileValidationService', () => {
     ).rejects.toThrow(/1 MiB/);
   });
 
+
+  it('redacts legacy profile and result credentials on read', () => {
+    const formatted = RepoProfileValidationService.format(validationRow({
+      profile: {
+        schema_version: 1,
+        verify: ['mysql -uroot -psecret'],
+        services: [{
+          name: 'postgres',
+          healthcheck: { command: 'redis-cli -a secret' },
+        }],
+      },
+      result: {
+        commands: [{ command: 'mysql -uroot -psecret', output: 'PGPASSWORD=hunter2' }],
+      },
+      error: 'PGPASSWORD=hunter2',
+    }));
+    const serialized = JSON.stringify(formatted);
+    expect(serialized).not.toContain('secret');
+    expect(serialized).not.toContain('hunter2');
+    expect(serialized).toContain('[REDACTED]');
+  });
+
   it('hides validation details from non-members', async () => {
     RepoProfileService.assertCanRead.mockRejectedValueOnce(new ForbiddenError('no'));
     await expect(

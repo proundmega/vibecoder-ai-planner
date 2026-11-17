@@ -2326,6 +2326,54 @@ class DockerSandboxRunnerTest {
         RedactionRegistry.reset();
     }
 
+
+    @Test
+    void closeRetriesTrackedServiceCleanupAfterAFailedDestroy() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("services-close-retry.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              network) exit 0 ;;
+              run) exit 0 ;;
+              inspect)
+                case "$*" in
+                  *"State.Health"*) echo healthy ;;
+                  *"IPAddress"*) echo 172.18.0.5 ;;
+                  *) echo true ;;
+                esac
+                ;;
+              rm)
+                case "$*" in
+                  *vibecode-service-*) echo "cannot remove"; exit 1 ;;
+                  *) exit 0 ;;
+                esac
+                ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+        RepoProfile profile = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres",
+              "image":"postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "env":{"POSTGRES_USER":"vibecode"},
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready","retries":2}
+            }]}
+            """, RepoProfile.class);
+        SandboxConfig effective = config.withRepoProfile(profile, "1", 1);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(effective)) {
+            SandboxHandle handle = runner.create(effective.specFor(workspace()));
+            assertThrows(IOException.class, () -> runner.destroy(handle));
+        }
+
+        String calls = Files.readString(log);
+        int attempts = calls.split("rm -f -v vibecode-service-", -1).length - 1;
+        assertTrue(attempts >= 2, calls);
+    }
+
     private Path fakeDocker(Path log, String body) throws IOException {
         return fakeDocker(log, body, "4242");
     }

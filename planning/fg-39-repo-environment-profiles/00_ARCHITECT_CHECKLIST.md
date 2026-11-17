@@ -70,6 +70,8 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D11 | Real-Docker/real-repo profile dry-run e2e (cache real-Docker coverage moves with D9) | fg-39 slice 1 review | Testing | bt-60 / fg-39 slice 4 | open |
 | D12 | Service container disk quota and egress-governed image pulls; image pulls currently use the Docker daemon directly | fg-39 slice 2 review | Security | fg-39 slice 4 / fg-44 | open |
 | D13 | Enforce one current draft per project (partial unique index) or explicit multi-draft UI | fg-39 slice 5 review | Data | fg-39 slice 5 follow-up | open |
+| D14 | Dry-run history pagination beyond the latest 200 rows | fg-39 slice 5 review | UX | fg-39 follow-up | open |
+| D15 | One-time storage scrub/migration for legacy literal credentials in profile and validation rows (read-time redaction is in place) | fg-39 review | Security | fg-39 follow-up | open |
 
 ## User decisions
 

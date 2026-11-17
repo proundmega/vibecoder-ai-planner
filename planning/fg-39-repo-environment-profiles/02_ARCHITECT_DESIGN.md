@@ -304,6 +304,7 @@ Verification still uses the existing ephemeral `/tmp` cache defaults.
 | Service start fails after `docker run` created the container | The tracked name is removed with `-v`; the network is removed. |
 | Service container or network removal fails | `destroy()` fails closed and the runtime stays tracked for a retry; the startup reaper is the last resort. |
 | Dry-run output contains a generated password or credential | The password is registered in `RedactionRegistry`; the agent and backend redact before storage. |
+| Sandbox destroy fails after a dry run | The validation is reported `failed` with a cleanup error; it cannot be activated. |
 | A project member reads a validation | Status/error are visible; command output is hidden unless the reader is the project owner or a super admin. |
 
 ## Security considerations
@@ -318,10 +319,16 @@ Verification still uses the existing ephemeral `/tmp` cache defaults.
   cache volume (D9/fg-44).
 - The backend and agent share the same secret-key rules (including `PASS`,
   `PWD`, `PASSPHRASE` and embedded forms such as `PGPASS`/`DBPASS`). Service
-  `connection_url` userinfo must be exactly `${password}`; literal
-  userinfo/query/path credentials, credential-shaped healthcheck/commands,
-  newlines/NUL and reserved env names (`PATH`, `HOME`, `LD_PRELOAD`,
-  `HTTP_PROXY`, ...) are rejected.
+  `connection_url` userinfo must be exactly the literal `${password}`; literal
+  userinfo/query/path credentials, generated-password-shaped 32+ hex values in
+  query/path/fragment positions, credential-shaped healthcheck/commands
+  (including `mysql/mariadb -p` and `redis-cli -a`/`REDISCLI_AUTH`),
+  percent-encoded placeholders, newlines/NUL and reserved env names
+  (`PATH`, `HOME`, `LD_PRELOAD`, `HTTP_PROXY`, ...) are rejected in profile and
+  service env.
+- Legacy rows are scrubbed at read time (`redactProfile`/`redactResult`) so a
+  profile stored before these rules existed cannot expose a literal credential
+  to members; a one-time storage scrub remains D15.
 - Service `env`, `password_env` and `connection_env` are validated again in the
   agent, and the env-file writer rejects newline/NUL injection.
 - Each generated service password is registered in `RedactionRegistry` before

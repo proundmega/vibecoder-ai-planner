@@ -171,15 +171,30 @@ class RepoProfileTest {
                 }]}
                 """.formatted(image, envKey)));
         }
+        String hex = "a".repeat(64);
         for (String url : new String[]{
             "postgresql://vibecode:hunter2@${host}:5432/test?token=${password}",
             "postgresql://vibecode:${password}@${host}:5432/test?password=hunter2",
             "postgresql://vibecode:${password}@${host}:5432/password=hunter2",
-            "postgresql://vibecode:${password}@${host}:5432/" + "a".repeat(64),
+            "postgresql://vibecode:${password}@${host}:5432/" + hex,
+            "postgresql://vibecode:${password}@${host}:5432/test?auth=" + hex,
+            "postgresql://vibecode:${password}@${host}:5432/test?x=" + hex,
+            "postgresql://vibecode:${password}@${host}:5432/test#x=" + hex,
+            "postgresql://vibecode:%24%7Bpassword%7D@${host}:5432/test",
             "postgresql://vibecode:${password}@${host}:5432/test\\nEVIL=1",
         }) {
             assertThrows(IllegalArgumentException.class,
                 () -> parse(base.formatted(image, url, "pg_isready")));
+        }
+        for (String command : new String[]{
+            "mysql -uroot -psecret",
+            "mysql -u root -p hunter2",
+            "redis-cli -a secret",
+            "REDISCLI_AUTH=secret redis-cli ping",
+        }) {
+            assertThrows(IllegalArgumentException.class,
+                () -> parse(base.formatted(image,
+                    "postgresql://vibecode:${password}@${host}:5432/test", command)));
         }
         assertThrows(IllegalArgumentException.class,
             () -> parse(base.formatted(image,

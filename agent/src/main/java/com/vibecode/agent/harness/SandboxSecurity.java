@@ -51,7 +51,7 @@ final class SandboxSecurity {
         return name != null && SECRET_KEY.matcher(name).find();
     }
 
-    static boolean isReservedServiceEnv(String name) {
+    static boolean isReservedEnv(String name) {
         return name != null && RESERVED_SERVICE_ENV.contains(name);
     }
 

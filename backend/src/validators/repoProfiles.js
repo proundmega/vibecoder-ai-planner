@@ -57,6 +57,10 @@ const RESERVED_ENV = new Set([
 const ENV_REFERENCE = /^\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)$/;
 const ASSIGNMENT = /(?:^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|([^\s;&|)`"']+))/g;
 const SECRET_FLAG = /(?:^|\s)--?(?:password|passwd|pwd|token|secret|api[_-]?key|passphrase)(?:=|\s+)(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/gi;
+const MYSQL_PASSWORD = /\b(?:mysql|mariadb)\b[^\n;&|]*?(?:^|\s)-p(?:\s*=\s*|\s*)(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/gi;
+const REDIS_PASSWORD = /\bredis-cli\b[^\n;&|]*?(?:^|\s)-a(?:\s*=\s*|\s*)(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/gi;
+const REDISCLI_AUTH = /\bREDISCLI_AUTH\b\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/gi;
+const CREDENTIAL_LIKE = /[a-f0-9]{32,}/i;
 
 function isSecretKey(name) {
   if (name == null) return false;
@@ -93,6 +97,15 @@ function commandIssue(command) {
       return 'passes a literal credential on the command line';
     }
   }
+  for (const pattern of [MYSQL_PASSWORD, REDIS_PASSWORD, REDISCLI_AUTH]) {
+    pattern.lastIndex = 0;
+    for (const match of text.matchAll(pattern)) {
+      const value = match[1] ?? match[2] ?? match[3] ?? '';
+      if (!isEnvReference(value)) {
+        return 'passes a literal client password on the command line';
+      }
+    }
+  }
   return null;
 }
 
@@ -109,6 +122,11 @@ function connectionUrlIssue(url, passwordEnv) {
   if (!text || text.length > 1000 || text.includes('\0')
       || text.includes('\n') || text.includes('\r')) {
     return 'is invalid';
+  }
+  const decodedText = decodeUrlPart(text);
+  if ((decodedText.includes('${host}') && !text.includes('${host}'))
+      || (decodedText.includes('${password}') && !text.includes('${password}'))) {
+    return 'must use literal ${host}/${password} placeholders, not percent-encoded forms';
   }
   let parsed;
   try {
@@ -132,7 +150,7 @@ function connectionUrlIssue(url, passwordEnv) {
     if (isSecretKey(name) && value !== '${password}') {
       return `query parameter ${name} must use \${password}`;
     }
-    if (containsSecretValue(value)) {
+    if (containsSecretValue(value) || CREDENTIAL_LIKE.test(value)) {
       return `query parameter ${name} contains a literal credential`;
     }
   }
@@ -152,7 +170,7 @@ function connectionUrlIssue(url, passwordEnv) {
     }
   }
   const fragment = decodeUrlPart(parsed.hash || '');
-  if (fragment && containsSecretValue(fragment)) {
+  if (fragment && (containsSecretValue(fragment) || CREDENTIAL_LIKE.test(fragment))) {
     return 'fragment contains a literal credential';
   }
   return null;
@@ -340,7 +358,7 @@ function validateRepoProfile(value) {
   if (Array.isArray(validated.caches) && validated.caches.length > 0) {
     issues.push('profile caches are not implemented until D9/fg-44');
   }
-  const envError = envIssue(validated.env);
+  const envError = envIssue(validated.env, { reserved: true });
   if (envError) issues.push(envError);
   for (const field of ['setup', 'verify']) {
     (validated[field] || []).forEach((command, index) => {

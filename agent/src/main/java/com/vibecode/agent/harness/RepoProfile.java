@@ -48,6 +48,16 @@ public class RepoProfile {
     private static final Pattern SECRET_FLAG = Pattern.compile(
         "(?i)(?:^|\\s)--?(?:password|passwd|pwd|token|secret|api[_-]?key|passphrase)"
             + "(?:=|\\s+)(?:\"([^\"]*)\"|'([^']*)'|([^\\s;&|]+))");
+    private static final Pattern MYSQL_PASSWORD = Pattern.compile(
+        "(?i)\\b(?:mysql|mariadb)\\b[^\\n;&|]*?(?:^|\\s)-p(?:\\s*=\\s*|\\s*)"
+            + "(?:\"([^\"]*)\"|'([^']*)'|([^\\s;&|]+))");
+    private static final Pattern REDIS_PASSWORD = Pattern.compile(
+        "(?i)\\bredis-cli\\b[^\\n;&|]*?(?:^|\\s)-a(?:\\s*=\\s*|\\s*)"
+            + "(?:\"([^\"]*)\"|'([^']*)'|([^\\s;&|]+))");
+    private static final Pattern REDISCLI_AUTH = Pattern.compile(
+        "(?i)\\bREDISCLI_AUTH\\b\\s*[:=]\\s*"
+            + "(?:\"([^\"]*)\"|'([^']*)'|([^\\s;&|]+))");
+    private static final Pattern CREDENTIAL_LIKE_ANY = Pattern.compile("(?i)[a-f0-9]{32,}");
     private static final Pattern URL_PARTS = Pattern.compile(
         "^(?<scheme>[A-Za-z][A-Za-z0-9+.-]*)://(?:(?<userinfo>[^/@]*)@)?"
             + "(?<host>[^/?#]+)(?<path>/[^?#]*)?(?:\\?(?<query>[^#]*))?"
@@ -410,7 +420,7 @@ public class RepoProfile {
                     "profile service image must be pinned by digest: " + service.name());
             }
             for (Map.Entry<String, String> entry : service.env().entrySet()) {
-                if (SandboxSecurity.isReservedServiceEnv(entry.getKey())) {
+                if (SandboxSecurity.isReservedEnv(entry.getKey())) {
                     throw new IllegalArgumentException(
                         "profile service " + service.name() + " env key is reserved: "
                             + entry.getKey());
@@ -423,7 +433,7 @@ public class RepoProfile {
                     throw new IllegalArgumentException(
                         "profile service " + service.name() + " password_env is invalid");
                 }
-                if (SandboxSecurity.isReservedServiceEnv(passwordEnv)) {
+                if (SandboxSecurity.isReservedEnv(passwordEnv)) {
                     throw new IllegalArgumentException(
                         "profile service " + service.name() + " password_env is reserved");
                 }
@@ -466,7 +476,7 @@ public class RepoProfile {
                 throw new IllegalArgumentException(
                     "profile service " + service.name() + " connection_env is invalid");
             }
-            if (SandboxSecurity.isReservedServiceEnv(service.connectionEnv())) {
+            if (SandboxSecurity.isReservedEnv(service.connectionEnv())) {
                 throw new IllegalArgumentException(
                     "profile service " + service.name() + " connection_env is reserved");
             }
@@ -516,6 +526,9 @@ public class RepoProfile {
     private static void validateEnvEntry(String key, String value, String source) {
         if (key == null || !ENV_KEY.matcher(key).matches()) {
             throw new IllegalArgumentException(source + " env key is invalid: " + key);
+        }
+        if (SandboxSecurity.isReservedEnv(key)) {
+            throw new IllegalArgumentException(source + " env key is reserved: " + key);
         }
         if (SandboxSecurity.isSecretKey(key)) {
             throw new IllegalArgumentException(source + " env key looks secret: " + key);
@@ -667,6 +680,17 @@ public class RepoProfile {
                 return "passes a literal credential on the command line";
             }
         }
+        for (Pattern pattern : List.of(MYSQL_PASSWORD, REDIS_PASSWORD, REDISCLI_AUTH)) {
+            Matcher client = pattern.matcher(text);
+            while (client.find()) {
+                String value = client.group(1) != null
+                    ? client.group(1)
+                    : (client.group(2) != null ? client.group(2) : client.group(3));
+                if (!isEnvReference(value)) {
+                    return "passes a literal client password on the command line";
+                }
+            }
+        }
         return null;
     }
 
@@ -676,6 +700,11 @@ public class RepoProfile {
             || text.indexOf('\0') >= 0 || text.indexOf('\n') >= 0
             || text.indexOf('\r') >= 0) {
             return "is invalid";
+        }
+        String decodedText = percentDecode(text);
+        if ((decodedText.contains("${host}") && !text.contains("${host}"))
+            || (decodedText.contains("${password}") && !text.contains("${password}"))) {
+            return "must use literal ${host}/${password} placeholders, not percent-encoded forms";
         }
         Matcher parts = URL_PARTS.matcher(text);
         if (!parts.matches()) {
@@ -696,7 +725,7 @@ public class RepoProfile {
                 }
             }
         }
-        if (containsSecretValue(percentDecode(text))) {
+        if (containsSecretValue(decodedText)) {
             return "contains a literal credential";
         }
         String query = parts.group("query");
@@ -711,7 +740,7 @@ public class RepoProfile {
                 if (SandboxSecurity.isSecretKey(name) && !value.equals("${password}")) {
                     return "query parameter " + name + " must use ${password}";
                 }
-                if (containsSecretValue(value)) {
+                if (containsSecretValue(value) || CREDENTIAL_LIKE_ANY.matcher(value).find()) {
                     return "query parameter " + name + " contains a literal credential";
                 }
             }
@@ -734,8 +763,11 @@ public class RepoProfile {
             }
         }
         String fragment = parts.group("fragment");
-        if (fragment != null && containsSecretValue(percentDecode(fragment))) {
-            return "fragment contains a literal credential";
+        if (fragment != null) {
+            String decoded = percentDecode(fragment);
+            if (containsSecretValue(decoded) || CREDENTIAL_LIKE_ANY.matcher(decoded).find()) {
+                return "fragment contains a literal credential";
+            }
         }
         return null;
     }

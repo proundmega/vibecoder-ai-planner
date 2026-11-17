@@ -308,11 +308,16 @@ describe('RepoProfileService', () => {
         }), owner())).rejects.toThrow(/looks secret/);
       }
 
+      const hex = 'a'.repeat(64);
       for (const connectionUrl of [
         'postgresql://vibecode:hunter2@${host}:5432/test?token=${password}',
         'postgresql://vibecode:${password}@${host}:5432/test?password=hunter2',
         'postgresql://vibecode:${password}@${host}:5432/password=hunter2',
-        `postgresql://vibecode:\${password}@\${host}:5432/${'a'.repeat(64)}`,
+        `postgresql://vibecode:\${password}@\${host}:5432/${hex}`,
+        `postgresql://vibecode:\${password}@\${host}:5432/test?auth=${hex}`,
+        `postgresql://vibecode:\${password}@\${host}:5432/test?x=${hex}`,
+        `postgresql://vibecode:\${password}@\${host}:5432/test#x=${hex}`,
+        'postgresql://vibecode:%24%7Bpassword%7D@${host}:5432/test',
         'postgresql://vibecode:${password}@${host}:5432/test\nEVIL=1',
       ]) {
         await expect(RepoProfileService.create(1, validProfile({
@@ -320,11 +325,21 @@ describe('RepoProfileService', () => {
         }), owner())).rejects.toThrow(/connection_url/);
       }
 
+      for (const command of [
+        'PGPASSWORD=hunter2 pg_isready',
+        'mysql -uroot -psecret',
+        'mysql -u root -p hunter2',
+        'redis-cli -a secret',
+        'REDISCLI_AUTH=secret redis-cli ping',
+      ]) {
+        await expect(RepoProfileService.create(1, validProfile({
+          services: [validService({ healthcheck: { command } })],
+        }), owner())).rejects.toThrow(/healthcheck.command/);
+      }
+
       await expect(RepoProfileService.create(1, validProfile({
-        services: [validService({
-          healthcheck: { command: 'PGPASSWORD=hunter2 pg_isready' },
-        })],
-      }), owner())).rejects.toThrow(/healthcheck.command/);
+        env: { LD_PRELOAD: '/evil.so' },
+      }), owner())).rejects.toThrow(/reserved/);
 
       await expect(RepoProfileService.create(1, validProfile({
         verify: ['PGPASSWORD=hunter2 psql -c "select 1"'],

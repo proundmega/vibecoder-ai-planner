@@ -3,6 +3,7 @@ const { pool } = require('../db');
 const Project = require('../models/project');
 const GitHubService = require('./GitHubService');
 const { encrypt, decrypt } = require('../utils/crypto');
+const { redactProfile } = require('../utils/repoProfileRedaction');
 const logger = require('../utils/logger');
 const {
   validateRepoProfile, normalizeExactHost,
@@ -85,12 +86,12 @@ function profileHash(profile) {
     .digest('hex');
 }
 
-function format(row) {
+function format(row, options = {}) {
   return {
     id: row.id,
     project_id: row.project_id,
     version: row.version,
-    profile: row.profile,
+    profile: options.redact === false ? row.profile : redactProfile(row.profile),
     profile_hash: row.profile_hash,
     status: row.status,
     created_by: row.created_by,
@@ -461,7 +462,9 @@ class RepoProfileService {
        WHERE project_id = $1 AND status = 'active'`,
       [projectId]
     );
-    return result.rows.length > 0 ? format(result.rows[0]) : null;
+    return result.rows.length > 0
+      ? format(result.rows[0], { redact: false })
+      : null;
   }
 
   async getActiveForAgent(projectId, agent) {

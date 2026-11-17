@@ -222,10 +222,17 @@ async function load() {
 
 async function detect() {
   const hasContent = Boolean(latest.value)
+    || baseBranch.value.trim() !== ''
+    || image.value.trim() !== ''
+    || languagesText.value.trim() !== ''
     || setupText.value.trim() !== ''
     || verifyText.value.trim() !== ''
+    || egressText.value.trim() !== ''
     || services.value.length > 0
     || envRows.value.length > 0
+    || Number(setupMinutes.value) !== 15
+    || Number(verifyMinutes.value) !== 20
+    || Number(maxRoundMinutes.value) !== 45
   if (hasContent && typeof window !== 'undefined'
       && !window.confirm('Detection will replace the current form contents. Continue?')) {
     return
@@ -578,6 +585,7 @@ onBeforeUnmount(() => {
         </div>
         <div>
           <h3>Dry runs</h3>
+          <p class="muted">Showing the latest 200 dry runs.</p>
           <div v-if="!validations.length" class="muted">No dry runs yet.</div>
           <div v-for="validation in validations" :key="validation.id" class="validation">
             <div class="validation-header">

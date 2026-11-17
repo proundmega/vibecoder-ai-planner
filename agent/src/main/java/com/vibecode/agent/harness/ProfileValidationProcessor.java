@@ -204,6 +204,19 @@ public class ProfileValidationProcessor {
                 result.put("baseSha", workspace.getBaseCommit());
             }
             result.put("commands", commands);
+            // Destroy before reporting success: destroy() fails closed when a
+            // service container or network remains, and a validation that
+            // leaks resources must not become activatable.
+            if (sandbox != null) {
+                try {
+                    sandboxRunner.destroy(sandbox);
+                    sandbox = null;
+                } catch (IOException | RuntimeException e) {
+                    reportFailed(projectId, validation,
+                        "Profile validation cleanup failed: " + e.getMessage());
+                    return;
+                }
+            }
             report(projectId, validation, succeeded ? "succeeded" : "failed", result,
                 succeeded ? null : "profile setup or verification failed");
         } catch (IOException | RuntimeException e) {

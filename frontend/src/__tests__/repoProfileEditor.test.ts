@@ -143,6 +143,25 @@ describe('RepoProfileEditor', () => {
     expect(button(wrapper, 'Save draft')?.attributes('disabled')).toBeDefined()
   })
 
+
+  it('confirms detection when only non-service fields were edited', async () => {
+    vi.mocked(getRepoProfile).mockResolvedValueOnce({
+      active: null, latest: null, versions: [],
+    } as never)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    const wrapper = mount(RepoProfileEditor, {
+      props: { projectId: '1' },
+    })
+    await flushPromises()
+    await wrapper.find('input[placeholder="main"]').setValue('release')
+    await button(wrapper, 'Detect from repo')!.trigger('click')
+    await flushPromises()
+
+    expect(confirm).toHaveBeenCalled()
+    expect(detectRepoProfile).not.toHaveBeenCalled()
+  })
+
   it('loads a draft and saves the edited profile', async () => {
     const wrapper = mount(RepoProfileEditor, {
       props: { projectId: '1' },

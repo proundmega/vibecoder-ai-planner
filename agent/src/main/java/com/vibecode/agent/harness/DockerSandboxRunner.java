@@ -537,7 +537,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
     @Override
     public void close() {
-        for (String name : new ArrayList<>(created)) {
+        Set<String> names = new LinkedHashSet<>(created);
+        names.addAll(services.keySet());
+        for (String name : names) {
             if (destroyByName(name)) {
                 created.remove(name);
             } else {
@@ -558,21 +560,23 @@ public final class DockerSandboxRunner implements SandboxRunner {
         watchdogs.clear();
         runningProcesses.clear();
         egress.clear();
-        for (ServiceRuntime runtime : services.values()) {
-            RedactionRegistry.unregister(runtime.passwords());
+        if (!services.isEmpty()) {
+            // Keep failed service cleanup tracked (and its passwords registered)
+            // so a later close or the startup reaper can finish the job.
+            log.warn("{} service runtime(s) are still present after close; startup reaping is D9",
+                services.size());
         }
-        services.clear();
         execLocks.clear();
         compromised.clear();
-        if (created.isEmpty()) {
+        if (created.isEmpty() && services.isEmpty()) {
             try {
                 Runtime.getRuntime().removeShutdownHook(shutdownHook);
             } catch (IllegalStateException ignored) {
                 // Already shutting down; the hook is running this method.
             }
         } else {
-            log.warn("Retaining the sandbox shutdown hook; {} container(s) still tracked",
-                created.size());
+            log.warn("Retaining the sandbox shutdown hook; {} container(s) and {} service runtime(s) still tracked",
+                created.size(), services.size());
         }
     }
 
