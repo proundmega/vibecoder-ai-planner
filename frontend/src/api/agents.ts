@@ -2,15 +2,24 @@ import { get, post, del, put } from './client'
 
 export interface AgentKeyInfo {
   name: string
-  keyPreview: string
+  agentId: number
+  providerId: number | null
+  providerName: string | null
+  keyAvailable: boolean
+  expiresAt: string | null
   rateLimit: number
   maxActionsPerDay: number
+  createdAt: string | null
+  enrolledAt: string | null
 }
 
 export interface Agent {
   id: number
   name: string
   owner_id: number
+  provider_id?: number | null
+  provider_name?: string | null
+  api_key_expires_at?: string | null
   rate_limit: number
   max_actions_per_day: number
   current_daily_usage: number
@@ -83,6 +92,18 @@ export function deleteAgent(agentId: string): Promise<void> {
 
 export function revokeAgentKey(agentId: string): Promise<void> {
   return post(`/api/v1/agents/revoke/${agentId}`)
+}
+
+export interface RotatedAgentKey {
+  agentId: number
+  agentName: string
+  newApiKey: string
+  expiresAt: string
+  message: string
+}
+
+export function rotateAgentKey(agentId: string | number): Promise<RotatedAgentKey> {
+  return post<RotatedAgentKey>(`/api/v1/agents/${agentId}/rotate-key`)
 }
 
 export interface UpdateAgentNameParams {

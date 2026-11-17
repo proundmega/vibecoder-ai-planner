@@ -1,28 +1,41 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { fetchAgentDetail } from '@/api/agents'
+import { fetchAgentDetail, getAgentKeyInfo, rotateAgentKey } from '@/api/agents'
 import { useAuthStore } from '@/stores/auth'
 import { deleteAgent, revokeAgentKey } from '@/api/agents'
+import AgentKeyRevealModal from '@/components/AgentKeyRevealModal.vue'
 
 const route = useRoute()
 const agent = ref(null)
+const keyInfo = ref(null)
 const loading = ref(true)
 const error = ref(null)
 const authStore = useAuthStore()
 const router = useRouter()
 const showRevokeConfirm = ref(false)
 const showDeleteConfirm = ref(false)
+const showRotateConfirm = ref(false)
+const rotatedKey = ref(null)
 const actionLoading = ref(false)
+const rotating = ref(false)
 const actionError = ref(null)
 
 const canRevoke = computed(() => authStore.canRevokeAgent())
 const canDelete = computed(() => authStore.canDeleteAgent())
+const agentId = computed(() => agent.value?.agent_id || agent.value?.id || route.params.id)
+const displayName = computed(() =>
+  agent.value?.agent_name || agent.value?.name || `Agent ${agentId.value}`
+)
 
 onMounted(async () => {
   try {
-    const data = await fetchAgentDetail(route.params.id)
+    const [data, info] = await Promise.all([
+      fetchAgentDetail(route.params.id),
+      getAgentKeyInfo(String(route.params.id)).catch(() => null),
+    ])
     agent.value = data
+    keyInfo.value = info
   } catch (err) {
     console.error('Failed to load agent detail:', err)
     error.value = 'Failed to load agent detail'
@@ -30,6 +43,14 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+async function refreshKeyInfo() {
+  try {
+    keyInfo.value = await getAgentKeyInfo(String(agentId.value))
+  } catch {
+    keyInfo.value = null
+  }
+}
 
 function formatCost(cost) {
   return `$${Number(cost || 0).toFixed(2)}`
@@ -43,11 +64,11 @@ async function handleRevoke() {
   actionLoading.value = true
   actionError.value = null
   try {
-    const agentId = agent.value.agent_id || agent.value.id
-    await revokeAgentKey(agentId)
+    await revokeAgentKey(String(agentId.value))
     showRevokeConfirm.value = false
     const data = await fetchAgentDetail(route.params.id)
     agent.value = data
+    await refreshKeyInfo()
   } catch (err) {
     actionError.value = err.message || 'Failed to revoke API key'
   } finally {
@@ -55,12 +76,32 @@ async function handleRevoke() {
   }
 }
 
+async function handleRotate() {
+  rotating.value = true
+  actionError.value = null
+  try {
+    const result = await rotateAgentKey(agentId.value)
+    showRotateConfirm.value = false
+    rotatedKey.value = {
+      id: result.agentId || agentId.value,
+      name: result.agentName || displayName.value,
+      apiKey: result.newApiKey,
+      expiresAt: result.expiresAt,
+      providerName: keyInfo.value?.providerName || null,
+    }
+    await refreshKeyInfo()
+  } catch (err) {
+    actionError.value = err.message || 'Failed to rotate API key'
+  } finally {
+    rotating.value = false
+  }
+}
+
 async function handleDelete() {
   actionLoading.value = true
   actionError.value = null
   try {
-    const agentId = agent.value.agent_id || agent.value.id
-    await deleteAgent(agentId)
+    await deleteAgent(String(agentId.value))
     router.push('/agents')
   } catch (err) {
     actionError.value = err.message || 'Failed to delete agent'
@@ -76,7 +117,7 @@ async function handleDelete() {
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else-if="agent" class="detail-content">
       <div class="detail-header">
-        <h1>{{ agent.agent_name || agent.name || 'Agent ' + agent.agent_id }}</h1>
+        <h1>{{ displayName }}</h1>
         <span :class="['status-badge', 'status-' + agent.status]">
           {{ agent.status }}
         </span>
@@ -99,6 +140,44 @@ async function handleDelete() {
           <label>Last Seen</label>
           <span>{{ formatDate(agent.last_seen) }}</span>
         </div>
+      </div>
+
+      <div class="details-section">
+        <h2>Details</h2>
+        <dl class="details-grid">
+          <div>
+            <dt>Name</dt>
+            <dd>{{ displayName }}</dd>
+          </div>
+          <div>
+            <dt>Agent ID</dt>
+            <dd>{{ agentId }}</dd>
+          </div>
+          <div>
+            <dt>Provider</dt>
+            <dd>{{ keyInfo?.providerName || agent.provider_name || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Rate limit</dt>
+            <dd>{{ keyInfo?.rateLimit ?? agent.rate_limit ?? 100 }} req/min</dd>
+          </div>
+          <div>
+            <dt>Max actions/day</dt>
+            <dd>{{ keyInfo?.maxActionsPerDay ?? agent.max_actions_per_day ?? 1000 }}</dd>
+          </div>
+          <div>
+            <dt>API key</dt>
+            <dd>{{ keyInfo ? 'Hidden — shown only at creation or rotation' : 'Unavailable' }}</dd>
+          </div>
+          <div>
+            <dt>Key expires</dt>
+            <dd>{{ formatDate(keyInfo?.expiresAt) }}</dd>
+          </div>
+          <div>
+            <dt>Created</dt>
+            <dd>{{ formatDate(keyInfo?.createdAt || agent.created_at) }}</dd>
+          </div>
+        </dl>
       </div>
 
       <div v-if="agent.current_ticket_id" class="current-ticket">
@@ -129,6 +208,9 @@ async function handleDelete() {
       <div v-if="canRevoke || canDelete" class="actions-section">
         <h2>Actions</h2>
         <div class="actions-buttons">
+          <button v-if="canRevoke" class="btn-secondary" @click="showRotateConfirm = true" :disabled="actionLoading || rotating">
+            Rotate API Key
+          </button>
           <button v-if="canRevoke" class="btn-danger-outline" @click="showRevokeConfirm = true" :disabled="actionLoading">
             Revoke API Key
           </button>
@@ -152,6 +234,19 @@ async function handleDelete() {
         </div>
       </div>
 
+      <div v-if="showRotateConfirm" class="modal-overlay" @click.self="showRotateConfirm = false">
+        <div class="modal modal-sm">
+          <h3>Rotate API Key</h3>
+          <p>Rotate the key for <strong>{{ displayName }}</strong>? The current key stops working immediately, and the new key is shown only once.</p>
+          <div class="modal-actions">
+            <button class="btn-danger" @click="handleRotate" :disabled="rotating">
+              {{ rotating ? 'Rotating...' : 'Rotate key' }}
+            </button>
+            <button class="btn-cancel" @click="showRotateConfirm = false" :disabled="rotating">Cancel</button>
+          </div>
+        </div>
+      </div>
+
       <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
         <div class="modal modal-sm">
           <h3>Delete Agent</h3>
@@ -164,6 +259,14 @@ async function handleDelete() {
           </div>
         </div>
       </div>
+
+      <AgentKeyRevealModal
+        v-if="rotatedKey"
+        :agent="rotatedKey"
+        title="New API key"
+        warning="The previous key is now invalid. Store this key now — it will not be shown again."
+        @close="rotatedKey = null"
+      />
 
       <router-link to="/agents" class="back-link">← Back to Agents</router-link>
     </div>
@@ -248,6 +351,44 @@ async function handleDelete() {
   color: #1f2937;
 }
 
+.details-section {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 1.5rem;
+}
+
+.details-section h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  color: #1f2937;
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px 20px;
+  margin: 0;
+}
+
+.details-grid div {
+  min-width: 0;
+}
+
+.details-grid dt {
+  margin-bottom: 2px;
+  font-size: 0.8em;
+  color: #6b7280;
+}
+
+.details-grid dd {
+  margin: 0;
+  color: #1f2937;
+  font-weight: 500;
+  word-break: break-word;
+}
+
 .current-ticket {
   background: white;
   border: 1px solid #e5e7eb;
@@ -325,6 +466,26 @@ async function handleDelete() {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.btn-secondary {
+  padding: 8px 16px;
+  background: white;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #f9fafb;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .btn-danger {

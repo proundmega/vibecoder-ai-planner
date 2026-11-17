@@ -52,7 +52,13 @@ describe('AgentList create flow', () => {
       .mockResolvedValue({
         agents: [{ id: 'a1', name: 'New Agent', provider_name: null, rate_limit: 100, created_at: null }],
       })
-    agentsApi.createAgent.mockResolvedValue({ id: 'a1', name: 'New Agent' })
+    agentsApi.createAgent.mockResolvedValue({
+      id: 'a1',
+      name: 'New Agent',
+      provider_id: null,
+      generatedApiKey: 'ak_test_secret',
+      api_key_expires_at: '2026-12-17T00:00:00.000Z',
+    })
 
     const wrapper = mount(AgentList, mountOptions)
     await flushPromises()
@@ -78,7 +84,18 @@ describe('AgentList create flow', () => {
     expect(agentsApi.fetchAgentStatusList).toHaveBeenCalledTimes(2)
     expect(agentsApi.listAgents).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('New Agent')
-    expect(wrapper.find('.v-modal__title').exists()).toBe(false)
+
+    // The one-time key is shown in the success dialog, not stored client-side.
+    const reveal = wrapper.find('.agent-key-reveal')
+    expect(reveal.exists()).toBe(true)
+    expect(reveal.text()).toContain('ak_test_secret')
+    expect(reveal.text()).toContain('Agent ID')
+    expect(localStorage.getItem('agent_api_key')).toBeNull()
+
+    const done = reveal.findAll('button').find(button => button.text() === 'Done')
+    await done.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.agent-key-reveal').exists()).toBe(false)
 
     // Reopening must not be stuck on "Creating..."
     await openCreateModal(wrapper)

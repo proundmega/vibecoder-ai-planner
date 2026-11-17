@@ -46,10 +46,13 @@ describe('Agent API - Key Masking', () => {
         name: 'Test Agent',
         api_key_hash: '$2a$10$realhashvalue123456789012345678901234567890',
         api_key_hash_prefix: 'abcdef1234567890',
-        api_key: 'ak_test123456789',
         owner_id: 'user-1',
+        provider_id: 'p1',
+        provider_name: 'OpenAI',
+        api_key_expires_at: new Date('2026-12-17T00:00:00Z'),
         rate_limit: 100,
         max_actions_per_day: 1000,
+        created_at: new Date('2026-11-17T00:00:00Z'),
       },
     ]);
   });
@@ -95,13 +98,19 @@ describe('Agent API - Key Masking', () => {
     expect(res.body.agents[0]).not.toHaveProperty('api_key');
   });
 
-  it('GET /agents/:agentId/key returns key preview', async () => {
+  it('GET /agents/:agentId/key returns metadata and never a key preview', async () => {
     const res = await request(app)
       .get('/api/v1/agents/a1/key')
       .set('Authorization', 'Bearer mock-token');
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.keyPreview).toBe('ak_test1***');
+    expect(res.body.keyAvailable).toBe(false);
+    expect(res.body).not.toHaveProperty('keyPreview');
+    expect(res.body).not.toHaveProperty('api_key');
+    expect(res.body.providerName).toBe('OpenAI');
+    expect(res.body.rateLimit).toBe(100);
+    expect(res.body.maxActionsPerDay).toBe(1000);
+    expect(res.body.expiresAt).toBe('2026-12-17T00:00:00.000Z');
   });
 
   it('POST /agents/create still returns generatedApiKey (plaintext, intentional)', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import AgentDetail from '@/views/AgentDetail.vue'
 
 vi.mock('@/stores/auth', () => ({
@@ -8,6 +8,8 @@ vi.mock('@/stores/auth', () => ({
 
 vi.mock('@/api/agents', () => ({
   fetchAgentDetail: vi.fn(),
+  getAgentKeyInfo: vi.fn(),
+  rotateAgentKey: vi.fn(),
   deleteAgent: vi.fn(),
   revokeAgentKey: vi.fn(),
 }))
@@ -30,18 +32,27 @@ describe('AgentDetail', () => {
       canDeleteAgent: () => role === 'super_admin' || role === 'project_admin',
     }))
 
-    const { fetchAgentDetail } = await import('@/api/agents')
+    const { fetchAgentDetail, getAgentKeyInfo } = await import('@/api/agents')
     fetchAgentDetail.mockResolvedValue({ agent_id: 'agent-1', agent_name: 'Test Agent', status: 'online' })
+    getAgentKeyInfo.mockResolvedValue({
+      name: 'Test Agent',
+      agentId: 'agent-1',
+      providerId: null,
+      providerName: null,
+      keyAvailable: false,
+      expiresAt: null,
+      rateLimit: 100,
+      maxActionsPerDay: 1000,
+      createdAt: null,
+      enrolledAt: null,
+    })
 
     const wrapper = mount(AgentDetail, {
       global: {
         stubs: { 'router-link': { template: '<span><slot /></span>' } },
       },
     })
-    // Wait for onMounted + fetchAgentDetail to complete
-    await wrapper.vm.$nextTick()
-    await wrapper.vm.$nextTick()
-    await wrapper.vm.$nextTick()
+    await flushPromises()
     return wrapper
   }
 

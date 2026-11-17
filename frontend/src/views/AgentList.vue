@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { fetchAgentStatusList, createAgent, listAgents, updateAgentName } from '@/api/agents'
 import { listProviders } from '@/api/providers'
 import AgentModal from '@/components/AgentModal.vue'
+import AgentKeyRevealModal from '@/components/AgentKeyRevealModal.vue'
 
 const agents = ref([])
 const loading = ref(true)
@@ -11,6 +12,7 @@ const error = ref(null)
 const showCreateModal = ref(false)
 const createError = ref(null)
 const creatingAgent = ref(false)
+const createdAgent = ref(null)
 const activeTab = ref('heartbeat')
 const agentsData = ref([])
 const loadingAgents = ref(false)
@@ -73,8 +75,20 @@ async function handleCreate(name, providerId, rateLimit, maxActionsPerDay, keyEx
   creatingAgent.value = true
   createError.value = null
   try {
-    await createAgent({ name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays })
+    const created = await createAgent({ name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays })
     showCreateModal.value = false
+
+    const provider = providers.value.find(p =>
+      String(p.id) === String(created.provider_id ?? providerId)
+    )
+    createdAgent.value = {
+      id: created.id,
+      name: created.name || name,
+      providerName: created.provider_name || provider?.name || null,
+      apiKey: created.generatedApiKey || created.api_key || null,
+      expiresAt: created.api_key_expires_at || null,
+    }
+
     // Refresh both tables immediately instead of waiting for the poll or a
     // tab switch.
     await Promise.all([loadAgents(), loadCrudAgents()])
@@ -143,6 +157,11 @@ function formatDate(dateStr) {
       :creating="creatingAgent"
       v-model:selectedProvider="selectedProviderId"
       @created="handleCreate"
+    />
+    <AgentKeyRevealModal
+      v-if="createdAgent"
+      :agent="createdAgent"
+      @close="createdAgent = null"
     />
     <div v-if="createError" class="error">{{ createError }}</div>
 

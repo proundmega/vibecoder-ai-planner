@@ -269,7 +269,7 @@ router.get('/:agentId/history', verifyTokenOrAgent, requireAnyPermission('AGENT_
  * /agents/{agentId}/key:
  *   get:
  *     tags: [Agents]
- *     summary: Get agent API key info (preview only)
+ *     summary: Get agent key metadata (the plaintext key is never recoverable)
  *     parameters:
  *       - in: path
  *         name: agentId
@@ -291,9 +291,17 @@ router.get('/:agentId/key', verifyTokenOrAgent, async (req, res) => {
     }
     res.json({
       name: agent.name,
-      keyPreview: agent.api_key ? agent.api_key.substring(0, 8) + '***' : 'None',
+      agentId: agent.id,
+      providerId: agent.provider_id || null,
+      providerName: agent.provider_name || null,
+      // The plaintext key is never stored, so it cannot be previewed. Rotating
+      // the key is the only way to obtain a new one.
+      keyAvailable: false,
+      expiresAt: agent.api_key_hash ? agent.api_key_expires_at || null : null,
       rateLimit: agent.rate_limit,
       maxActionsPerDay: agent.max_actions_per_day,
+      createdAt: agent.created_at || null,
+      enrolledAt: agent.enrolled_at || null,
     });
   } catch (error) {
     logger.error('GET /api/agents/:agentId/key', error);
