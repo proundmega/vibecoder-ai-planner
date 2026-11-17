@@ -113,12 +113,25 @@ async function handleCreateTicket() {
   creationError.value = null
   try {
     const newTicket = await createTicket(selectedProjectId.value, newTicketTitle.value.trim(), newTicketDesc.value.trim())
-    if (newTicket) {
-      tickets.value.unshift(newTicket)
+    if (!newTicket) {
+      // createTicket() resolves to null on failure, so surface it here instead
+      // of silently closing the modal.
+      creationError.value = 'Failed to create ticket. Please try again.'
+      return
     }
+
+    tickets.value.unshift(newTicket)
     showCreateTicket.value = false
     newTicketTitle.value = ''
     newTicketDesc.value = ''
+
+    // Continue in the Edit Ticket view so the new ticket can be completed
+    // (priority, assignee, planning templates) without another navigation.
+    router.push({
+      name: 'TicketDetail',
+      params: { id: newTicket.projectId || selectedProjectId.value, ticketId: newTicket.id },
+      query: { edit: '1' },
+    })
   } catch (err) {
     console.error('Failed to create ticket:', err)
     creationError.value = 'Failed to create ticket. Please try again.'

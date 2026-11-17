@@ -1,0 +1,172 @@
+import { mount, flushPromises } from '@vue/test-utils'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+const { mockRoute, mockRouter } = vi.hoisted(() => ({
+  mockRoute: { params: { id: 'p1', ticketId: 't1' }, query: {} },
+  mockRouter: { push: vi.fn(), back: vi.fn(), replace: vi.fn() },
+}))
+
+vi.mock('vue-router', () => ({
+  useRoute: () => mockRoute,
+  useRouter: () => mockRouter,
+  createRouter: vi.fn(() => ({})),
+  createWebHistory: vi.fn(() => ({})),
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    user: { value: { id: 'u1', role: 'project_admin' } },
+    canUpdateTicket: () => true,
+    canDeleteTicket: () => true,
+    hasRole: () => false,
+  }),
+}))
+
+vi.mock('@/api/tickets', () => ({
+  fetchTicket: vi.fn(),
+  updateTicket: vi.fn(),
+  addComment: vi.fn(),
+  fetchComments: vi.fn(),
+  deleteTicket: vi.fn(),
+  dependencyBlockedMessage: () => null,
+  fetchProjectUsers: vi.fn(),
+}))
+
+vi.mock('@/api/approvals', () => ({
+  getTicketApprovals: vi.fn(),
+  createApproval: vi.fn(),
+}))
+
+vi.mock('@/api/ticketAttachments', () => ({
+  fetchAttachments: vi.fn(),
+  uploadAttachment: vi.fn(),
+  deleteAttachment: vi.fn(),
+}))
+
+vi.mock('@/api/ticketPlanning', () => ({
+  listPlanningFiles: vi.fn(),
+  getPlanningFile: vi.fn(),
+  upsertPlanningFile: vi.fn(),
+  applyTemplate: vi.fn(),
+  updatePlanningStatus: vi.fn(),
+}))
+
+vi.mock('@/api/client', () => ({
+  getTicketPlanningUsage: vi.fn(),
+  getPlanningFileUsage: vi.fn(),
+}))
+
+vi.mock('@/api/templates', () => ({
+  listTemplates: vi.fn(),
+}))
+
+import TicketDetail from '@/views/TicketDetail.vue'
+import TicketEditModal from '@/components/TicketEditModal.vue'
+import * as ticketsApi from '@/api/tickets'
+import * as approvalsApi from '@/api/approvals'
+import * as attachmentsApi from '@/api/ticketAttachments'
+import * as planningApi from '@/api/ticketPlanning'
+import * as clientApi from '@/api/client'
+import * as templatesApi from '@/api/templates'
+
+function baseTicket(overrides = {}) {
+  return {
+    id: 't1',
+    title: 'Test ticket',
+    description: 'Description',
+    status: 'backlog',
+    priority: 'medium',
+    projectId: 'p1',
+    ownerId: 'u1',
+    ...overrides,
+  }
+}
+
+async function mountDetail(ticket) {
+  ticketsApi.fetchTicket.mockResolvedValue(ticket)
+  const wrapper = mount(TicketDetail)
+  await flushPromises()
+  return wrapper
+}
+
+function findButton(wrapper, label) {
+  return wrapper.findAll('button').find(button => button.text().includes(label))
+}
+
+describe('TicketDetail', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRoute.query = {}
+    ticketsApi.fetchComments.mockResolvedValue([])
+    approvalsApi.getTicketApprovals.mockResolvedValue([])
+    attachmentsApi.fetchAttachments.mockResolvedValue([])
+    planningApi.listPlanningFiles.mockResolvedValue([])
+    clientApi.getTicketPlanningUsage.mockResolvedValue(null)
+    templatesApi.listTemplates.mockResolvedValue([])
+  })
+
+  it('disables Delete Ticket while the ticket is in progress', async () => {
+    const wrapper = await mountDetail(baseTicket({ status: 'in_progress' }))
+    const deleteButton = findButton(wrapper, 'Delete Ticket')
+
+    expect(deleteButton).toBeTruthy()
+    expect(deleteButton.attributes('disabled')).toBeDefined()
+    expect(deleteButton.attributes('title')).toContain('Backlog')
+  })
+
+  it('allows deleting a backlog ticket', async () => {
+    const wrapper = await mountDetail(baseTicket({ status: 'backlog' }))
+    const deleteButton = findButton(wrapper, 'Delete Ticket')
+
+    expect(deleteButton).toBeTruthy()
+    expect(deleteButton.attributes('disabled')).toBeUndefined()
+  })
+
+  it('renders the planning file Edit action with the styled VButton and shows the saved message', async () => {
+    planningApi.listPlanningFiles.mockResolvedValue([
+      { key: 'planning.md', status: 'draft', last_cost_usd: 0 },
+    ])
+    planningApi.getPlanningFile.mockResolvedValue({ content: 'existing plan' })
+    planningApi.upsertPlanningFile.mockResolvedValue({})
+
+    const wrapper = await mountDetail(baseTicket())
+
+    // loadPlanning() opens the main file in the editor; cancel back to the list
+    // to reach the row-level Edit action.
+    const cancelButton = findButton(wrapper, 'Cancel')
+    await cancelButton.trigger('click')
+    await flushPromises()
+
+    const planningFile = wrapper.find('.planning-file')
+
+    expect(planningFile.exists()).toBe(true)
+    const editButton = planningFile.find('button.v-btn')
+    expect(editButton.exists()).toBe(true)
+    expect(editButton.text()).toBe('Edit')
+
+    await editButton.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('.editor-textarea').setValue('updated plan')
+    await wrapper.find('.btn-submit').trigger('click')
+    await flushPromises()
+
+    expect(planningApi.upsertPlanningFile).toHaveBeenCalledWith('t1', 'planning.md', 'updated plan')
+    expect(wrapper.find('.success').exists()).toBe(true)
+    expect(wrapper.find('.success').text()).toBe('Planning file saved')
+  })
+
+  it('opens the Edit Ticket modal by default when the board navigates with ?edit=1', async () => {
+    mockRoute.query = { edit: '1' }
+
+    const wrapper = await mountDetail(baseTicket())
+
+    expect(wrapper.findComponent(TicketEditModal).exists()).toBe(true)
+  })
+
+  it('keeps the Edit Ticket modal closed without the query flag', async () => {
+    const wrapper = await mountDetail(baseTicket())
+
+    expect(wrapper.findComponent(TicketEditModal).exists()).toBe(false)
+  })
+})

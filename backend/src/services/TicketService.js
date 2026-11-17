@@ -6,7 +6,7 @@ const PermissionService = require('../services/PermissionService');
 const TicketPlanningService = require('../services/TicketPlanningService');
 const TicketAttachmentService = require('../services/TicketAttachmentService');
 const DependencyService = require('../services/DependencyService');
-const { ValidationError, NotFoundError, ForbiddenError } = require('../errors/HttpError');
+const { ValidationError, NotFoundError, ForbiddenError, ConflictError } = require('../errors/HttpError');
 
 class TicketService {
   async create(projectId, title, description, priority, userId) {
@@ -244,6 +244,14 @@ class TicketService {
 
     if (!(await this.canActOnTicketProject(ticket, { operatorId: userId, role }))) {
       throw new ForbiddenError('Unauthorized: not a member of this ticket\'s project');
+    }
+
+    // Work-in-progress tickets are protected from deletion. Move the ticket
+    // back to backlog first (in_progress -> backlog is an allowed transition).
+    if (ticket.status === 'in_progress') {
+      throw new ConflictError(
+        'Cannot delete a ticket that is in progress. Move it to backlog first.'
+      );
     }
 
     await Ticket.delete(id);

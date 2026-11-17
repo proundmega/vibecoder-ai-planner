@@ -9,6 +9,7 @@ import { listPlanningFiles, getPlanningFile, upsertPlanningFile, applyTemplate, 
 import { getTicketPlanningUsage, getPlanningFileUsage } from '@/api/client'
 import { listTemplates } from '@/api/templates'
 import TicketEditModal from '@/components/TicketEditModal.vue'
+import VButton from '@/components/VButton.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,7 +19,9 @@ const loading = ref(true)
 const error = ref(null)
 const newComment = ref('')
 const comments = ref([])
-const showEditModal = ref(false)
+// The board sends `?edit=1` after creating a ticket so the user lands in the
+// Edit Ticket view by default.
+const showEditModal = ref(route.query.edit === '1')
 const showDeleteConfirm = ref(false)
 const deleting = ref(false)
 const attachments = ref([])
@@ -147,6 +150,15 @@ async function requestApproval() {
     error.value = err.message || 'Failed to request approval'
   } finally {
     approving.value = false
+  }
+}
+
+function closeEditModal() {
+  showEditModal.value = false
+  if (route.query.edit !== undefined) {
+    const query = { ...route.query }
+    delete query.edit
+    router.replace({ query })
   }
 }
 
@@ -387,7 +399,13 @@ async function handleShowTemplateSelect() {
       <button @click="router.back()" class="back-btn">← Back</button>
       <div class="action-buttons">
         <button v-if="canUpdate()" @click="showEditModal = true" class="btn-edit">Edit Ticket</button>
-        <button v-if="canDelete()" @click="showDeleteConfirm = true" class="btn-delete">Delete Ticket</button>
+        <button
+          v-if="canDelete()"
+          @click="showDeleteConfirm = true"
+          class="btn-delete"
+          :disabled="ticket?.status === 'in_progress'"
+          :title="ticket?.status === 'in_progress' ? 'Move this ticket to Backlog before deleting it' : ''"
+        >Delete Ticket</button>
       </div>
     </div>
 
@@ -519,7 +537,11 @@ async function handleShowTemplateSelect() {
                   ${{ file.last_cost_usd.toFixed(4) }}
                 </span>
               </div>
-              <button @click="editingFile = file; editingContent = ''; loadPlanningFile(file.key)" class="btn-small">Edit</button>
+              <VButton
+                variant="secondary"
+                size="small"
+                @click="editingFile = file; editingContent = ''; loadPlanningFile(file.key)"
+              >Edit</VButton>
             </div>
           </div>
 
@@ -671,7 +693,7 @@ async function handleShowTemplateSelect() {
       v-if="showEditModal && ticket"
       :ticket="ticket"
       :project-id="route.params.id"
-      @close="showEditModal = false"
+      @close="closeEditModal"
       @saved="handleEditSaved"
     />
 
@@ -735,6 +757,11 @@ async function handleShowTemplateSelect() {
   border: none;
   border-radius: 6px;
   cursor: pointer;
+}
+
+.btn-delete:disabled {
+  background: #fca5a5;
+  cursor: not-allowed;
 }
 
 h1 {
@@ -1045,6 +1072,16 @@ h1 {
 
 .error {
   color: #ef4444;
+}
+
+.success {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: #065f46;
+  font-size: 13px;
 }
 
 .approval-status {

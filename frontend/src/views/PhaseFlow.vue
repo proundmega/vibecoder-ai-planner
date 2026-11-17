@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { fetchPhases, fetchAllowedPhases, transitionPhase } from '@/api/phases'
+import { fetchPhases, fetchAllowedPhases, fetchPhaseHistory, transitionPhase } from '@/api/phases'
 import PhaseDraft from './phases/PhaseDraft.vue'
 import PhasePlanning from './phases/PhasePlanning.vue'
 import PhasePlanApproved from './phases/PhasePlanApproved.vue'
