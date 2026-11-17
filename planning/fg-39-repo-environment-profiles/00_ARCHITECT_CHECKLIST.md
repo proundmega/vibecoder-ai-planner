@@ -1,13 +1,13 @@
 ---
 id: "fg-39"
 title: "Repository Onboarding and Environment Profiles"
-status: in_progress
+status: in_review
 priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-10-31"
 updated: "2026-11-17"
-pr: null
+pr: 167
 branch: "feat/fg-39-slice2-services"
 depends_on: ["fg-30", "fg-34"]
 ---
@@ -33,20 +33,21 @@ environment failures, not coding failures.
 | Slice | Scope | State |
 |---|---|---|
 | 1 | Versioned profile schema/API, GitHub-manifest stack detection, profile-driven base branch/setup/verify/env/timeouts, digest-pinned image override, dry-run validation queue + agent worker, activation only after an exact-content successful dry run, fg-34/D27 profile origin-CA plumbing | done (#161) |
-| 2 | Service containers (Postgres/Redis) with health checks, ephemeral data and connection env | in progress |
+| 2 | Service containers (Postgres/Redis) with health checks, ephemeral data and connection env | in review (#167) |
 | 3 | Flaky-test retry policy, test-data hooks and known-failure semantics | planned |
 | 4 | Prebuilt per-stack images/devcontainers, lockfile-keyed cache generations and cache-write sanitization | planned |
-| 5 | Project settings profile editor | in progress |
+| 5 | Project settings profile editor | in review (#167) |
 
-Slice 1 deliberately fails closed for non-empty `services` and `flaky_tests`
-rather than accepting configuration it does not execute.
+Slices 1, 2 and 5 are implemented; non-empty `flaky_tests` and `caches` still
+fail closed until slices 3 and 4 rather than accepting configuration the
+runtime does not execute.
 
 ## Status evidence
 
 | Claim | Evidence | Checked |
 |---|---|---|
 | Slice 1 implementation | PR #161 | ☑ |
-| Slice 2/5 implementation | `feat/fg-39-slice2-services` | ☐ |
+| Slice 2/5 implementation | PR #167 | ☑ |
 | Verification results | `03` → Results | ☑ |
 
 ## Deferred register (canonical)
@@ -60,10 +61,10 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D2 | Evaluate profile reliability | fg-37 | Evaluation | fg-37-agent-evaluation-harness | open |
 | D3 | Cache-aware budgets | fg-38 | Billing | fg-38-harness-budgets-routing | open |
 | D4 | Profile/setup telemetry | fg-41 | Observability | fg-41-harness-observability | open |
-| D5 | Service containers and health checks (slice 2) | fg-39 FR5 | Infrastructure | fg-39 slice 2 | in progress |
+| D5 | Service containers and health checks (slice 2) | fg-39 FR5 | Infrastructure | fg-39 slice 2 | in review (#167) |
 | D6 | Flaky-test retry policy and test-data hooks (slice 3) | fg-39 FR8 | Reliability | fg-39 slice 3 | open |
 | D7 | Prebuilt per-stack images/devcontainers and pinned toolchains (slice 4) | fg-39 FR3 | Infrastructure | fg-39 slice 4 | open |
-| D8 | Project settings profile editor (slice 5) | fg-39 FR2 | UX | fg-39 slice 5 | in progress |
+| D8 | Project settings profile editor (slice 5) | fg-39 FR2 | UX | fg-39 slice 5 | in review (#167) |
 | D9 | Persistent dependency caches: size quota/watchdog, volume GC, lockfile-keyed generations and sanitized cache writes | fg-39 FR4 | Security | fg-39 slice 4 | open |
 | D10 | Profile change event log beyond version rows/`created_by` timestamps | fg-39 safety | Audit | fg-41 | open |
 | D11 | Real-Docker/real-repo profile dry-run e2e (cache real-Docker coverage moves with D9) | fg-39 slice 1 review | Testing | bt-60 / fg-39 slice 4 | open |
