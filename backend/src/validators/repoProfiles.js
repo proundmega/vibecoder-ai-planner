@@ -10,7 +10,8 @@ const MAX_CA_CERTIFICATES = 16;
 // embed a credential word (PGPASS, DBPASS, DB_PASS, DB_PWD, PASSWD, ...) are
 // rejected, as are the underscore-delimited forms (API_KEY, KEY, ...).
 const SECRET_KEY_PRIMARY = /(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|token|credential|pass(?:word|wd|phrase)|rediscli[_-]?auth|authorization)/i;
-const SECRET_KEY_SEGMENT = /(?:^|_)(?:key|pass|pwd|auth)(?:$|_)/i;
+const SECRET_KEY_SEGMENT = /(?:^|_)(?:key|pass|pwd)(?:$|_)/i;
+const SECRET_KEY_AUTH = /(?:^|_)auth$/i;
 const SECRET_KEY_SUFFIX = /(?:pass|pwd)$/i;
 const GITHUB_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?$/;
 const BRANCH = /^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*\/$)(?!.*\.$)[A-Za-z0-9._/-]{1,255}$/;
@@ -68,7 +69,8 @@ function isSecretKey(name) {
   const value = String(name);
   return SECRET_KEY_PRIMARY.test(value)
     || SECRET_KEY_SEGMENT.test(value)
-    || SECRET_KEY_SUFFIX.test(value);
+    || SECRET_KEY_SUFFIX.test(value)
+    || SECRET_KEY_AUTH.test(value);
 }
 
 function containsSecretValue(value) {

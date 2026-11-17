@@ -146,6 +146,7 @@ class SecretRedactorTest {
             redactor.redact("MYSQL -P 3306 -u root"));
         assertEquals("mysql -p \"$MYSQL_PWD\"",
             redactor.redact("mysql -p \"$MYSQL_PWD\""));
+        assertEquals("AUTH_MODE=token", redactor.redact("AUTH_MODE=token"));
         assertEquals("mysql -p -h db -u root",
             redactor.redact("mysql -p -h db -u root"));
         String image = "docker pull node@sha256:" + "a".repeat(64);

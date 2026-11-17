@@ -35,6 +35,7 @@ describe('repo-profile redaction', () => {
     expect(redactText('MYSQL -P 3306 -u root')).toBe('MYSQL -P 3306 -u root');
     expect(redactText('mysql -p -h db -u root')).toBe('mysql -p -h db -u root');
     expect(redactText('mysql -p "$MYSQL_PWD"')).toBe('mysql -p "$MYSQL_PWD"');
+    expect(redactText('AUTH_MODE=token')).toBe('AUTH_MODE=token');
     expect(redactText(
       'docker pull node@sha256:' + 'a'.repeat(64),
     )).toBe('docker pull node@sha256:' + 'a'.repeat(64));

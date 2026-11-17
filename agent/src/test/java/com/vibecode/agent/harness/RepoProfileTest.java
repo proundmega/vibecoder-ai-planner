@@ -236,7 +236,15 @@ class RepoProfileTest {
             {"schema_version":1,"verify":["npm test"],"services":[{
               "name":"postgres","image":"%s",
               "env":{"REDISCLI_AUTH":"secret","AUTHORIZATION":"secret",
-              "AUTH":"secret"},"connection_env":"DATABASE_URL",
+              "AUTH":"secret","BASIC_AUTH":"secret"},"connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready"}
+            }]}
+            """.formatted(image)));
+        assertDoesNotThrow(() -> parse("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres","image":"%s",
+              "env":{"AUTH_MODE":"token"},"connection_env":"DATABASE_URL",
               "connection_url":"postgresql://vibecode@${host}:5432/test",
               "healthcheck":{"command":"pg_isready"}
             }]}

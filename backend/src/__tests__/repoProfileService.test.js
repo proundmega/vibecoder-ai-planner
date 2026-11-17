@@ -388,6 +388,7 @@ describe('RepoProfileService', () => {
         { REDISCLI_AUTH: 'secret' },
         { AUTHORIZATION: 'secret' },
         { AUTH: 'secret' },
+        { BASIC_AUTH: 'secret' },
         { DB_PASS: 'secret' },
         { PGPASS: 'secret' },
         { PASS: 'secret' },
@@ -399,6 +400,12 @@ describe('RepoProfileService', () => {
         }));
         expect(result.error).toBeDefined();
       }
+      const authMode = validateRepoProfile(validProfile({
+        services: [validService({
+          env: { POSTGRES_USER: 'vibecode', AUTH_MODE: 'token' },
+        })],
+      }));
+      expect(authMode.error).toBeUndefined();
     });
 
     it('accepts environment references in commands', async () => {

@@ -12,7 +12,8 @@ const LONG_TOKEN = /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{20,}\b
 const BEARER = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{20,}/gi;
 
 const SECRET_KEY_PRIMARY = /(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|token|credential|pass(?:word|wd|phrase)|rediscli[_-]?auth|authorization)/i;
-const SECRET_KEY_SEGMENT = /(?:^|_)(?:key|pass|pwd|auth)(?:$|_)/i;
+const SECRET_KEY_SEGMENT = /(?:^|_)(?:key|pass|pwd)(?:$|_)/i;
+const SECRET_KEY_AUTH = /(?:^|_)auth$/i;
 const SECRET_KEY_SUFFIX = /(?:pass|pwd)$/i;
 
 function isSecretKey(name) {
@@ -20,7 +21,8 @@ function isSecretKey(name) {
   const value = String(name);
   return SECRET_KEY_PRIMARY.test(value)
     || SECRET_KEY_SEGMENT.test(value)
-    || SECRET_KEY_SUFFIX.test(value);
+    || SECRET_KEY_SUFFIX.test(value)
+    || SECRET_KEY_AUTH.test(value);
 }
 
 function isEnvReference(value) {
