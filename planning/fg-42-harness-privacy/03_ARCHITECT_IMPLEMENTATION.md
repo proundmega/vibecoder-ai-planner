@@ -93,4 +93,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-17 | `aa701b0` (#166) | Backend 146 suites / 1853 tests; Agent 787 tests (9 skipped); Frontend 61 files / 574 tests; real-Postgres integration 16 suites / 157 tests | Implementation updated after review; PR open for re-review. Database deletion covers events, usage, runs, checkpoints, messages and billing logs; on-disk workspace/artifact retention is deferred in `00` D8. |
+| 2026-11-17 | `4c031d6` (#166) | Backend 146 suites / 1853 tests; Agent 787 tests (9 skipped); Frontend 61 files / 574 tests; real-Postgres integration 16 suites / 157 tests | Implementation updated after review; PR open for re-review. Database deletion covers events, usage, runs, checkpoints, messages and billing logs; on-disk workspace/artifact retention is deferred in `00` D8. |
