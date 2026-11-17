@@ -112,6 +112,47 @@ class SecretRedactorTest {
         }
     }
 
+
+    @Test
+    void redactsShortClientPasswordsAndBarePassKeys() {
+        for (String line : List.of(
+            "mysql -uroot -psecret",
+            "MYSQL -psecret",
+            "mysql -u root -p hunter2",
+            "mysqladmin -u root -psecret ping",
+            "mysqldump -u root -psecret db",
+            "redis-cli -a secret",
+            "REDIS-CLI -a secret",
+            "REDISCLI_AUTH=secret redis-cli ping",
+            "DB_PASS=secret",
+            "PGPASS=secret",
+            "DBPASS=secret",
+            "PASS=secret",
+            "AUTH=secret",
+            "AUTHORIZATION=secret"
+        )) {
+            String redacted = redactor.redact(line);
+            assertFalse(redacted.contains("secret"), redacted);
+            assertFalse(redacted.contains("hunter2"), redacted);
+            assertTrue(redacted.contains("[REDACTED]"), redacted);
+        }
+    }
+
+    @Test
+    void keepsPortFlagsPromptsAndDigests() {
+        assertEquals("mysql -P 3306 -u root",
+            redactor.redact("mysql -P 3306 -u root"));
+        assertEquals("MYSQL -P 3306 -u root",
+            redactor.redact("MYSQL -P 3306 -u root"));
+        assertEquals("mysql -p \"$MYSQL_PWD\"",
+            redactor.redact("mysql -p \"$MYSQL_PWD\""));
+        assertEquals("AUTH_MODE=token", redactor.redact("AUTH_MODE=token"));
+        assertEquals("mysql -p -h db -u root",
+            redactor.redact("mysql -p -h db -u root"));
+        String image = "docker pull node@sha256:" + "a".repeat(64);
+        assertEquals(image, redactor.redact(image));
+    }
+
     @Test
     void redactsAwsSecretAccessKeys() {
         String redacted = redactor.redact(

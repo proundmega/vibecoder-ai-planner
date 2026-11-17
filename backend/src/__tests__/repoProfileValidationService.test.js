@@ -8,6 +8,7 @@ jest.mock('../services/RepoProfileService', () => ({
   assertAgentProjectAccess: jest.fn(),
   assertProfileRepoBinding: jest.fn(),
   profileHash: jest.fn(() => 'hash'),
+  canWrite: jest.fn(() => true),
 }));
 
 const RepoProfileValidationService = require('../services/RepoProfileValidationService');
@@ -58,6 +59,7 @@ describe('RepoProfileValidationService', () => {
     RepoProfileService.assertCanRead.mockResolvedValue({ id: 1, ownerId: 7 });
     RepoProfileService.assertAgentProjectAccess.mockResolvedValue({ id: 1, ownerId: 7 });
     RepoProfileService.assertProfileRepoBinding.mockResolvedValue(undefined);
+    RepoProfileService.canWrite.mockResolvedValue(true);
   });
 
   it('queues a validation with an immutable profile snapshot', async () => {
@@ -243,6 +245,28 @@ describe('RepoProfileValidationService', () => {
     ).rejects.toThrow(/1 MiB/);
   });
 
+
+  it('redacts legacy profile and result credentials on read', () => {
+    const formatted = RepoProfileValidationService.format(validationRow({
+      profile: {
+        schema_version: 1,
+        verify: ['mysql -uroot -psecret'],
+        services: [{
+          name: 'postgres',
+          healthcheck: { command: 'redis-cli -a secret' },
+        }],
+      },
+      result: {
+        commands: [{ command: 'mysql -uroot -psecret', output: 'PGPASSWORD=hunter2' }],
+      },
+      error: 'PGPASSWORD=hunter2',
+    }));
+    const serialized = JSON.stringify(formatted);
+    expect(serialized).not.toContain('secret');
+    expect(serialized).not.toContain('hunter2');
+    expect(serialized).toContain('[REDACTED]');
+  });
+
   it('hides validation details from non-members', async () => {
     RepoProfileService.assertCanRead.mockRejectedValueOnce(new ForbiddenError('no'));
     await expect(
@@ -254,6 +278,54 @@ describe('RepoProfileValidationService', () => {
     pool.query.mockResolvedValueOnce({ rows: [validationRow()] });
     const rows = await RepoProfileValidationService.list(1, { userId: 7 });
     expect(rows).toHaveLength(1);
-    expect(pool.query.mock.calls[0][0]).toContain('LIMIT 50');
+    expect(pool.query.mock.calls[0][0]).toContain('LIMIT 200');
+  });
+
+  it('redacts credentials from a stored dry-run result and error', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [validationRow({ status: 'running', agent_id: 9 })] })
+      .mockResolvedValueOnce({ rows: [validationRow({ status: 'succeeded', agent_id: 9 })] });
+
+    await RepoProfileValidationService.finish(
+      1, VALIDATION_ID, { id: 9, owner_id: 7 },
+      {
+        status: 'succeeded',
+        result: {
+          commands: [{
+            phase: 'verify',
+            command: 'printenv DATABASE_URL',
+            exitCode: 0,
+            output: 'DATABASE_URL=postgresql://vibecode:hunter2@postgres:5432/test',
+          }],
+          password: 'hunter2',
+        },
+        error: 'DATABASE_URL=postgresql://vibecode:hunter2@postgres:5432/test',
+      }
+    );
+
+    const stored = pool.query.mock.calls[1][1];
+    expect(stored[1]).not.toContain('hunter2');
+    expect(stored[1]).toContain('[REDACTED]');
+    expect(stored[2]).not.toContain('hunter2');
+    expect(stored[2]).toContain('[REDACTED]');
+  });
+
+  it('hides dry-run command output from project members who cannot write', async () => {
+    RepoProfileService.canWrite.mockResolvedValue(false);
+    pool.query.mockResolvedValueOnce({
+      rows: [validationRow({ result: { commands: [{ output: 'ok' }] } })],
+    });
+
+    const rows = await RepoProfileValidationService.list(1, { userId: 8 });
+    expect(rows[0].result).toBeNull();
+  });
+
+  it('keeps dry-run command output for the project owner', async () => {
+    pool.query.mockResolvedValueOnce({
+      rows: [validationRow({ result: { commands: [{ output: 'ok' }] } })],
+    });
+
+    const rows = await RepoProfileValidationService.list(1, { userId: 7 });
+    expect(rows[0].result).toEqual({ commands: [{ output: 'ok' }] });
   });
 });

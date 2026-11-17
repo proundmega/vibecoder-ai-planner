@@ -2,6 +2,7 @@
 import { onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AIAssistant from './AIAssistant.vue'
+import RepoProfileEditor from '@/components/RepoProfileEditor.vue'
 import { useGitHub } from '@/composables/useGitHub'
 import { useUsage } from '@/composables/useUsage'
 import { useMemory } from '@/composables/useMemory'
@@ -17,6 +18,7 @@ const tabs = [
   { id: 'tickets', label: 'Tickets' },
   { id: 'approvals', label: 'Approvals' },
   { id: 'github', label: 'GitHub' },
+  { id: 'repo-profile', label: 'Repository Profile' },
   { id: 'ai', label: 'AI Chat' },
   { id: 'usage', label: 'Usage & Billing' },
   { id: 'memory', label: 'Memory' },
@@ -215,6 +217,10 @@ async function handleTabSwitch(tabId) {
             </div>
           </div>
         </div>
+      </div>
+
+      <div v-if="activeTab === 'repo-profile'" class="tab-panel">
+        <RepoProfileEditor :project-id="String(projectId)" />
       </div>
 
       <div v-if="activeTab === 'usage'" class="tab-panel">

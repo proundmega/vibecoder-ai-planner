@@ -3,6 +3,7 @@ const { pool } = require('../db');
 const Project = require('../models/project');
 const GitHubService = require('./GitHubService');
 const { encrypt, decrypt } = require('../utils/crypto');
+const { redactProfile } = require('../utils/repoProfileRedaction');
 const logger = require('../utils/logger');
 const {
   validateRepoProfile, normalizeExactHost,
@@ -48,6 +49,15 @@ async function assertCanWrite(projectId, user) {
   throw new ForbiddenError('Only the project owner or a super admin can change the repo profile');
 }
 
+async function canWrite(projectId, user) {
+  try {
+    await assertCanWrite(projectId, user);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function assertAgentProjectAccess(projectId, agent) {
   const project = await assertProjectExists(projectId);
   const requesterId = agent?.owner_id;
@@ -76,12 +86,12 @@ function profileHash(profile) {
     .digest('hex');
 }
 
-function format(row) {
+function format(row, options = {}) {
   return {
     id: row.id,
     project_id: row.project_id,
     version: row.version,
-    profile: row.profile,
+    profile: options.redact === false ? row.profile : redactProfile(row.profile),
     profile_hash: row.profile_hash,
     status: row.status,
     created_by: row.created_by,
@@ -421,24 +431,26 @@ async function assertMtlsReference(projectId, egress) {
 class RepoProfileService {
   async listVersions(projectId, user) {
     await assertCanRead(projectId, user);
+    const raw = await canWrite(projectId, user);
     const result = await pool.query(
       `SELECT * FROM repo_profiles
        WHERE project_id = $1
        ORDER BY version DESC`,
       [projectId]
     );
-    return result.rows.map(format);
+    return result.rows.map((row) => format(row, { redact: !raw }));
   }
 
   async getCurrent(projectId, user) {
     await assertCanRead(projectId, user);
+    const raw = await canWrite(projectId, user);
     const result = await pool.query(
       `SELECT * FROM repo_profiles
        WHERE project_id = $1
        ORDER BY (status = 'active') DESC, version DESC`,
       [projectId]
     );
-    const rows = result.rows.map(format);
+    const rows = result.rows.map((row) => format(row, { redact: !raw }));
     return {
       active: rows.find((row) => row.status === 'active') || null,
       latest: rows[0] || null,
@@ -452,7 +464,9 @@ class RepoProfileService {
        WHERE project_id = $1 AND status = 'active'`,
       [projectId]
     );
-    return result.rows.length > 0 ? format(result.rows[0]) : null;
+    return result.rows.length > 0
+      ? format(result.rows[0], { redact: false })
+      : null;
   }
 
   async getActiveForAgent(projectId, agent) {
@@ -496,7 +510,7 @@ class RepoProfileService {
         ]
       );
       await client.query('COMMIT');
-      return format(inserted.rows[0]);
+      return format(inserted.rows[0], { redact: false });
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -538,7 +552,7 @@ class RepoProfileService {
     if (updated.rows.length === 0) {
       throw new ValidationError('Only draft profiles can be edited; create a new version');
     }
-    return format(updated.rows[0]);
+    return format(updated.rows[0], { redact: false });
   }
 
   async activate(projectId, profileId, user) {
@@ -564,7 +578,7 @@ class RepoProfileService {
       }
       if (target.rows[0].status === 'active') {
         await client.query('COMMIT');
-        return format({ ...target.rows[0], profile_hash: contentHash });
+        return format({ ...target.rows[0], profile_hash: contentHash }, { redact: false });
       }
       const validated = await client.query(
         `SELECT 1 FROM repo_profile_validations
@@ -590,7 +604,7 @@ class RepoProfileService {
         [profileId, projectId]
       );
       await client.query('COMMIT');
-      return format(activated.rows[0]);
+      return format(activated.rows[0], { redact: false });
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -741,6 +755,7 @@ const service = new RepoProfileService();
 module.exports = service;
 module.exports.assertCanRead = assertCanRead;
 module.exports.assertCanWrite = assertCanWrite;
+module.exports.canWrite = canWrite;
 module.exports.assertAgentProjectAccess = assertAgentProjectAccess;
 module.exports.assertProjectExists = assertProjectExists;
 module.exports.format = format;

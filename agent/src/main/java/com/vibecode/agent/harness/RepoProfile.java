@@ -15,6 +15,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -38,8 +40,32 @@ public class RepoProfile {
     private static final Pattern IMAGE = Pattern.compile(
         "^[A-Za-z0-9][A-Za-z0-9._/:@-]*@sha256:[a-f0-9]{64}$");
     private static final Pattern ENV_KEY = Pattern.compile("^[A-Z_][A-Z0-9_]*$");
-    private static final Pattern SECRET_KEY = Pattern.compile(
-        "(?i)(?:^|_)(?:API_?KEY|ACCESS_?KEY|KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_?KEY)(?:$|_)");
+    private static final Pattern ENV_REFERENCE = Pattern.compile(
+        "^\\$(?:\\{[A-Za-z_][A-Za-z0-9_]*\\}|[A-Za-z_][A-Za-z0-9_]*)$");
+    private static final Pattern ASSIGNMENT = Pattern.compile(
+        "(?:^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)\\s*(?::|=(?!=))\\s*"
+            + "(?:\"([^\"]*)\"|'([^']*)'|([^\\s;&|)`\"']+))");
+    private static final Pattern SECRET_FLAG = Pattern.compile(
+        "(?i)(?:^|\\s)--?(?:password|passwd|pwd|token|secret|api[_-]?key|passphrase)"
+            + "(?:=|\\s+)(?:\"([^\"]*)\"|'([^']*)'|([^\\s;&|]+))");
+    private static final Pattern MYSQL_PASSWORD = Pattern.compile(
+        "(?i:(?:mysql|mariadb|mysqladmin|mysqldump|mariadb-admin|mariadb-dump))"
+            + "\\b[^\\n;&|]*?\\s-p(?:\\s*=\\s*|\\s*)"
+            + "(?:\"([^\"]*)\"|'([^']*)'|([^\\s;&|]+))");
+    private static final Pattern REDIS_PASSWORD = Pattern.compile(
+        "(?i:redis-cli)\\b[^\\n;&|]*?\\s-a(?:\\s*=\\s*|\\s*)"
+            + "(?:\"([^\"]*)\"|'([^']*)'|([^\\s;&|]+))");
+    private static final Pattern REDISCLI_AUTH = Pattern.compile(
+        "(?i:REDISCLI_AUTH)\\b\\s*[:=]\\s*"
+            + "(?:\"([^\"]*)\"|'([^']*)'|([^\\s;&|]+))");
+    private static final Pattern CREDENTIAL_LIKE_ANY = Pattern.compile("(?i)[a-f0-9]{32,}");
+    private static final Pattern URL_PARTS = Pattern.compile(
+        "^(?<scheme>[A-Za-z][A-Za-z0-9+.-]*)://(?:(?<userinfo>[^/@]*)@)?"
+            + "(?<host>[^/?#]+)(?<path>/[^?#]*)?(?:\\?(?<query>[^#]*))?"
+            + "(?:#(?<fragment>.*))?$");
+    private static final Pattern PATH_ASSIGNMENT = Pattern.compile(
+        "^([A-Za-z_][A-Za-z0-9_]*)\\s*[:=]\\s*(.+)$");
+    private static final Pattern CREDENTIAL_LIKE = Pattern.compile("(?i)^[a-f0-9]{32,}$");
     private static final List<Pattern> SECRET_VALUES = List.of(
         Pattern.compile("-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----"),
         Pattern.compile("\\bAKIA[0-9A-Z]{16}\\b"),
@@ -47,7 +73,8 @@ public class RepoProfile {
         Pattern.compile("\\bgh[pousr]_[A-Za-z0-9]{20,}\\b"),
         Pattern.compile("\\bgithub_pat_[A-Za-z0-9_]{20,}\\b"),
         Pattern.compile("\\bxox[abcdepr]-[A-Za-z0-9-]{10,}\\b"),
-        Pattern.compile("https?://[^\\s/@]+:[^\\s/@]+@")
+        Pattern.compile("(?i)[a-z][a-z0-9+.-]*://[^\\s/@]+:(?!\\$\\{password\\})[^\\s/@]+@"),
+        Pattern.compile("(?i)\\b(Bearer|Basic)\\s+[A-Za-z0-9._~+/=-]{20,}")
     );
     private static final int MAX_CA_BYTES = 64 * 1024;
     private static final int MAX_CA_CERTIFICATES = 16;
@@ -67,7 +94,7 @@ public class RepoProfile {
     private Timeouts timeouts = new Timeouts();
     @JsonProperty("max_round_minutes")
     private int maxRoundMinutes = 45;
-    private List<Object> services = List.of();
+    private List<Service> services = List.of();
     @JsonProperty("flaky_tests")
     private List<String> flakyTests = List.of();
     private Egress egress;
@@ -85,6 +112,108 @@ public class RepoProfile {
 
         public int verifyMinutes() {
             return verifyMinutes;
+        }
+    }
+
+
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY,
+        getterVisibility = JsonAutoDetect.Visibility.NONE,
+        isGetterVisibility = JsonAutoDetect.Visibility.NONE,
+        setterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonIgnoreProperties(ignoreUnknown = false)
+    public static class Service {
+        private String name;
+        private String image;
+        private Map<String, String> env = Map.of();
+        @JsonProperty("password_env")
+        private String passwordEnv;
+        @JsonProperty("connection_env")
+        private String connectionEnv;
+        @JsonProperty("connection_url")
+        private String connectionUrl;
+        private Healthcheck healthcheck;
+
+        public String name() {
+            return name;
+        }
+
+        public String image() {
+            return image;
+        }
+
+        public Map<String, String> env() {
+            return env == null ? Map.of() : Map.copyOf(env);
+        }
+
+        public String passwordEnv() {
+            return passwordEnv == null || passwordEnv.isBlank() ? null : passwordEnv;
+        }
+
+        public String connectionEnv() {
+            return connectionEnv;
+        }
+
+        public String connectionUrl() {
+            return connectionUrl;
+        }
+
+        public Healthcheck healthcheck() {
+            return healthcheck;
+        }
+
+        public ServiceSpec toSpec() {
+            Healthcheck check = healthcheck();
+            return new ServiceSpec(
+                name(),
+                image(),
+                env(),
+                passwordEnv(),
+                connectionEnv(),
+                connectionUrl(),
+                new ServiceSpec.Healthcheck(
+                    check.command(),
+                    check.intervalSeconds(),
+                    check.timeoutSeconds(),
+                    check.retries(),
+                    check.startPeriodSeconds()
+                )
+            );
+        }
+    }
+
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY,
+        getterVisibility = JsonAutoDetect.Visibility.NONE,
+        isGetterVisibility = JsonAutoDetect.Visibility.NONE,
+        setterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonIgnoreProperties(ignoreUnknown = false)
+    public static class Healthcheck {
+        private String command;
+        @JsonProperty("interval_seconds")
+        private int intervalSeconds = 2;
+        @JsonProperty("timeout_seconds")
+        private int timeoutSeconds = 5;
+        private int retries = 30;
+        @JsonProperty("start_period_seconds")
+        private int startPeriodSeconds = 0;
+
+        public String command() {
+            return command;
+        }
+
+        public int intervalSeconds() {
+            return intervalSeconds;
+        }
+
+        public int timeoutSeconds() {
+            return timeoutSeconds;
+        }
+
+        public int retries() {
+            return retries;
+        }
+
+        public int startPeriodSeconds() {
+            return startPeriodSeconds;
         }
     }
 
@@ -210,7 +339,7 @@ public class RepoProfile {
         return maxRoundMinutes;
     }
 
-    public List<Object> services() {
+    public List<Service> services() {
         return services == null ? List.of() : List.copyOf(services);
     }
 
@@ -251,21 +380,7 @@ public class RepoProfile {
                 "profile caches are not implemented until D9/fg-44");
         }
         for (Map.Entry<String, String> entry : env().entrySet()) {
-            if (!ENV_KEY.matcher(entry.getKey()).matches()) {
-                throw new IllegalArgumentException(
-                    "profile env key is invalid: " + entry.getKey());
-            }
-            if (SECRET_KEY.matcher(entry.getKey()).find()) {
-                throw new IllegalArgumentException(
-                    "profile env key looks secret: " + entry.getKey());
-            }
-            String value = entry.getValue() == null ? "" : entry.getValue();
-            for (Pattern pattern : SECRET_VALUES) {
-                if (pattern.matcher(value).find()) {
-                    throw new IllegalArgumentException(
-                        "profile env value looks like a credential: " + entry.getKey());
-                }
-            }
+            validateEnvEntry(entry.getKey(), entry.getValue(), "profile");
         }
         if (timeouts().setupMinutes() < 1 || timeouts().setupMinutes() > 120) {
             throw new IllegalArgumentException("profile setup_minutes must be 1-120");
@@ -276,15 +391,157 @@ public class RepoProfile {
         if (maxRoundMinutes < 1 || maxRoundMinutes > 240) {
             throw new IllegalArgumentException("profile max_round_minutes must be 1-240");
         }
-        if (!services().isEmpty()) {
-            throw new IllegalArgumentException(
-                "profile services are not implemented until fg-39 slice 2");
-        }
+        validateServices();
         if (!flakyTests().isEmpty()) {
             throw new IllegalArgumentException(
                 "profile flaky_tests are not implemented until fg-39 slice 3");
         }
         validateEgress();
+    }
+
+
+    private void validateServices() {
+        if (services().size() > 5) {
+            throw new IllegalArgumentException("profile services must contain at most 5 entries");
+        }
+        Set<String> names = new LinkedHashSet<>();
+        Set<String> connectionEnvs = new LinkedHashSet<>();
+        for (Service service : services()) {
+            if (service == null) {
+                throw new IllegalArgumentException("profile service is null");
+            }
+            if (service.name() == null || !service.name().matches("[a-z][a-z0-9-]{0,30}")) {
+                throw new IllegalArgumentException("profile service name is invalid: " + service.name());
+            }
+            if (!names.add(service.name())) {
+                throw new IllegalArgumentException("profile service name is duplicated: " + service.name());
+            }
+            if (service.image() == null || !IMAGE.matcher(service.image()).matches()) {
+                throw new IllegalArgumentException(
+                    "profile service image must be pinned by digest: " + service.name());
+            }
+            for (Map.Entry<String, String> entry : service.env().entrySet()) {
+                if (SandboxSecurity.isReservedEnv(entry.getKey())) {
+                    throw new IllegalArgumentException(
+                        "profile service " + service.name() + " env key is reserved: "
+                            + entry.getKey());
+                }
+                validateEnvEntry(entry.getKey(), entry.getValue(), "service " + service.name());
+            }
+            String passwordEnv = service.passwordEnv();
+            if (passwordEnv != null) {
+                if (!ENV_KEY.matcher(passwordEnv).matches()) {
+                    throw new IllegalArgumentException(
+                        "profile service " + service.name() + " password_env is invalid");
+                }
+                if (SandboxSecurity.isReservedEnv(passwordEnv)) {
+                    throw new IllegalArgumentException(
+                        "profile service " + service.name() + " password_env is reserved");
+                }
+                if (service.env().containsKey(passwordEnv)) {
+                    throw new IllegalArgumentException(
+                        "profile service " + service.name() + " must not set password_env directly");
+                }
+                if (service.connectionUrl() == null
+                    || !service.connectionUrl().contains("${password}")) {
+                    throw new IllegalArgumentException(
+                        "profile service " + service.name()
+                            + " connection_url must include ${password}");
+                }
+            } else if (service.connectionUrl() != null
+                && service.connectionUrl().contains("${password}")) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name()
+                        + " uses ${password} without password_env");
+            }
+            if (service.connectionUrl() == null || !service.connectionUrl().contains("${host}")) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name() + " connection_url must include ${host}");
+            }
+            Matcher placeholders = Pattern.compile("\\$\\{([^}]+)\\}")
+                .matcher(service.connectionUrl());
+            while (placeholders.find()) {
+                String token = placeholders.group(1);
+                if (!token.equals("host") && !token.equals("password")) {
+                    throw new IllegalArgumentException(
+                        "profile service " + service.name()
+                            + " connection_url has unsupported placeholder ${" + token + "}");
+                }
+            }
+            String urlIssue = connectionUrlIssue(service.connectionUrl(), passwordEnv);
+            if (urlIssue != null) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name() + " connection_url " + urlIssue);
+            }
+            if (service.connectionEnv() == null || !ENV_KEY.matcher(service.connectionEnv()).matches()) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name() + " connection_env is invalid");
+            }
+            if (SandboxSecurity.isReservedEnv(service.connectionEnv())) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name() + " connection_env is reserved");
+            }
+            if (SandboxSecurity.isSecretKey(service.connectionEnv())) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name()
+                        + " connection_env must not look secret; use password_env");
+            }
+            if (env().containsKey(service.connectionEnv())) {
+                throw new IllegalArgumentException(
+                    "profile service connection_env conflicts with profile env: "
+                        + service.connectionEnv());
+            }
+            if (!connectionEnvs.add(service.connectionEnv())) {
+                throw new IllegalArgumentException(
+                    "profile service connection_env is duplicated: " + service.connectionEnv());
+            }
+            Healthcheck healthcheck = service.healthcheck();
+            if (healthcheck == null) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name() + " healthcheck is required");
+            }
+            if (healthcheck.command() == null || healthcheck.command().isBlank()
+                || healthcheck.command().length() > 500
+                || healthcheck.command().indexOf('\0') >= 0
+                || healthcheck.command().indexOf('\n') >= 0
+                || healthcheck.command().indexOf('\r') >= 0) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name() + " healthcheck command is invalid");
+            }
+            String healthIssue = commandIssue(healthcheck.command());
+            if (healthIssue != null) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name() + " healthcheck command " + healthIssue);
+            }
+            if (healthcheck.intervalSeconds() < 1 || healthcheck.intervalSeconds() > 60
+                || healthcheck.timeoutSeconds() < 1 || healthcheck.timeoutSeconds() > 60
+                || healthcheck.retries() < 1 || healthcheck.retries() > 120
+                || healthcheck.startPeriodSeconds() < 0
+                || healthcheck.startPeriodSeconds() > 120) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name() + " healthcheck bounds are invalid");
+            }
+        }
+    }
+
+    private static void validateEnvEntry(String key, String value, String source) {
+        if (key == null || !ENV_KEY.matcher(key).matches()) {
+            throw new IllegalArgumentException(source + " env key is invalid: " + key);
+        }
+        if (SandboxSecurity.isReservedEnv(key)) {
+            throw new IllegalArgumentException(source + " env key is reserved: " + key);
+        }
+        if (SandboxSecurity.isSecretKey(key)) {
+            throw new IllegalArgumentException(source + " env key looks secret: " + key);
+        }
+        String text = value == null ? "" : value;
+        if (text.length() > 4000 || text.indexOf('\0') >= 0
+            || text.indexOf('\n') >= 0 || text.indexOf('\r') >= 0) {
+            throw new IllegalArgumentException(source + " env value is invalid: " + key);
+        }
+        if (containsSecretValue(text)) {
+            throw new IllegalArgumentException(source + " env value looks like a credential: " + key);
+        }
     }
 
     private void validateEgress() {
@@ -378,7 +635,172 @@ public class RepoProfile {
                 throw new IllegalArgumentException(
                     "profile " + field + " contains an invalid command");
             }
+            String issue = commandIssue(command);
+            if (issue != null) {
+                throw new IllegalArgumentException(
+                    "profile " + field + " command " + issue);
+            }
         }
+    }
+
+    private static boolean isEnvReference(String value) {
+        if (value == null) {
+            return false;
+        }
+        String text = value.trim();
+        if (text.length() >= 2
+            && ((text.startsWith("\"") && text.endsWith("\""))
+                || (text.startsWith("'") && text.endsWith("'")))) {
+            text = text.substring(1, text.length() - 1).trim();
+        }
+        return ENV_REFERENCE.matcher(text).matches();
+    }
+
+    private static boolean containsSecretValue(String value) {
+        String text = value == null ? "" : value;
+        for (Pattern pattern : SECRET_VALUES) {
+            if (pattern.matcher(text).find()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String commandIssue(String command) {
+        String text = command == null ? "" : command;
+        if (containsSecretValue(percentDecode(text))) {
+            return "contains a literal credential";
+        }
+        Matcher assignment = ASSIGNMENT.matcher(text);
+        while (assignment.find()) {
+            String key = assignment.group(1);
+            String value = assignment.group(2) != null
+                ? assignment.group(2)
+                : (assignment.group(3) != null ? assignment.group(3) : assignment.group(4));
+            if (SandboxSecurity.isSecretKey(key) && !isEnvReference(value)) {
+                return "assigns a literal credential to " + key;
+            }
+        }
+        Matcher flag = SECRET_FLAG.matcher(text);
+        while (flag.find()) {
+            String value = flag.group(1) != null
+                ? flag.group(1)
+                : (flag.group(2) != null ? flag.group(2) : flag.group(3));
+            if (!isEnvReference(value)) {
+                return "passes a literal credential on the command line";
+            }
+        }
+        for (Pattern pattern : List.of(MYSQL_PASSWORD, REDIS_PASSWORD, REDISCLI_AUTH)) {
+            Matcher client = pattern.matcher(text);
+            while (client.find()) {
+                String value = client.group(1) != null
+                    ? client.group(1)
+                    : (client.group(2) != null ? client.group(2) : client.group(3));
+                if (value.startsWith("-") || isEnvReference(value)) {
+                    continue;
+                }
+                return "passes a literal client password on the command line";
+            }
+        }
+        return null;
+    }
+
+    private static String connectionUrlIssue(String url, String passwordEnv) {
+        String text = url == null ? "" : url;
+        if (text.isEmpty() || text.length() > 1000
+            || text.indexOf('\0') >= 0 || text.indexOf('\n') >= 0
+            || text.indexOf('\r') >= 0) {
+            return "is invalid";
+        }
+        String decodedText = percentDecode(text);
+        if ((decodedText.contains("${host}") && !text.contains("${host}"))
+            || (decodedText.contains("${password}") && !text.contains("${password}"))) {
+            return "must use literal ${host}/${password} placeholders, not percent-encoded forms";
+        }
+        Matcher parts = URL_PARTS.matcher(text);
+        if (!parts.matches()) {
+            return "must be a valid URL";
+        }
+        String userinfo = parts.group("userinfo");
+        if (userinfo != null && !userinfo.isEmpty()) {
+            int colon = userinfo.indexOf(':');
+            if (colon >= 0) {
+                String password = percentDecode(userinfo.substring(colon + 1));
+                if (!password.isEmpty()) {
+                    if (passwordEnv == null) {
+                        return "must not contain a literal password without password_env";
+                    }
+                    if (!password.equals("${password}")) {
+                        return "must use ${password} in the userinfo, not a literal password";
+                    }
+                }
+            }
+        }
+        if (containsSecretValue(decodedText)) {
+            return "contains a literal credential";
+        }
+        String query = parts.group("query");
+        if (query != null) {
+            for (String pair : query.split("&")) {
+                if (pair.isEmpty()) {
+                    continue;
+                }
+                int equals = pair.indexOf('=');
+                String name = percentDecode(equals >= 0 ? pair.substring(0, equals) : pair);
+                String value = equals >= 0 ? percentDecode(pair.substring(equals + 1)) : "";
+                if (SandboxSecurity.isSecretKey(name) && !value.equals("${password}")) {
+                    return "query parameter " + name + " must use ${password}";
+                }
+                if (containsSecretValue(value) || CREDENTIAL_LIKE_ANY.matcher(value).find()) {
+                    return "query parameter " + name + " contains a literal credential";
+                }
+            }
+        }
+        String path = parts.group("path");
+        if (path != null) {
+            for (String segment : path.split("/")) {
+                String decoded = percentDecode(segment);
+                if (containsSecretValue(decoded)) {
+                    return "path contains a literal credential";
+                }
+                Matcher assignment = PATH_ASSIGNMENT.matcher(decoded);
+                if (assignment.matches() && SandboxSecurity.isSecretKey(assignment.group(1))
+                    && !assignment.group(2).equals("${password}")) {
+                    return "path parameter " + assignment.group(1) + " must use ${password}";
+                }
+                if (CREDENTIAL_LIKE.matcher(decoded).matches()) {
+                    return "path contains a credential-like value";
+                }
+            }
+        }
+        String fragment = parts.group("fragment");
+        if (fragment != null) {
+            String decoded = percentDecode(fragment);
+            if (containsSecretValue(decoded) || CREDENTIAL_LIKE_ANY.matcher(decoded).find()) {
+                return "fragment contains a literal credential";
+            }
+        }
+        return null;
+    }
+
+    private static String percentDecode(String value) {
+        String text = value == null ? "" : value;
+        StringBuilder decoded = new StringBuilder(text.length());
+        for (int index = 0; index < text.length(); index++) {
+            char current = text.charAt(index);
+            if (current == '%' && index + 2 < text.length()) {
+                try {
+                    int code = Integer.parseInt(text.substring(index + 1, index + 3), 16);
+                    decoded.append((char) code);
+                    index += 2;
+                    continue;
+                } catch (NumberFormatException ignored) {
+                    // Keep the raw percent sign when it is not a valid escape.
+                }
+            }
+            decoded.append(current);
+        }
+        return decoded.toString();
     }
 
     private static void validateExactHost(String host) {

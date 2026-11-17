@@ -14,6 +14,8 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -257,6 +259,72 @@ class DockerSandboxRunnerIntegrationTest {
                 assertTrue(result.timedOut(), result.output());
                 assertTrue(result.output().contains("workspace disk quota exceeded"),
                     result.output());
+            } finally {
+                runner.destroy(handle);
+            }
+        }
+    }
+
+
+    @Test
+    void reachesAProfileServiceContainer() throws Exception {
+        String image = System.getenv("SANDBOX_IT_IMAGE");
+        String serviceImage = System.getenv("SANDBOX_IT_SERVICE_IMAGE");
+        Assumptions.assumeTrue(image != null && !image.isBlank(),
+            "SANDBOX_IT_IMAGE is not set; skipping the service smoke test");
+        Assumptions.assumeTrue(serviceImage != null
+                && serviceImage.contains("@sha256:"),
+            "SANDBOX_IT_SERVICE_IMAGE must be a digest-pinned image");
+        Assumptions.assumeTrue(
+            FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+            "POSIX permissions are required for the service smoke test");
+
+        SandboxConfig config = integrationConfig(image, Map.of());
+        RepoProfile profile = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+            {"schema_version":1,"verify":["true"],"services":[{
+              "name":"postgres",
+              "image":"%s",
+              "env":{"POSTGRES_USER":"vibecode","POSTGRES_DB":"test"},
+              "password_env":"POSTGRES_PASSWORD",
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode:${password}@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready -U vibecode -d test",
+                "interval_seconds":1,"timeout_seconds":3,"retries":30}
+            }]}
+            """.formatted(serviceImage), RepoProfile.class);
+        SandboxConfig effective = config.withRepoProfile(profile, "1", 1);
+        Path workspace = Files.createDirectories(tempDir.resolve("services-workspace"));
+        Files.setPosixFilePermissions(workspace, PosixFilePermissions.fromString("rwxrwxrwx"));
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(effective)) {
+            SandboxHandle handle = runner.create(effective.specFor(workspace));
+            try {
+                ExecResult result = runner.exec(handle, ExecRequest.of(
+                    "python3 -c \"import hashlib,os,socket,urllib.parse; "
+                        + "u=urllib.parse.urlparse(os.environ['DATABASE_URL']); "
+                        + "assert u.username=='vibecode' and u.password and len(u.password)==64; "
+                        + "assert u.hostname=='postgres' and u.port==5432 and u.path=='/test'; "
+                        + "socket.create_connection((u.hostname,u.port),10); "
+                        + "print('ok ' + hashlib.sha256(u.password.encode()).hexdigest())\"",
+                    Duration.ofSeconds(30)));
+                assertTrue(result.passed(), result.output());
+                assertTrue(result.output().contains("ok "), result.output());
+
+                String serviceContainer = handle.id()
+                    .replace("vibecode-sandbox-", "vibecode-service-") + "-postgres";
+                String serviceEnv = dockerCommand(
+                    "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}",
+                    serviceContainer);
+                String servicePassword = serviceEnv.lines()
+                    .filter(line -> line.startsWith("POSTGRES_PASSWORD="))
+                    .map(line -> line.substring("POSTGRES_PASSWORD=".length()))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("service password is missing"));
+                String expectedHash = HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256")
+                        .digest(servicePassword.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                assertTrue(result.output().contains(expectedHash),
+                    "the sandbox DATABASE_URL must use the service's generated password");
             } finally {
                 runner.destroy(handle);
             }

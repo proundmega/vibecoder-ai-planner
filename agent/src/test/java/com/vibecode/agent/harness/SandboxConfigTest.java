@@ -868,6 +868,40 @@ class SandboxConfigTest {
             () -> otherHost.withEgressMtls(mtlsMaterial()));
     }
 
+
+    @Test
+    void repoProfileServicesReachTheSandboxSpecOnlyInDockerMode() throws IOException {
+        SandboxConfig docker = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img"
+        )::get);
+        RepoProfile profile = profile("""
+            {
+              "schema_version": 1,
+              "verify": ["npm test"],
+              "services": [{
+                "name": "postgres",
+                "image": "postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "env": {"POSTGRES_USER": "vibecode", "POSTGRES_DB": "test"},
+                "password_env": "POSTGRES_PASSWORD",
+                "connection_env": "DATABASE_URL",
+                "connection_url": "postgresql://vibecode:${password}@${host}:5432/test",
+                "healthcheck": {"command": "pg_isready -U vibecode", "retries": 5}
+              }]
+            }
+            """);
+
+        SandboxSpec spec = docker.withRepoProfile(profile, "1", 1).specFor(
+            Files.createDirectories(tempDir.resolve("services-workspace")));
+        assertEquals(1, spec.services().size());
+        assertEquals("postgres", spec.services().get(0).name());
+        assertEquals("DATABASE_URL", spec.services().get(0).connectionEnv());
+
+        SandboxConfig host = SandboxConfig.from(env()::get);
+        assertThrows(IllegalStateException.class,
+            () -> host.withRepoProfile(profile, "1", 1));
+    }
+
     @Test
     void specAddsNonSecretVerificationDefaults() throws IOException {
         Path workspace = Files.createDirectories(tempDir.resolve("workspace"));

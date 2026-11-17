@@ -165,6 +165,11 @@ public class ProfileValidationProcessor {
                     throw new IllegalStateException(
                         "The profile validation budget was exhausted during sandbox setup");
                 }
+            } else if (!profile.services().isEmpty()) {
+                reportFailed(projectId, validation,
+                    "The profile declares services, but host mode cannot provide them. "
+                        + "Set SANDBOX_MODE=docker.");
+                return;
             } else if (profile.image() != null || !profile.caches().isEmpty()
                 || profile.egress() != null) {
                 log.warn("Repo profile image/caches/egress are ignored in host mode; "
@@ -199,6 +204,19 @@ public class ProfileValidationProcessor {
                 result.put("baseSha", workspace.getBaseCommit());
             }
             result.put("commands", commands);
+            // Destroy before reporting success: destroy() fails closed when a
+            // service container or network remains, and a validation that
+            // leaks resources must not become activatable.
+            if (sandbox != null) {
+                try {
+                    sandboxRunner.destroy(sandbox);
+                    sandbox = null;
+                } catch (IOException | RuntimeException e) {
+                    reportFailed(projectId, validation,
+                        "Profile validation cleanup failed: " + e.getMessage());
+                    return;
+                }
+            }
             report(projectId, validation, succeeded ? "succeeded" : "failed", result,
                 succeeded ? null : "profile setup or verification failed");
         } catch (IOException | RuntimeException e) {
@@ -264,10 +282,10 @@ public class ProfileValidationProcessor {
         for (VerificationResult result : phaseResults) {
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("phase", phase);
-            entry.put("command", result.command());
+            entry.put("command", RedactionRegistry.redact(result.command()));
             entry.put("exitCode", result.exitCode());
             entry.put("timedOut", result.timedOut());
-            entry.put("output", result.output());
+            entry.put("output", RedactionRegistry.redact(result.output()));
             entry.put("durationMs", durationMs);
             results.add(entry);
             passed = passed && result.passed();
@@ -280,8 +298,9 @@ public class ProfileValidationProcessor {
         RepoProfileValidation validation,
         String message
     ) {
-        log.warn("Repo-profile validation {} failed: {}", validation.id(), message);
-        report(projectId, validation, "failed", Map.of(), message);
+        String safe = RedactionRegistry.redact(message);
+        log.warn("Repo-profile validation {} failed: {}", validation.id(), safe);
+        report(projectId, validation, "failed", Map.of(), safe);
     }
 
     private void report(
@@ -293,7 +312,8 @@ public class ProfileValidationProcessor {
     ) {
         try {
             apiService.finishRepoProfileValidation(
-                projectId, validation.id(), status, result, error);
+                projectId, validation.id(), status, result,
+                error == null ? null : RedactionRegistry.redact(error));
         } catch (IOException | RuntimeException e) {
             log.warn("Could not report repo-profile validation {}: {}",
                 validation.id(), e.getMessage());

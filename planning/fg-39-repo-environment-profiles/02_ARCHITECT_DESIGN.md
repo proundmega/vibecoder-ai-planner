@@ -183,6 +183,92 @@ existing GitHub agent config route.
    build queue in the same poll cycle.
 7. The worker does not start a model session and does not publish anything.
 
+
+## Slice 2 service schema (v1)
+
+```json
+{
+  "services": [
+    {
+      "name": "postgres",
+      "image": "postgres:16-alpine@sha256:...",
+      "env": { "POSTGRES_USER": "vibecode", "POSTGRES_DB": "vibecode_test" },
+      "password_env": "POSTGRES_PASSWORD",
+      "connection_env": "DATABASE_URL",
+      "connection_url": "postgresql://vibecode:${password}@${host}:5432/vibecode_test",
+      "healthcheck": {
+        "command": "pg_isready -U vibecode -d vibecode_test",
+        "interval_seconds": 2,
+        "timeout_seconds": 5,
+        "retries": 30,
+        "start_period_seconds": 0
+      }
+    }
+  ]
+}
+```
+
+- Maximum five services, unique DNS-safe names and digest-pinned images.
+- `env` is non-secret service configuration. `password_env` is optional; when
+  set, the agent generates a per-run password and puts it only in that service
+  environment.
+- `connection_url` must contain `${host}` and, when `password_env` is set,
+  `${password}`. No other placeholders or literal credentials are accepted.
+- `connection_env` is injected into the sandbox; it must not collide with the
+  profile env or another service.
+- `healthcheck` is required and bounded (1–60s interval/timeout, 1–120 retries,
+  0–120s start period).
+- Services require `SANDBOX_MODE=docker`; host mode fails closed.
+
+### Service lifecycle
+
+1. Create a per-run internal bridge network (`vibecode-services-<suffix>`).
+2. Start each service container with its env file, healthcheck flags, bounded
+   memory/PIDs/CPU, `no-new-privileges`, `NET_RAW` dropped, 1 MiB/1-file log
+   rotation and an owner label.
+3. Wait for Docker health `healthy`; fail fast on `unhealthy`, `exited`, `dead`
+   or timeout.
+4. Read each service IP and add an `/etc/hosts` entry to the sandbox. The
+   sandbox uses the service network as its primary network; external DNS stays
+   disabled and the egress network is attached afterwards when allowlist mode
+   is enabled.
+5. Generate connection URLs, pass them to the sandbox through a 0600 env-file
+   (never argv or profile JSON), and remove the file after `docker run`.
+6. Track each service container name before `docker run`; a failed or timed
+   out start removes every tracked container and the network.
+7. Destroy service containers with `-v` and the network after the sandbox. If
+   removal fails, keep the runtime tracked and fail the destroy so a leak is
+   visible instead of reporting a clean sandbox; the startup reaper is the last
+   resort.
+8. Cap the health wait at 180 seconds so a slow service cannot consume the
+   profile's whole setup/round budget.
+
+### Service trust decisions
+
+- Service images are admin-approved, digest-pinned dependencies. They are not
+  the sandbox boundary: they run as the image's user (often root) inside their
+  own container with no host mounts, bounded resources, an internal-only
+  network and no inbound sandbox access.
+- Service disk quota is not implemented (D12). Logs are bounded, `NET_RAW` is
+  dropped, and a noisy service can still write to its ephemeral container
+  layer.
+- Image pulls use the Docker daemon directly and are not governed by the
+  sandbox egress allowlist (D12). Operator-approved digests are the trust
+  decision.
+
+## Slice 5 profile editor
+
+- New `Repository Profile` tab in `ProjectDetail.vue` backed by
+  `RepoProfileEditor.vue`.
+- Shows the active/latest version, status, exact-content validation requirement
+  and read-only state for non-owners.
+- Supports detect, draft create/save, command/env/timeout/service/egress fields,
+  dry-run polling, activation and version/validation history.
+- Only the current draft is editable. Viewing any other version, including an
+  older draft, is read-only, and Save/Validate/Activate always target the
+  current draft. Detection asks before replacing unsaved form content.
+- Does not expose deferred fields (`caches`, `flaky_tests`).
+
 ## Persistent caches (deferred)
 
 Persistent cache mounts are **not** part of slice 1. A writable Docker volume
@@ -215,6 +301,11 @@ Verification still uses the existing ephemeral `/tmp` cache defaults.
 | Origin CA host not allowlisted, or mode mismatch | Sandbox creation fails before the container starts. |
 | Dry-run clone/setup/verify fails | Validation is `failed` with per-command output; no ticket/run is created. |
 | Agent dies during a dry run | Validation remains `running` until the profile-budget stale reap. |
+| Service start fails after `docker run` created the container | The tracked name is removed with `-v`; the network is removed. |
+| Service container or network removal fails | `destroy()` fails closed and the runtime stays tracked for a retry; the startup reaper is the last resort. |
+| Dry-run output contains a generated password or credential | The password is registered in `RedactionRegistry`; the agent and backend redact before storage. |
+| Sandbox destroy fails after a dry run | The validation is reported `failed` with a cleanup error; it cannot be activated. |
+| A project member reads a validation | Status/error are visible; command output is hidden unless the reader is the project owner or a super admin. |
 
 ## Security considerations
 
@@ -226,8 +317,37 @@ Verification still uses the existing ephemeral `/tmp` cache defaults.
   `terminate`, bypass `Host == SNI`, or supply a private key instead of a CA.
 - Persistent caches are deferred; slice 1 does not expose a writable host
   cache volume (D9/fg-44).
-- Dry-run results include bounded, redacted output only; the profile snapshot
-  is stored with the validation for audit.
+- The backend and agent share the same secret-key rules (including `PASS`,
+  `PWD`, `PASSPHRASE` and embedded forms such as `PGPASS`/`DBPASS`). Service
+  `connection_url` userinfo must be exactly the literal `${password}`; literal
+  userinfo/query/path credentials, generated-password-shaped 32+ hex values in
+  query/path/fragment positions, credential-shaped healthcheck/commands
+  (including the lowercase `mysql/mariadb/mysqladmin/mysqldump -p` password
+  flag, `redis-cli -a` and `REDISCLI_AUTH`; client names are matched
+  case-insensitively while the flag stays case-sensitive, so uppercase `-P` is
+  a port and `-p -h host` is a prompt),
+  percent-encoded placeholders, newlines/NUL and reserved env names
+  (`PATH`, `HOME`, `LD_PRELOAD`, `HTTP_PROXY`, ...) are rejected in profile and
+  service env.
+- The read-time scrub is owner-aware: the project owner/super admin receives the
+  raw profile for the editable current draft and write responses, so a scrub
+  can never be saved back over a real value; members and other read-only views
+  receive the scrubbed profile. Legacy validation results are scrubbed for
+  readers; a one-time storage scrub remains D15.
+- The scrub uses the same `isSecretKey` rule as the validators (so
+  `DB_PASS`, `PGPASS`, `DBPASS`, `PASS`, exact `AUTH`/`AUTHORIZATION`/
+  `BASIC_AUTH`, `REDISCLI_AUTH`, ... are covered), preserves quoted or
+  unquoted `$ENV` references and `${password}` placeholders, does not redact
+  `AUTH_MODE`/`AUTH_TYPE`-style configuration keys, and does not redact
+  `sha256:` image digests.
+- Service `env`, `password_env` and `connection_env` are validated again in the
+  agent, and the env-file writer rejects newline/NUL injection.
+- Each generated service password is registered in `RedactionRegistry` before
+  any setup/verify command runs. The agent redacts each command/output, and the
+  backend re-redacts the result and error at ingest.
+- Dry-run results include bounded, redacted output only; command output is
+  restricted to the project owner or a super admin, and the profile snapshot is
+  stored with the validation for audit.
 
 ## Data model
 

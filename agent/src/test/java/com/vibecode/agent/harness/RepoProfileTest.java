@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.Base64;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -84,15 +85,179 @@ class RepoProfileTest {
     }
 
     @Test
-    void rejectsUnknownFieldsAndUnimplementedServicesFlakyTests() {
+    void rejectsUnknownFieldsAndUnimplementedFlakyTests() {
         assertThrows(Exception.class, () -> parse("""
             {"schema_version":1,"verify":["npm test"],"unknown_field":true}
             """));
         assertThrows(IllegalArgumentException.class, () -> parse("""
-            {"schema_version":1,"verify":["npm test"],"services":[{"name":"postgres"}]}
+            {"schema_version":1,"verify":["npm test"],"flaky_tests":["test/flake.js"]}
+            """));
+    }
+
+    @Test
+    void parsesAValidServiceDefinition() throws Exception {
+        RepoProfile profile = parse("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres",
+              "image":"postgres@sha256:%s",
+              "env":{"POSTGRES_USER":"vibecode","POSTGRES_DB":"test"},
+              "password_env":"POSTGRES_PASSWORD",
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode:${password}@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready -U vibecode -d test",
+                "interval_seconds":2,"timeout_seconds":5,"retries":30}
+            }]}
+            """.formatted("a".repeat(64)));
+
+        assertEquals(1, profile.services().size());
+        ServiceSpec spec = profile.services().get(0).toSpec();
+        assertEquals("postgres", spec.name());
+        assertEquals("DATABASE_URL", spec.connectionEnv());
+        assertEquals(2, spec.healthcheck().intervalSeconds());
+    }
+
+    @Test
+    void rejectsInvalidServiceDefinitions() {
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres",
+              "image":"postgres:16",
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode:${password}@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready"}
+            }]}
             """));
         assertThrows(IllegalArgumentException.class, () -> parse("""
-            {"schema_version":1,"verify":["npm test"],"flaky_tests":["test/flake.js"]}
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres",
+              "image":"postgres@sha256:%s",
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode:secret@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready"}
+            }]}
+            """.formatted("a".repeat(64))));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres",
+              "image":"postgres@sha256:%s",
+              "password_env":"not a valid key",
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode:${password}@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready"}
+            }]}
+            """.formatted("a".repeat(64))));
+    }
+
+
+    @Test
+    void rejectsLiteralCredentialsAndReservedServiceNames() {
+        String image = "postgres@sha256:" + "a".repeat(64);
+        String base = """
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres","image":"%s",
+              "env":{"POSTGRES_USER":"vibecode","POSTGRES_DB":"test"},
+              "password_env":"POSTGRES_PASSWORD","connection_env":"DATABASE_URL",
+              "connection_url":"%s",
+              "healthcheck":{"command":"%s"}
+            }]}
+            """;
+        for (String envKey : new String[]{"DB_PASS", "DB_PWD", "PGPASS", "DBPASS"}) {
+            assertThrows(IllegalArgumentException.class, () -> parse("""
+                {"schema_version":1,"verify":["npm test"],"services":[{
+                  "name":"postgres","image":"%s",
+                  "env":{"%s":"x"},"connection_env":"DATABASE_URL",
+                  "connection_url":"postgresql://vibecode@${host}:5432/test",
+                  "healthcheck":{"command":"pg_isready"}
+                }]}
+                """.formatted(image, envKey)));
+        }
+        String hex = "a".repeat(64);
+        for (String url : new String[]{
+            "postgresql://vibecode:hunter2@${host}:5432/test?token=${password}",
+            "postgresql://vibecode:${password}@${host}:5432/test?password=hunter2",
+            "postgresql://vibecode:${password}@${host}:5432/password=hunter2",
+            "postgresql://vibecode:${password}@${host}:5432/" + hex,
+            "postgresql://vibecode:${password}@${host}:5432/test?auth=" + hex,
+            "postgresql://vibecode:${password}@${host}:5432/test?x=" + hex,
+            "postgresql://vibecode:${password}@${host}:5432/test#x=" + hex,
+            "postgresql://vibecode:%24%7Bpassword%7D@${host}:5432/test",
+            "postgresql://vibecode:${password}@${host}:5432/test\\nEVIL=1",
+        }) {
+            assertThrows(IllegalArgumentException.class,
+                () -> parse(base.formatted(image, url, "pg_isready")));
+        }
+        for (String command : new String[]{
+            "mysql -uroot -psecret",
+            "MYSQL -psecret",
+            "mysql -u root -p hunter2",
+            "mysqladmin -u root -psecret ping",
+            "mysqldump -u root -psecret db",
+            "redis-cli -a secret",
+            "REDIS-CLI -a secret",
+            "REDISCLI_AUTH=secret redis-cli ping",
+        }) {
+            assertThrows(IllegalArgumentException.class,
+                () -> parse(base.formatted(image,
+                    "postgresql://vibecode:${password}@${host}:5432/test", command)));
+        }
+        assertThrows(IllegalArgumentException.class,
+            () -> parse(base.formatted(image,
+                "postgresql://vibecode:${password}@${host}:5432/test",
+                "PGPASSWORD=hunter2 pg_isready")));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres","image":"%s",
+              "env":{"PATH":"/evil"},"connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready"}
+            }]}
+            """.formatted(image)));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres","image":"%s",
+              "connection_env":"DATABASE_PASSWORD",
+              "connection_url":"postgresql://vibecode@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready"}
+            }]}
+            """.formatted(image)));
+        assertDoesNotThrow(() -> parse(base.formatted(image,
+            "postgresql://vibecode:${password}@${host}:5432/test",
+            "mysql -P 3306 -h db -u root")));
+        assertDoesNotThrow(() -> parse(base.formatted(image,
+            "postgresql://vibecode:${password}@${host}:5432/test",
+            "MYSQL -P 3306 -h db -u root")));
+        assertDoesNotThrow(() -> parse(base.formatted(image,
+            "postgresql://vibecode:${password}@${host}:5432/test",
+            "mysql -p '$MYSQL_PWD' -h db -u root")));
+        assertDoesNotThrow(() -> parse(base.formatted(image,
+            "postgresql://vibecode:${password}@${host}:5432/test",
+            "mysql -p -h db -u root")));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres","image":"%s",
+              "env":{"REDISCLI_AUTH":"secret","AUTHORIZATION":"secret",
+              "AUTH":"secret","BASIC_AUTH":"secret"},"connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready"}
+            }]}
+            """.formatted(image)));
+        assertDoesNotThrow(() -> parse("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres","image":"%s",
+              "env":{"AUTH_MODE":"token"},"connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready"}
+            }]}
+            """.formatted(image)));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"env":{"LD_PRELOAD":"/evil.so"}}
+            """));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["PGPASSWORD=hunter2 psql -c 'select 1'"]}
+            """));
+        assertDoesNotThrow(() -> parse("""
+            {"schema_version":1,
+             "verify":["PGPASSWORD=$PGPASSWORD psql -c 'select 1'"]}
             """));
     }
 

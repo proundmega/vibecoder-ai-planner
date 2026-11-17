@@ -18,6 +18,7 @@ jest.mock('../services/GitHubService', () => ({
 }));
 
 const RepoProfileService = require('../services/RepoProfileService');
+const { validateRepoProfile } = require('../validators/repoProfiles');
 const Project = require('../models/project');
 const GitHubService = require('../services/GitHubService');
 const { pool } = require('../db');
@@ -43,6 +44,24 @@ function clientWith(responses) {
   }
   pool.connect.mockResolvedValueOnce(client);
   return client;
+}
+
+function validService(overrides = {}) {
+  return {
+    name: 'postgres',
+    image: `postgres@sha256:${'a'.repeat(64)}`,
+    env: { POSTGRES_USER: 'vibecode', POSTGRES_DB: 'test' },
+    password_env: 'POSTGRES_PASSWORD',
+    connection_env: 'DATABASE_URL',
+    connection_url: 'postgresql://vibecode:${password}@${host}:5432/test',
+    healthcheck: {
+      command: 'pg_isready -U vibecode -d test',
+      interval_seconds: 2,
+      timeout_seconds: 5,
+      retries: 30,
+    },
+    ...overrides,
+  };
 }
 
 function validProfile(overrides = {}) {
@@ -248,14 +267,10 @@ describe('RepoProfileService', () => {
       ).rejects.toThrow(/looks like a credential/);
     });
 
-    it('rejects unknown fields and unimplemented services/caches/flaky tests', async () => {
+    it('rejects unknown fields and unimplemented caches/flaky tests', async () => {
       await expect(
         RepoProfileService.create(1, validProfile({ wat: true }), owner())
       ).rejects.toThrow(/unknown profile field/);
-
-      await expect(
-        RepoProfileService.create(1, validProfile({ services: [{ name: 'postgres' }] }), owner())
-      ).rejects.toThrow(/slice 2/);
 
       await expect(
         RepoProfileService.create(1, validProfile({ caches: ['npm'] }), owner())
@@ -264,6 +279,177 @@ describe('RepoProfileService', () => {
       await expect(
         RepoProfileService.create(1, validProfile({ flaky_tests: ['test/flaky.js'] }), owner())
       ).rejects.toThrow(/slice 3/);
+    });
+
+    it('accepts a valid service container definition', async () => {
+      const stored = {
+        id: 'p1', project_id: 1, version: 1,
+        profile: validProfile({ services: [validService()] }), status: 'draft',
+      };
+      clientWith([
+        {},
+        { rows: [{ id: 1 }] },
+        { rows: [{ version: 1 }] },
+        { rows: [stored] },
+        {},
+      ]);
+
+      await expect(RepoProfileService.create(
+        1, validProfile({ services: [validService()] }), owner()
+      )).resolves.toBeTruthy();
+    });
+
+    it('rejects password-suffixed keys and literal credentials in URLs and commands', async () => {
+      for (const key of ['DB_PASS', 'DB_PWD', 'PGPASS', 'DBPASS']) {
+        await expect(RepoProfileService.create(1, validProfile({
+          env: { [key]: 'x' },
+        }), owner())).rejects.toThrow(/looks secret/);
+        await expect(RepoProfileService.create(1, validProfile({
+          services: [validService({ env: { POSTGRES_USER: 'vibecode', [key]: 'x' } })],
+        }), owner())).rejects.toThrow(/looks secret/);
+      }
+
+      const hex = 'a'.repeat(64);
+      for (const connectionUrl of [
+        'postgresql://vibecode:hunter2@${host}:5432/test?token=${password}',
+        'postgresql://vibecode:${password}@${host}:5432/test?password=hunter2',
+        'postgresql://vibecode:${password}@${host}:5432/password=hunter2',
+        `postgresql://vibecode:\${password}@\${host}:5432/${hex}`,
+        `postgresql://vibecode:\${password}@\${host}:5432/test?auth=${hex}`,
+        `postgresql://vibecode:\${password}@\${host}:5432/test?x=${hex}`,
+        `postgresql://vibecode:\${password}@\${host}:5432/test#x=${hex}`,
+        'postgresql://vibecode:%24%7Bpassword%7D@${host}:5432/test',
+        'postgresql://vibecode:${password}@${host}:5432/test\nEVIL=1',
+      ]) {
+        await expect(RepoProfileService.create(1, validProfile({
+          services: [validService({ connection_url: connectionUrl })],
+        }), owner())).rejects.toThrow(/connection_url/);
+      }
+
+      for (const command of [
+        'PGPASSWORD=hunter2 pg_isready',
+        'mysql -uroot -psecret',
+        'mysql -u root -p hunter2',
+        'redis-cli -a secret',
+        'REDIS-CLI -a secret',
+        'REDISCLI_AUTH=secret redis-cli ping',
+      ]) {
+        await expect(RepoProfileService.create(1, validProfile({
+          services: [validService({ healthcheck: { command } })],
+        }), owner())).rejects.toThrow(/healthcheck.command/);
+      }
+
+      await expect(RepoProfileService.create(1, validProfile({
+        env: { LD_PRELOAD: '/evil.so' },
+      }), owner())).rejects.toThrow(/reserved/);
+
+      await expect(RepoProfileService.create(1, validProfile({
+        verify: ['PGPASSWORD=hunter2 psql -c "select 1"'],
+      }), owner())).rejects.toThrow(/literal credential/);
+
+      await expect(RepoProfileService.create(1, validProfile({
+        services: [validService({ env: { POSTGRES_USER: 'vibecode', PATH: '/evil' } })],
+      }), owner())).rejects.toThrow(/reserved/);
+
+      await expect(RepoProfileService.create(1, validProfile({
+        services: [validService({ connection_env: 'DATABASE_PASSWORD' })],
+      }), owner())).rejects.toThrow(/must not look secret/);
+    });
+
+
+    it('distinguishes mysql port/prompt flags from client passwords', () => {
+      for (const command of [
+        'mysql -P 3306 -h db -u root',
+        'MYSQL -P 3306 -h db -u root',
+        'mysql -p -h db -u root',
+        'mysql -p "$MYSQL_PWD" -h db -u root',
+      ]) {
+        const result = validateRepoProfile(validProfile({
+          services: [validService({ healthcheck: { command } })],
+        }));
+        expect(result.error).toBeUndefined();
+      }
+      for (const command of [
+        'mysql -uroot -psecret',
+        'MYSQL -psecret',
+        'mysql -u root -p hunter2',
+        'mysqladmin -u root -psecret ping',
+        'mysqldump -u root -psecret db',
+        'redis-cli -a secret',
+        'REDIS-CLI -a secret',
+        'REDISCLI_AUTH=secret redis-cli ping',
+      ]) {
+        const result = validateRepoProfile(validProfile({
+          services: [validService({ healthcheck: { command } })],
+        }));
+        expect(result.error).toBeDefined();
+      }
+      for (const env of [
+        { REDISCLI_AUTH: 'secret' },
+        { AUTHORIZATION: 'secret' },
+        { AUTH: 'secret' },
+        { BASIC_AUTH: 'secret' },
+        { DB_PASS: 'secret' },
+        { PGPASS: 'secret' },
+        { PASS: 'secret' },
+      ]) {
+        const result = validateRepoProfile(validProfile({
+          services: [validService({
+            env: { POSTGRES_USER: 'vibecode', ...env },
+          })],
+        }));
+        expect(result.error).toBeDefined();
+      }
+      const authMode = validateRepoProfile(validProfile({
+        services: [validService({
+          env: { POSTGRES_USER: 'vibecode', AUTH_MODE: 'token' },
+        })],
+      }));
+      expect(authMode.error).toBeUndefined();
+    });
+
+    it('accepts environment references in commands', async () => {
+      const stored = {
+        id: 'p1', project_id: 1, version: 1,
+        profile: validProfile({
+          verify: ['PGPASSWORD=$PGPASSWORD psql -c "select 1"'],
+        }),
+        status: 'draft',
+      };
+      clientWith([
+        {},
+        { rows: [{ id: 1 }] },
+        { rows: [{ version: 1 }] },
+        { rows: [stored] },
+        {},
+      ]);
+      await expect(RepoProfileService.create(1, validProfile({
+        verify: ['PGPASSWORD=$PGPASSWORD psql -c "select 1"'],
+      }), owner())).resolves.toBeTruthy();
+    });
+
+    it('rejects unsafe or inconsistent service definitions', async () => {
+      const cases = [
+        validService({ image: 'postgres:16' }),
+        validService({ healthcheck: undefined }),
+        validService({ connection_url: 'postgresql://vibecode:secret@db:5432/test' }),
+        validService({ connection_url: 'postgresql://${host}:5432/test' }),
+        validService({ password_env: 'POSTGRES_PASSWORD', env: {
+          POSTGRES_USER: 'vibecode', POSTGRES_PASSWORD: 'x',
+        } }),
+      ];
+      for (const service of cases) {
+        await expect(RepoProfileService.create(
+          1, validProfile({ services: [service] }), owner()
+        )).rejects.toThrow();
+      }
+      await expect(RepoProfileService.create(1, validProfile({
+        env: { DATABASE_URL: 'not-secret' },
+        services: [validService()],
+      }), owner())).rejects.toThrow(/connection_env/);
+      await expect(RepoProfileService.create(1, validProfile({
+        services: [validService(), validService()],
+      }), owner())).rejects.toThrow(/unique/);
     });
   });
 
@@ -415,6 +601,49 @@ describe('RepoProfileService', () => {
       expect(result.versions).toHaveLength(2);
     });
   });
+
+
+    it('returns raw profiles to the owner and redacted profiles to members', async () => {
+      const legacy = validProfile({ verify: ['mysql -uroot -psecret'] });
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: 'a', version: 1, status: 'active', profile: legacy }],
+      });
+
+      const ownerResult = await RepoProfileService.getCurrent(1, owner());
+      expect(ownerResult.latest.profile.verify[0]).toContain('secret');
+
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ user_id: 8 }] })
+        .mockResolvedValueOnce({
+          rows: [{ id: 'a', version: 1, status: 'active', profile: legacy }],
+        });
+      const memberResult = await RepoProfileService.getCurrent(
+        1, { userId: 8, role: 'member' }
+      );
+      expect(memberResult.latest.profile.verify[0]).not.toContain('secret');
+      expect(memberResult.latest.profile.verify[0]).toContain('[REDACTED]');
+    });
+
+    it('returns raw version history to the owner and redacted history to members', async () => {
+      const legacy = validProfile({ setup: ['DB_PASS=secret npm ci'] });
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: 'a', version: 1, status: 'active', profile: legacy }],
+      });
+
+      const ownerRows = await RepoProfileService.listVersions(1, owner());
+      expect(ownerRows[0].profile.setup[0]).toContain('secret');
+
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ user_id: 8 }] })
+        .mockResolvedValueOnce({
+          rows: [{ id: 'a', version: 1, status: 'active', profile: legacy }],
+        });
+      const memberRows = await RepoProfileService.listVersions(
+        1, { userId: 8, role: 'member' }
+      );
+      expect(memberRows[0].profile.setup[0]).not.toContain('secret');
+      expect(memberRows[0].profile.setup[0]).toContain('[REDACTED]');
+    });
 
   describe('stack detection', () => {
     it('proposes a Node profile with a lockfile and non-watch vitest command', async () => {

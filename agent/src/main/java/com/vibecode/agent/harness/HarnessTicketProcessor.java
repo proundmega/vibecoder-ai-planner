@@ -846,6 +846,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     return;
                 }
             } else if (profile != null) {
+                if (!profile.services().isEmpty()) {
+                    failAndRelease(pickedUp.getId(),
+                        "The active repo profile declares services, but host mode cannot "
+                            + "provide them. Set SANDBOX_MODE=docker.");
+                    return;
+                }
                 if (!profile.caches().isEmpty() || profile.image() != null
                     || profile.egress() != null) {
                     log.warn("Repo profile image/caches/egress are ignored in host mode; "

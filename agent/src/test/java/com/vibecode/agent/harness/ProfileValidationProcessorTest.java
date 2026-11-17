@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -155,6 +156,37 @@ class ProfileValidationProcessorTest {
     }
 
 
+
+    @Test
+    void redactsKnownServicePasswordsFromReportedOutput() throws Exception {
+        String password = "a".repeat(64);
+        RedactionRegistry.reset();
+        RedactionRegistry.register(password);
+        try {
+            when(apiService.claimRepoProfileValidation("1"))
+                .thenReturn(validation(profileJson("")));
+            when(verificationRunner.run(any(Path.class), anyList(), any(Duration.class), anyMap()))
+                .thenReturn(List.of(new VerificationResult("npm ci", 0, "ok", false)))
+                .thenReturn(List.of(new VerificationResult(
+                    "npm test", 0,
+                    "DATABASE_URL=postgresql://vibecode:" + password
+                        + "@postgres:5432/test", false)));
+
+            processor(SandboxConfig.defaults()).pollOnce();
+
+            ArgumentCaptor<Map<String, Object>> result = ArgumentCaptor.forClass(Map.class);
+            verify(apiService).finishRepoProfileValidation(
+                eq("1"), anyString(), eq("succeeded"), result.capture(), eq(null));
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> commands = (List<Map<String, Object>>) result.getValue().get("commands");
+            String output = String.valueOf(commands.get(1).get("output"));
+            assertFalse(output.contains(password), output);
+            assertTrue(output.contains("[REDACTED]"), output);
+        } finally {
+            RedactionRegistry.reset();
+        }
+    }
+
     @Test
     void rejectsAProfileThatDoesNotMatchTheConfiguredRepository() throws Exception {
         when(apiService.claimRepoProfileValidation("1")).thenReturn(validation("""
@@ -205,6 +237,35 @@ class ProfileValidationProcessorTest {
             any(Path.class), anyList(), timeouts.capture(), anyMap());
         assertTrue(timeouts.getAllValues().get(0).toMillis() <= 60_000);
         assertTrue(timeouts.getAllValues().get(1).toMillis() <= 60_000);
+    }
+
+
+    @Test
+    void cleanupFailureFailsTheValidationEvenWhenCommandsPass() throws Exception {
+        Path repoDir = Files.createDirectories(tempDir.resolve("cleanup-workspace"));
+        when(workspace.getRepoDir()).thenReturn(repoDir);
+        SandboxConfig docker = SandboxConfig.from(new HashMap<>(Map.of(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img"
+        ))::get);
+        SandboxHandle handle = new SandboxHandle("sbx-cleanup", repoDir, false, Instant.now());
+        when(sandboxRunner.create(any(SandboxSpec.class))).thenReturn(handle);
+        when(apiService.claimRepoProfileValidation("1"))
+            .thenReturn(validation(profileJson("")));
+        when(verificationRunner.run(
+            eq(sandboxRunner), eq(handle), anyList(), any(Duration.class)))
+            .thenReturn(List.of(new VerificationResult("npm ci", 0, "ok", false)))
+            .thenReturn(List.of(new VerificationResult("npm test", 0, "ok", false)));
+        doThrow(new IOException("service container remains"))
+            .when(sandboxRunner).destroy(handle);
+
+        processor(docker).pollOnce();
+
+        verify(apiService).finishRepoProfileValidation(
+            eq("1"), anyString(), eq("failed"), anyMap(),
+            org.mockito.ArgumentMatchers.contains("cleanup"));
+        verify(apiService, never()).finishRepoProfileValidation(
+            anyString(), anyString(), eq("succeeded"), anyMap(), any());
     }
 
     @Test

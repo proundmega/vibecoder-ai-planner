@@ -51,6 +51,24 @@ public final class RedactionRegistry {
         register(values.toArray(String[]::new));
     }
 
+    /** Remove per-run secrets once the resource that owned them is gone. */
+    public static void unregister(Collection<String> values) {
+        if (values == null || values.isEmpty()) {
+            return;
+        }
+        synchronized (LOCK) {
+            boolean changed = false;
+            for (String value : values) {
+                if (value != null && SECRETS.remove(value)) {
+                    changed = true;
+                }
+            }
+            if (changed) {
+                redactor = new SecretRedactor(SECRETS);
+            }
+        }
+    }
+
     public static String redact(String value) {
         return redactor.redact(value);
     }
