@@ -30,5 +30,12 @@ CREATE TABLE IF NOT EXISTS harness_privacy_policies (
 COMMENT ON TABLE harness_privacy_policies IS
   'Per-project harness data classification, provider, retention and redaction policy (fg-42).';
 
+-- Provider metadata used for the policy decision is persisted with the run so
+-- an operator can audit later which endpoint/region the agent claimed.
+ALTER TABLE harness_runs
+  ADD COLUMN IF NOT EXISTS provider_base_url TEXT;
+ALTER TABLE harness_runs
+  ADD COLUMN IF NOT EXISTS provider_region TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_harness_privacy_policies_updated
   ON harness_privacy_policies(updated_at DESC);

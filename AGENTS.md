@@ -182,7 +182,9 @@ Budgets/routing (fg-38): `HARNESS_DEFAULT_MAX_DURATION_MINUTES`,
 `HARNESS_DEFAULT_BLOCK_ON_SECRET`, `HARNESS_DEFAULT_BLOCK_ON_PII`,
 `HARNESS_DEFAULT_REDACT_PII`, `HARNESS_DEFAULT_EVENT_RETENTION_DAYS`,
 `HARNESS_DEFAULT_ARTIFACT_RETENTION_DAYS`; the agent reports its provider
-region from `AI_REGION`. A breach stops the session with run
+region from `AI_REGION`. `HARNESS_PRIVACY_REQUIRE_DURABILITY` (default true)
+refuses a run when the backend privacy policy cannot be resolved. A breach
+stops the session with run
 status `budget_exceeded`, never publishes, and releases the ticket; the global
 or project kill switch blocks new runs and withdraws leases from active ones.
 `harness_events` is append-only; only the retention purge may delete rows.

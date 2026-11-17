@@ -182,6 +182,10 @@ export interface HarnessPrivacyPolicy {
 export interface HarnessPrivacyDeleteResult {
   events: number
   usage: number
+  messages: number
+  checkpoints: number
+  runs: number
+  usageLogs: number
 }
 
 export interface HarnessPrivacyExport {
@@ -191,6 +195,10 @@ export interface HarnessPrivacyExport {
   events: HarnessEvent[]
   usage: Array<Record<string, unknown>>
   runs: Array<Record<string, unknown>>
+  checkpoints: Array<Record<string, unknown>>
+  messages: Array<Record<string, unknown>>
+  usageLogs: Array<Record<string, unknown>>
+  hasMore: boolean
 }
 
 function query(params: Record<string, string | undefined>): string {

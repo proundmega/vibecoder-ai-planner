@@ -158,8 +158,10 @@ final class WorkspaceFileBridge implements AutoCloseable {
                 if (limit <= 0) {
                     limit = DEFAULT_READ_LINES;
                 }
-                sendText(exchange, 200, readLines(file, offset,
-                    Math.min(limit, DEFAULT_READ_LINES)));
+                sendText(exchange, 200, HarnessPrivacyGuard.forModel(
+                    readLines(file, offset, Math.min(limit, DEFAULT_READ_LINES))));
+            } catch (HarnessPrivacyPipeline.PrivacyViolationException e) {
+                sendJson(exchange, 403, Map.of("error", "blocked by privacy policy"));
             } catch (IOException e) {
                 sendJson(exchange, 403, Map.of("error", safeMessage(e)));
             }
@@ -199,8 +201,10 @@ final class WorkspaceFileBridge implements AutoCloseable {
                 if (max <= 0) {
                     max = MAX_GREP_MATCHES;
                 }
-                sendText(exchange, 200, grep(searchRoot, pattern, include,
-                    Math.min(max, MAX_GREP_MATCHES)));
+                sendText(exchange, 200, HarnessPrivacyGuard.forModel(
+                    grep(searchRoot, pattern, include, Math.min(max, MAX_GREP_MATCHES))));
+            } catch (HarnessPrivacyPipeline.PrivacyViolationException e) {
+                sendJson(exchange, 403, Map.of("error", "blocked by privacy policy"));
             } catch (IOException e) {
                 sendJson(exchange, 403, Map.of("error", safeMessage(e)));
             }

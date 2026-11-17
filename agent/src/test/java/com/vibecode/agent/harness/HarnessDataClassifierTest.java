@@ -45,6 +45,18 @@ class HarnessDataClassifierTest {
     }
 
     @Test
+    void sensitiveRepositoryPathsAreSecret() {
+        HarnessDataClassifier.Classification result = classifier.classify(
+            null,
+            List.of(),
+            List.of("config/.env.production", "src/main/App.java"));
+
+        assertEquals(HarnessPrivacyPolicy.SECRET, result.level());
+        assertTrue(result.secret());
+        assertTrue(result.reasons().contains("sensitive repository path"));
+    }
+
+    @Test
     void piiRaisesTheClassificationToConfidential() {
         HarnessDataClassifier.Classification result = classifier.classify(
             "Contact alice@example.com",

@@ -23,7 +23,15 @@ const CLASS_RANK = Object.freeze({
   secret: 3,
 });
 const DATA_CLASS_SET = new Set(DATA_CLASSES);
-const DELETE_CLASSES = Object.freeze(['events', 'usage', 'all']);
+const DELETE_CLASSES = Object.freeze([
+  'events',
+  'usage',
+  'messages',
+  'checkpoints',
+  'runs',
+  'usage_logs',
+  'all',
+]);
 const DEFAULT_MAX_CLASS = 'confidential';
 
 function envList(name) {
@@ -145,9 +153,28 @@ class HarnessPrivacyService {
     provider,
     providerBaseUrl = null,
     providerRegion = null,
+    agentId = null,
     client = pool,
   } = {}) {
     const policy = await this.getPolicy(projectId, { client });
+    let resolvedBaseUrl = providerBaseUrl;
+    let resolvedRegion = providerRegion;
+    if (agentId !== null && agentId !== undefined) {
+      // Prefer the provider config the backend owns over agent-supplied
+      // metadata. The agent is trusted, but this is defense in depth and gives
+      // the run an auditable endpoint/region.
+      const providerConfig = await client.query(
+        `SELECT p.base_url,
+                p.routing_rules->>'region' AS region
+         FROM agents a
+         LEFT JOIN providers p ON p.id = a.provider_id
+         WHERE a.id = $1`,
+        [positiveInteger(agentId, 'agentId')]
+      );
+      const row = providerConfig.rows?.[0] || {};
+      if (row.base_url) resolvedBaseUrl = row.base_url;
+      if (row.region) resolvedRegion = row.region;
+    }
     const normalised = normaliseProvider(provider);
     const restricted = policy.source === 'project'
       || policy.allowedProviders.length > 0
@@ -157,11 +184,15 @@ class HarnessPrivacyService {
       || policy.maxDataClass === 'secret';
     if (!normalised) {
       if (!restricted) {
-        return policy;
+        return {
+          ...policy,
+          resolvedProviderBaseUrl: resolvedBaseUrl,
+          resolvedProviderRegion: resolvedRegion,
+        };
       }
       throw new ConflictError('Harness provider is required by privacy policy');
     }
-    const local = isLocalEndpoint(providerBaseUrl, policy.localEndpoint);
+    const local = isLocalEndpoint(resolvedBaseUrl, policy.localEndpoint);
     if (policy.allowedProviders.length > 0
       && !policy.allowedProviders.includes(normalised)
       && !local) {
@@ -188,17 +219,21 @@ class HarnessPrivacyService {
       }
     }
     if (policy.dataResidency
-      && (!providerRegion
-        || String(providerRegion).toLowerCase() !== policy.dataResidency.toLowerCase())) {
+      && (!resolvedRegion
+        || String(resolvedRegion).toLowerCase() !== policy.dataResidency.toLowerCase())) {
       throw new ConflictError(
-        `Provider region '${providerRegion || 'unspecified'}' does not satisfy `
+        `Provider region '${resolvedRegion || 'unspecified'}' does not satisfy `
           + `project residency '${policy.dataResidency}'`
       );
     }
-    return policy;
+    return {
+      ...policy,
+      resolvedProviderBaseUrl: resolvedBaseUrl,
+      resolvedProviderRegion: resolvedRegion,
+    };
   }
 
-  async upsertPolicy({ projectId, policy = {}, updatedBy = null } = {}) {
+  async upsertPolicy({ projectId, policy = {}, updatedBy = null, client = pool } = {}) {
     const id = positiveInteger(projectId, 'projectId');
     const maxDataClass = policy.maxDataClass === undefined
       ? null
@@ -215,8 +250,26 @@ class HarnessPrivacyService {
         : String(policy.allowedProviders).split(','))
         .map(normaliseProvider)
         .filter(Boolean);
+    const localEndpoint = policy.localEndpoint === undefined
+      ? null
+      : normaliseEndpoint(policy.localEndpoint);
+    if (localEndpoint) {
+      let parsed;
+      try {
+        parsed = new URL(localEndpoint);
+      } catch {
+        throw new ValidationError('localEndpoint must be a valid URL');
+      }
+      if (parsed.username || parsed.password) {
+        throw new ValidationError('localEndpoint must not contain credentials');
+      }
+    }
+    const clearLocalEndpoint = policy.localEndpoint === null || policy.localEndpoint === '';
+    const clearLocalModel = policy.localModel === null || policy.localModel === '';
+    const clearDataResidency = policy.dataResidency === null
+      || policy.dataResidency === '';
 
-    const result = await pool.query(
+    const result = await client.query(
       `INSERT INTO harness_privacy_policies
          (project_id, max_data_class, allowed_providers, require_no_training,
           local_only, local_endpoint, local_model, data_residency, block_on_secret,
@@ -239,9 +292,12 @@ class HarnessPrivacyService {
            allowed_providers = COALESCE($3::text[], harness_privacy_policies.allowed_providers),
            require_no_training = COALESCE($4, harness_privacy_policies.require_no_training),
            local_only = COALESCE($5, harness_privacy_policies.local_only),
-           local_endpoint = COALESCE($6, harness_privacy_policies.local_endpoint),
-           local_model = COALESCE($7, harness_privacy_policies.local_model),
-           data_residency = COALESCE($8, harness_privacy_policies.data_residency),
+           local_endpoint = CASE WHEN $15 THEN NULL
+             ELSE COALESCE($6, harness_privacy_policies.local_endpoint) END,
+           local_model = CASE WHEN $16 THEN NULL
+             ELSE COALESCE($7, harness_privacy_policies.local_model) END,
+           data_residency = CASE WHEN $17 THEN NULL
+             ELSE COALESCE($8, harness_privacy_policies.data_residency) END,
            block_on_secret = COALESCE($9, harness_privacy_policies.block_on_secret),
            block_on_pii = COALESCE($10, harness_privacy_policies.block_on_pii),
            redact_pii = COALESCE($11, harness_privacy_policies.redact_pii),
@@ -258,7 +314,7 @@ class HarnessPrivacyService {
         allowedProviders,
         policy.requireNoTraining === undefined ? null : Boolean(policy.requireNoTraining),
         policy.localOnly === undefined ? null : Boolean(policy.localOnly),
-        policy.localEndpoint === undefined ? null : normaliseEndpoint(policy.localEndpoint),
+        localEndpoint,
         policy.localModel === undefined ? null : (policy.localModel || null),
         policy.dataResidency === undefined ? null : (policy.dataResidency || null),
         policy.blockOnSecret === undefined ? null : Boolean(policy.blockOnSecret),
@@ -267,9 +323,41 @@ class HarnessPrivacyService {
         retentionDays(policy.eventRetentionDays, 'eventRetentionDays', null),
         retentionDays(policy.artifactRetentionDays, 'artifactRetentionDays', null),
         updatedBy,
+        clearLocalEndpoint,
+        clearLocalModel,
+        clearDataResidency,
       ]
     );
     return rowToPolicy(result.rows[0], 'project');
+  }
+
+  async recordPolicyAudit({ projectId, policy, actorId = null, client = pool } = {}) {
+    await client.query(
+      `INSERT INTO harness_events
+         (event_id, trace_id, project_id, type, payload)
+       VALUES ($1, $2, $3, 'audit.privacy', $4::jsonb)`,
+      [
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+        positiveInteger(projectId, 'projectId'),
+        JSON.stringify(redactPayload({
+          action: 'policy_updated',
+          policyVersion: policy.policyVersion,
+          maxDataClass: policy.maxDataClass,
+          allowedProviders: policy.allowedProviders,
+          requireNoTraining: policy.requireNoTraining,
+          localOnly: policy.localOnly,
+          dataResidency: policy.dataResidency,
+          blockOnSecret: policy.blockOnSecret,
+          blockOnPii: policy.blockOnPii,
+          redactPii: policy.redactPii,
+          eventRetentionDays: policy.eventRetentionDays,
+          artifactRetentionDays: policy.artifactRetentionDays,
+          actor: { type: 'user', id: actorId === null ? null : String(actorId) },
+        }).payload),
+      ]
+    );
+    return policy;
   }
 
   /**
@@ -301,22 +389,73 @@ class HarnessPrivacyService {
       }
     }
     const classes = new Set(dataClasses);
-    const deleteEvents = classes.has('all') || classes.has('events');
-    const deleteUsage = classes.has('all') || classes.has('usage');
+    const all = classes.has('all');
+    const deleteEvents = all || classes.has('events');
+    const deleteUsage = all || classes.has('usage');
+    const deleteMessages = all || classes.has('messages');
+    const deleteCheckpoints = all || classes.has('checkpoints');
+    const deleteRuns = all || classes.has('runs');
+    const deleteUsageLogs = all || classes.has('usage_logs');
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       await client.query("SET LOCAL harness.allow_event_purge = 'on'");
-      let events = 0;
-      let usage = 0;
+      const counts = {
+        events: 0,
+        usage: 0,
+        messages: 0,
+        checkpoints: 0,
+        runs: 0,
+        usageLogs: 0,
+      };
+
+      if (deleteMessages) {
+        const params = [id];
+        const predicate = beforeDate ? 'AND tm.created_at < $2' : '';
+        if (beforeDate) params.push(beforeDate.toISOString());
+        const result = await client.query(
+          `DELETE FROM ticket_messages tm
+           USING tickets t
+           WHERE tm.ticket_id = t.id
+             AND t.project_id = $1
+             ${predicate}`,
+          params
+        );
+        counts.messages = result.rowCount || 0;
+      }
+
+      if (deleteUsageLogs) {
+        const params = [id];
+        const predicate = beforeDate ? 'AND created_at < $2' : '';
+        if (beforeDate) params.push(beforeDate.toISOString());
+        const result = await client.query(
+          `DELETE FROM usage_logs
+           WHERE project_id = $1 ${predicate}`,
+          params
+        );
+        counts.usageLogs = result.rowCount || 0;
+      }
+
+      if (deleteCheckpoints) {
+        const params = [id];
+        const predicate = beforeDate ? 'AND hc.created_at < $2' : '';
+        if (beforeDate) params.push(beforeDate.toISOString());
+        const result = await client.query(
+          `DELETE FROM harness_checkpoints hc
+           USING harness_runs r
+           WHERE hc.run_id = r.id
+             AND r.project_id = $1
+             ${predicate}`,
+          params
+        );
+        counts.checkpoints = result.rowCount || 0;
+      }
+
       if (deleteEvents) {
         const params = [id];
-        let predicate = '';
-        if (beforeDate) {
-          params.push(beforeDate.toISOString());
-          predicate = 'AND created_at < $2';
-        }
+        const predicate = beforeDate ? 'AND created_at < $2' : '';
+        if (beforeDate) params.push(beforeDate.toISOString());
         const result = await client.query(
           `DELETE FROM harness_events
            WHERE project_id = $1
@@ -324,21 +463,31 @@ class HarnessPrivacyService {
              ${predicate}`,
           params
         );
-        events = result.rowCount || 0;
+        counts.events = result.rowCount || 0;
       }
+
       if (deleteUsage) {
         const params = [id];
-        let predicate = '';
-        if (beforeDate) {
-          params.push(beforeDate.toISOString());
-          predicate = 'AND created_at < $2';
-        }
+        const predicate = beforeDate ? 'AND created_at < $2' : '';
+        if (beforeDate) params.push(beforeDate.toISOString());
         const result = await client.query(
           `DELETE FROM harness_usage
            WHERE project_id = $1 ${predicate}`,
           params
         );
-        usage = result.rowCount || 0;
+        counts.usage = result.rowCount || 0;
+      }
+
+      if (deleteRuns) {
+        const params = [id];
+        const predicate = beforeDate ? 'AND started_at < $2' : '';
+        if (beforeDate) params.push(beforeDate.toISOString());
+        const result = await client.query(
+          `DELETE FROM harness_runs
+           WHERE project_id = $1 ${predicate}`,
+          params
+        );
+        counts.runs = result.rowCount || 0;
       }
 
       await client.query(
@@ -353,14 +502,14 @@ class HarnessPrivacyService {
             action: 'delete',
             dataClasses: Array.from(classes),
             before: beforeDate ? beforeDate.toISOString() : null,
-            deleted: { events, usage },
+            deleted: counts,
             reason: reason || null,
             actor: { type: actorType, id: actorId === null ? null : String(actorId) },
-          })),
+          }).payload),
         ]
       );
       await client.query('COMMIT');
-      return { events, usage };
+      return counts;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -375,32 +524,69 @@ class HarnessPrivacyService {
     if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 5000) {
       throw new ValidationError('limit must be an integer between 1 and 5000');
     }
-    const [policy, events, usage, runs] = await Promise.all([
-      this.getPolicy(id),
-      pool.query(
-        `SELECT * FROM harness_events WHERE project_id = $1
-         ORDER BY event_timestamp ASC, event_id ASC LIMIT $2`,
-        [id, parsedLimit]
-      ),
-      pool.query(
-        `SELECT * FROM harness_usage WHERE project_id = $1
-         ORDER BY created_at ASC LIMIT $2`,
-        [id, parsedLimit]
-      ),
-      pool.query(
-        `SELECT * FROM harness_runs WHERE project_id = $1
-         ORDER BY started_at ASC LIMIT $2`,
-        [id, parsedLimit]
-      ),
-    ]);
-    return {
-      projectId: id,
-      exportedAt: new Date().toISOString(),
-      policy,
-      events: events.rows,
-      usage: usage.rows,
-      runs: runs.rows,
-    };
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const fetchLimit = parsedLimit + 1;
+      const [policy, events, usage, runs, checkpoints, messages, usageLogs] =
+        await Promise.all([
+          this.getPolicy(id, { client }),
+          client.query(
+            `SELECT * FROM harness_events WHERE project_id = $1
+             ORDER BY event_timestamp ASC, event_id ASC LIMIT $2`,
+            [id, fetchLimit]
+          ),
+          client.query(
+            `SELECT * FROM harness_usage WHERE project_id = $1
+             ORDER BY created_at ASC LIMIT $2`,
+            [id, fetchLimit]
+          ),
+          client.query(
+            `SELECT * FROM harness_runs WHERE project_id = $1
+             ORDER BY started_at ASC LIMIT $2`,
+            [id, fetchLimit]
+          ),
+          client.query(
+            `SELECT hc.* FROM harness_checkpoints hc
+             JOIN harness_runs r ON r.id = hc.run_id
+             WHERE r.project_id = $1
+             ORDER BY hc.created_at ASC LIMIT $2`,
+            [id, fetchLimit]
+          ),
+          client.query(
+            `SELECT tm.* FROM ticket_messages tm
+             JOIN tickets t ON t.id = tm.ticket_id
+             WHERE t.project_id = $1
+             ORDER BY tm.created_at ASC LIMIT $2`,
+            [id, fetchLimit]
+          ),
+          client.query(
+            `SELECT * FROM usage_logs WHERE project_id = $1
+             ORDER BY created_at ASC LIMIT $2`,
+            [id, fetchLimit]
+          ),
+        ]);
+      await client.query('COMMIT');
+      const trim = (result) => result.rows.slice(0, parsedLimit);
+      return {
+        projectId: id,
+        exportedAt: new Date().toISOString(),
+        policy,
+        events: trim(events),
+        usage: trim(usage),
+        runs: trim(runs),
+        checkpoints: trim(checkpoints),
+        messages: trim(messages),
+        usageLogs: trim(usageLogs),
+        hasMore: [events, usage, runs, checkpoints, messages, usageLogs]
+          .some((result) => result.rows.length > parsedLimit),
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   rank(dataClass) {

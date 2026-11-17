@@ -22,7 +22,9 @@
 | `backend/src/migrations/053_harness_privacy.sql` | add | Per-project classification, provider, local-model, redaction and retention policy. |
 | `backend/src/migrations/053_harness_privacy_rollback.sql` | add | Rollback for the policy table. |
 | `backend/src/migrations/apply.js` | edit | Register migration 053 after 052. |
-| `backend/src/services/HarnessPrivacyService.js` | add | Policy read/update, provider/residency/no-training/local-only enforcement, deletion with audit tombstone, export. |
+| `backend/src/services/HarnessPrivacyService.js` | add | Policy read/update (with nullable clears), provider/residency/no-training/local-only enforcement, full-scope deletion with audit tombstone, snapshot export, policy audit. |
+| `backend/src/utils/piiRedaction.js` | add | Shared high-confidence PII redaction for ingest and agent messages. |
+| `backend/src/utils/harnessRedaction.js` | edit | PII redaction and `pii_flagged` metadata at event ingest. |
 | `backend/src/services/HarnessRunService.js` | edit | Enforce privacy policy in the start transaction and hand the resolved policy to the route. |
 | `backend/src/services/HarnessEventService.js` | edit | `privacy.decision` type; per-project event retention in `purgeExpired`. |
 | `backend/src/services/HarnessAuditService.js` | edit | `audit.privacy` recorder and type. |
@@ -33,6 +35,9 @@
 | `agent/src/main/java/com/vibecode/agent/harness/PiiRedactor.java` | add | High-confidence email/phone/SSN/Luhn-valid card redaction. |
 | `agent/src/main/java/com/vibecode/agent/harness/HarnessDataClassifier.java` | add | Classifies ticket, planning and repo context; secret wins. |
 | `agent/src/main/java/com/vibecode/agent/harness/HarnessPrivacyPipeline.java` | add | Pre-flight classification/redaction and post-flight output scan; fails closed. |
+| `agent/src/main/java/com/vibecode/agent/harness/HarnessPrivacyGuard.java` | add | Shared model/storage boundary; PII is scanned even when redaction is disabled, and persisted strings always lose PII. |
+| `agent/src/main/java/com/vibecode/agent/harness/WorkspaceFileBridge.java` | edit | Redacts/blocks secrets and PII before returning `sandbox_read`/`sandbox_grep` content. |
+| `agent/src/main/java/com/vibecode/agent/harness/SandboxBashBridge.java` | edit | Redacts/blocks secrets and PII in `sandbox_bash` output, including streamed chunks. |
 | `agent/src/main/java/com/vibecode/agent/harness/SecretRedactor.java` | edit | Adds a conservative high-entropy token rule beside the known credential formats. |
 | `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java` | edit | Loads the policy, redacts before prompting, enforces local-only/model, scans verification output and PR text, emits `privacy.decision`. |
 | `agent/src/main/java/com/vibecode/agent/service/ApiService.java` | edit | Sends provider endpoint/region and captures `privacyPolicy`. |
@@ -63,17 +68,17 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
-| FR1 | Agent | `HarnessDataClassifierTest.java` | Public, internal, confidential and secret classification; most restrictive wins | `cd agent && mvn -Dtest=HarnessDataClassifierTest test` |
-| FR2 | Agent | `HarnessPrivacyPipelineTest.java`, `PiiRedactorTest.java`, `HarnessTicketProcessorTest.java` | Prompt secrets/PII redacted before `sendPrompt`; no token or email in the prompt | `cd agent && mvn -Dtest='HarnessPrivacyPipelineTest,PiiRedactorTest,HarnessTicketProcessorTest' test` |
+| FR1 | Agent | `HarnessDataClassifierTest.java` | Public, internal, confidential and secret classification; sensitive paths and most restrictive wins | `cd agent && mvn -Dtest=HarnessDataClassifierTest test` |
+| FR2 | Agent | `HarnessPrivacyPipelineTest.java`, `PiiRedactorTest.java`, `HarnessTicketProcessorTest.java`, `WorkspaceFileBridgeTest.java`, `SandboxBashBridgeTest.java` | Prompt/tool secrets and PII redacted before the model; `blockOnPii` still scans when `redactPii=false` | `cd agent && mvn -Dtest='HarnessPrivacyPipelineTest,PiiRedactorTest,HarnessTicketProcessorTest,WorkspaceFileBridgeTest,SandboxBashBridgeTest' test` |
 | FR3 | Agent | `SecretRedactorTest.java`, `HarnessDataClassifierTest.java` | Known-format and high-entropy secret scan; policy event emitted | `cd agent && mvn -Dtest='SecretRedactorTest,HarnessDataClassifierTest' test` |
-| FR4 | Agent | `HarnessPrivacyPipelineTest.java` | Verification output and PR text scanned/redacted before publishing | `cd agent && mvn -Dtest=HarnessPrivacyPipelineTest test` |
-| FR5 | Backend | `harnessPrivacyService.test.js`, `api-harness-runs.test.js` | Allowlist, no-training, residency, local-only and start-response handoff | `cd backend && npx jest src/__tests__/harnessPrivacyService.test.js src/__tests__/api-harness-runs.test.js --runInBand` |
-| FR6 | Backend | `api-harness-observability.test.js` | Non-member cannot read, export or delete project privacy data | `cd backend && npx jest src/__tests__/api-harness-observability.test.js --runInBand` |
-| FR7 | Backend | `harnessPrivacyService.test.js`, `harnessEventService.test.js`, `integration/harnessPrivacyMigration.test.js` | Deletion by class/before keeps audit tombstone; per-project retention; migration rollback | `cd backend && npx jest src/__tests__/harnessPrivacyService.test.js src/__tests__/harnessEventService.test.js src/__tests__/integration/harnessPrivacyMigration.test.js --runInBand` |
+| FR4 | Agent | `HarnessPrivacyPipelineTest.java`, `HarnessTicketProcessorTest.java`, `SandboxBashBridgeTest.java` | Verification output, tool output and PR text scanned/redacted before storage/publishing | `cd agent && mvn -Dtest='HarnessPrivacyPipelineTest,HarnessTicketProcessorTest,SandboxBashBridgeTest' test` |
+| FR5 | Backend | `harnessPrivacyService.test.js`, `api-harness-runs.test.js` | Allowlist, no-training, residency, local-only, backend-authoritative endpoint and start-response handoff | `cd backend && npx jest src/__tests__/harnessPrivacyService.test.js src/__tests__/api-harness-runs.test.js --runInBand` |
+| FR6 | Backend | `api-harness-observability.test.js` | Non-member and plain member cannot read, export or delete project privacy data | `cd backend && npx jest src/__tests__/api-harness-observability.test.js --runInBand` |
+| FR7 | Backend | `harnessPrivacyService.test.js`, `harnessEventService.test.js`, `integration/harnessPrivacyDeletion.test.js`, `integration/harnessPrivacyMigration.test.js` | `all` empties events, usage, runs, checkpoints, messages and billing logs while keeping the audit tombstone; per-project retention; migration rollback | `cd backend && npx jest src/__tests__/harnessPrivacyService.test.js src/__tests__/harnessEventService.test.js src/__tests__/integration/harnessPrivacyDeletion.test.js src/__tests__/integration/harnessPrivacyMigration.test.js --runInBand` |
 | FR8 | Backend + Agent | `harnessPrivacyService.test.js`, `HarnessPrivacyPolicyTest.java` | Local-only requires the configured endpoint; local model overrides routing | `cd backend && npx jest src/__tests__/harnessPrivacyService.test.js --runInBand` and `cd agent && mvn -Dtest=HarnessPrivacyPolicyTest test` |
-| FR9 | Backend | `harnessAuditService.test.js`, `api-harness-observability.test.js` | Policy changes and deletion emit `audit.privacy` without the secret | `cd backend && npx jest src/__tests__/harnessAuditService.test.js src/__tests__/api-harness-observability.test.js --runInBand` |
-| FR10 | Backend + Agent | `harnessPrivacyService.test.js`, `HarnessPrivacyPipelineTest.java` | Policy read/redaction failure aborts instead of sending data | `cd backend && npx jest src/__tests__/harnessPrivacyService.test.js --runInBand` and `cd agent && mvn -Dtest=HarnessPrivacyPipelineTest test` |
-| NFR5 | Backend + Agent | `harnessPrivacyService.test.js`, `HarnessTicketProcessorTest.java`, `harnessAuditService.test.js` | Stored prompts/events/audit contain no token or PII | `cd backend && npx jest src/__tests__/harnessPrivacyService.test.js src/__tests__/harnessAuditService.test.js --runInBand` |
+| FR9 | Backend + Agent | `harnessAuditService.test.js`, `api-harness-observability.test.js`, `harnessRunService.test.js` | Policy changes are transactional/full-snapshot, exports and blocked runs are audited as `audit.privacy` | `cd backend && npx jest src/__tests__/harnessAuditService.test.js src/__tests__/api-harness-observability.test.js src/__tests__/harnessRunService.test.js --runInBand` |
+| FR10 | Backend + Agent | `harnessPrivacyService.test.js`, `HarnessPrivacyPipelineTest.java`, `HarnessTicketProcessorTest.java` | Policy read/redaction failure and missing durable policy fail closed | `cd backend && npx jest src/__tests__/harnessPrivacyService.test.js --runInBand` and `cd agent && mvn -Dtest='HarnessPrivacyPipelineTest,HarnessTicketProcessorTest' test` |
+| NFR5 | Backend + Agent | `harnessRedaction.test.js`, `harnessPrivacyService.test.js`, `HarnessTicketProcessorTest.java`, `HarnessPrivacyGuardTest.java` | Stored prompts, tool output, messages, run errors, events and audit contain no token or PII | `cd backend && npx jest src/__tests__/harnessRedaction.test.js src/__tests__/harnessPrivacyService.test.js --runInBand` and `cd agent && mvn -Dtest='HarnessTicketProcessorTest,HarnessPrivacyGuardTest' test` |
 
 ## Review checklist
 
@@ -88,4 +93,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-17 | `aa701b0` (#166) | Backend 146 suites / 1847 tests; Agent 772 tests (9 skipped); Frontend 61 files / 574 tests; real-Postgres integration 15 suites / 156 tests | Implementation complete on `feat/fg-42-harness-privacy`; PR opened for review |
+| 2026-11-17 | `aa701b0` (#166) | Backend 146 suites / 1853 tests; Agent 787 tests (9 skipped); Frontend 61 files / 574 tests; real-Postgres integration 16 suites / 157 tests | Implementation updated after review; PR open for re-review. Database deletion covers events, usage, runs, checkpoints, messages and billing logs; on-disk workspace/artifact retention is deferred in `00` D8. |

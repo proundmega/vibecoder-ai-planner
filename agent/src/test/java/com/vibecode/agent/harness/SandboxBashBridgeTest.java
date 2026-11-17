@@ -81,7 +81,24 @@ class SandboxBashBridgeTest {
 
     @AfterEach
     void tearDown() {
+        HarnessPrivacyGuard.configure(null);
         bridge.close();
+    }
+
+    @Test
+    void redactsSecretsAndPiiBeforeReturningCommandOutput() throws Exception {
+        when(runner.exec(any(), any())).thenReturn(new ExecResult(
+            "command", 0, "mail alice@example.com token sk-abcdefghijklmnopqrstuvwxyz012345",
+            false, false));
+
+        HttpResponse<String> response = exec(Map.of("command", "env"), bridge.token());
+
+        assertEquals(200, response.statusCode());
+        JsonNode body = objectMapper.readTree(response.body());
+        String output = body.path("output").asText();
+        assertFalse(output.contains("alice@example.com"), output);
+        assertFalse(output.contains("sk-abcdefghijklmnopqrstuvwxyz012345"), output);
+        assertTrue(output.contains("[REDACTED_EMAIL]"), output);
     }
 
     @Test

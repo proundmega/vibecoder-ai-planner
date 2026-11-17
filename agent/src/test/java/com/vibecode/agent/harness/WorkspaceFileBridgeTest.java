@@ -36,9 +36,24 @@ class WorkspaceFileBridgeTest {
 
     @AfterEach
     void tearDown() {
+        HarnessPrivacyGuard.configure(null);
         if (bridge != null) {
             bridge.close();
         }
+    }
+
+    @Test
+    void redactsSecretsAndPiiBeforeReturningFileContent() throws Exception {
+        Files.writeString(workspace.resolve("notes.txt"),
+            "contact alice@example.com token sk-abcdefghijklmnopqrstuvwxyz012345\n");
+
+        HttpResponse<String> response = post("/read", "{\"path\":\"notes.txt\"}", true);
+
+        assertEquals(200, response.statusCode());
+        assertFalse(response.body().contains("alice@example.com"), response.body());
+        assertFalse(response.body().contains("sk-abcdefghijklmnopqrstuvwxyz012345"),
+            response.body());
+        assertTrue(response.body().contains("[REDACTED_EMAIL]"), response.body());
     }
 
     @Test

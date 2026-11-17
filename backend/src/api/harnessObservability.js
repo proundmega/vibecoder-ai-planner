@@ -544,6 +544,24 @@ router.get('/projects/:projectId/usage', verifyTokenOrAgent, async (req, res, ne
  *         name: projectId
  *         required: true
  *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               maxDataClass: { type: string, enum: [public, internal, confidential, secret] }
+ *               allowedProviders: { type: array, items: { type: string } }
+ *               requireNoTraining: { type: boolean }
+ *               localOnly: { type: boolean }
+ *               localEndpoint: { type: string, nullable: true }
+ *               localModel: { type: string, nullable: true }
+ *               dataResidency: { type: string, nullable: true }
+ *               blockOnSecret: { type: boolean }
+ *               blockOnPii: { type: boolean }
+ *               redactPii: { type: boolean }
+ *               eventRetentionDays: { type: integer, minimum: 1, maximum: 3650 }
  *     responses:
  *       200:
  *         description: Updated privacy policy
@@ -551,7 +569,10 @@ router.get('/projects/:projectId/usage', verifyTokenOrAgent, async (req, res, ne
 router.get('/projects/:projectId/privacy-policy', verifyTokenOrAgent, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
-    await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
+    await assertProjectAccess(projectId, req, 'PROJECT_UPDATE');
+    if (!POLICY_WRITE_ROLES.has(req.user?.role)) {
+      throw new ForbiddenError('Project admin permission required');
+    }
     const policy = await HarnessPrivacyService.getPolicy(projectId);
     res.json({ success: true, data: policy });
   } catch (error) {
@@ -568,31 +589,29 @@ router.put('/projects/:projectId/privacy-policy', verifyTokenOrAgent, async (req
       throw new ForbiddenError('Project admin permission required');
     }
     const actorId = req.user?.userId || req.user?.id;
-    const policy = await HarnessPrivacyService.upsertPolicy({
-      projectId,
-      policy: req.body || {},
-      updatedBy: actorId,
-    });
+    const client = await pool.connect();
     try {
-      await HarnessAuditService.recordPrivacy({
+      await client.query('BEGIN');
+      const policy = await HarnessPrivacyService.upsertPolicy({
         projectId,
-        action: 'policy_updated',
-        reason: 'privacy policy updated',
-        actorType: 'user',
-        actorId,
-        payload: {
-          policyVersion: policy.policyVersion,
-          maxDataClass: policy.maxDataClass,
-          allowedProviders: policy.allowedProviders,
-          localOnly: policy.localOnly,
-          requireNoTraining: policy.requireNoTraining,
-          dataResidency: policy.dataResidency,
-        },
+        policy: req.body || {},
+        updatedBy: actorId,
+        client,
       });
-    } catch (auditError) {
-      logger.warn(`Privacy policy audit failed: ${auditError.message}`);
+      await HarnessPrivacyService.recordPolicyAudit({
+        projectId,
+        policy,
+        actorId,
+        client,
+      });
+      await client.query('COMMIT');
+      res.json({ success: true, data: policy });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-    res.json({ success: true, data: policy });
   } catch (error) {
     logger.error('PUT /harness/projects/:projectId/privacy-policy failed:', error);
     next(error);
@@ -612,6 +631,20 @@ router.put('/projects/:projectId/privacy-policy', verifyTokenOrAgent, async (req
  *         name: projectId
  *         required: true
  *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               dataClasses:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   enum: [events, usage, messages, checkpoints, runs, usage_logs, all]
+ *               before: { type: string, format: date-time, nullable: true }
+ *               reason: { type: string, nullable: true }
  *     responses:
  *       200:
  *         description: Deletion counts
@@ -659,10 +692,34 @@ router.post('/projects/:projectId/privacy/delete', verifyTokenOrAgent, async (re
 router.get('/projects/:projectId/privacy/export', verifyTokenOrAgent, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
-    await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
+    await assertProjectAccess(projectId, req, 'PROJECT_UPDATE');
+    if (!POLICY_WRITE_ROLES.has(req.user?.role)) {
+      throw new ForbiddenError('Project admin permission required');
+    }
+    const actorId = req.user?.userId || req.user?.id;
     const data = await HarnessPrivacyService.exportProjectData(projectId, {
       limit: req.query.limit,
     });
+    try {
+      await HarnessAuditService.recordPrivacy({
+        projectId,
+        action: 'export',
+        reason: 'project data exported',
+        actorType: 'user',
+        actorId,
+        payload: {
+          events: data.events.length,
+          usage: data.usage.length,
+          runs: data.runs.length,
+          checkpoints: data.checkpoints.length,
+          messages: data.messages.length,
+          usageLogs: data.usageLogs.length,
+          hasMore: data.hasMore,
+        },
+      });
+    } catch (auditError) {
+      logger.warn(`Privacy export audit failed: ${auditError.message}`);
+    }
     res.json({ success: true, data });
   } catch (error) {
     logger.error('GET /harness/projects/:projectId/privacy/export failed:', error);

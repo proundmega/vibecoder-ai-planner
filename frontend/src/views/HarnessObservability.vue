@@ -72,7 +72,6 @@ const privacyForm = ref({
   blockOnPii: false,
   redactPii: true,
   eventRetentionDays: 30,
-  artifactRetentionDays: 7,
 })
 
 const successRate = computed(() => {
@@ -160,7 +159,6 @@ function applyPrivacyForm(value: HarnessPrivacyPolicy): void {
     blockOnPii: value.blockOnPii,
     redactPii: value.redactPii,
     eventRetentionDays: value.eventRetentionDays,
-    artifactRetentionDays: value.artifactRetentionDays,
   }
 }
 
@@ -241,7 +239,6 @@ async function savePrivacy(): Promise<void> {
       blockOnPii: privacyForm.value.blockOnPii,
       redactPii: privacyForm.value.redactPii,
       eventRetentionDays: privacyForm.value.eventRetentionDays,
-      artifactRetentionDays: privacyForm.value.artifactRetentionDays,
     })
     applyPrivacyForm(privacy.value)
     privacyStatus.value = `Saved policy v${privacy.value.policyVersion}.`
@@ -254,19 +251,25 @@ async function savePrivacy(): Promise<void> {
 
 async function deleteProjectData(): Promise<void> {
   if (!projectId.value) return
-  const scope = privacyDeleteBefore.value ? 'older data' : 'all stored run data'
-  if (!window.confirm(`Delete ${scope} for this project? Audit records are kept.`)) {
-    return
+  const scope = privacyDeleteBefore.value ? 'older data' : 'all stored database run data';
+  if (!window.confirm(
+    `Delete ${scope} for this project? This removes events, usage, runs, `
+      + 'checkpoints, ticket messages and billing logs. Audit records and '
+      + 'on-disk workspaces are retained.'
+  )) {
+    return;
   }
   privacyStatus.value = null
   try {
     const result = await deleteHarnessProjectData(projectId.value, {
-      dataClasses: ['events', 'usage'],
+      dataClasses: ['all'],
       before: privacyDeleteBefore.value || null,
       reason: 'operator deletion from harness dashboard',
     })
     privacyStatus.value =
-      `Deleted ${result.events} event(s) and ${result.usage} usage row(s).`
+      `Deleted ${result.events} event(s), ${result.usage} usage row(s), `
+      + `${result.runs} run(s), ${result.checkpoints} checkpoint(s), `
+      + `${result.messages} message(s) and ${result.usageLogs} billing log(s).`
     await Promise.all([loadDashboard(), loadAudit()])
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to delete project data'
@@ -289,8 +292,10 @@ async function exportProjectData(): Promise<void> {
     link.click()
     URL.revokeObjectURL(url)
     privacyStatus.value =
-      `Exported ${data.events.length} event(s), ${data.usage.length} usage row(s) ` +
-      `and ${data.runs.length} run(s).`
+      `Exported ${data.events.length} event(s), ${data.usage.length} usage row(s), ` +
+      `${data.runs.length} run(s), ${data.checkpoints.length} checkpoint(s), ` +
+      `${data.messages.length} message(s) and ${data.usageLogs.length} billing log(s).` +
+      (data.hasMore ? ' More data is available; narrow the export.' : '')
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to export project data'
   } finally {
@@ -596,15 +601,6 @@ watch(projectId, loadAll)
             <span>Event retention (days)</span>
             <input
               v-model.number="privacyForm.eventRetentionDays"
-              type="number"
-              min="1"
-              max="3650"
-            />
-          </label>
-          <label>
-            <span>Artifact retention (days)</span>
-            <input
-              v-model.number="privacyForm.artifactRetentionDays"
               type="number"
               min="1"
               max="3650"

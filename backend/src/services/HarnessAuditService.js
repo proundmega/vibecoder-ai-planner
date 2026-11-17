@@ -171,7 +171,6 @@ class HarnessAuditService {
       actorType,
       actorId,
       reason,
-      dedupeKey: `privacy:${action}:${runId || projectId}:${Date.now()}`,
       payload: { action, ...payload },
     });
   }

@@ -115,6 +115,15 @@ class HarnessTicketProcessorTest {
         harness = mock(HarnessClient.class);
         when(harness.createSession(anyString())).thenReturn("ses_test");
 
+        when(apiService.startHarnessRun(
+            any(), anyString(), any(), any(), any(), anyInt()))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.startHarnessRun(
+            any(), anyString(), any(), any(), any(), anyInt(), any(), anyInt()))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(any(), anyString(), anyInt())).thenReturn(true);
+        when(apiService.renewHarnessLease(any(), anyString(), anyInt())).thenReturn(true);
+
         planningDocFetcher = mock(PlanningDocFetcher.class);
         when(planningDocFetcher.fetch(1L)).thenReturn(List.of("=== 01 ===\nRequirement"));
 
@@ -540,6 +549,12 @@ class HarnessTicketProcessorTest {
         return ticket;
     }
 
+    private void withoutDurableRun() throws IOException {
+        doThrow(new IOException("persistence unavailable"))
+            .when(apiService).startHarnessRun(
+                any(), anyString(), any(), any(), any(), anyInt());
+    }
+
 
     @Test
     void profilePointingAtAnotherRepositoryIsRejectedBeforeRunStart() throws Exception {
@@ -820,6 +835,18 @@ class HarnessTicketProcessorTest {
     }
 
     @Test
+    void failsClosedWhenThePrivacyPolicyCannotBeResolved() throws Exception {
+        withoutDurableRun();
+
+        processor.processTicket(ticket());
+
+        verify(workspace, never()).cloneRepo(anyString(), anyString(), any(), any());
+        verify(harness, never()).start(any());
+        assertTrue(postedMessages().stream().anyMatch(message ->
+            message.contains("Could not start a durable harness run")));
+    }
+
+    @Test
     void refusesToPublishWhenNoVerificationCommandsExist() throws Exception {
         when(verificationRunner.resolveCommands(any())).thenReturn(List.of());
 
@@ -827,7 +854,7 @@ class HarnessTicketProcessorTest {
 
         verify(harness, never()).start(any());
         verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
-        verify(apiService).releaseTicket(1L);
+        verify(apiService).releaseHarnessTicket("run-1");
         assertTrue(postedMessages().stream().anyMatch(message ->
             message.contains("No verification commands")));
     }
@@ -841,7 +868,7 @@ class HarnessTicketProcessorTest {
         processor.processTicket(ticket());
 
         verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
-        verify(apiService).releaseTicket(1L);
+        verify(apiService).releaseHarnessTicket("run-1");
         assertTrue(postedMessages().stream().anyMatch(message ->
             message.contains("Dependency installation failed")
                 && message.contains("install exploded")));
@@ -1141,7 +1168,7 @@ class HarnessTicketProcessorTest {
         verify(workspace, never()).commitAndPush(anyString(), anyString());
         verify(gitHubService, never()).createPullRequest(
             anyString(), anyString(), anyString(), anyString());
-        verify(apiService).releaseTicket(1L);
+        verify(apiService).releaseHarnessTicket("run-1");
         assertTrue(postedMessages().stream().anyMatch(message ->
             message.contains("Verification failed")
                 && message.contains("AssertionError")));
@@ -1180,7 +1207,7 @@ class HarnessTicketProcessorTest {
         processor.processTicket(ticket());
 
         verify(workspace, never()).commitAndPush(anyString(), anyString());
-        verify(apiService).releaseTicket(1L);
+        verify(apiService).releaseHarnessTicket("run-1");
         assertTrue(postedMessages().stream().anyMatch(message ->
             message.contains("Publishing blocked") && message.contains(".env")));
     }
@@ -1196,7 +1223,7 @@ class HarnessTicketProcessorTest {
 
         verify(workspace, never()).commitAndPush(anyString(), anyString());
         verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
-        verify(apiService).releaseTicket(1L);
+        verify(apiService).releaseHarnessTicket("run-1");
         assertTrue(postedMessages().stream().anyMatch(message ->
             message.contains("Publishing blocked")
                 && message.contains("configured credential")));
@@ -1209,7 +1236,7 @@ class HarnessTicketProcessorTest {
         processor.processTicket(ticket());
 
         verify(workspace, never()).commitAndPush(anyString(), anyString());
-        verify(apiService).releaseTicket(1L);
+        verify(apiService).releaseHarnessTicket("run-1");
         verify(harness).close();
         verify(workspace).cleanup();
     }
@@ -1290,6 +1317,32 @@ class HarnessTicketProcessorTest {
             eq("run-1"), eq("failed"), contains("Verification failed"), isNull(), isNull());
         verify(apiService).releaseHarnessTicket("run-1");
         verify(apiService, never()).releaseTicket(1L);
+    }
+
+    @Test
+    void verificationFailureRedactsPiiFromMessagesAndRunError() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        String email = "alice@example.com";
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1))
+            .thenReturn(java.util.Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(verificationRunner.run(any(), anyList(), any()))
+            .thenReturn(List.of(new VerificationResult(
+                "npm test", 1, "mail " + email + " failed", false)));
+
+        processor.processTicket(ticket());
+
+        List<String> messages = postedMessages();
+        assertTrue(messages.stream().noneMatch(message -> message.contains(email)),
+            messages.toString());
+        assertTrue(messages.stream().anyMatch(message -> message.contains("[REDACTED_EMAIL]")),
+            messages.toString());
+
+        ArgumentCaptor<String> error = ArgumentCaptor.forClass(String.class);
+        verify(apiService).finishHarnessRun(
+            eq("run-1"), eq("failed"), error.capture(), isNull(), isNull());
+        assertFalse(error.getValue().contains(email), error.getValue());
     }
 
     @Test

@@ -4,6 +4,7 @@ const app = require('../index');
 jest.mock('../db', () => ({
   pool: {
     query: jest.fn().mockResolvedValue({ rows: [] }),
+    connect: jest.fn(),
     stats: jest.fn(() => ({ idleCount: 1 })),
   },
 }));
@@ -52,6 +53,7 @@ jest.mock('../services/HarnessBudgetService', () => ({
 jest.mock('../services/HarnessPrivacyService', () => ({
   getPolicy: jest.fn(),
   upsertPolicy: jest.fn(),
+  recordPolicyAudit: jest.fn(),
   deleteProjectData: jest.fn(),
   exportProjectData: jest.fn(),
 }));
@@ -91,6 +93,10 @@ describe('Harness observability API', () => {
     });
     PermissionService.hasPermission.mockResolvedValue(true);
     pool.query.mockResolvedValue({ rows: [] });
+    pool.connect.mockResolvedValue({
+      query: jest.fn().mockResolvedValue({ rows: [] }),
+      release: jest.fn(),
+    });
     HarnessRunService.getRun.mockResolvedValue(RUN);
     HarnessUsageService.listForRun.mockResolvedValue([]);
     HarnessUsageService.getRunTotals.mockResolvedValue({ inputTokens: 0 });
@@ -478,11 +484,11 @@ describe('Harness observability API', () => {
       expect(HarnessPrivacyService.upsertPolicy).toHaveBeenCalledWith(
         expect.objectContaining({ projectId: 5, updatedBy: 'user-1' })
       );
-      expect(HarnessAuditService.recordPrivacy).toHaveBeenCalledWith(
+      expect(HarnessPrivacyService.recordPolicyAudit).toHaveBeenCalledWith(
         expect.objectContaining({
           projectId: 5,
-          action: 'policy_updated',
-          payload: expect.objectContaining({ policyVersion: 2 }),
+          actorId: 'user-1',
+          policy: expect.objectContaining({ policyVersion: 2 }),
         })
       );
     });
@@ -491,9 +497,18 @@ describe('Harness observability API', () => {
       pool.query
         .mockResolvedValueOnce({ rows: [{ owner_id: 'user-1', is_member: false }] })
         .mockResolvedValueOnce({ rows: [{ owner_id: 'user-1', is_member: false }] });
-      HarnessPrivacyService.deleteProjectData.mockResolvedValue({ events: 3, usage: 1 });
+      HarnessPrivacyService.deleteProjectData.mockResolvedValue({
+        events: 3, usage: 1, messages: 0, checkpoints: 0, runs: 0, usageLogs: 0,
+      });
       HarnessPrivacyService.exportProjectData.mockResolvedValue({
-        projectId: 5, events: [], usage: [], runs: [],
+        projectId: 5,
+        events: [],
+        usage: [],
+        runs: [],
+        checkpoints: [],
+        messages: [],
+        usageLogs: [],
+        hasMore: false,
       });
 
       const deleted = await request(app)
@@ -508,6 +523,9 @@ describe('Harness observability API', () => {
         .set('Authorization', 'Bearer mock-token');
       expect(exported.statusCode).toBe(200);
       expect(exported.body.data.projectId).toBe(5);
+      expect(HarnessAuditService.recordPrivacy).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: 5, action: 'export' })
+      );
     });
 
     it('denies a plain member the privacy policy write', async () => {
@@ -517,11 +535,19 @@ describe('Harness observability API', () => {
       pool.query.mockResolvedValueOnce({
         rows: [{ owner_id: 'owner-1', is_member: true }],
       });
+      pool.query.mockResolvedValueOnce({
+        rows: [{ owner_id: 'owner-1', is_member: true }],
+      });
       const res = await request(app)
         .put('/api/v1/harness/projects/5/privacy-policy')
         .set('Authorization', 'Bearer mock-token')
         .send({ maxDataClass: 'internal' });
       expect(res.statusCode).toBe(403);
+
+      const read = await request(app)
+        .get('/api/v1/harness/projects/5/privacy-policy')
+        .set('Authorization', 'Bearer mock-token');
+      expect(read.statusCode).toBe(403);
     });
 
     it('denies privacy reads, exports and deletes to a non-member', async () => {

@@ -91,6 +91,28 @@ class HarnessPrivacyPipelineTest {
     }
 
     @Test
+    void preflightBlocksPiiEvenWhenPiiRedactionIsDisabled() {
+        HarnessDataClassifier.Classification classification =
+            pipeline.classify("ticket", List.of(), List.of());
+
+        assertThrows(
+            HarnessPrivacyPipeline.PrivacyViolationException.class,
+            () -> pipeline.preflight(
+                "mail alice@example.com",
+                classification,
+                policy(Map.of("blockOnPii", true, "redactPii", false))));
+    }
+
+    @Test
+    void postflightBlocksPiiEvenWhenPiiRedactionIsDisabled() {
+        assertThrows(
+            HarnessPrivacyPipeline.PrivacyViolationException.class,
+            () -> pipeline.postflight(
+                "mail alice@example.com",
+                policy(Map.of("blockOnPii", true, "redactPii", false))));
+    }
+
+    @Test
     void postflightRedactsVerificationOutputAndPublishText() throws Exception {
         HarnessPrivacyPipeline.PostflightResult result = pipeline.postflight(
             "output token sk-abcdefghijklmnopqrstuvwxyz012345 contact alice@example.com",

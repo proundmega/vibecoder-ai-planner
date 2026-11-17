@@ -93,6 +93,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
         1, Math.min(leaseTtlSeconds / 2, longEnv("HARNESS_HEARTBEAT_SECONDS", 30)));
     private final boolean durabilityRequired =
         booleanEnv("HARNESS_DURABILITY_REQUIRED", false);
+    private final boolean privacyRequiresDurability =
+        booleanEnv("HARNESS_PRIVACY_REQUIRE_DURABILITY", true);
     private final long workspaceRetentionHours =
         longEnv("HARNESS_WORKSPACE_RETENTION_HOURS", 24);
 
@@ -729,6 +731,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         budgetTracker = null;
         budgetPolicy = null;
         privacyPolicy = null;
+        HarnessPrivacyGuard.configure(null);
         routingDecision = null;
         activeHarnessConfig = harnessConfig;
         activeHarness = null;
@@ -744,7 +747,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         // a non-matching "ghp-..." string. The branch is persisted by the
         // backend, pushed and logged, so it must not carry the raw title.
         String branchName = config.getGitHubBranchName(
-            pickedUp.getId(), redactor.redact(pickedUp.getTitle()));
+            pickedUp.getId(), redactWithProvider(pickedUp.getTitle()));
 
         RepoProfileSnapshot profileSnapshot = null;
         try {
@@ -936,10 +939,19 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 : privacyPolicy;
             String ticketText = (pickedUp.getTitle() == null ? "" : pickedUp.getTitle())
                 + "\n" + (pickedUp.getDescription() == null ? "" : pickedUp.getDescription());
+            // The model can read repository files through the privacy-guarded
+            // tools, so a repository-bearing run is at least confidential even
+            // before a diff exists.
             HarnessDataClassifier.Classification classification = privacyPipeline.classify(
                 ticketText, planningDocs, List.of("repository"));
-            HarnessPrivacyPipeline.PreflightResult preflight = privacyPipeline.preflight(
-                prompt, classification, effectivePrivacy);
+            HarnessPrivacyPipeline.PreflightResult preflight;
+            try {
+                preflight = privacyPipeline.preflight(
+                    prompt, classification, effectivePrivacy);
+            } catch (HarnessPrivacyPipeline.PrivacyViolationException e) {
+                emitPrivacyDecisionBlocked(classification, effectivePrivacy, e.getMessage());
+                throw e;
+            }
             prompt = preflight.prompt();
             emitPrivacyDecision(preflight, effectivePrivacy);
             emitPromptSent(prompt, planningDocs, commands);
@@ -1057,8 +1069,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 if (!assertLeaseHeld(pickedUp.getId())) {
                     return;
                 }
-                String publishTitle = redactor.redact("feat: " + pickedUp.getTitle());
-                publishTitle = privacyPipeline.postflight(publishTitle, privacyPolicy).text();
+                String publishTitle = redactWithProvider("feat: " + pickedUp.getTitle());
+                HarnessPrivacyPipeline.PostflightResult titleFilter =
+                    privacyPipeline.postflight(publishTitle, privacyPolicy);
+                emitPostflightDecision("publish.title", titleFilter);
+                publishTitle = titleFilter.text();
                 emitEvent("publish.started", Map.of(
                     "branch", branchName,
                     "changedFiles", diff.changedFileCount(),
@@ -1072,7 +1087,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 }
                 String prBase = profile == null ? "main" : profile.baseBranchOr("main");
                 String prBody = privacyPipeline.postflight(
-                    buildPrBody(pickedUp, branchName, commitSha, diff, verification),
+                    HarnessPrivacyGuard.forStorage(buildPrBody(
+                        pickedUp, branchName, commitSha, diff, verification)),
                     privacyPolicy
                 ).text();
                 String prUrl = gitHubService.createPullRequest(
@@ -1273,6 +1289,39 @@ public final class HarnessTicketProcessor implements TicketWorker {
         HarnessPrivacyPolicy policy
     ) {
         emitEvent("privacy.decision", preflight.eventPayload(policy));
+    }
+
+    private void emitPrivacyDecisionBlocked(
+        HarnessDataClassifier.Classification classification,
+        HarnessPrivacyPolicy policy,
+        String reason
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("level", classification.level());
+        payload.put("reasons", classification.reasons());
+        payload.put("sensitive", classification.secret());
+        payload.put("pii", classification.pii());
+        payload.put("blocked", true);
+        payload.put("reason", reason);
+        payload.put("policyVersion", policy.policyVersion());
+        payload.put("maxDataClass", policy.maxDataClass());
+        emitEvent("privacy.decision", payload);
+    }
+
+    private void emitPostflightDecision(
+        String boundary,
+        HarnessPrivacyPipeline.PostflightResult filtered
+    ) {
+        if (filtered.secretRedactions() == 0 && filtered.piiRedactions() == 0) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("action", "postflight_redaction");
+        payload.put("boundary", boundary);
+        payload.put("sensitiveRedactions", filtered.secretRedactions());
+        payload.put("piiRedactions", filtered.piiRedactions());
+        payload.put("policyVersion", privacyPolicy == null ? 0 : privacyPolicy.policyVersion());
+        emitEvent("privacy.decision", payload);
     }
 
     private static boolean sameEndpoint(String providerBaseUrl, String localEndpoint) {
@@ -1521,13 +1570,14 @@ public final class HarnessTicketProcessor implements TicketWorker {
         for (VerificationResult result : results) {
             HarnessPrivacyPipeline.PostflightResult filtered = privacyPipeline.postflight(
                 result.output(), privacyPolicy);
+            emitPostflightDecision("verification.output", filtered);
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("phase", phase);
             payload.put("command", result.command());
             payload.put("exitCode", result.exitCode());
             payload.put("passed", result.passed());
             payload.put("timedOut", result.timedOut());
-            payload.put("output", filtered.text());
+            payload.put("output", HarnessPrivacyGuard.forStorage(filtered.text()));
             emitEvent("verification.result", payload);
         }
     }
@@ -1826,6 +1876,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         eventContext = null;
         budgetPolicy = null;
         privacyPolicy = null;
+        HarnessPrivacyGuard.configure(null);
         terminalEventEmitted = false;
         runStartedAt = Instant.now();
         if (config.isDryRun()) {
@@ -1869,7 +1920,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             startFailureReason = e.getMessage();
             return false;
         } catch (IOException | RuntimeException e) {
-            if (durabilityRequired) {
+            if (durabilityRequired || privacyRequiresDurability) {
                 log.error("Harness run persistence is required but failed for ticket {}: {}",
                     ticket.getId(), e.getMessage());
                 return false;
@@ -1880,7 +1931,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
 
         if (run == null || run.get("id") == null) {
-            if (durabilityRequired) {
+            if (durabilityRequired || privacyRequiresDurability) {
                 log.error("Harness run persistence is required but returned no run for ticket {}",
                     ticket.getId());
                 return false;
@@ -1910,6 +1961,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         budgetPolicy = HarnessBudgetPolicy.from(
             apiService.getLastBudgetPolicy(), maxDuration(), provider);
         privacyPolicy = HarnessPrivacyPolicy.from(apiService.getLastPrivacyPolicy());
+        HarnessPrivacyGuard.configure(privacyPolicy);
         emitRunStarted(ticket, branchName, attempt);
         try {
             boolean leased = apiService.claimHarnessLease(
@@ -2355,7 +2407,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         try {
             // Redact before storage: ticket messages are persisted by the
             // backend and may contain bounded sandbox/verification output.
-            String safe = truncate(redactor.redact(content));
+            String safe = truncate(redactWithProvider(content));
             TicketMessage ignored = apiService.postMessage(ticketId, type, safe);
             if (ignored == null) {
                 log.debug("Ticket message returned no body for ticket {}", ticketId);
@@ -2439,7 +2491,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
     }
 
     private String redactWithProvider(String value) {
-        return redactor.redact(value);
+        return HarnessPrivacyGuard.forStorage(redactor.redact(value));
     }
 
     private static String truncate(String value) {

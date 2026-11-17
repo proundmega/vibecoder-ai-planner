@@ -8,6 +8,7 @@ import com.vibecode.agent.model.ApiResponse;
 import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
 import com.vibecode.agent.harness.RedactionRegistry;
+import com.vibecode.agent.harness.HarnessPrivacyGuard;
 import com.vibecode.agent.harness.EgressMtlsMaterial;
 import com.vibecode.agent.harness.RepoProfileSnapshot;
 import com.vibecode.agent.harness.RepoProfileValidation;
@@ -539,7 +540,7 @@ public class ApiService {
         String url = baseUrl + "/tickets/" + ticketId + "/messages";
         Map<String, Object> body = Map.of(
             "messageType", messageType,
-            "content", RedactionRegistry.redact(content)
+            "content", HarnessPrivacyGuard.forStorage(content)
         );
         ApiResponse<TicketMessage> response = executePost(url, body, new TypeReference<ApiResponse<TicketMessage>>() {});
         

@@ -3,6 +3,7 @@ const User = require('../models/user');
 const PermissionService = require('../services/PermissionService');
 const ApprovalService = require('../services/ApprovalService');
  const MessageService = require('../services/MessageService');
+const { redactText, redactPayload } = require('../utils/harnessRedaction');
 
 async function getTicket(req, res, next) {
   try {
@@ -256,12 +257,19 @@ async function postMessage(req, res, next) {
     }
 
     const userId = req.agent?.owner_id || req.user?.userId;
+    // Agent-authored messages are a persisted boundary: strip credential
+    // formats and high-confidence PII even if a supervisor regression missed
+    // them. Human comments keep their text.
+    const safeContent = req.agent ? redactText(content) : content;
+    const safeMetadata = req.agent
+      ? redactPayload(req.body.metadata || {}).payload
+      : (req.body.metadata || {});
     const message = await MessageService.postMessage(
       ticketId,
       userId,
       messageType,
-      content,
-      req.body.metadata || {}
+      safeContent,
+      safeMetadata
     );
 
     res.status(201).json({ success: true, data: message });

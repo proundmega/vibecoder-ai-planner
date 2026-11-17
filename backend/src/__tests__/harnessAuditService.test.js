@@ -142,7 +142,6 @@ describe('HarnessAuditService', () => {
           action: 'policy_updated',
           policyVersion: 3,
           maxDataClass: 'internal',
-          dedupeKey: expect.stringContaining('privacy:policy_updated'),
         }),
       })
     );

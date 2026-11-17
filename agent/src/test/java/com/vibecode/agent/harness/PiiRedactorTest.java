@@ -66,6 +66,16 @@ class PiiRedactorTest {
     }
 
     @Test
+    void leavesBareTenAndThirteenDigitIdentifiersAlone() {
+        String source = "order 1234567890 timestamp 1700000000 epoch 1700000000000";
+
+        PiiRedactor.Result result = PiiRedactor.redact(source);
+
+        assertEquals(source, result.text());
+        assertEquals(0, result.count());
+    }
+
+    @Test
     void handlesNullAndEmptyInput() {
         PiiRedactor.Result result = PiiRedactor.redact(null);
 

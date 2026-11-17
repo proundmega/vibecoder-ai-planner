@@ -170,6 +170,64 @@ describe('HarnessPrivacyService', () => {
       expect(params[2]).toEqual(['openai', 'opencode-go']);
       expect(params[10]).toBe(false);
     });
+
+    it('clears string fields when the caller sends null', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [policyRow()] });
+      await HarnessPrivacyService.upsertPolicy({
+        projectId: PROJECT,
+        policy: {
+          localEndpoint: null,
+          localModel: null,
+          dataResidency: null,
+        },
+      });
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain('CASE WHEN $15 THEN NULL');
+      expect(sql).toContain('CASE WHEN $16 THEN NULL');
+      expect(sql).toContain('CASE WHEN $17 THEN NULL');
+      expect(params.slice(14)).toEqual([true, true, true]);
+    });
+
+    it('rejects credentials embedded in a local endpoint', async () => {
+      await expect(HarnessPrivacyService.upsertPolicy({
+        projectId: PROJECT,
+        policy: { localEndpoint: 'http://user:pass@localhost:11434/v1' },
+      })).rejects.toThrow('must not contain credentials');
+    });
+
+    it('records the full security-relevant policy snapshot in the audit payload', async () => {
+      const client = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+      await HarnessPrivacyService.recordPolicyAudit({
+        projectId: PROJECT,
+        actorId: 1,
+        client,
+        policy: {
+          policyVersion: 4,
+          maxDataClass: 'internal',
+          allowedProviders: ['opencode-go'],
+          requireNoTraining: true,
+          localOnly: true,
+          dataResidency: 'eu',
+          blockOnSecret: true,
+          blockOnPii: true,
+          redactPii: false,
+          eventRetentionDays: 14,
+          artifactRetentionDays: 3,
+        },
+      });
+
+      const payload = JSON.parse(client.query.mock.calls[0][1][3]);
+      expect(payload).toMatchObject({
+        action: 'policy_updated',
+        policyVersion: 4,
+        blockOnSecret: true,
+        blockOnPii: true,
+        redactPii: false,
+        eventRetentionDays: 14,
+        artifactRetentionDays: 3,
+      });
+    });
   });
 
   describe('deletion', () => {
@@ -193,7 +251,14 @@ describe('HarnessPrivacyService', () => {
         actorId: 1,
       });
 
-      expect(result).toEqual({ events: 4, usage: 2 });
+      expect(result).toEqual({
+        events: 4,
+        usage: 2,
+        messages: 0,
+        checkpoints: 0,
+        runs: 0,
+        usageLogs: 0,
+      });
       const auditInsert = client.query.mock.calls.find(
         (call) => String(call[0]).includes('audit.privacy')
       );
@@ -201,6 +266,47 @@ describe('HarnessPrivacyService', () => {
       expect(auditInsert[1][3]).toContain('"deleted"');
       expect(client.query).toHaveBeenCalledWith('COMMIT');
       expect(client.release).toHaveBeenCalled();
+    });
+
+    it('deletes every stored run table for the all class', async () => {
+      const client = {
+        query: jest.fn()
+          .mockResolvedValueOnce({}) // BEGIN
+          .mockResolvedValueOnce({}) // SET LOCAL
+          .mockResolvedValueOnce({ rowCount: 1 }) // messages
+          .mockResolvedValueOnce({ rowCount: 2 }) // usage_logs
+          .mockResolvedValueOnce({ rowCount: 3 }) // checkpoints
+          .mockResolvedValueOnce({ rowCount: 4 }) // events
+          .mockResolvedValueOnce({ rowCount: 5 }) // usage
+          .mockResolvedValueOnce({ rowCount: 6 }) // runs
+          .mockResolvedValueOnce({ rows: [{ event_id: 'audit-1' }] }) // audit
+          .mockResolvedValueOnce({}), // COMMIT
+        release: jest.fn(),
+      };
+      pool.connect.mockResolvedValueOnce(client);
+
+      const result = await HarnessPrivacyService.deleteProjectData({
+        projectId: PROJECT,
+        dataClasses: ['all'],
+        reason: 'subject request',
+        actorId: 1,
+      });
+
+      expect(result).toEqual({
+        events: 4,
+        usage: 5,
+        messages: 1,
+        checkpoints: 3,
+        runs: 6,
+        usageLogs: 2,
+      });
+      const sql = client.query.mock.calls.map((call) => String(call[0])).join('\n');
+      expect(sql).toContain('DELETE FROM ticket_messages');
+      expect(sql).toContain('DELETE FROM usage_logs');
+      expect(sql).toContain('DELETE FROM harness_checkpoints');
+      expect(sql).toContain('DELETE FROM harness_events');
+      expect(sql).toContain('DELETE FROM harness_usage');
+      expect(sql).toContain('DELETE FROM harness_runs');
     });
 
     it('rolls back on failure', async () => {
@@ -222,18 +328,33 @@ describe('HarnessPrivacyService', () => {
   });
 
   describe('export', () => {
-    it('returns policy, events, usage and runs for the project', async () => {
-      pool.query
-        .mockResolvedValueOnce({ rows: [policyRow()] })
-        .mockResolvedValueOnce({ rows: [{ event_id: 'e1' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'u1' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'r1' }] });
+    it('returns a consistent snapshot with all stored run tables', async () => {
+      const client = {
+        query: jest.fn()
+          .mockResolvedValueOnce({}) // BEGIN
+          .mockResolvedValueOnce({ rows: [policyRow()] })
+          .mockResolvedValueOnce({ rows: [{ event_id: 'e1' }] })
+          .mockResolvedValueOnce({ rows: [{ id: 'u1' }] })
+          .mockResolvedValueOnce({ rows: [{ id: 'r1' }] })
+          .mockResolvedValueOnce({ rows: [{ id: 'c1' }] })
+          .mockResolvedValueOnce({ rows: [{ id: 'm1' }] })
+          .mockResolvedValueOnce({ rows: [{ id: 'l1' }] })
+          .mockResolvedValueOnce({}), // COMMIT
+        release: jest.fn(),
+      };
+      pool.connect.mockResolvedValueOnce(client);
 
       const data = await HarnessPrivacyService.exportProjectData(PROJECT);
       expect(data.projectId).toBe(PROJECT);
       expect(data.events).toHaveLength(1);
       expect(data.usage).toHaveLength(1);
       expect(data.runs).toHaveLength(1);
+      expect(data.checkpoints).toHaveLength(1);
+      expect(data.messages).toHaveLength(1);
+      expect(data.usageLogs).toHaveLength(1);
+      expect(data.hasMore).toBe(false);
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
+      expect(client.release).toHaveBeenCalled();
     });
   });
 });

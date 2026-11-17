@@ -31,6 +31,7 @@ describe('Migration 053 harness privacy (real DB, transactional)', () => {
       await client.query(`SET LOCAL search_path TO ${schema}, public`);
       await client.query('CREATE TABLE users (id BIGINT PRIMARY KEY)');
       await client.query('CREATE TABLE projects (id BIGINT PRIMARY KEY)');
+      await client.query('CREATE TABLE harness_runs (id BIGINT PRIMARY KEY)');
       await client.query('INSERT INTO users (id) VALUES (1)');
       await client.query('INSERT INTO projects (id) VALUES (7)');
 

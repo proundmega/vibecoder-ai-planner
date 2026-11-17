@@ -17,6 +17,10 @@ jest.mock('../services/HarnessBudgetService', () => ({
   assertCanStart: jest.fn().mockResolvedValue({}),
 }));
 
+jest.mock('../services/HarnessAuditService', () => ({
+  recordPrivacy: jest.fn().mockResolvedValue(null),
+}));
+
 jest.mock('../services/HarnessPrivacyService', () => ({
   assertProviderAllowed: jest.fn().mockResolvedValue({ source: 'default' }),
 }));
@@ -26,6 +30,7 @@ const DependencyService = require('../services/DependencyService');
 const HarnessEventService = require('../services/HarnessEventService');
 const HarnessBudgetService = require('../services/HarnessBudgetService');
 const HarnessPrivacyService = require('../services/HarnessPrivacyService');
+const HarnessAuditService = require('../services/HarnessAuditService');
 const { pool } = require('../db');
 
 const RUN_ID = '11111111-1111-4111-8111-111111111111';
@@ -97,6 +102,8 @@ describe('HarnessRunService', () => {
         null,
         null,
         2,
+        null,
+        null,
       ]);
     });
 
@@ -124,10 +131,12 @@ describe('HarnessRunService', () => {
       expect(client.query.mock.calls[2][0]).toContain('FROM repo_profiles');
       expect(client.query.mock.calls[2][0]).toContain("rp.status = 'active'");
       expect(client.query.mock.calls[2][0]).toContain('v.profile_hash = rp.profile_hash');
-      expect(client.query.mock.calls[3][1].slice(-3)).toEqual([
+      expect(client.query.mock.calls[3][1].slice(-5)).toEqual([
         '11111111-1111-4111-8111-111111111111',
         3,
         2,
+        null,
+        null,
       ]);
     });
 
@@ -438,6 +447,30 @@ describe('HarnessRunService', () => {
         'def456',
         'https://github.com/o/r/pull/1',
       ]);
+    });
+
+    it('redacts PII from run errors and audits a privacy block', async () => {
+      const row = {
+        id: RUN_ID,
+        status: 'failed',
+        error: 'PII pattern detected for alice@example.com',
+        project_id: 5,
+        ticket_id: 42,
+        agent_id: 7,
+      };
+      pool.query.mockResolvedValueOnce({ rows: [row] });
+
+      await HarnessRunService.finishRun(RUN_ID, {
+        status: 'failed',
+        error: 'PII pattern detected for alice@example.com',
+      });
+
+      const [, params] = pool.query.mock.calls[0];
+      expect(params[2]).not.toContain('alice@example.com');
+      expect(params[2]).toContain('[REDACTED_EMAIL]');
+      expect(HarnessAuditService.recordPrivacy).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: 5, action: 'run_blocked' })
+      );
     });
 
     it('is idempotent for an already terminal run', async () => {

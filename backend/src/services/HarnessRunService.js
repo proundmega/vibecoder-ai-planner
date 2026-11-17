@@ -1,6 +1,7 @@
 const { pool } = require('../db');
 const DependencyService = require('./DependencyService');
 const HarnessBudgetService = require('./HarnessBudgetService');
+const { redactText } = require('../utils/harnessRedaction');
 const logger = require('../utils/logger');
 const {
   NotFoundError,
@@ -180,6 +181,7 @@ class HarnessRunService {
           provider,
           providerBaseUrl,
           providerRegion,
+          agentId: normalisedAgentId,
           client,
         });
       }
@@ -210,8 +212,10 @@ class HarnessRunService {
         `INSERT INTO harness_runs
            (ticket_id, agent_id, project_id, branch, base_sha, workspace_path,
             session_id, provider, model, attempt, repo_profile_id,
-            repo_profile_version, budget_reserved_usd)
-         SELECT $1, $2, t.project_id, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+            repo_profile_version, budget_reserved_usd, provider_base_url,
+            provider_region)
+         SELECT $1, $2, t.project_id, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                $12, $13, $14
          FROM tickets t
          JOIN agents a ON a.id = $2
          WHERE t.id = $1
@@ -240,6 +244,8 @@ class HarnessRunService {
           normalisedProfileId,
           normalisedProfileVersion,
           reservedCostUsd,
+          privacyPolicy?.resolvedProviderBaseUrl ?? providerBaseUrl ?? null,
+          privacyPolicy?.resolvedProviderRegion ?? providerRegion ?? null,
         ]
       );
 
@@ -504,20 +510,47 @@ class HarnessRunService {
          DELETE FROM harness_leases WHERE run_id = $1
        )
        SELECT * FROM finished`,
-      [id, status, error, headSha, prUrl]
+      [id, status, error == null ? null : redactText(String(error)), headSha, prUrl]
     );
 
     if (result.rows.length > 0) {
       await this.recordTerminalEvent(result.rows[0]);
+      await this.recordPrivacyBlock(result.rows[0]);
       return result.rows[0];
     }
 
     const existing = await this.getRun(id);
     if (TERMINAL_RUN_STATUSES.includes(existing.status)) {
       await this.recordTerminalEvent(existing);
+      await this.recordPrivacyBlock(existing);
       return existing;
     }
     throw new ConflictError('Harness run is not active');
+  }
+
+  async recordPrivacyBlock(run) {
+    if (!run || run.status !== 'failed' || !run.error) {
+      return;
+    }
+    if (!/privacy|secret pattern|pii pattern|data class|local\/self-hosted|not allowed by the project privacy policy/i
+      .test(String(run.error))) {
+      return;
+    }
+    try {
+      // Lazy require avoids the HarnessAuditService -> HarnessRunService cycle.
+      const HarnessAuditService = require('./HarnessAuditService');
+      await HarnessAuditService.recordPrivacy({
+        projectId: run.project_id,
+        runId: run.id,
+        ticketId: run.ticket_id,
+        agentId: run.agent_id,
+        action: 'run_blocked',
+        reason: redactText(String(run.error)),
+        actorType: 'agent',
+      });
+    } catch (error) {
+      logger.warn(`Privacy block audit failed for run ${run.id}: ${error.message}`);
+    }
   }
 
   /**

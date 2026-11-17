@@ -76,6 +76,9 @@ public final class HarnessPrivacyPipeline {
         HarnessPrivacyPolicy effective = policy == null
             ? HarnessPrivacyPolicy.defaults()
             : policy;
+        // Secret-class data is allowed through the ceiling only because the
+        // next step either blocks it (blockOnSecret) or removes it; a project
+        // ceiling must not make every run with a stray test token impossible.
         if (!classification.secret() && !effective.allowsClass(classification.level())) {
             throw new PrivacyViolationException(
                 "Data class '" + classification.level()
@@ -92,18 +95,18 @@ public final class HarnessPrivacyPipeline {
             throw new PrivacyViolationException(
                 "Secret pattern detected in prompt; refusing to send it");
         }
-        PiiRedactor.Result pii = effective.redactPii()
-            ? PiiRedactor.redact(redacted)
-            : new PiiRedactor.Result(redacted, 0);
-        if (pii.count() > 0 && effective.blockOnPii()) {
+        PiiRedactor.Result piiScan = PiiRedactor.redact(redacted);
+        if (piiScan.count() > 0 && effective.blockOnPii()) {
             throw new PrivacyViolationException(
                 "PII pattern detected in prompt; refusing to send it");
         }
+        String output = effective.redactPii() ? piiScan.text() : redacted;
+        int piiRedactions = effective.redactPii() ? piiScan.count() : 0;
         return new PreflightResult(
-            pii.text(),
+            output,
             classification,
             secretRedactions,
-            pii.count()
+            piiRedactions
         );
     }
 
@@ -118,14 +121,14 @@ public final class HarnessPrivacyPipeline {
             throw new PrivacyViolationException(
                 "Secret pattern detected in model output; refusing to publish");
         }
-        PiiRedactor.Result pii = effective.redactPii()
-            ? PiiRedactor.redact(redacted)
-            : new PiiRedactor.Result(redacted, 0);
-        if (pii.count() > 0 && effective.blockOnPii()) {
+        PiiRedactor.Result piiScan = PiiRedactor.redact(redacted);
+        if (piiScan.count() > 0 && effective.blockOnPii()) {
             throw new PrivacyViolationException(
                 "PII pattern detected in model output; refusing to publish");
         }
-        return new PostflightResult(pii.text(), secretRedactions, pii.count());
+        String output = effective.redactPii() ? piiScan.text() : redacted;
+        int piiRedactions = effective.redactPii() ? piiScan.count() : 0;
+        return new PostflightResult(output, secretRedactions, piiRedactions);
     }
 
     private static int count(String value) {

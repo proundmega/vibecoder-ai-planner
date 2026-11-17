@@ -100,6 +100,8 @@ async function assertCanReadRun(req, run) {
  *               sessionId: { type: string, nullable: true }
  *               provider: { type: string, nullable: true }
  *               model: { type: string, nullable: true }
+ *               providerBaseUrl: { type: string, nullable: true }
+ *               providerRegion: { type: string, nullable: true }
  *               attempt: { type: integer, minimum: 1 }
  *               repoProfileId: { type: string, pattern: '^[0-9a-fA-F-]{36}$', nullable: true }
  *               repoProfileVersion: { type: integer, minimum: 1, nullable: true }

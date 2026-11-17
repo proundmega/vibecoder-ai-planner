@@ -67,7 +67,15 @@ public final class HarnessDataClassifier {
         }
 
         if (changedPaths != null && !changedPaths.isEmpty()) {
-            level = raise(level, HarnessPrivacyPolicy.CONFIDENTIAL);
+            for (String path : changedPaths) {
+                if (isSensitivePath(path)) {
+                    secret = true;
+                    reasons.add("sensitive repository path");
+                }
+            }
+            level = raise(level, secret
+                ? HarnessPrivacyPolicy.SECRET
+                : HarnessPrivacyPolicy.CONFIDENTIAL);
             reasons.add("repository source changes");
         }
 
@@ -85,6 +93,21 @@ public final class HarnessDataClassifier {
     private boolean containsSecret(String value) {
         if (value == null || value.isEmpty()) return false;
         return !secretRedactor.redact(value).equals(value);
+    }
+
+    static boolean isSensitivePath(String path) {
+        if (path == null || path.isBlank()) return false;
+        String normalised = path.replace('\\', '/').toLowerCase(java.util.Locale.ROOT);
+        String name = normalised.substring(normalised.lastIndexOf('/') + 1);
+        return normalised.contains("/secrets/")
+            || normalised.startsWith("secrets/")
+            || name.startsWith(".env")
+            || name.endsWith(".pem")
+            || name.endsWith(".key")
+            || name.equals("id_rsa")
+            || name.equals("id_ed25519")
+            || name.contains("credential")
+            || name.contains("secret");
     }
 
     private static String raise(String current, String candidate) {
