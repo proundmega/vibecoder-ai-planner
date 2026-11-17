@@ -189,6 +189,8 @@ class RepoProfileTest {
         for (String command : new String[]{
             "mysql -uroot -psecret",
             "mysql -u root -p hunter2",
+            "mysqladmin -u root -psecret ping",
+            "mysqldump -u root -psecret db",
             "redis-cli -a secret",
             "REDISCLI_AUTH=secret redis-cli ping",
         }) {
@@ -216,6 +218,23 @@ class RepoProfileTest {
               "healthcheck":{"command":"pg_isready"}
             }]}
             """.formatted(image)));
+        assertDoesNotThrow(() -> parse(base.formatted(image,
+            "postgresql://vibecode:${password}@${host}:5432/test",
+            "mysql -P 3306 -h db -u root")));
+        assertDoesNotThrow(() -> parse(base.formatted(image,
+            "postgresql://vibecode:${password}@${host}:5432/test",
+            "mysql -p -h db -u root")));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres","image":"%s",
+              "env":{"REDISCLI_AUTH":"secret"},"connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready"}
+            }]}
+            """.formatted(image)));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"env":{"LD_PRELOAD":"/evil.so"}}
+            """));
         assertThrows(IllegalArgumentException.class, () -> parse("""
             {"schema_version":1,"verify":["PGPASSWORD=hunter2 psql -c 'select 1'"]}
             """));

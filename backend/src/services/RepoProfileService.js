@@ -431,24 +431,26 @@ async function assertMtlsReference(projectId, egress) {
 class RepoProfileService {
   async listVersions(projectId, user) {
     await assertCanRead(projectId, user);
+    const raw = await canWrite(projectId, user);
     const result = await pool.query(
       `SELECT * FROM repo_profiles
        WHERE project_id = $1
        ORDER BY version DESC`,
       [projectId]
     );
-    return result.rows.map(format);
+    return result.rows.map((row) => format(row, { redact: !raw }));
   }
 
   async getCurrent(projectId, user) {
     await assertCanRead(projectId, user);
+    const raw = await canWrite(projectId, user);
     const result = await pool.query(
       `SELECT * FROM repo_profiles
        WHERE project_id = $1
        ORDER BY (status = 'active') DESC, version DESC`,
       [projectId]
     );
-    const rows = result.rows.map(format);
+    const rows = result.rows.map((row) => format(row, { redact: !raw }));
     return {
       active: rows.find((row) => row.status === 'active') || null,
       latest: rows[0] || null,
@@ -508,7 +510,7 @@ class RepoProfileService {
         ]
       );
       await client.query('COMMIT');
-      return format(inserted.rows[0]);
+      return format(inserted.rows[0], { redact: false });
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -550,7 +552,7 @@ class RepoProfileService {
     if (updated.rows.length === 0) {
       throw new ValidationError('Only draft profiles can be edited; create a new version');
     }
-    return format(updated.rows[0]);
+    return format(updated.rows[0], { redact: false });
   }
 
   async activate(projectId, profileId, user) {
@@ -576,7 +578,7 @@ class RepoProfileService {
       }
       if (target.rows[0].status === 'active') {
         await client.query('COMMIT');
-        return format({ ...target.rows[0], profile_hash: contentHash });
+        return format({ ...target.rows[0], profile_hash: contentHash }, { redact: false });
       }
       const validated = await client.query(
         `SELECT 1 FROM repo_profile_validations
@@ -602,7 +604,7 @@ class RepoProfileService {
         [profileId, projectId]
       );
       await client.query('COMMIT');
-      return format(activated.rows[0]);
+      return format(activated.rows[0], { redact: false });
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

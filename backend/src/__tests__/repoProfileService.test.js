@@ -18,6 +18,7 @@ jest.mock('../services/GitHubService', () => ({
 }));
 
 const RepoProfileService = require('../services/RepoProfileService');
+const { validateRepoProfile } = require('../validators/repoProfiles');
 const Project = require('../models/project');
 const GitHubService = require('../services/GitHubService');
 const { pool } = require('../db');
@@ -354,6 +355,45 @@ describe('RepoProfileService', () => {
       }), owner())).rejects.toThrow(/must not look secret/);
     });
 
+
+    it('distinguishes mysql port/prompt flags from client passwords', () => {
+      for (const command of [
+        'mysql -P 3306 -h db -u root',
+        'mysql -p -h db -u root',
+      ]) {
+        const result = validateRepoProfile(validProfile({
+          services: [validService({ healthcheck: { command } })],
+        }));
+        expect(result.error).toBeUndefined();
+      }
+      for (const command of [
+        'mysql -uroot -psecret',
+        'mysql -u root -p hunter2',
+        'mysqladmin -u root -psecret ping',
+        'mysqldump -u root -psecret db',
+        'redis-cli -a secret',
+        'REDISCLI_AUTH=secret redis-cli ping',
+      ]) {
+        const result = validateRepoProfile(validProfile({
+          services: [validService({ healthcheck: { command } })],
+        }));
+        expect(result.error).toBeDefined();
+      }
+      for (const env of [
+        { REDISCLI_AUTH: 'secret' },
+        { DB_PASS: 'secret' },
+        { PGPASS: 'secret' },
+        { PASS: 'secret' },
+      ]) {
+        const result = validateRepoProfile(validProfile({
+          services: [validService({
+            env: { POSTGRES_USER: 'vibecode', ...env },
+          })],
+        }));
+        expect(result.error).toBeDefined();
+      }
+    });
+
     it('accepts environment references in commands', async () => {
       const stored = {
         id: 'p1', project_id: 1, version: 1,
@@ -547,6 +587,49 @@ describe('RepoProfileService', () => {
       expect(result.versions).toHaveLength(2);
     });
   });
+
+
+    it('returns raw profiles to the owner and redacted profiles to members', async () => {
+      const legacy = validProfile({ verify: ['mysql -uroot -psecret'] });
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: 'a', version: 1, status: 'active', profile: legacy }],
+      });
+
+      const ownerResult = await RepoProfileService.getCurrent(1, owner());
+      expect(ownerResult.latest.profile.verify[0]).toContain('secret');
+
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ user_id: 8 }] })
+        .mockResolvedValueOnce({
+          rows: [{ id: 'a', version: 1, status: 'active', profile: legacy }],
+        });
+      const memberResult = await RepoProfileService.getCurrent(
+        1, { userId: 8, role: 'member' }
+      );
+      expect(memberResult.latest.profile.verify[0]).not.toContain('secret');
+      expect(memberResult.latest.profile.verify[0]).toContain('[REDACTED]');
+    });
+
+    it('returns raw version history to the owner and redacted history to members', async () => {
+      const legacy = validProfile({ setup: ['DB_PASS=secret npm ci'] });
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: 'a', version: 1, status: 'active', profile: legacy }],
+      });
+
+      const ownerRows = await RepoProfileService.listVersions(1, owner());
+      expect(ownerRows[0].profile.setup[0]).toContain('secret');
+
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ user_id: 8 }] })
+        .mockResolvedValueOnce({
+          rows: [{ id: 'a', version: 1, status: 'active', profile: legacy }],
+        });
+      const memberRows = await RepoProfileService.listVersions(
+        1, { userId: 8, role: 'member' }
+      );
+      expect(memberRows[0].profile.setup[0]).not.toContain('secret');
+      expect(memberRows[0].profile.setup[0]).toContain('[REDACTED]');
+    });
 
   describe('stack detection', () => {
     it('proposes a Node profile with a lockfile and non-watch vitest command', async () => {

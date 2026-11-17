@@ -43,19 +43,20 @@ public class RepoProfile {
     private static final Pattern ENV_REFERENCE = Pattern.compile(
         "^\\$(?:\\{[A-Za-z_][A-Za-z0-9_]*\\}|[A-Za-z_][A-Za-z0-9_]*)$");
     private static final Pattern ASSIGNMENT = Pattern.compile(
-        "(?:^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)\\s*[:=]\\s*"
+        "(?:^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)\\s*(?::|=(?!=))\\s*"
             + "(?:\"([^\"]*)\"|'([^']*)'|([^\\s;&|)`\"']+))");
     private static final Pattern SECRET_FLAG = Pattern.compile(
         "(?i)(?:^|\\s)--?(?:password|passwd|pwd|token|secret|api[_-]?key|passphrase)"
             + "(?:=|\\s+)(?:\"([^\"]*)\"|'([^']*)'|([^\\s;&|]+))");
     private static final Pattern MYSQL_PASSWORD = Pattern.compile(
-        "(?i)\\b(?:mysql|mariadb)\\b[^\\n;&|]*?(?:^|\\s)-p(?:\\s*=\\s*|\\s*)"
+        "(?i:(?:mysql|mariadb|mysqladmin|mysqldump|mariadb-admin|mariadb-dump))"
+            + "\\b[^\\n;&|]*?\\s-p(?:\\s*=\\s*|\\s*)"
             + "(?:\"([^\"]*)\"|'([^']*)'|([^\\s;&|]+))");
     private static final Pattern REDIS_PASSWORD = Pattern.compile(
-        "(?i)\\bredis-cli\\b[^\\n;&|]*?(?:^|\\s)-a(?:\\s*=\\s*|\\s*)"
+        "(?i:redis-cli)\\b[^\\n;&|]*?\\s-a(?:\\s*=\\s*|\\s*)"
             + "(?:\"([^\"]*)\"|'([^']*)'|([^\\s;&|]+))");
     private static final Pattern REDISCLI_AUTH = Pattern.compile(
-        "(?i)\\bREDISCLI_AUTH\\b\\s*[:=]\\s*"
+        "(?i:REDISCLI_AUTH)\\b\\s*[:=]\\s*"
             + "(?:\"([^\"]*)\"|'([^']*)'|([^\\s;&|]+))");
     private static final Pattern CREDENTIAL_LIKE_ANY = Pattern.compile("(?i)[a-f0-9]{32,}");
     private static final Pattern URL_PARTS = Pattern.compile(
@@ -686,9 +687,10 @@ public class RepoProfile {
                 String value = client.group(1) != null
                     ? client.group(1)
                     : (client.group(2) != null ? client.group(2) : client.group(3));
-                if (!isEnvReference(value)) {
-                    return "passes a literal client password on the command line";
+                if (value.startsWith("-") || isEnvReference(value)) {
+                    continue;
                 }
+                return "passes a literal client password on the command line";
             }
         }
         return null;

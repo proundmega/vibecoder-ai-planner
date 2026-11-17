@@ -63,7 +63,17 @@ public final class SecretRedactor {
         // every position.
         new Rule("(?i)(?<![A-Za-z0-9+.-])"
             + "([a-z][a-z0-9+.-]*+://)([^/\\s:@]*+):([^/\\s@]++)@",
-            "$1" + REDACTED + "@")
+            "$1" + REDACTED + "@"),
+        // Short client password flags. The client name is case-insensitive but
+        // the flag is not: mysql -P is the port. A value starting with '-' is a
+        // prompt/another option, and a '$' value is an environment reference.
+        new Rule("((?i:(?:mysql|mariadb|mysqladmin|mysqldump|mariadb-admin|mariadb-dump))"
+                + "\\b[^\\n;&|]*?\\s-p(?:\\s*=\\s*|\\s*))(?![-$])"
+                + "(\"[^\"]*\"|'[^']*'|[^\\s;&|]+)",
+            "$1" + REDACTED),
+        new Rule("((?i:redis-cli)\\b[^\\n;&|]*?\\s-a(?:\\s*=\\s*|\\s*))(?![-$])"
+                + "(\"[^\"]*\"|'[^']*'|[^\\s;&|]+)",
+            "$1" + REDACTED)
     );
 
     /**
@@ -83,7 +93,7 @@ public final class SecretRedactor {
      */
     private static final String CREDENTIAL_KEY =
         "(?:api[_-]*key|private[_-]*key|secret|token|password|passwd|pwd"
-            + "|authorization|pass[_-]*phrase)";
+            + "|authorization|pass[_-]*phrase|pass|rediscli[_-]*auth)";
 
     private static final Pattern KEY_VALUE = Pattern.compile(
         "(?i)(?<![\\w.-])(?=[\\w.-]*" + CREDENTIAL_KEY + ")"
@@ -102,6 +112,15 @@ public final class SecretRedactor {
     private static final Pattern HIGH_ENTROPY = Pattern.compile(
         "(?<![A-Za-z0-9+/=_-])[A-Za-z0-9+/=_-]{32,128}(?![A-Za-z0-9+/=_-])");
     private static final double MIN_ENTROPY = 4.5;
+
+    /**
+     * Bare PASS/PWD/AUTH keys are redacted at any value length. The generic
+     * key/value rule keeps its eight-character floor to avoid corrupting
+     * ordinary prose, but {@code DB_PASS=secret} is still a credential.
+     */
+    private static final Pattern SHORT_PASS_KEY_VALUE = Pattern.compile(
+        "(?i)(?<![\\w.-])([\\w.-]++)([\"']?)(\\s*[:=]\\s*)"
+            + "(?:\"([^\"]*)\"|'([^']*)'|([^\\s\"'\\r\\n]+))");
 
     private final List<String> knownSecrets;
 
@@ -148,6 +167,7 @@ public final class SecretRedactor {
             redacted = rule.pattern().matcher(redacted).replaceAll(rule.replacement());
         }
         redacted = redactKeyValues(redacted);
+        redacted = redactShortPassKeyValues(redacted);
         return redactHighEntropy(redacted);
     }
 
@@ -208,6 +228,47 @@ public final class SecretRedactor {
             entropy -= probability * (Math.log(probability) / Math.log(2));
         }
         return entropy;
+    }
+
+    private static boolean isShortPassKey(String key) {
+        if (key == null || key.isEmpty()) {
+            return false;
+        }
+        if (key.matches("(?i).*(?:PASSWORD|PASSWD|PASSPHRASE)$")) {
+            return false;
+        }
+        return key.matches("(?i).*(?:PASS|PWD)$")
+            || key.matches("(?i)REDISCLI[_-]?AUTH");
+    }
+
+    private static boolean isEnvReference(String value) {
+        return value != null && value.matches("^\\$(?:\\{[A-Za-z_][A-Za-z0-9_]*\\}|[A-Za-z_][A-Za-z0-9_]*)$");
+    }
+
+    private static String redactShortPassKeyValues(String value) {
+        Matcher matcher = SHORT_PASS_KEY_VALUE.matcher(value);
+        StringBuilder out = new StringBuilder(value.length());
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            String literal = matcher.group(4) != null
+                ? matcher.group(4)
+                : (matcher.group(5) != null ? matcher.group(5) : matcher.group(6));
+            if (!isShortPassKey(key) || isEnvReference(literal)) {
+                matcher.appendReplacement(out, Matcher.quoteReplacement(matcher.group(0)));
+                continue;
+            }
+            String replacement = key + matcher.group(2) + matcher.group(3);
+            if (matcher.group(4) != null) {
+                replacement += "\"" + REDACTED + "\"";
+            } else if (matcher.group(5) != null) {
+                replacement += "'" + REDACTED + "'";
+            } else {
+                replacement += REDACTED;
+            }
+            matcher.appendReplacement(out, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(out);
+        return out.toString();
     }
 
     private static String redactKeyValues(String value) {

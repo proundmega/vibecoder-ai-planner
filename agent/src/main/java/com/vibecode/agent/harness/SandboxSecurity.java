@@ -20,7 +20,7 @@ final class SandboxSecurity {
      */
     private static final Pattern SECRET_KEY = Pattern.compile(
         "(?i)(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|token|credential"
-            + "|pass(?:word|wd|phrase))|(?:^|_)(?:key|pass|pwd)(?:$|_)|(?:pass|pwd)$");
+            + "|pass(?:word|wd|phrase)|rediscli[_-]?auth)|(?:^|_)(?:key|pass|pwd)(?:$|_)|(?:pass|pwd)$");
 
     private static final java.util.Set<String> RESERVED_SERVICE_ENV = java.util.Set.of(
         "PATH", "HOME", "TMPDIR", "TEMP", "TMP", "SHELL", "USER", "LOGNAME",

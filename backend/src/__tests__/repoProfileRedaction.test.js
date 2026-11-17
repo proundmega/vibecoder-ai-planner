@@ -9,9 +9,15 @@ describe('repo-profile redaction', () => {
     for (const command of [
       'mysql -uroot -psecret',
       'mysql -u root -p hunter2',
+      'mysqladmin -u root -psecret ping',
+      'mysqldump -u root -psecret db',
       'redis-cli -a secret',
       'REDISCLI_AUTH=secret redis-cli ping',
       'PGPASSWORD=hunter2 psql',
+      'DB_PASS=secret',
+      'PGPASS=secret',
+      'DBPASS=secret',
+      'PASS=secret',
     ]) {
       const redacted = redactText(command);
       expect(redacted).not.toContain('secret');
@@ -20,7 +26,12 @@ describe('repo-profile redaction', () => {
     }
   });
 
-  test('keeps environment references and placeholders intact', () => {
+  test('keeps environment references, ports, prompts and placeholders intact', () => {
+    expect(redactText('mysql -P 3306 -u root')).toBe('mysql -P 3306 -u root');
+    expect(redactText('mysql -p -h db -u root')).toBe('mysql -p -h db -u root');
+    expect(redactText(
+      'docker pull node@sha256:' + 'a'.repeat(64),
+    )).toBe('docker pull node@sha256:' + 'a'.repeat(64));
     expect(redactText('PGPASSWORD=$PGPASSWORD psql')).toBe(
       'PGPASSWORD=$PGPASSWORD psql',
     );

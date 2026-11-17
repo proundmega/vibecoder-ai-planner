@@ -1,16 +1,16 @@
 const REDACTED = '[REDACTED]';
 
 const URL_USERINFO = /([a-z][a-z0-9+.-]*:\/\/)([^/\s:@]*):(?!\$\{password\})[^/\s@]+@/gi;
-const SHORT_MYSQL = /(\b(?:mysql|mariadb)\b[^\n;&|]*?\s-p)(?:\s*=\s*|\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/gi;
-const SHORT_REDIS = /(\bredis-cli\b[^\n;&|]*?\s-a)(?:\s*=\s*|\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/gi;
-const REDISCLI_AUTH = /(\bREDISCLI_AUTH\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/gi;
-const KEY_VALUE = /(\b[A-Za-z_][A-Za-z0-9_]*(?:password|passwd|pwd|secret|token|api[_-]?key|credential|passphrase)[A-Za-z0-9_]*\s*[:=]\s*)(?![\$\s])(?:"[^"]*"|'[^']*'|[^\s;&|]+)/gi;
+const SHORT_MYSQL = /(\b(?:mysql|mariadb|mysqladmin|mysqldump|mariadb-admin|mariadb-dump)\b[^\n;&|]*?\s-p)(?:\s*=\s*|\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/g;
+const SHORT_REDIS = /(\bredis-cli\b[^\n;&|]*?\s-a)(?:\s*=\s*|\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/g;
+const REDISCLI_AUTH = /(\bREDISCLI_AUTH\b\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/g;
+const KEY_VALUE = /(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)(\s*(?::|=(?!=))\s*)("[^"]*"|'[^']*'|[^\s;&|]+)/g;
 const PRIVATE_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*/gi;
-const GENERATED_PASSWORD = /\b[0-9a-f]{64}\b/gi;
+const GENERATED_PASSWORD = /(?<!sha256:)\b[0-9a-f]{64}\b/gi;
 const LONG_TOKEN = /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b|\bsk-[A-Za-z0-9_-]{20,}\b|\bxox[abpcrsd]-[A-Za-z0-9-]{10,}\b|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/gi;
 const BEARER = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{20,}/gi;
 
-const SECRET_KEY_PRIMARY = /(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|token|credential|pass(?:word|wd|phrase))/i;
+const SECRET_KEY_PRIMARY = /(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|token|credential|pass(?:word|wd|phrase)|rediscli[_-]?auth)/i;
 const SECRET_KEY_SEGMENT = /(?:^|_)(?:key|pass|pwd)(?:$|_)/i;
 const SECRET_KEY_SUFFIX = /(?:pass|pwd)$/i;
 
@@ -34,12 +34,21 @@ function redactText(value) {
   text = text.replace(LONG_TOKEN, REDACTED);
   text = text.replace(BEARER, '$1 ' + REDACTED);
   text = text.replace(URL_USERINFO, '$1[REDACTED]@');
-  text = text.replace(KEY_VALUE, (match, prefix) => `${prefix}${REDACTED}`);
+  text = text.replace(KEY_VALUE, (match, lead, key, separator, token) => {
+    const value = token.replace(/^["']|["']$/g, '');
+    if (!isSecretKey(key) || isEnvReference(value)) return match;
+    const quote = token.startsWith('"') ? '"' : (token.startsWith("'") ? "'" : '');
+    return `${lead}${key}${separator}${quote}${REDACTED}${quote}`;
+  });
   text = text.replace(SHORT_MYSQL, (match, prefix, secret) => (
-    isEnvReference(secret) ? match : `${prefix} ${REDACTED}`
+    isEnvReference(secret) || secret.replace(/^["']/, '').startsWith('-')
+      ? match
+      : `${prefix} ${REDACTED}`
   ));
   text = text.replace(SHORT_REDIS, (match, prefix, secret) => (
-    isEnvReference(secret) ? match : `${prefix} ${REDACTED}`
+    isEnvReference(secret) || secret.replace(/^["']/, '').startsWith('-')
+      ? match
+      : `${prefix} ${REDACTED}`
   ));
   text = text.replace(REDISCLI_AUTH, (match, prefix, secret) => (
     isEnvReference(secret) ? match : `${prefix}${REDACTED}`

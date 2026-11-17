@@ -322,13 +322,21 @@ Verification still uses the existing ephemeral `/tmp` cache defaults.
   `connection_url` userinfo must be exactly the literal `${password}`; literal
   userinfo/query/path credentials, generated-password-shaped 32+ hex values in
   query/path/fragment positions, credential-shaped healthcheck/commands
-  (including `mysql/mariadb -p` and `redis-cli -a`/`REDISCLI_AUTH`),
+  (including the case-sensitive lowercase `mysql/mariadb/mysqladmin/mysqldump
+  -p` password flag, `redis-cli -a` and `REDISCLI_AUTH`; uppercase `-P` is a
+  port and `-p -h host` is a prompt),
   percent-encoded placeholders, newlines/NUL and reserved env names
   (`PATH`, `HOME`, `LD_PRELOAD`, `HTTP_PROXY`, ...) are rejected in profile and
   service env.
-- Legacy rows are scrubbed at read time (`redactProfile`/`redactResult`) so a
-  profile stored before these rules existed cannot expose a literal credential
-  to members; a one-time storage scrub remains D15.
+- The read-time scrub is owner-aware: the project owner/super admin receives the
+  raw profile for the editable current draft and write responses, so a scrub
+  can never be saved back over a real value; members and other read-only views
+  receive the scrubbed profile. Legacy validation results are scrubbed for
+  readers; a one-time storage scrub remains D15.
+- The scrub uses the same `isSecretKey` rule as the validators (so
+  `DB_PASS`, `PGPASS`, `DBPASS`, `PASS`, `REDISCLI_AUTH`, ... are covered),
+  preserves `$ENV` references and `${password}` placeholders, and does not
+  redact `sha256:` image digests.
 - Service `env`, `password_env` and `connection_env` are validated again in the
   agent, and the env-file writer rejects newline/NUL injection.
 - Each generated service password is registered in `RedactionRegistry` before
