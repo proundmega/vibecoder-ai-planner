@@ -70,14 +70,13 @@ const canEdit = computed(() => {
   const userId = auth.user?.value?.id
   return Boolean(ownerId && userId && String(ownerId) === String(userId))
 })
+// Only the current draft is editable. Viewing any other version (including
+// an older draft) is read-only so Save cannot overwrite the newer draft.
 const viewingHistorical = computed(() => (
-  Boolean(viewingVersion.value) && viewingVersion.value?.status !== 'draft'
+  Boolean(viewingVersion.value)
+    && viewingVersion.value?.id !== draft.value?.id
 ))
-const editable = computed(() => (
-  canEdit.value
-    && !viewingHistorical.value
-    && (!latest.value || Boolean(draft.value))
-))
+const editable = computed(() => canEdit.value && !viewingHistorical.value)
 const selectedProfile = computed(() => draft.value || active.value)
 const matchingValidation = computed<RepoProfileValidation | null>(() => {
   if (!draft.value?.profile_hash) return null
@@ -222,6 +221,15 @@ async function load() {
 }
 
 async function detect() {
+  const hasContent = Boolean(latest.value)
+    || setupText.value.trim() !== ''
+    || verifyText.value.trim() !== ''
+    || services.value.length > 0
+    || envRows.value.length > 0
+  if (hasContent && typeof window !== 'undefined'
+      && !window.confirm('Detection will replace the current form contents. Continue?')) {
+    return
+  }
   busy.value = 'detect'
   error.value = ''
   warnings.value = []
@@ -321,7 +329,7 @@ function schedulePoll(validationId: string) {
 }
 
 async function validate() {
-  const target = draft.value || latest.value
+  const target = draft.value
   if (!target) return
   busy.value = 'validate'
   error.value = ''
@@ -515,6 +523,9 @@ onBeforeUnmount(() => {
             <label>Retries
               <input v-model.number="service.retries" type="number" min="1" max="120" />
             </label>
+            <label>Start period (s)
+              <input v-model.number="service.startPeriod" type="number" min="0" max="120" />
+            </label>
           </div>
         </div>
 
@@ -531,12 +542,17 @@ onBeforeUnmount(() => {
         <button class="btn primary" :disabled="busy !== '' || !editable" @click="save">
           {{ busy === 'save' ? 'Saving…' : draft ? 'Save draft' : 'Create draft' }}
         </button>
-        <button class="btn secondary" :disabled="busy !== '' || !latest" @click="validate">
+        <button
+          class="btn secondary"
+          :disabled="busy !== '' || !draft || viewingHistorical"
+          :title="draft ? 'Validate the current draft' : 'Save or create a draft first'"
+          @click="validate"
+        >
           {{ busy === 'validate' ? 'Queuing…' : 'Validate (dry run)' }}
         </button>
         <button
           class="btn success"
-          :disabled="busy !== '' || !draft || !matchingValidation"
+          :disabled="busy !== '' || !draft || !matchingValidation || viewingHistorical"
           :title="matchingValidation ? 'Activate this validated draft' : 'Run a successful dry run for this exact draft first'"
           @click="activate"
         >
@@ -571,7 +587,10 @@ onBeforeUnmount(() => {
             </div>
             <p v-if="validation.error" class="error-text">{{ validation.error }}</p>
             <pre v-for="(command, index) in validationCommands(validation)" :key="index" class="command">{{ command.phase }}: {{ command.command || command.reason }}
-exit {{ command.exitCode }}<template v-if="command.output"> — {{ command.output }}</template></pre>
+exit {{ command.exitCode ?? '—' }}<template v-if="command.output"> — {{ command.output }}</template></pre>
+            <p v-if="validation.result === null" class="muted">
+              Command output is visible to the project owner or a super admin.
+            </p>
           </div>
         </div>
       </div>

@@ -48,6 +48,15 @@ async function assertCanWrite(projectId, user) {
   throw new ForbiddenError('Only the project owner or a super admin can change the repo profile');
 }
 
+async function canWrite(projectId, user) {
+  try {
+    await assertCanWrite(projectId, user);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function assertAgentProjectAccess(projectId, agent) {
   const project = await assertProjectExists(projectId);
   const requesterId = agent?.owner_id;
@@ -741,6 +750,7 @@ const service = new RepoProfileService();
 module.exports = service;
 module.exports.assertCanRead = assertCanRead;
 module.exports.assertCanWrite = assertCanWrite;
+module.exports.canWrite = canWrite;
 module.exports.assertAgentProjectAccess = assertAgentProjectAccess;
 module.exports.assertProjectExists = assertProjectExists;
 module.exports.format = format;

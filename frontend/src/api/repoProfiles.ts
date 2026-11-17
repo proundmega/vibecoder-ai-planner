@@ -69,7 +69,7 @@ export interface RepoProfileValidation {
   profile: RepoProfile
   profile_hash: string | null
   status: 'queued' | 'running' | 'succeeded' | 'failed'
-  result?: Record<string, unknown>
+  result?: Record<string, unknown> | null
   error?: string | null
   created_at?: string
   started_at?: string | null

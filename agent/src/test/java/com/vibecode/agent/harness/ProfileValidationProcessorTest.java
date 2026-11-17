@@ -155,6 +155,37 @@ class ProfileValidationProcessorTest {
     }
 
 
+
+    @Test
+    void redactsKnownServicePasswordsFromReportedOutput() throws Exception {
+        String password = "a".repeat(64);
+        RedactionRegistry.reset();
+        RedactionRegistry.register(password);
+        try {
+            when(apiService.claimRepoProfileValidation("1"))
+                .thenReturn(validation(profileJson("")));
+            when(verificationRunner.run(any(Path.class), anyList(), any(Duration.class), anyMap()))
+                .thenReturn(List.of(new VerificationResult("npm ci", 0, "ok", false)))
+                .thenReturn(List.of(new VerificationResult(
+                    "npm test", 0,
+                    "DATABASE_URL=postgresql://vibecode:" + password
+                        + "@postgres:5432/test", false)));
+
+            processor(SandboxConfig.defaults()).pollOnce();
+
+            ArgumentCaptor<Map<String, Object>> result = ArgumentCaptor.forClass(Map.class);
+            verify(apiService).finishRepoProfileValidation(
+                eq("1"), anyString(), eq("succeeded"), result.capture(), eq(null));
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> commands = (List<Map<String, Object>>) result.getValue().get("commands");
+            String output = String.valueOf(commands.get(1).get("output"));
+            assertFalse(output.contains(password), output);
+            assertTrue(output.contains("[REDACTED]"), output);
+        } finally {
+            RedactionRegistry.reset();
+        }
+    }
+
     @Test
     void rejectsAProfileThatDoesNotMatchTheConfiguredRepository() throws Exception {
         when(apiService.claimRepoProfileValidation("1")).thenReturn(validation("""

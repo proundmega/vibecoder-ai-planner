@@ -68,6 +68,8 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D9 | Persistent dependency caches: size quota/watchdog, volume GC, lockfile-keyed generations and sanitized cache writes | fg-39 FR4 | Security | fg-39 slice 4 | open |
 | D10 | Profile change event log beyond version rows/`created_by` timestamps | fg-39 safety | Audit | fg-41 | open |
 | D11 | Real-Docker/real-repo profile dry-run e2e (cache real-Docker coverage moves with D9) | fg-39 slice 1 review | Testing | bt-60 / fg-39 slice 4 | open |
+| D12 | Service container disk quota and egress-governed image pulls; image pulls currently use the Docker daemon directly | fg-39 slice 2 review | Security | fg-39 slice 4 / fg-44 | open |
+| D13 | Enforce one current draft per project (partial unique index) or explicit multi-draft UI | fg-39 slice 5 review | Data | fg-39 slice 5 follow-up | open |
 
 ## User decisions
 
@@ -76,4 +78,5 @@ deferred scope are owned by this document; `01`–`04` link here.
 - A profile may select an image only by digest; it may not widen the operator
   egress allowlist or force a weaker TLS mode.
 - The first dry run is an operator-triggered setup/verify run, not a model run.
-- `services` and `flaky_tests` are rejected until the corresponding slices land.
+- Services run only in Docker mode and fail closed in host mode; `flaky_tests`
+  and `caches` remain rejected until slices 3 and 4.

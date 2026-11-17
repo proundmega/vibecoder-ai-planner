@@ -261,7 +261,7 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
         healthcheck: { command: 'pg_isready' },
       }],
     }), { userId: ownerId, role: 'project_admin' }))
-      .rejects.toThrow(/literal credential/);
+      .rejects.toThrow(/literal password/);
 
     const after = await pool.query(
       'SELECT count(*)::int AS count FROM repo_profiles WHERE project_id = $1',

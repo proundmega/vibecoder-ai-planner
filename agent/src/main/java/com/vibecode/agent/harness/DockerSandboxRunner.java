@@ -123,6 +123,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
         private final List<String> containers;
         private final Map<String, String> environment;
         private final Map<String, String> hosts;
+        private final List<String> passwords;
 
         ServiceRuntime(
             String network,
@@ -130,10 +131,21 @@ public final class DockerSandboxRunner implements SandboxRunner {
             Map<String, String> environment,
             Map<String, String> hosts
         ) {
+            this(network, containers, environment, hosts, List.of());
+        }
+
+        ServiceRuntime(
+            String network,
+            List<String> containers,
+            Map<String, String> environment,
+            Map<String, String> hosts,
+            List<String> passwords
+        ) {
             this.network = network;
             this.containers = List.copyOf(containers);
             this.environment = Map.copyOf(environment);
             this.hosts = Map.copyOf(hosts);
+            this.passwords = List.copyOf(passwords);
         }
 
         String network() {
@@ -152,12 +164,17 @@ public final class DockerSandboxRunner implements SandboxRunner {
             return hosts;
         }
 
+        List<String> passwords() {
+            return passwords;
+        }
+
         @Override
         public String toString() {
             return "ServiceRuntime{network=" + network
                 + ", containers=" + containers
                 + ", environmentKeys=" + environment.keySet()
-                + ", hosts=" + hosts.keySet() + "}";
+                + ", hosts=" + hosts.keySet()
+                + ", passwordCount=" + passwords.size() + "}";
         }
     }
 
@@ -176,7 +193,15 @@ public final class DockerSandboxRunner implements SandboxRunner {
         String name = "vibecode-sandbox-" + UUID.randomUUID().toString()
             .replace("-", "").substring(0, 12);
 
-        ServiceRuntime serviceRuntime = startServices(name, spec);
+        ServiceRuntime serviceRuntime;
+        try {
+            serviceRuntime = startServices(name, spec);
+        } catch (IOException | RuntimeException e) {
+            // startServices may have left tracked resources when its own
+            // cleanup failed; retry through the normal destroy path.
+            destroyByName(name);
+            throw e instanceof IOException io ? io : new IOException(e);
+        }
         if (serviceRuntime != null) {
             services.put(name, serviceRuntime);
         }
@@ -533,6 +558,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
         watchdogs.clear();
         runningProcesses.clear();
         egress.clear();
+        for (ServiceRuntime runtime : services.values()) {
+            RedactionRegistry.unregister(runtime.passwords());
+        }
         services.clear();
         execLocks.clear();
         compromised.clear();
@@ -604,10 +632,11 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
         // The sandbox may still exist; always attempt to remove its service
         // containers/network and egress proxy/network so a later retry does not
-        // leak them.
-        stopServices(name);
+        // leak them. A failed service cleanup must fail the destroy so the
+        // supervisor cannot publish while a service container is still alive.
+        boolean servicesClean = stopServices(name);
         stopEgress(name);
-        return gone;
+        return gone && servicesClean;
     }
 
     private void stopWatchdog(String name) {
@@ -1350,15 +1379,32 @@ public final class DockerSandboxRunner implements SandboxRunner {
         }
 
         List<String> containers = new ArrayList<>();
+        List<String> passwords = new ArrayList<>();
         Map<String, String> environment = new LinkedHashMap<>();
         Map<String, String> hosts = new LinkedHashMap<>();
+        // Track the network before the first container exists so a failed
+        // start can always clean it up through stopServices.
+        services.put(sandboxName,
+            new ServiceRuntime(network, containers, environment, hosts, passwords));
         try {
             for (ServiceSpec service : spec.services()) {
                 String container = "vibecode-service-" + suffix + "-" + service.name();
+                // Track the name before docker run: a timeout or a non-zero
+                // exit can still leave a container behind, and only a tracked
+                // name lets cleanup remove it.
+                containers.add(container);
+                services.put(sandboxName,
+                    new ServiceRuntime(network, containers, environment, hosts, passwords));
                 Map<String, String> serviceEnvironment = new LinkedHashMap<>(service.env());
                 String password = service.passwordEnv() == null ? null : randomServicePassword();
                 if (password != null) {
                     serviceEnvironment.put(service.passwordEnv(), password);
+                    passwords.add(password);
+                    // The dry-run output may print the connection URL or the
+                    // bare password; register it before any command runs.
+                    RedactionRegistry.register(password);
+                    services.put(sandboxName,
+                        new ServiceRuntime(network, containers, environment, hosts, passwords));
                 }
                 Path envFile = writeEnvironmentFile(serviceEnvironment);
                 List<String> command = new ArrayList<>(List.of(
@@ -1372,6 +1418,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     "--memory", "536870912",
                     "--cpus", "1.0",
                     "--security-opt", "no-new-privileges",
+                    "--cap-drop", "NET_RAW",
+                    "--log-opt", "max-size=1m",
+                    "--log-opt", "max-file=1",
                     "--health-cmd", service.healthcheck().command(),
                     "--health-interval", service.healthcheck().intervalSeconds() + "s",
                     "--health-timeout", service.healthcheck().timeoutSeconds() + "s",
@@ -1394,7 +1443,6 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     throw new IOException("Could not start service '" + service.name()
                         + "': " + (started.timedOut() ? "docker run timed out" : started.output()));
                 }
-                containers.add(container);
                 awaitServiceHealthy(container, service.healthcheck());
                 DockerResult address = runDocker(
                     List.of(config.dockerBinary(), "inspect", "-f",
@@ -1414,24 +1462,32 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     url = url.replace("${password}", password);
                 }
                 environment.put(service.connectionEnv(), url);
+                services.put(sandboxName,
+                    new ServiceRuntime(network, containers, environment, hosts, passwords));
             }
-            return new ServiceRuntime(network, containers, environment, hosts);
+            return new ServiceRuntime(network, containers, environment, hosts, passwords);
         } catch (IOException | RuntimeException e) {
-            for (String container : containers) {
-                runDocker(List.of(config.dockerBinary(), "rm", "-f", "-v", container),
-                    CONTROL_TIMEOUT, CONTROL_OUTPUT_BYTES);
-            }
-            runDocker(List.of(config.dockerBinary(), "network", "rm", network),
-                CONTROL_TIMEOUT, CONTROL_OUTPUT_BYTES);
+            // Keep the runtime tracked when cleanup fails so the caller's
+            // destroy retry (or the startup reaper) can finish the job.
+            stopServices(sandboxName);
             throw e instanceof IOException io ? io : new IOException(e);
         }
     }
 
-    private void stopServices(String name) {
-        ServiceRuntime runtime = services.remove(name);
+    /**
+     * Remove a sandbox's service containers and network.
+     *
+     * @return {@code true} when every tracked service resource is gone. The
+     *     runtime stays in {@code services} when cleanup fails so a later
+     *     destroy retry can finish it and destroy() can refuse to report a
+     *     clean sandbox.
+     */
+    private boolean stopServices(String name) {
+        ServiceRuntime runtime = services.get(name);
         if (runtime == null) {
-            return;
+            return true;
         }
+        boolean clean = true;
         for (String container : runtime.containers()) {
             DockerResult removed = runDocker(
                 List.of(config.dockerBinary(), "rm", "-f", "-v", container),
@@ -1442,10 +1498,12 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 continue;
             }
             String output = removed.output().toLowerCase();
-            if (!output.contains("no such container") && !output.contains("no such object")) {
-                log.warn("Could not remove service container {}: {}", container,
-                    LOG_REDACTOR.redact(removed.output().trim()));
+            if (output.contains("no such container") || output.contains("no such object")) {
+                continue;
             }
+            clean = false;
+            log.warn("Could not remove service container {}: {}", container,
+                LOG_REDACTOR.redact(removed.output().trim()));
         }
         // stop() keeps the sandbox container, so detach it before removing the
         // network; destroy() already removed the container and this is a no-op.
@@ -1460,18 +1518,26 @@ public final class DockerSandboxRunner implements SandboxRunner {
             CONTROL_TIMEOUT,
             CONTROL_OUTPUT_BYTES
         );
-        if (network.exitCode() != 0 && !network.timedOut()) {
+        if (network.exitCode() != 0 || network.timedOut()) {
             String output = network.output().toLowerCase();
             if (!output.contains("not found") && !output.contains("no such")) {
+                clean = false;
                 log.warn("Could not remove service network {}: {}", runtime.network(),
                     LOG_REDACTOR.redact(network.output().trim()));
             }
         }
+        if (clean) {
+            services.remove(name, runtime);
+            RedactionRegistry.unregister(runtime.passwords());
+        }
+        return clean;
     }
 
     private void awaitServiceHealthy(String container, ServiceSpec.Healthcheck healthcheck)
         throws IOException {
-        long timeoutMs = Math.min(300_000L,
+        // Cap the wait so a slow service cannot consume the profile's whole
+        // setup/round budget before the caller checks its deadline.
+        long timeoutMs = Math.min(180_000L,
             (healthcheck.startPeriodSeconds()
                 + (long) healthcheck.intervalSeconds() * healthcheck.retries() + 15L) * 1_000L);
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
@@ -1517,7 +1583,21 @@ public final class DockerSandboxRunner implements SandboxRunner {
             }
             StringBuilder content = new StringBuilder();
             for (Map.Entry<String, String> entry : environment.entrySet()) {
-                content.append(entry.getKey()).append('=').append(entry.getValue()).append('\n');
+                String key = entry.getKey();
+                String value = entry.getValue() == null ? "" : entry.getValue();
+                // docker --env-file has no escaping: a newline or NUL would
+                // inject another variable. Service schema validation already
+                // rejects these; keep the writer fail-closed as well.
+                if (key == null || key.isBlank() || key.indexOf('=') >= 0
+                    || key.indexOf('\0') >= 0 || key.indexOf('\n') >= 0
+                    || key.indexOf('\r') >= 0) {
+                    throw new IOException("Service environment key is invalid");
+                }
+                if (value.indexOf('\0') >= 0 || value.indexOf('\n') >= 0
+                    || value.indexOf('\r') >= 0) {
+                    throw new IOException("Service environment value is invalid: " + key);
+                }
+                content.append(key).append('=').append(value).append('\n');
             }
             Files.writeString(file, content.toString(), StandardCharsets.UTF_8);
             return file;

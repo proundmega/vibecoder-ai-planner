@@ -298,6 +298,67 @@ describe('RepoProfileService', () => {
       )).resolves.toBeTruthy();
     });
 
+    it('rejects password-suffixed keys and literal credentials in URLs and commands', async () => {
+      for (const key of ['DB_PASS', 'DB_PWD', 'PGPASS', 'DBPASS']) {
+        await expect(RepoProfileService.create(1, validProfile({
+          env: { [key]: 'x' },
+        }), owner())).rejects.toThrow(/looks secret/);
+        await expect(RepoProfileService.create(1, validProfile({
+          services: [validService({ env: { POSTGRES_USER: 'vibecode', [key]: 'x' } })],
+        }), owner())).rejects.toThrow(/looks secret/);
+      }
+
+      for (const connectionUrl of [
+        'postgresql://vibecode:hunter2@${host}:5432/test?token=${password}',
+        'postgresql://vibecode:${password}@${host}:5432/test?password=hunter2',
+        'postgresql://vibecode:${password}@${host}:5432/password=hunter2',
+        `postgresql://vibecode:\${password}@\${host}:5432/${'a'.repeat(64)}`,
+        'postgresql://vibecode:${password}@${host}:5432/test\nEVIL=1',
+      ]) {
+        await expect(RepoProfileService.create(1, validProfile({
+          services: [validService({ connection_url: connectionUrl })],
+        }), owner())).rejects.toThrow(/connection_url/);
+      }
+
+      await expect(RepoProfileService.create(1, validProfile({
+        services: [validService({
+          healthcheck: { command: 'PGPASSWORD=hunter2 pg_isready' },
+        })],
+      }), owner())).rejects.toThrow(/healthcheck.command/);
+
+      await expect(RepoProfileService.create(1, validProfile({
+        verify: ['PGPASSWORD=hunter2 psql -c "select 1"'],
+      }), owner())).rejects.toThrow(/literal credential/);
+
+      await expect(RepoProfileService.create(1, validProfile({
+        services: [validService({ env: { POSTGRES_USER: 'vibecode', PATH: '/evil' } })],
+      }), owner())).rejects.toThrow(/reserved/);
+
+      await expect(RepoProfileService.create(1, validProfile({
+        services: [validService({ connection_env: 'DATABASE_PASSWORD' })],
+      }), owner())).rejects.toThrow(/must not look secret/);
+    });
+
+    it('accepts environment references in commands', async () => {
+      const stored = {
+        id: 'p1', project_id: 1, version: 1,
+        profile: validProfile({
+          verify: ['PGPASSWORD=$PGPASSWORD psql -c "select 1"'],
+        }),
+        status: 'draft',
+      };
+      clientWith([
+        {},
+        { rows: [{ id: 1 }] },
+        { rows: [{ version: 1 }] },
+        { rows: [stored] },
+        {},
+      ]);
+      await expect(RepoProfileService.create(1, validProfile({
+        verify: ['PGPASSWORD=$PGPASSWORD psql -c "select 1"'],
+      }), owner())).resolves.toBeTruthy();
+    });
+
     it('rejects unsafe or inconsistent service definitions', async () => {
       const cases = [
         validService({ image: 'postgres:16' }),

@@ -2084,6 +2084,9 @@ class DockerSandboxRunnerTest {
         assertTrue(calls.contains("--health-cmd pg_isready -U vibecode -d test"), calls);
         assertTrue(calls.contains("--env-file"), calls);
         assertTrue(calls.contains("--add-host postgres:172.18.0.5"), calls);
+        assertTrue(calls.contains("--cap-drop NET_RAW"), calls);
+        assertTrue(calls.contains("--log-opt max-size=1m"), calls);
+        assertTrue(calls.contains("--log-opt max-file=1"), calls);
         assertTrue(calls.contains("rm -f -v vibecode-service-"), calls);
         assertTrue(calls.contains("network rm vibecode-services-"), calls);
         assertFalse(calls.contains("POSTGRES_PASSWORD"), calls);
@@ -2177,6 +2180,150 @@ class DockerSandboxRunnerTest {
         String calls = Files.readString(log);
         assertTrue(calls.contains("network disconnect -f vibecode-services-"), calls);
         assertTrue(calls.contains("network rm vibecode-services-"), calls);
+    }
+
+
+    @Test
+    void cleansUpATrackedServiceWhenDockerRunFails() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("services-run-failure.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              network) exit 0 ;;
+              run) echo "run failed"; exit 1 ;;
+              rm) exit 0 ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+        RepoProfile profile = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres",
+              "image":"postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "env":{"POSTGRES_USER":"vibecode"},
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready","retries":2}
+            }]}
+            """, RepoProfile.class);
+        SandboxConfig effective = config.withRepoProfile(profile, "1", 1);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(effective)) {
+            assertThrows(IOException.class,
+                () -> runner.create(effective.specFor(workspace())));
+        }
+
+        String calls = Files.readString(log);
+        assertTrue(calls.contains("rm -f -v vibecode-service-"), calls);
+        assertTrue(calls.contains("network rm vibecode-services-"), calls);
+    }
+
+    @Test
+    void destroyFailsWhenAServiceContainerCannotBeRemoved() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("services-remove-failure.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              network) exit 0 ;;
+              run) exit 0 ;;
+              inspect)
+                case "$*" in
+                  *"State.Health"*) echo healthy ;;
+                  *"IPAddress"*) echo 172.18.0.5 ;;
+                  *) echo true ;;
+                esac
+                ;;
+              rm)
+                case "$*" in
+                  *vibecode-service-*) echo "cannot remove"; exit 1 ;;
+                  *) exit 0 ;;
+                esac
+                ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+        RepoProfile profile = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres",
+              "image":"postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "env":{"POSTGRES_USER":"vibecode"},
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready","retries":2}
+            }]}
+            """, RepoProfile.class);
+        SandboxConfig effective = config.withRepoProfile(profile, "1", 1);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(effective)) {
+            SandboxHandle handle = runner.create(effective.specFor(workspace()));
+            assertThrows(IOException.class, () -> runner.destroy(handle));
+        }
+
+        String calls = Files.readString(log);
+        assertTrue(calls.contains("rm -f -v vibecode-service-"), calls);
+    }
+
+    @Test
+    void registersGeneratedServicePasswordsForRedaction() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("services-redaction.log");
+        Path envCopy = tempDir.resolve("service.env");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              run)
+                previous=""
+                for argument in "$@"; do
+                  if [ "$previous" = "--env-file" ] && grep -q "POSTGRES_PASSWORD=" "$argument"; then cp "$argument" "%s"; fi
+                  previous="$argument"
+                done
+                exit 0
+                ;;
+              network) exit 0 ;;
+              inspect)
+                case "$*" in
+                  *"State.Health"*) echo healthy ;;
+                  *"IPAddress"*) echo 172.18.0.5 ;;
+                  *) echo true ;;
+                esac
+                ;;
+              rm) exit 0 ;;
+              *) exit 0 ;;
+            esac
+            """.formatted(envCopy));
+        SandboxConfig config = dockerConfig(script.toString());
+        RepoProfile profile = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres",
+              "image":"postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "env":{"POSTGRES_USER":"vibecode"},
+              "password_env":"POSTGRES_PASSWORD",
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode:${password}@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready","retries":2}
+            }]}
+            """, RepoProfile.class);
+        SandboxConfig effective = config.withRepoProfile(profile, "1", 1);
+
+        RedactionRegistry.reset();
+        String password;
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(effective)) {
+            SandboxHandle handle = runner.create(effective.specFor(workspace()));
+            String env = Files.readString(envCopy);
+            java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("POSTGRES_PASSWORD=([0-9a-f]{64})").matcher(env);
+            assertTrue(matcher.find(), env);
+            password = matcher.group(1);
+            assertEquals("[REDACTED]", RedactionRegistry.redact(password));
+            String redactedUrl = RedactionRegistry.redact(
+                "DATABASE_URL=postgresql://vibecode:" + password + "@postgres:5432/test");
+            assertFalse(redactedUrl.contains(password), redactedUrl);
+            assertTrue(redactedUrl.contains("[REDACTED]"), redactedUrl);
+            runner.destroy(handle);
+        }
+        // The per-run password is removed once its service runtime is gone.
+        assertFalse("[REDACTED]".equals(RedactionRegistry.redact(password)));
+        RedactionRegistry.reset();
     }
 
     private Path fakeDocker(Path log, String body) throws IOException {

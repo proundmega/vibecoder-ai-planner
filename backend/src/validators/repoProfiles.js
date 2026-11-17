@@ -6,7 +6,12 @@ const CACHES = ['npm', 'maven', 'gradle', 'pip', 'go', 'cargo'];
 const MAX_CA_BYTES = 64 * 1024;
 const MAX_CA_CERTIFICATES = 16;
 
-const SECRET_KEY = /(?:^|_)(?:API_?KEY|ACCESS_?KEY|KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|PRIVATE_?KEY)(?:$|_)/i;
+// Keep this in sync with the agent's SandboxSecurity.isSecretKey. Names that
+// embed a credential word (PGPASS, DBPASS, DB_PASS, DB_PWD, PASSWD, ...) are
+// rejected, as are the underscore-delimited forms (API_KEY, KEY, ...).
+const SECRET_KEY_PRIMARY = /(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|token|credential|pass(?:word|wd|phrase))/i;
+const SECRET_KEY_SEGMENT = /(?:^|_)(?:key|pass|pwd)(?:$|_)/i;
+const SECRET_KEY_SUFFIX = /(?:pass|pwd)$/i;
 const GITHUB_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?$/;
 const BRANCH = /^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*\/$)(?!.*\.$)[A-Za-z0-9._/-]{1,255}$/;
 const IMAGE = /^[A-Za-z0-9][A-Za-z0-9._/:@-]*@sha256:[a-f0-9]{64}$/;
@@ -30,8 +35,128 @@ const SECRET_VALUE_PATTERNS = [
   /\bgh[pousr]_[A-Za-z0-9]{20,}\b/,
   /\bgithub_pat_[A-Za-z0-9_]{20,}\b/,
   /\bxox[abcdepr]-[A-Za-z0-9-]{10,}\b/,
-  /https?:\/\/[^\s/@]+:[^\s/@]+@/,
+  /[a-z][a-z0-9+.-]*:\/\/[^\s/@]+:(?!\$\{password\})[^\s/@]+@/i,
+  /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{20,}/i,
 ];
+
+// Environment names that would change how the service or sandbox runs, or
+// that could inject a runtime hook. Service env is trusted admin config, but
+// these names must stay owned by the image/sandbox.
+const RESERVED_ENV = new Set([
+  'PATH', 'HOME', 'TMPDIR', 'TEMP', 'TMP', 'SHELL', 'USER', 'LOGNAME',
+  'HOSTNAME', 'SHLVL', 'PWD', 'OLDPWD',
+  'LD_PRELOAD', 'LD_LIBRARY_PATH', 'LD_AUDIT', 'DYLD_INSERT_LIBRARIES',
+  'NODE_OPTIONS', 'NODE_PATH', 'PYTHONPATH', 'PYTHONHOME', 'PYTHONSTARTUP',
+  'PERL5LIB', 'RUBYLIB', 'GEM_HOME', 'GEM_PATH', 'CLASSPATH',
+  'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'BASH_ENV', 'ENV', 'IFS',
+  'PROMPT_COMMAND', 'DOCKER_HOST', 'DOCKER_CONFIG', 'SSH_AUTH_SOCK',
+  'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
+  'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
+]);
+
+const ENV_REFERENCE = /^\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)$/;
+const ASSIGNMENT = /(?:^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*(?:"([^"]*)"|'([^']*)'|([^\s;&|)`"']+))/g;
+const SECRET_FLAG = /(?:^|\s)--?(?:password|passwd|pwd|token|secret|api[_-]?key|passphrase)(?:=|\s+)(?:"([^"]*)"|'([^']*)'|([^\s;&|]+))/gi;
+
+function isSecretKey(name) {
+  if (name == null) return false;
+  const value = String(name);
+  return SECRET_KEY_PRIMARY.test(value)
+    || SECRET_KEY_SEGMENT.test(value)
+    || SECRET_KEY_SUFFIX.test(value);
+}
+
+function containsSecretValue(value) {
+  const text = String(value == null ? '' : value);
+  return SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function isEnvReference(value) {
+  return ENV_REFERENCE.test(String(value == null ? '' : value).trim());
+}
+
+function commandIssue(command) {
+  const text = String(command);
+  if (containsSecretValue(text)) {
+    return 'contains a literal credential';
+  }
+  for (const match of text.matchAll(ASSIGNMENT)) {
+    const key = match[1];
+    const value = match[2] ?? match[3] ?? match[4] ?? '';
+    if (isSecretKey(key) && !isEnvReference(value)) {
+      return `assigns a literal credential to ${key}`;
+    }
+  }
+  for (const match of text.matchAll(SECRET_FLAG)) {
+    const value = match[1] ?? match[2] ?? match[3] ?? '';
+    if (!isEnvReference(value)) {
+      return 'passes a literal credential on the command line';
+    }
+  }
+  return null;
+}
+
+function decodeUrlPart(value) {
+  try {
+    return decodeURIComponent(String(value));
+  } catch {
+    return String(value);
+  }
+}
+
+function connectionUrlIssue(url, passwordEnv) {
+  const text = String(url == null ? '' : url);
+  if (!text || text.length > 1000 || text.includes('\0')
+      || text.includes('\n') || text.includes('\r')) {
+    return 'is invalid';
+  }
+  let parsed;
+  try {
+    parsed = new URL(text);
+  } catch {
+    return 'must be a valid URL';
+  }
+  const literalPassword = decodeUrlPart(parsed.password);
+  if (literalPassword) {
+    if (!passwordEnv) {
+      return 'must not contain a literal password without password_env';
+    }
+    if (literalPassword !== '${password}') {
+      return 'must use ${password} in the userinfo, not a literal password';
+    }
+  }
+  if (containsSecretValue(decodeUrlPart(text))) {
+    return 'contains a literal credential';
+  }
+  for (const [name, value] of parsed.searchParams) {
+    if (isSecretKey(name) && value !== '${password}') {
+      return `query parameter ${name} must use \${password}`;
+    }
+    if (containsSecretValue(value)) {
+      return `query parameter ${name} contains a literal credential`;
+    }
+  }
+  for (const segment of parsed.pathname.split('/')) {
+    const decoded = decodeUrlPart(segment);
+    if (containsSecretValue(decoded)) {
+      return 'path contains a literal credential';
+    }
+    const match = decoded.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*(.+)$/);
+    if (match && isSecretKey(match[1]) && match[2] !== '${password}') {
+      return `path parameter ${match[1]} must use \${password}`;
+    }
+    // A bare 32+ hex/64 hex value is not a plausible database/schema name and
+    // matches the shape of the generated service password.
+    if (/^[a-f0-9]{32,}$/i.test(decoded)) {
+      return 'path contains a credential-like value';
+    }
+  }
+  const fragment = decodeUrlPart(parsed.hash || '');
+  if (fragment && containsSecretValue(fragment)) {
+    return 'fragment contains a literal credential';
+  }
+  return null;
+}
 
 const TOP_LEVEL = new Set([
   'schema_version', 'repo_url', 'base_branch', 'languages', 'image',
@@ -39,13 +164,17 @@ const TOP_LEVEL = new Set([
   'services', 'flaky_tests', 'egress',
 ]);
 
-function envIssue(env) {
+function envIssue(env, options = {}) {
   if (!env) return null;
+  const reserved = options.reserved === true;
   for (const [key, value] of Object.entries(env)) {
     if (!ENV_KEY.test(key)) {
       return `profile env key "${key}" must match ${ENV_KEY}`;
     }
-    if (SECRET_KEY.test(key)) {
+    if (reserved && RESERVED_ENV.has(key)) {
+      return `env key "${key}" is reserved and cannot be set by a service`;
+    }
+    if (isSecretKey(key)) {
       return `profile env key "${key}" looks secret; use the credential store instead`;
     }
     if (typeof value !== 'string') {
@@ -54,7 +183,7 @@ function envIssue(env) {
     if (value.length > 4000 || value.includes('\0') || value.includes('\n') || value.includes('\r')) {
       return `profile env value for "${key}" is invalid`;
     }
-    if (SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value))) {
+    if (containsSecretValue(value)) {
       return `profile env value for "${key}" looks like a credential; use the credential store instead`;
     }
   }
@@ -143,7 +272,7 @@ const serviceSchema = Joi.object({
   env: Joi.object().max(32).default({}),
   password_env: Joi.string().trim().pattern(ENV_KEY).allow('').optional(),
   connection_env: Joi.string().trim().pattern(ENV_KEY).required(),
-  connection_url: Joi.string().trim().min(1).max(1000).required(),
+  connection_url: Joi.string().trim().min(1).max(1000).pattern(COMMAND).required(),
   healthcheck: serviceHealthcheckSchema.required(),
 });
 
@@ -213,6 +342,12 @@ function validateRepoProfile(value) {
   }
   const envError = envIssue(validated.env);
   if (envError) issues.push(envError);
+  for (const field of ['setup', 'verify']) {
+    (validated[field] || []).forEach((command, index) => {
+      const issue = commandIssue(command);
+      if (issue) issues.push(`${field}[${index}] ${issue}`);
+    });
+  }
 
   if (Array.isArray(validated.services) && validated.services.length > 0) {
     const names = new Set();
@@ -235,13 +370,30 @@ function validateRepoProfile(value) {
           issues.push(`unknown ${prefix}.healthcheck field: ${key}`);
         }
       }
-      const serviceEnvIssue = envIssue(service.env);
+      const serviceEnvIssue = envIssue(service.env, { reserved: true });
       if (serviceEnvIssue) {
         issues.push(`${prefix}.env: ${serviceEnvIssue}`);
       }
       const passwordEnv = service.password_env || null;
+      if (passwordEnv && RESERVED_ENV.has(passwordEnv)) {
+        issues.push(`${prefix}.password_env "${passwordEnv}" is reserved`);
+      }
+      if (service.connection_env && RESERVED_ENV.has(service.connection_env)) {
+        issues.push(`${prefix}.connection_env "${service.connection_env}" is reserved`);
+      }
+      if (isSecretKey(service.connection_env)) {
+        issues.push(`${prefix}.connection_env must not look secret; use password_env`);
+      }
+      const healthIssue = commandIssue(service.healthcheck?.command);
+      if (healthIssue) {
+        issues.push(`${prefix}.healthcheck.command ${healthIssue}`);
+      }
       if (passwordEnv && service.env && Object.hasOwn(service.env, passwordEnv)) {
         issues.push(`${prefix}.env must not set password_env "${passwordEnv}"`);
+      }
+      const urlIssue = connectionUrlIssue(service.connection_url, passwordEnv);
+      if (urlIssue) {
+        issues.push(`${prefix}.connection_url ${urlIssue}`);
       }
       if (passwordEnv && !String(service.connection_url).includes('${password}')) {
         issues.push(`${prefix}.connection_url must include \${password} when password_env is set`);
@@ -256,10 +408,6 @@ function validateRepoProfile(value) {
         if (match[1] !== 'host' && match[1] !== 'password') {
           issues.push(`${prefix}.connection_url has unsupported placeholder \${${match[1]}}`);
         }
-      }
-      if (/\/\/[^/\s]*:[^/\s]*@/.test(service.connection_url)
-          && !String(service.connection_url).includes('${password}')) {
-        issues.push(`${prefix}.connection_url must use \${password}, not a literal credential`);
       }
       if (profileEnvKeys.has(service.connection_env)) {
         issues.push(`${prefix}.connection_env "${service.connection_env}" conflicts with profile env`);
@@ -343,5 +491,6 @@ module.exports = {
   normalizeExactHost,
   LANGUAGES,
   CACHES,
-  SECRET_KEY,
+  isSecretKey,
+  RESERVED_ENV,
 };

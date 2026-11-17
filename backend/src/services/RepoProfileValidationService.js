@@ -1,6 +1,7 @@
 const { pool } = require('../db');
 const RepoProfileService = require('./RepoProfileService');
 const { NotFoundError, ForbiddenError, ValidationError, ConflictError } = require('../errors/HttpError');
+const { redactPayload } = require('../utils/harnessRedaction');
 
 const STALE_FLOOR_MINUTES = 60;
 const STALE_BUFFER_MINUTES = 5;
@@ -12,7 +13,7 @@ function staleMinutesFor(profile) {
   return Math.max(STALE_FLOOR_MINUTES, budget) + STALE_BUFFER_MINUTES;
 }
 
-function format(row) {
+function format(row, options = {}) {
   return {
     id: row.id,
     project_id: row.project_id,
@@ -23,7 +24,7 @@ function format(row) {
     status: row.status,
     requested_by: row.requested_by,
     agent_id: row.agent_id,
-    result: row.result,
+    result: options.includeResult === false ? null : row.result,
     error: row.error,
     created_at: row.created_at,
     started_at: row.started_at,
@@ -40,7 +41,11 @@ function normalizeResult(result) {
   if (Buffer.byteLength(serialized, 'utf8') > MAX_RESULT_BYTES) {
     throw new ValidationError('result must be at most 1 MiB');
   }
-  return result;
+  // Defense in depth: the agent redacts known service passwords and
+  // credential formats before reporting, but the result crosses a process and
+  // an HTTP boundary. Re-scan it at ingest so no caller can persist a
+  // credential-shaped output.
+  return redactPayload(result).payload;
 }
 
 class RepoProfileValidationService {
@@ -106,18 +111,20 @@ class RepoProfileValidationService {
 
   async list(projectId, user) {
     await RepoProfileService.assertCanRead(projectId, user);
+    const includeResult = await RepoProfileService.canWrite(projectId, user);
     const result = await pool.query(
       `SELECT * FROM repo_profile_validations
        WHERE project_id = $1
        ORDER BY created_at DESC
-       LIMIT 50`,
+       LIMIT 200`,
       [projectId]
     );
-    return result.rows.map(format);
+    return result.rows.map((row) => format(row, { includeResult }));
   }
 
   async get(projectId, validationId, user) {
     await RepoProfileService.assertCanRead(projectId, user);
+    const includeResult = await RepoProfileService.canWrite(projectId, user);
     const result = await pool.query(
       'SELECT * FROM repo_profile_validations WHERE id = $1 AND project_id = $2',
       [validationId, projectId]
@@ -125,7 +132,7 @@ class RepoProfileValidationService {
     if (result.rows.length === 0) {
       throw new NotFoundError('Repo profile validation not found');
     }
-    return format(result.rows[0]);
+    return format(result.rows[0], { includeResult });
   }
 
   async claimNext(projectId, agent) {
@@ -177,7 +184,9 @@ class RepoProfileValidationService {
       throw new ValidationError("status must be 'succeeded' or 'failed'");
     }
     const result = normalizeResult(payload.result);
-    const error = payload.error == null ? null : String(payload.error).slice(0, 4000);
+    const error = payload.error == null
+      ? null
+      : redactPayload({ error: String(payload.error).slice(0, 4000) }).payload.error;
 
     const existing = await pool.query(
       'SELECT * FROM repo_profile_validations WHERE id = $1 AND project_id = $2',

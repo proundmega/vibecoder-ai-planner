@@ -19,7 +19,19 @@ final class SandboxSecurity {
      * {@code HOME}, {@code NPM_CONFIG_CACHE}, ...).
      */
     private static final Pattern SECRET_KEY = Pattern.compile(
-        "(?i).*((^|_)key($|_)|api[_-]?key|access[_-]?key|secret|token|password|passwd|credential|private[_-]?key).*");
+        "(?i)(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|token|credential"
+            + "|pass(?:word|wd|phrase))|(?:^|_)(?:key|pass|pwd)(?:$|_)|(?:pass|pwd)$");
+
+    private static final java.util.Set<String> RESERVED_SERVICE_ENV = java.util.Set.of(
+        "PATH", "HOME", "TMPDIR", "TEMP", "TMP", "SHELL", "USER", "LOGNAME",
+        "HOSTNAME", "SHLVL", "PWD", "OLDPWD",
+        "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "DYLD_INSERT_LIBRARIES",
+        "NODE_OPTIONS", "NODE_PATH", "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP",
+        "PERL5LIB", "RUBYLIB", "GEM_HOME", "GEM_PATH", "CLASSPATH",
+        "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "BASH_ENV", "ENV", "IFS",
+        "PROMPT_COMMAND", "DOCKER_HOST", "DOCKER_CONFIG", "SSH_AUTH_SOCK",
+        "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+        "http_proxy", "https_proxy", "all_proxy", "no_proxy");
 
     /**
      * URLs with embedded userinfo ({@code scheme://user:pass@host}). Non-secret
@@ -36,7 +48,11 @@ final class SandboxSecurity {
     }
 
     static boolean isSecretKey(String name) {
-        return name != null && SECRET_KEY.matcher(name).matches();
+        return name != null && SECRET_KEY.matcher(name).find();
+    }
+
+    static boolean isReservedServiceEnv(String name) {
+        return name != null && RESERVED_SERVICE_ENV.contains(name);
     }
 
     static boolean looksLikeCredential(String value) {

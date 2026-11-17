@@ -269,10 +269,10 @@ public class ProfileValidationProcessor {
         for (VerificationResult result : phaseResults) {
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("phase", phase);
-            entry.put("command", result.command());
+            entry.put("command", RedactionRegistry.redact(result.command()));
             entry.put("exitCode", result.exitCode());
             entry.put("timedOut", result.timedOut());
-            entry.put("output", result.output());
+            entry.put("output", RedactionRegistry.redact(result.output()));
             entry.put("durationMs", durationMs);
             results.add(entry);
             passed = passed && result.passed();
@@ -285,8 +285,9 @@ public class ProfileValidationProcessor {
         RepoProfileValidation validation,
         String message
     ) {
-        log.warn("Repo-profile validation {} failed: {}", validation.id(), message);
-        report(projectId, validation, "failed", Map.of(), message);
+        String safe = RedactionRegistry.redact(message);
+        log.warn("Repo-profile validation {} failed: {}", validation.id(), safe);
+        report(projectId, validation, "failed", Map.of(), safe);
     }
 
     private void report(
@@ -298,7 +299,8 @@ public class ProfileValidationProcessor {
     ) {
         try {
             apiService.finishRepoProfileValidation(
-                projectId, validation.id(), status, result, error);
+                projectId, validation.id(), status, result,
+                error == null ? null : RedactionRegistry.redact(error));
         } catch (IOException | RuntimeException e) {
             log.warn("Could not report repo-profile validation {}: {}",
                 validation.id(), e.getMessage());

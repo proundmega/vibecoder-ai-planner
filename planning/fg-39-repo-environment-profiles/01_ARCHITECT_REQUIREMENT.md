@@ -32,11 +32,11 @@ Without profiles, agents spend their budget debugging the environment or fail ve
 ## Slice 1 scope
 
 Slice 1 implements FR1, FR2, FR3 (operator-provided pinned image), FR6, FR7,
-FR9, FR10 and the fg-34/D27 origin-CA profile handoff. Persistent caches (FR4),
-services (FR5) and flaky-test retry (FR8) are rejected at validation until
-their slices land, so no profile declares storage or execution it does not
-get. FR3's prebuilt image catalog is deferred to slice 4; slice 1 accepts any
-digest-pinned image the operator supplies.
+FR9, FR10 and the fg-34/D27 origin-CA profile handoff. Persistent caches (FR4)
+and flaky-test retry (FR8) are rejected at validation until their slices land,
+so no profile declares storage or execution it does not get. FR3's prebuilt
+image catalog is deferred to slice 4; slice 1 accepts any digest-pinned image
+the operator supplies.
 
 Slice 2 adds FR5: ephemeral service containers with health checks, a per-run
 internal network, generated test passwords and injected connection env. Slice 5
