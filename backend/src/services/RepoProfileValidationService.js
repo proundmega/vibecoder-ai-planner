@@ -24,7 +24,9 @@ function format(row, options = {}) {
     status: row.status,
     requested_by: row.requested_by,
     agent_id: row.agent_id,
-    result: options.includeResult === false ? null : redactResult(row.result),
+    result: options.includeResult === false
+      ? null
+      : (options.redact === false ? row.result : redactResult(row.result)),
     error: row.error == null ? null : redactText(row.error),
     created_at: row.created_at,
     started_at: row.started_at,
