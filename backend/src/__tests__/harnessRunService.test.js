@@ -125,10 +125,11 @@ describe('HarnessRunService', () => {
 
       expect(HarnessAuditService.recordPrivacy).toHaveBeenCalledWith(
         expect.objectContaining({
-          projectId: expect.anything(),
+          projectId: 5,
           action: 'start_blocked',
           ticketId: 42,
           agentId: 7,
+          dedupeKey: 'privacy:start_blocked:42:anthropic',
         })
       );
       expect(client.release).toHaveBeenCalled();

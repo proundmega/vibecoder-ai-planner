@@ -30,14 +30,17 @@ describe('Harness privacy export (real DB)', () => {
       [projectId, ownerId]
     );
     ticketId = ticket.rows[0].id;
-    for (const content of [
-      'first contact alice@example.com token ghp_abcdefghijklmnopqrstuvwxyz0123456789',
-      'second contact bob@example.com',
+    for (const [content, metadata] of [
+      [
+        'first contact alice@example.com token ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+        { password: 'hunter2', nested: { token: 'abc123' }, input_tokens: 4 },
+      ],
+      ['second contact bob@example.com', {}],
     ]) {
       await pool.query(
-        `INSERT INTO ticket_messages (ticket_id, user_id, message_type, content)
-         VALUES ($1, $2, 'update', $3)`,
-        [ticketId, ownerId, content]
+        `INSERT INTO ticket_messages (ticket_id, user_id, message_type, content, metadata)
+         VALUES ($1, $2, 'update', $3, $4)`,
+        [ticketId, ownerId, content, JSON.stringify(metadata)]
       );
     }
   });
@@ -65,6 +68,12 @@ describe('Harness privacy export (real DB)', () => {
     expect(combined).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz0123456789');
     expect(combined).toContain('[REDACTED_EMAIL]');
     expect(combined).toContain('[REDACTED]');
+    const seeded = data.messages.find((row) => row.id && row.metadata && row.metadata.password);
+    expect(seeded.metadata.password).toBe('[REDACTED]');
+    expect(seeded.metadata.nested.token).toBe('[REDACTED]');
+    expect(seeded.metadata.input_tokens).toBe(4);
+    expect(combined).not.toContain('hunter2');
+    expect(combined).not.toContain('abc123');
     expect(data.hasMore).toBe(false);
     expect(data.nextOffset).toBeNull();
   });

@@ -1,6 +1,11 @@
 const crypto = require('crypto');
 const { pool } = require('../db');
-const { redactPayload, redactText } = require('../utils/harnessRedaction');
+const {
+  redactPayload,
+  redactText,
+  SENSITIVE_KEY_PATTERN,
+  TOKEN_COUNT_KEYS,
+} = require('../utils/harnessRedaction');
 const {
   ValidationError,
   ConflictError,
@@ -134,23 +139,33 @@ function rowToPolicy(row, source) {
   };
 }
 
-function redactExportValue(value) {
+function isExportTokenCountKey(key) {
+  return TOKEN_COUNT_KEYS.has(String(key).toLowerCase().replace(/[_-]/g, ''));
+}
+
+function redactExportValue(value, key = null) {
+  if (key !== null && !isExportTokenCountKey(key) && SENSITIVE_KEY_PATTERN.test(key)) {
+    return '[REDACTED]';
+  }
   if (typeof value === 'string') {
     return redactText(value);
   }
   if (Array.isArray(value)) {
-    return value.map(redactExportValue);
+    return value.map((child) => redactExportValue(child, key));
   }
   if (value && typeof value === 'object' && !(value instanceof Date)) {
     return Object.fromEntries(
-      Object.entries(value).map(([key, child]) => [key, redactExportValue(child)])
+      Object.entries(value).map(([childKey, child]) => [
+        childKey,
+        redactExportValue(child, childKey),
+      ])
     );
   }
   return value;
 }
 
 function redactExportRow(row) {
-  return row ? redactExportValue(row) : row;
+  return row ? redactExportValue(row, null) : row;
 }
 
 function redactExportRows(rows) {
@@ -543,6 +558,11 @@ class HarnessPrivacyService {
     }
   }
 
+  /**
+   * Redacted, offset-paginated export. Each page runs in its own repeatable-
+   * read transaction; callers must follow `nextOffset` to get a complete set.
+   * A single long-lived snapshot/keyset cursor is deferred (D10).
+   */
   async exportProjectData(projectId, { limit = 1000, offset = 0 } = {}) {
     const id = positiveInteger(projectId, 'projectId');
     const parsedLimit = Number(limit);
@@ -567,31 +587,31 @@ class HarnessPrivacyService {
       );
       const usage = await client.query(
         `SELECT * FROM harness_usage WHERE project_id = $1
-         ORDER BY created_at ASC LIMIT $2 OFFSET $3`,
+         ORDER BY created_at ASC, id ASC LIMIT $2 OFFSET $3`,
         [id, fetchLimit, parsedOffset]
       );
       const runs = await client.query(
         `SELECT * FROM harness_runs WHERE project_id = $1
-         ORDER BY started_at ASC LIMIT $2 OFFSET $3`,
+         ORDER BY started_at ASC, id ASC LIMIT $2 OFFSET $3`,
         [id, fetchLimit, parsedOffset]
       );
       const checkpoints = await client.query(
         `SELECT hc.* FROM harness_checkpoints hc
          JOIN harness_runs r ON r.id = hc.run_id
          WHERE r.project_id = $1
-         ORDER BY hc.created_at ASC LIMIT $2 OFFSET $3`,
+         ORDER BY hc.created_at ASC, hc.id ASC LIMIT $2 OFFSET $3`,
         [id, fetchLimit, parsedOffset]
       );
       const messages = await client.query(
         `SELECT tm.* FROM ticket_messages tm
          JOIN tickets t ON t.id = tm.ticket_id
          WHERE t.project_id = $1
-         ORDER BY tm.created_at ASC LIMIT $2 OFFSET $3`,
+         ORDER BY tm.created_at ASC, tm.id ASC LIMIT $2 OFFSET $3`,
         [id, fetchLimit, parsedOffset]
       );
       const usageLogs = await client.query(
         `SELECT * FROM usage_logs WHERE project_id = $1
-         ORDER BY created_at ASC LIMIT $2 OFFSET $3`,
+         ORDER BY created_at ASC, id ASC LIMIT $2 OFFSET $3`,
         [id, fetchLimit, parsedOffset]
       );
       await client.query('COMMIT');

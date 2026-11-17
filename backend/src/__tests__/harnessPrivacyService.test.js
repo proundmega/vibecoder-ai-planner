@@ -365,6 +365,11 @@ describe('HarnessPrivacyService', () => {
             rows: [{
               id: 'm1',
               content: 'mail alice@example.com token ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+              metadata: {
+                password: 'hunter2',
+                nested: { token: 'abc123' },
+                ticket_count: 3,
+              },
             }],
           })
           .mockResolvedValueOnce({ rows: [{ id: 'l1' }] })
@@ -386,6 +391,9 @@ describe('HarnessPrivacyService', () => {
       expect(data.messages[0].content).toContain('[REDACTED_EMAIL]');
       expect(data.messages[0].content).not.toContain('alice@example.com');
       expect(data.messages[0].content).not.toContain('ghp_');
+      expect(data.messages[0].metadata.password).toBe('[REDACTED]');
+      expect(data.messages[0].metadata.nested.token).toBe('[REDACTED]');
+      expect(data.messages[0].metadata.ticket_count).toBe(3);
       expect(client.query).toHaveBeenCalledWith('COMMIT');
       expect(client.release).toHaveBeenCalled();
     });

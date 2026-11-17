@@ -195,6 +195,7 @@ class HarnessRunService {
               action: 'start_blocked',
               reason: redactText(String(error.message || error)),
               actorType: 'agent',
+              dedupeKey: `privacy:start_blocked:${normalisedTicketId}:${provider || 'none'}`,
               payload: { provider: provider || null },
             });
           } catch (auditError) {

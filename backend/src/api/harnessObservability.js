@@ -693,7 +693,7 @@ router.post('/projects/:projectId/privacy/delete', verifyTokenOrAgent, async (re
  *         schema: { type: integer, minimum: 0 }
  *     responses:
  *       200:
- *         description: Redacted project run data export
+ *         description: Redacted project run data export (offset-paginated; each page is an independent snapshot)
  */
 router.get('/projects/:projectId/privacy/export', verifyTokenOrAgent, async (req, res, next) => {
   try {

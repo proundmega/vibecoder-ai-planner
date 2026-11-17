@@ -39,3 +39,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D7 | Entropy-threshold and bare-10-digit phone tuning per provider | fg-42 | Security | revisit if false positives/negatives appear in real repos | open |
 | D8 | On-disk workspace/artifact deletion and per-project artifact retention | fg-42 | Retention | fg-44/workspace lifecycle | open |
 | D9 | Repo-visibility classification, production changed-path enumeration for path rules, and exhaustive PII classifier (addresses, configurable customer identifiers) | fg-42 | Security | follow-up privacy classifier ticket | open |
+| D10 | Keyset/single-snapshot project export for very large projects | fg-42 | Retention | follow-up export job ticket | open |
