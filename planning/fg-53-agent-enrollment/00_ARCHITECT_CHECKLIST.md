@@ -63,7 +63,7 @@ needed to mint and revoke enrollment tokens.
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Plan merged | pending (planning PR) | ☐ |
+| Plan merged | PR #173 (open) | ☐ |
 | Implementation merged | pending | ☐ |
 | Verification results | n/a — planned | ☐ |
 
