@@ -27,6 +27,7 @@ duplicating its scope.
 | UX-2 | Delete guard is read-then-write with no row lock. A concurrent `backlog -> in_progress` can still delete an in-progress ticket. | `TicketService.delete`; PR #168 review | Make the soft delete conditional/`FOR UPDATE` if it must be a hard invariant | P2 | open |
 | UX-3 | `done` tickets are deletable; there is no archive lifecycle. | `TicketService.delete` blocks only `in_progress` | Define archive/restore, or allow purge only with an audited permission | P3 | open |
 | UX-4 | Unstyled classes. `.btn-primary` (`ErrorPage.vue`), `.btn-sm` (`TerminalView.vue`), `.ticket-content` (`TicketBoard.vue`), `.badge` base (`TicketDetail.vue`). | class/style scan; PR #168 notes | Move to `VButton`/design tokens or add scoped rules | P3 | open |
+| PROV-1 | Provider types offered by the UI but not implemented: `azure`, `google`, `cohere`. `ProviderRouter.createProvider` throws "Unknown provider type" when testing them, and the Java agent's `default:` branch silently falls back to `ClaudeProvider` with a non-Anthropic key. | `Providers.vue` `providerTypes`; `ProviderRouter.js`; `AgentApp.createAiProvider` default | Add real adapters or hide the options; make unknown types fail closed | P2 | open (PR #170 adds OpenCode; these remain) |
 
 ### Recently fixed (do not re-track)
 
