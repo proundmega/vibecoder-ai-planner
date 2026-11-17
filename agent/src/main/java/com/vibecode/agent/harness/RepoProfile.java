@@ -15,6 +15,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -67,7 +69,7 @@ public class RepoProfile {
     private Timeouts timeouts = new Timeouts();
     @JsonProperty("max_round_minutes")
     private int maxRoundMinutes = 45;
-    private List<Object> services = List.of();
+    private List<Service> services = List.of();
     @JsonProperty("flaky_tests")
     private List<String> flakyTests = List.of();
     private Egress egress;
@@ -85,6 +87,108 @@ public class RepoProfile {
 
         public int verifyMinutes() {
             return verifyMinutes;
+        }
+    }
+
+
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY,
+        getterVisibility = JsonAutoDetect.Visibility.NONE,
+        isGetterVisibility = JsonAutoDetect.Visibility.NONE,
+        setterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonIgnoreProperties(ignoreUnknown = false)
+    public static class Service {
+        private String name;
+        private String image;
+        private Map<String, String> env = Map.of();
+        @JsonProperty("password_env")
+        private String passwordEnv;
+        @JsonProperty("connection_env")
+        private String connectionEnv;
+        @JsonProperty("connection_url")
+        private String connectionUrl;
+        private Healthcheck healthcheck;
+
+        public String name() {
+            return name;
+        }
+
+        public String image() {
+            return image;
+        }
+
+        public Map<String, String> env() {
+            return env == null ? Map.of() : Map.copyOf(env);
+        }
+
+        public String passwordEnv() {
+            return passwordEnv == null || passwordEnv.isBlank() ? null : passwordEnv;
+        }
+
+        public String connectionEnv() {
+            return connectionEnv;
+        }
+
+        public String connectionUrl() {
+            return connectionUrl;
+        }
+
+        public Healthcheck healthcheck() {
+            return healthcheck;
+        }
+
+        public ServiceSpec toSpec() {
+            Healthcheck check = healthcheck();
+            return new ServiceSpec(
+                name(),
+                image(),
+                env(),
+                passwordEnv(),
+                connectionEnv(),
+                connectionUrl(),
+                new ServiceSpec.Healthcheck(
+                    check.command(),
+                    check.intervalSeconds(),
+                    check.timeoutSeconds(),
+                    check.retries(),
+                    check.startPeriodSeconds()
+                )
+            );
+        }
+    }
+
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY,
+        getterVisibility = JsonAutoDetect.Visibility.NONE,
+        isGetterVisibility = JsonAutoDetect.Visibility.NONE,
+        setterVisibility = JsonAutoDetect.Visibility.NONE)
+    @JsonIgnoreProperties(ignoreUnknown = false)
+    public static class Healthcheck {
+        private String command;
+        @JsonProperty("interval_seconds")
+        private int intervalSeconds = 2;
+        @JsonProperty("timeout_seconds")
+        private int timeoutSeconds = 5;
+        private int retries = 30;
+        @JsonProperty("start_period_seconds")
+        private int startPeriodSeconds = 0;
+
+        public String command() {
+            return command;
+        }
+
+        public int intervalSeconds() {
+            return intervalSeconds;
+        }
+
+        public int timeoutSeconds() {
+            return timeoutSeconds;
+        }
+
+        public int retries() {
+            return retries;
+        }
+
+        public int startPeriodSeconds() {
+            return startPeriodSeconds;
         }
     }
 
@@ -210,7 +314,7 @@ public class RepoProfile {
         return maxRoundMinutes;
     }
 
-    public List<Object> services() {
+    public List<Service> services() {
         return services == null ? List.of() : List.copyOf(services);
     }
 
@@ -276,15 +380,130 @@ public class RepoProfile {
         if (maxRoundMinutes < 1 || maxRoundMinutes > 240) {
             throw new IllegalArgumentException("profile max_round_minutes must be 1-240");
         }
-        if (!services().isEmpty()) {
-            throw new IllegalArgumentException(
-                "profile services are not implemented until fg-39 slice 2");
-        }
+        validateServices();
         if (!flakyTests().isEmpty()) {
             throw new IllegalArgumentException(
                 "profile flaky_tests are not implemented until fg-39 slice 3");
         }
         validateEgress();
+    }
+
+
+    private void validateServices() {
+        if (services().size() > 5) {
+            throw new IllegalArgumentException("profile services must contain at most 5 entries");
+        }
+        Set<String> names = new LinkedHashSet<>();
+        Set<String> connectionEnvs = new LinkedHashSet<>();
+        for (Service service : services()) {
+            if (service == null) {
+                throw new IllegalArgumentException("profile service is null");
+            }
+            if (service.name() == null || !service.name().matches("[a-z][a-z0-9-]{0,30}")) {
+                throw new IllegalArgumentException("profile service name is invalid: " + service.name());
+            }
+            if (!names.add(service.name())) {
+                throw new IllegalArgumentException("profile service name is duplicated: " + service.name());
+            }
+            if (service.image() == null || !IMAGE.matcher(service.image()).matches()) {
+                throw new IllegalArgumentException(
+                    "profile service image must be pinned by digest: " + service.name());
+            }
+            for (Map.Entry<String, String> entry : service.env().entrySet()) {
+                validateEnvEntry(entry.getKey(), entry.getValue(), "service " + service.name());
+            }
+            String passwordEnv = service.passwordEnv();
+            if (passwordEnv != null) {
+                if (!ENV_KEY.matcher(passwordEnv).matches()) {
+                    throw new IllegalArgumentException(
+                        "profile service " + service.name() + " password_env is invalid");
+                }
+                if (service.env().containsKey(passwordEnv)) {
+                    throw new IllegalArgumentException(
+                        "profile service " + service.name() + " must not set password_env directly");
+                }
+                if (service.connectionUrl() == null
+                    || !service.connectionUrl().contains("${password}")) {
+                    throw new IllegalArgumentException(
+                        "profile service " + service.name()
+                            + " connection_url must include ${password}");
+                }
+            } else if (service.connectionUrl() != null
+                && service.connectionUrl().contains("${password}")) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name()
+                        + " uses ${password} without password_env");
+            }
+            if (service.connectionUrl() == null || !service.connectionUrl().contains("${host}")) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name() + " connection_url must include ${host}");
+            }
+            Matcher placeholders = Pattern.compile("\\$\\{([^}]+)\\}")
+                .matcher(service.connectionUrl());
+            while (placeholders.find()) {
+                String token = placeholders.group(1);
+                if (!token.equals("host") && !token.equals("password")) {
+                    throw new IllegalArgumentException(
+                        "profile service " + service.name()
+                            + " connection_url has unsupported placeholder ${" + token + "}");
+                }
+            }
+            if (service.connectionUrl().matches(".*//[^/\\s]*:[^/\\s]*@.*")
+                && !service.connectionUrl().contains("${password}")) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name()
+                        + " connection_url must use ${password}, not a literal credential");
+            }
+            if (service.connectionEnv() == null || !ENV_KEY.matcher(service.connectionEnv()).matches()) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name() + " connection_env is invalid");
+            }
+            if (env().containsKey(service.connectionEnv())) {
+                throw new IllegalArgumentException(
+                    "profile service connection_env conflicts with profile env: "
+                        + service.connectionEnv());
+            }
+            if (!connectionEnvs.add(service.connectionEnv())) {
+                throw new IllegalArgumentException(
+                    "profile service connection_env is duplicated: " + service.connectionEnv());
+            }
+            Healthcheck healthcheck = service.healthcheck();
+            if (healthcheck == null) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name() + " healthcheck is required");
+            }
+            if (healthcheck.command() == null || healthcheck.command().isBlank()
+                || healthcheck.command().length() > 500
+                || healthcheck.command().indexOf('\0') >= 0
+                || healthcheck.command().indexOf('\n') >= 0
+                || healthcheck.command().indexOf('\r') >= 0) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name() + " healthcheck command is invalid");
+            }
+            if (healthcheck.intervalSeconds() < 1 || healthcheck.intervalSeconds() > 60
+                || healthcheck.timeoutSeconds() < 1 || healthcheck.timeoutSeconds() > 60
+                || healthcheck.retries() < 1 || healthcheck.retries() > 120
+                || healthcheck.startPeriodSeconds() < 0
+                || healthcheck.startPeriodSeconds() > 120) {
+                throw new IllegalArgumentException(
+                    "profile service " + service.name() + " healthcheck bounds are invalid");
+            }
+        }
+    }
+
+    private static void validateEnvEntry(String key, String value, String source) {
+        if (key == null || !ENV_KEY.matcher(key).matches()) {
+            throw new IllegalArgumentException(source + " env key is invalid: " + key);
+        }
+        if (SECRET_KEY.matcher(key).find()) {
+            throw new IllegalArgumentException(source + " env key looks secret: " + key);
+        }
+        String text = value == null ? "" : value;
+        for (Pattern pattern : SECRET_VALUES) {
+            if (pattern.matcher(text).find()) {
+                throw new IllegalArgumentException(source + " env value looks like a credential: " + key);
+            }
+        }
     }
 
     private void validateEgress() {

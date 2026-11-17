@@ -165,6 +165,11 @@ public class ProfileValidationProcessor {
                     throw new IllegalStateException(
                         "The profile validation budget was exhausted during sandbox setup");
                 }
+            } else if (!profile.services().isEmpty()) {
+                reportFailed(projectId, validation,
+                    "The profile declares services, but host mode cannot provide them. "
+                        + "Set SANDBOX_MODE=docker.");
+                return;
             } else if (profile.image() != null || !profile.caches().isEmpty()
                 || profile.egress() != null) {
                 log.warn("Repo profile image/caches/egress are ignored in host mode; "

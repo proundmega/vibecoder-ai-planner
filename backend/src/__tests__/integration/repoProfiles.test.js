@@ -212,6 +212,64 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
     await pool.query('DELETE FROM repo_profiles WHERE project_id = $1', [projectId]);
   });
 
+  test('service definitions round-trip through storage and activation', async () => {
+    const service = {
+      name: 'postgres',
+      image: `postgres@sha256:${'a'.repeat(64)}`,
+      env: { POSTGRES_USER: 'vibecode', POSTGRES_DB: 'test' },
+      password_env: 'POSTGRES_PASSWORD',
+      connection_env: 'DATABASE_URL',
+      connection_url: 'postgresql://vibecode:${password}@${host}:5432/test',
+      healthcheck: {
+        command: 'pg_isready -U vibecode -d test',
+        interval_seconds: 2,
+        timeout_seconds: 5,
+        retries: 30,
+      },
+    };
+
+    const draft = await RepoProfileService.create(projectId, profile({
+      services: [service],
+    }), { userId: ownerId, role: 'project_admin' });
+
+    expect(draft.profile.services).toEqual([
+      { ...service, healthcheck: { ...service.healthcheck, start_period_seconds: 0 } },
+    ]);
+
+    const active = await validateAndActivate(draft.id);
+    expect(active.status).toBe('active');
+    expect(active.profile.services).toEqual([
+      { ...service, healthcheck: { ...service.healthcheck, start_period_seconds: 0 } },
+    ]);
+    expect(JSON.stringify(active.profile)).not.toContain('POSTGRES_PASSWORD=');
+
+    await pool.query('DELETE FROM repo_profiles WHERE project_id = $1', [projectId]);
+  });
+
+  test('service definitions with a literal password are rejected before storage', async () => {
+    const before = await pool.query(
+      'SELECT count(*)::int AS count FROM repo_profiles WHERE project_id = $1',
+      [projectId]
+    );
+    await expect(RepoProfileService.create(projectId, profile({
+      services: [{
+        name: 'postgres',
+        image: `postgres@sha256:${'a'.repeat(64)}`,
+        env: { POSTGRES_USER: 'vibecode' },
+        connection_env: 'DATABASE_URL',
+        connection_url: 'postgresql://vibecode:hunter2@${host}:5432/test',
+        healthcheck: { command: 'pg_isready' },
+      }],
+    }), { userId: ownerId, role: 'project_admin' }))
+      .rejects.toThrow(/literal credential/);
+
+    const after = await pool.query(
+      'SELECT count(*)::int AS count FROM repo_profiles WHERE project_id = $1',
+      [projectId]
+    );
+    expect(after.rows[0].count).toBe(before.rows[0].count);
+  });
+
   test('a project without an active repository cannot create a profile', async () => {
     await expect(RepoProfileService.create(noRepoProjectId, profile(), {
       userId: ownerId, role: 'project_admin',

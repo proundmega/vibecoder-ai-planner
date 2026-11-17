@@ -183,6 +183,68 @@ existing GitHub agent config route.
    build queue in the same poll cycle.
 7. The worker does not start a model session and does not publish anything.
 
+
+## Slice 2 service schema (v1)
+
+```json
+{
+  "services": [
+    {
+      "name": "postgres",
+      "image": "postgres:16-alpine@sha256:...",
+      "env": { "POSTGRES_USER": "vibecode", "POSTGRES_DB": "vibecode_test" },
+      "password_env": "POSTGRES_PASSWORD",
+      "connection_env": "DATABASE_URL",
+      "connection_url": "postgresql://vibecode:${password}@${host}:5432/vibecode_test",
+      "healthcheck": {
+        "command": "pg_isready -U vibecode -d vibecode_test",
+        "interval_seconds": 2,
+        "timeout_seconds": 5,
+        "retries": 30,
+        "start_period_seconds": 0
+      }
+    }
+  ]
+}
+```
+
+- Maximum five services, unique DNS-safe names and digest-pinned images.
+- `env` is non-secret service configuration. `password_env` is optional; when
+  set, the agent generates a per-run password and puts it only in that service
+  environment.
+- `connection_url` must contain `${host}` and, when `password_env` is set,
+  `${password}`. No other placeholders or literal credentials are accepted.
+- `connection_env` is injected into the sandbox; it must not collide with the
+  profile env or another service.
+- `healthcheck` is required and bounded (1–60s interval/timeout, 1–120 retries,
+  0–120s start period).
+- Services require `SANDBOX_MODE=docker`; host mode fails closed.
+
+### Service lifecycle
+
+1. Create a per-run internal bridge network (`vibecode-services-<suffix>`).
+2. Start each service container with its env file, healthcheck flags, bounded
+   memory/PIDs/CPU and an owner label.
+3. Wait for Docker health `healthy`; fail fast on `unhealthy`, `exited`, `dead`
+   or timeout.
+4. Read each service IP and add an `/etc/hosts` entry to the sandbox. The
+   sandbox uses the service network as its primary network; external DNS stays
+   disabled and the egress network is attached afterwards when allowlist mode
+   is enabled.
+5. Generate connection URLs, pass them to the sandbox through a 0600 env-file
+   (never argv or profile JSON), and remove the file after `docker run`.
+6. Destroy service containers with `-v` and the network after the sandbox.
+
+## Slice 5 profile editor
+
+- New `Repository Profile` tab in `ProjectDetail.vue` backed by
+  `RepoProfileEditor.vue`.
+- Shows the active/latest version, status, exact-content validation requirement
+  and read-only state for non-owners.
+- Supports detect, draft create/save, command/env/timeout/service/egress fields,
+  dry-run polling, activation and version/validation history.
+- Does not expose deferred fields (`caches`, `flaky_tests`).
+
 ## Persistent caches (deferred)
 
 Persistent cache mounts are **not** part of slice 1. A writable Docker volume

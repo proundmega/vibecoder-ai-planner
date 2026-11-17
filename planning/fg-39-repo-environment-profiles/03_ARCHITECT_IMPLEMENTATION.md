@@ -5,6 +5,20 @@
 
 ## Plan
 
+### Slice 2 — services and Slice 5 — editor
+
+- [x] Profile schema + agent model for bounded service definitions
+      (`name`, digest-pinned image, non-secret env, generated password env,
+      connection env/URL placeholders, required healthcheck).
+- [x] Agent Docker service runtime: per-run internal network, health wait,
+      sandbox `/etc/hosts` entries, generated connection env via 0600 env-file,
+      cleanup on failure/destroy/startup reaping.
+- [x] Host mode fails closed for profiles with services.
+- [x] Frontend `repoProfiles` API module, `RepoProfileEditor` component and
+      Project Settings tab.
+- [x] Tests for backend/agent validation, Docker service lifecycle, frontend
+      API and editor save flow.
+
 ### Slice 1 — schema, detection, runtime, dry run
 
 - [x] Migration `050_repo_profiles.sql` + rollback: profiles, validations,
@@ -58,6 +72,18 @@
 | `agent/src/test/java/.../SandboxConfigTest.java` | edit | Profile image/env/CA |
 | `agent/src/test/java/.../WorkspaceManagerTest.java` | edit | Base branch + failure |
 | `agent/src/test/java/.../HarnessTicketProcessorTest.java` | edit | Profile-driven run |
+| `agent/.../harness/ServiceSpec.java` | add | Service container spec |
+| `agent/.../harness/RepoProfile.java` | edit | Service schema + validation/toSpec |
+| `agent/.../harness/SandboxConfig.java` | edit | Profile services -> spec; host fail |
+| `agent/.../harness/DockerSandboxRunner.java` | edit | Service network/containers/health/cleanup |
+| `agent/src/test/java/.../DockerSandboxRunnerTest.java` | edit | Healthy/unhealthy service lifecycle |
+| `agent/src/test/java/.../SandboxConfigTest.java` | edit | Services require Docker |
+| `frontend/src/api/repoProfiles.ts` | add | Hand-written profile API client/types |
+| `frontend/src/components/RepoProfileEditor.vue` | add | Profile editor |
+| `frontend/src/views/ProjectDetail.vue` | edit | Repository Profile tab |
+| `frontend/src/__tests__/repoProfiles.test.ts` | add | API contract |
+| `frontend/src/__tests__/repoProfileEditor.test.ts` | add | Editor load/save |
+| `backend/src/__tests__/repoProfileService.test.js` | edit | Service schema validation |
 
 ## Dependencies
 
@@ -75,13 +101,14 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR2 | Backend | `repoProfileService.test.js` | Detect Node/Python/Java/Go/monorepo manifests and propose commands | same |
 | FR3 | Backend/Agent | `repoProfileService.test.js`, `SandboxConfigTest.java` | Image override only with `@sha256`; profile image reaches `SandboxSpec` | both |
 | FR4 | Backend/Agent | `repoProfileService.test.js`, `RepoProfileTest.java` | Non-empty caches are rejected until D9/fg-44 (no unbounded volume); cache quota/GC is deferred | both |
-| FR5 | Backend | `repoProfileService.test.js` | Non-empty `services` is rejected until slice 2 (fail closed) | `cd backend && npx jest repoProfileService --runInBand` |
+| FR5 | Backend/Agent/Frontend | `repoProfileService.test.js`, `RepoProfileTest.java`, `SandboxConfigTest.java`, `DockerSandboxRunnerTest.java`, `RepoProfileEditor.vue` | Service schema validation; Docker lifecycle with health wait, generated credentials, internal network and cleanup; host mode fails closed; editor can edit/save services | backend/agent/frontend suites |
 | FR6 | Agent | `HarnessTicketProcessorTest.java`, `ProfileValidationProcessorTest.java`, `WorkspaceManagerTest.java` | Model session and setup/verify share the `max_round_minutes` cap; clone has a bounded timeout; failure stops publish | `cd agent && mvn -Dtest=HarnessTicketProcessorTest,ProfileValidationProcessorTest,WorkspaceManagerTest test` |
 | FR7 | Backend/Agent | `repoProfileService.test.js`, `RepoProfileTest.java` | Non-secret env accepted; secret-like key/value rejected | both |
 | FR8 | Backend | `repoProfileService.test.js` | Non-empty `flaky_tests` is rejected until slice 3 (never silently ignored) | `cd backend && npx jest repoProfileService --runInBand` |
 | FR9 | Backend/Agent | `repoProfileValidationService.test.js`, `ProfileValidationProcessorTest.java` | Queue/claim/finish; success/failure result; profile-budget stale reap (>60-minute regression); activation requires the successful exact `profile_hash`; dry runs run after ticket work | both |
 | FR10 | Agent | `HarnessTicketProcessorTest.java` | Missing/failed profile fetch warns and keeps autodetection; a profile for another repo is rejected before run start | `cd agent && mvn -Dtest=HarnessTicketProcessorTest test` |
 | D27 | Backend/Agent | `repoProfileService.test.js`, `SandboxConfigTest.java` | CA bundle shape validated; host must be allowlisted; `sni-only` mismatch fails closed | both |
+| FR2/FR5 (UI) | Frontend | `repoProfiles.test.ts`, `repoProfileEditor.test.ts` | Detect/save/validate/activate API contract; draft editor loads and saves profile fields | `cd frontend && npx vitest run src/__tests__/repoProfiles.test.ts src/__tests__/repoProfileEditor.test.ts` |
 | D29 | Backend/Agent | `repoProfileMtlsService.test.js`, `RepoProfileTest.java`, `SandboxConfigTest.java`, `EgressProxyScriptTest.java`, `EgressProxyTerminateIntegrationTest.java` | mTLS credential cert/key match, encrypted key, scoped hosts; profile reference validation; proxy presents the client cert only to the exact host and audits use | both |
 
 ## Review checklist
@@ -101,3 +128,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 | 2026-11-16 | `cdb6d13` | Backend 137 suites / 1717 tests; agent 683 tests / 9 skipped; real-Postgres integration 4 tests | Final review cleanup: `max_round_minutes` is passed to the OpenCode client so the model session is bounded; dry-run clone/sandbox setup share the overall deadline and clone has an explicit timeout; harness-run profile evidence requires an active profile with a matching successful validation; migration 050 adds idempotent `profile_hash` columns; cache documentation drift removed. |
 | 2026-11-16 | `32ce869` | Backend 137 suites / 1719 tests; agent 683 tests / 9 skipped; integration 6 tests | Upgrade-safe migration: `profile_hash` ALTERs run before the index that references them; a real-Postgres test creates the earlier draft schema and applies 050. Legacy null profile hashes are persisted when queuing validation or activating, so existing profiles can be validated and activated. Runtime clone timeout now follows the profile setup budget. |
 | 2026-11-16 | `97fcc99` | Backend 137 suites / 1721 tests | Closed the legacy-hash race: the validation request only backfills `profile_hash` when it is still null, re-reads on a lost update and fails with a conflict if the profile changed. Activation also backfills an already-active legacy row. Added unit regressions for both paths. |
+| 2026-11-17 | `feat/fg-39-slice2-services` | Backend 145 suites / 1830 tests; agent 748 tests / 10 skipped; frontend 63 files / 575 tests; real-Postgres integration 8 tests; real-Docker service smoke test | Pass. Slice 2 adds bounded service definitions, a per-run internal network, Docker health checks, generated per-run passwords through 0600 env-files, sandbox `/etc/hosts` entries, egress attach after creation, and cleanup on failure/destroy. Host mode fails closed for services. Slice 5 adds the Repository Profile tab and editor with detection, drafts, dry-run polling, activation, version history and read-only gating. Verified with backend lint (0 errors), backend unit/integration, agent `mvn test`, frontend lint/typecheck/tests, `SANDBOX_IT_IMAGE=vibecode-agent-sandbox:latest SANDBOX_IT_SERVICE_IMAGE=pgvector/pgvector@sha256:7d0a… mvn test -Dtest=DockerSandboxRunnerIntegrationTest#reachesAProfileServiceContainer`, `node planning/check-planning.js`, `git diff --check`, and root/test/override Compose configs. |

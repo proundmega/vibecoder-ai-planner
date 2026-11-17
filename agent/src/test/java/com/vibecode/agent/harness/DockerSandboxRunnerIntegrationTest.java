@@ -263,6 +263,52 @@ class DockerSandboxRunnerIntegrationTest {
         }
     }
 
+
+    @Test
+    void reachesAProfileServiceContainer() throws Exception {
+        String image = System.getenv("SANDBOX_IT_IMAGE");
+        String serviceImage = System.getenv("SANDBOX_IT_SERVICE_IMAGE");
+        Assumptions.assumeTrue(image != null && !image.isBlank(),
+            "SANDBOX_IT_IMAGE is not set; skipping the service smoke test");
+        Assumptions.assumeTrue(serviceImage != null
+                && serviceImage.contains("@sha256:"),
+            "SANDBOX_IT_SERVICE_IMAGE must be a digest-pinned image");
+        Assumptions.assumeTrue(
+            FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+            "POSIX permissions are required for the service smoke test");
+
+        SandboxConfig config = integrationConfig(image, Map.of());
+        RepoProfile profile = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+            {"schema_version":1,"verify":["true"],"services":[{
+              "name":"postgres",
+              "image":"%s",
+              "env":{"POSTGRES_USER":"vibecode","POSTGRES_DB":"test"},
+              "password_env":"POSTGRES_PASSWORD",
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode:${password}@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready -U vibecode -d test",
+                "interval_seconds":1,"timeout_seconds":3,"retries":30}
+            }]}
+            """.formatted(serviceImage), RepoProfile.class);
+        SandboxConfig effective = config.withRepoProfile(profile, "1", 1);
+        Path workspace = Files.createDirectories(tempDir.resolve("services-workspace"));
+        Files.setPosixFilePermissions(workspace, PosixFilePermissions.fromString("rwxrwxrwx"));
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(effective)) {
+            SandboxHandle handle = runner.create(effective.specFor(workspace));
+            try {
+                ExecResult result = runner.exec(handle, ExecRequest.of(
+                    "python3 -c \"import socket; "
+                        + "socket.create_connection(('postgres',5432),10); print('ok')\"",
+                    Duration.ofSeconds(30)));
+                assertTrue(result.passed(), result.output());
+                assertTrue(result.output().contains("ok"), result.output());
+            } finally {
+                runner.destroy(handle);
+            }
+        }
+    }
+
     @Test
     void allowsOnlyTheConfiguredEgressHostsAndBlocksDirectAccess() throws IOException {
         Assumptions.assumeTrue("1".equals(System.getenv("SANDBOX_IT_NETWORK")),

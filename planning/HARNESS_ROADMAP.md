@@ -31,7 +31,7 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-36 | `fg-36-merge-lifecycle` | Planned | Base branch, conflicts, CI gate, merge queue, rollback | fg-31, fg-32 |
 | fg-37 | `fg-37-agent-evaluation-harness` | Planned | Golden corpus, grading, metrics, A/B, reviewer calibration | fg-30/31/32 |
 | fg-38 | `fg-38-harness-budgets-routing` | In progress (implementation pending merge) | Live budgets, hard stops, quotas, model routing/fallback | fg-30 Phase 1 |
-| fg-39 | `fg-39-repo-environment-profiles` | In review (#161, Slice 1) | Repo onboarding, versioned profiles, detection, dry-run, setup/verify, pinned image, repo binding and exact-content activation; caches/services/flaky/per-stack images planned | fg-34 |
+| fg-39 | `fg-39-repo-environment-profiles` | Slices 2 & 5 in progress | Slice 1 merged (#161); adding service containers/health checks and the Project Settings profile editor; caches/flaky/per-stack images planned | fg-34 |
 | fg-40 | `fg-40-multi-agent-orchestration` | Planned | Roles, task graph, worktrees, handoffs, integrator | fg-33, fg-36, fg-38, fg-39 |
 | fg-41 | `fg-41-harness-observability` | In progress (implementation pending merge) | Event stream, traces, replay, dashboards, audit | fg-33 |
 | fg-42 | `fg-42-harness-privacy` | In review (#166) | Classification, redaction, provider policy, retention | fg-34, fg-41 |

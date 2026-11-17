@@ -90,6 +90,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
     private final Map<String, ScheduledExecutorService> watchdogs = new ConcurrentHashMap<>();
     private final Map<String, Process> runningProcesses = new ConcurrentHashMap<>();
     private final Map<String, EgressRuntime> egress = new ConcurrentHashMap<>();
+    private final Map<String, ServiceRuntime> services = new ConcurrentHashMap<>();
     // One exec at a time per sandbox: the post-exec freeze must not catch
     // another in-flight command and destroy the container for doing so.
     private final Map<String, ReentrantLock> execLocks = new ConcurrentHashMap<>();
@@ -115,6 +116,51 @@ public final class DockerSandboxRunner implements SandboxRunner {
         Runtime.getRuntime().addShutdownHook(shutdownHook);
     }
 
+
+    /** Runtime state for one sandbox's profile service containers. */
+    static final class ServiceRuntime {
+        private final String network;
+        private final List<String> containers;
+        private final Map<String, String> environment;
+        private final Map<String, String> hosts;
+
+        ServiceRuntime(
+            String network,
+            List<String> containers,
+            Map<String, String> environment,
+            Map<String, String> hosts
+        ) {
+            this.network = network;
+            this.containers = List.copyOf(containers);
+            this.environment = Map.copyOf(environment);
+            this.hosts = Map.copyOf(hosts);
+        }
+
+        String network() {
+            return network;
+        }
+
+        List<String> containers() {
+            return containers;
+        }
+
+        Map<String, String> environment() {
+            return environment;
+        }
+
+        Map<String, String> hosts() {
+            return hosts;
+        }
+
+        @Override
+        public String toString() {
+            return "ServiceRuntime{network=" + network
+                + ", containers=" + containers
+                + ", environmentKeys=" + environment.keySet()
+                + ", hosts=" + hosts.keySet() + "}";
+        }
+    }
+
     /** Test seam for the watchdog scheduler. */
     @FunctionalInterface
     interface WatchdogFactory {
@@ -130,21 +176,43 @@ public final class DockerSandboxRunner implements SandboxRunner {
         String name = "vibecode-sandbox-" + UUID.randomUUID().toString()
             .replace("-", "").substring(0, 12);
 
+        ServiceRuntime serviceRuntime = startServices(name, spec);
+        if (serviceRuntime != null) {
+            services.put(name, serviceRuntime);
+        }
+
         EgressRuntime egressRuntime = null;
-        if (spec.networkEnabled()) {
-            egressRuntime = startEgress(name, spec);
-            egress.put(name, egressRuntime);
+        try {
+            if (spec.networkEnabled()) {
+                egressRuntime = startEgress(name, spec);
+                egress.put(name, egressRuntime);
+            }
+        } catch (IOException | RuntimeException e) {
+            destroyByName(name);
+            throw e instanceof IOException io ? io : new IOException(e);
         }
 
         List<String> command = new ArrayList<>();
         command.add(config.dockerBinary());
+        Path serviceEnvFile = null;
         try {
-            command.addAll(buildCreateArgs(spec, name, egressRuntime));
-        } catch (RuntimeException e) {
+            if (serviceRuntime != null && !serviceRuntime.environment().isEmpty()) {
+                serviceEnvFile = writeEnvironmentFile(serviceRuntime.environment());
+            }
+            command.addAll(buildCreateArgs(
+                spec, name, egressRuntime, serviceRuntime, serviceEnvFile));
+        } catch (IOException | RuntimeException e) {
+            deleteQuietly(serviceEnvFile);
             destroyByName(name);
-            throw new IOException("Could not build the sandbox command", e);
+            throw e instanceof IOException io ? io
+                : new IOException("Could not build the sandbox command", e);
         }
-        DockerResult result = runDocker(command, CREATE_TIMEOUT, CONTROL_OUTPUT_BYTES);
+        DockerResult result;
+        try {
+            result = runDocker(command, CREATE_TIMEOUT, CONTROL_OUTPUT_BYTES);
+        } finally {
+            deleteQuietly(serviceEnvFile);
+        }
         if (result.timedOut() || result.exitCode() != 0) {
             destroyByName(name);
             throw new IOException("Could not start sandbox '" + name + "': "
@@ -159,6 +227,20 @@ public final class DockerSandboxRunner implements SandboxRunner {
         if (!"true".equals(inspect.output().trim())) {
             destroyByName(name);
             throw new IOException("Sandbox '" + name + "' is not running: " + inspect.output());
+        }
+
+        if (serviceRuntime != null && egressRuntime != null) {
+            DockerResult connected = runDocker(
+                List.of(config.dockerBinary(), "network", "connect",
+                    egressRuntime.network(), name),
+                CREATE_TIMEOUT,
+                CONTROL_OUTPUT_BYTES
+            );
+            if (connected.timedOut() || connected.exitCode() != 0) {
+                destroyByName(name);
+                throw new IOException("Could not attach sandbox '" + name
+                    + "' to the egress network: " + connected.output());
+            }
         }
 
         try {
@@ -198,8 +280,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
         if (watchdog != null) {
             watchdogs.put(name, watchdog);
         }
-        log.info("Started sandbox {} (image {}, workspace {})",
-            name, spec.image(), spec.mountSource());
+        log.info("Started sandbox {} (image {}, workspace {}, services {})",
+            name, spec.image(), spec.mountSource(), spec.services().size());
         return new SandboxHandle(name, workspace, false, Instant.now());
     }
 
@@ -451,6 +533,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
         watchdogs.clear();
         runningProcesses.clear();
         egress.clear();
+        services.clear();
         execLocks.clear();
         compromised.clear();
         if (created.isEmpty()) {
@@ -484,6 +567,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
     private void stopByName(String name) {
         stopWatchdog(name);
         stopContainer(name);
+        stopServices(name);
         stopEgress(name);
     }
 
@@ -518,8 +602,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     LOG_REDACTOR.redact(combined.trim()));
             }
         }
-        // The sandbox may still exist; always attempt to remove its egress
-        // network and proxy so a later retry does not leak them.
+        // The sandbox may still exist; always attempt to remove its service
+        // containers/network and egress proxy/network so a later retry does not
+        // leak them.
+        stopServices(name);
         stopEgress(name);
         return gone;
     }
@@ -1243,6 +1329,220 @@ public final class DockerSandboxRunner implements SandboxRunner {
      * The sandbox joins only the internal network, so it has no default route
      * and every outbound connection must pass through the proxy.
      */
+
+    private ServiceRuntime startServices(String sandboxName, SandboxSpec spec) throws IOException {
+        if (spec.services().isEmpty()) {
+            return null;
+        }
+        String suffix = sandboxName.startsWith("vibecode-sandbox-")
+            ? sandboxName.substring("vibecode-sandbox-".length())
+            : sandboxName;
+        String network = "vibecode-services-" + suffix;
+        List<String> networkCommand = new ArrayList<>(List.of(
+            config.dockerBinary(), "network", "create",
+            "--driver", "bridge", "--internal", "--label", LABEL));
+        addOwnerLabel(networkCommand, spec.owner());
+        networkCommand.add(network);
+        DockerResult created = runDocker(networkCommand, CREATE_TIMEOUT, CONTROL_OUTPUT_BYTES);
+        if (created.timedOut() || created.exitCode() != 0) {
+            throw new IOException("Could not create service network '" + network + "': "
+                + created.output());
+        }
+
+        List<String> containers = new ArrayList<>();
+        Map<String, String> environment = new LinkedHashMap<>();
+        Map<String, String> hosts = new LinkedHashMap<>();
+        try {
+            for (ServiceSpec service : spec.services()) {
+                String container = "vibecode-service-" + suffix + "-" + service.name();
+                Map<String, String> serviceEnvironment = new LinkedHashMap<>(service.env());
+                String password = service.passwordEnv() == null ? null : randomServicePassword();
+                if (password != null) {
+                    serviceEnvironment.put(service.passwordEnv(), password);
+                }
+                Path envFile = writeEnvironmentFile(serviceEnvironment);
+                List<String> command = new ArrayList<>(List.of(
+                    config.dockerBinary(), "run", "-d", "--name", container,
+                    "--label", LABEL
+                ));
+                addOwnerLabel(command, spec.owner());
+                command.addAll(List.of(
+                    "--network", network,
+                    "--pids-limit", "256",
+                    "--memory", "536870912",
+                    "--cpus", "1.0",
+                    "--security-opt", "no-new-privileges",
+                    "--health-cmd", service.healthcheck().command(),
+                    "--health-interval", service.healthcheck().intervalSeconds() + "s",
+                    "--health-timeout", service.healthcheck().timeoutSeconds() + "s",
+                    "--health-retries", String.valueOf(service.healthcheck().retries())
+                ));
+                if (service.healthcheck().startPeriodSeconds() > 0) {
+                    command.add("--health-start-period");
+                    command.add(service.healthcheck().startPeriodSeconds() + "s");
+                }
+                command.add("--env-file");
+                command.add(envFile.toString());
+                command.add(service.image());
+                DockerResult started;
+                try {
+                    started = runDocker(command, CREATE_TIMEOUT, CONTROL_OUTPUT_BYTES);
+                } finally {
+                    deleteQuietly(envFile);
+                }
+                if (started.timedOut() || started.exitCode() != 0) {
+                    throw new IOException("Could not start service '" + service.name()
+                        + "': " + (started.timedOut() ? "docker run timed out" : started.output()));
+                }
+                containers.add(container);
+                awaitServiceHealthy(container, service.healthcheck());
+                DockerResult address = runDocker(
+                    List.of(config.dockerBinary(), "inspect", "-f",
+                        "{{index .NetworkSettings.Networks \"" + network + "\" \"IPAddress\"}}",
+                        container),
+                    INSPECT_TIMEOUT,
+                    1_024
+                );
+                String serviceAddress = address.output().trim();
+                if (address.exitCode() != 0 || !serviceAddress.matches("[0-9a-fA-F:.]+")) {
+                    throw new IOException("Could not determine the address of service '"
+                        + service.name() + "': " + address.output());
+                }
+                hosts.put(service.name(), serviceAddress);
+                String url = service.connectionUrl().replace("${host}", service.name());
+                if (password != null) {
+                    url = url.replace("${password}", password);
+                }
+                environment.put(service.connectionEnv(), url);
+            }
+            return new ServiceRuntime(network, containers, environment, hosts);
+        } catch (IOException | RuntimeException e) {
+            for (String container : containers) {
+                runDocker(List.of(config.dockerBinary(), "rm", "-f", "-v", container),
+                    CONTROL_TIMEOUT, CONTROL_OUTPUT_BYTES);
+            }
+            runDocker(List.of(config.dockerBinary(), "network", "rm", network),
+                CONTROL_TIMEOUT, CONTROL_OUTPUT_BYTES);
+            throw e instanceof IOException io ? io : new IOException(e);
+        }
+    }
+
+    private void stopServices(String name) {
+        ServiceRuntime runtime = services.remove(name);
+        if (runtime == null) {
+            return;
+        }
+        for (String container : runtime.containers()) {
+            DockerResult removed = runDocker(
+                List.of(config.dockerBinary(), "rm", "-f", "-v", container),
+                CONTROL_TIMEOUT,
+                CONTROL_OUTPUT_BYTES
+            );
+            if (!removed.timedOut() && removed.exitCode() == 0) {
+                continue;
+            }
+            String output = removed.output().toLowerCase();
+            if (!output.contains("no such container") && !output.contains("no such object")) {
+                log.warn("Could not remove service container {}: {}", container,
+                    LOG_REDACTOR.redact(removed.output().trim()));
+            }
+        }
+        // stop() keeps the sandbox container, so detach it before removing the
+        // network; destroy() already removed the container and this is a no-op.
+        runDocker(
+            List.of(config.dockerBinary(), "network", "disconnect", "-f",
+                runtime.network(), name),
+            CONTROL_TIMEOUT,
+            CONTROL_OUTPUT_BYTES
+        );
+        DockerResult network = runDocker(
+            List.of(config.dockerBinary(), "network", "rm", runtime.network()),
+            CONTROL_TIMEOUT,
+            CONTROL_OUTPUT_BYTES
+        );
+        if (network.exitCode() != 0 && !network.timedOut()) {
+            String output = network.output().toLowerCase();
+            if (!output.contains("not found") && !output.contains("no such")) {
+                log.warn("Could not remove service network {}: {}", runtime.network(),
+                    LOG_REDACTOR.redact(network.output().trim()));
+            }
+        }
+    }
+
+    private void awaitServiceHealthy(String container, ServiceSpec.Healthcheck healthcheck)
+        throws IOException {
+        long timeoutMs = Math.min(300_000L,
+            (healthcheck.startPeriodSeconds()
+                + (long) healthcheck.intervalSeconds() * healthcheck.retries() + 15L) * 1_000L);
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+        while (System.nanoTime() < deadline) {
+            DockerResult state = runDocker(
+                List.of(config.dockerBinary(), "inspect", "-f",
+                    "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}",
+                    container),
+                INSPECT_TIMEOUT,
+                1_024
+            );
+            if (state.timedOut() || state.exitCode() != 0) {
+                throw new IOException("Could not inspect service '" + container + "': "
+                    + state.output());
+            }
+            String status = state.output().trim().toLowerCase();
+            if ("healthy".equals(status)) {
+                return;
+            }
+            if ("unhealthy".equals(status) || "exited".equals(status)
+                || "dead".equals(status) || "removing".equals(status)) {
+                throw new IOException("Service '" + container + "' is " + status);
+            }
+            try {
+                Thread.sleep(Math.max(1, healthcheck.intervalSeconds()) * 1_000L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while waiting for service '" + container + "'", e);
+            }
+        }
+        throw new IOException("Service '" + container + "' did not become healthy within "
+            + timeoutMs / 1_000 + "s");
+    }
+
+    private Path writeEnvironmentFile(Map<String, String> environment) throws IOException {
+        Path file = Files.createTempFile("vibecode-service-env-", ".env");
+        try {
+            try {
+                Files.setPosixFilePermissions(file,
+                    PosixFilePermissions.fromString("rw-------"));
+            } catch (UnsupportedOperationException ignored) {
+                // Non-POSIX filesystems still get the process umask.
+            }
+            StringBuilder content = new StringBuilder();
+            for (Map.Entry<String, String> entry : environment.entrySet()) {
+                content.append(entry.getKey()).append('=').append(entry.getValue()).append('\n');
+            }
+            Files.writeString(file, content.toString(), StandardCharsets.UTF_8);
+            return file;
+        } catch (IOException | RuntimeException e) {
+            deleteQuietly(file);
+            throw e;
+        }
+    }
+
+    private static void deleteQuietly(Path file) {
+        if (file == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException ignored) {
+            // Best effort; the file contains only test service configuration.
+        }
+    }
+
+    private static String randomServicePassword() {
+        return (UUID.randomUUID().toString() + UUID.randomUUID())
+            .replace("-", "");
+    }
+
     private EgressRuntime startEgress(String sandboxName, SandboxSpec spec) throws IOException {
         String suffix = sandboxName.startsWith("vibecode-sandbox-")
             ? sandboxName.substring("vibecode-sandbox-".length())
@@ -2228,6 +2528,25 @@ public final class DockerSandboxRunner implements SandboxRunner {
         String name,
         EgressRuntime egress
     ) {
+        return buildCreateArgs(spec, name, egress, null);
+    }
+
+    static List<String> buildCreateArgs(
+        SandboxSpec spec,
+        String name,
+        EgressRuntime egress,
+        ServiceRuntime serviceRuntime
+    ) {
+        return buildCreateArgs(spec, name, egress, serviceRuntime, null);
+    }
+
+    static List<String> buildCreateArgs(
+        SandboxSpec spec,
+        String name,
+        EgressRuntime egress,
+        ServiceRuntime serviceRuntime,
+        Path serviceEnvFile
+    ) {
         List<String> args = new ArrayList<>();
         args.add("run");
         args.add("-d");
@@ -2306,7 +2625,15 @@ public final class DockerSandboxRunner implements SandboxRunner {
         // resolves nothing: external DNS would be an untracked exfiltration
         // channel. The proxy is addressed by IP and also pinned in /etc/hosts.
         args.add("--network");
-        args.add(egress == null ? "none" : egress.network());
+        args.add(serviceRuntime != null
+            ? serviceRuntime.network()
+            : (egress == null ? "none" : egress.network()));
+        if (serviceRuntime != null) {
+            for (Map.Entry<String, String> host : serviceRuntime.hosts().entrySet()) {
+                args.add("--add-host");
+                args.add(host.getKey() + ":" + host.getValue());
+            }
+        }
         if (egress != null) {
             args.add("--dns");
             args.add("127.0.0.1");
@@ -2317,7 +2644,14 @@ public final class DockerSandboxRunner implements SandboxRunner {
             args.add(egress.proxyName() + ":" + pinned);
         }
 
-        for (Map.Entry<String, String> entry : containerEnvironment(spec, egress).entrySet()) {
+        if (serviceEnvFile != null) {
+            args.add("--env-file");
+            args.add(serviceEnvFile.toString());
+        }
+        for (Map.Entry<String, String> entry : containerEnvironment(spec, egress,
+                serviceEnvFile == null && serviceRuntime != null
+                    ? serviceRuntime.environment()
+                    : Map.of()).entrySet()) {
             args.add("-e");
             args.add(entry.getKey() + "=" + entry.getValue());
         }
@@ -2402,6 +2736,14 @@ public final class DockerSandboxRunner implements SandboxRunner {
     }
 
     static Map<String, String> containerEnvironment(SandboxSpec spec, EgressRuntime egress) {
+        return containerEnvironment(spec, egress, Map.of());
+    }
+
+    static Map<String, String> containerEnvironment(
+        SandboxSpec spec,
+        EgressRuntime egress,
+        Map<String, String> serviceEnvironment
+    ) {
         Map<String, String> env = new LinkedHashMap<>(spec.env());
         env.putIfAbsent("HOME", "/tmp");
         env.putIfAbsent("TMPDIR", "/tmp");
@@ -2431,6 +2773,11 @@ public final class DockerSandboxRunner implements SandboxRunner {
             }
         }
         SandboxSecurity.validateEnv(env, "sandbox environment");
+        if (serviceEnvironment != null && !serviceEnvironment.isEmpty()) {
+            // Generated service connection values may contain a per-run test
+            // password. They are trusted supervisor output, never profile env.
+            env.putAll(serviceEnvironment);
+        }
         return env;
     }
 

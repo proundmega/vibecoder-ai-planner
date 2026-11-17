@@ -45,6 +45,24 @@ function clientWith(responses) {
   return client;
 }
 
+function validService(overrides = {}) {
+  return {
+    name: 'postgres',
+    image: `postgres@sha256:${'a'.repeat(64)}`,
+    env: { POSTGRES_USER: 'vibecode', POSTGRES_DB: 'test' },
+    password_env: 'POSTGRES_PASSWORD',
+    connection_env: 'DATABASE_URL',
+    connection_url: 'postgresql://vibecode:${password}@${host}:5432/test',
+    healthcheck: {
+      command: 'pg_isready -U vibecode -d test',
+      interval_seconds: 2,
+      timeout_seconds: 5,
+      retries: 30,
+    },
+    ...overrides,
+  };
+}
+
 function validProfile(overrides = {}) {
   return {
     schema_version: 1,
@@ -248,14 +266,10 @@ describe('RepoProfileService', () => {
       ).rejects.toThrow(/looks like a credential/);
     });
 
-    it('rejects unknown fields and unimplemented services/caches/flaky tests', async () => {
+    it('rejects unknown fields and unimplemented caches/flaky tests', async () => {
       await expect(
         RepoProfileService.create(1, validProfile({ wat: true }), owner())
       ).rejects.toThrow(/unknown profile field/);
-
-      await expect(
-        RepoProfileService.create(1, validProfile({ services: [{ name: 'postgres' }] }), owner())
-      ).rejects.toThrow(/slice 2/);
 
       await expect(
         RepoProfileService.create(1, validProfile({ caches: ['npm'] }), owner())
@@ -264,6 +278,48 @@ describe('RepoProfileService', () => {
       await expect(
         RepoProfileService.create(1, validProfile({ flaky_tests: ['test/flaky.js'] }), owner())
       ).rejects.toThrow(/slice 3/);
+    });
+
+    it('accepts a valid service container definition', async () => {
+      const stored = {
+        id: 'p1', project_id: 1, version: 1,
+        profile: validProfile({ services: [validService()] }), status: 'draft',
+      };
+      clientWith([
+        {},
+        { rows: [{ id: 1 }] },
+        { rows: [{ version: 1 }] },
+        { rows: [stored] },
+        {},
+      ]);
+
+      await expect(RepoProfileService.create(
+        1, validProfile({ services: [validService()] }), owner()
+      )).resolves.toBeTruthy();
+    });
+
+    it('rejects unsafe or inconsistent service definitions', async () => {
+      const cases = [
+        validService({ image: 'postgres:16' }),
+        validService({ healthcheck: undefined }),
+        validService({ connection_url: 'postgresql://vibecode:secret@db:5432/test' }),
+        validService({ connection_url: 'postgresql://${host}:5432/test' }),
+        validService({ password_env: 'POSTGRES_PASSWORD', env: {
+          POSTGRES_USER: 'vibecode', POSTGRES_PASSWORD: 'x',
+        } }),
+      ];
+      for (const service of cases) {
+        await expect(RepoProfileService.create(
+          1, validProfile({ services: [service] }), owner()
+        )).rejects.toThrow();
+      }
+      await expect(RepoProfileService.create(1, validProfile({
+        env: { DATABASE_URL: 'not-secret' },
+        services: [validService()],
+      }), owner())).rejects.toThrow(/connection_env/);
+      await expect(RepoProfileService.create(1, validProfile({
+        services: [validService(), validService()],
+      }), owner())).rejects.toThrow(/unique/);
     });
   });
 

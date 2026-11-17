@@ -84,16 +84,67 @@ class RepoProfileTest {
     }
 
     @Test
-    void rejectsUnknownFieldsAndUnimplementedServicesFlakyTests() {
+    void rejectsUnknownFieldsAndUnimplementedFlakyTests() {
         assertThrows(Exception.class, () -> parse("""
             {"schema_version":1,"verify":["npm test"],"unknown_field":true}
             """));
         assertThrows(IllegalArgumentException.class, () -> parse("""
-            {"schema_version":1,"verify":["npm test"],"services":[{"name":"postgres"}]}
-            """));
-        assertThrows(IllegalArgumentException.class, () -> parse("""
             {"schema_version":1,"verify":["npm test"],"flaky_tests":["test/flake.js"]}
             """));
+    }
+
+    @Test
+    void parsesAValidServiceDefinition() throws Exception {
+        RepoProfile profile = parse("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres",
+              "image":"postgres@sha256:%s",
+              "env":{"POSTGRES_USER":"vibecode","POSTGRES_DB":"test"},
+              "password_env":"POSTGRES_PASSWORD",
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode:${password}@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready -U vibecode -d test",
+                "interval_seconds":2,"timeout_seconds":5,"retries":30}
+            }]}
+            """.formatted("a".repeat(64)));
+
+        assertEquals(1, profile.services().size());
+        ServiceSpec spec = profile.services().get(0).toSpec();
+        assertEquals("postgres", spec.name());
+        assertEquals("DATABASE_URL", spec.connectionEnv());
+        assertEquals(2, spec.healthcheck().intervalSeconds());
+    }
+
+    @Test
+    void rejectsInvalidServiceDefinitions() {
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres",
+              "image":"postgres:16",
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode:${password}@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready"}
+            }]}
+            """));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres",
+              "image":"postgres@sha256:%s",
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode:secret@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready"}
+            }]}
+            """.formatted("a".repeat(64))));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"services":[{
+              "name":"postgres",
+              "image":"postgres@sha256:%s",
+              "password_env":"not a valid key",
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode:${password}@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready"}
+            }]}
+            """.formatted("a".repeat(64))));
     }
 
     @Test

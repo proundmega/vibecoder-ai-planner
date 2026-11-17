@@ -13,6 +13,15 @@ const IMAGE = /^[A-Za-z0-9][A-Za-z0-9._/:@-]*@sha256:[a-f0-9]{64}$/;
 const ENV_KEY = /^[A-Z_][A-Z0-9_]*$/;
 const COMMAND = /^[^\0\r\n]+$/;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+const SERVICE_NAME = /^[a-z][a-z0-9-]{0,30}$/;
+const SERVICE_KEYS = new Set([
+  'name', 'image', 'env', 'password_env', 'connection_env',
+  'connection_url', 'healthcheck',
+]);
+const HEALTHCHECK_KEYS = new Set([
+  'command', 'interval_seconds', 'timeout_seconds', 'retries',
+  'start_period_seconds',
+]);
 
 const SECRET_VALUE_PATTERNS = [
   /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/,
@@ -119,6 +128,25 @@ function caBundleIssue(b64) {
   return null;
 }
 
+
+const serviceHealthcheckSchema = Joi.object({
+  command: Joi.string().trim().min(1).max(500).pattern(COMMAND).required(),
+  interval_seconds: Joi.number().integer().min(1).max(60).default(2),
+  timeout_seconds: Joi.number().integer().min(1).max(60).default(5),
+  retries: Joi.number().integer().min(1).max(120).default(30),
+  start_period_seconds: Joi.number().integer().min(0).max(120).default(0),
+});
+
+const serviceSchema = Joi.object({
+  name: Joi.string().trim().pattern(SERVICE_NAME).required(),
+  image: Joi.string().trim().max(500).pattern(IMAGE).required(),
+  env: Joi.object().max(32).default({}),
+  password_env: Joi.string().trim().pattern(ENV_KEY).allow('').optional(),
+  connection_env: Joi.string().trim().pattern(ENV_KEY).required(),
+  connection_url: Joi.string().trim().min(1).max(1000).required(),
+  healthcheck: serviceHealthcheckSchema.required(),
+});
+
 const profileSchema = Joi.object({
   schema_version: Joi.number().integer().valid(1).default(1),
   repo_url: Joi.string().trim().max(500).pattern(GITHUB_URL).allow('').optional(),
@@ -149,7 +177,7 @@ const profileSchema = Joi.object({
     verify_minutes: Joi.number().integer().min(1).max(180).default(20),
   }).default({ setup_minutes: 15, verify_minutes: 20 }),
   max_round_minutes: Joi.number().integer().min(1).max(240).default(45),
-  services: Joi.array().default([]),
+  services: Joi.array().items(serviceSchema).max(5).default([]),
   flaky_tests: Joi.array().items(Joi.string().max(500)).default([]),
   egress: Joi.object({
     tls_mode: Joi.string().valid('terminate').default('terminate'),
@@ -177,9 +205,6 @@ function validateRepoProfile(value) {
   for (const key of Object.keys(validated)) {
     if (!TOP_LEVEL.has(key)) issues.push(`unknown profile field: ${key}`);
   }
-  if (Array.isArray(validated.services) && validated.services.length > 0) {
-    issues.push('profile services are not implemented until fg-39 slice 2');
-  }
   if (Array.isArray(validated.flaky_tests) && validated.flaky_tests.length > 0) {
     issues.push('profile flaky_tests are not implemented until fg-39 slice 3');
   }
@@ -188,6 +213,65 @@ function validateRepoProfile(value) {
   }
   const envError = envIssue(validated.env);
   if (envError) issues.push(envError);
+
+  if (Array.isArray(validated.services) && validated.services.length > 0) {
+    const names = new Set();
+    const connectionEnvs = new Set();
+    const profileEnvKeys = new Set(Object.keys(validated.env || {}));
+    validated.services.forEach((service, index) => {
+      const prefix = `services[${index}]`;
+      for (const key of Object.keys(service)) {
+        if (!SERVICE_KEYS.has(key)) issues.push(`unknown ${prefix} field: ${key}`);
+      }
+      if (!SERVICE_NAME.test(service.name || '')) {
+        issues.push(`${prefix}.name must match ${SERVICE_NAME}`);
+      } else if (names.has(service.name)) {
+        issues.push(`${prefix}.name must be unique`);
+      } else {
+        names.add(service.name);
+      }
+      for (const key of Object.keys(service.healthcheck || {})) {
+        if (!HEALTHCHECK_KEYS.has(key)) {
+          issues.push(`unknown ${prefix}.healthcheck field: ${key}`);
+        }
+      }
+      const serviceEnvIssue = envIssue(service.env);
+      if (serviceEnvIssue) {
+        issues.push(`${prefix}.env: ${serviceEnvIssue}`);
+      }
+      const passwordEnv = service.password_env || null;
+      if (passwordEnv && service.env && Object.hasOwn(service.env, passwordEnv)) {
+        issues.push(`${prefix}.env must not set password_env "${passwordEnv}"`);
+      }
+      if (passwordEnv && !String(service.connection_url).includes('${password}')) {
+        issues.push(`${prefix}.connection_url must include \${password} when password_env is set`);
+      }
+      if (!passwordEnv && String(service.connection_url).includes('${password}')) {
+        issues.push(`${prefix}.connection_url uses \${password} without password_env`);
+      }
+      if (!String(service.connection_url).includes('${host}')) {
+        issues.push(`${prefix}.connection_url must include \${host}`);
+      }
+      for (const match of String(service.connection_url).matchAll(/\$\{([^}]+)\}/g)) {
+        if (match[1] !== 'host' && match[1] !== 'password') {
+          issues.push(`${prefix}.connection_url has unsupported placeholder \${${match[1]}}`);
+        }
+      }
+      if (/\/\/[^/\s]*:[^/\s]*@/.test(service.connection_url)
+          && !String(service.connection_url).includes('${password}')) {
+        issues.push(`${prefix}.connection_url must use \${password}, not a literal credential`);
+      }
+      if (profileEnvKeys.has(service.connection_env)) {
+        issues.push(`${prefix}.connection_env "${service.connection_env}" conflicts with profile env`);
+      }
+      if (connectionEnvs.has(service.connection_env)) {
+        issues.push(`${prefix}.connection_env "${service.connection_env}" is duplicated`);
+      } else {
+        connectionEnvs.add(service.connection_env);
+      }
+      if (service.password_env === '') delete service.password_env;
+    });
+  }
 
   if (validated.timeouts) {
     const timeoutKeys = new Set(['setup_minutes', 'verify_minutes']);

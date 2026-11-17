@@ -55,7 +55,8 @@ public record SandboxConfig(
     String hostWorkspaceRoot,
     List<String> egressOriginCaHosts,
     String egressOriginCaPem,
-    EgressMtlsMaterial egressMtls
+    EgressMtlsMaterial egressMtls,
+    List<ServiceSpec> services
 ) {
 
     public static final String DEFAULT_IMAGE = "vibecode-agent-sandbox:latest";
@@ -155,7 +156,8 @@ public record SandboxConfig(
             value(env, "SANDBOX_HOST_WORKSPACE_ROOT", ""),
             originCaHosts,
             originCaPem,
-            null
+            null,
+            List.of()
         );
         config.validate();
         return config;
@@ -383,7 +385,8 @@ public record SandboxConfig(
             artifactMaxBytes,
             egressOriginCaHosts,
             egressOriginCaPem,
-            egressMtls
+            egressMtls,
+            services
         );
     }
 
@@ -436,7 +439,8 @@ public record SandboxConfig(
             hostWorkspaceRoot,
             egressOriginCaHosts,
             egressOriginCaPem,
-            material
+            material,
+            services
         );
     }
 
@@ -450,6 +454,13 @@ public record SandboxConfig(
             return this;
         }
         String effectiveImage = profile.image() != null ? profile.image() : image;
+        if (!profile.services().isEmpty() && mode != SandboxMode.DOCKER) {
+            throw new IllegalStateException(
+                "repo profile services require SANDBOX_MODE=docker");
+        }
+        List<ServiceSpec> effectiveServices = profile.services().stream()
+            .map(RepoProfile.Service::toSpec)
+            .toList();
         Map<String, String> effectiveEnv = new LinkedHashMap<>(runEnv);
         effectiveEnv.putAll(profile.environment());
 
@@ -499,7 +510,8 @@ public record SandboxConfig(
             hostWorkspaceRoot,
             effectiveCaHosts,
             effectiveCaPem,
-            egressMtls
+            egressMtls,
+            effectiveServices
         );
     }
 
