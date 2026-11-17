@@ -96,6 +96,61 @@ describe('Provider Controller', () => {
     });
   });
 
+  describe('OpenCode provider defaults', () => {
+    it('defaults the OpenCode endpoint and persists it for the agent', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 2,
+          name: 'zen',
+          provider_type: 'opencode',
+          api_key_encrypted: 'encrypted-key',
+          base_url: 'https://opencode.ai/zen/v1',
+          model: 'kimi-k2.6',
+          roles: ['worker'],
+          max_tokens: 4096,
+          temperature: 0.1,
+          is_active: true,
+          endpoint_url: 'https://opencode.ai/zen/v1',
+          fallback_provider: null,
+          routing_rules: '{}',
+          is_project_director: false,
+          created_at: new Date(),
+          updated_at: new Date(),
+        }],
+      });
+
+      mockReq.body = {
+        name: 'zen',
+        providerType: 'opencode',
+        apiKey: 'oc_sk-test',
+        model: 'kimi-k2.6',
+      };
+
+      await providerController.addProvider(mockReq, mockRes, nextFn);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain('INSERT INTO providers');
+      // base_url (index 3) and endpoint_url (index 8) must both reach the agent.
+      expect(params[3]).toBe('https://opencode.ai/zen/v1');
+      expect(params[8]).toBe('https://opencode.ai/zen/v1');
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      expect(nextFn).not.toHaveBeenCalled();
+    });
+
+    it('rejects an OpenCode provider without a model', async () => {
+      mockReq.body = {
+        name: 'zen',
+        providerType: 'opencode',
+        apiKey: 'oc_sk-test',
+      };
+
+      await providerController.addProvider(mockReq, mockRes, nextFn);
+
+      expect(nextFn).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateProvider', () => {
     it('should update a provider', async () => {
       

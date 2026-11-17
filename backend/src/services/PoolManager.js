@@ -245,7 +245,9 @@ class PoolManager {
 
   async resolveProviderConfig(providerId) {
     const result = await pool.query(
-      `SELECT provider_type, api_key_encrypted, base_url, model, max_tokens, temperature
+      `SELECT provider_type, api_key_encrypted,
+              COALESCE(base_url, endpoint_url) AS base_url,
+              model, max_tokens, temperature
        FROM providers WHERE id = $1 AND is_active = true`,
       [providerId]
     );
@@ -267,14 +269,18 @@ class PoolManager {
 
   async autoSelectProvider() {
     let result = await pool.query(
-      `SELECT provider_type, api_key_encrypted, base_url, model, max_tokens, temperature
+      `SELECT provider_type, api_key_encrypted,
+              COALESCE(base_url, endpoint_url) AS base_url,
+              model, max_tokens, temperature
        FROM providers WHERE is_active = true AND 'worker' = ANY(roles)
        ORDER BY created_at ASC LIMIT 1`
     );
 
     if (result.rows.length === 0) {
       result = await pool.query(
-        `SELECT provider_type, api_key_encrypted, base_url, model, max_tokens, temperature
+        `SELECT provider_type, api_key_encrypted,
+                COALESCE(base_url, endpoint_url) AS base_url,
+                model, max_tokens, temperature
          FROM providers WHERE is_active = true
          ORDER BY created_at ASC LIMIT 1`
       );

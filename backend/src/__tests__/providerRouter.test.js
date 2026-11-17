@@ -193,6 +193,47 @@ describe('ProviderRouter', () => {
       expect(provider.chat).toBeDefined();
     });
 
+    it('should create ClaudeProvider for anthropic type', () => {
+      const router = new ProviderRouter(1);
+      const provider = router.createProvider('anthropic', { apiKey: 'test', model: 'claude-sonnet-4-20250514' });
+      expect(ClaudeProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'claude-sonnet-4-20250514', maxTokens: undefined, temperature: undefined, baseUrl: undefined });
+      expect(provider.chat).toBeDefined();
+    });
+
+    it('should create GenericProvider for opencode type', () => {
+      const router = new ProviderRouter(1);
+      const provider = router.createProvider('opencode', {
+        apiKey: 'oc_sk-test',
+        model: 'kimi-k2.6',
+        baseUrl: 'https://opencode.ai/zen/v1',
+      });
+      expect(GenericProvider).toHaveBeenCalledWith({
+        apiKey: 'oc_sk-test',
+        model: 'kimi-k2.6',
+        maxTokens: undefined,
+        temperature: undefined,
+        baseUrl: 'https://opencode.ai/zen/v1',
+      });
+      expect(provider.chat).toBeDefined();
+    });
+
+    it('should create GenericProvider for opencode-go type', () => {
+      const router = new ProviderRouter(1);
+      const provider = router.createProvider('opencode-go', {
+        apiKey: 'oc_sk-test',
+        model: 'kimi-k2.6',
+        baseUrl: 'https://opencode.ai/zen/go/v1',
+      });
+      expect(GenericProvider).toHaveBeenCalledWith({
+        apiKey: 'oc_sk-test',
+        model: 'kimi-k2.6',
+        maxTokens: undefined,
+        temperature: undefined,
+        baseUrl: 'https://opencode.ai/zen/go/v1',
+      });
+      expect(provider.chat).toBeDefined();
+    });
+
     it('should throw error for unknown provider type', () => {
       const router = new ProviderRouter(1);
       expect(() => router.createProvider('unknown', {})).toThrow('Unknown provider type: unknown');

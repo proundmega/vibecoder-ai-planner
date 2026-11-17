@@ -121,7 +121,7 @@ Required for `docker compose up`:
 | `PROJECT_ID` | Project to work on | `1` |
 | `REPO_OWNER` | GitHub org/user | _(required)_ |
 | `REPO_NAME` | GitHub repo name | _(required)_ |
-| `AI_PROVIDER` | AI provider | `claude` |
+| `AI_PROVIDER` | AI provider (`claude`, `openai`, `opencode`, `opencode-go`, or an OpenAI-compatible type) | `claude` |
 | `AI_MODEL` | AI model | `claude-sonnet-4-20250514` |
 | `AI_API_KEY` | AI provider API key | _(required)_ |
 | `POLL_INTERVAL_MS` | Polling interval | `30000` |

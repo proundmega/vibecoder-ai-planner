@@ -150,7 +150,9 @@ class AgentService {
     if (!agent.provider_id) throw new Error('NO_PROVIDER');
     const enc = require('../utils/crypto');
     const result = await pool.query(
-      `SELECT p.provider_type, p.api_key_encrypted, p.base_url, p.model, p.max_tokens
+      `SELECT p.provider_type, p.api_key_encrypted,
+              COALESCE(p.base_url, p.endpoint_url) AS base_url,
+              p.model, p.max_tokens
        FROM providers p WHERE p.id = $1`, [agent.provider_id]
     );
     if (result.rows.length === 0) throw new Error('PROVIDER_NOT_FOUND');

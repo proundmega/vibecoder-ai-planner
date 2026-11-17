@@ -345,6 +345,7 @@ describe('PoolManager', () => {
 
       const config = await pm.resolveProviderConfig('provider-1');
 
+      expect(pool.query.mock.calls[0][0]).toContain('COALESCE(base_url, endpoint_url)');
       expect(config.provider_type).toBe('claude');
       expect(config.api_key).toBe('decrypted-encrypted-key-123');
       expect(config.base_url).toBe('https://api.anthropic.com');

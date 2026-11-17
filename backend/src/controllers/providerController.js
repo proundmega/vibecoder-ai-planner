@@ -1,7 +1,8 @@
 const ProviderRouter = require('../services/ProviderRouter');
 const ProviderService = require('../services/ProviderService');
 const { encrypt, decrypt, maskToken } = require('../utils/crypto');
-const { NotFoundError } = require('../errors/HttpError');
+const { NotFoundError, ValidationError } = require('../errors/HttpError');
+const { getProviderDefaults } = require('../utils/providerDefaults');
 const { pool } = require('../db');
 
 async function addProvider(req, res, next) {
@@ -21,6 +22,15 @@ async function addProvider(req, res, next) {
       custom: 'custom-model',
     };
 
+    // OpenCode gateways have a fixed endpoint and no safe default model, so
+    // require an explicit model and fill the endpoint the agent expects.
+    const defaults = getProviderDefaults(providerType);
+    if (defaults?.requiresModel && (!model || !String(model).trim())) {
+      throw new ValidationError(`Model is required for ${providerType} providers`);
+    }
+    const resolvedEndpointUrl = endpoint_url || defaults?.endpointUrl || null;
+    const resolvedBaseUrl = baseUrl || (defaults ? resolvedEndpointUrl : null);
+
     let row;
     if (is_project_director) {
       const client = await pool.connect();
@@ -29,7 +39,7 @@ async function addProvider(req, res, next) {
         await client.query('UPDATE providers SET is_project_director = false');
         const txResult = await client.query(
           'INSERT INTO providers (name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *',
-          [name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, JSON.stringify(normalizedRoutingRules), true]
+          [name, providerType, encryptedKey, resolvedBaseUrl, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, resolvedEndpointUrl, fallback_provider || null, JSON.stringify(normalizedRoutingRules), true]
         );
         await client.query('COMMIT');
         row = txResult.rows[0];
@@ -44,7 +54,7 @@ async function addProvider(req, res, next) {
         `INSERT INTO providers (name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director, is_active)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING *`,
-         [name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, JSON.stringify(normalizedRoutingRules), false, true]
+         [name, providerType, encryptedKey, resolvedBaseUrl, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, resolvedEndpointUrl, fallback_provider || null, JSON.stringify(normalizedRoutingRules), false, true]
       );
       row = result.rows[0];
     }
@@ -381,11 +391,16 @@ async function testProvider(req, res, next) {
 
     const providerConfig = result.rows[0];
 
-    const baseUrl = providerConfig.base_url || providerConfig.endpoint_url;
-    if (!baseUrl || typeof baseUrl !== 'string') {
-      if (process.env.INTEGRATION_TESTS !== '1') {
-        throw new Error('Base URL is required for this provider type');
-      }
+    const type = providerConfig.provider_type;
+    const defaults = getProviderDefaults(type);
+    const baseUrl = providerConfig.base_url
+      || providerConfig.endpoint_url
+      || defaults?.endpointUrl
+      || null;
+    const needsBaseUrl = ['generic', 'ollama', 'vllm', 'llamacpp', 'custom'].includes(type);
+    if ((!baseUrl || typeof baseUrl !== 'string') && needsBaseUrl
+      && process.env.INTEGRATION_TESTS !== '1') {
+      throw new Error('Base URL is required for this provider type');
     }
 
     const apiKey = providerConfig.api_key_encrypted ? decrypt(providerConfig.api_key_encrypted) : null;

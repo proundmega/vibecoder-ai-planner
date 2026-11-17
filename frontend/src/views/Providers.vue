@@ -33,17 +33,17 @@
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label>Model <span class="optional">(optional)</span></label>
-            <input v-model="newProvider.model" type="text" placeholder="gpt-4o, llama3, ..." />
+            <label>Model <span v-if="!newProviderRequiresModel" class="optional">(optional)</span></label>
+            <input v-model="newProvider.model" type="text" :placeholder="newProviderModelPlaceholder" />
           </div>
           <div class="form-group">
             <label>API Key <span class="optional">(required for cloud providers)</span></label>
             <input v-model="newProvider.apiKey" type="password" placeholder="sk-..." />
           </div>
         </div>
-        <div v-if="['ollama','vllm','llamacpp','custom'].includes(newProvider.providerType)" class="form-group">
-          <label>Endpoint URL</label>
-          <input v-model="newProvider.endpoint_url" type="text" placeholder="http://localhost:11434/v1" />
+        <div v-if="needsEndpoint(newProvider.providerType)" class="form-group">
+          <label>Endpoint URL <span v-if="newProviderEndpointOptional" class="optional">(optional)</span></label>
+          <input v-model="newProvider.endpoint_url" type="text" :placeholder="newProviderEndpointPlaceholder" />
         </div>
         <div class="form-group">
           <label>Fallback Provider <span class="optional">(optional)</span></label>
@@ -126,9 +126,9 @@
           <label>API Key (leave blank to keep current)</label>
           <input v-model="editProvider.apiKey" type="password" placeholder="New API key" />
         </div>
-        <div v-if="['ollama','vllm','llamacpp','custom'].includes(editingProvider.providerType)" class="form-group">
-          <label>Endpoint URL</label>
-          <input v-model="editProvider.endpoint_url" type="text" placeholder="http://localhost:11434/v1" />
+        <div v-if="needsEndpoint(editingProvider.providerType)" class="form-group">
+          <label>Endpoint URL <span v-if="editEndpointOptional" class="optional">(optional)</span></label>
+          <input v-model="editProvider.endpoint_url" type="text" :placeholder="editEndpointPlaceholder" />
         </div>
         <div class="form-group">
           <label>Fallback Provider</label>
@@ -153,7 +153,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { listProviders, addProvider, updateProvider, deleteProvider, testProvider, setDirector } from '@/api/providers'
 import VButton from '@/components/VButton.vue'
 
@@ -168,6 +168,8 @@ const testResult = ref(null)
 const providerTypes = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'anthropic', label: 'Anthropic' },
+  { value: 'opencode', label: 'OpenCode (Zen)' },
+  { value: 'opencode-go', label: 'OpenCode Go' },
   { value: 'claude', label: 'Claude' },
   { value: 'azure', label: 'Azure OpenAI' },
   { value: 'google', label: 'Google Gemini' },
@@ -188,6 +190,44 @@ const newProvider = ref({
   is_project_director: false,
 })
 
+const ENDPOINT_PROVIDER_TYPES = ['ollama', 'vllm', 'llamacpp', 'custom', 'opencode', 'opencode-go']
+
+function needsEndpoint(type) {
+  return ENDPOINT_PROVIDER_TYPES.includes(type)
+}
+
+const newProviderRequiresModel = computed(() =>
+  ['opencode', 'opencode-go'].includes(newProvider.value.providerType)
+)
+
+const newProviderModelPlaceholder = computed(() =>
+  newProviderRequiresModel.value
+    ? 'kimi-k2.6, glm-5.2, deepseek-v4-pro, ...'
+    : 'gpt-4o, llama3, ...'
+)
+
+function endpointPlaceholder(type) {
+  if (type === 'opencode') return 'https://opencode.ai/zen/v1'
+  if (type === 'opencode-go') return 'https://opencode.ai/zen/go/v1'
+  return 'http://localhost:11434/v1'
+}
+
+const newProviderEndpointPlaceholder = computed(() =>
+  endpointPlaceholder(newProvider.value.providerType)
+)
+
+const newProviderEndpointOptional = computed(() =>
+  ['opencode', 'opencode-go'].includes(newProvider.value.providerType)
+)
+
+const editEndpointPlaceholder = computed(() =>
+  endpointPlaceholder(editingProvider.value?.providerType)
+)
+
+const editEndpointOptional = computed(() =>
+  ['opencode', 'opencode-go'].includes(editingProvider.value?.providerType)
+)
+
 const editProvider = ref({})
 
 const loadProviders = async () => {
@@ -204,6 +244,11 @@ const loadProviders = async () => {
 
 const handleAddProvider = async () => {
   if (!newProvider.value.name) return
+  error.value = null
+  if (newProviderRequiresModel.value && !newProvider.value.model?.trim()) {
+    error.value = 'Model is required for OpenCode providers'
+    return
+  }
   try {
     await addProvider({
       name: newProvider.value.name,
