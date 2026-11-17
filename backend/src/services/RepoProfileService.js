@@ -2,12 +2,18 @@ const crypto = require('crypto');
 const { pool } = require('../db');
 const Project = require('../models/project');
 const GitHubService = require('./GitHubService');
-const { validateRepoProfile } = require('../validators/repoProfiles');
+const { encrypt, decrypt } = require('../utils/crypto');
+const logger = require('../utils/logger');
+const {
+  validateRepoProfile, normalizeExactHost,
+} = require('../validators/repoProfiles');
 const {
   NotFoundError, ForbiddenError, ValidationError,
 } = require('../errors/HttpError');
 
 const WRITE_ROLES = new Set(['super_admin']);
+const MAX_MTLS_BYTES = 32 * 1024;
+const MTLS_KIND = 'mtls-client';
 
 function isSuperAdmin(user) {
   return Boolean(user && WRITE_ROLES.has(user.role));
@@ -286,6 +292,132 @@ async function detectStack(projectId) {
   };
 }
 
+
+function decodeMtlsValue(value, field) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new ValidationError(`${field} is required`);
+  }
+  let raw;
+  try {
+    raw = Buffer.from(value, 'base64');
+  } catch {
+    throw new ValidationError(`${field} must be valid base64`);
+  }
+  if (raw.length === 0 || raw.length > MAX_MTLS_BYTES) {
+    throw new ValidationError(`${field} must decode to 1-32 KiB`);
+  }
+  return raw.toString('utf8');
+}
+
+function validateMtlsMaterial(certB64, keyB64) {
+  const certPem = decodeMtlsValue(certB64, 'cert_b64');
+  const keyPem = decodeMtlsValue(keyB64, 'key_b64');
+  if (/PRIVATE KEY/.test(certPem)) {
+    throw new ValidationError('cert_b64 must contain a certificate only');
+  }
+  if (!/PRIVATE KEY/.test(keyPem) || /CERTIFICATE/.test(keyPem)) {
+    throw new ValidationError('key_b64 must contain a private key only');
+  }
+  const blocks = certPem.match(
+    /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g
+  ) || [];
+  if (blocks.length !== 1) {
+    throw new ValidationError('cert_b64 must contain exactly one client certificate');
+  }
+  let certificate;
+  let privateKey;
+  try {
+    certificate = new crypto.X509Certificate(blocks[0]);
+    privateKey = crypto.createPrivateKey(keyPem);
+  } catch {
+    throw new ValidationError('cert_b64/key_b64 is not valid PEM material');
+  }
+  if (certificate.ca) {
+    throw new ValidationError('cert_b64 must be a client certificate, not a CA');
+  }
+  const certPublic = certificate.publicKey.export({ type: 'spki', format: 'der' });
+  const keyPublic = crypto.createPublicKey(privateKey).export({ type: 'spki', format: 'der' });
+  if (!Buffer.from(certPublic).equals(Buffer.from(keyPublic))) {
+    throw new ValidationError('cert_b64 does not match key_b64');
+  }
+  return {
+    certPem,
+    keyPem,
+    certSha256: crypto.createHash('sha256').update(certPem, 'utf8').digest('hex'),
+  };
+}
+
+function normalizeMtlsHosts(hosts) {
+  if (!Array.isArray(hosts) || hosts.length === 0 || hosts.length > 16) {
+    throw new ValidationError('hosts must contain 1-16 exact hostnames');
+  }
+  const normalized = [];
+  for (const host of hosts) {
+    const result = normalizeExactHost(host);
+    if (result.error) throw new ValidationError(result.error.replace('egress.origin_ca_hosts', 'hosts'));
+    if (!normalized.includes(result.host)) normalized.push(result.host);
+  }
+  return normalized;
+}
+
+function metadataObject(value) {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  return value;
+}
+
+function mtlsCredentialView(row) {
+  const metadata = metadataObject(row.metadata);
+  return {
+    id: row.id,
+    name: row.name,
+    hosts: Array.isArray(metadata.hosts) ? metadata.hosts : [],
+    cert_sha256: metadata.cert_sha256 || null,
+    is_active: row.is_active,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+async function assertMtlsReference(projectId, egress) {
+  const mtls = egress && egress.mtls;
+  if (!mtls) return;
+  const result = await pool.query(
+    `SELECT * FROM project_credentials
+     WHERE id = $1 AND project_id = $2 AND credential_type = 'custom'`,
+    [mtls.credential_id, projectId]
+  );
+  if (result.rows.length === 0) {
+    throw new ValidationError('egress.mtls.credential_id does not belong to this project');
+  }
+  const row = result.rows[0];
+  if (!row.is_active) {
+    throw new ValidationError('egress.mtls credential is inactive');
+  }
+  const metadata = metadataObject(row.metadata);
+  if (metadata.kind !== MTLS_KIND) {
+    throw new ValidationError('egress.mtls credential is not an mTLS client credential');
+  }
+  if (!metadata.cert_b64 || !row.key_encrypted) {
+    throw new ValidationError('egress.mtls credential has no certificate/key material');
+  }
+  const allowed = new Set(
+    normalizeMtlsHosts(metadata.hosts || [])
+  );
+  for (const host of normalizeMtlsHosts(mtls.hosts)) {
+    if (!allowed.has(host)) {
+      throw new ValidationError(
+        `egress.mtls host ${host} is not scoped to the referenced credential`);
+    }
+  }
+}
+
 class RepoProfileService {
   async listVersions(projectId, user) {
     await assertCanRead(projectId, user);
@@ -340,6 +472,7 @@ class RepoProfileService {
         details.map((detail) => detail.message).join('; ') || result.error.message
       );
     }
+    await assertMtlsReference(projectId, result.value.egress);
 
     const client = await pool.connect();
     try {
@@ -384,6 +517,7 @@ class RepoProfileService {
         details.map((detail) => detail.message).join('; ') || result.error.message
       );
     }
+    await assertMtlsReference(projectId, result.value.egress);
 
     const current = await pool.query(
       'SELECT * FROM repo_profiles WHERE id = $1 AND project_id = $2',
@@ -465,6 +599,137 @@ class RepoProfileService {
     }
   }
 
+  async createMtlsCredential(projectId, payload, user) {
+    await assertCanWrite(projectId, user);
+    const name = typeof payload?.name === 'string' ? payload.name.trim() : '';
+    if (!name || name.length > 100) {
+      throw new ValidationError('name must be 1-100 characters');
+    }
+    const hosts = normalizeMtlsHosts(payload?.hosts);
+    const material = validateMtlsMaterial(payload?.cert_b64, payload?.key_b64);
+    const metadata = {
+      kind: MTLS_KIND,
+      hosts,
+      cert_b64: Buffer.from(material.certPem, 'utf8').toString('base64'),
+      cert_sha256: material.certSha256,
+    };
+    const inserted = await pool.query(
+      `INSERT INTO project_credentials
+         (project_id, name, credential_type, key_encrypted, key_masked, metadata, created_by)
+       VALUES ($1, $2, 'custom', $3, $4, $5, $6)
+       RETURNING *`,
+      [
+        projectId,
+        name,
+        encrypt(material.keyPem),
+        '[redacted]',
+        JSON.stringify(metadata),
+        user.userId || user.id,
+      ]
+    );
+    logger.info('Stored repo-profile mTLS credential {} for project {} hosts={} certSha256={}',
+      inserted.rows[0].id, projectId, hosts.join(','), material.certSha256);
+    return mtlsCredentialView(inserted.rows[0]);
+  }
+
+  async listMtlsCredentials(projectId, user) {
+    await assertCanRead(projectId, user);
+    const result = await pool.query(
+      `SELECT * FROM project_credentials
+       WHERE project_id = $1
+         AND credential_type = 'custom'
+         AND metadata->>'kind' = $2
+       ORDER BY created_at DESC`,
+      [projectId, MTLS_KIND]
+    );
+    return result.rows.map(mtlsCredentialView);
+  }
+
+  async deleteMtlsCredential(projectId, credentialId, user) {
+    await assertCanWrite(projectId, user);
+    const inUse = await pool.query(
+      `SELECT 1 FROM repo_profiles
+       WHERE project_id = $1
+         AND status IN ('draft', 'active')
+         AND profile->'egress'->'mtls'->>'credential_id' = $2
+       LIMIT 1`,
+      [projectId, String(credentialId)]
+    );
+    if (inUse.rows.length > 0) {
+      throw new ValidationError(
+        'mTLS credential is still referenced by a draft or active repo profile');
+    }
+    const result = await pool.query(
+      `UPDATE project_credentials
+       SET is_active = FALSE, updated_at = NOW()
+       WHERE id = $1 AND project_id = $2
+         AND credential_type = 'custom' AND metadata->>'kind' = $3
+       RETURNING *`,
+      [credentialId, projectId, MTLS_KIND]
+    );
+    if (result.rows.length === 0) {
+      throw new NotFoundError('mTLS credential not found');
+    }
+    logger.info('Deactivated repo-profile mTLS credential {} for project {}',
+      credentialId, projectId);
+    return mtlsCredentialView(result.rows[0]);
+  }
+
+  async getMtlsMaterialForAgent(projectId, agent, profileId = null, profileVersion = null) {
+    await assertAgentProjectAccess(projectId, agent);
+    let profile;
+    if (profileId != null || profileVersion != null) {
+      if (profileId == null || profileVersion == null) {
+        throw new ValidationError('profileId and profileVersion must be provided together');
+      }
+      const profileResult = await pool.query(
+        `SELECT * FROM repo_profiles
+         WHERE id = $1 AND project_id = $2 AND version = $3`,
+        [profileId, projectId, profileVersion]
+      );
+      if (profileResult.rows.length === 0) {
+        throw new NotFoundError('Repo profile not found');
+      }
+      profile = profileResult.rows[0];
+    } else {
+      profile = await this.getActive(projectId);
+    }
+    const mtls = profile?.profile?.egress?.mtls;
+    if (!mtls) return null;
+    const result = await pool.query(
+      `SELECT * FROM project_credentials
+       WHERE id = $1 AND project_id = $2 AND credential_type = 'custom'`,
+      [mtls.credential_id, projectId]
+    );
+    if (result.rows.length === 0 || !result.rows[0].is_active) {
+      throw new ValidationError('Active repo profile mTLS credential is missing or inactive');
+    }
+    const row = result.rows[0];
+    const metadata = metadataObject(row.metadata);
+    if (metadata.kind !== MTLS_KIND || !metadata.cert_b64 || !row.key_encrypted) {
+      throw new ValidationError('Active repo profile mTLS credential is invalid');
+    }
+    const allowed = new Set(normalizeMtlsHosts(metadata.hosts || []));
+    const effectiveHosts = normalizeMtlsHosts(mtls.hosts);
+    for (const host of effectiveHosts) {
+      if (!allowed.has(host)) {
+        throw new ValidationError(
+          `Profile mTLS host ${host} is not scoped to its credential`);
+      }
+    }
+    logger.info('Released repo-profile mTLS material for project {} profile {} credential {} hosts={} certSha256={}',
+      projectId, profile.id, row.id, effectiveHosts.join(','), metadata.cert_sha256 || '');
+    return {
+      profile_id: profile.id,
+      profile_version: profile.version,
+      credential_id: row.id,
+      hosts: effectiveHosts,
+      cert_b64: metadata.cert_b64,
+      key_b64: Buffer.from(decrypt(row.key_encrypted), 'utf8').toString('base64'),
+      cert_sha256: metadata.cert_sha256 || null,
+    };
+  }
+
   async detect(projectId, user) {
     await assertCanWrite(projectId, user);
     return detectStack(projectId);
@@ -482,3 +747,4 @@ module.exports.format = format;
 module.exports.detectStack = detectStack;
 module.exports.assertProfileRepoBinding = assertProfileRepoBinding;
 module.exports.profileHash = profileHash;
+module.exports.assertMtlsReference = assertMtlsReference;

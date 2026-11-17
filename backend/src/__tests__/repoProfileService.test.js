@@ -144,6 +144,61 @@ describe('RepoProfileService', () => {
       expect(pool.connect).not.toHaveBeenCalled();
     });
 
+    it('accepts an egress mTLS reference scoped to its credential', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          is_active: true,
+          key_encrypted: 'enc:key',
+          metadata: {
+            kind: 'mtls-client',
+            cert_b64: 'cert',
+            hosts: ['registry.example.com'],
+          },
+        }],
+      });
+      const stored = {
+        id: 'p1', project_id: 1, version: 1, status: 'draft', profile: validProfile(),
+      };
+      clientWith([
+        {},
+        { rows: [{ id: 1 }] },
+        { rows: [{ version: 1 }] },
+        { rows: [stored] },
+        {},
+      ]);
+      const profile = validProfile({
+        egress: {
+          tls_mode: 'terminate',
+          mtls: { credential_id: 5, hosts: ['registry.example.com'] },
+        },
+      });
+
+      await expect(RepoProfileService.create(1, profile, owner())).resolves.toBeTruthy();
+      expect(pool.query.mock.calls[0][0]).toContain('FROM project_credentials');
+    });
+
+    it('rejects an egress mTLS reference outside the credential scope', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          is_active: true,
+          key_encrypted: 'enc:key',
+          metadata: {
+            kind: 'mtls-client',
+            cert_b64: 'cert',
+            hosts: ['registry.example.com'],
+          },
+        }],
+      });
+
+      await expect(RepoProfileService.create(1, validProfile({
+        egress: {
+          tls_mode: 'terminate',
+          mtls: { credential_id: 5, hosts: ['other.example.com'] },
+        },
+      }), owner())).rejects.toThrow(/not scoped/);
+      expect(pool.connect).not.toHaveBeenCalled();
+    });
+
     it('rejects a repo_url that does not match the connected repository', async () => {
       await expect(
         RepoProfileService.create(

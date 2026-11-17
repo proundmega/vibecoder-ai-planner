@@ -2,6 +2,7 @@ package com.vibecode.agent.service;
 
 import com.sun.net.httpserver.HttpServer;
 import com.vibecode.agent.config.AgentConfig;
+import com.vibecode.agent.harness.EgressMtlsMaterial;
 import com.vibecode.agent.harness.RedactionRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -318,6 +319,41 @@ class ApiServiceHarnessTest {
             request.path());
         assertTrue(request.body().contains("\"status\":\"succeeded\""), request.body());
         assertFalse(request.body().contains("\"error\""), request.body());
+    }
+
+
+    @Test
+    void fetchesScopedMtlsMaterialForTheAgent() throws Exception {
+        String cert = java.nio.file.Files.readString(
+            java.nio.file.Path.of("src/test/resources/egress-client-cert.pem"));
+        String key = java.nio.file.Files.readString(
+            java.nio.file.Path.of("src/test/resources/egress-client-key.pem"));
+        EgressMtlsMaterial expected = new EgressMtlsMaterial(
+            List.of("registry.example.com"), cert, key);
+        String body = "{\"profile_id\":\"11111111-1111-4111-8111-111111111111\","
+            + "\"profile_version\":3,\"credential_id\":\"5\","
+            + "\"cert_sha256\":\"" + expected.certSha256() + "\","
+            + "\"hosts\":[\"registry.example.com\"],"
+            + "\"cert_b64\":\"" + java.util.Base64.getEncoder()
+                .encodeToString(cert.getBytes(java.nio.charset.StandardCharsets.UTF_8)) + "\","
+            + "\"key_b64\":\"" + java.util.Base64.getEncoder()
+                .encodeToString(key.getBytes(java.nio.charset.StandardCharsets.UTF_8)) + "\"}";
+        respond("/api/v1/projects/1/repo-profile/agent/mtls", 200, ok(body));
+
+        var material = api.getRepoProfileMtls(
+            "1", "11111111-1111-4111-8111-111111111111", 3, 5);
+
+        assertEquals(List.of("registry.example.com"), material.hosts());
+        assertTrue(material.certSha256().matches("[a-f0-9]{64}"));
+        assertTrue(material.toString().contains("key=<redacted>"));
+        RecordedRequest request = lastRequest();
+        assertEquals("GET", request.method());
+        assertEquals("/api/v1/projects/1/repo-profile/agent/mtls", request.path());
+        assertEquals("test-agent-key", request.apiKey());
+
+        respond("/api/v1/projects/1/repo-profile/agent/mtls", 200, ok("null"));
+        assertEquals(null, api.getRepoProfileMtls(
+            "1", "11111111-1111-4111-8111-111111111111", 3, 5));
     }
 
     @Test

@@ -22,6 +22,7 @@ import java.nio.charset.CoderResult;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.Certificate;
@@ -1248,6 +1249,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
             : sandboxName;
         String network = "vibecode-egress-" + suffix;
         String proxy = "vibecode-egress-proxy-" + suffix;
+        Path mtlsEnvFile = null;
         try {
             List<String> networkCommand = new ArrayList<>(List.of(
                 config.dockerBinary(), "network", "create",
@@ -1264,9 +1266,12 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     + created.output());
             }
 
+            if (spec.egressMtls() != null) {
+                mtlsEnvFile = writeMtlsEnvFile(spec.egressMtls());
+            }
             List<String> proxyCommand = new ArrayList<>();
             proxyCommand.add(config.dockerBinary());
-            proxyCommand.addAll(buildProxyRunArgs(spec, proxy, network));
+            proxyCommand.addAll(buildProxyRunArgs(spec, proxy, network, mtlsEnvFile));
             DockerResult started = runDocker(proxyCommand, CREATE_TIMEOUT, CONTROL_OUTPUT_BYTES);
             if (started.timedOut() || started.exitCode() != 0) {
                 throw new IOException("Could not start egress proxy '" + proxy + "': "
@@ -1289,6 +1294,11 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 log.info("Egress proxy origin CA trust: hosts={} sha256={}",
                     String.join(",", spec.egressOriginCaHosts()),
                     originCaSha256(spec.egressOriginCaPem()));
+            }
+            if (spec.egressMtls() != null) {
+                log.info("Egress proxy mTLS client certificate: hosts={} sha256={}",
+                    String.join(",", spec.egressMtls().hosts()),
+                    spec.egressMtls().certSha256());
             }
 
             // The proxy is attached to the internal network at start. Give it
@@ -1328,6 +1338,43 @@ public final class DockerSandboxRunner implements SandboxRunner {
         } catch (IOException | RuntimeException e) {
             stopEgress(network, proxy);
             throw e instanceof IOException io ? io : new IOException(e);
+        } finally {
+            if (mtlsEnvFile != null) {
+                try {
+                    Files.deleteIfExists(mtlsEnvFile);
+                } catch (IOException e) {
+                    log.warn("Could not remove the temporary mTLS environment file: {}",
+                        e.getMessage());
+                }
+            }
+        }
+    }
+
+    private Path writeMtlsEnvFile(EgressMtlsMaterial material) throws IOException {
+        Path file = Files.createTempFile("vibecode-egress-mtls-", ".env");
+        try {
+            try {
+                Files.setPosixFilePermissions(file,
+                    PosixFilePermissions.fromString("rw-------"));
+            } catch (UnsupportedOperationException ignored) {
+                // Non-POSIX filesystems still get the process umask.
+            }
+            String content = "EGRESS_MTLS_HOSTS=" + String.join(",", material.hosts()) + "\n"
+                + "EGRESS_MTLS_CERT_PEM_B64="
+                + Base64.getEncoder().encodeToString(
+                    material.certPem().getBytes(StandardCharsets.UTF_8)) + "\n"
+                + "EGRESS_MTLS_KEY_PEM_B64="
+                + Base64.getEncoder().encodeToString(
+                    material.keyPem().getBytes(StandardCharsets.UTF_8)) + "\n";
+            Files.writeString(file, content, StandardCharsets.UTF_8);
+            return file;
+        } catch (IOException | RuntimeException e) {
+            try {
+                Files.deleteIfExists(file);
+            } catch (IOException ignored) {
+                // Preserve the original write failure.
+            }
+            throw e;
         }
     }
 
@@ -1967,6 +2014,15 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
     /** Build the hardened proxy container arguments. Package-visible for tests. */
     static List<String> buildProxyRunArgs(SandboxSpec spec, String proxyName, String network) {
+        return buildProxyRunArgs(spec, proxyName, network, null);
+    }
+
+    static List<String> buildProxyRunArgs(
+        SandboxSpec spec,
+        String proxyName,
+        String network,
+        Path mtlsEnvFile
+    ) {
         List<String> args = new ArrayList<>();
         args.add("run");
         args.add("-d");
@@ -2013,6 +2069,19 @@ public final class DockerSandboxRunner implements SandboxRunner {
         args.add("EGRESS_ORIGIN_CA_PEM_B64="
             + Base64.getEncoder().encodeToString(
                 spec.egressOriginCaPem().getBytes(StandardCharsets.UTF_8)));
+        // The client key is written to a 0600 env-file instead of argv. When
+        // no mTLS material is attached, explicitly clear inherited values.
+        if (mtlsEnvFile != null) {
+            args.add("--env-file");
+            args.add(mtlsEnvFile.toString());
+        } else {
+            args.add("-e");
+            args.add("EGRESS_MTLS_HOSTS=");
+            args.add("-e");
+            args.add("EGRESS_MTLS_CERT_PEM_B64=");
+            args.add("-e");
+            args.add("EGRESS_MTLS_KEY_PEM_B64=");
+        }
         // Never inherit a test seam from the proxy image. The resolver override
         // is only honored when EGRESS_TEST_MODE=1, which the supervisor clears.
         args.add("-e");
@@ -2110,7 +2179,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     denialsSuppressed++;
                 }
             } else if (trimmed.contains("\"message\":\"egress origin CA")
-                || trimmed.contains("\"message\": \"egress origin CA")) {
+                || trimmed.contains("\"message\": \"egress origin CA")
+                || trimmed.contains("\"message\":\"egress mTLS")
+                || trimmed.contains("\"message\": \"egress mTLS")) {
                 log.info("Sandbox egress audit: {}", trimmed);
             }
         }

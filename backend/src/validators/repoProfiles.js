@@ -153,8 +153,12 @@ const profileSchema = Joi.object({
   flaky_tests: Joi.array().items(Joi.string().max(500)).default([]),
   egress: Joi.object({
     tls_mode: Joi.string().valid('terminate').default('terminate'),
-    origin_ca_hosts: Joi.array().items(Joi.string().max(253)).min(1).max(16).required(),
-    origin_ca_b64: Joi.string().max(Math.ceil(MAX_CA_BYTES * 4 / 3) + 16).required(),
+    origin_ca_hosts: Joi.array().items(Joi.string().max(253)).min(1).max(16),
+    origin_ca_b64: Joi.string().max(Math.ceil(MAX_CA_BYTES * 4 / 3) + 16),
+    mtls: Joi.object({
+      credential_id: Joi.number().integer().positive().required(),
+      hosts: Joi.array().items(Joi.string().max(253)).min(1).max(16).required(),
+    }).optional(),
   }).optional(),
 }).required();
 
@@ -193,22 +197,44 @@ function validateRepoProfile(value) {
   }
 
   if (validated.egress) {
-    const egressKeys = new Set(['tls_mode', 'origin_ca_hosts', 'origin_ca_b64']);
+    const egressKeys = new Set(['tls_mode', 'origin_ca_hosts', 'origin_ca_b64', 'mtls']);
     for (const key of Object.keys(validated.egress)) {
       if (!egressKeys.has(key)) issues.push(`unknown egress field: ${key}`);
     }
-    const hosts = [];
-    for (const host of validated.egress.origin_ca_hosts || []) {
-      const result = normalizeExactHost(host);
-      if (result.error) issues.push(result.error);
-      else hosts.push(result.host);
+    const hasCaHosts = Array.isArray(validated.egress.origin_ca_hosts)
+      && validated.egress.origin_ca_hosts.length > 0;
+    const hasCaBundle = typeof validated.egress.origin_ca_b64 === 'string'
+      && validated.egress.origin_ca_b64.length > 0;
+    if (hasCaHosts !== hasCaBundle) {
+      issues.push('egress.origin_ca_hosts and origin_ca_b64 must be set together');
     }
-    if (hosts.length !== (validated.egress.origin_ca_hosts || []).length) {
-      // Host errors were already appended above.
+    if (hasCaHosts) {
+      const hosts = [];
+      for (const host of validated.egress.origin_ca_hosts) {
+        const result = normalizeExactHost(host);
+        if (result.error) issues.push(result.error);
+        else hosts.push(result.host);
+      }
+      const caError = caBundleIssue(validated.egress.origin_ca_b64);
+      if (caError) issues.push(caError);
+      if (hosts.length > 0) validated.egress.origin_ca_hosts = hosts;
     }
-    const caError = caBundleIssue(validated.egress.origin_ca_b64);
-    if (caError) issues.push(caError);
-    if (hosts.length > 0) validated.egress.origin_ca_hosts = hosts;
+    if (validated.egress.mtls) {
+      const mtlsKeys = new Set(['credential_id', 'hosts']);
+      for (const key of Object.keys(validated.egress.mtls)) {
+        if (!mtlsKeys.has(key)) issues.push(`unknown egress.mtls field: ${key}`);
+      }
+      const hosts = [];
+      for (const host of validated.egress.mtls.hosts || []) {
+        const result = normalizeExactHost(host);
+        if (result.error) issues.push(result.error.replace('egress.origin_ca_hosts', 'egress.mtls.hosts'));
+        else hosts.push(result.host);
+      }
+      if (hosts.length > 0) validated.egress.mtls.hosts = hosts;
+    }
+    if (!hasCaHosts && !validated.egress.mtls) {
+      issues.push('egress must configure origin_ca_hosts/origin_ca_b64 or mtls');
+    }
   }
 
   if (issues.length > 0) {
@@ -230,6 +256,7 @@ function validateRepoProfile(value) {
 module.exports = {
   profileSchema,
   validateRepoProfile,
+  normalizeExactHost,
   LANGUAGES,
   CACHES,
   SECRET_KEY,

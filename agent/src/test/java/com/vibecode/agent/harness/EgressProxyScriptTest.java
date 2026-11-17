@@ -329,6 +329,74 @@ class EgressProxyScriptTest {
             Files.readAllBytes(Path.of("src/test/resources", resource)));
     }
 
+
+    @Test
+    void configuresScopedMtlsWithoutLoggingTheKey() throws Exception {
+        Result result = run("--check-mtls", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ALLOWED_HOSTS", "registry.npmjs.org",
+            "EGRESS_MTLS_HOSTS", "registry.npmjs.org.",
+            "EGRESS_MTLS_CERT_PEM_B64", resourceBase64("egress-client-cert.pem"),
+            "EGRESS_MTLS_KEY_PEM_B64", resourceBase64("egress-client-key.pem")));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains("MTLS registry.npmjs.org"), result.output);
+        assertTrue(result.output.contains("sha256="), result.output);
+        assertFalse(result.output.contains("PRIVATE KEY"), result.output);
+    }
+
+    @Test
+    void rejectsMtlsMisconfiguration() throws Exception {
+        Result nonTerminate = run("--check-mtls", "", Map.of(
+            "EGRESS_ALLOWED_HOSTS", "registry.npmjs.org",
+            "EGRESS_MTLS_HOSTS", "registry.npmjs.org",
+            "EGRESS_MTLS_CERT_PEM_B64", resourceBase64("egress-client-cert.pem"),
+            "EGRESS_MTLS_KEY_PEM_B64", resourceBase64("egress-client-key.pem")));
+        assertEquals(1, nonTerminate.exitCode, nonTerminate.output);
+        assertTrue(nonTerminate.output.contains("terminate"), nonTerminate.output);
+
+        Result mismatch = run("--check-mtls", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ALLOWED_HOSTS", "registry.npmjs.org",
+            "EGRESS_MTLS_HOSTS", "registry.npmjs.org",
+            "EGRESS_MTLS_CERT_PEM_B64", resourceBase64("egress-origin-leaf.pem"),
+            "EGRESS_MTLS_KEY_PEM_B64", resourceBase64("egress-client-key.pem")));
+        assertEquals(1, mismatch.exitCode, mismatch.output);
+        assertTrue(mismatch.output.contains("does not match"), mismatch.output);
+
+        Result ca = run("--check-mtls", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ALLOWED_HOSTS", "registry.npmjs.org",
+            "EGRESS_MTLS_HOSTS", "registry.npmjs.org",
+            "EGRESS_MTLS_CERT_PEM_B64", resourceBase64("egress-client-ca.pem"),
+            "EGRESS_MTLS_KEY_PEM_B64", resourceBase64("egress-client-key.pem")));
+        assertEquals(1, ca.exitCode, ca.output);
+        assertTrue(ca.output.contains("not a CA"), ca.output);
+
+        Result wildcard = run("--check-mtls", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ALLOWED_HOSTS", "*.example.com",
+            "EGRESS_MTLS_HOSTS", "*.example.com",
+            "EGRESS_MTLS_CERT_PEM_B64", resourceBase64("egress-client-cert.pem"),
+            "EGRESS_MTLS_KEY_PEM_B64", resourceBase64("egress-client-key.pem")));
+        assertEquals(1, wildcard.exitCode, wildcard.output);
+        assertTrue(wildcard.output.contains("wildcards"), wildcard.output);
+
+        Result outside = run("--check-mtls", "", Map.of(
+            "EGRESS_TLS_MODE", "terminate",
+            "EGRESS_ALLOWED_HOSTS", "other.example.com",
+            "EGRESS_MTLS_HOSTS", "registry.npmjs.org",
+            "EGRESS_MTLS_CERT_PEM_B64", resourceBase64("egress-client-cert.pem"),
+            "EGRESS_MTLS_KEY_PEM_B64", resourceBase64("egress-client-key.pem")));
+        assertEquals(1, outside.exitCode, outside.output);
+        assertTrue(outside.output.contains("not in the allowlist"), outside.output);
+    }
+
+    private static String resourceBase64(String resource) throws IOException {
+        return Base64.getEncoder().encodeToString(
+            Files.readAllBytes(Path.of("src/test/resources", resource)));
+    }
+
     @Test
     void rejectsUnknownTlsModes() throws Exception {
         Result result = run("--check-allow", "registry.npmjs.org:443", Map.of(
@@ -445,6 +513,9 @@ class EgressProxyScriptTest {
             List.of("node", script.toString(), mode, target));
         builder.environment().remove("EGRESS_ORIGIN_CA_HOSTS");
         builder.environment().remove("EGRESS_ORIGIN_CA_PEM_B64");
+        builder.environment().remove("EGRESS_MTLS_HOSTS");
+        builder.environment().remove("EGRESS_MTLS_CERT_PEM_B64");
+        builder.environment().remove("EGRESS_MTLS_KEY_PEM_B64");
         builder.environment().remove("NODE_EXTRA_CA_CERTS");
         builder.environment().put("EGRESS_ALLOWED_HOSTS",
             "registry.npmjs.org,*.githubusercontent.com,"

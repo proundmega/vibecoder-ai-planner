@@ -56,6 +56,13 @@ const ORIGIN_CA_HOSTS = String(process.env.EGRESS_ORIGIN_CA_HOSTS || "")
 const ORIGIN_CA_PEM_B64 = String(process.env.EGRESS_ORIGIN_CA_PEM_B64 || "").trim();
 const MAX_ORIGIN_CA_BYTES = 64 * 1024;
 const MAX_ORIGIN_CA_CERTIFICATES = 16;
+const MTLS_HOSTS = String(process.env.EGRESS_MTLS_HOSTS || "")
+  .split(",")
+  .map((value) => normaliseHost(value))
+  .filter(Boolean);
+const MTLS_CERT_PEM_B64 = String(process.env.EGRESS_MTLS_CERT_PEM_B64 || "").trim();
+const MTLS_KEY_PEM_B64 = String(process.env.EGRESS_MTLS_KEY_PEM_B64 || "").trim();
+const MAX_MTLS_BYTES = 32 * 1024;
 const MAX_TUNNELS = 32;
 const MAX_LEAF_CERTS = 256;
 const MAX_RESPONSE_HEADER_BYTES = 32 * 1024;
@@ -131,6 +138,10 @@ const originCaByHost = new Map();
 const originCaUsed = new Set();
 let originCaInitialized = false;
 let originCaSha256 = null;
+const mtlsByHost = new Map();
+const mtlsReached = new Set();
+let mtlsInitialized = false;
+let mtlsCertSha256 = null;
 
 function splitPemCertificates(pem) {
   return pem.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
@@ -227,6 +238,112 @@ function initOriginCAs() {
     sha256: originCaSha256,
   });
   originCaInitialized = true;
+}
+
+function mtlsHostError(host) {
+  if (!host || host.length > 253) {
+    return "has an invalid host";
+  }
+  if (host.includes("*")) {
+    return "wildcards are not allowed";
+  }
+  if (isIpLiteral(host)) {
+    return "must list hostnames, not IP literals";
+  }
+  const blocked = isBlockedName(host);
+  if (blocked) {
+    return "must not allow internal or metadata hosts: " + blocked;
+  }
+  if (!/^[a-z0-9.-]+$/.test(host)) {
+    return "has an invalid host";
+  }
+  if (!matchesAllowlist(host)) {
+    return "is not in the allowlist";
+  }
+  return null;
+}
+
+function markMtlsReached(host) {
+  const value = normaliseHost(host);
+  if (!mtlsByHost.has(value) || mtlsReached.has(value)) {
+    return;
+  }
+  mtlsReached.add(value);
+  log("info", "egress mTLS host reached", {
+    host: value,
+    sha256: mtlsCertSha256,
+  });
+}
+
+/**
+ * Load the optional client certificate/key pair. The key remains in this
+ * proxy process and is applied only to the named allowlisted origins.
+ */
+function initMtls() {
+  if (mtlsInitialized) {
+    return;
+  }
+  const configured = MTLS_HOSTS.length > 0
+    || MTLS_CERT_PEM_B64.length > 0 || MTLS_KEY_PEM_B64.length > 0;
+  if (!configured) {
+    mtlsInitialized = true;
+    return;
+  }
+  if (MTLS_HOSTS.length === 0 || !MTLS_CERT_PEM_B64 || !MTLS_KEY_PEM_B64) {
+    throw new Error(
+      "EGRESS_MTLS_HOSTS, EGRESS_MTLS_CERT_PEM_B64 and EGRESS_MTLS_KEY_PEM_B64 must be set together"
+    );
+  }
+  if (TLS_MODE !== "terminate") {
+    throw new Error("client-certificate mTLS requires EGRESS_TLS_MODE=terminate");
+  }
+  const certBytes = Buffer.from(MTLS_CERT_PEM_B64, "base64");
+  const keyBytes = Buffer.from(MTLS_KEY_PEM_B64, "base64");
+  if (certBytes.length === 0 || certBytes.length > MAX_MTLS_BYTES
+      || keyBytes.length === 0 || keyBytes.length > MAX_MTLS_BYTES) {
+    throw new Error("EGRESS_MTLS_CERT_PEM_B64/EGRESS_MTLS_KEY_PEM_B64 must decode to bounded values");
+  }
+  const certPem = certBytes.toString("utf8");
+  const keyPem = keyBytes.toString("utf8");
+  if (/PRIVATE KEY/i.test(certPem)) {
+    throw new Error("EGRESS_MTLS_CERT_PEM_B64 must contain a certificate only");
+  }
+  if (!/PRIVATE KEY/i.test(keyPem) || /CERTIFICATE/i.test(keyPem)) {
+    throw new Error("EGRESS_MTLS_KEY_PEM_B64 must contain a private key only");
+  }
+  const certBlocks = splitPemCertificates(certPem);
+  if (certBlocks.length !== 1) {
+    throw new Error("EGRESS_MTLS_CERT_PEM_B64 must contain exactly one certificate");
+  }
+  let certificate;
+  let privateKey;
+  try {
+    certificate = new crypto.X509Certificate(certBlocks[0]);
+    privateKey = crypto.createPrivateKey(keyPem);
+  } catch (error) {
+    throw new Error("EGRESS_MTLS_CERT_PEM_B64/EGRESS_MTLS_KEY_PEM_B64 are not valid PEM material");
+  }
+  if (certificate.ca) {
+    throw new Error("EGRESS_MTLS_CERT_PEM_B64 must be a client certificate, not a CA");
+  }
+  const certPublic = certificate.publicKey.export({ type: "spki", format: "der" });
+  const keyPublic = crypto.createPublicKey(privateKey).export({ type: "spki", format: "der" });
+  if (!Buffer.from(certPublic).equals(Buffer.from(keyPublic))) {
+    throw new Error("EGRESS_MTLS_CERT_PEM_B64 does not match EGRESS_MTLS_KEY_PEM_B64");
+  }
+  mtlsCertSha256 = crypto.createHash("sha256").update(certPem, "utf8").digest("hex");
+  for (const host of MTLS_HOSTS) {
+    const reason = mtlsHostError(host);
+    if (reason) {
+      throw new Error("mTLS host " + reason + ": " + host);
+    }
+    mtlsByHost.set(host, { cert: certPem, key: keyPem });
+  }
+  log("info", "egress mTLS configured", {
+    hosts: Array.from(mtlsByHost.keys()),
+    sha256: mtlsCertSha256,
+  });
+  mtlsInitialized = true;
 }
 
 function initTerminateMode() {
@@ -515,9 +632,15 @@ function handleTunneledRequest(request, response, host, address, port, agent, tl
     maxHeaderSize: MAX_RESPONSE_HEADER_BYTES,
     timeout: IDLE_TIMEOUT_MS,
   }, (upstreamResponse) => {
-    // Only record the CA as used after the origin TLS handshake and response
-    // succeeded; a failed connection must not produce an audit "used" entry.
+    // Only record trust material after the origin TLS handshake and response
+    // succeeded. Node's public TLS API does not expose whether the origin sent
+    // a CertificateRequest; getCertificate() reports the locally configured
+    // certificate even when none was requested. Log "host reached" rather than
+    // claiming the certificate was used.
     markOriginCaUsed(host);
+    if (mtlsByHost.has(normaliseHost(host))) {
+      markMtlsReached(host);
+    }
     const status = upstreamResponse.statusCode || 502;
     if (status === 101 || (status >= 100 && status < 200)) {
       upstreamResponse.destroy();
@@ -704,6 +827,13 @@ function startTerminateTunnel(clientSocket, host, address, port, initial) {
     if (originCas) {
       // Keep the bundled public roots and add the scoped CA only for this host.
       agentOptions.ca = [...tls.rootCertificates, ...originCas];
+    }
+    const mtls = mtlsByHost.get(originHost);
+    if (mtls) {
+      // The client key is scoped to this exact origin; the agent is created
+      // per tunnel so it cannot be reused for another host.
+      agentOptions.cert = mtls.cert;
+      agentOptions.key = mtls.key;
     }
     const agent = new https.Agent(agentOptions);
     let server = null;
@@ -1336,6 +1466,7 @@ function runProxy() {
   }
   try {
     initOriginCAs();
+    initMtls();
   } catch (error) {
     failStartup(error.message);
   }
@@ -1394,6 +1525,16 @@ if (process.argv.includes("--check-hello")) {
     initOriginCAs();
     console.log("ORIGIN_CA " + Array.from(originCaByHost.keys()).join(",")
       + " sha256=" + originCaSha256);
+    process.exit(0);
+  } catch (error) {
+    console.error(`ERROR ${error.message}`);
+    process.exit(1);
+  }
+} else if (process.argv.includes("--check-mtls")) {
+  try {
+    initMtls();
+    console.log("MTLS " + Array.from(mtlsByHost.keys()).join(",")
+      + " sha256=" + mtlsCertSha256);
     process.exit(0);
   } catch (error) {
     console.error(`ERROR ${error.message}`);

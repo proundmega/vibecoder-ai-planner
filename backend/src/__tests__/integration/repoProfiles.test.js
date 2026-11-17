@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const { Pool } = require('pg');
 const RepoProfileService = require('../../services/RepoProfileService');
 const RepoProfileValidationService = require('../../services/RepoProfileValidationService');
@@ -49,6 +51,7 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
   });
 
   afterAll(async () => {
+    await pool.query('DELETE FROM project_credentials WHERE project_id = $1', [projectId]);
     await pool.query('DELETE FROM users WHERE id = $1', [ownerId]);
     await pool.end();
   });
@@ -164,6 +167,48 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
       userId: ownerId, role: 'project_admin',
     });
     expect(active.status).toBe('active');
+    await pool.query('DELETE FROM repo_profiles WHERE project_id = $1', [projectId]);
+  });
+
+  test('mTLS credential material round-trips through storage and the exact profile revision', async () => {
+    const cert = fs.readFileSync(
+      path.join(__dirname, 'fixtures/egress-client-cert.pem'),
+      'utf8'
+    );
+    const key = fs.readFileSync(
+      path.join(__dirname, 'fixtures/egress-client-key.pem'),
+      'utf8'
+    );
+    const credential = await RepoProfileService.createMtlsCredential(projectId, {
+      name: `registry-client-${suffix}`,
+      hosts: ['registry.example.com', 'other.example.com'],
+      cert_b64: Buffer.from(cert).toString('base64'),
+      key_b64: Buffer.from(key).toString('base64'),
+    }, { userId: ownerId, role: 'project_admin' });
+
+    const draft = await RepoProfileService.create(projectId, profile({
+      egress: {
+        tls_mode: 'terminate',
+        mtls: {
+          credential_id: credential.id,
+          hosts: ['registry.example.com'],
+        },
+      },
+    }), { userId: ownerId, role: 'project_admin' });
+
+    await validateAndActivate(draft.id);
+    const material = await RepoProfileService.getMtlsMaterialForAgent(
+      projectId, agent, draft.id, draft.version);
+
+    expect(material.profile_id).toBe(draft.id);
+    expect(material.profile_version).toBe(draft.version);
+    expect(typeof material.credential_id).toBe('string');
+    expect(material.credential_id).toBe(credential.id);
+    expect(material.hosts).toEqual(['registry.example.com']);
+    expect(material.cert_b64).toBe(Buffer.from(cert).toString('base64'));
+    expect(Buffer.from(material.cert_b64, 'base64').toString('utf8')).toBe(cert);
+    expect(Buffer.from(material.key_b64, 'base64').toString('utf8')).toBe(key);
+
     await pool.query('DELETE FROM repo_profiles WHERE project_id = $1', [projectId]);
   });
 

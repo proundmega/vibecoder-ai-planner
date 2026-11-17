@@ -32,7 +32,8 @@ public record SandboxSpec(
     String apparmorProfile,
     long artifactMaxBytes,
     List<String> egressOriginCaHosts,
-    String egressOriginCaPem
+    String egressOriginCaPem,
+    EgressMtlsMaterial egressMtls
 ) {
 
     public SandboxSpec {
@@ -71,6 +72,10 @@ public record SandboxSpec(
         if (egressOriginCaHosts.isEmpty() != egressOriginCaPem.isBlank()) {
             throw new IllegalArgumentException(
                 "Origin CA hosts and PEM must be configured together");
+        }
+        if (egressMtls != null && egressTlsMode != EgressTlsMode.TERMINATE) {
+            throw new IllegalArgumentException(
+                "client-certificate mTLS requires EgressTlsMode.TERMINATE");
         }
     }
 

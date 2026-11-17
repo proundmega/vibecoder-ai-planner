@@ -82,6 +82,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR9 | Backend/Agent | `repoProfileValidationService.test.js`, `ProfileValidationProcessorTest.java` | Queue/claim/finish; success/failure result; profile-budget stale reap (>60-minute regression); activation requires the successful exact `profile_hash`; dry runs run after ticket work | both |
 | FR10 | Agent | `HarnessTicketProcessorTest.java` | Missing/failed profile fetch warns and keeps autodetection; a profile for another repo is rejected before run start | `cd agent && mvn -Dtest=HarnessTicketProcessorTest test` |
 | D27 | Backend/Agent | `repoProfileService.test.js`, `SandboxConfigTest.java` | CA bundle shape validated; host must be allowlisted; `sni-only` mismatch fails closed | both |
+| D29 | Backend/Agent | `repoProfileMtlsService.test.js`, `RepoProfileTest.java`, `SandboxConfigTest.java`, `EgressProxyScriptTest.java`, `EgressProxyTerminateIntegrationTest.java` | mTLS credential cert/key match, encrypted key, scoped hosts; profile reference validation; proxy presents the client cert only to the exact host and audits use | both |
 
 ## Review checklist
 

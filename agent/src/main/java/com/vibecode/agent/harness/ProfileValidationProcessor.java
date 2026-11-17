@@ -142,6 +142,24 @@ public class ProfileValidationProcessor {
             if (sandboxConfig.isDocker()) {
                 effective = sandboxConfig.withRepoProfile(
                     profile, projectId, validation.profileVersion());
+                if (profile.egress() != null && profile.egress().mtls() != null) {
+                    EgressMtlsMaterial material = apiService.getRepoProfileMtls(
+                        projectId,
+                        validation.profileId(),
+                        validation.profileVersion(),
+                        profile.egress().mtls().credentialId());
+                    if (material == null) {
+                        throw new IllegalStateException(
+                            "the active profile requires client-certificate mTLS, "
+                                + "but no active mTLS credential is configured");
+                    }
+                    if (!new java.util.HashSet<>(material.hosts())
+                        .equals(new java.util.HashSet<>(profile.egress().mtls().hosts()))) {
+                        throw new IllegalStateException(
+                            "the active profile mTLS hosts do not match the credential scope");
+                    }
+                    effective = effective.withEgressMtls(material);
+                }
                 sandbox = sandboxRunner.create(effective.specFor(workspace.getRepoDir()));
                 if (Instant.now().isAfter(deadline)) {
                     throw new IllegalStateException(

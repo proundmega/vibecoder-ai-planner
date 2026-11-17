@@ -96,9 +96,15 @@ public class RepoProfile {
         private List<String> originCaHosts = List.of();
         @JsonProperty("origin_ca_b64")
         private String originCaB64;
+        @JsonProperty("mtls")
+        private Mtls mtls;
 
         public String tlsMode() {
             return tlsMode;
+        }
+
+        public Mtls mtls() {
+            return mtls;
         }
 
         public List<String> originCaHosts() {
@@ -116,11 +122,43 @@ public class RepoProfile {
             return List.copyOf(normalized);
         }
 
+        public boolean hasOriginCa() {
+            return !originCaHosts().isEmpty()
+                || (originCaB64 != null && !originCaB64.isBlank());
+        }
+
         public String originCaPem() {
             if (originCaB64 == null || originCaB64.isBlank()) {
                 throw new IllegalArgumentException("profile egress origin_ca_b64 is required");
             }
             return new String(Base64.getDecoder().decode(originCaB64), StandardCharsets.UTF_8);
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = false)
+    public static class Mtls {
+        @JsonProperty("credential_id")
+        private long credentialId;
+        @JsonProperty("hosts")
+        private List<String> hosts = List.of();
+
+        public long credentialId() {
+            return credentialId;
+        }
+
+        public List<String> hosts() {
+            if (hosts == null) {
+                return List.of();
+            }
+            LinkedHashSet<String> normalized = new LinkedHashSet<>();
+            for (String host : hosts) {
+                String value = host == null ? "" : host.trim().toLowerCase(Locale.ROOT);
+                if (value.endsWith(".")) {
+                    value = value.substring(0, value.length() - 1);
+                }
+                normalized.add(value);
+            }
+            return List.copyOf(normalized);
         }
     }
 
@@ -255,12 +293,42 @@ public class RepoProfile {
         }
         if (!"terminate".equals(egress.tlsMode())) {
             throw new IllegalArgumentException(
-                "profile egress tls_mode must be terminate when an origin CA is set");
+                "profile egress tls_mode must be terminate");
         }
+        boolean hasCa = !egress.originCaHosts().isEmpty()
+            || (egress.originCaB64 != null && !egress.originCaB64.isBlank());
+        if (hasCa) {
+            validateOriginCa(egress);
+        }
+        if (egress.mtls() != null) {
+            if (egress.mtls().credentialId() <= 0) {
+                throw new IllegalArgumentException(
+                    "profile egress.mtls credential_id must be positive");
+            }
+            List<String> mtlsHosts = egress.mtls().hosts();
+            if (mtlsHosts.isEmpty() || mtlsHosts.size() > 16) {
+                throw new IllegalArgumentException(
+                    "profile egress.mtls.hosts must contain 1-16 hosts");
+            }
+            for (String host : mtlsHosts) {
+                validateExactHost(host);
+            }
+        }
+        if (!hasCa && egress.mtls() == null) {
+            throw new IllegalArgumentException(
+                "profile egress must configure an origin CA or client-certificate mTLS");
+        }
+    }
+
+    private void validateOriginCa(Egress egress) {
         List<String> hosts = egress.originCaHosts();
         if (hosts.isEmpty() || hosts.size() > 16) {
             throw new IllegalArgumentException(
                 "profile egress origin_ca_hosts must contain 1-16 hosts");
+        }
+        if (egress.originCaB64 == null || egress.originCaB64.isBlank()) {
+            throw new IllegalArgumentException(
+                "profile egress origin_ca_b64 is required with origin_ca_hosts");
         }
         for (String host : hosts) {
             validateExactHost(host);

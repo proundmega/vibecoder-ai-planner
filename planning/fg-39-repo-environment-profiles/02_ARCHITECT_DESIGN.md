@@ -106,7 +106,11 @@ This is an admin operation, not model-driven.
   "egress": {
     "tls_mode": "terminate",
     "origin_ca_hosts": ["registry.example.com"],
-    "origin_ca_b64": "<base64 PEM CA bundle>"
+    "origin_ca_b64": "<base64 PEM CA bundle>",
+    "mtls": {
+      "credential_id": 12,
+      "hosts": ["registry.example.com"]
+    }
   }
 }
 ```
@@ -126,7 +130,11 @@ This is an admin operation, not model-driven.
 - `egress` is optional and only valid with `tls_mode: "terminate"`. Its exact
   hosts must already be covered by the agent's `SANDBOX_ALLOWED_HOSTS`; the
   backend validates the PEM bundle shape and CA constraints, and the agent
-  re-validates before sandbox creation.
+  re-validates before sandbox creation. `egress.mtls` references an active
+  project mTLS credential (the certificate is public metadata; the key is
+  encrypted) and lists the same exact host scope. The agent fetches the key
+  material only through the owner-scoped agent endpoint and never puts it in
+  profile JSON, ordinary profile responses or the sandbox.
 
 ## Profile API (slice 1)
 
@@ -141,7 +149,11 @@ This is an admin operation, not model-driven.
 | `POST /projects/:id/repo-profile/:profileId/validate` | owner/super admin | Queue a dry run |
 | `GET /projects/:id/repo-profile/validations` | project member | Dry-run history |
 | `GET /projects/:id/repo-profile/validations/:validationId` | project member | Dry-run status/result |
+| `POST /projects/:id/repo-profile/credentials/mtls` | owner/super admin | Store a scoped mTLS client certificate/key |
+| `GET /projects/:id/repo-profile/credentials/mtls` | project member | List mTLS credential metadata (no keys) |
+| `DELETE /projects/:id/repo-profile/credentials/mtls/:credentialId` | owner/super admin | Deactivate a credential |
 | `GET /projects/:id/repo-profile/agent` | agent API key | Active profile for the agent |
+| `GET /projects/:id/repo-profile/agent/mtls` | agent API key | Scoped client certificate/key for the active profile |
 | `POST /projects/:id/repo-profile/validations/claim` | agent API key | Claim the next queued dry run |
 | `POST /projects/:id/repo-profile/validations/:validationId/finish` | agent API key | Report the dry-run result |
 

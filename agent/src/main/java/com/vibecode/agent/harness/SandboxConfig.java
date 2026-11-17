@@ -54,7 +54,8 @@ public record SandboxConfig(
     String containerWorkspaceRoot,
     String hostWorkspaceRoot,
     List<String> egressOriginCaHosts,
-    String egressOriginCaPem
+    String egressOriginCaPem,
+    EgressMtlsMaterial egressMtls
 ) {
 
     public static final String DEFAULT_IMAGE = "vibecode-agent-sandbox:latest";
@@ -153,7 +154,8 @@ public record SandboxConfig(
             value(env, "SANDBOX_CONTAINER_WORKSPACE_ROOT", DEFAULT_CONTAINER_WORKSPACE_ROOT),
             value(env, "SANDBOX_HOST_WORKSPACE_ROOT", ""),
             originCaHosts,
-            originCaPem
+            originCaPem,
+            null
         );
         config.validate();
         return config;
@@ -380,7 +382,61 @@ public record SandboxConfig(
             apparmorProfile,
             artifactMaxBytes,
             egressOriginCaHosts,
-            egressOriginCaPem
+            egressOriginCaPem,
+            egressMtls
+        );
+    }
+
+    /**
+     * Attach scoped client-certificate material for an active profile. The
+     * material is fetched separately from the profile so the private key is
+     * never stored in profile JSON or returned with the profile.
+     */
+    public SandboxConfig withEgressMtls(EgressMtlsMaterial material) {
+        if (material == null) {
+            return this;
+        }
+        if (egressTlsMode != EgressTlsMode.TERMINATE) {
+            throw new IllegalStateException(
+                "repo profile requests client-certificate mTLS, but SANDBOX_EGRESS_TLS_MODE is "
+                    + egressTlsMode.value() + "; set it to terminate explicitly");
+        }
+        for (String host : material.hosts()) {
+            if (!matchesAllowlist(host, allowedHosts)) {
+                throw new IllegalStateException(
+                    "repo profile mTLS host " + host
+                        + " is not covered by SANDBOX_ALLOWED_HOSTS");
+            }
+        }
+        return new SandboxConfig(
+            mode,
+            image,
+            proxyImage,
+            dockerBinary,
+            execTimeout,
+            limits,
+            diskCheckInterval,
+            networkEnabled,
+            allowedHosts,
+            egressProxy,
+            egressUpstreamNetwork,
+            egressProbeTimeoutMs,
+            egressTlsMode,
+            owner,
+            poolAgent,
+            daemonId,
+            runEnv,
+            user,
+            requireSandbox,
+            allowRoot,
+            seccompProfile,
+            apparmorProfile,
+            artifactMaxBytes,
+            containerWorkspaceRoot,
+            hostWorkspaceRoot,
+            egressOriginCaHosts,
+            egressOriginCaPem,
+            material
         );
     }
 
@@ -399,7 +455,7 @@ public record SandboxConfig(
 
         List<String> effectiveCaHosts = egressOriginCaHosts;
         String effectiveCaPem = egressOriginCaPem;
-        if (profile.egress() != null) {
+        if (profile.egress() != null && profile.egress().hasOriginCa()) {
             if (egressTlsMode != EgressTlsMode.TERMINATE) {
                 throw new IllegalStateException(
                     "repo profile requests an origin CA, but SANDBOX_EGRESS_TLS_MODE is "
@@ -442,7 +498,8 @@ public record SandboxConfig(
             containerWorkspaceRoot,
             hostWorkspaceRoot,
             effectiveCaHosts,
-            effectiveCaPem
+            effectiveCaPem,
+            egressMtls
         );
     }
 
