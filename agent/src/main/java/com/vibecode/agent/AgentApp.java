@@ -349,6 +349,8 @@ public class AgentApp {
                     mem,
                     cpu
                 );
+            } catch (AgentAuthFatalException e) {
+                exitOnFatalAuth(e);
             } catch (Exception e) {
                 log.warn("Heartbeat send failed", e);
             }
@@ -359,6 +361,8 @@ public class AgentApp {
         while (!Thread.currentThread().isInterrupted()) {
             try {
                 processCycle();
+            } catch (AgentAuthFatalException e) {
+                exitOnFatalAuth(e);
             } catch (Exception e) {
                 log.error("Error in processing cycle", e);
             }
@@ -463,6 +467,12 @@ public class AgentApp {
         } catch (RuntimeException e) {
             log.warn("Repo profile validation cycle failed: {}", e.getMessage());
         }
+    }
+
+    private void exitOnFatalAuth(AgentAuthFatalException error) {
+        log.error("Agent authentication failed: {}", error.getMessage());
+        System.err.println("Error: " + RedactionRegistry.redact(error.getMessage()));
+        System.exit(1);
     }
 
     private void shutdown() {

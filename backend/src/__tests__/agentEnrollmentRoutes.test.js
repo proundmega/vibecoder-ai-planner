@@ -37,7 +37,7 @@ function asUser(userId, role) {
 describe('Agent enrollment routes (FR1, FR2, FR12, FR14, NFR2)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    delete process.env.AGENT_ENROLLMENT_ENABLED;
+    process.env.AGENT_ENROLLMENT_ENABLED = 'true';
     PermissionService.hasAnyPermission.mockResolvedValue(true);
     pool.query.mockResolvedValue({ rows: [] });
     asUser('7', 'project_admin');
@@ -247,10 +247,19 @@ describe('requireSecureTransport (FR14)', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('accepts HTTPS directly or through a trusted proxy header', () => {
+  it('accepts HTTPS reported by Express (trust proxy configured)', () => {
     process.env.NODE_ENV = 'production';
     expect(call({ secure: true }).next).toHaveBeenCalled();
-    expect(call({ get: name => (name === 'x-forwarded-proto' ? 'https' : undefined) }).next).toHaveBeenCalled();
+  });
+
+  it('rejects a spoofed X-Forwarded-Proto when trust proxy is not configured', () => {
+    process.env.NODE_ENV = 'production';
+    const { res, next } = call({
+      get: name => (name === 'x-forwarded-proto' ? 'https' : undefined),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error.code).toBe('TLS_REQUIRED');
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('allows loopback and the explicit insecure-testing flag', () => {
@@ -263,6 +272,10 @@ describe('requireSecureTransport (FR14)', () => {
 });
 
 describe('agentEnrollmentRateLimit (FR12)', () => {
+  beforeEach(() => {
+    rateLimit._reset();
+  });
+
   afterEach(() => {
     delete process.env.INTEGRATION_TESTS;
     rateLimit._reset();
@@ -278,5 +291,29 @@ describe('agentEnrollmentRateLimit (FR12)', () => {
     const third = await request(limited).post('/enroll').send({});
     expect(third.statusCode).toBe(429);
     expect(third.body.error.code).toBe('RATE_LIMITED');
+  });
+
+  it('cannot bypass the limit by varying the token prefix', async () => {
+    let counter = 0;
+    const limited = express();
+    limited.use(express.json());
+    limited.post('/enroll', rateLimit({ max: 2, keyFn: () => `prefix-${++counter}` }), (_req, res) => res.json({ ok: true }));
+
+    expect((await request(limited).post('/enroll').send({})).statusCode).toBe(200);
+    expect((await request(limited).post('/enroll').send({})).statusCode).toBe(200);
+    expect((await request(limited).post('/enroll').send({})).statusCode).toBe(429);
+  });
+
+  it('bounds the bucket map even with unique keys', () => {
+    const limiter = rateLimit({ max: 100000 });
+    const res = {
+      set: () => res,
+      status: () => res,
+      json: () => res,
+    };
+    for (let i = 0; i < rateLimit.MAX_BUCKETS + 50; i++) {
+      limiter({ ip: `10.0.${i >> 8}.${i & 255}`, socket: {} }, res, () => {});
+    }
+    expect(rateLimit._size()).toBeLessThanOrEqual(rateLimit.MAX_BUCKETS);
   });
 });

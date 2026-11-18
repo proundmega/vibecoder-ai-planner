@@ -12,7 +12,13 @@ const mintSchema = Joi.object({
 const enrollSchema = Joi.object({
   token: Joi.string().min(20).max(128).required(),
   name: Joi.string().min(1).max(100).required(),
-  node_metadata: Joi.object().max(64).optional().default({}),
+  node_metadata: Joi.object().max(64).optional().default({})
+    .custom((value, helpers) => {
+      if (Buffer.byteLength(JSON.stringify(value || {}), 'utf8') > 4096) {
+        return helpers.message('node_metadata must be at most 4 KiB');
+      }
+      return value;
+    }),
 });
 
 const refreshSchema = Joi.object({

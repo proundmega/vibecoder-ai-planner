@@ -37,6 +37,7 @@ class AgentAuthManagerTest {
         final AtomicInteger refreshes = new AtomicInteger();
         final java.util.List<String> keys = new java.util.ArrayList<>();
         boolean failNextRefresh;
+        boolean alwaysFailRefresh;
         AgentCredentialStore.Credentials next;
 
         StubClient(AgentConfig config) { super(config); }
@@ -57,11 +58,26 @@ class AgentAuthManagerTest {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
+            if (alwaysFailRefresh) {
+                throw new IOException("backend unavailable");
+            }
             if (failNextRefresh) {
                 failNextRefresh = false;
                 throw new IOException("simulated lost response");
             }
             return next;
+        }
+    }
+
+    static class FailingStore extends AgentCredentialStore {
+        boolean fail;
+
+        FailingStore(Path path) { super(path); }
+
+        @Override
+        public void save(AgentCredentialStore.Credentials credentials) throws IOException {
+            if (fail) throw new IOException("read-only volume");
+            super.save(credentials);
         }
     }
 
@@ -142,6 +158,44 @@ class AgentAuthManagerTest {
 
         assertEquals(client.keys.size(), 2);
         assertEquals(client.keys.get(0), client.keys.get(1));
+    }
+
+    @Test
+    void keepsTheIdempotencyKeyWhenTheCredentialWriteFails() throws IOException {
+        EnrollConfig config = new EnrollConfig();
+        config.token = "enr_once";
+        Path file = tempDir.resolve("credentials.json");
+        StubClient client = new StubClient(config);
+        client.next = pair("at_expiring", Instant.now().plusSeconds(30));
+        FailingStore store = new FailingStore(file);
+
+        AgentAuthManager manager = new AgentAuthManager(config, store, client);
+        manager.initialize();
+
+        store.fail = true;
+        assertThrows(IOException.class, manager::ensureValidAccessToken);
+        store.fail = false;
+        manager.ensureValidAccessToken();
+
+        assertEquals(2, client.keys.size());
+        assertEquals(client.keys.get(0), client.keys.get(1));
+    }
+
+    @Test
+    void throwsAFatalAuthErrorWhenRefreshCannotBeRetried() throws IOException {
+        EnrollConfig config = new EnrollConfig();
+        config.token = "enr_once";
+        Path file = tempDir.resolve("credentials.json");
+        StubClient client = new StubClient(config);
+        client.next = pair("at_expiring", Instant.now().plusSeconds(30));
+        client.alwaysFailRefresh = true;
+
+        AgentAuthManager manager = new AgentAuthManager(
+            config, new AgentCredentialStore(file), client);
+        manager.initialize();
+
+        assertThrows(com.vibecode.agent.service.AgentAuthFatalException.class,
+            manager::ensureValidAccessToken);
     }
 
     @Test

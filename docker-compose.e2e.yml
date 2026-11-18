@@ -9,6 +9,8 @@ services:
       # Cypress seeds users via the API; disable login/register rate limits
       # and allow the origin the browser uses inside the compose network.
       - INTEGRATION_TESTS=1
+      - AGENT_ENROLLMENT_ENABLED=1
+      - ALLOW_INSECURE_AGENT_ENROLLMENT=1
       - ALLOWED_ORIGINS=http://frontend,http://localhost:3000,http://localhost:3002
   cypress:
     profiles: ["e2e"]

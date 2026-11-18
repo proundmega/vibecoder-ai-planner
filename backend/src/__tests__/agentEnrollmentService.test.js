@@ -148,24 +148,29 @@ describe('AgentEnrollmentService (FR1–FR3, FR5, FR11, NFR1)', () => {
 
   it('rotates a refresh token and links the replaced row', async () => {
     const raw = AgentTokenService.generate('refresh');
+    const lockedRow = {
+      id: 21,
+      agent_id: 42,
+      family_id: '11111111-1111-1111-1111-111111111111',
+      token_hash: AgentTokenService.hash(raw),
+      expires_at: new Date(Date.now() + 60_000),
+      revoked_at: null,
+      rotated_at: null,
+    };
     const client = mockClient([
-      ['SELECT * FROM agent_refresh_tokens', {
-        rows: [{
-          id: 21,
-          agent_id: 42,
-          family_id: '11111111-1111-1111-1111-111111111111',
-          token_hash: AgentTokenService.hash(raw),
-          expires_at: new Date(Date.now() + 60_000),
-          revoked_at: null,
-          rotated_at: null,
-        }],
-      }],
+      ['SELECT * FROM agent_refresh_tokens WHERE token_prefix', { rows: [lockedRow] }],
+      ['SELECT id FROM agents WHERE id = $1 FOR UPDATE', { rows: [{ id: 42 }] }],
+      ['SELECT * FROM agent_refresh_tokens WHERE id = $1 FOR UPDATE', { rows: [lockedRow] }],
       ['INSERT INTO agent_refresh_tokens', { rows: [{ id: 22 }] }],
       ['SELECT project_id FROM agents', { rows: [{ project_id: 3 }] }],
     ]);
     pool.connect.mockResolvedValue(client);
 
     const result = await AgentEnrollmentService.refresh({ token: raw, idempotencyKey: 'key-1' });
+    const lockIndex = client.query.mock.calls.findIndex(([sql]) => sql.includes('FOR UPDATE') && sql.includes('FROM agents'));
+    const rotateIndex = client.query.mock.calls.findIndex(([sql]) => sql.includes('UPDATE agent_refresh_tokens SET rotated_at'));
+    expect(lockIndex).toBeGreaterThan(-1);
+    expect(lockIndex).toBeLessThan(rotateIndex);
 
     expect(result.access_token).toMatch(/^at_/);
     expect(result.refresh_token).not.toBe(raw);
@@ -175,18 +180,19 @@ describe('AgentEnrollmentService (FR1–FR3, FR5, FR11, NFR1)', () => {
 
   it('revokes the whole family when a rotated refresh token is reused', async () => {
     const raw = AgentTokenService.generate('refresh');
+    const rotatedRow = {
+      id: 21,
+      agent_id: 42,
+      family_id: '11111111-1111-1111-1111-111111111111',
+      token_hash: AgentTokenService.hash(raw),
+      expires_at: new Date(Date.now() + 60_000),
+      revoked_at: null,
+      rotated_at: new Date(),
+    };
     const client = mockClient([
-      ['SELECT * FROM agent_refresh_tokens', {
-        rows: [{
-          id: 21,
-          agent_id: 42,
-          family_id: '11111111-1111-1111-1111-111111111111',
-          token_hash: AgentTokenService.hash(raw),
-          expires_at: new Date(Date.now() + 60_000),
-          revoked_at: null,
-          rotated_at: new Date(),
-        }],
-      }],
+      ['SELECT * FROM agent_refresh_tokens WHERE token_prefix', { rows: [rotatedRow] }],
+      ['SELECT id FROM agents WHERE id = $1 FOR UPDATE', { rows: [{ id: 42 }] }],
+      ['SELECT * FROM agent_refresh_tokens WHERE id = $1 FOR UPDATE', { rows: [rotatedRow] }],
       ['SELECT response_ciphertext, expires_at', { rows: [] }],
     ]);
     pool.connect.mockResolvedValue(client);
@@ -211,18 +217,19 @@ describe('AgentEnrollmentService (FR1–FR3, FR5, FR11, NFR1)', () => {
       refresh_expires_at: new Date(Date.now() + 86_400_000).toISOString(),
     };
     const { encrypt } = require('../utils/crypto');
+    const cachedRow = {
+      id: 21,
+      agent_id: 42,
+      family_id: '11111111-1111-1111-1111-111111111111',
+      token_hash: AgentTokenService.hash(raw),
+      expires_at: new Date(Date.now() + 60_000),
+      revoked_at: null,
+      rotated_at: new Date(),
+    };
     const client = mockClient([
-      ['SELECT * FROM agent_refresh_tokens', {
-        rows: [{
-          id: 21,
-          agent_id: 42,
-          family_id: '11111111-1111-1111-1111-111111111111',
-          token_hash: AgentTokenService.hash(raw),
-          expires_at: new Date(Date.now() + 60_000),
-          revoked_at: null,
-          rotated_at: new Date(),
-        }],
-      }],
+      ['SELECT * FROM agent_refresh_tokens WHERE token_prefix', { rows: [cachedRow] }],
+      ['SELECT id FROM agents WHERE id = $1 FOR UPDATE', { rows: [{ id: 42 }] }],
+      ['SELECT * FROM agent_refresh_tokens WHERE id = $1 FOR UPDATE', { rows: [cachedRow] }],
       ['SELECT response_ciphertext, expires_at', {
         rows: [{
           response_ciphertext: encrypt(JSON.stringify(cached)),
@@ -240,9 +247,78 @@ describe('AgentEnrollmentService (FR1–FR3, FR5, FR11, NFR1)', () => {
       sql.includes('INSERT INTO agent_auth_events') && params.includes('refresh.replay_cache_hit'))).toBe(true);
   });
 
-  it('requires an idempotency key for refresh', async () => {
-    await expect(AgentEnrollmentService.refresh({ token: AgentTokenService.generate('refresh') }))
+  it('requires an idempotency key for a first refresh', async () => {
+    const raw = AgentTokenService.generate('refresh');
+    const client = mockClient([
+      ['SELECT * FROM agent_refresh_tokens WHERE token_prefix', {
+        rows: [{
+          id: 21,
+          agent_id: 42,
+          family_id: '11111111-1111-1111-1111-111111111111',
+          token_hash: AgentTokenService.hash(raw),
+          expires_at: new Date(Date.now() + 60_000),
+          revoked_at: null,
+          rotated_at: null,
+        }],
+      }],
+      ['SELECT id FROM agents WHERE id = $1 FOR UPDATE', { rows: [{ id: 42 }] }],
+      ['SELECT * FROM agent_refresh_tokens WHERE id = $1 FOR UPDATE', {
+        rows: [{
+          id: 21,
+          agent_id: 42,
+          family_id: '11111111-1111-1111-1111-111111111111',
+          token_hash: AgentTokenService.hash(raw),
+          expires_at: new Date(Date.now() + 60_000),
+          revoked_at: null,
+          rotated_at: null,
+        }],
+      }],
+    ]);
+    pool.connect.mockResolvedValue(client);
+
+    await expect(AgentEnrollmentService.refresh({ token: raw }))
       .rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_REQUIRED' });
+    expect(client.query.mock.calls.some(([sql]) => sql.includes('INSERT INTO agent_refresh_tokens'))).toBe(false);
+  });
+
+  it('revokes the family when a rotated token is replayed with no key', async () => {
+    const raw = AgentTokenService.generate('refresh');
+    const client = mockClient([
+      ['SELECT * FROM agent_refresh_tokens WHERE token_prefix', {
+        rows: [{
+          id: 21,
+          agent_id: 42,
+          family_id: '11111111-1111-1111-1111-111111111111',
+          token_hash: AgentTokenService.hash(raw),
+          expires_at: new Date(Date.now() + 60_000),
+          revoked_at: null,
+          rotated_at: new Date(),
+        }],
+      }],
+      ['SELECT id FROM agents WHERE id = $1 FOR UPDATE', { rows: [{ id: 42 }] }],
+      ['SELECT * FROM agent_refresh_tokens WHERE id = $1 FOR UPDATE', {
+        rows: [{
+          id: 21,
+          agent_id: 42,
+          family_id: '11111111-1111-1111-1111-111111111111',
+          token_hash: AgentTokenService.hash(raw),
+          expires_at: new Date(Date.now() + 60_000),
+          revoked_at: null,
+          rotated_at: new Date(),
+        }],
+      }],
+    ]);
+    pool.connect.mockResolvedValue(client);
+
+    await expect(AgentEnrollmentService.refresh({ token: raw }))
+      .rejects.toMatchObject({ code: 'REFRESH_TOKEN_REUSED' });
+
+    const familyRevokes = client.query.mock.calls.filter(([sql]) => sql.includes('SET revoked_at = NOW()'));
+    expect(familyRevokes).toHaveLength(2);
+    expect(client.query.mock.calls.some(([sql, params]) =>
+      sql.includes('INSERT INTO agent_auth_events')
+      && params.includes('refresh.reused')
+      && String(params).includes('missing_idempotency_key'))).toBe(true);
   });
 
   it('authenticates an access token and reports expired/revoked states', async () => {

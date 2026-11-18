@@ -14,6 +14,10 @@ const props = defineProps({
     type: String,
     default: 'This is the only time this key is shown. Store it now — it cannot be retrieved later.',
   },
+  copyLabel: {
+    type: String,
+    default: 'Copy key',
+  },
 })
 
 const emit = defineEmits(['close'])
@@ -96,7 +100,7 @@ function formatDate(value) {
         <div class="key-row">
           <code class="agent-key-value">{{ agent.apiKey }}</code>
           <VButton variant="secondary" size="small" @click="copyKey">
-            {{ copied ? 'Copied' : 'Copy key' }}
+            {{ copied ? 'Copied' : copyLabel }}
           </VButton>
         </div>
         <p v-if="copyError" class="copy-error">{{ copyError }}</p>

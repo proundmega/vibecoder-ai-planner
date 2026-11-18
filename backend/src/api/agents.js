@@ -327,6 +327,9 @@ router.get('/:agentId/history', verifyTokenOrAgent, requireAnyPermission('AGENT_
  *                 keyStatus:
  *                   type: string
  *                   enum: [active, expired, revoked]
+ *                 authMode:
+ *                   type: string
+ *                   enum: [legacy, enrollment]
  *                 expiresAt: { type: string, format: date-time, nullable: true }
  *                 rateLimit: { type: integer }
  *                 maxActionsPerDay: { type: integer }
@@ -342,9 +345,17 @@ router.get('/:agentId/key', verifyToken, requireAnyPermission('AGENT_READ'), asy
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    const expiresAt = agent.api_key_hash ? agent.api_key_expires_at || null : null;
+    const enrolled = agent.enrolled_at != null || agent.project_id != null;
+    let expiresAt = agent.api_key_hash ? agent.api_key_expires_at || null : null;
     let keyStatus = 'revoked';
-    if (agent.api_key_hash) {
+    let authMode = 'legacy';
+
+    if (enrolled) {
+      authMode = 'enrollment';
+      const credentialStatus = await AgentService.getEnrollmentKeyStatus(agent.id);
+      keyStatus = credentialStatus.keyStatus;
+      expiresAt = credentialStatus.expiresAt;
+    } else if (agent.api_key_hash) {
       keyStatus = expiresAt && new Date(expiresAt).getTime() <= Date.now()
         ? 'expired'
         : 'active';
@@ -358,6 +369,7 @@ router.get('/:agentId/key', verifyToken, requireAnyPermission('AGENT_READ'), asy
       // The plaintext key is never stored, so it cannot be previewed. Rotating
       // the key is the only way to obtain a new one.
       keyStatus,
+      authMode,
       expiresAt,
       rateLimit: agent.rate_limit,
       maxActionsPerDay: agent.max_actions_per_day,

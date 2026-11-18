@@ -70,8 +70,17 @@ function formatDate(dateStr) {
   return dateStr ? new Date(dateStr).toLocaleString() : '—'
 }
 
+const isEnrolled = computed(() => keyInfo.value?.authMode === 'enrollment')
+
 const keyStatusLabel = computed(() => {
   if (!keyInfo.value) return 'Unavailable'
+  if (isEnrolled.value) {
+    return {
+      active: 'Enrollment credentials active',
+      expired: 'Enrollment credentials expired — rotate is not available',
+      revoked: 'Enrollment credentials revoked',
+    }[keyInfo.value.keyStatus] || keyInfo.value.keyStatus
+  }
   if (keyInfo.value.keyStatus === 'revoked') {
     return canRevoke.value ? 'Revoked — rotate to issue a new key' : 'Revoked'
   }
@@ -256,11 +265,11 @@ async function handleDelete() {
       <div v-if="canRevoke || canDelete" class="actions-section">
         <h2>Actions</h2>
         <div class="actions-buttons">
-          <button v-if="canRevoke" class="btn-secondary" @click="openRotateConfirm" :disabled="actionLoading || rotating">
+          <button v-if="canRevoke && !isEnrolled" class="btn-secondary" @click="openRotateConfirm" :disabled="actionLoading || rotating">
             Rotate API Key
           </button>
           <button v-if="canRevoke" class="btn-danger-outline" @click="openRevokeConfirm" :disabled="actionLoading">
-            Revoke API Key
+            {{ isEnrolled ? 'Revoke Credentials' : 'Revoke API Key' }}
           </button>
           <button v-if="canDelete" class="btn-danger" @click="openDeleteConfirm" :disabled="actionLoading">
             Delete Agent

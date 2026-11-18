@@ -119,6 +119,7 @@ process.env.JWT_SECRET = 'test-secret-key-at-least-32-chars-long';
 process.env.DATABASE_URL = 'postgresql://localhost/test';
 process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 process.env.NODE_ENV = 'test';
+process.env.AGENT_ENROLLMENT_ENABLED = 'true';
 process.env.REDIS_URL = 'redis://localhost:6379';
 
 // Redis mock

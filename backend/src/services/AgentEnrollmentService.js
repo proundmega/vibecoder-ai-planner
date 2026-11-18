@@ -111,7 +111,7 @@ class AgentEnrollmentService {
    * Mint a one-time, project-scoped join token. The raw value is returned
    * exactly once; only its hash and lookup prefix are persisted.
    */
-  async mint({ projectId, name, ttlSeconds, maxUses, providerId = null, createdBy = null }) {
+  async mint({ projectId, name, ttlSeconds, maxUses, providerId = null, createdBy = null, ip = null }) {
     if (providerId) {
       const provider = await pool.query('SELECT id FROM providers WHERE id = $1', [providerId]);
       if (provider.rows.length === 0) {
@@ -146,6 +146,7 @@ class AgentEnrollmentService {
       eventType: 'enrollment.minted',
       actorType: 'user',
       actorId: createdBy != null ? String(createdBy) : null,
+      ip,
       metadata: { enrollment_token_id: result.rows[0].id, max_uses: uses, ttl_seconds: ttl },
     });
 
@@ -164,7 +165,7 @@ class AgentEnrollmentService {
     return result.rows;
   }
 
-  async revoke(id) {
+  async revoke(id, { ip = null, actorId = null } = {}) {
     const result = await pool.query(
       `UPDATE agent_enrollment_tokens
        SET revoked_at = NOW()
@@ -176,6 +177,9 @@ class AgentEnrollmentService {
     await this.audit(pool, {
       projectId: result.rows[0].project_id,
       eventType: 'enrollment.revoked',
+      actorType: actorId != null ? 'user' : 'system',
+      actorId: actorId != null ? String(actorId) : null,
+      ip,
       metadata: { enrollment_token_id: id },
     });
     return result.rows[0];
@@ -292,11 +296,6 @@ class AgentEnrollmentService {
       refreshCounter.inc({ result: 'invalid' });
       throw new EnrollmentError(401, 'REFRESH_TOKEN_INVALID', 'Invalid refresh token');
     }
-    if (!idempotencyKey || String(idempotencyKey).trim() === '') {
-      refreshCounter.inc({ result: 'invalid' });
-      throw new EnrollmentError(400, 'IDEMPOTENCY_KEY_REQUIRED', 'idempotency_key is required');
-    }
-
     const endTimer = refreshDuration.startTimer();
     let counted = false;
     const count = result => {
@@ -308,23 +307,55 @@ class AgentEnrollmentService {
     const db = await pool.connect();
     try {
       await db.query('BEGIN');
-      const found = await db.query(
-        'SELECT * FROM agent_refresh_tokens WHERE token_prefix = $1 FOR UPDATE',
+      const initial = await db.query(
+        'SELECT * FROM agent_refresh_tokens WHERE token_prefix = $1',
         [AgentTokenService.lookupPrefix(token)]
       );
-      const row = found.rows.find(candidate => AgentTokenService.matches(token, candidate.token_hash));
+      let row = initial.rows.find(candidate => AgentTokenService.matches(token, candidate.token_hash));
 
       if (!row) {
         count('invalid');
         throw new EnrollmentError(401, 'REFRESH_TOKEN_INVALID', 'Invalid refresh token');
       }
 
-      if (row.revoked_at) {
+      // Serialize refresh and revocation on the agent row. A revoke locks this
+      // row, updates the legacy key, then revokes tokens; if it commits first
+      // we see revoked rows, and if we commit first it revokes our new pair too.
+      const agentLock = await db.query(
+        'SELECT id FROM agents WHERE id = $1 FOR UPDATE',
+        [row.agent_id]
+      );
+      if (agentLock.rows.length === 0) {
+        count('invalid');
+        throw new EnrollmentError(401, 'REFRESH_TOKEN_INVALID', 'Invalid refresh token');
+      }
+
+      const locked = await db.query(
+        'SELECT * FROM agent_refresh_tokens WHERE id = $1 FOR UPDATE',
+        [row.id]
+      );
+      row = locked.rows[0];
+      if (!row || !AgentTokenService.matches(token, row.token_hash) || row.revoked_at) {
         count('invalid');
         throw new EnrollmentError(401, 'REFRESH_TOKEN_INVALID', 'Invalid refresh token');
       }
 
       if (row.rotated_at) {
+        // A rotated token with no key at all is still reuse: revoke the family
+        // rather than returning a 400 that leaves the stolen token harmless but
+        // undetected.
+        if (!idempotencyKey || String(idempotencyKey).trim() === '') {
+          await this.revokeFamily(db, row.agent_id);
+          await this.audit(db, {
+            agentId: row.agent_id,
+            eventType: 'refresh.reused',
+            ip,
+            metadata: { refresh_token_id: row.id, reason: 'missing_idempotency_key' },
+          });
+          await db.query('COMMIT');
+          count('reuse');
+          throw new EnrollmentError(401, 'REFRESH_TOKEN_REUSED', 'Refresh token already used; re-enroll this node');
+        }
         // A retry of the same refresh request carries the same idempotency
         // key. Within the replay window we return the identical pair instead
         // of rotating again, so a lost response cannot lock the node out.
@@ -359,6 +390,11 @@ class AgentEnrollmentService {
         await db.query('COMMIT');
         count('reuse');
         throw new EnrollmentError(401, 'REFRESH_TOKEN_REUSED', 'Refresh token already used; re-enroll this node');
+      }
+
+      if (!idempotencyKey || String(idempotencyKey).trim() === '') {
+        count('invalid');
+        throw new EnrollmentError(400, 'IDEMPOTENCY_KEY_REQUIRED', 'idempotency_key is required');
       }
 
       if (new Date(row.expires_at) <= new Date()) {
@@ -447,9 +483,9 @@ class AgentEnrollmentService {
     return { status: 'ok', agent };
   }
 
-  async revokeAllForAgent(agentId) {
-    await this.revokeFamily(pool, agentId);
-    await this.audit(pool, {
+  async revokeAllForAgent(agentId, db = pool) {
+    await this.revokeFamily(db, agentId);
+    await this.audit(db, {
       agentId,
       eventType: 'agent.credentials_revoked',
     });

@@ -16,11 +16,9 @@ const {
 const router = express.Router();
 
 function enrollmentEnabled() {
-  if (process.env.AGENT_ENROLLMENT_ENABLED === 'true') return true;
-  if (process.env.AGENT_ENROLLMENT_ENABLED === 'false') return false;
-  // Off by default in production; on for local/dev/test so the pilot works
-  // without extra setup.
-  return process.env.NODE_ENV !== 'production';
+  // Explicit opt-in only: NODE_ENV=development is not enough, so a dev-mode
+  // container exposed to a network cannot silently offer enrollment.
+  return process.env.AGENT_ENROLLMENT_ENABLED === 'true';
 }
 
 router.use((req, res, next) => {
@@ -44,9 +42,9 @@ function requireSecureTransport(req, res, next) {
   if (process.env.ALLOW_INSECURE_AGENT_ENROLLMENT === '1') return next();
   if (process.env.NODE_ENV === 'test' || process.env.INTEGRATION_TESTS === '1') return next();
 
-  const forwarded = req.get('x-forwarded-proto');
-  const proto = forwarded ? forwarded.split(',')[0].trim() : (req.secure ? 'https' : 'http');
-  if (proto === 'https') return next();
+  // `req.secure` only reflects X-Forwarded-Proto when Express `trust proxy`
+  // is configured (TRUST_PROXY), so a direct client cannot spoof this check.
+  if (req.secure) return next();
   if (isLoopback(req.ip || req.socket?.remoteAddress)) return next();
 
   return res.status(403).json({
@@ -135,7 +133,7 @@ router.post(
   '/tokens',
   verifyToken,
   requireAnyPermission('AGENT_CREATE'),
-  agentEnrollmentRateLimit({ max: 30 }),
+  agentEnrollmentRateLimit({ max: 30, scope: 'mint' }),
   validate(mintSchema),
   async (req, res) => {
     try {
@@ -149,6 +147,7 @@ router.post(
         maxUses: req.body.max_uses,
         providerId: req.body.provider_id || null,
         createdBy: req.user.userId,
+        ip: req.ip,
       });
 
       res.status(201).json({
@@ -229,7 +228,10 @@ router.delete(
       }
       await projectForUser(req, existing.rows[0].project_id);
 
-      const revoked = await AgentEnrollmentService.revoke(req.params.id);
+      const revoked = await AgentEnrollmentService.revoke(req.params.id, {
+        ip: req.ip,
+        actorId: req.user.userId,
+      });
       if (!revoked) {
         return res.status(404).json(errorBody('NOT_FOUND', 'Enrollment token not found'));
       }
@@ -275,6 +277,7 @@ router.post(
   requireSecureTransport,
   agentEnrollmentRateLimit({
     max: 20,
+    scope: 'enroll',
     keyFn: req => (typeof req.body?.token === 'string' ? req.body.token.slice(0, 12) : 'none'),
   }),
   validate(enrollSchema),
@@ -339,6 +342,7 @@ router.post(
   requireSecureTransport,
   agentEnrollmentRateLimit({
     max: 60,
+    scope: 'refresh',
     keyFn: req => (typeof req.body?.refresh_token === 'string' ? req.body.refresh_token.slice(0, 12) : 'none'),
   }),
   validate(refreshSchema),

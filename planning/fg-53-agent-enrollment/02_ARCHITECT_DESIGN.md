@@ -287,7 +287,7 @@ Refresh:
 
 - **Authentication:** join/access/refresh tokens are bearer secrets. Access
   tokens use `X-API-Key`; enrollment/refresh bodies are POST-only, never URLs.
-  TLS is required outside loopback unless `ALLOW_INSECURE_AGENT_ENROLLMENT=1`.
+  TLS is required outside loopback unless `ALLOW_INSECURE_AGENT_ENROLLMENT=1`. `req.secure` honors `X-Forwarded-Proto` only when Express `trust proxy` is configured via `TRUST_PROXY`; a direct client cannot spoof it.
 - **Authorization:** mint/list/revoke use existing `AGENT_CREATE` /
   `AGENT_READ` / `AGENT_REVOKE` plus project membership. Join tokens are bound
   to one project and optional provider; the enroll request cannot override
@@ -405,8 +405,9 @@ Refresh:
 
 1. **Migration** — apply `055_agent_enrollment.sql` (additive; legacy keys
    untouched).
-2. **Backend behind a flag** — `AGENT_ENROLLMENT_ENABLED=false` by default in
-   production; enable in staging/dev after TLS is configured. Mint/list/revoke
+2. **Backend behind a flag** — `AGENT_ENROLLMENT_ENABLED` is explicit opt-in
+   (`true`); it is not implied by `NODE_ENV=development`. Dev Compose sets it
+   to `true`, production-style Compose defaults to `false`. Mint/list/revoke
    and enroll/refresh return 404 when disabled (chosen over 403/503 so the
    feature is not advertised); test the flag-off response.
 3. **Middleware** — ship dual auth for `at_…` and `ak_…`; enforce expiry on

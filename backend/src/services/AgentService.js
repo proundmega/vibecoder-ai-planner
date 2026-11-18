@@ -88,10 +88,28 @@ class AgentService {
   }
 
   async revokeApiKey(agentId) {
-    await pool.query('UPDATE agents SET api_key_hash = NULL, api_key_hash_prefix = NULL WHERE id = $1', [agentId]);
-    // FR6: revoking an agent invalidates every credential it holds, not only
-    // the legacy key.
-    await AgentEnrollmentService.revokeAllForAgent(agentId);
+    const db = await pool.connect();
+    try {
+      await db.query('BEGIN');
+      // Lock the agent before touching tokens. A concurrent refresh locks the
+      // same row, so either it rotates before us and we revoke the new pair,
+      // or it waits and sees the revoked rows.
+      const locked = await db.query('SELECT id FROM agents WHERE id = $1 FOR UPDATE', [agentId]);
+      if (locked.rows.length === 0) {
+        await db.query('ROLLBACK');
+        throw new Error('AGENT_NOT_FOUND');
+      }
+      await db.query('UPDATE agents SET api_key_hash = NULL, api_key_hash_prefix = NULL WHERE id = $1', [agentId]);
+      // FR6: revoking an agent invalidates every credential it holds, not only
+      // the legacy key.
+      await AgentEnrollmentService.revokeAllForAgent(agentId, db);
+      await db.query('COMMIT');
+    } catch (error) {
+      await db.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      db.release();
+    }
   }
 
   async registerAction(agentId, actionType, tableName, recordId) {
@@ -190,6 +208,24 @@ class AgentService {
       model: provider.model,
       max_tokens: provider.max_tokens,
     };
+  }
+
+  async getEnrollmentKeyStatus(agentId) {
+    const result = await pool.query(
+      `SELECT
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE revoked_at IS NOT NULL)::int AS revoked,
+         COUNT(*) FILTER (WHERE revoked_at IS NULL AND expires_at > NOW())::int AS active,
+         MAX(expires_at) FILTER (WHERE revoked_at IS NULL) AS expires_at
+       FROM agent_access_tokens
+       WHERE agent_id = $1`,
+      [agentId]
+    );
+    const row = result.rows[0] || { total: 0, revoked: 0, active: 0, expires_at: null };
+    let status = 'revoked';
+    if (row.active > 0) status = 'active';
+    else if (row.total > 0 && row.revoked < row.total) status = 'expired';
+    return { keyStatus: status, expiresAt: row.expires_at || null };
   }
 
   async getAgentByApiKey(apiKey) {

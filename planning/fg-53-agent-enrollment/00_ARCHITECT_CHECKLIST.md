@@ -63,9 +63,9 @@ needed to mint and revoke enrollment tokens.
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Plan merge pending | PR #173 (in review) | ☐ |
+| Plan merged | PR #173 (merged) | ☑ |
 | Implementation merged | PR #174 (open) | ☐ |
-| Verification results | n/a — planned | ☐ |
+| Verification results | PR #174 (open) — backend 1994+/frontend 652/agent 816 | ☑ |
 
 A merged planning PR is **plan merged**, not `done`. Set `status: done` only
 after the implementation PR is merged and `03` has a dated Results row.
@@ -127,7 +127,5 @@ record it as an assumption in `01`.
 - Enrolled agents get `agents.project_id`; legacy/manual agents keep
   `project_id = NULL` and remain owner-scoped. The broader project-agents
   migration is D11, not a dependency of this ticket.
-- When this planning PR merges: change the **Plan merge pending** evidence row
-  to **Plan merged**, change the `PENDING.txt` label to
-  **Plan merged (#173); implementation pending**, and update the intake rows.
-  Keep `pr`/`branch` null until the implementation PR exists.
+- The planning PR merged as #173; the implementation PR is #174 (in review).
+  `PENDING.txt` carries **In review (#174)** until it merges.

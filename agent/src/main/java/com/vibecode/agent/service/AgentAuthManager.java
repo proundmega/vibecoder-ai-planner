@@ -104,13 +104,22 @@ public class AgentAuthManager {
         if (pendingRefreshKey == null) {
             pendingRefreshKey = java.util.UUID.randomUUID().toString();
         }
-        AgentCredentialStore.Credentials rotated = client.refresh(
-            current.refreshToken(), pendingRefreshKey);
-        pendingRefreshKey = null;
+        AgentCredentialStore.Credentials rotated;
+        try {
+            rotated = client.refresh(current.refreshToken(), pendingRefreshKey);
+        } catch (IOException error) {
+            // Keep pendingRefreshKey so a retry of this same attempt can hit the
+            // backend replay cache, then fail the process rather than looping.
+            throw new AgentAuthFatalException(
+                "Agent credentials could not be refreshed; re-enroll this node", error);
+        }
         // Persist before adopting so a failed write cannot leave memory ahead
         // of disk (a restart would replay a rotated token and revoke the family).
         if (store != null) store.save(rotated);
         adopt(rotated);
+        // Clear only after the new pair is durable; a failed save retries with
+        // the same key instead of presenting the rotated token under a new key.
+        pendingRefreshKey = null;
     }
 
     private void adopt(AgentCredentialStore.Credentials next) {
