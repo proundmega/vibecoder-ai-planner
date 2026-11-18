@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, unref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchAgentDetail, getAgentKeyInfo, rotateAgentKey } from '@/api/agents'
 import { useAuthStore } from '@/stores/auth'
@@ -21,10 +21,7 @@ const actionLoading = ref(false)
 const rotating = ref(false)
 const actionError = ref(null)
 
-const currentUser = computed(() => {
-  const raw = authStore.user
-  return raw && typeof raw === 'object' && 'value' in raw ? raw.value : raw
-})
+const currentUser = computed(() => unref(authStore.user) || null)
 const isSuperAdmin = computed(() => currentUser.value?.role === 'super_admin')
 const isOwner = computed(() => {
   const ownerId = agent.value?.owner_id

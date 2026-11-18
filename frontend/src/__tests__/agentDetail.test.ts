@@ -10,13 +10,16 @@ const { authState } = vi.hoisted(() => ({
   authState: { id: 'user-1', role: 'project_admin', canRevoke: true, canDelete: true },
 }))
 
-vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({
-    user: { value: { id: authState.id, role: authState.role } },
-    canRevokeAgent: () => authState.canRevoke,
-    canDeleteAgent: () => authState.canDelete,
-  }),
-}))
+vi.mock('@/stores/auth', async () => {
+  const { ref } = await import('vue')
+  return {
+    useAuthStore: () => ({
+      user: ref({ id: authState.id, role: authState.role }),
+      canRevokeAgent: () => authState.canRevoke,
+      canDeleteAgent: () => authState.canDelete,
+    }),
+  }
+})
 
 vi.mock('@/api/agents', () => ({
   fetchAgentDetail: vi.fn(),

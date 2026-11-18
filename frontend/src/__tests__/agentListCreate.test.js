@@ -126,4 +126,39 @@ describe('AgentList create flow', () => {
 
     wrapper.unmount()
   })
+
+  it('re-enables the modal when create hangs past the timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      agentsApi.createAgent.mockReturnValue(new Promise(() => {}))
+
+      const wrapper = mount(AgentList, mountOptions)
+      await wrapper.vm.$nextTick()
+
+      const button = wrapper.findAll('button').find(b => b.text() === 'Create Agent')
+      await button.trigger('click')
+      await wrapper.vm.$nextTick()
+      await wrapper.find('.v-modal input').setValue('Hanging Agent')
+      await wrapper.find('.v-modal form').trigger('submit')
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('button[type="submit"]').text()).toBe('Creating...')
+
+      await vi.advanceTimersByTimeAsync(30000)
+      await wrapper.vm.$nextTick()
+
+      const submit = wrapper.find('button[type="submit"]')
+      expect(submit.text()).toBe('Create')
+      expect(wrapper.find('.v-modal .submit-error').text()).toContain('taking longer than expected')
+
+      // Once the timeout releases `creating`, the overlay can close the dialog.
+      await wrapper.find('.v-modal-overlay').trigger('click')
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('.v-modal input').exists()).toBe(false)
+
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

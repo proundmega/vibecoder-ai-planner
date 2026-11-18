@@ -19,6 +19,8 @@ const loadingAgents = ref(false)
 const providers = ref([])
 const selectedProviderId = ref(null)
 const router = useRouter()
+const CREATE_TIMEOUT_MS = 30000
+let createAttempt = 0
 let pollInterval = null
 const editingAgentId = ref(null)
 const editName = ref('')
@@ -77,10 +79,23 @@ function formatCost(cost) {
 }
 
 async function handleCreate(name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays) {
+  const attempt = ++createAttempt
   creatingAgent.value = true
   createError.value = null
+  let timedOut = false
+  const timer = setTimeout(() => {
+    if (attempt !== createAttempt) return
+    timedOut = true
+    // Re-enable dismissal so a hung request cannot trap the dialog. The
+    // request itself cannot be cancelled safely; if it later succeeds the
+    // operator can rotate the key from the agent page.
+    creatingAgent.value = false
+    createError.value = 'Creating the agent is taking longer than expected. Refresh the list before retrying; if the agent appears, rotate its key.'
+  }, CREATE_TIMEOUT_MS)
+
   try {
     const created = await createAgent({ name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays })
+    if (attempt !== createAttempt || timedOut) return
     showCreateModal.value = false
 
     const provider = providers.value.find(p =>
@@ -98,9 +113,11 @@ async function handleCreate(name, providerId, rateLimit, maxActionsPerDay, keyEx
     // tab switch.
     await Promise.all([loadAgents(), loadCrudAgents()])
   } catch (err) {
+    if (attempt !== createAttempt || timedOut) return
     createError.value = err.message || 'Failed to create agent'
   } finally {
-    creatingAgent.value = false
+    clearTimeout(timer)
+    if (attempt === createAttempt && !timedOut) creatingAgent.value = false
   }
 }
 

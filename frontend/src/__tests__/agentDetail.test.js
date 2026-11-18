@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { ref } from 'vue'
 import AgentDetail from '@/views/AgentDetail.vue'
 
 vi.mock('@/stores/auth', () => ({
@@ -27,7 +28,7 @@ describe('AgentDetail', () => {
   async function createWrapper(role, ownerId = 'user-1') {
     const { useAuthStore } = await import('@/stores/auth')
     useAuthStore.mockImplementation(() => ({
-      user: { value: { id: 'user-1', role } },
+      user: ref({ id: 'user-1', role }),
       canRevokeAgent: () => role === 'super_admin' || role === 'project_admin',
       canDeleteAgent: () => role === 'super_admin' || role === 'project_admin',
     }))

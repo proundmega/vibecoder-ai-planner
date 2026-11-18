@@ -9,8 +9,15 @@ const mountOptions = {
 }
 
 describe('AgentKeyRevealModal', () => {
+  const originalExecCommand = document.execCommand
+
   afterEach(() => {
     delete (navigator as unknown as { clipboard?: unknown }).clipboard
+    if (originalExecCommand) {
+      document.execCommand = originalExecCommand
+    } else {
+      delete (document as unknown as { execCommand?: unknown }).execCommand
+    }
   })
 
   it('shows the one-time key and copies it', async () => {
@@ -78,6 +85,18 @@ describe('AgentKeyRevealModal', () => {
     const done = wrapper.findAll('button').find(button => button.text() === 'Done')
     await done!.trigger('click')
     expect(wrapper.emitted('close')).toBeTruthy()
+  })
+
+  it('cannot be dismissed with Escape', async () => {
+    const wrapper = mount(AgentKeyRevealModal, {
+      ...mountOptions,
+      props: {
+        agent: { id: 'a1', name: 'Worker One', apiKey: 'ak_test_secret' },
+      },
+    })
+
+    await wrapper.find('.v-modal').trigger('keydown.esc')
+    expect(wrapper.emitted('close')).toBeFalsy()
   })
 
   it('removes the fallback textarea after a successful copy', async () => {
