@@ -3,7 +3,7 @@ const Ticket = require('../models/ticket');
 const Project = require('../models/project');
 const User = require('../models/user');
 const PermissionService = require('../services/PermissionService');
-const { ValidationError, NotFoundError, ForbiddenError } = require('../errors/HttpError');
+const { ValidationError, NotFoundError, ForbiddenError, ConflictError } = require('../errors/HttpError');
 
 jest.mock('../models/ticket');
 jest.mock('../models/project');
@@ -285,6 +285,54 @@ describe('TicketService', () => {
       await expect(TicketService.delete('t1', 100))
         .rejects
         .toThrow(ForbiddenError);
+    });
+
+    test('should reject deleting an in_progress ticket', async () => {
+      Ticket.findById.mockResolvedValueOnce({
+        id: 't1',
+        ownerId: 100,
+        projectId: 1,
+        status: 'in_progress',
+      });
+      PermissionService.hasPermission.mockResolvedValueOnce(true);
+
+      await expect(TicketService.delete('t1', 100, 'member'))
+        .rejects
+        .toThrow(ConflictError);
+
+      expect(Ticket.delete).not.toHaveBeenCalled();
+    });
+
+    test('should allow deleting a backlog ticket', async () => {
+      Ticket.findById.mockResolvedValueOnce({
+        id: 't1',
+        ownerId: 100,
+        projectId: 1,
+        status: 'backlog',
+      });
+      PermissionService.hasPermission.mockResolvedValueOnce(true);
+
+      await TicketService.delete('t1', 100, 'member');
+
+      expect(Ticket.delete).toHaveBeenCalledWith('t1');
+    });
+
+    test('should return Forbidden before the in-progress guard for a non-member', async () => {
+      Ticket.findById.mockResolvedValueOnce({
+        id: 't1',
+        ownerId: 100,
+        projectId: 1,
+        status: 'in_progress',
+      });
+      PermissionService.hasPermission.mockResolvedValueOnce(true);
+      Project.findById.mockResolvedValueOnce({ id: 1, ownerId: 100 });
+      // No project membership row for user 200.
+
+      await expect(TicketService.delete('t1', 200, 'member'))
+        .rejects
+        .toThrow(ForbiddenError);
+
+      expect(Ticket.delete).not.toHaveBeenCalled();
     });
   });
 

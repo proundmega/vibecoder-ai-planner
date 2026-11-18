@@ -9,6 +9,7 @@ import { listPlanningFiles, getPlanningFile, upsertPlanningFile, applyTemplate, 
 import { getTicketPlanningUsage, getPlanningFileUsage } from '@/api/client'
 import { listTemplates } from '@/api/templates'
 import TicketEditModal from '@/components/TicketEditModal.vue'
+import VButton from '@/components/VButton.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,9 +19,13 @@ const loading = ref(true)
 const error = ref(null)
 const newComment = ref('')
 const comments = ref([])
+// The board sends `?edit=1` after creating a ticket so the user lands in the
+// Edit Ticket view by default. Opening is deferred until the ticket is loaded
+// so ownership-based permission checks can run.
 const showEditModal = ref(false)
 const showDeleteConfirm = ref(false)
 const deleting = ref(false)
+const deleteError = ref(null)
 const attachments = ref([])
 const uploading = ref(false)
 const uploadError = ref('')
@@ -86,6 +91,16 @@ onMounted(async () => {
     if (!ticket.value) {
       error.value = 'Ticket not found'
     } else {
+      // Decide the auto-open immediately: it only depends on the ticket and
+      // permissions, not on comments/attachments/planning. This also survives
+      // a failure in any of those unrelated fetches.
+      if (route.query.edit === '1') {
+        if (canUpdate()) {
+          showEditModal.value = true
+        } else {
+          stripEditQuery()
+        }
+      }
       comments.value = await fetchComments(ticketId)
       approvals.value = await getTicketApprovals(ticketId)
       attachments.value = await fetchAttachments(ticketId)
@@ -150,6 +165,19 @@ async function requestApproval() {
   }
 }
 
+function stripEditQuery() {
+  if (route.query.edit !== undefined) {
+    const query = { ...route.query }
+    delete query.edit
+    router.replace({ query })
+  }
+}
+
+function closeEditModal() {
+  showEditModal.value = false
+  stripEditQuery()
+}
+
 async function handleEditSaved(updates) {
   if (ticket.value) {
     Object.assign(ticket.value, updates)
@@ -166,15 +194,23 @@ async function handleEditSaved(updates) {
 async function handleDelete() {
   deleting.value = true
   showDeleteConfirm.value = false
-  
+  deleteError.value = null
+
   try {
     await deleteTicket(ticket.value.id)
     router.push(`/projects/${route.params.id}/tickets`)
   } catch (err) {
     console.error('Failed to delete ticket:', err)
-    error.value = 'Failed to delete ticket: ' + err.message
+    // Keep the confirmation closed and surface the failure in the page, rather
+    // than reopening the modal over the error.
+    deleteError.value = 'Failed to delete ticket: ' + err.message
     deleting.value = false
-    showDeleteConfirm.value = true
+    if (err.status === 409) {
+      // A concurrent transition won the race; refresh so the page reflects the
+      // real status and the Delete button/hint are correct.
+      const fresh = await fetchTicket(ticket.value.id)
+      if (fresh) ticket.value = fresh
+    }
   }
 }
 
@@ -387,9 +423,24 @@ async function handleShowTemplateSelect() {
       <button @click="router.back()" class="back-btn">← Back</button>
       <div class="action-buttons">
         <button v-if="canUpdate()" @click="showEditModal = true" class="btn-edit">Edit Ticket</button>
-        <button v-if="canDelete()" @click="showDeleteConfirm = true" class="btn-delete">Delete Ticket</button>
+        <span
+          v-if="canDelete()"
+          class="delete-ticket-action"
+          :title="ticket?.status === 'in_progress' ? 'Move this ticket to Backlog before deleting it' : ''"
+        >
+          <button
+            @click="showDeleteConfirm = true"
+            class="btn-delete"
+            :disabled="ticket?.status === 'in_progress'"
+          >Delete Ticket</button>
+        </span>
       </div>
     </div>
+
+    <p v-if="ticket?.status === 'in_progress' && canDelete()" class="delete-hint">
+      Move this ticket to Backlog before deleting it.
+    </p>
+    <div v-if="deleteError" class="error-banner">{{ deleteError }}</div>
 
     <h1>Ticket #{{ ticketId }}</h1>
 
@@ -519,7 +570,11 @@ async function handleShowTemplateSelect() {
                   ${{ file.last_cost_usd.toFixed(4) }}
                 </span>
               </div>
-              <button @click="editingFile = file; editingContent = ''; loadPlanningFile(file.key)" class="btn-small">Edit</button>
+              <VButton
+                variant="secondary"
+                size="small"
+                @click="editingFile = file; editingContent = ''; loadPlanningFile(file.key)"
+              >Edit</VButton>
             </div>
           </div>
 
@@ -671,7 +726,7 @@ async function handleShowTemplateSelect() {
       v-if="showEditModal && ticket"
       :ticket="ticket"
       :project-id="route.params.id"
-      @close="showEditModal = false"
+      @close="closeEditModal"
       @saved="handleEditSaved"
     />
 
@@ -719,6 +774,26 @@ async function handleShowTemplateSelect() {
   gap: 10px;
 }
 
+.delete-ticket-action {
+  display: inline-flex;
+}
+
+.delete-hint {
+  margin: -8px 0 12px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.error-banner {
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 13px;
+}
+
 .btn-edit {
   padding: 8px 16px;
   background: #3b82f6;
@@ -735,6 +810,11 @@ async function handleShowTemplateSelect() {
   border: none;
   border-radius: 6px;
   cursor: pointer;
+}
+
+.btn-delete:disabled {
+  background: #fca5a5;
+  cursor: not-allowed;
 }
 
 h1 {
@@ -1045,6 +1125,16 @@ h1 {
 
 .error {
   color: #ef4444;
+}
+
+.success {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: #065f46;
+  font-size: 13px;
 }
 
 .approval-status {
