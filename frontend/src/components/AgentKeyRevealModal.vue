@@ -18,6 +18,14 @@ const props = defineProps({
     type: String,
     default: 'Copy key',
   },
+  idLabel: {
+    type: String,
+    default: 'Agent ID',
+  },
+  expiresLabel: {
+    type: String,
+    default: 'Key expires',
+  },
 })
 
 const emit = defineEmits(['close'])
@@ -82,7 +90,7 @@ function formatDate(value) {
           <dd>{{ agent.name || '—' }}</dd>
         </div>
         <div>
-          <dt>Agent ID</dt>
+          <dt>{{ idLabel }}</dt>
           <dd>{{ agent.id ?? '—' }}</dd>
         </div>
         <div v-if="agent.providerName">
@@ -90,7 +98,7 @@ function formatDate(value) {
           <dd>{{ agent.providerName }}</dd>
         </div>
         <div>
-          <dt>Key expires</dt>
+          <dt>{{ expiresLabel }}</dt>
           <dd>{{ formatDate(agent.expiresAt) }}</dd>
         </div>
       </dl>

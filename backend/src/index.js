@@ -207,6 +207,8 @@ if (process.env.NODE_ENV !== 'test') {
   };
   const agentTokenRetentionInterval = setInterval(agentTokenPurgeTick, 24 * 60 * 60 * 1000);
   agentTokenRetentionInterval.unref();
+  // Purge once at startup so a restarted/upgraded API does not wait a day.
+  agentTokenPurgeTick();
 
   gracefulShutdown(server, pool, [
     () => clearInterval(cleanupInterval),

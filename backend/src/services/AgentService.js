@@ -212,13 +212,18 @@ class AgentService {
 
   async getEnrollmentKeyStatus(agentId) {
     const result = await pool.query(
-      `SELECT
+      `WITH credentials AS (
+         SELECT revoked_at, expires_at FROM agent_access_tokens WHERE agent_id = $1
+         UNION ALL
+         SELECT revoked_at, expires_at FROM agent_refresh_tokens
+         WHERE agent_id = $1 AND rotated_at IS NULL
+       )
+       SELECT
          COUNT(*)::int AS total,
          COUNT(*) FILTER (WHERE revoked_at IS NOT NULL)::int AS revoked,
          COUNT(*) FILTER (WHERE revoked_at IS NULL AND expires_at > NOW())::int AS active,
          MAX(expires_at) FILTER (WHERE revoked_at IS NULL) AS expires_at
-       FROM agent_access_tokens
-       WHERE agent_id = $1`,
+       FROM credentials`,
       [agentId]
     );
     const row = result.rows[0] || { total: 0, revoked: 0, active: 0, expires_at: null };

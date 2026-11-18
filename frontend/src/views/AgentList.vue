@@ -313,6 +313,8 @@ function formatDate(dateStr) {
       intro="Give this token to the new node. It is exchanged once for its own short-lived credentials."
       warning="This is the only time this join token is shown. It expires automatically and can be revoked."
       copy-label="Copy token"
+      id-label="Join token ID"
+      expires-label="Token expires"
       @close="mintedToken = null"
     />
 

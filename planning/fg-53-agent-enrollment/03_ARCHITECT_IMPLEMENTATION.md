@@ -31,7 +31,7 @@
 6. **Pool agents and long-running credentials** — configurable lifetime and a
    renewal path; remove the silent one-day expiry. Verify: >24h simulation test.
 7. **Metrics and admin UI/docs** — enrollment/refresh counters and failure
-   counters in `metrics.js`; `api/agentEnrollment.ts`, mint/list/revoke panel
+   counters in `AgentEnrollmentMetrics.js`; `api/agentEnrollment.ts`, mint/list/revoke panel
    on the Agents page with a project selector, one-time token display; operator
    runbook in `02` → Rollout. Verify: metrics assertions + Vitest + typecheck +
    build.
@@ -45,26 +45,22 @@
 | `backend/src/migrations/apply.js` | MODIFY | Append migration after `054_agent_revoke_project_admin.sql` |
 | `backend/src/services/AgentEnrollmentService.js` | CREATE | Mint/list/revoke/enroll/refresh, hashing, transactions, audit |
 | `backend/src/services/AgentTokenService.js` | CREATE | Token generation, prefix/hash, timing-safe compare, expiry helpers |
-| `backend/src/services/AgentRefreshReplayService.js` | CREATE | Encrypted idempotency replay cache lookup/store/purge |
+| `backend/src/services/AgentEnrollmentMetrics.js` | CREATE | Enrollment/refresh/auth-failure counters and duration histograms |
 | `backend/src/validators/agentEnrollment.js` | CREATE | Joi schemas for mint/enroll/refresh/metadata |
 | `backend/src/api/agentEnrollment.js` | CREATE | Routes + OpenAPI JSDoc, permission/membership checks, flag |
 | `backend/src/api/v1/index.js` | MODIFY | Mount `/agent-enrollment` |
 | `backend/src/middleware/auth.js` | MODIFY | Prefix dispatch, shared expiry/revocation check, load `project_id` into `req.agent` |
 | `backend/src/middleware/agentProjectScope.js` | CREATE | Assert `req.agent.project_id` matches the ticket/credential project; legacy NULL keeps owner scope |
-| `backend/src/services/TicketService.js` | MODIFY | Enforce `agentProjectId` on create and `getOne`/list/read/write paths before owner/admin bypass |
 | `backend/src/api/tickets.js` | MODIFY | Apply project-scope assertion to agent ticket list/read/status/message/phase/review routes |
 | `backend/src/api/projects.js` | MODIFY | Apply project-scope assertion to agent `POST /projects/:id/tickets` |
-| `backend/src/controllers/ticketController.js` | MODIFY | Resolve/pass the ticket project to the scope assertion |
-| `backend/src/controllers/projectController.js` | MODIFY | Enforce the agent project on `createProjectTicket` before creation |
-| `backend/src/api/ticketPlanning.js` | MODIFY | Apply the project-scope assertion to agent planning reads |
 | `backend/src/api/github.js` | MODIFY | Apply the project-scope assertion to agent repo/token routes |
 | `backend/src/api/repoProfiles.js` | MODIFY | Apply the project-scope assertion to agent repo-profile routes |
 | `backend/src/api/review.js` | MODIFY | Apply the project-scope assertion to the agent local-diff route |
 | `backend/src/api/harnessRuns.js` | MODIFY | Apply the project-scope assertion to agent lease/run routes |
 | `backend/src/api/harnessObservability.js` | MODIFY | Make project observability/privacy/budget/kill-switch routes JWT-only; keep run-scoped agent routes project-asserted |
 | `backend/src/api/v1/agentHeartbeat.js` | MODIFY | Use shared agent auth; enforce expiry on heartbeat and status paths |
-| `backend/src/services/AgentService.js` | MODIFY | Revocation cascade, `project_id` persistence/return, enrollment metadata, key-preview honesty |
-| `backend/src/metrics.js` | MODIFY | Enrollment/refresh and auth-failure counters/histograms |
+| `backend/src/services/AgentService.js` | MODIFY | Revocation cascade in one agent-locked transaction, project-filtered list, enrollment credential status, provider-config expiry |
+| `backend/src/utils/trustProxy.js` | CREATE | Parse `TRUST_PROXY` booleans, hop counts and IP/CIDR lists |
 | `backend/src/services/PoolManager.js` | MODIFY | Credential lifetime/renewal for pool agents |
 | `backend/src/middleware/agentEnrollmentRateLimit.js` | CREATE | Per-IP/prefix limits for enroll/refresh/mint |
 | `backend/src/services/AgentTokenCleanupService.js` | CREATE | Retention purge for token/audit rows using the expiry indexes |
@@ -74,7 +70,7 @@
 | `agent/src/main/java/com/vibecode/agent/service/AgentAuthManager.java` | CREATE | Access-token lifecycle, single-flight refresh timer/401 coalescing, idempotency-key reuse |
 | `agent/src/main/java/com/vibecode/agent/AgentApp.java` | MODIFY | First-boot enrollment, auth manager wiring |
 | `agent/src/main/java/com/vibecode/agent/service/ApiService.java` | MODIFY | Use `AgentAuthManager` token instead of static key |
-| `agent/Dockerfile` / `agent/docker-compose*.yml` | MODIFY | Credential volume, `ENROLLMENT_TOKEN`/`ENROLLMENT_URL`, pass `AGENT_ID` |
+| `agent/docker-compose.yml` | MODIFY | Credential volume, `ENROLLMENT_TOKEN`/`ENROLLMENT_URL`, pass `AGENT_ID`, local TLS opt-in |
 | `agent/docker-compose.remote.yml.example` | CREATE | Remote-worker template without the API's Compose network |
 | `agent/.env.example` | MODIFY | `AGENT_ID`, enrollment/credential variables, TLS note |
 | `agent/scripts/agent-enrollment-smoke.sh` | CREATE | Docker enroll → restart-with-volume check |
@@ -85,7 +81,7 @@
 | `backend/package.json` | DEFERRED | `test:load:agent-enrollment` script with the NFR4 load test |
 | `frontend/src/api/agentEnrollment.ts` | CREATE | Mint/list/revoke client |
 | `frontend/src/views/AgentList.vue` | MODIFY | Enrollment tokens panel + project selector; one-time display |
-| `frontend/src/__tests__/...` | CREATE | API/component/enrollment tests |
+| `frontend/src/__tests__/agentEnrollment.test.ts`, `agentListEnrollment.test.js` | CREATE | API client and enrollment panel tests |
 | `README.md` | MODIFY | Enrollment variables, TLS, credential volume; fix `AGENT_ID` docs |
 
 ## Dependencies
@@ -140,6 +136,17 @@
 | NFR7 | backend unit | `backend/src/__tests__/agentTokenCleanup.test.js` | [NFR7] expired/revoked rows purged past retention; audit retention respected; expiry indexes used | `cd backend && npm test` |
 | NFR8 | planning | `planning/check-planning.js` + this matrix | [NFR8] every FR/NFR has a row; test cases carry requirement IDs | `node planning/check-planning.js` |
 
+### FR15 and ownership notes
+
+- FR15 delivers the configurable lifetime (`POOL_AGENT_KEY_EXPIRY_DAYS`, default
+  30) but not automatic renewal; pool agents remain legacy owner-scoped
+  (`project_id NULL`) until `00` D8/D11. Enrolled agents are owned by the
+  project owner and scoped by `agents.project_id` (A5/A8).
+- `GET /agents` filters an enrolled agent's view to its own project; JWT
+  operators still see all agents they own.
+- Enrollment credential status combines unrotated refresh tokens with access
+  tokens, so a refreshable node is not reported as expired.
+
 ## Verification commands
 
 ```bash
@@ -175,7 +182,7 @@ cd backend  && bash integration-test/run.sh --only
 | 0 | pending | | | |
 | 1 | independent review (PR #173) | Project scoping was not stored/enforced; refresh replay could revoke a concurrent/lost-response winner. | Added `agents.project_id` + route enforcement and tests; added refresh `family_id` + grace window and concurrent/lost-response/reuse tests. Non-blocking verification, metrics, credential-file, decision, index and retention-index gaps also closed. | superseded by round 2 |
 | 2 | independent review (PR #173) | Grace replay could mint a fresh pair for a stolen old token; project scope missed ticket read/list and several agent routes. | Replaced grace with an encrypted idempotency replay cache (same key → same pair; different/absent key → family revoke) and negative theft tests; added the exhaustive agent route inventory and read/list cross-project tests. | superseded by round 3 |
-| 3 | independent review (PR #173) | `POST /projects/:id/tickets` missing from the inventory/enforcement; client timer/401 refreshes could race with different keys; heartbeat method typo; duplicate `TicketService.js` row. | Added route/controller/`TicketService.create` scope + create test; specified single-flight refresh and coalescing; corrected `POST /agents-status/:id/heartbeat`; merged the file row. | superseded by round 4 |
+| 3 | independent review (PR #173) | `POST /projects/:id/tickets` missing from the inventory/enforcement; client timer/401 refreshes could race with different keys; heartbeat method typo; duplicate `TicketService.js` row. | Applied the assertion at route middleware (TicketService unchanged) and added create tests; specified single-flight refresh and coalescing; corrected `POST /agents-status/:id/heartbeat`; merged the file row. | superseded by round 4 |
 | 4 | independent review (PR #173) | Harness project observability/privacy/budget/kill-switch routes were agent-authenticated without project scope; idempotency-key wire convention inconsistent. | Made the project/global harness operator routes JWT-only and added auth tests; kept run-scoped agent routes project-asserted; standardized on the body `idempotency_key`; added the handler-auth provider-config route to the self-scoped inventory. | pending |
 
 ## Results

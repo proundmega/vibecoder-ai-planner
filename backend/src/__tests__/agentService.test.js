@@ -56,6 +56,20 @@ describe('AgentService', () => {
     });
   });
 
+  describe('getEnrollmentKeyStatus', () => {
+    it('considers unrotated refresh tokens as well as access tokens', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ total: 1, revoked: 0, active: 1, expires_at: new Date() }],
+      });
+
+      const result = await AgentService.getEnrollmentKeyStatus('a1');
+
+      expect(pool.query.mock.calls[0][0]).toContain('agent_refresh_tokens');
+      expect(pool.query.mock.calls[0][0]).toContain('rotated_at IS NULL');
+      expect(result.keyStatus).toBe('active');
+    });
+  });
+
   describe('revokeApiKey', () => {
     it('locks the agent and clears the key inside one transaction', async () => {
       const client = {

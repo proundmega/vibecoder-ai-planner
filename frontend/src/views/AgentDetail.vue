@@ -127,7 +127,7 @@ async function handleRevoke() {
     agent.value = data
     await refreshKeyInfo()
   } catch (err) {
-    actionError.value = err.message || 'Failed to revoke API key'
+    actionError.value = err.message || (isEnrolled.value ? 'Failed to revoke credentials' : 'Failed to revoke API key')
   } finally {
     actionLoading.value = false
   }
@@ -279,8 +279,15 @@ async function handleDelete() {
 
       <div v-if="showRevokeConfirm" class="modal-overlay" @click.self="closeRevokeConfirm">
         <div class="modal modal-sm">
-          <h3>Revoke API Key</h3>
-          <p>Are you sure you want to revoke the API key for <strong>{{ agent.agent_name || agent.name }}</strong>? The agent will no longer be able to make API calls.</p>
+          <h3>{{ isEnrolled ? 'Revoke Credentials' : 'Revoke API Key' }}</h3>
+          <p v-if="isEnrolled">
+            Revoke all credentials for <strong>{{ agent.agent_name || agent.name }}</strong>?
+            The node must be enrolled again with a new join token.
+          </p>
+          <p v-else>
+            Are you sure you want to revoke the API key for
+            <strong>{{ agent.agent_name || agent.name }}</strong>? The agent will no longer be able to make API calls.
+          </p>
           <p v-if="actionError" class="error modal-error">{{ actionError }}</p>
           <div class="modal-actions">
             <button class="btn-danger" @click="handleRevoke" :disabled="actionLoading">

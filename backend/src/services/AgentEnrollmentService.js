@@ -322,9 +322,10 @@ class AgentEnrollmentService {
       // row, updates the legacy key, then revokes tokens; if it commits first
       // we see revoked rows, and if we commit first it revokes our new pair too.
       const agentLock = await db.query(
-        'SELECT id FROM agents WHERE id = $1 FOR UPDATE',
+        'SELECT id, project_id FROM agents WHERE id = $1 FOR UPDATE',
         [row.agent_id]
       );
+      const projectId = agentLock.rows[0] ? agentLock.rows[0].project_id : null;
       if (agentLock.rows.length === 0) {
         count('invalid');
         throw new EnrollmentError(401, 'REFRESH_TOKEN_INVALID', 'Invalid refresh token');
@@ -347,6 +348,7 @@ class AgentEnrollmentService {
         if (!idempotencyKey || String(idempotencyKey).trim() === '') {
           await this.revokeFamily(db, row.agent_id);
           await this.audit(db, {
+            projectId,
             agentId: row.agent_id,
             eventType: 'refresh.reused',
             ip,
@@ -369,6 +371,7 @@ class AgentEnrollmentService {
         if (cached && new Date(cached.expires_at) > new Date()) {
           const payload = JSON.parse(decrypt(cached.response_ciphertext));
           await this.audit(db, {
+            projectId,
             agentId: row.agent_id,
             eventType: 'refresh.replay_cache_hit',
             ip,
@@ -382,6 +385,7 @@ class AgentEnrollmentService {
         // A rotated token replayed with a different or missing key is theft.
         await this.revokeFamily(db, row.agent_id);
         await this.audit(db, {
+          projectId,
           agentId: row.agent_id,
           eventType: 'refresh.reused',
           ip,
@@ -430,6 +434,7 @@ class AgentEnrollmentService {
       );
 
       await this.audit(db, {
+        projectId,
         agentId: row.agent_id,
         eventType: 'refresh.rotated',
         ip,

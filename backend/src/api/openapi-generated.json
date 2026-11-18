@@ -5421,6 +5421,13 @@
                         "revoked"
                       ]
                     },
+                    "authMode": {
+                      "type": "string",
+                      "enum": [
+                        "legacy",
+                        "enrollment"
+                      ]
+                    },
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time",

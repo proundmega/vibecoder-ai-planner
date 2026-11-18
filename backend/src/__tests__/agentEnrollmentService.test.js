@@ -159,7 +159,7 @@ describe('AgentEnrollmentService (FR1–FR3, FR5, FR11, NFR1)', () => {
     };
     const client = mockClient([
       ['SELECT * FROM agent_refresh_tokens WHERE token_prefix', { rows: [lockedRow] }],
-      ['SELECT id FROM agents WHERE id = $1 FOR UPDATE', { rows: [{ id: 42 }] }],
+      ['SELECT id, project_id FROM agents', { rows: [{ id: 42, project_id: 3 }] }],
       ['SELECT * FROM agent_refresh_tokens WHERE id = $1 FOR UPDATE', { rows: [lockedRow] }],
       ['INSERT INTO agent_refresh_tokens', { rows: [{ id: 22 }] }],
       ['SELECT project_id FROM agents', { rows: [{ project_id: 3 }] }],
@@ -171,6 +171,9 @@ describe('AgentEnrollmentService (FR1–FR3, FR5, FR11, NFR1)', () => {
     const rotateIndex = client.query.mock.calls.findIndex(([sql]) => sql.includes('UPDATE agent_refresh_tokens SET rotated_at'));
     expect(lockIndex).toBeGreaterThan(-1);
     expect(lockIndex).toBeLessThan(rotateIndex);
+    const rotatedAudit = client.query.mock.calls.find(([sql, params]) =>
+      sql.includes('INSERT INTO agent_auth_events') && params.includes('refresh.rotated'));
+    expect(rotatedAudit[1][0]).toBe(3);
 
     expect(result.access_token).toMatch(/^at_/);
     expect(result.refresh_token).not.toBe(raw);
@@ -191,7 +194,7 @@ describe('AgentEnrollmentService (FR1–FR3, FR5, FR11, NFR1)', () => {
     };
     const client = mockClient([
       ['SELECT * FROM agent_refresh_tokens WHERE token_prefix', { rows: [rotatedRow] }],
-      ['SELECT id FROM agents WHERE id = $1 FOR UPDATE', { rows: [{ id: 42 }] }],
+      ['SELECT id, project_id FROM agents', { rows: [{ id: 42, project_id: 3 }] }],
       ['SELECT * FROM agent_refresh_tokens WHERE id = $1 FOR UPDATE', { rows: [rotatedRow] }],
       ['SELECT response_ciphertext, expires_at', { rows: [] }],
     ]);
@@ -228,7 +231,7 @@ describe('AgentEnrollmentService (FR1–FR3, FR5, FR11, NFR1)', () => {
     };
     const client = mockClient([
       ['SELECT * FROM agent_refresh_tokens WHERE token_prefix', { rows: [cachedRow] }],
-      ['SELECT id FROM agents WHERE id = $1 FOR UPDATE', { rows: [{ id: 42 }] }],
+      ['SELECT id, project_id FROM agents', { rows: [{ id: 42, project_id: 3 }] }],
       ['SELECT * FROM agent_refresh_tokens WHERE id = $1 FOR UPDATE', { rows: [cachedRow] }],
       ['SELECT response_ciphertext, expires_at', {
         rows: [{
@@ -261,7 +264,7 @@ describe('AgentEnrollmentService (FR1–FR3, FR5, FR11, NFR1)', () => {
           rotated_at: null,
         }],
       }],
-      ['SELECT id FROM agents WHERE id = $1 FOR UPDATE', { rows: [{ id: 42 }] }],
+      ['SELECT id, project_id FROM agents', { rows: [{ id: 42, project_id: 3 }] }],
       ['SELECT * FROM agent_refresh_tokens WHERE id = $1 FOR UPDATE', {
         rows: [{
           id: 21,
@@ -295,7 +298,7 @@ describe('AgentEnrollmentService (FR1–FR3, FR5, FR11, NFR1)', () => {
           rotated_at: new Date(),
         }],
       }],
-      ['SELECT id FROM agents WHERE id = $1 FOR UPDATE', { rows: [{ id: 42 }] }],
+      ['SELECT id, project_id FROM agents', { rows: [{ id: 42, project_id: 3 }] }],
       ['SELECT * FROM agent_refresh_tokens WHERE id = $1 FOR UPDATE', {
         rows: [{
           id: 21,
