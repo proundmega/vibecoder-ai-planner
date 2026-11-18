@@ -54,6 +54,16 @@ describe('github API', () => {
       expect(result?.connected).toBe(true)
     })
 
+    it('treats a legacy row without flags as connected when a repo URL exists', async () => {
+      const { get } = await import('../api/client')
+      get.mockResolvedValue({ repo_url: 'org/repo', default_branch: 'main' })
+
+      const result = await github.getRepoStatus('proj-123')
+
+      expect(result?.isActive).toBe(true)
+      expect(result?.connected).toBe(true)
+    })
+
     it('returns null when the backend has no repo', async () => {
       const { get } = await import('../api/client')
       get.mockResolvedValue(null)

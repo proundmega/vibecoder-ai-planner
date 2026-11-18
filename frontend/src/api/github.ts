@@ -32,7 +32,7 @@ export function normalizeRepoStatus(raw: RawRepoStatus | null | undefined): Repo
   if (!raw) return null
   const repoUrl = raw.repoUrl ?? raw.repo_url ?? ''
   const defaultBranch = raw.defaultBranch ?? raw.default_branch ?? raw.branch ?? ''
-  const isActive = raw.isActive ?? raw.is_active ?? Boolean(raw.connected)
+  const isActive = raw.isActive ?? raw.is_active ?? raw.connected ?? Boolean(repoUrl)
   return {
     id: raw.id ?? null,
     projectId: String(raw.projectId ?? raw.project_id ?? ''),
