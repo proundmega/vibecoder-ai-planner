@@ -18,6 +18,10 @@ const props = defineProps({
     type: String,
     default: 'Copy key',
   },
+  keyLabel: {
+    type: String,
+    default: 'API key',
+  },
   idLabel: {
     type: String,
     default: 'Agent ID',
@@ -104,7 +108,7 @@ function formatDate(value) {
       </dl>
 
       <div v-if="agent.apiKey" class="key-section">
-        <label>API key</label>
+        <label>{{ keyLabel }}</label>
         <div class="key-row">
           <code class="agent-key-value">{{ agent.apiKey }}</code>
           <VButton variant="secondary" size="small" @click="copyKey">

@@ -150,7 +150,7 @@ router.post('/revoke/:agentId', verifyToken, requireAnyPermission('AGENT_REVOKE'
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
-    await AgentService.revokeApiKey(req.params.agentId);
+    await AgentService.revokeApiKey(req.params.agentId, { ip: req.ip });
     res.json({ message: 'API key revoked' });
   } catch (error) {
     logger.error('POST /api/agents/revoke/:agentId', error);

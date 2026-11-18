@@ -469,10 +469,12 @@ public class AgentApp {
         }
     }
 
-    private void exitOnFatalAuth(AgentAuthFatalException error) {
+    static volatile java.util.function.IntConsumer exitHook = System::exit;
+
+    static void exitOnFatalAuth(AgentAuthFatalException error) {
         log.error("Agent authentication failed: {}", error.getMessage());
         System.err.println("Error: " + RedactionRegistry.redact(error.getMessage()));
-        System.exit(1);
+        exitHook.accept(1);
     }
 
     private void shutdown() {

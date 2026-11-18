@@ -144,6 +144,10 @@
   project owner and scoped by `agents.project_id` (A5/A8).
 - `GET /agents` filters an enrolled agent's view to its own project; JWT
   operators still see all agents they own.
+- Non-owner project admins can mint but not manage the enrolled agent; that
+  project-scoped management change is `00` D12.
+- The pre-existing credential-decrypt membership gap is `00` D13; it is
+  JWT-only today so agents cannot reach it.
 - Enrollment credential status combines unrotated refresh tokens with access
   tokens, so a refreshable node is not reported as expired.
 

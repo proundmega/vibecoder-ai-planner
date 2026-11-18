@@ -150,6 +150,31 @@ describe('AgentDetail', () => {
     expect(wrapper.find('.details-section').text()).toContain('Revoked')
   })
 
+  it('labels enrollment credentials and hides legacy rotate', async () => {
+    ;(agentsApi.getAgentKeyInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      name: 'Worker One',
+      agentId: 'a1',
+      providerId: 1,
+      providerName: 'OpenAI',
+      keyStatus: 'active',
+      authMode: 'enrollment',
+      expiresAt: '2026-11-18T01:00:00.000Z',
+      rateLimit: 100,
+      maxActionsPerDay: 1000,
+      createdAt: '2026-11-17T00:00:00.000Z',
+      enrolledAt: '2026-11-18T00:00:00.000Z',
+    })
+
+    const wrapper = mount(AgentDetail, mountOptions)
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('Enrollment credentials active')
+    expect(text).toContain('Revoke Credentials')
+    expect(text).not.toContain('Rotate API Key')
+    expect(text).not.toContain('Revoke API Key')
+  })
+
   it('does not suggest rotation to users without permission', async () => {
     authState.role = 'member'
     authState.canRevoke = false

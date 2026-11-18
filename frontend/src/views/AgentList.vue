@@ -308,11 +308,17 @@ function formatDate(dateStr) {
     />
     <AgentKeyRevealModal
       v-if="mintedToken"
-      :agent="{ id: mintedToken.id, name: mintedToken.name, apiKey: mintedToken.token }"
+      :agent="{
+        id: mintedToken.id,
+        name: mintedToken.name,
+        apiKey: mintedToken.token,
+        expiresAt: mintedToken.expires_at,
+      }"
       title="Join token created"
       intro="Give this token to the new node. It is exchanged once for its own short-lived credentials."
       warning="This is the only time this join token is shown. It expires automatically and can be revoked."
       copy-label="Copy token"
+      key-label="Join token"
       id-label="Join token ID"
       expires-label="Token expires"
       @close="mintedToken = null"

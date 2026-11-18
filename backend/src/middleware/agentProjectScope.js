@@ -6,6 +6,9 @@ const { pool } = require('../db');
  * `agents.project_id` is authoritative; legacy `ak_` agents have it NULL and
  * keep the existing owner-scoped checks. The assertion runs before any
  * owner/admin bypass in the handlers.
+ *
+ * Every middleware carries `agentScope` so the wiring test can enumerate all
+ * agent-authenticated project routes and prove none is missing an assertion.
  */
 function scopedProject(req) {
   return req.agent && req.agent.project_id != null ? String(req.agent.project_id) : null;
@@ -24,67 +27,23 @@ function assertAgentProject(req, projectId) {
   return projectId != null && String(projectId) === scope;
 }
 
+function mark(fn, scope) {
+  fn.agentScope = scope;
+  return fn;
+}
+
 function forProjectParam(param = 'projectId') {
-  return (req, res, next) => {
+  return mark((req, res, next) => {
     if (!assertAgentProject(req, req.params[param])) return deny(res);
     next();
-  };
+  }, 'project');
 }
 
 function forBodyProject(field = 'projectId') {
-  return (req, res, next) => {
+  return mark((req, res, next) => {
     if (!assertAgentProject(req, (req.body || {})[field])) return deny(res);
     next();
-  };
-}
-
-function forBodyTicket(field = 'ticketId') {
-  return async (req, res, next) => {
-    if (scopedProject(req) == null) return next();
-    try {
-      const ticketId = (req.body || {})[field];
-      if (ticketId == null) return next();
-      if (!/^\d+$/.test(String(ticketId))) return next();
-      const projectId = await projectForTicket(ticketId);
-      if (projectId != null && !assertAgentProject(req, projectId)) return deny(res);
-      next();
-    } catch (error) {
-      next(error);
-    }
-  };
-}
-
-function forTicketParam(param = 'ticketId') {
-  return async (req, res, next) => {
-    if (scopedProject(req) == null) return next();
-    // Leave malformed ids to validatePathParams (400) instead of sending them
-    // to PostgreSQL, which would raise 22P02 and become a 500.
-    if (!/^\d+$/.test(String(req.params[param]))) return next();
-    try {
-      const result = await pool.query('SELECT project_id FROM tickets WHERE id = $1', [req.params[param]]);
-      if (result.rows.length === 0) return next();
-      if (!assertAgentProject(req, result.rows[0].project_id)) return deny(res);
-      next();
-    } catch (error) {
-      next(error);
-    }
-  };
-}
-
-function forRunParam(param = 'runId') {
-  return async (req, res, next) => {
-    if (scopedProject(req) == null) return next();
-    // harness_runs.id is a UUID; let the path validator reject malformed ids.
-    if (!/^[0-9a-fA-F-]{1,64}$/.test(String(req.params[param]))) return next();
-    try {
-      const result = await pool.query('SELECT project_id FROM harness_runs WHERE id = $1', [req.params[param]]);
-      if (result.rows.length === 0) return next();
-      if (!assertAgentProject(req, result.rows[0].project_id)) return deny(res);
-      next();
-    } catch (error) {
-      next(error);
-    }
-  };
+  }, 'body-project');
 }
 
 async function projectForTicket(ticketId) {
@@ -97,12 +56,59 @@ async function projectForRun(runId) {
   return result.rows[0] ? result.rows[0].project_id : null;
 }
 
+function forBodyTicket(field = 'ticketId') {
+  return mark(async (req, res, next) => {
+    if (scopedProject(req) == null) return next();
+    try {
+      const ticketId = (req.body || {})[field];
+      if (ticketId == null) return next();
+      if (!/^\d+$/.test(String(ticketId))) return next();
+      const projectId = await projectForTicket(ticketId);
+      if (projectId != null && !assertAgentProject(req, projectId)) return deny(res);
+      next();
+    } catch (error) {
+      next(error);
+    }
+  }, 'body-ticket');
+}
+
+function forTicketParam(param = 'ticketId') {
+  return mark(async (req, res, next) => {
+    if (scopedProject(req) == null) return next();
+    // Leave malformed ids to validatePathParams (400) instead of sending them
+    // to PostgreSQL, which would raise 22P02 and become a 500.
+    if (!/^\d+$/.test(String(req.params[param]))) return next();
+    try {
+      const projectId = await projectForTicket(req.params[param]);
+      if (projectId != null && !assertAgentProject(req, projectId)) return deny(res);
+      next();
+    } catch (error) {
+      next(error);
+    }
+  }, 'ticket');
+}
+
+function forRunParam(param = 'runId') {
+  return mark(async (req, res, next) => {
+    if (scopedProject(req) == null) return next();
+    // harness_runs.id is a UUID; let the path validator reject malformed ids.
+    if (!/^[0-9a-fA-F-]{1,64}$/.test(String(req.params[param]))) return next();
+    try {
+      const projectId = await projectForRun(req.params[param]);
+      if (projectId != null && !assertAgentProject(req, projectId)) return deny(res);
+      next();
+    } catch (error) {
+      next(error);
+    }
+  }, 'run');
+}
+
 /**
  * Harness events may reference a project, ticket and/or run. Every reference
  * that is present must match the agent's project.
  */
 function forHarnessEventBody() {
-  return async (req, res, next) => {
+  return mark(async (req, res, next) => {
     if (scopedProject(req) == null) return next();
     try {
       const body = req.body || {};
@@ -121,11 +127,11 @@ function forHarnessEventBody() {
     } catch (error) {
       next(error);
     }
-  };
+  }, 'event');
 }
 
 function selfAgentOnly(param = 'agentId') {
-  return (req, res, next) => {
+  return mark((req, res, next) => {
     if (!req.agent) return next(); // JWT operator
     if (String(req.agent.id) !== String(req.params[param])) {
       return res.status(403).json({
@@ -134,7 +140,7 @@ function selfAgentOnly(param = 'agentId') {
       });
     }
     next();
-  };
+  }, 'self');
 }
 
 module.exports = {

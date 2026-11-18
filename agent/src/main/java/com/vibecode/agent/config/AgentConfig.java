@@ -168,9 +168,13 @@ public class AgentConfig {
      * deployments are unchanged.
      */
     public boolean usesEnrollment() {
-        if ("enroll".equals(agentAuthMode)) return true;
-        if ("legacy".equals(agentAuthMode)) return false;
-        return !staticCredentialsConfigured() && hasEnrollmentSource();
+        return shouldEnroll(agentAuthMode, staticCredentialsConfigured(), hasEnrollmentSource());
+    }
+
+    static boolean shouldEnroll(String mode, boolean hasStaticCredentials, boolean hasEnrollmentSource) {
+        if ("enroll".equals(mode)) return true;
+        if ("legacy".equals(mode)) return false;
+        return !hasStaticCredentials && hasEnrollmentSource;
     }
 
     public String getEnrollmentUrl() {

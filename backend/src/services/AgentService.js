@@ -87,14 +87,14 @@ class AgentService {
     return result.rows;
   }
 
-  async revokeApiKey(agentId) {
+  async revokeApiKey(agentId, { ip = null } = {}) {
     const db = await pool.connect();
     try {
       await db.query('BEGIN');
       // Lock the agent before touching tokens. A concurrent refresh locks the
       // same row, so either it rotates before us and we revoke the new pair,
       // or it waits and sees the revoked rows.
-      const locked = await db.query('SELECT id FROM agents WHERE id = $1 FOR UPDATE', [agentId]);
+      const locked = await db.query('SELECT id, project_id FROM agents WHERE id = $1 FOR UPDATE', [agentId]);
       if (locked.rows.length === 0) {
         await db.query('ROLLBACK');
         throw new Error('AGENT_NOT_FOUND');
@@ -102,7 +102,10 @@ class AgentService {
       await db.query('UPDATE agents SET api_key_hash = NULL, api_key_hash_prefix = NULL WHERE id = $1', [agentId]);
       // FR6: revoking an agent invalidates every credential it holds, not only
       // the legacy key.
-      await AgentEnrollmentService.revokeAllForAgent(agentId, db);
+      await AgentEnrollmentService.revokeAllForAgent(agentId, db, {
+        projectId: locked.rows[0].project_id,
+        ip,
+      });
       await db.query('COMMIT');
     } catch (error) {
       await db.query('ROLLBACK').catch(() => {});

@@ -124,33 +124,42 @@ class AgentEnrollmentService {
     const uses = maxUses || 1;
     const expiresAt = new Date(Date.now() + ttl * 1000);
 
-    const result = await pool.query(
-      `INSERT INTO agent_enrollment_tokens
-         (project_id, provider_id, name, token_prefix, token_hash, max_uses, expires_at, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, project_id, provider_id, name, max_uses, used_count, expires_at, created_at`,
-      [
+    const db = await pool.connect();
+    try {
+      await db.query('BEGIN');
+      const result = await db.query(
+        `INSERT INTO agent_enrollment_tokens
+           (project_id, provider_id, name, token_prefix, token_hash, max_uses, expires_at, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id, project_id, provider_id, name, max_uses, used_count, expires_at, created_at`,
+        [
+          projectId,
+          providerId || null,
+          name,
+          AgentTokenService.lookupPrefix(rawToken),
+          AgentTokenService.hash(rawToken),
+          uses,
+          expiresAt,
+          createdBy,
+        ]
+      );
+
+      await this.audit(db, {
         projectId,
-        providerId || null,
-        name,
-        AgentTokenService.lookupPrefix(rawToken),
-        AgentTokenService.hash(rawToken),
-        uses,
-        expiresAt,
-        createdBy,
-      ]
-    );
-
-    await this.audit(pool, {
-      projectId,
-      eventType: 'enrollment.minted',
-      actorType: 'user',
-      actorId: createdBy != null ? String(createdBy) : null,
-      ip,
-      metadata: { enrollment_token_id: result.rows[0].id, max_uses: uses, ttl_seconds: ttl },
-    });
-
-    return { ...result.rows[0], token: rawToken };
+        eventType: 'enrollment.minted',
+        actorType: 'user',
+        actorId: createdBy != null ? String(createdBy) : null,
+        ip,
+        metadata: { enrollment_token_id: result.rows[0].id, max_uses: uses, ttl_seconds: ttl },
+      });
+      await db.query('COMMIT');
+      return { ...result.rows[0], token: rawToken };
+    } catch (error) {
+      await db.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      db.release();
+    }
   }
 
   async list(projectId) {
@@ -488,11 +497,13 @@ class AgentEnrollmentService {
     return { status: 'ok', agent };
   }
 
-  async revokeAllForAgent(agentId, db = pool) {
+  async revokeAllForAgent(agentId, db = pool, { projectId = null, ip = null } = {}) {
     await this.revokeFamily(db, agentId);
     await this.audit(db, {
+      projectId,
       agentId,
       eventType: 'agent.credentials_revoked',
+      ip,
     });
   }
 

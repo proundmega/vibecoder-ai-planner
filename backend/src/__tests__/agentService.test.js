@@ -74,7 +74,7 @@ describe('AgentService', () => {
     it('locks the agent and clears the key inside one transaction', async () => {
       const client = {
         query: jest.fn(async sql => (
-          sql.includes('SELECT id FROM agents') ? { rows: [{ id: 'a1' }] } : { rows: [] }
+          sql.includes('FROM agents') && sql.includes('FOR UPDATE') ? { rows: [{ id: 'a1', project_id: 3 }] } : { rows: [] }
         )),
         release: jest.fn(),
       };
@@ -84,7 +84,7 @@ describe('AgentService', () => {
 
       expect(client.query).toHaveBeenCalledWith('BEGIN');
       expect(client.query).toHaveBeenCalledWith(
-        'SELECT id FROM agents WHERE id = $1 FOR UPDATE',
+        'SELECT id, project_id FROM agents WHERE id = $1 FOR UPDATE',
         ['a1']
       );
       expect(client.query).toHaveBeenCalledWith(

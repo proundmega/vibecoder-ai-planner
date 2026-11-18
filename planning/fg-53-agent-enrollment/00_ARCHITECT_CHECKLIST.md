@@ -65,7 +65,7 @@ needed to mint and revoke enrollment tokens.
 |---|---|---|
 | Plan merged | PR #173 (merged) | ☑ |
 | Implementation merged | PR #174 (open) | ☐ |
-| Verification results | PR #174 (open) — backend 1994+/frontend 652/agent 816 | ☑ |
+| Verification results | PR #174 (open) — backend 2016 tests/162 suites, frontend 653/74 files, agent 824 tests | ☑ |
 
 A merged planning PR is **plan merged**, not `done`. Set `status: done` only
 after the implementation PR is merged and `03` has a dated Results row.
@@ -85,6 +85,8 @@ after the implementation PR is merged and `03` has a dated Results row.
 | D9 | Credential-file encryption or OS keyring instead of a 0600 JSON file | self | Security | none | open |
 | D10 | Enrollment/audit UI filters, export and retention dashboard | fg-41 | Observability | fg-41 | open |
 | D11 | Broader project-agents migration: assign manual/legacy agents to a project and expose per-project agent lists. fg-53 adds `agents.project_id` for enrolled agents only; legacy agents stay owner-scoped (`project_id = NULL`) | FUTURE_IDEAS Project Agents Table Migration | Migration / Authorization | new ticket | open |
+| D12 | Project-scoped agent management: a non-owner project admin with `AGENT_CREATE` + membership can mint a join token, but the resulting agent is owned by the project owner, so rotate/revoke/delete still need the owner or a super_admin | self | Authorization / UX | new ticket | open |
+| D13 | Pre-existing credential-decrypt membership gap: the JWT credential decrypt route checks permission but not project membership. It is JWT-only today, so agents cannot reach it; audit/fix before exposing it to agents | self | Security | new ticket | open |
 
 States: `open`, `scheduled`, `done`, `dropped`.
 

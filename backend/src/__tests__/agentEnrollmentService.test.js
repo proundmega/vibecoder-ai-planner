@@ -42,37 +42,39 @@ describe('AgentEnrollmentService (FR1–FR3, FR5, FR11, NFR1)', () => {
     pool.query.mockResolvedValue({ rows: [] });
   });
 
-  it('mints a join token and persists only its hash/prefix', async () => {
-    pool.query.mockImplementation(sql => {
-      if (sql.includes('INSERT INTO agent_enrollment_tokens')) {
-        return Promise.resolve({
-          rows: [{
-            id: 11,
-            project_id: 3,
-            provider_id: null,
-            name: 'worker',
-            max_uses: 1,
-            used_count: 0,
-            expires_at: new Date(Date.now() + 900_000),
-            created_at: new Date(),
-          }],
-        });
-      }
-      return Promise.resolve({ rows: [] });
-    });
+  it('mints a join token and persists only its hash/prefix in one transaction', async () => {
+    const client = mockClient([
+      ['INSERT INTO agent_enrollment_tokens', {
+        rows: [{
+          id: 11,
+          project_id: 3,
+          provider_id: null,
+          name: 'worker',
+          max_uses: 1,
+          used_count: 0,
+          expires_at: new Date(Date.now() + 900_000),
+          created_at: new Date(),
+        }],
+      }],
+    ]);
+    pool.connect.mockResolvedValue(client);
 
     const result = await AgentEnrollmentService.mint({
       projectId: 3,
       name: 'worker',
       createdBy: 7,
+      ip: '10.0.0.5',
     });
 
     expect(result.token).toMatch(/^enr_/);
-    const insert = pool.query.mock.calls.find(([sql]) => sql.includes('INSERT INTO agent_enrollment_tokens'));
+    const insert = client.query.mock.calls.find(([sql]) => sql.includes('INSERT INTO agent_enrollment_tokens'));
     expect(insert[1]).toContain(AgentTokenService.hash(result.token));
     expect(insert[1]).toContain(AgentTokenService.lookupPrefix(result.token));
     expect(insert[1]).not.toContain(result.token);
-    expect(pool.query.mock.calls.some(([sql]) => sql.includes('INSERT INTO agent_auth_events'))).toBe(true);
+    const audit = client.query.mock.calls.find(([sql]) => sql.includes('INSERT INTO agent_auth_events'));
+    expect(audit[1]).toContain(3);
+    expect(audit[1]).toContain('10.0.0.5');
+    expect(client.query.mock.calls.some(([sql]) => sql === 'COMMIT')).toBe(true);
   });
 
   it('lists token metadata without secrets', async () => {

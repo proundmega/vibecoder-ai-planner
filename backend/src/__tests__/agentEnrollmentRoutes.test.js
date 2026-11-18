@@ -212,6 +212,51 @@ describe('Agent enrollment routes (FR1, FR2, FR12, FR14, NFR2)', () => {
   });
 });
 
+describe('mint rate limit (FR12)', () => {
+  beforeEach(() => {
+    rateLimit._reset();
+    process.env.AGENT_ENROLLMENT_ENABLED = 'true';
+    PermissionService.hasAnyPermission.mockResolvedValue(true);
+    asUser('7', 'project_admin');
+    pool.query.mockImplementation(sql => (
+      sql.includes('SELECT id, owner_id FROM projects')
+        ? Promise.resolve({ rows: [{ id: 3, owner_id: '7' }] })
+        : Promise.resolve({ rows: [] })
+    ));
+    jest.spyOn(AgentEnrollmentService, 'mint').mockResolvedValue({
+      id: 1,
+      name: 'join',
+      project_id: 3,
+      provider_id: null,
+      max_uses: 1,
+      expires_at: new Date(),
+      token: 'enr_once',
+    });
+  });
+
+  afterEach(() => {
+    rateLimit._reset();
+  });
+
+  it('returns 429 after the per-IP mint allowance', async () => {
+    for (let i = 0; i < 30; i += 1) {
+      const res = await request(app)
+        .post('/api/v1/agent-enrollment/tokens')
+        .set('Authorization', 'Bearer mock-token')
+        .send({ project_id: 3, name: 'join' });
+      expect(res.statusCode).toBe(201);
+    }
+
+    const limited = await request(app)
+      .post('/api/v1/agent-enrollment/tokens')
+      .set('Authorization', 'Bearer mock-token')
+      .send({ project_id: 3, name: 'join' });
+
+    expect(limited.statusCode).toBe(429);
+    expect(limited.body.error.code).toBe('RATE_LIMITED');
+  });
+});
+
 describe('AGENT_ENROLLMENT_ENABLED parsing', () => {
   const original = process.env.AGENT_ENROLLMENT_ENABLED;
   afterEach(() => {

@@ -170,13 +170,13 @@ describe('Agent token authentication (FR4, FR6, FR9, FR10)', () => {
   it('revokes access and refresh tokens when a legacy key is revoked', async () => {
     const client = {
       query: jest.fn(async sql => (
-        sql.includes('SELECT id FROM agents') ? { rows: [{ id: 42 }] } : { rows: [] }
+        sql.includes('FROM agents') && sql.includes('FOR UPDATE') ? { rows: [{ id: 42, project_id: 3 }] } : { rows: [] }
       )),
       release: jest.fn(),
     };
     pool.connect.mockResolvedValueOnce(client);
     const spy = jest.spyOn(AgentEnrollmentService, 'revokeAllForAgent').mockResolvedValue(undefined);
     await AgentService.revokeApiKey(42);
-    expect(spy).toHaveBeenCalledWith(42, expect.anything());
+    expect(spy).toHaveBeenCalledWith(42, expect.anything(), expect.objectContaining({ ip: null }));
   });
 });

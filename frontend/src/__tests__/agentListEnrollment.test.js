@@ -106,6 +106,10 @@ describe('AgentList enrollment panel (FR16, NFR3)', () => {
       expect.objectContaining({ projectId: '3', name: 'node-1', ttlSeconds: 900, maxUses: 1 })
     )
     expect(wrapper.text()).toContain('enr_secret_once')
+    expect(wrapper.text()).toContain('Join token ID')
+    expect(wrapper.text()).toContain('Token expires')
+    expect(wrapper.text()).toContain('Join token')
+    expect(wrapper.text()).not.toContain('API key')
     expect(JSON.stringify(localStorage)).not.toContain('enr_secret_once')
   })
 
