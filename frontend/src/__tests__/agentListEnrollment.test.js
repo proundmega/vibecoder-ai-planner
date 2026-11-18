@@ -25,7 +25,7 @@ vi.mock('@/api/providers', () => ({
 }))
 
 vi.mock('@/api/projects', () => ({
-  fetchProjects: vi.fn().mockResolvedValue([{ id: 3, name: 'Project One' }]),
+  fetchProjectsStrict: vi.fn().mockResolvedValue([{ id: 3, name: 'Project One' }]),
 }))
 
 vi.mock('@/api/agentEnrollment', () => ({
@@ -122,6 +122,14 @@ describe('AgentList enrollment panel (FR16, NFR3)', () => {
     const revoke = wrapper.findAll('button').find(button => button.text() === 'Revoke')
     expect(revoke).toBeTruthy()
     await revoke.trigger('click')
+    await flushPromises()
+
+    // First click asks for confirmation.
+    expect(enrollmentApi.revokeEnrollmentToken).not.toHaveBeenCalled()
+
+    const confirm = wrapper.findAll('button').find(button => button.text() === 'Confirm revoke')
+    expect(confirm).toBeTruthy()
+    await confirm.trigger('click')
     await flushPromises()
 
     expect(enrollmentApi.revokeEnrollmentToken).toHaveBeenCalledWith(5)

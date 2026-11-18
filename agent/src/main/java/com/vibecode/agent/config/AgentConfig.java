@@ -88,9 +88,18 @@ public class AgentConfig {
                 "AGENT_AUTH_MODE=legacy requires AGENT_ID and AGENT_API_KEY");
         }
         this.projectId = getEnv("PROJECT_ID", null);
-        if (!usesEnrollment() && (this.projectId == null || this.projectId.isBlank())) {
+        // Compute from the just-read fields (not the overridable method) so a
+        // test/subclass cannot change validation mid-construction.
+        boolean enrollmentMode = shouldEnroll(
+            this.agentAuthMode, staticCredentialsConfigured(), hasEnrollmentSource());
+        if (!enrollmentMode && (this.projectId == null || this.projectId.isBlank())) {
             throw new IllegalStateException(
                 "PROJECT_ID is required for static credentials (enrollment reads the project from the server)");
+        }
+        if (enrollmentMode && (this.credentialsFile == null || this.credentialsFile.isBlank())) {
+            throw new IllegalStateException(
+                "AGENT_CREDENTIALS_FILE is required in enrollment mode; mount a persistent volume "
+                    + "so the node does not need a new join token after restart");
         }
         this.repoOwner = getEnv("REPO_OWNER", null);
         this.repoName = getEnv("REPO_NAME", null);

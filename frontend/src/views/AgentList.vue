@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchAgentStatusList, createAgent, listAgents, updateAgentName } from '@/api/agents'
 import { listProviders } from '@/api/providers'
-import { fetchProjects } from '@/api/projects'
+import { fetchProjectsStrict } from '@/api/projects'
 import {
   listEnrollmentTokens,
   mintEnrollmentToken,
@@ -42,6 +42,7 @@ const enrollmentAvailable = ref(true)
 const minting = ref(false)
 const mintedToken = ref(null)
 const revokingTokenId = ref(null)
+const revokeConfirmTokenId = ref(null)
 const mintForm = ref({ name: '', ttlMinutes: 15, maxUses: 1, providerId: '' })
 
 const canReadEnrollment = computed(() => authStore.hasAnyPermission(['AGENT_READ']))
@@ -176,15 +177,17 @@ function cancelEdit() {
 const tabs = computed(() => [
   { id: 'heartbeat', label: 'Heartbeat' },
   { id: 'agents', label: 'Agents' },
-  ...(enrollmentAvailable.value ? [{ id: 'enrollment', label: 'Enrollment' }] : []),
+  ...(enrollmentAvailable.value && canReadEnrollment.value
+    ? [{ id: 'enrollment', label: 'Enrollment' }]
+    : []),
 ])
 
 async function loadEnrollmentPanel() {
   if (projects.value.length === 0) {
     try {
-      projects.value = await fetchProjects()
+      projects.value = await fetchProjectsStrict()
     } catch (err) {
-      console.error('Failed to load projects:', err)
+      enrollmentError.value = err.message || 'Failed to load projects'
     }
   }
   if (!enrollmentProjectId.value && projects.value.length > 0) {
@@ -240,6 +243,14 @@ async function submitMint() {
   }
 }
 
+function askRevokeToken(token) {
+  revokeConfirmTokenId.value = token.id
+}
+
+function cancelRevokeToken() {
+  revokeConfirmTokenId.value = null
+}
+
 async function revokeToken(token) {
   revokingTokenId.value = token.id
   enrollmentError.value = ''
@@ -250,6 +261,7 @@ async function revokeToken(token) {
     enrollmentError.value = err.message || 'Failed to revoke join token'
   } finally {
     revokingTokenId.value = null
+    revokeConfirmTokenId.value = null
   }
 }
 
@@ -498,14 +510,25 @@ function formatDate(dateStr) {
                 </span>
               </td>
               <td>
-                <button
-                  v-if="canRevokeEnrollment && !token.revoked_at"
-                  class="btn-danger-outline"
-                  :disabled="revokingTokenId === token.id"
-                  @click="revokeToken(token)"
-                >
-                  {{ revokingTokenId === token.id ? 'Revoking...' : 'Revoke' }}
-                </button>
+                <template v-if="canRevokeEnrollment && !token.revoked_at">
+                  <template v-if="revokeConfirmTokenId === token.id">
+                    <button
+                      class="btn-danger"
+                      :disabled="revokingTokenId === token.id"
+                      @click="revokeToken(token)"
+                    >
+                      {{ revokingTokenId === token.id ? 'Revoking...' : 'Confirm revoke' }}
+                    </button>
+                    <button class="btn-sm" @click="cancelRevokeToken">Cancel</button>
+                  </template>
+                  <button
+                    v-else
+                    class="btn-danger-outline"
+                    @click="askRevokeToken(token)"
+                  >
+                    Revoke
+                  </button>
+                </template>
                 <span v-else class="none">—</span>
               </td>
             </tr>

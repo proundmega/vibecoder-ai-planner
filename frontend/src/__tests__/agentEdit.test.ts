@@ -29,7 +29,7 @@ vi.mock('@/stores/auth', () => ({
 }))
 
 vi.mock('@/api/projects', () => ({
-  fetchProjects: vi.fn().mockResolvedValue([]),
+  fetchProjectsStrict: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock('@/api/agentEnrollment', () => ({

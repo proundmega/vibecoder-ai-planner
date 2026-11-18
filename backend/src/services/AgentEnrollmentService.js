@@ -453,7 +453,9 @@ class AgentEnrollmentService {
       count('rotated');
       return payload;
     } catch (error) {
-      count('invalid');
+      // Only a rejected token is an "invalid" result; an outage or bug is a
+      // separate bounded label so operators do not read it as token probing.
+      count(error instanceof EnrollmentError ? 'invalid' : 'error');
       await db.query('ROLLBACK').catch(() => {});
       throw error;
     } finally {
@@ -489,6 +491,8 @@ class AgentEnrollmentService {
     delete agent.token_hash;
     delete agent.token_expires_at;
     delete agent.token_revoked_at;
+    delete agent.api_key_hash;
+    delete agent.api_key_hash_prefix;
     agent.id = row.id;
 
     await pool.query('UPDATE agent_access_tokens SET last_used_at = NOW() WHERE id = $1', [row.token_id])

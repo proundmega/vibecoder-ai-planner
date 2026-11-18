@@ -14,6 +14,7 @@ describe('Agent enrollment metrics (NFR6)', () => {
     refreshCounter.inc({ result: 'replay_cache_hit' });
     refreshCounter.inc({ result: 'reuse' });
     refreshCounter.inc({ result: 'invalid' });
+    refreshCounter.inc({ result: 'error' });
     authFailureCounter.inc({ reason: 'expired' });
 
     const enrollment = await enrollmentCounter.get();
@@ -22,7 +23,7 @@ describe('Agent enrollment metrics (NFR6)', () => {
 
     expect(enrollment.values.some(v => v.labels.result === 'success' && v.value >= 1)).toBe(true);
     expect(enrollment.values.some(v => v.labels.result === 'failure' && v.value >= 1)).toBe(true);
-    for (const result of ['rotated', 'replay_cache_hit', 'reuse', 'invalid']) {
+    for (const result of ['rotated', 'replay_cache_hit', 'reuse', 'invalid', 'error']) {
       expect(refresh.values.some(v => v.labels.result === result && v.value >= 1)).toBe(true);
     }
     expect(auth.values.some(v => v.labels.reason === 'expired' && v.value >= 1)).toBe(true);

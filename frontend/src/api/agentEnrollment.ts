@@ -12,8 +12,14 @@ export interface EnrollmentToken {
   created_at: string
 }
 
-export interface MintedEnrollmentToken extends EnrollmentToken {
+export interface MintedEnrollmentToken {
+  id: number
+  project_id: number
+  provider_id: number | null
+  name: string
+  max_uses: number
   token: string
+  expires_at: string
 }
 
 export interface MintEnrollmentTokenParams {
