@@ -1,6 +1,7 @@
 package com.vibecode.agent;
 
 import com.vibecode.agent.config.AgentConfig;
+import com.vibecode.agent.config.RepoCoordinates;
 import com.vibecode.agent.harness.HarnessConfig;
 import com.vibecode.agent.harness.RedactionRegistry;
 import com.vibecode.agent.harness.HarnessTicketProcessor;
@@ -60,6 +61,7 @@ public class AgentApp {
     public AgentApp(AgentConfig config, AgentAuthManager authManager) {
         this.config = config;
         this.apiService = new ApiService(config, authManager);
+        applyServerRepoConfig();
         this.providerSettings = resolveProviderSettings();
         RedactionRegistry.register(config.getAgentApiKey(), config.getAiApiKey(),
             providerSettings.apiKey(), System.getenv("GITHUB_TOKEN"));
@@ -201,6 +203,38 @@ public class AgentApp {
      * Resolves provider settings once so the legacy path and the harness share
      * the same credentials, model and endpoint.
      */
+    /**
+     * The project's configured repository is authoritative; REPO_OWNER/
+     * REPO_NAME remain a fallback for review-only or legacy deployments.
+     */
+    private void applyServerRepoConfig() {
+        if (config.getProjectId() == null || config.getProjectId().isBlank()) return;
+        try {
+            Map<String, Object> repo = apiService.getRepoConfig(config.getProjectId());
+            if (repo == null) {
+                log.info("No project repository configured; using REPO_OWNER/REPO_NAME if set");
+                return;
+            }
+            applyRepoCoordinates(config, repo);
+        } catch (Exception e) {
+            log.warn("Could not load the project repository from the backend; using REPO_OWNER/REPO_NAME if set");
+        }
+    }
+
+    static boolean applyRepoCoordinates(AgentConfig config, Map<String, Object> repoConfig) {
+        if (repoConfig == null) return false;
+        Object url = repoConfig.get("repoUrl");
+        if (url == null) return false;
+        return RepoCoordinates.parse(String.valueOf(url)).map(coordinates -> {
+            config.setRepoCoordinates(coordinates.owner(), coordinates.name());
+            log.info("Using project repository {}/{} from the backend", coordinates.owner(), coordinates.name());
+            return true;
+        }).orElseGet(() -> {
+            log.warn("Project repository URL is not a usable Git URL: {}", url);
+            return false;
+        });
+    }
+
     private ProviderSettings resolveProviderSettings() {
         Map<String, Object> providerConfig = null;
         try {

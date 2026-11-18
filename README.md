@@ -122,6 +122,11 @@ Required for `docker compose up`:
 
 ### Agent `.env` (Java)
 
+The agent reads the project's connected repository from the backend at startup,
+so `REPO_OWNER`/`REPO_NAME` are only a fallback for review-only nodes or
+projects without a configured repo. Restart the agent after changing the
+project's repo in the UI.
+
 For a remote node, mint a one-time join token in **Agents → Enrollment**, set
 `ENROLLMENT_TOKEN` and a persistent `AGENT_CREDENTIALS_FILE` volume, and leave
 `AGENT_ID`/`AGENT_API_KEY` unset. The node enrolls on first boot, stores its own
@@ -139,8 +144,8 @@ local testing only. Deleting the credential volume requires a new join token.
 | `AGENT_CREDENTIALS_FILE` | Persistent credential file for enrolled nodes; the file wins over `ENROLLMENT_TOKEN` on restart | _(none)_ |
 | `BACKEND_URL` | Backend API URL | `http://localhost:3001` |
 | `PROJECT_ID` | Project to work on | `1` |
-| `REPO_OWNER` | GitHub org/user | _(required)_ |
-| `REPO_NAME` | GitHub repo name | _(required)_ |
+| `REPO_OWNER` | Fallback GitHub org/user; the project's configured repository takes precedence | _(optional)_ |
+| `REPO_NAME` | Fallback GitHub repo name; the project's configured repository takes precedence | _(optional)_ |
 | `AI_PROVIDER` | AI provider (`claude`, `openai`, `opencode`, `opencode-go`, `generic`, `custom`, `ollama`, `vllm`, `llamacpp`) | `claude` |
 | `AI_MODEL` | AI model | `claude-sonnet-4-20250514` |
 | `AI_API_KEY` | AI provider API key | _(required)_ |

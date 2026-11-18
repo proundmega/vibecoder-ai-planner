@@ -46,8 +46,8 @@ public class AgentConfig {
     private final String credentialsFile;
     private final String agentAuthMode;
     private String projectId;
-    private final String repoOwner;
-    private final String repoName;
+    private String repoOwner;
+    private String repoName;
     private final Duration pollInterval;
     private final Duration staleTimeout;
     private final String aiProvider;
@@ -202,6 +202,15 @@ public class AgentConfig {
     public String getProjectId() { return projectId; }
     public String getRepoOwner() { return repoOwner; }
     public String getRepoName() { return repoName; }
+
+    /** Set from the project's configured repository (server wins over env). */
+    public void setRepoCoordinates(String owner, String name) {
+        this.repoOwner = owner;
+        this.repoName = name;
+        if (owner != null && !owner.isBlank()) {
+            validateCloneDir(this.repoCloneDir);
+        }
+    }
     public Duration getPollInterval() { return pollInterval; }
     public Duration getStaleTimeout() { return staleTimeout; }
     public String getAiProvider() { return aiProvider; }

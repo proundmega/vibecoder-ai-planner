@@ -13,6 +13,7 @@ services:
       - ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN:?mint one in the UI}
       - ENROLLMENT_URL=${ENROLLMENT_URL:-}
       - AGENT_CREDENTIALS_FILE=/credentials/agent.json
+      # Optional fallback only; the project's configured repo wins.
       - REPO_OWNER=${REPO_OWNER:-}
       - REPO_NAME=${REPO_NAME:-}
       - REPO_CLONE_DIR=/repos
