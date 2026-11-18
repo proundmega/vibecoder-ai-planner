@@ -38,6 +38,7 @@ const enrollmentProjectId = ref('')
 const enrollmentTokens = ref([])
 const enrollmentLoading = ref(false)
 const enrollmentError = ref('')
+const enrollmentAvailable = ref(true)
 const minting = ref(false)
 const mintedToken = ref(null)
 const revokingTokenId = ref(null)
@@ -172,11 +173,11 @@ function cancelEdit() {
   editingAgentId.value = null
 }
 
-const tabs = [
+const tabs = computed(() => [
   { id: 'heartbeat', label: 'Heartbeat' },
   { id: 'agents', label: 'Agents' },
-  { id: 'enrollment', label: 'Enrollment' },
-]
+  ...(enrollmentAvailable.value ? [{ id: 'enrollment', label: 'Enrollment' }] : []),
+])
 
 async function loadEnrollmentPanel() {
   if (projects.value.length === 0) {
@@ -202,7 +203,13 @@ async function loadEnrollmentTokens() {
   try {
     enrollmentTokens.value = await listEnrollmentTokens(enrollmentProjectId.value)
   } catch (err) {
-    enrollmentError.value = err.message || 'Failed to load join tokens'
+    if (err.status === 404) {
+      // Feature flag off: remove the surface instead of advertising it.
+      enrollmentAvailable.value = false
+      enrollmentError.value = ''
+    } else {
+      enrollmentError.value = err.message || 'Failed to load join tokens'
+    }
   } finally {
     enrollmentLoading.value = false
   }

@@ -134,6 +134,17 @@ describe('AgentList enrollment panel (FR16, NFR3)', () => {
     expect(wrapper.findAll('button').some(button => button.text() === 'Revoke')).toBe(false)
   })
 
+  it('hides the enrollment tab when the server disables the feature', async () => {
+    enrollmentApi.listEnrollmentTokens.mockRejectedValue(
+      Object.assign(new Error('Not found'), { status: 404 })
+    )
+
+    const wrapper = mount(AgentList, mountOptions)
+    await openEnrollment(wrapper)
+
+    expect(wrapper.findAll('button').some(button => button.text() === 'Enrollment')).toBe(false)
+  })
+
   it('hides the panel content without AGENT_READ', async () => {
     authState.read = false
 

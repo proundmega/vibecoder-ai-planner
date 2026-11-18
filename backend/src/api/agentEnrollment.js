@@ -313,9 +313,12 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
- *             required: [refresh_token]
+ *             required: [refresh_token, idempotency_key]
  *             properties:
  *               refresh_token: { type: string }
+ *               idempotency_key:
+ *                 type: string
+ *                 description: Random per-attempt key; retries with the same key return the identical pair
  *     responses:
  *       200:
  *         description: New access/refresh credential pair
