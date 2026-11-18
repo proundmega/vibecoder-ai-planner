@@ -66,6 +66,14 @@ describe('Telemetry Events', () => {
       expect(result.tokens_out).toBe(50);
     });
 
+    it('should map OpenAI-compatible/OpenCode usage tokens', () => {
+      for (const providerType of ['openai-compatible', 'opencode', 'opencode-go']) {
+        const result = UsageLogger._buildNormalizedFields(providerType, { prompt_tokens: 150, completion_tokens: 50 }, 1200, 'kimi-k2.6');
+        expect(result.tokens_in).toBe(150);
+        expect(result.tokens_out).toBe(50);
+      }
+    });
+
     it('should handle null rawUsage', () => {
       const result = UsageLogger._buildNormalizedFields('claude', null, 1200, 'claude-sonnet-4-20250514');
       expect(result.tokens_in).toBe(0);

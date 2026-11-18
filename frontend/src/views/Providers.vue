@@ -119,7 +119,7 @@
           <input v-model="editProvider.name" type="text" />
         </div>
         <div class="form-group">
-          <label>Model</label>
+          <label>Model <span v-if="!editRequiresModel" class="optional">(optional)</span></label>
           <input v-model="editProvider.model" type="text" placeholder="gpt-4o, llama3, ..." />
         </div>
         <div class="form-group">
@@ -228,6 +228,10 @@ const editEndpointOptional = computed(() =>
   ['opencode', 'opencode-go'].includes(editingProvider.value?.providerType)
 )
 
+const editRequiresModel = computed(() =>
+  ['opencode', 'opencode-go'].includes(editingProvider.value?.providerType)
+)
+
 const editProvider = ref({})
 
 const loadProviders = async () => {
@@ -282,10 +286,16 @@ const showEditForm = (provider) => {
 
 const handleUpdateProvider = async () => {
   if (!editingProvider.value) return
+  error.value = null
+  const model = (editProvider.value.model || '').trim()
+  if (editRequiresModel.value && !model) {
+    error.value = 'Model is required for OpenCode providers'
+    return
+  }
   try {
     const updates = {
       name: editProvider.value.name,
-      model: editProvider.value.model || undefined,
+      model: model || undefined,
       endpoint_url: editProvider.value.endpoint_url || undefined,
       fallback_provider: editProvider.value.fallback_provider,
     }

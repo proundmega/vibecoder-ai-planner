@@ -306,6 +306,73 @@ describe('ProvidersPage', () => {
     expect(wrapper.find('input[placeholder="https://opencode.ai/zen/v1"]').exists()).toBe(true)
   })
 
+  it('submits an edited OpenCode endpoint so agents see the new value', async () => {
+    const provider = {
+      id: '1',
+      name: 'OpenCode Zen',
+      providerType: 'opencode',
+      model: 'kimi-k2.6',
+      endpoint_url: 'https://opencode.ai/zen/v1',
+      is_project_director: false,
+      is_active: true,
+    }
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([provider])
+    ;(providersApi.updateProvider as ReturnType<typeof vi.fn>).mockResolvedValue(provider)
+    wrapper = mount(ProvidersPage, mountOptions)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const editButton = wrapper.findAll('button').find(b => b.text() === 'Edit')
+    expect(editButton).toBeDefined()
+    await editButton!.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const endpoint = wrapper.find('.edit-form input[placeholder="https://opencode.ai/zen/v1"]')
+    await endpoint.setValue('https://proxy.internal/zen/v1')
+    const save = wrapper.findAll('.edit-form button')[0]
+    await save.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(providersApi.updateProvider).toHaveBeenCalledWith(
+      '1',
+      expect.objectContaining({ endpoint_url: 'https://proxy.internal/zen/v1' })
+    )
+  })
+
+  it('rejects clearing the model of an OpenCode provider in the edit form', async () => {
+    const provider = {
+      id: '1',
+      name: 'OpenCode Zen',
+      providerType: 'opencode',
+      model: 'kimi-k2.6',
+      endpoint_url: 'https://opencode.ai/zen/v1',
+      is_project_director: false,
+      is_active: true,
+    }
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([provider])
+    wrapper = mount(ProvidersPage, mountOptions)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const editButton = wrapper.findAll('button').find(b => b.text() === 'Edit')
+    expect(editButton).toBeDefined()
+    await editButton!.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const model = wrapper.findAll('.edit-form input')[1]
+    await model.setValue('')
+    const save = wrapper.findAll('.edit-form button')[0]
+    await save.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(providersApi.updateProvider).not.toHaveBeenCalled()
+    expect(wrapper.find('.error-message').text()).toContain('Model is required')
+  })
+
   it('requires a model for OpenCode providers', async () => {
     ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([])
     ;(providersApi.addProvider as ReturnType<typeof vi.fn>).mockResolvedValue({ id: '1' })

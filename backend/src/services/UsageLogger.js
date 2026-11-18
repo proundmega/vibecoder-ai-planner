@@ -204,7 +204,11 @@ class UsageLogger {
     if (providerType === 'claude') {
       tokensIn = raw.input_tokens || 0;
       tokensOut = raw.output_tokens || 0;
-    } else if (providerType === 'openai' || providerType === 'generic') {
+    } else if (providerType === 'openai'
+      || providerType === 'generic'
+      || providerType === 'openai-compatible'
+      || providerType === 'opencode'
+      || providerType === 'opencode-go') {
       tokensIn = raw.prompt_tokens || 0;
       tokensOut = raw.completion_tokens || 0;
     }

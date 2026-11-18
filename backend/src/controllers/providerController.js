@@ -2,7 +2,7 @@ const ProviderRouter = require('../services/ProviderRouter');
 const ProviderService = require('../services/ProviderService');
 const { encrypt, decrypt, maskToken } = require('../utils/crypto');
 const { NotFoundError, ValidationError } = require('../errors/HttpError');
-const { getProviderDefaults } = require('../utils/providerDefaults');
+const { getProviderDefaults, resolveProviderEndpoint } = require('../utils/providerDefaults');
 const { pool } = require('../db');
 
 async function addProvider(req, res, next) {
@@ -28,8 +28,14 @@ async function addProvider(req, res, next) {
     if (defaults?.requiresModel && (!model || !String(model).trim())) {
       throw new ValidationError(`Model is required for ${providerType} providers`);
     }
-    const resolvedEndpointUrl = endpoint_url || defaults?.endpointUrl || null;
-    const resolvedBaseUrl = baseUrl || (defaults ? resolvedEndpointUrl : null);
+    // base_url and endpoint_url are two names for the same endpoint. Keep them
+    // in sync so every agent path (legacy, pool, harness) sees the same value.
+    const resolvedEndpointUrl = resolveProviderEndpoint({
+      providerType,
+      baseUrl,
+      endpointUrl: endpoint_url,
+    });
+    const resolvedBaseUrl = resolvedEndpointUrl;
 
     let row;
     if (is_project_director) {
@@ -107,6 +113,15 @@ async function updateProvider(req, res, next) {
 
     const existingRow = existing.rows[0];
 
+    // Enforce the same invariants as create. A PATCH can change the type
+    // and/or clear the model, so validate the resulting row, not just the body.
+    const effectiveProviderType = providerType !== undefined ? providerType : existingRow.provider_type;
+    const effectiveModel = model !== undefined ? model : existingRow.model;
+    const defaults = getProviderDefaults(effectiveProviderType);
+    if (defaults?.requiresModel && !String(effectiveModel || '').trim()) {
+      throw new ValidationError(`Model is required for ${effectiveProviderType} providers`);
+    }
+
     const updates = [];
     const values = [];
     let paramIndex = 1;
@@ -119,9 +134,23 @@ async function updateProvider(req, res, next) {
       updates.push(`provider_type = $${paramIndex++}`);
       values.push(providerType);
     }
-    if (baseUrl !== undefined) {
+    // The UI only edits endpoint_url. Write both columns whenever an endpoint
+    // or the provider type changes; otherwise agent paths that read base_url
+    // would keep calling the old endpoint.
+    const providerTypeChanged = providerType !== undefined && providerType !== existingRow.provider_type;
+    const endpointProvided = baseUrl !== undefined || endpoint_url !== undefined;
+    if (providerTypeChanged || endpointProvided) {
+      const resolvedEndpoint = endpointProvided
+        ? resolveProviderEndpoint({ providerType: effectiveProviderType, baseUrl, endpointUrl: endpoint_url })
+        : resolveProviderEndpoint({
+          providerType: effectiveProviderType,
+          baseUrl: existingRow.base_url,
+          endpointUrl: existingRow.endpoint_url,
+        });
       updates.push(`base_url = $${paramIndex++}`);
-      values.push(baseUrl);
+      values.push(resolvedEndpoint);
+      updates.push(`endpoint_url = $${paramIndex++}`);
+      values.push(resolvedEndpoint);
     }
     if (model !== undefined) {
       updates.push(`model = $${paramIndex++}`);
@@ -142,10 +171,6 @@ async function updateProvider(req, res, next) {
     if (isActive !== undefined) {
       updates.push(`is_active = $${paramIndex++}`);
       values.push(isActive);
-    }
-    if (endpoint_url !== undefined) {
-      updates.push(`endpoint_url = $${paramIndex++}`);
-      values.push(endpoint_url || null);
     }
     if (fallback_provider !== undefined) {
       updates.push(`fallback_provider = $${paramIndex++}`);
@@ -392,11 +417,11 @@ async function testProvider(req, res, next) {
     const providerConfig = result.rows[0];
 
     const type = providerConfig.provider_type;
-    const defaults = getProviderDefaults(type);
-    const baseUrl = providerConfig.base_url
-      || providerConfig.endpoint_url
-      || defaults?.endpointUrl
-      || null;
+    const baseUrl = resolveProviderEndpoint({
+      providerType: type,
+      baseUrl: providerConfig.base_url,
+      endpointUrl: providerConfig.endpoint_url,
+    });
     const needsBaseUrl = ['generic', 'ollama', 'vllm', 'llamacpp', 'custom'].includes(type);
     if ((!baseUrl || typeof baseUrl !== 'string') && needsBaseUrl
       && process.env.INTEGRATION_TESTS !== '1') {

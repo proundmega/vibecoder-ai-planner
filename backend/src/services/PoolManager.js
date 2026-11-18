@@ -3,6 +3,7 @@ const { docker, DOCKER_URL } = require('../utils/docker');
 const AgentService = require('./AgentService');
 const { pool } = require('../db');
 const { decrypt } = require('../utils/crypto');
+const { resolveProviderEndpoint } = require('../utils/providerDefaults');
 
 const AGENT_IMAGE = process.env.AGENT_IMAGE || 'vibecode-agent';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://api:3001';
@@ -245,8 +246,7 @@ class PoolManager {
 
   async resolveProviderConfig(providerId) {
     const result = await pool.query(
-      `SELECT provider_type, api_key_encrypted,
-              COALESCE(base_url, endpoint_url) AS base_url,
+      `SELECT provider_type, api_key_encrypted, base_url, endpoint_url,
               model, max_tokens, temperature
        FROM providers WHERE id = $1 AND is_active = true`,
       [providerId]
@@ -260,7 +260,11 @@ class PoolManager {
     return {
       provider_type: p.provider_type,
       api_key: p.api_key_encrypted ? decrypt(p.api_key_encrypted) : null,
-      base_url: p.base_url,
+      base_url: resolveProviderEndpoint({
+        providerType: p.provider_type,
+        baseUrl: p.base_url,
+        endpointUrl: p.endpoint_url,
+      }),
       model: p.model,
       max_tokens: p.max_tokens || 4096,
       temperature: p.temperature,
@@ -269,8 +273,7 @@ class PoolManager {
 
   async autoSelectProvider() {
     let result = await pool.query(
-      `SELECT provider_type, api_key_encrypted,
-              COALESCE(base_url, endpoint_url) AS base_url,
+      `SELECT provider_type, api_key_encrypted, base_url, endpoint_url,
               model, max_tokens, temperature
        FROM providers WHERE is_active = true AND 'worker' = ANY(roles)
        ORDER BY created_at ASC LIMIT 1`
@@ -278,8 +281,7 @@ class PoolManager {
 
     if (result.rows.length === 0) {
       result = await pool.query(
-        `SELECT provider_type, api_key_encrypted,
-                COALESCE(base_url, endpoint_url) AS base_url,
+        `SELECT provider_type, api_key_encrypted, base_url, endpoint_url,
                 model, max_tokens, temperature
          FROM providers WHERE is_active = true
          ORDER BY created_at ASC LIMIT 1`
@@ -294,7 +296,11 @@ class PoolManager {
     return {
       provider_type: p.provider_type,
       api_key: p.api_key_encrypted ? decrypt(p.api_key_encrypted) : null,
-      base_url: p.base_url,
+      base_url: resolveProviderEndpoint({
+        providerType: p.provider_type,
+        baseUrl: p.base_url,
+        endpointUrl: p.endpoint_url,
+      }),
       model: p.model,
       max_tokens: p.max_tokens || 4096,
       temperature: p.temperature,

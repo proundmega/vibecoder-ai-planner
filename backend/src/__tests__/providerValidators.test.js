@@ -1,4 +1,4 @@
-const { addProviderSchema } = require('../validators/providers');
+const { addProviderSchema, updateProviderSchema } = require('../validators/providers');
 
 describe('provider validators', () => {
   describe('addProviderSchema', () => {
@@ -29,6 +29,42 @@ describe('provider validators', () => {
       });
 
       expect(error).toBeUndefined();
+    });
+  });
+
+  describe('updateProviderSchema', () => {
+    it('requires a model when switching a provider to OpenCode', () => {
+      const { error } = updateProviderSchema.validate({
+        providerType: 'opencode',
+      });
+
+      expect(error).toBeDefined();
+      expect(error.details[0].message).toContain('model is required');
+    });
+
+    it('accepts a type switch to OpenCode with a model', () => {
+      const { error } = updateProviderSchema.validate({
+        providerType: 'opencode',
+        model: 'kimi-k2.6',
+      });
+
+      expect(error).toBeUndefined();
+    });
+
+    it('does not require a model when the type is unchanged', () => {
+      const { error } = updateProviderSchema.validate({
+        name: 'Renamed',
+      });
+
+      expect(error).toBeUndefined();
+    });
+
+    it('rejects an empty model', () => {
+      const { error } = updateProviderSchema.validate({
+        model: '',
+      });
+
+      expect(error).toBeDefined();
     });
   });
 });

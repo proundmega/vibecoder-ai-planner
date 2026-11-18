@@ -28,8 +28,33 @@ function providerTypesRequiringModel() {
   );
 }
 
+/**
+ * Treat blank strings as "not configured". The database can hold '' (for
+ * example from an old form), and an empty string must never win over a real
+ * endpoint in any agent path.
+ */
+function normaliseEndpoint(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * Single source of truth for the endpoint an agent should call. `base_url` is
+ * the legacy column; `endpoint_url` is the column the UI edits. Either may be
+ * set, so both are considered before the provider type's built-in default.
+ */
+function resolveProviderEndpoint({ providerType = null, baseUrl = null, endpointUrl = null } = {}) {
+  return normaliseEndpoint(baseUrl)
+    || normaliseEndpoint(endpointUrl)
+    || getProviderDefaults(providerType)?.endpointUrl
+    || null;
+}
+
 module.exports = {
   PROVIDER_DEFAULTS,
   getProviderDefaults,
   providerTypesRequiringModel,
+  normaliseEndpoint,
+  resolveProviderEndpoint,
 };

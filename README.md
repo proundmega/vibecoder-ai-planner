@@ -124,6 +124,7 @@ Required for `docker compose up`:
 | `AI_PROVIDER` | AI provider (`claude`, `openai`, `opencode`, `opencode-go`, or an OpenAI-compatible type) | `claude` |
 | `AI_MODEL` | AI model | `claude-sonnet-4-20250514` |
 | `AI_API_KEY` | AI provider API key | _(required)_ |
+| `AI_ENDPOINT_URL` | OpenAI-compatible endpoint; required for `generic`/`ollama`/`vllm`/`llamacpp` and for an OpenCode agent when no backend provider config is available | _(provider default)_ |
 | `POLL_INTERVAL_MS` | Polling interval | `30000` |
 | `STALE_TIMEOUT_MS` | Agent stale timeout | `3600000` |
 | `DRY_RUN` | Dry run mode | `false` |

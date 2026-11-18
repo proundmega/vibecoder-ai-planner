@@ -1,6 +1,7 @@
 const { pool } = require('../db');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const { resolveProviderEndpoint } = require('../utils/providerDefaults');
 
 const SALT_ROUNDS = 10;
 const DEFAULT_KEY_EXPIRY_DAYS = 30;
@@ -150,8 +151,7 @@ class AgentService {
     if (!agent.provider_id) throw new Error('NO_PROVIDER');
     const enc = require('../utils/crypto');
     const result = await pool.query(
-      `SELECT p.provider_type, p.api_key_encrypted,
-              COALESCE(p.base_url, p.endpoint_url) AS base_url,
+      `SELECT p.provider_type, p.api_key_encrypted, p.base_url, p.endpoint_url,
               p.model, p.max_tokens
        FROM providers p WHERE p.id = $1`, [agent.provider_id]
     );
@@ -161,7 +161,11 @@ class AgentService {
     return {
       provider_type: provider.provider_type,
       api_key: decryptedKey,
-      base_url: provider.base_url,
+      base_url: resolveProviderEndpoint({
+        providerType: provider.provider_type,
+        baseUrl: provider.base_url,
+        endpointUrl: provider.endpoint_url,
+      }),
       model: provider.model,
       max_tokens: provider.max_tokens,
     };

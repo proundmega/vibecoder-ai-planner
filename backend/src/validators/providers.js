@@ -18,7 +18,7 @@ const addProviderSchema = Joi.object({
   baseUrl: Joi.string().uri().allow('').optional(),
   model: Joi.string().min(1)
     .when('providerType', {
-      is: Joi.string().valid(...modelRequiredFor),
+      is: Joi.exist().valid(...modelRequiredFor),
       then: Joi.required(),
       otherwise: Joi.optional(),
     })
@@ -40,7 +40,16 @@ const updateProviderSchema = Joi.object({
   providerType: Joi.string().min(1).optional(),
   apiKey: Joi.string().allow('').optional(),
   baseUrl: Joi.string().uri().allow('').optional(),
-  model: Joi.string().min(1).optional(),
+  model: Joi.string().min(1)
+    .when('providerType', {
+      is: Joi.exist().valid(...modelRequiredFor),
+      then: Joi.required(),
+      otherwise: Joi.optional(),
+    })
+    .messages({
+      'string.empty': 'model must not be empty',
+      'any.required': `model is required for ${modelRequiredFor.join(', ')} providers`,
+    }),
   maxTokens: Joi.number().integer().min(1).optional(),
   temperature: Joi.number().min(0).max(1).optional(),
   roles: Joi.array().items(Joi.string()).optional(),
