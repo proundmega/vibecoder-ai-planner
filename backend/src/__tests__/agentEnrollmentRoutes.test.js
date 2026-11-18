@@ -6,7 +6,7 @@ const jwt = require('jsonwebtoken');
 const AgentEnrollmentService = require('../services/AgentEnrollmentService');
 const PermissionService = require('../services/PermissionService');
 const rateLimit = require('../middleware/agentEnrollmentRateLimit');
-const { requireSecureTransport } = require('../api/agentEnrollment');
+const { requireSecureTransport, enrollmentEnabled } = require('../api/agentEnrollment');
 
 jest.mock('../db', () => ({
   pool: {
@@ -209,6 +209,26 @@ describe('Agent enrollment routes (FR1, FR2, FR12, FR14, NFR2)', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body.error.code).toBe('IDEMPOTENCY_KEY_REQUIRED');
+  });
+});
+
+describe('AGENT_ENROLLMENT_ENABLED parsing', () => {
+  const original = process.env.AGENT_ENROLLMENT_ENABLED;
+  afterEach(() => {
+    process.env.AGENT_ENROLLMENT_ENABLED = original;
+  });
+
+  it('accepts 1, true and case variants; rejects everything else', () => {
+    process.env.AGENT_ENROLLMENT_ENABLED = '1';
+    expect(enrollmentEnabled()).toBe(true);
+    process.env.AGENT_ENROLLMENT_ENABLED = 'true';
+    expect(enrollmentEnabled()).toBe(true);
+    process.env.AGENT_ENROLLMENT_ENABLED = 'TRUE';
+    expect(enrollmentEnabled()).toBe(true);
+    process.env.AGENT_ENROLLMENT_ENABLED = '0';
+    expect(enrollmentEnabled()).toBe(false);
+    delete process.env.AGENT_ENROLLMENT_ENABLED;
+    expect(enrollmentEnabled()).toBe(false);
   });
 });
 

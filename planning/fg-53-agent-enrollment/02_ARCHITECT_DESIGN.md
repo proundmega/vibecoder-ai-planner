@@ -287,7 +287,7 @@ Refresh:
 
 - **Authentication:** join/access/refresh tokens are bearer secrets. Access
   tokens use `X-API-Key`; enrollment/refresh bodies are POST-only, never URLs.
-  TLS is required outside loopback unless `ALLOW_INSECURE_AGENT_ENROLLMENT=1`. `req.secure` honors `X-Forwarded-Proto` only when Express `trust proxy` is configured via `TRUST_PROXY`; a direct client cannot spoof it.
+  TLS is required outside loopback unless `ALLOW_INSECURE_AGENT_ENROLLMENT=1`. `req.secure` honors `X-Forwarded-Proto` only when Express `trust proxy` is configured via `TRUST_PROXY` (`1` = one trusted hop, `true` = trust all hops, or an IP/CIDR list); a direct client cannot spoof it.
 - **Authorization:** mint/list/revoke use existing `AGENT_CREATE` /
   `AGENT_READ` / `AGENT_REVOKE` plus project membership. Join tokens are bound
   to one project and optional provider; the enroll request cannot override

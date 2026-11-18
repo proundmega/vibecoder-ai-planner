@@ -15,9 +15,9 @@ const app = express();
 // Only honor X-Forwarded-Proto when the operator explicitly declares the
 // reverse-proxy hops/IPs. Without this, req.secure stays false and a direct
 // HTTP client cannot spoof the enrollment TLS check.
-const trustProxy = process.env.TRUST_PROXY;
-if (trustProxy) {
-  app.set('trust proxy', trustProxy === 'true' ? true : trustProxy);
+const trustProxy = require('./utils/trustProxy').parseTrustProxy(process.env.TRUST_PROXY);
+if (trustProxy !== null) {
+  app.set('trust proxy', trustProxy);
 }
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3002')

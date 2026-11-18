@@ -17,8 +17,10 @@ const router = express.Router();
 
 function enrollmentEnabled() {
   // Explicit opt-in only: NODE_ENV=development is not enough, so a dev-mode
-  // container exposed to a network cannot silently offer enrollment.
-  return process.env.AGENT_ENROLLMENT_ENABLED === 'true';
+  // container exposed to a network cannot silently offer enrollment. Compose
+  // uses `1`, so accept the common boolean spellings.
+  const value = String(process.env.AGENT_ENROLLMENT_ENABLED || '').trim().toLowerCase();
+  return value === '1' || value === 'true';
 }
 
 router.use((req, res, next) => {
