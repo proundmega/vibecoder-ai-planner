@@ -1,9 +1,10 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { mockRoute, mockRouter } = vi.hoisted(() => ({
+const { mockRoute, mockRouter, authState } = vi.hoisted(() => ({
   mockRoute: { params: { id: 'p1', ticketId: 't1' }, query: {} },
   mockRouter: { push: vi.fn(), back: vi.fn(), replace: vi.fn() },
+  authState: { canUpdate: true },
 }))
 
 vi.mock('vue-router', () => ({
@@ -16,7 +17,7 @@ vi.mock('vue-router', () => ({
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     user: { value: { id: 'u1', role: 'project_admin' } },
-    canUpdateTicket: () => true,
+    canUpdateTicket: () => authState.canUpdate,
     canDeleteTicket: () => true,
     hasRole: () => false,
   }),
@@ -96,6 +97,7 @@ function findButton(wrapper, label) {
 describe('TicketDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    authState.canUpdate = true
     mockRoute.query = {}
     ticketsApi.fetchComments.mockResolvedValue([])
     approvalsApi.getTicketApprovals.mockResolvedValue([])
@@ -188,5 +190,50 @@ describe('TicketDetail', () => {
     const wrapper = await mountDetail(baseTicket())
 
     expect(wrapper.findComponent(TicketEditModal).exists()).toBe(false)
+  })
+
+  it('does not auto-open the edit modal without update permission', async () => {
+    mockRoute.query = { edit: '1' }
+    authState.canUpdate = false
+
+    const wrapper = await mountDetail(baseTicket())
+
+    expect(wrapper.findComponent(TicketEditModal).exists()).toBe(false)
+  })
+
+  it('strips the edit query when the edit modal is closed', async () => {
+    mockRoute.query = { edit: '1' }
+
+    const wrapper = await mountDetail(baseTicket())
+    const modal = wrapper.findComponent(TicketEditModal)
+    expect(modal.exists()).toBe(true)
+
+    modal.vm.$emit('close')
+    await flushPromises()
+
+    expect(mockRouter.replace).toHaveBeenCalledWith({ query: {} })
+    expect(wrapper.findComponent(TicketEditModal).exists()).toBe(false)
+  })
+
+  it('refetches the ticket after a 409 delete conflict', async () => {
+    ticketsApi.fetchTicket
+      .mockResolvedValueOnce(baseTicket())
+      .mockResolvedValueOnce(baseTicket({ status: 'in_progress' }))
+    ticketsApi.deleteTicket.mockRejectedValue(
+      Object.assign(new Error('Cannot delete a ticket that is in progress.'), { status: 409 })
+    )
+
+    const wrapper = mount(TicketDetail)
+    await flushPromises()
+
+    await findButton(wrapper, 'Delete Ticket').trigger('click')
+    await flushPromises()
+    await wrapper.find('.delete-confirm .btn-submit').trigger('click')
+    await flushPromises()
+
+    expect(ticketsApi.fetchTicket).toHaveBeenCalledTimes(2)
+    const deleteButton = findButton(wrapper, 'Delete Ticket')
+    expect(deleteButton.attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.delete-hint').exists()).toBe(true)
   })
 })

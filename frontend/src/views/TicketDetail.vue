@@ -20,8 +20,9 @@ const error = ref(null)
 const newComment = ref('')
 const comments = ref([])
 // The board sends `?edit=1` after creating a ticket so the user lands in the
-// Edit Ticket view by default.
-const showEditModal = ref(route.query.edit === '1')
+// Edit Ticket view by default. Opening is deferred until the ticket is loaded
+// so ownership-based permission checks can run.
+const showEditModal = ref(false)
 const showDeleteConfirm = ref(false)
 const deleting = ref(false)
 const deleteError = ref(null)
@@ -95,6 +96,9 @@ onMounted(async () => {
       attachments.value = await fetchAttachments(ticketId)
       await loadPlanning()
       await loadPlanningUsage()
+      if (route.query.edit === '1' && canUpdate()) {
+        showEditModal.value = true
+      }
     }
   } catch (e) {
     console.error('Failed to load ticket:', e)
@@ -190,6 +194,12 @@ async function handleDelete() {
     // than reopening the modal over the error.
     deleteError.value = 'Failed to delete ticket: ' + err.message
     deleting.value = false
+    if (err.status === 409) {
+      // A concurrent transition won the race; refresh so the page reflects the
+      // real status and the Delete button/hint are correct.
+      const fresh = await fetchTicket(ticket.value.id)
+      if (fresh) ticket.value = fresh
+    }
   }
 }
 

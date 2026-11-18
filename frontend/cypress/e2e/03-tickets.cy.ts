@@ -15,7 +15,7 @@ describe('Ticket CRUD and Status Transitions', () => {
     cy.login(admin.email, admin.password);
   });
 
-  it('should create a ticket from the board and see it in backlog', () => {
+  it('should create a ticket and open it in the Edit Ticket view', () => {
     const title = `Board Ticket ${Date.now()}`;
 
     cy.visit(`/projects/${projectId}/tickets`);
@@ -24,6 +24,13 @@ describe('Ticket CRUD and Status Transitions', () => {
     cy.get('.modal textarea[placeholder="Optional description"]').type('Created by Cypress');
     cy.get('.modal .btn-submit').contains('Create').click();
 
+    // Creating now navigates straight into the ticket's edit view.
+    cy.url().should('match', new RegExp(`/projects/${projectId}/tickets/\\d+\\?edit=1$`));
+    cy.get('.v-modal').should('be.visible').and('contain', 'Edit Ticket');
+
+    // The ticket persisted: close the modal and it is on the backlog board.
+    cy.contains('.v-modal button', 'Cancel').click();
+    cy.visit(`/projects/${projectId}/tickets`);
     cy.get('.status-col.backlog .ticket-card').should('contain', title);
   });
 

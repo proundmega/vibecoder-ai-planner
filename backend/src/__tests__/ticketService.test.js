@@ -316,6 +316,24 @@ describe('TicketService', () => {
 
       expect(Ticket.delete).toHaveBeenCalledWith('t1');
     });
+
+    test('should return Forbidden before the in-progress guard for a non-member', async () => {
+      Ticket.findById.mockResolvedValueOnce({
+        id: 't1',
+        ownerId: 100,
+        projectId: 1,
+        status: 'in_progress',
+      });
+      PermissionService.hasPermission.mockResolvedValueOnce(true);
+      Project.findById.mockResolvedValueOnce({ id: 1, ownerId: 100 });
+      // No project membership row for user 200.
+
+      await expect(TicketService.delete('t1', 200, 'member'))
+        .rejects
+        .toThrow(ForbiddenError);
+
+      expect(Ticket.delete).not.toHaveBeenCalled();
+    });
   });
 
   describe('Agent-initiated operations with userRole', () => {
