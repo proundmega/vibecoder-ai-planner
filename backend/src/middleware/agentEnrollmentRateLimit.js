@@ -14,6 +14,13 @@ function agentEnrollmentRateLimit({ max = 20, windowMs = 60 * 1000, keyFn } = {}
     const key = `${ip}:${suffix}`;
     const now = Date.now();
 
+    // Bound the map for long-lived processes with many one-off token prefixes.
+    if (buckets.size > 5000) {
+      for (const [candidate, state] of buckets) {
+        if (now >= state.resetAt) buckets.delete(candidate);
+      }
+    }
+
     let bucket = buckets.get(key);
     if (!bucket || now >= bucket.resetAt) {
       bucket = { count: 0, resetAt: now + windowMs };
