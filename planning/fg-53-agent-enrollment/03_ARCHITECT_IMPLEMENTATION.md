@@ -25,7 +25,7 @@
    different-key, concurrent-refresh, lost-response and retention tests.
 5. **Agent enrollment client** — `AgentConfig` precedence, credential store
    (0600/atomic) including `projectId`, enroll on first boot, access-token use
-   and refresh scheduler. Verify: `mvn test` + the Docker smoke test with a
+   and a single-flight refresh scheduler that coalesces timer/401 triggers. Verify: `mvn test` + the Docker smoke test with a
    persistent volume/restart.
 6. **Pool agents and long-running credentials** — configurable lifetime and a
    renewal path; remove the silent one-day expiry. Verify: >24h simulation test.
@@ -50,10 +50,11 @@
 | `backend/src/api/v1/index.js` | MODIFY | Mount `/agent-enrollment` |
 | `backend/src/middleware/auth.js` | MODIFY | Prefix dispatch, shared expiry/revocation check, load `project_id` into `req.agent` |
 | `backend/src/middleware/agentProjectScope.js` | CREATE | Assert `req.agent.project_id` matches the ticket/credential project; legacy NULL keeps owner scope |
-| `backend/src/services/TicketService.js` | MODIFY | Enforce `agentProjectId` before owner/admin bypass in `canActOnTicketProject` and writer paths |
+| `backend/src/services/TicketService.js` | MODIFY | Enforce `agentProjectId` on create and `getOne`/list/read/write paths before owner/admin bypass |
 | `backend/src/api/tickets.js` | MODIFY | Apply project-scope assertion to agent ticket list/read/status/message/phase/review routes |
+| `backend/src/api/projects.js` | MODIFY | Apply project-scope assertion to agent `POST /projects/:id/tickets` |
 | `backend/src/controllers/ticketController.js` | MODIFY | Resolve/pass the ticket project to the scope assertion |
-| `backend/src/services/TicketService.js` | MODIFY | Enforce project scope in `getOne`/list/read paths, not only writers |
+| `backend/src/controllers/projectController.js` | MODIFY | Enforce the agent project on `createProjectTicket` before creation |
 | `backend/src/api/ticketPlanning.js` | MODIFY | Apply the project-scope assertion to agent planning reads |
 | `backend/src/api/github.js` | MODIFY | Apply the project-scope assertion to agent repo/token routes |
 | `backend/src/api/repoProfiles.js` | MODIFY | Apply the project-scope assertion to agent repo-profile routes |
@@ -68,7 +69,7 @@
 | `agent/src/main/java/com/vibecode/agent/config/AgentConfig.java` | MODIFY | Enrollment/credential-file env + precedence; `PROJECT_ID` optional in enrollment mode |
 | `agent/src/main/java/com/vibecode/agent/service/AgentEnrollmentClient.java` | CREATE | Enroll/refresh HTTP client |
 | `agent/src/main/java/com/vibecode/agent/service/AgentCredentialStore.java` | CREATE | 0600 atomic load/save, including `projectId` |
-| `agent/src/main/java/com/vibecode/agent/service/AgentAuthManager.java` | CREATE | Access-token lifecycle, refresh timer, 401 retry |
+| `agent/src/main/java/com/vibecode/agent/service/AgentAuthManager.java` | CREATE | Access-token lifecycle, single-flight refresh timer/401 coalescing, idempotency-key reuse |
 | `agent/src/main/java/com/vibecode/agent/AgentApp.java` | MODIFY | First-boot enrollment, auth manager wiring |
 | `agent/src/main/java/com/vibecode/agent/service/ApiService.java` | MODIFY | Use `AgentAuthManager` token instead of static key |
 | `agent/Dockerfile` / `agent/docker-compose*.yml` | MODIFY | Credential volume, `ENROLLMENT_TOKEN`/`ENROLLMENT_URL`, pass `AGENT_ID` |
@@ -117,7 +118,7 @@
 | FR5 | backend unit + integration | `backend/src/__tests__/agentEnrollmentService.test.js`, `src/__tests__/integration/agentEnrollment.test.js` | [FR5] refresh rotates; same idempotency key returns the identical pair; a stolen rotated token replayed with a different/absent key gets no new pair and revokes the family; audit reason | `cd backend && npm test && npm run test:integration` |
 | FR6 | backend unit | `backend/src/__tests__/agentTokenAuth.test.js` | [FR6] delete/revoke invalidates access, refresh and legacy tokens; other agents unaffected | `cd backend && npm test` |
 | FR7 | agent unit + Docker smoke | `agent/src/test/java/com/vibecode/agent/enrollment/AgentEnrollmentTest.java`, `agent/scripts/agent-enrollment-smoke.sh` | [FR7] first boot enrolls without `PROJECT_ID`; credential file stores `projectId`; restart with volume skips enroll; file precedence; no secrets logged | `cd agent && mvn test`; `bash agent/scripts/agent-enrollment-smoke.sh` |
-| FR8 | agent unit | `agent/src/test/java/com/vibecode/agent/enrollment/AgentAuthManagerTest.java` | [FR8] refresh before expiry and on 401; lost-response retry reuses the idempotency key and gets the same pair; bounded retries; exit on failure | `cd agent && mvn test` |
+| FR8 | agent unit | `agent/src/test/java/com/vibecode/agent/enrollment/AgentAuthManagerTest.java` | [FR8] refresh before expiry and on 401; simultaneous timer+401 triggers coalesce to one request/key; lost-response retry reuses the key and gets the same pair; bounded retries; exit on failure | `cd agent && mvn test` |
 | FR9 | backend unit + agent unit | `backend/src/__tests__/api-agent-auth.test.js`, `AgentConfigTest` | [FR9] legacy `ak_` keys work; prefix dispatch; feature flag off keeps legacy | `cd backend && npm test`; `cd agent && mvn test` |
 | FR10 | backend unit | `backend/src/__tests__/agentHeartbeatExpiry.test.js` | [FR10] expired key 401 on heartbeat and agent-status routes; not reported online; all paths share the check | `cd backend && npm test` |
 | FR11 | backend unit | `backend/src/__tests__/agentEnrollmentService.test.js` | [FR11] audit events for mint/revoke/enroll/refresh/replay-cache-hit/reuse/expiry; redaction | `cd backend && npm test` |
@@ -128,7 +129,7 @@
 | FR16 | frontend unit | `frontend/src/__tests__/agentEnrollmentModal.test.ts`, `api-agentEnrollment.test.ts` | [FR16] one-time display/copy; list/revoke; permission gating; no localStorage | `cd frontend && npm test -- --run` |
 | FR17 | shell/config | `agent/docker-compose.yml`, `agent/docker-compose.remote.yml.example`, `agent/.env.example` | [FR17] Compose config includes `AGENT_ID`; remote template has no external API network; env docs list enrollment vars | `docker compose -f agent/docker-compose.yml config`; `docker compose -f agent/docker-compose.remote.yml.example config` |
 | NFR1 | backend unit | `backend/src/__tests__/agentEnrollmentService.test.js` | [NFR1] responses/logs/events contain no raw token; hash-only token rows; replay cache is encrypted, TTL-bounded and returns only the matching retry | `cd backend && npm test` |
-| NFR2 | backend unit + integration | `backend/src/__tests__/agentEnrollmentPermissions.test.js`, `agentProjectScope.test.js`, `src/__tests__/integration/agentEnrollment.test.js` | [NFR2] owner/member/admin/stranger matrix; cross-project token use fails; enrolled agent cannot list/read/pick up/edit/release another project’s ticket, planning, GitHub or harness resource; credential access and token purge keep scope | `cd backend && npm test && npm run test:integration` |
+| NFR2 | backend unit + integration | `backend/src/__tests__/agentEnrollmentPermissions.test.js`, `agentProjectScope.test.js`, `src/__tests__/integration/agentEnrollment.test.js` | [NFR2] owner/member/admin/stranger matrix; cross-project token use fails; enrolled agent cannot create/list/read/pick up/edit/release another project’s ticket, planning, GitHub or harness resource; credential access and token purge keep scope | `cd backend && npm test && npm run test:integration` |
 | NFR3 | agent unit + frontend unit | `AgentCredentialStoreTest.java`, `agentEnrollmentModal.test.ts` | [NFR3] 0600 atomic write, temp cleanup; no secret in Pinia/localStorage | `cd agent && mvn test`; `cd frontend && npm test -- --run` |
 | NFR4 | backend integration + load | `backend/src/__tests__/integration/agentEnrollmentLoad.test.js` | [NFR4] indexed lookups; 100 enrollments and 1,000 refreshes with p95 targets from `02` | `cd backend && npm run test:load:agent-enrollment` |
 | NFR5 | backend integration + bash | migration rollback test, `agent_enrollment.test.sh` | [NFR5] legacy keys pass; rollback succeeds; flag-off behavior | `cd backend && npm run test:integration`; `bash integration-test/run.sh --only` |
@@ -170,7 +171,8 @@ cd backend  && bash integration-test/run.sh --only
 |---|---|---|---|---|
 | 0 | pending | | | |
 | 1 | independent review (PR #173) | Project scoping was not stored/enforced; refresh replay could revoke a concurrent/lost-response winner. | Added `agents.project_id` + route enforcement and tests; added refresh `family_id` + grace window and concurrent/lost-response/reuse tests. Non-blocking verification, metrics, credential-file, decision, index and retention-index gaps also closed. | superseded by round 2 |
-| 2 | independent review (PR #173) | Grace replay could mint a fresh pair for a stolen old token; project scope missed ticket read/list and several agent routes. | Replaced grace with an encrypted idempotency replay cache (same key → same pair; different/absent key → family revoke) and negative theft tests; added the exhaustive agent route inventory and read/list cross-project tests. | pending |
+| 2 | independent review (PR #173) | Grace replay could mint a fresh pair for a stolen old token; project scope missed ticket read/list and several agent routes. | Replaced grace with an encrypted idempotency replay cache (same key → same pair; different/absent key → family revoke) and negative theft tests; added the exhaustive agent route inventory and read/list cross-project tests. | superseded by round 3 |
+| 3 | independent review (PR #173) | `POST /projects/:id/tickets` missing from the inventory/enforcement; client timer/401 refreshes could race with different keys; heartbeat method typo; duplicate `TicketService.js` row. | Added route/controller/`TicketService.create` scope + create test; specified single-flight refresh and coalescing; corrected `POST /agents-status/:id/heartbeat`; merged the file row. | pending |
 
 ## Results
 

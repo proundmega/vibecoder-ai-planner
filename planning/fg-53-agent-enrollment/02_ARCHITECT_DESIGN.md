@@ -32,7 +32,9 @@ Two credentials are added:
   refresh token is stored on the node with mode `0600` and rotated on every
   use. Refresh calls carry an `Idempotency-Key`; the same key returns the same
   pair from the encrypted replay cache, while a different/absent key on a
-  rotated token is treated as reuse.
+  rotated token is treated as reuse. The agent coalesces timer and 401
+  refresh triggers into one in-flight request per agent, so two independent
+  keys can never race.
 - **Project scope:** enrollment writes the join token's project to
   `agents.project_id`. That column, not the token row and not the agent's
   `PROJECT_ID` env, is authoritative for agent authorization. Legacy `ak_…`
@@ -271,6 +273,7 @@ Refresh:
 | Partial enroll | DB error between agent and token inserts | Integration test finds no rows | Single transaction; rollback | Retry with the same token only if the transaction rolled back |
 | Refresh reuse with a different/absent key | Stolen/replayed rotated token without the original idempotency key | `REFRESH_TOKEN_REUSED` audit; family revoked | Rotation + negative theft test | Re-enroll the node with a new join token |
 | Concurrent refresh / lost response | Two requests with the same key, or a retry after the response was lost | One rotation commits; the replay row returns the identical pair | Family stays valid; the winner's access token still works; `refresh_replay_cache_hit` audit | None; the agent reuses its idempotency key |
+| Client timer/401 race | Timer refresh and 401 refresh start together | AgentAuthManager coalesces to one in-flight request | Single key; both callers await the same result; no family revoke | None |
 | Replay cache expiry | Retry arrives after `AGENT_REFRESH_REPLAY_CACHE_SECONDS` | Token is rotated and no replay row remains | Bounded retry window; agent re-enrolls if the response was truly lost | Mint a new join token |
 | Agent requests another project | Enrolled agent sends a ticket/credential request for a different project | 403 from the project-scope assertion | `agents.project_id` is authoritative; legacy NULL agents unchanged; cross-project tests | None |
 | Agent clock skew | Node clock ahead/behind | Early expiry/refresh loops | Server returns absolute `expires_at`; use DB `NOW()`; refresh margin | Fix clock/NTP |
@@ -303,7 +306,7 @@ Refresh:
 
   | Route group | Project source | Enforcement |
   |---|---|---|
-  | `POST /tickets` | body `project_id` | assert before create |
+  | `POST /tickets`, `POST /projects/:id/tickets` | body `projectId` / `:id` | assert before `TICKET_CREATE` and create |
   | `GET /tickets/project/:projectId`, `/backlog` | `:projectId` | assert |
   | `GET /tickets/:ticketId` | ticket project | assert in `TicketService.getOne`/controller |
   | `PUT /tickets/:ticketId`, `POST /status`, `/pickup`, `/release` | ticket project | assert before owner/admin checks |
@@ -316,7 +319,7 @@ Refresh:
   | `GET /harness/tickets/:ticketId/run`, `POST /harness/leases`, `POST /leases/:ticketId/renew`, `DELETE /leases/:ticketId` | ticket project | assert |
   | `GET /harness/agents/:agentId/runs`, `/workspaces` | self-scoped | require `req.agent.id === :agentId` |
   | `POST /harness/events`, `POST/GET /harness/runs/:runId/usage`, `GET /runs/:runId/{events,timeline}` | run → project | assert run/project matches |
-  | `GET /agents-status/:id/heartbeat`, `GET /agents/:agentId/provider-config/changed` | self-scoped | shared agent auth expiry/revocation; existing self check; no project data |
+  | `POST /agents-status/:id/heartbeat`, `GET /agents/:agentId/provider-config/changed` | self-scoped | shared agent auth expiry/revocation; existing self check; no project data |
 
   Agent-management routes under `/agents` are owner-scoped configuration, not
   project data; their existing permission/ownership checks remain. JWT-only
