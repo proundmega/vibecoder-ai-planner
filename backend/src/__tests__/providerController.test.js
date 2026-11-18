@@ -328,6 +328,55 @@ describe('Provider Controller', () => {
       expect(params).toContain('https://opencode.ai/zen/v1');
       expect(params.filter(value => value === 'https://opencode.ai/zen/v1')).toHaveLength(2);
     });
+
+    it('moves the built-in endpoint when switching opencode to opencode-go', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ ...existingOpenCode }] })
+        .mockResolvedValueOnce({
+          rows: [{
+            ...existingOpenCode,
+            provider_type: 'opencode-go',
+            base_url: 'https://opencode.ai/zen/go/v1',
+            endpoint_url: 'https://opencode.ai/zen/go/v1',
+          }],
+        });
+
+      mockReq.params.id = '5';
+      mockReq.body = { providerType: 'opencode-go' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(nextFn).not.toHaveBeenCalled();
+      const [, params] = pool.query.mock.calls[1];
+      expect(params.filter(value => value === 'https://opencode.ai/zen/go/v1')).toHaveLength(2);
+    });
+
+    it('keeps a custom endpoint when switching between OpenCode types', async () => {
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{
+            ...existingOpenCode,
+            base_url: 'https://proxy.internal/zen/v1',
+            endpoint_url: 'https://proxy.internal/zen/v1',
+          }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{
+            ...existingOpenCode,
+            provider_type: 'opencode-go',
+            base_url: 'https://proxy.internal/zen/v1',
+            endpoint_url: 'https://proxy.internal/zen/v1',
+          }],
+        });
+
+      mockReq.params.id = '5';
+      mockReq.body = { providerType: 'opencode-go' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      const [, params] = pool.query.mock.calls[1];
+      expect(params.filter(value => value === 'https://proxy.internal/zen/v1')).toHaveLength(2);
+    });
   });
 
   describe('deleteProvider', () => {
@@ -431,8 +480,31 @@ describe('Provider Controller', () => {
       });
     });
 
-    it('should fall back to endpoint_url when base_url is blank', async () => {
+    it('requires a base URL for a custom provider with no endpoint', async () => {
       pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 4,
+          name: 'custom-provider',
+          provider_type: 'custom',
+          api_key_encrypted: 'encrypted-key',
+          model: 'custom-model',
+          max_tokens: 4096,
+          temperature: 0.1,
+          base_url: null,
+          endpoint_url: null,
+        }],
+      });
+
+      mockReq.params.id = '4';
+
+      await providerController.testProvider(mockReq, mockRes, nextFn);
+
+      expect(nextFn).toHaveBeenCalledWith(expect.objectContaining({
+        message: 'Base URL is required for this provider type',
+      }));
+    });
+
+    it('should fall back to endpoint_url when base_url is blank', async () => {      pool.query.mockResolvedValueOnce({
         rows: [{
           id: 3,
           name: 'opencode-proxy',

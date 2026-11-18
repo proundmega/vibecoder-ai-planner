@@ -154,10 +154,11 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { listProviders, addProvider, updateProvider, deleteProvider, testProvider, setDirector } from '@/api/providers'
+import { listProviders, addProvider, updateProvider, deleteProvider, testProvider, setDirector, fetchProviderDefaults } from '@/api/providers'
 import VButton from '@/components/VButton.vue'
 
 const providers = ref([])
+const providerDefaults = ref({})
 const loading = ref(true)
 const error = ref(null)
 const showAddForm = ref(false)
@@ -165,7 +166,7 @@ const editingProvider = ref(null)
 const testingId = ref(null)
 const testResult = ref(null)
 
-const providerTypes = [
+const BASE_PROVIDER_TYPES = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'opencode', label: 'OpenCode (Zen)' },
@@ -190,14 +191,29 @@ const newProvider = ref({
   is_project_director: false,
 })
 
-const ENDPOINT_PROVIDER_TYPES = ['ollama', 'vllm', 'llamacpp', 'custom', 'opencode', 'opencode-go']
+const ENDPOINT_PROVIDER_TYPES = ['ollama', 'vllm', 'llamacpp', 'custom']
+
+function providerDefault(type) {
+  return providerDefaults.value[type] || null
+}
+
+const providerTypes = computed(() => BASE_PROVIDER_TYPES.map(providerType => ({
+  ...providerType,
+  // The backend owns the OpenCode labels/endpoints; fall back to the static
+  // label only while the defaults request is in flight.
+  label: providerDefault(providerType.value)?.label || providerType.label,
+})))
 
 function needsEndpoint(type) {
-  return ENDPOINT_PROVIDER_TYPES.includes(type)
+  return Boolean(providerDefault(type)) || ENDPOINT_PROVIDER_TYPES.includes(type)
+}
+
+function requiresModel(type) {
+  return Boolean(providerDefault(type)?.requiresModel)
 }
 
 const newProviderRequiresModel = computed(() =>
-  ['opencode', 'opencode-go'].includes(newProvider.value.providerType)
+  requiresModel(newProvider.value.providerType)
 )
 
 const newProviderModelPlaceholder = computed(() =>
@@ -207,9 +223,7 @@ const newProviderModelPlaceholder = computed(() =>
 )
 
 function endpointPlaceholder(type) {
-  if (type === 'opencode') return 'https://opencode.ai/zen/v1'
-  if (type === 'opencode-go') return 'https://opencode.ai/zen/go/v1'
-  return 'http://localhost:11434/v1'
+  return providerDefault(type)?.endpointUrl || 'http://localhost:11434/v1'
 }
 
 const newProviderEndpointPlaceholder = computed(() =>
@@ -217,7 +231,7 @@ const newProviderEndpointPlaceholder = computed(() =>
 )
 
 const newProviderEndpointOptional = computed(() =>
-  ['opencode', 'opencode-go'].includes(newProvider.value.providerType)
+  Boolean(providerDefault(newProvider.value.providerType))
 )
 
 const editEndpointPlaceholder = computed(() =>
@@ -225,11 +239,11 @@ const editEndpointPlaceholder = computed(() =>
 )
 
 const editEndpointOptional = computed(() =>
-  ['opencode', 'opencode-go'].includes(editingProvider.value?.providerType)
+  Boolean(providerDefault(editingProvider.value?.providerType))
 )
 
 const editRequiresModel = computed(() =>
-  ['opencode', 'opencode-go'].includes(editingProvider.value?.providerType)
+  requiresModel(editingProvider.value?.providerType)
 )
 
 const editProvider = ref({})
@@ -243,6 +257,17 @@ const loadProviders = async () => {
     error.value = e.message || 'Failed to load providers'
   } finally {
     loading.value = false
+  }
+}
+
+const loadProviderDefaults = async () => {
+  try {
+    const defaults = await fetchProviderDefaults()
+    providerDefaults.value = Object.fromEntries(
+      (defaults || []).map(defaultsEntry => [defaultsEntry.type, defaultsEntry])
+    )
+  } catch {
+    providerDefaults.value = {}
   }
 }
 
@@ -296,8 +321,12 @@ const handleUpdateProvider = async () => {
     const updates = {
       name: editProvider.value.name,
       model: model || undefined,
-      endpoint_url: editProvider.value.endpoint_url || undefined,
       fallback_provider: editProvider.value.fallback_provider,
+    }
+    if (needsEndpoint(editingProvider.value.providerType)) {
+      // Send an empty string when cleared so the backend can reset the
+      // endpoint (OpenCode falls back to its built-in default).
+      updates.endpoint_url = (editProvider.value.endpoint_url || '').trim()
     }
     if (editProvider.value.apiKey) {
       updates.apiKey = editProvider.value.apiKey
@@ -342,7 +371,10 @@ const handleTestProvider = async (id) => {
   }
 }
 
-onMounted(loadProviders)
+onMounted(() => {
+  loadProviderDefaults()
+  loadProviders()
+})
 </script>
 
 <style scoped>

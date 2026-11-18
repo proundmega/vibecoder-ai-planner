@@ -140,13 +140,26 @@ async function updateProvider(req, res, next) {
     const providerTypeChanged = providerType !== undefined && providerType !== existingRow.provider_type;
     const endpointProvided = baseUrl !== undefined || endpoint_url !== undefined;
     if (providerTypeChanged || endpointProvided) {
-      const resolvedEndpoint = endpointProvided
-        ? resolveProviderEndpoint({ providerType: effectiveProviderType, baseUrl, endpointUrl: endpoint_url })
-        : resolveProviderEndpoint({
+      let resolvedEndpoint;
+      if (endpointProvided) {
+        resolvedEndpoint = resolveProviderEndpoint({
           providerType: effectiveProviderType,
+          baseUrl,
+          endpointUrl: endpoint_url,
+        });
+      } else {
+        // When only the type changes, keep a custom endpoint but move a
+        // built-in default to the new type's default (opencode ↔ opencode-go).
+        const previousEndpoint = resolveProviderEndpoint({
+          providerType: existingRow.provider_type,
           baseUrl: existingRow.base_url,
           endpointUrl: existingRow.endpoint_url,
         });
+        const previousDefault = getProviderDefaults(existingRow.provider_type)?.endpointUrl;
+        resolvedEndpoint = previousEndpoint && previousEndpoint !== previousDefault
+          ? previousEndpoint
+          : (defaults?.endpointUrl || null);
+      }
       updates.push(`base_url = $${paramIndex++}`);
       values.push(resolvedEndpoint);
       updates.push(`endpoint_url = $${paramIndex++}`);

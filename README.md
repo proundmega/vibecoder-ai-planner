@@ -121,7 +121,7 @@ Required for `docker compose up`:
 | `PROJECT_ID` | Project to work on | `1` |
 | `REPO_OWNER` | GitHub org/user | _(required)_ |
 | `REPO_NAME` | GitHub repo name | _(required)_ |
-| `AI_PROVIDER` | AI provider (`claude`, `openai`, `opencode`, `opencode-go`, or an OpenAI-compatible type) | `claude` |
+| `AI_PROVIDER` | AI provider (`claude`, `openai`, `opencode`, `opencode-go`, `generic`, `custom`, `ollama`, `vllm`, `llamacpp`) | `claude` |
 | `AI_MODEL` | AI model | `claude-sonnet-4-20250514` |
 | `AI_API_KEY` | AI provider API key | _(required)_ |
 | `AI_ENDPOINT_URL` | OpenAI-compatible endpoint; required for `generic`/`ollama`/`vllm`/`llamacpp` and for an OpenCode agent when no backend provider config is available | _(provider default)_ |

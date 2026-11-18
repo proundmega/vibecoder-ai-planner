@@ -5,6 +5,7 @@ const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
 const providerController = require('../controllers/providerController');
 const { addProviderSchema, updateProviderSchema } = require('../validators/providers');
+const { providerCatalog } = require('../utils/providerDefaults');
 const ProviderService = require('../services/ProviderService');
 
 /**
@@ -59,6 +60,20 @@ const deprecatedRoute = (req, res) => {
 router.use('/projects/:projectId/provider', deprecatedRoute);
 router.use('/projects/:projectId/providers', deprecatedRoute);
 router.use('/projects/:projectId/providers/', deprecatedRoute);
+
+/**
+ * @openapi
+ * /providers/defaults:
+ *   get:
+ *     tags: [Providers]
+ *     summary: List built-in provider defaults
+ *     responses:
+ *       200:
+ *         description: Provider type catalog with default endpoints and model rules
+ */
+router.get('/defaults', verifyToken, (req, res) => {
+  res.json({ success: true, data: providerCatalog() });
+});
 
 /**
  * @openapi

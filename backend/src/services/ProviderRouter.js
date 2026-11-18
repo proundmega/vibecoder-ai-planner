@@ -76,7 +76,7 @@ class ProviderRouter {
       case 'vllm':
       case 'llamacpp':
       case 'custom':
-        return new GenericProvider(config);
+        return new GenericProvider({ ...config, providerType: type });
       default:
         throw new Error(`Unknown provider type: ${type}`);
     }

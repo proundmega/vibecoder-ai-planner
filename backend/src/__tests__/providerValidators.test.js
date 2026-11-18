@@ -33,13 +33,12 @@ describe('provider validators', () => {
   });
 
   describe('updateProviderSchema', () => {
-    it('requires a model when switching a provider to OpenCode', () => {
+    it('allows a type-only switch; the controller validates the resulting row', () => {
       const { error } = updateProviderSchema.validate({
         providerType: 'opencode',
       });
 
-      expect(error).toBeDefined();
-      expect(error.details[0].message).toContain('model is required');
+      expect(error).toBeUndefined();
     });
 
     it('accepts a type switch to OpenCode with a model', () => {

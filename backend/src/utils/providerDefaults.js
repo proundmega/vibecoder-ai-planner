@@ -29,6 +29,19 @@ function providerTypesRequiringModel() {
 }
 
 /**
+ * Public, serialisable view of the built-in defaults. The Providers UI reads
+ * this instead of duplicating endpoints/model rules in the frontend.
+ */
+function providerCatalog() {
+  return Object.entries(PROVIDER_DEFAULTS).map(([type, defaults]) => ({
+    type,
+    label: defaults.label,
+    endpointUrl: defaults.endpointUrl,
+    requiresModel: Boolean(defaults.requiresModel),
+  }));
+}
+
+/**
  * Treat blank strings as "not configured". The database can hold '' (for
  * example from an old form), and an empty string must never win over a real
  * endpoint in any agent path.
@@ -55,6 +68,7 @@ module.exports = {
   PROVIDER_DEFAULTS,
   getProviderDefaults,
   providerTypesRequiringModel,
+  providerCatalog,
   normaliseEndpoint,
   resolveProviderEndpoint,
 };

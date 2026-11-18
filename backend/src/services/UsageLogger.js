@@ -6,8 +6,8 @@ const logger = require('../utils/logger');
 class UsageLogger {
   static async log(projectId, userId, agentId, providerType, model, usage, durationMs, ticketId = null, options = {}) {
     const { planningStage, fileKey, rawUsage } = options;
-    const tokensIn = usage?.input_tokens || usage?.tokens_in || 0;
-    const tokensOut = usage?.output_tokens || usage?.tokens_out || 0;
+    const tokensIn = usage?.input_tokens ?? usage?.tokens_in ?? usage?.prompt_tokens ?? 0;
+    const tokensOut = usage?.output_tokens ?? usage?.tokens_out ?? usage?.completion_tokens ?? 0;
     const cost = calculateCost(model, tokensIn, tokensOut);
 
     await pool.query(

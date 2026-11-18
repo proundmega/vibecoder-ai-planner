@@ -1,6 +1,7 @@
 const {
   normaliseEndpoint,
   resolveProviderEndpoint,
+  providerCatalog,
 } = require('../utils/providerDefaults');
 
 describe('provider endpoint resolution', () => {
@@ -40,5 +41,22 @@ describe('provider endpoint resolution', () => {
 
   it('returns null when nothing is configured', () => {
     expect(resolveProviderEndpoint({ providerType: 'openai' })).toBeNull();
+  });
+
+  it('exposes the defaults catalog for the UI', () => {
+    expect(providerCatalog()).toEqual([
+      {
+        type: 'opencode',
+        label: 'OpenCode (Zen)',
+        endpointUrl: 'https://opencode.ai/zen/v1',
+        requiresModel: true,
+      },
+      {
+        type: 'opencode-go',
+        label: 'OpenCode Go',
+        endpointUrl: 'https://opencode.ai/zen/go/v1',
+        requiresModel: true,
+      },
+    ]);
   });
 });

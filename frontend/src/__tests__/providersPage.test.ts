@@ -5,6 +5,7 @@ import * as providersApi from '@/api/providers'
 
 vi.mock('@/api/providers', () => ({
   listProviders: vi.fn(),
+  fetchProviderDefaults: vi.fn(),
   addProvider: vi.fn(),
   updateProvider: vi.fn(),
   deleteProvider: vi.fn(),
@@ -18,6 +19,10 @@ describe('ProvidersPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubGlobal('confirm', vi.fn(() => true))
+    ;(providersApi.fetchProviderDefaults as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { type: 'opencode', label: 'OpenCode (Zen)', endpointUrl: 'https://opencode.ai/zen/v1', requiresModel: true },
+      { type: 'opencode-go', label: 'OpenCode Go', endpointUrl: 'https://opencode.ai/zen/go/v1', requiresModel: true },
+    ])
   })
 
   afterEach(() => {
@@ -341,8 +346,59 @@ describe('ProvidersPage', () => {
     )
   })
 
-  it('rejects clearing the model of an OpenCode provider in the edit form', async () => {
+  it('sends an empty endpoint when the field is cleared so the backend can reset it', async () => {
     const provider = {
+      id: '1',
+      name: 'OpenCode Zen',
+      providerType: 'opencode',
+      model: 'kimi-k2.6',
+      endpoint_url: 'https://proxy.internal/zen/v1',
+      is_project_director: false,
+      is_active: true,
+    }
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([provider])
+    ;(providersApi.updateProvider as ReturnType<typeof vi.fn>).mockResolvedValue(provider)
+    wrapper = mount(ProvidersPage, mountOptions)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const editButton = wrapper.findAll('button').find(b => b.text() === 'Edit')
+    expect(editButton).toBeDefined()
+    await editButton!.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const endpoint = wrapper.find('.edit-form input[placeholder="https://opencode.ai/zen/v1"]')
+    await endpoint.setValue('')
+    const save = wrapper.findAll('.edit-form button')[0]
+    await save.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(providersApi.updateProvider).toHaveBeenCalledWith(
+      '1',
+      expect.objectContaining({ endpoint_url: '' })
+    )
+  })
+
+  it('shows the endpoint field for a custom provider', async () => {
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    wrapper = mount(ProvidersPage, mountOptions)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    const buttons = wrapper.findAll('button')
+    await buttons[0].trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.find('select').setValue('custom')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('input[placeholder="http://localhost:11434/v1"]').exists()).toBe(true)
+  })
+
+  it('rejects clearing the model of an OpenCode provider in the edit form', async () => {    const provider = {
       id: '1',
       name: 'OpenCode Zen',
       providerType: 'opencode',
