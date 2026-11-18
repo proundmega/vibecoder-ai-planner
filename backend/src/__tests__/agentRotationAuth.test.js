@@ -34,6 +34,7 @@ describe('Agent key management authorization', () => {
   let findByIdSpy;
   let rotateSpy;
   let revokeSpy;
+  let deleteSpy;
 
   function asUser(userId, role) {
     jwt.verify.mockReturnValue({ userId, email: 'user@test.com', role });
@@ -54,12 +55,14 @@ describe('Agent key management authorization', () => {
       api_key_expires_at: new Date('2027-01-01T00:00:00Z'),
     });
     revokeSpy = jest.spyOn(AgentService, 'revokeApiKey').mockResolvedValue(undefined);
+    deleteSpy = jest.spyOn(AgentService, 'delete').mockResolvedValue(undefined);
   });
 
   afterEach(() => {
     findByIdSpy.mockRestore();
     rotateSpy.mockRestore();
     revokeSpy.mockRestore();
+    deleteSpy.mockRestore();
   });
 
   it('allows a project_admin to rotate an agent it owns', async () => {
@@ -128,5 +131,38 @@ describe('Agent key management authorization', () => {
 
     expect(res.statusCode).toBe(404);
     expect(revokeSpy).not.toHaveBeenCalled();
+  });
+
+  it('allows a project_admin to delete an agent it owns', async () => {
+    asUser('owner-1', 'project_admin');
+
+    const res = await request(app)
+      .delete('/api/v1/agents/a1')
+      .set('Authorization', 'Bearer mock-token');
+
+    expect(res.statusCode).toBe(200);
+    expect(deleteSpy).toHaveBeenCalledWith('a1');
+  });
+
+  it('allows a super_admin to delete another owner’s agent', async () => {
+    asUser('admin-1', 'super_admin');
+
+    const res = await request(app)
+      .delete('/api/v1/agents/a1')
+      .set('Authorization', 'Bearer mock-token');
+
+    expect(res.statusCode).toBe(200);
+    expect(deleteSpy).toHaveBeenCalledWith('a1');
+  });
+
+  it('returns 404 when a project_admin deletes another owner’s agent', async () => {
+    asUser('other-1', 'project_admin');
+
+    const res = await request(app)
+      .delete('/api/v1/agents/a1')
+      .set('Authorization', 'Bearer mock-token');
+
+    expect(res.statusCode).toBe(404);
+    expect(deleteSpy).not.toHaveBeenCalled();
   });
 });

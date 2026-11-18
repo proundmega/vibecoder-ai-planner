@@ -24,22 +24,26 @@ describe('AgentDetail', () => {
     vi.clearAllMocks()
   })
 
-  async function createWrapper(role) {
+  async function createWrapper(role, ownerId = 'user-1') {
     const { useAuthStore } = await import('@/stores/auth')
     useAuthStore.mockImplementation(() => ({
-      user: { value: { role } },
+      user: { value: { id: 'user-1', role } },
       canRevokeAgent: () => role === 'super_admin' || role === 'project_admin',
       canDeleteAgent: () => role === 'super_admin' || role === 'project_admin',
     }))
 
     const { fetchAgentDetail, getAgentKeyInfo } = await import('@/api/agents')
-    fetchAgentDetail.mockResolvedValue({ agent_id: 'agent-1', agent_name: 'Test Agent', status: 'online' })
+    fetchAgentDetail.mockResolvedValue({
+      agent_id: 'agent-1',
+      agent_name: 'Test Agent',
+      owner_id: ownerId,
+      status: 'online',
+    })
     getAgentKeyInfo.mockResolvedValue({
       name: 'Test Agent',
       agentId: 'agent-1',
       providerId: null,
       providerName: null,
-      keyAvailable: false,
       expiresAt: null,
       rateLimit: 100,
       maxActionsPerDay: 1000,
@@ -70,6 +74,13 @@ describe('AgentDetail', () => {
     const wrapper = await createWrapper('project_admin')
     expect(wrapper.find('.btn-secondary').text()).toContain('Rotate API Key')
     expect(wrapper.find('.btn-danger-outline').text()).toContain('Revoke API Key')
+  })
+
+  it('hides actions for a project_admin who does not own the agent', async () => {
+    const wrapper = await createWrapper('project_admin', 'other-user')
+    expect(wrapper.find('.btn-secondary').exists()).toBe(false)
+    expect(wrapper.find('.btn-danger-outline').exists()).toBe(false)
+    expect(wrapper.find('.btn-danger').exists()).toBe(false)
   })
 
   it('does NOT render Delete button for user role', async () => {

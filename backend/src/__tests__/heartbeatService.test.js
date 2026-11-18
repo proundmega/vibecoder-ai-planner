@@ -185,6 +185,7 @@ describe('HeartbeatService', () => {
         {
           agent_id: 1,
           name: 'Agent 1',
+          owner_id: 7,
           status: 'online',
           current_ticket_id: 'ticket-1',
           current_ticket_title: 'Fix login bug',
@@ -195,6 +196,7 @@ describe('HeartbeatService', () => {
         {
           agent_id: 2,
           name: 'Agent 2',
+          owner_id: 8,
           status: 'offline',
           current_ticket_id: null,
           current_ticket_title: null,
@@ -208,8 +210,10 @@ describe('HeartbeatService', () => {
       const result = await heartbeatService.getAllAgents();
       expect(result).toHaveLength(2);
       expect(result[0].agent_id).toBe(1);
+      expect(result[0].owner_id).toBe(7);
       expect(result[0].actions_today).toBe(5);
       expect(result[1].status).toBe('offline');
+      expect(mockPool.query.mock.calls[0][0]).toContain('a.owner_id');
     });
 
     test('should return empty array when no agents have heartbeats', async () => {

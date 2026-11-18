@@ -105,7 +105,6 @@ describe('Agent API - Key Masking', () => {
       .set('Authorization', 'Bearer mock-token');
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.keyAvailable).toBe(false);
     expect(res.body.keyStatus).toBe('active');
     expect(res.body).not.toHaveProperty('keyPreview');
     expect(res.body).not.toHaveProperty('api_key');

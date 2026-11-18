@@ -21,8 +21,21 @@ const actionLoading = ref(false)
 const rotating = ref(false)
 const actionError = ref(null)
 
-const canRevoke = computed(() => authStore.canRevokeAgent())
-const canDelete = computed(() => authStore.canDeleteAgent())
+const currentUser = computed(() => {
+  const raw = authStore.user
+  return raw && typeof raw === 'object' && 'value' in raw ? raw.value : raw
+})
+const isSuperAdmin = computed(() => currentUser.value?.role === 'super_admin')
+const isOwner = computed(() => {
+  const ownerId = agent.value?.owner_id
+  const userId = currentUser.value?.id
+  return ownerId !== undefined && ownerId !== null
+    && userId !== undefined && userId !== null
+    && String(ownerId) === String(userId)
+})
+const canManageAgent = computed(() => isSuperAdmin.value || isOwner.value)
+const canRevoke = computed(() => authStore.canRevokeAgent() && canManageAgent.value)
+const canDelete = computed(() => authStore.canDeleteAgent() && canManageAgent.value)
 const agentId = computed(() => agent.value?.agent_id || agent.value?.id || route.params.id)
 const displayName = computed(() =>
   agent.value?.agent_name || agent.value?.name || `Agent ${agentId.value}`
@@ -62,8 +75,12 @@ function formatDate(dateStr) {
 
 const keyStatusLabel = computed(() => {
   if (!keyInfo.value) return 'Unavailable'
-  if (keyInfo.value.keyStatus === 'revoked') return 'Revoked — rotate to issue a new key'
-  if (keyInfo.value.keyStatus === 'expired') return 'Expired — rotate to issue a new key'
+  if (keyInfo.value.keyStatus === 'revoked') {
+    return canRevoke.value ? 'Revoked — rotate to issue a new key' : 'Revoked'
+  }
+  if (keyInfo.value.keyStatus === 'expired') {
+    return canRevoke.value ? 'Expired — rotate to issue a new key' : 'Expired'
+  }
   return 'Hidden — shown only at creation or rotation'
 })
 

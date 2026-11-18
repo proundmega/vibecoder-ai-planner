@@ -48,6 +48,7 @@ class HeartbeatService {
       `SELECT
         a.id as agent_id,
         a.name,
+        a.owner_id,
         COALESCE(ah.status, 'offline') as status,
         ah.current_ticket_id,
         t.title as current_ticket_title,
@@ -59,7 +60,7 @@ class HeartbeatService {
       LEFT JOIN agent_heartbeats ah ON ah.agent_id = a.id
       LEFT JOIN tickets t ON t.id = ah.current_ticket_id
       LEFT JOIN agent_actions aa ON aa.agent_id = a.id AND aa.created_at >= CURRENT_DATE
-      GROUP BY a.id, a.name, ah.status, ah.current_ticket_id, t.title, ah.last_seen, ah.current_step
+      GROUP BY a.id, a.name, a.owner_id, ah.status, ah.current_ticket_id, t.title, ah.last_seen, ah.current_step
       ORDER BY ah.last_seen DESC NULLS LAST`
     );
     return result.rows;

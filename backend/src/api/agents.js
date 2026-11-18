@@ -206,9 +206,15 @@ router.put('/:agentId', verifyTokenOrAgent, requireAnyPermission('AGENT_REVOKE')
  *         description: Agent deleted
  *       400:
  *         description: Deletion failed
+ *       404:
+ *         description: Agent not found
  */
-router.delete('/:agentId', verifyTokenOrAgent, requireAnyPermission('AGENT_DELETE'), async (req, res) => {
+router.delete('/:agentId', verifyToken, requireAnyPermission('AGENT_DELETE'), async (req, res) => {
   try {
+    const agent = await findManageableAgent(req, req.params.agentId);
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
     await AgentService.delete(req.params.agentId);
     res.json({ message: 'Agent deleted' });
   } catch (error) {
@@ -304,7 +310,6 @@ router.get('/:agentId/history', verifyTokenOrAgent, requireAnyPermission('AGENT_
  *                 agentId: { type: integer }
  *                 providerId: { type: integer, nullable: true }
  *                 providerName: { type: string, nullable: true }
- *                 keyAvailable: { type: boolean }
  *                 keyStatus:
  *                   type: string
  *                   enum: [active, expired, revoked]
@@ -338,7 +343,6 @@ router.get('/:agentId/key', verifyToken, requireAnyPermission('AGENT_READ'), asy
       providerName: agent.provider_name || null,
       // The plaintext key is never stored, so it cannot be previewed. Rotating
       // the key is the only way to obtain a new one.
-      keyAvailable: false,
       keyStatus,
       expiresAt,
       rateLimit: agent.rate_limit,

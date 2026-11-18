@@ -5,7 +5,6 @@ export interface AgentKeyInfo {
   agentId: number
   providerId: number | null
   providerName: string | null
-  keyAvailable: boolean
   keyStatus: 'active' | 'expired' | 'revoked'
   expiresAt: string | null
   rateLimit: number
@@ -39,6 +38,7 @@ export interface AgentHistorySummary {
 export interface AgentStatus {
   agent_id: number
   name: string
+  owner_id: number
   status: string
   last_seen: string
   current_ticket_id: number | null

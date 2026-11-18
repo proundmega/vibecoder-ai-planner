@@ -4602,6 +4602,9 @@
           },
           "400": {
             "description": "Deletion failed"
+          },
+          "404": {
+            "description": "Agent not found"
           }
         }
       }
@@ -4669,9 +4672,6 @@
                     "providerName": {
                       "type": "string",
                       "nullable": true
-                    },
-                    "keyAvailable": {
-                      "type": "boolean"
                     },
                     "keyStatus": {
                       "type": "string",
