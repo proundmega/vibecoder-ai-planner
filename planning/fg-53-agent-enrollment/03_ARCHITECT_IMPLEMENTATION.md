@@ -14,8 +14,9 @@
 2. **Auth middleware and project scope** — dispatch `at_…` access tokens and
    legacy `ak_…` keys, enforce expiry/revocation centrally, load
    `project_id` into `req.agent`, and add the project-scope assertion used by
-   ticket and other agent-facing project routes. Verify: `api-agent-auth`,
-   heartbeat-expiry and cross-project tests.
+   ticket and other agent-facing project routes; make harness project
+   observability/privacy/budget/kill-switch routes JWT-only. Verify:
+   `api-agent-auth`, heartbeat-expiry and cross-project tests.
 3. **Enrollment routes** — validators, rate limiters, generic failures, audit
    events, OpenAPI annotations, flag gating. Verify: route tests + bash suite.
 4. **Revocation, replay and retention** — cascade agent delete/revoke to token
@@ -60,6 +61,7 @@
 | `backend/src/api/repoProfiles.js` | MODIFY | Apply the project-scope assertion to agent repo-profile routes |
 | `backend/src/api/review.js` | MODIFY | Apply the project-scope assertion to the agent local-diff route |
 | `backend/src/api/harnessRuns.js` | MODIFY | Apply the project-scope assertion to agent lease/run routes |
+| `backend/src/api/harnessObservability.js` | MODIFY | Make project observability/privacy/budget/kill-switch routes JWT-only; keep run-scoped agent routes project-asserted |
 | `backend/src/api/v1/agentHeartbeat.js` | MODIFY | Use shared agent auth; enforce expiry on heartbeat and status paths |
 | `backend/src/services/AgentService.js` | MODIFY | Revocation cascade, `project_id` persistence/return, enrollment metadata, key-preview honesty |
 | `backend/src/metrics.js` | MODIFY | Enrollment/refresh and auth-failure counters/histograms |
@@ -76,7 +78,8 @@
 | `agent/docker-compose.remote.yml.example` | CREATE | Remote-worker template without the API's Compose network |
 | `agent/.env.example` | MODIFY | `AGENT_ID`, enrollment/credential variables, TLS note |
 | `agent/scripts/agent-enrollment-smoke.sh` | CREATE | Docker enroll → restart-with-volume check |
-| `backend/src/__tests__/agentProjectScope.test.js` | CREATE | Cross-project ticket read/list/write, planning, GitHub, harness and credential scope matrix |
+| `backend/src/__tests__/agentProjectScope.test.js` | CREATE | Cross-project ticket read/list/write/create, planning, GitHub, harness and credential scope matrix |
+| `backend/src/__tests__/harnessObservabilityAuth.test.js` | CREATE | Agent tokens rejected on project observability/privacy/budget/kill-switch routes; JWT membership checks |
 | `backend/src/__tests__/integration/agentEnrollmentLoad.test.js` | CREATE | 100 enrollments / 1,000 refreshes with p95 evidence |
 | `backend/src/__tests__/agentEnrollmentMetrics.test.js` | CREATE | Enrollment/refresh/replay-cache-hit/reuse/failure counter assertions |
 | `backend/package.json` | MODIFY | Add the `test:load:agent-enrollment` script |
@@ -129,7 +132,7 @@
 | FR16 | frontend unit | `frontend/src/__tests__/agentEnrollmentModal.test.ts`, `api-agentEnrollment.test.ts` | [FR16] one-time display/copy; list/revoke; permission gating; no localStorage | `cd frontend && npm test -- --run` |
 | FR17 | shell/config | `agent/docker-compose.yml`, `agent/docker-compose.remote.yml.example`, `agent/.env.example` | [FR17] Compose config includes `AGENT_ID`; remote template has no external API network; env docs list enrollment vars | `docker compose -f agent/docker-compose.yml config`; `docker compose -f agent/docker-compose.remote.yml.example config` |
 | NFR1 | backend unit | `backend/src/__tests__/agentEnrollmentService.test.js` | [NFR1] responses/logs/events contain no raw token; hash-only token rows; replay cache is encrypted, TTL-bounded and returns only the matching retry | `cd backend && npm test` |
-| NFR2 | backend unit + integration | `backend/src/__tests__/agentEnrollmentPermissions.test.js`, `agentProjectScope.test.js`, `src/__tests__/integration/agentEnrollment.test.js` | [NFR2] owner/member/admin/stranger matrix; cross-project token use fails; enrolled agent cannot create/list/read/pick up/edit/release another project’s ticket, planning, GitHub or harness resource; credential access and token purge keep scope | `cd backend && npm test && npm run test:integration` |
+| NFR2 | backend unit + integration | `backend/src/__tests__/agentEnrollmentPermissions.test.js`, `agentProjectScope.test.js`, `harnessObservabilityAuth.test.js`, `src/__tests__/integration/agentEnrollment.test.js` | [NFR2] owner/member/admin/stranger matrix; cross-project token use fails; enrolled agent cannot create/list/read/pick up/edit/release another project’s ticket, planning, GitHub or harness resource, and is rejected from project observability/privacy/budget/kill-switch routes; credential access and token purge keep scope | `cd backend && npm test && npm run test:integration` |
 | NFR3 | agent unit + frontend unit | `AgentCredentialStoreTest.java`, `agentEnrollmentModal.test.ts` | [NFR3] 0600 atomic write, temp cleanup; no secret in Pinia/localStorage | `cd agent && mvn test`; `cd frontend && npm test -- --run` |
 | NFR4 | backend integration + load | `backend/src/__tests__/integration/agentEnrollmentLoad.test.js` | [NFR4] indexed lookups; 100 enrollments and 1,000 refreshes with p95 targets from `02` | `cd backend && npm run test:load:agent-enrollment` |
 | NFR5 | backend integration + bash | migration rollback test, `agent_enrollment.test.sh` | [NFR5] legacy keys pass; rollback succeeds; flag-off behavior | `cd backend && npm run test:integration`; `bash integration-test/run.sh --only` |
@@ -172,7 +175,8 @@ cd backend  && bash integration-test/run.sh --only
 | 0 | pending | | | |
 | 1 | independent review (PR #173) | Project scoping was not stored/enforced; refresh replay could revoke a concurrent/lost-response winner. | Added `agents.project_id` + route enforcement and tests; added refresh `family_id` + grace window and concurrent/lost-response/reuse tests. Non-blocking verification, metrics, credential-file, decision, index and retention-index gaps also closed. | superseded by round 2 |
 | 2 | independent review (PR #173) | Grace replay could mint a fresh pair for a stolen old token; project scope missed ticket read/list and several agent routes. | Replaced grace with an encrypted idempotency replay cache (same key → same pair; different/absent key → family revoke) and negative theft tests; added the exhaustive agent route inventory and read/list cross-project tests. | superseded by round 3 |
-| 3 | independent review (PR #173) | `POST /projects/:id/tickets` missing from the inventory/enforcement; client timer/401 refreshes could race with different keys; heartbeat method typo; duplicate `TicketService.js` row. | Added route/controller/`TicketService.create` scope + create test; specified single-flight refresh and coalescing; corrected `POST /agents-status/:id/heartbeat`; merged the file row. | pending |
+| 3 | independent review (PR #173) | `POST /projects/:id/tickets` missing from the inventory/enforcement; client timer/401 refreshes could race with different keys; heartbeat method typo; duplicate `TicketService.js` row. | Added route/controller/`TicketService.create` scope + create test; specified single-flight refresh and coalescing; corrected `POST /agents-status/:id/heartbeat`; merged the file row. | superseded by round 4 |
+| 4 | independent review (PR #173) | Harness project observability/privacy/budget/kill-switch routes were agent-authenticated without project scope; idempotency-key wire convention inconsistent. | Made the project/global harness operator routes JWT-only and added auth tests; kept run-scoped agent routes project-asserted; standardized on the body `idempotency_key`; added the handler-auth provider-config route to the self-scoped inventory. | pending |
 
 ## Results
 

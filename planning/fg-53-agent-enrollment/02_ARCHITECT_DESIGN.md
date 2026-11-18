@@ -30,7 +30,7 @@ Two credentials are added:
 - **Node credentials** (`at_…` access + `ar_…` refresh): issued by enrollment.
   The access token is short-lived and used as the existing `X-API-Key`. The
   refresh token is stored on the node with mode `0600` and rotated on every
-  use. Refresh calls carry an `Idempotency-Key`; the same key returns the same
+  use. Refresh calls carry an `idempotency_key` field; the same key returns the same
   pair from the encrypted replay cache, while a different/absent key on a
   rotated token is treated as reuse. The agent coalesces timer and 401
   refresh triggers into one in-flight request per agent, so two independent
@@ -208,7 +208,7 @@ Refresh replay is handled by an idempotency key and an encrypted replay cache
 with a short TTL (`AGENT_REFRESH_REPLAY_CACHE_SECONDS`, default 60). The cache
 returns the same pair only for the same `(refresh_token_id, idempotency_key)`;
 a different/absent key on a rotated token is reuse and revokes the family. The
-`Idempotency-Key` is a 128-bit random value generated per refresh attempt and
+`idempotency_key` is a 128-bit random value generated per refresh attempt and
 reused only for that attempt's retries; it is not derived from the token.
 
 ## API contract
@@ -256,7 +256,7 @@ Request:
          (legacy agents with project_id NULL keep the owner-scoped check)
 
 Refresh:
-  ar_ + Idempotency-Key -> lookup FOR UPDATE
+  ar_ + idempotency_key -> lookup FOR UPDATE
       -> if not rotated: mark rotated + insert new pair (same family) +
          store encrypted response keyed by (refresh_token_id, key) -> COMMIT
       -> if rotated and the same key has an unexpired replay row:
@@ -319,7 +319,9 @@ Refresh:
   | `GET /harness/tickets/:ticketId/run`, `POST /harness/leases`, `POST /leases/:ticketId/renew`, `DELETE /leases/:ticketId` | ticket project | assert |
   | `GET /harness/agents/:agentId/runs`, `/workspaces` | self-scoped | require `req.agent.id === :agentId` |
   | `POST /harness/events`, `POST/GET /harness/runs/:runId/usage`, `GET /runs/:runId/{events,timeline}` | run → project | assert run/project matches |
+  | `GET /harness/projects/:projectId/{runs,events,audit,dashboard,usage,privacy-policy,budget-policy,kill-switch}`, `PUT .../{privacy-policy,budget-policy,kill-switch}`, `GET .../kill-switch/audit`, `POST .../privacy/delete`, `GET .../privacy/export`, `GET/PUT /harness/kill-switch` | JWT-only (operator) | change `verifyTokenOrAgent` → `verifyToken`; existing membership/role checks remain; agent tokens are rejected |
   | `POST /agents-status/:id/heartbeat`, `GET /agents/:agentId/provider-config/changed` | self-scoped | shared agent auth expiry/revocation; existing self check; no project data |
+  | `GET /agents/:agentId/provider-config` | self-scoped, handler auth | `X-API-Key` checked in handler; no project data |
 
   Agent-management routes under `/agents` are owner-scoped configuration, not
   project data; their existing permission/ownership checks remain. JWT-only
