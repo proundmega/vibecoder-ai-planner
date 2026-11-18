@@ -60,6 +60,40 @@ function formatDate(dateStr) {
   return dateStr ? new Date(dateStr).toLocaleString() : '—'
 }
 
+const keyStatusLabel = computed(() => {
+  if (!keyInfo.value) return 'Unavailable'
+  if (keyInfo.value.keyStatus === 'revoked') return 'Revoked — rotate to issue a new key'
+  if (keyInfo.value.keyStatus === 'expired') return 'Expired — rotate to issue a new key'
+  return 'Hidden — shown only at creation or rotation'
+})
+
+function openRevokeConfirm() {
+  actionError.value = null
+  showRevokeConfirm.value = true
+}
+
+function openDeleteConfirm() {
+  actionError.value = null
+  showDeleteConfirm.value = true
+}
+
+function openRotateConfirm() {
+  actionError.value = null
+  showRotateConfirm.value = true
+}
+
+function closeRotateConfirm() {
+  if (!rotating.value) showRotateConfirm.value = false
+}
+
+function closeRevokeConfirm() {
+  if (!actionLoading.value) showRevokeConfirm.value = false
+}
+
+function closeDeleteConfirm() {
+  if (!actionLoading.value) showDeleteConfirm.value = false
+}
+
 async function handleRevoke() {
   actionLoading.value = true
   actionError.value = null
@@ -167,7 +201,7 @@ async function handleDelete() {
           </div>
           <div>
             <dt>API key</dt>
-            <dd>{{ keyInfo ? 'Hidden — shown only at creation or rotation' : 'Unavailable' }}</dd>
+            <dd>{{ keyStatusLabel }}</dd>
           </div>
           <div>
             <dt>Key expires</dt>
@@ -208,54 +242,56 @@ async function handleDelete() {
       <div v-if="canRevoke || canDelete" class="actions-section">
         <h2>Actions</h2>
         <div class="actions-buttons">
-          <button v-if="canRevoke" class="btn-secondary" @click="showRotateConfirm = true" :disabled="actionLoading || rotating">
+          <button v-if="canRevoke" class="btn-secondary" @click="openRotateConfirm" :disabled="actionLoading || rotating">
             Rotate API Key
           </button>
-          <button v-if="canRevoke" class="btn-danger-outline" @click="showRevokeConfirm = true" :disabled="actionLoading">
+          <button v-if="canRevoke" class="btn-danger-outline" @click="openRevokeConfirm" :disabled="actionLoading">
             Revoke API Key
           </button>
-          <button v-if="canDelete" class="btn-danger" @click="showDeleteConfirm = true" :disabled="actionLoading">
+          <button v-if="canDelete" class="btn-danger" @click="openDeleteConfirm" :disabled="actionLoading">
             Delete Agent
           </button>
         </div>
-        <div v-if="actionError" class="error">{{ actionError }}</div>
       </div>
 
-      <div v-if="showRevokeConfirm" class="modal-overlay" @click.self="showRevokeConfirm = false">
+      <div v-if="showRevokeConfirm" class="modal-overlay" @click.self="closeRevokeConfirm">
         <div class="modal modal-sm">
           <h3>Revoke API Key</h3>
           <p>Are you sure you want to revoke the API key for <strong>{{ agent.agent_name || agent.name }}</strong>? The agent will no longer be able to make API calls.</p>
+          <p v-if="actionError" class="error modal-error">{{ actionError }}</p>
           <div class="modal-actions">
             <button class="btn-danger" @click="handleRevoke" :disabled="actionLoading">
               {{ actionLoading ? 'Revoking...' : 'Revoke' }}
             </button>
-            <button class="btn-cancel" @click="showRevokeConfirm = false" :disabled="actionLoading">Cancel</button>
+            <button class="btn-cancel" @click="closeRevokeConfirm" :disabled="actionLoading">Cancel</button>
           </div>
         </div>
       </div>
 
-      <div v-if="showRotateConfirm" class="modal-overlay" @click.self="showRotateConfirm = false">
+      <div v-if="showRotateConfirm" class="modal-overlay" @click.self="closeRotateConfirm">
         <div class="modal modal-sm">
           <h3>Rotate API Key</h3>
           <p>Rotate the key for <strong>{{ displayName }}</strong>? The current key stops working immediately, and the new key is shown only once.</p>
+          <p v-if="actionError" class="error modal-error">{{ actionError }}</p>
           <div class="modal-actions">
             <button class="btn-danger" @click="handleRotate" :disabled="rotating">
               {{ rotating ? 'Rotating...' : 'Rotate key' }}
             </button>
-            <button class="btn-cancel" @click="showRotateConfirm = false" :disabled="rotating">Cancel</button>
+            <button class="btn-cancel" @click="closeRotateConfirm" :disabled="rotating">Cancel</button>
           </div>
         </div>
       </div>
 
-      <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
+      <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="closeDeleteConfirm">
         <div class="modal modal-sm">
           <h3>Delete Agent</h3>
           <p>Are you sure you want to delete <strong>{{ agent.agent_name || agent.name }}</strong>? This action cannot be undone.</p>
+          <p v-if="actionError" class="error modal-error">{{ actionError }}</p>
           <div class="modal-actions">
             <button class="btn-danger" @click="handleDelete" :disabled="actionLoading">
               {{ actionLoading ? 'Deleting...' : 'Delete' }}
             </button>
-            <button class="btn-cancel" @click="showDeleteConfirm = false" :disabled="actionLoading">Cancel</button>
+            <button class="btn-cancel" @click="closeDeleteConfirm" :disabled="actionLoading">Cancel</button>
           </div>
         </div>
       </div>
@@ -264,6 +300,7 @@ async function handleDelete() {
         v-if="rotatedKey"
         :agent="rotatedKey"
         title="New API key"
+        intro="The new key is active. Save it before closing this dialog."
         warning="The previous key is now invalid. Store this key now — it will not be shown again."
         @close="rotatedKey = null"
       />
@@ -567,6 +604,13 @@ async function handleDelete() {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.modal p.modal-error {
+  padding: 0;
+  margin: -8px 0 16px;
+  text-align: left;
+  color: #ef4444;
 }
 
 .btn-cancel {

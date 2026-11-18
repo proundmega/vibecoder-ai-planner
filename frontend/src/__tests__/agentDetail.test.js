@@ -28,7 +28,7 @@ describe('AgentDetail', () => {
     const { useAuthStore } = await import('@/stores/auth')
     useAuthStore.mockImplementation(() => ({
       user: { value: { role } },
-      canRevokeAgent: () => role === 'super_admin',
+      canRevokeAgent: () => role === 'super_admin' || role === 'project_admin',
       canDeleteAgent: () => role === 'super_admin' || role === 'project_admin',
     }))
 
@@ -64,6 +64,12 @@ describe('AgentDetail', () => {
   it('renders Delete button when user is project_admin', async () => {
     const wrapper = await createWrapper('project_admin')
     expect(wrapper.find('.btn-danger').text()).toContain('Delete Agent')
+  })
+
+  it('renders Rotate and Revoke for project_admin', async () => {
+    const wrapper = await createWrapper('project_admin')
+    expect(wrapper.find('.btn-secondary').text()).toContain('Rotate API Key')
+    expect(wrapper.find('.btn-danger-outline').text()).toContain('Revoke API Key')
   })
 
   it('does NOT render Delete button for user role', async () => {
@@ -138,6 +144,6 @@ describe('AgentDetail', () => {
     await wrapper.find('.modal-actions .btn-danger').trigger('click')
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('.error').text()).toBe('Network error')
+    expect(wrapper.find('.modal-overlay .error').text()).toBe('Network error')
   })
 })

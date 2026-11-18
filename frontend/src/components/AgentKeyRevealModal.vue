@@ -6,6 +6,10 @@ import VButton from '@/components/VButton.vue'
 const props = defineProps({
   agent: { type: Object, required: true },
   title: { type: String, default: 'Agent created' },
+  intro: {
+    type: String,
+    default: 'The agent is ready. Save its credentials before closing this dialog.',
+  },
   warning: {
     type: String,
     default: 'This is the only time this key is shown. Store it now — it cannot be retrieved later.',
@@ -27,16 +31,22 @@ async function copyKey() {
     } else {
       // Clipboard API requires a secure context; LAN HTTP deployments need
       // this fallback.
-      const textarea = document.createElement('textarea')
-      textarea.value = value
-      textarea.setAttribute('readonly', '')
-      textarea.style.position = 'fixed'
-      textarea.style.opacity = '0'
-      document.body.appendChild(textarea)
-      textarea.select()
-      const copiedOk = document.execCommand('copy')
-      document.body.removeChild(textarea)
-      if (!copiedOk) throw new Error('copy failed')
+      let textarea
+      try {
+        textarea = document.createElement('textarea')
+        textarea.value = value
+        textarea.setAttribute('readonly', '')
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+        const copiedOk = document.execCommand('copy')
+        if (!copiedOk) throw new Error('copy failed')
+      } finally {
+        if (textarea && textarea.parentNode) {
+          textarea.parentNode.removeChild(textarea)
+        }
+      }
     }
     copied.value = true
   } catch {
@@ -50,10 +60,16 @@ function formatDate(value) {
 </script>
 
 <template>
-  <VModal :modelValue="true" :title="title" size="medium" @close="emit('close')">
+  <VModal
+    :modelValue="true"
+    :title="title"
+    size="medium"
+    :close-on-overlay="false"
+    :closable="false"
+  >
     <div class="agent-key-reveal">
       <p class="intro">
-        The agent is ready. Save its credentials before closing this dialog.
+        {{ intro }}
       </p>
 
       <dl class="details">

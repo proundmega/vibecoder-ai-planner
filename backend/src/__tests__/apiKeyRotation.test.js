@@ -84,6 +84,9 @@ describe('AgentService - API Key Rotation', () => {
     expect(updateQuery).not.toContain('api_key =');
     expect(updateQuery).toContain('api_key_hash =');
     expect(updateQuery).toContain('api_key_hash_prefix =');
+    // Ownership is enforced by the route; the service must update by id so a
+    // super_admin can rotate another owner's key.
+    expect(updateQuery).not.toContain('owner_id');
   });
 
   it('rotateKey generates key with ak_ prefix format matching create()', async () => {

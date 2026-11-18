@@ -118,6 +118,7 @@ describe('AgentList create flow', () => {
     await flushPromises()
 
     expect(wrapper.find('.v-modal__title').exists()).toBe(true)
+    expect(wrapper.find('.v-modal .submit-error').text()).toContain('boom')
     expect(wrapper.text()).toContain('boom')
     const submit = wrapper.find('button[type="submit"]')
     expect(submit.text()).toBe('Create')

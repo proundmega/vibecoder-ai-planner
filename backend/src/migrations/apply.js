@@ -56,6 +56,7 @@ const SQL_FILES = [
   path.join(__dirname, './051_harness_events.sql'),
   path.join(__dirname, './052_harness_budgets.sql'),
   path.join(__dirname, './053_harness_privacy.sql'),
+  path.join(__dirname, './054_agent_revoke_project_admin.sql'),
 ];
 
 const DATA_MIGRATIONS = [

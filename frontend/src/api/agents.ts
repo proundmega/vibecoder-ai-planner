@@ -6,6 +6,7 @@ export interface AgentKeyInfo {
   providerId: number | null
   providerName: string | null
   keyAvailable: boolean
+  keyStatus: 'active' | 'expired' | 'revoked'
   expiresAt: string | null
   rateLimit: number
   maxActionsPerDay: number

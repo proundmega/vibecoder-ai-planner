@@ -4,7 +4,7 @@ const router = express.Router();
 const AgentService = require('../services/AgentService');
 const ProviderService = require('../services/ProviderService');
 const PermissionService = require('../services/PermissionService');
-const { verifyTokenOrAgent } = require('../middleware/auth');
+const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
 const { updateAgentSchema } = require('../validators/agents');
@@ -31,6 +31,19 @@ function maskAgentList(agents) {
     if (masked.api_key_hash_prefix) masked.api_key_hash_prefix = '***';
     return masked;
   });
+}
+
+/**
+ * Owners manage their own agents; super admins manage any agent. Return null
+ * for both "missing" and "not yours" so callers can answer 404 without
+ * leaking agent IDs.
+ */
+async function findManageableAgent(req, agentId) {
+  const agent = await AgentService.findById(agentId);
+  if (!agent) return null;
+  if (req.user.role === 'super_admin') return agent;
+  if (String(agent.owner_id) === String(req.user.userId)) return agent;
+  return null;
 }
 
 /**
@@ -123,8 +136,12 @@ router.get('/', verifyTokenOrAgent, requireAnyPermission('AGENT_READ'), async (r
  *       400:
  *         description: Revoke failed
  */
-router.post('/revoke/:agentId', verifyTokenOrAgent, requireAnyPermission('AGENT_REVOKE'), async (req, res) => {
+router.post('/revoke/:agentId', verifyToken, requireAnyPermission('AGENT_REVOKE'), async (req, res) => {
   try {
+    const agent = await findManageableAgent(req, req.params.agentId);
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
     await AgentService.revokeApiKey(req.params.agentId);
     res.json({ message: 'API key revoked' });
   } catch (error) {
@@ -277,18 +294,43 @@ router.get('/:agentId/history', verifyTokenOrAgent, requireAnyPermission('AGENT_
  *         schema: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
- *         description: Agent key info
+ *         description: Agent key metadata (no plaintext or preview)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 name: { type: string }
+ *                 agentId: { type: integer }
+ *                 providerId: { type: integer, nullable: true }
+ *                 providerName: { type: string, nullable: true }
+ *                 keyAvailable: { type: boolean }
+ *                 keyStatus:
+ *                   type: string
+ *                   enum: [active, expired, revoked]
+ *                 expiresAt: { type: string, format: date-time, nullable: true }
+ *                 rateLimit: { type: integer }
+ *                 maxActionsPerDay: { type: integer }
+ *                 createdAt: { type: string, format: date-time, nullable: true }
+ *                 enrolledAt: { type: string, format: date-time, nullable: true }
  *       404:
  *         description: Agent not found
  */
-router.get('/:agentId/key', verifyTokenOrAgent, async (req, res) => {
+router.get('/:agentId/key', verifyToken, requireAnyPermission('AGENT_READ'), async (req, res) => {
   try {
-    const userId = req.agent ? req.agent.owner_id : req.user.userId;
-    const agents = await AgentService.list(userId);
-    const agent = agents.find(a => String(a.id) === String(req.params.agentId));
+    const agent = await AgentService.findById(req.params.agentId);
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
+
+    const expiresAt = agent.api_key_hash ? agent.api_key_expires_at || null : null;
+    let keyStatus = 'revoked';
+    if (agent.api_key_hash) {
+      keyStatus = expiresAt && new Date(expiresAt).getTime() <= Date.now()
+        ? 'expired'
+        : 'active';
+    }
+
     res.json({
       name: agent.name,
       agentId: agent.id,
@@ -297,7 +339,8 @@ router.get('/:agentId/key', verifyTokenOrAgent, async (req, res) => {
       // The plaintext key is never stored, so it cannot be previewed. Rotating
       // the key is the only way to obtain a new one.
       keyAvailable: false,
-      expiresAt: agent.api_key_hash ? agent.api_key_expires_at || null : null,
+      keyStatus,
+      expiresAt,
       rateLimit: agent.rate_limit,
       maxActionsPerDay: agent.max_actions_per_day,
       createdAt: agent.created_at || null,
@@ -449,9 +492,13 @@ router.get('/:agentId/provider-config/changed', verifyTokenOrAgent, async (req, 
  *       404:
  *         description: Agent not found
  */
-router.post('/:agentId/rotate-key', verifyTokenOrAgent, requireAnyPermission('AGENT_REVOKE'), async (req, res) => {
+router.post('/:agentId/rotate-key', verifyToken, requireAnyPermission('AGENT_REVOKE'), async (req, res) => {
   try {
-    const result = await AgentService.rotateKey(req.params.agentId, req.user.userId);
+    const agent = await findManageableAgent(req, req.params.agentId);
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+    const result = await AgentService.rotateKey(req.params.agentId);
     res.json({
       success: true,
       data: {

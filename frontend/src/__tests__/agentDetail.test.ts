@@ -49,6 +49,7 @@ describe('AgentDetail', () => {
       providerId: 1,
       providerName: 'OpenAI',
       keyAvailable: false,
+      keyStatus: 'active',
       expiresAt: '2026-12-17T00:00:00.000Z',
       rateLimit: 100,
       maxActionsPerDay: 1000,
@@ -97,5 +98,44 @@ describe('AgentDetail', () => {
     expect(wrapper.text()).toContain('New API key')
     expect(agentsApi.getAgentKeyInfo).toHaveBeenCalledTimes(2)
     expect(localStorage.getItem('agent_api_key')).toBeNull()
+  })
+
+  it('shows a rotate failure inside the open confirmation dialog', async () => {
+    ;(agentsApi.rotateAgentKey as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('rotate failed'))
+
+    const wrapper = mount(AgentDetail, mountOptions)
+    await flushPromises()
+
+    const rotate = wrapper.findAll('button').find(button => button.text() === 'Rotate API Key')
+    await rotate!.trigger('click')
+    await flushPromises()
+
+    const confirm = wrapper.findAll('button').find(button => button.text() === 'Rotate key')
+    await confirm!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.modal-overlay').exists()).toBe(true)
+    expect(wrapper.find('.modal-overlay .modal-error').text()).toContain('rotate failed')
+  })
+
+  it('shows revoked key status in the details', async () => {
+    ;(agentsApi.getAgentKeyInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      name: 'Worker One',
+      agentId: 'a1',
+      providerId: 1,
+      providerName: 'OpenAI',
+      keyAvailable: false,
+      keyStatus: 'revoked',
+      expiresAt: null,
+      rateLimit: 100,
+      maxActionsPerDay: 1000,
+      createdAt: '2026-11-17T00:00:00.000Z',
+      enrolledAt: null,
+    })
+
+    const wrapper = mount(AgentDetail, mountOptions)
+    await flushPromises()
+
+    expect(wrapper.find('.details-section').text()).toContain('Revoked')
   })
 })

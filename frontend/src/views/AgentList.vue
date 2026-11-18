@@ -63,6 +63,11 @@ function viewDetail(agentId) {
   router.push(`/agents/${agentId}`)
 }
 
+function openCreateModal() {
+  createError.value = null
+  showCreateModal.value = true
+}
+
 function statusClass(status) {
   return { online: 'status-online', idle: 'status-idle', offline: 'status-offline' }[status] || 'status-offline'
 }
@@ -147,7 +152,7 @@ function formatDate(dateStr) {
   <div class="agent-list">
     <div class="header-row">
       <h1>Agents</h1>
-      <button class="btn-primary" @click="showCreateModal = true">
+      <button class="btn-primary" @click="openCreateModal">
         Create Agent
       </button>
     </div>
@@ -155,6 +160,7 @@ function formatDate(dateStr) {
       v-model:show="showCreateModal"
       :providers="providers"
       :creating="creatingAgent"
+      :submit-error="createError"
       v-model:selectedProvider="selectedProviderId"
       @created="handleCreate"
     />
@@ -163,7 +169,6 @@ function formatDate(dateStr) {
       :agent="createdAgent"
       @close="createdAgent = null"
     />
-    <div v-if="createError" class="error">{{ createError }}</div>
 
     <div class="tabs">
       <button

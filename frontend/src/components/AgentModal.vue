@@ -11,6 +11,7 @@ const props = defineProps({
   // Parent-owned submit state: the modal must not latch "Creating..." after
   // the event, because the parent performs the async create.
   creating: { type: Boolean, default: false },
+  submitError: { type: String, default: '' },
 })
 
 const emit = defineEmits(['update:show', 'created', 'update:selectedProvider'])
@@ -36,8 +37,14 @@ function resetForm() {
 }
 
 function close() {
+  if (props.creating) return
   emit('update:show', false)
   resetForm()
+}
+
+function handleShowChange(value) {
+  if (props.creating) return
+  emit('update:show', value)
 }
 
 // The parent closes the modal on success without going through close(), so
@@ -61,7 +68,13 @@ async function submit() {
 </script>
 
 <template>
-  <VModal :modelValue="show" @update:modelValue="val => emit('update:show', val)" title="Create Agent">
+  <VModal
+    :modelValue="show"
+    :close-on-overlay="!creating"
+    :closable="!creating"
+    @update:modelValue="handleShowChange"
+    title="Create Agent"
+  >
     <form @submit.prevent="submit">
       <VInput
         v-model="name"
@@ -97,6 +110,7 @@ async function submit() {
         <label>API Key Expiry (days)</label>
         <input type="number" v-model.number="keyExpiryDays" min="1" max="365" :disabled="creating" />
       </div>
+      <p v-if="submitError" class="submit-error">{{ submitError }}</p>
       <div class="modal-actions">
         <VButton type="submit" variant="primary" :loading="creating" :disabled="!name.trim()">
           {{ creating ? 'Creating...' : 'Create' }}
@@ -139,6 +153,15 @@ async function submit() {
   margin-top: var(--spacing-xs);
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
+}
+
+.submit-error {
+  margin: 0 0 var(--spacing-sm);
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-md);
+  background: var(--color-error-bg, #fee2e2);
+  color: var(--color-error, #b91c1c);
+  font-size: var(--font-size-sm);
 }
 
 .modal-actions {

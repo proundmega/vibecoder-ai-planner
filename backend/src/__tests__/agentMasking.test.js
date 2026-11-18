@@ -37,24 +37,25 @@ const { pool } = require('../db');
 
 describe('Agent API - Key Masking', () => {
   let listSpy;
+  let findByIdSpy;
+  const agentRow = {
+    id: 'a1',
+    name: 'Test Agent',
+    api_key_hash: '$2a$10$realhashvalue123456789012345678901234567890',
+    api_key_hash_prefix: 'abcdef1234567890',
+    owner_id: 'user-1',
+    provider_id: 'p1',
+    provider_name: 'OpenAI',
+    api_key_expires_at: new Date('2026-12-17T00:00:00Z'),
+    rate_limit: 100,
+    max_actions_per_day: 1000,
+    created_at: new Date('2026-11-17T00:00:00Z'),
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    listSpy = jest.spyOn(AgentService, 'list').mockResolvedValue([
-      {
-        id: 'a1',
-        name: 'Test Agent',
-        api_key_hash: '$2a$10$realhashvalue123456789012345678901234567890',
-        api_key_hash_prefix: 'abcdef1234567890',
-        owner_id: 'user-1',
-        provider_id: 'p1',
-        provider_name: 'OpenAI',
-        api_key_expires_at: new Date('2026-12-17T00:00:00Z'),
-        rate_limit: 100,
-        max_actions_per_day: 1000,
-        created_at: new Date('2026-11-17T00:00:00Z'),
-      },
-    ]);
+    listSpy = jest.spyOn(AgentService, 'list').mockResolvedValue([{ ...agentRow }]);
+    findByIdSpy = jest.spyOn(AgentService, 'findById').mockResolvedValue({ ...agentRow });
   });
 
   it('GET /agents masks api_key_hash in response', async () => {
@@ -105,12 +106,51 @@ describe('Agent API - Key Masking', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body.keyAvailable).toBe(false);
+    expect(res.body.keyStatus).toBe('active');
     expect(res.body).not.toHaveProperty('keyPreview');
     expect(res.body).not.toHaveProperty('api_key');
     expect(res.body.providerName).toBe('OpenAI');
     expect(res.body.rateLimit).toBe(100);
     expect(res.body.maxActionsPerDay).toBe(1000);
     expect(res.body.expiresAt).toBe('2026-12-17T00:00:00.000Z');
+  });
+
+  it('GET /agents/:agentId/key reports a revoked key', async () => {
+    findByIdSpy.mockResolvedValueOnce({
+      ...agentRow,
+      api_key_hash: null,
+      api_key_hash_prefix: null,
+    });
+
+    const res = await request(app)
+      .get('/api/v1/agents/a1/key')
+      .set('Authorization', 'Bearer mock-token');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.keyStatus).toBe('revoked');
+    expect(res.body.expiresAt).toBeNull();
+  });
+
+  it('GET /agents/:agentId/key reports an expired key', async () => {
+    findByIdSpy.mockResolvedValueOnce({
+      ...agentRow,
+      api_key_expires_at: new Date('2020-01-01T00:00:00Z'),
+    });
+
+    const res = await request(app)
+      .get('/api/v1/agents/a1/key')
+      .set('Authorization', 'Bearer mock-token');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.keyStatus).toBe('expired');
+  });
+
+  it('GET /agents/:agentId/key rejects agent API-key authentication', async () => {
+    const res = await request(app)
+      .get('/api/v1/agents/a1/key')
+      .set('X-API-Key', 'test-agent-key');
+
+    expect(res.statusCode).toBe(401);
   });
 
   it('POST /agents/create still returns generatedApiKey (plaintext, intentional)', async () => {

@@ -89,6 +89,30 @@ describe('AgentModal', () => {
     expect(btn.attributes('disabled')).toBeUndefined()
   })
 
+  it('cannot be dismissed while the parent is creating', async () => {
+    const wrapper = mount(AgentModal, {
+      ...mountOptions,
+      props: { show: true, creating: true },
+      attachTo: container,
+    })
+
+    await wrapper.find('.v-modal-overlay').trigger('click')
+    await wrapper.find('.v-modal').trigger('keydown.esc')
+
+    expect(wrapper.emitted('update:show')).toBeFalsy()
+    expect(wrapper.find('.v-modal__close').exists()).toBe(false)
+  })
+
+  it('renders the parent submit error inside the modal', async () => {
+    const wrapper = mount(AgentModal, {
+      ...mountOptions,
+      props: { show: true, submitError: 'boom' },
+      attachTo: container,
+    })
+
+    expect(wrapper.find('.v-modal .submit-error').text()).toBe('boom')
+  })
+
   it('resets the form when the modal is hidden', async () => {
     const wrapper = mount(AgentModal, { ...mountOptions, props: { show: true }, attachTo: container })
     await wrapper.find('input').setValue('Agent')
