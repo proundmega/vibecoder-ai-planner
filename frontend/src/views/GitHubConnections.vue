@@ -105,7 +105,6 @@ async function handleCreateBranch() {
     repoSuccess.value = 'Branch created successfully'
     await loadBranches()
     branchTicketId.value = ''
-    branchName.value = ''
     showCreateBranch.value = false
   } catch (err) {
     repoError.value = err.message || 'Failed to create branch'
@@ -178,8 +177,8 @@ async function handleCreatePR() {
         <div v-else class="repo-connected">
           <div class="repo-info">
             <span class="status-connected">Connected</span>
-            <span class="repo-url">{{ githubRepo.repo_url }}</span>
-            <span class="repo-branch">Default branch: {{ githubRepo.default_branch }}</span>
+            <span class="repo-url">{{ githubRepo.repoUrl }}</span>
+            <span class="repo-branch">Default branch: {{ githubRepo.defaultBranch }}</span>
           </div>
           <button @click="handleDisconnectRepo" class="btn-danger">Disconnect</button>
         </div>
@@ -212,11 +211,12 @@ async function handleCreatePR() {
           <div v-for="branch in branches" :key="branch.name" class="branch-item">
             <span class="branch-name">{{ branch.name }}</span>
             <button
-              @click="handleDeleteBranch(branch.ticket_id)"
-              :disabled="actionLoading === `delete-${branch.ticket_id}`"
+              v-if="branch.ticketId"
+              @click="handleDeleteBranch(branch.ticketId)"
+              :disabled="actionLoading === `delete-${branch.ticketId}`"
               class="btn-delete"
             >
-              {{ actionLoading === `delete-${branch.ticket_id}` ? 'Deleting...' : 'Delete' }}
+              {{ actionLoading === `delete-${branch.ticketId}` ? 'Deleting...' : 'Delete' }}
             </button>
           </div>
         </div>
@@ -249,12 +249,12 @@ async function handleCreatePR() {
         <div v-else class="prs-list">
           <div v-for="pr in prs" :key="pr.id" class="pr-item">
             <div class="pr-info">
-              <router-link :to="pr.html_url" target="_blank" class="pr-link">
+              <a :href="pr.url" target="_blank" rel="noopener" class="pr-link">
                 #{{ pr.number }} {{ pr.title }}
-              </router-link>
+              </a>
               <span :class="['pr-state', pr.state]">{{ pr.state }}</span>
             </div>
-            <span class="pr-branch">{{ pr.head_ref }}</span>
+            <span class="pr-branch">{{ pr.head }}</span>
           </div>
         </div>
       </div>
