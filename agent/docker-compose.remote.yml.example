@@ -10,6 +10,7 @@ services:
       - BACKEND_URL=${BACKEND_URL:?set BACKEND_URL, e.g. https://planner.example.com}
       - PROJECT_ID=${PROJECT_ID:?set PROJECT_ID}
       - AGENT_AUTH_MODE=enroll
+      - AGENT_MODE=${AGENT_MODE:-build}
       - ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN:?mint one in the UI}
       - ENROLLMENT_URL=${ENROLLMENT_URL:-}
       - AGENT_CREDENTIALS_FILE=/credentials/agent.json

@@ -9,6 +9,7 @@ services:
       # fg-53 enrollment: set ENROLLMENT_TOKEN instead of AGENT_ID/AGENT_API_KEY.
       # The credential file is the durable node identity; mount it on a volume.
       - AGENT_AUTH_MODE=${AGENT_AUTH_MODE:-auto}
+      - AGENT_MODE=${AGENT_MODE:-auto}
       - ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN:-}
       - ENROLLMENT_URL=${ENROLLMENT_URL:-}
       - AGENT_CREDENTIALS_FILE=${AGENT_CREDENTIALS_FILE:-/credentials/agent.json}

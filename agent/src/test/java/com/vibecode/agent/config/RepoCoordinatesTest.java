@@ -36,6 +36,14 @@ class RepoCoordinatesTest {
     }
 
     @Test
+    void acceptsBareOwnerRepoAndDropsQueryFragment() {
+        assertParsed("acme/widgets", "acme", "widgets");
+        assertParsed("acme/widgets.git", "acme", "widgets");
+        assertParsed("https://github.com/acme/widgets.git?ref=main", "acme", "widgets");
+        assertParsed("https://github.com/acme/widgets#readme", "acme", "widgets");
+    }
+
+    @Test
     void rejectsNonRepositoryValues() {
         assertTrue(RepoCoordinates.parse(null).isEmpty());
         assertTrue(RepoCoordinates.parse("").isEmpty());

@@ -16,6 +16,17 @@ public record RepoCoordinates(String owner, String name) {
         if (repoUrl == null || repoUrl.isBlank()) return Optional.empty();
 
         String value = repoUrl.trim();
+
+        // Bare owner/repo (legacy/internal value; the connect API normally
+        // uses a full URL).
+        if (!value.contains("://") && !value.contains("@") && !value.contains(":")) {
+            String bare = stripQueryAndFragment(value);
+            String[] parts = bare.split("/");
+            if (parts.length == 2 && !parts[0].isBlank() && !parts[1].isBlank()) {
+                return Optional.of(new RepoCoordinates(parts[0], stripGitSuffix(parts[1])));
+            }
+        }
+
         int scheme = value.indexOf("://");
         if (scheme >= 0) {
             value = value.substring(scheme + 3);
@@ -45,9 +56,9 @@ public record RepoCoordinates(String owner, String name) {
 
         int pathStart = value.indexOf('/');
         if (pathStart < 0) return Optional.empty();
-        String path = value.substring(pathStart + 1);
+        String path = stripQueryAndFragment(value.substring(pathStart + 1));
         if (path.endsWith("/")) path = path.substring(0, path.length() - 1);
-        if (path.endsWith(".git")) path = path.substring(0, path.length() - 4);
+        path = stripGitSuffix(path);
 
         List<String> segments = new ArrayList<>();
         for (String segment : path.split("/")) {
@@ -58,6 +69,19 @@ public record RepoCoordinates(String owner, String name) {
         String name = segments.get(segments.size() - 1);
         String owner = String.join("/", segments.subList(0, segments.size() - 1));
         if (owner.isBlank() || name.isBlank()) return Optional.empty();
-        return Optional.of(new RepoCoordinates(owner, name));
+        return Optional.of(new RepoCoordinates(owner, stripGitSuffix(name)));
+    }
+
+    private static String stripQueryAndFragment(String value) {
+        int cut = value.length();
+        int query = value.indexOf('?');
+        int fragment = value.indexOf('#');
+        if (query >= 0 && query < cut) cut = query;
+        if (fragment >= 0 && fragment < cut) cut = fragment;
+        return value.substring(0, cut);
+    }
+
+    private static String stripGitSuffix(String value) {
+        return value.endsWith(".git") ? value.substring(0, value.length() - 4) : value;
     }
 }

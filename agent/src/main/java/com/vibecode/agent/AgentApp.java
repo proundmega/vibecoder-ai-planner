@@ -200,23 +200,44 @@ public class AgentApp {
     }
 
     /**
-     * Resolves provider settings once so the legacy path and the harness share
-     * the same credentials, model and endpoint.
-     */
-    /**
-     * The project's configured repository is authoritative; REPO_OWNER/
-     * REPO_NAME remain a fallback for review-only or legacy deployments.
+     * The project's configured repository is authoritative in build mode.
+     * `auto` keeps the legacy env-pair signal; `review` never builds.
      */
     private void applyServerRepoConfig() {
-        if (config.getProjectId() == null || config.getProjectId().isBlank()) return;
+        if (config.isReviewMode()) {
+            log.info("Agent mode {}: ticket processing disabled, repository not loaded", config.getAgentMode());
+            return;
+        }
+
+        boolean buildMode = config.isBuildMode();
+        if (config.getProjectId() == null || config.getProjectId().isBlank()) {
+            if (buildMode) {
+                throw new IllegalStateException(
+                    "AGENT_MODE=build requires a project id and a configured repository");
+            }
+            return;
+        }
+
         try {
             Map<String, Object> repo = apiService.getRepoConfig(config.getProjectId());
-            if (repo == null) {
-                log.info("No project repository configured; using REPO_OWNER/REPO_NAME if set");
-                return;
+            boolean applied = repo != null && applyRepoCoordinates(config, repo);
+            if (!applied) {
+                if (buildMode && !config.hasRepoCoordinates()) {
+                    throw new IllegalStateException(
+                        "AGENT_MODE=build but the project has no usable repository configured");
+                }
+                log.info("No usable project repository from the backend; using REPO_OWNER/REPO_NAME if set");
             }
-            applyRepoCoordinates(config, repo);
+        } catch (AgentAuthFatalException e) {
+            throw new IllegalStateException(
+                "Agent credentials failed while loading the project repository; re-enroll this node", e);
+        } catch (IllegalStateException e) {
+            throw e;
         } catch (Exception e) {
+            if (buildMode && !config.hasRepoCoordinates()) {
+                throw new IllegalStateException(
+                    "AGENT_MODE=build could not load the project repository: " + e.getMessage(), e);
+            }
             log.warn("Could not load the project repository from the backend; using REPO_OWNER/REPO_NAME if set");
         }
     }
@@ -230,11 +251,15 @@ public class AgentApp {
             log.info("Using project repository {}/{} from the backend", coordinates.owner(), coordinates.name());
             return true;
         }).orElseGet(() -> {
-            log.warn("Project repository URL is not a usable Git URL: {}", url);
+            log.warn("Project repository URL is not a usable Git URL");
             return false;
         });
     }
 
+    /**
+     * Resolves provider settings once so the legacy path and the harness share
+     * the same credentials, model and endpoint.
+     */
     private ProviderSettings resolveProviderSettings() {
         Map<String, Object> providerConfig = null;
         try {
@@ -451,9 +476,10 @@ public class AgentApp {
     private void processCycle() throws IOException {
         recoverStartupOnce();
 
-        // Check if this is a review agent (no REPO_OWNER/REPO_NAME means review mode)
-        if (config.getRepoOwner() == null || config.getRepoOwner().isBlank()) {
-            log.warn("REPO_OWNER is not set — running in review mode only. Ticket processing is disabled. Set REPO_OWNER and REPO_NAME to enable build mode.");
+        // Explicit review mode, or auto mode without a legacy env repo pair.
+        if (config.isReviewMode()) {
+            log.warn("Agent mode {} — running in review mode only. Ticket processing is disabled. Set AGENT_MODE=build for a build node.",
+                config.getAgentMode());
             if (reviewProcessor == null) {
                 log.warn("Review cycle skipped: the configured provider is not usable by the legacy review path");
                 pollProfileValidation();
@@ -545,10 +571,11 @@ public class AgentApp {
         } catch (IllegalStateException e) {
             log.error("Configuration error: {}", e.getMessage());
             System.err.println("Error: " + RedactionRegistry.redact(e.getMessage()));
-            System.err.println("Required env vars: BACKEND_URL, PROJECT_ID, and either "
+            System.err.println("Required env vars: BACKEND_URL and either "
                 + "AGENT_ID + AGENT_API_KEY or ENROLLMENT_TOKEN (+ AGENT_CREDENTIALS_FILE)");
             System.err.println("For ticket processing: also set REPO_OWNER, REPO_NAME");
-            System.err.println("For review mode: omit REPO_OWNER/REPO_NAME");
+            System.err.println("For build mode: AGENT_MODE=build (repo from the project) or REPO_OWNER/REPO_NAME");
+            System.err.println("For review mode: AGENT_MODE=review");
             System.exit(1);
         } catch (Exception e) {
             log.error("Fatal error", e);
