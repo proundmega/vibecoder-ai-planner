@@ -58,10 +58,8 @@ function requireSecureTransport(req, res, next) {
   });
 }
 
-function errorBody(code, message, status = 400, details) {
-  const error = { code, message };
-  if (details) error.details = details;
-  return { success: false, error };
+function errorBody(code, message) {
+  return { success: false, error: { code, message } };
 }
 
 async function projectForUser(req, projectId) {
@@ -171,7 +169,7 @@ router.post(
         return res.status(404).json(errorBody('PROVIDER_NOT_FOUND', 'Provider not found'));
       }
       logger.error('POST /api/v1/agent-enrollment/tokens', error);
-      res.status(500).json(errorBody('INTERNAL_SERVER_ERROR', 'Could not create enrollment token', 500));
+      res.status(500).json(errorBody('INTERNAL_SERVER_ERROR', 'Could not create enrollment token'));
     }
   }
 );
@@ -191,7 +189,7 @@ router.get(
       if (error.status === 404) return res.status(404).json(errorBody('NOT_FOUND', 'Project not found'));
       if (error.status === 403) return res.status(403).json(errorBody('FORBIDDEN', 'Project membership required'));
       logger.error('GET /api/v1/agent-enrollment/tokens', error);
-      res.status(500).json(errorBody('INTERNAL_SERVER_ERROR', 'Could not list enrollment tokens', 500));
+      res.status(500).json(errorBody('INTERNAL_SERVER_ERROR', 'Could not list enrollment tokens'));
     }
   }
 );
@@ -242,7 +240,7 @@ router.delete(
       if (error.status === 404) return res.status(404).json(errorBody('NOT_FOUND', 'Project not found'));
       if (error.status === 403) return res.status(403).json(errorBody('FORBIDDEN', 'Project membership required'));
       logger.error('DELETE /api/v1/agent-enrollment/tokens/:id', error);
-      res.status(500).json(errorBody('INTERNAL_SERVER_ERROR', 'Could not revoke enrollment token', 500));
+      res.status(500).json(errorBody('INTERNAL_SERVER_ERROR', 'Could not revoke enrollment token'));
     }
   }
 );
@@ -295,7 +293,7 @@ router.post(
     } catch (error) {
       if (!(error instanceof AgentEnrollmentService.EnrollmentError)) {
         logger.error('POST /api/v1/agent-enrollment/enroll', error);
-        return res.status(500).json(errorBody('INTERNAL_SERVER_ERROR', 'Could not enroll the agent', 500));
+        return res.status(500).json(errorBody('INTERNAL_SERVER_ERROR', 'Could not enroll the agent'));
       }
       // All join-token failures look the same to the caller so a token prefix
       // cannot be probed. The precise reason is recorded in the audit event.
@@ -361,7 +359,7 @@ router.post(
         return res.status(error.status).json(errorBody(error.code, error.message));
       }
       logger.error('POST /api/v1/agent-enrollment/refresh', error);
-      return res.status(500).json(errorBody('INTERNAL_SERVER_ERROR', 'Could not refresh credentials', 500));
+      return res.status(500).json(errorBody('INTERNAL_SERVER_ERROR', 'Could not refresh credentials'));
     }
   }
 );
@@ -404,7 +402,7 @@ router.get(
       res.json({ success: true, data: metadata });
     } catch (error) {
       logger.error('GET /api/v1/agent-enrollment/agents/:agentId', error);
-      res.status(500).json(errorBody('INTERNAL_SERVER_ERROR', 'Could not load enrollment metadata', 500));
+      res.status(500).json(errorBody('INTERNAL_SERVER_ERROR', 'Could not load enrollment metadata'));
     }
   }
 );

@@ -11,7 +11,7 @@ const HarnessMetrics = require('../services/HarnessMetrics');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
-const { forRunParam, forHarnessEventBody, selfAgentOnly } = require('../middleware/agentProjectScope');
+const { forRunParam, forHarnessEventBody } = require('../middleware/agentProjectScope');
 const {
   ForbiddenError,
   NotFoundError,

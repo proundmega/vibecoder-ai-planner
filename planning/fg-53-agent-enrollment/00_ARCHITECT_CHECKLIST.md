@@ -65,7 +65,7 @@ needed to mint and revoke enrollment tokens.
 |---|---|---|
 | Plan merged | PR #173 (merged) | ☑ |
 | Implementation merged | PR #174 (open) | ☐ |
-| Verification results | PR #174 (open) — backend 2016 tests/162 suites, frontend 653/74 files, agent 824 tests | ☑ |
+| Verification results | PR #174 (open) — backend 2016 tests/163 suites, frontend 653/74 files, agent 824 tests | ☑ |
 
 A merged planning PR is **plan merged**, not `done`. Set `status: done` only
 after the implementation PR is merged and `03` has a dated Results row.

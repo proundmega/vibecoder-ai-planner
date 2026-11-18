@@ -105,6 +105,14 @@ Required for `docker compose up`:
 | `REDIS_PREFIX` | Redis key prefix | `vibecode:` |
 | `METRICS_TOKEN` | Auth token for `/metrics` endpoint | _(none = no auth)_ |
 | `LOG_LEVEL` | Winston log level | `info` |
+| `AGENT_ENROLLMENT_ENABLED` | Enable join-token mint/enroll/refresh (`1`/`true`) | `false` (dev Compose: `true`) |
+| `AGENT_ENROLLMENT_TOKEN_TTL_SECONDS` | Join-token lifetime | `900` |
+| `AGENT_ACCESS_TOKEN_TTL_SECONDS` | Node access-token lifetime | `3600` |
+| `AGENT_REFRESH_TOKEN_TTL_DAYS` | Refresh-token lifetime | `30` |
+| `AGENT_REFRESH_REPLAY_CACHE_SECONDS` | Idempotent refresh replay window | `60` |
+| `ALLOW_INSECURE_AGENT_ENROLLMENT` | Allow non-TLS enrollment for local testing | `0` |
+| `TRUST_PROXY` | Express trust proxy: `1` (one hop), `true`, or IP/CIDR list | _(unset)_ |
+| `POOL_AGENT_KEY_EXPIRY_DAYS` | Pool-agent static key lifetime | `30` |
 
 ### Frontend `.env.local`
 

@@ -13,6 +13,11 @@ export function fetchProjects(): Promise<Project[]> {
   return get<Project[]>('/api/v1/projects').catch(() => [])
 }
 
+/** Like fetchProjects, but surfaces failures so callers can show an error. */
+export function fetchProjectsStrict(): Promise<Project[]> {
+  return get<Project[]>('/api/v1/projects')
+}
+
 export function createProject(name: string, description?: string): Promise<Project | null> {
   return post<Project>('/api/v1/projects', { name, description }).catch(() => null)
 }

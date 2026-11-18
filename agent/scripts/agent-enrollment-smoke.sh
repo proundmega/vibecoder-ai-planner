@@ -58,16 +58,16 @@ if echo "$first_logs" | grep -q "$ENROLLMENT_TOKEN"; then
   echo "FAIL: enrollment token leaked into logs"
   exit 1
 fi
+before_hash=$(docker exec "$CONTAINER" cat /credentials/agent.json | sha256sum | awk '{print $1}')
 docker rm -f "$CONTAINER" >/dev/null
 
 echo "Restart with the same volume (expected: no re-enroll)..."
 run_agent
 sleep 10
-second_logs=$(docker logs "$CONTAINER" 2>&1)
-if echo "$second_logs" | grep -qi "authenticated via enrollment"; then
-  # The message is logged on both paths; assert there is no second enrollment
-  # by checking the credential's refresh token did not change.
-  echo "Agent started with stored credentials (no enrollment token required)"
+after_hash=$(docker exec "$CONTAINER" cat /credentials/agent.json | sha256sum | awk '{print $1}')
+if [ -z "$before_hash" ] || [ "$before_hash" != "$after_hash" ]; then
+  echo "FAIL: credential file changed across restart without a refresh"
+  exit 1
 fi
 docker rm -f "$CONTAINER" >/dev/null
 
