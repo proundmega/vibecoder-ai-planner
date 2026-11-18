@@ -209,36 +209,50 @@ public class AgentApp {
             return;
         }
 
-        boolean buildMode = config.isBuildMode();
         if (config.getProjectId() == null || config.getProjectId().isBlank()) {
-            if (buildMode) {
+            if (config.isBuildMode()) {
                 throw new IllegalStateException(
                     "AGENT_MODE=build requires a project id and a configured repository");
             }
             return;
         }
 
+        resolveRepoConfig(config, () -> apiService.getRepoConfig(config.getProjectId()));
+    }
+
+    /**
+     * Fetch/apply the project repo for an already-selected mode. Package-private
+     * static so build/review/failure behavior is testable without constructing
+     * a live AgentApp.
+     */
+    static void resolveRepoConfig(
+            AgentConfig config,
+            java.util.concurrent.Callable<Map<String, Object>> loader) {
+        if (config.isReviewMode()) return;
+        boolean buildMode = config.isBuildMode();
+
+        Map<String, Object> repo;
         try {
-            Map<String, Object> repo = apiService.getRepoConfig(config.getProjectId());
-            boolean applied = repo != null && applyRepoCoordinates(config, repo);
-            if (!applied) {
-                if (buildMode && !config.hasRepoCoordinates()) {
-                    throw new IllegalStateException(
-                        "AGENT_MODE=build but the project has no usable repository configured");
-                }
-                log.info("No usable project repository from the backend; using REPO_OWNER/REPO_NAME if set");
-            }
+            repo = loader.call();
         } catch (AgentAuthFatalException e) {
             throw new IllegalStateException(
                 "Agent credentials failed while loading the project repository; re-enroll this node", e);
-        } catch (IllegalStateException e) {
-            throw e;
         } catch (Exception e) {
             if (buildMode && !config.hasRepoCoordinates()) {
                 throw new IllegalStateException(
                     "AGENT_MODE=build could not load the project repository: " + e.getMessage(), e);
             }
             log.warn("Could not load the project repository from the backend; using REPO_OWNER/REPO_NAME if set");
+            return;
+        }
+
+        boolean applied = repo != null && applyRepoCoordinates(config, repo);
+        if (!applied) {
+            if (buildMode && !config.hasRepoCoordinates()) {
+                throw new IllegalStateException(
+                    "AGENT_MODE=build but the project has no usable repository configured");
+            }
+            log.info("No usable project repository from the backend; using REPO_OWNER/REPO_NAME if set");
         }
     }
 

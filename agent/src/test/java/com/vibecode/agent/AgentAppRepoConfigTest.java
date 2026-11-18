@@ -3,10 +3,13 @@ package com.vibecode.agent;
 import com.vibecode.agent.config.AgentConfig;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AgentAppRepoConfigTest {
@@ -22,6 +25,69 @@ class AgentAppRepoConfigTest {
         assertTrue(applied);
         assertEquals("server-org", config.getRepoOwner());
         assertEquals("server-repo", config.getRepoName());
+    }
+
+    static class ModeConfig extends AgentConfig {
+        boolean review;
+        boolean build;
+        boolean hasRepo;
+
+        @Override public boolean isReviewMode() { return review; }
+        @Override public boolean isBuildMode() { return build; }
+        @Override public boolean hasRepoCoordinates() { return hasRepo; }
+        @Override public void setRepoCoordinates(String owner, String name) { hasRepo = true; }
+    }
+
+    @Test
+    void reviewModeNeverLoadsTheRepository() {
+        ModeConfig config = new ModeConfig();
+        config.review = true;
+        AtomicBoolean loaded = new AtomicBoolean(false);
+
+        AgentApp.resolveRepoConfig(config, () -> {
+            loaded.set(true);
+            return null;
+        });
+
+        assertFalse(loaded.get());
+    }
+
+    @Test
+    void buildModeFailsWhenNoRepoCanBeResolved() {
+        ModeConfig config = new ModeConfig();
+        config.build = true;
+        config.hasRepo = false;
+
+        assertThrows(IllegalStateException.class,
+            () -> AgentApp.resolveRepoConfig(config, () -> null));
+        assertThrows(IllegalStateException.class,
+            () -> AgentApp.resolveRepoConfig(config, () -> {
+                throw new IOException("backend unavailable");
+            }));
+    }
+
+    @Test
+    void buildModeKeepsEnvFallbackOnFetchFailure() {
+        ModeConfig config = new ModeConfig();
+        config.build = true;
+        config.hasRepo = true;
+
+        AgentApp.resolveRepoConfig(config, () -> {
+            throw new IOException("backend unavailable");
+        });
+        assertTrue(config.hasRepo);
+    }
+
+    @Test
+    void buildModeAppliesTheServerRepo() {
+        ModeConfig config = new ModeConfig();
+        config.build = true;
+        config.hasRepo = false;
+
+        AgentApp.resolveRepoConfig(config,
+            () -> Map.of("repoUrl", "https://github.com/server-org/server-repo.git"));
+
+        assertTrue(config.hasRepo);
     }
 
     @Test

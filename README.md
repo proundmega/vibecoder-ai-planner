@@ -122,7 +122,7 @@ Required for `docker compose up`:
 
 ### Agent `.env` (Java)
 
-The agent reads the project's connected repository from the backend at startup
+See [`agent/ENROLLMENT.md`](agent/ENROLLMENT.md) for the full self-enrollment walkthrough. The agent reads the project's connected repository from the backend at startup
 when `AGENT_MODE=build`; `REPO_OWNER`/`REPO_NAME` are then only a fallback.
 Review-only nodes use `AGENT_MODE=review`. `AGENT_MODE=auto` keeps the legacy
 behavior: an env repo pair means build, otherwise review. Restart the agent
