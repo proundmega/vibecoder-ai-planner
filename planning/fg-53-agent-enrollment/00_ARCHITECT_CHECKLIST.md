@@ -6,7 +6,7 @@ priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-11-17"
-updated: "2026-11-17"
+updated: "2026-11-18"
 pr: null
 branch: null
 depends_on: []
@@ -63,7 +63,7 @@ needed to mint and revoke enrollment tokens.
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Plan merged | PR #173 (open) | ☐ |
+| Plan merged | PR #173 (in review; merge pending) | ☐ |
 | Implementation merged | pending | ☐ |
 | Verification results | n/a — planned | ☐ |
 
@@ -84,6 +84,7 @@ after the implementation PR is merged and `03` has a dated Results row.
 | D8 | Migrate legacy `ak_…` agents to access/refresh tokens automatically | self | Migration | none | open |
 | D9 | Credential-file encryption or OS keyring instead of a 0600 JSON file | self | Security | none | open |
 | D10 | Enrollment/audit UI filters, export and retention dashboard | fg-41 | Observability | fg-41 | open |
+| D11 | Broader project-agents migration: assign manual/legacy agents to a project and expose per-project agent lists. fg-53 adds `agents.project_id` for enrolled agents only; legacy agents stay owner-scoped (`project_id = NULL`) | FUTURE_IDEAS Project Agents Table Migration | Migration / Authorization | new ticket | open |
 
 States: `open`, `scheduled`, `done`, `dropped`.
 
@@ -91,11 +92,12 @@ States: `open`, `scheduled`, `done`, `dropped`.
 
 | # | Decision | Options | Recommendation | Answer |
 |---|---|---|---|---|
-| 1 | Credential lifetimes | A: access 60 min / refresh 30 d / join 15 min; B: access 15 min / refresh 7 d / join 10 min; C: configurable with A as default | C (A defaults) | |
-| 2 | Transport policy | A: refuse enrollment/refresh over plain HTTP except loopback; B: allow private LAN with a warning; C: allow HTTP everywhere | A, with `ALLOW_INSECURE_AGENT_ENROLLMENT=1` for local testing | |
-| 3 | Agent ownership | A: project owner; B: join-token creator; C: configurable | A (matches PoolManager and survives staff changes) | |
-| 4 | UI scope | A: mint/list/revoke join tokens in this ticket; B: API-only first, UI follow-up | A — the key is otherwise unusable without curl | |
-| 5 | Node credential transport | A: reuse `X-API-Key` for `at_…` tokens; B: new `Authorization: Agent <token>` scheme | A — no changes to existing agent/client headers | |
+| 1 | Credential lifetimes | A: access 60 min / refresh 30 d / join 15 min; B: access 15 min / refresh 7 d / join 10 min; C: configurable with A as default | C (A defaults) | C — `AGENT_ACCESS_TOKEN_TTL_SECONDS=3600`, `AGENT_REFRESH_TOKEN_TTL_DAYS=30`, `AGENT_ENROLLMENT_TOKEN_TTL_SECONDS=900` |
+| 2 | Transport policy | A: refuse enrollment/refresh over plain HTTP except loopback; B: allow private LAN with a warning; C: allow HTTP everywhere | A, with `ALLOW_INSECURE_AGENT_ENROLLMENT=1` for local testing | A |
+| 3 | Agent ownership | A: project owner; B: join-token creator; C: configurable | A (matches PoolManager and survives staff changes) | A |
+| 4 | UI scope | A: mint/list/revoke join tokens in this ticket; B: API-only first, UI follow-up | A — the key is otherwise unusable without curl | A |
+| 5 | Node credential transport | A: reuse `X-API-Key` for `at_…` tokens; B: new `Authorization: Agent <token>` scheme | A — no changes to existing agent/client headers | A |
+| 6 | Refresh-token replay policy | A: revoke the family on the first rotated-token replay; B: accept the immediately previous token inside a short grace window, then revoke the family; C: idempotency key with a short replay cache | B — survives concurrent refresh and a lost response without storing raw tokens | B — `AGENT_REFRESH_GRACE_SECONDS=60` |
 
 If a decision is not answered before implementation, use the recommendation and
 record it as an assumption in `01`.
@@ -122,3 +124,10 @@ record it as an assumption in `01`.
 - The deployment blockers from the intake list (`AGENT-1`, `AGENT-2`,
   `AUTH-1`, `AUTH-3` in `FUTURE_IDEAS.txt`) are covered by this suite; once
   the plan merges, mark those rows and remove them from the intake list.
+- Enrolled agents get `agents.project_id`; legacy/manual agents keep
+  `project_id = NULL` and remain owner-scoped. The broader project-agents
+  migration is D11, not a dependency of this ticket.
+- When this planning PR merges: check the **Plan merged** evidence row, change
+  the `PENDING.txt` label to **Plan merged (#173); implementation pending**,
+  and update the intake rows. Keep `pr`/`branch` null until the implementation
+  PR exists.

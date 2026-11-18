@@ -201,6 +201,7 @@ before treating them as done.
 - **Source**: bp-69-agent-creation-ui
 - **Description**: Missing `project_agents` table migration. Agents are currently per-user, not per-project.
 - **Priority**: P2
+- **Status**: Partially planned in `fg-53` (PR #173) — enrolled agents get `agents.project_id`; manual/legacy agent project assignment and per-project agent lists remain deferred (`fg-53` D11)
 - **Why deferred**: Requires schema change, affects agent authorization logic
 
 ---

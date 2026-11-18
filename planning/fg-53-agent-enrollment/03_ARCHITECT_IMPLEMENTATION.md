@@ -8,24 +8,31 @@
 ## Plan
 
 1. **Token schema and services** — add `054_agent_enrollment.sql` (+rollback),
+   `agents.project_id`, refresh `family_id`/grace support,
    `AgentEnrollmentService` (mint/list/revoke/enroll/refresh) and token
    hashing/prefix helpers. Verify: service unit tests + migration dry-run.
-2. **Auth middleware** — dispatch `at_…` access tokens and legacy `ak_…` keys,
-   enforce expiry/revocation centrally, and move heartbeat onto the shared
-   helper. Verify: `api-agent-auth` and heartbeat-expiry tests.
+2. **Auth middleware and project scope** — dispatch `at_…` access tokens and
+   legacy `ak_…` keys, enforce expiry/revocation centrally, load
+   `project_id` into `req.agent`, and add the project-scope assertion used by
+   ticket and other agent-facing project routes. Verify: `api-agent-auth`,
+   heartbeat-expiry and cross-project tests.
 3. **Enrollment routes** — validators, rate limiters, generic failures, audit
    events, OpenAPI annotations, flag gating. Verify: route tests + bash suite.
-4. **Revocation and retention** — cascade agent delete/revoke to token rows;
-   add the daily purge job; expose enrollment metadata without secrets.
-   Verify: revocation tests + retention test.
+4. **Revocation, replay and retention** — cascade agent delete/revoke to token
+   rows; implement the refresh grace/idempotency path; add the daily purge job;
+   expose enrollment metadata without secrets. Verify: revocation,
+   concurrent-refresh, lost-response and retention tests.
 5. **Agent enrollment client** — `AgentConfig` precedence, credential store
-   (0600/atomic), enroll on first boot, access-token use and refresh scheduler.
-   Verify: `mvn test` + a Docker smoke test with a volume.
+   (0600/atomic) including `projectId`, enroll on first boot, access-token use
+   and refresh scheduler. Verify: `mvn test` + the Docker smoke test with a
+   persistent volume/restart.
 6. **Pool agents and long-running credentials** — configurable lifetime and a
    renewal path; remove the silent one-day expiry. Verify: >24h simulation test.
-7. **Admin UI and docs** — `api/agentEnrollment.ts`, mint/list/revoke panel on
-   the Agents page with a project selector, one-time token display; operator
-   runbook in `02` → Rollout. Verify: Vitest + typecheck + build.
+7. **Metrics and admin UI/docs** — enrollment/refresh counters and failure
+   counters in `metrics.js`; `api/agentEnrollment.ts`, mint/list/revoke panel
+   on the Agents page with a project selector, one-time token display; operator
+   runbook in `02` → Rollout. Verify: metrics assertions + Vitest + typecheck +
+   build.
 
 ## Per-file changes
 
@@ -39,25 +46,36 @@
 | `backend/src/validators/agentEnrollment.js` | CREATE | Joi schemas for mint/enroll/refresh/metadata |
 | `backend/src/api/agentEnrollment.js` | CREATE | Routes + OpenAPI JSDoc, permission/membership checks, flag |
 | `backend/src/api/v1/index.js` | MODIFY | Mount `/agent-enrollment` |
-| `backend/src/middleware/auth.js` | MODIFY | Prefix dispatch, shared expiry/revocation check |
-| `backend/src/api/v1/agentHeartbeat.js` | MODIFY | Use shared agent auth; enforce expiry |
-| `backend/src/services/AgentService.js` | MODIFY | Revocation cascade, enrollment metadata, key-preview honesty |
+| `backend/src/middleware/auth.js` | MODIFY | Prefix dispatch, shared expiry/revocation check, load `project_id` into `req.agent` |
+| `backend/src/middleware/agentProjectScope.js` | CREATE | Assert `req.agent.project_id` matches the ticket/credential project; legacy NULL keeps owner scope |
+| `backend/src/services/TicketService.js` | MODIFY | Enforce `agentProjectId` before owner/admin bypass in `canActOnTicketProject` and writer paths |
+| `backend/src/api/ticketPlanning.js` | MODIFY | Apply the project-scope assertion to agent planning reads |
+| `backend/src/api/github.js` | MODIFY | Apply the project-scope assertion to agent repo/token routes |
+| `backend/src/api/harnessRuns.js` | MODIFY | Apply the project-scope assertion to agent lease/run routes |
+| `backend/src/api/v1/agentHeartbeat.js` | MODIFY | Use shared agent auth; enforce expiry on heartbeat and status paths |
+| `backend/src/services/AgentService.js` | MODIFY | Revocation cascade, `project_id` persistence/return, enrollment metadata, key-preview honesty |
+| `backend/src/metrics.js` | MODIFY | Enrollment/refresh and auth-failure counters/histograms |
 | `backend/src/services/PoolManager.js` | MODIFY | Credential lifetime/renewal for pool agents |
 | `backend/src/middleware/agentEnrollmentRateLimit.js` | CREATE | Per-IP/prefix limits for enroll/refresh/mint |
-| `backend/src/services/AgentTokenCleanupService.js` | CREATE | Retention purge for token/audit rows |
-| `agent/src/main/java/com/vibecode/agent/config/AgentConfig.java` | MODIFY | Enrollment/credential-file env + precedence |
+| `backend/src/services/AgentTokenCleanupService.js` | CREATE | Retention purge for token/audit rows using the expiry indexes |
+| `agent/src/main/java/com/vibecode/agent/config/AgentConfig.java` | MODIFY | Enrollment/credential-file env + precedence; `PROJECT_ID` optional in enrollment mode |
 | `agent/src/main/java/com/vibecode/agent/service/AgentEnrollmentClient.java` | CREATE | Enroll/refresh HTTP client |
-| `agent/src/main/java/com/vibecode/agent/service/AgentCredentialStore.java` | CREATE | 0600 atomic load/save |
+| `agent/src/main/java/com/vibecode/agent/service/AgentCredentialStore.java` | CREATE | 0600 atomic load/save, including `projectId` |
 | `agent/src/main/java/com/vibecode/agent/service/AgentAuthManager.java` | CREATE | Access-token lifecycle, refresh timer, 401 retry |
 | `agent/src/main/java/com/vibecode/agent/AgentApp.java` | MODIFY | First-boot enrollment, auth manager wiring |
 | `agent/src/main/java/com/vibecode/agent/service/ApiService.java` | MODIFY | Use `AgentAuthManager` token instead of static key |
 | `agent/Dockerfile` / `agent/docker-compose*.yml` | MODIFY | Credential volume, `ENROLLMENT_TOKEN`/`ENROLLMENT_URL`, pass `AGENT_ID` |
 | `agent/docker-compose.remote.yml.example` | CREATE | Remote-worker template without the API's Compose network |
 | `agent/.env.example` | MODIFY | `AGENT_ID`, enrollment/credential variables, TLS note |
+| `agent/scripts/agent-enrollment-smoke.sh` | CREATE | Docker enroll → restart-with-volume check |
+| `backend/src/__tests__/agentProjectScope.test.js` | CREATE | Cross-project ticket/credential scope matrix |
+| `backend/src/__tests__/integration/agentEnrollmentLoad.test.js` | CREATE | 100 enrollments / 1,000 refreshes with p95 evidence |
+| `backend/src/__tests__/agentEnrollmentMetrics.test.js` | CREATE | Enrollment/refresh/grace/reuse/failure counter assertions |
+| `backend/package.json` | MODIFY | Add the `test:load:agent-enrollment` script |
 | `frontend/src/api/agentEnrollment.ts` | CREATE | Mint/list/revoke client |
 | `frontend/src/views/AgentList.vue` | MODIFY | Enrollment tokens panel + project selector; one-time display |
 | `frontend/src/__tests__/...` | CREATE | API/component/enrollment tests |
-| `README.md` / `agent/.env.example` | MODIFY | Enrollment variables, TLS, credential volume; fix `AGENT_ID` docs |
+| `README.md` | MODIFY | Enrollment variables, TLS, credential volume; fix `AGENT_ID` docs |
 
 ## Dependencies
 
@@ -65,6 +83,8 @@
   project membership checks.
 - Migration runner and rollback convention.
 - Java agent build and image pipeline.
+- `agents.project_id` is added by this ticket for enrolled agents; the broader
+  manual/legacy project-agent migration is deferred in `00` D11.
 - Related: fg-43 (host deployment), fg-40 (multi-host), fg-41 (audit export).
 
 ## Migration notes
@@ -72,9 +92,10 @@
 - File: `054_agent_enrollment.sql` + `054_agent_enrollment_rollback.sql`.
 - Apply order: after `053_harness_privacy.sql` in the `apply.js` array.
 - Additive only; no backfill. Existing agents keep working with
-  `enrollment_token_id = NULL`.
-- Rollback order: drop `agents` columns, then `agent_auth_events`,
-  `agent_refresh_tokens`, `agent_access_tokens`, `agent_enrollment_tokens`.
+  `project_id = NULL` and `enrollment_token_id = NULL`.
+- Rollback order: drop the `agents` project/enrollment columns and index, then
+  `agent_auth_events`, `agent_refresh_tokens`, `agent_access_tokens`,
+  `agent_enrollment_tokens`.
 - Verify with `cd backend && npm run db:migrate:dry-run` and a real PG
   integration run.
 
@@ -82,31 +103,31 @@
 
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
-| FR1 | backend unit | `backend/src/__tests__/agentEnrollmentService.test.js` | mint returns raw token once, stores only hash/prefix, rejects bad TTL/max_uses/provider/permission | `cd backend && npm test` |
-| FR2 | backend unit | `backend/src/__tests__/agentEnrollmentService.test.js` | list omits secrets; revoke blocks enrollment | `cd backend && npm test` |
-| FR3 | backend unit + integration | `backend/src/__tests__/agentEnrollmentService.test.js`, `src/__tests__/integration/agentEnrollment.test.js` | valid enroll creates one agent; expired/revoked/exhausted create none; project/provider cannot be overridden | `cd backend && npm test && npm run test:integration` |
-| FR4 | backend unit | `backend/src/__tests__/agentTokenAuth.test.js` | `at_` token authorizes; expired/revoked 401; prefix-index lookup | `cd backend && npm test` |
-| FR5 | backend unit + integration | `backend/src/__tests__/agentEnrollmentService.test.js`, `src/__tests__/integration/agentEnrollment.test.js` | refresh rotates; old refresh fails; reuse revokes family | `cd backend && npm test && npm run test:integration` |
-| FR6 | backend unit | `backend/src/__tests__/agentTokenAuth.test.js` | delete/revoke invalidates access, refresh and legacy tokens; other agents unaffected | `cd backend && npm test` |
-| FR7 | agent unit + smoke | `agent/src/test/java/com/vibecode/agent/enrollment/AgentEnrollmentTest.java` | first boot enrolls; restart with volume skips enroll; file precedence; no secrets logged | `cd agent && mvn test` |
-| FR8 | agent unit | `agent/src/test/java/com/vibecode/agent/enrollment/AgentAuthManagerTest.java` | refresh before expiry and on 401; bounded retries; exit on failure | `cd agent && mvn test` |
-| FR9 | backend unit + agent unit | `backend/src/__tests__/api-agent-auth.test.js`, `AgentConfigTest` | legacy `ak_` keys work; prefix dispatch; feature flag off keeps legacy | `cd backend && npm test`; `cd agent && mvn test` |
-| FR10 | backend unit | `backend/src/__tests__/agentHeartbeatExpiry.test.js` | expired key heartbeat 401; not reported online; all paths share check | `cd backend && npm test` |
-| FR11 | backend unit | `backend/src/__tests__/agentEnrollmentService.test.js` | audit events for mint/revoke/enroll/refresh/reuse/expiry; redaction | `cd backend && npm test` |
-| FR12 | backend unit + bash | `backend/src/__tests__/agentEnrollmentRateLimit.test.js`, `backend/integration-test/suites/agent_enrollment.test.sh` | burst 429; concurrent max_uses; generic errors | `cd backend && npm test`; `cd backend && bash integration-test/run.sh --only` |
-| FR13 | backend integration | `backend/src/__tests__/integration/agentEnrollment.test.js` | DB failure leaves no rows; concurrent refresh has one winner | `cd backend && npm run test:integration` |
-| FR14 | backend unit | `backend/src/__tests__/agentEnrollmentRoutes.test.js` | non-loopback HTTP rejected; HTTPS/dev flag accepted; proxy header | `cd backend && npm test` |
-| FR15 | backend integration | `backend/src/__tests__/integration/poolAgentCredentials.test.js` | pool agent authenticates past 24h; lifetime configurable; renewal path | `cd backend && npm run test:integration` |
-| FR16 | frontend unit | `frontend/src/__tests__/agentEnrollmentModal.test.ts`, `api-agentEnrollment.test.ts` | one-time display/copy; list/revoke; permission gating; no localStorage | `cd frontend && npm test -- --run` |
-| FR17 | shell/config | `agent/docker-compose.yml`, `agent/docker-compose.remote.yml.example`, `agent/.env.example` | Compose config includes `AGENT_ID`; remote template has no external API network; env docs list enrollment vars | `docker compose -f agent/docker-compose.yml config`; `docker compose -f agent/docker-compose.remote.yml.example config` |
-| NFR1 | backend unit | `backend/src/__tests__/agentEnrollmentService.test.js` | responses/logs/events contain no raw token; hash-only rows | `cd backend && npm test` |
-| NFR2 | backend unit | `backend/src/__tests__/agentEnrollmentPermissions.test.js` | owner/member/admin/stranger matrix; cross-project token fails | `cd backend && npm test` |
-| NFR3 | agent unit + frontend unit | `AgentCredentialStoreTest.java`, `agentEnrollmentModal.test.ts` | 0600 atomic write, temp cleanup; no secret in Pinia/localStorage | `cd agent && mvn test`; `cd frontend && npm test -- --run` |
-| NFR4 | backend integration | `backend/src/__tests__/integration/agentEnrollment.test.js` | indexed lookup; enroll/refresh load targets | `cd backend && npm run test:integration` |
-| NFR5 | backend integration + bash | migration rollback test, `agent_enrollment.test.sh` | legacy keys pass; rollback succeeds; flag-off behavior | `cd backend && npm run test:integration`; `bash integration-test/run.sh --only` |
-| NFR6 | bash + docs | `backend/integration-test/suites/agent_enrollment.test.sh` | mint → enroll → refresh → revoke → 401; error codes match runbook | `cd backend && bash integration-test/run.sh --only` |
-| NFR7 | backend unit | `backend/src/__tests__/agentTokenCleanup.test.js` | expired/revoked rows purged past retention; audit retention respected | `cd backend && npm test` |
-| NFR8 | planning | `planning/check-planning.js` + this matrix | every FR/NFR has a row; tests named with IDs | `node planning/check-planning.js` |
+| FR1 | backend unit | `backend/src/__tests__/agentEnrollmentService.test.js` | [FR1] mint returns raw token once, stores only hash/prefix, rejects bad TTL/max_uses/provider/permission | `cd backend && npm test` |
+| FR2 | backend unit | `backend/src/__tests__/agentEnrollmentService.test.js` | [FR2] list omits secrets; revoke blocks enrollment | `cd backend && npm test` |
+| FR3 | backend unit + integration | `backend/src/__tests__/agentEnrollmentService.test.js`, `agentProjectScope.test.js`, `src/__tests__/integration/agentEnrollment.test.js` | [FR3] enroll creates one agent with the token project; expired/revoked/exhausted create none; project/provider cannot be overridden; issued token serves its project and 403s another project | `cd backend && npm test && npm run test:integration` |
+| FR4 | backend unit | `backend/src/__tests__/agentTokenAuth.test.js` | [FR4] `at_` token authorizes; expired/revoked 401; prefix-index lookup | `cd backend && npm test` |
+| FR5 | backend unit + integration | `backend/src/__tests__/agentEnrollmentService.test.js`, `src/__tests__/integration/agentEnrollment.test.js` | [FR5] refresh rotates; grace replay returns a usable pair; reuse after grace revokes the family; audit reason | `cd backend && npm test && npm run test:integration` |
+| FR6 | backend unit | `backend/src/__tests__/agentTokenAuth.test.js` | [FR6] delete/revoke invalidates access, refresh and legacy tokens; other agents unaffected | `cd backend && npm test` |
+| FR7 | agent unit + Docker smoke | `agent/src/test/java/com/vibecode/agent/enrollment/AgentEnrollmentTest.java`, `agent/scripts/agent-enrollment-smoke.sh` | [FR7] first boot enrolls without `PROJECT_ID`; credential file stores `projectId`; restart with volume skips enroll; file precedence; no secrets logged | `cd agent && mvn test`; `bash agent/scripts/agent-enrollment-smoke.sh` |
+| FR8 | agent unit | `agent/src/test/java/com/vibecode/agent/enrollment/AgentAuthManagerTest.java` | [FR8] refresh before expiry and on 401; lost-response retry inside grace; bounded retries; exit on failure | `cd agent && mvn test` |
+| FR9 | backend unit + agent unit | `backend/src/__tests__/api-agent-auth.test.js`, `AgentConfigTest` | [FR9] legacy `ak_` keys work; prefix dispatch; feature flag off keeps legacy | `cd backend && npm test`; `cd agent && mvn test` |
+| FR10 | backend unit | `backend/src/__tests__/agentHeartbeatExpiry.test.js` | [FR10] expired key 401 on heartbeat and agent-status routes; not reported online; all paths share the check | `cd backend && npm test` |
+| FR11 | backend unit | `backend/src/__tests__/agentEnrollmentService.test.js` | [FR11] audit events for mint/revoke/enroll/refresh/grace/reuse/expiry; redaction | `cd backend && npm test` |
+| FR12 | backend unit + bash | `backend/src/__tests__/agentEnrollmentRateLimit.test.js`, `backend/integration-test/suites/agent_enrollment.test.sh` | [FR12] burst 429; concurrent max_uses; generic errors | `cd backend && npm test`; `cd backend && bash integration-test/run.sh --only` |
+| FR13 | backend integration | `backend/src/__tests__/integration/agentEnrollment.test.js` | [FR13] DB failure leaves no rows; concurrent refresh both usable inside grace; winner token works; after-grace replay revokes | `cd backend && npm run test:integration` |
+| FR14 | backend unit | `backend/src/__tests__/agentEnrollmentRoutes.test.js` | [FR14] non-loopback HTTP rejected; HTTPS/dev flag accepted; proxy header | `cd backend && npm test` |
+| FR15 | backend integration | `backend/src/__tests__/integration/poolAgentCredentials.test.js` | [FR15] pool agent authenticates past 24h; lifetime configurable; renewal path | `cd backend && npm run test:integration` |
+| FR16 | frontend unit | `frontend/src/__tests__/agentEnrollmentModal.test.ts`, `api-agentEnrollment.test.ts` | [FR16] one-time display/copy; list/revoke; permission gating; no localStorage | `cd frontend && npm test -- --run` |
+| FR17 | shell/config | `agent/docker-compose.yml`, `agent/docker-compose.remote.yml.example`, `agent/.env.example` | [FR17] Compose config includes `AGENT_ID`; remote template has no external API network; env docs list enrollment vars | `docker compose -f agent/docker-compose.yml config`; `docker compose -f agent/docker-compose.remote.yml.example config` |
+| NFR1 | backend unit | `backend/src/__tests__/agentEnrollmentService.test.js` | [NFR1] responses/logs/events contain no raw token; hash-only rows | `cd backend && npm test` |
+| NFR2 | backend unit + integration | `backend/src/__tests__/agentEnrollmentPermissions.test.js`, `agentProjectScope.test.js`, `src/__tests__/integration/agentEnrollment.test.js` | [NFR2] owner/member/admin/stranger matrix; cross-project token use fails; enrolled agent cannot pick up/edit/release/read another project’s ticket or credential; token purge keeps scope | `cd backend && npm test && npm run test:integration` |
+| NFR3 | agent unit + frontend unit | `AgentCredentialStoreTest.java`, `agentEnrollmentModal.test.ts` | [NFR3] 0600 atomic write, temp cleanup; no secret in Pinia/localStorage | `cd agent && mvn test`; `cd frontend && npm test -- --run` |
+| NFR4 | backend integration + load | `backend/src/__tests__/integration/agentEnrollmentLoad.test.js` | [NFR4] indexed lookups; 100 enrollments and 1,000 refreshes with p95 targets from `02` | `cd backend && npm run test:load:agent-enrollment` |
+| NFR5 | backend integration + bash | migration rollback test, `agent_enrollment.test.sh` | [NFR5] legacy keys pass; rollback succeeds; flag-off behavior | `cd backend && npm run test:integration`; `bash integration-test/run.sh --only` |
+| NFR6 | bash + metrics + docs | `backend/integration-test/suites/agent_enrollment.test.sh`, `backend/src/__tests__/agentEnrollmentMetrics.test.js` | [NFR6] mint → enroll → refresh → revoke → 401; error codes match runbook; counters emitted | `cd backend && bash integration-test/run.sh --only`; `cd backend && npm test` |
+| NFR7 | backend unit | `backend/src/__tests__/agentTokenCleanup.test.js` | [NFR7] expired/revoked rows purged past retention; audit retention respected; expiry indexes used | `cd backend && npm test` |
+| NFR8 | planning | `planning/check-planning.js` + this matrix | [NFR8] every FR/NFR has a row; test cases carry requirement IDs | `node planning/check-planning.js` |
 
 ## Verification commands
 
@@ -115,8 +136,11 @@ node planning/check-planning.js
 cd backend  && npm test && npm run lint
 cd frontend && npm test -- --run && npm run lint && npm run typecheck && npm run build
 cd agent    && mvn test
+# Docker enrollment smoke: enroll, restart with the volume, verify no re-enroll
+bash agent/scripts/agent-enrollment-smoke.sh
 # when applicable
 cd backend  && npm run test:coverage && npm run test:integration
+cd backend  && npm run test:load:agent-enrollment
 cd backend  && bash integration-test/run.sh --only
 ```
 
@@ -138,6 +162,7 @@ cd backend  && bash integration-test/run.sh --only
 | Round | Reviewer | Blocking findings | Resolution | Re-review |
 |---|---|---|---|---|
 | 0 | pending | | | |
+| 1 | independent review (PR #173) | Project scoping was not stored/enforced; refresh replay could revoke a concurrent/lost-response winner. | Added `agents.project_id` + route enforcement and tests; added refresh `family_id` + grace window and concurrent/lost-response/reuse tests. Non-blocking verification, metrics, credential-file, decision, index and retention-index gaps also closed. | pending |
 
 ## Results
 

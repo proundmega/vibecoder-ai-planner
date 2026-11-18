@@ -63,6 +63,7 @@ for heartbeats while every real call fails with `KEY_EXPIRED`.
 | A5 | The project owner is an acceptable owner for enrolled agents | Agents may disappear from the creator’s agent list; ownership transfer becomes a project operation | Mirrors PoolManager; `FR3` test | open |
 | A6 | Reusing `X-API-Key` for access tokens does not break existing agent clients | A new header would require agent and proxy changes | Middleware prefix dispatch; `FR4` | open |
 | A7 | PostgreSQL row locks/conditional updates provide enough concurrency control for single-use tokens | Concurrent enrollments could exceed `max_uses` | `FR13` integration test | open |
+| A8 | The server-side `agents.project_id` is the authoritative project scope; the agent's `PROJECT_ID` env is only a bootstrap hint | A compromised worker could act across the owner's projects | `FR3`/`NFR2` cross-project tests | open |
 
 ## Functional requirements
 
@@ -70,17 +71,17 @@ for heartbeats while every real call fails with `KEY_EXPIRED`.
 |---|---|---|
 | FR1 | An authorized user can mint a join token for a project with a name, TTL, max uses and optional provider. The raw token is returned exactly once; only a hash and lookup prefix are stored. | `POST /api/v1/agent-enrollment/tokens` returns 201 with the raw token once; list/detail responses never contain it or its hash; invalid project/provider/permission is rejected. |
 | FR2 | Project admins can list join-token metadata and revoke a token. | `GET .../tokens?project_id=` returns id/name/provider/max_uses/used_count/expires_at/revoked_at and no secret; `DELETE .../tokens/:id` sets `revoked_at`; a revoked token cannot enroll. |
-| FR3 | `POST /api/v1/agent-enrollment/enroll` atomically validates a join token, consumes one use, creates an agent in the token’s project, and returns the node’s credentials. | Valid request creates exactly one agent and returns `agentId`, `accessToken`, `refreshToken` and expiries; expired/revoked/exhausted/unknown tokens return a generic 401 and create no rows; the request cannot override project or provider. |
+| FR3 | `POST /api/v1/agent-enrollment/enroll` atomically validates a join token, consumes one use, creates an agent with `agents.project_id = token.project_id`, and returns the node’s credentials. | Valid request creates exactly one agent with the token’s project and returns `{ agent_id, project_id, access_token, refresh_token, access_expires_at, refresh_expires_at }`; expired/revoked/exhausted/unknown tokens return a generic 401 and create no rows; the request cannot override project or provider. The issued access token authorizes a ticket/credential request in that project and returns 403 for another project even when the agent’s owner is a member or admin there. |
 | FR4 | An agent access token (`at_…`) authenticates through `X-API-Key`; it is looked up by prefix/hash, checked for expiry/revocation, and resolves to its agent. | Valid access token authorizes agent routes; expired token returns 401 `TOKEN_EXPIRED`; revoked token returns 401 `TOKEN_REVOKED`; lookup uses an indexed prefix. |
-| FR5 | `POST /api/v1/agent-enrollment/refresh` exchanges a valid refresh token (`ar_…`) for a new access token and a rotated refresh token. Reuse of a rotated/revoked refresh token revokes the token family. | Refresh returns a new pair; the old refresh token fails; reuse revokes all access/refresh tokens for the agent and emits an audit event. |
+| FR5 | `POST /api/v1/agent-enrollment/refresh` exchanges a valid refresh token (`ar_…`) for a new access token and a rotated refresh token. Replay of the immediately previous token inside a short grace window returns a fresh usable pair without revoking the family; reuse after the window (or of an older token) revokes the family. | Refresh returns a new pair and marks the old token rotated. A replay inside `AGENT_REFRESH_GRACE_SECONDS` (default 60) returns a usable pair, keeps the family valid and emits a `refresh_grace_replay` audit event. Reuse outside the window revokes all access/refresh tokens for the agent; the winning access token stops working and an audit event records the reason. |
 | FR6 | Revoking an agent or its keys invalidates every credential for that agent (access, refresh and legacy key). | After revoke/delete, authenticated calls with any of the agent’s tokens return 401; token rows are marked revoked; other agents are unaffected. |
-| FR7 | The Java agent supports first-boot enrollment via `ENROLLMENT_TOKEN` + `ENROLLMENT_URL` when no static `AGENT_ID`/`AGENT_API_KEY` is set; it persists credentials to `AGENT_CREDENTIALS_FILE` (0600, atomic write) and uses the access token. | A container with an enrollment token and a persistent volume enrolls and starts; restarting with the volume does not re-enroll; an existing credential file takes precedence over the env token; no token appears in logs. |
-| FR8 | The agent refreshes before access-token expiry and once on a 401, with bounded backoff; it never runs with an expired token. | Unit test uses a short TTL and asserts refresh before expiry and on 401; refresh failure retries N times, logs a redacted error and exits non-zero. |
+| FR7 | The Java agent supports first-boot enrollment via `ENROLLMENT_TOKEN` + `ENROLLMENT_URL` when no static `AGENT_ID`/`AGENT_API_KEY` is set; it persists `{ agentId, projectId, refreshToken, accessToken, exp }` to `AGENT_CREDENTIALS_FILE` (0600, atomic write) and uses the access token. | A container with an enrollment token and a persistent volume enrolls and starts without requiring `PROJECT_ID`; restarting with the volume does not re-enroll and reuses the stored project; an existing credential file takes precedence over the env token; no token appears in logs. |
+| FR8 | The agent refreshes before access-token expiry and once on a 401, with bounded backoff; it never runs with an expired token and survives a lost refresh response. | Unit test uses a short TTL and asserts refresh before expiry and on 401; a lost response is retried with the same refresh token and succeeds inside the grace window; refresh failure retries N times, logs a redacted error and exits non-zero. |
 | FR9 | Existing `AGENT_ID` + `AGENT_API_KEY` (`ak_…`) configurations continue to work unchanged; middleware selects token type by prefix. | Legacy agent auth tests still pass; a legacy key authenticates; the enrollment feature can be disabled without affecting legacy mode. |
-| FR10 | Every agent auth path, including heartbeat and agent-status, enforces access/legacy key expiry and revocation. | An expired key receives 401 on heartbeat; the agent is not reported online; all agent routes use the same expiry check. |
-| FR11 | Join-token lifecycle, enrollment, refresh, reuse detection, expiry and revocation emit audit events with actor/project/agent/IP and no secrets. | Events are persisted/queryable; logs and events redact raw tokens; failed attempts include a reason code, not the token. |
+| FR10 | Every agent auth path, including heartbeat and the agent status/read paths, enforces access/legacy key expiry and revocation. | An expired key receives 401 on heartbeat and on agent-authenticated status routes; the agent is not reported online; all agent routes use the same expiry check. |
+| FR11 | Join-token lifecycle, enrollment, refresh, grace replay, reuse detection, expiry and revocation emit audit events with actor/project/agent/IP and no secrets. | Events are persisted/queryable; logs and events redact raw tokens; failed attempts include a reason code, not the token. |
 | FR12 | Enrollment, refresh and token minting are rate-limited per IP and token prefix; failures are generic; `max_uses` is enforced under concurrency. | A burst returns 429; parallel enrollments beyond `max_uses` produce one success and the rest 401; token probing does not reveal whether a prefix exists. |
-| FR13 | Enrollment and refresh are transactional; failures leave no partial agent/token rows; concurrent refresh has one winner. | Integration test injects a DB failure mid-enroll and finds no agent/token rows; concurrent refresh returns one success and one 401. |
+| FR13 | Enrollment and refresh are transactional; failures leave no partial agent/token rows; a refresh token rotates exactly once. | Integration test injects a DB failure mid-enroll and finds no agent/token rows. Two concurrent refreshes with the same token both return usable pairs inside the grace window without revoking the family, and the winner’s access token still authorizes a request. A third replay after the grace window is rejected as reuse and revokes the family. |
 | FR14 | Enrollment and refresh over non-TLS are refused unless the request is loopback or `ALLOW_INSECURE_AGENT_ENROLLMENT=1`. | Plain HTTP from a non-loopback address is rejected with a clear error; HTTPS or the explicit dev flag succeeds; proxy `trust proxy` behavior is tested. |
 | FR15 | PoolManager-provisioned agents either use enrollment/refresh or receive credentials with a configurable lifetime and an automatic renewal path; no silent one-day expiry. | A pool agent remains authenticated past 24 hours in a test; its key lifetime is configurable; an expired pool credential is renewed or the agent fails with a clear operator action. |
 | FR16 | Project admins can mint, list and revoke join tokens in the UI; the raw token is shown once with a copy action and never persisted client-side. | Component test verifies the one-time display, copy action, list/revoke, permission gating and that localStorage/Pinia does not retain the raw token. |
@@ -91,7 +92,7 @@ for heartbeats while every real call fails with `KEY_EXPIRED`.
 | ID | Requirement | Acceptance |
 |---|---|---|
 | NFR1 | Token storage is one-way: only hashes and non-secret prefixes are stored; raw tokens are never logged, returned twice, put in URLs, or written to prompt/event payloads. | Code review and tests assert response/log/event fields contain only hashes/prefixes; a token-shaped string is redacted. |
-| NFR2 | Authorization is project-scoped: mint/list/revoke require the existing agent permissions plus project membership; enrollment cannot cross projects or choose a provider not allowed by the token. | Permission-boundary tests for owner/member/admin/stranger; cross-project token use fails. |
+| NFR2 | Authorization is project-scoped: mint/list/revoke require the existing agent permissions plus project membership; enrollment cannot cross projects or choose a provider not allowed by the token; an enrolled agent is confined to `agents.project_id` for ticket and credential access. | Permission-boundary tests for owner/member/admin/stranger; cross-project token use fails; an enrolled agent cannot pick up, edit, release or read a ticket/credential in another project even when its owner is a member or admin there; purging the enrollment token does not change the agent’s scope. |
 | NFR3 | Node credentials are written atomically with mode `0600`; secrets are never echoed, committed, included in argv, or stored in localStorage. | Credential-store unit test checks permissions and temp-file cleanup; frontend test checks storage; lint/scan finds no fixture secrets. |
 | NFR4 | Token lookup is indexed and bounded; enroll/refresh add no full-table scans and stay within the existing request timeout under expected load. | Query plans use the prefix indexes; a load test covers 100 enrollments and 1,000 refreshes with p95 targets documented in `02`. |
 | NFR5 | The change is additive and backward compatible: legacy keys keep working, the migration is non-destructive, and the feature can be disabled without rolling back the schema. | Legacy tests pass; migration rollback succeeds; `AGENT_ENROLLMENT_ENABLED=false` leaves legacy auth working. |
@@ -113,11 +114,11 @@ for heartbeats while every real call fails with `KEY_EXPIRED`.
 
 | Area | Impact | Evidence / owner |
 |---|---|---|
-| API routes/contracts | New `/api/v1/agent-enrollment/*` endpoints; existing agent routes unchanged; OpenAPI annotations required | `02` API contract; generated spec |
-| Database/migrations | New `agent_enrollment_tokens`, `agent_access_tokens`, `agent_refresh_tokens`, `agent_auth_events`; `agents` gains enrollment metadata columns | `02` data model; `054_agent_enrollment.sql` + rollback |
+| API routes/contracts | New `/api/v1/agent-enrollment/*` endpoints; existing agent routes keep their contracts but gain project-scope enforcement; OpenAPI annotations required | `02` API contract; generated spec |
+| Database/migrations | New `agent_enrollment_tokens`, `agent_access_tokens`, `agent_refresh_tokens`, `agent_auth_events`; `agents` gains `project_id` and enrollment metadata columns | `02` data model; `054_agent_enrollment.sql` + rollback |
 | Frontend | New `api/agentEnrollment.ts`; mint/list/revoke UI in the Agents/Compute Nodes area; agent list shows enrollment mode | `03` per-file changes |
 | Agent/harness | `AgentConfig`, `AgentApp`, auth manager, credential store, `ApiService`; no prompt/harness behavior change | `03` agent test matrix |
-| Permissions/auth | Reuses `AGENT_CREATE`/`AGENT_READ`/`AGENT_REVOKE` + project membership; new token type in middleware | `02` security section |
+| Permissions/auth | Reuses `AGENT_CREATE`/`AGENT_READ`/`AGENT_REVOKE` + project membership; new token type in middleware; `agents.project_id` enforced on ticket/credential routes | `02` security section |
 | Background jobs/external calls | Expiry cleanup job; refresh calls from the agent | `02` failure modes |
 | Downstream tickets | Unblocks remote self-registration (AGENT-1/2/AUTH-1); complements fg-40/fg-43; user PATs remain D1 | `00` notes |
 | Rollback | Disable `AGENT_ENROLLMENT_ENABLED`, revoke tokens; migration rollback drops new tables/columns; legacy keys untouched | `02` rollout |
@@ -131,20 +132,19 @@ Summarised only; the authoritative list is **`00` → Deferred register**.
 - Multi-host scheduling — see `00` D3.
 - Automatic migration of legacy agents — see `00` D8.
 - UI one-liner/QR generation — see `00` D5.
+- Broader project-agents migration for manual/legacy agents — see `00` D11.
 
 ## Open questions
 
-| # | Question | Assumption if unanswered |
-|---|---|---|
-| 1 | Are 60-minute access tokens and 30-day refresh tokens acceptable defaults? | Use the recommendation in `00` decision 1. |
-| 2 | Should enrollment be rejected on plain HTTP on a private LAN? | Reject unless loopback or `ALLOW_INSECURE_AGENT_ENROLLMENT=1` (decision 2). |
-| 3 | Is a minimal mint/list/revoke UI required in the first implementation? | Yes (decision 4); API-only would leave the key unusable without curl. |
-| 4 | Should enrolled agents be owned by the project owner or the token creator? | Project owner (decision 3). |
-| 5 | Should refresh-token reuse revoke the whole family or only the reused token? | Revoke the family; force re-enrollment (FR5). |
+None. All product decisions are recorded and answered in **`00` → Decisions
+needed from the user** (lifetimes, transport, ownership, UI scope, credential
+transport and refresh replay); this document does not duplicate them.
 
 ## Dependencies
 
-- Depends on: none (uses existing agent auth, permissions and migrations).
+- Depends on: none for the new `agents.project_id` column (uses existing agent
+  auth, permissions and migrations). The broader manual/legacy project-agent
+  migration is deferred in `00` D11.
 - Related: `fg-43` (host deployment/sizing), `fg-40` (multi-host orchestration),
   `fg-41` (audit/metrics), `fg-45`/`fg-51` (readiness and traceability gates).
 - Blocks: true remote self-registration; the intake rows `AGENT-1`,
