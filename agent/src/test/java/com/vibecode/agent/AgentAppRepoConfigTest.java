@@ -31,11 +31,17 @@ class AgentAppRepoConfigTest {
         boolean review;
         boolean build;
         boolean hasRepo;
+        String owner;
+        String name;
 
         @Override public boolean isReviewMode() { return review; }
         @Override public boolean isBuildMode() { return build; }
         @Override public boolean hasRepoCoordinates() { return hasRepo; }
-        @Override public void setRepoCoordinates(String owner, String name) { hasRepo = true; }
+        @Override public void setRepoCoordinates(String owner, String name) {
+            this.owner = owner;
+            this.name = name;
+            this.hasRepo = true;
+        }
     }
 
     @Test
@@ -88,6 +94,20 @@ class AgentAppRepoConfigTest {
             () -> Map.of("repoUrl", "https://github.com/server-org/server-repo.git"));
 
         assertTrue(config.hasRepo);
+    }
+
+    @Test
+    void autoBuildWithEnvRepoStillAppliesTheServerRepo() {
+        ModeConfig config = new ModeConfig();
+        config.review = false;
+        config.build = false;
+        config.hasRepo = true; // legacy REPO_OWNER/REPO_NAME pair
+
+        AgentApp.resolveRepoConfig(config,
+            () -> Map.of("repoUrl", "https://github.com/server-org/server-repo.git"));
+
+        assertEquals("server-org", config.owner);
+        assertEquals("server-repo", config.name);
     }
 
     @Test

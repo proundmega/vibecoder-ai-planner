@@ -105,13 +105,7 @@ public class AgentConfig {
         }
         this.repoOwner = getEnv("REPO_OWNER", null);
         this.repoName = getEnv("REPO_NAME", null);
-        this.agentMode = getEnv("AGENT_MODE", "auto").toLowerCase();
-        if (!"auto".equals(this.agentMode)
-                && !"build".equals(this.agentMode)
-                && !"review".equals(this.agentMode)) {
-            throw new IllegalStateException(
-                "AGENT_MODE must be 'auto', 'build' or 'review' (got '" + this.agentMode + "')");
-        }
+        this.agentMode = parseAgentMode(getEnv("AGENT_MODE", null));
         this.pollInterval = Duration.ofMillis(getLongEnv("POLL_INTERVAL_MS", 30000));
         this.staleTimeout = Duration.ofMillis(getLongEnv("STALE_TIMEOUT_MS", 3600000));
         this.aiProvider = getEnv("AI_PROVIDER", "claude");
@@ -131,7 +125,7 @@ public class AgentConfig {
         this.repoCloneDir = getEnv("REPO_CLONE_DIR", "/tmp/repos");
         this.harnessConfig = HarnessConfig.fromEnvironment();
         this.sandboxConfig = SandboxConfig.fromEnvironment();
-        if (this.repoOwner != null && !this.repoOwner.isBlank()) {
+        if (!isReviewMode() && hasRepoCoordinates()) {
             validateCloneDir(this.repoCloneDir);
         }
     }
@@ -234,14 +228,25 @@ public class AgentConfig {
     }
 
     public boolean isReviewMode() {
-        return shouldReview(agentMode, repoOwner);
+        return shouldReview(agentMode, repoOwner, repoName);
     }
 
-    static boolean shouldReview(String mode, String repoOwner) {
+    static String parseAgentMode(String raw) {
+        String value = raw == null ? "" : raw.trim().toLowerCase();
+        if (value.isBlank()) return "auto";
+        if ("auto".equals(value) || "build".equals(value) || "review".equals(value)) {
+            return value;
+        }
+        throw new IllegalStateException(
+            "AGENT_MODE must be 'auto', 'build' or 'review' (got '" + raw + "')");
+    }
+
+    static boolean shouldReview(String mode, String repoOwner, String repoName) {
         if ("review".equals(mode)) return true;
         if ("build".equals(mode)) return false;
-        // auto preserves the legacy signal: env repo pair means build.
-        return repoOwner == null || repoOwner.isBlank();
+        // auto preserves the legacy signal: a complete env repo pair means build.
+        return repoOwner == null || repoOwner.isBlank()
+            || repoName == null || repoName.isBlank();
     }
     public Duration getPollInterval() { return pollInterval; }
     public Duration getStaleTimeout() { return staleTimeout; }

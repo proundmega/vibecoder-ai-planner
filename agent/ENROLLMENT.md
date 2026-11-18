@@ -38,6 +38,9 @@ AGENT_CREDENTIALS_FILE=/credentials/agent.json
 
 - `AGENT_MODE=build` means the node must resolve a project repository. The
   server repository wins; `REPO_OWNER`/`REPO_NAME` are only a fallback.
+  **Server-repo-only build nodes must set `AGENT_MODE=build`**: `auto` stays
+  review unless the legacy env pair is present. The remote template defaults to
+  `build`; the standalone `agent/docker-compose.yml` defaults to `auto`.
 - `AGENT_MODE=review` runs review/validation work only and never clones or
   pushes.
 - `AGENT_MODE=auto` is the legacy default: a `REPO_OWNER`/`REPO_NAME` pair means
@@ -115,7 +118,7 @@ In the UI, the agent appears under **Agents**, and the join token shows one use.
 | Enrollment tab missing or 404 | `AGENT_ENROLLMENT_ENABLED` is off, or you lack `AGENT_READ`. |
 | `TLS_REQUIRED` | Use HTTPS, or set `ALLOW_INSECURE_AGENT_ENROLLMENT=1` for local testing. |
 | `AGENT_CREDENTIALS_FILE is required` | Mount a persistent volume and set the path. |
-| `AGENT_MODE=build but the project has no usable repository` | Connect a repo under **Manage GitHub**, or set `REPO_OWNER`/`REPO_NAME` as a fallback. |
+| `AGENT_MODE=build but the project has no usable repository` | The node has already consumed its one-time join token. Connect a repo under **Manage GitHub**, then mint a new token (or configure `REPO_OWNER`/`REPO_NAME` before starting). |
 | Agent says review mode on a build worker | Set `AGENT_MODE=build`. |
 | Join token rejected | It is expired, revoked, or already used; mint a new one. |
 | Agent cannot refresh | The refresh token family was revoked or expired; re-enroll. |

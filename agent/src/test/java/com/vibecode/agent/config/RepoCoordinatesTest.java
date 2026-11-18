@@ -31,6 +31,11 @@ class RepoCoordinatesTest {
     }
 
     @Test
+    void keepsNumericScpOwners() {
+        assertParsed("git@github.com:123/repo.git", "123", "repo");
+    }
+
+    @Test
     void keepsGitlabSubgroupsInTheOwner() {
         assertParsed("https://gitlab.com/group/sub/widgets.git", "group/sub", "widgets");
     }

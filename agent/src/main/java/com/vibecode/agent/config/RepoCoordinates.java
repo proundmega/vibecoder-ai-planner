@@ -45,11 +45,15 @@ public record RepoCoordinates(String owner, String name) {
             String after = value.substring(colon + 1);
             int nextSlash = after.indexOf('/');
             String port = nextSlash >= 0 ? after.substring(0, nextSlash) : after;
-            if (port.matches("\\d+")) {
+            String rest = after.substring(port.length());
+            long remainingSegments = java.util.Arrays.stream(rest.split("/"))
+                .filter(segment -> !segment.isBlank())
+                .count();
+            if (port.matches("\\d+") && remainingSegments >= 2) {
                 // ssh://host:22/owner/repo — drop the explicit port.
                 value = value.substring(0, colon) + after.substring(port.length());
             } else {
-                // SCP-like host:owner/repo.
+                // SCP-like host:owner/repo (owner may be numeric).
                 value = value.substring(0, colon) + "/" + after;
             }
         }

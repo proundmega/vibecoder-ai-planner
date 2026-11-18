@@ -33,8 +33,14 @@ import java.util.concurrent.TimeUnit;
  *   java -jar agent.jar
  * 
  * Or with env vars:
- *   AGENT_API_KEY=xxx BACKEND_URL=http://localhost:3001 PROJECT_ID=1 \
- *   REPO_OWNER=myorg REPO_NAME=myrepo \
+ *   # enrolled build node (repo comes from the project)
+ *   ENROLLMENT_TOKEN=enr_xxx AGENT_MODE=build \
+ *   BACKEND_URL=http://localhost:3001 AGENT_CREDENTIALS_FILE=/credentials/agent.json \
+ *   java -jar agent.jar
+ *
+ *   # legacy static build node
+ *   AGENT_ID=1 AGENT_API_KEY=xxx AGENT_MODE=build \
+ *   BACKEND_URL=http://localhost:3001 PROJECT_ID=1 \
  *   java -jar agent.jar
  */
 public class AgentApp {
@@ -59,8 +65,12 @@ public class AgentApp {
     }
 
     public AgentApp(AgentConfig config, AgentAuthManager authManager) {
+        this(config, authManager, new ApiService(config, authManager));
+    }
+
+    AgentApp(AgentConfig config, AgentAuthManager authManager, ApiService apiService) {
         this.config = config;
-        this.apiService = new ApiService(config, authManager);
+        this.apiService = apiService;
         applyServerRepoConfig();
         this.providerSettings = resolveProviderSettings();
         RedactionRegistry.register(config.getAgentApiKey(), config.getAiApiKey(),
@@ -587,7 +597,6 @@ public class AgentApp {
             System.err.println("Error: " + RedactionRegistry.redact(e.getMessage()));
             System.err.println("Required env vars: BACKEND_URL and either "
                 + "AGENT_ID + AGENT_API_KEY or ENROLLMENT_TOKEN (+ AGENT_CREDENTIALS_FILE)");
-            System.err.println("For ticket processing: also set REPO_OWNER, REPO_NAME");
             System.err.println("For build mode: AGENT_MODE=build (repo from the project) or REPO_OWNER/REPO_NAME");
             System.err.println("For review mode: AGENT_MODE=review");
             System.exit(1);

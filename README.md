@@ -125,8 +125,10 @@ Required for `docker compose up`:
 See [`agent/ENROLLMENT.md`](agent/ENROLLMENT.md) for the full self-enrollment walkthrough. The agent reads the project's connected repository from the backend at startup
 when `AGENT_MODE=build`; `REPO_OWNER`/`REPO_NAME` are then only a fallback.
 Review-only nodes use `AGENT_MODE=review`. `AGENT_MODE=auto` keeps the legacy
-behavior: an env repo pair means build, otherwise review. Restart the agent
-after changing the project's repo in the UI.
+behavior: an env repo pair means build, otherwise review, so a build node that
+relies only on the server repo must set `AGENT_MODE=build`. The remote template
+defaults to `build`; the standalone Compose file defaults to `auto`. Restart
+the agent after changing the project's repo in the UI.
 
 For a remote node, mint a one-time join token in **Agents → Enrollment**, set
 `ENROLLMENT_TOKEN` and a persistent `AGENT_CREDENTIALS_FILE` volume, and leave
