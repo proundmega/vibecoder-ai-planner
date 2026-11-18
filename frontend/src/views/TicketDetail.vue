@@ -91,14 +91,21 @@ onMounted(async () => {
     if (!ticket.value) {
       error.value = 'Ticket not found'
     } else {
+      // Decide the auto-open immediately: it only depends on the ticket and
+      // permissions, not on comments/attachments/planning. This also survives
+      // a failure in any of those unrelated fetches.
+      if (route.query.edit === '1') {
+        if (canUpdate()) {
+          showEditModal.value = true
+        } else {
+          stripEditQuery()
+        }
+      }
       comments.value = await fetchComments(ticketId)
       approvals.value = await getTicketApprovals(ticketId)
       attachments.value = await fetchAttachments(ticketId)
       await loadPlanning()
       await loadPlanningUsage()
-      if (route.query.edit === '1' && canUpdate()) {
-        showEditModal.value = true
-      }
     }
   } catch (e) {
     console.error('Failed to load ticket:', e)
@@ -158,13 +165,17 @@ async function requestApproval() {
   }
 }
 
-function closeEditModal() {
-  showEditModal.value = false
+function stripEditQuery() {
   if (route.query.edit !== undefined) {
     const query = { ...route.query }
     delete query.edit
     router.replace({ query })
   }
+}
+
+function closeEditModal() {
+  showEditModal.value = false
+  stripEditQuery()
 }
 
 async function handleEditSaved(updates) {

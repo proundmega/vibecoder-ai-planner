@@ -192,13 +192,23 @@ describe('TicketDetail', () => {
     expect(wrapper.findComponent(TicketEditModal).exists()).toBe(false)
   })
 
-  it('does not auto-open the edit modal without update permission', async () => {
+  it('does not auto-open the edit modal without update permission and strips the query', async () => {
     mockRoute.query = { edit: '1' }
     authState.canUpdate = false
 
     const wrapper = await mountDetail(baseTicket())
 
     expect(wrapper.findComponent(TicketEditModal).exists()).toBe(false)
+    expect(mockRouter.replace).toHaveBeenCalledWith({ query: {} })
+  })
+
+  it('auto-opens the edit modal even when unrelated data fetches fail', async () => {
+    mockRoute.query = { edit: '1' }
+    ticketsApi.fetchComments.mockRejectedValue(new Error('comments unavailable'))
+
+    const wrapper = await mountDetail(baseTicket())
+
+    expect(wrapper.findComponent(TicketEditModal).exists()).toBe(true)
   })
 
   it('strips the edit query when the edit modal is closed', async () => {
