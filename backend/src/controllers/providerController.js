@@ -1,7 +1,8 @@
 const ProviderRouter = require('../services/ProviderRouter');
 const ProviderService = require('../services/ProviderService');
 const { encrypt, decrypt, maskToken } = require('../utils/crypto');
-const { NotFoundError } = require('../errors/HttpError');
+const { NotFoundError, ValidationError } = require('../errors/HttpError');
+const { getProviderDefaults, resolveProviderEndpoint, providerRequiresEndpoint } = require('../utils/providerDefaults');
 const { pool } = require('../db');
 
 async function addProvider(req, res, next) {
@@ -21,6 +22,21 @@ async function addProvider(req, res, next) {
       custom: 'custom-model',
     };
 
+    // OpenCode gateways have a fixed endpoint and no safe default model, so
+    // require an explicit model and fill the endpoint the agent expects.
+    const defaults = getProviderDefaults(providerType);
+    if (defaults?.requiresModel && (!model || !String(model).trim())) {
+      throw new ValidationError(`Model is required for ${providerType} providers`);
+    }
+    // base_url and endpoint_url are two names for the same endpoint. Keep them
+    // in sync so every agent path (legacy, pool, harness) sees the same value.
+    const resolvedEndpointUrl = resolveProviderEndpoint({
+      providerType,
+      baseUrl,
+      endpointUrl: endpoint_url,
+    });
+    const resolvedBaseUrl = resolvedEndpointUrl;
+
     let row;
     if (is_project_director) {
       const client = await pool.connect();
@@ -29,7 +45,7 @@ async function addProvider(req, res, next) {
         await client.query('UPDATE providers SET is_project_director = false');
         const txResult = await client.query(
           'INSERT INTO providers (name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *',
-          [name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, JSON.stringify(normalizedRoutingRules), true]
+          [name, providerType, encryptedKey, resolvedBaseUrl, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, resolvedEndpointUrl, fallback_provider || null, JSON.stringify(normalizedRoutingRules), true]
         );
         await client.query('COMMIT');
         row = txResult.rows[0];
@@ -44,7 +60,7 @@ async function addProvider(req, res, next) {
         `INSERT INTO providers (name, provider_type, api_key_encrypted, base_url, model, roles, max_tokens, temperature, endpoint_url, fallback_provider, routing_rules, is_project_director, is_active)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING *`,
-         [name, providerType, encryptedKey, baseUrl || null, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, endpoint_url || null, fallback_provider || null, JSON.stringify(normalizedRoutingRules), false, true]
+         [name, providerType, encryptedKey, resolvedBaseUrl, model || localModels[providerType] || 'gpt-4o', roles || ['worker'], maxTokens || 4096, temperature || 0.1, resolvedEndpointUrl, fallback_provider || null, JSON.stringify(normalizedRoutingRules), false, true]
       );
       row = result.rows[0];
     }
@@ -97,6 +113,23 @@ async function updateProvider(req, res, next) {
 
     const existingRow = existing.rows[0];
 
+    // Enforce the same invariants as create. A PATCH can change the type
+    // and/or clear the model, so validate the resulting row, not just the body.
+    const effectiveProviderType = providerType !== undefined ? providerType : existingRow.provider_type;
+    const effectiveModel = model !== undefined ? model : existingRow.model;
+    const defaults = getProviderDefaults(effectiveProviderType);
+    const providerTypeChanged = providerType !== undefined && providerType !== existingRow.provider_type;
+    const previousDefaults = getProviderDefaults(existingRow.provider_type);
+    if (defaults?.requiresModel && !String(effectiveModel || '').trim()) {
+      throw new ValidationError(`Model is required for ${effectiveProviderType} providers`);
+    }
+    // Switching from a provider family that does not require a model (e.g.
+    // OpenAI's gpt-4o) must not silently carry the old model into OpenCode.
+    if (providerTypeChanged && defaults?.requiresModel && !previousDefaults?.requiresModel
+      && !String(model || '').trim()) {
+      throw new ValidationError(`Model is required when switching to ${effectiveProviderType} providers`);
+    }
+
     const updates = [];
     const values = [];
     let paramIndex = 1;
@@ -109,9 +142,38 @@ async function updateProvider(req, res, next) {
       updates.push(`provider_type = $${paramIndex++}`);
       values.push(providerType);
     }
-    if (baseUrl !== undefined) {
+    // The UI only edits endpoint_url. Write both columns whenever an endpoint
+    // or the provider type changes; otherwise agent paths that read base_url
+    // would keep calling the old endpoint.
+    const endpointProvided = baseUrl !== undefined || endpoint_url !== undefined;
+    if (providerTypeChanged || endpointProvided) {
+      let resolvedEndpoint;
+      if (endpointProvided) {
+        resolvedEndpoint = resolveProviderEndpoint({
+          providerType: effectiveProviderType,
+          baseUrl,
+          endpointUrl: endpoint_url,
+        });
+      } else {
+        // When only the type changes, keep a custom endpoint but move a
+        // built-in default to the new type's default (opencode ↔ opencode-go).
+        const previousEndpoint = resolveProviderEndpoint({
+          providerType: existingRow.provider_type,
+          baseUrl: existingRow.base_url,
+          endpointUrl: existingRow.endpoint_url,
+        });
+        const previousDefault = getProviderDefaults(existingRow.provider_type)?.endpointUrl;
+        resolvedEndpoint = previousEndpoint && previousEndpoint !== previousDefault
+          ? previousEndpoint
+          : (defaults?.endpointUrl || null);
+      }
+      if (!resolvedEndpoint && providerRequiresEndpoint(effectiveProviderType)) {
+        throw new ValidationError(`Endpoint URL is required for ${effectiveProviderType} providers`);
+      }
       updates.push(`base_url = $${paramIndex++}`);
-      values.push(baseUrl);
+      values.push(resolvedEndpoint);
+      updates.push(`endpoint_url = $${paramIndex++}`);
+      values.push(resolvedEndpoint);
     }
     if (model !== undefined) {
       updates.push(`model = $${paramIndex++}`);
@@ -132,10 +194,6 @@ async function updateProvider(req, res, next) {
     if (isActive !== undefined) {
       updates.push(`is_active = $${paramIndex++}`);
       values.push(isActive);
-    }
-    if (endpoint_url !== undefined) {
-      updates.push(`endpoint_url = $${paramIndex++}`);
-      values.push(endpoint_url || null);
     }
     if (fallback_provider !== undefined) {
       updates.push(`fallback_provider = $${paramIndex++}`);
@@ -381,11 +439,16 @@ async function testProvider(req, res, next) {
 
     const providerConfig = result.rows[0];
 
-    const baseUrl = providerConfig.base_url || providerConfig.endpoint_url;
-    if (!baseUrl || typeof baseUrl !== 'string') {
-      if (process.env.INTEGRATION_TESTS !== '1') {
-        throw new Error('Base URL is required for this provider type');
-      }
+    const type = providerConfig.provider_type;
+    const baseUrl = resolveProviderEndpoint({
+      providerType: type,
+      baseUrl: providerConfig.base_url,
+      endpointUrl: providerConfig.endpoint_url,
+    });
+    const needsBaseUrl = providerRequiresEndpoint(type);
+    if ((!baseUrl || typeof baseUrl !== 'string') && needsBaseUrl
+      && process.env.INTEGRATION_TESTS !== '1') {
+      throw new Error('Base URL is required for this provider type');
     }
 
     const apiKey = providerConfig.api_key_encrypted ? decrypt(providerConfig.api_key_encrypted) : null;

@@ -2046,6 +2046,19 @@
         }
       }
     },
+    "/providers/defaults": {
+      "get": {
+        "tags": [
+          "Providers"
+        ],
+        "summary": "List built-in provider defaults",
+        "responses": {
+          "200": {
+            "description": "Provider type catalog with default endpoints and model rules"
+          }
+        }
+      }
+    },
     "/providers/{id}": {
       "get": {
         "tags": [

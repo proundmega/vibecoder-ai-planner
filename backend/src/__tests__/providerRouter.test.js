@@ -161,35 +161,76 @@ describe('ProviderRouter', () => {
     it('should create GenericProvider for generic type', () => {
       const router = new ProviderRouter(1);
       const provider = router.createProvider('generic', { apiKey: 'test', model: 'gpt-4o', baseUrl: 'http://localhost:8080' });
-      expect(GenericProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'gpt-4o', maxTokens: undefined, temperature: undefined, baseUrl: 'http://localhost:8080' });
+      expect(GenericProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'gpt-4o', maxTokens: undefined, temperature: undefined, baseUrl: 'http://localhost:8080', providerType: 'generic' });
       expect(provider.chat).toBeDefined();
     });
 
     it('should create GenericProvider for ollama type', () => {
       const router = new ProviderRouter(1);
       const provider = router.createProvider('ollama', { apiKey: 'test', model: 'llama3', baseUrl: 'http://localhost:11434/v1' });
-      expect(GenericProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'llama3', maxTokens: undefined, temperature: undefined, baseUrl: 'http://localhost:11434/v1' });
+      expect(GenericProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'llama3', maxTokens: undefined, temperature: undefined, baseUrl: 'http://localhost:11434/v1', providerType: 'ollama' });
       expect(provider.chat).toBeDefined();
     });
 
     it('should create GenericProvider for vllm type', () => {
       const router = new ProviderRouter(1);
       const provider = router.createProvider('vllm', { apiKey: 'test', model: 'meta-llama/Llama-3-8b', baseUrl: 'http://localhost:8000/v1' });
-      expect(GenericProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'meta-llama/Llama-3-8b', maxTokens: undefined, temperature: undefined, baseUrl: 'http://localhost:8000/v1' });
+      expect(GenericProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'meta-llama/Llama-3-8b', maxTokens: undefined, temperature: undefined, baseUrl: 'http://localhost:8000/v1', providerType: 'vllm' });
       expect(provider.chat).toBeDefined();
     });
 
     it('should create GenericProvider for llamacpp type', () => {
       const router = new ProviderRouter(1);
       const provider = router.createProvider('llamacpp', { apiKey: 'test', model: 'llama-3-8b', baseUrl: 'http://localhost:8081' });
-      expect(GenericProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'llama-3-8b', maxTokens: undefined, temperature: undefined, baseUrl: 'http://localhost:8081' });
+      expect(GenericProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'llama-3-8b', maxTokens: undefined, temperature: undefined, baseUrl: 'http://localhost:8081', providerType: 'llamacpp' });
       expect(provider.chat).toBeDefined();
     });
 
     it('should create GenericProvider for custom type', () => {
       const router = new ProviderRouter(1);
       const provider = router.createProvider('custom', { apiKey: 'test', model: 'custom-model', baseUrl: 'http://custom-api.com' });
-      expect(GenericProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'custom-model', maxTokens: undefined, temperature: undefined, baseUrl: 'http://custom-api.com' });
+      expect(GenericProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'custom-model', maxTokens: undefined, temperature: undefined, baseUrl: 'http://custom-api.com', providerType: 'custom' });
+      expect(provider.chat).toBeDefined();
+    });
+
+    it('should create ClaudeProvider for anthropic type', () => {
+      const router = new ProviderRouter(1);
+      const provider = router.createProvider('anthropic', { apiKey: 'test', model: 'claude-sonnet-4-20250514' });
+      expect(ClaudeProvider).toHaveBeenCalledWith({ apiKey: 'test', model: 'claude-sonnet-4-20250514', maxTokens: undefined, temperature: undefined, baseUrl: undefined });
+      expect(provider.chat).toBeDefined();
+    });
+
+    it('should create GenericProvider for opencode type', () => {
+      const router = new ProviderRouter(1);
+      const provider = router.createProvider('opencode', {
+        apiKey: 'oc_sk-test',
+        model: 'kimi-k2.6',
+        baseUrl: 'https://opencode.ai/zen/v1',
+        providerType: 'opencode',
+      });
+      expect(GenericProvider).toHaveBeenCalledWith({
+        apiKey: 'oc_sk-test',
+        model: 'kimi-k2.6',
+        baseUrl: 'https://opencode.ai/zen/v1',
+        providerType: 'opencode',
+      });
+      expect(provider.chat).toBeDefined();
+    });
+
+    it('should create GenericProvider for opencode-go type', () => {
+      const router = new ProviderRouter(1);
+      const provider = router.createProvider('opencode-go', {
+        apiKey: 'oc_sk-test',
+        model: 'kimi-k2.6',
+        baseUrl: 'https://opencode.ai/zen/go/v1',
+        providerType: 'opencode-go',
+      });
+      expect(GenericProvider).toHaveBeenCalledWith({
+        apiKey: 'oc_sk-test',
+        model: 'kimi-k2.6',
+        baseUrl: 'https://opencode.ai/zen/go/v1',
+        providerType: 'opencode-go',
+      });
       expect(provider.chat).toBeDefined();
     });
 

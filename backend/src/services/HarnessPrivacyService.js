@@ -10,6 +10,7 @@ const {
   ValidationError,
   ConflictError,
 } = require('../errors/HttpError');
+const { resolveProviderEndpoint } = require('../utils/providerDefaults');
 
 /**
  * Harness privacy and data-governance policy (fg-42).
@@ -202,7 +203,9 @@ class HarnessPrivacyService {
       // metadata. The agent is trusted, but this is defense in depth and gives
       // the run an auditable endpoint/region.
       const providerConfig = await client.query(
-        `SELECT p.base_url,
+        `SELECT p.provider_type,
+                p.base_url,
+                p.endpoint_url,
                 p.routing_rules->>'region' AS region
          FROM agents a
          LEFT JOIN providers p ON p.id = a.provider_id
@@ -210,7 +213,12 @@ class HarnessPrivacyService {
         [positiveInteger(agentId, 'agentId')]
       );
       const row = providerConfig.rows?.[0] || {};
-      if (row.base_url) resolvedBaseUrl = row.base_url;
+      const resolvedEndpoint = resolveProviderEndpoint({
+        providerType: row.provider_type,
+        baseUrl: row.base_url,
+        endpointUrl: row.endpoint_url,
+      });
+      if (resolvedEndpoint) resolvedBaseUrl = resolvedEndpoint;
       if (row.region) resolvedRegion = row.region;
     }
     const normalised = normaliseProvider(provider);

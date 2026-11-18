@@ -66,6 +66,29 @@ describe('Telemetry Events', () => {
       expect(result.tokens_out).toBe(50);
     });
 
+    it('should map OpenAI-compatible/OpenCode usage tokens', () => {
+      for (const providerType of ['openai-compatible', 'opencode', 'opencode-go']) {
+        const result = UsageLogger._buildNormalizedFields(providerType, { prompt_tokens: 150, completion_tokens: 50 }, 1200, 'kimi-k2.6');
+        expect(result.tokens_in).toBe(150);
+        expect(result.tokens_out).toBe(50);
+      }
+    });
+
+    it('should map local-provider usage tokens', () => {
+      for (const providerType of ['ollama', 'vllm', 'llamacpp', 'custom']) {
+        const result = UsageLogger._buildNormalizedFields(providerType, { prompt_tokens: 150, completion_tokens: 50 }, 1200, 'local-model');
+        expect(result.tokens_in).toBe(150);
+        expect(result.tokens_out).toBe(50);
+        expect(result.tokens_total).toBe(200);
+      }
+    });
+
+    it('should map anthropic usage like claude', () => {
+      const result = UsageLogger._buildNormalizedFields('anthropic', { input_tokens: 150, output_tokens: 50 }, 1200, 'claude-sonnet-4-20250514');
+      expect(result.tokens_in).toBe(150);
+      expect(result.tokens_out).toBe(50);
+    });
+
     it('should handle null rawUsage', () => {
       const result = UsageLogger._buildNormalizedFields('claude', null, 1200, 'claude-sonnet-4-20250514');
       expect(result.tokens_in).toBe(0);
@@ -124,6 +147,12 @@ describe('Telemetry Events', () => {
       const result = UsageLogger._buildFieldProvenance('openai');
       expect(result['normalized_fields.tokens_in']).toBe('normalized:prompt_tokens→tokens_in');
       expect(result['normalized_fields.tokens_out']).toBe('normalized:completion_tokens→tokens_out');
+    });
+
+    it('should treat anthropic provenance like claude', () => {
+      const result = UsageLogger._buildFieldProvenance('anthropic');
+      expect(result['normalized_fields.tokens_in']).toBe('normalized:input_tokens→tokens_in');
+      expect(result['normalized_fields.tokens_out']).toBe('normalized:output_tokens→tokens_out');
     });
 
     it('should have correct provenance for generic', () => {

@@ -65,15 +65,18 @@ class ProviderRouter {
   createProvider(type, config) {
     switch (type) {
       case 'claude':
+      case 'anthropic':
         return new ClaudeProvider(config);
       case 'openai':
         return new OpenAIProvider(config);
+      case 'opencode':
+      case 'opencode-go':
       case 'generic':
       case 'ollama':
       case 'vllm':
       case 'llamacpp':
       case 'custom':
-        return new GenericProvider(config);
+        return new GenericProvider({ ...config, providerType: type });
       default:
         throw new Error(`Unknown provider type: ${type}`);
     }

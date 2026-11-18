@@ -6,8 +6,8 @@ const logger = require('../utils/logger');
 class UsageLogger {
   static async log(projectId, userId, agentId, providerType, model, usage, durationMs, ticketId = null, options = {}) {
     const { planningStage, fileKey, rawUsage } = options;
-    const tokensIn = usage?.input_tokens || usage?.tokens_in || 0;
-    const tokensOut = usage?.output_tokens || usage?.tokens_out || 0;
+    const tokensIn = usage?.input_tokens ?? usage?.tokens_in ?? usage?.prompt_tokens ?? 0;
+    const tokensOut = usage?.output_tokens ?? usage?.tokens_out ?? usage?.completion_tokens ?? 0;
     const cost = calculateCost(model, tokensIn, tokensOut);
 
     await pool.query(
@@ -201,10 +201,12 @@ class UsageLogger {
     let tokensIn = 0;
     let tokensOut = 0;
 
-    if (providerType === 'claude') {
+    if (providerType === 'claude' || providerType === 'anthropic') {
       tokensIn = raw.input_tokens || 0;
       tokensOut = raw.output_tokens || 0;
-    } else if (providerType === 'openai' || providerType === 'generic') {
+    } else {
+      // OpenAI Chat Completions-compatible providers, including local ones
+      // (ollama/vllm/llamacpp/custom) and OpenCode gateways.
       tokensIn = raw.prompt_tokens || 0;
       tokensOut = raw.completion_tokens || 0;
     }
@@ -240,7 +242,7 @@ class UsageLogger {
       'derived_metrics.tokens_per_second': 'derived:tokens_out/duration_ms',
     };
 
-    if (providerType === 'claude') {
+    if (providerType === 'claude' || providerType === 'anthropic') {
       provenance['normalized_fields.tokens_in'] = 'normalized:input_tokens→tokens_in';
       provenance['normalized_fields.tokens_out'] = 'normalized:output_tokens→tokens_out';
     } else {

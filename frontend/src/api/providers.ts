@@ -25,6 +25,13 @@ export interface ProviderResolveInput {
   phase?: string
 }
 
+export interface ProviderDefault {
+  type: string
+  label: string
+  endpointUrl: string
+  requiresModel: boolean
+}
+
 export interface ProviderResolveOutput {
   provider: string
   endpoint_url: string | null
@@ -37,6 +44,10 @@ export interface ProviderResolveOutput {
 
 export function listProviders(): Promise<Provider[]> {
   return get<Provider[]>('/api/v1/providers').catch(() => []) as Promise<Provider[]>
+}
+
+export function fetchProviderDefaults(): Promise<ProviderDefault[]> {
+  return get<ProviderDefault[]>('/api/v1/providers/defaults').catch(() => []) as Promise<ProviderDefault[]>
 }
 
 export function addProvider(data: { name: string; providerType: string; apiKey?: string; baseUrl?: string; model?: string; roles?: string[]; maxTokens?: number; temperature?: number; endpoint_url?: string; fallback_provider?: string; routing_rules?: string; is_project_director?: boolean }): Promise<Provider> {

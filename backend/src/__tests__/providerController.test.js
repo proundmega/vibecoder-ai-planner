@@ -96,6 +96,61 @@ describe('Provider Controller', () => {
     });
   });
 
+  describe('OpenCode provider defaults', () => {
+    it('defaults the OpenCode endpoint and persists it for the agent', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 2,
+          name: 'zen',
+          provider_type: 'opencode',
+          api_key_encrypted: 'encrypted-key',
+          base_url: 'https://opencode.ai/zen/v1',
+          model: 'kimi-k2.6',
+          roles: ['worker'],
+          max_tokens: 4096,
+          temperature: 0.1,
+          is_active: true,
+          endpoint_url: 'https://opencode.ai/zen/v1',
+          fallback_provider: null,
+          routing_rules: '{}',
+          is_project_director: false,
+          created_at: new Date(),
+          updated_at: new Date(),
+        }],
+      });
+
+      mockReq.body = {
+        name: 'zen',
+        providerType: 'opencode',
+        apiKey: 'oc_sk-test',
+        model: 'kimi-k2.6',
+      };
+
+      await providerController.addProvider(mockReq, mockRes, nextFn);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain('INSERT INTO providers');
+      // base_url (index 3) and endpoint_url (index 8) must both reach the agent.
+      expect(params[3]).toBe('https://opencode.ai/zen/v1');
+      expect(params[8]).toBe('https://opencode.ai/zen/v1');
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      expect(nextFn).not.toHaveBeenCalled();
+    });
+
+    it('rejects an OpenCode provider without a model', async () => {
+      mockReq.body = {
+        name: 'zen',
+        providerType: 'opencode',
+        apiKey: 'oc_sk-test',
+      };
+
+      await providerController.addProvider(mockReq, mockRes, nextFn);
+
+      expect(nextFn).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(pool.query).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateProvider', () => {
     it('should update a provider', async () => {
       
@@ -166,6 +221,221 @@ describe('Provider Controller', () => {
           is_project_director: false,
         }),
       });
+    });
+  });
+
+  describe('OpenCode provider update invariants', () => {
+    const existingOpenCode = {
+      id: 5,
+      name: 'zen',
+      provider_type: 'opencode',
+      api_key_encrypted: 'encrypted-key',
+      base_url: 'https://opencode.ai/zen/v1',
+      model: 'kimi-k2.6',
+      roles: ['worker'],
+      max_tokens: 4096,
+      temperature: 0.1,
+      is_active: true,
+      endpoint_url: 'https://opencode.ai/zen/v1',
+      fallback_provider: null,
+      routing_rules: '{}',
+      is_project_director: false,
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+
+    it('writes an edited endpoint to both base_url and endpoint_url', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ ...existingOpenCode }] })
+        .mockResolvedValueOnce({ rows: [{ ...existingOpenCode, base_url: 'https://proxy.internal/zen/v1', endpoint_url: 'https://proxy.internal/zen/v1' }] });
+
+      mockReq.params.id = '5';
+      mockReq.body = { endpoint_url: 'https://proxy.internal/zen/v1' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(nextFn).not.toHaveBeenCalled();
+      const [sql, params] = pool.query.mock.calls[1];
+      expect(sql).toContain('base_url =');
+      expect(sql).toContain('endpoint_url =');
+      // base_url and endpoint_url must not drift; agent paths read either one.
+      expect(params[0]).toBe('https://proxy.internal/zen/v1');
+      expect(params[1]).toBe('https://proxy.internal/zen/v1');
+    });
+
+    it('clearing the endpoint for OpenCode falls back to the built-in endpoint', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ ...existingOpenCode }] })
+        .mockResolvedValueOnce({ rows: [{ ...existingOpenCode }] });
+
+      mockReq.params.id = '5';
+      mockReq.body = { endpoint_url: '' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      const [, params] = pool.query.mock.calls[1];
+      expect(params[0]).toBe('https://opencode.ai/zen/v1');
+      expect(params[1]).toBe('https://opencode.ai/zen/v1');
+    });
+
+    it('rejects switching a provider to OpenCode without a model', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          ...existingOpenCode,
+          provider_type: 'openai',
+          base_url: null,
+          endpoint_url: null,
+          model: '',
+        }],
+      });
+
+      mockReq.params.id = '5';
+      mockReq.body = { providerType: 'opencode' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(nextFn).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(pool.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects switching an OpenAI provider to OpenCode with its stale model', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          ...existingOpenCode,
+          provider_type: 'openai',
+          base_url: null,
+          endpoint_url: null,
+          model: 'gpt-4o',
+        }],
+      });
+
+      mockReq.params.id = '5';
+      mockReq.body = { providerType: 'opencode' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(nextFn).toHaveBeenCalledWith(expect.objectContaining({
+        statusCode: 400,
+        message: 'Model is required when switching to opencode providers',
+      }));
+      expect(pool.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies the default endpoint when switching to OpenCode with a model', async () => {
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{
+            ...existingOpenCode,
+            provider_type: 'openai',
+            base_url: null,
+            endpoint_url: null,
+            model: 'gpt-4o',
+          }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{
+            ...existingOpenCode,
+            provider_type: 'opencode',
+            base_url: 'https://opencode.ai/zen/v1',
+            endpoint_url: 'https://opencode.ai/zen/v1',
+          }],
+        });
+
+      mockReq.params.id = '5';
+      mockReq.body = { providerType: 'opencode', model: 'kimi-k2.6' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(nextFn).not.toHaveBeenCalled();
+      const [, params] = pool.query.mock.calls[1];
+      expect(params).toContain('https://opencode.ai/zen/v1');
+      expect(params.filter(value => value === 'https://opencode.ai/zen/v1')).toHaveLength(2);
+      expect(params).toContain('kimi-k2.6');
+    });
+
+    it('moves the built-in endpoint when switching opencode to opencode-go', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [{ ...existingOpenCode }] })
+        .mockResolvedValueOnce({
+          rows: [{
+            ...existingOpenCode,
+            provider_type: 'opencode-go',
+            base_url: 'https://opencode.ai/zen/go/v1',
+            endpoint_url: 'https://opencode.ai/zen/go/v1',
+          }],
+        });
+
+      mockReq.params.id = '5';
+      mockReq.body = { providerType: 'opencode-go' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(nextFn).not.toHaveBeenCalled();
+      const [, params] = pool.query.mock.calls[1];
+      expect(params.filter(value => value === 'https://opencode.ai/zen/go/v1')).toHaveLength(2);
+    });
+
+    it('keeps a custom endpoint when switching between OpenCode types', async () => {
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [{
+            ...existingOpenCode,
+            base_url: 'https://proxy.internal/zen/v1',
+            endpoint_url: 'https://proxy.internal/zen/v1',
+          }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{
+            ...existingOpenCode,
+            provider_type: 'opencode-go',
+            base_url: 'https://proxy.internal/zen/v1',
+            endpoint_url: 'https://proxy.internal/zen/v1',
+          }],
+        });
+
+      mockReq.params.id = '5';
+      mockReq.body = { providerType: 'opencode-go' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      const [, params] = pool.query.mock.calls[1];
+      expect(params.filter(value => value === 'https://proxy.internal/zen/v1')).toHaveLength(2);
+    });
+  });
+
+  describe('endpoint-required providers', () => {
+    it('rejects clearing the endpoint of a custom provider', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 6,
+          name: 'custom-local',
+          provider_type: 'custom',
+          api_key_encrypted: null,
+          base_url: 'http://localhost:9000/v1',
+          model: 'local-model',
+          roles: ['worker'],
+          max_tokens: 4096,
+          temperature: 0.1,
+          is_active: true,
+          endpoint_url: 'http://localhost:9000/v1',
+          fallback_provider: null,
+          routing_rules: '{}',
+          is_project_director: false,
+          created_at: new Date(),
+          updated_at: new Date(),
+        }],
+      });
+
+      mockReq.params.id = '6';
+      mockReq.body = { endpoint_url: '' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(nextFn).toHaveBeenCalledWith(expect.objectContaining({
+        statusCode: 400,
+        message: 'Endpoint URL is required for custom providers',
+      }));
+      expect(pool.query).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -268,6 +538,57 @@ describe('Provider Controller', () => {
           message: 'Connection successful',
         },
       });
+    });
+
+    it('requires a base URL for a custom provider with no endpoint', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 4,
+          name: 'custom-provider',
+          provider_type: 'custom',
+          api_key_encrypted: 'encrypted-key',
+          model: 'custom-model',
+          max_tokens: 4096,
+          temperature: 0.1,
+          base_url: null,
+          endpoint_url: null,
+        }],
+      });
+
+      mockReq.params.id = '4';
+
+      await providerController.testProvider(mockReq, mockRes, nextFn);
+
+      expect(nextFn).toHaveBeenCalledWith(expect.objectContaining({
+        message: 'Base URL is required for this provider type',
+      }));
+    });
+
+    it('should fall back to endpoint_url when base_url is blank', async () => {      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 3,
+          name: 'opencode-proxy',
+          provider_type: 'opencode',
+          api_key_encrypted: 'encrypted-key',
+          model: 'kimi-k2.6',
+          max_tokens: 4096,
+          temperature: 0.1,
+          base_url: '',
+          endpoint_url: 'https://proxy.internal/opencode',
+        }],
+      });
+
+      const mockProvider = { validate: jest.fn().mockResolvedValue(true) };
+      ProviderRouter.prototype.createProvider = jest.fn().mockReturnValue(mockProvider);
+
+      mockReq.params.id = '3';
+
+      await providerController.testProvider(mockReq, mockRes, nextFn);
+
+      expect(ProviderRouter.prototype.createProvider).toHaveBeenCalledWith(
+        'opencode',
+        expect.objectContaining({ baseUrl: 'https://proxy.internal/opencode' })
+      );
     });
   });
 

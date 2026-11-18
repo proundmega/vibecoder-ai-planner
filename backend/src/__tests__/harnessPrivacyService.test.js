@@ -167,6 +167,34 @@ describe('HarnessPrivacyService', () => {
       expect(policy.resolvedProviderBaseUrl).toBe('http://ollama:11434/v1');
       expect(policy.resolvedProviderRegion).toBe('eu');
     });
+
+    it('uses endpoint_url when base_url is blank', async () => {
+      pool.query
+        .mockResolvedValueOnce({
+          rows: [policyRow({
+            local_only: true,
+            local_endpoint: 'http://ollama:11434/v1',
+            data_residency: 'eu',
+            allowed_providers: [],
+          })],
+        })
+        .mockResolvedValueOnce({
+          rows: [{
+            provider_type: 'opencode',
+            base_url: '',
+            endpoint_url: 'http://ollama:11434/v1',
+            region: 'eu',
+          }],
+        });
+
+      const policy = await HarnessPrivacyService.assertProviderAllowed({
+        projectId: PROJECT,
+        agentId: 7,
+        provider: 'generic',
+      });
+
+      expect(policy.resolvedProviderBaseUrl).toBe('http://ollama:11434/v1');
+    });
   });
 
   describe('upsertPolicy', () => {

@@ -352,6 +352,26 @@ describe('PoolManager', () => {
       expect(config.max_tokens).toBe(8192);
     });
 
+    it('uses endpoint_url when base_url is empty', async () => {
+      const { pool } = require('../db');
+      pool.query.mockReset();
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          provider_type: 'opencode',
+          api_key_encrypted: 'enc',
+          base_url: '',
+          endpoint_url: 'https://proxy.internal/opencode',
+          model: 'kimi-k2.6',
+          max_tokens: 4096,
+          temperature: 0.1,
+        }],
+      });
+
+      const config = await pm.resolveProviderConfig('provider-1');
+
+      expect(config.base_url).toBe('https://proxy.internal/opencode');
+    });
+
     it('throws when provider not found', async () => {
       const { pool } = require('../db');
       pool.query.mockReset();

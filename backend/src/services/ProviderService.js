@@ -1,5 +1,6 @@
 const { pool } = require('../db');
 const { decrypt } = require('../utils/crypto');
+const { resolveProviderEndpoint } = require('../utils/providerDefaults');
 
 class ProviderService {
   constructor() {
@@ -146,9 +147,18 @@ class ProviderService {
       ? ruleConfig.api_key
       : decrypt(baseConfig.api_key_encrypted);
 
+    const provider = ruleConfig.provider || baseConfig.provider_type;
+    const ruleEndpoint = ruleConfig.endpoint_url || ruleConfig.base_url;
+
     return {
-      provider: ruleConfig.provider || baseConfig.provider_type,
-      endpoint_url: ruleConfig.endpoint_url || ruleConfig.base_url || baseConfig.base_url || null,
+      provider,
+      endpoint_url: ruleEndpoint
+        ? resolveProviderEndpoint({ providerType: provider, endpointUrl: ruleEndpoint })
+        : resolveProviderEndpoint({
+          providerType: provider,
+          baseUrl: baseConfig.base_url,
+          endpointUrl: baseConfig.endpoint_url,
+        }),
       model: ruleConfig.model || baseConfig.model,
       api_key: apiKey,
       max_tokens: ruleConfig.max_tokens || baseConfig.max_tokens || 4096,
@@ -162,7 +172,11 @@ class ProviderService {
   _defaultProvider(config) {
     return {
       provider: config.provider_type,
-      endpoint_url: config.base_url || config.endpoint_url || null,
+      endpoint_url: resolveProviderEndpoint({
+        providerType: config.provider_type,
+        baseUrl: config.base_url,
+        endpointUrl: config.endpoint_url,
+      }),
       model: config.model,
       api_key: decrypt(config.api_key_encrypted),
       max_tokens: config.max_tokens || 4096,

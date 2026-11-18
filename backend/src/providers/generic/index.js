@@ -25,6 +25,7 @@ class GenericProvider extends ProviderInterface {
   constructor(config) {
     super();
     this.baseURL = config.baseUrl;
+    this.providerType = config.providerType || 'generic';
     this.model = config.model || 'gpt-4o';
     this.maxTokens = config.maxTokens || 4096;
     this.temperature = config.temperature || 0.1;
@@ -85,7 +86,7 @@ class GenericProvider extends ProviderInterface {
     try {
       await UsageLogger.log(
         this.projectId, this.userId, this.agentId,
-        'generic', this.model, usage, duration, this.ticketId,
+        this.providerType, this.model, usage, duration, this.ticketId,
         { rawUsage: response.data.usage }
       );
     } catch (e) {

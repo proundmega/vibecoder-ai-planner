@@ -65,6 +65,51 @@ describe('Agent Provider Config — Double-Wrap Regression Test', () => {
       expect(result.max_tokens).toBe(4096)
     })
 
+    it('falls back to endpoint_url when base_url is null', async () => {
+      const mockAgent = { id: 'a1', name: 'Agent', api_key_hash: '$2a$10$hash', provider_id: 'prov-1' }
+      const mockProvider = { provider_type: 'opencode', api_key_encrypted: null, base_url: null, endpoint_url: 'https://opencode.ai/zen/v1', model: 'kimi-k2.6', max_tokens: 4096 }
+
+      let queryCount = 0
+      pool.query.mockImplementation(() => {
+        queryCount++
+        if (queryCount === 1) {
+          return Promise.resolve({ rows: [mockAgent] })
+        }
+        return Promise.resolve({ rows: [mockProvider] })
+      })
+
+      const result = await AgentService.getProviderConfig('a1', 'test-key')
+
+      expect(result.provider_type).toBe('opencode')
+      expect(result.base_url).toBe('https://opencode.ai/zen/v1')
+    })
+
+    it('ignores a blank base_url and uses endpoint_url', async () => {
+      const mockAgent = { id: 'a1', name: 'Agent', api_key_hash: '$2a$10$hash', provider_id: 'prov-1' }
+      const mockProvider = { provider_type: 'opencode', api_key_encrypted: null, base_url: '', endpoint_url: 'https://proxy.internal/opencode', model: 'kimi-k2.6', max_tokens: 4096 }
+
+      pool.query
+        .mockResolvedValueOnce({ rows: [mockAgent] })
+        .mockResolvedValueOnce({ rows: [mockProvider] })
+
+      const result = await AgentService.getProviderConfig('a1', 'test-key')
+
+      expect(result.base_url).toBe('https://proxy.internal/opencode')
+    })
+
+    it('falls back to the provider default endpoint', async () => {
+      const mockAgent = { id: 'a1', name: 'Agent', api_key_hash: '$2a$10$hash', provider_id: 'prov-1' }
+      const mockProvider = { provider_type: 'opencode-go', api_key_encrypted: null, base_url: null, endpoint_url: null, model: 'kimi-k2.6', max_tokens: 4096 }
+
+      pool.query
+        .mockResolvedValueOnce({ rows: [mockAgent] })
+        .mockResolvedValueOnce({ rows: [mockProvider] })
+
+      const result = await AgentService.getProviderConfig('a1', 'test-key')
+
+      expect(result.base_url).toBe('https://opencode.ai/zen/go/v1')
+    })
+
     it('returns null api_key when provider has no encrypted key', async () => {
       const mockAgent = { id: 'a1', name: 'Agent', api_key_hash: '$2a$10$hash', provider_id: 'prov-1' }
       const mockProvider = { provider_type: 'openai', api_key_encrypted: null, base_url: null, model: 'gpt-4', max_tokens: 2048 }
