@@ -205,7 +205,9 @@ as a follow-up. Tokens are compared with `crypto.timingSafeEqual` on the hash.
 Refresh replay is handled by an idempotency key and an encrypted replay cache
 with a short TTL (`AGENT_REFRESH_REPLAY_CACHE_SECONDS`, default 60). The cache
 returns the same pair only for the same `(refresh_token_id, idempotency_key)`;
-a different/absent key on a rotated token is reuse and revokes the family.
+a different/absent key on a rotated token is reuse and revokes the family. The
+`Idempotency-Key` is a 128-bit random value generated per refresh attempt and
+reused only for that attempt's retries; it is not derived from the token.
 
 ## API contract
 
