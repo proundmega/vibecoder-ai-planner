@@ -118,8 +118,16 @@ async function updateProvider(req, res, next) {
     const effectiveProviderType = providerType !== undefined ? providerType : existingRow.provider_type;
     const effectiveModel = model !== undefined ? model : existingRow.model;
     const defaults = getProviderDefaults(effectiveProviderType);
+    const providerTypeChanged = providerType !== undefined && providerType !== existingRow.provider_type;
+    const previousDefaults = getProviderDefaults(existingRow.provider_type);
     if (defaults?.requiresModel && !String(effectiveModel || '').trim()) {
       throw new ValidationError(`Model is required for ${effectiveProviderType} providers`);
+    }
+    // Switching from a provider family that does not require a model (e.g.
+    // OpenAI's gpt-4o) must not silently carry the old model into OpenCode.
+    if (providerTypeChanged && defaults?.requiresModel && !previousDefaults?.requiresModel
+      && !String(model || '').trim()) {
+      throw new ValidationError(`Model is required when switching to ${effectiveProviderType} providers`);
     }
 
     const updates = [];
@@ -137,7 +145,6 @@ async function updateProvider(req, res, next) {
     // The UI only edits endpoint_url. Write both columns whenever an endpoint
     // or the provider type changes; otherwise agent paths that read base_url
     // would keep calling the old endpoint.
-    const providerTypeChanged = providerType !== undefined && providerType !== existingRow.provider_type;
     const endpointProvided = baseUrl !== undefined || endpoint_url !== undefined;
     if (providerTypeChanged || endpointProvided) {
       let resolvedEndpoint;

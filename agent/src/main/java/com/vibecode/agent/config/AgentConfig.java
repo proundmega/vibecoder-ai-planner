@@ -22,7 +22,9 @@ import java.time.Duration;
  * Optional env vars:
  *   POLL_INTERVAL_MS    - Polling interval in ms (default: 30000)
  *   STALE_TIMEOUT_MS    - Stale ticket timeout in ms (default: 3600000 = 1 hour)
- *   AI_PROVIDER         - AI provider to use: claude or openai (default: claude)
+ *   AI_PROVIDER         - AI provider to use: claude, anthropic, openai, opencode,
+ *                         opencode-go, generic, custom, ollama, vllm or llamacpp
+ *                         (default: claude)
  *   AI_MODEL            - AI model name (default: claude-sonnet-4-20250514)
  *   AI_API_KEY          - AI provider API key (falls back to env if not in DB)
  *   AI_ENDPOINT_URL     - OpenAI-compatible endpoint URL (e.g., http://localhost:11434/v1)

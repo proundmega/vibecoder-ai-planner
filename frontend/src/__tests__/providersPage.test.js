@@ -4,6 +4,7 @@ import Providers from '@/views/Providers.vue'
 
 vi.mock('@/api/providers', () => ({
   listProviders: vi.fn(),
+  fetchProviderDefaults: vi.fn(),
   addProvider: vi.fn(),
   updateProvider: vi.fn(),
   deleteProvider: vi.fn(),
@@ -21,8 +22,12 @@ describe('Providers', () => {
   })
 
   async function createWrapper(providers = []) {
-    const { listProviders } = await import('@/api/providers')
+    const { listProviders, fetchProviderDefaults } = await import('@/api/providers')
     listProviders.mockResolvedValue(providers)
+    fetchProviderDefaults.mockResolvedValue([
+      { type: 'opencode', label: 'OpenCode (Zen)', endpointUrl: 'https://opencode.ai/zen/v1', requiresModel: true },
+      { type: 'opencode-go', label: 'OpenCode Go', endpointUrl: 'https://opencode.ai/zen/go/v1', requiresModel: true },
+    ])
 
     const wrapper = mount(Providers, {
       global: {

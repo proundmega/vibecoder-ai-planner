@@ -192,6 +192,9 @@ const newProvider = ref({
 })
 
 const ENDPOINT_PROVIDER_TYPES = ['ollama', 'vllm', 'llamacpp', 'custom']
+// The backend owns OpenCode metadata. These type names only keep the field and
+// model guard usable if the defaults request fails.
+const OPENCODE_PROVIDER_TYPES = ['opencode', 'opencode-go']
 
 function providerDefault(type) {
   return providerDefaults.value[type] || null
@@ -205,11 +208,18 @@ const providerTypes = computed(() => BASE_PROVIDER_TYPES.map(providerType => ({
 })))
 
 function needsEndpoint(type) {
-  return Boolean(providerDefault(type)) || ENDPOINT_PROVIDER_TYPES.includes(type)
+  return Boolean(providerDefault(type))
+    || OPENCODE_PROVIDER_TYPES.includes(type)
+    || ENDPOINT_PROVIDER_TYPES.includes(type)
+}
+
+function endpointOptional(type) {
+  return Boolean(providerDefault(type)) || OPENCODE_PROVIDER_TYPES.includes(type)
 }
 
 function requiresModel(type) {
-  return Boolean(providerDefault(type)?.requiresModel)
+  const defaults = providerDefault(type)
+  return defaults ? Boolean(defaults.requiresModel) : OPENCODE_PROVIDER_TYPES.includes(type)
 }
 
 const newProviderRequiresModel = computed(() =>
@@ -231,7 +241,7 @@ const newProviderEndpointPlaceholder = computed(() =>
 )
 
 const newProviderEndpointOptional = computed(() =>
-  Boolean(providerDefault(newProvider.value.providerType))
+  endpointOptional(newProvider.value.providerType)
 )
 
 const editEndpointPlaceholder = computed(() =>
@@ -239,7 +249,7 @@ const editEndpointPlaceholder = computed(() =>
 )
 
 const editEndpointOptional = computed(() =>
-  Boolean(providerDefault(editingProvider.value?.providerType))
+  endpointOptional(editingProvider.value?.providerType)
 )
 
 const editRequiresModel = computed(() =>
@@ -324,9 +334,15 @@ const handleUpdateProvider = async () => {
       fallback_provider: editProvider.value.fallback_provider,
     }
     if (needsEndpoint(editingProvider.value.providerType)) {
-      // Send an empty string when cleared so the backend can reset the
-      // endpoint (OpenCode falls back to its built-in default).
-      updates.endpoint_url = (editProvider.value.endpoint_url || '').trim()
+      // OpenCode types always send the field so clearing resets to the
+      // backend default. For local/custom types an empty field must be
+      // omitted, otherwise saving would erase the only working endpoint.
+      const endpoint = (editProvider.value.endpoint_url || '').trim()
+      if (providerDefault(editingProvider.value.providerType)) {
+        updates.endpoint_url = endpoint
+      } else if (endpoint) {
+        updates.endpoint_url = endpoint
+      }
     }
     if (editProvider.value.apiKey) {
       updates.apiKey = editProvider.value.apiKey

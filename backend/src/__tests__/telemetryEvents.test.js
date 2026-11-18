@@ -74,6 +74,21 @@ describe('Telemetry Events', () => {
       }
     });
 
+    it('should map local-provider usage tokens', () => {
+      for (const providerType of ['ollama', 'vllm', 'llamacpp', 'custom']) {
+        const result = UsageLogger._buildNormalizedFields(providerType, { prompt_tokens: 150, completion_tokens: 50 }, 1200, 'local-model');
+        expect(result.tokens_in).toBe(150);
+        expect(result.tokens_out).toBe(50);
+        expect(result.tokens_total).toBe(200);
+      }
+    });
+
+    it('should map anthropic usage like claude', () => {
+      const result = UsageLogger._buildNormalizedFields('anthropic', { input_tokens: 150, output_tokens: 50 }, 1200, 'claude-sonnet-4-20250514');
+      expect(result.tokens_in).toBe(150);
+      expect(result.tokens_out).toBe(50);
+    });
+
     it('should handle null rawUsage', () => {
       const result = UsageLogger._buildNormalizedFields('claude', null, 1200, 'claude-sonnet-4-20250514');
       expect(result.tokens_in).toBe(0);

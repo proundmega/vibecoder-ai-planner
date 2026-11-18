@@ -201,14 +201,12 @@ class UsageLogger {
     let tokensIn = 0;
     let tokensOut = 0;
 
-    if (providerType === 'claude') {
+    if (providerType === 'claude' || providerType === 'anthropic') {
       tokensIn = raw.input_tokens || 0;
       tokensOut = raw.output_tokens || 0;
-    } else if (providerType === 'openai'
-      || providerType === 'generic'
-      || providerType === 'openai-compatible'
-      || providerType === 'opencode'
-      || providerType === 'opencode-go') {
+    } else {
+      // OpenAI Chat Completions-compatible providers, including local ones
+      // (ollama/vllm/llamacpp/custom) and OpenCode gateways.
       tokensIn = raw.prompt_tokens || 0;
       tokensOut = raw.completion_tokens || 0;
     }

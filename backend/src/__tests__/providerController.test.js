@@ -298,7 +298,30 @@ describe('Provider Controller', () => {
       expect(pool.query).toHaveBeenCalledTimes(1);
     });
 
-    it('applies the default endpoint when switching to OpenCode', async () => {
+    it('rejects switching an OpenAI provider to OpenCode with its stale model', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          ...existingOpenCode,
+          provider_type: 'openai',
+          base_url: null,
+          endpoint_url: null,
+          model: 'gpt-4o',
+        }],
+      });
+
+      mockReq.params.id = '5';
+      mockReq.body = { providerType: 'opencode' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(nextFn).toHaveBeenCalledWith(expect.objectContaining({
+        statusCode: 400,
+        message: 'Model is required when switching to opencode providers',
+      }));
+      expect(pool.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies the default endpoint when switching to OpenCode with a model', async () => {
       pool.query
         .mockResolvedValueOnce({
           rows: [{
@@ -319,7 +342,7 @@ describe('Provider Controller', () => {
         });
 
       mockReq.params.id = '5';
-      mockReq.body = { providerType: 'opencode' };
+      mockReq.body = { providerType: 'opencode', model: 'kimi-k2.6' };
 
       await providerController.updateProvider(mockReq, mockRes, nextFn);
 
@@ -327,6 +350,7 @@ describe('Provider Controller', () => {
       const [, params] = pool.query.mock.calls[1];
       expect(params).toContain('https://opencode.ai/zen/v1');
       expect(params.filter(value => value === 'https://opencode.ai/zen/v1')).toHaveLength(2);
+      expect(params).toContain('kimi-k2.6');
     });
 
     it('moves the built-in endpoint when switching opencode to opencode-go', async () => {

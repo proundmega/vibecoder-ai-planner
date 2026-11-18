@@ -381,6 +381,39 @@ describe('ProvidersPage', () => {
     )
   })
 
+  it('keeps the existing endpoint when a custom provider field is cleared', async () => {
+    const provider = {
+      id: '2',
+      name: 'Custom Local',
+      providerType: 'custom',
+      model: 'local-model',
+      endpoint_url: 'http://localhost:9000/v1',
+      is_project_director: false,
+      is_active: true,
+    }
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([provider])
+    ;(providersApi.updateProvider as ReturnType<typeof vi.fn>).mockResolvedValue(provider)
+    wrapper = mount(ProvidersPage, mountOptions)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const editButton = wrapper.findAll('button').find(b => b.text() === 'Edit')
+    expect(editButton).toBeDefined()
+    await editButton!.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const endpoint = wrapper.find('.edit-form input[placeholder="http://localhost:11434/v1"]')
+    await endpoint.setValue('')
+    const save = wrapper.findAll('.edit-form button')[0]
+    await save.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const payload = (providersApi.updateProvider as ReturnType<typeof vi.fn>).mock.calls[0][1]
+    expect(payload.endpoint_url).toBeUndefined()
+  })
+
   it('shows the endpoint field for a custom provider', async () => {
     ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([])
     wrapper = mount(ProvidersPage, mountOptions)
