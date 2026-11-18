@@ -63,7 +63,7 @@ needed to mint and revoke enrollment tokens.
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Plan merged | PR #173 (in review; merge pending) | ☐ |
+| Plan merge pending | PR #173 (in review) | ☐ |
 | Implementation merged | pending | ☐ |
 | Verification results | n/a — planned | ☐ |
 
@@ -97,7 +97,7 @@ States: `open`, `scheduled`, `done`, `dropped`.
 | 3 | Agent ownership | A: project owner; B: join-token creator; C: configurable | A (matches PoolManager and survives staff changes) | A |
 | 4 | UI scope | A: mint/list/revoke join tokens in this ticket; B: API-only first, UI follow-up | A — the key is otherwise unusable without curl | A |
 | 5 | Node credential transport | A: reuse `X-API-Key` for `at_…` tokens; B: new `Authorization: Agent <token>` scheme | A — no changes to existing agent/client headers | A |
-| 6 | Refresh-token replay policy | A: revoke the family on the first rotated-token replay; B: accept the immediately previous token inside a short grace window, then revoke the family; C: idempotency key with a short replay cache | B — survives concurrent refresh and a lost response without storing raw tokens | B — `AGENT_REFRESH_GRACE_SECONDS=60` |
+| 6 | Refresh-token replay policy | A: revoke the family on the first rotated-token replay; B: accept any rotated token inside a short grace window; C: idempotency key with an encrypted short replay cache that returns the same pair | C — survives concurrent refresh and a lost response without granting a stolen old token a new credential | C — `AGENT_REFRESH_REPLAY_CACHE_SECONDS=60` |
 
 If a decision is not answered before implementation, use the recommendation and
 record it as an assumption in `01`.
@@ -127,7 +127,7 @@ record it as an assumption in `01`.
 - Enrolled agents get `agents.project_id`; legacy/manual agents keep
   `project_id = NULL` and remain owner-scoped. The broader project-agents
   migration is D11, not a dependency of this ticket.
-- When this planning PR merges: check the **Plan merged** evidence row, change
-  the `PENDING.txt` label to **Plan merged (#173); implementation pending**,
-  and update the intake rows. Keep `pr`/`branch` null until the implementation
-  PR exists.
+- When this planning PR merges: change the **Plan merge pending** evidence row
+  to **Plan merged**, change the `PENDING.txt` label to
+  **Plan merged (#173); implementation pending**, and update the intake rows.
+  Keep `pr`/`branch` null until the implementation PR exists.

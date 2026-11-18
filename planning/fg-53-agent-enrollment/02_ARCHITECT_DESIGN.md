@@ -30,7 +30,9 @@ Two credentials are added:
 - **Node credentials** (`at_…` access + `ar_…` refresh): issued by enrollment.
   The access token is short-lived and used as the existing `X-API-Key`. The
   refresh token is stored on the node with mode `0600` and rotated on every
-  use.
+  use. Refresh calls carry an `Idempotency-Key`; the same key returns the same
+  pair from the encrypted replay cache, while a different/absent key on a
+  rotated token is treated as reuse.
 - **Project scope:** enrollment writes the join token's project to
   `agents.project_id`. That column, not the token row and not the agent's
   `PROJECT_ID` env, is authoritative for agent authorization. Legacy `ak_…`
@@ -53,11 +55,12 @@ Normal requests
     -> expiry/revocation -> req.agent { id, owner_id, provider_id, project_id }
 
 Refresh
-  POST /agent-enrollment/refresh { refreshToken }
-    -> lock ar_; first use marks it rotated and inserts new at_ + ar_ (same family)
-    -> replay of the immediate previous token inside AGENT_REFRESH_GRACE_SECONDS
-       issues another usable pair without revoking the family (lost-response retry)
-    -> replay after the grace window revokes the family and audits reuse
+  POST /agent-enrollment/refresh { refresh_token, idempotency_key }
+    -> lock ar_; first use marks it rotated, inserts new at_ + ar_ (same family)
+       and stores the encrypted response keyed by (refresh_token_id, key)
+    -> retry with the same key inside AGENT_REFRESH_REPLAY_CACHE_SECONDS:
+       return the stored pair (no second rotation, family stays valid)
+    -> rotated token with a different/absent key: revoke family + audit reuse
 
 Revoke
   agent delete / key revoke -> revoke all at_/ar_/legacy tokens; 401 thereafter
@@ -133,6 +136,17 @@ CREATE INDEX idx_agent_refresh_tokens_agent ON agent_refresh_tokens(agent_id, cr
 CREATE INDEX idx_agent_refresh_tokens_family ON agent_refresh_tokens(family_id, created_at DESC);
 CREATE INDEX idx_agent_refresh_tokens_expiry ON agent_refresh_tokens(expires_at);
 
+CREATE TABLE agent_refresh_replays (
+  id BIGSERIAL PRIMARY KEY,
+  refresh_token_id BIGINT NOT NULL REFERENCES agent_refresh_tokens(id) ON DELETE CASCADE,
+  idempotency_key VARCHAR(128) NOT NULL,
+  response_ciphertext TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (refresh_token_id, idempotency_key)
+);
+CREATE INDEX idx_agent_refresh_replays_expiry ON agent_refresh_replays(expires_at);
+
 CREATE TABLE agent_auth_events (
   id BIGSERIAL PRIMARY KEY,
   project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL,
@@ -164,15 +178,18 @@ CREATE INDEX idx_agents_project_id ON agents(project_id);
 - Project scope is stored on `agents`, not derived from
   `agents.enrollment_token_id`, so the retention purge's `ON DELETE SET NULL`
   cannot widen or erase an agent's project.
-- Rollback: drop the new columns then the tables (child before parent); legacy
-  agent columns untouched.
+- Rollback: drop the new columns then the tables (child before parent:
+  `agent_auth_events`, `agent_refresh_replays`, `agent_refresh_tokens`,
+  `agent_access_tokens`, `agent_enrollment_tokens`); legacy agent columns
+  untouched.
 - Apply order: append after `053_harness_privacy.sql` in
   `backend/src/migrations/apply.js`.
 - Cleanup: a daily job deletes expired/revoked token rows older than the
   retention window (`AGENT_TOKEN_RETENTION_DAYS`, default 30), using the
-  `expires_at` indexes; `agent_auth_events` keeps a longer window
-  (`AGENT_AUTH_EVENT_RETENTION_DAYS`, default 180) and is indexed by
-  `created_at`.
+  `expires_at` indexes; `agent_refresh_replays` is purged by its short TTL
+  (`AGENT_REFRESH_REPLAY_CACHE_SECONDS`, default 60); `agent_auth_events`
+  keeps a longer window (`AGENT_AUTH_EVENT_RETENTION_DAYS`, default 180) and
+  is indexed by `created_at`.
 
 ### Token formats
 
@@ -185,9 +202,10 @@ CREATE INDEX idx_agents_project_id ON agents(project_id);
 High entropy makes a fast hash acceptable; `00` D4 records an HMAC/KMS pepper
 as a follow-up. Tokens are compared with `crypto.timingSafeEqual` on the hash.
 
-Refresh replay is limited by `AGENT_REFRESH_GRACE_SECONDS` (default 60). The
-grace applies only to the immediately previous token in a family; an older
-rotated token is treated as reuse immediately.
+Refresh replay is handled by an idempotency key and an encrypted replay cache
+with a short TTL (`AGENT_REFRESH_REPLAY_CACHE_SECONDS`, default 60). The cache
+returns the same pair only for the same `(refresh_token_id, idempotency_key)`;
+a different/absent key on a rotated token is reuse and revokes the family.
 
 ## API contract
 
@@ -197,7 +215,7 @@ rotated token is treated as reuse immediately.
 | GET | `/api/v1/agent-enrollment/tokens?project_id=` | JWT + `AGENT_READ` + membership | — | `{ success, data: [{ id, name, provider_id, max_uses, used_count, expires_at, revoked_at, created_at }] }` | 403 |
 | DELETE | `/api/v1/agent-enrollment/tokens/:id` | JWT + `AGENT_REVOKE` + membership | — | `{ success, data: { id, revoked_at } }` | 404, 403 |
 | POST | `/api/v1/agent-enrollment/enroll` | join token in body | `{ token, name, node_metadata? }` | `{ success, data: { agent_id, project_id, provider_id, access_token, refresh_token, access_expires_at, refresh_expires_at } }` | 400 validation, 401 generic invalid/expired/exhausted, 429 rate limit |
-| POST | `/api/v1/agent-enrollment/refresh` | refresh token in body | `{ refresh_token }` | same credential pair as enroll | 401 `REFRESH_TOKEN_INVALID`, 401 `REFRESH_TOKEN_REUSED`, 429 |
+| POST | `/api/v1/agent-enrollment/refresh` | refresh token + idempotency key in body | `{ refresh_token, idempotency_key }` | same credential pair as enroll; the same key returns the identical pair | 400 `IDEMPOTENCY_KEY_REQUIRED`, 401 `REFRESH_TOKEN_INVALID`, 401 `REFRESH_TOKEN_REUSED`, 429 |
 | GET | `/api/v1/agent-enrollment/agents/:agentId` | JWT + `AGENT_READ` + membership | — | `{ project_id, enrolled_at, enrollment_token_id, node_metadata, auth_mode }` (no secrets) | 403/404 |
 
 Existing `POST /api/v1/agents/create`, `POST /agents/:id/rotate-key`,
@@ -234,13 +252,12 @@ Request:
          (legacy agents with project_id NULL keep the owner-scoped check)
 
 Refresh:
-  ar_ -> lookup FOR UPDATE
-      -> if not rotated: mark rotated + insert new pair (same family) -> COMMIT
-      -> if rotated within AGENT_REFRESH_GRACE_SECONDS and immediately previous:
-         insert a fresh pair in the same family, keep the family valid,
-         audit refresh_grace_replay
-      -> if rotated after the grace window or an older token: revoke family +
-         audit reuse
+  ar_ + Idempotency-Key -> lookup FOR UPDATE
+      -> if not rotated: mark rotated + insert new pair (same family) +
+         store encrypted response keyed by (refresh_token_id, key) -> COMMIT
+      -> if rotated and the same key has an unexpired replay row:
+         decrypt + return the identical pair; audit refresh_replay_cache_hit
+      -> if rotated with a different/absent key: revoke family + audit reuse
 ```
 
 ## Failure modes and recovery
@@ -250,8 +267,9 @@ Refresh:
 | Join token expired/revoked/used | TTL, admin revoke, max_uses reached | Generic 401; audit reason | Validation tests; no agent rows on failure | Mint a new token |
 | Concurrent enroll | Two nodes use a 1-use token | One 201, one 401; DB row lock test | `SELECT ... FOR UPDATE` + conditional update | None |
 | Partial enroll | DB error between agent and token inserts | Integration test finds no rows | Single transaction; rollback | Retry with the same token only if the transaction rolled back |
-| Refresh reuse after grace | Stolen/replayed refresh token outside `AGENT_REFRESH_GRACE_SECONDS` | `REFRESH_TOKEN_REUSED` audit; family revoked | Rotation + reuse-after-grace test | Re-enroll the node with a new join token |
-| Concurrent refresh / lost response | Two requests, or a retry after the response was lost | One rotation commits; replay within grace returns a usable pair | Family stays valid; the winner's access token still works; `refresh_grace_replay` audit | None; the agent persists the latest pair |
+| Refresh reuse with a different/absent key | Stolen/replayed rotated token without the original idempotency key | `REFRESH_TOKEN_REUSED` audit; family revoked | Rotation + negative theft test | Re-enroll the node with a new join token |
+| Concurrent refresh / lost response | Two requests with the same key, or a retry after the response was lost | One rotation commits; the replay row returns the identical pair | Family stays valid; the winner's access token still works; `refresh_replay_cache_hit` audit | None; the agent reuses its idempotency key |
+| Replay cache expiry | Retry arrives after `AGENT_REFRESH_REPLAY_CACHE_SECONDS` | Token is rotated and no replay row remains | Bounded retry window; agent re-enrolls if the response was truly lost | Mint a new join token |
 | Agent requests another project | Enrolled agent sends a ticket/credential request for a different project | 403 from the project-scope assertion | `agents.project_id` is authoritative; legacy NULL agents unchanged; cross-project tests | None |
 | Agent clock skew | Node clock ahead/behind | Early expiry/refresh loops | Server returns absolute `expires_at`; use DB `NOW()`; refresh margin | Fix clock/NTP |
 | Credential file lost | Volume not mounted/recreated | Agent exits with `NO_CREDENTIALS` | Document volume; re-enroll with a new token | Mount a persistent volume |
@@ -275,16 +293,44 @@ Refresh:
   enrolled agent cannot use its owner's wider role. `PROJECT_ID` on the agent
   is a bootstrap hint only and is never trusted for authorization. The
   assertion is applied to every agent-authenticated project-scoped route:
-  ticket writes/status/comments/planning and harness leases/runs resolve the
-  ticket project, while GitHub repo/token routes use `:projectId`. The
+  ticket read/write/status/messages/phases/planning and harness leases/runs
+  resolve the ticket project, while GitHub repo/token routes use `:projectId`. The
   credential decrypt route is JWT-only today, so an agent cannot reach it; if
   it is opened to agents it must use the same assertion.
+- **Project-scoped agent route inventory (exhaustive for current project routes):**
+
+  | Route group | Project source | Enforcement |
+  |---|---|---|
+  | `POST /tickets` | body `project_id` | assert before create |
+  | `GET /tickets/project/:projectId`, `/backlog` | `:projectId` | assert |
+  | `GET /tickets/:ticketId` | ticket project | assert in `TicketService.getOne`/controller |
+  | `PUT /tickets/:ticketId`, `POST /status`, `/pickup`, `/release` | ticket project | assert before owner/admin checks |
+  | `GET/POST /tickets/:ticketId/messages`, `GET /phases`, `/phases/current`, `/phases/allowed`, `POST /phases/transition`, `GET /review/diff` | ticket project | assert |
+  | `GET /tickets/:ticketId/planning`, `/planning/:fileKey` | ticket project | assert |
+  | `POST /tickets/:ticketId/review/local-diff` | ticket project | assert |
+  | `GET /github/:projectId/repo/agent`, `POST /github/:projectId/token` | `:projectId` | assert |
+  | `GET /projects/:projectId/repo-profile/agent`, `/agent/mtls`, `POST /validations/claim`, `/validations/:id/finish` | `:projectId` | assert |
+  | `POST /harness/runs`, `GET /runs/:runId`, `POST /runs/:runId/{publish,reconcile,dead-letter,adopt,release-ticket,checkpoints,heartbeat,finish}`, `GET /runs/:runId/checkpoints` | run → project | assert the run belongs to the agent's project |
+  | `GET /harness/tickets/:ticketId/run`, `POST /harness/leases`, `POST /leases/:ticketId/renew`, `DELETE /leases/:ticketId` | ticket project | assert |
+  | `GET /harness/agents/:agentId/runs`, `/workspaces` | self-scoped | require `req.agent.id === :agentId` |
+  | `POST /harness/events`, `POST/GET /harness/runs/:runId/usage`, `GET /runs/:runId/{events,timeline}` | run → project | assert run/project matches |
+  | `GET /agents-status/:id/heartbeat`, `GET /agents/:agentId/provider-config/changed` | self-scoped | shared agent auth expiry/revocation; existing self check; no project data |
+
+  Agent-management routes under `/agents` are owner-scoped configuration, not
+  project data; their existing permission/ownership checks remain. JWT-only
+  routes today (comments, attachments, deployments, milestones,
+  memory, ticket delete, GitHub branch/PR, planning writes) are not
+  agent-authenticated and need no assertion; if any is opened to agents it
+  must use the same helper. New agent routes must be added to this table.
 - **Input validation:** Joi schemas bound name (1–100), TTL (60–86400 s),
   max uses (1–100), provider existence, metadata size (≤4 KiB, JSON object),
   token length/prefix. Reject unknown fields.
-- **Secrets:** hash-only storage; raw token returned once; credential file
-  `0600` atomic write; redact token shapes in logs, errors, prompts and audit
-  metadata; never put tokens in argv or Docker env after enrollment.
+- **Secrets:** hash-only storage; raw tokens leave the API only on issuance or
+  the matching idempotent refresh retry; the replay cache stores the response
+  encrypted with `ENCRYPTION_KEY`, TTL-bounded and excluded from logs/audit
+  metadata; credential file `0600` atomic write; redact token shapes in logs,
+  errors, prompts and audit metadata; never put tokens in argv or Docker env
+  after enrollment.
 - **Audit:** append-only `agent_auth_events` for mint/revoke/enroll/refresh/
   reuse/expiry/revocation with actor, project, agent, IP and reason code.
 - **Rate limiting / abuse:** per-IP and per-prefix limits on enroll/refresh;
@@ -310,13 +356,13 @@ Refresh:
 ## Observability
 
 - Counters: `agent_enrollment_total{result}`, `agent_refresh_total{result}`
-  (`rotated`, `grace_replay`, `reuse`, `invalid`), and
+  (`rotated`, `replay_cache_hit`, `reuse`, `invalid`), and
   `agent_auth_failures_total{reason}`.
 - Histograms: `agent_enrollment_duration_ms`, `agent_refresh_duration_ms`.
 - Labels are bounded (result/reason enumerations); no token, prefix, agent
   name or IP is used as a label.
 - The metrics module is `backend/src/metrics.js`; tests assert each counter
-  increments for the success, grace-replay, reuse and failure paths.
+  increments for the success, replay-cache-hit, reuse and failure paths.
 
 ## Risks & edge cases
 
@@ -329,7 +375,7 @@ Refresh:
 | `X-API-Key` prefix collision (`at_` vs legacy) | Wrong dispatch | Prefix is explicit and tested; legacy keys are `ak_` |
 | Provider deleted after token minted | Enrollment creates agent with NULL provider | Token stores provider_id; `ON DELETE SET NULL`; agent falls back to env or fails clearly |
 | Project owner changes | Enrolled agents owned by old owner | Document; project ownership transfer follow-up |
-| Grace-window refresh replay | A duplicate refresh pair can exist briefly | Access tokens stay short-lived; the family is revoked after the grace window; audit `refresh_grace_replay` |
+| Replay-cache compromise | The short-lived encrypted pair could leak | Cache TTL is 60 s, rows are encrypted and purged; a different/absent key revokes the family |
 | Agent project scope | A compromised worker targets another project | Server-side `agents.project_id` checked on every ticket/credential route; client `PROJECT_ID` ignored; cross-project tests |
 | Static key and credential file both present | Wrong identity | Precedence rules + `AGENT_AUTH_MODE` override; test |
 | Reverse proxy misreports HTTPS | False TLS acceptance/rejection | `trust proxy` config; `X-Forwarded-Proto` test |
@@ -341,7 +387,7 @@ Refresh:
 | Token dispatch in `middleware/auth.js` | A prefix bug can bypass auth or lock out legacy agents | Unit tests for `at_`, `ar_`, `enr_`, `ak_`, malformed and expired tokens; `file:line` |
 | Agent project scope | Owner-scoped checks could let a worker cross projects | Cross-project ticket/credential tests with an owner who is also a member/admin; `agents.project_id` loaded into `req.agent` |
 | Enrollment transaction | Partial agent/token rows or double-use | Concurrency integration test; inspect `FOR UPDATE`/conditional update |
-| Refresh rotation/reuse | Stolen refresh token must not mint indefinitely, while retries must not lock out the node | Grace/concurrent/lost-response tests; reuse-after-grace family revocation; winner token still valid |
+| Refresh rotation/reuse | Stolen refresh token must not mint indefinitely, while same-request retries must not lock out the node | Same-key returns the same pair; different/absent key revokes the family; concurrent/lost-response tests |
 | Heartbeat expiry | Existing hole could make expired agents appear online | `agentHeartbeat.js` uses the shared auth helper; test expired key |
 | Agent credential file | Token leakage or lost credentials | Permission/atomic-write test; no log assertions |
 | TLS check | Plain HTTP would expose bearer tokens | Test non-loopback HTTP rejection + dev flag |
