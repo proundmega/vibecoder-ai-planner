@@ -170,6 +170,12 @@ Also indexed in `planning/HARNESS_ROADMAP.md` (fg-45 in Phase C, fg-46 deferred 
 | **fg-51** | `fg-51-requirement-traceability` | P1 | fg-31, fg-32, fg-36, fg-45, fg-48 | Requirement traceability: map every FR/NFR to code, tests and verification evidence at the reviewed SHA; per-requirement gap report with counts (not a composite score); gate before human approval/merge; scoped waivers; `fg-32` fix requests and the `fg-36` stale-SHA merge gate consume the trace API. **Planned.** |
 | **fg-52** | `fg-52-spec-review-auto-merge` | P1 | bp-134, fg-31, fg-32, fg-36, fg-37, fg-41, fg-45, fg-51 | **Plan merged (#136); implementation pending** — Spec review + effort/risk/confidence scoring + per-project policy tiers (`off`, `auto_approve`, `shadow`, `auto_merge_low_risk`); separate reviewer/estimator/merge actor; fixed additive security baseline, global/project kill switches, deterministic gates, policy-change audit, final-diff re-score and shadow/canary rollout. Single autonomy-policy owner; supersedes fg-30 Phase 3 policy/auto-merge. |
 
+## Security and Access (fg-53)
+
+| ID | Directory | Priority | Depends on | Description |
+|----|-----------|----------|------------|-------------|
+| **fg-53** | `fg-53-agent-enrollment` | P1 | none | **Planned** — One-time project-scoped join tokens, `POST /agent-enrollment/enroll`, and short-lived agent access tokens with rotating refresh tokens. First-boot enrollment and a 0600 credential store in the Java agent; uniform expiry/revocation (including heartbeat); admin mint/list/revoke API + minimal UI. Enables true self-registration for remote workers and closes `AGENT-1`/`AGENT-2`/`AUTH-1`/`AUTH-3`. User PATs remain deferred (`00` D1). Plan in review: PR #173. |
+
 ## Other (pa-*)
 
 | ID | Directory | Description |
