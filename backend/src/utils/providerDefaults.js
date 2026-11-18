@@ -18,6 +18,15 @@ const PROVIDER_DEFAULTS = Object.freeze({
   }),
 });
 
+// Types with no built-in endpoint that cannot work without one.
+const ENDPOINT_REQUIRED_TYPES = Object.freeze([
+  'generic',
+  'custom',
+  'ollama',
+  'vllm',
+  'llamacpp',
+]);
+
 function getProviderDefaults(providerType) {
   return PROVIDER_DEFAULTS[providerType] || null;
 }
@@ -64,6 +73,10 @@ function resolveProviderEndpoint({ providerType = null, baseUrl = null, endpoint
     || null;
 }
 
+function providerRequiresEndpoint(providerType) {
+  return ENDPOINT_REQUIRED_TYPES.includes(providerType);
+}
+
 module.exports = {
   PROVIDER_DEFAULTS,
   getProviderDefaults,
@@ -71,4 +84,5 @@ module.exports = {
   providerCatalog,
   normaliseEndpoint,
   resolveProviderEndpoint,
+  providerRequiresEndpoint,
 };

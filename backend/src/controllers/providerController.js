@@ -2,7 +2,7 @@ const ProviderRouter = require('../services/ProviderRouter');
 const ProviderService = require('../services/ProviderService');
 const { encrypt, decrypt, maskToken } = require('../utils/crypto');
 const { NotFoundError, ValidationError } = require('../errors/HttpError');
-const { getProviderDefaults, resolveProviderEndpoint } = require('../utils/providerDefaults');
+const { getProviderDefaults, resolveProviderEndpoint, providerRequiresEndpoint } = require('../utils/providerDefaults');
 const { pool } = require('../db');
 
 async function addProvider(req, res, next) {
@@ -166,6 +166,9 @@ async function updateProvider(req, res, next) {
         resolvedEndpoint = previousEndpoint && previousEndpoint !== previousDefault
           ? previousEndpoint
           : (defaults?.endpointUrl || null);
+      }
+      if (!resolvedEndpoint && providerRequiresEndpoint(effectiveProviderType)) {
+        throw new ValidationError(`Endpoint URL is required for ${effectiveProviderType} providers`);
       }
       updates.push(`base_url = $${paramIndex++}`);
       values.push(resolvedEndpoint);
@@ -442,7 +445,7 @@ async function testProvider(req, res, next) {
       baseUrl: providerConfig.base_url,
       endpointUrl: providerConfig.endpoint_url,
     });
-    const needsBaseUrl = ['generic', 'ollama', 'vllm', 'llamacpp', 'custom'].includes(type);
+    const needsBaseUrl = providerRequiresEndpoint(type);
     if ((!baseUrl || typeof baseUrl !== 'string') && needsBaseUrl
       && process.env.INTEGRATION_TESTS !== '1') {
       throw new Error('Base URL is required for this provider type');

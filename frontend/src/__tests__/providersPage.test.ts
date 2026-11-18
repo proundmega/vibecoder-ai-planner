@@ -311,6 +311,33 @@ describe('ProvidersPage', () => {
     expect(wrapper.find('input[placeholder="https://opencode.ai/zen/v1"]').exists()).toBe(true)
   })
 
+  it('keeps OpenCode defaults when the defaults request fails', async () => {
+    ;(providersApi.listProviders as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(providersApi.fetchProviderDefaults as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    wrapper = mount(ProvidersPage, mountOptions)
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    const buttons = wrapper.findAll('button')
+    await buttons[0].trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.find('select').setValue('opencode')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('input[placeholder="https://opencode.ai/zen/v1"]').exists()).toBe(true)
+
+    const inputs = wrapper.findAll('input')
+    await inputs[0].setValue('OpenCode Zen')
+    const addButtons = wrapper.findAll('.add-form button')
+    await addButtons[0].trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(providersApi.addProvider).not.toHaveBeenCalled()
+    expect(wrapper.find('.error-message').text()).toContain('Model is required')
+  })
+
   it('submits an edited OpenCode endpoint so agents see the new value', async () => {
     const provider = {
       id: '1',

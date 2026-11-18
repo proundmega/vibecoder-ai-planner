@@ -2,6 +2,7 @@ const {
   normaliseEndpoint,
   resolveProviderEndpoint,
   providerCatalog,
+  providerRequiresEndpoint,
 } = require('../utils/providerDefaults');
 
 describe('provider endpoint resolution', () => {
@@ -58,5 +59,14 @@ describe('provider endpoint resolution', () => {
         requiresModel: true,
       },
     ]);
+  });
+
+  it('knows which provider types cannot work without an endpoint', () => {
+    for (const type of ['generic', 'custom', 'ollama', 'vllm', 'llamacpp']) {
+      expect(providerRequiresEndpoint(type)).toBe(true);
+    }
+    for (const type of ['opencode', 'opencode-go', 'openai', 'claude']) {
+      expect(providerRequiresEndpoint(type)).toBe(false);
+    }
   });
 });

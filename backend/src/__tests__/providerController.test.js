@@ -403,6 +403,42 @@ describe('Provider Controller', () => {
     });
   });
 
+  describe('endpoint-required providers', () => {
+    it('rejects clearing the endpoint of a custom provider', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{
+          id: 6,
+          name: 'custom-local',
+          provider_type: 'custom',
+          api_key_encrypted: null,
+          base_url: 'http://localhost:9000/v1',
+          model: 'local-model',
+          roles: ['worker'],
+          max_tokens: 4096,
+          temperature: 0.1,
+          is_active: true,
+          endpoint_url: 'http://localhost:9000/v1',
+          fallback_provider: null,
+          routing_rules: '{}',
+          is_project_director: false,
+          created_at: new Date(),
+          updated_at: new Date(),
+        }],
+      });
+
+      mockReq.params.id = '6';
+      mockReq.body = { endpoint_url: '' };
+
+      await providerController.updateProvider(mockReq, mockRes, nextFn);
+
+      expect(nextFn).toHaveBeenCalledWith(expect.objectContaining({
+        statusCode: 400,
+        message: 'Endpoint URL is required for custom providers',
+      }));
+      expect(pool.query).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('deleteProvider', () => {
     it('should delete a provider', async () => {
       

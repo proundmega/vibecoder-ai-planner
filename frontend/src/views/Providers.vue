@@ -192,34 +192,43 @@ const newProvider = ref({
 })
 
 const ENDPOINT_PROVIDER_TYPES = ['ollama', 'vllm', 'llamacpp', 'custom']
-// The backend owns OpenCode metadata. These type names only keep the field and
-// model guard usable if the defaults request fails.
-const OPENCODE_PROVIDER_TYPES = ['opencode', 'opencode-go']
+// Mirror only the OpenCode entries so the field, placeholder and reset path
+// still work if /providers/defaults is unavailable. The API response remains
+// the source of truth whenever the request succeeds.
+const FALLBACK_PROVIDER_DEFAULTS = {
+  opencode: {
+    label: 'OpenCode (Zen)',
+    endpointUrl: 'https://opencode.ai/zen/v1',
+    requiresModel: true,
+  },
+  'opencode-go': {
+    label: 'OpenCode Go',
+    endpointUrl: 'https://opencode.ai/zen/go/v1',
+    requiresModel: true,
+  },
+}
 
 function providerDefault(type) {
-  return providerDefaults.value[type] || null
+  return providerDefaults.value[type] || FALLBACK_PROVIDER_DEFAULTS[type] || null
 }
 
 const providerTypes = computed(() => BASE_PROVIDER_TYPES.map(providerType => ({
   ...providerType,
-  // The backend owns the OpenCode labels/endpoints; fall back to the static
-  // label only while the defaults request is in flight.
+  // The backend owns the OpenCode labels/endpoints; the fallback only matters
+  // while the defaults request is in flight or if it failed.
   label: providerDefault(providerType.value)?.label || providerType.label,
 })))
 
 function needsEndpoint(type) {
-  return Boolean(providerDefault(type))
-    || OPENCODE_PROVIDER_TYPES.includes(type)
-    || ENDPOINT_PROVIDER_TYPES.includes(type)
+  return Boolean(providerDefault(type)) || ENDPOINT_PROVIDER_TYPES.includes(type)
 }
 
 function endpointOptional(type) {
-  return Boolean(providerDefault(type)) || OPENCODE_PROVIDER_TYPES.includes(type)
+  return Boolean(providerDefault(type)) || ENDPOINT_PROVIDER_TYPES.includes(type)
 }
 
 function requiresModel(type) {
-  const defaults = providerDefault(type)
-  return defaults ? Boolean(defaults.requiresModel) : OPENCODE_PROVIDER_TYPES.includes(type)
+  return Boolean(providerDefault(type)?.requiresModel)
 }
 
 const newProviderRequiresModel = computed(() =>

@@ -242,7 +242,7 @@ class UsageLogger {
       'derived_metrics.tokens_per_second': 'derived:tokens_out/duration_ms',
     };
 
-    if (providerType === 'claude') {
+    if (providerType === 'claude' || providerType === 'anthropic') {
       provenance['normalized_fields.tokens_in'] = 'normalized:input_tokens→tokens_in';
       provenance['normalized_fields.tokens_out'] = 'normalized:output_tokens→tokens_out';
     } else {

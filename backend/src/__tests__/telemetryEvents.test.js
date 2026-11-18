@@ -149,6 +149,12 @@ describe('Telemetry Events', () => {
       expect(result['normalized_fields.tokens_out']).toBe('normalized:completion_tokens→tokens_out');
     });
 
+    it('should treat anthropic provenance like claude', () => {
+      const result = UsageLogger._buildFieldProvenance('anthropic');
+      expect(result['normalized_fields.tokens_in']).toBe('normalized:input_tokens→tokens_in');
+      expect(result['normalized_fields.tokens_out']).toBe('normalized:output_tokens→tokens_out');
+    });
+
     it('should have correct provenance for generic', () => {
       const result = UsageLogger._buildFieldProvenance('generic');
       expect(result['normalized_fields.tokens_in']).toBe('normalized:prompt_tokens→tokens_in');
