@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory, type Router } from 'vue-router'
 
+const githubLoad = vi.hoisted(() => vi.fn())
+
 vi.mock('@/composables/useGitHub', async () => {
   const { ref } = await import('vue')
   return {
@@ -9,7 +11,7 @@ vi.mock('@/composables/useGitHub', async () => {
       repo: ref(null), loading: ref(false), error: ref(null), success: ref(null),
       showConnectForm: ref(false), repoUrl: ref(''), repoBranch: ref('main'), repoAccessToken: ref(''),
       branches: ref([]), prs: ref([]), creatingBranch: ref(false), branchTicketId: ref(''),
-      load: vi.fn(), connect: vi.fn(), disconnect: vi.fn(), createBranch: vi.fn(),
+      loaded: ref(false), load: githubLoad, connect: vi.fn(), disconnect: vi.fn(), createBranch: vi.fn(),
     }),
   }
 })
@@ -101,5 +103,20 @@ describe('ProjectDetail child routes', () => {
     expect(wrapper.find('.github-child').exists()).toBe(true)
     const githubTab = wrapper.findAll('button').find(button => button.text() === 'GitHub')
     expect(githubTab?.classes()).toContain('active')
+  })
+
+  it('loads the active tab after returning from a directly loaded child route', async () => {
+    const router = await makeRouter('/projects/1')
+    await router.push('/projects/1/github')
+    mount({ template: '<router-view />' }, { global: { plugins: [router] } })
+    await flushPromises()
+
+    expect(githubLoad).not.toHaveBeenCalled()
+
+    await router.back()
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/projects/1')
+    expect(githubLoad).toHaveBeenCalledTimes(1)
   })
 })

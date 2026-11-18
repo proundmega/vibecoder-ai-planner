@@ -92,6 +92,13 @@ watch(activeTab, (tabId) => {
   ensureTabData(tabId)
 })
 
+// A direct child load never runs the parent's onMounted data fetch. When the
+// user returns to the parent (browser back or a route push), the active inline
+// tab is already selected, so load its data now instead of waiting for a click.
+watch(isChildRoute, (child) => {
+  if (!child) ensureTabData(activeTab.value)
+})
+
 onMounted(() => {
   if (isChildRoute.value) return
   ensureTabData('github')
@@ -100,7 +107,10 @@ onMounted(() => {
 })
 
 async function handleTabSwitch(tabId) {
-  if (activeTab.value === tabId && !isChildRoute.value) return
+  if (activeTab.value === tabId && !isChildRoute.value) {
+    ensureTabData(tabId)
+    return
+  }
   activeTab.value = tabId
   if (tabId === 'tickets') {
     router.push(`/projects/${projectId}/tickets`)
@@ -211,8 +221,8 @@ async function handleTabSwitch(tabId) {
             <div class="repo-info">
               <h3>Connected Repository</h3>
               <div class="repo-badge">
-                <span class="repo-url">{{ githubRepo.repo_url }}</span>
-                <span class="repo-branch">{{ githubRepo.default_branch }}</span>
+                <span class="repo-url">{{ githubRepo.repoUrl }}</span>
+                <span class="repo-branch">{{ githubRepo.defaultBranch }}</span>
               </div>
               <button @click="githubDisconnect" :disabled="githubLoading" class="btn-danger">Disconnect</button>
             </div>

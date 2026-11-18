@@ -177,8 +177,8 @@ async function handleCreatePR() {
         <div v-else class="repo-connected">
           <div class="repo-info">
             <span class="status-connected">Connected</span>
-            <span class="repo-url">{{ githubRepo.repo_url }}</span>
-            <span class="repo-branch">Default branch: {{ githubRepo.default_branch }}</span>
+            <span class="repo-url">{{ githubRepo.repoUrl }}</span>
+            <span class="repo-branch">Default branch: {{ githubRepo.defaultBranch }}</span>
           </div>
           <button @click="handleDisconnectRepo" class="btn-danger">Disconnect</button>
         </div>
