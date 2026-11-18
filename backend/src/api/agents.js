@@ -246,7 +246,7 @@ router.get('/:agentId/history', verifyTokenOrAgent, requireAnyPermission('AGENT_
     let agent;
     if (apiKey) {
       agent = await AgentService.getAgentByApiKey(apiKey);
-      if (!agent || agent.id !== req.params.agentId) {
+      if (!agent || String(agent.id) !== String(req.params.agentId)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
     } else if (req.user && req.user.userId) {
