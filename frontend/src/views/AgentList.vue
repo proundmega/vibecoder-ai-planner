@@ -207,6 +207,7 @@ async function loadEnrollmentTokens() {
       // Feature flag off: remove the surface instead of advertising it.
       enrollmentAvailable.value = false
       enrollmentError.value = ''
+      if (activeTab.value === 'enrollment') activeTab.value = 'heartbeat'
     } else {
       enrollmentError.value = err.message || 'Failed to load join tokens'
     }
@@ -250,6 +251,12 @@ async function revokeToken(token) {
   } finally {
     revokingTokenId.value = null
   }
+}
+
+function enrollmentProviderName(providerId) {
+  if (!providerId) return 'Any'
+  const provider = providers.value.find(p => String(p.id) === String(providerId))
+  return provider ? provider.name : `Provider ${providerId}`
 }
 
 function enrollmentStatus(token) {
@@ -473,7 +480,7 @@ function formatDate(dateStr) {
           <tbody>
             <tr v-for="token in enrollmentTokens" :key="token.id">
               <td>{{ token.name }}</td>
-              <td>{{ token.provider_id || 'Any' }}</td>
+              <td>{{ enrollmentProviderName(token.provider_id) }}</td>
               <td>{{ token.used_count }} / {{ token.max_uses }}</td>
               <td>{{ formatDate(token.expires_at) }}</td>
               <td>
