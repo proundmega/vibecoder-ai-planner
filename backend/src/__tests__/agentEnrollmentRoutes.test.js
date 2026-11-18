@@ -140,7 +140,7 @@ describe('Agent enrollment routes (FR1, FR2, FR12, FR14, NFR2)', () => {
 
   it('collapses join-token failures into a generic 401', async () => {
     jest.spyOn(AgentEnrollmentService, 'enroll').mockRejectedValue(
-      Object.assign(new Error('expired'), { code: 'ENROLLMENT_TOKEN_EXPIRED' })
+      new AgentEnrollmentService.EnrollmentError(401, 'ENROLLMENT_TOKEN_EXPIRED', 'expired')
     );
     jest.spyOn(AgentEnrollmentService, 'audit').mockResolvedValue(undefined);
 
@@ -151,6 +151,17 @@ describe('Agent enrollment routes (FR1, FR2, FR12, FR14, NFR2)', () => {
     expect(res.statusCode).toBe(401);
     expect(res.body.error.code).toBe('ENROLLMENT_TOKEN_INVALID');
     expect(JSON.stringify(res.body)).not.toContain('enr_unknownvalue');
+  });
+
+  it('returns 500 for an internal enrollment failure, not an invalid-token 401', async () => {
+    jest.spyOn(AgentEnrollmentService, 'enroll').mockRejectedValue(new Error('database unavailable'));
+
+    const res = await request(app)
+      .post('/api/v1/agent-enrollment/enroll')
+      .send({ token: 'enr_validvalue1234567890', name: 'worker' });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body.error.code).toBe('INTERNAL_SERVER_ERROR');
   });
 
   it('returns the credential pair on a successful enroll', async () => {

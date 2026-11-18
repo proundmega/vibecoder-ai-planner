@@ -88,8 +88,10 @@ public class AgentAuthManager {
 
     private void enroll() throws IOException {
         AgentCredentialStore.Credentials enrolled = client.enroll(agentName(), nodeMetadata());
-        adopt(enrolled);
+        // Persist first: if the volume is read-only/full, fail without
+        // pretending the node has usable durable credentials.
         if (store != null) store.save(enrolled);
+        adopt(enrolled);
     }
 
     private void refresh() throws IOException {
@@ -105,8 +107,10 @@ public class AgentAuthManager {
         AgentCredentialStore.Credentials rotated = client.refresh(
             current.refreshToken(), pendingRefreshKey);
         pendingRefreshKey = null;
-        adopt(rotated);
+        // Persist before adopting so a failed write cannot leave memory ahead
+        // of disk (a restart would replay a rotated token and revoke the family).
         if (store != null) store.save(rotated);
+        adopt(rotated);
     }
 
     private void adopt(AgentCredentialStore.Credentials next) {

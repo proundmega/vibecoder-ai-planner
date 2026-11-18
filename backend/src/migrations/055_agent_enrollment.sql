@@ -39,6 +39,8 @@ CREATE INDEX IF NOT EXISTS idx_agent_access_tokens_prefix
   ON agent_access_tokens(token_prefix);
 CREATE INDEX IF NOT EXISTS idx_agent_access_tokens_agent
   ON agent_access_tokens(agent_id, expires_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_access_tokens_expiry
+  ON agent_access_tokens(expires_at);
 
 CREATE TABLE IF NOT EXISTS agent_refresh_tokens (
   id BIGSERIAL PRIMARY KEY,

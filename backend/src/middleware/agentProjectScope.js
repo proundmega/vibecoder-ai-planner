@@ -44,6 +44,7 @@ function forBodyTicket(field = 'ticketId') {
     try {
       const ticketId = (req.body || {})[field];
       if (ticketId == null) return next();
+      if (!/^\d+$/.test(String(ticketId))) return next();
       const projectId = await projectForTicket(ticketId);
       if (projectId != null && !assertAgentProject(req, projectId)) return deny(res);
       next();
@@ -56,6 +57,9 @@ function forBodyTicket(field = 'ticketId') {
 function forTicketParam(param = 'ticketId') {
   return async (req, res, next) => {
     if (scopedProject(req) == null) return next();
+    // Leave malformed ids to validatePathParams (400) instead of sending them
+    // to PostgreSQL, which would raise 22P02 and become a 500.
+    if (!/^\d+$/.test(String(req.params[param]))) return next();
     try {
       const result = await pool.query('SELECT project_id FROM tickets WHERE id = $1', [req.params[param]]);
       if (result.rows.length === 0) return next();
@@ -70,6 +74,8 @@ function forTicketParam(param = 'ticketId') {
 function forRunParam(param = 'runId') {
   return async (req, res, next) => {
     if (scopedProject(req) == null) return next();
+    // harness_runs.id is a UUID; let the path validator reject malformed ids.
+    if (!/^[0-9a-fA-F-]{1,64}$/.test(String(req.params[param]))) return next();
     try {
       const result = await pool.query('SELECT project_id FROM harness_runs WHERE id = $1', [req.params[param]]);
       if (result.rows.length === 0) return next();
@@ -102,10 +108,12 @@ function forHarnessEventBody() {
       const body = req.body || {};
       if (body.projectId != null && !assertAgentProject(req, body.projectId)) return deny(res);
       if (body.ticketId != null) {
+        if (!/^\d+$/.test(String(body.ticketId))) return next();
         const projectId = await projectForTicket(body.ticketId);
         if (projectId != null && !assertAgentProject(req, projectId)) return deny(res);
       }
       if (body.runId != null) {
+        if (!/^[0-9a-fA-F-]{1,64}$/.test(String(body.runId))) return next();
         const projectId = await projectForRun(body.runId);
         if (projectId != null && !assertAgentProject(req, projectId)) return deny(res);
       }

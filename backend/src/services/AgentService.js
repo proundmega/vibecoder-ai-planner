@@ -70,15 +70,20 @@ class AgentService {
     return { ...agent, api_key: apiKey };
   }
 
-  async list(userId) {
-    const result = await pool.query(
-      `SELECT agents.*, providers.name as provider_name, providers.provider_type as provider_type
-       FROM agents 
+  async list(userId, { projectId = null } = {}) {
+    const params = [userId];
+    let sql = `SELECT agents.*, providers.name as provider_name, providers.provider_type as provider_type
+       FROM agents
        LEFT JOIN providers ON agents.provider_id = providers.id
-       WHERE agents.owner_id = $1 
-       ORDER BY agents.created_at DESC`,
-      [userId]
-    );
+       WHERE agents.owner_id = $1`;
+    if (projectId != null) {
+      // An enrolled agent token must not enumerate the owner's agents in
+      // other projects.
+      params.push(projectId);
+      sql += ' AND agents.project_id = $2';
+    }
+    sql += ' ORDER BY agents.created_at DESC';
+    const result = await pool.query(sql, params);
     return result.rows;
   }
 
@@ -158,6 +163,9 @@ class AgentService {
       agent = auth.agent;
     } else {
       agent = await this.getAgentByApiKey(apiKey);
+      if (agent && agent.api_key_expires_at && new Date(agent.api_key_expires_at) <= new Date()) {
+        throw new Error('TOKEN_EXPIRED');
+      }
     }
     if (!agent) throw new Error('AGENT_NOT_FOUND');
     if (String(agent.id) !== String(agentId)) throw new Error('AGENT_NOT_FOUND');

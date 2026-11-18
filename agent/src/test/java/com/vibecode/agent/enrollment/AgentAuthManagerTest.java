@@ -52,6 +52,11 @@ class AgentAuthManagerTest {
                 throws IOException {
             refreshes.incrementAndGet();
             keys.add(idempotencyKey);
+            try {
+                Thread.sleep(30);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
             if (failNextRefresh) {
                 failNextRefresh = false;
                 throw new IOException("simulated lost response");
@@ -137,6 +142,36 @@ class AgentAuthManagerTest {
 
         assertEquals(client.keys.size(), 2);
         assertEquals(client.keys.get(0), client.keys.get(1));
+    }
+
+    @Test
+    void coalescesSimultaneousRefreshTriggersIntoOneRequest() throws Exception {
+        EnrollConfig config = new EnrollConfig();
+        config.token = "enr_once";
+        Path file = tempDir.resolve("credentials.json");
+        StubClient client = new StubClient(config);
+        client.next = pair("at_expiring", Instant.now().plusSeconds(30));
+        AgentAuthManager manager = new AgentAuthManager(
+            config, new AgentCredentialStore(file), client);
+        manager.initialize();
+
+        client.next = pair("at_fresh", Instant.now().plusSeconds(3600));
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.List<java.util.concurrent.Future<String>> futures = new java.util.ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            futures.add(pool.submit(() -> {
+                start.await();
+                return manager.ensureValidAccessToken();
+            }));
+        }
+        start.countDown();
+        assertEquals("at_fresh", futures.get(0).get());
+        assertEquals("at_fresh", futures.get(1).get());
+        pool.shutdownNow();
+
+        assertEquals(1, client.refreshes.get());
+        assertEquals(1, client.keys.size());
     }
 
     @Test

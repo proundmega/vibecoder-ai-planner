@@ -133,6 +133,39 @@ describe('Agent token authentication (FR4, FR6, FR9, FR10)', () => {
     expect(HeartbeatService.recordHeartbeat).not.toHaveBeenCalled();
   });
 
+  it('rejects an expired legacy key on provider-config before decrypting', async () => {
+    jest.spyOn(AgentService, 'getAgentByApiKey').mockResolvedValue({
+      id: 42,
+      owner_id: 7,
+      name: 'legacy',
+      provider_id: 2,
+      api_key_expires_at: new Date(Date.now() - 1000),
+    });
+
+    const res = await request(app)
+      .get('/api/v1/agents/42/provider-config')
+      .set('X-API-Key', 'ak_expired');
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body.error.code).toBe('TOKEN_EXPIRED');
+  });
+
+  it('rejects an expired legacy key on the agent history route', async () => {
+    jest.spyOn(AgentService, 'getAgentByApiKey').mockResolvedValue({
+      id: 42,
+      owner_id: 7,
+      name: 'legacy',
+      api_key_expires_at: new Date(Date.now() - 1000),
+    });
+
+    const res = await request(app)
+      .get('/api/v1/agents/42/history')
+      .set('X-API-Key', 'ak_expired');
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body.error.code).toBe('KEY_EXPIRED');
+  });
+
   it('revokes access and refresh tokens when a legacy key is revoked', async () => {
     const spy = jest.spyOn(AgentEnrollmentService, 'revokeAllForAgent').mockResolvedValue(undefined);
     await AgentService.revokeApiKey(42);

@@ -4,7 +4,12 @@ const router = express.Router();
 const AgentService = require('../services/AgentService');
 const ProviderService = require('../services/ProviderService');
 const PermissionService = require('../services/PermissionService');
-const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
+const {
+  verifyToken,
+  verifyTokenOrAgent,
+  authenticateAgentByApiKey,
+  agentAuthFailure,
+} = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
 const { updateAgentSchema } = require('../validators/agents');
@@ -111,7 +116,10 @@ router.post('/create', verifyTokenOrAgent, requireAnyPermission('AGENT_CREATE'),
  */
 router.get('/', verifyTokenOrAgent, requireAnyPermission('AGENT_READ'), async (req, res) => {
   try {
-    const agents = await AgentService.list(req.user.userId);
+    const projectFilter = req.agent && req.agent.project_id != null
+      ? { projectId: req.agent.project_id }
+      : {};
+    const agents = await AgentService.list(req.user.userId, projectFilter);
     res.json({ agents: maskAgentList(agents) });
   } catch (error) {
     logger.error('GET /api/agents', error);
@@ -245,8 +253,14 @@ router.get('/:agentId/history', verifyTokenOrAgent, requireAnyPermission('AGENT_
     const apiKey = req.headers['x-api-key'];
     let agent;
     if (apiKey) {
-      agent = await AgentService.getAgentByApiKey(apiKey);
-      if (!agent || String(agent.id) !== String(req.params.agentId)) {
+      agent = await authenticateAgentByApiKey(apiKey, { mock: false });
+      if (!agent) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (agent._expired || agent._revoked) {
+        return res.status(401).json({ success: false, error: agentAuthFailure(agent) });
+      }
+      if (String(agent.id) !== String(req.params.agentId)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
     } else if (req.user && req.user.userId) {

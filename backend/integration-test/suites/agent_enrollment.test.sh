@@ -70,25 +70,45 @@ code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/agent-enrollment/enr
   -d "{\"token\":\"$join_token\",\"name\":\"second-node\"}")
 assert_status "Single-use join token cannot enroll twice" "401" "$code"
 
-local refresh_body new_access
+local refresh_body new_access new_refresh replay_body replay_access idem_key other_key
+idem_key="idem-$(date +%s%N)-$RANDOM"
 refresh_body=$(curl_sf "$BASE/api/v1/agent-enrollment/refresh" \
   -H "Content-Type: application/json" \
-  -d "{\"refresh_token\":\"$refresh_token\"}")
+  -d "{\"refresh_token\":\"$refresh_token\",\"idempotency_key\":\"$idem_key\"}")
 new_access=$(echo "$refresh_body" | extract_field "access_token")
+new_refresh=$(echo "$refresh_body" | extract_field "refresh_token")
 if [[ "$new_access" == at_* ]] && [ "$new_access" != "$access_token" ]; then
   pass "Refresh rotated the access token"
 else
   fail "Refresh rotated the access token" "no new access token"
 fi
 
-code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/agent-enrollment/refresh" \
+# Same key retry inside the replay window returns the identical pair.
+replay_body=$(curl_sf "$BASE/api/v1/agent-enrollment/refresh" \
   -H "Content-Type: application/json" \
-  -d "{\"refresh_token\":\"$refresh_token\"}")
-assert_status "Rotated refresh token cannot be reused" "401" "$code"
+  -d "{\"refresh_token\":\"$refresh_token\",\"idempotency_key\":\"$idem_key\"}")
+replay_access=$(echo "$replay_body" | extract_field "access_token")
+if [ "$replay_access" = "$new_access" ] \
+   && [ "$(echo "$replay_body" | extract_field "refresh_token")" = "$new_refresh" ]; then
+  pass "Same idempotency key returns the identical pair"
+else
+  fail "Same idempotency key returns the identical pair" "pair changed"
+fi
 
 code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/agents/$agent_id/history" \
   -H "X-API-Key: $new_access")
 assert_status "Rotated access token still authenticates" "200" "$code"
+
+# A different key on the rotated token is reuse and revokes the family.
+other_key="idem-other-$(date +%s%N)-$RANDOM"
+code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/agent-enrollment/refresh" \
+  -H "Content-Type: application/json" \
+  -d "{\"refresh_token\":\"$refresh_token\",\"idempotency_key\":\"$other_key\"}")
+assert_status "Rotated refresh token with a different key is rejected" "401" "$code"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/agents/$agent_id/history" \
+  -H "X-API-Key: $new_access")
+assert_status "Refresh reuse revokes the winning access token" "401" "$code"
 
 # Revoking the agent must invalidate the enrollment credentials too.
 curl_sf "$BASE/api/v1/agents/revoke/$agent_id" \

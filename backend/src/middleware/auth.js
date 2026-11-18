@@ -222,8 +222,10 @@ function agentAuthFailure(agent) {
 }
 
 async function authenticateAgentByApiKey(apiKey, { mock = true } = {}) {
-  // Mock validation for test keys
-  if (mock && (apiKey.startsWith('test-') || apiKey === 'mock-agent-key')) {
+  // Mock validation for test keys (unit tests only; never in a deployment).
+  if (mock
+      && process.env.NODE_ENV === 'test'
+      && (apiKey.startsWith('test-') || apiKey === 'mock-agent-key')) {
     return {
       id: 1,
       owner_id: 1,

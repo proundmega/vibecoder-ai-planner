@@ -135,6 +135,7 @@ router.post(
   '/tokens',
   verifyToken,
   requireAnyPermission('AGENT_CREATE'),
+  agentEnrollmentRateLimit({ max: 30 }),
   validate(mintSchema),
   async (req, res) => {
     try {
@@ -287,6 +288,10 @@ router.post(
       });
       res.status(201).json({ success: true, data: credentials });
     } catch (error) {
+      if (!(error instanceof AgentEnrollmentService.EnrollmentError)) {
+        logger.error('POST /api/v1/agent-enrollment/enroll', error);
+        return res.status(500).json(errorBody('INTERNAL_SERVER_ERROR', 'Could not enroll the agent', 500));
+      }
       // All join-token failures look the same to the caller so a token prefix
       // cannot be probed. The precise reason is recorded in the audit event.
       await AgentEnrollmentService.audit(pool, {
