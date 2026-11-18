@@ -393,6 +393,12 @@ router.get('/:agentId/provider-config', async (req, res, next) => {
       NO_PROVIDER: { code: 'NO_PROVIDER', message: 'Agent has no provider configured' },
       PROVIDER_NOT_FOUND: { code: 'PROVIDER_NOT_FOUND', message: 'Provider configuration not found' },
     };
+    if (error.message === 'TOKEN_EXPIRED') {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'TOKEN_EXPIRED', message: 'Agent access token expired; refresh the node credentials' },
+      });
+    }
     if (error.message in errorMessages) {
       return res.status(404).json({ success: false, error: errorMessages[error.message] });
     }

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
+const { forProjectParam } = require('../middleware/agentProjectScope');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
 const githubController = require('../controllers/githubController');
@@ -46,7 +47,7 @@ router.get('/:projectId/repo', verifyToken, githubController.getRepoStatus);
  *       200:
  *         description: Repository config; `accessToken` is present only in explicit PAT mode
  */
-router.get('/:projectId/repo/agent', verifyTokenOrAgent, githubController.getRepoForAgent);
+router.get('/:projectId/repo/agent', verifyTokenOrAgent, forProjectParam(), githubController.getRepoForAgent);
 
 /**
  * @openapi
@@ -67,7 +68,7 @@ router.get('/:projectId/repo/agent', verifyTokenOrAgent, githubController.getRep
  *       403:
  *         description: GitHub access is disabled or not configured
  */
-router.post('/:projectId/token', verifyTokenOrAgent, validate(tokenRequestSchema), githubController.requestToken);
+router.post('/:projectId/token', verifyTokenOrAgent, forProjectParam(), validate(tokenRequestSchema), githubController.requestToken);
 
 /**
  * @openapi

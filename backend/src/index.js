@@ -190,12 +190,23 @@ if (process.env.NODE_ENV !== 'test') {
   eventRetentionInterval.unref();
   purgeTick();
 
+  // Daily retention for fg-53 enrollment/access/refresh tokens and auth events.
+  const AgentTokenCleanupService = require('./services/AgentTokenCleanupService');
+  const agentTokenPurgeTick = () => {
+    AgentTokenCleanupService.purgeExpired().catch(err => {
+      logger.error('Agent token retention failed:', err.message);
+    });
+  };
+  const agentTokenRetentionInterval = setInterval(agentTokenPurgeTick, 24 * 60 * 60 * 1000);
+  agentTokenRetentionInterval.unref();
+
   gracefulShutdown(server, pool, [
     () => clearInterval(cleanupInterval),
     () => {
       if (reaperInterval) clearInterval(reaperInterval);
     },
     () => clearInterval(eventRetentionInterval),
+    () => clearInterval(agentTokenRetentionInterval),
   ]);
 }
 

@@ -1,8 +1,15 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchAgentStatusList, createAgent, listAgents, updateAgentName } from '@/api/agents'
 import { listProviders } from '@/api/providers'
+import { fetchProjects } from '@/api/projects'
+import {
+  listEnrollmentTokens,
+  mintEnrollmentToken,
+  revokeEnrollmentToken,
+} from '@/api/agentEnrollment'
+import { useAuthStore } from '@/stores/auth'
 import AgentModal from '@/components/AgentModal.vue'
 import AgentKeyRevealModal from '@/components/AgentKeyRevealModal.vue'
 
@@ -24,6 +31,21 @@ let createAttempt = 0
 let pollInterval = null
 const editingAgentId = ref(null)
 const editName = ref('')
+
+const authStore = useAuthStore()
+const projects = ref([])
+const enrollmentProjectId = ref('')
+const enrollmentTokens = ref([])
+const enrollmentLoading = ref(false)
+const enrollmentError = ref('')
+const minting = ref(false)
+const mintedToken = ref(null)
+const revokingTokenId = ref(null)
+const mintForm = ref({ name: '', ttlMinutes: 15, maxUses: 1, providerId: '' })
+
+const canReadEnrollment = computed(() => authStore.hasAnyPermission(['AGENT_READ']))
+const canMintEnrollment = computed(() => authStore.canCreateAgent())
+const canRevokeEnrollment = computed(() => authStore.canRevokeAgent())
 
 async function loadAgents() {
   try {
@@ -58,6 +80,15 @@ onUnmounted(() => {
 watch(activeTab, (tab) => {
   if (tab === 'agents') {
     loadCrudAgents()
+  }
+  if (tab === 'enrollment' && canReadEnrollment.value) {
+    loadEnrollmentPanel()
+  }
+})
+
+watch(enrollmentProjectId, () => {
+  if (activeTab.value === 'enrollment' && enrollmentProjectId.value) {
+    loadEnrollmentTokens()
   }
 })
 
@@ -144,7 +175,82 @@ function cancelEdit() {
 const tabs = [
   { id: 'heartbeat', label: 'Heartbeat' },
   { id: 'agents', label: 'Agents' },
+  { id: 'enrollment', label: 'Enrollment' },
 ]
+
+async function loadEnrollmentPanel() {
+  if (projects.value.length === 0) {
+    try {
+      projects.value = await fetchProjects()
+    } catch (err) {
+      console.error('Failed to load projects:', err)
+    }
+  }
+  if (!enrollmentProjectId.value && projects.value.length > 0) {
+    enrollmentProjectId.value = String(projects.value[0].id)
+  }
+  await loadEnrollmentTokens()
+}
+
+async function loadEnrollmentTokens() {
+  if (!enrollmentProjectId.value) {
+    enrollmentTokens.value = []
+    return
+  }
+  enrollmentLoading.value = true
+  enrollmentError.value = ''
+  try {
+    enrollmentTokens.value = await listEnrollmentTokens(enrollmentProjectId.value)
+  } catch (err) {
+    enrollmentError.value = err.message || 'Failed to load join tokens'
+  } finally {
+    enrollmentLoading.value = false
+  }
+}
+
+async function submitMint() {
+  if (!mintForm.value.name.trim() || !enrollmentProjectId.value) return
+  minting.value = true
+  enrollmentError.value = ''
+  try {
+    const created = await mintEnrollmentToken({
+      projectId: enrollmentProjectId.value,
+      name: mintForm.value.name.trim(),
+      ttlSeconds: Math.max(1, Number(mintForm.value.ttlMinutes) || 15) * 60,
+      maxUses: Number(mintForm.value.maxUses) || 1,
+      providerId: mintForm.value.providerId || null,
+    })
+    // The raw token exists only in this response; keep it in memory for the
+    // one-time dialog and never persist it.
+    mintedToken.value = created
+    mintForm.value.name = ''
+    await loadEnrollmentTokens()
+  } catch (err) {
+    enrollmentError.value = err.message || 'Failed to mint join token'
+  } finally {
+    minting.value = false
+  }
+}
+
+async function revokeToken(token) {
+  revokingTokenId.value = token.id
+  enrollmentError.value = ''
+  try {
+    await revokeEnrollmentToken(token.id)
+    await loadEnrollmentTokens()
+  } catch (err) {
+    enrollmentError.value = err.message || 'Failed to revoke join token'
+  } finally {
+    revokingTokenId.value = null
+  }
+}
+
+function enrollmentStatus(token) {
+  if (token.revoked_at) return 'revoked'
+  if (new Date(token.expires_at) <= new Date()) return 'expired'
+  if (token.used_count >= token.max_uses) return 'used'
+  return 'active'
+}
 
 async function loadCrudAgents() {
   loadingAgents.value = true
@@ -185,6 +291,14 @@ function formatDate(dateStr) {
       v-if="createdAgent"
       :agent="createdAgent"
       @close="createdAgent = null"
+    />
+    <AgentKeyRevealModal
+      v-if="mintedToken"
+      :agent="{ id: mintedToken.id, name: mintedToken.name, apiKey: mintedToken.token }"
+      title="Join token created"
+      intro="Give this token to the new node. It is exchanged once for its own short-lived credentials."
+      warning="This is the only time this join token is shown. It expires automatically and can be revoked."
+      @close="mintedToken = null"
     />
 
     <div class="tabs">
@@ -293,6 +407,93 @@ function formatDate(dateStr) {
         <p class="empty-hint">Click "Create Agent" to get started.</p>
       </div>
     </div>
+
+    <!-- Enrollment Tab -->
+    <div v-if="activeTab === 'enrollment'">
+      <div v-if="!canReadEnrollment" class="empty-state">
+        <p>You do not have permission to view join tokens.</p>
+      </div>
+      <template v-else>
+        <div class="enrollment-toolbar">
+          <label for="enrollment-project">Project</label>
+          <select id="enrollment-project" v-model="enrollmentProjectId">
+            <option value="" disabled>Select a project</option>
+            <option v-for="project in projects" :key="project.id" :value="String(project.id)">
+              {{ project.name }}
+            </option>
+          </select>
+        </div>
+
+        <form v-if="canMintEnrollment" class="mint-form" @submit.prevent="submitMint">
+          <input v-model="mintForm.name" placeholder="Token name" maxlength="100" />
+          <label>
+            TTL (min)
+            <input v-model.number="mintForm.ttlMinutes" type="number" min="1" max="1440" />
+          </label>
+          <label>
+            Max uses
+            <input v-model.number="mintForm.maxUses" type="number" min="1" max="100" />
+          </label>
+          <select v-model="mintForm.providerId">
+            <option value="">Any provider</option>
+            <option v-for="provider in providers" :key="provider.id" :value="String(provider.id)">
+              {{ provider.name }}
+            </option>
+          </select>
+          <button
+            type="submit"
+            class="btn-primary"
+            :disabled="minting || !mintForm.name.trim() || !enrollmentProjectId"
+          >
+            {{ minting ? 'Minting...' : 'Mint join token' }}
+          </button>
+        </form>
+
+        <div v-if="enrollmentError" class="error">{{ enrollmentError }}</div>
+
+        <div v-if="enrollmentLoading" class="loading">Loading join tokens...</div>
+        <table v-else-if="enrollmentTokens.length > 0" class="agent-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Provider</th>
+              <th>Uses</th>
+              <th>Expires</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="token in enrollmentTokens" :key="token.id">
+              <td>{{ token.name }}</td>
+              <td>{{ token.provider_id || 'Any' }}</td>
+              <td>{{ token.used_count }} / {{ token.max_uses }}</td>
+              <td>{{ formatDate(token.expires_at) }}</td>
+              <td>
+                <span :class="['token-status', `token-${enrollmentStatus(token)}`]">
+                  {{ enrollmentStatus(token) }}
+                </span>
+              </td>
+              <td>
+                <button
+                  v-if="canRevokeEnrollment && !token.revoked_at"
+                  class="btn-danger-outline"
+                  :disabled="revokingTokenId === token.id"
+                  @click="revokeToken(token)"
+                >
+                  {{ revokingTokenId === token.id ? 'Revoking...' : 'Revoke' }}
+                </button>
+                <span v-else class="none">—</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty-state">
+          <p>No join tokens for this project.</p>
+          <p class="empty-hint">Mint one to enroll a new node without copying a long-lived key.</p>
+        </div>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -313,6 +514,67 @@ function formatDate(dateStr) {
   padding: 40px 20px;
   text-align: center;
   color: #6b7280;
+}
+
+.enrollment-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.enrollment-toolbar select,
+.mint-form input,
+.mint-form select {
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.mint-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.mint-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.token-status {
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.85em;
+  font-weight: 500;
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.token-active {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.token-used,
+.token-expired {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.token-revoked {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .error {

@@ -2,6 +2,7 @@ const { pool } = require('../db');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { resolveProviderEndpoint } = require('../utils/providerDefaults');
+const AgentEnrollmentService = require('./AgentEnrollmentService');
 
 const SALT_ROUNDS = 10;
 const DEFAULT_KEY_EXPIRY_DAYS = 30;
@@ -83,6 +84,9 @@ class AgentService {
 
   async revokeApiKey(agentId) {
     await pool.query('UPDATE agents SET api_key_hash = NULL, api_key_hash_prefix = NULL WHERE id = $1', [agentId]);
+    // FR6: revoking an agent invalidates every credential it holds, not only
+    // the legacy key.
+    await AgentEnrollmentService.revokeAllForAgent(agentId);
   }
 
   async registerAction(agentId, actionType, tableName, recordId) {
@@ -146,8 +150,17 @@ class AgentService {
   }
 
   async getProviderConfig(agentId, apiKey) {
-    const agent = await this.getAgentByApiKey(apiKey);
+    let agent;
+    if (typeof apiKey === 'string' && apiKey.startsWith('at_')) {
+      const auth = await AgentEnrollmentService.authenticateAccessToken(apiKey);
+      if (auth.status === 'expired') throw new Error('TOKEN_EXPIRED');
+      if (auth.status !== 'ok') throw new Error('AGENT_NOT_FOUND');
+      agent = auth.agent;
+    } else {
+      agent = await this.getAgentByApiKey(apiKey);
+    }
     if (!agent) throw new Error('AGENT_NOT_FOUND');
+    if (String(agent.id) !== String(agentId)) throw new Error('AGENT_NOT_FOUND');
     if (!agent.provider_id) throw new Error('NO_PROVIDER');
     const enc = require('../utils/crypto');
     const result = await pool.query(
@@ -172,6 +185,11 @@ class AgentService {
   }
 
   async getAgentByApiKey(apiKey) {
+    if (typeof apiKey === 'string' && apiKey.startsWith('at_')) {
+      const result = await AgentEnrollmentService.authenticateAccessToken(apiKey);
+      return result.status === 'ok' ? { ...result.agent, _tokenKind: 'access' } : null;
+    }
+
     const apiKeyLookupPrefix = deterministicApiKeyPrefix(apiKey);
 
     const result = await pool.query(

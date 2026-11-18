@@ -39,9 +39,13 @@ import java.time.Duration;
 public class AgentConfig {
 
     private final String agentApiKey;
-    private final String agentId;
+    private String agentId;
     private final String backendUrl;
-    private final String projectId;
+    private final String enrollmentToken;
+    private final String enrollmentUrl;
+    private final String credentialsFile;
+    private final String agentAuthMode;
+    private String projectId;
     private final String repoOwner;
     private final String repoName;
     private final Duration pollInterval;
@@ -61,10 +65,33 @@ public class AgentConfig {
     private final SandboxConfig sandboxConfig;
 
     public AgentConfig() {
-        this.agentApiKey = requireEnv("AGENT_API_KEY");
-        this.agentId = requireEnv("AGENT_ID");
+        this.agentApiKey = getEnv("AGENT_API_KEY", null);
+        this.agentId = getEnv("AGENT_ID", null);
         this.backendUrl = requireEnv("BACKEND_URL");
-        this.projectId = requireEnv("PROJECT_ID");
+        this.enrollmentToken = getEnv("ENROLLMENT_TOKEN", null);
+        this.enrollmentUrl = getEnv("ENROLLMENT_URL", null);
+        this.credentialsFile = getEnv("AGENT_CREDENTIALS_FILE", null);
+        this.agentAuthMode = getEnv("AGENT_AUTH_MODE", "auto").toLowerCase();
+        if (!"auto".equals(this.agentAuthMode)
+                && !"enroll".equals(this.agentAuthMode)
+                && !"legacy".equals(this.agentAuthMode)) {
+            throw new IllegalStateException(
+                "AGENT_AUTH_MODE must be 'auto', 'enroll' or 'legacy' (got '" + this.agentAuthMode + "')");
+        }
+        if (!staticCredentialsConfigured() && !hasEnrollmentSource()) {
+            throw new IllegalStateException(
+                "No agent credentials: set AGENT_ID + AGENT_API_KEY, or ENROLLMENT_TOKEN "
+                    + "(with optional AGENT_CREDENTIALS_FILE)");
+        }
+        if ("legacy".equals(this.agentAuthMode) && !staticCredentialsConfigured()) {
+            throw new IllegalStateException(
+                "AGENT_AUTH_MODE=legacy requires AGENT_ID and AGENT_API_KEY");
+        }
+        this.projectId = getEnv("PROJECT_ID", null);
+        if (!usesEnrollment() && (this.projectId == null || this.projectId.isBlank())) {
+            throw new IllegalStateException(
+                "PROJECT_ID is required for static credentials (enrollment reads the project from the server)");
+        }
         this.repoOwner = getEnv("REPO_OWNER", null);
         this.repoName = getEnv("REPO_NAME", null);
         this.pollInterval = Duration.ofMillis(getLongEnv("POLL_INTERVAL_MS", 30000));
@@ -115,6 +142,50 @@ public class AgentConfig {
     public String getAgentApiKey() { return agentApiKey; }
     public String getAgentId() { return agentId; }
     public String getBackendUrl() { return backendUrl; }
+    public String getEnrollmentToken() { return enrollmentToken; }
+    public String getCredentialsFile() { return credentialsFile; }
+    public String getAgentAuthMode() { return agentAuthMode; }
+
+    /** Set after first-boot enrollment resolves the server-assigned id. */
+    public void setAgentId(String agentId) { this.agentId = agentId; }
+
+    /** Set from the server during enrollment; client PROJECT_ID is only a hint. */
+    public void setProjectId(String projectId) { this.projectId = projectId; }
+
+    public boolean staticCredentialsConfigured() {
+        return agentApiKey != null && !agentApiKey.isBlank()
+            && agentId != null && !agentId.isBlank();
+    }
+
+    public boolean hasEnrollmentSource() {
+        return (enrollmentToken != null && !enrollmentToken.isBlank())
+            || (credentialsFile != null && !credentialsFile.isBlank());
+    }
+
+    /**
+     * Enrollment mode applies when explicitly requested, or when the legacy
+     * static pair is absent. A static pair always wins in `auto` so existing
+     * deployments are unchanged.
+     */
+    public boolean usesEnrollment() {
+        if ("enroll".equals(agentAuthMode)) return true;
+        if ("legacy".equals(agentAuthMode)) return false;
+        return !staticCredentialsConfigured() && hasEnrollmentSource();
+    }
+
+    public String getEnrollmentUrl() {
+        if (enrollmentUrl != null && !enrollmentUrl.isBlank()) return enrollmentUrl;
+        return getApiUrl() + "/agent-enrollment/enroll";
+    }
+
+    public String getRefreshUrl() {
+        String explicit = getEnv("AGENT_ENROLLMENT_REFRESH_URL", null);
+        if (explicit != null && !explicit.isBlank()) return explicit;
+        String enroll = getEnrollmentUrl();
+        return enroll.endsWith("/enroll")
+            ? enroll.substring(0, enroll.length() - "/enroll".length()) + "/refresh"
+            : getApiUrl() + "/agent-enrollment/refresh";
+    }
     public String getProjectId() { return projectId; }
     public String getRepoOwner() { return repoOwner; }
     public String getRepoName() { return repoName; }

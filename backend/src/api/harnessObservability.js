@@ -10,7 +10,8 @@ const HarnessAuditService = require('../services/HarnessAuditService');
 const HarnessMetrics = require('../services/HarnessMetrics');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
-const { verifyTokenOrAgent } = require('../middleware/auth');
+const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
+const { forRunParam, forHarnessEventBody, selfAgentOnly } = require('../middleware/agentProjectScope');
 const {
   ForbiddenError,
   NotFoundError,
@@ -143,7 +144,7 @@ function projectIdParam(value) {
  *       201:
  *         description: Event stored (or an existing idempotent duplicate)
  */
-router.post('/events', verifyTokenOrAgent, async (req, res, next) => {
+router.post('/events', verifyTokenOrAgent, forHarnessEventBody(), async (req, res, next) => {
   try {
     const agentId = requireAgent(req);
     const body = req.body || {};
@@ -219,7 +220,7 @@ router.post('/events', verifyTokenOrAgent, async (req, res, next) => {
  *       201:
  *         description: Usage stored (greatest value wins on retries)
  */
-router.post('/runs/:runId/usage', verifyTokenOrAgent, async (req, res, next) => {
+router.post('/runs/:runId/usage', verifyTokenOrAgent, forRunParam(), async (req, res, next) => {
   try {
     const agentId = requireAgent(req);
     const body = req.body || {};
@@ -261,7 +262,7 @@ router.post('/runs/:runId/usage', verifyTokenOrAgent, async (req, res, next) => 
  *       200:
  *         description: Usage rows and totals
  */
-router.get('/runs/:runId/usage', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/runs/:runId/usage', verifyTokenOrAgent, forRunParam(), async (req, res, next) => {
   try {
     await assertRunAccess(req.params.runId, req);
     const [rows, totals] = await Promise.all([
@@ -304,7 +305,7 @@ router.get('/runs/:runId/usage', verifyTokenOrAgent, async (req, res, next) => {
  *       200:
  *         description: Ordered events
  */
-router.get('/runs/:runId/events', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/runs/:runId/events', verifyTokenOrAgent, forRunParam(), async (req, res, next) => {
   try {
     await assertRunAccess(req.params.runId, req);
     const events = await HarnessEventService.listForRun(req.params.runId, {
@@ -329,7 +330,7 @@ router.get('/runs/:runId/events', verifyTokenOrAgent, async (req, res, next) => 
  *       - ApiKeyAuth: []
  *       - BearerAuth: []
  */
-router.get('/runs/:runId/timeline', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/runs/:runId/timeline', verifyTokenOrAgent, forRunParam(), async (req, res, next) => {
   try {
     await assertRunAccess(req.params.runId, req);
     const timeline = await HarnessEventService.getTimeline(req.params.runId);
@@ -360,7 +361,7 @@ router.get('/runs/:runId/timeline', verifyTokenOrAgent, async (req, res, next) =
  *       200:
  *         description: Recent runs
  */
-router.get('/projects/:projectId/runs', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/projects/:projectId/runs', verifyToken, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
     await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
@@ -396,7 +397,7 @@ router.get('/projects/:projectId/runs', verifyTokenOrAgent, async (req, res, nex
  *       200:
  *         description: Events
  */
-router.get('/projects/:projectId/events', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/projects/:projectId/events', verifyToken, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
     await assertProjectAccess(projectId, req, 'TICKET_READ');
@@ -431,7 +432,7 @@ router.get('/projects/:projectId/events', verifyTokenOrAgent, async (req, res, n
  *       200:
  *         description: Audit events
  */
-router.get('/projects/:projectId/audit', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/projects/:projectId/audit', verifyToken, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
     await assertProjectAccess(projectId, req, 'TICKET_READ');
@@ -471,7 +472,7 @@ router.get('/projects/:projectId/audit', verifyTokenOrAgent, async (req, res, ne
  *       200:
  *         description: Dashboard data
  */
-router.get('/projects/:projectId/dashboard', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/projects/:projectId/dashboard', verifyToken, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
     await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
@@ -503,7 +504,7 @@ router.get('/projects/:projectId/dashboard', verifyTokenOrAgent, async (req, res
  *       200:
  *         description: Usage summary
  */
-router.get('/projects/:projectId/usage', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/projects/:projectId/usage', verifyToken, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
     await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
@@ -566,7 +567,7 @@ router.get('/projects/:projectId/usage', verifyTokenOrAgent, async (req, res, ne
  *       200:
  *         description: Updated privacy policy
  */
-router.get('/projects/:projectId/privacy-policy', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/projects/:projectId/privacy-policy', verifyToken, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
     await assertProjectAccess(projectId, req, 'PROJECT_UPDATE');
@@ -581,7 +582,7 @@ router.get('/projects/:projectId/privacy-policy', verifyTokenOrAgent, async (req
   }
 });
 
-router.put('/projects/:projectId/privacy-policy', verifyTokenOrAgent, async (req, res, next) => {
+router.put('/projects/:projectId/privacy-policy', verifyToken, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
     await assertProjectAccess(projectId, req, 'PROJECT_UPDATE');
@@ -649,7 +650,7 @@ router.put('/projects/:projectId/privacy-policy', verifyTokenOrAgent, async (req
  *       200:
  *         description: Deletion counts
  */
-router.post('/projects/:projectId/privacy/delete', verifyTokenOrAgent, async (req, res, next) => {
+router.post('/projects/:projectId/privacy/delete', verifyToken, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
     await assertProjectAccess(projectId, req, 'PROJECT_UPDATE');
@@ -695,7 +696,7 @@ router.post('/projects/:projectId/privacy/delete', verifyTokenOrAgent, async (re
  *       200:
  *         description: Redacted project run data export (offset-paginated; each page is an independent snapshot)
  */
-router.get('/projects/:projectId/privacy/export', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/projects/:projectId/privacy/export', verifyToken, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
     await assertProjectAccess(projectId, req, 'PROJECT_UPDATE');
@@ -768,7 +769,7 @@ router.get('/projects/:projectId/privacy/export', verifyTokenOrAgent, async (req
  *       403:
  *         description: Project admin required
  */
-router.get('/projects/:projectId/budget-policy', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/projects/:projectId/budget-policy', verifyToken, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
     await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
@@ -780,7 +781,7 @@ router.get('/projects/:projectId/budget-policy', verifyTokenOrAgent, async (req,
   }
 });
 
-router.put('/projects/:projectId/budget-policy', verifyTokenOrAgent, async (req, res, next) => {
+router.put('/projects/:projectId/budget-policy', verifyToken, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
     await assertProjectAccess(projectId, req, 'PROJECT_UPDATE');
@@ -819,7 +820,7 @@ router.put('/projects/:projectId/budget-policy', verifyTokenOrAgent, async (req,
  *       200:
  *         description: Kill-switch audit rows
  */
-router.get('/projects/:projectId/kill-switch/audit', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/projects/:projectId/kill-switch/audit', verifyToken, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
     await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
@@ -863,7 +864,7 @@ router.get('/projects/:projectId/kill-switch/audit', verifyTokenOrAgent, async (
  *       200:
  *         description: Updated switch
  */
-router.get('/projects/:projectId/kill-switch', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/projects/:projectId/kill-switch', verifyToken, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
     await assertProjectAccess(projectId, req, 'DASHBOARD_READ');
@@ -875,7 +876,7 @@ router.get('/projects/:projectId/kill-switch', verifyTokenOrAgent, async (req, r
   }
 });
 
-router.put('/projects/:projectId/kill-switch', verifyTokenOrAgent, async (req, res, next) => {
+router.put('/projects/:projectId/kill-switch', verifyToken, async (req, res, next) => {
   try {
     const projectId = projectIdParam(req.params.projectId);
     await assertProjectAccess(projectId, req, 'PROJECT_UPDATE');
@@ -918,7 +919,7 @@ router.put('/projects/:projectId/kill-switch', verifyTokenOrAgent, async (req, r
  *       403:
  *         description: super_admin required
  */
-router.get('/kill-switch', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/kill-switch', verifyToken, async (req, res, next) => {
   try {
     if (req.agent) throw new ForbiddenError('Operator JWT required');
     const { role } = operatorIdentity(req);
@@ -933,7 +934,7 @@ router.get('/kill-switch', verifyTokenOrAgent, async (req, res, next) => {
   }
 });
 
-router.put('/kill-switch', verifyTokenOrAgent, async (req, res, next) => {
+router.put('/kill-switch', verifyToken, async (req, res, next) => {
   try {
     if (req.agent) throw new ForbiddenError('Operator JWT required');
     const { role, userId } = operatorIdentity(req);

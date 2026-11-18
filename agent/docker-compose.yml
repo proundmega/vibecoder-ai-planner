@@ -4,7 +4,14 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      - AGENT_API_KEY=${AGENT_API_KEY}
+      - AGENT_ID=${AGENT_ID:-}
+      - AGENT_API_KEY=${AGENT_API_KEY:-}
+      # fg-53 enrollment: set ENROLLMENT_TOKEN instead of AGENT_ID/AGENT_API_KEY.
+      # The credential file is the durable node identity; mount it on a volume.
+      - AGENT_AUTH_MODE=${AGENT_AUTH_MODE:-auto}
+      - ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN:-}
+      - ENROLLMENT_URL=${ENROLLMENT_URL:-}
+      - AGENT_CREDENTIALS_FILE=${AGENT_CREDENTIALS_FILE:-/credentials/agent.json}
       - BACKEND_URL=${BACKEND_URL:-http://api:3001}
       - PROJECT_ID=${PROJECT_ID:-1}
       - REPO_OWNER=${REPO_OWNER}
@@ -79,6 +86,7 @@ services:
       # The bind is host-owned; make it writable by the agent user (uid 100,
       # gid 101), for example: mkdir -p repos && chown 100:101 repos
       - ${REPO_HOST_PATH:-./repos}:/repos
+      - agent_credentials:/credentials
     restart: unless-stopped
     networks:
       # Host mode joins only the API network. Docker mode adds the restricted
@@ -90,6 +98,11 @@ services:
           # JVM + Node + npm install + Vitest need more than 512M.
           memory: 2G
           cpus: '2.0'
+
+volumes:
+  # Persisted enrollment credentials (0600). Recreating the container keeps the
+  # node identity; removing the volume requires a new join token.
+  agent_credentials:
 
 networks:
   # The API's Compose network, so BACKEND_URL=http://api:3001 resolves.

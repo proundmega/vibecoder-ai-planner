@@ -1,14 +1,14 @@
 ---
 id: "fg-53"
 title: "Agent Enrollment and Node Access Tokens"
-status: planned
+status: in_progress
 priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-11-17"
 updated: "2026-11-18"
 pr: null
-branch: null
+branch: feat/fg-53-agent-enrollment
 depends_on: []
 ---
 
@@ -64,7 +64,7 @@ needed to mint and revoke enrollment tokens.
 | Claim | Evidence | Checked |
 |---|---|---|
 | Plan merge pending | PR #173 (in review) | ☐ |
-| Implementation merged | pending | ☐ |
+| Implementation merged | implementation in progress on `feat/fg-53-agent-enrollment` | ☐ |
 | Verification results | n/a — planned | ☐ |
 
 A merged planning PR is **plan merged**, not `done`. Set `status: done` only
@@ -81,7 +81,7 @@ after the implementation PR is merged and `03` has a dated Results row.
 | D5 | One-line/QR enrollment UX and prebuilt `.env` generation | self | Developer experience | none | open |
 | D6 | Distributed rate limiting for enroll/refresh across multiple API instances | self | Security / Ops | none | open |
 | D7 | Enrollment approval workflow (human approves a pending node) | self | Security | none | open |
-| D8 | Migrate legacy `ak_…` agents to access/refresh tokens automatically | self | Migration | none | open |
+| D8 | Migrate legacy `ak_…` agents to access/refresh tokens automatically. Pool keys are now configurable (`POOL_AGENT_KEY_EXPIRY_DAYS`, default 30) but automatic renewal is still deferred | self | Migration | none | open |
 | D9 | Credential-file encryption or OS keyring instead of a 0600 JSON file | self | Security | none | open |
 | D10 | Enrollment/audit UI filters, export and retention dashboard | fg-41 | Observability | fg-41 | open |
 | D11 | Broader project-agents migration: assign manual/legacy agents to a project and expose per-project agent lists. fg-53 adds `agents.project_id` for enrolled agents only; legacy agents stay owner-scoped (`project_id = NULL`) | FUTURE_IDEAS Project Agents Table Migration | Migration / Authorization | new ticket | open |

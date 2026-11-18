@@ -84,8 +84,8 @@ wins; a static key wins over an enrollment token unless
 
 ## Data model & migrations
 
-Migration `backend/src/migrations/054_agent_enrollment.sql` (+
-`054_agent_enrollment_rollback.sql`):
+Migration `backend/src/migrations/055_agent_enrollment.sql` (+
+`055_agent_enrollment_rollback.sql`):
 
 ```sql
 CREATE TABLE agent_enrollment_tokens (
@@ -184,7 +184,7 @@ CREATE INDEX idx_agents_project_id ON agents(project_id);
   `agent_auth_events`, `agent_refresh_replays`, `agent_refresh_tokens`,
   `agent_access_tokens`, `agent_enrollment_tokens`); legacy agent columns
   untouched.
-- Apply order: append after `053_harness_privacy.sql` in
+- Apply order: append after `054_agent_revoke_project_admin.sql` in
   `backend/src/migrations/apply.js`.
 - Cleanup: a daily job deletes expired/revoked token rows older than the
   retention window (`AGENT_TOKEN_RETENTION_DAYS`, default 30), using the
@@ -403,7 +403,7 @@ Refresh:
 
 ## Rollout
 
-1. **Migration** — apply `054_agent_enrollment.sql` (additive; legacy keys
+1. **Migration** — apply `055_agent_enrollment.sql` (additive; legacy keys
    untouched).
 2. **Backend behind a flag** — `AGENT_ENROLLMENT_ENABLED=false` by default in
    production; enable in staging/dev after TLS is configured. Mint/list/revoke

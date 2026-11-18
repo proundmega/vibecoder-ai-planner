@@ -2002,6 +2002,478 @@
         }
       }
     },
+    "/projects/{projectId}/repo-profile": {
+      "get": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "Get the active repo profile and version history",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active profile, latest profile and versions"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "Create a draft repo profile version",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "fg-39 profile v1"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Draft profile created"
+          },
+          "400": {
+            "description": "Invalid profile"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/repo-profile/versions": {
+      "get": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "List repo profile versions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Profile versions"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/repo-profile/detect": {
+      "post": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "Detect a repo profile from GitHub manifests",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Proposed profile and warnings"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/repo-profile/{profileId}": {
+      "put": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "Edit a draft repo profile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          },
+          {
+            "in": "path",
+            "name": "profileId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F-]{36}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated draft"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/repo-profile/{profileId}/activate": {
+      "post": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "Activate one repo profile version",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          },
+          {
+            "in": "path",
+            "name": "profileId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F-]{36}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Activated profile"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/repo-profile/{profileId}/validate": {
+      "post": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "Queue a dry-run validation for a profile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          },
+          {
+            "in": "path",
+            "name": "profileId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F-]{36}$"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Validation queued"
+          },
+          "409": {
+            "description": "A validation is already queued/running"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/repo-profile/validations": {
+      "get": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "List dry-run validations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validation history"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/repo-profile/validations/{validationId}": {
+      "get": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "Get one dry-run validation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          },
+          {
+            "in": "path",
+            "name": "validationId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F-]{36}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Validation status and result"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/repo-profile/agent": {
+      "get": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "Get the active repo profile for the agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active profile or null"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/repo-profile/credentials/mtls": {
+      "post": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "Store a scoped mTLS client certificate/key for repo-profile egress",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Credential metadata (never the private key)"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "List repo-profile mTLS client credentials",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Credential metadata (never private keys)"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/repo-profile/credentials/mtls/{credentialId}": {
+      "delete": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "Deactivate a repo-profile mTLS client credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          },
+          {
+            "in": "path",
+            "name": "credentialId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deactivated credential metadata"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/repo-profile/agent/mtls": {
+      "get": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "Get one exact profile revision's scoped mTLS client material for the agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          },
+          {
+            "in": "query",
+            "name": "profileId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F-]{36}$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "profileVersion",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Client certificate/key material or null"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/repo-profile/validations/claim": {
+      "post": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "Claim the next queued dry run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Claimed validation or null"
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/repo-profile/validations/{validationId}/finish": {
+      "post": {
+        "tags": [
+          "Repo Profiles"
+        ],
+        "summary": "Report a dry-run validation result",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          },
+          {
+            "in": "path",
+            "name": "validationId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F-]{36}$"
+            }
+          }
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Finished validation"
+          }
+        }
+      }
+    },
     "/providers": {
       "get": {
         "tags": [
@@ -2989,9 +3461,27 @@
                     "type": "string",
                     "nullable": true
                   },
+                  "providerBaseUrl": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "providerRegion": {
+                    "type": "string",
+                    "nullable": true
+                  },
                   "attempt": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "repoProfileId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F-]{36}$",
+                    "nullable": true
+                  },
+                  "repoProfileVersion": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "nullable": true
                   }
                 }
               }
@@ -3387,6 +3877,228 @@
         }
       }
     },
+    "/harness/projects/{projectId}/privacy-policy": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Read the project harness privacy and data-governance policy",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Effective privacy policy"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Update the project privacy policy",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "maxDataClass": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "internal",
+                      "confidential",
+                      "secret"
+                    ]
+                  },
+                  "allowedProviders": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "requireNoTraining": {
+                    "type": "boolean"
+                  },
+                  "localOnly": {
+                    "type": "boolean"
+                  },
+                  "localEndpoint": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "localModel": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "dataResidency": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "blockOnSecret": {
+                    "type": "boolean"
+                  },
+                  "blockOnPii": {
+                    "type": "boolean"
+                  },
+                  "redactPii": {
+                    "type": "boolean"
+                  },
+                  "eventRetentionDays": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3650
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated privacy policy"
+          }
+        }
+      }
+    },
+    "/harness/projects/{projectId}/privacy/delete": {
+      "post": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Delete project-scoped run data (audit tombstone retained)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dataClasses": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "events",
+                        "usage",
+                        "messages",
+                        "checkpoints",
+                        "runs",
+                        "usage_logs",
+                        "all"
+                      ]
+                    }
+                  },
+                  "before": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true
+                  },
+                  "reason": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deletion counts"
+          }
+        }
+      }
+    },
+    "/harness/projects/{projectId}/privacy/export": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Export project harness run data",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5000
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted project run data export (offset-paginated; each page is an independent snapshot)"
+          }
+        }
+      }
+    },
     "/harness/projects/{projectId}/budget-policy": {
       "get": {
         "tags": [
@@ -3440,6 +4152,34 @@
           },
           "403": {
             "description": "Project admin required"
+          }
+        }
+      }
+    },
+    "/harness/projects/{projectId}/kill-switch/audit": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "List immutable kill-switch history for a project (including global)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Kill-switch audit rows"
           }
         }
       }
@@ -4854,6 +5594,243 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Agent not found"
+          }
+        }
+      }
+    },
+    "/agent-enrollment/tokens": {
+      "post": {
+        "tags": [
+          "Agent Enrollment"
+        ],
+        "summary": "Mint a one-time project join token",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "project_id",
+                  "name"
+                ],
+                "properties": {
+                  "project_id": {
+                    "type": "integer"
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "ttl_seconds": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 86400
+                  },
+                  "max_uses": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  },
+                  "provider_id": {
+                    "type": "integer",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Join token created; the raw token is returned once"
+          },
+          "400": {
+            "description": "Validation failed"
+          },
+          "403": {
+            "description": "Project membership required"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Agent Enrollment"
+        ],
+        "summary": "List join-token metadata for a project",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Token metadata without secrets"
+          }
+        }
+      }
+    },
+    "/agent-enrollment/tokens/{id}": {
+      "delete": {
+        "tags": [
+          "Agent Enrollment"
+        ],
+        "summary": "Revoke a join token",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Token revoked"
+          },
+          "404": {
+            "description": "Token not found"
+          }
+        }
+      }
+    },
+    "/agent-enrollment/enroll": {
+      "post": {
+        "tags": [
+          "Agent Enrollment"
+        ],
+        "summary": "Exchange a join token for node credentials",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token",
+                  "name"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "node_metadata": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agent created with an access/refresh credential pair"
+          },
+          "401": {
+            "description": "Join token invalid, expired, revoked or exhausted"
+          },
+          "403": {
+            "description": "TLS required"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        }
+      }
+    },
+    "/agent-enrollment/refresh": {
+      "post": {
+        "tags": [
+          "Agent Enrollment"
+        ],
+        "summary": "Rotate a node refresh token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "refresh_token"
+                ],
+                "properties": {
+                  "refresh_token": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New access/refresh credential pair"
+          },
+          "401": {
+            "description": "Refresh token invalid or reused"
+          },
+          "403": {
+            "description": "TLS required"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        }
+      }
+    },
+    "/agent-enrollment/agents/{agentId}": {
+      "get": {
+        "tags": [
+          "Agent Enrollment"
+        ],
+        "summary": "Enrollment metadata for an agent (no secrets)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agentId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Enrollment metadata"
           },
           "404": {
             "description": "Agent not found"
