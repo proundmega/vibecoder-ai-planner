@@ -33,6 +33,7 @@ public class ApiService {
     private final OkHttpClient eventHttpClient;
     private final ObjectMapper objectMapper;
     private final AgentConfig config;
+    private final AgentAuthManager authManager;
     private final String baseUrl;
     private volatile Map<String, Object> lastBudgetPolicy;
     private volatile Map<String, Object> lastPrivacyPolicy;
@@ -40,7 +41,12 @@ public class ApiService {
     private volatile String providerRegionContext;
 
     public ApiService(AgentConfig config) {
+        this(config, null);
+    }
+
+    public ApiService(AgentConfig config, AgentAuthManager authManager) {
         this.config = config;
+        this.authManager = authManager;
         this.baseUrl = config.getApiUrl();
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
@@ -48,6 +54,7 @@ public class ApiService {
             .connectTimeout(java.time.Duration.ofSeconds(10))
             .readTimeout(java.time.Duration.ofSeconds(30))
             .writeTimeout(java.time.Duration.ofSeconds(30))
+            .addInterceptor(new AgentAuthInterceptor())
             .build();
         // Event emission runs on the supervisor's tool-event path. Use a short,
         // event-specific timeout so a slow observability backend cannot stall
@@ -56,7 +63,35 @@ public class ApiService {
             .connectTimeout(java.time.Duration.ofSeconds(2))
             .readTimeout(java.time.Duration.ofSeconds(3))
             .writeTimeout(java.time.Duration.ofSeconds(3))
+            .addInterceptor(new AgentAuthInterceptor())
             .build();
+    }
+
+    /**
+     * Injects the current node credential and retries once after a 401 when a
+     * refresh token is available. Legacy static keys keep the old behavior.
+     */
+    private final class AgentAuthInterceptor implements Interceptor {
+        @Override
+        public Response intercept(Chain chain) throws IOException {
+            String token = authManager != null
+                ? authManager.ensureValidAccessToken()
+                : config.getAgentApiKey();
+            Request request = chain.request().newBuilder()
+                .header("X-API-Key", token == null ? "" : token)
+                .build();
+            Response response = chain.proceed(request);
+            if (response.code() == 401 && authManager != null) {
+                response.close();
+                authManager.refreshAfterUnauthorized(token);
+                String refreshed = authManager.ensureValidAccessToken();
+                Response retry = chain.proceed(chain.request().newBuilder()
+                    .header("X-API-Key", refreshed == null ? "" : refreshed)
+                    .build());
+                return retry;
+            }
+            return response;
+        }
     }
 
     /**
@@ -582,7 +617,6 @@ public class ApiService {
     private <T> ApiResponse<T> executeGet(String url, TypeReference<ApiResponse<T>> typeRef) throws IOException {
         Request request = new Request.Builder()
             .url(url)
-            .header("X-API-Key", config.getAgentApiKey())
             .get()
             .build();
 
@@ -606,7 +640,6 @@ public class ApiService {
 
         Request request = new Request.Builder()
             .url(url)
-            .header("X-API-Key", config.getAgentApiKey())
             .header("Content-Type", "application/json")
             .post(requestBody)
             .build();
@@ -623,7 +656,6 @@ public class ApiService {
 
         Request request = new Request.Builder()
             .url(url)
-            .header("X-API-Key", config.getAgentApiKey())
             .header("Content-Type", "application/json")
             .patch(requestBody)
             .build();
@@ -640,7 +672,6 @@ public class ApiService {
 
         Request request = new Request.Builder()
             .url(url)
-            .header("X-API-Key", config.getAgentApiKey())
             .header("Content-Type", "application/json")
             .put(requestBody)
             .build();

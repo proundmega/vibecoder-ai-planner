@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
+const { forProjectParam } = require('../middleware/agentProjectScope');
 const RepoProfileService = require('../services/RepoProfileService');
 const RepoProfileValidationService = require('../services/RepoProfileValidationService');
 const { ForbiddenError, ValidationError } = require('../errors/HttpError');
@@ -293,7 +294,7 @@ router.get('/:projectId/repo-profile/validations/:validationId', verifyToken, as
  *       200:
  *         description: Active profile or null
  */
-router.get('/:projectId/repo-profile/agent', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/:projectId/repo-profile/agent', verifyTokenOrAgent, forProjectParam(), async (req, res, next) => {
   try {
     requireAgent(req);
     const data = await RepoProfileService.getActiveForAgent(req.params.projectId, req.agent);
@@ -408,7 +409,7 @@ router.delete('/:projectId/repo-profile/credentials/mtls/:credentialId', verifyT
  *       200:
  *         description: Client certificate/key material or null
  */
-router.get('/:projectId/repo-profile/agent/mtls', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/:projectId/repo-profile/agent/mtls', verifyTokenOrAgent, forProjectParam(), async (req, res, next) => {
   try {
     const agent = requireAgent(req);
     if (!req.query.profileId || req.query.profileVersion == null) {
@@ -443,7 +444,7 @@ router.get('/:projectId/repo-profile/agent/mtls', verifyTokenOrAgent, async (req
  *       200:
  *         description: Claimed validation or null
  */
-router.post('/:projectId/repo-profile/validations/claim', verifyTokenOrAgent, async (req, res, next) => {
+router.post('/:projectId/repo-profile/validations/claim', verifyTokenOrAgent, forProjectParam(), async (req, res, next) => {
   try {
     const agent = requireAgent(req);
     const data = await RepoProfileValidationService.claimNext(
@@ -477,7 +478,7 @@ router.post('/:projectId/repo-profile/validations/claim', verifyTokenOrAgent, as
  *       200:
  *         description: Finished validation
  */
-router.post('/:projectId/repo-profile/validations/:validationId/finish', verifyTokenOrAgent, async (req, res, next) => {
+router.post('/:projectId/repo-profile/validations/:validationId/finish', verifyTokenOrAgent, forProjectParam(), async (req, res, next) => {
   try {
     const agent = requireAgent(req);
     const data = await RepoProfileValidationService.finish(

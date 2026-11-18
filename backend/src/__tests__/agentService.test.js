@@ -43,16 +43,67 @@ describe('AgentService', () => {
       );
       expect(result).toEqual(mockRows);
     });
+
+    it('filters enrolled agents to their project', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      await AgentService.list('user-1', { projectId: 3 });
+
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('AND agents.project_id = $2'),
+        ['user-1', 3]
+      );
+    });
+  });
+
+  describe('getEnrollmentKeyStatus', () => {
+    it('considers unrotated refresh tokens as well as access tokens', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ total: 1, revoked: 0, active: 1, expires_at: new Date() }],
+      });
+
+      const result = await AgentService.getEnrollmentKeyStatus('a1');
+
+      expect(pool.query.mock.calls[0][0]).toContain('agent_refresh_tokens');
+      expect(pool.query.mock.calls[0][0]).toContain('rotated_at IS NULL');
+      expect(result.keyStatus).toBe('active');
+    });
   });
 
   describe('revokeApiKey', () => {
-    it('sets api_key_hash to NULL', async () => {
+    it('locks the agent and clears the key inside one transaction', async () => {
+      const client = {
+        query: jest.fn(async sql => (
+          sql.includes('FROM agents') && sql.includes('FOR UPDATE') ? { rows: [{ id: 'a1', project_id: 3 }] } : { rows: [] }
+        )),
+        release: jest.fn(),
+      };
+      pool.connect.mockResolvedValueOnce(client);
+
       await AgentService.revokeApiKey('a1');
 
-      expect(pool.query).toHaveBeenCalledWith(
+      expect(client.query).toHaveBeenCalledWith('BEGIN');
+      expect(client.query).toHaveBeenCalledWith(
+        'SELECT id, project_id FROM agents WHERE id = $1 FOR UPDATE',
+        ['a1']
+      );
+      expect(client.query).toHaveBeenCalledWith(
         'UPDATE agents SET api_key_hash = NULL, api_key_hash_prefix = NULL WHERE id = $1',
         ['a1']
       );
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
+      expect(client.release).toHaveBeenCalled();
+    });
+
+    it('refuses to revoke a missing agent', async () => {
+      const client = {
+        query: jest.fn(async () => ({ rows: [] })),
+        release: jest.fn(),
+      };
+      pool.connect.mockResolvedValueOnce(client);
+
+      await expect(AgentService.revokeApiKey('missing')).rejects.toThrow('AGENT_NOT_FOUND');
+      expect(client.query).toHaveBeenCalledWith('ROLLBACK');
     });
   });
 

@@ -54,8 +54,12 @@ public class AgentApp {
     private volatile boolean startupRecoveryComplete = false;
 
     public AgentApp(AgentConfig config) {
+        this(config, null);
+    }
+
+    public AgentApp(AgentConfig config, AgentAuthManager authManager) {
         this.config = config;
-        this.apiService = new ApiService(config);
+        this.apiService = new ApiService(config, authManager);
         this.providerSettings = resolveProviderSettings();
         RedactionRegistry.register(config.getAgentApiKey(), config.getAiApiKey(),
             providerSettings.apiKey(), System.getenv("GITHUB_TOKEN"));
@@ -345,6 +349,8 @@ public class AgentApp {
                     mem,
                     cpu
                 );
+            } catch (AgentAuthFatalException e) {
+                exitOnFatalAuth(e);
             } catch (Exception e) {
                 log.warn("Heartbeat send failed", e);
             }
@@ -355,6 +361,8 @@ public class AgentApp {
         while (!Thread.currentThread().isInterrupted()) {
             try {
                 processCycle();
+            } catch (AgentAuthFatalException e) {
+                exitOnFatalAuth(e);
             } catch (Exception e) {
                 log.error("Error in processing cycle", e);
             }
@@ -461,6 +469,14 @@ public class AgentApp {
         }
     }
 
+    static volatile java.util.function.IntConsumer exitHook = System::exit;
+
+    static void exitOnFatalAuth(AgentAuthFatalException error) {
+        log.error("Agent authentication failed: {}", error.getMessage());
+        System.err.println("Error: " + RedactionRegistry.redact(error.getMessage()));
+        exitHook.accept(1);
+    }
+
     private void shutdown() {
         log.info("Shutting down agent...");
         if (heartbeatScheduler != null) {
@@ -480,12 +496,23 @@ public class AgentApp {
     public static void main(String[] args) {
         try {
             AgentConfig config = new AgentConfig();
-            AgentApp app = new AgentApp(config);
+            AgentAuthManager authManager = null;
+            if (config.usesEnrollment()) {
+                AgentCredentialStore store = null;
+                if (config.getCredentialsFile() != null && !config.getCredentialsFile().isBlank()) {
+                    store = new AgentCredentialStore(java.nio.file.Path.of(config.getCredentialsFile()));
+                }
+                authManager = new AgentAuthManager(config, store, new AgentEnrollmentClient(config));
+                authManager.initialize();
+                log.info("Agent authenticated via enrollment (agentId={})", config.getAgentId());
+            }
+            AgentApp app = new AgentApp(config, authManager);
             app.start();
         } catch (IllegalStateException e) {
             log.error("Configuration error: {}", e.getMessage());
             System.err.println("Error: " + RedactionRegistry.redact(e.getMessage()));
-            System.err.println("Required env vars: AGENT_API_KEY, BACKEND_URL, PROJECT_ID");
+            System.err.println("Required env vars: BACKEND_URL, PROJECT_ID, and either "
+                + "AGENT_ID + AGENT_API_KEY or ENROLLMENT_TOKEN (+ AGENT_CREDENTIALS_FILE)");
             System.err.println("For ticket processing: also set REPO_OWNER, REPO_NAME");
             System.err.println("For review mode: omit REPO_OWNER/REPO_NAME");
             System.exit(1);

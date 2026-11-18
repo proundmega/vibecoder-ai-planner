@@ -1,0 +1,32 @@
+# Remote worker template (fg-53): runs an agent against a backend that is NOT
+# on this Compose network. Copy this file, fill the values, and run:
+#   docker compose -f docker-compose.remote.yml up -d
+#
+# Do not commit a filled copy: it contains a one-time join token.
+services:
+  agent:
+    image: ${AGENT_IMAGE:-vibecode-agent:latest}
+    environment:
+      - BACKEND_URL=${BACKEND_URL:?set BACKEND_URL, e.g. https://planner.example.com}
+      - PROJECT_ID=${PROJECT_ID:?set PROJECT_ID}
+      - AGENT_AUTH_MODE=enroll
+      - ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN:?mint one in the UI}
+      - ENROLLMENT_URL=${ENROLLMENT_URL:-}
+      - AGENT_CREDENTIALS_FILE=/credentials/agent.json
+      - REPO_OWNER=${REPO_OWNER:-}
+      - REPO_NAME=${REPO_NAME:-}
+      - REPO_CLONE_DIR=/repos
+      - AI_PROVIDER=${AI_PROVIDER:-claude}
+      - AI_MODEL=${AI_MODEL:-claude-sonnet-4-20250514}
+      - AI_API_KEY=${AI_API_KEY:-}
+      - HARNESS_MODE=${HARNESS_MODE:-legacy}
+      - AGENT_NAME=${AGENT_NAME:-}
+    volumes:
+      - agent_credentials:/credentials
+      - ${REPO_HOST_PATH:-./repos}:/repos
+    restart: unless-stopped
+
+volumes:
+  # Keep this volume: deleting it loses the node identity and requires a new
+  # join token.
+  agent_credentials:

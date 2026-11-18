@@ -84,8 +84,8 @@ wins; a static key wins over an enrollment token unless
 
 ## Data model & migrations
 
-Migration `backend/src/migrations/054_agent_enrollment.sql` (+
-`054_agent_enrollment_rollback.sql`):
+Migration `backend/src/migrations/055_agent_enrollment.sql` (+
+`055_agent_enrollment_rollback.sql`):
 
 ```sql
 CREATE TABLE agent_enrollment_tokens (
@@ -184,7 +184,7 @@ CREATE INDEX idx_agents_project_id ON agents(project_id);
   `agent_auth_events`, `agent_refresh_replays`, `agent_refresh_tokens`,
   `agent_access_tokens`, `agent_enrollment_tokens`); legacy agent columns
   untouched.
-- Apply order: append after `053_harness_privacy.sql` in
+- Apply order: append after `054_agent_revoke_project_admin.sql` in
   `backend/src/migrations/apply.js`.
 - Cleanup: a daily job deletes expired/revoked token rows older than the
   retention window (`AGENT_TOKEN_RETENTION_DAYS`, default 30), using the
@@ -287,7 +287,7 @@ Refresh:
 
 - **Authentication:** join/access/refresh tokens are bearer secrets. Access
   tokens use `X-API-Key`; enrollment/refresh bodies are POST-only, never URLs.
-  TLS is required outside loopback unless `ALLOW_INSECURE_AGENT_ENROLLMENT=1`.
+  TLS is required outside loopback unless `ALLOW_INSECURE_AGENT_ENROLLMENT=1`. `req.secure` honors `X-Forwarded-Proto` only when Express `trust proxy` is configured via `TRUST_PROXY` (`1` = one trusted hop, `true` = trust all hops, or an IP/CIDR list); a direct client cannot spoof it.
 - **Authorization:** mint/list/revoke use existing `AGENT_CREATE` /
   `AGENT_READ` / `AGENT_REVOKE` plus project membership. Join tokens are bound
   to one project and optional provider; the enroll request cannot override
@@ -403,10 +403,11 @@ Refresh:
 
 ## Rollout
 
-1. **Migration** — apply `054_agent_enrollment.sql` (additive; legacy keys
+1. **Migration** — apply `055_agent_enrollment.sql` (additive; legacy keys
    untouched).
-2. **Backend behind a flag** — `AGENT_ENROLLMENT_ENABLED=false` by default in
-   production; enable in staging/dev after TLS is configured. Mint/list/revoke
+2. **Backend behind a flag** — `AGENT_ENROLLMENT_ENABLED` is explicit opt-in
+   (`true`); it is not implied by `NODE_ENV=development`. Dev Compose sets it
+   to `true`, production-style Compose defaults to `false`. Mint/list/revoke
    and enroll/refresh return 404 when disabled (chosen over 403/503 so the
    feature is not advertised); test the flag-off response.
 3. **Middleware** — ship dual auth for `at_…` and `ak_…`; enforce expiry on

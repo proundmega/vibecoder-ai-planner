@@ -427,7 +427,14 @@ class PoolManager {
         `pool-${agentId}`,
         apiKey,
         ownerId,
-        { rateLimit: 1000, maxActionsPerDay: 10000, keyExpiryDays: 1 }
+        {
+          rateLimit: 1000,
+          maxActionsPerDay: 10000,
+          // FR15: configurable lifetime instead of a silent one-day key. The
+          // automatic renewal path is deferred (fg-53 D8); operators can set a
+          // shorter lifetime where pool containers are short-lived.
+          keyExpiryDays: parseInt(process.env.POOL_AGENT_KEY_EXPIRY_DAYS, 10) || 30,
+        }
       );
     } catch (err) {
       throw new Error(`Failed to create DB record for pool agent: ${err.message}`);

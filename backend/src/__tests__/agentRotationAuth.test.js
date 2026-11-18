@@ -119,7 +119,7 @@ describe('Agent key management authorization', () => {
       .set('Authorization', 'Bearer mock-token');
 
     expect(res.statusCode).toBe(200);
-    expect(revokeSpy).toHaveBeenCalledWith('a1');
+    expect(revokeSpy).toHaveBeenCalledWith('a1', expect.objectContaining({ ip: expect.any(String) }));
   });
 
   it('returns 404 when a project_admin revokes another owner’s key', async () => {

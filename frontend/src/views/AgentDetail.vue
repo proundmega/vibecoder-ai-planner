@@ -70,8 +70,17 @@ function formatDate(dateStr) {
   return dateStr ? new Date(dateStr).toLocaleString() : '—'
 }
 
+const isEnrolled = computed(() => keyInfo.value?.authMode === 'enrollment')
+
 const keyStatusLabel = computed(() => {
   if (!keyInfo.value) return 'Unavailable'
+  if (isEnrolled.value) {
+    return {
+      active: 'Enrollment credentials active',
+      expired: 'Enrollment credentials expired — rotate is not available',
+      revoked: 'Enrollment credentials revoked',
+    }[keyInfo.value.keyStatus] || keyInfo.value.keyStatus
+  }
   if (keyInfo.value.keyStatus === 'revoked') {
     return canRevoke.value ? 'Revoked — rotate to issue a new key' : 'Revoked'
   }
@@ -118,7 +127,7 @@ async function handleRevoke() {
     agent.value = data
     await refreshKeyInfo()
   } catch (err) {
-    actionError.value = err.message || 'Failed to revoke API key'
+    actionError.value = err.message || (isEnrolled.value ? 'Failed to revoke credentials' : 'Failed to revoke API key')
   } finally {
     actionLoading.value = false
   }
@@ -256,11 +265,11 @@ async function handleDelete() {
       <div v-if="canRevoke || canDelete" class="actions-section">
         <h2>Actions</h2>
         <div class="actions-buttons">
-          <button v-if="canRevoke" class="btn-secondary" @click="openRotateConfirm" :disabled="actionLoading || rotating">
+          <button v-if="canRevoke && !isEnrolled" class="btn-secondary" @click="openRotateConfirm" :disabled="actionLoading || rotating">
             Rotate API Key
           </button>
           <button v-if="canRevoke" class="btn-danger-outline" @click="openRevokeConfirm" :disabled="actionLoading">
-            Revoke API Key
+            {{ isEnrolled ? 'Revoke Credentials' : 'Revoke API Key' }}
           </button>
           <button v-if="canDelete" class="btn-danger" @click="openDeleteConfirm" :disabled="actionLoading">
             Delete Agent
@@ -270,8 +279,15 @@ async function handleDelete() {
 
       <div v-if="showRevokeConfirm" class="modal-overlay" @click.self="closeRevokeConfirm">
         <div class="modal modal-sm">
-          <h3>Revoke API Key</h3>
-          <p>Are you sure you want to revoke the API key for <strong>{{ agent.agent_name || agent.name }}</strong>? The agent will no longer be able to make API calls.</p>
+          <h3>{{ isEnrolled ? 'Revoke Credentials' : 'Revoke API Key' }}</h3>
+          <p v-if="isEnrolled">
+            Revoke all credentials for <strong>{{ agent.agent_name || agent.name }}</strong>?
+            The node must be enrolled again with a new join token.
+          </p>
+          <p v-else>
+            Are you sure you want to revoke the API key for
+            <strong>{{ agent.agent_name || agent.name }}</strong>? The agent will no longer be able to make API calls.
+          </p>
           <p v-if="actionError" class="error modal-error">{{ actionError }}</p>
           <div class="modal-actions">
             <button class="btn-danger" @click="handleRevoke" :disabled="actionLoading">

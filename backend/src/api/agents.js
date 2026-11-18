@@ -4,7 +4,12 @@ const router = express.Router();
 const AgentService = require('../services/AgentService');
 const ProviderService = require('../services/ProviderService');
 const PermissionService = require('../services/PermissionService');
-const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
+const {
+  verifyToken,
+  verifyTokenOrAgent,
+  authenticateAgentByApiKey,
+  agentAuthFailure,
+} = require('../middleware/auth');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate } = require('../middleware/validate');
 const { updateAgentSchema } = require('../validators/agents');
@@ -111,7 +116,10 @@ router.post('/create', verifyTokenOrAgent, requireAnyPermission('AGENT_CREATE'),
  */
 router.get('/', verifyTokenOrAgent, requireAnyPermission('AGENT_READ'), async (req, res) => {
   try {
-    const agents = await AgentService.list(req.user.userId);
+    const projectFilter = req.agent && req.agent.project_id != null
+      ? { projectId: req.agent.project_id }
+      : {};
+    const agents = await AgentService.list(req.user.userId, projectFilter);
     res.json({ agents: maskAgentList(agents) });
   } catch (error) {
     logger.error('GET /api/agents', error);
@@ -142,7 +150,7 @@ router.post('/revoke/:agentId', verifyToken, requireAnyPermission('AGENT_REVOKE'
     if (!agent) {
       return res.status(404).json({ error: 'Agent not found' });
     }
-    await AgentService.revokeApiKey(req.params.agentId);
+    await AgentService.revokeApiKey(req.params.agentId, { ip: req.ip });
     res.json({ message: 'API key revoked' });
   } catch (error) {
     logger.error('POST /api/agents/revoke/:agentId', error);
@@ -245,8 +253,14 @@ router.get('/:agentId/history', verifyTokenOrAgent, requireAnyPermission('AGENT_
     const apiKey = req.headers['x-api-key'];
     let agent;
     if (apiKey) {
-      agent = await AgentService.getAgentByApiKey(apiKey);
-      if (!agent || agent.id !== req.params.agentId) {
+      agent = await authenticateAgentByApiKey(apiKey, { mock: false });
+      if (!agent) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (agent._expired || agent._revoked) {
+        return res.status(401).json({ success: false, error: agentAuthFailure(agent) });
+      }
+      if (String(agent.id) !== String(req.params.agentId)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
     } else if (req.user && req.user.userId) {
@@ -313,6 +327,9 @@ router.get('/:agentId/history', verifyTokenOrAgent, requireAnyPermission('AGENT_
  *                 keyStatus:
  *                   type: string
  *                   enum: [active, expired, revoked]
+ *                 authMode:
+ *                   type: string
+ *                   enum: [legacy, enrollment]
  *                 expiresAt: { type: string, format: date-time, nullable: true }
  *                 rateLimit: { type: integer }
  *                 maxActionsPerDay: { type: integer }
@@ -328,9 +345,17 @@ router.get('/:agentId/key', verifyToken, requireAnyPermission('AGENT_READ'), asy
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    const expiresAt = agent.api_key_hash ? agent.api_key_expires_at || null : null;
+    const enrolled = agent.enrolled_at != null || agent.project_id != null;
+    let expiresAt = agent.api_key_hash ? agent.api_key_expires_at || null : null;
     let keyStatus = 'revoked';
-    if (agent.api_key_hash) {
+    let authMode = 'legacy';
+
+    if (enrolled) {
+      authMode = 'enrollment';
+      const credentialStatus = await AgentService.getEnrollmentKeyStatus(agent.id);
+      keyStatus = credentialStatus.keyStatus;
+      expiresAt = credentialStatus.expiresAt;
+    } else if (agent.api_key_hash) {
       keyStatus = expiresAt && new Date(expiresAt).getTime() <= Date.now()
         ? 'expired'
         : 'active';
@@ -344,6 +369,7 @@ router.get('/:agentId/key', verifyToken, requireAnyPermission('AGENT_READ'), asy
       // The plaintext key is never stored, so it cannot be previewed. Rotating
       // the key is the only way to obtain a new one.
       keyStatus,
+      authMode,
       expiresAt,
       rateLimit: agent.rate_limit,
       maxActionsPerDay: agent.max_actions_per_day,
@@ -393,6 +419,12 @@ router.get('/:agentId/provider-config', async (req, res, next) => {
       NO_PROVIDER: { code: 'NO_PROVIDER', message: 'Agent has no provider configured' },
       PROVIDER_NOT_FOUND: { code: 'PROVIDER_NOT_FOUND', message: 'Provider configuration not found' },
     };
+    if (error.message === 'TOKEN_EXPIRED') {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'TOKEN_EXPIRED', message: 'Agent access token expired; refresh the node credentials' },
+      });
+    }
     if (error.message in errorMessages) {
       return res.status(404).json({ success: false, error: errorMessages[error.message] });
     }

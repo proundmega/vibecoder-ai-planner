@@ -1,14 +1,14 @@
 ---
 id: "fg-53"
 title: "Agent Enrollment and Node Access Tokens"
-status: planned
+status: in_progress
 priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-11-17"
 updated: "2026-11-18"
-pr: null
-branch: null
+pr: 174
+branch: feat/fg-53-agent-enrollment
 depends_on: []
 ---
 
@@ -63,9 +63,9 @@ needed to mint and revoke enrollment tokens.
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Plan merge pending | PR #173 (in review) | ☐ |
-| Implementation merged | pending | ☐ |
-| Verification results | n/a — planned | ☐ |
+| Plan merged | PR #173 (merged) | ☑ |
+| Implementation merged | PR #174 (open) | ☐ |
+| Verification results | PR #174 (open) — backend 2016 tests/162 suites, frontend 653/74 files, agent 824 tests | ☑ |
 
 A merged planning PR is **plan merged**, not `done`. Set `status: done` only
 after the implementation PR is merged and `03` has a dated Results row.
@@ -81,10 +81,12 @@ after the implementation PR is merged and `03` has a dated Results row.
 | D5 | One-line/QR enrollment UX and prebuilt `.env` generation | self | Developer experience | none | open |
 | D6 | Distributed rate limiting for enroll/refresh across multiple API instances | self | Security / Ops | none | open |
 | D7 | Enrollment approval workflow (human approves a pending node) | self | Security | none | open |
-| D8 | Migrate legacy `ak_…` agents to access/refresh tokens automatically | self | Migration | none | open |
+| D8 | Migrate legacy `ak_…` agents to access/refresh tokens automatically. Pool keys are now configurable (`POOL_AGENT_KEY_EXPIRY_DAYS`, default 30) but automatic renewal is still deferred | self | Migration | none | open |
 | D9 | Credential-file encryption or OS keyring instead of a 0600 JSON file | self | Security | none | open |
 | D10 | Enrollment/audit UI filters, export and retention dashboard | fg-41 | Observability | fg-41 | open |
 | D11 | Broader project-agents migration: assign manual/legacy agents to a project and expose per-project agent lists. fg-53 adds `agents.project_id` for enrolled agents only; legacy agents stay owner-scoped (`project_id = NULL`) | FUTURE_IDEAS Project Agents Table Migration | Migration / Authorization | new ticket | open |
+| D12 | Project-scoped agent management: a non-owner project admin with `AGENT_CREATE` + membership can mint a join token, but the resulting agent is owned by the project owner, so rotate/revoke/delete still need the owner or a super_admin | self | Authorization / UX | new ticket | open |
+| D13 | Pre-existing credential-decrypt membership gap: the JWT credential decrypt route checks permission but not project membership. It is JWT-only today, so agents cannot reach it; audit/fix before exposing it to agents | self | Security | new ticket | open |
 
 States: `open`, `scheduled`, `done`, `dropped`.
 
@@ -127,7 +129,5 @@ record it as an assumption in `01`.
 - Enrolled agents get `agents.project_id`; legacy/manual agents keep
   `project_id = NULL` and remain owner-scoped. The broader project-agents
   migration is D11, not a dependency of this ticket.
-- When this planning PR merges: change the **Plan merge pending** evidence row
-  to **Plan merged**, change the `PENDING.txt` label to
-  **Plan merged (#173); implementation pending**, and update the intake rows.
-  Keep `pr`/`branch` null until the implementation PR exists.
+- The planning PR merged as #173; the implementation PR is #174 (in review).
+  `PENDING.txt` carries **In review (#174)** until it merges.

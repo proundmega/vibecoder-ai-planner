@@ -12,6 +12,14 @@ logger.info('Starting Vibecode API...');
 
 const app = express();
 
+// Only honor X-Forwarded-Proto when the operator explicitly declares the
+// reverse-proxy hops/IPs. Without this, req.secure stays false and a direct
+// HTTP client cannot spoof the enrollment TLS check.
+const trustProxy = require('./utils/trustProxy').parseTrustProxy(process.env.TRUST_PROXY);
+if (trustProxy !== null) {
+  app.set('trust proxy', trustProxy);
+}
+
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3002')
   .split(',')
   .map(o => o.trim());
@@ -190,12 +198,25 @@ if (process.env.NODE_ENV !== 'test') {
   eventRetentionInterval.unref();
   purgeTick();
 
+  // Daily retention for fg-53 enrollment/access/refresh tokens and auth events.
+  const AgentTokenCleanupService = require('./services/AgentTokenCleanupService');
+  const agentTokenPurgeTick = () => {
+    AgentTokenCleanupService.purgeExpired().catch(err => {
+      logger.error('Agent token retention failed:', err.message);
+    });
+  };
+  const agentTokenRetentionInterval = setInterval(agentTokenPurgeTick, 24 * 60 * 60 * 1000);
+  agentTokenRetentionInterval.unref();
+  // Purge once at startup so a restarted/upgraded API does not wait a day.
+  agentTokenPurgeTick();
+
   gracefulShutdown(server, pool, [
     () => clearInterval(cleanupInterval),
     () => {
       if (reaperInterval) clearInterval(reaperInterval);
     },
     () => clearInterval(eventRetentionInterval),
+    () => clearInterval(agentTokenRetentionInterval),
   ]);
 }
 

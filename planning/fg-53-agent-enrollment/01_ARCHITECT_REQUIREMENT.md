@@ -115,7 +115,7 @@ for heartbeats while every real call fails with `KEY_EXPIRED`.
 | Area | Impact | Evidence / owner |
 |---|---|---|
 | API routes/contracts | New `/api/v1/agent-enrollment/*` endpoints; existing agent routes keep their contracts but gain project-scope enforcement; OpenAPI annotations required | `02` API contract; generated spec |
-| Database/migrations | New `agent_enrollment_tokens`, `agent_access_tokens`, `agent_refresh_tokens`, `agent_auth_events`; `agents` gains `project_id` and enrollment metadata columns | `02` data model; `054_agent_enrollment.sql` + rollback |
+| Database/migrations | New `agent_enrollment_tokens`, `agent_access_tokens`, `agent_refresh_tokens`, `agent_refresh_replays`, `agent_auth_events`; `agents` gains `project_id` and enrollment metadata columns | `02` data model; `055_agent_enrollment.sql` + rollback |
 | Frontend | New `api/agentEnrollment.ts`; mint/list/revoke UI in the Agents/Compute Nodes area; agent list shows enrollment mode | `03` per-file changes |
 | Agent/harness | `AgentConfig`, `AgentApp`, auth manager, credential store, `ApiService`; no prompt/harness behavior change | `03` agent test matrix |
 | Permissions/auth | Reuses `AGENT_CREATE`/`AGENT_READ`/`AGENT_REVOKE` + project membership; new token type in middleware; `agents.project_id` enforced on ticket/credential routes | `02` security section |

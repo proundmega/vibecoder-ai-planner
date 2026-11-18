@@ -12,6 +12,8 @@ services:
       - AGENT_DOCKER_HOST=${AGENT_DOCKER_HOST:-tcp://docker-proxy:2375}
       - ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       - INTEGRATION_TESTS=1
+      - AGENT_ENROLLMENT_ENABLED=${AGENT_ENROLLMENT_ENABLED:-true}
+      - ALLOW_INSECURE_AGENT_ENROLLMENT=${ALLOW_INSECURE_AGENT_ENROLLMENT:-1}
       # Local development defaults to the explicit PAT fallback until an App is configured.
       - GITHUB_AUTH_MODE=${GITHUB_AUTH_MODE:-pat}
       - ALLOW_PAT=${ALLOW_PAT:-true}

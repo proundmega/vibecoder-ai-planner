@@ -86,6 +86,9 @@ services:
       # Pool agents use the restricted socket proxy, never the raw socket.
       - AGENT_DOCKER_HOST=${AGENT_DOCKER_HOST:-tcp://docker-proxy:2375}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - AGENT_ENROLLMENT_ENABLED=${AGENT_ENROLLMENT_ENABLED:-false}
+      - ALLOW_INSECURE_AGENT_ENROLLMENT=${ALLOW_INSECURE_AGENT_ENROLLMENT:-0}
+      - TRUST_PROXY=${TRUST_PROXY:-}
       - GITHUB_AUTH_MODE=${GITHUB_AUTH_MODE:-app}
       - ALLOW_PAT=${ALLOW_PAT:-false}
       - GITHUB_APP_ID=${GITHUB_APP_ID:-}

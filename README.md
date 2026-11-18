@@ -114,9 +114,21 @@ Required for `docker compose up`:
 
 ### Agent `.env` (Java)
 
+For a remote node, mint a one-time join token in **Agents → Enrollment**, set
+`ENROLLMENT_TOKEN` and a persistent `AGENT_CREDENTIALS_FILE` volume, and leave
+`AGENT_ID`/`AGENT_API_KEY` unset. The node enrolls on first boot, stores its own
+access/refresh credentials (`0600`) and refreshes automatically. Enrollment
+requires HTTPS outside loopback; `ALLOW_INSECURE_AGENT_ENROLLMENT=1` is for
+local testing only. Deleting the credential volume requires a new join token.
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `AGENT_API_KEY` | API key for backend auth | _(required)_ |
+| `AGENT_ID` | Static agent id (legacy pair with `AGENT_API_KEY`) | _(required for legacy)_ |
+| `AGENT_API_KEY` | Static API key for backend auth | _(required for legacy)_ |
+| `AGENT_AUTH_MODE` | `auto`, `legacy` or `enroll`; `auto` prefers a static pair and enrolls when it is absent | `auto` |
+| `ENROLLMENT_TOKEN` | One-time `enr_…` join token minted in Agents → Enrollment | _(none)_ |
+| `ENROLLMENT_URL` | Override the enrollment endpoint (defaults to `BACKEND_URL` + `/api/v1/agent-enrollment/enroll`) | _(derived)_ |
+| `AGENT_CREDENTIALS_FILE` | Persistent credential file for enrolled nodes; the file wins over `ENROLLMENT_TOKEN` on restart | _(none)_ |
 | `BACKEND_URL` | Backend API URL | `http://localhost:3001` |
 | `PROJECT_ID` | Project to work on | `1` |
 | `REPO_OWNER` | GitHub org/user | _(required)_ |

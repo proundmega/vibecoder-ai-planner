@@ -1,6 +1,8 @@
 const jwt = require('jsonwebtoken');
 const { pool } = require('../db');
 const AgentService = require('../services/AgentService');
+const AgentEnrollmentService = require('../services/AgentEnrollmentService');
+const { authFailureCounter } = require('../services/AgentEnrollmentMetrics');
 const { getSecret } = require('../utils/jwt');
 const bcrypt = require('bcryptjs');
 const IpWhitelistService = require('../services/IpWhitelistService');
@@ -202,9 +204,28 @@ exports.requireActiveUser = async (req, res, next) => {
   }
 };
 
-async function authenticateAgentByApiKey(apiKey) {
-  // Mock validation for test keys
-  if (apiKey.startsWith('test-') || apiKey === 'mock-agent-key') {
+function agentAuthFailure(agent) {
+  const isAccessToken = agent._tokenKind === 'access';
+  if (agent._revoked) {
+    return {
+      code: isAccessToken ? 'TOKEN_REVOKED' : 'KEY_REVOKED',
+      message: 'Agent credentials have been revoked',
+    };
+  }
+  return {
+    code: isAccessToken ? 'TOKEN_EXPIRED' : 'KEY_EXPIRED',
+    message: isAccessToken
+      ? 'Agent access token expired; refresh the node credentials'
+      : `API key expired on ${new Date(agent.api_key_expires_at).toISOString()}`,
+    expiredAt: agent.api_key_expires_at,
+  };
+}
+
+async function authenticateAgentByApiKey(apiKey, { mock = true } = {}) {
+  // Mock validation for test keys (unit tests only; never in a deployment).
+  if (mock
+      && process.env.NODE_ENV === 'test'
+      && (apiKey.startsWith('test-') || apiKey === 'mock-agent-key')) {
     return {
       id: 1,
       owner_id: 1,
@@ -214,24 +235,49 @@ async function authenticateAgentByApiKey(apiKey) {
     };
   }
 
+  // Enrollment-issued access tokens use the same X-API-Key header but a
+  // different table and lifecycle. Legacy ak_ keys keep the old path.
+  if (apiKey.startsWith('at_')) {
+    const result = await AgentEnrollmentService.authenticateAccessToken(apiKey);
+    if (result.status === 'ok') {
+      return { ...result.agent, _tokenKind: 'access' };
+    }
+    if (result.status === 'expired') {
+      authFailureCounter.inc({ reason: 'expired' });
+      return { _tokenKind: 'access', _expired: true };
+    }
+    if (result.status === 'revoked') {
+      authFailureCounter.inc({ reason: 'revoked' });
+      return { _tokenKind: 'access', _revoked: true };
+    }
+    authFailureCounter.inc({ reason: 'invalid' });
+    return null;
+  }
+
   const agent = await AgentService.getAgentByApiKey(apiKey);
   if (!agent) {
+    authFailureCounter.inc({ reason: 'invalid' });
     return null;
   }
 
   // Check expiry
   if (agent.api_key_expires_at && new Date(agent.api_key_expires_at) < new Date()) {
+    authFailureCounter.inc({ reason: 'expired' });
     return { ...agent, _expired: true };
   }
 
   // Verify hash (bcrypt.compare is timing-safe)
   const valid = await bcrypt.compare(apiKey, agent.api_key_hash);
   if (!valid) {
+    authFailureCounter.inc({ reason: 'invalid' });
     return null;
   }
 
   return agent;
 }
+
+exports.authenticateAgentByApiKey = authenticateAgentByApiKey;
+exports.agentAuthFailure = agentAuthFailure;
 
 exports.agentAuth = async (req, res, next) => {
   try {
@@ -246,15 +292,8 @@ exports.agentAuth = async (req, res, next) => {
       return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid API key' } });
     }
 
-    if (agent._expired) {
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'KEY_EXPIRED',
-          message: `API key expired on ${new Date(agent.api_key_expires_at).toISOString()}`,
-          expiredAt: agent.api_key_expires_at,
-        },
-      });
+    if (agent._expired || agent._revoked) {
+      return res.status(401).json({ success: false, error: agentAuthFailure(agent) });
     }
 
     req.agent = agent;
@@ -285,15 +324,8 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
       return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid API key' } });
     }
 
-    if (agent._expired) {
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'KEY_EXPIRED',
-          message: `API key expired on ${new Date(agent.api_key_expires_at).toISOString()}`,
-          expiredAt: agent.api_key_expires_at,
-        },
-      });
+    if (agent._expired || agent._revoked) {
+      return res.status(401).json({ success: false, error: agentAuthFailure(agent) });
     }
 
     req.agent = agent;

@@ -14,6 +14,22 @@ const props = defineProps({
     type: String,
     default: 'This is the only time this key is shown. Store it now — it cannot be retrieved later.',
   },
+  copyLabel: {
+    type: String,
+    default: 'Copy key',
+  },
+  keyLabel: {
+    type: String,
+    default: 'API key',
+  },
+  idLabel: {
+    type: String,
+    default: 'Agent ID',
+  },
+  expiresLabel: {
+    type: String,
+    default: 'Key expires',
+  },
 })
 
 const emit = defineEmits(['close'])
@@ -78,7 +94,7 @@ function formatDate(value) {
           <dd>{{ agent.name || '—' }}</dd>
         </div>
         <div>
-          <dt>Agent ID</dt>
+          <dt>{{ idLabel }}</dt>
           <dd>{{ agent.id ?? '—' }}</dd>
         </div>
         <div v-if="agent.providerName">
@@ -86,17 +102,17 @@ function formatDate(value) {
           <dd>{{ agent.providerName }}</dd>
         </div>
         <div>
-          <dt>Key expires</dt>
+          <dt>{{ expiresLabel }}</dt>
           <dd>{{ formatDate(agent.expiresAt) }}</dd>
         </div>
       </dl>
 
       <div v-if="agent.apiKey" class="key-section">
-        <label>API key</label>
+        <label>{{ keyLabel }}</label>
         <div class="key-row">
           <code class="agent-key-value">{{ agent.apiKey }}</code>
           <VButton variant="secondary" size="small" @click="copyKey">
-            {{ copied ? 'Copied' : 'Copy key' }}
+            {{ copied ? 'Copied' : copyLabel }}
           </VButton>
         </div>
         <p v-if="copyError" class="copy-error">{{ copyError }}</p>

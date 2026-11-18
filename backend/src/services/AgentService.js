@@ -2,6 +2,7 @@ const { pool } = require('../db');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { resolveProviderEndpoint } = require('../utils/providerDefaults');
+const AgentEnrollmentService = require('./AgentEnrollmentService');
 
 const SALT_ROUNDS = 10;
 const DEFAULT_KEY_EXPIRY_DAYS = 30;
@@ -69,20 +70,49 @@ class AgentService {
     return { ...agent, api_key: apiKey };
   }
 
-  async list(userId) {
-    const result = await pool.query(
-      `SELECT agents.*, providers.name as provider_name, providers.provider_type as provider_type
-       FROM agents 
+  async list(userId, { projectId = null } = {}) {
+    const params = [userId];
+    let sql = `SELECT agents.*, providers.name as provider_name, providers.provider_type as provider_type
+       FROM agents
        LEFT JOIN providers ON agents.provider_id = providers.id
-       WHERE agents.owner_id = $1 
-       ORDER BY agents.created_at DESC`,
-      [userId]
-    );
+       WHERE agents.owner_id = $1`;
+    if (projectId != null) {
+      // An enrolled agent token must not enumerate the owner's agents in
+      // other projects.
+      params.push(projectId);
+      sql += ' AND agents.project_id = $2';
+    }
+    sql += ' ORDER BY agents.created_at DESC';
+    const result = await pool.query(sql, params);
     return result.rows;
   }
 
-  async revokeApiKey(agentId) {
-    await pool.query('UPDATE agents SET api_key_hash = NULL, api_key_hash_prefix = NULL WHERE id = $1', [agentId]);
+  async revokeApiKey(agentId, { ip = null } = {}) {
+    const db = await pool.connect();
+    try {
+      await db.query('BEGIN');
+      // Lock the agent before touching tokens. A concurrent refresh locks the
+      // same row, so either it rotates before us and we revoke the new pair,
+      // or it waits and sees the revoked rows.
+      const locked = await db.query('SELECT id, project_id FROM agents WHERE id = $1 FOR UPDATE', [agentId]);
+      if (locked.rows.length === 0) {
+        await db.query('ROLLBACK');
+        throw new Error('AGENT_NOT_FOUND');
+      }
+      await db.query('UPDATE agents SET api_key_hash = NULL, api_key_hash_prefix = NULL WHERE id = $1', [agentId]);
+      // FR6: revoking an agent invalidates every credential it holds, not only
+      // the legacy key.
+      await AgentEnrollmentService.revokeAllForAgent(agentId, db, {
+        projectId: locked.rows[0].project_id,
+        ip,
+      });
+      await db.query('COMMIT');
+    } catch (error) {
+      await db.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      db.release();
+    }
   }
 
   async registerAction(agentId, actionType, tableName, recordId) {
@@ -146,8 +176,20 @@ class AgentService {
   }
 
   async getProviderConfig(agentId, apiKey) {
-    const agent = await this.getAgentByApiKey(apiKey);
+    let agent;
+    if (typeof apiKey === 'string' && apiKey.startsWith('at_')) {
+      const auth = await AgentEnrollmentService.authenticateAccessToken(apiKey);
+      if (auth.status === 'expired') throw new Error('TOKEN_EXPIRED');
+      if (auth.status !== 'ok') throw new Error('AGENT_NOT_FOUND');
+      agent = auth.agent;
+    } else {
+      agent = await this.getAgentByApiKey(apiKey);
+      if (agent && agent.api_key_expires_at && new Date(agent.api_key_expires_at) <= new Date()) {
+        throw new Error('TOKEN_EXPIRED');
+      }
+    }
     if (!agent) throw new Error('AGENT_NOT_FOUND');
+    if (String(agent.id) !== String(agentId)) throw new Error('AGENT_NOT_FOUND');
     if (!agent.provider_id) throw new Error('NO_PROVIDER');
     const enc = require('../utils/crypto');
     const result = await pool.query(
@@ -171,7 +213,35 @@ class AgentService {
     };
   }
 
+  async getEnrollmentKeyStatus(agentId) {
+    const result = await pool.query(
+      `WITH credentials AS (
+         SELECT revoked_at, expires_at FROM agent_access_tokens WHERE agent_id = $1
+         UNION ALL
+         SELECT revoked_at, expires_at FROM agent_refresh_tokens
+         WHERE agent_id = $1 AND rotated_at IS NULL
+       )
+       SELECT
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE revoked_at IS NOT NULL)::int AS revoked,
+         COUNT(*) FILTER (WHERE revoked_at IS NULL AND expires_at > NOW())::int AS active,
+         MAX(expires_at) FILTER (WHERE revoked_at IS NULL) AS expires_at
+       FROM credentials`,
+      [agentId]
+    );
+    const row = result.rows[0] || { total: 0, revoked: 0, active: 0, expires_at: null };
+    let status = 'revoked';
+    if (row.active > 0) status = 'active';
+    else if (row.total > 0 && row.revoked < row.total) status = 'expired';
+    return { keyStatus: status, expiresAt: row.expires_at || null };
+  }
+
   async getAgentByApiKey(apiKey) {
+    if (typeof apiKey === 'string' && apiKey.startsWith('at_')) {
+      const result = await AgentEnrollmentService.authenticateAccessToken(apiKey);
+      return result.status === 'ok' ? { ...result.agent, _tokenKind: 'access' } : null;
+    }
+
     const apiKeyLookupPrefix = deterministicApiKeyPrefix(apiKey);
 
     const result = await pool.query(

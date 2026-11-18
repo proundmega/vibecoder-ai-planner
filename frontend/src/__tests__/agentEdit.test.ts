@@ -20,6 +20,24 @@ vi.mock('@/api/providers', () => ({
   listProviders: vi.fn().mockResolvedValue([]),
 }))
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    hasAnyPermission: () => true,
+    canCreateAgent: () => true,
+    canRevokeAgent: () => true,
+  }),
+}))
+
+vi.mock('@/api/projects', () => ({
+  fetchProjects: vi.fn().mockResolvedValue([]),
+}))
+
+vi.mock('@/api/agentEnrollment', () => ({
+  listEnrollmentTokens: vi.fn().mockResolvedValue([]),
+  mintEnrollmentToken: vi.fn(),
+  revokeEnrollmentToken: vi.fn(),
+}))
+
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn(), currentRoute: { value: { path: '/' } } }),
   useRoute: () => ({ params: {} }),

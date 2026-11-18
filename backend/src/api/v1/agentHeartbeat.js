@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const HeartbeatService = require('../../services/HeartbeatService');
 const AgentService = require('../../services/AgentService');
-const { verifyToken } = require('../../middleware/auth');
+const { verifyToken, authenticateAgentByApiKey, agentAuthFailure } = require('../../middleware/auth');
 const logger = require('../../utils/logger');
 
 /**
@@ -45,10 +45,21 @@ router.post('/:id/heartbeat', async (req, res, next) => {
     if (!apiKey) {
       return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'X-API-Key header required' } });
     }
-    const agent = await AgentService.getAgentByApiKey(apiKey);
-    if (!agent || String(agent.id) !== String(req.params.id)) {
+
+    // Shared credential check (legacy ak_ and enrollment at_ tokens) so
+    // heartbeat enforces the same expiry/revocation rules as every other
+    // agent route.
+    const agent = await authenticateAgentByApiKey(apiKey, { mock: false });
+    if (!agent) {
       return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Invalid API key for this agent' } });
     }
+    if (agent._expired || agent._revoked) {
+      return res.status(401).json({ success: false, error: agentAuthFailure(agent) });
+    }
+    if (String(agent.id) !== String(req.params.id)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Invalid API key for this agent' } });
+    }
+
     const { current_ticket_id, current_step, memory_usage, cpu_usage } = req.body;
     await HeartbeatService.recordHeartbeat(agent.id, {
       ticketId: current_ticket_id,

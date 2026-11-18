@@ -130,6 +130,28 @@ describe('Agent API - Key Masking', () => {
     expect(res.body.expiresAt).toBeNull();
   });
 
+  it('GET /agents/:agentId/key reports enrollment credential status', async () => {
+    findByIdSpy.mockResolvedValueOnce({
+      ...agentRow,
+      api_key_hash: null,
+      api_key_hash_prefix: null,
+      enrolled_at: new Date('2026-11-18T00:00:00Z'),
+      project_id: 3,
+    });
+    jest.spyOn(AgentService, 'getEnrollmentKeyStatus').mockResolvedValueOnce({
+      keyStatus: 'active',
+      expiresAt: new Date('2026-11-18T01:00:00Z'),
+    });
+
+    const res = await request(app)
+      .get('/api/v1/agents/a1/key')
+      .set('Authorization', 'Bearer mock-token');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.authMode).toBe('enrollment');
+    expect(res.body.keyStatus).toBe('active');
+  });
+
   it('GET /agents/:agentId/key reports an expired key', async () => {
     findByIdSpy.mockResolvedValueOnce({
       ...agentRow,

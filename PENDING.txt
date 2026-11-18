@@ -174,7 +174,7 @@ Also indexed in `planning/HARNESS_ROADMAP.md` (fg-45 in Phase C, fg-46 deferred 
 
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|
-| **fg-53** | `fg-53-agent-enrollment` | P1 | none | **Planned** — One-time project-scoped join tokens, `POST /agent-enrollment/enroll`, and short-lived agent access tokens with rotating refresh tokens. First-boot enrollment and a 0600 credential store in the Java agent; uniform expiry/revocation (including heartbeat); admin mint/list/revoke API + minimal UI. Enables true self-registration for remote workers and closes `AGENT-1`/`AGENT-2`/`AUTH-1`/`AUTH-3`. User PATs remain deferred (`00` D1). Plan in review: PR #173. |
+| **fg-53** | `fg-53-agent-enrollment` | P1 | none | **In review (#174)** — One-time project-scoped join tokens, `POST /agent-enrollment/enroll`, and short-lived agent access tokens with rotating refresh tokens. First-boot enrollment and a 0600 credential store in the Java agent; uniform expiry/revocation (including heartbeat); admin mint/list/revoke API + minimal UI. Enables true self-registration for remote workers and closes `AGENT-1`/`AGENT-2`/`AUTH-1`/`AUTH-3`. User PATs remain deferred (`00` D1). Plan merged in PR #173; implementation PR #174 is open. |
 
 ## Other (pa-*)
 
