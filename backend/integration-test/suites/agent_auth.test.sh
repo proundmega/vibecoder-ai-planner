@@ -34,9 +34,11 @@ test_agent_auth() {
   agent_id=$(echo "$agent_body" | extract_id)
   api_key=$(echo "$agent_body" | extract_field "generatedApiKey")
 
-  # Test 1: Valid X-API-Key should not return 401
+  # Test 1: Valid X-API-Key should not return 401. Use the agent history
+  # endpoint, which accepts X-API-Key; the key-metadata route is deliberately
+  # user/JWT-only.
   local code_valid
-  code_valid=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/agents/$agent_id/key" \
+  code_valid=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/agents/$agent_id/history" \
     -H "X-API-Key: $api_key")
   # Agent endpoint may return 403/404 if agent doesn't exist, but auth should pass (not 401)
   if [ "$code_valid" != "401" ]; then
@@ -47,18 +49,18 @@ test_agent_auth() {
 
   # Test 2: Invalid X-API-Key should return 401
   local code_invalid
-  code_invalid=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/agents/test-agent-id/key" \
+  code_invalid=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/agents/test-agent-id/history" \
     -H "X-API-Key: invalid-key-12345")
   assert_status "Invalid X-API-Key returns 401" "401" "$code_invalid"
 
   # Test 3: Missing X-API-Key should return 401
   local code_missing
-  code_missing=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/agents/test-agent-id/key")
+  code_missing=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/agents/test-agent-id/history")
   assert_status "Missing X-API-Key returns 401" "401" "$code_missing"
 
   # Test 4: Empty X-API-Key should return 401
   local code_empty
-  code_empty=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/agents/test-agent-id/key" \
+  code_empty=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/agents/test-agent-id/history" \
     -H "X-API-Key: ")
   assert_status "Empty X-API-Key returns 401" "401" "$code_empty"
 
