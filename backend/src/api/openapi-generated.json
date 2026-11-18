@@ -4602,6 +4602,9 @@
           },
           "400": {
             "description": "Deletion failed"
+          },
+          "404": {
+            "description": "Agent not found"
           }
         }
       }
@@ -4637,7 +4640,7 @@
         "tags": [
           "Agents"
         ],
-        "summary": "Get agent API key info (preview only)",
+        "summary": "Get agent key metadata (the plaintext key is never recoverable)",
         "parameters": [
           {
             "in": "path",
@@ -4650,7 +4653,59 @@
         ],
         "responses": {
           "200": {
-            "description": "Agent key info"
+            "description": "Agent key metadata (no plaintext or preview)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "agentId": {
+                      "type": "integer"
+                    },
+                    "providerId": {
+                      "type": "integer",
+                      "nullable": true
+                    },
+                    "providerName": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "keyStatus": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "expired",
+                        "revoked"
+                      ]
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "rateLimit": {
+                      "type": "integer"
+                    },
+                    "maxActionsPerDay": {
+                      "type": "integer"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "enrolledAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
           },
           "404": {
             "description": "Agent not found"

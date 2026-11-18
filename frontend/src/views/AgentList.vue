@@ -4,18 +4,23 @@ import { useRouter } from 'vue-router'
 import { fetchAgentStatusList, createAgent, listAgents, updateAgentName } from '@/api/agents'
 import { listProviders } from '@/api/providers'
 import AgentModal from '@/components/AgentModal.vue'
+import AgentKeyRevealModal from '@/components/AgentKeyRevealModal.vue'
 
 const agents = ref([])
 const loading = ref(true)
 const error = ref(null)
 const showCreateModal = ref(false)
 const createError = ref(null)
+const creatingAgent = ref(false)
+const createdAgent = ref(null)
 const activeTab = ref('heartbeat')
 const agentsData = ref([])
 const loadingAgents = ref(false)
 const providers = ref([])
 const selectedProviderId = ref(null)
 const router = useRouter()
+const CREATE_TIMEOUT_MS = 30000
+let createAttempt = 0
 let pollInterval = null
 const editingAgentId = ref(null)
 const editName = ref('')
@@ -60,6 +65,11 @@ function viewDetail(agentId) {
   router.push(`/agents/${agentId}`)
 }
 
+function openCreateModal() {
+  createError.value = null
+  showCreateModal.value = true
+}
+
 function statusClass(status) {
   return { online: 'status-online', idle: 'status-idle', offline: 'status-offline' }[status] || 'status-offline'
 }
@@ -69,12 +79,45 @@ function formatCost(cost) {
 }
 
 async function handleCreate(name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays) {
+  const attempt = ++createAttempt
+  creatingAgent.value = true
+  createError.value = null
+  let timedOut = false
+  const timer = setTimeout(() => {
+    if (attempt !== createAttempt) return
+    timedOut = true
+    // Re-enable dismissal so a hung request cannot trap the dialog. The
+    // request itself cannot be cancelled safely; if it later succeeds the
+    // operator can rotate the key from the agent page.
+    creatingAgent.value = false
+    createError.value = 'Creating the agent is taking longer than expected. Refresh the list before retrying; if the agent appears, rotate its key.'
+  }, CREATE_TIMEOUT_MS)
+
   try {
-    await createAgent({ name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays })
+    const created = await createAgent({ name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays })
+    if (attempt !== createAttempt || timedOut) return
     showCreateModal.value = false
-    createError.value = null
+
+    const provider = providers.value.find(p =>
+      String(p.id) === String(created.provider_id ?? providerId)
+    )
+    createdAgent.value = {
+      id: created.id,
+      name: created.name || name,
+      providerName: created.provider_name || provider?.name || null,
+      apiKey: created.generatedApiKey || created.api_key || null,
+      expiresAt: created.api_key_expires_at || null,
+    }
+
+    // Refresh both tables immediately instead of waiting for the poll or a
+    // tab switch.
+    await Promise.all([loadAgents(), loadCrudAgents()])
   } catch (err) {
+    if (attempt !== createAttempt || timedOut) return
     createError.value = err.message || 'Failed to create agent'
+  } finally {
+    clearTimeout(timer)
+    if (attempt === createAttempt && !timedOut) creatingAgent.value = false
   }
 }
 
@@ -126,12 +169,23 @@ function formatDate(dateStr) {
   <div class="agent-list">
     <div class="header-row">
       <h1>Agents</h1>
-      <button class="btn-primary" @click="showCreateModal = true">
+      <button class="btn-primary" @click="openCreateModal">
         Create Agent
       </button>
     </div>
-    <AgentModal v-model:show="showCreateModal" :providers="providers" v-model:selectedProvider="selectedProviderId" @created="handleCreate" />
-    <div v-if="createError" class="error">{{ createError }}</div>
+    <AgentModal
+      v-model:show="showCreateModal"
+      :providers="providers"
+      :creating="creatingAgent"
+      :submit-error="createError"
+      v-model:selectedProvider="selectedProviderId"
+      @created="handleCreate"
+    />
+    <AgentKeyRevealModal
+      v-if="createdAgent"
+      :agent="createdAgent"
+      @close="createdAgent = null"
+    />
 
     <div class="tabs">
       <button

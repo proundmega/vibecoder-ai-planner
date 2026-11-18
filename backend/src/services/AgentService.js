@@ -46,7 +46,7 @@ class AgentService {
     return { ...result.rows[0], api_key: apiKey };
   }
 
-  async rotateKey(agentId, userId) {
+  async rotateKey(agentId) {
     const apiKey = `ak_${crypto.randomBytes(24).toString('hex')}`;
     const apiKeyHash = await bcrypt.hash(apiKey, SALT_ROUNDS);
     const apiKeyLookupPrefix = deterministicApiKeyPrefix(apiKey);
@@ -56,9 +56,9 @@ class AgentService {
     const result = await pool.query(
       `UPDATE agents 
        SET api_key_hash = $1, api_key_hash_prefix = $2, api_key_expires_at = $3
-       WHERE id = $4 AND owner_id = $5
+       WHERE id = $4
        RETURNING id, name, api_key_expires_at`,
-      [apiKeyHash, apiKeyLookupPrefix, expiresAt, agentId, userId]
+      [apiKeyHash, apiKeyLookupPrefix, expiresAt, agentId]
     );
 
     if (result.rows.length === 0) {

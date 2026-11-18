@@ -72,7 +72,7 @@ describe('AgentService - API Key Rotation', () => {
       api_key_expires_at: new Date()
     }] });
 
-    const result = await AgentService.rotateKey(1, 1);
+    const result = await AgentService.rotateKey(1);
 
     expect(result.api_key).toBeDefined();
 
@@ -84,6 +84,9 @@ describe('AgentService - API Key Rotation', () => {
     expect(updateQuery).not.toContain('api_key =');
     expect(updateQuery).toContain('api_key_hash =');
     expect(updateQuery).toContain('api_key_hash_prefix =');
+    // Ownership is enforced by the route; the service must update by id so a
+    // super_admin can rotate another owner's key.
+    expect(updateQuery).not.toContain('owner_id');
   });
 
   it('rotateKey generates key with ak_ prefix format matching create()', async () => {
@@ -94,7 +97,7 @@ describe('AgentService - API Key Rotation', () => {
       api_key_expires_at: new Date()
     }] });
 
-    const result = await AgentService.rotateKey(1, 1);
+    const result = await AgentService.rotateKey(1);
 
     // New key should use ak_ prefix format (64 hex chars after ak_)
     expect(result.api_key).toMatch(/^ak_[0-9a-f]{48}$/);
@@ -109,7 +112,7 @@ describe('AgentService - API Key Rotation', () => {
   it('throws error when rotating non-existent agent', async () => {
     pool.query.mockResolvedValueOnce({ rows: [] });
 
-    await expect(AgentService.rotateKey(999, 1)).rejects.toThrow('AGENT_NOT_FOUND');
+    await expect(AgentService.rotateKey(999)).rejects.toThrow('AGENT_NOT_FOUND');
   });
 
   it('getAgentByApiKey uses prefix lookup for O(1) candidate selection', async () => {

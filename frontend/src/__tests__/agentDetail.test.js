@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
+import { ref } from 'vue'
 import AgentDetail from '@/views/AgentDetail.vue'
 
 vi.mock('@/stores/auth', () => ({
@@ -8,6 +9,8 @@ vi.mock('@/stores/auth', () => ({
 
 vi.mock('@/api/agents', () => ({
   fetchAgentDetail: vi.fn(),
+  getAgentKeyInfo: vi.fn(),
+  rotateAgentKey: vi.fn(),
   deleteAgent: vi.fn(),
   revokeAgentKey: vi.fn(),
 }))
@@ -22,26 +25,39 @@ describe('AgentDetail', () => {
     vi.clearAllMocks()
   })
 
-  async function createWrapper(role) {
+  async function createWrapper(role, ownerId = 'user-1') {
     const { useAuthStore } = await import('@/stores/auth')
     useAuthStore.mockImplementation(() => ({
-      user: { value: { role } },
-      canRevokeAgent: () => role === 'super_admin',
+      user: ref({ id: 'user-1', role }),
+      canRevokeAgent: () => role === 'super_admin' || role === 'project_admin',
       canDeleteAgent: () => role === 'super_admin' || role === 'project_admin',
     }))
 
-    const { fetchAgentDetail } = await import('@/api/agents')
-    fetchAgentDetail.mockResolvedValue({ agent_id: 'agent-1', agent_name: 'Test Agent', status: 'online' })
+    const { fetchAgentDetail, getAgentKeyInfo } = await import('@/api/agents')
+    fetchAgentDetail.mockResolvedValue({
+      agent_id: 'agent-1',
+      agent_name: 'Test Agent',
+      owner_id: ownerId,
+      status: 'online',
+    })
+    getAgentKeyInfo.mockResolvedValue({
+      name: 'Test Agent',
+      agentId: 'agent-1',
+      providerId: null,
+      providerName: null,
+      expiresAt: null,
+      rateLimit: 100,
+      maxActionsPerDay: 1000,
+      createdAt: null,
+      enrolledAt: null,
+    })
 
     const wrapper = mount(AgentDetail, {
       global: {
         stubs: { 'router-link': { template: '<span><slot /></span>' } },
       },
     })
-    // Wait for onMounted + fetchAgentDetail to complete
-    await wrapper.vm.$nextTick()
-    await wrapper.vm.$nextTick()
-    await wrapper.vm.$nextTick()
+    await flushPromises()
     return wrapper
   }
 
@@ -53,6 +69,19 @@ describe('AgentDetail', () => {
   it('renders Delete button when user is project_admin', async () => {
     const wrapper = await createWrapper('project_admin')
     expect(wrapper.find('.btn-danger').text()).toContain('Delete Agent')
+  })
+
+  it('renders Rotate and Revoke for project_admin', async () => {
+    const wrapper = await createWrapper('project_admin')
+    expect(wrapper.find('.btn-secondary').text()).toContain('Rotate API Key')
+    expect(wrapper.find('.btn-danger-outline').text()).toContain('Revoke API Key')
+  })
+
+  it('hides actions for a project_admin who does not own the agent', async () => {
+    const wrapper = await createWrapper('project_admin', 'other-user')
+    expect(wrapper.find('.btn-secondary').exists()).toBe(false)
+    expect(wrapper.find('.btn-danger-outline').exists()).toBe(false)
+    expect(wrapper.find('.btn-danger').exists()).toBe(false)
   })
 
   it('does NOT render Delete button for user role', async () => {
@@ -127,6 +156,6 @@ describe('AgentDetail', () => {
     await wrapper.find('.modal-actions .btn-danger').trigger('click')
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('.error').text()).toBe('Network error')
+    expect(wrapper.find('.modal-overlay .error').text()).toBe('Network error')
   })
 })

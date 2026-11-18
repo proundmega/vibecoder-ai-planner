@@ -1,0 +1,218 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { mount, flushPromises } from '@vue/test-utils'
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ params: { id: 'a1' } }),
+  useRouter: () => ({ push: vi.fn() }),
+}))
+
+const { authState } = vi.hoisted(() => ({
+  authState: { id: 'user-1', role: 'project_admin', canRevoke: true, canDelete: true },
+}))
+
+vi.mock('@/stores/auth', async () => {
+  const { ref } = await import('vue')
+  return {
+    useAuthStore: () => ({
+      user: ref({ id: authState.id, role: authState.role }),
+      canRevokeAgent: () => authState.canRevoke,
+      canDeleteAgent: () => authState.canDelete,
+    }),
+  }
+})
+
+vi.mock('@/api/agents', () => ({
+  fetchAgentDetail: vi.fn(),
+  getAgentKeyInfo: vi.fn(),
+  rotateAgentKey: vi.fn(),
+  deleteAgent: vi.fn(),
+  revokeAgentKey: vi.fn(),
+}))
+
+import AgentDetail from '@/views/AgentDetail.vue'
+import * as agentsApi from '@/api/agents'
+
+const mountOptions = {
+  global: {
+    stubs: { Teleport: { template: '<div><slot /></div>' } },
+  },
+}
+
+describe('AgentDetail', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    authState.id = 'user-1'
+    authState.role = 'project_admin'
+    authState.canRevoke = true
+    authState.canDelete = true
+    ;(agentsApi.fetchAgentDetail as ReturnType<typeof vi.fn>).mockResolvedValue({
+      agent_id: 'a1',
+      name: 'Worker One',
+      owner_id: 'user-1',
+      status: 'online',
+      totalActions: 3,
+      totalCost: 0.5,
+      current_step: 'idle',
+      last_seen: '2026-11-17T10:00:00.000Z',
+      history: [],
+    })
+    ;(agentsApi.getAgentKeyInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      name: 'Worker One',
+      agentId: 'a1',
+      providerId: 1,
+      providerName: 'OpenAI',
+      keyStatus: 'active',
+      expiresAt: '2026-12-17T00:00:00.000Z',
+      rateLimit: 100,
+      maxActionsPerDay: 1000,
+      createdAt: '2026-11-17T00:00:00.000Z',
+      enrolledAt: null,
+    })
+    ;(agentsApi.rotateAgentKey as ReturnType<typeof vi.fn>).mockResolvedValue({
+      agentId: 'a1',
+      agentName: 'Worker One',
+      newApiKey: 'ak_rotated_secret',
+      expiresAt: '2027-01-01T00:00:00.000Z',
+      message: 'Key rotated',
+    })
+  })
+
+  it('shows agent configuration and never a recoverable key', async () => {
+    const wrapper = mount(AgentDetail, mountOptions)
+    await flushPromises()
+
+    const details = wrapper.find('.details-section')
+    expect(details.exists()).toBe(true)
+    expect(details.text()).toContain('Worker One')
+    expect(details.text()).toContain('OpenAI')
+    expect(details.text()).toContain('100 req/min')
+    expect(details.text()).toContain('1000')
+    expect(details.text()).toContain('Hidden — shown only at creation or rotation')
+    expect(details.text()).toContain('2026')
+  })
+
+  it('rotates the key and shows the new key once', async () => {
+    const wrapper = mount(AgentDetail, mountOptions)
+    await flushPromises()
+
+    const rotate = wrapper.findAll('button').find(button => button.text() === 'Rotate API Key')
+    expect(rotate).toBeTruthy()
+    await rotate!.trigger('click')
+    await flushPromises()
+
+    const confirm = wrapper.findAll('button').find(button => button.text() === 'Rotate key')
+    expect(confirm).toBeTruthy()
+    await confirm!.trigger('click')
+    await flushPromises()
+
+    expect(agentsApi.rotateAgentKey).toHaveBeenCalledWith('a1')
+    expect(wrapper.find('.agent-key-value').text()).toBe('ak_rotated_secret')
+    expect(wrapper.text()).toContain('New API key')
+    expect(agentsApi.getAgentKeyInfo).toHaveBeenCalledTimes(2)
+    expect(localStorage.getItem('agent_api_key')).toBeNull()
+  })
+
+  it('shows a rotate failure inside the open confirmation dialog', async () => {
+    ;(agentsApi.rotateAgentKey as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('rotate failed'))
+
+    const wrapper = mount(AgentDetail, mountOptions)
+    await flushPromises()
+
+    const rotate = wrapper.findAll('button').find(button => button.text() === 'Rotate API Key')
+    await rotate!.trigger('click')
+    await flushPromises()
+
+    const confirm = wrapper.findAll('button').find(button => button.text() === 'Rotate key')
+    await confirm!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.modal-overlay').exists()).toBe(true)
+    expect(wrapper.find('.modal-overlay .modal-error').text()).toContain('rotate failed')
+  })
+
+  it('shows revoked key status in the details', async () => {
+    ;(agentsApi.getAgentKeyInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      name: 'Worker One',
+      agentId: 'a1',
+      providerId: 1,
+      providerName: 'OpenAI',
+      keyStatus: 'revoked',
+      expiresAt: null,
+      rateLimit: 100,
+      maxActionsPerDay: 1000,
+      createdAt: '2026-11-17T00:00:00.000Z',
+      enrolledAt: null,
+    })
+
+    const wrapper = mount(AgentDetail, mountOptions)
+    await flushPromises()
+
+    expect(wrapper.find('.details-section').text()).toContain('Revoked')
+  })
+
+  it('does not suggest rotation to users without permission', async () => {
+    authState.role = 'member'
+    authState.canRevoke = false
+    authState.canDelete = false
+    ;(agentsApi.getAgentKeyInfo as ReturnType<typeof vi.fn>).mockResolvedValue({
+      name: 'Worker One',
+      agentId: 'a1',
+      providerId: 1,
+      providerName: 'OpenAI',
+      keyStatus: 'revoked',
+      expiresAt: null,
+      rateLimit: 100,
+      maxActionsPerDay: 1000,
+      createdAt: '2026-11-17T00:00:00.000Z',
+      enrolledAt: null,
+    })
+
+    const wrapper = mount(AgentDetail, mountOptions)
+    await flushPromises()
+
+    const text = wrapper.find('.details-section').text()
+    expect(text).toContain('Revoked')
+    expect(text).not.toContain('rotate')
+  })
+
+  it('hides key actions for a project_admin who does not own the agent', async () => {
+    authState.id = 'other-1'
+    ;(agentsApi.fetchAgentDetail as ReturnType<typeof vi.fn>).mockResolvedValue({
+      agent_id: 'a1',
+      name: 'Worker One',
+      owner_id: 'user-1',
+      status: 'online',
+      totalActions: 0,
+      totalCost: 0,
+      history: [],
+    })
+
+    const wrapper = mount(AgentDetail, mountOptions)
+    await flushPromises()
+
+    expect(wrapper.find('.btn-secondary').exists()).toBe(false)
+    expect(wrapper.find('.btn-danger-outline').exists()).toBe(false)
+    expect(wrapper.find('.btn-danger').exists()).toBe(false)
+  })
+
+  it('shows key actions for a super_admin on another owner’s agent', async () => {
+    authState.id = 'admin-1'
+    authState.role = 'super_admin'
+    ;(agentsApi.fetchAgentDetail as ReturnType<typeof vi.fn>).mockResolvedValue({
+      agent_id: 'a1',
+      name: 'Worker One',
+      owner_id: 'user-1',
+      status: 'online',
+      totalActions: 0,
+      totalCost: 0,
+      history: [],
+    })
+
+    const wrapper = mount(AgentDetail, mountOptions)
+    await flushPromises()
+
+    expect(wrapper.find('.btn-secondary').exists()).toBe(true)
+    expect(wrapper.find('.btn-danger-outline').exists()).toBe(true)
+    expect(wrapper.find('.btn-danger').exists()).toBe(true)
+  })
+})
