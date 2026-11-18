@@ -7,7 +7,7 @@ effort: "Large"
 scope: "Both"
 created: "2026-11-17"
 updated: "2026-11-18"
-pr: null
+pr: 174
 branch: feat/fg-53-agent-enrollment
 depends_on: []
 ---
@@ -64,7 +64,7 @@ needed to mint and revoke enrollment tokens.
 | Claim | Evidence | Checked |
 |---|---|---|
 | Plan merge pending | PR #173 (in review) | ☐ |
-| Implementation merged | implementation in progress on `feat/fg-53-agent-enrollment` | ☐ |
+| Implementation merged | PR #174 (open) | ☐ |
 | Verification results | n/a — planned | ☐ |
 
 A merged planning PR is **plan merged**, not `done`. Set `status: done` only
