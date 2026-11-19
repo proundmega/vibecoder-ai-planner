@@ -4,6 +4,9 @@ This walks through joining a worker host to a project without copying a
 long-lived API key. The node enrolls once with a short-lived join token, stores
 its own credentials, and refreshes them automatically.
 
+For the deployment map (which Compose file, auth/repo modes, build commands),
+see [README.md](README.md).
+
 ## 1. Prerequisites
 
 - Backend enrollment is enabled: `AGENT_ENROLLMENT_ENABLED=true` (`1` works).
