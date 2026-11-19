@@ -57,7 +57,7 @@ Four runtime layers, one platform tier:
 | Clone, branch, push, open PR | yes | no (read-only checkout for review) | no |
 | Read tickets and PR diffs | granted projects | granted projects | granted projects |
 | Post review / findings | no | yes | no |
-| Move `review → done` | no | no (D10) | no |
+| Move `review → done` | no | no (D10: comment-only now; bounded small-ticket approval later) | no |
 | Draft/publish planning docs | no | no | yes (API-guarded) |
 | Report usage | yes | yes | yes |
 
@@ -299,9 +299,6 @@ The independent reviewer should start here.
 
 ## Open questions
 
-| # | Question | Resolution |
-|---|---|---|
-| 1 | Reviewer close authority | Comment only for v1; `D10` |
-| 2 | Planner publish path | API draft, guarded publish like workers |
-| 3 | Grant granularity | Node-level; runtime role narrows |
-| 4 | Default build concurrency | 1 |
+Product decisions (reviewer authority, planner publish path) live in **`00` →
+Decisions needed from the user**; no design questions remain. Default
+concurrency and grant granularity are captured in `01` → Open questions.

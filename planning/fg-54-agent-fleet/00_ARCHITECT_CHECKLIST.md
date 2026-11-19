@@ -91,7 +91,7 @@ after the implementation PR is merged and `03` has a dated Results row.
 | D7 | Discovery adapters beyond OpenAI-compatible, Anthropic and Ollama (vLLM/LM Studio variants) | self | Integration | none | open |
 | D8 | Migration of legacy `ak_…` keys and project-bound agents | self | Migration | none — dropped by the approved clean cut | dropped |
 | D9 | `PoolManager` container-per-agent mode; replaced by supervisor runtimes on enrolled nodes | self | Infrastructure | fg-54 phase 3 | open |
-| D10 | Reviewer authority: may a reviewer move `review → done`, or comment only? | self | Product | none | open |
+| D10 | Reviewer authority beyond comment-only: bounded approval/close for **small tickets** (risk threshold, evidence, audit); explicitly not in this suite | self | Product | new ticket | open |
 | D11 | Bulk fleet operations (import/export, clone a node config) in the UI | self | UX | none | open |
 | D12 | Credential version-history UI and rollback to a previous secret version | self | Security / UX | none | open |
 | D13 | Fleet dashboards and alerts (node down, runtime crash-loop, model verification failures) | fg-41 | Observability | fg-41 | open |
@@ -107,6 +107,8 @@ after the implementation PR is merged and `03` has a dated Results row.
 | 3 | Where does the manager live? | Agent host / server stack | server stack | **Server stack tier with replicas**, deployed with the API; not an agent role. |
 | 4 | Supervisor shape | static config / backend-pushed | static first | **Static, idempotent reconcile** on boot, rerun or `SIGHUP`; dynamic dispatch is D1. |
 | 5 | Secrets in the supervisor config | allowed / forbidden | forbidden | **Forbidden.** Config carries roles/models/counts only; secrets are fetched over the authenticated node channel. |
+| 6 | Reviewer authority | comment only / full close | comment only | **Comment only for now.** Reviewers will later approve a small subset of small tickets; that bounded capability is `D10`, not part of this suite. |
+| 7 | Planner publish path | direct push / guarded API | guarded API | **Confirmed:** planners draft and publish through the same guarded API path as workers; no direct repo pushes. |
 
 ## Completion gate
 

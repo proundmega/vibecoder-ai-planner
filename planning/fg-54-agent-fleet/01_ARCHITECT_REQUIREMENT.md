@@ -137,12 +137,13 @@ Summarise only. The authoritative list — with reasons and follow-ups — is
 
 ## Open questions
 
+Product decisions (reviewer authority, planner publish path) are recorded in
+**`00` → Decisions needed from the user**. Remaining design questions:
+
 | # | Question | Assumption if unanswered |
 |---|---|---|
-| 1 | May a `reviewer` move a ticket `review → done`, or only comment? | Comment only; transition stays human/manager (`D10`) |
-| 2 | Is `planner` allowed to write planning docs directly to the repo branch, or only draft via the API? | Draft via API, publish through the same guarded path as workers |
-| 3 | Should grants be node-level, runtime-model-level, or both? | Node-level grants; runtime role narrows them (`02`) |
-| 4 | What is the default concurrency for a build runtime? | `1` ticket per runtime; raised deliberately with a model that supports it |
+| 1 | Should grants be node-level, runtime-model-level, or both? | Node-level grants; runtime role narrows them (`02`) |
+| 2 | What is the default concurrency for a build runtime? | `1` ticket per runtime; raised deliberately with a model that supports it |
 
 ## Dependencies
 
