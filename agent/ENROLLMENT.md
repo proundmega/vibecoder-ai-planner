@@ -117,6 +117,15 @@ network from the planner stack, so the worker can run anywhere that can reach
    docker compose -f docker-compose.remote.yml up -d
    ```
 
+   For plain HTTP on a LAN address, add `ALLOW_INSECURE_AGENT_ENROLLMENT=1`
+   (the backend needs it too):
+
+   ```bash
+   ENROLLMENT_TOKEN='enr_...' BACKEND_URL='http://192.168.3.51:3001' \
+   ALLOW_INSECURE_AGENT_ENROLLMENT=1 \
+   docker compose -f docker-compose.remote.yml up -d
+   ```
+
 Each worker needs its own single-use token, its own credential volume and a
 distinct `AGENT_NAME` so they are easy to tell apart in the UI. With Compose,
 `-p worker-a` / `-p worker-b` keeps the volumes separate.

@@ -15,6 +15,8 @@ services:
       - ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN:?mint one in the UI}
       - ENROLLMENT_URL=${ENROLLMENT_URL:-}
       - AGENT_CREDENTIALS_FILE=/credentials/agent.json
+      # Only for plain-HTTP backends on a non-loopback host (dev/LAN testing).
+      - ALLOW_INSECURE_AGENT_ENROLLMENT=${ALLOW_INSECURE_AGENT_ENROLLMENT:-0}
       # Optional fallback only; the project's configured repo wins.
       - REPO_OWNER=${REPO_OWNER:-}
       - REPO_NAME=${REPO_NAME:-}
