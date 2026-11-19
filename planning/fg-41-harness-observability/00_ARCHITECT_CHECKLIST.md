@@ -35,3 +35,8 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D3 | Budget metrics and alerts | fg-38 | Billing | fg-38-harness-budgets-routing | open |
 | D4 | Retention/redaction policy | fg-42 | Privacy | fg-42-harness-privacy | open |
 | D5 | Merge/rollback audit events | fg-36 | Audit | fg-36-merge-lifecycle | open |
+
+## Relationship to fg-54 (planned)
+
+Run and event attribution will use `runtime_id` plus `node_id` once fg-54 lands;
+existing `agent_id` fields map 1:1 to `runtime_id`. No requirement changes.

@@ -133,3 +133,6 @@ after the implementation PR is merged and `03` has a dated Results row.
 - `fg-40` owns task graphs and handoffs between roles; this suite owns identity,
   model selection and fleet deployment. They meet at the runtime role and lease,
   and neither restates the other's scope.
+- Dependent suites reconciled in this PR under `planning/README.md` rule 7:
+  `fg-38`, `fg-40`, `fg-41`, `fg-43`, `fg-44`, `fg-53`. Planned suites received
+  targeted deltas; in-progress suites received relationship notes only.

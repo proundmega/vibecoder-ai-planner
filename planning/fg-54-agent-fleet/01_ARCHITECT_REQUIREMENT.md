@@ -121,7 +121,7 @@ reference.
 | Agent/harness | Supervisor entrypoint, role/model config, child process lifecycle, no static auth | `02`, `03` |
 | Permissions/auth | New node/fleet permissions; agent auth switches to node credential + runtime header | `FR4`, `NFR1` |
 | Background jobs/external calls | Manager service jobs; provider discovery/test calls | `FR13`, `FR14` |
-| Downstream tickets | fg-38 consumes model metadata; fg-40 consumes roles/leases; fg-43/44 sizing and workspace | `00` Notes |
+| Downstream tickets | Reconciled in this PR: `fg-38`, `fg-40`, `fg-41`, `fg-43`, `fg-44`, `fg-53` (relationship notes and the required deltas) | `planning/README.md` rule 7 |
 | Rollback | Revert the PR and run the rollback migration; no data backfill to preserve | `NFR5` |
 
 ## Out of scope

@@ -35,7 +35,7 @@ fg-30 Phase 3 mentions multi-agent at a high level, but there is no role model, 
 
 ## Functional requirements
 
-- **FR1 - Roles:** architect (read-only plan), builder (write), reviewer (read-only), fixer (write, scoped to findings), integrator (merge/conflict).
+- **FR1 - Roles:** architect (read-only plan), builder (write), reviewer (read-only), fixer (write, scoped to findings), integrator (merge/conflict). Runtime identities are the fg-54 enum (`worker`/`reviewer`/`planner`); architect maps to `planner`, builder/fixer to `worker`, reviewer to `reviewer`, and the integrator is the `manager` service.
 - **FR2 - Task graph:** nodes with inputs, outputs, dependencies, owner role, budget and acceptance checks.
 - **FR3 - Worktrees:** one branch/worktree per task; no shared writable workspace between parallel builders.
 - **FR4 - Handoff:** a versioned artifact (plan, diff, findings, test report) passed to the next role.
@@ -48,7 +48,8 @@ fg-30 Phase 3 mentions multi-agent at a high level, but there is no role model, 
 
 ## Safety requirements
 
-- Only builder/fixer roles can write; reviewer/architect are read-only.
+- Only `worker` runtimes write; `reviewer`/`planner` are read-only; the
+  integrator is the `manager` service, not a runtime role.
 - A task cannot modify files outside its declared scope without escalation.
 - Parallel tasks cannot push to the same branch.
 - The integrator cannot merge without approval and passing checks.

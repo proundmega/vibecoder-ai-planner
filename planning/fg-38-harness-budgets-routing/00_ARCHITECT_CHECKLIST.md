@@ -19,6 +19,14 @@ depends_on: ["fg-30"]
 
 **Related code:** `HarnessConfig`, `OpenCodeClient`, `HarnessTicketProcessor`, usage/billing APIs
 
+## Relationship to fg-54 (planned)
+
+`fg-54` owns the credential/model registry (`provider_credentials`,
+`provider_models`, role tags, verification). This ticket stays the consumer:
+routing and budget policy select a model from that registry, and usage
+attribution records `runtime_id`/`node_id` once fg-54 lands. No requirement
+changes; `agent` in FR8 means the runtime.
+
 ## Why this ticket exists
 
 fg-30 defines budget defaults (45 min, 1.5M tokens, $5, 100 tool calls), but nothing enforces them. There is no live token meter, no hard stop, no per-project quota, and no policy for choosing Beam Free vs a paid model or handling a provider outage.
