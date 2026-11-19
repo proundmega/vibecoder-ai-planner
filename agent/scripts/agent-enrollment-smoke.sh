@@ -4,15 +4,15 @@
 #
 # Requires a running backend and a join token minted in the UI:
 #   BACKEND_URL=https://planner.example.com \
-#   PROJECT_ID=1 ENROLLMENT_TOKEN=enr_... \
+#   ENROLLMENT_TOKEN=enr_... \
 #   bash agent/scripts/agent-enrollment-smoke.sh
 #
-# Optional: AGENT_IMAGE (default vibecode-agent:fg53-smoke), AGENT_NAME.
+# Optional: AGENT_IMAGE (default vibecode-agent:fg53-smoke), AGENT_NAME,
+# PROJECT_ID (enrollment reads the project from the token), AGENT_MODE.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 : "${BACKEND_URL:?set BACKEND_URL}"
-: "${PROJECT_ID:?set PROJECT_ID}"
 : "${ENROLLMENT_TOKEN:?mint a join token in Agents -> Enrollment}"
 
 AGENT_IMAGE="${AGENT_IMAGE:-vibecode-agent:fg53-smoke}"
@@ -29,9 +29,12 @@ echo "Building agent image..."
 docker build -t "$AGENT_IMAGE" "$ROOT" >/dev/null
 
 run_agent() {
+  local extra=()
+  [ -n "${PROJECT_ID:-}" ] && extra+=(-e "PROJECT_ID=$PROJECT_ID")
+  [ -n "${AGENT_MODE:-}" ] && extra+=(-e "AGENT_MODE=$AGENT_MODE")
   docker run -d --name "$CONTAINER" \
     -e "BACKEND_URL=$BACKEND_URL" \
-    -e "PROJECT_ID=$PROJECT_ID" \
+    "${extra[@]}" \
     -e "AGENT_AUTH_MODE=enroll" \
     -e "ENROLLMENT_TOKEN=$ENROLLMENT_TOKEN" \
     -e "AGENT_CREDENTIALS_FILE=/credentials/agent.json" \

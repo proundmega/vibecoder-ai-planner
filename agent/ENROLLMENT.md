@@ -81,6 +81,46 @@ volumes:
   agent_credentials:
 ```
 
+### Worker on a separate host
+
+`agent/docker-compose.remote.yml.example` is self-contained: it needs no Docker
+network from the planner stack, so the worker can run anywhere that can reach
+`BACKEND_URL`.
+
+1. Get the image onto the worker — build it there:
+
+   ```bash
+   docker build -t vibecode-agent:latest agent/
+   ```
+
+   or copy it from a machine that already has it:
+
+   ```bash
+   docker save vibecode-agent:latest | gzip | ssh worker 'gunzip | docker load'
+   ```
+
+2. Point `BACKEND_URL` at an address the worker can reach (LAN or public URL),
+   not the Compose-internal `http://api:3001`.
+
+3. For `AGENT_MODE=build`, make the clone directory writable (the agent runs as
+   uid 100, gid 101):
+
+   ```bash
+   mkdir -p repos && sudo chown 100:101 repos
+   ```
+
+4. Run it:
+
+   ```bash
+   ENROLLMENT_TOKEN='enr_...' \
+   BACKEND_URL='https://planner.example.com' \
+   docker compose -f docker-compose.remote.yml up -d
+   ```
+
+Each worker needs its own single-use token, its own credential volume and a
+distinct `AGENT_NAME` so they are easy to tell apart in the UI. With Compose,
+`-p worker-a` / `-p worker-b` keeps the volumes separate.
+
 ## 5. Verify
 
 ```bash
@@ -118,6 +158,8 @@ In the UI, the agent appears under **Agents**, and the join token shows one use.
 | Enrollment tab missing or 404 | `AGENT_ENROLLMENT_ENABLED` is off, or you lack `AGENT_READ`. |
 | `TLS_REQUIRED` | Use HTTPS, or set `ALLOW_INSECURE_AGENT_ENROLLMENT=1` for local testing. |
 | `AGENT_CREDENTIALS_FILE is required` | Mount a persistent volume and set the path. |
+| `Permission denied` writing `/credentials/agent.json` | The image predates the `/credentials` ownership fix (rebuild it), or the volume was created by an older/root-owned container. Remove it with `docker volume rm <project>_agent_credentials`; that loses the identity, so mint a new token. |
+| `network … declared as external, but could not be found` | You used `agent/docker-compose.yml` on a host without the planner stack. Use the remote template, or set `VIBECODE_NETWORK` to the planner’s network. |
 | `AGENT_MODE=build but the project has no usable repository` | The node has already consumed its one-time join token. Connect a repo under **Manage GitHub**, then mint a new token (or configure `REPO_OWNER`/`REPO_NAME` before starting). |
 | Agent says review mode on a build worker | Set `AGENT_MODE=build`. |
 | Join token rejected | It is expired, revoked, or already used; mint a new one. |

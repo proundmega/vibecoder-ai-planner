@@ -8,7 +8,8 @@ services:
     image: ${AGENT_IMAGE:-vibecode-agent:latest}
     environment:
       - BACKEND_URL=${BACKEND_URL:?set BACKEND_URL, e.g. https://planner.example.com}
-      - PROJECT_ID=${PROJECT_ID:?set PROJECT_ID}
+      # Optional with enrollment: the join token supplies the project.
+      - PROJECT_ID=${PROJECT_ID:-}
       - AGENT_AUTH_MODE=enroll
       - AGENT_MODE=${AGENT_MODE:-build}
       - ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN:?mint one in the UI}
@@ -24,7 +25,11 @@ services:
       - HARNESS_MODE=${HARNESS_MODE:-legacy}
       - AGENT_NAME=${AGENT_NAME:-}
     volumes:
+      # Credentials are written as the agent user (uid 100); the image owns
+      # /credentials so a fresh named volume inherits that ownership.
       - agent_credentials:/credentials
+      # Build mode clones here. The host directory must be writable by uid 100,
+      # gid 101: mkdir -p repos && sudo chown 100:101 repos
       - ${REPO_HOST_PATH:-./repos}:/repos
     restart: unless-stopped
 
