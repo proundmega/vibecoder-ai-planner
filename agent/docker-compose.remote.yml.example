@@ -15,6 +15,8 @@ services:
       # First boot only: the credential volume is the node identity after that.
       # Leave this set in .env (harmless once a credential file exists) or
       # remove it; an image update or reboot works without a token.
+      # With neither a token nor a credential file the agent exits with
+      # "No agent credentials" and restart-loops until one is provided.
       - ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN:-}
       - ENROLLMENT_URL=${ENROLLMENT_URL:-}
       - AGENT_CREDENTIALS_FILE=/credentials/agent.json

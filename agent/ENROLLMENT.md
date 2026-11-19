@@ -51,6 +51,10 @@ AGENT_CREDENTIALS_FILE=/credentials/agent.json
 - Do **not** set `AGENT_ID` or `AGENT_API_KEY` in enrollment mode.
 - `PROJECT_ID` is optional; the server supplies the project from the token.
 - The credential file must be on a persistent volume.
+- The token is only needed for the **first** boot. With neither
+  `ENROLLMENT_TOKEN` nor a credential file the agent exits with
+  `No agent credentials: …` and restart-loops; the Compose token is optional so
+  reboots and image updates need nothing.
 
 Provider settings come from the backend (`/agents/:id/provider-config`); choose
 the provider on the join token. `AI_PROVIDER`/`AI_MODEL`/`AI_API_KEY` are

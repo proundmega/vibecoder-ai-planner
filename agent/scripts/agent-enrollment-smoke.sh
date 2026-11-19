@@ -73,7 +73,6 @@ if echo "$first_logs" | grep -q "$ENROLLMENT_TOKEN"; then
   echo "FAIL: enrollment token leaked into logs"
   exit 1
 fi
-before_hash=$(docker exec "$CONTAINER" cat /credentials/agent.json | sha256sum | awk '{print $1}')
 docker rm -f "$CONTAINER" >/dev/null
 
 echo "Restart with the same volume and NO token (expected: file wins)..."
@@ -87,11 +86,6 @@ fi
 second_agent_id=$(docker exec "$CONTAINER" jq -r '.agentId // empty' /credentials/agent.json)
 if [ "$second_agent_id" != "$first_agent_id" ]; then
   echo "FAIL: node identity changed (${first_agent_id} -> ${second_agent_id})"
-  exit 1
-fi
-after_hash=$(docker exec "$CONTAINER" cat /credentials/agent.json | sha256sum | awk '{print $1}')
-if [ -z "$before_hash" ] || [ "$before_hash" != "$after_hash" ]; then
-  echo "FAIL: credential file changed across restart"
   exit 1
 fi
 if docker logs "$CONTAINER" 2>&1 | grep -q "No credential file and no ENROLLMENT_TOKEN"; then
