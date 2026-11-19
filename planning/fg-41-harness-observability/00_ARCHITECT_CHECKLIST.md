@@ -39,4 +39,6 @@ deferred scope are owned by this document; `01`–`04` link here.
 ## Relationship to fg-54 (planned)
 
 Run and event attribution will use `runtime_id` plus `node_id` once fg-54 lands;
-existing `agent_id` fields map 1:1 to `runtime_id`. No requirement changes.
+existing `agent_id` fields map 1:1 to `runtime_id`. **`harness_events` stays
+append-only:** fg-54 does not update, rename or delete historical rows; it only
+adds a nullable `runtime_id` column for new events. No requirement changes.

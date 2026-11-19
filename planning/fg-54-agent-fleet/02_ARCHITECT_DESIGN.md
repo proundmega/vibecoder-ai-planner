@@ -228,6 +228,20 @@ CREATE TABLE agent_node_auth_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX idx_agent_node_access_tokens_prefix
+  ON agent_node_access_tokens(token_prefix);
+CREATE INDEX idx_agent_node_access_tokens_node
+  ON agent_node_access_tokens(node_id, expires_at DESC);
+CREATE INDEX idx_agent_node_access_tokens_expiry
+  ON agent_node_access_tokens(expires_at) WHERE revoked_at IS NULL;
+
+CREATE INDEX idx_agent_node_refresh_tokens_prefix
+  ON agent_node_refresh_tokens(token_prefix);
+CREATE INDEX idx_agent_node_refresh_tokens_node
+  ON agent_node_refresh_tokens(node_id, expires_at DESC);
+CREATE INDEX idx_agent_node_refresh_tokens_expiry
+  ON agent_node_refresh_tokens(expires_at) WHERE revoked_at IS NULL;
+
 -- Claim marker only; the run lease authority stays harness_leases (fg-33).
 ALTER TABLE tickets RENAME COLUMN assigned_agent_id TO assigned_runtime_id;
 ```
@@ -246,8 +260,7 @@ over, so the ordering is:
    columns to `NULL`, and delete legacy rows where the renamed column is
    `NOT NULL` (`harness_runs`, `harness_leases`, `agent_heartbeats`). Tables: `agent_actions`, `agent_heartbeats`, `usage_logs`,
    `telemetry_events`, `harness_runs`, `harness_leases`, `harness_usage`,
-   `harness_events` (no FK today), `repo_profile_validations`, and
-   `tickets.assigned_agent_id`.
+   `repo_profile_validations`, and `tickets.assigned_agent_id`.
 3. `tickets`: rename to `assigned_runtime_id`, set it to `NULL` (legacy
    assignments cannot be mapped under the clean cut), then add
    `FOREIGN KEY (assigned_runtime_id) REFERENCES agent_runtimes(id) ON DELETE SET NULL`.
@@ -257,6 +270,12 @@ over, so the ordering is:
 5. Drop `agents` (all FKs are gone).
 6. Drop `project_providers` and `providers`. Secrets are **not migrated**; the
    registry starts empty and credentials are re-entered.
+
+**Append-only exception:** `harness_events` (fg-41) is deliberately excluded
+from the reset. The migration does **not** rename, null or delete its
+historical rows; `agent_id` stays immutable. It only adds a nullable
+`runtime_id` column for events written after the cut, so no update or delete
+touches the append-only store and the fg-41 trigger/test stay valid.
 
 The rollback recreates the empty legacy tables, renames the columns back and
 restores the old FKs. It restores schema only; the clean cut accepts data loss,
@@ -320,7 +339,7 @@ ticket cannot be released twice.
 | DELETE | `/api/v1/agent-nodes/:id/grants/:grantId` | JWT `AGENT_CREATE` + node owner + project admin; grant must belong to `:id` | — | revoked grant | 403/404 |
 | GET | `/api/v1/agent-nodes/:id/config` | node credential, `:id` **must equal** the credential node | `?runtime=` optional | resolved runtimes, models, grants (no secrets) | 401/403/404 |
 | POST | `/api/v1/agent-nodes/:id/runtimes` | node credential, `:id` **must equal** the credential node | declared set (`role`, `modelRef`, `count`, `effort?`, `project?`) | upserted runtimes (resolved effort) | 400/401/403/404/409 |
-| GET | `/api/v1/agent-nodes/:id/runtimes/:runtimeId/provider-config` | node credential + runtime ownership | — | decrypted provider config for one run (no-store, audited) | 401/403/404 |
+| GET | `/api/v1/agent-nodes/:id/runtimes/:runtimeId/provider-config` | node credential, `:id` **must equal** the credential node + runtime ownership | — | decrypted provider config for one run (no-store, audited) | 401/403/404 |
 | POST | `/api/v1/agent-runtimes/:id/heartbeat` | node credential + `X-Agent-Runtime` | `{status, currentProjectId}` | ack | 401/403/409 |
 | PATCH | `/api/v1/agent-runtimes/:id` | JWT `AGENT_CREATE` + node access | `{effort?, concurrency?, status?}` | updated runtime | 400/403/404 |
 | GET/POST | `/api/v1/provider-credentials` | JWT `PROJECT_MANAGE_MEMBERS` (project) or owner/super_admin (global) | credential fields | list/create (secret masked) | 400/403 |
@@ -339,9 +358,10 @@ with 404 (existence is not leaked).
 JWT node mutations are scoped twice. **Node ownership** (`owner_id = caller`,
 or `super_admin`) is required for revoke, drain and grant changes; **project
 admin** on the grant's project is additionally required to create or delete a
-grant. A project admin who does not own the node can manage grants for their
-project but cannot revoke or drain the node. Grant deletion validates
-`(nodeId, grantId)` and returns 404 for a foreign pair.
+grant. Both are required: a project admin who does not own the node cannot
+manage its grants and must ask the node owner (or a super_admin) to create or
+remove them. Grant deletion validates `(nodeId, grantId)` and returns 404 for a
+foreign pair.
 
 Existing agent endpoints (`/agents/*`, claim/review/planning) keep their paths
 but authenticate with the node credential plus the runtime header, and check

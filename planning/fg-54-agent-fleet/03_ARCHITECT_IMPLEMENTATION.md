@@ -130,6 +130,9 @@ starts; this table is the expected shape, not a frozen diff.
   `NOT NULL`), and add the new FK to `agent_runtimes`.
 - Drops: fg-53 token/audit tables after their internal FKs, then `agents`,
   `providers` and `project_providers`. No secret or identity data is migrated.
+- Append-only: `harness_events` (fg-41) is excluded from the reset. Only a
+  nullable `runtime_id` column is added; historical `agent_id` rows stay
+  untouched and no update/delete runs against the event store.
 - Backfill: none — the clean cut is approved in `00`; the seeded-DB test
   asserts the migration succeeds and legacy references are cleared.
 - Rollback risk: recreates empty legacy tables and old columns; restores schema
@@ -146,6 +149,7 @@ One row per requirement. This table is the contract between `01` and the code.
 | FR3 | backend route | `backend/src/__tests__/agentNodes.test.js` | `FR3 creates and revokes a grant` | `npm test` |
 | FR4 | backend route | `backend/src/__tests__/agentRoleEnforcement.test.js` | `FR4 denies a build claim for a reviewer runtime` | `npm test` |
 | FR5 | backend unit | `backend/src/__tests__/providerRegistry.test.js` | `FR5 encrypts the secret and rotates in place` | `npm test` |
+| FR5 | backend route | `backend/src/__tests__/providerRegistry.test.js` | `FR5 global credential create/list requires owner or super_admin` | `npm test` |
 | FR6 | backend unit | `backend/src/__tests__/providerRegistry.test.js` | `FR6 discovery creates unverified models` | `npm test` |
 | FR7 | backend route | `backend/src/__tests__/providerRegistry.test.js` | `FR7 adds a manual model` | `npm test` |
 | FR8 | backend unit | `backend/src/__tests__/providerRegistry.test.js` | `FR8 test marks verified or stores the error` | `npm test` |
@@ -215,7 +219,8 @@ grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_h
 |---|---|---|---|---|
 | 0 | primary (planning) | none | initial suite | `dfb2d32` |
 | 1 | primary (planning) | B1-B7 design/contract gaps | `6d6a3e3` — migration, provider replacement, node binding, permissions, lease authority, fg-32, grants | `6d6a3e3` |
-| 2 | primary (planning) | 3 residual: seeded-row reset, JWT node scope, provider-config coverage | this commit | pending |
+| 2 | primary (planning) | 3 residual: seeded-row reset, JWT node scope, provider-config coverage | `70ce671` | `70ce671` |
+| 3 | primary (planning) | grant scope contradiction, append-only `harness_events` | this commit | pending |
 
 ## Results
 

@@ -89,7 +89,7 @@ reference.
 | FR18 | Deleting a credential or model that is referenced returns `409` with the referencing runtimes/models; deactivation and rotation remain available | Delete of an in-use credential returns 409 and leaves the row; delete after detaching succeeds |
 | FR19 | Models carry a canonical reasoning-effort default (`minimal`, `low`, `medium`, `high`, `max`); runtimes may override it, and the resolved effort reaches the provider adapter | A model defaults to `medium`; a `reviewer` runtime overrides to `max` and the provider request carries the mapped value; an unknown value is rejected at the API and DB; unsupported provider values are clamped, never silently dropped |
 | FR20 | Node-scoped routes bind `:id` to the presented node credential, and node listing is scoped to owned nodes or the caller's project memberships | A valid credential with a foreign `:id` gets 404 and no data; a member sees only nodes granted to their projects; a super_admin sees all |
-| FR21 | JWT node/grant mutations require node ownership (or super_admin) plus project admin scope for the grant's project; grant deletion binds `grantId` to `nodeId` | A non-owner project admin cannot revoke/drain the node; deleting a grant with a mismatched `nodeId` returns 404; owner + project admin succeeds |
+| FR21 | JWT node/grant mutations require node ownership (or super_admin) plus project admin scope for the grant's project; grant deletion binds `grantId` to `nodeId` | A non-owner project admin cannot revoke/drain the node **or create/delete its grants**; deleting a grant with a mismatched `nodeId` returns 404; owner + project admin succeeds |
 
 ## Non-functional / safety requirements
 
