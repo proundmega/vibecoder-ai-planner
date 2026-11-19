@@ -62,6 +62,7 @@ reference.
 | A4 | One build runtime works on one project per lease; reviewers and planners may span their grants | Cross-project build reuse needs workspace/token resets per lease | Design constraint in `02`; enforced by `FR10` | accepted |
 | A5 | Node-level trust (one credential per host, runtime header per child) is acceptable for v1 | A compromised runtime impersonates siblings on the same host | Same-host trust domain; per-runtime tokens deferred to `D2` | accepted |
 | A6 | The manager can share the API image and database, and coordinate with Postgres locks | A separate service/DB would change deployment and migration order | `02` design; concurrency tests in `NFR4` | open |
+| A7 | Providers expose reasoning effort under different names/values and support different ceilings | A single value can fail or be silently ignored | Canonical enum + adapter mapping/clamping; `FR19` tests each adapter | open |
 
 ## Functional requirements
 
@@ -85,6 +86,7 @@ reference.
 | FR16 | The clean cut removes static agent auth, project-bound agents and the fused provider model/role columns, with a forward migration and rollback | Grep for `AGENT_ID`/`AGENT_API_KEY`/`agents.project_id` finds no production path; migration and rollback apply on an empty and a seeded DB |
 | FR17 | Security-relevant actions write audit events: enrollment, grant changes, credential rotation/deletion attempts, runtime state changes, role-denied requests | Each action produces an audit row with actor, node/runtime and outcome |
 | FR18 | Deleting a credential or model that is referenced returns `409` with the referencing runtimes/models; deactivation and rotation remain available | Delete of an in-use credential returns 409 and leaves the row; delete after detaching succeeds |
+| FR19 | Models carry a canonical reasoning-effort default (`minimal`, `low`, `medium`, `high`, `max`); runtimes may override it, and the resolved effort reaches the provider adapter | A model defaults to `medium`; a `reviewer` runtime overrides to `max` and the provider request carries the mapped value; an unknown value is rejected at the API and DB; unsupported provider values are clamped, never silently dropped |
 
 ## Non-functional / safety requirements
 
@@ -102,8 +104,8 @@ reference.
 ## In scope
 
 - `agent_nodes`, `agent_node_grants`, `agent_runtimes`, node enrollment tokens.
-- `provider_credentials` + `provider_models` with discovery, manual add, test
-  and role tags.
+- `provider_credentials` + `provider_models` with discovery, manual add, test,
+  role tags and reasoning-effort defaults/overrides.
 - Server-side role and grant enforcement; lease/project assignment rules.
 - Supervisor mode in the agent image; one host Compose stack.
 - `manager` service with replicas and housekeeping jobs.

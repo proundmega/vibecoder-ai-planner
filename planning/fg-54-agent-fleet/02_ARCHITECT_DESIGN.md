@@ -36,11 +36,27 @@ Four runtime layers, one platform tier:
 - **Roles are closed**: `worker`, `reviewer`, `planner`. `manager` is a server
   service tier, not a role. Capabilities live in code, not in the DB.
 - **Credentials and models split**: `provider_credentials` owns the secret and
-  endpoint; `provider_models` owns the model id, capability metadata and
-  `roles[]`. A runtime attaches a model whose roles include its role.
+  endpoint; `provider_models` owns the model id, capability metadata, `roles[]`
+  and a default reasoning `effort`. A runtime attaches a model whose roles
+  include its role and may override the effort (reviewers can run `max`).
 - **Supervisor**: one container per host. It enrolls as the node, fetches its
   resolved configuration, and reconciles child JVMs. The config lists roles,
-  model refs and counts — never secrets.
+  model refs, effort and counts — never secrets:
+
+  ```ini
+  ; agent.ini — no secrets; fetched config wins over any secret-looking value
+  [runtime "workers"]
+  role = worker
+  model = acme/claude-sonnet
+  count = 3
+  effort = high
+
+  [runtime "reviewers"]
+  role = reviewer
+  model = acme/claude-opus
+  count = 2
+  effort = max
+  ```
 - **Manager**: a service in the main stack. It owns housekeeping and later
   desired state; replicas coordinate through Postgres locks and
   `FOR UPDATE SKIP LOCKED`.
@@ -59,6 +75,7 @@ Four runtime layers, one platform tier:
 | Post review / findings | no | yes | no |
 | Move `review → done` | no | no (D10: comment-only now; bounded small-ticket approval later) | no |
 | Draft/publish planning docs | no | no | yes (API-guarded) |
+| Reasoning effort | model default, overridable | model default, overridable up to `max` | model default, overridable |
 | Report usage | yes | yes | yes |
 
 ## Alternatives considered
@@ -125,6 +142,8 @@ CREATE TABLE provider_models (
   roles TEXT[] NOT NULL DEFAULT '{}',
   max_tokens INTEGER,
   context_window INTEGER,
+  effort VARCHAR(20) NOT NULL DEFAULT 'medium'
+    CHECK (effort IN ('minimal','low','medium','high','max')),
   last_verified_at TIMESTAMPTZ,
   last_verify_error TEXT,
   UNIQUE (credential_id, model)
@@ -138,6 +157,8 @@ CREATE TABLE agent_runtimes (
   role VARCHAR(20) NOT NULL CHECK (role IN ('worker','reviewer','planner')),
   model_id BIGINT NOT NULL REFERENCES provider_models(id) ON DELETE RESTRICT,
   concurrency INTEGER NOT NULL DEFAULT 1 CHECK (concurrency > 0),
+  effort VARCHAR(20)
+    CHECK (effort IS NULL OR effort IN ('minimal','low','medium','high','max')), -- NULL = model default
   status VARCHAR(20) NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending','running','draining','stopped')),
   current_project_id BIGINT REFERENCES projects(id) ON DELETE SET NULL,
@@ -187,12 +208,13 @@ ALTER TABLE tickets ADD COLUMN lease_expires_at TIMESTAMPTZ;
 | DELETE | `/api/v1/agent-nodes/:id/grants/:grantId` | JWT `AGENT_CREATE` | — | revoked grant | 403/404 |
 | GET | `/api/v1/agent-nodes/:id/config` | node credential | `?runtime=` optional | resolved runtimes, models, grants (no secrets) | 401/403 |
 | POST | `/api/v1/agent-runtimes/:id/heartbeat` | node credential + `X-Agent-Runtime` | `{status, currentProjectId}` | ack | 401/403/409 |
+| POST | `/api/v1/agent-nodes/:id/runtimes` | node credential | declared set (`role`, `modelRef`, `count`, `effort?`, `project?`) | upserted runtimes (resolved effort) | 400/401/403/409 |
 | GET/POST | `/api/v1/provider-credentials` | JWT `PROVIDER_MANAGE` | credential fields | list/create (secret masked) | 400/403 |
 | PATCH/DELETE | `/api/v1/provider-credentials/:id` | JWT `PROVIDER_MANAGE` | rotation or status | updated/masked | 403/409 |
 | POST | `/api/v1/provider-credentials/:id/discover` | JWT `PROVIDER_MANAGE` | — | discovered models (`unverified`) | 400/403/502 |
 | POST | `/api/v1/provider-credentials/:id/models` | JWT `PROVIDER_MANAGE` | `{model, displayName?, roles?}` | manual model | 400/403/409 |
 | POST | `/api/v1/provider-models/:id/test` | JWT `PROVIDER_MANAGE` | — | `{verified, latencyMs}` | 400/403/502/429 |
-| PATCH | `/api/v1/provider-models/:id` | JWT `PROVIDER_MANAGE` | `{roles?, status?, maxTokens?}` | updated model | 400/403/409 |
+| PATCH | `/api/v1/provider-models/:id` | JWT `PROVIDER_MANAGE` | `{roles?, status?, maxTokens?, effort?}` | updated model | 400/403/409 |
 
 Existing agent endpoints (`/agents/*`, claim/review/planning) keep their paths
 but authenticate with the node credential plus the runtime header, and check
@@ -218,6 +240,7 @@ revoke:  UI → grant/runtime revoked → next heartbeat 403 → runtime drains,
 | Supervisor crash mid-spawn | OOM/kill | children orphaned | PID tracking, startup sweep, deterministic names; kill -9 test | Restart the stack |
 | Partial reconcile | Backend down at boot | config fetch fails | retry with backoff, keep current children, no destructive action | Check backend reachability |
 | Model unverified | Attached before test | runtime creation 409 | attach requires `verified`; test records error | Run the test button |
+| Unsupported effort value | Provider has a lower ceiling or a different field | adapter maps/clamps | map canonical → provider; clamp and log at `debug`; unknown canonical value is 400 | Pick a supported value |
 | Credential rotation during a run | Rotation while runtimes are live | version change | runtimes resolve per run; rotation keeps model refs | None; next run uses the new secret |
 | Duplicate manager work | Two replicas tick together | duplicate audit rows | advisory lock + `SKIP LOCKED`; two-replica test | None |
 | Grant revoked mid-lease | Admin revokes a grant | 403 on next heartbeat | runtime releases the lease then drains; test asserts release | Re-grant if accidental |
@@ -269,6 +292,7 @@ revoke:  UI → grant/runtime revoked → next heartbeat 403 → runtime drains,
 | Clean cut breaks old scripts | operator confusion | docs state the cut; no shim by decision |
 | Model discovery differs per provider | incomplete lists | manual add + test is authoritative (`FR7`, `FR8`) |
 | Reviewer/planner roles have no work yet | idle runtimes | planner ships with the planning API path; reviewers use `review` tickets |
+| `max` effort increases spend | higher cost per run | surface resolved effort in usage; fg-38 budgets cap it |
 | Advisory lock leak on crash | job starvation | locks are session-scoped and released on disconnect; test reconnect |
 
 ## Review focus

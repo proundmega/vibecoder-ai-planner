@@ -19,8 +19,8 @@ Ordered slices. Each slice should be independently verifiable.
 3. **Role and grant enforcement** — closed enum, role middleware, project
    assignment rules on claim/review/planning. Verify: 403 matrix tests.
 4. **Credential/model registry** — CRUD, encrypted secret, rotation,
-   discovery, manual add, test, reference guards. Verify: registry tests +
-   redaction assertions.
+   discovery, manual add, test, reasoning effort, reference guards. Verify:
+   registry tests + redaction assertions.
 5. **Supervisor** — `SUPERVISOR_CONFIG`, child spawn, deterministic names,
    reconcile, drain, SIGHUP; no secrets in config. Verify: apply-twice,
    remove-one, kill -9 tests.
@@ -66,6 +66,7 @@ Ordered slices. Each slice should be independently verifiable.
 | `agent/src/main/java/com/vibecode/agent/config/AgentConfig.java` | MODIFY | Remove static auth and client role; runtime id/role |
 | `agent/src/main/java/com/vibecode/agent/service/AgentAuthManager.java` | MODIFY | Node credentials only |
 | `agent/src/main/java/com/vibecode/agent/service/RuntimeApi.java` | CREATE | Config/heartbeat/claim with runtime header |
+| `agent/src/main/java/com/vibecode/agent/service/ProviderEffort.java` | CREATE | Canonical effort mapping/clamping per provider |
 | `agent/agent.ini.example` | CREATE | Supervisor config example, secrets forbidden |
 | `agent/docker-compose.yml` | MODIFY | Supervisor entrypoint; one service |
 | `agent/docker-compose.remote.yml.example` | MODIFY | Same, single stack |
@@ -129,6 +130,8 @@ One row per requirement. This table is the contract between `01` and the code.
 | FR16 | backend integration | `backend/src/__tests__/integration/agentFleet.integration.test.js` | `FR16 migrate and rollback on a fresh database` | `npm run test:integration` |
 | FR17 | backend route | `backend/src/__tests__/agentNodes.test.js` | `FR17 audit rows for enrollment and grant changes` | `npm test` |
 | FR18 | backend route | `backend/src/__tests__/providerRegistry.test.js` | `FR18 delete in-use credential returns 409` | `npm test` |
+| FR19 | backend unit | `backend/src/__tests__/providerRegistry.test.js` | `FR19 resolves model effort default and runtime override` | `npm test` |
+| FR19 | agent unit | `agent/src/test/java/com/vibecode/agent/service/ProviderEffortTest.java` | `FR19 maps and clamps effort per provider` | `mvn test` |
 | NFR1 | backend route | `backend/src/__tests__/agentRoleEnforcement.test.js` | `NFR1 deny-by-default matrix` | `npm test` |
 | NFR2 | backend unit | `backend/src/__tests__/providerRegistry.test.js` | `NFR2 no secret in responses or logs` | `npm test` |
 | NFR2 | agent unit | `agent/src/test/java/com/vibecode/agent/supervisor/RuntimeConfigTest.java` | `NFR2 no secret in config or argv` | `mvn test` |

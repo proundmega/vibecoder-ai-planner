@@ -22,10 +22,11 @@ depends_on: ["fg-30"]
 ## Relationship to fg-54 (planned)
 
 `fg-54` owns the credential/model registry (`provider_credentials`,
-`provider_models`, role tags, verification). This ticket stays the consumer:
-routing and budget policy select a model from that registry, and usage
-attribution records `runtime_id`/`node_id` once fg-54 lands. No requirement
-changes; `agent` in FR8 means the runtime.
+`provider_models`, role tags, verification, reasoning effort). This ticket stays
+the consumer: routing and budget policy select a model from that registry, the
+resolved effort is a cost signal, and usage attribution records
+`runtime_id`/`node_id` once fg-54 lands. No requirement changes; `agent` in FR8
+means the runtime.
 
 ## Why this ticket exists
 

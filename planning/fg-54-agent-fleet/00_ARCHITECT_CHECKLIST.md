@@ -109,6 +109,7 @@ after the implementation PR is merged and `03` has a dated Results row.
 | 5 | Secrets in the supervisor config | allowed / forbidden | forbidden | **Forbidden.** Config carries roles/models/counts only; secrets are fetched over the authenticated node channel. |
 | 6 | Reviewer authority | comment only / full close | comment only | **Comment only for now.** Reviewers will later approve a small subset of small tickets; that bounded capability is `D10`, not part of this suite. |
 | 7 | Planner publish path | direct push / guarded API | guarded API | **Confirmed:** planners draft and publish through the same guarded API path as workers; no direct repo pushes. |
+| 8 | Reasoning effort | free-form / canonical enum + override | canonical enum | **Canonical `minimal|low|medium|high|max` default per model, optional per-runtime override.** Adapters map or clamp provider-specific values; reviewers may run at `max`. |
 
 ## Completion gate
 
