@@ -33,7 +33,7 @@ FlowMetricsService.deriveStage(ticket) + in-process aggregation
 | 3 | pending row in `approval_requests` for the ticket | `human_approval` |
 | 4 | `status='review'` | `review` |
 | 5 | `status='in_progress'` | `in_progress` |
-| 6 | `status='backlog'` and `assigned_agent_id IS NOT NULL` | `assigned` |
+| 6 | `status='backlog'` and `assigned_runtime_id IS NOT NULL` | `assigned` |
 | 7 | `status='backlog'` and `ready_at IS NOT NULL` and (`readiness_override_expires_at IS NULL OR readiness_override_expires_at > NOW()`) | `ready` |
 | 8 | `status='backlog'` and `plan_approved_at IS NOT NULL` | `planning` (substate `approval_recorded`, not ready) |
 | 9 | `status='backlog'` and (`planning_status IN ('template_selected','in_progress','review')` or `phase IN ('planning','plan_approved')`) | `planning` |
@@ -158,7 +158,7 @@ The first version should be read-only and refresh every 30–60 seconds.
   - agent log MDC field and HTTP header (`X-Run-Id`);
   - `harness_events.run_id` (fg-41);
   - PR body marker `<!-- vibecode-run: <uuid> -->` (marker only, no secrets).
-- Include `ticket_id`, `agent_id`, `project_id`, `stage`, `outcome`.
+- Include `ticket_id`, `runtime_id`, `project_id`, `stage`, `outcome`.
 - Do not include prompts, source contents or secrets.
 
 ## Alerts (Phase 3)

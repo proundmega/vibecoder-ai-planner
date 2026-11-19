@@ -22,7 +22,7 @@ The gate only helps if it covers all of them. Today the following paths move a t
 
 | Path | Entry point | Current write |
 |---|---|---|
-| Agent pickup | `POST /api/v1/tickets/:id/pickup` → `TicketService.pickUpTicket` (`TicketService.js:267-272`) | `UPDATE status='in_progress', assigned_agent_id, locked_at` |
+| Agent pickup | `POST /api/v1/tickets/:id/pickup` → `TicketService.pickUpTicket` (`TicketService.js:267-272`) | `UPDATE status='in_progress', assigned_runtime_id, locked_at` |
 | UI “Start Work” | `TicketDetail.vue:115` → `updateTicket` → `PUT /api/v1/tickets/:id` (`frontend/src/api/tickets.ts:36`) → `TicketService.update` → `Ticket.update` (`models/ticket.js:89-97`) | sets `status`; `VALID_TRANSITIONS` allows `backlog -> in_progress` |
 | Status endpoint | `POST /api/v1/tickets/:id/status` (`api/tickets.js:146`) → `TicketService.updateStatus` (`TicketService.js:207`) → `Ticket.updateStatus` (`models/ticket.js:169-181`) | sets `status` only |
 | Phase transition | `POST /api/v1/tickets/:id/phases/transition` → `PhaseService.transition` (`PhaseService.js:51-68`) | writes `phase` **and** `status`; `PHASE_TO_STATUS` maps `assigned`/`in_progress`/`blocked` → `in_progress` |

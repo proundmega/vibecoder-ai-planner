@@ -84,11 +84,11 @@ Do not weaken the normal build guard. Add an explicit fixer-only allow path:
 Run lifecycle and identity (FR13):
 
 1. The fixer calls `ApiService.startHarnessRun(..., purpose='fix', fixRequestId=<claimed request>, baseSha=<reviewed_sha>)`. `POST /harness/runs` and `HarnessRunService.startRun` accept and validate the three new fields.
-2. The fixer agent is provisioned with the same `owner_id` as the ticket's assigned agent. `startRun`'s `t.assigned_agent_id = a.owner_id` check stays in force; the fixer-only allowance does not bypass it. If a deployment cannot share the owner, the fix path must use the claimed fix lease as the authorization instead — a separate design change, not Phase 1.
+2. The fixer agent is provisioned with the same `owner_id` as the ticket's assigned runtime. `startRun`'s ownership check (`t.assigned_runtime_id` resolves through its node to the same owner) stays in force; the fixer-only allowance does not bypass it. If a deployment cannot share the owner, the fix path must use the claimed fix lease as the authorization instead — a separate design change, not Phase 1.
 3. After start, the fixer records the normal checkpoints (`created` → `cloned` → `session_ready` → `prompting` → `verifying` → `publishing` → `done`), sends heartbeats during long steps, and calls `finishRun` with `succeeded` or `failed`.
 4. `startRun` still enforces `t.status='in_progress'`, the one-active-run lease and the existing PR/head guard for `purpose=build`.
 
-`ticket_fix_requests.claimed_by` stores the numeric `agents.id` (BIGINT), matching `harness_runs.agent_id`; compare it with the authenticated agent id, not the agent name or API key.
+`ticket_fix_requests.claimed_by` stores the numeric `agent_runtimes.id` (BIGINT), matching `harness_runs.runtime_id`; compare it with the authenticated runtime id, not the runtime name or node credential.
 
 The normal build `startRun` continues to refuse tickets and prior runs with PR/head evidence.
 

@@ -45,7 +45,10 @@ Ordered slices. Each slice should be independently verifiable.
 | `backend/src/models/ticket.js` | MODIFY | `assigned_runtime_id` claim marker; no new expiry column |
 | `backend/src/services/AgentNodeService.js` | CREATE | Enroll, config, heartbeat, provider-config, revoke/drain |
 | `backend/src/services/AgentRoleService.js` | CREATE | Role/grant resolution and denial audit |
-| `backend/src/services/ProviderRegistryService.js` | CREATE | Credential/model CRUD, discovery, test, guards |
+| `backend/src/services/ProviderRegistryService.js` | CREATE | Credential/model CRUD, discovery, test, guards, secret delivery |
+| `backend/src/services/ProviderService.js` | MODIFY | Read the registry; remove fused provider columns |
+| `backend/src/services/ProviderRouter.js` | MODIFY | Role lookup from verified `provider_models` |
+| `backend/src/controllers/providerController.js` | MODIFY | Registry CRUD, effort, delete guards |
 | `backend/src/services/AgentEnrollmentService.js` | MODIFY | Node-scoped tokens; remove project/provider binding |
 | `backend/src/services/AgentService.js` | MODIFY | Runtime records, no project-bound agent |
 | `backend/src/services/TicketService.js` | MODIFY | Claim by runtime + grant; stale sweep skips active run leases |
@@ -59,9 +62,11 @@ Ordered slices. Each slice should be independently verifiable.
 | `backend/src/api/tickets.js` | MODIFY | Pickup/release by runtime role and grant |
 | `backend/src/api/review.js` | MODIFY | Reviewer role and project grant checks |
 | `backend/src/api/harnessRuns.js` | MODIFY | Runtime ownership; single lease authority |
+| `backend/src/api/agentHeartbeat.js` | MODIFY | Node/runtime heartbeat instead of agent key |
 | `backend/src/api/v1/index.js` | MODIFY | Mount node/registry routers |
 | `backend/src/middleware/agentRuntimeAuth.js` | CREATE | Node credential + `X-Agent-Runtime` resolution |
 | `backend/src/middleware/agentNodeAuth.js` | CREATE | Bind `:id` to the presented node credential; list scope |
+| `backend/src/middleware/agentNodeAccess.js` | CREATE | JWT node ownership and project-admin scope for grants |
 | `backend/src/middleware/agentRole.js` | CREATE | Role/grant checks and denial audit |
 | `backend/src/middleware/auth.js` | MODIFY | Remove static `ak_…`/`X-API-Key` agent path; node tokens only |
 | `backend/src/middleware/agentProjectScope.js` | MODIFY | Runtime→grant→project scope assertions |
@@ -120,8 +125,9 @@ starts; this table is the expected shape, not a frozen diff.
 - FK remap: detach FKs to `agents(id)` in `agent_actions`, `agent_heartbeats`,
   `usage_logs`, `telemetry_events`, `harness_runs`, `harness_leases`,
   `harness_usage`, `repo_profile_validations` and `tickets`, rename the columns
-  to `runtime_id`/`assigned_runtime_id`; clear ticket assignments and add the
-  new FK to `agent_runtimes`.
+  to `runtime_id`/`assigned_runtime_id`, then **clear every legacy value**
+  (NULL the nullable columns, delete legacy rows where the column is
+  `NOT NULL`), and add the new FK to `agent_runtimes`.
 - Drops: fg-53 token/audit tables after their internal FKs, then `agents`,
   `providers` and `project_providers`. No secret or identity data is migrated.
 - Backfill: none — the clean cut is approved in `00`; the seeded-DB test
@@ -148,18 +154,23 @@ One row per requirement. This table is the contract between `01` and the code.
 | FR11 | agent unit | `agent/src/test/java/com/vibecode/agent/supervisor/SupervisorReconcileTest.java` | `FR11 apply twice is a no-op; remove one drains only that child` | `mvn test` |
 | FR11 | agent integration | `agent/src/test/java/com/vibecode/agent/supervisor/SupervisorIntegrationTest.java` | `FR11 kill -9 then restart yields the exact child set` | `mvn test` |
 | FR12 | agent unit | `agent/src/test/java/com/vibecode/agent/supervisor/RuntimeConfigTest.java` | `FR12 rejects secrets and unknown keys in the ini` | `mvn test` |
+| FR12 | backend route | `backend/src/__tests__/agentNodes.test.js` | `FR12 provider-config requires the node credential and runtime ownership` | `npm test` |
+| FR12 | backend route | `backend/src/__tests__/agentNodes.test.js` | `FR12 provider-config sets no-store and audits the read` | `npm test` |
 | FR13 | backend integration | `backend/src/__tests__/integration/agentFleet.integration.test.js` | `FR13 two manager replicas run one job each` | `npm run test:integration` |
 | FR14 | backend unit | `backend/src/__tests__/managerJobs.test.js` | `FR14 each job is idempotent` | `npm test` |
 | FR14 | backend integration | `backend/src/__tests__/integration/agentFleet.integration.test.js` | `FR14 stale sweep skips tickets with an unexpired run lease` | `npm run test:integration` |
 | FR15 | frontend unit | `frontend/src/__tests__/agentFleet.test.ts` | `FR15 renders verified state and role tags` | `npm test -- --run` |
-| FR16 | backend integration | `backend/src/__tests__/integration/agentFleet.integration.test.js` | `FR16 migrate and rollback on a fresh database` | `npm run test:integration` |
+| FR16 | backend integration | `backend/src/__tests__/integration/agentFleet.integration.test.js` | `FR16 migrate and rollback on a fresh and a seeded database` | `npm run test:integration` |
 | FR17 | backend route | `backend/src/__tests__/agentNodes.test.js` | `FR17 audit rows for enrollment and grant changes` | `npm test` |
+| FR17 | backend route | `backend/src/__tests__/agentNodes.test.js` | `FR17 provider-config read writes an audit row` | `npm test` |
 | FR18 | backend route | `backend/src/__tests__/providerRegistry.test.js` | `FR18 delete in-use credential returns 409` | `npm test` |
 | FR19 | backend unit | `backend/src/__tests__/providerRegistry.test.js` | `FR19 resolves model effort default and runtime override` | `npm test` |
 | FR19 | agent unit | `agent/src/test/java/com/vibecode/agent/service/ProviderEffortTest.java` | `FR19 maps and clamps effort per provider` | `mvn test` |
 | FR20 | backend route | `backend/src/__tests__/agentNodes.test.js` | `FR20 foreign node id returns 404 and list scope is enforced` | `npm test` |
+| FR21 | backend route | `backend/src/__tests__/agentNodes.test.js` | `FR21 owner and project-admin scope matrix for node mutations` | `npm test` |
 | NFR1 | backend route | `backend/src/__tests__/agentRoleEnforcement.test.js` | `NFR1 deny-by-default matrix` | `npm test` |
 | NFR2 | backend unit | `backend/src/__tests__/providerRegistry.test.js` | `NFR2 no secret in responses or logs` | `npm test` |
+| NFR2 | backend route | `backend/src/__tests__/agentNodes.test.js` | `NFR2 provider-config plaintext is never logged` | `npm test` |
 | NFR2 | agent unit | `agent/src/test/java/com/vibecode/agent/supervisor/RuntimeConfigTest.java` | `NFR2 no secret in config or argv` | `mvn test` |
 | NFR3 | agent unit | `agent/src/test/java/com/vibecode/agent/supervisor/SupervisorReconcileTest.java` | `NFR3 reconcile is crash-safe` | `mvn test` |
 | NFR4 | backend integration | `backend/src/__tests__/integration/agentFleet.integration.test.js` | `NFR4 replicas produce one effect per item` | `npm run test:integration` |
@@ -202,7 +213,9 @@ grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_h
 
 | Round | Reviewer | Blocking findings | Resolution | Re-review |
 |---|---|---|---|---|
-| 0 | pending planning review | — | — | — |
+| 0 | primary (planning) | none | initial suite | `dfb2d32` |
+| 1 | primary (planning) | B1-B7 design/contract gaps | `6d6a3e3` — migration, provider replacement, node binding, permissions, lease authority, fg-32, grants | `6d6a3e3` |
+| 2 | primary (planning) | 3 residual: seeded-row reset, JWT node scope, provider-config coverage | this commit | pending |
 
 ## Results
 

@@ -154,6 +154,8 @@ CREATE TABLE provider_models (
     CHECK (effort IN ('minimal','low','medium','high','max')),
   last_verified_at TIMESTAMPTZ,
   last_verify_error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (credential_id, model)
 );
 
@@ -236,13 +238,17 @@ The migration **creates** `agent_runtimes`; it does not rename `agents`. The
 legacy table is removed after its references are detached. No row is carried
 over, so the ordering is:
 
-1. Create the new tables and partial indexes above.
+1. Create the new tables and partial indexes above. The `NULLS NOT DISTINCT`
+   constraint requires PG15+; the repo runs pg17.
 2. Detach every FK that points at `agents(id)`, then rename the column to
-   `runtime_id` (or `assigned_runtime_id`) so historical rows keep their old
-   numeric values without a constraint. Tables: `agent_actions`,
-   `agent_heartbeats`, `usage_logs`, `telemetry_events`, `harness_runs`,
-   `harness_leases`, `harness_usage`, `harness_events` (no FK today),
-   `repo_profile_validations`, and `tickets.assigned_agent_id`.
+   `runtime_id` (or `assigned_runtime_id`). Then **remove every legacy value**
+   so a new runtime starting at id 1 cannot inherit an old row: set nullable
+   columns to `NULL`, and delete legacy rows where the renamed column is
+   `NOT NULL` (`harness_runs`, `harness_leases`, `agent_heartbeats`,
+   `agent_actions`). Tables: `agent_actions`, `agent_heartbeats`, `usage_logs`,
+   `telemetry_events`, `harness_runs`, `harness_leases`, `harness_usage`,
+   `harness_events` (no FK today), `repo_profile_validations`, and
+   `tickets.assigned_agent_id`.
 3. `tickets`: rename to `assigned_runtime_id`, set it to `NULL` (legacy
    assignments cannot be mapped under the clean cut), then add
    `FOREIGN KEY (assigned_runtime_id) REFERENCES agent_runtimes(id) ON DELETE SET NULL`.
@@ -308,11 +314,11 @@ ticket cannot be released twice.
 |---|---|---|---|---|---|
 | POST | `/api/v1/agent-nodes/enroll` | join token | `{token, name, hostname, fingerprint}` | `{node, accessToken, refreshToken}` | 400/401/409/429 |
 | GET | `/api/v1/agent-nodes` | JWT `AGENT_READ` | — | nodes owned by the caller, or granted to a project the caller belongs to; super_admin sees all | 403 |
-| POST | `/api/v1/agent-nodes/:id/revoke` | JWT `AGENT_REVOKE` | — | node + runtimes marked | 404/409 |
-| POST | `/api/v1/agent-nodes/:id/drain` | JWT `AGENT_REVOKE` | — | drain accepted | 404 |
+| POST | `/api/v1/agent-nodes/:id/revoke` | JWT `AGENT_REVOKE` + node owner (or super_admin) | — | node + runtimes marked | 403/404/409 |
+| POST | `/api/v1/agent-nodes/:id/drain` | JWT `AGENT_REVOKE` + node owner (or super_admin) | — | drain accepted | 403/404 |
 | GET | `/api/v1/agent-nodes/:id/grants` | JWT `AGENT_READ` + node access | — | grants | 403/404 |
-| POST | `/api/v1/agent-nodes/:id/grants` | JWT `AGENT_CREATE` + project admin | `{projectId, role}` | grant (reactivates a revoked tuple) | 400/403/409 |
-| DELETE | `/api/v1/agent-nodes/:id/grants/:grantId` | JWT `AGENT_CREATE` | — | revoked grant | 403/404 |
+| POST | `/api/v1/agent-nodes/:id/grants` | JWT `AGENT_CREATE` + node owner + project admin | `{projectId, role}` | grant (reactivates a revoked tuple) | 400/403/404/409 |
+| DELETE | `/api/v1/agent-nodes/:id/grants/:grantId` | JWT `AGENT_CREATE` + node owner + project admin; grant must belong to `:id` | — | revoked grant | 403/404 |
 | GET | `/api/v1/agent-nodes/:id/config` | node credential, `:id` **must equal** the credential node | `?runtime=` optional | resolved runtimes, models, grants (no secrets) | 401/403/404 |
 | POST | `/api/v1/agent-nodes/:id/runtimes` | node credential, `:id` **must equal** the credential node | declared set (`role`, `modelRef`, `count`, `effort?`, `project?`) | upserted runtimes (resolved effort) | 400/401/403/404/409 |
 | GET | `/api/v1/agent-nodes/:id/runtimes/:runtimeId/provider-config` | node credential + runtime ownership | — | decrypted provider config for one run (no-store, audited) | 401/403/404 |
@@ -330,6 +336,13 @@ No new permission codes are introduced: nodes use `AGENT_READ`,
 `PROJECT_MANAGE_MEMBERS` exactly like the current provider routes. Node-scoped
 routes resolve the presented credential first and reject a mismatched `:id`
 with 404 (existence is not leaked).
+
+JWT node mutations are scoped twice. **Node ownership** (`owner_id = caller`,
+or `super_admin`) is required for revoke, drain and grant changes; **project
+admin** on the grant's project is additionally required to create or delete a
+grant. A project admin who does not own the node can manage grants for their
+project but cannot revoke or drain the node. Grant deletion validates
+`(nodeId, grantId)` and returns 404 for a foreign pair.
 
 Existing agent endpoints (`/agents/*`, claim/review/planning) keep their paths
 but authenticate with the node credential plus the runtime header, and check
@@ -362,7 +375,8 @@ revoke:  UI → grant/runtime revoked → next heartbeat 403 → runtime drains,
 | Node reads another node's config | Credential presents a foreign `:id` | 404/403 | credential-to-`:id` binding in `agentNodeAuth`; test asserts 404 | None |
 | Double release by the manager | Ticket lock and run lease both expire | duplicate release/audit | single authority: skip tickets with an unexpired `harness_leases` row; `SKIP LOCKED`; concurrency test | None |
 | Re-grant after revoke | `revoked_at` set, same tuple inserted | unique violation | partial unique index on active grants; re-grant clears `revoked_at` (upsert) | None |
-| Seeded migration destroys legacy rows | Clean-cut drop | expected data loss | documented; seeded-DB test asserts schema and cleared references | Restore from backup only if needed |
+| Cross-owner grant change | Non-owner project admin targets a node or a foreign `grantId` | 403/404 | ownership + project-admin checks; `(nodeId, grantId)` binding; FR21 test | None |
+| Seeded migration destroys legacy rows | Clean-cut drop/reset | expected data loss | documented; the seeded test asserts **no legacy id remains** in any `runtime_id`/`assigned_runtime_id` and no row matches a new runtime | Restore from backup only if needed |
 | Role confusion from a stale client | Old container without runtime header | 401/403 | reject runtime-less agent calls; no env-based fallback | Rebuild the container |
 | Delete in-use credential/model | UI delete | 409 | `ON DELETE RESTRICT` + explicit reference list | Disable or rotate instead |
 
