@@ -184,7 +184,7 @@ CREATE TABLE agent_node_enrollment_tokens (
   owner_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name VARCHAR(100) NOT NULL,
   token_prefix VARCHAR(16) NOT NULL,
-  token_hash CHAR(64) NOT NULL,
+  token_hash CHAR(64) NOT NULL UNIQUE,
   max_uses INTEGER NOT NULL DEFAULT 1 CHECK (max_uses > 0),
   used_count INTEGER NOT NULL DEFAULT 0 CHECK (used_count >= 0),
   expires_at TIMESTAMPTZ NOT NULL,
@@ -199,7 +199,7 @@ CREATE TABLE agent_node_access_tokens (
   id BIGSERIAL PRIMARY KEY,
   node_id BIGINT NOT NULL REFERENCES agent_nodes(id) ON DELETE CASCADE,
   token_prefix VARCHAR(16) NOT NULL,
-  token_hash CHAR(64) NOT NULL,
+  token_hash CHAR(64) NOT NULL UNIQUE,
   expires_at TIMESTAMPTZ NOT NULL,
   revoked_at TIMESTAMPTZ,
   last_used_at TIMESTAMPTZ,
@@ -210,7 +210,7 @@ CREATE TABLE agent_node_refresh_tokens (
   id BIGSERIAL PRIMARY KEY,
   node_id BIGINT NOT NULL REFERENCES agent_nodes(id) ON DELETE CASCADE,
   token_prefix VARCHAR(16) NOT NULL,
-  token_hash CHAR(64) NOT NULL,
+  token_hash CHAR(64) NOT NULL UNIQUE,
   family_id UUID NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
   revoked_at TIMESTAMPTZ,
@@ -261,21 +261,23 @@ over, so the ordering is:
    `NOT NULL` (`harness_runs`, `harness_leases`, `agent_heartbeats`). Tables: `agent_actions`, `agent_heartbeats`, `usage_logs`,
    `telemetry_events`, `harness_runs`, `harness_leases`, `harness_usage`,
    `repo_profile_validations`, and `tickets.assigned_agent_id`.
-3. `tickets`: rename to `assigned_runtime_id`, set it to `NULL` (legacy
+3. Append-only exception: `ALTER TABLE harness_events ADD COLUMN runtime_id BIGINT;`
+   Do **not** rename, null or delete historical `agent_id` rows (fg-41 owns the
+   append-only store).
+4. `tickets`: rename to `assigned_runtime_id`, set it to `NULL` (legacy
    assignments cannot be mapped under the clean cut), then add
    `FOREIGN KEY (assigned_runtime_id) REFERENCES agent_runtimes(id) ON DELETE SET NULL`.
-4. Drop the fg-53 token/audit tables (`agent_enrollment_tokens`,
+5. Drop the fg-53 token/audit tables (`agent_enrollment_tokens`,
    `agent_access_tokens`, `agent_refresh_tokens`, `agent_auth_events`) after
    dropping their internal FKs; the node tables replace them.
-5. Drop `agents` (all FKs are gone).
-6. Drop `project_providers` and `providers`. Secrets are **not migrated**; the
+6. Drop `agents` (all FKs are gone).
+7. Drop `project_providers` and `providers`. Secrets are **not migrated**; the
    registry starts empty and credentials are re-entered.
 
 **Append-only exception:** `harness_events` (fg-41) is deliberately excluded
-from the reset. The migration does **not** rename, null or delete its
-historical rows; `agent_id` stays immutable. It only adds a nullable
-`runtime_id` column for events written after the cut, so no update or delete
-touches the append-only store and the fg-41 trigger/test stay valid.
+from the reset. Step 3 only adds a nullable `runtime_id` column for events
+written after the cut, so no update or delete touches the append-only store and
+the fg-41 trigger/test stay valid.
 
 The rollback recreates the empty legacy tables, renames the columns back and
 restores the old FKs. It restores schema only; the clean cut accepts data loss,

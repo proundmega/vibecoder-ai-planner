@@ -130,9 +130,9 @@ starts; this table is the expected shape, not a frozen diff.
   `NOT NULL`), and add the new FK to `agent_runtimes`.
 - Drops: fg-53 token/audit tables after their internal FKs, then `agents`,
   `providers` and `project_providers`. No secret or identity data is migrated.
-- Append-only: `harness_events` (fg-41) is excluded from the reset. Only a
-  nullable `runtime_id` column is added; historical `agent_id` rows stay
-  untouched and no update/delete runs against the event store.
+- Append-only: `ALTER TABLE harness_events ADD COLUMN runtime_id BIGINT;`
+  (fg-41). No rename/update/delete of historical rows; `agent_id` stays
+  immutable and the event-store trigger/test is untouched.
 - Backfill: none — the clean cut is approved in `00`; the seeded-DB test
   asserts the migration succeeds and legacy references are cleared.
 - Rollback risk: recreates empty legacy tables and old columns; restores schema
@@ -159,6 +159,7 @@ One row per requirement. This table is the contract between `01` and the code.
 | FR11 | agent integration | `agent/src/test/java/com/vibecode/agent/supervisor/SupervisorIntegrationTest.java` | `FR11 kill -9 then restart yields the exact child set` | `mvn test` |
 | FR12 | agent unit | `agent/src/test/java/com/vibecode/agent/supervisor/RuntimeConfigTest.java` | `FR12 rejects secrets and unknown keys in the ini` | `mvn test` |
 | FR12 | backend route | `backend/src/__tests__/agentNodes.test.js` | `FR12 provider-config requires the node credential and runtime ownership` | `npm test` |
+| FR12 | backend route | `backend/src/__tests__/agentNodes.test.js` | `FR12 provider-config returns the key, model, endpoint and effort` | `npm test` |
 | FR12 | backend route | `backend/src/__tests__/agentNodes.test.js` | `FR12 provider-config sets no-store and audits the read` | `npm test` |
 | FR13 | backend integration | `backend/src/__tests__/integration/agentFleet.integration.test.js` | `FR13 two manager replicas run one job each` | `npm run test:integration` |
 | FR14 | backend unit | `backend/src/__tests__/managerJobs.test.js` | `FR14 each job is idempotent` | `npm test` |
@@ -220,7 +221,8 @@ grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_h
 | 0 | primary (planning) | none | initial suite | `dfb2d32` |
 | 1 | primary (planning) | B1-B7 design/contract gaps | `6d6a3e3` — migration, provider replacement, node binding, permissions, lease authority, fg-32, grants | `6d6a3e3` |
 | 2 | primary (planning) | 3 residual: seeded-row reset, JWT node scope, provider-config coverage | `70ce671` | `70ce671` |
-| 3 | primary (planning) | grant scope contradiction, append-only `harness_events` | this commit | pending |
+| 3 | primary (planning) | grant scope contradiction, append-only `harness_events` | `b9ed38e` | approved (round 4) |
+| 4 | primary (planning) | none — minor notes only | notes applied in this commit | approved — merge pending |
 
 ## Results
 
