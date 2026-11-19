@@ -40,7 +40,7 @@ On a 2 TB SSD this is manageable at first, but long-running swarms will eventual
 - **FR1 - Workspace layout:** each runtime gets `/repos/runtimes/<runtimeId>/` and each ticket a subdirectory; no runtime writes into another runtime's root.
 - **FR2 - Ticket cleanup:** remove the ticket workspace only after the run reaches a terminal state and the lease is released (success, failure or explicit release). If the JVM exits uncleanly, preserve the workspace until the fg-33 reaper expires the lease and marks the run terminal; never delete an active workspace.
 - **FR3 - Idle refresh:** if a runtime has no active ticket/lease for `AGENT_IDLE_REFRESH_MS` (default 2h), the supervisor stops and restarts that child, removing its workspace/caches; the runtime record keeps the same identity and refreshes its node credential.
-- **FR4 - Max lifetime:** recycle a container after `AGENT_MAX_LIFETIME_HOURS` even if busy, but only between tickets (never mid-ticket).
+- **FR4 - Max lifetime:** recycle a runtime after `AGENT_MAX_LIFETIME_HOURS` even if busy, but only between tickets (never mid-ticket).
 - **FR5 - Disk watermarks:** at 70% warn, 80% stop spawning new agents, 85% clean idle workspaces, 90% emergency recycle oldest idle agents and alert.
 - **FR6 - Inode guard:** track inode usage and treat it like disk pressure.
 - **FR7 - Logs:** Docker json-file rotation (`max-size=10m`, `max-file=3`); no unbounded container logs.

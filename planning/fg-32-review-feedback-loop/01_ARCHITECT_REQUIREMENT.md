@@ -4,6 +4,11 @@
 **Revised:** 2026-11-03 (fg-33 fixer-run integration: FR13, run lifecycle, identity rule)
 **Related code:** `ReviewProcessor`, `HarnessTicketProcessor`, `WorkspaceManager`, `PhaseService`, `CodeReview.vue`, `PhaseReview.vue`
 
+**fg-54 note:** the fixer is a `worker` runtime (no `AGENT_MODE=fix`); reviewer
+and fixer are separate `(node, project, role)` grants, and
+`tickets.assigned_agent_id` becomes `assigned_runtime_id`. The fix-request lease
+in FR4 is separate from the run lease in `harness_leases`.
+
 ## Problem
 
 When the reviewer proposes changes, the loop stops. There is no automatic path from review findings back to a Java agent that can correct the branch.

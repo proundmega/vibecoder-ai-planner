@@ -10,9 +10,9 @@
 Ordered slices. Each slice should be independently verifiable.
 
 1. **Schema and models** — `agent_nodes`, `agent_node_grants`,
-   `agent_runtimes`, `provider_credentials`, `provider_models`,
-   `agent_node_enrollment_tokens`, lease columns; rollback. Verify:
-   `npm run db:migrate` + rollback on a fresh DB.
+   `agent_runtimes`, `provider_credentials`, `provider_models`, node token
+   tables, legacy FK detach/drop; rollback. Verify:
+   `npm run db:migrate` + rollback on a **fresh and a seeded** DB.
 2. **Node enrollment and auth** — owner-scoped join tokens, node credential
    pair, runtime header resolution; remove static agent auth. Verify: enroll →
    config → heartbeat tests and a 401 for static keys.
@@ -36,29 +36,40 @@ Ordered slices. Each slice should be independently verifiable.
 
 | File | Action | Change |
 |---|---|---|
-| `backend/src/migrations/056_agent_fleet.sql` | CREATE | New tables, rename, dropped legacy columns |
-| `backend/src/migrations/056_agent_fleet_rollback.sql` | CREATE | Reverse the migration |
+| `backend/src/migrations/056_agent_fleet.sql` | CREATE | New tables, legacy FK detach/drop, claim-column rename |
+| `backend/src/migrations/056_agent_fleet_rollback.sql` | CREATE | Reverse the migration (schema only) |
 | `backend/src/migrations/apply.js` | MODIFY | Register 056 after 055 |
 | `backend/src/models/agentNode.js` | CREATE | Node + grant persistence |
-| `backend/src/models/agentRuntime.js` | CREATE | Runtime persistence and lease helpers |
+| `backend/src/models/agentRuntime.js` | CREATE | Runtime persistence and claim helpers |
 | `backend/src/models/providerCredential.js` | CREATE | Credential + model persistence |
-| `backend/src/models/ticket.js` | MODIFY | `assigned_runtime_id`, `lease_expires_at` |
-| `backend/src/services/AgentNodeService.js` | CREATE | Enroll, config, heartbeat, revoke/drain |
+| `backend/src/models/ticket.js` | MODIFY | `assigned_runtime_id` claim marker; no new expiry column |
+| `backend/src/services/AgentNodeService.js` | CREATE | Enroll, config, heartbeat, provider-config, revoke/drain |
 | `backend/src/services/AgentRoleService.js` | CREATE | Role/grant resolution and denial audit |
 | `backend/src/services/ProviderRegistryService.js` | CREATE | Credential/model CRUD, discovery, test, guards |
 | `backend/src/services/AgentEnrollmentService.js` | MODIFY | Node-scoped tokens; remove project/provider binding |
 | `backend/src/services/AgentService.js` | MODIFY | Runtime records, no project-bound agent |
-| `backend/src/services/TicketService.js` | MODIFY | Claim by runtime + grant; lease expiry |
-| `backend/src/services/PoolManager.js` | MODIFY | Stop container-per-agent creation; manager owns reconciliation |
-| `backend/src/api/agentNodes.js` | CREATE | Node, grant, config, heartbeat routes |
+| `backend/src/services/TicketService.js` | MODIFY | Claim by runtime + grant; stale sweep skips active run leases |
+| `backend/src/services/HeartbeatService.js` | MODIFY | Node/runtime heartbeat and expiry |
+| `backend/src/services/PoolManager.js` | MODIFY | Remove container-per-agent creation; resolve registry models |
+| `backend/src/api/agentNodes.js` | CREATE | Node, grant, config, provider-config, heartbeat routes |
 | `backend/src/api/providerRegistry.js` | CREATE | Credential/model routes |
 | `backend/src/api/agents.js` | MODIFY | Runtime header auth; remove static-key paths |
 | `backend/src/api/agentEnrollment.js` | MODIFY | Node enrollment routes; remove project/provider fields |
 | `backend/src/api/providers.js` | MODIFY | Delegate to the registry service |
+| `backend/src/api/tickets.js` | MODIFY | Pickup/release by runtime role and grant |
+| `backend/src/api/review.js` | MODIFY | Reviewer role and project grant checks |
+| `backend/src/api/harnessRuns.js` | MODIFY | Runtime ownership; single lease authority |
+| `backend/src/api/v1/index.js` | MODIFY | Mount node/registry routers |
 | `backend/src/middleware/agentRuntimeAuth.js` | CREATE | Node credential + `X-Agent-Runtime` resolution |
+| `backend/src/middleware/agentNodeAuth.js` | CREATE | Bind `:id` to the presented node credential; list scope |
 | `backend/src/middleware/agentRole.js` | CREATE | Role/grant checks and denial audit |
+| `backend/src/middleware/auth.js` | MODIFY | Remove static `ak_…`/`X-API-Key` agent path; node tokens only |
+| `backend/src/middleware/agentProjectScope.js` | MODIFY | Runtime→grant→project scope assertions |
+| `backend/src/validators/agentFleet.js` | CREATE | Node/grant/runtime Joi schemas |
+| `backend/src/validators/providerRegistry.js` | CREATE | Credential/model/effort Joi schemas |
+| `backend/openapi-generated.json` | MODIFY | Regenerate after route changes |
 | `backend/src/manager/index.js` | CREATE | Manager entrypoint and job loop |
-| `backend/src/manager/jobs/*.js` | CREATE | Lease reaper, token cleanup, heartbeat expiry, pool reconcile |
+| `backend/src/manager/jobs/*.js` | CREATE | Stale-claim sweep, token cleanup, heartbeat expiry, legacy pool drain |
 | `docker-compose.yml` | MODIFY | `manager` service (replicas, healthcheck, internal only) |
 | `agent/src/main/java/com/vibecode/agent/supervisor/Supervisor.java` | CREATE | Config parse, reconcile, signals, child lifecycle |
 | `agent/src/main/java/com/vibecode/agent/supervisor/RuntimeConfig.java` | CREATE | ini model, no-secret validation |
@@ -76,10 +87,17 @@ Ordered slices. Each slice should be independently verifiable.
 | `frontend/src/views/AgentDetail.vue` | MODIFY | Runtime status and role, no static key |
 | `frontend/src/views/Providers.vue` | MODIFY | Credentials + models with add/test/role tags |
 | `README.md`, `agent/ENROLLMENT.md` | MODIFY | New model; explicit clean-cut note |
-| `backend/src/__tests__/agentFleet*.test.js` | CREATE | Backend unit/route coverage |
-| `backend/src/__tests__/integration/agentFleet.integration.test.js` | CREATE | Migration, lease, replica behaviour |
+| `backend/src/__tests__/agentNodes.test.js` | CREATE | Enrollment, grants, config, heartbeat, node binding |
+| `backend/src/__tests__/agentRoleEnforcement.test.js` | CREATE | Role/grant matrix, cross-project denial |
+| `backend/src/__tests__/agentRuntime.test.js` | CREATE | Runtime records, effort resolution, one active project |
+| `backend/src/__tests__/providerRegistry.test.js` | CREATE | Credentials, discovery, test, effort, delete guards |
+| `backend/src/__tests__/managerJobs.test.js` | CREATE | Idempotent job units |
+| `backend/src/__tests__/integration/agentFleet.integration.test.js` | CREATE | Seeded migration/rollback, lease authority, replicas |
 | `frontend/src/__tests__/agentFleet.test.ts` | CREATE | Fleet/registry views |
-| `agent/src/test/java/com/vibecode/agent/supervisor/*Test.java` | CREATE | Reconcile, drain, no-secret config |
+| `agent/src/test/java/com/vibecode/agent/supervisor/SupervisorReconcileTest.java` | CREATE | Reconcile, drain, crash restart, 50-runtime timing |
+| `agent/src/test/java/com/vibecode/agent/supervisor/SupervisorIntegrationTest.java` | CREATE | kill -9 child-set convergence |
+| `agent/src/test/java/com/vibecode/agent/supervisor/RuntimeConfigTest.java` | CREATE | ini parsing, no-secret validation |
+| `agent/src/test/java/com/vibecode/agent/service/ProviderEffortTest.java` | CREATE | Effort mapping/clamping |
 
 Exact imports and signatures belong in `04` per slice when implementation
 starts; this table is the expected shape, not a frozen diff.
@@ -97,13 +115,19 @@ starts; this table is the expected shape, not a frozen diff.
 
 - File: `056_agent_fleet.sql` + `056_agent_fleet_rollback.sql`
 - Apply order: after `055_agent_enrollment.sql` in `apply.js`
-- Backfill: none. The clean cut is approved in `00`; no legacy key or
-  project-binding data is preserved.
-- Renames: `agents → agent_runtimes`; `tickets.assigned_agent_id →
-  assigned_runtime_id`. Postgres preserves FKs on `ALTER TABLE ... RENAME`;
-  re-verify every call site with `grep -rn assigned_agent_id backend/src`.
-- Rollback risk: dropping new tables discards node/runtime identities; with no
-  deployments that is the intended behaviour.
+- Structure: **create** `agent_runtimes` and the node/registry tables; do not
+  rename `agents`.
+- FK remap: detach FKs to `agents(id)` in `agent_actions`, `agent_heartbeats`,
+  `usage_logs`, `telemetry_events`, `harness_runs`, `harness_leases`,
+  `harness_usage`, `repo_profile_validations` and `tickets`, rename the columns
+  to `runtime_id`/`assigned_runtime_id`; clear ticket assignments and add the
+  new FK to `agent_runtimes`.
+- Drops: fg-53 token/audit tables after their internal FKs, then `agents`,
+  `providers` and `project_providers`. No secret or identity data is migrated.
+- Backfill: none — the clean cut is approved in `00`; the seeded-DB test
+  asserts the migration succeeds and legacy references are cleared.
+- Rollback risk: recreates empty legacy tables and old columns; restores schema
+  only. Rolling back discards node/runtime/registry data by design.
 
 ## Verification matrix (canonical)
 
@@ -126,12 +150,14 @@ One row per requirement. This table is the contract between `01` and the code.
 | FR12 | agent unit | `agent/src/test/java/com/vibecode/agent/supervisor/RuntimeConfigTest.java` | `FR12 rejects secrets and unknown keys in the ini` | `mvn test` |
 | FR13 | backend integration | `backend/src/__tests__/integration/agentFleet.integration.test.js` | `FR13 two manager replicas run one job each` | `npm run test:integration` |
 | FR14 | backend unit | `backend/src/__tests__/managerJobs.test.js` | `FR14 each job is idempotent` | `npm test` |
+| FR14 | backend integration | `backend/src/__tests__/integration/agentFleet.integration.test.js` | `FR14 stale sweep skips tickets with an unexpired run lease` | `npm run test:integration` |
 | FR15 | frontend unit | `frontend/src/__tests__/agentFleet.test.ts` | `FR15 renders verified state and role tags` | `npm test -- --run` |
 | FR16 | backend integration | `backend/src/__tests__/integration/agentFleet.integration.test.js` | `FR16 migrate and rollback on a fresh database` | `npm run test:integration` |
 | FR17 | backend route | `backend/src/__tests__/agentNodes.test.js` | `FR17 audit rows for enrollment and grant changes` | `npm test` |
 | FR18 | backend route | `backend/src/__tests__/providerRegistry.test.js` | `FR18 delete in-use credential returns 409` | `npm test` |
 | FR19 | backend unit | `backend/src/__tests__/providerRegistry.test.js` | `FR19 resolves model effort default and runtime override` | `npm test` |
 | FR19 | agent unit | `agent/src/test/java/com/vibecode/agent/service/ProviderEffortTest.java` | `FR19 maps and clamps effort per provider` | `mvn test` |
+| FR20 | backend route | `backend/src/__tests__/agentNodes.test.js` | `FR20 foreign node id returns 404 and list scope is enforced` | `npm test` |
 | NFR1 | backend route | `backend/src/__tests__/agentRoleEnforcement.test.js` | `NFR1 deny-by-default matrix` | `npm test` |
 | NFR2 | backend unit | `backend/src/__tests__/providerRegistry.test.js` | `NFR2 no secret in responses or logs` | `npm test` |
 | NFR2 | agent unit | `agent/src/test/java/com/vibecode/agent/supervisor/RuntimeConfigTest.java` | `NFR2 no secret in config or argv` | `mvn test` |
@@ -156,7 +182,7 @@ cd backend && npm test
 cd backend && npm run test:integration
 cd frontend && npm test -- --run && npm run typecheck && npm run lint
 cd agent && mvn -B test
-grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID" backend/src agent/src | grep -v __tests__
+grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_hash\|X-API-Key" backend/src agent/src | grep -v __tests__
 ```
 
 ## Review checklist

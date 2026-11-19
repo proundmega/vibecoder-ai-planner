@@ -63,6 +63,7 @@ reference.
 | A5 | Node-level trust (one credential per host, runtime header per child) is acceptable for v1 | A compromised runtime impersonates siblings on the same host | Same-host trust domain; per-runtime tokens deferred to `D2` | accepted |
 | A6 | The manager can share the API image and database, and coordinate with Postgres locks | A separate service/DB would change deployment and migration order | `02` design; concurrency tests in `NFR4` | open |
 | A7 | Providers expose reasoning effort under different names/values and support different ceilings | A single value can fail or be silently ignored | Canonical enum + adapter mapping/clamping; `FR19` tests each adapter | open |
+| A8 | `harness_leases` remains the run-lease authority; `tickets.assigned_runtime_id` + `locked_at` is only a claim marker | Adding a second expiry would double-release tickets | Single-reaper design in `02`; `FR14` concurrency test | accepted |
 
 ## Functional requirements
 
@@ -81,12 +82,13 @@ reference.
 | FR11 | The supervisor reconciles a declared runtime set on boot, rerun and `SIGHUP`: spawn missing, drain removed, leave matching untouched | Applying the same config twice makes no changes; removing one entry drains and stops only that child |
 | FR12 | Supervisor config carries no secrets; runtime provider/model credentials are fetched over the authenticated node channel | Config files and `docker inspect` show no API keys or tokens; a run resolves provider config from the backend |
 | FR13 | A manager service runs in the main Compose stack and can be replicated safely | Two replicas run; each housekeeping job executes once per tick across replicas |
-| FR14 | The manager performs v1 housekeeping: expired lease release, enrollment-token cleanup, runtime/node heartbeat expiry and pool reconciliation | Each job has an idempotent unit test and a two-replica test proving no double execution |
+| FR14 | The manager performs v1 housekeeping: stale-claim release (skipping active run leases), enrollment-token cleanup, runtime/node heartbeat expiry and legacy pool drain | Each job has an idempotent unit test and a two-replica test proving one effect per item; a ticket with an unexpired `harness_leases` row is never released |
 | FR15 | The UI supports credential and model management (add, discover, test, role tags) and node/fleet management (grants, runtimes, drain, revoke) | Views call the new endpoints and show verified/unverified state and role tags |
-| FR16 | The clean cut removes static agent auth, project-bound agents and the fused provider model/role columns, with a forward migration and rollback | Grep for `AGENT_ID`/`AGENT_API_KEY`/`agents.project_id` finds no production path; migration and rollback apply on an empty and a seeded DB |
-| FR17 | Security-relevant actions write audit events: enrollment, grant changes, credential rotation/deletion attempts, runtime state changes, role-denied requests | Each action produces an audit row with actor, node/runtime and outcome |
+| FR16 | The clean cut removes static agent auth, project-bound agents and the fused provider model/role columns, with a forward migration and rollback | Grep finds no production path for `AGENT_ID`/`AGENT_API_KEY`/`AGENT_AUTH_MODE`/`agents.project_id`/`api_key_hash`/`X-API-Key`; migration and rollback apply on an empty **and a seeded** DB |
+| FR17 | Security-relevant actions write audit events: enrollment, grant changes, credential rotation/deletion attempts, provider-config reads, runtime state changes, role- and node-binding-denied requests | Each action produces an audit row with actor, node/runtime and outcome |
 | FR18 | Deleting a credential or model that is referenced returns `409` with the referencing runtimes/models; deactivation and rotation remain available | Delete of an in-use credential returns 409 and leaves the row; delete after detaching succeeds |
 | FR19 | Models carry a canonical reasoning-effort default (`minimal`, `low`, `medium`, `high`, `max`); runtimes may override it, and the resolved effort reaches the provider adapter | A model defaults to `medium`; a `reviewer` runtime overrides to `max` and the provider request carries the mapped value; an unknown value is rejected at the API and DB; unsupported provider values are clamped, never silently dropped |
+| FR20 | Node-scoped routes bind `:id` to the presented node credential, and node listing is scoped to owned nodes or the caller's project memberships | A valid credential with a foreign `:id` gets 404 and no data; a member sees only nodes granted to their projects; a super_admin sees all |
 
 ## Non-functional / safety requirements
 
@@ -121,9 +123,9 @@ reference.
 | Database/migrations | New tables and FKs; `agents` renamed/replaced; legacy columns dropped | `056_agent_fleet.sql` |
 | Frontend | New/reworked Agents, Fleet and Providers views; API client additions | `02` design |
 | Agent/harness | Supervisor entrypoint, role/model config, child process lifecycle, no static auth | `02`, `03` |
-| Permissions/auth | New node/fleet permissions; agent auth switches to node credential + runtime header | `FR4`, `NFR1` |
+| Permissions/auth | No new permission codes: nodes use `AGENT_READ/CREATE/REVOKE/DELETE`; registry reuses `PROJECT_MANAGE_MEMBERS`; agent auth switches to node credential + runtime header | `02` API contract |
 | Background jobs/external calls | Manager service jobs; provider discovery/test calls | `FR13`, `FR14` |
-| Downstream tickets | Reconciled in this PR: `fg-38`, `fg-40`, `fg-41`, `fg-43`, `fg-44`, `fg-53` (relationship notes and the required deltas) | `planning/README.md` rule 7 |
+| Downstream tickets | Reconciled in this PR: `fg-32`, `fg-38`, `fg-40`, `fg-41`, `fg-43`, `fg-44`, `fg-45`, `fg-46`, `fg-53` (relationship notes and the required deltas) | `planning/README.md` rule 7 |
 | Rollback | Revert the PR and run the rollback migration; no data backfill to preserve | `NFR5` |
 
 ## Out of scope

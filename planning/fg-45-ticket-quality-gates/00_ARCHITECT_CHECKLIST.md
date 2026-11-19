@@ -19,6 +19,13 @@ depends_on: ["fg-30", "fg-31"]
 
 **Related code:** `validators/tickets.js`, `TemplateService`, `TicketPlanningService`, `PhaseService`, `TicketService`, `models/ticket.js`, `middleware/permissions.js`, `agent/harness/HarnessTicketProcessor.java`, `agent/service/TicketProcessor.java`, `TicketBoard.vue`, `TicketDetail.vue`, `frontend/src/api/tickets.ts`
 
+## Relationship to fg-54 (planned)
+
+The pickup contract documented in `01` changes columns: `assigned_agent_id`
+becomes `assigned_runtime_id`, and readiness checks apply to runtime roles
+(`worker`/`reviewer`/`planner`) instead of a client `AGENT_MODE`. No readiness
+requirement changes.
+
 ## Why this ticket exists
 
 Planning templates exist, but nothing enforces them. A ticket can be created with only a title, picked up by an agent, and implemented without scope, acceptance criteria, plan or tests. The existing planning gate (`PhaseService.getGateStatus`) is only used by tests. Five separate paths move a ticket into execution and none of them checks readiness.

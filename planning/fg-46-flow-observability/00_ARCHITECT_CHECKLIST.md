@@ -20,6 +20,12 @@ depends_on: ["fg-30", "fg-31", "fg-32", "fg-33", "fg-36", "fg-41", "fg-44", "fg-
 **Priority:** P2 - after the project completes a full build -> review -> fix -> merge cycle
 **Related code:** `backend/src/metrics.js`, `middleware/slowRequest.js`, `HeartbeatService`, `PhaseService`, `approval_requests`, `ticket_phases`, `usage_logs`, `Dashboard.vue`, `AgentList.vue`
 
+## Relationship to fg-54 (planned)
+
+Flow queries use `tickets.assigned_runtime_id` (not `assigned_agent_id`) and
+attribute harness stages to `runtime_id`/`node_id`. No metric definition
+changes; the deferred suite reads the renamed columns when it starts.
+
 ## Why this ticket exists
 
 The system has infrastructure metrics and agent heartbeats, but no way to answer “where is work piling up?” or “which stage is the bottleneck?” The answer requires flow metrics (queue depth/age by stage), harness stage timings, provider saturation, review/fix rounds and merge time.

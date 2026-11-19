@@ -71,7 +71,7 @@ long-running agent role.
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Plan merged | n/a — planning PR not opened yet | ☐ |
+| Plan merged | PR #177 (open — not merged yet) | ☐ |
 | Implementation merged | pending | ☐ |
 | Verification results | n/a — not started | ☐ |
 
@@ -135,5 +135,6 @@ after the implementation PR is merged and `03` has a dated Results row.
   model selection and fleet deployment. They meet at the runtime role and lease,
   and neither restates the other's scope.
 - Dependent suites reconciled in this PR under `planning/README.md` rule 7:
-  `fg-38`, `fg-40`, `fg-41`, `fg-43`, `fg-44`, `fg-53`. Planned suites received
-  targeted deltas; in-progress suites received relationship notes only.
+  `fg-32`, `fg-38`, `fg-40`, `fg-41`, `fg-43`, `fg-44`, `fg-45`, `fg-46`,
+  `fg-53`. Planned suites received targeted deltas; in-progress/deferred suites
+  received relationship notes only.
