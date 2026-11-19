@@ -12,7 +12,10 @@ services:
       - PROJECT_ID=${PROJECT_ID:-}
       - AGENT_AUTH_MODE=enroll
       - AGENT_MODE=${AGENT_MODE:-build}
-      - ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN:?mint one in the UI}
+      # First boot only: the credential volume is the node identity after that.
+      # Leave this set in .env (harmless once a credential file exists) or
+      # remove it; an image update or reboot works without a token.
+      - ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN:-}
       - ENROLLMENT_URL=${ENROLLMENT_URL:-}
       - AGENT_CREDENTIALS_FILE=/credentials/agent.json
       # Only for plain-HTTP backends on a non-loopback host (dev/LAN testing).

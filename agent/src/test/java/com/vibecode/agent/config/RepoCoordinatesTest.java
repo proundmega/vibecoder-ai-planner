@@ -33,6 +33,10 @@ class RepoCoordinatesTest {
     @Test
     void keepsNumericScpOwners() {
         assertParsed("git@github.com:123/repo.git", "123", "repo");
+        // A numeric SCP owner is not a port even when a subgroup follows.
+        assertParsed("git@github.com:123/group/repo.git", "123/group", "repo");
+        // Ports only exist in a scheme authority.
+        assertParsed("ssh://git@github.com:2222/123/repo.git", "123", "repo");
     }
 
     @Test

@@ -28,15 +28,22 @@ trap cleanup EXIT
 echo "Building agent image..."
 docker build -t "$AGENT_IMAGE" "$ROOT" >/dev/null
 
+# Start with a clean identity so the first boot really enrolls.
+docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+docker volume rm "$VOLUME" >/dev/null 2>&1 || true
+
 run_agent() {
+  local with_token="${1:-true}"
   local extra=()
   [ -n "${PROJECT_ID:-}" ] && extra+=(-e "PROJECT_ID=$PROJECT_ID")
   [ -n "${AGENT_MODE:-}" ] && extra+=(-e "AGENT_MODE=$AGENT_MODE")
+  # The second boot deliberately omits the join token so success proves the
+  # credential file, not the (still valid) token, is what authorized it.
+  [ "$with_token" = "true" ] && extra+=(-e "ENROLLMENT_TOKEN=$ENROLLMENT_TOKEN")
   docker run -d --name "$CONTAINER" \
     -e "BACKEND_URL=$BACKEND_URL" \
     "${extra[@]}" \
     -e "AGENT_AUTH_MODE=enroll" \
-    -e "ENROLLMENT_TOKEN=$ENROLLMENT_TOKEN" \
     -e "AGENT_CREDENTIALS_FILE=/credentials/agent.json" \
     -e "AGENT_NAME=$AGENT_NAME" \
     -v "$VOLUME:/credentials" \
@@ -44,7 +51,7 @@ run_agent() {
 }
 
 echo "First boot (expected: enroll)..."
-run_agent
+run_agent true
 sleep 15
 mode=$(docker exec "$CONTAINER" stat -c '%a' /credentials/agent.json)
 if [ "$mode" != "600" ]; then
@@ -56,6 +63,11 @@ if ! docker exec "$CONTAINER" grep -q '"refreshToken"' /credentials/agent.json; 
   echo "FAIL: credential file has no refresh token"
   exit 1
 fi
+first_agent_id=$(docker exec "$CONTAINER" jq -r '.agentId // empty' /credentials/agent.json)
+if [ -z "$first_agent_id" ]; then
+  echo "FAIL: credential file has no agentId"
+  exit 1
+fi
 first_logs=$(docker logs "$CONTAINER" 2>&1)
 if echo "$first_logs" | grep -q "$ENROLLMENT_TOKEN"; then
   echo "FAIL: enrollment token leaked into logs"
@@ -64,12 +76,26 @@ fi
 before_hash=$(docker exec "$CONTAINER" cat /credentials/agent.json | sha256sum | awk '{print $1}')
 docker rm -f "$CONTAINER" >/dev/null
 
-echo "Restart with the same volume (expected: no re-enroll)..."
-run_agent
+echo "Restart with the same volume and NO token (expected: file wins)..."
+run_agent false
 sleep 10
+if [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER")" != "true" ]; then
+  echo "FAIL: container exited without a join token"
+  docker logs "$CONTAINER" | tail -20
+  exit 1
+fi
+second_agent_id=$(docker exec "$CONTAINER" jq -r '.agentId // empty' /credentials/agent.json)
+if [ "$second_agent_id" != "$first_agent_id" ]; then
+  echo "FAIL: node identity changed (${first_agent_id} -> ${second_agent_id})"
+  exit 1
+fi
 after_hash=$(docker exec "$CONTAINER" cat /credentials/agent.json | sha256sum | awk '{print $1}')
 if [ -z "$before_hash" ] || [ "$before_hash" != "$after_hash" ]; then
-  echo "FAIL: credential file changed across restart without a refresh"
+  echo "FAIL: credential file changed across restart"
+  exit 1
+fi
+if docker logs "$CONTAINER" 2>&1 | grep -q "No credential file and no ENROLLMENT_TOKEN"; then
+  echo "FAIL: restart tried to enroll instead of loading the credential file"
   exit 1
 fi
 docker rm -f "$CONTAINER" >/dev/null

@@ -28,7 +28,8 @@ public record RepoCoordinates(String owner, String name) {
         }
 
         int scheme = value.indexOf("://");
-        if (scheme >= 0) {
+        boolean hasScheme = scheme >= 0;
+        if (hasScheme) {
             value = value.substring(scheme + 3);
         }
 
@@ -38,22 +39,19 @@ public record RepoCoordinates(String owner, String name) {
             value = value.substring(at + 1);
         }
 
-        // SCP-like Git URLs use a colon before the path (`host:owner/repo`).
+        // Without a scheme, a colon before the path is SCP-like syntax
+        // (`host:owner/repo`), never a port: `git@host:123/group/repo` has the
+        // owner path `123/group/repo`. Ports only exist in a scheme authority.
         int colon = value.indexOf(':');
         int slash = value.indexOf('/');
         if (colon >= 0 && (slash < 0 || colon < slash)) {
             String after = value.substring(colon + 1);
             int nextSlash = after.indexOf('/');
             String port = nextSlash >= 0 ? after.substring(0, nextSlash) : after;
-            String rest = after.substring(port.length());
-            long remainingSegments = java.util.Arrays.stream(rest.split("/"))
-                .filter(segment -> !segment.isBlank())
-                .count();
-            if (port.matches("\\d+") && remainingSegments >= 2) {
+            if (hasScheme && port.matches("\\d+")) {
                 // ssh://host:22/owner/repo — drop the explicit port.
                 value = value.substring(0, colon) + after.substring(port.length());
-            } else {
-                // SCP-like host:owner/repo (owner may be numeric).
+            } else if (!hasScheme) {
                 value = value.substring(0, colon) + "/" + after;
             }
         }

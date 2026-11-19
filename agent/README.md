@@ -113,7 +113,7 @@ Mode defaults differ: the remote template defaults to `build`; the standalone
 ```bash
 cd agent
 ./build.sh                 # mvn clean package + tests
-mvn -B test                # tests only (844+, 10 skipped)
+mvn -B test                # tests only (844 tests, 10 skipped)
 mvn -B package -DskipTests # JAR only → target/agent-*.jar
 ```
 

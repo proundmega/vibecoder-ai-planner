@@ -158,7 +158,9 @@ In the UI, the agent appears under **Agents**, and the join token shows one use.
 ## 6. Restart and revoke
 
 - Restarting with the same volume reuses the credential file; no new token is
-  needed.
+  needed. `ENROLLMENT_TOKEN` is optional in the remote template, so
+  `docker compose up -d` works after a reboot or image update without it
+  (keeping it in `.env` is harmless — the file wins).
 - Deleting the volume requires a new join token.
 - **Revoke** from the agent’s detail page (**Revoke Credentials**). The node
   must be enrolled again with a new token.
