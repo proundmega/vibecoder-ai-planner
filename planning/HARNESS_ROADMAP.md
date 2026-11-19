@@ -35,6 +35,7 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-40 | `fg-40-multi-agent-orchestration` | Planned | Roles, task graph, worktrees, handoffs, integrator | fg-33, fg-36, fg-38, fg-39 |
 | fg-41 | `fg-41-harness-observability` | In progress (implementation pending merge) | Event stream, traces, replay, dashboards, audit | fg-33 |
 | fg-42 | `fg-42-harness-privacy` | In review (#166) | Classification, redaction, provider policy, retention | fg-34, fg-41 |
+| fg-54 | `fg-54-agent-fleet` | Planned | Node/grant/runtime/lease identity, credential+model registry with roles, static host supervisor (one Compose stack), replicated manager service; approved clean cut | fg-53 |
 
 fg-30 Phases 2-4 (human loop, autonomy, hardening) remain part of the fg-30 implementation plan; the cross-cutting tickets above fill the gaps that were not specified there.
 
