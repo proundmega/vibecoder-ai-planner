@@ -13,13 +13,14 @@ import java.time.Duration;
  * Agent configuration loaded from environment variables.
  * 
  * Required env vars:
- *   AGENT_API_KEY      - API key for backend authentication
  *   BACKEND_URL         - Base URL of the backend API (e.g., http://localhost:3001)
- *   PROJECT_ID          - Project ID to work on
- *   REPO_OWNER          - GitHub repository owner
- *   REPO_NAME           - GitHub repository name
- * 
+ *   PROJECT_ID          - Project ID (optional with enrollment; supplied by the server)
+ *   AGENT_ID + AGENT_API_KEY, or ENROLLMENT_TOKEN + AGENT_CREDENTIALS_FILE
+ *
  * Optional env vars:
+ *   AGENT_MODE          - auto (default; env repo pair = build), build or review
+ *   REPO_OWNER/REPO_NAME - Optional build fallback; the project's configured
+ *                         repository is authoritative when AGENT_MODE=build
  *   POLL_INTERVAL_MS    - Polling interval in ms (default: 30000)
  *   STALE_TIMEOUT_MS    - Stale ticket timeout in ms (default: 3600000 = 1 hour)
  *   AI_PROVIDER         - AI provider to use: claude, anthropic, openai, opencode,
@@ -46,8 +47,9 @@ public class AgentConfig {
     private final String credentialsFile;
     private final String agentAuthMode;
     private String projectId;
-    private final String repoOwner;
-    private final String repoName;
+    private String repoOwner;
+    private String repoName;
+    private final String agentMode;
     private final Duration pollInterval;
     private final Duration staleTimeout;
     private final String aiProvider;
@@ -103,6 +105,7 @@ public class AgentConfig {
         }
         this.repoOwner = getEnv("REPO_OWNER", null);
         this.repoName = getEnv("REPO_NAME", null);
+        this.agentMode = parseAgentMode(getEnv("AGENT_MODE", null));
         this.pollInterval = Duration.ofMillis(getLongEnv("POLL_INTERVAL_MS", 30000));
         this.staleTimeout = Duration.ofMillis(getLongEnv("STALE_TIMEOUT_MS", 3600000));
         this.aiProvider = getEnv("AI_PROVIDER", "claude");
@@ -122,7 +125,7 @@ public class AgentConfig {
         this.repoCloneDir = getEnv("REPO_CLONE_DIR", "/tmp/repos");
         this.harnessConfig = HarnessConfig.fromEnvironment();
         this.sandboxConfig = SandboxConfig.fromEnvironment();
-        if (this.repoOwner != null && !this.repoOwner.isBlank()) {
+        if (!isReviewMode() && hasRepoCoordinates()) {
             validateCloneDir(this.repoCloneDir);
         }
     }
@@ -202,6 +205,49 @@ public class AgentConfig {
     public String getProjectId() { return projectId; }
     public String getRepoOwner() { return repoOwner; }
     public String getRepoName() { return repoName; }
+
+    public String getAgentMode() { return agentMode; }
+
+    /** Set from the project's configured repository (server wins over env). */
+    public void setRepoCoordinates(String owner, String name) {
+        // Validate before mutating so a failure leaves env fallback intact.
+        if (owner != null && !owner.isBlank()) {
+            validateCloneDir(this.repoCloneDir);
+        }
+        this.repoOwner = owner;
+        this.repoName = name;
+    }
+
+    public boolean hasRepoCoordinates() {
+        return repoOwner != null && !repoOwner.isBlank()
+            && repoName != null && !repoName.isBlank();
+    }
+
+    public boolean isBuildMode() {
+        return "build".equals(agentMode);
+    }
+
+    public boolean isReviewMode() {
+        return shouldReview(agentMode, repoOwner, repoName);
+    }
+
+    static String parseAgentMode(String raw) {
+        String value = raw == null ? "" : raw.trim().toLowerCase();
+        if (value.isBlank()) return "auto";
+        if ("auto".equals(value) || "build".equals(value) || "review".equals(value)) {
+            return value;
+        }
+        throw new IllegalStateException(
+            "AGENT_MODE must be 'auto', 'build' or 'review' (got '" + raw + "')");
+    }
+
+    static boolean shouldReview(String mode, String repoOwner, String repoName) {
+        if ("review".equals(mode)) return true;
+        if ("build".equals(mode)) return false;
+        // auto preserves the legacy signal: a complete env repo pair means build.
+        return repoOwner == null || repoOwner.isBlank()
+            || repoName == null || repoName.isBlank();
+    }
     public Duration getPollInterval() { return pollInterval; }
     public Duration getStaleTimeout() { return staleTimeout; }
     public String getAiProvider() { return aiProvider; }
@@ -284,6 +330,7 @@ public class AgentConfig {
             ", aiMaxTokens=" + aiMaxTokens +
             ", dryRun=" + dryRun +
             ", maxTicketsPerCycle=" + maxTicketsPerCycle +
+            ", agentMode='" + agentMode + '\'' +
             ", repoCloneDir='" + repoCloneDir + '\'' +
             ", harnessMode='" + harnessConfig.mode() + '\'' +
             ", sandboxMode='" + sandboxConfig.mode() + '\'' +

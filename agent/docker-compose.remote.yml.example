@@ -8,11 +8,22 @@ services:
     image: ${AGENT_IMAGE:-vibecode-agent:latest}
     environment:
       - BACKEND_URL=${BACKEND_URL:?set BACKEND_URL, e.g. https://planner.example.com}
-      - PROJECT_ID=${PROJECT_ID:?set PROJECT_ID}
+      # Optional with enrollment: the join token supplies the project.
+      - PROJECT_ID=${PROJECT_ID:-}
       - AGENT_AUTH_MODE=enroll
-      - ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN:?mint one in the UI}
+      - AGENT_MODE=${AGENT_MODE:-build}
+      # First boot only: the credential volume is the node identity after that.
+      # Leave this set in .env (harmless once a credential file exists) or
+      # remove it; an image update or reboot works without a token.
+      # With neither a token nor a credential file the agent exits with
+      # "No credential file and no ENROLLMENT_TOKEN" and restart-loops until
+      # one is provided.
+      - ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN:-}
       - ENROLLMENT_URL=${ENROLLMENT_URL:-}
       - AGENT_CREDENTIALS_FILE=/credentials/agent.json
+      # Only for plain-HTTP backends on a non-loopback host (dev/LAN testing).
+      - ALLOW_INSECURE_AGENT_ENROLLMENT=${ALLOW_INSECURE_AGENT_ENROLLMENT:-0}
+      # Optional fallback only; the project's configured repo wins.
       - REPO_OWNER=${REPO_OWNER:-}
       - REPO_NAME=${REPO_NAME:-}
       - REPO_CLONE_DIR=/repos
@@ -22,7 +33,11 @@ services:
       - HARNESS_MODE=${HARNESS_MODE:-legacy}
       - AGENT_NAME=${AGENT_NAME:-}
     volumes:
+      # Credentials are written as the agent user (uid 100); the image owns
+      # /credentials so a fresh named volume inherits that ownership.
       - agent_credentials:/credentials
+      # Build mode clones here. The host directory must be writable by uid 100,
+      # gid 101: mkdir -p repos && sudo chown 100:101 repos
       - ${REPO_HOST_PATH:-./repos}:/repos
     restart: unless-stopped
 

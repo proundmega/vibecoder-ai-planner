@@ -1,6 +1,7 @@
 package com.vibecode.agent;
 
 import com.vibecode.agent.config.AgentConfig;
+import com.vibecode.agent.config.RepoCoordinates;
 import com.vibecode.agent.harness.HarnessConfig;
 import com.vibecode.agent.harness.RedactionRegistry;
 import com.vibecode.agent.harness.HarnessTicketProcessor;
@@ -32,8 +33,14 @@ import java.util.concurrent.TimeUnit;
  *   java -jar agent.jar
  * 
  * Or with env vars:
- *   AGENT_API_KEY=xxx BACKEND_URL=http://localhost:3001 PROJECT_ID=1 \
- *   REPO_OWNER=myorg REPO_NAME=myrepo \
+ *   # enrolled build node (repo comes from the project)
+ *   ENROLLMENT_TOKEN=enr_xxx AGENT_MODE=build \
+ *   BACKEND_URL=http://localhost:3001 AGENT_CREDENTIALS_FILE=/credentials/agent.json \
+ *   java -jar agent.jar
+ *
+ *   # legacy static build node
+ *   AGENT_ID=1 AGENT_API_KEY=xxx AGENT_MODE=build \
+ *   BACKEND_URL=http://localhost:3001 PROJECT_ID=1 \
  *   java -jar agent.jar
  */
 public class AgentApp {
@@ -58,8 +65,13 @@ public class AgentApp {
     }
 
     public AgentApp(AgentConfig config, AgentAuthManager authManager) {
+        this(config, authManager, new ApiService(config, authManager));
+    }
+
+    AgentApp(AgentConfig config, AgentAuthManager authManager, ApiService apiService) {
         this.config = config;
-        this.apiService = new ApiService(config, authManager);
+        this.apiService = apiService;
+        applyServerRepoConfig();
         this.providerSettings = resolveProviderSettings();
         RedactionRegistry.register(config.getAgentApiKey(), config.getAiApiKey(),
             providerSettings.apiKey(), System.getenv("GITHUB_TOKEN"));
@@ -195,6 +207,77 @@ public class AgentApp {
 
         log.warn("No GitHub PAT available in explicit pat mode");
         return null;
+    }
+
+    /**
+     * The project's configured repository is authoritative in build mode.
+     * `auto` keeps the legacy env-pair signal; `review` never builds.
+     */
+    private void applyServerRepoConfig() {
+        if (config.isReviewMode()) {
+            log.info("Agent mode {}: ticket processing disabled, repository not loaded", config.getAgentMode());
+            return;
+        }
+
+        if (config.getProjectId() == null || config.getProjectId().isBlank()) {
+            if (config.isBuildMode()) {
+                throw new IllegalStateException(
+                    "AGENT_MODE=build requires a project id and a configured repository");
+            }
+            return;
+        }
+
+        resolveRepoConfig(config, () -> apiService.getRepoConfig(config.getProjectId()));
+    }
+
+    /**
+     * Fetch/apply the project repo for an already-selected mode. Package-private
+     * static so build/review/failure behavior is testable without constructing
+     * a live AgentApp.
+     */
+    static void resolveRepoConfig(
+            AgentConfig config,
+            java.util.concurrent.Callable<Map<String, Object>> loader) {
+        if (config.isReviewMode()) return;
+        boolean buildMode = config.isBuildMode();
+
+        Map<String, Object> repo;
+        try {
+            repo = loader.call();
+        } catch (AgentAuthFatalException e) {
+            throw new IllegalStateException(
+                "Agent credentials failed while loading the project repository; re-enroll this node", e);
+        } catch (Exception e) {
+            if (buildMode && !config.hasRepoCoordinates()) {
+                throw new IllegalStateException(
+                    "AGENT_MODE=build could not load the project repository: " + e.getMessage(), e);
+            }
+            log.warn("Could not load the project repository from the backend; using REPO_OWNER/REPO_NAME if set");
+            return;
+        }
+
+        boolean applied = repo != null && applyRepoCoordinates(config, repo);
+        if (!applied) {
+            if (buildMode && !config.hasRepoCoordinates()) {
+                throw new IllegalStateException(
+                    "AGENT_MODE=build but the project has no usable repository configured");
+            }
+            log.info("No usable project repository from the backend; using REPO_OWNER/REPO_NAME if set");
+        }
+    }
+
+    static boolean applyRepoCoordinates(AgentConfig config, Map<String, Object> repoConfig) {
+        if (repoConfig == null) return false;
+        Object url = repoConfig.get("repoUrl");
+        if (url == null) return false;
+        return RepoCoordinates.parse(String.valueOf(url)).map(coordinates -> {
+            config.setRepoCoordinates(coordinates.owner(), coordinates.name());
+            log.info("Using project repository {}/{} from the backend", coordinates.owner(), coordinates.name());
+            return true;
+        }).orElseGet(() -> {
+            log.warn("Project repository URL is not a usable Git URL");
+            return false;
+        });
     }
 
     /**
@@ -417,9 +500,10 @@ public class AgentApp {
     private void processCycle() throws IOException {
         recoverStartupOnce();
 
-        // Check if this is a review agent (no REPO_OWNER/REPO_NAME means review mode)
-        if (config.getRepoOwner() == null || config.getRepoOwner().isBlank()) {
-            log.warn("REPO_OWNER is not set — running in review mode only. Ticket processing is disabled. Set REPO_OWNER and REPO_NAME to enable build mode.");
+        // Explicit review mode, or auto mode without a legacy env repo pair.
+        if (config.isReviewMode()) {
+            log.warn("Agent mode {} — running in review mode only. Ticket processing is disabled. Set AGENT_MODE=build for a build node.",
+                config.getAgentMode());
             if (reviewProcessor == null) {
                 log.warn("Review cycle skipped: the configured provider is not usable by the legacy review path");
                 pollProfileValidation();
@@ -511,10 +595,10 @@ public class AgentApp {
         } catch (IllegalStateException e) {
             log.error("Configuration error: {}", e.getMessage());
             System.err.println("Error: " + RedactionRegistry.redact(e.getMessage()));
-            System.err.println("Required env vars: BACKEND_URL, PROJECT_ID, and either "
+            System.err.println("Required env vars: BACKEND_URL and either "
                 + "AGENT_ID + AGENT_API_KEY or ENROLLMENT_TOKEN (+ AGENT_CREDENTIALS_FILE)");
-            System.err.println("For ticket processing: also set REPO_OWNER, REPO_NAME");
-            System.err.println("For review mode: omit REPO_OWNER/REPO_NAME");
+            System.err.println("For build mode: AGENT_MODE=build (repo from the project) or REPO_OWNER/REPO_NAME");
+            System.err.println("For review mode: AGENT_MODE=review");
             System.exit(1);
         } catch (Exception e) {
             log.error("Fatal error", e);

@@ -122,6 +122,14 @@ Required for `docker compose up`:
 
 ### Agent `.env` (Java)
 
+See [`agent/ENROLLMENT.md`](agent/ENROLLMENT.md) for the full self-enrollment walkthrough, and [`agent/README.md`](agent/README.md) for deployment topologies, auth/repo modes and the build/run commands. The agent reads the project's connected repository from the backend at startup
+when `AGENT_MODE=build`; `REPO_OWNER`/`REPO_NAME` are then only a fallback.
+Review-only nodes use `AGENT_MODE=review`. `AGENT_MODE=auto` keeps the legacy
+behavior: an env repo pair means build, otherwise review, so a build node that
+relies only on the server repo must set `AGENT_MODE=build`. The remote template
+defaults to `build`; the standalone Compose file defaults to `auto`. Restart
+the agent after changing the project's repo in the UI.
+
 For a remote node, mint a one-time join token in **Agents → Enrollment**, set
 `ENROLLMENT_TOKEN` and a persistent `AGENT_CREDENTIALS_FILE` volume, and leave
 `AGENT_ID`/`AGENT_API_KEY` unset. The node enrolls on first boot, stores its own
@@ -139,8 +147,9 @@ local testing only. Deleting the credential volume requires a new join token.
 | `AGENT_CREDENTIALS_FILE` | Persistent credential file for enrolled nodes; the file wins over `ENROLLMENT_TOKEN` on restart | _(none)_ |
 | `BACKEND_URL` | Backend API URL | `http://localhost:3001` |
 | `PROJECT_ID` | Project to work on | `1` |
-| `REPO_OWNER` | GitHub org/user | _(required)_ |
-| `REPO_NAME` | GitHub repo name | _(required)_ |
+| `AGENT_MODE` | `auto` (env repo pair = build), `build` (project repo; fail if none), `review` | `auto` |
+| `REPO_OWNER` | Build fallback; the project's configured repository takes precedence with `AGENT_MODE=build` | _(optional)_ |
+| `REPO_NAME` | Build fallback; the project's configured repository takes precedence with `AGENT_MODE=build` | _(optional)_ |
 | `AI_PROVIDER` | AI provider (`claude`, `openai`, `opencode`, `opencode-go`, `generic`, `custom`, `ollama`, `vllm`, `llamacpp`) | `claude` |
 | `AI_MODEL` | AI model | `claude-sonnet-4-20250514` |
 | `AI_API_KEY` | AI provider API key | _(required)_ |

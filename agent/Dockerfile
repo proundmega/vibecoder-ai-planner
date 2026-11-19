@@ -34,8 +34,8 @@ COPY --from=build /app/target/agent-*.jar agent.jar
 # Create a non-root user with a writable home and workspace directories
 RUN addgroup -S agent \
     && adduser -S -G agent -h /home/agent agent \
-    && mkdir -p /repos /tmp/opencode /home/agent \
-    && chown -R agent:agent /repos /tmp/opencode /home/agent
+    && mkdir -p /repos /tmp/opencode /home/agent /credentials \
+    && chown -R agent:agent /repos /tmp/opencode /home/agent /credentials
 USER agent
 
 ENV HOME=/home/agent
