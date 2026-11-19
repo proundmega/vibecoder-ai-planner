@@ -244,8 +244,7 @@ over, so the ordering is:
    `runtime_id` (or `assigned_runtime_id`). Then **remove every legacy value**
    so a new runtime starting at id 1 cannot inherit an old row: set nullable
    columns to `NULL`, and delete legacy rows where the renamed column is
-   `NOT NULL` (`harness_runs`, `harness_leases`, `agent_heartbeats`,
-   `agent_actions`). Tables: `agent_actions`, `agent_heartbeats`, `usage_logs`,
+   `NOT NULL` (`harness_runs`, `harness_leases`, `agent_heartbeats`). Tables: `agent_actions`, `agent_heartbeats`, `usage_logs`,
    `telemetry_events`, `harness_runs`, `harness_leases`, `harness_usage`,
    `harness_events` (no FK today), `repo_profile_validations`, and
    `tickets.assigned_agent_id`.
