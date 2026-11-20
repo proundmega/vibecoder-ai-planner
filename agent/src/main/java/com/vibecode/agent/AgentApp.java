@@ -322,7 +322,8 @@ public class AgentApp {
             if (baseUrl != null && !baseUrl.isBlank() && !openCode) {
                 normalized = "generic";
             }
-            return new ProviderSettings(normalized, apiKey, baseUrl, model, maxTokens, effort);
+            return new ProviderSettings(normalized, apiKey, baseUrl, model, maxTokens, effort,
+                config.getEffort() != null);
         }
 
         // Fall back to env vars
@@ -338,7 +339,8 @@ public class AgentApp {
             ? "generic"
             : config.getAiProvider().toLowerCase();
         String effort = com.vibecode.agent.service.ProviderEffort.canonical(config.getEffort());
-        return new ProviderSettings(type, apiKey, endpointUrl, model, config.getAiMaxTokens(), effort);
+        return new ProviderSettings(type, apiKey, endpointUrl, model, config.getAiMaxTokens(), effort,
+            config.getEffort() != null);
     }
 
     private AiProvider createAiProvider(ProviderSettings settings) {
@@ -348,28 +350,30 @@ public class AgentApp {
         switch (type) {
             case "openai":
                 log.info("Using OpenAI provider, model: {}", settings.model());
-                return new OpenAiProvider(settings.apiKey(), settings.model(), settings.effort());
+                return new OpenAiProvider(settings.apiKey(), settings.model(), settings.effort(), settings.effortExplicit());
             case "generic":
                 log.info("Using OpenAI-compatible provider: {}, model: {}",
                     settings.baseUrl(), settings.model());
                 return new OpenAiCompatibleProvider(
-                    settings.baseUrl(), settings.model(), settings.apiKey(), maxTokens, settings.effort());
+                    settings.baseUrl(), settings.model(), settings.apiKey(), maxTokens,
+                    settings.effort(), settings.effortExplicit());
             case "opencode":
             case "opencode-go":
                 if (settings.baseUrl() != null && !settings.baseUrl().isBlank()) {
                     log.info("Using OpenAI-compatible OpenCode endpoint: {}, model: {}",
                         settings.baseUrl(), settings.model());
                     return new OpenAiCompatibleProvider(
-                        settings.baseUrl(), settings.model(), settings.apiKey(), maxTokens, settings.effort());
+                        settings.baseUrl(), settings.model(), settings.apiKey(), maxTokens,
+                        settings.effort(), settings.effortExplicit());
                 }
                 log.warn("Provider '{}' is supported by the OpenCode harness; legacy provider disabled",
                     type);
-                return new ClaudeProvider(settings.apiKey(), settings.model(), settings.effort());
+                return new ClaudeProvider(settings.apiKey(), settings.model(), settings.effort(), settings.effortExplicit());
             case "claude":
             case "anthropic":
             default:
                 log.info("Using Claude provider, model: {}", settings.model());
-                return new ClaudeProvider(settings.apiKey(), settings.model(), settings.effort());
+                return new ClaudeProvider(settings.apiKey(), settings.model(), settings.effort(), settings.effortExplicit());
         }
     }
 
@@ -467,6 +471,11 @@ public class AgentApp {
                 );
             } catch (AgentAuthFatalException e) {
                 exitOnFatalAuth(e);
+            } catch (com.vibecode.agent.service.ApiService.RuntimeRevokedException e) {
+                log.error("Runtime is no longer authorized: {}", e.getMessage());
+                shuttingDown = true;
+                shutdown();
+                System.exit(0);
             } catch (Exception e) {
                 log.warn("Heartbeat send failed", e);
             }

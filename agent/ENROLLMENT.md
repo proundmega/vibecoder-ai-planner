@@ -39,6 +39,7 @@ role = worker
 model = acme/claude-sonnet
 count = 3
 effort = high
+project = 1
 
 [runtime "reviewers"]
 role = reviewer
@@ -48,7 +49,8 @@ effort = max
 ```
 
 The model ref is `<credential-name>/<model>` resolved inside the node owner
-and project scope. An ambiguous or missing ref is rejected by the server; it
+and project scope. A worker section requires `project`; a reviewer/planner
+section may omit it. An ambiguous or missing ref is rejected by the server; it
 is never guessed. `effort` is optional and canonical
 (`minimal|low|medium|high|max`); provider-specific values are mapped or
 clamped by the adapter.
@@ -97,7 +99,7 @@ only plaintext secret path, it is `no-store` and it is audited.
 ```bash
 docker logs -f <supervisor-container>
 # Node authenticated via enrollment (nodeId=…)
-# Supervisor reconciled: desired=3 running=3 spawned=3 drained=0
+# Supervisor reconciled: desired=2 running=4
 # Runtime workers-1 heartbeat accepted
 
 docker exec <supervisor-container> ls -l /credentials/node.json

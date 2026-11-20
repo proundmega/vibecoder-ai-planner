@@ -35,7 +35,7 @@ import java.util.regex.Pattern;
 public final class RuntimeConfig {
 
     /** Maximum children declared by a single section. */
-    public static final int MAX_COUNT = 100;
+    public static final int MAX_COUNT = 64;
 
     /** Maximum section (runtime) name length. */
     public static final int MAX_NAME_LENGTH = 100;
@@ -464,7 +464,6 @@ public final class RuntimeConfig {
                     throw error(lineNo, name, "project is longer than 200 characters");
                 }
             }
-
             return new DeclaredRuntime(name, parsedRole, modelRef, count, effort, project);
         }
 

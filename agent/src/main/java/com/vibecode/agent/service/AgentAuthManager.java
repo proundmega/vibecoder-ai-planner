@@ -9,17 +9,21 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Owns the node access-token lifecycle: first-boot enrollment, credential
  * persistence, refresh before expiry and one refresh retry after a 401.
  *
- * <p>Refresh is single-flight: every caller is synchronized on this instance,
- * so a timer refresh and a 401-triggered refresh coalesce into one in-flight
- * request with one {@code idempotency_key}. The backend replay cache returns
- * the same pair for a retry with that key; presenting a rotated token with a
- * different key would revoke the family, so the key is retained until the new
- * pair is durable.</p>
+ * <p><b>Host-safe refresh.</b> The supervisor and all of its children share one
+ * credential file. A refresh rotates the node's refresh token and the backend
+ * revokes the whole family if a rotated token is presented with a different
+ * idempotency key. This class therefore takes an OS file lock around the
+ * read/reload/refresh/write sequence and persists the idempotency key in the
+ * credential file. The first process rotates; every other process reloads the
+ * new pair (or replays the same key after a lost response) instead of racing
+ * with a new key.</p>
  */
 public class AgentAuthManager {
 
@@ -30,7 +34,7 @@ public class AgentAuthManager {
     private final AgentEnrollmentClient client;
 
     private volatile AgentCredentialStore.Credentials credentials;
-    private String pendingRefreshKey;
+    private String inMemoryRefreshKey;
 
     public AgentAuthManager(AgentConfig config, AgentCredentialStore store, AgentEnrollmentClient client) {
         this.config = config;
@@ -62,10 +66,8 @@ public class AgentAuthManager {
         if (current == null) {
             throw new IOException("Node credential is not initialized; enroll this node first");
         }
-        if (current.accessToken() == null
-                || current.accessExpiresAt() == null
-                || Instant.now().isAfter(current.accessExpiresAt().minus(REFRESH_MARGIN))) {
-            refresh();
+        if (needsRefresh(current)) {
+            refresh(false, null);
             current = credentials;
         }
         return current.accessToken();
@@ -74,7 +76,8 @@ public class AgentAuthManager {
     /**
      * Called once after a 401. A rotated/expired refresh token surfaces as an
      * IOException so the caller can exit non-zero instead of looping. If
-     * another thread already refreshed the token that failed, this is a no-op.
+     * another process already refreshed the token that failed, this adopts the
+     * new pair without a network call.
      */
     public synchronized void refreshAfterUnauthorized(String failedAccessToken) throws IOException {
         if (credentials == null) {
@@ -83,43 +86,157 @@ public class AgentAuthManager {
         if (failedAccessToken != null && !failedAccessToken.equals(credentials.accessToken())) {
             return;
         }
-        refresh();
+        refresh(true, failedAccessToken);
     }
 
     private void enroll() throws IOException {
         AgentCredentialStore.Credentials enrolled = client.enroll(nodeName(), nodeMetadata());
+        AgentCredentialStore.Credentials withKey = new AgentCredentialStore.Credentials(
+            enrolled.nodeId(),
+            enrolled.accessToken(),
+            enrolled.refreshToken(),
+            enrolled.accessExpiresAt(),
+            enrolled.refreshExpiresAt(),
+            UUID.randomUUID().toString());
         // Persist first: if the volume is read-only/full, fail without
         // pretending the node has usable durable credentials.
-        if (store != null) store.save(enrolled);
-        adopt(enrolled);
+        if (store != null) store.save(withKey);
+        adopt(withKey);
     }
 
-    private void refresh() throws IOException {
+    private void refresh(boolean force, String failedAccessToken) throws IOException {
+        if (store == null) {
+            refreshInMemory(force, failedAccessToken);
+            return;
+        }
+        store.withLock(() -> {
+            refreshLocked(force, failedAccessToken);
+            return null;
+        });
+    }
+
+    private void refreshLocked(boolean force, String failedAccessToken) throws IOException {
+        AgentCredentialStore.Credentials current = credentials;
+
+        // Another process may have rotated while we waited for the lock.
+        if (store.exists()) {
+            AgentCredentialStore.Credentials disk = store.load();
+            if (isNewer(disk, current)) {
+                adopt(disk);
+                current = disk;
+            }
+        }
+
+        if (current == null || current.refreshToken() == null) {
+            throw new IOException("No refresh token available; re-enroll this node");
+        }
+
+        boolean adoptedAnotherProcessesPair = force
+            && failedAccessToken != null
+            && current.accessToken() != null
+            && !failedAccessToken.equals(current.accessToken())
+            && !needsRefresh(current);
+        if (adoptedAnotherProcessesPair) {
+            return;
+        }
+        if (!force && !needsRefresh(current)) {
+            return;
+        }
+
+        // Persist the key before the network call so a crash/retry (or a
+        // surviving process) replays the same key instead of minting a new one.
+        String key = current.refreshKey();
+        if (key == null || key.isBlank()) {
+            key = inMemoryRefreshKey;
+        }
+        if (key == null || key.isBlank()) {
+            key = UUID.randomUUID().toString();
+        }
+        inMemoryRefreshKey = key;
+        current = new AgentCredentialStore.Credentials(
+            current.nodeId(), current.accessToken(), current.refreshToken(),
+            current.accessExpiresAt(), current.refreshExpiresAt(), key);
+        try {
+            store.save(current);
+            adopt(current);
+        } catch (IOException saveError) {
+            // The network call can still succeed; keep the key in memory so a
+            // retry after the volume recovers replays it.
+            adopt(current);
+        }
+
+        AgentCredentialStore.Credentials rotated;
+        try {
+            rotated = client.refresh(current.refreshToken(), key, current.nodeId());
+        } catch (IOException error) {
+            // Keep the persisted key so a retry of this same attempt can hit
+            // the backend replay cache, then fail the process rather than loop.
+            throw new AgentAuthFatalException(
+                "Node credentials could not be refreshed; re-enroll this node", error);
+        }
+
+        AgentCredentialStore.Credentials next = new AgentCredentialStore.Credentials(
+            rotated.nodeId() != null && !rotated.nodeId().isBlank()
+                ? rotated.nodeId() : current.nodeId(),
+            rotated.accessToken(),
+            rotated.refreshToken(),
+            rotated.accessExpiresAt(),
+            rotated.refreshExpiresAt(),
+            UUID.randomUUID().toString());
+        // Persist before adopting so a failed write cannot leave memory ahead
+        // of disk (a restart would replay a rotated token under a new key).
+        store.save(next);
+        adopt(next);
+        inMemoryRefreshKey = null;
+    }
+
+    private void refreshInMemory(boolean force, String failedAccessToken) throws IOException {
         AgentCredentialStore.Credentials current = credentials;
         if (current == null || current.refreshToken() == null) {
             throw new IOException("No refresh token available; re-enroll this node");
         }
-        // Keep the same key across retries of this attempt (including lost
-        // responses) so the backend replay cache can return the same pair.
-        if (pendingRefreshKey == null) {
-            pendingRefreshKey = java.util.UUID.randomUUID().toString();
+        if (!force && !needsRefresh(current)) {
+            return;
+        }
+        if (force && failedAccessToken != null
+                && current.accessToken() != null
+                && !failedAccessToken.equals(current.accessToken())) {
+            return;
+        }
+        if (inMemoryRefreshKey == null || inMemoryRefreshKey.isBlank()) {
+            inMemoryRefreshKey = UUID.randomUUID().toString();
         }
         AgentCredentialStore.Credentials rotated;
         try {
-            rotated = client.refresh(current.refreshToken(), pendingRefreshKey);
+            rotated = client.refresh(current.refreshToken(), inMemoryRefreshKey);
         } catch (IOException error) {
-            // Keep pendingRefreshKey so a retry of this same attempt can hit the
-            // backend replay cache, then fail the process rather than looping.
             throw new AgentAuthFatalException(
                 "Node credentials could not be refreshed; re-enroll this node", error);
         }
-        // Persist before adopting so a failed write cannot leave memory ahead
-        // of disk (a restart would replay a rotated token and revoke the family).
-        if (store != null) store.save(rotated);
-        adopt(rotated);
-        // Clear only after the new pair is durable; a failed save retries with
-        // the same key instead of presenting the rotated token under a new key.
-        pendingRefreshKey = null;
+        adopt(new AgentCredentialStore.Credentials(
+            rotated.nodeId() != null && !rotated.nodeId().isBlank()
+                ? rotated.nodeId() : current.nodeId(),
+            rotated.accessToken(),
+            rotated.refreshToken(),
+            rotated.accessExpiresAt(),
+            rotated.refreshExpiresAt(),
+            null));
+        inMemoryRefreshKey = null;
+    }
+
+    private static boolean needsRefresh(AgentCredentialStore.Credentials credentials) {
+        return credentials.accessToken() == null
+            || credentials.accessExpiresAt() == null
+            || Instant.now().isAfter(credentials.accessExpiresAt().minus(REFRESH_MARGIN));
+    }
+
+    private static boolean isNewer(AgentCredentialStore.Credentials disk,
+                                   AgentCredentialStore.Credentials memory) {
+        if (disk == null) return false;
+        if (memory == null) return true;
+        if (!Objects.equals(disk.accessToken(), memory.accessToken())) return true;
+        if (disk.accessExpiresAt() == null) return false;
+        return memory.accessExpiresAt() == null || disk.accessExpiresAt().isAfter(memory.accessExpiresAt());
     }
 
     private void adopt(AgentCredentialStore.Credentials next) {

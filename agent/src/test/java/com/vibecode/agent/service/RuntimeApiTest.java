@@ -113,7 +113,7 @@ class RuntimeApiTest {
         assertEquals("POST", request.method());
         assertEquals("/api/v1/agent-nodes/7/runtimes", request.path());
         assertTrue(request.body().contains("\"modelRef\":\"acme/model\""));
-        assertTrue(request.body().startsWith("["));
+        assertTrue(request.body().contains("\"runtimes\":["));
     }
 
     @Test

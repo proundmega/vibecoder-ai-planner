@@ -69,9 +69,11 @@ public class RuntimeApi {
     /** POST /agent-nodes/:id/runtimes — declare the supervisor's desired set. */
     public List<Map<String, Object>> declareRuntimes(List<Map<String, Object>> declared) throws IOException {
         String nodeId = requireNodeId();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("runtimes", declared);
         Request request = new Request.Builder()
             .url(config.getApiUrl() + "/agent-nodes/" + encode(nodeId) + "/runtimes")
-            .post(jsonBody(declared))
+            .post(jsonBody(body))
             .build();
         Object data = execute(request, new TypeReference<Object>() {});
         if (data instanceof List<?> list) {

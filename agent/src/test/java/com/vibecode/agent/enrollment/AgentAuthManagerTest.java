@@ -51,6 +51,13 @@ class AgentAuthManagerTest {
         @Override
         public AgentCredentialStore.Credentials refresh(String refreshToken, String idempotencyKey)
                 throws IOException {
+            return refresh(refreshToken, idempotencyKey, null);
+        }
+
+        @Override
+        public AgentCredentialStore.Credentials refresh(String refreshToken, String idempotencyKey,
+                                                        String currentNodeId)
+                throws IOException {
             refreshes.incrementAndGet();
             keys.add(idempotencyKey);
             try {
@@ -179,6 +186,72 @@ class AgentAuthManagerTest {
 
         assertEquals(2, client.keys.size());
         assertEquals(client.keys.get(0), client.keys.get(1));
+    }
+
+    @Test
+    void twoRuntimeManagersShareOneHostRefreshAndDoNotRevokeTheFamily() throws IOException {
+        EnrollConfig firstConfig = new EnrollConfig();
+        firstConfig.token = "enr_once";
+        Path file = tempDir.resolve("credentials.json");
+        StubClient firstClient = new StubClient(firstConfig);
+        firstClient.next = pair("at_expiring", Instant.now().plusSeconds(30));
+
+        AgentAuthManager first = new AgentAuthManager(
+            firstConfig, new AgentCredentialStore(file), firstClient);
+        first.initialize();
+
+        EnrollConfig secondConfig = new EnrollConfig();
+        secondConfig.token = "enr_once";
+        StubClient secondClient = new StubClient(secondConfig);
+        AgentAuthManager second = new AgentAuthManager(
+            secondConfig, new AgentCredentialStore(file), secondClient);
+        second.initialize();
+
+        firstClient.next = pair("at_rotated", Instant.now().plusSeconds(3600));
+        String firstToken = first.ensureValidAccessToken();
+        String secondToken = second.ensureValidAccessToken();
+
+        assertEquals(1, firstClient.refreshes.get(), "the first process rotates once");
+        assertEquals(0, secondClient.refreshes.get(), "the second process reloads the rotated pair");
+        assertEquals(firstToken, secondToken);
+        assertEquals("42", second.getNodeId());
+    }
+
+    @Test
+    void aSecondProcessAfterA401AdoptsAnotherProcessesRotatedPair() throws IOException {
+        EnrollConfig firstConfig = new EnrollConfig();
+        firstConfig.token = "enr_once";
+        Path file = tempDir.resolve("credentials.json");
+        StubClient firstClient = new StubClient(firstConfig);
+        firstClient.next = pair("at_expiring", Instant.now().plusSeconds(30));
+        AgentAuthManager first = new AgentAuthManager(
+            firstConfig, new AgentCredentialStore(file), firstClient);
+        first.initialize();
+
+        // A second process writes a valid pair (simulating its earlier
+        // refresh), then loads it like a normal child.
+        new AgentCredentialStore(file).save(pair("at_second", Instant.now().plusSeconds(3600)));
+        EnrollConfig secondConfig = new EnrollConfig();
+        secondConfig.token = "enr_once";
+        StubClient secondClient = new StubClient(secondConfig);
+        AgentAuthManager second = new AgentAuthManager(
+            secondConfig, new AgentCredentialStore(file), secondClient);
+        second.initialize();
+        String stale = second.ensureValidAccessToken();
+        assertEquals("at_second", stale);
+        int secondRefreshes = secondClient.refreshes.get();
+
+        // The first process adopts the on-disk pair, then rotates it.
+        assertEquals("at_second", first.ensureValidAccessToken());
+        firstClient.next = pair("at_rotated", Instant.now().plusSeconds(3600));
+        first.refreshAfterUnauthorized("at_second");
+
+        // The second process gets a 401 for its old token and adopts the
+        // rotated pair without presenting a new idempotency key.
+        second.refreshAfterUnauthorized(stale);
+        assertEquals(secondRefreshes, secondClient.refreshes.get(),
+            "the 401 path adopts the other process's pair without a second rotation");
+        assertEquals("at_rotated", second.ensureValidAccessToken());
     }
 
     @Test

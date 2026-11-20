@@ -63,7 +63,7 @@ public final class Supervisor implements AutoCloseable {
     private final Path pidDir;
     private final int heapMb;
     private final ChildLauncher launcher;
-    private final Map<String, Long> runtimeIds;
+    private volatile Map<String, Long> runtimeIds;
     private final Duration stopTimeout;
     private final Duration pollInterval;
     private final Object lock = new Object();
@@ -224,6 +224,13 @@ public final class Supervisor implements AutoCloseable {
         return snapshot();
     }
 
+    /** Replace the section/runtime id map after a successful re-declaration. */
+    public void updateRuntimeIds(Map<String, Long> ids) {
+        synchronized (lock) {
+            this.runtimeIds = ids == null ? Map.of() : Map.copyOf(ids);
+        }
+    }
+
     /** Stop every managed child and end the periodic loop. Idempotent. */
     @Override
     public void close() {
@@ -335,7 +342,7 @@ public final class Supervisor implements AutoCloseable {
         Map<String, String> env = new LinkedHashMap<>();
         putIfPresent(env, "BACKEND_URL", System.getenv("BACKEND_URL"));
         putIfPresent(env, "AGENT_CREDENTIALS_FILE", System.getenv("AGENT_CREDENTIALS_FILE"));
-        env.put("AGENT_RUNTIME_NAME", slot.name());
+        env.put("AGENT_RUNTIME_NAME", slot.runtimeName());
         env.put("AGENT_ROLE", slot.role().wireName());
         env.put("AGENT_LLM_MODEL", slot.modelRef());
         if (slot.effort() != null) {

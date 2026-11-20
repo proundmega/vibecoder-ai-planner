@@ -242,7 +242,7 @@ class SupervisorReconcileTest {
             assertEquals("17", spec.project());
             assertEquals(77L, spec.runtimeId());
             assertEquals(512, spec.heapMb());
-            assertEquals("workers-1", spec.environment().get("AGENT_RUNTIME_NAME"));
+            assertEquals("workers", spec.environment().get("AGENT_RUNTIME_NAME"));
             assertEquals("worker", spec.environment().get("AGENT_ROLE"));
             assertEquals("acme/model", spec.environment().get("AGENT_LLM_MODEL"));
             assertEquals("max", spec.environment().get("AGENT_EFFORT"));

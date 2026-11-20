@@ -9,9 +9,9 @@
 ;
 ;   role   = worker | reviewer | planner   (required)
 ;   model  = <credential-name>/<model>     (required)
-;   count  = 1..100                        (required)
+;   count  = 1..64                         (required)
 ;   effort = minimal | low | medium | high | max   (optional; model default)
-;   project= <project id or slug>          (optional; assigned per lease)
+;   project= <project id>                  (required for workers; Track A)
 ;
 ; Section names are used in child names (<name>-1, <name>-2, …) and PID files.
 ; Changing role/model/effort/project replaces only the affected children;
@@ -28,6 +28,7 @@ role = worker
 model = acme/claude-sonnet
 count = 3
 effort = high
+project = 1
 
 ; Reviewers: comment-only in this phase; read-only project access.
 [runtime "reviewers"]

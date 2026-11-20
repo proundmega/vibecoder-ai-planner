@@ -17,22 +17,24 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Entry point for the host supervisor ({@code SUPERVISOR_CONFIG}).
  *
  * <p>The supervisor enrolls the node, declares the {@code agent.ini} runtimes
- * to the backend, and reconciles the child JVMs. If the backend is unreachable
- * it keeps the current children and retries; it never treats a failed config
- * fetch as a reason to stop the fleet.</p>
+ * to the backend, and reconciles the child JVMs. The declaration is required
+ * before the first child is spawned: a child without a server runtime id
+ * cannot heartbeat or claim work. A failed re-declaration keeps the running
+ * children and retries; it never tears down the fleet.</p>
  */
 public final class SupervisorMain {
 
     private static final Logger log = LoggerFactory.getLogger(SupervisorMain.class);
-    private static final Duration DEFAULT_STOP_TIMEOUT = Duration.ofSeconds(10);
     private static final Duration POLL_INTERVAL = Duration.ofSeconds(2);
     private static final int DEFAULT_HEAP_MB = 768;
     private static final int MIN_HEAP_MB = 128;
+    private static final int DECLARE_ATTEMPTS = 10;
 
     private SupervisorMain() {
     }
@@ -40,14 +42,19 @@ public final class SupervisorMain {
     public static void run(String configPath) throws Exception {
         Path path = Path.of(configPath);
         RuntimeConfig desired = RuntimeConfig.parse(path);
+        validateDeclaration(desired);
+        AtomicReference<RuntimeConfig> desiredRef = new AtomicReference<>(desired);
 
         AgentConfig agentConfig = new AgentConfig();
         AgentCredentialStore store = new AgentCredentialStore(Path.of(agentConfig.getCredentialsFile()));
         AgentAuthManager auth = new AgentAuthManager(agentConfig, store, new AgentEnrollmentClient(agentConfig));
         auth.initialize();
         RuntimeApi api = new RuntimeApi(agentConfig, auth);
+        assertNodeActive(api);
 
-        Map<String, Long> runtimeIds = declareWithRetry(api, desired, 5);
+        // One declaration per section. The server returns one runtime row per
+        // declaration; every child of that section shares the runtime id.
+        Map<String, Long> runtimeIds = declareRequired(api, desired, DECLARE_ATTEMPTS);
         int heapMb = childHeapMb(desired);
         Path pidDir = Path.of(System.getenv().getOrDefault(
             "SUPERVISOR_PID_DIR", "/tmp/vibecode-runtimes"));
@@ -63,12 +70,11 @@ public final class SupervisorMain {
             POLL_INTERVAL);
         supervisor.reconcile();
         log.info("Supervisor reconciled: desired={} running={}",
-            desired.expandedSlots().size(),
+            desired.runtimes().size(),
             supervisor.snapshot().size());
 
-        // The declaration is retried in the background so a backend restart
-        // does not leave the runtimes without records. Children also resolve
-        // their id from the node config on boot.
+        // A backend restart or a transient failure is retried with the current
+        // desired set. The supervisor never spawns id-less children.
         ScheduledExecutorService retry = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread thread = new Thread(r, "supervisor-declare-retry");
             thread.setDaemon(true);
@@ -76,13 +82,22 @@ public final class SupervisorMain {
         });
         retry.scheduleWithFixedDelay(() -> {
             try {
-                declareWithRetry(api, desired, 1);
-            } catch (RuntimeException e) {
+                if (!nodeActive(api.fetchConfig())) {
+                    log.info("Node is draining or revoked; stopping supervised runtimes");
+                    supervisor.close();
+                    return;
+                }
+                RuntimeConfig current = desiredRef.get();
+                Map<String, Long> refreshed = declareWithRetry(api, current, 1);
+                if (!refreshed.isEmpty()) {
+                    supervisor.updateRuntimeIds(refreshed);
+                }
+            } catch (Exception e) {
                 log.debug("Runtime re-declaration failed: {}", e.getMessage());
             }
         }, 60, 60, TimeUnit.SECONDS);
 
-        installSignalHandlers(supervisor, path);
+        installSignalHandlers(supervisor, path, api, desiredRef);
         try {
             supervisor.runLoop();
         } finally {
@@ -91,18 +106,14 @@ public final class SupervisorMain {
         }
     }
 
-    private static void installSignalHandlers(Supervisor supervisor, Path path) {
+    private static void installSignalHandlers(
+        Supervisor supervisor,
+        Path path,
+        RuntimeApi api,
+        AtomicReference<RuntimeConfig> desiredRef
+    ) {
         try {
-            sun.misc.Signal.handle(new sun.misc.Signal("HUP"), signal -> {
-                try {
-                    RuntimeConfig reloaded = RuntimeConfig.parse(path);
-                    log.info("SIGHUP: reloading {} runtime declaration(s)", reloaded.runtimes().size());
-                    supervisor.reconcile(reloaded);
-                } catch (Exception e) {
-                    // A bad edit must not take down the running fleet.
-                    log.error("SIGHUP reload rejected: {}", e.getMessage());
-                }
-            });
+            sun.misc.Signal.handle(new sun.misc.Signal("HUP"), signal -> reload(api, supervisor, path, desiredRef));
         } catch (Throwable e) {
             log.warn("Could not register SIGHUP handler: {}", e.getMessage());
         }
@@ -119,19 +130,22 @@ public final class SupervisorMain {
     }
 
     /**
-     * Declare the ini runtimes and return child-name → runtime id. A failure is
-     * retried; after the attempts are exhausted the supervisor still starts,
-     * and children resolve their own id from the node config.
+     * Declare the ini runtimes and return section-name → runtime id. The first
+     * boot must succeed before any child is spawned; a failed re-declaration
+     * (SIGHUP/retry) leaves the running fleet alone.
      */
     static Map<String, Long> declareWithRetry(RuntimeApi api, RuntimeConfig config, int attempts) {
         List<Map<String, Object>> declared = new ArrayList<>();
         for (RuntimeConfig.DeclaredRuntime runtime : config.runtimes()) {
             Map<String, Object> row = new LinkedHashMap<>();
+            // Stable section name: the server returns one runtime row per
+            // declaration and every child in the section shares its id.
+            row.put("name", runtime.name());
             row.put("role", runtime.role().wireName());
             row.put("modelRef", runtime.modelRef());
-            row.put("count", runtime.count());
+            row.put("concurrency", runtime.count());
             if (runtime.effort() != null) row.put("effort", runtime.effort().wireName());
-            if (runtime.project() != null) row.put("project", runtime.project());
+            if (runtime.project() != null) row.put("projectId", runtime.project());
             declared.add(row);
         }
 
@@ -139,17 +153,14 @@ public final class SupervisorMain {
         for (int attempt = 1; attempt <= Math.max(1, attempts); attempt++) {
             try {
                 List<Map<String, Object>> returned = api.declareRuntimes(declared);
-                Map<String, Long> ids = mapRuntimeIds(returned);
+                Map<String, Long> ids = mapSectionRuntimeIds(config, returned);
                 if (ids.isEmpty()) {
-                    ids = mapIdsInOrder(config, returned);
-                }
-                if (ids.isEmpty()) {
-                    ids = mapRuntimeIdsFromConfig(api.fetchConfig());
+                    ids = mapSectionRuntimeIdsFromConfig(config, api.fetchConfig());
                 }
                 if (!ids.isEmpty()) {
                     return ids;
                 }
-                log.warn("Runtime declaration returned no ids (attempt {}/{})", attempt, attempts);
+                log.warn("Runtime declaration returned no usable ids (attempt {}/{})", attempt, attempts);
             } catch (Exception e) {
                 last = new RuntimeException(e.getMessage(), e);
                 log.warn("Runtime declaration failed (attempt {}/{}): {}", attempt, attempts, e.getMessage());
@@ -159,25 +170,120 @@ public final class SupervisorMain {
             }
         }
         if (last != null) {
-            log.warn("Starting with unresolved runtime ids; children will resolve them from the node config");
+            log.warn("Runtime declaration still failing; keeping the current fleet");
         }
         return Map.of();
     }
 
     /**
-     * The API contract declares a runtime set without client names. When the
-     * response has no usable names, map ids to the deterministic slots in
-     * declaration order.
+     * Parse, declare and apply a reloaded config. The declaration must succeed
+     * before new children spawn; otherwise the current fleet is left untouched.
+     *
+     * @return the applied config, or {@code null} when the reload was rejected
      */
-    static Map<String, Long> mapIdsInOrder(RuntimeConfig config, List<Map<String, Object>> runtimes) {
+    static RuntimeConfig reload(
+        RuntimeApi api,
+        Supervisor supervisor,
+        Path path,
+        AtomicReference<RuntimeConfig> desiredRef
+    ) {
+        try {
+            RuntimeConfig reloaded = RuntimeConfig.parse(path);
+            validateDeclaration(reloaded);
+            Map<String, Long> ids = declareWithRetry(api, reloaded, 3);
+            if (ids.isEmpty()) {
+                log.error("SIGHUP reload rejected: runtime declaration failed; keeping the current fleet");
+                return null;
+            }
+            supervisor.updateRuntimeIds(ids);
+            desiredRef.set(reloaded);
+            log.info("SIGHUP: reloading {} runtime declaration(s)", reloaded.runtimes().size());
+            supervisor.reconcile(reloaded);
+            return reloaded;
+        } catch (Exception e) {
+            // A bad edit must not take down the running fleet.
+            log.error("SIGHUP reload rejected: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static void assertNodeActive(RuntimeApi api) {
+        try {
+            if (!nodeActive(api.fetchConfig())) {
+                throw new IllegalStateException("Node is draining or revoked; refusing to start runtimes");
+            }
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            // A config fetch failure is retried by the declaration path; do not
+            // fail closed on a transient backend outage.
+            log.warn("Could not read node status before startup: {}", e.getMessage());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    static boolean nodeActive(Map<String, Object> config) {
+        if (config == null) return true;
+        Object node = config.get("node");
+        String status = null;
+        if (node instanceof Map<?, ?> map) {
+            status = stringValue(((Map<String, Object>) map).get("status"));
+        }
+        if (status == null) {
+            status = stringValue(config.get("status"));
+        }
+        return status == null || "active".equalsIgnoreCase(status);
+    }
+
+    /**
+     * Track A's declare-runtimes contract requires a project for every worker.
+     * Reject it before a child can start (and crash-loop) without one.
+     */
+    static void validateDeclaration(RuntimeConfig config) {
+        for (RuntimeConfig.DeclaredRuntime runtime : config.runtimes()) {
+            if (runtime.role() == RuntimeConfig.Role.WORKER
+                    && (runtime.project() == null || runtime.project().isBlank())) {
+                throw new IllegalArgumentException(
+                    "worker runtime '" + runtime.name() + "' requires project");
+            }
+        }
+    }
+
+    /** First boot must have a declared runtime before any child starts. */
+    static Map<String, Long> declareRequired(RuntimeApi api, RuntimeConfig config, int attempts) {
+        Map<String, Long> ids = declareWithRetry(api, config, attempts);
+        if (ids.isEmpty()) {
+            throw new IllegalStateException(
+                "Runtime declaration failed; refusing to start children without server runtime ids");
+        }
+        return ids;
+    }
+
+    /**
+     * Map one returned runtime row per declared section to all of that
+     * section's child slots. The server may echo the section name; if it
+     * generated names, declaration order is the stable fallback.
+     */
+    static Map<String, Long> mapSectionRuntimeIds(RuntimeConfig config,
+                                                  List<Map<String, Object>> runtimes) {
         Map<String, Long> ids = new LinkedHashMap<>();
         if (runtimes == null || runtimes.isEmpty()) return ids;
-        List<RuntimeConfig.RuntimeSlot> slots = config.expandedSlots();
-        if (slots.size() != runtimes.size()) return ids;
-        for (int i = 0; i < slots.size(); i++) {
-            Long id = longValue(runtimes.get(i).get("id"));
-            if (id == null) return Map.of();
-            ids.put(slots.get(i).name(), id);
+        Map<String, Long> byName = mapRuntimeIds(runtimes);
+        for (RuntimeConfig.DeclaredRuntime declared : config.runtimes()) {
+            Long id = byName.get(declared.name());
+            if (id != null) ids.put(declared.name(), id);
+        }
+        if (ids.size() == config.runtimes().size()) {
+            return ids;
+        }
+        // No usable names: the API returns one row per declaration in order.
+        if (runtimes.size() == config.runtimes().size()) {
+            ids.clear();
+            for (int i = 0; i < runtimes.size(); i++) {
+                Long id = longValue(runtimes.get(i).get("id"));
+                if (id == null) return Map.of();
+                ids.put(config.runtimes().get(i).name(), id);
+            }
         }
         return ids;
     }
@@ -196,16 +302,16 @@ public final class SupervisorMain {
     }
 
     @SuppressWarnings("unchecked")
-    static Map<String, Long> mapRuntimeIdsFromConfig(Map<String, Object> config) {
-        if (config == null) return Map.of();
-        Object runtimes = config.get("runtimes");
-        if (runtimes == null) runtimes = config.get("data");
+    static Map<String, Long> mapSectionRuntimeIdsFromConfig(RuntimeConfig config,
+                                                           Map<String, Object> nodeConfig) {
+        if (nodeConfig == null) return Map.of();
+        Object runtimes = nodeConfig.get("runtimes");
+        if (runtimes == null) runtimes = nodeConfig.get("data");
         if (runtimes instanceof Map<?, ?> map) {
             runtimes = map.get("runtimes");
         }
         if (runtimes instanceof List<?> list) {
-            List<Map<String, Object>> rows = (List<Map<String, Object>>) list;
-            return mapRuntimeIds(rows);
+            return mapSectionRuntimeIds(config, (List<Map<String, Object>>) list);
         }
         return Map.of();
     }

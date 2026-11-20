@@ -689,7 +689,34 @@ public class ApiService {
         Map<String, Object> body = new java.util.HashMap<>();
         if (status != null) body.put("status", status);
         if (currentProjectId != null) body.put("currentProjectId", currentProjectId);
-        executePost(url, body, new TypeReference<ApiResponse<Object>>() {});
+        String json = objectMapper.writeValueAsString(body);
+        Request request = new Request.Builder()
+            .url(url)
+            .header("Content-Type", "application/json")
+            .post(RequestBody.create(json, MediaType.get("application/json")))
+            .build();
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (response.code() == 401 || response.code() == 403 || response.code() == 404) {
+                throw new RuntimeRevokedException(
+                    "Runtime or node is no longer authorized (HTTP " + response.code() + ")");
+            }
+            if (!response.isSuccessful()) {
+                throw new IOException("Heartbeat failed with HTTP " + response.code());
+            }
+            String responseBody = response.body() != null ? response.body().string() : "";
+            ApiResponse<Object> parsed = objectMapper.readValue(
+                responseBody, new TypeReference<ApiResponse<Object>>() {});
+            if (parsed.hasError()) {
+                throw new IOException("Heartbeat failed: " + parsed.getError());
+            }
+        }
+    }
+
+    /** The node/runtime credential was revoked, drained or removed. */
+    public static class RuntimeRevokedException extends IOException {
+        public RuntimeRevokedException(String message) {
+            super(message);
+        }
     }
 
     /**

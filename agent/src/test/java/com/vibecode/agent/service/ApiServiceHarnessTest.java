@@ -101,6 +101,14 @@ class ApiServiceHarnessTest {
     }
 
     @Test
+    void heartbeatTreatsA403AsARevokedRuntime() {
+        respond("/api/v1/agent-runtimes/3/heartbeat", 403, error("TOKEN_REVOKED"));
+
+        assertThrows(ApiService.RuntimeRevokedException.class,
+            () -> api.sendHeartbeat("3", "running", 1));
+    }
+
+    @Test
     void redactsCredentialsBeforePostingTicketMessages() throws Exception {
         respond("/api/v1/tickets/1/messages", 200, ok("{}"));
         String token = "custom-provider-key-123456";

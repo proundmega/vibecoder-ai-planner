@@ -108,6 +108,41 @@ public final class ProviderEffort {
         return reasoningEffort(providerType, MEDIUM) != null;
     }
 
+    /**
+     * Model-aware reasoning effort. Older OpenAI chat models reject
+     * {@code reasoning_effort}; return null unless the model is a known
+     * reasoning family.
+     */
+    public static String reasoningEffort(String providerType, String canonicalEffort, String model) {
+        String type = normalizeProvider(providerType);
+        if ("openai".equals(type) || "open-ai".equals(type)) {
+            if (!supportsReasoningEffortModel(model)) {
+                return null;
+            }
+        }
+        return reasoningEffort(providerType, canonicalEffort);
+    }
+
+    /** True for Anthropic models that support extended thinking. */
+    public static boolean supportsThinking(String model) {
+        if (model == null) return false;
+        String normalized = model.toLowerCase(Locale.ROOT);
+        return normalized.contains("claude-3-7")
+            || normalized.contains("claude-sonnet-4")
+            || normalized.contains("claude-opus-4")
+            || normalized.contains("claude-haiku-4")
+            || normalized.contains("claude-4");
+    }
+
+    private static boolean supportsReasoningEffortModel(String model) {
+        if (model == null) return false;
+        String normalized = model.toLowerCase(Locale.ROOT);
+        return normalized.startsWith("gpt-5")
+            || normalized.startsWith("o1")
+            || normalized.startsWith("o3")
+            || normalized.startsWith("o4");
+    }
+
     public static boolean isCanonical(String value) {
         return value != null && CANONICAL.contains(normalize(value));
     }

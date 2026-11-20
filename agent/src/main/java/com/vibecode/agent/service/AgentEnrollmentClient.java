@@ -59,15 +59,25 @@ public class AgentEnrollmentClient {
                 body.put("fingerprint", nodeMetadata.get("fingerprint"));
             }
         }
-        return post(config.getEnrollmentUrl(), body);
+        return post(config.getEnrollmentUrl(), body, null);
     }
 
     public AgentCredentialStore.Credentials refresh(String refreshToken, String idempotencyKey)
             throws IOException {
+        return refresh(refreshToken, idempotencyKey, null);
+    }
+
+    /**
+     * Refresh the pair. The backend's refresh payload deliberately omits the
+     * node id (the credential already identifies the node), so the caller
+     * supplies the current node id as a fallback.
+     */
+    public AgentCredentialStore.Credentials refresh(String refreshToken, String idempotencyKey,
+                                                    String currentNodeId) throws IOException {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("refresh_token", refreshToken);
         body.put("idempotency_key", idempotencyKey);
-        return postWithRetry(config.getRefreshUrl(), body);
+        return postWithRetry(config.getRefreshUrl(), body, currentNodeId);
     }
 
     /**
@@ -75,12 +85,13 @@ public class AgentEnrollmentClient {
      * backend replay cache returns the identical pair instead of treating the
      * rotated token as theft.
      */
-    private AgentCredentialStore.Credentials postWithRetry(String url, Map<String, Object> body)
+    private AgentCredentialStore.Credentials postWithRetry(String url, Map<String, Object> body,
+                                                           String fallbackNodeId)
             throws IOException {
         IOException last = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
             try {
-                return post(url, body);
+                return post(url, body, fallbackNodeId);
             } catch (IOException error) {
                 last = error;
                 if (attempt < 3) {
@@ -96,7 +107,8 @@ public class AgentEnrollmentClient {
         throw last != null ? last : new IOException("Refresh request failed");
     }
 
-    private AgentCredentialStore.Credentials post(String url, Map<String, Object> body) throws IOException {
+    private AgentCredentialStore.Credentials post(String url, Map<String, Object> body,
+                                                  String fallbackNodeId) throws IOException {
         requireSecureUrl(url);
 
         Request request = new Request.Builder()
@@ -120,7 +132,10 @@ public class AgentEnrollmentClient {
                 JsonNode node = data.path("node");
                 nodeId = firstText(node, "id", "nodeId", "node_id");
             }
-            if (nodeId == null) {
+            if (nodeId == null || nodeId.isBlank()) {
+                nodeId = fallbackNodeId;
+            }
+            if (nodeId == null || nodeId.isBlank()) {
                 throw new IOException("Node enrollment response did not include a node id");
             }
             String accessToken = firstText(data, "accessToken", "access_token");

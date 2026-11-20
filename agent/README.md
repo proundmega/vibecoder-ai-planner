@@ -68,7 +68,7 @@ Verify:
 ```bash
 docker logs -f build-host-1-supervisor-1
 # "Node authenticated via enrollment (nodeId=…)"
-# "Supervisor reconciled: desired=3 running=3 spawned=3 drained=0"
+# "Supervisor reconciled: desired=2 running=4"
 docker exec build-host-1-supervisor-1 ls -l /credentials/node.json
 # -rw------- … /credentials/node.json
 ```
@@ -96,6 +96,7 @@ role = worker
 model = acme/claude-sonnet
 count = 3
 effort = high
+project = 1
 
 [runtime "reviewers"]
 role = reviewer
@@ -115,7 +116,8 @@ count = 1
 - `count` spawns `<name>-1` … `<name>-N`; names are deterministic.
 - `effort` is `minimal`, `low`, `medium`, `high` or `max`; omitted means the
   model default (`medium`).
-- `project` is an optional worker hint. Grants decide authorization.
+- `project` is **required for worker sections** (Track A’s declare contract).
+  Grants decide authorization; the value is a declaration hint, never trusted.
 - Unknown keys, duplicate sections, invalid enums and any secret-looking key
   or value stop the supervisor at startup. Provider keys are fetched per
   runtime from the backend, never stored here.

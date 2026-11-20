@@ -27,22 +27,29 @@ public class OpenAiCompatibleProvider implements AiProvider {
     private final String apiKey;
     private final int maxTokens;
     private final String effort;
+    private final boolean effortExplicit;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private int tokensIn = 0;
     private int tokensOut = 0;
 
     public OpenAiCompatibleProvider(String endpointUrl, String model, String apiKey, int maxTokens) {
-        this(endpointUrl, model, apiKey, maxTokens, null);
+        this(endpointUrl, model, apiKey, maxTokens, null, false);
     }
 
     public OpenAiCompatibleProvider(String endpointUrl, String model, String apiKey, int maxTokens,
                                     String effort) {
+        this(endpointUrl, model, apiKey, maxTokens, effort, false);
+    }
+
+    public OpenAiCompatibleProvider(String endpointUrl, String model, String apiKey, int maxTokens,
+                                    String effort, boolean effortExplicit) {
         this.endpointUrl = endpointUrl;
         this.model = model != null ? model : "default";
         this.apiKey = apiKey;
         this.maxTokens = maxTokens;
         this.effort = ProviderEffort.canonical(effort);
+        this.effortExplicit = effortExplicit;
         this.httpClient = new OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(300, TimeUnit.SECONDS)
@@ -70,7 +77,7 @@ public class OpenAiCompatibleProvider implements AiProvider {
         requestBody.put("max_tokens", maxTokens);
         requestBody.put("temperature", 0.2);
         String reasoningEffort = ProviderEffort.reasoningEffort("generic", effort);
-        if (reasoningEffort != null) {
+        if (reasoningEffort != null && (effortExplicit || !"medium".equals(effort))) {
             requestBody.put("reasoning_effort", reasoningEffort);
         }
 
