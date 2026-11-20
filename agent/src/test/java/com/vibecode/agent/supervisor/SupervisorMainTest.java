@@ -366,6 +366,110 @@ class SupervisorMainTest {
         }
     }
 
+    @Test
+    void sighupReloadRetriesASoftSuspendedSection() throws Exception {
+        Assumptions.assumeTrue(sleepAvailable(), "POSIX sleep is required for this test");
+        RuntimeConfig initial = RuntimeConfig.parse("""
+            [runtime "workers"]
+            role = worker
+            model = acme/model
+            count = 1
+            project = 1
+            """);
+        Path ini = tempDir.resolve("agent.ini");
+        Files.writeString(ini, """
+            [runtime "workers"]
+            role = worker
+            model = acme/model
+            count = 1
+            project = 2
+            """);
+
+        com.vibecode.agent.service.RuntimeApi api = mock(com.vibecode.agent.service.RuntimeApi.class);
+        List<Map<String, Object>> declared = new ArrayList<>();
+        when(api.declareRuntimes(anyList())).thenAnswer(invocation -> {
+            declared.addAll(invocation.getArgument(0));
+            return List.of(Map.of("id", 5, "name", "workers-1"));
+        });
+
+        List<Long> pids = new ArrayList<>();
+        Supervisor supervisor = new Supervisor(
+            tempDir.resolve("pids-soft"),
+            initial,
+            64,
+            spec -> {
+                Process process = new ProcessBuilder("sleep", "60").start();
+                pids.add(process.pid());
+                return process;
+            },
+            Map.of("workers", 1L),
+            Duration.ofSeconds(2),
+            Duration.ofMillis(100));
+        try {
+            // A revoked grant is a soft suspension: the repointed project must
+            // be declared even though the old row still maps to project 1.
+            supervisor.updateSuspendedSections(java.util.Set.of("workers"));
+            supervisor.updateHardSuspendedSections(java.util.Set.of());
+            AtomicReference<RuntimeConfig> desired = new AtomicReference<>(initial);
+
+            RuntimeConfig applied = SupervisorMain.reload(api, supervisor, ini, desired);
+
+            assertNotNull(applied);
+            assertEquals("2", String.valueOf(declared.get(0).get("projectId")),
+                "the repointed project is declared");
+            assertEquals(1, supervisor.snapshot().size());
+            assertTrue(supervisor.suspendedSectionsSnapshot().isEmpty());
+        } finally {
+            supervisor.close();
+            for (long pid : pids) {
+                ProcessHandle.of(pid).ifPresent(ProcessHandle::destroy);
+            }
+        }
+    }
+
+    @Test
+    void sighupReloadKeepsAnAdminStoppedSectionRetired() throws Exception {
+        RuntimeConfig initial = RuntimeConfig.parse("""
+            [runtime "workers"]
+            role = worker
+            model = acme/model
+            count = 1
+            project = 1
+            """);
+        Path ini = tempDir.resolve("agent.ini");
+        Files.writeString(ini, """
+            [runtime "workers"]
+            role = worker
+            model = acme/model
+            count = 1
+            project = 2
+            """);
+
+        com.vibecode.agent.service.RuntimeApi api = mock(com.vibecode.agent.service.RuntimeApi.class);
+        Supervisor supervisor = new Supervisor(
+            tempDir.resolve("pids-hard"),
+            initial,
+            64,
+            spec -> null,
+            Map.of(),
+            Duration.ofSeconds(1),
+            Duration.ofMillis(100));
+        try {
+            supervisor.updateSuspendedSections(java.util.Set.of("workers"));
+            supervisor.updateHardSuspendedSections(java.util.Set.of("workers"));
+            AtomicReference<RuntimeConfig> desired = new AtomicReference<>(initial);
+
+            RuntimeConfig applied = SupervisorMain.reload(api, supervisor, ini, desired);
+
+            org.junit.jupiter.api.Assertions.assertNull(applied,
+                "an admin-stopped section must not be re-declared by SIGHUP");
+            org.mockito.Mockito.verify(api, org.mockito.Mockito.never())
+                .declareRuntimes(anyList());
+        } finally {
+            supervisor.close();
+        }
+    }
+
     private static boolean sleepAvailable() {
         try {
             Process process = new ProcessBuilder("sleep", "0").start();
