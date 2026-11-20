@@ -47,6 +47,8 @@ depends_on: []           # e.g. ["fg-30"]
       here, not copied into other docs
 - [ ] Open decisions are answered or explicitly accepted as assumptions
 - [ ] No fact is duplicated across documents (see `planning/README.md`)
+- [ ] Dependent planned suites are reconciled or carry a `Relationship to
+      <id>` note (`planning/README.md` rule 7)
 - [ ] Review policy is applied: independent reviewer, evidence-backed findings,
       blocking-only fix rounds (`planning/README.md` §Review policy)
 - [ ] Status evidence below matches the intended status

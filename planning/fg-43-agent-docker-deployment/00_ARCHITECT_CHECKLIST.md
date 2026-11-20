@@ -9,7 +9,7 @@ created: "2026-10-31"
 updated: "2026-11-03"
 pr: null
 branch: null
-depends_on: ["fg-33", "fg-34"]
+depends_on: ["fg-33", "fg-34", "fg-54"]
 ---
 
 # 00 — Agent Docker Deployment and Host Sizing (fg-43)
@@ -18,6 +18,19 @@ depends_on: ["fg-33", "fg-34"]
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`), file operations (`04`).
 
 **Related code:** `agent/docker-compose.yml`, `backend/src/services/PoolManager.js`
+
+## Relationship to fg-54 (planned)
+
+`fg-54` replaces the container-per-agent pool with a **supervisor** that runs
+runtimes in one host stack. This ticket keeps the host sizing, reservations,
+limits, pause controls and health gates; the unit being sized becomes a
+**runtime child process**, and the pool size becomes the declared runtime count.
+`PoolManager` container creation is superseded (`fg-54` D9). Role profiles map
+to the fg-54 enum (`worker`, `reviewer`, `planner`); the "fixer" and "light
+poller" profiles become worker/planner variants.
+
+`01` FR4, FR7 and FR9 are read with this replacement; the sizing formula and
+safety rules are unchanged.
 
 ## Why this ticket exists
 

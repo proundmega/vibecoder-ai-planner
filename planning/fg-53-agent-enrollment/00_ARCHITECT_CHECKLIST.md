@@ -131,3 +131,13 @@ record it as an assumption in `01`.
   migration is D11, not a dependency of this ticket.
 - The planning PR merged as #173; the implementation PR is #174 (in review).
   `PENDING.txt` carries **In review (#174)** until it merges.
+
+## Relationship to fg-54 (planned)
+
+`fg-54` supersedes this ticket's **project/provider binding**: enrollment tokens
+become owner-scoped node tokens, `agents.project_id` is removed in favour of
+`(node, project, role)` grants, and the runtime identity moves to
+`agent_runtimes`. Keep the primitives introduced here — token hashing, refresh
+rotation, the 0600 credential store and audit hooks — and the enrollment
+endpoint shape where it still applies. The schema and API binding change under
+the approved clean cut (no backfill).

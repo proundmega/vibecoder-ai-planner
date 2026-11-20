@@ -40,6 +40,12 @@ intentionally omitted.
    cases; it does not restate the requirement, the design, or acceptance.
 6. **No placeholder sections kept "for completeness".** Delete a section that
    does not apply rather than leaving `[TBD]`.
+7. **Shared-model changes reconcile their dependents.** A suite that changes a
+   shared contract (identity, schema, roles, deployment shape, provider
+   config) must list the affected suites in `01` → *Change impact* and either
+   update their **planned** docs in the same PR or add a `Relationship to
+   <id>` note to their `00` explaining what is superseded and what stays.
+   Merged/done suites get a note, never a rewrite of their history.
 
 ## Review policy
 

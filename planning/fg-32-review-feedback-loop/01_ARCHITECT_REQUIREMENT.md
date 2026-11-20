@@ -4,6 +4,11 @@
 **Revised:** 2026-11-03 (fg-33 fixer-run integration: FR13, run lifecycle, identity rule)
 **Related code:** `ReviewProcessor`, `HarnessTicketProcessor`, `WorkspaceManager`, `PhaseService`, `CodeReview.vue`, `PhaseReview.vue`
 
+**fg-54 note:** the fixer is a `worker` runtime (no `AGENT_MODE=fix`); reviewer
+and fixer are separate `(node, project, role)` grants, and
+`tickets.assigned_agent_id` becomes `assigned_runtime_id`. The fix-request lease
+in FR4 is separate from the run lease in `harness_leases`.
+
 ## Problem
 
 When the reviewer proposes changes, the loop stops. There is no automatic path from review findings back to a Java agent that can correct the branch.
@@ -79,11 +84,11 @@ Do not weaken the normal build guard. Add an explicit fixer-only allow path:
 Run lifecycle and identity (FR13):
 
 1. The fixer calls `ApiService.startHarnessRun(..., purpose='fix', fixRequestId=<claimed request>, baseSha=<reviewed_sha>)`. `POST /harness/runs` and `HarnessRunService.startRun` accept and validate the three new fields.
-2. The fixer agent is provisioned with the same `owner_id` as the ticket's assigned agent. `startRun`'s `t.assigned_agent_id = a.owner_id` check stays in force; the fixer-only allowance does not bypass it. If a deployment cannot share the owner, the fix path must use the claimed fix lease as the authorization instead — a separate design change, not Phase 1.
+2. The fixer agent is provisioned with the same `owner_id` as the ticket's assigned runtime. `startRun`'s ownership check (`t.assigned_runtime_id` → `agent_runtimes.node_id` → `agent_nodes.owner_id`) stays in force; the fixer-only allowance does not bypass it. If a deployment cannot share the owner, the fix path must use the claimed fix lease as the authorization instead — a separate design change, not Phase 1.
 3. After start, the fixer records the normal checkpoints (`created` → `cloned` → `session_ready` → `prompting` → `verifying` → `publishing` → `done`), sends heartbeats during long steps, and calls `finishRun` with `succeeded` or `failed`.
 4. `startRun` still enforces `t.status='in_progress'`, the one-active-run lease and the existing PR/head guard for `purpose=build`.
 
-`ticket_fix_requests.claimed_by` stores the numeric `agents.id` (BIGINT), matching `harness_runs.agent_id`; compare it with the authenticated agent id, not the agent name or API key.
+`ticket_fix_requests.claimed_by` stores the numeric `agent_runtimes.id` (BIGINT), matching `harness_runs.runtime_id`; compare it with the authenticated runtime id, not the runtime name or node credential.
 
 The normal build `startRun` continues to refuse tickets and prior runs with PR/head evidence.
 

@@ -9,7 +9,7 @@ created: "2026-10-31"
 updated: "2026-11-03"
 pr: null
 branch: null
-depends_on: ["fg-30", "fg-31", "fg-32", "fg-33", "fg-36"]
+depends_on: ["fg-30", "fg-31", "fg-32", "fg-33", "fg-36", "fg-54"]
 ---
 
 # 00 — Multi-Agent Orchestration (fg-40)
@@ -18,6 +18,23 @@ depends_on: ["fg-30", "fg-31", "fg-32", "fg-33", "fg-36"]
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`), file operations (`04`).
 
 **Related code:** `AgentApp`, `TicketWorker`, `HarnessTicketProcessor`, `PhaseService`
+
+## Relationship to fg-54 (planned)
+
+`fg-54` owns node/runtime identity and the closed runtime role enum
+(`worker`, `reviewer`, `planner`); this ticket owns the task graph, handoffs and
+integrator semantics. Task-level roles map onto the canonical runtime roles:
+
+| fg-40 task role | Runtime role / tier |
+|---|---|
+| architect | `planner` |
+| builder, fixer | `worker` |
+| reviewer | `reviewer` |
+| integrator | `manager` service tier (not a runtime) |
+
+Task graphs may still name finer task types, but a runtime identity is always
+one of the three enum values, and grants/leases come from fg-54. `FR1` and the
+safety list in `01` are read with this mapping.
 
 ## Why this ticket exists
 
