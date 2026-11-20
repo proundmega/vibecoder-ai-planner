@@ -89,6 +89,18 @@ describe('Agent node routes (FR1, FR3, FR20, FR21, NFR1)', () => {
     expect(foreign.statusCode).toBe(404);
   });
 
+  it('returns nodes with their embedded runtimes', async () => {
+    jest.spyOn(AgentNodeService, 'listNodes').mockResolvedValue([
+      { id: 12, name: 'host', runtimes: [{ id: 3, name: 'worker-1', role: 'worker' }] },
+    ]);
+
+    const res = await request(app)
+      .get('/api/v1/agent-nodes')
+      .set('Authorization', 'Bearer mock-token');
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data[0].runtimes[0].name).toBe('worker-1');
+  });
+
   it('hides a node from a non-owner JWT mutation', async () => {
     const revoke = jest.spyOn(AgentNodeService, 'revoke');
     pool.query.mockImplementation((sql) => {

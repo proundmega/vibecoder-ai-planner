@@ -36,10 +36,21 @@ async function resetIfCleanCutApplied() {
                WHERE table_name = 'agent_actions' AND column_name = 'agent_id') AS has_legacy_action`
   );
   const row = columns.rows[0];
-  if (row.has_runtimes && (!row.has_agents || !row.has_legacy_action)) {
-    await pool.query('DROP SCHEMA public CASCADE');
-    await pool.query('CREATE SCHEMA public');
+  const cutApplied = row.has_runtimes && (!row.has_agents || !row.has_legacy_action);
+  if (!cutApplied) return;
+
+  const resetAllowed =
+    process.env.NODE_ENV === 'test'
+    || process.env.INTEGRATION_TESTS === '1'
+    || process.env.ALLOW_TEST_DB_RESET === '1';
+  if (!resetAllowed) {
+    throw new Error(
+      'Refusing to reset a database that carries the fg-54 clean cut; set ALLOW_TEST_DB_RESET=1 for a disposable test database'
+    );
   }
+
+  await pool.query('DROP SCHEMA public CASCADE');
+  await pool.query('CREATE SCHEMA public');
 }
 
 beforeAll(async () => {

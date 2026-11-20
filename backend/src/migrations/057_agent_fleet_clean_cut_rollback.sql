@@ -84,6 +84,18 @@ ALTER TABLE agents
   ADD COLUMN IF NOT EXISTS enrollment_token_id BIGINT
     REFERENCES agent_enrollment_tokens(id) ON DELETE SET NULL;
 
+ALTER TABLE agent_enrollment_tokens
+  ADD CONSTRAINT agent_enrollment_tokens_uses_check CHECK (used_count <= max_uses);
+
+CREATE INDEX IF NOT EXISTS idx_agents_api_key ON agents(api_key);
+CREATE INDEX IF NOT EXISTS idx_agents_owner_id ON agents(owner_id);
+CREATE INDEX IF NOT EXISTS idx_agents_provider_id ON agents(provider_id);
+CREATE INDEX IF NOT EXISTS idx_agents_project_id ON agents(project_id);
+CREATE INDEX IF NOT EXISTS idx_providers_type ON providers(provider_type);
+CREATE INDEX IF NOT EXISTS idx_providers_project_id ON providers(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_providers_project_id ON project_providers(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_providers_is_active ON project_providers(is_active);
+
 CREATE TABLE IF NOT EXISTS agent_access_tokens (
   id BIGSERIAL PRIMARY KEY,
   agent_id BIGINT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -172,6 +184,10 @@ CREATE INDEX IF NOT EXISTS idx_agent_refresh_tokens_expiry ON agent_refresh_toke
 CREATE INDEX IF NOT EXISTS idx_agent_enrollment_tokens_prefix ON agent_enrollment_tokens(token_prefix);
 CREATE INDEX IF NOT EXISTS idx_agent_enrollment_tokens_project ON agent_enrollment_tokens(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_enrollment_tokens_expiry ON agent_enrollment_tokens(expires_at) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_agent_refresh_replays_expiry ON agent_refresh_replays(expires_at);
+CREATE INDEX IF NOT EXISTS idx_agent_auth_events_project ON agent_auth_events(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_auth_events_agent ON agent_auth_events(agent_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_auth_events_created ON agent_auth_events(created_at);
 
 CREATE OR REPLACE FUNCTION release_agent_tickets_on_delete() RETURNS TRIGGER AS $$
 BEGIN

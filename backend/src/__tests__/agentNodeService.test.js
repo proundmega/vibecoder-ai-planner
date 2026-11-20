@@ -136,6 +136,7 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
 
   it('rejects a runtime whose model is not tagged for its role', async () => {
     const client = mockClient([
+      ['SELECT id FROM agent_nodes WHERE id = $1 FOR UPDATE', { rows: [{ id: 12 }] }],
       ['FROM agent_node_grants', { rows: [{ id: 1 }] }],
     ]);
     pool.connect.mockResolvedValue(client);
@@ -156,6 +157,7 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
 
   it('creates one runtime per declared slot with stable names', async () => {
     const client = mockClient([
+      ['SELECT id FROM agent_nodes WHERE id = $1 FOR UPDATE', { rows: [{ id: 12 }] }],
       ['FROM agent_node_grants', { rows: [{ id: 1 }] }],
       ['INSERT INTO agent_runtimes', (params) => ({ rows: [{ id: params[1].endsWith('-2') ? 22 : 21, name: params[1] }] })],
     ]);
@@ -171,8 +173,88 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
     expect(rows.map((row) => row.name)).toEqual(['workers-1', 'workers-2']);
   });
 
+  it('hides runtimes for projects a shared caller cannot access', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ id: 5 }] }) // accessible projects
+      .mockResolvedValueOnce({
+        rows: [
+          { id: 1, node_id: 12, current_project_id: 5 },
+          { id: 2, node_id: 12, current_project_id: 9 },
+          { id: 3, node_id: 12, current_project_id: null },
+        ],
+      });
+
+    const [node] = await AgentNodeService.withRuntimes(
+      [{ id: 12, owner_id: 99 }],
+      { userId: 7, role: 'member' }
+    );
+    expect(node.runtimes.map((runtime) => runtime.id)).toEqual([1]);
+  });
+
+  it('caps the total runtimes created by one declaration', async () => {
+    process.env.AGENT_MAX_RUNTIMES_PER_NODE = '1';
+    const client = mockClient([
+      ['SELECT id FROM agent_nodes WHERE id = $1 FOR UPDATE', { rows: [{ id: 12 }] }],
+      ['FROM agent_node_grants', { rows: [{ id: 1 }] }],
+      ['INSERT INTO agent_runtimes', { rows: [{ id: 21, name: 'workers-1' }] }],
+    ]);
+    pool.connect.mockResolvedValue(client);
+    jest.spyOn(AgentNodeService, 'resolveModel').mockResolvedValue({
+      id: 8, model: 'm', roles: ['worker'],
+    });
+
+    await expect(
+      AgentNodeService.declareRuntimes(
+        { id: 12, owner_id: 7 },
+        [
+          { role: 'worker', modelRef: 'c/m', projectId: 5, name: 'a' },
+          { role: 'worker', modelRef: 'c/m', projectId: 5, name: 'b' },
+        ]
+      )
+    ).rejects.toMatchObject({ code: 'TOO_MANY_RUNTIMES' });
+    delete process.env.AGENT_MAX_RUNTIMES_PER_NODE;
+  });
+
+  it('enforces the node-wide runtime cap across declarations', async () => {
+    const client = mockClient([
+      ['SELECT id FROM agent_nodes WHERE id = $1 FOR UPDATE', { rows: [{ id: 12 }] }],
+      ['INSERT INTO agent_runtimes', { rows: [{ id: 21, name: 'r-1' }] }],
+      ['SELECT count(*)::int AS n FROM agent_runtimes', { rows: [{ n: 101 }] }],
+    ]);
+    pool.connect.mockResolvedValue(client);
+    jest.spyOn(AgentNodeService, 'resolveModel').mockResolvedValue({
+      id: 8, model: 'm', roles: ['reviewer'],
+    });
+
+    await expect(
+      AgentNodeService.declareRuntimes(
+        { id: 12, owner_id: 7 },
+        [{ role: 'reviewer', modelRef: 'c/m', name: 'r' }]
+      )
+    ).rejects.toMatchObject({ code: 'TOO_MANY_RUNTIMES' });
+    expect(client.query.mock.calls.some(([sql]) => sql === 'ROLLBACK')).toBe(true);
+  });
+
+  it('refuses to revive a stopped runtime past the node cap', async () => {
+    const client = mockClient([
+      ['SELECT id FROM agent_nodes WHERE id = $1 FOR UPDATE', { rows: [{ id: 12 }] }],
+      ['SELECT * FROM agent_runtimes WHERE id = $1 AND node_id = $2', {
+        rows: [{ id: 3, status: 'stopped', role: 'worker' }],
+      }],
+      ['SELECT count(*)::int AS n FROM agent_runtimes', { rows: [{ n: 100 }] }],
+    ]);
+    pool.connect.mockResolvedValue(client);
+
+    await expect(
+      AgentNodeService.heartbeat({ id: 12 }, 3, { status: 'running' })
+    ).rejects.toMatchObject({ code: 'CAP_EXCEEDED' });
+    expect(client.query.mock.calls.some(([sql]) => sql === 'ROLLBACK')).toBe(true);
+  });
+
   it('requires a grant before declaring a runtime project', async () => {
-    const client = mockClient([]);
+    const client = mockClient([
+      ['SELECT id FROM agent_nodes WHERE id = $1 FOR UPDATE', { rows: [{ id: 12 }] }],
+    ]);
     pool.connect.mockResolvedValue(client);
 
     await expect(
