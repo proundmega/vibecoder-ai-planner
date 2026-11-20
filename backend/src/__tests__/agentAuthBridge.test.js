@@ -67,6 +67,13 @@ describe('node credential bridge (FR4, FR20, NFR1)', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body.error.code).toBe('RUNTIME_REQUIRED');
+    expect(pool.query.mock.calls.some(([sql, params]) =>
+      sql.includes('agent_node_auth_events')
+        && params[0] === 12
+        && params[2] === 'auth.runtime_missing'
+        && params[3] === 'node'
+        && params[4] === '12'
+    )).toBe(true);
   });
 
   it('fails closed when the runtime has no active project scope', async () => {

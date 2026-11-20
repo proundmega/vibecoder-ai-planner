@@ -210,7 +210,7 @@ router.post('/resolve', verifyToken, async (req, res, next) => {
       phase: req.body.phase || 'backlog',
     };
     const projectId = req.body.project_id || null;
-    const config = await ProviderService.resolveProvider(ticketInfo, projectId);
+    const config = await ProviderService.resolveProvider(ticketInfo, projectId, req.user.userId);
     res.json({ success: true, data: config });
   } catch (err) {
     next(err);

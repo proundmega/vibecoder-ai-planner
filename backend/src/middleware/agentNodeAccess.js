@@ -16,6 +16,7 @@ async function loadNode(req, res, next) {
     ]);
     const node = result.rows[0];
     if (!node) return notFound(res);
+    req.nodeRecord = node;
 
     const isSuper = req.user && req.user.role === 'super_admin';
     const isOwner = req.user && String(node.owner_id) === String(req.user.userId);
@@ -82,7 +83,10 @@ function requireProjectAdmin(param = 'projectId') {
       if (result.rows.length === 0) {
         await auditDenial(req, 'auth.project_admin_denied', {
           projectId,
-          metadata: { path: req.originalUrl || req.path || null },
+          metadata: {
+            nodeId: req.nodeRecord ? req.nodeRecord.id : null,
+            path: req.originalUrl || req.path || null,
+          },
         });
         return res.status(403).json({
           success: false,

@@ -8,28 +8,73 @@ class ProviderService {
     this.cacheTtl = 300000; // 5 minutes
   }
 
-  async getProjectProviders(projectId) {
-    const cacheKey = `provider:${projectId || 'global'}`;
+  async getProjectProviders(projectId, userId = null) {
+    const cacheKey = `provider:${projectId || 'global'}:${userId || 'none'}`;
     const cached = this.cache.get(cacheKey);
-    
+
     if (cached && (Date.now() - cached.timestamp < this.cacheTtl)) {
       return cached.providers;
     }
 
-    const result = await pool.query(
-      `SELECT * FROM providers
-       WHERE (project_id = $1 OR project_id IS NULL) AND is_active = true
-       ORDER BY project_id IS NULL ASC`,
-      [projectId]
-    );
-    
+    let result = { rows: [] };
+    if (projectId != null) {
+      result = await pool.query(
+        `SELECT pc.id AS credential_id,
+                pc.provider_type,
+                pc.api_key_encrypted,
+                pc.base_url,
+                pc.project_id,
+                pm.id AS model_id,
+                pm.model,
+                pm.max_tokens,
+                pm.roles,
+                pm.effort
+         FROM provider_credentials pc
+         JOIN provider_models pm ON pm.credential_id = pc.id
+         JOIN projects p ON p.id = $1
+         WHERE pc.status = 'active'
+           AND pm.status = 'verified'
+           AND (pc.project_id = $1
+                OR (pc.project_id IS NULL AND pc.owner_id = $2))
+         ORDER BY (pc.project_id IS NULL) ASC,
+                  (pm.roles @> ARRAY['worker']::TEXT[]) DESC,
+                  pc.id ASC, pm.id ASC`,
+        [projectId, userId]
+      );
+    } else if (userId != null) {
+      result = await pool.query(
+        `SELECT pc.id AS credential_id,
+                pc.provider_type,
+                pc.api_key_encrypted,
+                pc.base_url,
+                pc.project_id,
+                pm.id AS model_id,
+                pm.model,
+                pm.max_tokens,
+                pm.roles,
+                pm.effort
+         FROM provider_credentials pc
+         JOIN provider_models pm ON pm.credential_id = pc.id
+         WHERE pc.status = 'active'
+           AND pm.status = 'verified'
+           AND pc.project_id IS NULL
+           AND pc.owner_id = $1
+         ORDER BY (pm.roles @> ARRAY['worker']::TEXT[]) DESC,
+                  pc.id ASC, pm.id ASC`,
+        [userId]
+      );
+    }
+
     this.cache.set(cacheKey, { providers: result.rows, timestamp: Date.now() });
     return result.rows;
   }
 
   invalidateProviderCache(projectId = null) {
     if (projectId) {
-      this.cache.delete(`provider:${projectId}`);
+      const prefix = `provider:${projectId}:`;
+      for (const key of this.cache.keys()) {
+        if (key.startsWith(prefix)) this.cache.delete(key);
+      }
     } else {
       this.cache.clear();
     }
@@ -62,125 +107,27 @@ class ProviderService {
     };
   }
 
-  async resolveProvider(ticketInfo, projectId = null) {
-    const providers = await this.getProjectProviders(projectId);
+  async resolveProvider(_ticketInfo, projectId = null, userId = null) {
+    const providers = await this.getProjectProviders(projectId, userId);
 
     if (providers.length === 0) {
       throw new Error('No active provider configuration found');
     }
 
-    const projectProviders = providers.filter(p => projectId !== null && p.project_id === projectId);
-    const globalProviders = providers.filter(p => p.project_id === null);
-
-    for (const provider of projectProviders) {
-      const config = await this._tryResolve(provider, ticketInfo);
-      if (config) return config;
-    }
-
-    // First pass: check providers with routing rules
-    const providersWithRules = globalProviders.filter(p =>
-      p.routing_rules && Array.isArray(p.routing_rules.rules) && p.routing_rules.rules.length > 0
-    );
-    const providersWithoutRules = globalProviders.filter(p =>
-      !p.routing_rules || !Array.isArray(p.routing_rules.rules) || p.routing_rules.rules.length === 0
-    );
-
-    for (const provider of providersWithRules) {
-      const config = await this._tryResolve(provider, ticketInfo);
-      if (config) return config;
-    }
-
-    for (const provider of providersWithoutRules) {
-      const config = await this._tryResolve(provider, ticketInfo);
-      if (config) return config;
-    }
-
-    throw new Error('No matching provider configuration found');
+    return this._registryProviderConfig(providers[0]);
   }
 
-  async _tryResolve(provider, ticketInfo) {
-    const rules = provider.routing_rules;
-    if (!rules || !Array.isArray(rules.rules) || rules.rules.length === 0) {
-      return this._defaultProvider(provider);
-    }
-
-    const ticketLabels = new Set(ticketInfo.labels || []);
-    const ticketPriority = ticketInfo.priority || 'medium';
-
-    for (const rule of rules.rules) {
-      if (this._matches(rule.match, ticketLabels, ticketPriority)) {
-        return this._buildProviderConfig(provider, rule, false);
-      }
-    }
-
-    if (rules.fallback) {
-      return this._buildProviderConfig(provider, rules.fallback, true);
-    }
-
-    return null;
-  }
-
-  _matches(match, ticketLabels, ticketPriority) {
-    if (!match) return true;
-
-    if (match.labels && Array.isArray(match.labels) && match.labels.length > 0) {
-      const requiredLabels = new Set(match.labels);
-      let matched = false;
-      for (const label of ticketLabels) {
-        if (requiredLabels.has(label)) {
-          matched = true;
-          break;
-        }
-      }
-      if (!matched) return false;
-    }
-
-    if (match.priority && match.priority !== ticketPriority) {
-      return false;
-    }
-
-    return true;
-  }
-
-  _buildProviderConfig(baseConfig, ruleConfig, isFallback) {
-    const apiKey = ruleConfig.api_key
-      ? ruleConfig.api_key
-      : decrypt(baseConfig.api_key_encrypted);
-
-    const provider = ruleConfig.provider || baseConfig.provider_type;
-    const ruleEndpoint = ruleConfig.endpoint_url || ruleConfig.base_url;
-
-    return {
-      provider,
-      endpoint_url: ruleEndpoint
-        ? resolveProviderEndpoint({ providerType: provider, endpointUrl: ruleEndpoint })
-        : resolveProviderEndpoint({
-          providerType: provider,
-          baseUrl: baseConfig.base_url,
-          endpointUrl: baseConfig.endpoint_url,
-        }),
-      model: ruleConfig.model || baseConfig.model,
-      api_key: apiKey,
-      max_tokens: ruleConfig.max_tokens || baseConfig.max_tokens || 4096,
-      temperature: ruleConfig.temperature !== undefined
-        ? ruleConfig.temperature
-        : (baseConfig.temperature || 0.1),
-      is_fallback: isFallback,
-    };
-  }
-
-  _defaultProvider(config) {
+  _registryProviderConfig(config) {
     return {
       provider: config.provider_type,
       endpoint_url: resolveProviderEndpoint({
         providerType: config.provider_type,
         baseUrl: config.base_url,
-        endpointUrl: config.endpoint_url,
       }),
       model: config.model,
       api_key: decrypt(config.api_key_encrypted),
       max_tokens: config.max_tokens || 4096,
-      temperature: config.temperature || 0.1,
+      temperature: 0.1,
       is_fallback: false,
     };
   }

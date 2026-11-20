@@ -58,7 +58,12 @@ class ProviderRouter {
 
       const provider = this.createProvider(row.provider_type, config);
       for (const role of row.roles || []) {
-        this.providers.set(`${this.projectId}:${role}`, provider);
+        const key = `${this.projectId}:${role}`;
+        // Rows are project-scoped first (and worker-tagged models first), so
+        // the first provider for a role is the highest-priority one.
+        if (!this.providers.has(key)) {
+          this.providers.set(key, provider);
+        }
       }
     }
 

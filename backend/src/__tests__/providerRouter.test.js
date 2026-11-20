@@ -93,6 +93,39 @@ describe('ProviderRouter', () => {
       });
     });
 
+
+    it('keeps project-scoped credentials ahead of global credentials for a role', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            credential_id: 1,
+            provider_type: 'claude',
+            api_key_encrypted: 'encrypted-project-key',
+            base_url: null,
+            model_id: 11,
+            model: 'project-model',
+            roles: ['worker'],
+            max_tokens: 4096,
+          },
+          {
+            credential_id: 2,
+            provider_type: 'openai',
+            api_key_encrypted: 'encrypted-global-key',
+            base_url: null,
+            model_id: 12,
+            model: 'global-model',
+            roles: ['worker'],
+            max_tokens: 4096,
+          },
+        ],
+      });
+
+      const router = new ProviderRouter(1);
+      await router.loadProviders();
+
+      expect(router.getForRole('worker')).toBe(ClaudeProvider.mock.results[0].value);
+    });
+
     it('should not reload providers if already loaded', async () => {
       pool.query.mockResolvedValueOnce({ rows: [] });
 

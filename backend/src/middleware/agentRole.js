@@ -23,28 +23,51 @@ function isNodeRequest(req) {
  * Record an authorization denial without letting an audit failure change the
  * response. Node/runtime identity is retained when available.
  */
-async function auditDenial(req, eventType, { projectId = null, metadata = {} } = {}) {
+async function recordAuthEvent({
+  nodeId = null,
+  projectId = null,
+  eventType,
+  actorType = 'system',
+  actorId = null,
+  ip = null,
+  metadata = {},
+}) {
   try {
     await pool.query(
       `INSERT INTO agent_node_auth_events
          (node_id, project_id, event_type, actor_type, actor_id, ip_address, metadata)
        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
       [
-        req.node && req.node.id ? req.node.id : null,
+        nodeId == null ? null : nodeId,
         projectId == null ? null : projectId,
         eventType,
-        req.runtime ? 'runtime' : (req.user ? 'user' : 'agent'),
-        String((req.runtime && req.runtime.id)
-          ?? (req.agent && req.agent.id)
-          ?? (req.user && req.user.userId)
-          ?? ''),
-        req.ip || null,
+        actorType,
+        actorId == null ? null : String(actorId),
+        ip || null,
         JSON.stringify(metadata),
       ]
     );
   } catch {
     // Authorization already failed closed; auditing is best effort.
   }
+}
+
+async function auditDenial(req, eventType, { projectId = null, metadata = {} } = {}) {
+  const nodeId = (req.node && req.node.id) || (req.nodeRecord && req.nodeRecord.id) || null;
+  const actorId = (req.user && req.user.userId)
+    ?? (req.runtime && req.runtime.id)
+    ?? (req.agent && req.agent.id)
+    ?? nodeId
+    ?? null;
+  return recordAuthEvent({
+    nodeId,
+    projectId,
+    eventType,
+    actorType: req.runtime ? 'runtime' : (req.user ? 'user' : (nodeId ? 'node' : 'agent')),
+    actorId,
+    ip: req.ip || null,
+    metadata,
+  });
 }
 
 function deny(res, status, code, message) {
@@ -316,4 +339,5 @@ module.exports = {
   requireProjectGrant,
   requireRunGrant,
   requireReviewEventGrant,
+  recordAuthEvent,
 };
