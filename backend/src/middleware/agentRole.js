@@ -1,4 +1,5 @@
 const { pool } = require('../db');
+const logger = require('../utils/logger');
 
 /**
  * Runtime role/grant enforcement for node-authenticated requests.
@@ -47,8 +48,9 @@ async function recordAuthEvent({
         JSON.stringify(metadata),
       ]
     );
-  } catch {
+  } catch (error) {
     // Authorization already failed closed; auditing is best effort.
+    logger.warn(`Authorization audit failed: ${error.message}`);
   }
 }
 
