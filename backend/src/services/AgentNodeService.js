@@ -694,6 +694,8 @@ class AgentNodeService {
              DO UPDATE SET role = EXCLUDED.role, model_id = EXCLUDED.model_id,
                            concurrency = EXCLUDED.concurrency, effort = EXCLUDED.effort,
                            current_project_id = EXCLUDED.current_project_id,
+                           status = CASE WHEN agent_runtimes.status = 'stopped'
+                                         THEN 'pending' ELSE agent_runtimes.status END,
                            updated_at = NOW()
              RETURNING *`,
             [node.id, name, role, model.id, concurrency, effort, projectId || null]
@@ -727,6 +729,17 @@ class AgentNodeService {
 
   async heartbeat(node, runtimeId, { status = null, currentProjectId = null } = {}) {
     const runtime = await this.getRuntimeForNode(node.id, runtimeId);
+    if (status && status !== 'stopped' && runtime.status === 'stopped') {
+      const maxRuntimes = intEnv('AGENT_MAX_RUNTIMES_PER_NODE', 100);
+      const active = await pool.query(
+        `SELECT count(*)::int AS n FROM agent_runtimes
+         WHERE node_id = $1 AND status <> 'stopped'`,
+        [node.id]
+      );
+      if (active.rows[0] && active.rows[0].n >= maxRuntimes) {
+        throw fail(409, 'CAP_EXCEEDED', `Node may host at most ${maxRuntimes} runtimes`);
+      }
+    }
     if (currentProjectId != null) {
       const grant = await pool.query(
         `SELECT 1 FROM agent_node_grants

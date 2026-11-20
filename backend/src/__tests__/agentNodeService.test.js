@@ -231,6 +231,17 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
     expect(client.query.mock.calls.some(([sql]) => sql === 'ROLLBACK')).toBe(true);
   });
 
+  it('refuses to revive a stopped runtime past the node cap', async () => {
+    jest.spyOn(AgentNodeService, 'getRuntimeForNode').mockResolvedValue({
+      id: 3, status: 'stopped', role: 'worker',
+    });
+    pool.query.mockResolvedValueOnce({ rows: [{ n: 100 }] });
+
+    await expect(
+      AgentNodeService.heartbeat({ id: 12 }, 3, { status: 'running' })
+    ).rejects.toMatchObject({ code: 'CAP_EXCEEDED' });
+  });
+
   it('requires a grant before declaring a runtime project', async () => {
     const client = mockClient([]);
     pool.connect.mockResolvedValue(client);
