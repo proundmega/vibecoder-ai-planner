@@ -3,6 +3,7 @@ const {
   resolveProviderEndpoint,
   providerCatalog,
   providerRequiresEndpoint,
+  defaultTemperature,
 } = require('../utils/providerDefaults');
 
 describe('provider endpoint resolution', () => {
@@ -68,5 +69,32 @@ describe('provider endpoint resolution', () => {
     for (const type of ['opencode', 'opencode-go', 'openai', 'claude']) {
       expect(providerRequiresEndpoint(type)).toBe(false);
     }
+  });
+});
+
+
+describe('default provider temperature', () => {
+  afterEach(() => {
+    delete process.env.PROVIDER_DEFAULT_TEMPERATURE;
+  });
+
+  it('falls back to 0.1 for unset, blank, invalid or negative values', () => {
+    delete process.env.PROVIDER_DEFAULT_TEMPERATURE;
+    expect(defaultTemperature()).toBe(0.1);
+    process.env.PROVIDER_DEFAULT_TEMPERATURE = '';
+    expect(defaultTemperature()).toBe(0.1);
+    process.env.PROVIDER_DEFAULT_TEMPERATURE = '   ';
+    expect(defaultTemperature()).toBe(0.1);
+    process.env.PROVIDER_DEFAULT_TEMPERATURE = 'nope';
+    expect(defaultTemperature()).toBe(0.1);
+    process.env.PROVIDER_DEFAULT_TEMPERATURE = '-0.2';
+    expect(defaultTemperature()).toBe(0.1);
+  });
+
+  it('accepts a valid override including zero', () => {
+    process.env.PROVIDER_DEFAULT_TEMPERATURE = '0';
+    expect(defaultTemperature()).toBe(0);
+    process.env.PROVIDER_DEFAULT_TEMPERATURE = '0.7';
+    expect(defaultTemperature()).toBe(0.7);
   });
 });

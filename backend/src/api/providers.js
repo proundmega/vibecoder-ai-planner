@@ -192,6 +192,7 @@ router.get('/:id/agents', verifyToken, providerController.getProviderAgents);
  *   post:
  *     tags: [Providers]
  *     summary: Resolve provider for a ticket
+ *     description: Selects a verified registry model by role or phase. Legacy labels/priority routing is not used.
  *     requestBody:
  *       content:
  *         application/json:

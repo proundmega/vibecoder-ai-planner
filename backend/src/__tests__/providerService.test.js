@@ -158,7 +158,7 @@ describe('ProviderService', () => {
     it('passes the project and owner to the registry query', async () => {
       pool.query.mockResolvedValueOnce({ rows: [registryRow()] });
 
-      await ProviderService.resolveProvider({ labels: ['x'] }, 1, 7);
+      await ProviderService.resolveProvider({ role: 'worker' }, 1, 7);
 
       expect(pool.query.mock.calls[0][1]).toEqual([1, 7, 'worker']);
     });

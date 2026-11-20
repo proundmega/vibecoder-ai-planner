@@ -338,7 +338,7 @@ describe('Provider Routes Integration (PostgreSQL)', () => {
         const res = await request(app)
           .post('/api/v1/providers/resolve')
           .set('Authorization', `Bearer ${token}`)
-          .send({ project_id: projectId, labels: ['frontend'], priority: 'high' });
+          .send({ project_id: projectId, role: 'worker' });
         expect(res.status).toBe(200);
         expect(res.body.success).toBe(true);
         expect(res.body.data.provider).toBe('openai');
@@ -385,7 +385,7 @@ describe('Provider Routes Integration (PostgreSQL)', () => {
       const res = await request(app)
         .post('/api/v1/providers/resolve')
         .set('Authorization', `Bearer ${token}`)
-        .send({ labels: ['test'], priority: 'low' });
+        .send({});
       expect(res.status).toBe(500);
     });
   });

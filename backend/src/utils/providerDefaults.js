@@ -79,7 +79,9 @@ function providerRequiresEndpoint(providerType) {
 
 /** Default sampling temperature when a registry model has no override. */
 function defaultTemperature() {
-  const parsed = Number(process.env.PROVIDER_DEFAULT_TEMPERATURE);
+  const raw = process.env.PROVIDER_DEFAULT_TEMPERATURE;
+  if (raw === undefined || raw === null || String(raw).trim() === '') return 0.1;
+  const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0.1;
 }
 
