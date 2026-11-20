@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { verifyToken, agentAuth } = require('../middleware/auth');
+const { verifyToken, agentAuth, rejectNodeCredentials } = require('../middleware/auth');
 const usageController = require('../controllers/usageController');
 const UsageLogger = require('../services/UsageLogger');
 
@@ -85,7 +85,7 @@ router.get('/pricing/models', verifyToken, usageController.getModelPricing);
  *       403:
  *         description: Agent ID mismatch — agent can only report its own usage
  */
-router.post('/agents/:agentId/usage', agentAuth, async (req, res, next) => {
+router.post('/agents/:agentId/usage', agentAuth, rejectNodeCredentials, async (req, res, next) => {
   try {
     // Enforce: agent can only report usage for its own agent ID
     if (String(req.agent.id) !== String(req.params.agentId)) {

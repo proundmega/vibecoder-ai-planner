@@ -7,7 +7,7 @@ const HarnessUsageService = require('../services/HarnessUsageService');
 const HarnessEventService = require('../services/HarnessEventService');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
-const { verifyTokenOrAgent } = require('../middleware/auth');
+const { verifyTokenOrAgent, rejectNodeCredentials } = require('../middleware/auth');
 const { forRunParam, forTicketParam, forBodyTicket, selfAgentOnly } = require('../middleware/agentProjectScope');
 const { ForbiddenError, NotFoundError, ConflictError } = require('../errors/HttpError');
 const logger = require('../utils/logger');
@@ -116,7 +116,7 @@ async function assertCanReadRun(req, run) {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/runs', verifyTokenOrAgent, forBodyTicket(), async (req, res, next) => {
+router.post('/runs', verifyTokenOrAgent, rejectNodeCredentials, forBodyTicket(), async (req, res, next) => {
   try {
     const agentId = requireAgent(req);
     const {
@@ -197,7 +197,7 @@ router.post('/runs', verifyTokenOrAgent, forBodyTicket(), async (req, res, next)
   }
 });
 
-router.get('/runs/:runId', verifyTokenOrAgent, forRunParam(), async (req, res, next) => {
+router.get('/runs/:runId', verifyTokenOrAgent, rejectNodeCredentials, forRunParam(), async (req, res, next) => {
   try {
     const run = await HarnessRunService.getRun(req.params.runId);
     await assertCanReadRun(req, run);
@@ -208,7 +208,7 @@ router.get('/runs/:runId', verifyTokenOrAgent, forRunParam(), async (req, res, n
   }
 });
 
-router.get('/agents/:agentId/runs', verifyTokenOrAgent, selfAgentOnly(), async (req, res, next) => {
+router.get('/agents/:agentId/runs', verifyTokenOrAgent, rejectNodeCredentials, selfAgentOnly(), async (req, res, next) => {
   try {
     const agentId = requireAgent(req);
     if (String(agentId) !== String(req.params.agentId)) {
@@ -223,7 +223,7 @@ router.get('/agents/:agentId/runs', verifyTokenOrAgent, selfAgentOnly(), async (
   }
 });
 
-router.get('/agents/:agentId/workspaces', verifyTokenOrAgent, selfAgentOnly(), async (req, res, next) => {
+router.get('/agents/:agentId/workspaces', verifyTokenOrAgent, rejectNodeCredentials, selfAgentOnly(), async (req, res, next) => {
   try {
     const agentId = requireAgent(req);
     if (String(agentId) !== String(req.params.agentId)) {
@@ -238,7 +238,7 @@ router.get('/agents/:agentId/workspaces', verifyTokenOrAgent, selfAgentOnly(), a
   }
 });
 
-router.post('/runs/:runId/publish', verifyTokenOrAgent, forRunParam(), async (req, res, next) => {
+router.post('/runs/:runId/publish', verifyTokenOrAgent, rejectNodeCredentials, forRunParam(), async (req, res, next) => {
   try {
     const agentId = requireAgent(req);
     const run = await HarnessRunService.getRun(req.params.runId);
@@ -274,7 +274,7 @@ router.post('/runs/:runId/publish', verifyTokenOrAgent, forRunParam(), async (re
   }
 });
 
-router.post('/runs/:runId/reconcile', verifyTokenOrAgent, forRunParam(), async (req, res, next) => {
+router.post('/runs/:runId/reconcile', verifyTokenOrAgent, rejectNodeCredentials, forRunParam(), async (req, res, next) => {
   try {
     requireAgent(req);
     const run = await HarnessRunService.getRun(req.params.runId);
@@ -314,7 +314,7 @@ async function assertOperatorCanAccess(req, run) {
   await assertProjectAccess(run, userId);
 }
 
-router.post('/runs/:runId/dead-letter', verifyTokenOrAgent, forRunParam(), async (req, res, next) => {
+router.post('/runs/:runId/dead-letter', verifyTokenOrAgent, rejectNodeCredentials, forRunParam(), async (req, res, next) => {
   try {
     const run = await HarnessRunService.getRun(req.params.runId);
     await assertOperatorCanAccess(req, run);
@@ -329,7 +329,7 @@ router.post('/runs/:runId/dead-letter', verifyTokenOrAgent, forRunParam(), async
   }
 });
 
-router.post('/runs/:runId/adopt', verifyTokenOrAgent, forRunParam(), async (req, res, next) => {
+router.post('/runs/:runId/adopt', verifyTokenOrAgent, rejectNodeCredentials, forRunParam(), async (req, res, next) => {
   try {
     const run = await HarnessRunService.getRun(req.params.runId);
     await assertOperatorCanAccess(req, run);
@@ -344,7 +344,7 @@ router.post('/runs/:runId/adopt', verifyTokenOrAgent, forRunParam(), async (req,
   }
 });
 
-router.post('/runs/:runId/release-ticket', verifyTokenOrAgent, forRunParam(), async (req, res, next) => {
+router.post('/runs/:runId/release-ticket', verifyTokenOrAgent, rejectNodeCredentials, forRunParam(), async (req, res, next) => {
   try {
     let released;
     if (req.agent) {
@@ -370,7 +370,7 @@ router.post('/runs/:runId/release-ticket', verifyTokenOrAgent, forRunParam(), as
   }
 });
 
-router.get('/runs/:runId/checkpoints', verifyTokenOrAgent, forRunParam(), async (req, res, next) => {
+router.get('/runs/:runId/checkpoints', verifyTokenOrAgent, rejectNodeCredentials, forRunParam(), async (req, res, next) => {
   try {
     const run = await HarnessRunService.getRun(req.params.runId);
     await assertCanReadRun(req, run);
@@ -382,7 +382,7 @@ router.get('/runs/:runId/checkpoints', verifyTokenOrAgent, forRunParam(), async 
   }
 });
 
-router.post('/runs/:runId/checkpoints', verifyTokenOrAgent, forRunParam(), async (req, res, next) => {
+router.post('/runs/:runId/checkpoints', verifyTokenOrAgent, rejectNodeCredentials, forRunParam(), async (req, res, next) => {
   try {
     requireAgent(req);
     const run = await HarnessRunService.getRun(req.params.runId);
@@ -401,7 +401,7 @@ router.post('/runs/:runId/checkpoints', verifyTokenOrAgent, forRunParam(), async
   }
 });
 
-router.post('/runs/:runId/heartbeat', verifyTokenOrAgent, forRunParam(), async (req, res, next) => {
+router.post('/runs/:runId/heartbeat', verifyTokenOrAgent, rejectNodeCredentials, forRunParam(), async (req, res, next) => {
   try {
     const agentId = requireAgent(req);
     const run = await HarnessRunService.heartbeat(
@@ -416,7 +416,7 @@ router.post('/runs/:runId/heartbeat', verifyTokenOrAgent, forRunParam(), async (
   }
 });
 
-router.post('/runs/:runId/finish', verifyTokenOrAgent, forRunParam(), async (req, res, next) => {
+router.post('/runs/:runId/finish', verifyTokenOrAgent, rejectNodeCredentials, forRunParam(), async (req, res, next) => {
   try {
     requireAgent(req);
     const run = await HarnessRunService.getRun(req.params.runId);
@@ -483,7 +483,7 @@ router.post('/runs/:runId/finish', verifyTokenOrAgent, forRunParam(), async (req
   }
 });
 
-router.get('/tickets/:ticketId/run', verifyTokenOrAgent, forTicketParam(), async (req, res, next) => {
+router.get('/tickets/:ticketId/run', verifyTokenOrAgent, rejectNodeCredentials, forTicketParam(), async (req, res, next) => {
   try {
     const run = await HarnessRunService.getLatestRunForTicket(req.params.ticketId);
     if (!run) {
@@ -500,7 +500,7 @@ router.get('/tickets/:ticketId/run', verifyTokenOrAgent, forTicketParam(), async
   }
 });
 
-router.post('/leases', verifyTokenOrAgent, forBodyTicket(), async (req, res, next) => {
+router.post('/leases', verifyTokenOrAgent, rejectNodeCredentials, forBodyTicket(), async (req, res, next) => {
   try {
     const agentId = requireAgent(req);
     const lease = await HarnessRunService.claimLease({
@@ -524,7 +524,7 @@ router.post('/leases', verifyTokenOrAgent, forBodyTicket(), async (req, res, nex
   }
 });
 
-router.post('/leases/:ticketId/renew', verifyTokenOrAgent, forTicketParam(), async (req, res, next) => {
+router.post('/leases/:ticketId/renew', verifyTokenOrAgent, rejectNodeCredentials, forTicketParam(), async (req, res, next) => {
   try {
     const agentId = requireAgent(req);
     const lease = await HarnessRunService.renewLease({
@@ -548,7 +548,7 @@ router.post('/leases/:ticketId/renew', verifyTokenOrAgent, forTicketParam(), asy
   }
 });
 
-router.delete('/leases/:ticketId', verifyTokenOrAgent, forTicketParam(), async (req, res, next) => {
+router.delete('/leases/:ticketId', verifyTokenOrAgent, rejectNodeCredentials, forTicketParam(), async (req, res, next) => {
   try {
     requireAgent(req);
     const runId = req.body?.runId || req.query.runId;

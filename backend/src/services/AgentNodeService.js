@@ -217,7 +217,9 @@ class AgentNodeService {
     );
     if (!row) return { status: 'invalid', node: null };
     if (row.token_revoked_at) return { status: 'revoked', node: null };
-    if (new Date(row.token_expires_at) <= new Date()) return { status: 'expired', node: null };
+    if (new Date(row.token_expires_at) <= new Date()) {
+      return { status: 'expired', node: null, expiresAt: row.token_expires_at };
+    }
 
     const node = { ...row };
     delete node.token_hash;

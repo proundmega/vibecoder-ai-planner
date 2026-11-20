@@ -7,6 +7,7 @@ const PermissionService = require('../services/PermissionService');
 const {
   verifyToken,
   verifyTokenOrAgent,
+  rejectNodeCredentials,
   authenticateAgentByApiKey,
   agentAuthFailure,
 } = require('../middleware/auth');
@@ -80,7 +81,7 @@ async function findManageableAgent(req, agentId) {
  *       400:
  *         description: Creation failed
  */
-router.post('/create', verifyTokenOrAgent, requireAnyPermission('AGENT_CREATE'), validate(createAgentSchema), async (req, res) => {
+router.post('/create', verifyTokenOrAgent, rejectNodeCredentials, requireAnyPermission('AGENT_CREATE'), validate(createAgentSchema), async (req, res) => {
   try {
     const { name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays } = req.body;
     const apiKey = `ak_${crypto.randomBytes(24).toString('hex')}`;
@@ -114,7 +115,7 @@ router.post('/create', verifyTokenOrAgent, requireAnyPermission('AGENT_CREATE'),
  *                   items:
  *                     $ref: '#/components/schemas/Agent'
  */
-router.get('/', verifyTokenOrAgent, requireAnyPermission('AGENT_READ'), async (req, res) => {
+router.get('/', verifyTokenOrAgent, rejectNodeCredentials, requireAnyPermission('AGENT_READ'), async (req, res) => {
   try {
     const projectFilter = req.agent && req.agent.project_id != null
       ? { projectId: req.agent.project_id }
@@ -184,7 +185,7 @@ router.post('/revoke/:agentId', verifyToken, requireAnyPermission('AGENT_REVOKE'
  *       404:
  *         description: Agent not found
  */
-router.put('/:agentId', verifyTokenOrAgent, requireAnyPermission('AGENT_REVOKE'), validate(updateAgentSchema), async (req, res) => {
+router.put('/:agentId', verifyTokenOrAgent, rejectNodeCredentials, requireAnyPermission('AGENT_REVOKE'), validate(updateAgentSchema), async (req, res) => {
   try {
     const { name } = req.body;
     const result = await AgentService.updateName(req.params.agentId, name, req.user.userId);
@@ -248,7 +249,7 @@ router.delete('/:agentId', verifyToken, requireAnyPermission('AGENT_DELETE'), as
  *       403:
  *         description: Forbidden
  */
-router.get('/:agentId/history', verifyTokenOrAgent, requireAnyPermission('AGENT_READ'), async (req, res, _next) => {
+router.get('/:agentId/history', verifyTokenOrAgent, rejectNodeCredentials, requireAnyPermission('AGENT_READ'), async (req, res, _next) => {
   try {
     const apiKey = req.headers['x-api-key'];
     let agent;
@@ -464,7 +465,7 @@ router.get('/:agentId/provider-config', async (req, res, next) => {
  *                     changed: { type: boolean }
  *                     lastUpdated: { type: string, format: date-time }
  */
-router.get('/:agentId/provider-config/changed', verifyTokenOrAgent, async (req, res, next) => {
+router.get('/:agentId/provider-config/changed', verifyTokenOrAgent, rejectNodeCredentials, async (req, res, next) => {
   try {
     const agentId = req.params.agentId;
     const since = req.query.since;

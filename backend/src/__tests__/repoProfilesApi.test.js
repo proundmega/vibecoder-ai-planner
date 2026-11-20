@@ -189,7 +189,7 @@ describe('Repo profile API', () => {
     expect(finish.statusCode).toBe(200);
     expect(RepoProfileValidationService.finish).toHaveBeenCalledWith(
       '1', VALIDATION_ID, expect.objectContaining({ id: 7 }),
-      { status: 'succeeded', result: { ok: true } }
+      { status: 'succeeded', result: { ok: true } }, null
     );
   });
 

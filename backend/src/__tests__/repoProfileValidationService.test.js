@@ -328,4 +328,56 @@ describe('RepoProfileValidationService', () => {
     const rows = await RepoProfileValidationService.list(1, { userId: 7 });
     expect(rows[0].result).toEqual({ commands: [{ output: 'ok' }] });
   });
+
+  it('claims a validation under runtime_id without writing a legacy agent id', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [validationRow({ status: 'running', agent_id: null, runtime_id: 3 })],
+      });
+
+    const result = await RepoProfileValidationService.claimNext(
+      1, { id: 3, owner_id: 7 }, 3
+    );
+
+    expect(result.runtime_id).toBe(3);
+    expect(pool.query.mock.calls[1][0]).toContain('runtime_id = $3');
+    expect(pool.query.mock.calls[1][1]).toEqual([1, null, 3]);
+  });
+
+  it('finishes a runtime-owned validation by runtime_id', async () => {
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [validationRow({ status: 'running', agent_id: null, runtime_id: 3 })],
+      })
+      .mockResolvedValueOnce({
+        rows: [validationRow({
+          status: 'succeeded', agent_id: null, runtime_id: 3, result: { ok: true },
+        })],
+      });
+
+    const result = await RepoProfileValidationService.finish(
+      1, VALIDATION_ID, { id: 3, owner_id: 7 },
+      { status: 'succeeded', result: { ok: true } }, 3
+    );
+
+    expect(result.status).toBe('succeeded');
+    expect(result.runtime_id).toBe(3);
+    expect(pool.query.mock.calls[1][0]).toContain('runtime_id = $6');
+    expect(pool.query.mock.calls[1][1][5]).toBe(3);
+  });
+
+  it('rejects a finish from a different runtime', async () => {
+    pool.query.mockResolvedValueOnce({
+      rows: [validationRow({ status: 'running', agent_id: null, runtime_id: 4 })],
+    });
+
+    await expect(
+      RepoProfileValidationService.finish(
+        1, VALIDATION_ID, { id: 3, owner_id: 7 },
+        { status: 'succeeded' }, 3
+      )
+    ).rejects.toThrow(ForbiddenError);
+  });
 });
+

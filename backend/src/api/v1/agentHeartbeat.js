@@ -56,6 +56,17 @@ router.post('/:id/heartbeat', async (req, res, next) => {
     if (agent._expired || agent._revoked) {
       return res.status(401).json({ success: false, error: agentAuthFailure(agent) });
     }
+    // Node credentials must heartbeat their runtime through the node surface;
+    // the legacy table is keyed by agents(id) and would collide with node ids.
+    if (agent._node) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Node credentials cannot use the legacy agent heartbeat route',
+        },
+      });
+    }
     if (String(agent.id) !== String(req.params.id)) {
       return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Invalid API key for this agent' } });
     }

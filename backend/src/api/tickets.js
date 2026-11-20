@@ -3,6 +3,9 @@ const router = express.Router();
 const { requireAnyPermission } = require('../middleware/permissions');
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { validate, validatePathParams } = require('../middleware/validate');
+const { requireRuntime, requireTicketGrant, requireBodyGrant } = require('../middleware/agentRole');
+const LIVE_RUNTIME = 'running';
+const RELEASABLE_RUNTIME = ['running', 'draining'];
 const { forBodyProject, forProjectParam, forTicketParam } = require('../middleware/agentProjectScope');
 const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema, postMessageSchema } = require('../validators/tickets');
 const { statusFilterSchema } = require('../validators/statusFilter');
@@ -36,7 +39,7 @@ const GitHubService = require('../services/GitHubService');
  *       201:
  *         description: Ticket created
  */
-router.post('/', verifyTokenOrAgent, requireAnyPermission('TICKET_CREATE'), validate({ body: createTicketSchema }), forBodyProject('projectId'), ticketController.createTicket);
+router.post('/', verifyTokenOrAgent, requireRuntime('running'), requireAnyPermission('TICKET_CREATE'), validate({ body: createTicketSchema }), forBodyProject('projectId'), requireBodyGrant('worker'), ticketController.createTicket);
 
 /**
  * @openapi
@@ -142,7 +145,7 @@ router.get('/:ticketId', verifyTokenOrAgent, forTicketParam(), validatePathParam
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.put('/:ticketId', verifyTokenOrAgent, forTicketParam(), requireAnyPermission('TICKET_UPDATE'), validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: updateTicketSchema }), ticketController.updateTicket);
+router.put('/:ticketId', verifyTokenOrAgent, requireRuntime('running'), forTicketParam(), requireTicketGrant('worker'), requireAnyPermission('TICKET_UPDATE'), validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: updateTicketSchema }), ticketController.updateTicket);
 
 /**
  * @openapi
@@ -195,7 +198,7 @@ router.delete('/:ticketId', verifyToken, validatePathParams({ ticketId: pathPara
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/:ticketId/status', verifyTokenOrAgent, forTicketParam(), requireAnyPermission('TICKET_STATUS_CHANGE'), validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: statusTransitionSchema }), ticketController.changeStatus);
+router.post('/:ticketId/status', verifyTokenOrAgent, requireRuntime('running'), forTicketParam(), requireTicketGrant('worker'), requireAnyPermission('TICKET_STATUS_CHANGE'), validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: statusTransitionSchema }), ticketController.changeStatus);
 
 /**
  * @openapi
@@ -219,7 +222,7 @@ router.post('/:ticketId/status', verifyTokenOrAgent, forTicketParam(), requireAn
  *               $ref: '#/components/schemas/Error'
  */
 // Bodyless route - agent picks up ticket without request body
-router.post('/:ticketId/pickup', verifyTokenOrAgent, forTicketParam(), validatePathParams({ ticketId: pathParams.ticketId }), ticketController.pickUpTicket);
+router.post('/:ticketId/pickup', verifyTokenOrAgent, requireRuntime(LIVE_RUNTIME), forTicketParam(), requireTicketGrant('worker'), validatePathParams({ ticketId: pathParams.ticketId }), ticketController.pickUpTicket);
 
 /**
  * @openapi
@@ -237,7 +240,7 @@ router.post('/:ticketId/pickup', verifyTokenOrAgent, forTicketParam(), validateP
  *         description: Ticket released
  */
 // Bodyless route - agent releases ticket without request body
-router.post('/:ticketId/release', verifyTokenOrAgent, forTicketParam(), validatePathParams({ ticketId: pathParams.ticketId }), ticketController.releaseTicket);
+router.post('/:ticketId/release', verifyTokenOrAgent, requireRuntime(...RELEASABLE_RUNTIME), forTicketParam(), requireTicketGrant('worker'), validatePathParams({ ticketId: pathParams.ticketId }), ticketController.releaseTicket);
 
 /**
  * @openapi
@@ -429,9 +432,20 @@ router.get('/:ticketId/phases/allowed', verifyTokenOrAgent, forTicketParam(), va
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/:ticketId/phases/transition', verifyTokenOrAgent, forTicketParam(), validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: phaseTransitionSchema }), async (req, res, next) => {
+router.post('/:ticketId/phases/transition', verifyTokenOrAgent, requireRuntime('running'), forTicketParam(), requireTicketGrant('worker'), validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: phaseTransitionSchema }), async (req, res, next) => {
   try {
     const { toPhase, actorType, metadata } = req.body;
+    // Agent phase transitions cannot complete a ticket directly; done/deployed
+    // must go through the approval path like a status change.
+    if (req.agent && (toPhase === 'done' || toPhase === 'deployed')) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_STATUS',
+          message: 'AI agents must submit a review ticket for approval, not complete it',
+        },
+      });
+    }
     const actorId = req.user ? req.user.id : (req.agent ? req.agent.id : null);
     const result = await phaseService.transition(
       req.params.ticketId,
@@ -465,7 +479,7 @@ router.post('/:ticketId/phases/transition', verifyTokenOrAgent, forTicketParam()
  *       404:
  *         description: Ticket not found
  */
-router.get('/:ticketId/review/diff', verifyTokenOrAgent, forTicketParam(), validatePathParams({ ticketId: pathParams.ticketId }), async (req, res, next) => {
+router.get('/:ticketId/review/diff', verifyTokenOrAgent, requireRuntime(LIVE_RUNTIME), forTicketParam(), requireTicketGrant('reviewer'), validatePathParams({ ticketId: pathParams.ticketId }), async (req, res, next) => {
   try {
     const ticket = await pool.query('SELECT project_id, pr_url FROM tickets WHERE id = $1', [req.params.ticketId]);
     if (ticket.rows.length === 0) {

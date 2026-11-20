@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { forProjectParam } = require('../middleware/agentProjectScope');
+const { requireRuntime, requireProjectGrant } = require('../middleware/agentRole');
 const RepoProfileService = require('../services/RepoProfileService');
 const RepoProfileValidationService = require('../services/RepoProfileValidationService');
 const { ForbiddenError, ValidationError } = require('../errors/HttpError');
@@ -409,7 +410,7 @@ router.delete('/:projectId/repo-profile/credentials/mtls/:credentialId', verifyT
  *       200:
  *         description: Client certificate/key material or null
  */
-router.get('/:projectId/repo-profile/agent/mtls', verifyTokenOrAgent, forProjectParam(), async (req, res, next) => {
+router.get('/:projectId/repo-profile/agent/mtls', verifyTokenOrAgent, requireRuntime('running'), forProjectParam(), requireProjectGrant('worker'), async (req, res, next) => {
   try {
     const agent = requireAgent(req);
     if (!req.query.profileId || req.query.profileVersion == null) {
@@ -444,12 +445,13 @@ router.get('/:projectId/repo-profile/agent/mtls', verifyTokenOrAgent, forProject
  *       200:
  *         description: Claimed validation or null
  */
-router.post('/:projectId/repo-profile/validations/claim', verifyTokenOrAgent, forProjectParam(), async (req, res, next) => {
+router.post('/:projectId/repo-profile/validations/claim', verifyTokenOrAgent, requireRuntime('running'), forProjectParam(), requireProjectGrant('worker'), async (req, res, next) => {
   try {
     const agent = requireAgent(req);
     const data = await RepoProfileValidationService.claimNext(
       req.params.projectId,
-      agent
+      agent,
+      req.runtime ? req.runtime.id : null
     );
     res.json({ success: true, data });
   } catch (error) {
@@ -478,14 +480,15 @@ router.post('/:projectId/repo-profile/validations/claim', verifyTokenOrAgent, fo
  *       200:
  *         description: Finished validation
  */
-router.post('/:projectId/repo-profile/validations/:validationId/finish', verifyTokenOrAgent, forProjectParam(), async (req, res, next) => {
+router.post('/:projectId/repo-profile/validations/:validationId/finish', verifyTokenOrAgent, requireRuntime('running'), forProjectParam(), requireProjectGrant('worker'), async (req, res, next) => {
   try {
     const agent = requireAgent(req);
     const data = await RepoProfileValidationService.finish(
       req.params.projectId,
       req.params.validationId,
       agent,
-      req.body || {}
+      req.body || {},
+      req.runtime ? req.runtime.id : null
     );
     res.json({ success: true, data });
   } catch (error) {

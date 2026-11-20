@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { pool } = require('../db');
 const AgentService = require('../services/AgentService');
+const AgentNodeService = require('../services/AgentNodeService');
 const AgentEnrollmentService = require('../services/AgentEnrollmentService');
 const { authFailureCounter } = require('../services/AgentEnrollmentMetrics');
 const { getSecret } = require('../utils/jwt');
@@ -204,6 +205,23 @@ exports.requireActiveUser = async (req, res, next) => {
   }
 };
 
+/**
+ * A node credential authenticates the host; every node call must name the
+ * child runtime it acts for. Rejecting runtime-less node tokens here keeps a
+ * host token from falling back to the legacy unscoped agent path.
+ */
+function requireNodeRuntime(agent, res) {
+  if (!agent._node || agent._runtime) return true;
+  res.status(400).json({
+    success: false,
+    error: {
+      code: 'RUNTIME_REQUIRED',
+      message: 'X-Agent-Runtime header is required for node credentials',
+    },
+  });
+  return false;
+}
+
 function agentAuthFailure(agent) {
   const isAccessToken = agent._tokenKind === 'access';
   if (agent._revoked) {
@@ -221,7 +239,7 @@ function agentAuthFailure(agent) {
   };
 }
 
-async function authenticateAgentByApiKey(apiKey, { mock = true } = {}) {
+async function authenticateAgentByApiKey(apiKey, { mock = true, runtimeId = null } = {}) {
   // Mock validation for test keys (unit tests only; never in a deployment).
   if (mock
       && process.env.NODE_ENV === 'test'
@@ -238,13 +256,44 @@ async function authenticateAgentByApiKey(apiKey, { mock = true } = {}) {
   // Enrollment-issued access tokens use the same X-API-Key header but a
   // different table and lifecycle. Legacy ak_ keys keep the old path.
   if (apiKey.startsWith('at_')) {
-    const result = await AgentEnrollmentService.authenticateAccessToken(apiKey);
+    let result = await AgentNodeService.authenticateAccessToken(apiKey);
+    if (result.status === 'invalid') {
+      // Compatibility for fg-53 agent access tokens during the additive phase.
+      result = await AgentEnrollmentService.authenticateAccessToken(apiKey).catch(() => result);
+      if (result.status === 'ok') {
+        return { ...result.agent, _tokenKind: 'access' };
+      }
+    }
     if (result.status === 'ok') {
-      return { ...result.agent, _tokenKind: 'access' };
+      const node = result.node;
+      let runtime = null;
+      if (runtimeId) {
+        try {
+          runtime = await AgentNodeService.getRuntimeForNode(node.id, runtimeId);
+        } catch {
+          authFailureCounter.inc({ reason: 'invalid' });
+          return null;
+        }
+      }
+      return {
+        ...node,
+        id: runtime ? runtime.id : node.id,
+        node_id: node.id,
+        runtime_id: runtime ? runtime.id : null,
+        project_id: runtime ? runtime.current_project_id : null,
+        _node: true,
+        _nodeRecord: node,
+        _runtime: runtime,
+        _tokenKind: 'access',
+      };
     }
     if (result.status === 'expired') {
       authFailureCounter.inc({ reason: 'expired' });
-      return { _tokenKind: 'access', _expired: true };
+      return {
+        _tokenKind: 'access',
+        _expired: true,
+        api_key_expires_at: result.expiresAt || null,
+      };
     }
     if (result.status === 'revoked') {
       authFailureCounter.inc({ reason: 'revoked' });
@@ -279,6 +328,24 @@ async function authenticateAgentByApiKey(apiKey, { mock = true } = {}) {
 exports.authenticateAgentByApiKey = authenticateAgentByApiKey;
 exports.agentAuthFailure = agentAuthFailure;
 
+/**
+ * Legacy `/agents/*` routes have no project scope. Node credentials use the
+ * dedicated `/agent-nodes/*` surface instead, so fail closed here rather than
+ * letting a host token fall through the old agent authorization path.
+ */
+exports.rejectNodeCredentials = (req, res, next) => {
+  if (req.agent && req.agent._node) {
+    return res.status(403).json({
+      success: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: 'Node credentials cannot access legacy agent endpoints',
+      },
+    });
+  }
+  return next();
+};
+
 exports.agentAuth = async (req, res, next) => {
   try {
     const apiKey = req.headers['x-api-key'];
@@ -287,7 +354,9 @@ exports.agentAuth = async (req, res, next) => {
       return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing API key' } });
     }
 
-    const agent = await authenticateAgentByApiKey(apiKey);
+    const agent = await authenticateAgentByApiKey(apiKey, {
+      runtimeId: req.headers['x-agent-runtime'] || null,
+    });
     if (!agent) {
       return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid API key' } });
     }
@@ -296,7 +365,13 @@ exports.agentAuth = async (req, res, next) => {
       return res.status(401).json({ success: false, error: agentAuthFailure(agent) });
     }
 
+    if (!requireNodeRuntime(agent, res)) return;
+
     req.agent = agent;
+    if (agent._node) {
+      req.node = agent._nodeRecord;
+      req.runtime = agent._runtime;
+    }
     req.rateLimitCount = req.rateLimitCount || 0;
     next();
   } catch (error) {
@@ -319,7 +394,9 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
   }
 
   try {
-    const agent = await authenticateAgentByApiKey(apiKey);
+    const agent = await authenticateAgentByApiKey(apiKey, {
+      runtimeId: req.headers['x-agent-runtime'] || null,
+    });
     if (!agent) {
       return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid API key' } });
     }
@@ -328,7 +405,13 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
       return res.status(401).json({ success: false, error: agentAuthFailure(agent) });
     }
 
+    if (!requireNodeRuntime(agent, res)) return;
+
     req.agent = agent;
+    if (agent._node) {
+      req.node = agent._nodeRecord;
+      req.runtime = agent._runtime;
+    }
     req.user = {
       userId: agent.owner_id,
       id: agent.id,

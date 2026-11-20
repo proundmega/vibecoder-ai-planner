@@ -10,7 +10,23 @@ const { pool } = require('../db');
  * Every middleware carries `agentScope` so the wiring test can enumerate all
  * agent-authenticated project routes and prove none is missing an assertion.
  */
+// Node credentials are always project-scoped. A node token without a runtime
+// header (or a runtime without an active project) must not be treated like a
+// legacy agent with an unrestricted scope, so return a value that can never
+// match a real project id.
+const UNBOUND_NODE_SCOPE = '__node_runtime_required__';
+
+function isNodeToken(req) {
+  return Boolean(req.agent && req.agent._node);
+}
+
 function scopedProject(req) {
+  if (isNodeToken(req)) {
+    if (!req.runtime || req.runtime.current_project_id == null) {
+      return UNBOUND_NODE_SCOPE;
+    }
+    return String(req.runtime.current_project_id);
+  }
   return req.agent && req.agent.project_id != null ? String(req.agent.project_id) : null;
 }
 
@@ -145,6 +161,7 @@ function selfAgentOnly(param = 'agentId') {
 
 module.exports = {
   assertAgentProject,
+  isNodeToken,
   forProjectParam,
   forBodyProject,
   forBodyTicket,

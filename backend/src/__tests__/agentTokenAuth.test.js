@@ -2,6 +2,7 @@ const request = require('supertest');
 const app = require('../index');
 const AgentService = require('../services/AgentService');
 const AgentEnrollmentService = require('../services/AgentEnrollmentService');
+const AgentNodeService = require('../services/AgentNodeService');
 const HeartbeatService = require('../services/HeartbeatService');
 const { pool } = require('../db');
 const PermissionService = require('../services/PermissionService');
@@ -66,6 +67,25 @@ describe('Agent token authentication (FR4, FR6, FR9, FR10)', () => {
 
     expect(res.statusCode).toBe(401);
     expect(res.body.error.code).toBe('TOKEN_EXPIRED');
+    expect(HeartbeatService.recordHeartbeat).not.toHaveBeenCalled();
+  });
+
+  it('includes expiredAt for an expired node access token', async () => {
+    const expiresAt = new Date(Date.now() - 60_000).toISOString();
+    jest.spyOn(AgentNodeService, 'authenticateAccessToken').mockResolvedValue({
+      status: 'expired',
+      node: null,
+      expiresAt,
+    });
+
+    const res = await request(app)
+      .post('/api/v1/agents-status/42/heartbeat')
+      .set('X-API-Key', 'at_node_expired')
+      .send({});
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body.error.code).toBe('TOKEN_EXPIRED');
+    expect(res.body.error.expiredAt).toBe(expiresAt);
     expect(HeartbeatService.recordHeartbeat).not.toHaveBeenCalled();
   });
 
