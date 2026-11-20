@@ -40,8 +40,10 @@ describe('agent fleet additive migration on a seeded database (FR16, NFR5, NFR8)
     client = new Client({ connectionString: databaseUrlWithName(dbName) });
     await client.connect();
 
-    for (const file of SQL_FILES) {
-      if (file.endsWith('056_agent_fleet.sql')) continue;
+    // Base schema only; fleet migrations are applied explicitly below so the
+    // seeded legacy row is present before 056.
+    const baseFiles = SQL_FILES.slice(0, SQL_FILES.indexOf(MIGRATION_056));
+    for (const file of baseFiles) {
       await applyFile(client, file);
     }
   }, 180000);
