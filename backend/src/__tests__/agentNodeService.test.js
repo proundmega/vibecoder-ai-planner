@@ -136,6 +136,7 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
 
   it('rejects a runtime whose model is not tagged for its role', async () => {
     const client = mockClient([
+      ['SELECT id FROM agent_nodes WHERE id = $1 FOR UPDATE', { rows: [{ id: 12 }] }],
       ['FROM agent_node_grants', { rows: [{ id: 1 }] }],
     ]);
     pool.connect.mockResolvedValue(client);
@@ -156,6 +157,7 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
 
   it('creates one runtime per declared slot with stable names', async () => {
     const client = mockClient([
+      ['SELECT id FROM agent_nodes WHERE id = $1 FOR UPDATE', { rows: [{ id: 12 }] }],
       ['FROM agent_node_grants', { rows: [{ id: 1 }] }],
       ['INSERT INTO agent_runtimes', (params) => ({ rows: [{ id: params[1].endsWith('-2') ? 22 : 21, name: params[1] }] })],
     ]);
@@ -192,6 +194,7 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
   it('caps the total runtimes created by one declaration', async () => {
     process.env.AGENT_MAX_RUNTIMES_PER_NODE = '1';
     const client = mockClient([
+      ['SELECT id FROM agent_nodes WHERE id = $1 FOR UPDATE', { rows: [{ id: 12 }] }],
       ['FROM agent_node_grants', { rows: [{ id: 1 }] }],
       ['INSERT INTO agent_runtimes', { rows: [{ id: 21, name: 'workers-1' }] }],
     ]);
@@ -214,6 +217,7 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
 
   it('enforces the node-wide runtime cap across declarations', async () => {
     const client = mockClient([
+      ['SELECT id FROM agent_nodes WHERE id = $1 FOR UPDATE', { rows: [{ id: 12 }] }],
       ['INSERT INTO agent_runtimes', { rows: [{ id: 21, name: 'r-1' }] }],
       ['SELECT count(*)::int AS n FROM agent_runtimes', { rows: [{ n: 101 }] }],
     ]);
@@ -248,7 +252,9 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
   });
 
   it('requires a grant before declaring a runtime project', async () => {
-    const client = mockClient([]);
+    const client = mockClient([
+      ['SELECT id FROM agent_nodes WHERE id = $1 FOR UPDATE', { rows: [{ id: 12 }] }],
+    ]);
     pool.connect.mockResolvedValue(client);
 
     await expect(

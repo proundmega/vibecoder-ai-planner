@@ -646,6 +646,13 @@ class AgentNodeService {
     const db = await pool.connect();
     try {
       await db.query('BEGIN');
+      // Serialize declarations with heartbeat revivals on the node row so the
+      // node-wide cap holds under concurrency.
+      const lockedNode = await db.query(
+        'SELECT id FROM agent_nodes WHERE id = $1 FOR UPDATE',
+        [node.id]
+      );
+      if (lockedNode.rows.length === 0) throw fail(404, 'NODE_NOT_FOUND', 'Node not found');
       const results = [];
       const maxRuntimes = intEnv('AGENT_MAX_RUNTIMES_PER_NODE', 100);
       let totalSlots = 0;
