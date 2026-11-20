@@ -110,23 +110,6 @@ class AgentNodeService {
   static ROLES = ROLES;
   static EFFORTS = EFFORTS;
 
-  static isProjectAdmin(user, projectId) {
-    if (!user || !projectId) return Promise.resolve(false);
-    if (user.role === 'super_admin') return Promise.resolve(true);
-    return pool
-      .query(
-        `SELECT 1
-         FROM projects p
-         WHERE p.id = $1
-           AND (p.owner_id = $2
-                OR ($3 IN ('project_admin','super_admin')
-                    AND EXISTS (SELECT 1 FROM project_memberships m
-                                WHERE m.project_id = p.id AND m.user_id = $2)))`,
-        [projectId, user.userId, user.role]
-      )
-      .then((result) => result.rows.length > 0);
-  }
-
   async mint({ ownerId, name, ttlSeconds, maxUses, createdBy = null, ip = null }) {
     if (!ownerId) throw fail(400, 'OWNER_REQUIRED', 'ownerId is required');
     if (!name || !String(name).trim()) throw fail(400, 'NAME_REQUIRED', 'name is required');
@@ -448,12 +431,29 @@ class AgentNodeService {
     return updated.rows[0];
   }
 
-  async listGrants(nodeId) {
+  async listGrants(nodeId, user = null) {
+    const node = await pool.query('SELECT owner_id FROM agent_nodes WHERE id = $1', [nodeId]);
+    const isOwner =
+      user &&
+      (user.role === 'super_admin' ||
+        (node.rows[0] && String(node.rows[0].owner_id) === String(user.userId)));
+    if (!user || isOwner) {
+      const result = await pool.query(
+        `SELECT * FROM agent_node_grants
+         WHERE node_id = $1 AND revoked_at IS NULL
+         ORDER BY created_at DESC`,
+        [nodeId]
+      );
+      return result.rows;
+    }
     const result = await pool.query(
-      `SELECT * FROM agent_node_grants
-       WHERE node_id = $1 AND revoked_at IS NULL
-       ORDER BY created_at DESC`,
-      [nodeId]
+      `SELECT g.* FROM agent_node_grants g
+       WHERE g.node_id = $1 AND g.revoked_at IS NULL
+         AND (EXISTS (SELECT 1 FROM projects p WHERE p.id = g.project_id AND p.owner_id = $2)
+              OR EXISTS (SELECT 1 FROM project_memberships m
+                         WHERE m.project_id = g.project_id AND m.user_id = $2))
+       ORDER BY g.created_at DESC`,
+      [nodeId, user.userId]
     );
     return result.rows;
   }

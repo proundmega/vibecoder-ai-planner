@@ -60,6 +60,13 @@ describe('Agent node routes (FR1, FR3, FR20, FR21, NFR1)', () => {
     expect(res.body.data.access_token).toBe('at_secret');
   });
 
+  it('requires an idempotency key when refreshing', async () => {
+    const res = await request(app)
+      .post('/api/v1/agent-nodes/refresh')
+      .send({ refresh_token: 'ar_valid_refresh_token_value' });
+    expect(res.statusCode).toBe(400);
+  });
+
   it('binds node config to the presented credential', async () => {
     jest.spyOn(AgentNodeService, 'authenticateAccessToken').mockResolvedValue({
       status: 'ok',

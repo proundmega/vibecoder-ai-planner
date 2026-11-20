@@ -7,6 +7,8 @@ const {
 
 const MIGRATION_056 = SQL_FILES.find((file) => file.endsWith('056_agent_fleet.sql'));
 const ROLLBACK_056 = MIGRATION_056.replace(/\.sql$/, '_rollback.sql');
+const MIGRATION_057 = MIGRATION_056.replace('056_agent_fleet.sql', '057_agent_fleet_clean_cut.sql');
+const ROLLBACK_057 = MIGRATION_057.replace(/\.sql$/, '_rollback.sql');
 
 function databaseUrlWithName(name) {
   const url = new URL(process.env.DATABASE_URL);
@@ -121,5 +123,34 @@ describe('agent fleet additive migration on a seeded database (FR16, NFR5, NFR8)
     expect(await table('agents')).toBeTruthy();
     const still = await client.query('SELECT count(*)::int AS n FROM tickets WHERE assigned_agent_id = $1', [agentId]);
     expect(still.rows[0].n).toBe(1);
+  }, 180000);
+
+  it('applies the deferred clean cut after 056 and rolls both back', async () => {
+    await applyFile(client, MIGRATION_056);
+    await applyFile(client, MIGRATION_057);
+
+    const table = async (name) => {
+      const result = await client.query('SELECT to_regclass($1) AS name', [name]);
+      return result.rows[0].name;
+    };
+    expect(await table('agents')).toBeNull();
+    expect(await table('providers')).toBeNull();
+    const columns = await client.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'tickets' AND column_name IN ('assigned_agent_id','assigned_runtime_id')`
+    );
+    expect(columns.rows.map((r) => r.column_name).sort()).toEqual(['assigned_runtime_id']);
+
+    await applyFile(client, ROLLBACK_057);
+    expect(await table('agents')).toBeTruthy();
+    const restored = await client.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'tickets' AND column_name = 'assigned_agent_id'`
+    );
+    expect(restored.rows).toHaveLength(1);
+
+    await applyFile(client, ROLLBACK_056);
+    expect(await table('agent_runtimes')).toBeNull();
+    expect(await table('agents')).toBeTruthy();
   }, 180000);
 });

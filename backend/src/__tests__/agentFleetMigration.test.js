@@ -16,6 +16,14 @@ describe('agent fleet migration (FR1, FR2, FR16, NFR5)', () => {
     expect(enrollment).toBeGreaterThan(-1);
     expect(fleet).toBeGreaterThan(enrollment);
     expect(applySource).not.toContain('057_agent_fleet_clean_cut.sql');
+    const cut = fs.readFileSync(
+      path.join(migrations, '057_agent_fleet_clean_cut.sql'),
+      'utf8'
+    );
+    // 056 already created runtime_id; the cut must drop, never rename, legacy.
+    expect(cut).not.toMatch(/RENAME COLUMN agent_id TO runtime_id/i);
+    expect(cut).not.toMatch(/RENAME COLUMN assigned_agent_id/i);
+    expect(cut).toMatch(/DROP COLUMN IF EXISTS agent_id/);
   });
 
   it('creates the node, grant, runtime and registry schema', () => {

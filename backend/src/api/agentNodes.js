@@ -179,7 +179,7 @@ router.get(
   loadNode,
   async (req, res, next) => {
     try {
-      const data = await AgentNodeService.listGrants(req.nodeRecord.id);
+      const data = await AgentNodeService.listGrants(req.nodeRecord.id, req.user);
       res.json({ success: true, data });
     } catch (error) {
       if (error.status) return fail(res, error);

@@ -26,7 +26,7 @@ async function agentNodeAuth(req, res, next) {
     if (result.status !== 'ok') return unauthorized(res, result);
     req.node = result.node;
     return next();
-  } catch (error) {
+  } catch {
     return res.status(401).json({
       success: false,
       error: { code: 'UNAUTHORIZED', message: 'Invalid node credential' },
