@@ -38,7 +38,9 @@ function fail(res, error) {
     .json(errorBody(error.code || 'INTERNAL_SERVER_ERROR', error.message || 'Request failed'));
 }
 
-router.use((req, res, next) => {
+// Gate only the node/admin surface; this router is mounted at the app root so
+// an unscoped `router.use` would 404 unrelated routes.
+router.use('/agent-nodes', (req, res, next) => {
   if (!enrollmentEnabled()) return res.status(404).json(errorBody('NOT_FOUND', 'Not found'));
   next();
 });
