@@ -7,6 +7,8 @@ const providerController = require('../controllers/providerController');
 const { addProviderSchema, updateProviderSchema } = require('../validators/providers');
 const { providerCatalog } = require('../utils/providerDefaults');
 const ProviderService = require('../services/ProviderService');
+const { pool } = require('../db');
+const { ForbiddenError, ValidationError } = require('../errors/HttpError');
 
 /**
  * @openapi
@@ -198,18 +200,43 @@ router.get('/:id/agents', verifyToken, providerController.getProviderAgents);
  *             properties:
  *               labels: { type: array, items: { type: string } }
  *               priority: { type: string }
+ *               phase: { type: string }
+ *               role: { type: string, enum: [worker, reviewer, planner] }
+ *               project_id: { $ref: '#/components/schemas/NumericId' }
  *     responses:
  *       200:
  *         description: Resolved provider config
+ *       403:
+ *         description: Caller cannot access the requested project
  */
 router.post('/resolve', verifyToken, async (req, res, next) => {
   try {
+    const rawProjectId = req.body.project_id;
+    if (rawProjectId != null && !/^\d+$/.test(String(rawProjectId))) {
+      throw new ValidationError('project_id must be a positive integer');
+    }
+    const projectId = rawProjectId == null ? null : Number(rawProjectId);
+
+    if (projectId != null && req.user.role !== 'super_admin') {
+      const access = await pool.query(
+        `SELECT 1 FROM projects p
+         WHERE p.id = $1
+           AND (p.owner_id = $2
+                OR EXISTS (SELECT 1 FROM project_memberships m
+                           WHERE m.project_id = p.id AND m.user_id = $2))`,
+        [projectId, req.user.userId]
+      );
+      if (access.rows.length === 0) {
+        throw new ForbiddenError('Not a member of this project');
+      }
+    }
+
     const ticketInfo = {
       labels: req.body.labels || [],
       priority: req.body.priority || 'medium',
       phase: req.body.phase || 'backlog',
+      role: req.body.role,
     };
-    const projectId = req.body.project_id || null;
     const config = await ProviderService.resolveProvider(ticketInfo, projectId, req.user.userId);
     res.json({ success: true, data: config });
   } catch (err) {

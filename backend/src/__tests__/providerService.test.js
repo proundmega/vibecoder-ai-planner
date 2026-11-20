@@ -46,7 +46,7 @@ describe('ProviderService', () => {
       expect(sql).toContain('FROM provider_credentials pc');
       expect(sql).toContain("pm.status = 'verified'");
       expect(sql).toContain('pc.owner_id = $2');
-      expect(params).toEqual([1, 7]);
+      expect(params).toEqual([1, 7, 'worker']);
     });
 
     it('uses owner-global credentials when no project is supplied', async () => {
@@ -57,7 +57,7 @@ describe('ProviderService', () => {
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('pc.project_id IS NULL');
       expect(sql).not.toContain('JOIN projects');
-      expect(params).toEqual([7]);
+      expect(params).toEqual([7, 'worker']);
     });
 
     it('returns no providers without a project or owner', async () => {
@@ -118,12 +118,48 @@ describe('ProviderService', () => {
       expect(result.endpoint_url).toBe('https://opencode.ai/zen/v1');
     });
 
+
+    it('selects planner models from the planning phase', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [registryRow({ roles: ['planner'], model: 'plan-model' })],
+      });
+
+      const result = await ProviderService.resolveProvider({ phase: 'planning' }, 1, 7);
+
+      expect(result.model).toBe('plan-model');
+      expect(pool.query.mock.calls[0][1]).toEqual([1, 7, 'planner']);
+    });
+
+    it('selects reviewer models from the review phase', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [registryRow({ roles: ['reviewer'] })] });
+
+      await ProviderService.resolveProvider({ phase: 'review' }, 1, 7);
+
+      expect(pool.query.mock.calls[0][1]).toEqual([1, 7, 'reviewer']);
+    });
+
+    it('prefers an explicit role over the phase', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [registryRow()] });
+
+      await ProviderService.resolveProvider({ role: 'worker', phase: 'planning' }, 1, 7);
+
+      expect(pool.query.mock.calls[0][1]).toEqual([1, 7, 'worker']);
+    });
+
+    it('filters the registry query by the selected role', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [registryRow()] });
+
+      await ProviderService.resolveProvider({}, 1, 7);
+
+      expect(pool.query.mock.calls[0][0]).toContain('$3 = ANY(pm.roles)');
+    });
+
     it('passes the project and owner to the registry query', async () => {
       pool.query.mockResolvedValueOnce({ rows: [registryRow()] });
 
       await ProviderService.resolveProvider({ labels: ['x'] }, 1, 7);
 
-      expect(pool.query.mock.calls[0][1]).toEqual([1, 7]);
+      expect(pool.query.mock.calls[0][1]).toEqual([1, 7, 'worker']);
     });
   });
 });

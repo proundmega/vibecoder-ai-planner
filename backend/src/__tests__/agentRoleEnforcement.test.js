@@ -133,6 +133,20 @@ describe('agent role enforcement (FR4, NFR1)', () => {
     )).toBe(true);
   });
 
+
+  it('uses the runtime identity when the node owner is also present', async () => {
+    const req = nodeRequest({ role: 'reviewer' });
+    req.user = { userId: 7, role: 'project_admin' };
+    const { res } = await run(requireRole('worker'), req);
+
+    expect(res.statusCode).toBe(403);
+    const audit = pool.query.mock.calls.find(([sql, params]) =>
+      sql.includes('agent_node_auth_events') && params[2] === 'auth.role_denied'
+    );
+    expect(audit[1][3]).toBe('runtime');
+    expect(audit[1][4]).toBe('3');
+  });
+
   it('audits a grant denial with the project', async () => {
     const req = nodeRequest({ role: 'reviewer' });
     pool.query

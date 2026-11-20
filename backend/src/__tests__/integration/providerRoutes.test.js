@@ -329,7 +329,8 @@ describe('Provider Routes Integration (PostgreSQL)', () => {
       await pool.query(
         `INSERT INTO provider_models
            (credential_id, model, source, status, roles)
-         VALUES ($1, 'gpt-4o', 'manual', 'verified', ARRAY['worker'])`,
+         VALUES ($1, 'gpt-4o', 'manual', 'verified', ARRAY['worker']),
+                ($1, 'plan-model', 'manual', 'verified', ARRAY['planner'])`,
         [credential.rows[0].id]
       );
 
@@ -342,10 +343,41 @@ describe('Provider Routes Integration (PostgreSQL)', () => {
         expect(res.body.success).toBe(true);
         expect(res.body.data.provider).toBe('openai');
         expect(res.body.data.model).toBe('gpt-4o');
+
+        const planning = await request(app)
+          .post('/api/v1/providers/resolve')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ project_id: projectId, phase: 'planning' });
+        expect(planning.status).toBe(200);
+        expect(planning.body.data.model).toBe('plan-model');
       } finally {
         await pool.query('DELETE FROM provider_models WHERE credential_id = $1', [credential.rows[0].id]);
         await pool.query('DELETE FROM provider_credentials WHERE project_id = $1', [projectId]);
         await pool.query('DELETE FROM projects WHERE id = $1', [projectId]);
+      }
+    });
+
+
+    it('denies resolving another user\'s project', async () => {
+      const other = await pool.query(
+        `INSERT INTO users (email, name, password_hash)
+         VALUES ($1, 'Other Resolve User', 'x') RETURNING id`,
+        [`resolve_other_${Date.now()}@test.com`]
+      );
+      const project = await pool.query(
+        'INSERT INTO projects (name, owner_id) VALUES ($1, $2) RETURNING id',
+        [`other-project-${Date.now()}`, other.rows[0].id]
+      );
+
+      try {
+        const res = await request(app)
+          .post('/api/v1/providers/resolve')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ project_id: project.rows[0].id });
+        expect(res.status).toBe(403);
+      } finally {
+        await pool.query('DELETE FROM projects WHERE id = $1', [project.rows[0].id]);
+        await pool.query('DELETE FROM users WHERE id = $1', [other.rows[0].id]);
       }
     });
 

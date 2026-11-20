@@ -56,9 +56,9 @@ async function recordAuthEvent({
 
 async function auditDenial(req, eventType, { projectId = null, metadata = {} } = {}) {
   const nodeId = (req.node && req.node.id) || (req.nodeRecord && req.nodeRecord.id) || null;
-  const actorId = (req.user && req.user.userId)
-    ?? (req.runtime && req.runtime.id)
+  const actorId = (req.runtime && req.runtime.id)
     ?? (req.agent && req.agent.id)
+    ?? (req.user && req.user.userId)
     ?? nodeId
     ?? null;
   return recordAuthEvent({
@@ -84,9 +84,7 @@ async function checkRuntime(req, res, { roles = null, statuses = null } = {}) {
   if (!isNodeRequest(req)) return true;
 
   if (!req.runtime) {
-    await auditDenial(req, 'auth.runtime_missing', {
-      metadata: { path: req.originalUrl || req.path || null },
-    });
+    // auth.js rejects runtime-less node tokens earlier and audits them.
     deny(res, 400, 'RUNTIME_REQUIRED', 'Missing X-Agent-Runtime header');
     return false;
   }
