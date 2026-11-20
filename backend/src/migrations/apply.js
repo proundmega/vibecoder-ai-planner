@@ -63,10 +63,20 @@ const SQL_FILES = [
   path.join(__dirname, './059_harness_runtime_ownership.sql'),
 ];
 
+// 057 is the destructive clean cut. It stays out of the default chain until
+// the joint job removes the legacy agent/provider paths; enable it explicitly
+// on a fresh joint database. It must run after 059.
+if (process.env.AGENT_FLEET_CLEAN_CUT === '1') {
+  SQL_FILES.push(path.join(__dirname, './057_agent_fleet_clean_cut.sql'));
+}
+
 const DATA_MIGRATIONS = [
   path.join(__dirname, './migrate_provider_api_keys.js'),
   path.join(__dirname, './backfill_agent_key_hashes.js'),
-];
+].filter((file) => !(
+  process.env.AGENT_FLEET_CLEAN_CUT === '1'
+  && file.endsWith('backfill_agent_key_hashes.js')
+));
 
 const { spawn } = require('child_process');
 
