@@ -273,6 +273,11 @@ public final class Supervisor implements AutoCloseable {
         return sections;
     }
 
+    /** Snapshot of the currently suspended sections. */
+    public java.util.Set<String> suspendedSectionsSnapshot() {
+        return suspendedSections;
+    }
+
     /** Snapshot of section-name → runtime-id mappings. */
     public Map<String, Long> runtimeIdsSnapshot() {
         return runtimeIds;

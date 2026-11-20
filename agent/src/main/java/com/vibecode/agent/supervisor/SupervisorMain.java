@@ -97,7 +97,7 @@ public final class SupervisorMain {
                 java.util.Set<String> suspended = suspendedSections(config, ids);
                 DeclarationResult declaration = null;
                 if (tick.incrementAndGet() % 4 == 0) {
-                    declaration = declareWithRetry(api, desiredRef.get(), 1);
+                    declaration = declareWithRetry(api, desiredRef.get(), 1, suspended);
                     Map<String, Long> merged = new java.util.LinkedHashMap<>(ids);
                     merged.putAll(declaration.runtimeIds());
                     for (String section : declaration.suspendedSections()) {
@@ -194,14 +194,28 @@ public final class SupervisorMain {
      * keeps one project's revoked grant from stopping the whole host.
      */
     static DeclarationResult declareWithRetry(RuntimeApi api, RuntimeConfig config, int attempts) {
+        return declareWithRetry(api, config, attempts, java.util.Set.of());
+    }
+
+    /**
+     * Declare sections, skipping admin-suspended sections so a re-declaration
+     * cannot revive a stopped runtime (Track A upserts stopped -> pending).
+     */
+    static DeclarationResult declareWithRetry(RuntimeApi api, RuntimeConfig config, int attempts,
+                                              java.util.Set<String> skipSections) {
         Map<String, Long> ids = new LinkedHashMap<>();
         java.util.Set<String> suspended = new java.util.LinkedHashSet<>();
         RuntimeException last = null;
         java.util.Set<String> transientFailures = new java.util.LinkedHashSet<>();
+        java.util.Set<String> skip = skipSections == null ? java.util.Set.of() : skipSections;
 
         for (int attempt = 1; attempt <= Math.max(1, attempts); attempt++) {
             transientFailures = new java.util.LinkedHashSet<>();
             for (RuntimeConfig.DeclaredRuntime runtime : config.runtimes()) {
+                if (skip.contains(runtime.name())) {
+                    suspended.add(runtime.name());
+                    continue;
+                }
                 Map<String, Object> row = declarationRow(runtime);
                 try {
                     List<Map<String, Object>> returned = api.declareRuntimes(List.of(row));
@@ -318,7 +332,8 @@ public final class SupervisorMain {
         try {
             RuntimeConfig reloaded = RuntimeConfig.parse(path);
             validateDeclaration(reloaded);
-            DeclarationResult declared = declareWithRetry(api, reloaded, 3);
+            DeclarationResult declared = declareWithRetry(
+                api, reloaded, 3, supervisor.suspendedSectionsSnapshot());
             if (declared.terminal()) {
                 log.error("SIGHUP reload rejected: node auth failed; keeping the current fleet");
                 return null;
