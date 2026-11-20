@@ -200,7 +200,7 @@ class HarnessDashboardService {
 
   async getStuckRuns(projectId, stuckMinutes) {
     const result = await pool.query(
-      `SELECT r.id, r.ticket_id, r.agent_id, r.step, r.agent_step,
+      `SELECT r.id, r.ticket_id, r.agent_id, r.runtime_id, r.step, r.agent_step,
               r.started_at, r.heartbeat_at,
               EXTRACT(EPOCH FROM (NOW() - r.heartbeat_at))::int AS stale_seconds
        FROM harness_runs r

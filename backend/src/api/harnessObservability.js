@@ -10,9 +10,14 @@ const HarnessAuditService = require('../services/HarnessAuditService');
 const HarnessMetrics = require('../services/HarnessMetrics');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
-const { verifyToken, verifyTokenOrAgent, rejectNodeCredentials } = require('../middleware/auth');
+const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { forRunParam, forHarnessEventBody } = require('../middleware/agentProjectScope');
-const { requireRuntime, requireReviewEventGrant } = require('../middleware/agentRole');
+const {
+  requireRuntime,
+  requireRunGrant,
+  requireBodyGrant,
+  requireReviewEventGrant,
+} = require('../middleware/agentRole');
 const {
   ForbiddenError,
   NotFoundError,
@@ -81,12 +86,20 @@ async function assertProjectAccess(projectId, req, permission = 'DASHBOARD_READ'
   }
 }
 
-async function assertRunAccess(runId, req, permission = 'TICKET_READ') {
+async function assertRunAccess(runId, req, permission = 'TICKET_READ', { write = false } = {}) {
   const run = await HarnessRunService.getRun(runId);
   if (req.agent) {
-    if (String(run.agent_id) !== String(req.agent.id)) {
+    if (!req.runtime) {
+      if (String(run.agent_id) !== String(req.agent.id)) {
+        throw new ForbiddenError('Harness run belongs to another agent');
+      }
+      return run;
+    }
+    if (write && String(run.runtime_id) !== String(req.runtime.id)) {
       throw new ForbiddenError('Harness run belongs to another agent');
     }
+    // Node reads are project-scoped; requireRunGrant has already checked the
+    // runtime's active grant for this run's project.
     return run;
   }
   const { role } = operatorIdentity(req);
@@ -145,7 +158,7 @@ function projectIdParam(value) {
  *       201:
  *         description: Event stored (or an existing idempotent duplicate)
  */
-router.post('/events', verifyTokenOrAgent, requireRuntime('running'), forHarnessEventBody(), requireReviewEventGrant(), async (req, res, next) => {
+router.post('/events', verifyTokenOrAgent, requireRuntime('running'), forHarnessEventBody(), requireBodyGrant('worker', 'reviewer', 'planner'), requireReviewEventGrant(), async (req, res, next) => {
   try {
     const agentId = requireAgent(req);
     const body = req.body || {};
@@ -158,7 +171,7 @@ router.post('/events', verifyTokenOrAgent, requireRuntime('running'), forHarness
       runId: body.runId,
       ticketId: body.ticketId,
       projectId: body.projectId,
-      agentId,
+      ...(req.runtime ? { runtimeId: req.runtime.id } : { agentId }),
       sessionId: body.sessionId,
       type: body.type,
       version: body.version,
@@ -221,13 +234,13 @@ router.post('/events', verifyTokenOrAgent, requireRuntime('running'), forHarness
  *       201:
  *         description: Usage stored (greatest value wins on retries)
  */
-router.post('/runs/:runId/usage', verifyTokenOrAgent, rejectNodeCredentials, forRunParam(), async (req, res, next) => {
+router.post('/runs/:runId/usage', verifyTokenOrAgent, requireRuntime('running'), forRunParam(), requireRunGrant('worker'), async (req, res, next) => {
   try {
-    const agentId = requireAgent(req);
     const body = req.body || {};
+    await assertRunAccess(req.params.runId, req, 'TICKET_READ', { write: true });
     const row = await HarnessUsageService.recordUsage({
       runId: req.params.runId,
-      agentId,
+      ...(req.runtime ? { runtimeId: req.runtime.id } : { agentId: requireAgent(req) }),
       model: body.model,
       promptVersion: body.promptVersion,
       configHash: body.configHash,
@@ -263,7 +276,7 @@ router.post('/runs/:runId/usage', verifyTokenOrAgent, rejectNodeCredentials, for
  *       200:
  *         description: Usage rows and totals
  */
-router.get('/runs/:runId/usage', verifyTokenOrAgent, rejectNodeCredentials, forRunParam(), async (req, res, next) => {
+router.get('/runs/:runId/usage', verifyTokenOrAgent, requireRuntime('running'), forRunParam(), requireRunGrant('worker', 'reviewer', 'planner'), async (req, res, next) => {
   try {
     await assertRunAccess(req.params.runId, req);
     const [rows, totals] = await Promise.all([
@@ -306,7 +319,7 @@ router.get('/runs/:runId/usage', verifyTokenOrAgent, rejectNodeCredentials, forR
  *       200:
  *         description: Ordered events
  */
-router.get('/runs/:runId/events', verifyTokenOrAgent, rejectNodeCredentials, forRunParam(), async (req, res, next) => {
+router.get('/runs/:runId/events', verifyTokenOrAgent, requireRuntime('running'), forRunParam(), requireRunGrant('worker', 'reviewer', 'planner'), async (req, res, next) => {
   try {
     await assertRunAccess(req.params.runId, req);
     const events = await HarnessEventService.listForRun(req.params.runId, {
@@ -331,7 +344,7 @@ router.get('/runs/:runId/events', verifyTokenOrAgent, rejectNodeCredentials, for
  *       - ApiKeyAuth: []
  *       - BearerAuth: []
  */
-router.get('/runs/:runId/timeline', verifyTokenOrAgent, rejectNodeCredentials, forRunParam(), async (req, res, next) => {
+router.get('/runs/:runId/timeline', verifyTokenOrAgent, requireRuntime('running'), forRunParam(), requireRunGrant('worker', 'reviewer', 'planner'), async (req, res, next) => {
   try {
     await assertRunAccess(req.params.runId, req);
     const timeline = await HarnessEventService.getTimeline(req.params.runId);

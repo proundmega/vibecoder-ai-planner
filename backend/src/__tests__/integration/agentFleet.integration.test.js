@@ -9,6 +9,8 @@ const MIGRATION_056 = SQL_FILES.find((file) => file.endsWith('056_agent_fleet.sq
 const ROLLBACK_056 = MIGRATION_056.replace(/\.sql$/, '_rollback.sql');
 const MIGRATION_057 = MIGRATION_056.replace('056_agent_fleet.sql', '057_agent_fleet_clean_cut.sql');
 const ROLLBACK_057 = MIGRATION_057.replace(/\.sql$/, '_rollback.sql');
+const MIGRATION_059 = SQL_FILES.find((file) => file.endsWith('059_harness_runtime_ownership.sql'));
+const ROLLBACK_059 = MIGRATION_059.replace(/\.sql$/, '_rollback.sql');
 
 function databaseUrlWithName(name) {
   const url = new URL(process.env.DATABASE_URL);
@@ -185,5 +187,85 @@ describe('agent fleet additive migration on a seeded database (FR16, NFR5, NFR8)
     await applyFile(client, ROLLBACK_056);
     expect(await table('agent_runtimes')).toBeNull();
     expect(await table('agents')).toBeTruthy();
+  }, 180000);
+  it('relaxes harness ownership for runtime rows and refuses a lossy rollback', async () => {
+    await applyFile(client, MIGRATION_056);
+    await applyFile(client, MIGRATION_059);
+
+    const user = await client.query(
+      `INSERT INTO users (email, name, password_hash)
+       VALUES ('fg54-runtime@test.local', 'FG54 runtime', 'x') RETURNING id`
+    );
+    const project = await client.query(
+      `INSERT INTO projects (name, owner_id) VALUES ('fg54-runtime', $1) RETURNING id`,
+      [user.rows[0].id]
+    );
+    const credential = await client.query(
+      `INSERT INTO provider_credentials
+         (owner_id, name, provider_type, api_key_encrypted)
+       VALUES ($1, 'runtime-cred', 'openai', 'x') RETURNING id`,
+      [user.rows[0].id]
+    );
+    const model = await client.query(
+      `INSERT INTO provider_models (credential_id, model, source, roles)
+       VALUES ($1, 'gpt-runtime', 'manual', ARRAY['worker']) RETURNING id`,
+      [credential.rows[0].id]
+    );
+    const node = await client.query(
+      `INSERT INTO agent_nodes (owner_id, name) VALUES ($1, 'runtime-node') RETURNING id`,
+      [user.rows[0].id]
+    );
+    const runtime = await client.query(
+      `INSERT INTO agent_runtimes
+         (node_id, name, role, model_id, status, current_project_id)
+       VALUES ($1, 'worker-1', 'worker', $2, 'running', $3) RETURNING id`,
+      [node.rows[0].id, model.rows[0].id, project.rows[0].id]
+    );
+    const runtimeId = runtime.rows[0].id;
+    const ticket = await client.query(
+      `INSERT INTO tickets (project_id, title, owner_id, status, assigned_runtime_id, locked_at)
+       VALUES ($1, 'runtime ticket', $2, 'in_progress', $3, NOW()) RETURNING id`,
+      [project.rows[0].id, user.rows[0].id, runtimeId]
+    );
+    const run = await client.query(
+      `INSERT INTO harness_runs (ticket_id, agent_id, runtime_id, branch)
+       VALUES ($1, NULL, $2, 'feat/runtime') RETURNING id`,
+      [ticket.rows[0].id, runtimeId]
+    );
+    await client.query(
+      `INSERT INTO harness_leases (ticket_id, run_id, agent_id, runtime_id, expires_at)
+       VALUES ($1, $2, NULL, $3, NOW() + INTERVAL '10 minutes')`,
+      [ticket.rows[0].id, run.rows[0].id, runtimeId]
+    );
+
+    const nullable = await client.query(
+      `SELECT
+         (SELECT is_nullable FROM information_schema.columns
+          WHERE table_name = 'harness_runs' AND column_name = 'agent_id') AS runs_nullable,
+         (SELECT is_nullable FROM information_schema.columns
+          WHERE table_name = 'harness_leases' AND column_name = 'agent_id') AS leases_nullable`
+    );
+    expect(nullable.rows[0]).toEqual({ runs_nullable: 'YES', leases_nullable: 'YES' });
+
+    await expect(applyFile(client, ROLLBACK_059))
+      .rejects.toThrow(/runtime-owned harness runs or leases still exist/);
+
+    await client.query('DELETE FROM harness_leases WHERE run_id = $1', [run.rows[0].id]);
+    await client.query('DELETE FROM harness_runs WHERE id = $1', [run.rows[0].id]);
+    await applyFile(client, ROLLBACK_059);
+
+    const restored = await client.query(
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_name = 'harness_runs' AND column_name = 'agent_id'`
+    );
+    expect(restored.rows[0].is_nullable).toBe('NO');
+
+    // Leave the shared test schema in the forward state for later tests.
+    await applyFile(client, MIGRATION_059);
+    const forward = await client.query(
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_name = 'harness_runs' AND column_name = 'agent_id'`
+    );
+    expect(forward.rows[0].is_nullable).toBe('YES');
   }, 180000);
 });

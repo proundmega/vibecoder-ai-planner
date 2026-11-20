@@ -92,6 +92,7 @@ describe('HarnessRunService', () => {
       expect(client.query.mock.calls[2][1]).toEqual([
         42,
         7,
+        null,
         'feat/fg-33',
         'abc123',
         null,
@@ -105,6 +106,28 @@ describe('HarnessRunService', () => {
         null,
         null,
       ]);
+    });
+
+
+    it('persists a runtime-owned run without an agents row', async () => {
+      const row = { id: RUN_ID, ticket_id: 42, agent_id: null, runtime_id: 3, status: 'running' };
+      const client = clientWith(
+        [{ status: 'in_progress', assigned_runtime_id: '3' }],
+        { rows: [row] }
+      );
+
+      const result = await HarnessRunService.startRun({
+        ticketId: '42',
+        runtimeId: 3,
+        branch: 'feat/fg-54',
+      });
+
+      expect(result).toEqual(row);
+      expect(client.query.mock.calls[2][0]).toContain('runtime_id');
+      expect(client.query.mock.calls[2][1].slice(0, 4)).toEqual([42, null, 3, 'feat/fg-54']);
+      expect(HarnessBudgetService.assertCanStart).toHaveBeenCalledWith(
+        expect.objectContaining({ runtimeId: 3, agentId: null })
+      );
     });
 
     it('audits a provider-policy start rejection without creating a run', async () => {
@@ -130,6 +153,35 @@ describe('HarnessRunService', () => {
           ticketId: 42,
           agentId: 7,
           dedupeKey: 'privacy:start_blocked:42:anthropic',
+        })
+      );
+      expect(client.release).toHaveBeenCalled();
+    });
+
+
+    it('keeps the runtime identity in a privacy start-block audit', async () => {
+      const client = clientWith(
+        [{ status: 'in_progress', assigned_runtime_id: '3', project_id: 5 }],
+        { rows: [] }
+      );
+      HarnessPrivacyService.assertProviderAllowed.mockRejectedValueOnce(
+        new Error('Provider is not allowed by the project privacy policy')
+      );
+
+      await expect(HarnessRunService.startRun({
+        ticketId: 42,
+        runtimeId: 3,
+        branch: 'feat/fg-54',
+        provider: 'anthropic',
+      })).rejects.toThrow('privacy policy');
+
+      expect(HarnessAuditService.recordPrivacy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: 5,
+          runtimeId: 3,
+          actorId: 3,
+          agentId: null,
+          action: 'start_blocked',
         })
       );
       expect(client.release).toHaveBeenCalled();
@@ -446,7 +498,8 @@ describe('HarnessRunService', () => {
       expect(sql).toContain('agent_step = COALESCE');
       expect(sql).not.toContain('step = COALESCE($3, step)');
       expect(sql).toContain('agent_id = $2');
-      expect(params).toEqual([RUN_ID, 7, 'verifying']);
+      expect(sql).toContain('runtime_id = $3');
+      expect(params).toEqual([RUN_ID, 7, null, 'verifying']);
     });
 
     it('leaves the step untouched when omitted', async () => {
@@ -454,7 +507,21 @@ describe('HarnessRunService', () => {
 
       await HarnessRunService.heartbeat(RUN_ID, 7);
 
-      expect(pool.query.mock.calls[0][1]).toEqual([RUN_ID, 7, null]);
+      expect(pool.query.mock.calls[0][1]).toEqual([RUN_ID, 7, null, null]);
+    });
+
+
+    it('updates heartbeat for a runtime owner', async () => {
+      const row = { id: RUN_ID, runtime_id: 3, step: 'verifying' };
+      pool.query.mockResolvedValueOnce({ rows: [row] });
+
+      await expect(
+        HarnessRunService.heartbeat(RUN_ID, { runtimeId: 3 }, 'verifying')
+      ).resolves.toEqual(row);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain('runtime_id = $3');
+      expect(params).toEqual([RUN_ID, null, 3, 'verifying']);
     });
 
     it('throws when no active run matches the agent', async () => {
@@ -575,8 +642,28 @@ describe('HarnessRunService', () => {
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('ON CONFLICT (ticket_id) DO UPDATE');
       expect(sql).toContain('EXISTS');
-      expect(sql).toContain('t.assigned_agent_id = a.id');
-      expect(params).toEqual([42, RUN_ID, 7, 120]);
+      expect(sql).toContain('t.assigned_agent_id = $3');
+      expect(sql).toContain('t.assigned_runtime_id = $4');
+      expect(params).toEqual([42, RUN_ID, 7, null, 120]);
+    });
+
+
+    it('claims a lease for a runtime owner', async () => {
+      const lease = { ticket_id: 42, run_id: RUN_ID, runtime_id: 3 };
+      pool.query.mockResolvedValueOnce({ rows: [lease] });
+
+      await expect(
+        HarnessRunService.claimLease({
+          ticketId: 42,
+          runId: RUN_ID,
+          runtimeId: 3,
+          ttlSeconds: 120,
+        })
+      ).resolves.toEqual(lease);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain('runtime_id = $4');
+      expect(params).toEqual([42, RUN_ID, null, 3, 120]);
     });
 
     it('returns null when another run holds an unexpired lease', async () => {
@@ -608,7 +695,8 @@ describe('HarnessRunService', () => {
       expect(sql).toContain("r.status = 'running'");
       expect(sql).toContain('l.ticket_id = r.ticket_id');
       expect(sql).toContain('l.agent_id = r.agent_id');
-      expect(sql).toContain('t.assigned_agent_id = a.id');
+      expect(sql).toContain('t.assigned_agent_id = $3');
+      expect(sql).toContain('t.assigned_runtime_id = $4');
     });
 
     it('returns null when renewing a lost lease', async () => {
@@ -704,7 +792,17 @@ describe('HarnessRunService', () => {
       expect(sql).toContain("t.status = 'in_progress'");
       expect(sql).toContain("NULLIF(BTRIM(t.pr_url), '') IS NULL");
       expect(sql).toContain('NOT EXISTS');
-      expect(params).toEqual([RUN_ID, null]);
+      expect(params).toEqual([RUN_ID, null, null]);
+    });
+
+
+    it('scopes a runtime-initiated release to its own run', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [] });
+
+      await expect(
+        HarnessRunService.releaseTicketForRun(RUN_ID, { runtimeId: 3 })
+      ).resolves.toBeNull();
+      expect(pool.query.mock.calls[0][1]).toEqual([RUN_ID, null, 3]);
     });
 
     it('allows an operator to release a dead-letter run explicitly', async () => {
@@ -719,7 +817,7 @@ describe('HarnessRunService', () => {
       expect(sql).toContain(
         "r.status IN ('failed', 'dead_letter', 'budget_exceeded')"
       );
-      expect(params).toEqual([RUN_ID, null]);
+      expect(params).toEqual([RUN_ID, null, null]);
     });
 
     it('scopes an agent-initiated release to its own run', async () => {
@@ -728,7 +826,7 @@ describe('HarnessRunService', () => {
       await expect(
         HarnessRunService.releaseTicketForRun(RUN_ID, { agentId: 7 })
       ).resolves.toBeNull();
-      expect(pool.query.mock.calls[0][1]).toEqual([RUN_ID, 7]);
+      expect(pool.query.mock.calls[0][1]).toEqual([RUN_ID, 7, null]);
     });
   });
 
@@ -852,7 +950,8 @@ describe('HarnessRunService', () => {
       expect(sql).toContain('pr_url = COALESCE');
       expect(sql).toContain("status = 'running'");
       expect(sql).toContain('agent_id = $2');
-      expect(params).toEqual([RUN_ID, 7, 'abc123', null]);
+      expect(sql).toContain('runtime_id = $3');
+      expect(params).toEqual([RUN_ID, 7, null, 'abc123', null]);
     });
 
     it('requires head sha or PR URL', async () => {

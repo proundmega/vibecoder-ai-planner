@@ -4,6 +4,7 @@ const { pool } = require('../db');
 const AgentNodeService = require('../services/AgentNodeService');
 const HarnessEventService = require('../services/HarnessEventService');
 const RepoProfileValidationService = require('../services/RepoProfileValidationService');
+const HarnessRunService = require('../services/HarnessRunService');
 
 jest.mock('../db', () => ({
   pool: {
@@ -32,6 +33,26 @@ jest.mock('../services/PermissionService', () => ({
 jest.mock('../services/RepoProfileValidationService', () => ({
   claimNext: jest.fn(),
   finish: jest.fn(),
+}));
+
+jest.mock('../services/HarnessRunService', () => ({
+  startRun: jest.fn(),
+  getRun: jest.fn(),
+  getLatestRunForTicket: jest.fn(),
+  listActiveRunsForActor: jest.fn(),
+  listActiveRunsForAgent: jest.fn(),
+  listActiveWorkspacePathsForActor: jest.fn(),
+  listActiveWorkspacePaths: jest.fn(),
+  claimLease: jest.fn(),
+  renewLease: jest.fn(),
+  releaseLease: jest.fn(),
+  recordPublish: jest.fn(),
+  recordCheckpoint: jest.fn(),
+  heartbeat: jest.fn(),
+  finishRun: jest.fn(),
+  releaseTicketForRun: jest.fn(),
+  reconcileRun: jest.fn(),
+  getCheckpoints: jest.fn(),
 }));
 
 const NODE = { id: 12, owner_id: 7 };
@@ -87,27 +108,172 @@ describe('legacy surface gates for node credentials (B5-B9)', () => {
   });
 
   it.each([
-    ['runs', '/api/v1/harness/agents/3/runs'],
-    ['workspaces', '/api/v1/harness/agents/3/workspaces'],
-  ])('rejects node credentials on harness %s self routes', async (_name, path) => {
+    ['runs', '/api/v1/harness/agents/3/runs', 'listActiveRunsForActor'],
+    ['workspaces', '/api/v1/harness/agents/3/workspaces', 'listActiveWorkspacePathsForActor'],
+  ])('allows a granted reviewer to list harness %s for its runtime', async (_name, path, method) => {
+    mockRuntime({ role: 'reviewer' });
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('FROM agent_node_grants')) return Promise.resolve({ rows: [{ id: 1 }] });
+      return Promise.resolve({ rows: [] });
+    });
+    HarnessRunService[method].mockResolvedValue([]);
+
     const res = await request(app)
       .get(path)
       .set('X-API-Key', 'at_valid')
       .set('X-Agent-Runtime', '3');
 
-    expect(res.statusCode).toBe(403);
-    expect(res.body.error.message).toMatch(/legacy agent endpoints/);
+    expect(res.statusCode).toBe(200);
+    expect(HarnessRunService[method]).toHaveBeenCalledWith({ runtimeId: 3 });
   });
 
-  it('rejects node credentials on harness run writes until runtime_id lands', async () => {
+  it('starts a run for a granted worker runtime', async () => {
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('SELECT project_id FROM tickets')) return Promise.resolve({ rows: [{ project_id: 5 }] });
+      if (sql.includes('FROM agent_node_grants')) return Promise.resolve({ rows: [{ id: 1 }] });
+      return Promise.resolve({ rows: [] });
+    });
+    HarnessRunService.startRun.mockResolvedValue({
+      id: RUN_ID,
+      ticket_id: 1,
+      project_id: 5,
+      runtime_id: 3,
+      budget_policy: { source: 'test' },
+    });
+
     const res = await request(app)
       .post('/api/v1/harness/runs')
       .set('X-API-Key', 'at_valid')
       .set('X-Agent-Runtime', '3')
       .send({ ticketId: 1, branch: 'feature' });
 
+    expect(res.statusCode).toBe(201);
+    expect(HarnessRunService.startRun).toHaveBeenCalledWith(
+      expect.objectContaining({ ticketId: 1, runtimeId: 3 })
+    );
+  });
+
+
+  it('claims a lease for a granted worker runtime', async () => {
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('SELECT project_id FROM tickets')) return Promise.resolve({ rows: [{ project_id: 5 }] });
+      if (sql.includes('FROM agent_node_grants')) return Promise.resolve({ rows: [{ id: 1 }] });
+      return Promise.resolve({ rows: [] });
+    });
+    HarnessRunService.claimLease.mockResolvedValue({
+      ticket_id: 1, run_id: RUN_ID, runtime_id: 3,
+    });
+
+    const res = await request(app)
+      .post('/api/v1/harness/leases')
+      .set('X-API-Key', 'at_valid')
+      .set('X-Agent-Runtime', '3')
+      .send({ ticketId: 1, runId: RUN_ID, ttlSeconds: 60 });
+
+    expect(res.statusCode).toBe(201);
+    expect(HarnessRunService.claimLease).toHaveBeenCalledWith(
+      expect.objectContaining({ ticketId: 1, runId: RUN_ID, runtimeId: 3 })
+    );
+  });
+
+  it('records a heartbeat for a runtime owner', async () => {
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('SELECT project_id FROM harness_runs')) return Promise.resolve({ rows: [{ project_id: 5 }] });
+      if (sql.includes('FROM agent_node_grants')) return Promise.resolve({ rows: [{ id: 1 }] });
+      return Promise.resolve({ rows: [] });
+    });
+    HarnessRunService.heartbeat.mockResolvedValue({ id: RUN_ID, runtime_id: 3 });
+
+    const res = await request(app)
+      .post(`/api/v1/harness/runs/${RUN_ID}/heartbeat`)
+      .set('X-API-Key', 'at_valid')
+      .set('X-Agent-Runtime', '3')
+      .send({ step: 'verifying' });
+
+    expect(res.statusCode).toBe(200);
+    expect(HarnessRunService.heartbeat).toHaveBeenCalledWith(
+      RUN_ID, { runtimeId: 3 }, 'verifying'
+    );
+  });
+
+  it('lets a granted reviewer read a runtime-owned run', async () => {
+    mockRuntime({ role: 'reviewer' });
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('SELECT project_id FROM harness_runs')) return Promise.resolve({ rows: [{ project_id: 5 }] });
+      if (sql.includes('FROM agent_node_grants')) return Promise.resolve({ rows: [{ id: 1 }] });
+      return Promise.resolve({ rows: [] });
+    });
+    HarnessRunService.getRun.mockResolvedValue({
+      id: RUN_ID, ticket_id: 1, project_id: 5, agent_id: null, runtime_id: 99,
+    });
+
+    const res = await request(app)
+      .get(`/api/v1/harness/runs/${RUN_ID}`)
+      .set('X-API-Key', 'at_valid')
+      .set('X-Agent-Runtime', '3');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.runtime_id).toBe(99);
+  });
+
+  it('denies a worker publishing another runtime-owned run', async () => {
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('SELECT project_id FROM harness_runs')) return Promise.resolve({ rows: [{ project_id: 5 }] });
+      if (sql.includes('FROM agent_node_grants')) return Promise.resolve({ rows: [{ id: 1 }] });
+      return Promise.resolve({ rows: [] });
+    });
+    HarnessRunService.getRun.mockResolvedValue({
+      id: RUN_ID, ticket_id: 1, project_id: 5, agent_id: null, runtime_id: 99,
+    });
+
+    const res = await request(app)
+      .post(`/api/v1/harness/runs/${RUN_ID}/publish`)
+      .set('X-API-Key', 'at_valid')
+      .set('X-Agent-Runtime', '3')
+      .send({ headSha: 'abc123' });
+
     expect(res.statusCode).toBe(403);
-    expect(res.body.error.message).toMatch(/legacy agent endpoints/);
+    expect(res.body.error.message).toMatch(/another agent/);
+  });
+
+  it('requires an active grant for non-review harness events', async () => {
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('SELECT project_id FROM harness_runs')) return Promise.resolve({ rows: [{ project_id: 5 }] });
+      return Promise.resolve({ rows: [] });
+    });
+
+    const res = await request(app)
+      .post('/api/v1/harness/events')
+      .set('X-API-Key', 'at_valid')
+      .set('X-Agent-Runtime', '3')
+      .send({ type: 'run.started', runId: RUN_ID });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error.code).toBe('GRANT_REQUIRED');
+    expect(HarnessEventService.emit).not.toHaveBeenCalled();
+  });
+
+  it('accepts a granted non-review harness event', async () => {
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('SELECT project_id FROM harness_runs')) return Promise.resolve({ rows: [{ project_id: 5 }] });
+      if (sql.includes('FROM agent_node_grants')) return Promise.resolve({ rows: [{ id: 1 }] });
+      return Promise.resolve({ rows: [] });
+    });
+    HarnessEventService.emit.mockResolvedValue({
+      duplicate: false,
+      event: { type: 'run.started', event_id: 'eeeeeeee-1111-4111-8111-111111111111' },
+    });
+
+    const res = await request(app)
+      .post('/api/v1/harness/events')
+      .set('X-API-Key', 'at_valid')
+      .set('X-Agent-Runtime', '3')
+      .send({ type: 'run.started', runId: RUN_ID });
+
+    expect(res.statusCode).toBe(201);
+    expect(HarnessEventService.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: RUN_ID, runtimeId: 3 })
+    );
   });
 
   it('denies a reviewer runtime a write-capable GitHub token', async () => {
@@ -189,7 +355,7 @@ describe('legacy surface gates for node credentials (B5-B9)', () => {
 
     expect(res.statusCode).toBe(201);
     expect(HarnessEventService.emit).toHaveBeenCalledWith(
-      expect.objectContaining({ runId: RUN_ID, agentId: 3 })
+      expect.objectContaining({ runId: RUN_ID, runtimeId: 3 })
     );
   });
   it.each([

@@ -66,11 +66,43 @@ describe('HarnessUsageService', () => {
       const [sql, params] = pool.query.mock.calls[1];
       expect(sql).toContain('ON CONFLICT (run_id, model)');
       expect(sql).toContain('GREATEST');
-      expect(params.slice(0, 8)).toEqual([
-        RUN_ID, 42, 7, 9, 'gpt-4o', 'v1', null, 'small ticket',
+      expect(params.slice(0, 9)).toEqual([
+        RUN_ID, 42, 7, 9, null, 'gpt-4o', 'v1', null, 'small ticket',
       ]);
-      expect(params[8]).toBe(100);
-      expect(params[11]).toBe(0.42);
+      expect(params[9]).toBe(100);
+      expect(params[12]).toBe(0.42);
+    });
+
+
+    it('stores cumulative usage for a runtime-owned run', async () => {
+      HarnessRunService.getRun.mockResolvedValue({
+        id: RUN_ID, ticket_id: 42, project_id: 7, agent_id: null, runtime_id: 3,
+      });
+      const row = { id: 'usage-2', runtime_id: 3 };
+      pool.query
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [row] });
+
+      await expect(HarnessUsageService.recordUsage({
+        runId: RUN_ID,
+        runtimeId: 3,
+        model: 'gpt-4o',
+      })).resolves.toEqual({ ...row, quotaExceeded: false });
+
+      const params = pool.query.mock.calls[1][1];
+      expect(params.slice(0, 5)).toEqual([RUN_ID, 42, 7, null, 3]);
+    });
+
+    it('rejects usage from a different runtime', async () => {
+      HarnessRunService.getRun.mockResolvedValue({
+        id: RUN_ID, ticket_id: 42, project_id: 7, agent_id: null, runtime_id: 3,
+      });
+
+      await expect(HarnessUsageService.recordUsage({
+        runId: RUN_ID,
+        runtimeId: 4,
+        model: 'gpt-4o',
+      })).rejects.toThrow('Harness run belongs to another agent');
     });
 
     it('flags usage that exceeds the run budget reservation', async () => {

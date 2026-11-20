@@ -12,6 +12,8 @@ const { pool } = require('../db');
  * joint clean cut removes them.
  */
 const REVIEW_EVENT_TYPES = new Set(['review.result', 'fix.requested']);
+const NUMERIC_ID = /^\d+$/;
+const UUIDISH = /^[0-9a-fA-F-]{1,64}$/;
 
 function isNodeRequest(req) {
   return Boolean(req.agent && req.agent._node);
@@ -52,6 +54,12 @@ async function hasGrant(nodeId, projectId, role) {
   return result.rows.length > 0;
 }
 
+function validId(res, value, field, pattern) {
+  if (pattern.test(String(value))) return true;
+  deny(res, 400, 'VALIDATION_ERROR', `${field} is invalid`);
+  return false;
+}
+
 function projectIdFromBody(body = {}) {
   if (body.projectId != null) return body.projectId;
   if (body.project_id != null) return body.project_id;
@@ -85,6 +93,7 @@ function requireTicketGrant(...roles) {
   return async (req, res, next) => {
     if (!checkRuntime(req, res, { roles })) return;
     if (!isNodeRequest(req)) return next();
+    if (!validId(res, req.params.ticketId, 'ticketId', NUMERIC_ID)) return;
 
     try {
       const ticket = await pool.query(
@@ -117,7 +126,9 @@ function requireBodyGrant(...roles) {
     try {
       const body = req.body || {};
       let projectId = projectIdFromBody(body);
+      if (projectId != null && !validId(res, projectId, 'projectId', NUMERIC_ID)) return;
       if (projectId == null && body.ticketId != null) {
+        if (!validId(res, body.ticketId, 'ticketId', NUMERIC_ID)) return;
         const ticket = await pool.query(
           'SELECT project_id FROM tickets WHERE id = $1',
           [body.ticketId]
@@ -128,9 +139,7 @@ function requireBodyGrant(...roles) {
         projectId = ticket.rows[0].project_id;
       }
       if (projectId == null && body.runId != null) {
-        if (!/^[0-9a-fA-F-]{1,64}$/.test(String(body.runId))) {
-          return deny(res, 400, 'VALIDATION_ERROR', 'Invalid runId');
-        }
+        if (!validId(res, body.runId, 'runId', UUIDISH)) return;
         const run = await pool.query(
           'SELECT project_id FROM harness_runs WHERE id = $1',
           [body.runId]
@@ -155,6 +164,38 @@ function requireBodyGrant(...roles) {
 }
 
 /**
+ * Require a runtime role plus an active grant on the project of the harness
+ * run named by `:runId`.
+ */
+function requireRunGrant(...roles) {
+  return async (req, res, next) => {
+    if (!checkRuntime(req, res, { roles })) return;
+    if (!isNodeRequest(req)) return next();
+    if (!validId(res, req.params.runId, 'runId', UUIDISH)) return;
+
+    try {
+      const run = await pool.query(
+        'SELECT project_id FROM harness_runs WHERE id = $1',
+        [req.params.runId]
+      );
+      if (run.rows.length === 0) {
+        return deny(res, 404, 'NOT_FOUND', 'Harness run not found');
+      }
+      const projectId = run.rows[0].project_id;
+      if (projectId == null) {
+        return deny(res, 403, 'GRANT_REQUIRED', 'Run project is not available');
+      }
+      if (!(await hasGrant(req.node.id, projectId, req.runtime.role))) {
+        return deny(res, 403, 'GRANT_REQUIRED', 'No active grant for this project/role');
+      }
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  };
+}
+
+/**
  * Require a runtime role plus an active grant on the route's project param.
  */
 function requireProjectGrant(...roles) {
@@ -167,6 +208,7 @@ function requireProjectGrant(...roles) {
       if (projectId == null) {
         return deny(res, 403, 'GRANT_REQUIRED', 'Project is required for this action');
       }
+      if (!validId(res, projectId, 'projectId', NUMERIC_ID)) return;
       if (!(await hasGrant(req.node.id, projectId, req.runtime.role))) {
         return deny(res, 403, 'GRANT_REQUIRED', 'No active grant for this project/role');
       }
@@ -196,5 +238,6 @@ module.exports = {
   requireTicketGrant,
   requireBodyGrant,
   requireProjectGrant,
+  requireRunGrant,
   requireReviewEventGrant,
 };

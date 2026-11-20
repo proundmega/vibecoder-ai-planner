@@ -60,6 +60,7 @@ const SQL_FILES = [
   path.join(__dirname, './055_agent_enrollment.sql'),
   path.join(__dirname, './056_agent_fleet.sql'),
   path.join(__dirname, './058_provider_registry_events.sql'),
+  path.join(__dirname, './059_harness_runtime_ownership.sql'),
 ];
 
 const DATA_MIGRATIONS = [

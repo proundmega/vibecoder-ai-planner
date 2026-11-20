@@ -230,6 +230,10 @@ describe('node credential bridge (FR4, FR20, NFR1)', () => {
       status: 'running',
       current_project_id: 5,
     });
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('FROM agent_node_grants')) return Promise.resolve({ rows: [{ id: 1 }] });
+      return Promise.resolve({ rows: [] });
+    });
 
     const res = await request(app)
       .post('/api/v1/harness/events')

@@ -100,8 +100,8 @@ function retentionDays(value, fallback) {
 
 async function loadRun(runId) {
   const result = await pool.query(
-    `SELECT r.id, r.ticket_id, r.project_id, r.agent_id, r.session_id,
-            t.project_id AS ticket_project_id
+    `SELECT r.id, r.ticket_id, r.project_id, r.agent_id, r.runtime_id,
+            r.session_id, t.project_id AS ticket_project_id
      FROM harness_runs r
      JOIN tickets t ON t.id = r.ticket_id
      WHERE r.id = $1`,
@@ -135,6 +135,7 @@ class HarnessEventService {
     ticketId = null,
     projectId = null,
     agentId = null,
+    runtimeId = null,
     sessionId = null,
     type,
     version = 1,
@@ -168,15 +169,26 @@ class HarnessEventService {
     if (!resolvedProjectId) {
       throw new ValidationError('projectId is required when the event has no run');
     }
-    if (requireRunOwnership && run
-      && String(run.agent_id) !== String(agentId)) {
-      throw new ForbiddenError('Harness run belongs to another agent');
+    if (requireRunOwnership && run) {
+      const ownsRun = runtimeId !== null && runtimeId !== undefined
+        ? String(run.runtime_id) === String(runtimeId)
+        : String(run.agent_id) === String(agentId);
+      if (!ownsRun) {
+        throw new ForbiddenError('Harness run belongs to another agent');
+      }
     }
     const resolvedAgentId = run
       ? (run.agent_id === null ? null : Number(run.agent_id))
       : (agentId === null || agentId === undefined
         ? null
         : positiveInt(agentId, 'agentId'));
+    const resolvedRuntimeId = run
+      ? (run.runtime_id === null || run.runtime_id === undefined
+        ? null
+        : Number(run.runtime_id))
+      : (runtimeId === null || runtimeId === undefined
+        ? null
+        : positiveInt(runtimeId, 'runtimeId'));
     const resolvedSessionId = run && run.session_id
       ? run.session_id
       : (sessionId || null);
@@ -203,8 +215,8 @@ class HarnessEventService {
     const result = await pool.query(
       `INSERT INTO harness_events
          (event_id, trace_id, run_id, ticket_id, project_id, agent_id,
-          session_id, type, version, payload, event_timestamp)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
+          runtime_id, session_id, type, version, payload, event_timestamp)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12)
        ON CONFLICT (event_id) DO NOTHING
        RETURNING *`,
       [
@@ -214,6 +226,7 @@ class HarnessEventService {
         resolvedTicketId,
         resolvedProjectId,
         resolvedAgentId,
+        resolvedRuntimeId,
         resolvedSessionId,
         normalisedType,
         normalisedVersion,
@@ -434,6 +447,7 @@ class HarnessEventService {
       traceId,
       runId: id,
       agentId: run.agent_id,
+      runtimeId: run.runtime_id,
       type,
       payload: {
         status,
