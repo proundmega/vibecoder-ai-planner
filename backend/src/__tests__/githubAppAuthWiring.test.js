@@ -12,8 +12,9 @@ describe('GitHub App auth route wiring (fg-35 FR2/FR4/FR7)', () => {
   it('exposes an agent-authenticated token endpoint', () => {
     const layer = routeFor('post', '/:projectId/token');
     expect(layer).toBeDefined();
-    // auth + agent project-scope assertion + validator + handler
-    expect(layer.route.stack).toHaveLength(4);
+    // auth + runtime status + agent project-scope assertion + worker grant +
+    // validator + handler
+    expect(layer.route.stack).toHaveLength(6);
   });
 
   it('exposes owner-guarded installation management routes', () => {
