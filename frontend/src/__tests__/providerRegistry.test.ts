@@ -15,6 +15,7 @@ vi.mock('@/stores/auth', () => ({
 
 vi.mock('@/api/providerRegistry', () => ({
   listCredentials: vi.fn(),
+  listCredentialModels: vi.fn(),
   createCredential: vi.fn(),
   updateCredential: vi.fn(),
   deleteCredential: vi.fn(),
@@ -100,6 +101,7 @@ describe('Provider registry view', () => {
     authState.manage = true
     vi.stubGlobal('confirm', vi.fn(() => true))
     ;(registryApi.listCredentials as ReturnType<typeof vi.fn>).mockResolvedValue([credential])
+    ;(registryApi.listCredentialModels as ReturnType<typeof vi.fn>).mockResolvedValue(credential.models)
     ;(registryApi.createCredential as ReturnType<typeof vi.fn>).mockResolvedValue(credential)
     ;(registryApi.updateCredential as ReturnType<typeof vi.fn>).mockResolvedValue(credential)
     ;(registryApi.discoverModels as ReturnType<typeof vi.fn>).mockResolvedValue(
@@ -331,7 +333,6 @@ describe('Provider registry view', () => {
     await edit!.trigger('click')
     await flushPromises()
 
-    await wrapper.find('#edit-credential-name-1').setValue('Acme rotated')
     await wrapper.find('#edit-credential-key-1').setValue('sk-rotated')
     const save = wrapper.find('.edit-form').findAll('button')
       .find(button => button.text() === 'Save credential')
@@ -339,7 +340,6 @@ describe('Provider registry view', () => {
     await flushPromises()
 
     expect(registryApi.updateCredential).toHaveBeenCalledWith(1, {
-      name: 'Acme rotated',
       baseUrl: 'https://api.example.com/v1',
       status: 'active',
       apiKey: 'sk-rotated',

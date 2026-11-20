@@ -209,3 +209,4 @@ describe('fg-54 manager integration', () => {
     expect(expirySecond.stoppedRuntimes).not.toContain(ids.runtime);
     expect(cleanupFirst.processed).toBeGreaterThanOrEqual(0);
   });
+});

@@ -48,6 +48,31 @@ class SupervisorReconcileTest {
     }
 
     @Test
+    void suspendedSectionStopsAndDoesNotRespawnUntilResumed() throws IOException {
+        FakeLauncher launcher = new FakeLauncher();
+        Supervisor supervisor = new Supervisor(pidDir, workers(2), 256, launcher);
+        try {
+            supervisor.reconcile();
+            assertEquals(2, launcher.launchCount.get());
+
+            supervisor.updateSuspendedSections(java.util.Set.of("workers"));
+            supervisor.reconcile();
+            assertEquals(2, launcher.destroyCount.get(), "suspended section is stopped");
+            assertTrue(supervisor.snapshot().isEmpty());
+
+            supervisor.reconcile();
+            assertTrue(supervisor.snapshot().isEmpty(), "suspended section is not respawned");
+
+            supervisor.updateSuspendedSections(java.util.Set.of());
+            supervisor.reconcile();
+            assertEquals(4, launcher.launchCount.get(), "resuming spawns the section again");
+            assertEquals(2, supervisor.snapshot().size());
+        } finally {
+            supervisor.close();
+        }
+    }
+
+    @Test
     void applyTwiceIsANoOp() throws IOException {
         FakeLauncher launcher = new FakeLauncher();
         Supervisor supervisor = new Supervisor(pidDir, workers(2), 256, launcher);

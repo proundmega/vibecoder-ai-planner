@@ -64,6 +64,7 @@ public final class Supervisor implements AutoCloseable {
     private final int heapMb;
     private final ChildLauncher launcher;
     private volatile Map<String, Long> runtimeIds;
+    private volatile java.util.Set<String> suspendedSections = java.util.Set.of();
     private final Duration stopTimeout;
     private final Duration pollInterval;
     private final Object lock = new Object();
@@ -140,7 +141,7 @@ public final class Supervisor implements AutoCloseable {
         synchronized (lock) {
             ensureOpen();
             this.config = desired;
-            List<RuntimeConfig.RuntimeSlot> slots = desired.expandedSlots();
+            List<RuntimeConfig.RuntimeSlot> slots = activeSlots(desired);
             Map<String, RuntimeConfig.RuntimeSlot> desiredByName = byName(slots);
 
             sweep(slots);
@@ -222,6 +223,27 @@ public final class Supervisor implements AutoCloseable {
     /** Alias for {@link #snapshot()} used by tests and health endpoints. */
     public List<ChildState> trackedChildren() {
         return snapshot();
+    }
+
+    /**
+     * Suspend or resume whole sections after an admin drain/stop. Suspended
+     * sections are stopped and not spawned until the server reports them
+     * running/pending again.
+     */
+    public void updateSuspendedSections(java.util.Set<String> sections) {
+        synchronized (lock) {
+            this.suspendedSections = sections == null ? java.util.Set.of() : java.util.Set.copyOf(sections);
+        }
+    }
+
+    private List<RuntimeConfig.RuntimeSlot> activeSlots(RuntimeConfig desired) {
+        java.util.Set<String> suspended = suspendedSections;
+        if (suspended.isEmpty()) {
+            return desired.expandedSlots();
+        }
+        return desired.expandedSlots().stream()
+            .filter(slot -> !suspended.contains(slot.runtimeName()))
+            .toList();
     }
 
     /** Replace the section/runtime id map after a successful re-declaration. */
@@ -354,7 +376,17 @@ public final class Supervisor implements AutoCloseable {
         if (runtimeId != null) {
             env.put("AGENT_RUNTIME_ID", String.valueOf(runtimeId));
         }
+        env.put("AGENT_RUNTIME_CONCURRENCY", String.valueOf(concurrencyFor(slot.runtimeName())));
         return env;
+    }
+
+    private int concurrencyFor(String runtimeName) {
+        RuntimeConfig current = config;
+        if (current == null) return 1;
+        for (RuntimeConfig.DeclaredRuntime runtime : current.runtimes()) {
+            if (runtime.name().equals(runtimeName)) return runtime.count();
+        }
+        return 1;
     }
 
     private Long resolveRuntimeId(RuntimeConfig.RuntimeSlot slot) {

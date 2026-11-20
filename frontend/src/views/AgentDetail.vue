@@ -3,9 +3,11 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   drainAgentNode,
+  getAgentNodeGrants,
   listAgentNodes,
   revokeAgentNode,
   updateAgentRuntime,
+  type AgentGrant,
   type AgentNode,
   type AgentRuntime,
   type AgentRuntimeStatus,
@@ -21,6 +23,7 @@ const loading = ref(true)
 const error = ref('')
 const actionError = ref('')
 const busy = ref(false)
+const grants = ref<AgentGrant[]>([])
 
 const routeId = computed(() => String(route.params.id))
 
@@ -47,8 +50,19 @@ const status = computed(() => {
   return 'unknown'
 })
 
-const canManageRuntimes = computed(() => authStore.hasAnyPermission(['AGENT_CREATE']))
-const canManageNodes = computed(() => authStore.hasAnyPermission(['AGENT_REVOKE']))
+const canManageRuntimesBase = computed(() => authStore.hasAnyPermission(['AGENT_CREATE']))
+const canManageNodesBase = computed(() => authStore.hasAnyPermission(['AGENT_REVOKE']))
+
+function canManageNode(node: AgentNode | null | undefined): boolean {
+  if (!node) return false
+  if (authStore.isSuperAdmin()) return true
+  const userId = authStore.user.value?.id
+  return userId != null && String(node.owner_id) === String(userId)
+}
+
+const targetNode = computed(() => runtimeMatch.value?.node ?? nodeMatch.value)
+const canManageRuntimes = computed(() => canManageRuntimesBase.value && canManageNode(targetNode.value))
+const canManageNodes = computed(() => canManageNodesBase.value && canManageNode(targetNode.value))
 
 function formatDateTime(value: string | null | undefined): string {
   return value ? new Date(value).toLocaleString() : 'Never'
@@ -57,6 +71,8 @@ function formatDateTime(value: string | null | undefined): string {
 async function loadFleet(): Promise<void> {
   try {
     nodes.value = (await listAgentNodes()) || []
+    const node = runtimeMatch.value?.node ?? nodeMatch.value
+    grants.value = node ? await getAgentNodeGrants(node.id).catch(() => []) : []
     error.value = ''
   } catch (err) {
     error.value = (err as Error).message || 'Failed to load the runtime record'
@@ -147,7 +163,14 @@ onMounted(loadFleet)
           </div>
           <div>
             <dt>Model</dt>
-            <dd><code>{{ runtimeMatch.runtime.model_ref || runtimeMatch.runtime.model_id }}</code></dd>
+            <dd>
+              <code>
+                {{ runtimeMatch.runtime.model_ref
+                  || (runtimeMatch.runtime.credential_name
+                    ? `${runtimeMatch.runtime.credential_name}/${runtimeMatch.runtime.model}`
+                    : runtimeMatch.runtime.model || runtimeMatch.runtime.model_id) }}
+              </code>
+            </dd>
           </div>
           <div>
             <dt>Effort</dt>
@@ -246,7 +269,7 @@ onMounted(loadFleet)
           </div>
           <div>
             <dt>Grants</dt>
-            <dd>{{ nodeMatch.grants?.length ?? 0 }}</dd>
+            <dd>{{ grants.length }}</dd>
           </div>
         </dl>
 

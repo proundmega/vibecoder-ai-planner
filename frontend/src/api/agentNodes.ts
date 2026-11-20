@@ -12,7 +12,10 @@ export interface AgentRuntime {
   name: string
   role: AgentRuntimeRole
   model_id: ResourceId
-  model_ref: string
+  /** Track A returns the resolved model and credential name, not model_ref. */
+  model?: string
+  credential_name?: string
+  model_ref?: string
   concurrency: number
   effort: ReasoningEffort | null
   status: AgentRuntimeStatus

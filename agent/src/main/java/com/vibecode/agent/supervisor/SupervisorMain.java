@@ -80,22 +80,41 @@ public final class SupervisorMain {
             thread.setDaemon(true);
             return thread;
         });
+        java.util.concurrent.atomic.AtomicInteger tick = new java.util.concurrent.atomic.AtomicInteger();
         retry.scheduleWithFixedDelay(() -> {
             try {
-                if (!nodeActive(api.fetchConfig())) {
+                Map<String, Object> config = api.fetchConfig();
+                if (!nodeActive(config)) {
                     log.info("Node is draining or revoked; stopping supervised runtimes");
                     supervisor.close();
                     return;
                 }
+                java.util.Set<String> suspended = suspendedSections(config);
+                supervisor.updateSuspendedSections(suspended);
                 RuntimeConfig current = desiredRef.get();
-                Map<String, Long> refreshed = declareWithRetry(api, current, 1);
-                if (!refreshed.isEmpty()) {
-                    supervisor.updateRuntimeIds(refreshed);
+                supervisor.reconcile(current);
+
+                // Re-declare less often than the status poll; a declaration
+                // writes rows, while status polling only reconciles children.
+                if (tick.incrementAndGet() % 4 == 0) {
+                    Map<String, Long> refreshed = declareWithRetry(api, current, 1);
+                    if (!refreshed.isEmpty()) {
+                        supervisor.updateRuntimeIds(refreshed);
+                    }
                 }
+            } catch (com.vibecode.agent.service.AgentAuthFatalException e) {
+                log.error("Node credentials are terminal; stopping supervised runtimes");
+                supervisor.close();
             } catch (Exception e) {
-                log.debug("Runtime re-declaration failed: {}", e.getMessage());
+                if (terminalConfigFailure(e)) {
+                    log.error("Node/runtime is no longer authorized; stopping supervised runtimes: {}",
+                        e.getMessage());
+                    supervisor.close();
+                    return;
+                }
+                log.debug("Runtime status/declaration refresh failed: {}", e.getMessage());
             }
-        }, 60, 60, TimeUnit.SECONDS);
+        }, 5, 5, TimeUnit.SECONDS);
 
         installSignalHandlers(supervisor, path, api, desiredRef);
         try {
@@ -205,6 +224,39 @@ public final class SupervisorMain {
             log.error("SIGHUP reload rejected: {}", e.getMessage());
             return null;
         }
+    }
+
+    static boolean terminalConfigFailure(Throwable error) {
+        if (error instanceof com.vibecode.agent.service.AgentAuthFatalException) {
+            return true;
+        }
+        String message = error == null ? "" : String.valueOf(error.getMessage());
+        return message.contains("HTTP 401")
+            || message.contains("HTTP 403")
+            || message.contains("HTTP 404")
+            || message.contains("TOKEN_REVOKED")
+            || message.contains("TOKEN_EXPIRED");
+    }
+
+    @SuppressWarnings("unchecked")
+    static java.util.Set<String> suspendedSections(Map<String, Object> config) {
+        java.util.Set<String> suspended = new java.util.LinkedHashSet<>();
+        if (config == null) return suspended;
+        Object runtimes = config.get("runtimes");
+        if (runtimes == null) runtimes = config.get("data");
+        if (runtimes instanceof Map<?, ?> map) runtimes = map.get("runtimes");
+        if (!(runtimes instanceof List<?> list)) return suspended;
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> row)) continue;
+            Map<String, Object> runtime = (Map<String, Object>) row;
+            String status = stringValue(runtime.get("status"));
+            String name = stringValue(runtime.get("name"));
+            if (name != null && ("stopped".equalsIgnoreCase(status)
+                    || "draining".equalsIgnoreCase(status))) {
+                suspended.add(name);
+            }
+        }
+        return suspended;
     }
 
     private static void assertNodeActive(RuntimeApi api) {

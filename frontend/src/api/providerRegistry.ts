@@ -73,7 +73,9 @@ export interface UpdateModelInput {
 
 export interface ProviderModelTestResult {
   verified: boolean
-  latencyMs: number
+  /** Track A currently returns the verified model row, not a latency. */
+  latencyMs?: number
+  model?: ProviderModel
   error?: string | null
 }
 
@@ -94,6 +96,10 @@ export interface CredentialInUseError extends Error {
 
 export function listCredentials(): Promise<ProviderCredential[]> {
   return get<ProviderCredential[]>('/api/v1/provider-credentials')
+}
+
+export function listCredentialModels(credentialId: ResourceId): Promise<ProviderModel[]> {
+  return get<ProviderModel[]>(`/api/v1/provider-credentials/${credentialId}/models`)
 }
 
 export function createCredential(input: CreateCredentialInput): Promise<ProviderCredential> {

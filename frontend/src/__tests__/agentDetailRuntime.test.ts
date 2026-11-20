@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 
 const { authState } = vi.hoisted(() => ({
-  authState: { create: true, revoke: true, id: 'r1' },
+  authState: { create: true, revoke: true, id: 'r1', userId: 4 },
 }))
 
 vi.mock('vue-router', () => ({
@@ -11,6 +11,8 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
+    user: { value: { id: authState.userId } },
+    isSuperAdmin: () => false,
     hasAnyPermission: (permissions: string[]) => {
       if (permissions.includes('AGENT_CREATE')) return authState.create
       if (permissions.includes('AGENT_REVOKE')) return authState.revoke
@@ -21,6 +23,7 @@ vi.mock('@/stores/auth', () => ({
 
 vi.mock('@/api/agentNodes', () => ({
   listAgentNodes: vi.fn(),
+  getAgentNodeGrants: vi.fn(),
   drainAgentNode: vi.fn(),
   revokeAgentNode: vi.fn(),
   updateAgentRuntime: vi.fn(),
@@ -82,6 +85,7 @@ describe('Agent runtime detail view', () => {
     authState.revoke = true
     authState.id = 'r1'
     ;(agentNodesApi.listAgentNodes as ReturnType<typeof vi.fn>).mockResolvedValue([node])
+    ;(agentNodesApi.getAgentNodeGrants as ReturnType<typeof vi.fn>).mockResolvedValue([])
     ;(agentNodesApi.updateAgentRuntime as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...runtime,
       status: 'draining',

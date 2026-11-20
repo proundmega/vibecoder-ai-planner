@@ -81,6 +81,20 @@ class SupervisorMainTest {
     }
 
     @Test
+    void detectsStoppedAndDrainingRuntimesAndTerminalAuthFailures() {
+        java.util.Set<String> suspended = SupervisorMain.suspendedSections(Map.of(
+            "runtimes", List.of(
+                Map.of("name", "workers", "status", "stopped"),
+                Map.of("name", "reviewers", "status", "draining"),
+                Map.of("name", "planners", "status", "running"))));
+        assertEquals(java.util.Set.of("workers", "reviewers"), suspended);
+        assertTrue(SupervisorMain.terminalConfigFailure(new java.io.IOException("HTTP 401")));
+        assertTrue(SupervisorMain.terminalConfigFailure(
+            new com.vibecode.agent.service.AgentAuthFatalException("terminal", new java.io.IOException())));
+        assertEquals(false, SupervisorMain.terminalConfigFailure(new java.io.IOException("timeout")));
+    }
+
+    @Test
     void treatsDrainingAndRevokedNodesAsInactive() {
         assertTrue(SupervisorMain.nodeActive(Map.of("node", Map.of("status", "active"))));
         assertTrue(SupervisorMain.nodeActive(Map.of()));

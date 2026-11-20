@@ -57,6 +57,8 @@ public class AgentApp {
     private String githubAccessToken;
     private volatile boolean shuttingDown = false;
     private volatile boolean startupRecoveryComplete = false;
+    private final java.util.concurrent.atomic.AtomicBoolean runtimeStatusReported =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
 
     public AgentApp(AgentConfig config) {
         this(config, null);
@@ -464,9 +466,14 @@ public class AgentApp {
                     log.debug("Skipping heartbeat: runtime id is not resolved yet");
                     return;
                 }
+                // Report running once. Later heartbeats send no status so an
+                // admin drain/stop is not overwritten by COALESCE($3, status).
+                String status = runtimeStatusReported.compareAndSet(false, true)
+                    ? "running"
+                    : null;
                 apiService.sendHeartbeat(
                     config.getRuntimeId(),
-                    "running",
+                    status,
                     config.getProjectId()
                 );
             } catch (AgentAuthFatalException e) {
@@ -511,6 +518,15 @@ public class AgentApp {
      */
     private void recoverStartupOnce() {
         if (startupRecoveryComplete) {
+            return;
+        }
+        if (config.getRuntimeConcurrency() > 1) {
+            // Several children share one runtime id. Recovery lists runs by
+            // runtime id, so a sibling would see and reconcile another child's
+            // active run. Let the run reaper own shared-runtime recovery.
+            log.info("Skipping per-child harness recovery: runtime concurrency is {}",
+                config.getRuntimeConcurrency());
+            startupRecoveryComplete = true;
             return;
         }
         if (!(ticketWorker instanceof HarnessTicketProcessor harnessWorker)) {

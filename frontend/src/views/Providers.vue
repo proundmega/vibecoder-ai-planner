@@ -180,6 +180,7 @@
                   :id="`edit-credential-name-${credential.id}`"
                   v-model="editCredential.name"
                   type="text"
+                  disabled
                 />
               </div>
               <div class="form-group">
@@ -318,7 +319,10 @@
                       ]"
                     >
                       <template v-if="testResults[String(model.id)].verified">
-                        Verified in {{ testResults[String(model.id)].latencyMs }} ms
+                        <template v-if="testResults[String(model.id)].latencyMs != null">
+                          Verified in {{ testResults[String(model.id)].latencyMs }} ms
+                        </template>
+                        <template v-else>Verified</template>
                       </template>
                       <template v-else>
                         {{ testResults[String(model.id)].error || 'Verification failed' }}
@@ -466,6 +470,7 @@ import {
   createCredential,
   deleteCredential,
   discoverModels,
+  listCredentialModels,
   listCredentials,
   testModel,
   updateCredential,
@@ -634,7 +639,11 @@ async function loadCredentials(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    credentials.value = (await listCredentials()) || []
+    const rows = (await listCredentials()) || []
+    credentials.value = await Promise.all(rows.map(async (credential) => ({
+      ...credential,
+      models: await listCredentialModels(credential.id).catch(() => credential.models ?? []),
+    })))
   } catch (err) {
     error.value = (err as Error).message || 'Failed to load credentials'
   } finally {
@@ -689,7 +698,6 @@ async function handleUpdateCredential(credential: ProviderCredential): Promise<v
   notice.value = ''
   try {
     const updates: UpdateCredentialInput = {
-      name: editCredential.value.name.trim(),
       baseUrl: editCredential.value.baseUrl.trim(),
       status: editCredential.value.status,
     }

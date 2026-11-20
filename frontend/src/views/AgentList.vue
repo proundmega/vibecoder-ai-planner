@@ -84,7 +84,11 @@ function formatDateTime(value: string | null | undefined): string {
 }
 
 function modelLabel(runtime: AgentRuntime): string {
-  return runtime.model_ref || String(runtime.model_id)
+  if (runtime.model_ref) return runtime.model_ref
+  if (runtime.credential_name && runtime.model) {
+    return `${runtime.credential_name}/${runtime.model}`
+  }
+  return runtime.model || String(runtime.model_id)
 }
 
 async function loadNodes(): Promise<void> {

@@ -62,7 +62,8 @@ const node = {
       name: 'worker-1',
       role: 'worker' as const,
       model_id: 3,
-      model_ref: 'acme/gpt-4o',
+      credential_name: 'acme',
+      model: 'gpt-4o',
       concurrency: 2,
       effort: 'high' as const,
       status: 'running' as const,
@@ -123,6 +124,13 @@ describe('Agent fleet view', () => {
     ;(agentNodesApi.updateAgentRuntime as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...node.runtimes[0],
       status: 'draining',
+    })
+    ;(agentNodesApi.mintAgentNodeToken as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 99,
+      name: 'new-host',
+      token: 'enr_once_secret_token',
+      expires_at: '2026-11-20T12:00:00.000Z',
+      max_uses: 1,
     })
     ;(projectsApi.fetchProjectsStrict as ReturnType<typeof vi.fn>).mockResolvedValue([
       { id: '5', name: 'Alpha' },
@@ -240,6 +248,28 @@ describe('Agent fleet view', () => {
 
     expect(agentNodesApi.listAgentNodes).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('do not have permission')
+  })
+
+  it('mints a node join token and shows it once', async () => {
+    wrapper = await mountView()
+
+    const mint = wrapper.findAll('button').find(button => button.text() === 'Mint join token')
+    expect(mint).toBeTruthy()
+    await mint!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('#mint-node-name').setValue('new-host')
+    const submit = wrapper.findAll('button').find(button => button.text() === 'Mint')
+    expect(submit).toBeTruthy()
+    await submit!.trigger('click')
+    await flushPromises()
+
+    expect(agentNodesApi.mintAgentNodeToken).toHaveBeenCalledWith({
+      name: 'new-host',
+      ttl_seconds: 900,
+      max_uses: 1,
+    })
+    expect(wrapper.text()).toContain('enr_once_secret_token')
   })
 
   it('never renders static agent key material', async () => {

@@ -55,6 +55,7 @@ public class AgentConfig {
     private String role;
     private String modelRef;
     private String effort;
+    private final int runtimeConcurrency;
     private final Duration pollInterval;
     private final Duration staleTimeout;
     private final String aiProvider;
@@ -93,6 +94,7 @@ public class AgentConfig {
         this.runtimeId = getEnv("AGENT_RUNTIME_ID", null);
         this.modelRef = getEnv("AGENT_LLM_MODEL", null);
         this.effort = parseEffort(getEnv("AGENT_EFFORT", null));
+        this.runtimeConcurrency = Math.max(1, getIntEnv("AGENT_RUNTIME_CONCURRENCY", 1));
         this.nodeId = getEnv("AGENT_NODE_ID", null);
         this.pollInterval = Duration.ofMillis(getLongEnv("POLL_INTERVAL_MS", 30000));
         this.staleTimeout = Duration.ofMillis(getLongEnv("STALE_TIMEOUT_MS", 3600000));
@@ -161,6 +163,9 @@ public class AgentConfig {
 
     /** Runtime effort override; null means the model default applies. */
     public String getEffort() { return effort; }
+
+    /** Declared concurrency for this runtime section (server-side `concurrency`). */
+    public int getRuntimeConcurrency() { return runtimeConcurrency; }
 
     /**
      * Fill in the runtime identity resolved from the node config when the
