@@ -122,7 +122,7 @@ describe('fg-54 manager integration', () => {
   beforeAll(async () => {
     try {
       schemaReady = await detectSchema();
-    } catch (error) {
+    } catch {
       schemaReady = false;
     }
     if (!schemaReady && requireSchema) {
