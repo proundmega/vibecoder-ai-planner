@@ -46,11 +46,26 @@ describe('POST /api/v1/providers/resolve authorization', () => {
     expect(ProviderService.resolveProvider).not.toHaveBeenCalled();
     expect(pool.query).toHaveBeenCalledWith(
       expect.stringContaining('FROM projects p'),
-      [99, '7']
+      [99, '7', 'member']
     );
   });
 
-  it('allows a project member', async () => {
+  it('denies a plain project member', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app)
+      .post('/api/v1/providers/resolve')
+      .set('Authorization', 'Bearer token')
+      .send({ project_id: 5, role: 'worker' });
+
+    expect(res.statusCode).toBe(403);
+    expect(ProviderService.resolveProvider).not.toHaveBeenCalled();
+    expect(pool.query.mock.calls[0][0]).toContain("$3 IN ('project_admin','super_admin')");
+    expect(pool.query.mock.calls[0][1]).toEqual([5, '7', 'member']);
+  });
+
+  it('allows a project_admin member', async () => {
+    jwt.verify.mockReturnValueOnce({ userId: '7', role: 'project_admin' });
     pool.query.mockResolvedValueOnce({ rows: [{ ok: 1 }] });
 
     const res = await request(app)
@@ -64,6 +79,18 @@ describe('POST /api/v1/providers/resolve authorization', () => {
       5,
       '7'
     );
+  });
+
+  it('allows the project owner regardless of global role', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [{ ok: 1 }] });
+
+    const res = await request(app)
+      .post('/api/v1/providers/resolve')
+      .set('Authorization', 'Bearer token')
+      .send({ project_id: 5 });
+
+    expect(res.statusCode).toBe(200);
+    expect(ProviderService.resolveProvider).toHaveBeenCalled();
   });
 
   it('lets super_admin resolve any project without a membership query', async () => {

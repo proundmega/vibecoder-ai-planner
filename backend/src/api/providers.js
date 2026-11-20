@@ -222,15 +222,18 @@ router.post('/resolve', verifyToken, async (req, res, next) => {
         `SELECT 1 FROM projects p
          WHERE p.id = $1
            AND (p.owner_id = $2
-                OR EXISTS (SELECT 1 FROM project_memberships m
-                           WHERE m.project_id = p.id AND m.user_id = $2))`,
-        [projectId, req.user.userId]
+                OR ($3 IN ('project_admin','super_admin')
+                    AND EXISTS (SELECT 1 FROM project_memberships m
+                                WHERE m.project_id = p.id AND m.user_id = $2)))`,
+        [projectId, req.user.userId, req.user.role]
       );
       if (access.rows.length === 0) {
         throw new ForbiddenError('Not a member of this project');
       }
     }
 
+    // labels/priority remain accepted for the legacy resolve contract; model
+    // selection is by role/phase (fg-38 owns label/priority routing).
     const ticketInfo = {
       labels: req.body.labels || [],
       priority: req.body.priority || 'medium',
