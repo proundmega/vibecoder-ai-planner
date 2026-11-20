@@ -68,7 +68,7 @@ Ordered slices. Each slice should be independently verifiable.
 | `backend/src/middleware/agentNodeAuth.js` | CREATE | Bind `:id` to the presented node credential; list scope |
 | `backend/src/middleware/agentNodeAccess.js` | CREATE | JWT node ownership and project-admin scope for grants |
 | `backend/src/middleware/agentRole.js` | CREATE | Role/grant checks and denial audit |
-| `backend/src/middleware/auth.js` | MODIFY | Remove static `ak_…`/`X-API-Key` agent path; node tokens only |
+| `backend/src/middleware/auth.js` | MODIFY | Remove the static `ak_…` agent path; node credentials use `X-API-Key` |
 | `backend/src/middleware/agentProjectScope.js` | MODIFY | Runtime→grant→project scope assertions |
 | `backend/src/validators/agentFleet.js` | CREATE | Node/grant/runtime Joi schemas |
 | `backend/src/validators/providerRegistry.js` | CREATE | Credential/model/effort Joi schemas |
@@ -198,7 +198,7 @@ cd backend && npm test
 cd backend && npm run test:integration
 cd frontend && npm test -- --run && npm run typecheck && npm run lint
 cd agent && mvn -B test
-grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_hash\|X-API-Key" backend/src agent/src | grep -v __tests__
+grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_hash" backend/src agent/src | grep -v __tests__
 ```
 
 ## Review checklist
