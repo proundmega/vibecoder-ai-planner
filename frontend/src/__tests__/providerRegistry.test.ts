@@ -22,6 +22,7 @@ vi.mock('@/api/providerRegistry', () => ({
   discoverModels: vi.fn(),
   addModel: vi.fn(),
   testModel: vi.fn(),
+  deleteModel: vi.fn(),
   updateModel: vi.fn(),
 }))
 

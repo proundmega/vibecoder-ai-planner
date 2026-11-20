@@ -81,13 +81,43 @@ class SupervisorMainTest {
     }
 
     @Test
+    void declaration403IsTerminalInsteadOfRetriedForever() throws Exception {
+        com.vibecode.agent.service.RuntimeApi api = mock(com.vibecode.agent.service.RuntimeApi.class);
+        when(api.declareRuntimes(anyList())).thenThrow(
+            new com.vibecode.agent.service.RuntimeApi.RuntimeApiException(403, "GRANT_REQUIRED"));
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+            SupervisorMain.TerminalDeclarationException.class,
+            () -> SupervisorMain.declareWithRetry(api, config(), 3));
+    }
+
+    @Test
     void detectsStoppedAndDrainingRuntimesAndTerminalAuthFailures() {
         java.util.Set<String> suspended = SupervisorMain.suspendedSections(Map.of(
             "runtimes", List.of(
-                Map.of("name", "workers", "status", "stopped"),
-                Map.of("name", "reviewers", "status", "draining"),
-                Map.of("name", "planners", "status", "running"))));
+                Map.of("name", "workers-1", "status", "stopped"),
+                Map.of("name", "reviewers-1", "status", "draining"),
+                Map.of("name", "planners-1", "status", "running"))),
+            Map.of("workers", 1L, "reviewers", 2L, "planners", 3L));
         assertEquals(java.util.Set.of("workers", "reviewers"), suspended);
+        java.util.Set<String> revokedGrant = SupervisorMain.suspendedSections(Map.of(
+            "runtimes", List.of(Map.of(
+                "id", 1, "name", "workers-1", "status", "running",
+                "role", "worker", "current_project_id", 7)),
+            "grants", List.of(Map.of("project_id", 8, "role", "worker"))),
+            Map.of("workers", 1L));
+        assertEquals(java.util.Set.of("workers"), revokedGrant,
+            "a runtime for a revoked grant is suspended");
+
+        java.util.Set<String> missingRuntime = SupervisorMain.suspendedSections(Map.of(
+            "runtimes", List.of(),
+            "grants", List.of()),
+            Map.of("workers", 1L));
+        assertEquals(java.util.Set.of("workers"), missingRuntime,
+            "a runtime row removed from config retires its section");
+
+        assertEquals("workers", SupervisorMain.stripRuntimeSuffix("workers-12"));
+
         assertTrue(SupervisorMain.terminalConfigFailure(new java.io.IOException("HTTP 401")));
         assertTrue(SupervisorMain.terminalConfigFailure(
             new com.vibecode.agent.service.AgentAuthFatalException("terminal", new java.io.IOException())));

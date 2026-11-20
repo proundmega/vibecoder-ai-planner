@@ -27,8 +27,17 @@ const grants = ref<AgentGrant[]>([])
 
 const routeId = computed(() => String(route.params.id))
 
+function isNodeOwner(node: AgentNode): boolean {
+  if (authStore.isSuperAdmin()) return true
+  const userId = authStore.user.value?.id
+  return userId != null && String(node.owner_id) === String(userId)
+}
+
 const runtimeMatch = computed<{ node: AgentNode; runtime: AgentRuntime } | null>(() => {
   for (const node of nodes.value) {
+    // A shared member sees the node record but not runtimes for projects they
+    // do not belong to (fg-54 #181 filtering).
+    if (!isNodeOwner(node)) continue
     for (const runtime of node.runtimes ?? []) {
       if (String(runtime.id) === routeId.value) return { node, runtime }
     }
@@ -54,10 +63,7 @@ const canManageRuntimesBase = computed(() => authStore.hasAnyPermission(['AGENT_
 const canManageNodesBase = computed(() => authStore.hasAnyPermission(['AGENT_REVOKE']))
 
 function canManageNode(node: AgentNode | null | undefined): boolean {
-  if (!node) return false
-  if (authStore.isSuperAdmin()) return true
-  const userId = authStore.user.value?.id
-  return userId != null && String(node.owner_id) === String(userId)
+  return node ? isNodeOwner(node) : false
 }
 
 const targetNode = computed(() => runtimeMatch.value?.node ?? nodeMatch.value)

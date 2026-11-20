@@ -237,13 +237,45 @@ public final class Supervisor implements AutoCloseable {
     }
 
     private List<RuntimeConfig.RuntimeSlot> activeSlots(RuntimeConfig desired) {
-        java.util.Set<String> suspended = suspendedSections;
+        java.util.Set<String> suspended = new java.util.LinkedHashSet<>(suspendedSections);
+        suspended.addAll(sectionsWithStopMarkers());
         if (suspended.isEmpty()) {
             return desired.expandedSlots();
         }
         return desired.expandedSlots().stream()
             .filter(slot -> !suspended.contains(slot.runtimeName()))
             .toList();
+    }
+
+    /** A child writes this marker when its runtime is permanently denied. */
+    public void clearStopMarker(String sectionName) {
+        try {
+            Files.deleteIfExists(stopMarkerPath(sectionName));
+        } catch (IOException e) {
+            log.debug("Could not clear stop marker for {}: {}", sectionName, e.getMessage());
+        }
+    }
+
+    private Path stopMarkerPath(String sectionName) {
+        return pidDir.resolve(sectionName + ".stop");
+    }
+
+    private java.util.Set<String> sectionsWithStopMarkers() {
+        java.util.Set<String> sections = new java.util.LinkedHashSet<>();
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(pidDir, "*.stop")) {
+            for (Path file : stream) {
+                String name = file.getFileName().toString();
+                sections.add(name.substring(0, name.length() - ".stop".length()));
+            }
+        } catch (IOException e) {
+            log.debug("Could not list supervisor stop markers: {}", e.getMessage());
+        }
+        return sections;
+    }
+
+    /** Snapshot of section-name → runtime-id mappings. */
+    public Map<String, Long> runtimeIdsSnapshot() {
+        return runtimeIds;
     }
 
     /** Replace the section/runtime id map after a successful re-declaration. */
@@ -377,6 +409,7 @@ public final class Supervisor implements AutoCloseable {
             env.put("AGENT_RUNTIME_ID", String.valueOf(runtimeId));
         }
         env.put("AGENT_RUNTIME_CONCURRENCY", String.valueOf(concurrencyFor(slot.runtimeName())));
+        env.put("AGENT_RUNTIME_STOP_FILE", stopMarkerPath(slot.runtimeName()).toString());
         return env;
     }
 

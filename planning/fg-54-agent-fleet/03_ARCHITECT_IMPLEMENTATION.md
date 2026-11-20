@@ -226,4 +226,6 @@ grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_h
 
 ## Results
 
-No implementation has started; there are no verification results yet.
+| Date | Slice | Evidence |
+|---|---|---|
+| 2026-11-20 | Track B runtime/UI (PR #179) | Supervisor/runtime/manager/Fleet+Registry implemented; `mvn -B test` 892 pass, backend 2050 pass, frontend 573 pass + typecheck. Blocked on Track A's node-token bridge and registry/visibility follow-ups before the joint gate. |

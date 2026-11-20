@@ -48,6 +48,30 @@ class SupervisorReconcileTest {
     }
 
     @Test
+    void childStopMarkerRetiresTheSectionUntilCleared() throws IOException {
+        FakeLauncher launcher = new FakeLauncher();
+        Supervisor supervisor = new Supervisor(pidDir, workers(1), 256, launcher);
+        try {
+            supervisor.reconcile();
+            assertEquals(1, launcher.launchCount.get());
+
+            Files.writeString(pidDir.resolve("workers.stop"), "revoked");
+            supervisor.reconcile();
+            assertEquals(1, launcher.destroyCount.get());
+            assertTrue(supervisor.snapshot().isEmpty());
+
+            supervisor.reconcile();
+            assertTrue(supervisor.snapshot().isEmpty(), "a stop marker is not respawned");
+
+            supervisor.clearStopMarker("workers");
+            supervisor.reconcile();
+            assertEquals(2, launcher.launchCount.get(), "clearing the marker resumes the section");
+        } finally {
+            supervisor.close();
+        }
+    }
+
+    @Test
     void suspendedSectionStopsAndDoesNotRespawnUntilResumed() throws IOException {
         FakeLauncher launcher = new FakeLauncher();
         Supervisor supervisor = new Supervisor(pidDir, workers(2), 256, launcher);

@@ -155,7 +155,8 @@ public class RuntimeApi {
         try (Response closed = response) {
             String text = closed.body() != null ? closed.body().string() : "";
             if (!closed.isSuccessful()) {
-                throw new IOException("Runtime API request failed with HTTP " + closed.code());
+                throw new RuntimeApiException(closed.code(),
+                    "Runtime API request failed with HTTP " + closed.code());
             }
             if (text.isBlank()) {
                 @SuppressWarnings("unchecked")
@@ -175,6 +176,20 @@ public class RuntimeApi {
             .build();
         log.debug("Runtime API {} {}", authenticated.method(), authenticated.url().encodedPath());
         return httpClient.newCall(authenticated).execute();
+    }
+
+    /** HTTP failure with the status preserved for terminal decisions. */
+    public static class RuntimeApiException extends IOException {
+        private final int status;
+
+        public RuntimeApiException(int status, String message) {
+            super(message);
+            this.status = status;
+        }
+
+        public int status() {
+            return status;
+        }
     }
 
     private static String encode(String value) {

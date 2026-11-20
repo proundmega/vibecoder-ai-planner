@@ -4,12 +4,12 @@ import AgentList from '@/views/AgentList.vue'
 import * as agentNodesApi from '@/api/agentNodes'
 
 const { authState } = vi.hoisted(() => ({
-  authState: { read: true, create: true, revoke: true },
+  authState: { read: true, create: true, revoke: true, userId: 7 },
 }))
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
-    user: { value: { id: 7 } },
+    user: { value: { id: authState.userId } },
     isSuperAdmin: () => false,
     hasAnyPermission: (permissions: string[]) => {
       if (permissions.includes('AGENT_READ')) return authState.read
@@ -106,6 +106,7 @@ describe('Agent fleet view', () => {
     authState.read = true
     authState.create = true
     authState.revoke = true
+    authState.userId = 7
     ;(agentNodesApi.listAgentNodes as ReturnType<typeof vi.fn>).mockResolvedValue([node])
     ;(agentNodesApi.getAgentNodeGrants as ReturnType<typeof vi.fn>).mockResolvedValue(node.grants)
     ;(agentNodesApi.createAgentGrant as ReturnType<typeof vi.fn>).mockResolvedValue(node.grants[0])
@@ -270,6 +271,18 @@ describe('Agent fleet view', () => {
       max_uses: 1,
     })
     expect(wrapper.text()).toContain('enr_once_secret_token')
+  })
+
+  it('hides runtimes outside a shared member\'s project grants', async () => {
+    authState.userId = 99
+    wrapper = await mountView()
+    await expandNode(wrapper)
+
+    // The node is visible through a shared grant, but its runtime has no
+    // project in the member's grants, so it must not be listed.
+    expect(wrapper.text()).toContain('build-host')
+    expect(wrapper.text()).not.toContain('worker-1')
+    expect(wrapper.text()).toContain('No runtimes')
   })
 
   it('never renders static agent key material', async () => {

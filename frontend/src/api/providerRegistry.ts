@@ -146,6 +146,10 @@ export function testModel(modelId: ResourceId): Promise<ProviderModelTestResult>
   return post<ProviderModelTestResult>(`/api/v1/provider-models/${modelId}/test`)
 }
 
+export function deleteModel(modelId: ResourceId): Promise<void> {
+  return del<void>(`/api/v1/provider-models/${modelId}`)
+}
+
 export function updateModel(modelId: ResourceId, updates: UpdateModelInput): Promise<ProviderModel> {
   return patch<ProviderModel>(`/api/v1/provider-models/${modelId}`, updates)
 }

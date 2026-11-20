@@ -1,14 +1,14 @@
 ---
 id: "fg-54"
 title: "Agent Fleet: Nodes, Model Registry and Enforced Roles"
-status: planned
+status: in_review
 priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-11-19"
-updated: "2026-11-19"
-pr: null
-branch: null
+updated: "2026-11-20"
+pr: 179
+branch: feat/fg-54b-runtime-ui
 depends_on: ["fg-53"]
 ---
 
@@ -71,7 +71,9 @@ long-running agent role.
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Plan merged | PR #177 (open — not merged yet) | ☐ |
+| Plan merged | PR #177 (merged) | ☑ |
+| Control plane merged | PR #178 (merged; node-auth bridge remains a joint gate) | ☑ |
+| Runtime/UI implementation | PR #179 (draft; rebased on master) | ☐ |
 | Implementation merged | pending | ☐ |
 | Verification results | n/a — not started | ☐ |
 

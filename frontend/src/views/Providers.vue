@@ -311,6 +311,14 @@
                     >
                       {{ model.status === 'disabled' ? 'Enable' : 'Disable' }}
                     </VButton>
+                    <VButton
+                      variant="danger"
+                      size="small"
+                      :loading="deletingModelId === String(model.id)"
+                      @click="handleDeleteModel(model)"
+                    >
+                      Delete
+                    </VButton>
                     <div
                       v-if="testResults[String(model.id)]"
                       :class="[
@@ -469,6 +477,7 @@ import {
   addModel,
   createCredential,
   deleteCredential,
+  deleteModel,
   discoverModels,
   listCredentialModels,
   listCredentials,
@@ -528,9 +537,6 @@ const BASE_PROVIDER_TYPES = [
   { value: 'opencode', label: 'OpenCode (Zen)' },
   { value: 'opencode-go', label: 'OpenCode Go' },
   { value: 'claude', label: 'Claude' },
-  { value: 'azure', label: 'Azure OpenAI' },
-  { value: 'google', label: 'Google Gemini' },
-  { value: 'cohere', label: 'Cohere' },
   { value: 'ollama', label: 'Ollama' },
   { value: 'vllm', label: 'vLLM' },
   { value: 'llamacpp', label: 'llama.cpp' },
@@ -550,6 +556,7 @@ const notice = ref('')
 const showAddForm = ref(false)
 const savingCredential = ref(false)
 const deletingId = ref('')
+const deletingModelId = ref('')
 const discoveringId = ref('')
 const testingId = ref('')
 const savingModel = ref(false)
@@ -625,13 +632,28 @@ function referenceLabels(value: unknown): string[] {
 
 function conflictReferences(err: unknown): { runtimes: string[]; models: string[] } {
   const error = err as {
+    runtimes?: unknown
+    models?: unknown
     referencingRuntimes?: unknown
     referencingModels?: unknown
-    details?: { referencingRuntimes?: unknown; referencingModels?: unknown }
+    details?: {
+      runtimes?: unknown
+      models?: unknown
+      referencingRuntimes?: unknown
+      referencingModels?: unknown
+    }
   }
   return {
-    runtimes: referenceLabels(error.referencingRuntimes ?? error.details?.referencingRuntimes),
-    models: referenceLabels(error.referencingModels ?? error.details?.referencingModels),
+    runtimes: referenceLabels(
+      error.referencingRuntimes
+        ?? error.details?.referencingRuntimes
+        ?? error.runtimes
+        ?? error.details?.runtimes),
+    models: referenceLabels(
+      error.referencingModels
+        ?? error.details?.referencingModels
+        ?? error.models
+        ?? error.details?.models),
   }
 }
 
@@ -826,6 +848,22 @@ async function handleSaveModel(): Promise<void> {
     error.value = (err as Error).message || 'Failed to update the model'
   } finally {
     savingModel.value = false
+  }
+}
+
+async function handleDeleteModel(model: ProviderModel): Promise<void> {
+  if (!window.confirm(`Delete model ${model.model}?`)) return
+  deletingModelId.value = String(model.id)
+  error.value = ''
+  notice.value = ''
+  try {
+    await deleteModel(model.id)
+    notice.value = `Model ${model.model} deleted.`
+    await loadCredentials()
+  } catch (err) {
+    error.value = (err as Error).message || 'Failed to delete the model'
+  } finally {
+    deletingModelId.value = ''
   }
 }
 

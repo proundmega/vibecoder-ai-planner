@@ -51,16 +51,32 @@ const canCreateGrant = computed(() => authStore.hasAnyPermission(['AGENT_CREATE'
 const canRevokeNode = computed(() => authStore.hasAnyPermission(['AGENT_REVOKE']))
 
 function canManageNode(node: AgentNode): boolean {
-  if (authStore.isSuperAdmin()) return true
-  const userId = authStore.user.value?.id
-  return userId != null && String(node.owner_id) === String(userId)
+  return isNodeOwner(node)
 }
 
 const selectedNode = computed<AgentNode | null>(
   () => nodes.value.find(node => nodeKey(node) === selectedKey.value) ?? null
 )
 
-const selectedRuntimes = computed<AgentRuntime[]>(() => selectedNode.value?.runtimes ?? [])
+function isNodeOwner(node: AgentNode | null | undefined): boolean {
+  if (!node) return false
+  if (authStore.isSuperAdmin()) return true
+  const userId = authStore.user.value?.id
+  return userId != null && String(node.owner_id) === String(userId)
+}
+
+const selectedRuntimes = computed<AgentRuntime[]>(() => {
+  const node = selectedNode.value
+  if (!node) return []
+  const all = node.runtimes ?? []
+  if (isNodeOwner(node)) return all
+  // Track A's list embeds every runtime on a shared node; hide runtimes
+  // outside the projects this member can actually see (fg-54 #181 equivalent).
+  const projects = new Set(selectedGrants.value.map(grant => String(grant.project_id)))
+  return all.filter(runtime =>
+    runtime.current_project_id != null
+      && projects.has(String(runtime.current_project_id)))
+})
 
 const selectedGrants = computed<AgentGrant[]>(() => {
   if (!selectedKey.value) return []

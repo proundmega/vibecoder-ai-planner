@@ -89,8 +89,16 @@ public final class SupervisorMain {
                     supervisor.close();
                     return;
                 }
-                java.util.Set<String> suspended = suspendedSections(config);
+                java.util.Map<String, Long> ids = supervisor.runtimeIdsSnapshot();
+                java.util.Set<String> suspended = suspendedSections(config, ids);
                 supervisor.updateSuspendedSections(suspended);
+                for (String section : ids.keySet()) {
+                    if (!suspended.contains(section)) {
+                        // An admin restart (running/pending) clears a child's
+                        // terminal stop marker.
+                        supervisor.clearStopMarker(section);
+                    }
+                }
                 RuntimeConfig current = desiredRef.get();
                 supervisor.reconcile(current);
 
@@ -102,6 +110,10 @@ public final class SupervisorMain {
                         supervisor.updateRuntimeIds(refreshed);
                     }
                 }
+            } catch (TerminalDeclarationException e) {
+                log.error("Runtime declaration is permanently denied (HTTP {}); stopping supervised runtimes",
+                    e.status());
+                supervisor.close();
             } catch (com.vibecode.agent.service.AgentAuthFatalException e) {
                 log.error("Node credentials are terminal; stopping supervised runtimes");
                 supervisor.close();
@@ -180,6 +192,12 @@ public final class SupervisorMain {
                     return ids;
                 }
                 log.warn("Runtime declaration returned no usable ids (attempt {}/{})", attempt, attempts);
+            } catch (RuntimeApi.RuntimeApiException e) {
+                if (e.status() == 401 || e.status() == 403 || e.status() == 404) {
+                    throw new TerminalDeclarationException(e.status(), e.getMessage(), e);
+                }
+                last = new RuntimeException(e.getMessage(), e);
+                log.warn("Runtime declaration failed (attempt {}/{}): {}", attempt, attempts, e.getMessage());
             } catch (Exception e) {
                 last = new RuntimeException(e.getMessage(), e);
                 log.warn("Runtime declaration failed (attempt {}/{}): {}", attempt, attempts, e.getMessage());
@@ -226,6 +244,20 @@ public final class SupervisorMain {
         }
     }
 
+    /** A declaration denied by auth/grant/model policy must not be retried forever. */
+    public static class TerminalDeclarationException extends RuntimeException {
+        private final int status;
+
+        TerminalDeclarationException(int status, String message, Throwable cause) {
+            super(message, cause);
+            this.status = status;
+        }
+
+        public int status() {
+            return status;
+        }
+    }
+
     static boolean terminalConfigFailure(Throwable error) {
         if (error instanceof com.vibecode.agent.service.AgentAuthFatalException) {
             return true;
@@ -239,24 +271,82 @@ public final class SupervisorMain {
     }
 
     @SuppressWarnings("unchecked")
-    static java.util.Set<String> suspendedSections(Map<String, Object> config) {
+    static java.util.Set<String> suspendedSections(Map<String, Object> config,
+                                                  Map<String, Long> runtimeIds) {
         java.util.Set<String> suspended = new java.util.LinkedHashSet<>();
         if (config == null) return suspended;
+        Map<Long, String> sectionById = new java.util.LinkedHashMap<>();
+        if (runtimeIds != null) {
+            runtimeIds.forEach((section, id) -> {
+                if (id != null) sectionById.put(id, section);
+            });
+        }
+        java.util.Set<String> activeGrants = new java.util.LinkedHashSet<>();
+        Object grants = config.get("grants");
+        if (grants instanceof List<?> grantList) {
+            for (Object item : grantList) {
+                if (item instanceof Map<?, ?> grant) {
+                    String project = stringValue(((Map<String, Object>) grant).get("project_id"));
+                    String role = stringValue(((Map<String, Object>) grant).get("role"));
+                    if (project != null && role != null) activeGrants.add(project + ":" + role);
+                }
+            }
+        }
+
         Object runtimes = config.get("runtimes");
         if (runtimes == null) runtimes = config.get("data");
         if (runtimes instanceof Map<?, ?> map) runtimes = map.get("runtimes");
         if (!(runtimes instanceof List<?> list)) return suspended;
+
+        java.util.Set<String> seenSections = new java.util.LinkedHashSet<>();
         for (Object item : list) {
             if (!(item instanceof Map<?, ?> row)) continue;
             Map<String, Object> runtime = (Map<String, Object>) row;
             String status = stringValue(runtime.get("status"));
             String name = stringValue(runtime.get("name"));
-            if (name != null && ("stopped".equalsIgnoreCase(status)
-                    || "draining".equalsIgnoreCase(status))) {
-                suspended.add(name);
+            Long id = longValue(runtime.get("id"));
+            String section = id != null ? sectionById.get(id) : null;
+            if (section == null && name != null) {
+                section = stripRuntimeSuffix(name);
+            }
+            if (section == null) continue;
+            seenSections.add(section);
+
+            if ("stopped".equalsIgnoreCase(status) || "draining".equalsIgnoreCase(status)) {
+                suspended.add(section);
+                continue;
+            }
+            String project = stringValue(runtime.get("current_project_id"));
+            String role = stringValue(runtime.get("role"));
+            if (project != null && role != null
+                    && !activeGrants.contains(project + ":" + role)) {
+                // Grant revoked or narrowed: stop this section instead of
+                // letting the child heartbeat 403 and loop.
+                suspended.add(section);
+            }
+        }
+
+        // A runtime row removed from the node config retires its section.
+        if (runtimeIds != null) {
+            for (String section : runtimeIds.keySet()) {
+                if (!seenSections.contains(section)) {
+                    suspended.add(section);
+                }
             }
         }
         return suspended;
+    }
+
+    static String stripRuntimeSuffix(String name) {
+        if (name == null) return null;
+        int dash = name.lastIndexOf('-');
+        if (dash > 0 && dash < name.length() - 1) {
+            String suffix = name.substring(dash + 1);
+            if (suffix.chars().allMatch(Character::isDigit)) {
+                return name.substring(0, dash);
+            }
+        }
+        return name;
     }
 
     private static void assertNodeActive(RuntimeApi api) {

@@ -444,7 +444,11 @@ public class AgentApp {
         // returned only through the backend's guarded release path.
         recoverStartupOnce();
 
-        heartbeatScheduler = Executors.newScheduledThreadPool(1);
+        heartbeatScheduler = Executors.newScheduledThreadPool(1, runnable -> {
+            Thread thread = new Thread(runnable, "agent-heartbeat");
+            thread.setDaemon(true);
+            return thread;
+        });
         heartbeatScheduler.scheduleAtFixedRate(() -> {
             try {
                 Map<String, Object> mem = new HashMap<>();
@@ -468,18 +472,21 @@ public class AgentApp {
                 }
                 // Report running once. Later heartbeats send no status so an
                 // admin drain/stop is not overwritten by COALESCE($3, status).
-                String status = runtimeStatusReported.compareAndSet(false, true)
-                    ? "running"
-                    : null;
+                boolean firstHeartbeat = !runtimeStatusReported.get();
                 apiService.sendHeartbeat(
                     config.getRuntimeId(),
-                    status,
+                    firstHeartbeat ? "running" : null,
                     config.getProjectId()
                 );
+                if (firstHeartbeat) {
+                    runtimeStatusReported.set(true);
+                }
             } catch (AgentAuthFatalException e) {
                 exitOnFatalAuth(e);
             } catch (com.vibecode.agent.service.ApiService.RuntimeRevokedException e) {
                 log.error("Runtime is no longer authorized: {}", e.getMessage());
+                releaseCurrentClaim();
+                writeStopMarker();
                 shuttingDown = true;
                 shutdown();
                 System.exit(0);
@@ -670,7 +677,8 @@ public class AgentApp {
         for (Object item : list) {
             if (item instanceof Map<?, ?> row) {
                 Map<String, Object> runtime = (Map<String, Object>) row;
-                if (wanted.equals(string(runtime.get("name")))) {
+                String name = string(runtime.get("name"));
+                if (name != null && (wanted.equals(name) || name.startsWith(wanted + "-"))) {
                     return runtime;
                 }
             }
@@ -688,9 +696,44 @@ public class AgentApp {
         exitHook.accept(1);
     }
 
+    private void releaseCurrentClaim() {
+        try {
+            String ticketId = ticketWorker == null ? null : ticketWorker.getCurrentTicketId();
+            if (ticketId != null && !ticketId.isBlank()) {
+                apiService.releaseTicket(Long.valueOf(ticketId));
+                log.info("Released claim for ticket {} after runtime revocation", ticketId);
+            }
+        } catch (Exception releaseError) {
+            // The revocation may also deny the release; the reaper owns the
+            // final cleanup. Never loop here.
+            log.warn("Could not release the claim after revocation: {}", releaseError.getMessage());
+        }
+    }
+
+    private void writeStopMarker() {
+        String path = config.getRuntimeStopFile();
+        if (path == null || path.isBlank()) {
+            return;
+        }
+        try {
+            java.nio.file.Path marker = java.nio.file.Path.of(path);
+            if (marker.getParent() != null) {
+                java.nio.file.Files.createDirectories(marker.getParent());
+            }
+            java.nio.file.Files.writeString(marker, "revoked");
+        } catch (Exception e) {
+            log.warn("Could not write the runtime stop marker: {}", e.getMessage());
+        }
+    }
+
     private void shutdown() {
         log.info("Shutting down agent...");
         if (heartbeatScheduler != null) {
+            if (Thread.currentThread().getName().startsWith("agent-heartbeat")) {
+                // Called from the heartbeat task; do not await our own pool.
+                heartbeatScheduler.shutdownNow();
+                return;
+            }
             heartbeatScheduler.shutdown();
             try {
                 heartbeatScheduler.awaitTermination(5, TimeUnit.SECONDS);
