@@ -180,7 +180,7 @@ Also indexed in `planning/HARNESS_ROADMAP.md` (fg-45 in Phase C, fg-46 deferred 
 
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|
-| **fg-54** | `fg-54-agent-fleet` | P1 | fg-53 | **In review (#179)** — Node/grant/runtime/lease model, owner-scoped node enrollment, closed roles (`worker`/`reviewer`/`planner`) enforced server-side, credential+model split with discovery/manual add/test, role tags and reasoning effort, a static host supervisor that reconciles runtimes in one Compose stack, and a replicated `manager` service. Track A control plane merged (#178), registry #180, visibility #181 and the claim/release node bridge #182 merged; Track B runtime/UI is #179 and remains blocked on the harness/usage node bridge slice and 057 registration before joint verification. Do not activate workers with only #182 (durable-run failures park claimed tickets). Approved clean cut: no legacy key migration. |
+| **fg-54** | `fg-54-agent-fleet` | P1 | fg-53 | **In review (#179)** — Node/grant/runtime/lease model, owner-scoped node enrollment, closed roles (`worker`/`reviewer`/`planner`) enforced server-side, credential+model split with discovery/manual add/test, role tags and reasoning effort, a static host supervisor that reconciles runtimes in one Compose stack, and a replicated `manager` service. Track A control plane merged (#178), registry #180, visibility #181, claim/release #182 and runtime-owned harness runs/leases/usage #183 merged; Track B runtime/UI is #179 and remains blocked on 057 clean-cut registration and the CI/human gate before joint verification. Approved clean cut: no legacy key migration. |
 
 ## Other (pa-*)
 

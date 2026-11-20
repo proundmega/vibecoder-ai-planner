@@ -72,7 +72,7 @@ long-running agent role.
 | Claim | Evidence | Checked |
 |---|---|---|
 | Plan merged | PR #177 (merged) | ☑ |
-| Control plane merged | PR #178 merged; registry #180, visibility #181 and the claim/release node bridge #182 merged; harness/usage bridge remains a joint gate | ☑ |
+| Control plane merged | PR #178 merged; registry #180, visibility #181, claim/release #182 and runtime-owned harness runs/leases/usage #183 merged | ☑ |
 | Runtime/UI implementation | PR #179 (draft; rebased on master; joint gate pending) | ☐ |
 | Implementation merged | pending | ☐ |
 | Verification results | Partial Track B evidence in `03` → Results; joint gate pending | ☐ |
