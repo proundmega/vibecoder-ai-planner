@@ -1,545 +1,462 @@
-<script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { fetchAgentStatusList, createAgent, listAgents, updateAgentName } from '@/api/agents'
-import { listProviders } from '@/api/providers'
-import { fetchProjectsStrict } from '@/api/projects'
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
-  listEnrollmentTokens,
-  mintEnrollmentToken,
-  revokeEnrollmentToken,
-} from '@/api/agentEnrollment'
+  createAgentGrant,
+  drainAgentNode,
+  getAgentNodeGrants,
+  listAgentNodes,
+  revokeAgentGrant,
+  revokeAgentNode,
+  updateAgentRuntime,
+  type AgentGrant,
+  type AgentNode,
+  type AgentRuntime,
+  type AgentRuntimeRole,
+  type AgentRuntimeStatus,
+  type ResourceId,
+} from '@/api/agentNodes'
+import { fetchProjectsStrict, type Project } from '@/api/projects'
 import { useAuthStore } from '@/stores/auth'
-import AgentModal from '@/components/AgentModal.vue'
-import AgentKeyRevealModal from '@/components/AgentKeyRevealModal.vue'
-
-const agents = ref([])
-const loading = ref(true)
-const error = ref(null)
-const showCreateModal = ref(false)
-const createError = ref(null)
-const creatingAgent = ref(false)
-const createdAgent = ref(null)
-const activeTab = ref('heartbeat')
-const agentsData = ref([])
-const loadingAgents = ref(false)
-const providers = ref([])
-const selectedProviderId = ref(null)
-const router = useRouter()
-const CREATE_TIMEOUT_MS = 30000
-let createAttempt = 0
-let pollInterval = null
-const editingAgentId = ref(null)
-const editName = ref('')
+import VButton from '@/components/VButton.vue'
 
 const authStore = useAuthStore()
-const projects = ref([])
-const enrollmentProjectId = ref('')
-const enrollmentTokens = ref([])
-const enrollmentLoading = ref(false)
-const enrollmentError = ref('')
-const enrollmentAvailable = ref(true)
-const minting = ref(false)
-const mintedToken = ref(null)
-const revokingTokenId = ref(null)
-const revokeConfirmTokenId = ref(null)
-const mintForm = ref({ name: '', ttlMinutes: 15, maxUses: 1, providerId: '' })
 
-const canReadEnrollment = computed(() => authStore.hasAnyPermission(['AGENT_READ']))
-const canMintEnrollment = computed(() => authStore.canCreateAgent())
-const canRevokeEnrollment = computed(() => authStore.canRevokeAgent())
+const nodes = ref<AgentNode[]>([])
+const projects = ref<Project[]>([])
+const grantsByNode = ref<Record<string, AgentGrant[]>>({})
+const selectedKey = ref<string | null>(null)
+const loading = ref(true)
+const grantsLoading = ref(false)
+const loadingProjects = ref(false)
+const error = ref('')
+const actionError = ref('')
+const projectError = ref('')
+const busy = ref('')
+const grantForm = ref<{ projectId: string; role: AgentRuntimeRole }>({
+  projectId: '',
+  role: 'worker',
+})
 
-async function loadAgents() {
+const ROLE_OPTIONS: AgentRuntimeRole[] = ['worker', 'reviewer', 'planner']
+let pollInterval: ReturnType<typeof setInterval> | null = null
+
+const canView = computed(() => authStore.hasAnyPermission(['AGENT_READ']))
+const canCreateGrant = computed(() => authStore.hasAnyPermission(['AGENT_CREATE']))
+const canRevokeNode = computed(() => authStore.hasAnyPermission(['AGENT_REVOKE']))
+
+const selectedNode = computed<AgentNode | null>(
+  () => nodes.value.find(node => nodeKey(node) === selectedKey.value) ?? null
+)
+
+const selectedRuntimes = computed<AgentRuntime[]>(() => selectedNode.value?.runtimes ?? [])
+
+const selectedGrants = computed<AgentGrant[]>(() => {
+  if (!selectedKey.value) return []
+  return (grantsByNode.value[selectedKey.value] ?? []).filter(grant => !grant.revoked_at)
+})
+
+function nodeKey(node: AgentNode): string {
+  return String(node.id)
+}
+
+function runtimeKey(runtime: AgentRuntime): string {
+  return String(runtime.id)
+}
+
+function formatDate(value: string | null | undefined): string {
+  return value ? new Date(value).toLocaleDateString() : '—'
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  return value ? new Date(value).toLocaleString() : 'Never'
+}
+
+function modelLabel(runtime: AgentRuntime): string {
+  return runtime.model_ref || String(runtime.model_id)
+}
+
+async function loadNodes(): Promise<void> {
+  if (!canView.value) {
+    loading.value = false
+    return
+  }
   try {
-    const data = await fetchAgentStatusList()
-    agents.value = data || []
+    nodes.value = (await listAgentNodes()) || []
+    error.value = ''
   } catch (err) {
-    console.error('Failed to load agents:', err)
-    error.value = 'Failed to load agents'
+    error.value = (err as Error).message || 'Failed to load the agent fleet'
   } finally {
     loading.value = false
   }
 }
 
-async function loadProviders() {
+async function loadProjects(): Promise<void> {
+  if (!canCreateGrant.value) return
+  loadingProjects.value = true
+  projectError.value = ''
   try {
-    providers.value = await listProviders()
+    projects.value = (await fetchProjectsStrict()) || []
   } catch (err) {
-    console.error('Failed to load providers:', err)
+    projectError.value = (err as Error).message || 'Failed to load projects'
+  } finally {
+    loadingProjects.value = false
   }
 }
 
-onMounted(() => {
-  loadAgents()
-  loadProviders()
-  pollInterval = setInterval(loadAgents, 10000)
+async function loadGrants(node: AgentNode): Promise<void> {
+  const key = nodeKey(node)
+  grantsLoading.value = true
+  try {
+    grantsByNode.value = {
+      ...grantsByNode.value,
+      [key]: (await getAgentNodeGrants(node.id)) || [],
+    }
+  } catch (err) {
+    actionError.value = (err as Error).message || 'Failed to load grants'
+  } finally {
+    grantsLoading.value = false
+  }
+}
+
+async function refreshSelectedGrants(): Promise<void> {
+  const node = selectedNode.value
+  if (node) await loadGrants(node)
+}
+
+async function toggleNode(node: AgentNode): Promise<void> {
+  const key = nodeKey(node)
+  if (selectedKey.value === key) {
+    selectedKey.value = null
+    return
+  }
+  selectedKey.value = key
+  actionError.value = ''
+  if (node.grants) {
+    grantsByNode.value = { ...grantsByNode.value, [key]: node.grants }
+  }
+  await loadGrants(node)
+}
+
+async function onDrain(node: AgentNode): Promise<void> {
+  const key = nodeKey(node)
+  busy.value = `drain-${key}`
+  actionError.value = ''
+  try {
+    await drainAgentNode(node.id)
+    await loadNodes()
+  } catch (err) {
+    actionError.value = (err as Error).message || 'Failed to drain the node'
+  } finally {
+    busy.value = ''
+  }
+}
+
+async function onRevokeNode(node: AgentNode): Promise<void> {
+  const key = nodeKey(node)
+  busy.value = `revoke-${key}`
+  actionError.value = ''
+  try {
+    await revokeAgentNode(node.id)
+    await loadNodes()
+    await refreshSelectedGrants()
+  } catch (err) {
+    actionError.value = (err as Error).message || 'Failed to revoke the node'
+  } finally {
+    busy.value = ''
+  }
+}
+
+async function onAddGrant(node: AgentNode): Promise<void> {
+  if (!grantForm.value.projectId) {
+    actionError.value = 'Select a project before adding a grant'
+    return
+  }
+  const key = nodeKey(node)
+  busy.value = `grant-${key}`
+  actionError.value = ''
+  try {
+    await createAgentGrant(node.id, {
+      projectId: grantForm.value.projectId,
+      role: grantForm.value.role,
+    })
+    grantForm.value = { projectId: '', role: 'worker' }
+    await loadGrants(node)
+  } catch (err) {
+    actionError.value = (err as Error).message || 'Failed to create the grant'
+  } finally {
+    busy.value = ''
+  }
+}
+
+async function onRevokeGrant(node: AgentNode, grant: AgentGrant): Promise<void> {
+  const key = nodeKey(node)
+  busy.value = `grant-revoke-${key}-${String(grant.id)}`
+  actionError.value = ''
+  try {
+    await revokeAgentGrant(node.id, grant.id)
+    await loadGrants(node)
+  } catch (err) {
+    actionError.value = (err as Error).message || 'Failed to revoke the grant'
+  } finally {
+    busy.value = ''
+  }
+}
+
+async function onRuntimeStatus(runtime: AgentRuntime, status: AgentRuntimeStatus): Promise<void> {
+  const key = runtimeKey(runtime)
+  busy.value = `runtime-${key}`
+  actionError.value = ''
+  try {
+    await updateAgentRuntime(runtime.id, { status })
+    await loadNodes()
+  } catch (err) {
+    actionError.value = (err as Error).message || 'Failed to update the runtime'
+  } finally {
+    busy.value = ''
+  }
+}
+
+function isBusy(prefix: string, id: ResourceId): boolean {
+  return busy.value === `${prefix}-${String(id)}`
+}
+
+onMounted(async () => {
+  if (!canView.value) {
+    loading.value = false
+    return
+  }
+  await Promise.all([loadNodes(), loadProjects()])
+  pollInterval = setInterval(loadNodes, 15000)
 })
 
 onUnmounted(() => {
   if (pollInterval) clearInterval(pollInterval)
 })
-
-watch(activeTab, (tab) => {
-  if (tab === 'agents') {
-    loadCrudAgents()
-  }
-  if (tab === 'enrollment' && canReadEnrollment.value) {
-    loadEnrollmentPanel()
-  }
-})
-
-watch(enrollmentProjectId, () => {
-  if (activeTab.value === 'enrollment' && enrollmentProjectId.value) {
-    loadEnrollmentTokens()
-  }
-})
-
-function viewDetail(agentId) {
-  router.push(`/agents/${agentId}`)
-}
-
-function openCreateModal() {
-  createError.value = null
-  showCreateModal.value = true
-}
-
-function statusClass(status) {
-  return { online: 'status-online', idle: 'status-idle', offline: 'status-offline' }[status] || 'status-offline'
-}
-
-function formatCost(cost) {
-  return `$${Number(cost || 0).toFixed(2)}`
-}
-
-async function handleCreate(name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays) {
-  const attempt = ++createAttempt
-  creatingAgent.value = true
-  createError.value = null
-  let timedOut = false
-  const timer = setTimeout(() => {
-    if (attempt !== createAttempt) return
-    timedOut = true
-    // Re-enable dismissal so a hung request cannot trap the dialog. The
-    // request itself cannot be cancelled safely; if it later succeeds the
-    // operator can rotate the key from the agent page.
-    creatingAgent.value = false
-    createError.value = 'Creating the agent is taking longer than expected. Refresh the list before retrying; if the agent appears, rotate its key.'
-  }, CREATE_TIMEOUT_MS)
-
-  try {
-    const created = await createAgent({ name, providerId, rateLimit, maxActionsPerDay, keyExpiryDays })
-    if (attempt !== createAttempt || timedOut) return
-    showCreateModal.value = false
-
-    const provider = providers.value.find(p =>
-      String(p.id) === String(created.provider_id ?? providerId)
-    )
-    createdAgent.value = {
-      id: created.id,
-      name: created.name || name,
-      providerName: created.provider_name || provider?.name || null,
-      apiKey: created.generatedApiKey || created.api_key || null,
-      expiresAt: created.api_key_expires_at || null,
-    }
-
-    // Refresh both tables immediately instead of waiting for the poll or a
-    // tab switch.
-    await Promise.all([loadAgents(), loadCrudAgents()])
-  } catch (err) {
-    if (attempt !== createAttempt || timedOut) return
-    createError.value = err.message || 'Failed to create agent'
-  } finally {
-    clearTimeout(timer)
-    if (attempt === createAttempt && !timedOut) creatingAgent.value = false
-  }
-}
-
-function startEdit(agent) {
-  editingAgentId.value = agent.id
-  editName.value = agent.name
-}
-
-async function saveEdit(agent) {
-  if (!editName.value.trim()) return
-  try {
-    await updateAgentName(String(agent.id), editName.value.trim())
-    editingAgentId.value = null
-    loadCrudAgents()
-  } catch (err) {
-    console.error('Failed to update agent name:', err)
-  }
-}
-
-function cancelEdit() {
-  editingAgentId.value = null
-}
-
-const tabs = computed(() => [
-  { id: 'heartbeat', label: 'Heartbeat' },
-  { id: 'agents', label: 'Agents' },
-  ...(enrollmentAvailable.value && canReadEnrollment.value
-    ? [{ id: 'enrollment', label: 'Enrollment' }]
-    : []),
-])
-
-async function loadEnrollmentPanel() {
-  if (projects.value.length === 0) {
-    try {
-      projects.value = await fetchProjectsStrict()
-    } catch (err) {
-      enrollmentError.value = err.message || 'Failed to load projects'
-    }
-  }
-  if (!enrollmentProjectId.value && projects.value.length > 0) {
-    enrollmentProjectId.value = String(projects.value[0].id)
-  }
-  await loadEnrollmentTokens()
-}
-
-async function loadEnrollmentTokens() {
-  if (!enrollmentProjectId.value) {
-    enrollmentTokens.value = []
-    return
-  }
-  enrollmentLoading.value = true
-  enrollmentError.value = ''
-  try {
-    enrollmentTokens.value = await listEnrollmentTokens(enrollmentProjectId.value)
-  } catch (err) {
-    if (err.status === 404) {
-      // Feature flag off: remove the surface instead of advertising it.
-      enrollmentAvailable.value = false
-      enrollmentError.value = ''
-      if (activeTab.value === 'enrollment') activeTab.value = 'heartbeat'
-    } else {
-      enrollmentError.value = err.message || 'Failed to load join tokens'
-    }
-  } finally {
-    enrollmentLoading.value = false
-  }
-}
-
-async function submitMint() {
-  if (!mintForm.value.name.trim() || !enrollmentProjectId.value) return
-  minting.value = true
-  enrollmentError.value = ''
-  try {
-    const created = await mintEnrollmentToken({
-      projectId: enrollmentProjectId.value,
-      name: mintForm.value.name.trim(),
-      ttlSeconds: Math.max(1, Number(mintForm.value.ttlMinutes) || 15) * 60,
-      maxUses: Number(mintForm.value.maxUses) || 1,
-      providerId: mintForm.value.providerId || null,
-    })
-    // The raw token exists only in this response; keep it in memory for the
-    // one-time dialog and never persist it.
-    mintedToken.value = created
-    mintForm.value.name = ''
-    await loadEnrollmentTokens()
-  } catch (err) {
-    enrollmentError.value = err.message || 'Failed to mint join token'
-  } finally {
-    minting.value = false
-  }
-}
-
-function askRevokeToken(token) {
-  revokeConfirmTokenId.value = token.id
-}
-
-function cancelRevokeToken() {
-  revokeConfirmTokenId.value = null
-}
-
-async function revokeToken(token) {
-  revokingTokenId.value = token.id
-  enrollmentError.value = ''
-  try {
-    await revokeEnrollmentToken(token.id)
-    await loadEnrollmentTokens()
-  } catch (err) {
-    enrollmentError.value = err.message || 'Failed to revoke join token'
-  } finally {
-    revokingTokenId.value = null
-    revokeConfirmTokenId.value = null
-  }
-}
-
-function enrollmentProviderName(providerId) {
-  if (!providerId) return 'Any'
-  const provider = providers.value.find(p => String(p.id) === String(providerId))
-  return provider ? provider.name : `Provider ${providerId}`
-}
-
-function enrollmentStatus(token) {
-  if (token.revoked_at) return 'revoked'
-  if (new Date(token.expires_at) <= new Date()) return 'expired'
-  if (token.used_count >= token.max_uses) return 'used'
-  return 'active'
-}
-
-async function loadCrudAgents() {
-  loadingAgents.value = true
-  try {
-    const { agents } = await listAgents()
-    agentsData.value = agents || []
-  } catch {
-    agentsData.value = []
-  } finally {
-    loadingAgents.value = false
-  }
-}
-
-
-
-function formatDate(dateStr) {
-  return dateStr ? new Date(dateStr).toLocaleDateString() : '—'
-}
 </script>
 
 <template>
   <div class="agent-list">
     <div class="header-row">
-      <h1>Agents</h1>
-      <button class="btn-primary" @click="openCreateModal">
-        Create Agent
-      </button>
-    </div>
-    <AgentModal
-      v-model:show="showCreateModal"
-      :providers="providers"
-      :creating="creatingAgent"
-      :submit-error="createError"
-      v-model:selectedProvider="selectedProviderId"
-      @created="handleCreate"
-    />
-    <AgentKeyRevealModal
-      v-if="createdAgent"
-      :agent="createdAgent"
-      @close="createdAgent = null"
-    />
-    <AgentKeyRevealModal
-      v-if="mintedToken"
-      :agent="{
-        id: mintedToken.id,
-        name: mintedToken.name,
-        apiKey: mintedToken.token,
-        expiresAt: mintedToken.expires_at,
-      }"
-      title="Join token created"
-      intro="Give this token to the new node. It is exchanged once for its own short-lived credentials."
-      warning="This is the only time this join token is shown. It expires automatically and can be revoked."
-      copy-label="Copy token"
-      key-label="Join token"
-      id-label="Join token ID"
-      expires-label="Token expires"
-      @close="mintedToken = null"
-    />
-
-    <div class="tabs">
-      <button
-        v-for="tab in tabs"
-        :key="tab.id"
-        :class="['tab', { active: activeTab === tab.id }]"
-        @click="activeTab = tab.id"
+      <div>
+        <h1>Agent Fleet</h1>
+        <p class="page-subtitle">
+          Nodes, project grants and the runtime slots declared on each host.
+        </p>
+      </div>
+      <VButton
+        v-if="canView"
+        variant="secondary"
+        size="small"
+        :loading="loading"
+        @click="loadNodes"
       >
-        {{ tab.label }}
-      </button>
+        Refresh
+      </VButton>
     </div>
 
-    <!-- Heartbeat Tab -->
-    <div v-if="activeTab === 'heartbeat'">
-      <div v-if="loading" class="loading">Loading agents...</div>
+    <div v-if="!canView" class="empty-state" role="status">
+      <p>You do not have permission to view the agent fleet.</p>
+      <p class="empty-hint">Ask a project administrator for AGENT_READ access.</p>
+    </div>
+
+    <template v-else>
+      <div v-if="loading" class="loading">Loading fleet...</div>
       <div v-else-if="error" class="error">{{ error }}</div>
-      <div v-else>
-        <table v-if="agents.length > 0" class="agent-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Status</th>
-              <th>Current Ticket</th>
-              <th>Actions Today</th>
-              <th>Cost Today</th>
-              <th>Last Seen</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="agent in agents"
-              :key="agent.agent_id"
-              @click="viewDetail(agent.agent_id)"
-              class="agent-row"
+      <div v-else-if="nodes.length === 0" class="empty-state">
+        <p>No agent nodes enrolled.</p>
+        <p class="empty-hint">
+          Enroll a host with a node join token before declaring runtimes on it.
+        </p>
+      </div>
+
+      <div v-else class="node-list">
+        <div v-if="actionError" class="error action-error">{{ actionError }}</div>
+
+        <section v-for="node in nodes" :key="nodeKey(node)" class="node-card">
+          <div class="node-header">
+            <button
+              type="button"
+              class="node-summary"
+              :aria-expanded="selectedKey === nodeKey(node)"
+              @click="toggleNode(node)"
             >
-              <td>{{ agent.name || agent.agent_id }}</td>
-              <td>
-                <span :class="['status-badge', statusClass(agent.status)]">
-                  {{ agent.status }}
-                </span>
-              </td>
-              <td>
-                <router-link
-                  v-if="agent.current_ticket_id"
-                  :to="`/projects/?ticket=${agent.current_ticket_id}`"
-                  @click.stop
-                >
-                  {{ agent.current_ticket_title || agent.current_ticket_id.substring(0, 8) + '...' }}
-                </router-link>
-                <span v-else class="none">—</span>
-              </td>
-              <td>{{ agent.actions_today }}</td>
-              <td>{{ formatCost(agent.cost_today) }}</td>
-              <td>
-                {{ agent.last_seen ? new Date(agent.last_seen).toLocaleString() : 'Never' }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-else class="empty-state">
-          <p>No heartbeat data found.</p>
-          <p class="empty-hint">Agents may not have sent heartbeats recently.</p>
-        </div>
-      </div>
-    </div>
+              <span class="node-title">
+                <span class="node-name">{{ node.name }}</span>
+                <span :class="['status-badge', `status-${node.status}`]">{{ node.status }}</span>
+              </span>
+              <span class="node-meta">
+                <span>Owner: <strong>{{ node.owner_name || node.owner_id }}</strong></span>
+                <span>Host: {{ node.hostname || '—' }}</span>
+                <span>Last seen: {{ formatDateTime(node.last_seen_at) }}</span>
+              </span>
+            </button>
 
-    <!-- Agents Tab (CRUD) -->
-    <div v-if="activeTab === 'agents'">
-      <div v-if="loadingAgents" class="loading">Loading agents...</div>
-      <table v-else-if="agentsData.length > 0" class="agent-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Provider</th>
-            <th>API Key</th>
-            <th>Rate Limit</th>
-            <th>Created</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-          <tbody>
-            <tr v-for="agent in agentsData" :key="agent.id">
-              <td v-if="editingAgentId === agent.id">
-                <input v-model="editName" @keyup.enter="saveEdit(agent)" @keyup.escape="cancelEdit" @blur="saveEdit(agent)" class="edit-input" />
-                <button @click="cancelEdit" class="btn-sm">Cancel</button>
-              </td>
-              <td v-else>
-                <span>{{ agent.name }}</span>
-                <button @click="startEdit(agent)" class="btn-edit" title="Edit name">Edit</button>
-              </td>
-              <td>{{ agent.provider_name || '—' }}</td>
-            <td><code>••••••••</code> <router-link :to="`/agents/${agent.id}`" class="link-details">View</router-link></td>
-            <td>{{ agent.rate_limit || 100 }}</td>
-            <td>{{ formatDate(agent.created_at) }}</td>
-            <td>
-              <router-link :to="`/agents/${agent.id}`" class="link-details">
-                View Details
+            <div class="node-actions">
+              <VButton
+                v-if="canRevokeNode && node.status === 'active'"
+                variant="secondary"
+                size="small"
+                :loading="isBusy('drain', node.id)"
+                @click="onDrain(node)"
+              >
+                Drain
+              </VButton>
+              <VButton
+                v-if="canRevokeNode && node.status !== 'revoked'"
+                variant="danger"
+                size="small"
+                :loading="isBusy('revoke', node.id)"
+                @click="onRevokeNode(node)"
+              >
+                Revoke
+              </VButton>
+              <router-link :to="`/agents/${node.id}`" class="link-details">
+                Details
               </router-link>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <div v-else class="empty-state">
-        <p>No agents created yet.</p>
-        <p class="empty-hint">Click "Create Agent" to get started.</p>
-      </div>
-    </div>
+            </div>
+          </div>
 
-    <!-- Enrollment Tab -->
-    <div v-if="activeTab === 'enrollment'">
-      <div v-if="!canReadEnrollment" class="empty-state">
-        <p>You do not have permission to view join tokens.</p>
-      </div>
-      <template v-else>
-        <div class="enrollment-toolbar">
-          <label for="enrollment-project">Project</label>
-          <select id="enrollment-project" v-model="enrollmentProjectId">
-            <option value="" disabled>Select a project</option>
-            <option v-for="project in projects" :key="project.id" :value="String(project.id)">
-              {{ project.name }}
-            </option>
-          </select>
-        </div>
+          <div v-if="selectedKey === nodeKey(node)" class="node-detail">
+            <section class="detail-section">
+              <div class="section-header">
+                <h2>Grants</h2>
+                <span class="count">{{ selectedGrants.length }}</span>
+              </div>
 
-        <form v-if="canMintEnrollment" class="mint-form" @submit.prevent="submitMint">
-          <input v-model="mintForm.name" placeholder="Token name" maxlength="100" />
-          <label>
-            TTL (min)
-            <input v-model.number="mintForm.ttlMinutes" type="number" min="1" max="1440" />
-          </label>
-          <label>
-            Max uses
-            <input v-model.number="mintForm.maxUses" type="number" min="1" max="100" />
-          </label>
-          <select v-model="mintForm.providerId">
-            <option value="">Any provider</option>
-            <option v-for="provider in providers" :key="provider.id" :value="String(provider.id)">
-              {{ provider.name }}
-            </option>
-          </select>
-          <button
-            type="submit"
-            class="btn-primary"
-            :disabled="minting || !mintForm.name.trim() || !enrollmentProjectId"
-          >
-            {{ minting ? 'Minting...' : 'Mint join token' }}
-          </button>
-        </form>
+              <div v-if="grantsLoading" class="loading-inline">Loading grants...</div>
+              <table v-else-if="selectedGrants.length > 0" class="agent-table">
+                <thead>
+                  <tr>
+                    <th>Project</th>
+                    <th>Role</th>
+                    <th>Created</th>
+                    <th v-if="canCreateGrant">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="grant in selectedGrants" :key="grant.id">
+                    <td>{{ grant.project_name || grant.project_id }}</td>
+                    <td><span class="role-tag">{{ grant.role }}</span></td>
+                    <td>{{ formatDate(grant.created_at) }}</td>
+                    <td v-if="canCreateGrant">
+                      <VButton
+                        variant="danger"
+                        size="small"
+                        :loading="busy === `grant-revoke-${nodeKey(node)}-${String(grant.id)}`"
+                        @click="onRevokeGrant(node, grant)"
+                      >
+                        Revoke grant
+                      </VButton>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-else class="empty-inline">No active grants.</p>
 
-        <div v-if="enrollmentError" class="error">{{ enrollmentError }}</div>
-
-        <div v-if="enrollmentLoading" class="loading">Loading join tokens...</div>
-        <table v-else-if="enrollmentTokens.length > 0" class="agent-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Provider</th>
-              <th>Uses</th>
-              <th>Expires</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="token in enrollmentTokens" :key="token.id">
-              <td>{{ token.name }}</td>
-              <td>{{ enrollmentProviderName(token.provider_id) }}</td>
-              <td>{{ token.used_count }} / {{ token.max_uses }}</td>
-              <td>{{ formatDate(token.expires_at) }}</td>
-              <td>
-                <span :class="['token-status', `token-${enrollmentStatus(token)}`]">
-                  {{ enrollmentStatus(token) }}
-                </span>
-              </td>
-              <td>
-                <template v-if="canRevokeEnrollment && !token.revoked_at">
-                  <template v-if="revokeConfirmTokenId === token.id">
-                    <button
-                      class="btn-danger"
-                      :disabled="revokingTokenId === token.id"
-                      @click="revokeToken(token)"
-                    >
-                      {{ revokingTokenId === token.id ? 'Revoking...' : 'Confirm revoke' }}
-                    </button>
-                    <button class="btn-sm" @click="cancelRevokeToken">Cancel</button>
-                  </template>
-                  <button
-                    v-else
-                    class="btn-danger-outline"
-                    @click="askRevokeToken(token)"
+              <div v-if="canCreateGrant" class="grant-form">
+                <div class="form-group">
+                  <label :for="`grant-project-${nodeKey(node)}`">Project</label>
+                  <select
+                    :id="`grant-project-${nodeKey(node)}`"
+                    v-model="grantForm.projectId"
+                    :disabled="loadingProjects"
                   >
-                    Revoke
-                  </button>
-                </template>
-                <span v-else class="none">—</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-else class="empty-state">
-          <p>No join tokens for this project.</p>
-          <p class="empty-hint">Mint one to enroll a new node without copying a long-lived key.</p>
-        </div>
-      </template>
-    </div>
+                    <option value="" disabled>Select a project</option>
+                    <option v-for="project in projects" :key="project.id" :value="String(project.id)">
+                      {{ project.name }}
+                    </option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label :for="`grant-role-${nodeKey(node)}`">Role</label>
+                  <select :id="`grant-role-${nodeKey(node)}`" v-model="grantForm.role">
+                    <option v-for="role in ROLE_OPTIONS" :key="role" :value="role">
+                      {{ role }}
+                    </option>
+                  </select>
+                </div>
+                <VButton
+                  variant="primary"
+                  size="small"
+                  :loading="busy === `grant-${nodeKey(node)}`"
+                  @click="onAddGrant(node)"
+                >
+                  Add grant
+                </VButton>
+              </div>
+              <p v-if="projectError" class="error inline-error">{{ projectError }}</p>
+            </section>
+
+            <section class="detail-section">
+              <div class="section-header">
+                <h2>Runtimes</h2>
+                <span class="count">{{ selectedRuntimes.length }}</span>
+              </div>
+
+              <table v-if="selectedRuntimes.length > 0" class="agent-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Role</th>
+                    <th>Model</th>
+                    <th>Effort</th>
+                    <th>Status</th>
+                    <th>Last seen</th>
+                    <th v-if="canCreateGrant">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="runtime in selectedRuntimes" :key="runtime.id">
+                    <td>{{ runtime.name }}</td>
+                    <td><span class="role-tag">{{ runtime.role }}</span></td>
+                    <td><code>{{ modelLabel(runtime) }}</code></td>
+                    <td>
+                      <span class="effort-tag">{{ runtime.effort || 'default' }}</span>
+                    </td>
+                    <td>
+                      <span :class="['status-badge', `runtime-status-${runtime.status}`]">
+                        {{ runtime.status }}
+                      </span>
+                    </td>
+                    <td>{{ formatDateTime(runtime.last_seen_at) }}</td>
+                    <td v-if="canCreateGrant" class="runtime-actions">
+                      <VButton
+                        v-if="runtime.status === 'running'"
+                        variant="secondary"
+                        size="small"
+                        :loading="isBusy('runtime', runtime.id)"
+                        @click="onRuntimeStatus(runtime, 'draining')"
+                      >
+                        Drain runtime
+                      </VButton>
+                      <VButton
+                        v-if="runtime.status === 'running' || runtime.status === 'pending'"
+                        variant="ghost"
+                        size="small"
+                        :loading="isBusy('runtime', runtime.id)"
+                        @click="onRuntimeStatus(runtime, 'stopped')"
+                      >
+                        Stop runtime
+                      </VButton>
+                      <VButton
+                        v-if="runtime.status !== 'running'"
+                        variant="secondary"
+                        size="small"
+                        :loading="isBusy('runtime', runtime.id)"
+                        @click="onRuntimeStatus(runtime, 'running')"
+                      >
+                        Start runtime
+                      </VButton>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-else class="empty-inline">No runtimes declared on this node.</p>
+            </section>
+          </div>
+        </section>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -550,81 +467,151 @@ function formatDate(dateStr) {
   margin: 0 auto;
 }
 
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
 .agent-list h1 {
-  margin: 0 0 1rem 0;
+  margin: 0 0 0.25rem 0;
   font-size: 24px;
   color: #1f2937;
 }
 
-.loading, .error {
+.page-subtitle {
+  margin: 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.loading,
+.error {
   padding: 40px 20px;
   text-align: center;
   color: #6b7280;
 }
 
-.enrollment-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+.error {
+  color: #ef4444;
 }
 
-.enrollment-toolbar select,
-.mint-form input,
-.mint-form select {
-  padding: 8px 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
-.mint-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 0.75rem;
+.action-error {
+  padding: 12px 16px;
   margin-bottom: 1rem;
-  padding: 1rem;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
   border-radius: 8px;
 }
 
-.mint-form label {
+.inline-error {
+  padding: 0;
+  margin-top: 8px;
+  text-align: left;
+}
+
+.node-list {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  font-size: 12px;
-  color: #4b5563;
+  gap: 1rem;
 }
 
-.token-status {
-  padding: 2px 10px;
-  border-radius: 12px;
-  font-size: 0.85em;
-  font-weight: 500;
+.node-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.node-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 16px;
+  flex-wrap: wrap;
+}
+
+.node-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 240px;
+  padding: 0;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.node-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.node-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.node-meta {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.node-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.node-detail {
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.detail-section {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.section-header h2 {
+  margin: 0;
+  font-size: 16px;
+  color: #1f2937;
+}
+
+.count {
+  padding: 1px 8px;
   background: #e5e7eb;
   color: #374151;
-}
-
-.token-active {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.token-used,
-.token-expired {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.token-revoked {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.error {
-  color: #ef4444;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .agent-table {
@@ -634,57 +621,71 @@ function formatDate(dateStr) {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   overflow: hidden;
+  display: block;
+  overflow-x: auto;
 }
 
 .agent-table th,
 .agent-table td {
-  padding: 12px 16px;
+  padding: 10px 12px;
   text-align: left;
   border-bottom: 1px solid #f3f4f6;
+  white-space: nowrap;
 }
 
 .agent-table th {
   background: #f9fafb;
   font-weight: 600;
   color: #374151;
-  font-size: 13px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
-.agent-row {
-  cursor: pointer;
-  transition: background 0.2s;
+.agent-table code {
+  font-size: 12px;
+  color: #374151;
 }
 
-.agent-row:hover {
-  background: #f9fafb;
-}
-
-.status-badge {
+.status-badge,
+.role-tag,
+.effort-tag {
+  display: inline-block;
   padding: 2px 10px;
   border-radius: 12px;
-  font-size: 0.85em;
+  font-size: 0.82em;
   font-weight: 500;
+  line-height: 1.5;
 }
 
-.status-online {
-  background: #d4edda;
-  color: #155724;
+.status-active,
+.runtime-status-running {
+  background: #d1fae5;
+  color: #065f46;
 }
 
-.status-idle {
-  background: #fff3cd;
-  color: #856404;
+.status-draining,
+.runtime-status-draining,
+.runtime-status-pending {
+  background: #fef3c7;
+  color: #92400e;
 }
 
-.status-offline {
-  background: #f8d7da;
-  color: #721c24;
+.status-revoked,
+.runtime-status-stopped {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
-.none {
-  color: #9ca3af;
+.role-tag {
+  background: #e0e7ff;
+  color: #3730a3;
+  margin: 0 4px 2px 0;
+}
+
+.effort-tag {
+  background: #f3e8ff;
+  color: #6b21a8;
 }
 
 .empty-state {
@@ -696,59 +697,59 @@ function formatDate(dateStr) {
   color: #6b7280;
 }
 
-.header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
 .empty-hint {
   color: #9ca3af;
   font-size: 14px;
   margin-top: 4px;
 }
 
-.btn-primary {
-  padding: 8px 16px;
-  background: #3b82f6;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
+.empty-inline {
+  margin: 0 0 12px;
+  color: #9ca3af;
   font-size: 14px;
-  font-weight: 500;
 }
 
-.btn-primary:hover {
-  background: #2563eb;
-}
-
-.tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid #e5e7eb;
-  margin-bottom: 1rem;
-}
-
-.tab {
-  padding: 8px 16px;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  font-size: 14px;
+.loading-inline {
+  padding: 12px 0;
   color: #6b7280;
+  font-size: 14px;
+}
+
+.grant-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-group label {
+  font-size: 12px;
   font-weight: 500;
+  color: #4b5563;
 }
 
-.tab:hover {
-  color: #374151;
+.form-group select {
+  min-width: 160px;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
 }
 
-.tab.active {
-  color: #3b82f6;
-  border-bottom-color: #3b82f6;
+.runtime-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .link-details {
@@ -761,35 +762,18 @@ function formatDate(dateStr) {
   text-decoration: underline;
 }
 
-.edit-input {
-  padding: 4px 8px;
-  border: 1px solid #3b82f6;
-  border-radius: 4px;
-  font-size: 14px;
-  width: 200px;
-}
+@media (max-width: 640px) {
+  .agent-list {
+    padding: 1rem;
+  }
 
-.btn-edit {
-  padding: 2px 8px;
-  background: #f3f4f6;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  margin-left: 8px;
-}
+  .node-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
 
-.btn-edit:hover {
-  background: #e5e7eb;
-}
-
-.btn-sm {
-  padding: 2px 8px;
-  background: #fee2e2;
-  border: 1px solid #fca5a5;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  margin-left: 4px;
+  .node-actions {
+    justify-content: flex-start;
+  }
 }
 </style>
