@@ -127,6 +127,62 @@ class SupervisorMainTest {
     }
 
     @Test
+    void skippedSectionsAreNotDeclaredAndStaySuspended() throws Exception {
+        com.vibecode.agent.service.RuntimeApi api = mock(com.vibecode.agent.service.RuntimeApi.class);
+        java.util.List<java.util.List<Map<String, Object>>> calls = new java.util.ArrayList<>();
+        when(api.declareRuntimes(anyList())).thenAnswer(invocation -> {
+            List<Map<String, Object>> rows = invocation.getArgument(0);
+            calls.add(rows);
+            return List.of(Map.of("id", 10, "name", "workers-1"));
+        });
+
+        SupervisorMain.DeclarationResult result = SupervisorMain.declareWithRetry(
+            api, config(), 1, java.util.Set.of("reviewers"));
+
+        assertEquals(Map.of("workers", 10L), result.runtimeIds());
+        assertEquals(java.util.Set.of("reviewers"), result.suspendedSections());
+        assertEquals(1, calls.size());
+        assertEquals("workers", calls.get(0).get(0).get("name"),
+            "a suspended section must not be re-declared");
+    }
+
+    @Test
+    void allDeniedSectionsLeaveTheHostIdleInsteadOfExiting() throws Exception {
+        com.vibecode.agent.service.RuntimeApi api = mock(com.vibecode.agent.service.RuntimeApi.class);
+        when(api.declareRuntimes(anyList())).thenThrow(
+            new com.vibecode.agent.service.RuntimeApi.RuntimeApiException(403, "GRANT_REQUIRED"));
+
+        SupervisorMain.DeclarationResult result = SupervisorMain.declareRequired(api, config(), 1);
+
+        assertTrue(result.runtimeIds().isEmpty());
+        assertEquals(java.util.Set.of("workers", "reviewers"), result.suspendedSections());
+        assertTrue(result.unresolvedSections().isEmpty());
+    }
+
+    @Test
+    void anUnresolvedSectionStillFailsStartup() throws Exception {
+        com.vibecode.agent.service.RuntimeApi api = mock(com.vibecode.agent.service.RuntimeApi.class);
+        when(api.declareRuntimes(anyList())).thenThrow(new java.io.IOException("timeout"));
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+            IllegalStateException.class,
+            () -> SupervisorMain.declareRequired(api, config(), 1));
+    }
+
+    @Test
+    void bootSkipsStoppedSectionsByNameBeforeIdsExist() {
+        java.util.Set<String> suspended = SupervisorMain.bootSuspendedSections(
+            config(),
+            Map.of("runtimes", List.of(
+                Map.of("name", "workers-1", "status", "stopped"),
+                Map.of("name", "reviewers-1", "status", "running"),
+                Map.of("name", "planners-1", "status", "stopped"))));
+
+        assertEquals(java.util.Set.of("workers"), suspended,
+            "only ini sections are skipped; an unknown stopped row is ignored");
+    }
+
+    @Test
     void nodeAuthFailureDuringDeclarationIsTerminal() throws Exception {
         com.vibecode.agent.service.RuntimeApi api = mock(com.vibecode.agent.service.RuntimeApi.class);
         when(api.declareRuntimes(anyList())).thenThrow(

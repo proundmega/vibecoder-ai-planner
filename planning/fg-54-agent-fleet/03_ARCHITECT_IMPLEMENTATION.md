@@ -228,4 +228,4 @@ grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_h
 
 | Date | Slice | Evidence |
 |---|---|---|
-| 2026-11-20 | Track B runtime/UI (PR #179) | Supervisor/runtime/manager/Fleet+Registry implemented; `mvn -B test` 892 pass, backend 2050 pass, frontend 573 pass + typecheck. Blocked on Track A's node-token bridge and registry/visibility follow-ups before the joint gate. |
+| 2026-11-20 | Track B runtime/UI (PR #179) | Supervisor/runtime/manager/Fleet+Registry implemented; `mvn -B test` 904 pass (10 skipped), backend 2067 pass (169 suites), frontend 574 pass + typecheck. #180 and #181 are merged. Blocked only on Track A's remaining node-token bridge slices (#182 covers ticket claim/release) and 057 registration before the joint gate. |

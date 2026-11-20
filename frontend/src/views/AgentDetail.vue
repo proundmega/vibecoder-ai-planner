@@ -34,6 +34,9 @@ function isNodeOwner(node: AgentNode): boolean {
   return userId != null && String(node.owner_id) === String(userId)
 }
 
+// The API already filters shared-node runtimes (#181). Keep the same filter
+// here as defense in depth so a cached response cannot expose another
+// project's runtime detail.
 function visibleRuntimes(node: AgentNode): AgentRuntime[] {
   const all = node.runtimes ?? []
   if (isNodeOwner(node)) return all

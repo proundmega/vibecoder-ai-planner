@@ -72,8 +72,8 @@ long-running agent role.
 | Claim | Evidence | Checked |
 |---|---|---|
 | Plan merged | PR #177 (merged) | ☑ |
-| Control plane merged | PR #178 (merged; node-auth bridge remains a joint gate) | ☑ |
-| Runtime/UI implementation | PR #179 (draft; rebased on master) | ☐ |
+| Control plane merged | PR #178 merged; registry #180 and visibility #181 merged; node-token bridge remains a joint gate | ☑ |
+| Runtime/UI implementation | PR #179 (draft; rebased on master; joint gate pending) | ☐ |
 | Implementation merged | pending | ☐ |
 | Verification results | Partial Track B evidence in `03` → Results; joint gate pending | ☐ |
 

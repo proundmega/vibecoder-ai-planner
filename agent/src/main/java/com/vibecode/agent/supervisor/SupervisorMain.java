@@ -50,11 +50,18 @@ public final class SupervisorMain {
         AgentAuthManager auth = new AgentAuthManager(agentConfig, store, new AgentEnrollmentClient(agentConfig));
         auth.initialize();
         RuntimeApi api = new RuntimeApi(agentConfig, auth);
-        assertNodeActive(api);
+        Map<String, Object> bootConfig = fetchNodeConfig(api);
+        assertNodeActive(bootConfig);
+
+        // A stopped/draining runtime or a revoked grant must survive a host
+        // restart. Seed the skip set from the pre-declaration config (statuses
+        // are available by section name before ids are mapped).
+        java.util.Set<String> bootSuspended = bootSuspendedSections(desired, bootConfig);
 
         // One declaration per section. The server returns one runtime row per
         // declaration; every child of that section shares the runtime id.
-        DeclarationResult declared = declareRequired(api, desired, DECLARE_ATTEMPTS);
+        DeclarationResult declared =
+            declareRequired(api, desired, DECLARE_ATTEMPTS, bootSuspended);
         Map<String, Long> runtimeIds = declared.runtimeIds();
         int heapMb = childHeapMb(desired);
         Path pidDir = Path.of(System.getenv().getOrDefault(
@@ -303,18 +310,47 @@ public final class SupervisorMain {
     /**
      * First boot must have at least one declared/active runtime. Sections whose
      * grant is revoked are returned as suspended, not as a host-wide failure.
+     * A host whose every section is suspended stays up and idle so a re-grant
+     * does not require a restart.
      */
     static DeclarationResult declareRequired(RuntimeApi api, RuntimeConfig config, int attempts) {
-        DeclarationResult result = declareWithRetry(api, config, attempts);
+        return declareRequired(api, config, attempts, java.util.Set.of());
+    }
+
+    static DeclarationResult declareRequired(RuntimeApi api, RuntimeConfig config, int attempts,
+                                             java.util.Set<String> skipSections) {
+        DeclarationResult result = declareWithRetry(api, config, attempts, skipSections);
         if (result.terminal()) {
             throw new TerminalDeclarationException(
                 result.terminalStatus(), result.message(), null);
         }
         if (result.runtimeIds().isEmpty()) {
-            throw new IllegalStateException(
-                "Runtime declaration failed; refusing to start children without server runtime ids");
+            boolean allSuspended = result.unresolvedSections().isEmpty()
+                && !result.suspendedSections().isEmpty();
+            if (!allSuspended) {
+                throw new IllegalStateException(
+                    "Runtime declaration failed; refusing to start children without server runtime ids");
+            }
+            log.warn("Every runtime section is suspended; supervisor will idle and retry");
         }
         return result;
+    }
+
+    /**
+     * Sections that must not be declared at boot: stopped/draining rows or a
+     * runtime whose project grant no longer matches. Unknown ini sections are
+     * declared normally so a new section still gets its server row.
+     */
+    static java.util.Set<String> bootSuspendedSections(RuntimeConfig config,
+                                                       Map<String, Object> nodeConfig) {
+        if (nodeConfig == null) return java.util.Set.of();
+        java.util.Set<String> known = new java.util.LinkedHashSet<>();
+        for (RuntimeConfig.DeclaredRuntime runtime : config.runtimes()) {
+            known.add(runtime.name());
+        }
+        java.util.Set<String> suspended = suspendedSections(nodeConfig, null);
+        suspended.retainAll(known);
+        return suspended;
     }
 
     /**
@@ -461,21 +497,27 @@ public final class SupervisorMain {
         return name;
     }
 
-    private static void assertNodeActive(RuntimeApi api) {
+    /**
+     * Fetch the node config before startup. A terminal auth failure is
+     * propagated immediately; a transient outage is retried by the
+     * declaration path instead of failing the host closed.
+     */
+    static Map<String, Object> fetchNodeConfig(RuntimeApi api) {
         try {
-            if (!nodeActive(api.fetchConfig())) {
-                throw new IllegalStateException("Node is draining or revoked; refusing to start runtimes");
-            }
-        } catch (IllegalStateException e) {
-            throw e;
+            return api.fetchConfig();
         } catch (Exception e) {
             if (terminalConfigFailure(e)) {
                 throw new IllegalStateException(
                     "Node credential is terminal at startup: " + e.getMessage(), e);
             }
-            // A transient config fetch failure is retried by the declaration
-            // path; do not fail closed on a backend outage.
             log.warn("Could not read node status before startup: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    static void assertNodeActive(Map<String, Object> config) {
+        if (!nodeActive(config)) {
+            throw new IllegalStateException("Node is draining or revoked; refusing to start runtimes");
         }
     }
 

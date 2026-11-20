@@ -70,8 +70,8 @@ const selectedRuntimes = computed<AgentRuntime[]>(() => {
   if (!node) return []
   const all = node.runtimes ?? []
   if (isNodeOwner(node)) return all
-  // Track A's list embeds every runtime on a shared node; hide runtimes
-  // outside the projects this member can actually see (fg-54 #181 equivalent).
+  // The server filters shared-node runtimes (#181); this keeping filter is
+  // defense in depth for cached/older responses.
   const projects = new Set(selectedGrants.value.map(grant => String(grant.project_id)))
   return all.filter(runtime =>
     runtime.current_project_id != null

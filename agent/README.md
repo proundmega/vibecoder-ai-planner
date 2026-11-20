@@ -126,12 +126,14 @@ count = 1
 
 | Event | Behavior |
 |---|---|
-| Boot | Enroll if needed, read the node config, spawn missing runtimes, adopt matching children from the previous supervisor. |
+| Boot | Enroll if needed, read the node config, spawn missing runtimes, adopt matching children from the previous supervisor. A section already `stopped`/`draining` or whose grant was revoked is not re-declared, so it stays retired across a restart. |
 | Re-run / apply twice | No-op: matching children are left untouched. |
 | `agent.ini` change + `SIGHUP` | Spawn additions; drain and stop removed or changed children only. |
 | Child crash | Restart the child with backoff; the rest of the fleet is unaffected. |
 | Supervisor crash (`kill -9`) | Children keep running; the restart adopts them and converges to the declared set. |
 | Node revoked/drained | The next heartbeat is rejected; the runtime releases its claim and lease and stops. |
+| Section grant revoked | Only that section is suspended; the host keeps serving its other projects. |
+| Every section suspended | The supervisor stays up and idle, then re-declares when a grant or runtime is restored. |
 
 The supervisor tracks deterministic PID files under
 `SUPERVISOR_PID_DIR` (default `/tmp/vibecode-runtimes`), so a crash does not
@@ -181,6 +183,7 @@ so fresh named volumes are writable; a host bind for `/repos` must be chowned
 | `AGENT_RUNTIME_HEAP_MB` | Heap per child JVM | `768` |
 | `SUPERVISOR_MEMORY_BUDGET_MB` | Host budget shared across children (`0` = off) | `0` |
 | `SUPERVISOR_STOP_TIMEOUT_SECONDS` | Graceful drain budget | `10` |
+| `PROVIDER_CONFIG_REFRESH_SECONDS` | Re-read a rotated provider config between tickets (min 60) | `300` |
 | `REPO_CLONE_DIR` | Clone workspace | `/tmp/repos` (image: `/repos`) |
 | `POLL_INTERVAL_MS` | Poll interval | `30000` |
 | `MAX_TICKETS` | Tickets per cycle | `1` |

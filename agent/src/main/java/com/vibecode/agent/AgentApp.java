@@ -53,6 +53,11 @@ public class AgentApp {
     private volatile TicketWorker ticketWorker;
     private volatile ReviewProcessor reviewProcessor;
     private volatile long lastProviderRefreshAt = 0;
+    /** Minimum interval between provider-config reads (audit volume). */
+    private static final long MIN_PROVIDER_REFRESH_MS = 60_000L;
+    private static final long DEFAULT_PROVIDER_REFRESH_MS = 300_000L;
+    private final long providerRefreshIntervalMs;
+    private final long providerRefreshJitterMs;
     private final ProfileValidationProcessor profileValidationProcessor;
     private ScheduledExecutorService heartbeatScheduler;
     private String githubAccessToken;
@@ -78,6 +83,11 @@ public class AgentApp {
             : null;
         applyServerRepoConfig();
         this.providerSettings = resolveProviderSettings();
+        this.providerRefreshIntervalMs = providerRefreshIntervalMs();
+        this.providerRefreshJitterMs = providerRefreshJitterMs(config.getRuntimeId());
+        // The constructor already read the provider config; do not read it
+        // again on the first poll (each read is an audited event).
+        this.lastProviderRefreshAt = System.currentTimeMillis();
         RedactionRegistry.register(config.getEnrollmentToken(), config.getAiApiKey(),
             providerSettings.apiKey(), System.getenv("GITHUB_TOKEN"));
         AiProvider aiProvider = createAiProvider(providerSettings);
@@ -363,9 +373,9 @@ public class AgentApp {
      * effort change is picked up without restarting the runtime. Runs between
      * tickets, where no harness client is active.
      */
-    private void refreshProviderSettingsIfDue() {
+    void refreshProviderSettingsIfDue() {
         long now = System.currentTimeMillis();
-        if (now - lastProviderRefreshAt < 60_000L) {
+        if (now - lastProviderRefreshAt < providerRefreshIntervalMs + providerRefreshJitterMs) {
             return;
         }
         lastProviderRefreshAt = now;
@@ -397,7 +407,28 @@ public class AgentApp {
         startupRecoveryComplete = false;
     }
 
-    private static boolean sameProviderSettings(ProviderSettings a, ProviderSettings b) {
+    static long providerRefreshIntervalMs() {
+        String raw = System.getenv("PROVIDER_CONFIG_REFRESH_SECONDS");
+        if (raw == null || raw.isBlank()) {
+            return DEFAULT_PROVIDER_REFRESH_MS;
+        }
+        try {
+            long seconds = Long.parseLong(raw.trim());
+            return Math.max(MIN_PROVIDER_REFRESH_MS, seconds * 1000L);
+        } catch (NumberFormatException e) {
+            return DEFAULT_PROVIDER_REFRESH_MS;
+        }
+    }
+
+    /** Spread refreshes so a large fleet does not read config in lockstep. */
+    static long providerRefreshJitterMs(String runtimeId) {
+        if (runtimeId == null || runtimeId.isBlank()) {
+            return 0;
+        }
+        return Math.floorMod(runtimeId.hashCode(), 30_000);
+    }
+
+    static boolean sameProviderSettings(ProviderSettings a, ProviderSettings b) {
         if (a == null || b == null) return a == b;
         return java.util.Objects.equals(a.normalizedType(), b.normalizedType())
             && java.util.Objects.equals(a.apiKey(), b.apiKey())
@@ -511,51 +542,7 @@ public class AgentApp {
             thread.setDaemon(true);
             return thread;
         });
-        heartbeatScheduler.scheduleAtFixedRate(() -> {
-            try {
-                Map<String, Object> mem = new HashMap<>();
-                mem.put("free", Runtime.getRuntime().freeMemory());
-                mem.put("total", Runtime.getRuntime().totalMemory());
-                mem.put("max", Runtime.getRuntime().maxMemory());
-
-                Map<String, Object> cpu = new HashMap<>();
-                cpu.put("availableProcessors", Runtime.getRuntime().availableProcessors());
-
-                if ((config.getRuntimeId() == null || config.getRuntimeId().isBlank())
-                        && runtimeApi != null) {
-                    // A child may start before the supervisor's declaration
-                    // succeeds. Retry on the heartbeat tick rather than
-                    // exiting into a restart loop.
-                    resolveRuntimeIdentity(config, runtimeApi);
-                }
-                if (config.getRuntimeId() == null || config.getRuntimeId().isBlank()) {
-                    log.debug("Skipping heartbeat: runtime id is not resolved yet");
-                    return;
-                }
-                // Report running once. Later heartbeats send no status so an
-                // admin drain/stop is not overwritten by COALESCE($3, status).
-                boolean firstHeartbeat = !runtimeStatusReported.get();
-                apiService.sendHeartbeat(
-                    config.getRuntimeId(),
-                    firstHeartbeat ? "running" : null,
-                    config.getProjectId()
-                );
-                if (firstHeartbeat) {
-                    runtimeStatusReported.set(true);
-                }
-            } catch (AgentAuthFatalException e) {
-                exitOnFatalAuth(e);
-            } catch (com.vibecode.agent.service.ApiService.RuntimeRevokedException e) {
-                log.error("Runtime is no longer authorized: {}", e.getMessage());
-                releaseCurrentClaim();
-                writeStopMarker();
-                shuttingDown = true;
-                shutdown();
-                System.exit(0);
-            } catch (Exception e) {
-                log.warn("Heartbeat send failed", e);
-            }
-        }, 0, 30, TimeUnit.SECONDS);
+        heartbeatScheduler.scheduleAtFixedRate(this::heartbeatTick, 0, 30, TimeUnit.SECONDS);
 
         log.info("Polling for tickets every {} ms", config.getPollInterval().toMillis());
 
@@ -580,6 +567,57 @@ public class AgentApp {
 
         log.info("Agent stopped");
     }
+    /**
+     * One heartbeat tick. The first successful send reports {@code running};
+     * later sends omit the status so an admin drain/stop is preserved. A
+     * failed first send is retried on the next tick.
+     */
+    void heartbeatTick() {
+        try {
+            Map<String, Object> mem = new HashMap<>();
+            mem.put("free", Runtime.getRuntime().freeMemory());
+            mem.put("total", Runtime.getRuntime().totalMemory());
+            mem.put("max", Runtime.getRuntime().maxMemory());
+
+            Map<String, Object> cpu = new HashMap<>();
+            cpu.put("availableProcessors", Runtime.getRuntime().availableProcessors());
+
+            if ((config.getRuntimeId() == null || config.getRuntimeId().isBlank())
+                    && runtimeApi != null) {
+                // A child may start before the supervisor's declaration
+                // succeeds. Retry on the heartbeat tick rather than
+                // exiting into a restart loop.
+                resolveRuntimeIdentity(config, runtimeApi);
+            }
+            if (config.getRuntimeId() == null || config.getRuntimeId().isBlank()) {
+                log.debug("Skipping heartbeat: runtime id is not resolved yet");
+                return;
+            }
+            // Report running once. Later heartbeats send no status so an
+            // admin drain/stop is not overwritten by COALESCE($3, status).
+            boolean firstHeartbeat = !runtimeStatusReported.get();
+            apiService.sendHeartbeat(
+                config.getRuntimeId(),
+                firstHeartbeat ? "running" : null,
+                config.getProjectId()
+            );
+            if (firstHeartbeat) {
+                runtimeStatusReported.set(true);
+            }
+        } catch (AgentAuthFatalException e) {
+            exitOnFatalAuth(e);
+        } catch (com.vibecode.agent.service.ApiService.RuntimeRevokedException e) {
+            log.error("Runtime is no longer authorized: {}", e.getMessage());
+            releaseCurrentClaim();
+            writeStopMarker();
+            shuttingDown = true;
+            shutdown();
+            System.exit(0);
+        } catch (Exception e) {
+            log.warn("Heartbeat send failed", e);
+        }
+    }
+
     /**
      * Retry startup recovery on each poll until the active-run listing
      * succeeds. The backend reaper still reconciles terminal runs, so a failed
