@@ -19,6 +19,7 @@ const GenericProvider = require('../providers/generic');
 describe('ProviderRouter', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.PROVIDER_DEFAULT_TEMPERATURE;
     decrypt.mockImplementation((text) => text.replace('encrypted-', ''));
     ClaudeProvider.mockImplementation(() => ({
       chat: jest.fn().mockResolvedValue({ content: 'test', usage: {}, stop_reason: 'end_turn' }),

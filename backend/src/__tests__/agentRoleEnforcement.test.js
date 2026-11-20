@@ -3,6 +3,7 @@ jest.mock('../db', () => ({
 }));
 
 const { pool } = require('../db');
+const logger = require('../utils/logger');
 const {
   requireRuntime,
   requireRole,
@@ -145,6 +146,20 @@ describe('agent role enforcement (FR4, NFR1)', () => {
     );
     expect(audit[1][3]).toBe('runtime');
     expect(audit[1][4]).toBe('3');
+  });
+
+
+  it('still denies when writing the audit row fails', async () => {
+    const req = nodeRequest({ role: 'reviewer' });
+    pool.query.mockRejectedValueOnce(new Error('audit insert failed'));
+
+    const { res, next } = await run(requireRole('worker'), req);
+
+    expect(res.statusCode).toBe(403);
+    expect(next).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Authorization audit failed')
+    );
   });
 
   it('audits a grant denial with the project', async () => {

@@ -1,5 +1,6 @@
 const { pool } = require('../db');
 const { decrypt } = require('../utils/crypto');
+const { resolveProviderEndpoint, defaultTemperature } = require('../utils/providerDefaults');
 const ClaudeProvider = require('../providers/claude');
 const OpenAIProvider = require('../providers/openai');
 const GenericProvider = require('../providers/generic');
@@ -48,8 +49,11 @@ class ProviderRouter {
         apiKey: decryptedKey,
         model: row.model,
         maxTokens: row.max_tokens || 4096,
-        temperature: 0.1,
-        baseUrl: row.base_url || undefined,
+        temperature: defaultTemperature(),
+        baseUrl: resolveProviderEndpoint({
+          providerType: row.provider_type,
+          baseUrl: row.base_url,
+        }) || undefined,
         projectId: this.projectId,
         userId: this.context.userId || null,
         agentId: this.context.agentId || null,

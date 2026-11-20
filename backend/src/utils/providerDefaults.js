@@ -77,6 +77,12 @@ function providerRequiresEndpoint(providerType) {
   return ENDPOINT_REQUIRED_TYPES.includes(providerType);
 }
 
+/** Default sampling temperature when a registry model has no override. */
+function defaultTemperature() {
+  const parsed = Number(process.env.PROVIDER_DEFAULT_TEMPERATURE);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0.1;
+}
+
 module.exports = {
   PROVIDER_DEFAULTS,
   getProviderDefaults,
@@ -85,4 +91,5 @@ module.exports = {
   normaliseEndpoint,
   resolveProviderEndpoint,
   providerRequiresEndpoint,
+  defaultTemperature,
 };

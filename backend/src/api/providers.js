@@ -198,8 +198,6 @@ router.get('/:id/agents', verifyToken, providerController.getProviderAgents);
  *           schema:
  *             type: object
  *             properties:
- *               labels: { type: array, items: { type: string } }
- *               priority: { type: string }
  *               phase: { type: string }
  *               role: { type: string, enum: [worker, reviewer, planner] }
  *               project_id: { $ref: '#/components/schemas/NumericId' }
@@ -232,11 +230,8 @@ router.post('/resolve', verifyToken, async (req, res, next) => {
       }
     }
 
-    // labels/priority remain accepted for the legacy resolve contract; model
-    // selection is by role/phase (fg-38 owns label/priority routing).
+    // Model selection is by role/phase; fg-38 owns label/priority routing.
     const ticketInfo = {
-      labels: req.body.labels || [],
-      priority: req.body.priority || 'medium',
       phase: req.body.phase || 'backlog',
       role: req.body.role,
     };

@@ -26,6 +26,7 @@ function registryRow(overrides = {}) {
 describe('ProviderService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.PROVIDER_DEFAULT_TEMPERATURE;
     decrypt.mockReturnValue('decrypted-mock-key');
     ProviderService.invalidateProviderCache();
     pool.query.mockResolvedValue({ rows: [] });

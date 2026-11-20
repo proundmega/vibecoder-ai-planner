@@ -1,6 +1,6 @@
 const { pool } = require('../db');
 const { decrypt } = require('../utils/crypto');
-const { resolveProviderEndpoint } = require('../utils/providerDefaults');
+const { resolveProviderEndpoint, defaultTemperature } = require('../utils/providerDefaults');
 
 class ProviderService {
   constructor() {
@@ -144,7 +144,7 @@ class ProviderService {
       model: config.model,
       api_key: decrypt(config.api_key_encrypted),
       max_tokens: config.max_tokens || 4096,
-      temperature: 0.1,
+      temperature: defaultTemperature(),
       is_fallback: false,
     };
   }
