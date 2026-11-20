@@ -56,7 +56,8 @@ function boundedString(value, field, max = 200) {
 class HarnessUsageService {
   async recordUsage({
     runId,
-    agentId,
+    agentId = null,
+    runtimeId = null,
     model,
     promptVersion = null,
     configHash = null,
@@ -68,14 +69,23 @@ class HarnessUsageService {
     durationMs = 0,
   } = {}) {
     const id = requiredUuid(runId, 'runId');
-    const normalisedAgentId = positiveInteger(agentId, 'agentId');
+    const hasAgent = agentId !== null && agentId !== undefined;
+    const hasRuntime = runtimeId !== null && runtimeId !== undefined;
+    if (hasAgent === hasRuntime) {
+      throw new ValidationError('exactly one of agentId or runtimeId is required');
+    }
+    const normalisedAgentId = hasAgent ? positiveInteger(agentId, 'agentId') : null;
+    const normalisedRuntimeId = hasRuntime ? positiveInteger(runtimeId, 'runtimeId') : null;
     const normalisedModel = boundedString(model, 'model', 200);
     if (!normalisedModel) {
       throw new ValidationError('model is required');
     }
 
     const run = await HarnessRunService.getRun(id);
-    if (String(run.agent_id) !== String(normalisedAgentId)) {
+    const ownsRun = normalisedRuntimeId !== null
+      ? String(run.runtime_id) === String(normalisedRuntimeId)
+      : String(run.agent_id) === String(normalisedAgentId);
+    if (!ownsRun) {
       throw new ForbiddenError('Harness run belongs to another agent');
     }
 
@@ -113,10 +123,11 @@ class HarnessUsageService {
 
     const result = await pool.query(
       `INSERT INTO harness_usage
-         (run_id, ticket_id, project_id, agent_id, model, prompt_version,
-          config_hash, routing_reason, input_tokens, output_tokens,
-          cached_tokens, cost_usd, tool_calls, duration_ms, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+         (run_id, ticket_id, project_id, agent_id, runtime_id, model,
+          prompt_version, config_hash, routing_reason, input_tokens,
+          output_tokens, cached_tokens, cost_usd, tool_calls, duration_ms,
+          updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
        ON CONFLICT (run_id, model) WHERE run_id IS NOT NULL DO UPDATE
        SET input_tokens = GREATEST(harness_usage.input_tokens, EXCLUDED.input_tokens),
            output_tokens = GREATEST(harness_usage.output_tokens, EXCLUDED.output_tokens),
@@ -134,6 +145,7 @@ class HarnessUsageService {
         run.ticket_id,
         projectId,
         run.agent_id,
+        run.runtime_id ?? null,
         normalisedModel,
         boundedString(promptVersion, 'promptVersion', 100),
         boundedString(configHash, 'configHash', 128),
@@ -271,10 +283,11 @@ class HarnessUsageService {
     }
     const result = await pool.query(
       `INSERT INTO usage_logs
-         (project_id, agent_id, provider_type, model, tokens_in, tokens_out,
-          cost_usd, duration_ms, ticket_id, request_type, metadata)
-       SELECT u.project_id, u.agent_id, 'harness', u.model, u.input_tokens,
-              u.output_tokens, u.cost_usd, u.duration_ms, u.ticket_id,
+         (project_id, agent_id, runtime_id, provider_type, model, tokens_in,
+          tokens_out, cost_usd, duration_ms, ticket_id, request_type, metadata)
+       SELECT u.project_id, u.agent_id, u.runtime_id, 'harness', u.model,
+              u.input_tokens, u.output_tokens, u.cost_usd, u.duration_ms,
+              u.ticket_id,
               'harness',
               jsonb_build_object('run_id', $1, 'cached_tokens', u.cached_tokens,
                                  'tool_calls', u.tool_calls)

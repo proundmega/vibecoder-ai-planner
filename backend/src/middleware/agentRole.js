@@ -155,6 +155,37 @@ function requireBodyGrant(...roles) {
 }
 
 /**
+ * Require a runtime role plus an active grant on the project of the harness
+ * run named by `:runId`.
+ */
+function requireRunGrant(...roles) {
+  return async (req, res, next) => {
+    if (!checkRuntime(req, res, { roles })) return;
+    if (!isNodeRequest(req)) return next();
+
+    try {
+      const run = await pool.query(
+        'SELECT project_id FROM harness_runs WHERE id = $1',
+        [req.params.runId]
+      );
+      if (run.rows.length === 0) {
+        return deny(res, 404, 'NOT_FOUND', 'Harness run not found');
+      }
+      const projectId = run.rows[0].project_id;
+      if (projectId == null) {
+        return deny(res, 403, 'GRANT_REQUIRED', 'Run project is not available');
+      }
+      if (!(await hasGrant(req.node.id, projectId, req.runtime.role))) {
+        return deny(res, 403, 'GRANT_REQUIRED', 'No active grant for this project/role');
+      }
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  };
+}
+
+/**
  * Require a runtime role plus an active grant on the route's project param.
  */
 function requireProjectGrant(...roles) {
@@ -196,5 +227,6 @@ module.exports = {
   requireTicketGrant,
   requireBodyGrant,
   requireProjectGrant,
+  requireRunGrant,
   requireReviewEventGrant,
 };
