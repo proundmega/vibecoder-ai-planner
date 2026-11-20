@@ -171,6 +171,47 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
     expect(rows.map((row) => row.name)).toEqual(['workers-1', 'workers-2']);
   });
 
+  it('hides runtimes for projects a shared caller cannot access', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ id: 5 }] }) // accessible projects
+      .mockResolvedValueOnce({
+        rows: [
+          { id: 1, node_id: 12, current_project_id: 5 },
+          { id: 2, node_id: 12, current_project_id: 9 },
+          { id: 3, node_id: 12, current_project_id: null },
+        ],
+      });
+
+    const [node] = await AgentNodeService.withRuntimes(
+      [{ id: 12, owner_id: 99 }],
+      { userId: 7, role: 'member' }
+    );
+    expect(node.runtimes.map((runtime) => runtime.id)).toEqual([1]);
+  });
+
+  it('caps the total runtimes created by one declaration', async () => {
+    process.env.AGENT_MAX_RUNTIMES_PER_NODE = '1';
+    const client = mockClient([
+      ['FROM agent_node_grants', { rows: [{ id: 1 }] }],
+      ['INSERT INTO agent_runtimes', { rows: [{ id: 21, name: 'workers-1' }] }],
+    ]);
+    pool.connect.mockResolvedValue(client);
+    jest.spyOn(AgentNodeService, 'resolveModel').mockResolvedValue({
+      id: 8, model: 'm', roles: ['worker'],
+    });
+
+    await expect(
+      AgentNodeService.declareRuntimes(
+        { id: 12, owner_id: 7 },
+        [
+          { role: 'worker', modelRef: 'c/m', projectId: 5, name: 'a' },
+          { role: 'worker', modelRef: 'c/m', projectId: 5, name: 'b' },
+        ]
+      )
+    ).rejects.toMatchObject({ code: 'TOO_MANY_RUNTIMES' });
+    delete process.env.AGENT_MAX_RUNTIMES_PER_NODE;
+  });
+
   it('requires a grant before declaring a runtime project', async () => {
     const client = mockClient([]);
     pool.connect.mockResolvedValue(client);

@@ -339,7 +339,7 @@ class AgentNodeService {
     if (!user) throw fail(401, 'UNAUTHORIZED', 'Authentication required');
     if (user.role === 'super_admin') {
       const all = await pool.query('SELECT * FROM agent_nodes ORDER BY created_at DESC');
-      return this.withRuntimes(all.rows);
+      return this.withRuntimes(all.rows, user);
     }
     const result = await pool.query(
       `SELECT DISTINCT n.*
@@ -356,12 +356,30 @@ class AgentNodeService {
        ORDER BY n.created_at DESC`,
       [user.userId]
     );
-    return this.withRuntimes(result.rows);
+    return this.withRuntimes(result.rows, user);
   }
 
-  async withRuntimes(nodes) {
-    if (nodes.length === 0) return nodes;
+  async withRuntimes(nodes, user) {
+    if (!nodes || nodes.length === 0) return nodes || [];
     const ids = nodes.map((node) => node.id);
+    const fullAccess = Boolean(user && user.role === 'super_admin');
+    const ownedIds = new Set(
+      nodes
+        .filter((node) => user && String(node.owner_id) === String(user.userId))
+        .map((node) => String(node.id))
+    );
+
+    let accessibleProjectIds = new Set();
+    if (!fullAccess && user) {
+      const accessible = await pool.query(
+        `SELECT id FROM projects WHERE owner_id = $1
+         UNION
+         SELECT project_id FROM project_memberships WHERE user_id = $1`,
+        [user.userId]
+      );
+      accessibleProjectIds = new Set(accessible.rows.map((row) => String(row.id)));
+    }
+
     const runtimes = await pool.query(
       `SELECT r.*, pm.model, pm.effort AS model_effort, pc.name AS credential_name
        FROM agent_runtimes r
@@ -371,8 +389,14 @@ class AgentNodeService {
        ORDER BY r.name`,
       [ids]
     );
+
     const byNode = new Map(nodes.map((node) => [String(node.id), []]));
     for (const runtime of runtimes.rows) {
+      const visible = fullAccess
+        || ownedIds.has(String(runtime.node_id))
+        || (runtime.current_project_id != null
+            && accessibleProjectIds.has(String(runtime.current_project_id)));
+      if (!visible) continue;
       const list = byNode.get(String(runtime.node_id));
       if (list) list.push(runtime);
     }
@@ -620,6 +644,8 @@ class AgentNodeService {
     try {
       await db.query('BEGIN');
       const results = [];
+      const maxRuntimes = intEnv('AGENT_MAX_RUNTIMES_PER_NODE', 100);
+      let totalSlots = 0;
       for (const item of items) {
         const role = item.role;
         const projectId = item.projectId != null ? item.projectId : item.project;
@@ -649,6 +675,10 @@ class AgentNodeService {
         const count = item.count == null ? 1 : parseInt(item.count, 10);
         if (!Number.isFinite(count) || count < 1 || count > 100) {
           throw fail(400, 'INVALID_COUNT', 'count must be between 1 and 100');
+        }
+        totalSlots += count;
+        if (totalSlots > maxRuntimes) {
+          throw fail(400, 'TOO_MANY_RUNTIMES', `A declaration may create at most ${maxRuntimes} runtimes`);
         }
         const baseName = item.name || `${role}-${model.model}`;
         for (let index = 1; index <= count; index += 1) {

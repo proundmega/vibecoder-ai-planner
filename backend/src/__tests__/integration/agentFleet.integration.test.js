@@ -143,11 +143,29 @@ describe('agent fleet additive migration on a seeded database (FR16, NFR5, NFR8)
 
     await applyFile(client, ROLLBACK_057);
     expect(await table('agents')).toBeTruthy();
+
     const restored = await client.query(
+      `SELECT
+         (SELECT is_nullable FROM information_schema.columns
+          WHERE table_name = 'harness_runs' AND column_name = 'agent_id') AS runs_nullable,
+         (SELECT is_nullable FROM information_schema.columns
+          WHERE table_name = 'harness_leases' AND column_name = 'agent_id') AS leases_nullable,
+         to_regclass('public.idx_agents_api_key') IS NOT NULL AS agents_index,
+         to_regclass('public.idx_providers_type') IS NOT NULL AS providers_index,
+         to_regprocedure('public.release_agent_tickets_on_delete()') IS NOT NULL AS release_fn`
+    );
+    expect(restored.rows[0]).toEqual({
+      runs_nullable: 'NO',
+      leases_nullable: 'NO',
+      agents_index: true,
+      providers_index: true,
+      release_fn: true,
+    });
+    const ticketColumn = await client.query(
       `SELECT column_name FROM information_schema.columns
        WHERE table_name = 'tickets' AND column_name = 'assigned_agent_id'`
     );
-    expect(restored.rows).toHaveLength(1);
+    expect(ticketColumn.rows).toHaveLength(1);
 
     await applyFile(client, ROLLBACK_056);
     expect(await table('agent_runtimes')).toBeNull();

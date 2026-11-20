@@ -84,6 +84,18 @@ ALTER TABLE agents
   ADD COLUMN IF NOT EXISTS enrollment_token_id BIGINT
     REFERENCES agent_enrollment_tokens(id) ON DELETE SET NULL;
 
+ALTER TABLE agent_enrollment_tokens
+  ADD CONSTRAINT agent_enrollment_tokens_uses_check CHECK (used_count <= max_uses);
+
+CREATE INDEX IF NOT EXISTS idx_agents_api_key ON agents(api_key);
+CREATE INDEX IF NOT EXISTS idx_agents_owner_id ON agents(owner_id);
+CREATE INDEX IF NOT EXISTS idx_agents_provider_id ON agents(provider_id);
+CREATE INDEX IF NOT EXISTS idx_agents_project_id ON agents(project_id);
+CREATE INDEX IF NOT EXISTS idx_providers_type ON providers(provider_type);
+CREATE INDEX IF NOT EXISTS idx_providers_project_id ON providers(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_providers_project_id ON project_providers(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_providers_is_active ON project_providers(is_active);
+
 CREATE TABLE IF NOT EXISTS agent_access_tokens (
   id BIGSERIAL PRIMARY KEY,
   agent_id BIGINT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,

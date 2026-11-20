@@ -28,6 +28,21 @@ async function runMigration(file) {
  * from an earlier branch run. Rebuild it before applying the registered set.
  */
 async function resetIfCleanCutApplied() {
+  const resetAllowed =
+    process.env.NODE_ENV === 'test'
+    || process.env.INTEGRATION_TESTS === '1'
+    || process.env.ALLOW_TEST_DB_RESET === '1';
+  if (!resetAllowed) {
+    const guard = await pool.query(
+      `SELECT EXISTS (SELECT 1 FROM information_schema.columns
+                      WHERE table_name = 'agent_actions' AND column_name = 'agent_id') AS ok`
+    );
+    if (!guard.rows[0].ok) {
+      throw new Error(
+        'Refusing to reset a data-bearing DATABASE_URL; set ALLOW_TEST_DB_RESET=1 for a disposable test database'
+      );
+    }
+  }
   const columns = await pool.query(
     `SELECT
        to_regclass('public.agent_runtimes') IS NOT NULL AS has_runtimes,
