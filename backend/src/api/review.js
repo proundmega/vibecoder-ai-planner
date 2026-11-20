@@ -2,9 +2,12 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { forTicketParam } = require('../middleware/agentProjectScope');
+const { requireRuntime, requireTicketGrant } = require('../middleware/agentRole');
 const ReviewService = require('../services/ReviewService');
 
-router.post('/:ticketId/review/local-diff', verifyTokenOrAgent, forTicketParam(), async (req, res, next) => {
+// The worker publishes the diff it produced; reviewers read PR diffs through
+// GET /tickets/:ticketId/review/diff.
+router.post('/:ticketId/review/local-diff', verifyTokenOrAgent, requireRuntime('running'), forTicketParam(), requireTicketGrant('worker'), async (req, res, next) => {
   try {
     const { files } = req.body;
     if (!Array.isArray(files)) {

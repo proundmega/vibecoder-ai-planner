@@ -371,7 +371,8 @@ class TicketService {
         : await client.query(
           `UPDATE tickets
            SET assigned_agent_id = $1, locked_at = CURRENT_TIMESTAMP, status = 'in_progress'
-           WHERE id = $2 AND status = 'backlog' AND assigned_agent_id IS NULL
+           WHERE id = $2 AND status = 'backlog'
+             AND assigned_agent_id IS NULL AND assigned_runtime_id IS NULL
            RETURNING *`,
           [agentId, ticketId]
         );
@@ -391,49 +392,70 @@ class TicketService {
   }
 
   async releaseTicket(ticketId, { agentId = null, runtimeId = null, operatorId = null, role = null } = {}) {
-    const ticketResult = await pool.query(
-      'SELECT * FROM tickets WHERE id = $1',
-      [ticketId]
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const ticketResult = await client.query(
+        'SELECT * FROM tickets WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+        [ticketId]
+      );
 
-    if (ticketResult.rows.length === 0) {
-      throw new NotFoundError('Ticket not found');
+      if (ticketResult.rows.length === 0) {
+        throw new NotFoundError('Ticket not found');
+      }
+
+      const ticket = ticketResult.rows[0];
+
+      if (!ticket.assigned_agent_id && !ticket.assigned_runtime_id) {
+        throw new ValidationError('Ticket is not assigned to any agent');
+      }
+
+      if (runtimeId !== null) {
+        if (String(ticket.assigned_runtime_id) !== String(runtimeId)) {
+          throw new ForbiddenError('Ticket is assigned to another agent');
+        }
+      } else if (agentId !== null) {
+        // The assigned agent may always release its own ticket, even if its
+        // owner's membership changed after pickup.
+        if (String(ticket.assigned_agent_id) !== String(agentId)) {
+          throw new ForbiddenError('Ticket is assigned to another agent');
+        }
+      } else {
+        if (!operatorId) {
+          throw new ForbiddenError('Operator identity required to release a ticket');
+        }
+        if (!(await this.canActOnTicketProject(ticket, { operatorId, role }))) {
+          throw new ForbiddenError('Unauthorized: not a member of this ticket\'s project');
+        }
+      }
+
+      // The assignment predicate makes the clear conditional on the row still
+      // carrying the assignment we just authorized under the row lock, so a
+      // racing release/pickup cannot clear a newer claim.
+      const result = await client.query(
+        `UPDATE tickets
+         SET assigned_agent_id = NULL, assigned_runtime_id = NULL,
+             locked_at = NULL, status = 'backlog'
+         WHERE id = $1
+           AND (($2::bigint IS NOT NULL AND assigned_runtime_id = $2)
+                OR ($3::bigint IS NOT NULL AND assigned_agent_id = $3)
+                OR ($2::bigint IS NULL AND $3::bigint IS NULL))
+         RETURNING *`,
+        [ticketId, runtimeId, agentId]
+      );
+
+      if (result.rows.length === 0) {
+        throw new ForbiddenError('Ticket assignment changed');
+      }
+
+      await client.query('COMMIT');
+      return result.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const ticket = ticketResult.rows[0];
-
-    if (!ticket.assigned_agent_id && !ticket.assigned_runtime_id) {
-      throw new ValidationError('Ticket is not assigned to any agent');
-    }
-
-    if (runtimeId !== null) {
-      if (String(ticket.assigned_runtime_id) !== String(runtimeId)) {
-        throw new ForbiddenError('Ticket is assigned to another agent');
-      }
-    } else if (agentId !== null) {
-      // The assigned agent may always release its own ticket, even if its
-      // owner's membership changed after pickup.
-      if (String(ticket.assigned_agent_id) !== String(agentId)) {
-        throw new ForbiddenError('Ticket is assigned to another agent');
-      }
-    } else {
-      if (!operatorId) {
-        throw new ForbiddenError('Operator identity required to release a ticket');
-      }
-      if (!(await this.canActOnTicketProject(ticket, { operatorId, role }))) {
-        throw new ForbiddenError('Unauthorized: not a member of this ticket\'s project');
-      }
-    }
-
-    const result = await pool.query(
-      `UPDATE tickets
-       SET assigned_agent_id = NULL, assigned_runtime_id = NULL,
-           locked_at = NULL, status = 'backlog'
-       WHERE id = $1 RETURNING *`,
-      [ticketId]
-    );
-
-    return result.rows[0];
   }
 
   async enforceOwnership(ticketId, agentId) {

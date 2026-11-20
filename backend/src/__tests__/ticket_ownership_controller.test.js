@@ -79,6 +79,40 @@ describe('TicketController - Agent Orchestration', () => {
       });
     });
 
+    test('should pass the runtime id and return the assigned runtime', async () => {
+      TicketService.pickUpTicket.mockResolvedValueOnce({
+        id: 100,
+        title: 'Test Ticket',
+        status: 'in_progress',
+        assigned_agent_id: null,
+        assigned_runtime_id: 3,
+        locked_at: new Date(),
+      });
+
+      req.params.ticketId = '100';
+      req.agent = { id: 3, owner_id: 1, _node: true };
+      req.runtime = { id: 3 };
+
+      await ticketController.pickUpTicket(req, res);
+
+      expect(TicketService.pickUpTicket).toHaveBeenCalledWith('100', {
+        agentId: 3,
+        operatorId: 1,
+        runtimeId: 3,
+      });
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: {
+          id: 100,
+          title: 'Test Ticket',
+          status: 'in_progress',
+          assignedAgentId: null,
+          assignedRuntimeId: 3,
+          lockedAt: expect.any(Date),
+        },
+      });
+    });
+
     test('should reject a JWT request that has no agent identity', async () => {
       req.params.ticketId = '100';
       req.agent = undefined;
@@ -159,6 +193,39 @@ describe('TicketController - Agent Orchestration', () => {
 
       expect(TicketService.releaseTicket).toHaveBeenCalledWith('100', { agentId: 7 });
       expect(PermissionService.hasPermission).not.toHaveBeenCalled();
+    });
+
+    test('should release as the assigned runtime and return the assigned runtime', async () => {
+      TicketService.releaseTicket.mockResolvedValueOnce({
+        id: 100,
+        title: 'Test Ticket',
+        status: 'backlog',
+        assigned_agent_id: null,
+        assigned_runtime_id: null,
+        locked_at: null,
+      });
+
+      req.params.ticketId = '100';
+      req.agent = { id: 3, owner_id: 1, _node: true };
+      req.runtime = { id: 3 };
+
+      await ticketController.releaseTicket(req, res);
+
+      expect(TicketService.releaseTicket).toHaveBeenCalledWith('100', {
+        agentId: 3,
+        runtimeId: 3,
+      });
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: {
+          id: 100,
+          title: 'Test Ticket',
+          status: 'backlog',
+          assignedAgentId: null,
+          assignedRuntimeId: null,
+          lockedAt: null,
+        },
+      });
     });
 
     test('should reject a JWT caller without PROJECT_UPDATE', async () => {

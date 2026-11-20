@@ -4,6 +4,8 @@ const { requireAnyPermission } = require('../middleware/permissions');
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { validate, validatePathParams } = require('../middleware/validate');
 const { requireRuntime, requireTicketGrant } = require('../middleware/agentRole');
+const LIVE_RUNTIME = 'running';
+const RELEASABLE_RUNTIME = ['running', 'draining'];
 const { forBodyProject, forProjectParam, forTicketParam } = require('../middleware/agentProjectScope');
 const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema, postMessageSchema } = require('../validators/tickets');
 const { statusFilterSchema } = require('../validators/statusFilter');
@@ -220,7 +222,7 @@ router.post('/:ticketId/status', verifyTokenOrAgent, forTicketParam(), requireAn
  *               $ref: '#/components/schemas/Error'
  */
 // Bodyless route - agent picks up ticket without request body
-router.post('/:ticketId/pickup', verifyTokenOrAgent, requireRuntime, forTicketParam(), requireTicketGrant('worker'), validatePathParams({ ticketId: pathParams.ticketId }), ticketController.pickUpTicket);
+router.post('/:ticketId/pickup', verifyTokenOrAgent, requireRuntime(LIVE_RUNTIME), forTicketParam(), requireTicketGrant('worker'), validatePathParams({ ticketId: pathParams.ticketId }), ticketController.pickUpTicket);
 
 /**
  * @openapi
@@ -238,7 +240,7 @@ router.post('/:ticketId/pickup', verifyTokenOrAgent, requireRuntime, forTicketPa
  *         description: Ticket released
  */
 // Bodyless route - agent releases ticket without request body
-router.post('/:ticketId/release', verifyTokenOrAgent, requireRuntime, forTicketParam(), requireTicketGrant('worker'), validatePathParams({ ticketId: pathParams.ticketId }), ticketController.releaseTicket);
+router.post('/:ticketId/release', verifyTokenOrAgent, requireRuntime(...RELEASABLE_RUNTIME), forTicketParam(), requireTicketGrant('worker'), validatePathParams({ ticketId: pathParams.ticketId }), ticketController.releaseTicket);
 
 /**
  * @openapi
@@ -466,7 +468,7 @@ router.post('/:ticketId/phases/transition', verifyTokenOrAgent, forTicketParam()
  *       404:
  *         description: Ticket not found
  */
-router.get('/:ticketId/review/diff', verifyTokenOrAgent, forTicketParam(), validatePathParams({ ticketId: pathParams.ticketId }), async (req, res, next) => {
+router.get('/:ticketId/review/diff', verifyTokenOrAgent, requireRuntime(LIVE_RUNTIME), forTicketParam(), requireTicketGrant('reviewer'), validatePathParams({ ticketId: pathParams.ticketId }), async (req, res, next) => {
   try {
     const ticket = await pool.query('SELECT project_id, pr_url FROM tickets WHERE id = $1', [req.params.ticketId]);
     if (ticket.rows.length === 0) {

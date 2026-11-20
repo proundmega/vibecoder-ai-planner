@@ -205,6 +205,23 @@ exports.requireActiveUser = async (req, res, next) => {
   }
 };
 
+/**
+ * A node credential authenticates the host; every node call must name the
+ * child runtime it acts for. Rejecting runtime-less node tokens here keeps a
+ * host token from falling back to the legacy unscoped agent path.
+ */
+function requireNodeRuntime(agent, res) {
+  if (!agent._node || agent._runtime) return true;
+  res.status(400).json({
+    success: false,
+    error: {
+      code: 'RUNTIME_REQUIRED',
+      message: 'X-Agent-Runtime header is required for node credentials',
+    },
+  });
+  return false;
+}
+
 function agentAuthFailure(agent) {
   const isAccessToken = agent._tokenKind === 'access';
   if (agent._revoked) {
@@ -272,7 +289,11 @@ async function authenticateAgentByApiKey(apiKey, { mock = true, runtimeId = null
     }
     if (result.status === 'expired') {
       authFailureCounter.inc({ reason: 'expired' });
-      return { _tokenKind: 'access', _expired: true };
+      return {
+        _tokenKind: 'access',
+        _expired: true,
+        api_key_expires_at: result.expiresAt || null,
+      };
     }
     if (result.status === 'revoked') {
       authFailureCounter.inc({ reason: 'revoked' });
@@ -307,6 +328,24 @@ async function authenticateAgentByApiKey(apiKey, { mock = true, runtimeId = null
 exports.authenticateAgentByApiKey = authenticateAgentByApiKey;
 exports.agentAuthFailure = agentAuthFailure;
 
+/**
+ * Legacy `/agents/*` routes have no project scope. Node credentials use the
+ * dedicated `/agent-nodes/*` surface instead, so fail closed here rather than
+ * letting a host token fall through the old agent authorization path.
+ */
+exports.rejectNodeCredentials = (req, res, next) => {
+  if (req.agent && req.agent._node) {
+    return res.status(403).json({
+      success: false,
+      error: {
+        code: 'FORBIDDEN',
+        message: 'Node credentials cannot access legacy agent endpoints',
+      },
+    });
+  }
+  return next();
+};
+
 exports.agentAuth = async (req, res, next) => {
   try {
     const apiKey = req.headers['x-api-key'];
@@ -325,6 +364,8 @@ exports.agentAuth = async (req, res, next) => {
     if (agent._expired || agent._revoked) {
       return res.status(401).json({ success: false, error: agentAuthFailure(agent) });
     }
+
+    if (!requireNodeRuntime(agent, res)) return;
 
     req.agent = agent;
     if (agent._node) {
@@ -363,6 +404,8 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
     if (agent._expired || agent._revoked) {
       return res.status(401).json({ success: false, error: agentAuthFailure(agent) });
     }
+
+    if (!requireNodeRuntime(agent, res)) return;
 
     req.agent = agent;
     if (agent._node) {

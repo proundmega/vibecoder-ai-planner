@@ -12,6 +12,7 @@ const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { forRunParam, forHarnessEventBody } = require('../middleware/agentProjectScope');
+const { requireRuntime, requireReviewEventGrant } = require('../middleware/agentRole');
 const {
   ForbiddenError,
   NotFoundError,
@@ -144,7 +145,7 @@ function projectIdParam(value) {
  *       201:
  *         description: Event stored (or an existing idempotent duplicate)
  */
-router.post('/events', verifyTokenOrAgent, forHarnessEventBody(), async (req, res, next) => {
+router.post('/events', verifyTokenOrAgent, requireRuntime('running'), forHarnessEventBody(), requireReviewEventGrant(), async (req, res, next) => {
   try {
     const agentId = requireAgent(req);
     const body = req.body || {};

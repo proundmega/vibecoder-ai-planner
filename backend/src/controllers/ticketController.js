@@ -173,6 +173,7 @@ async function pickUpTicket(req, res, next) {
         title: result.title,
         status: result.status,
         assignedAgentId: result.assigned_agent_id,
+        assignedRuntimeId: result.assigned_runtime_id,
         lockedAt: result.locked_at,
       },
     });
@@ -196,6 +197,7 @@ async function releaseTicket(req, res, next) {
           title: result.title,
           status: result.status,
           assignedAgentId: result.assigned_agent_id,
+          assignedRuntimeId: result.assigned_runtime_id,
           lockedAt: result.locked_at,
         },
       });
@@ -225,6 +227,7 @@ async function releaseTicket(req, res, next) {
         title: result.title,
         status: result.status,
         assignedAgentId: result.assigned_agent_id,
+        assignedRuntimeId: result.assigned_runtime_id,
         lockedAt: result.locked_at,
       },
     });
