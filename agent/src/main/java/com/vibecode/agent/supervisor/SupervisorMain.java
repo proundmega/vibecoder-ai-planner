@@ -101,10 +101,18 @@ public final class SupervisorMain {
                     return;
                 }
                 java.util.Map<String, Long> ids = supervisor.runtimeIdsSnapshot();
-                java.util.Set<String> suspended = suspendedSections(config, ids);
+                // Admin stop/drain and revoked grants come from the config.
+                // Keep previously denied sections suspended too, so an
+                // all-denied host does not spawn id-less children between
+                // declaration attempts.
+                java.util.Set<String> configSuspended = suspendedSections(config, ids);
+                java.util.Set<String> suspended = mergeSuspendedSections(
+                    supervisor.suspendedSectionsSnapshot(), configSuspended, ids);
                 DeclarationResult declaration = null;
                 if (tick.incrementAndGet() % 4 == 0) {
-                    declaration = declareWithRetry(api, desiredRef.get(), 1, suspended);
+                    // Only admin-suspended sections are skipped; a denied or
+                    // unresolved section is retried so a re-grant recovers it.
+                    declaration = declareWithRetry(api, desiredRef.get(), 1, configSuspended);
                     Map<String, Long> merged = new java.util.LinkedHashMap<>(ids);
                     merged.putAll(declaration.runtimeIds());
                     for (String section : declaration.suspendedSections()) {
@@ -114,6 +122,11 @@ public final class SupervisorMain {
                         supervisor.updateRuntimeIds(merged);
                     }
                     suspended.addAll(declaration.suspendedSections());
+                    for (String section : declaration.runtimeIds().keySet()) {
+                        if (!configSuspended.contains(section)) {
+                            suspended.remove(section);
+                        }
+                    }
                     for (String section : declaration.unresolvedSections()) {
                         if (!merged.containsKey(section)) {
                             suspended.add(section);
@@ -334,6 +347,28 @@ public final class SupervisorMain {
             log.warn("Every runtime section is suspended; supervisor will idle and retry");
         }
         return result;
+    }
+
+    /**
+     * Carry a denied/unresolved section's suspension forward while it has no
+     * runtime id, and release it once the server reports it healthy again.
+     */
+    static java.util.Set<String> mergeSuspendedSections(
+        java.util.Set<String> previous,
+        java.util.Set<String> configSuspended,
+        Map<String, Long> runtimeIds
+    ) {
+        java.util.Set<String> suspended = new java.util.LinkedHashSet<>();
+        if (previous != null) suspended.addAll(previous);
+        if (configSuspended != null) suspended.addAll(configSuspended);
+        if (runtimeIds != null) {
+            for (String section : runtimeIds.keySet()) {
+                if (configSuspended == null || !configSuspended.contains(section)) {
+                    suspended.remove(section);
+                }
+            }
+        }
+        return suspended;
     }
 
     /**

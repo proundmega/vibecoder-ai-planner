@@ -183,6 +183,22 @@ class SupervisorMainTest {
     }
 
     @Test
+    void deniedSectionsStaySuspendedUntilTheyGetARuntimeId() {
+        assertEquals(java.util.Set.of("workers"), SupervisorMain.mergeSuspendedSections(
+            java.util.Set.of("workers"), java.util.Set.of(), Map.of()),
+            "a denied section with no id stays suspended between attempts");
+        assertEquals(java.util.Set.of("workers", "reviewers"),
+            SupervisorMain.mergeSuspendedSections(
+                java.util.Set.of("workers"), java.util.Set.of("reviewers"), Map.of()));
+        assertTrue(SupervisorMain.mergeSuspendedSections(
+            java.util.Set.of("workers"), java.util.Set.of(), Map.of("workers", 1L)).isEmpty(),
+            "a successfully declared section resumes");
+        assertEquals(java.util.Set.of("workers"), SupervisorMain.mergeSuspendedSections(
+            java.util.Set.of("workers"), java.util.Set.of("workers"), Map.of("workers", 1L)),
+            "an admin-stopped section with an id stays suspended");
+    }
+
+    @Test
     void nodeAuthFailureDuringDeclarationIsTerminal() throws Exception {
         com.vibecode.agent.service.RuntimeApi api = mock(com.vibecode.agent.service.RuntimeApi.class);
         when(api.declareRuntimes(anyList())).thenThrow(
