@@ -79,6 +79,7 @@ public final class SupervisorMain {
         java.util.Set<String> initiallySuspended = new java.util.LinkedHashSet<>(declared.suspendedSections());
         initiallySuspended.addAll(declared.unresolvedSections());
         supervisor.updateSuspendedSections(initiallySuspended);
+        supervisor.updateHardSuspendedSections(bootSuspended);
         supervisor.reconcile();
         log.info("Supervisor reconciled: desired={} running={}",
             desired.runtimes().size(),
@@ -106,13 +107,15 @@ public final class SupervisorMain {
                 // all-denied host does not spawn id-less children between
                 // declaration attempts.
                 java.util.Set<String> configSuspended = suspendedSections(config, ids);
+                java.util.Set<String> hardSuspended = hardSuspendedSections(config, ids);
                 java.util.Set<String> suspended = mergeSuspendedSections(
                     supervisor.suspendedSectionsSnapshot(), configSuspended, ids);
                 DeclarationResult declaration = null;
                 if (tick.incrementAndGet() % 4 == 0) {
-                    // Only admin-suspended sections are skipped; a denied or
-                    // unresolved section is retried so a re-grant recovers it.
-                    declaration = declareWithRetry(api, desiredRef.get(), 1, configSuspended);
+                    // Only hard-suspended sections are skipped; a denied or
+                    // unresolved section is retried so a re-grant or a
+                    // repointed project can recover it.
+                    declaration = declareWithRetry(api, desiredRef.get(), 1, hardSuspended);
                     Map<String, Long> merged = new java.util.LinkedHashMap<>(ids);
                     merged.putAll(declaration.runtimeIds());
                     for (String section : declaration.suspendedSections()) {
@@ -123,7 +126,7 @@ public final class SupervisorMain {
                     }
                     suspended.addAll(declaration.suspendedSections());
                     for (String section : declaration.runtimeIds().keySet()) {
-                        if (!configSuspended.contains(section)) {
+                        if (!hardSuspended.contains(section)) {
                             suspended.remove(section);
                         }
                     }
@@ -134,6 +137,7 @@ public final class SupervisorMain {
                     }
                 }
                 supervisor.updateSuspendedSections(suspended);
+                supervisor.updateHardSuspendedSections(hardSuspended);
                 for (String section : ids.keySet()) {
                     if (!suspended.contains(section)) {
                         // An admin restart (running/pending) clears a child's
@@ -372,9 +376,10 @@ public final class SupervisorMain {
     }
 
     /**
-     * Sections that must not be declared at boot: stopped/draining rows or a
-     * runtime whose project grant no longer matches. Unknown ini sections are
-     * declared normally so a new section still gets its server row.
+     * Sections that must not be declared at boot: stopped/draining rows. A
+     * revoked grant is not hard-suspended, so a repointed section can declare
+     * against its new project without the old grant being restored. Unknown
+     * ini sections are declared normally so a new section still gets a row.
      */
     static java.util.Set<String> bootSuspendedSections(RuntimeConfig config,
                                                        Map<String, Object> nodeConfig) {
@@ -383,7 +388,7 @@ public final class SupervisorMain {
         for (RuntimeConfig.DeclaredRuntime runtime : config.runtimes()) {
             known.add(runtime.name());
         }
-        java.util.Set<String> suspended = suspendedSections(nodeConfig, null);
+        java.util.Set<String> suspended = hardSuspendedSections(nodeConfig, null);
         suspended.retainAll(known);
         return suspended;
     }
@@ -404,7 +409,7 @@ public final class SupervisorMain {
             RuntimeConfig reloaded = RuntimeConfig.parse(path);
             validateDeclaration(reloaded);
             DeclarationResult declared = declareWithRetry(
-                api, reloaded, 3, supervisor.suspendedSectionsSnapshot());
+                api, reloaded, 3, supervisor.hardSuspendedSectionsSnapshot());
             if (declared.terminal()) {
                 log.error("SIGHUP reload rejected: node auth failed; keeping the current fleet");
                 return null;
@@ -453,11 +458,24 @@ public final class SupervisorMain {
             || message.contains("TOKEN_EXPIRED");
     }
 
+    /**
+     * Per-section suspension. {@code hard} sections (admin stop/drain or a row
+     * removed from the node config) are skipped on re-declaration; soft
+     * sections (revoked grant) are retried so repointing {@code project} in
+     * {@code agent.ini} can recover without restoring the old grant.
+     */
+    record SectionStates(
+        java.util.Set<String> suspended,
+        java.util.Set<String> hardSuspended
+    ) {
+    }
+
     @SuppressWarnings("unchecked")
-    static java.util.Set<String> suspendedSections(Map<String, Object> config,
-                                                  Map<String, Long> runtimeIds) {
+    static SectionStates sectionStates(Map<String, Object> config,
+                                       Map<String, Long> runtimeIds) {
         java.util.Set<String> suspended = new java.util.LinkedHashSet<>();
-        if (config == null) return suspended;
+        java.util.Set<String> hard = new java.util.LinkedHashSet<>();
+        if (config == null) return new SectionStates(suspended, hard);
         Map<Long, String> sectionById = new java.util.LinkedHashMap<>();
         if (runtimeIds != null) {
             runtimeIds.forEach((section, id) -> {
@@ -479,7 +497,7 @@ public final class SupervisorMain {
         Object runtimes = config.get("runtimes");
         if (runtimes == null) runtimes = config.get("data");
         if (runtimes instanceof Map<?, ?> map) runtimes = map.get("runtimes");
-        if (!(runtimes instanceof List<?> list)) return suspended;
+        if (!(runtimes instanceof List<?> list)) return new SectionStates(suspended, hard);
 
         java.util.Set<String> seenSections = new java.util.LinkedHashSet<>();
         for (Object item : list) {
@@ -497,6 +515,7 @@ public final class SupervisorMain {
 
             if ("stopped".equalsIgnoreCase(status) || "draining".equalsIgnoreCase(status)) {
                 suspended.add(section);
+                hard.add(section);
                 continue;
             }
             String project = stringValue(runtime.get("current_project_id"));
@@ -504,7 +523,8 @@ public final class SupervisorMain {
             if (project != null && role != null
                     && !activeGrants.contains(project + ":" + role)) {
                 // Grant revoked or narrowed: stop this section instead of
-                // letting the child heartbeat 403 and loop.
+                // letting the child heartbeat 403 and loop. Keep it soft so a
+                // repointed section can declare again.
                 suspended.add(section);
             }
         }
@@ -514,10 +534,21 @@ public final class SupervisorMain {
             for (String section : runtimeIds.keySet()) {
                 if (!seenSections.contains(section)) {
                     suspended.add(section);
+                    hard.add(section);
                 }
             }
         }
-        return suspended;
+        return new SectionStates(suspended, hard);
+    }
+
+    static java.util.Set<String> suspendedSections(Map<String, Object> config,
+                                                   Map<String, Long> runtimeIds) {
+        return sectionStates(config, runtimeIds).suspended();
+    }
+
+    static java.util.Set<String> hardSuspendedSections(Map<String, Object> config,
+                                                       Map<String, Long> runtimeIds) {
+        return sectionStates(config, runtimeIds).hardSuspended();
     }
 
     static String stripRuntimeSuffix(String name) {

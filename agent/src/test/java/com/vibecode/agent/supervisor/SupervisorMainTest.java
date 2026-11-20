@@ -183,6 +183,27 @@ class SupervisorMainTest {
     }
 
     @Test
+    void aGrantDeniedSectionCanBeRepointedWithoutRestoringTheOldGrant() {
+        // The old row still points at project 7, but the ini now declares
+        // project 8. A hard skip would pin the section to the revoked project.
+        java.util.Set<String> hard = SupervisorMain.hardSuspendedSections(Map.of(
+            "runtimes", List.of(Map.of(
+                "id", 1, "name", "workers-1", "status", "running",
+                "role", "worker", "current_project_id", 7)),
+            "grants", List.of(Map.of("project_id", 8, "role", "worker"))),
+            Map.of("workers", 1L));
+
+        assertTrue(hard.isEmpty());
+        assertEquals(java.util.Set.of(),
+            SupervisorMain.bootSuspendedSections(config(), Map.of(
+                "runtimes", List.of(Map.of(
+                    "name", "workers-1", "status", "running",
+                    "role", "worker", "current_project_id", 7)),
+                "grants", List.of(Map.of("project_id", 8, "role", "worker")))),
+            "boot must attempt the repointed declaration");
+    }
+
+    @Test
     void deniedSectionsStaySuspendedUntilTheyGetARuntimeId() {
         assertEquals(java.util.Set.of("workers"), SupervisorMain.mergeSuspendedSections(
             java.util.Set.of("workers"), java.util.Set.of(), Map.of()),
@@ -226,6 +247,21 @@ class SupervisorMainTest {
             Map.of("workers", 1L));
         assertEquals(java.util.Set.of("workers"), revokedGrant,
             "a runtime for a revoked grant is suspended");
+        assertTrue(SupervisorMain.hardSuspendedSections(Map.of(
+            "runtimes", List.of(Map.of(
+                "id", 1, "name", "workers-1", "status", "running",
+                "role", "worker", "current_project_id", 7)),
+            "grants", List.of(Map.of("project_id", 8, "role", "worker"))),
+            Map.of("workers", 1L)).isEmpty(),
+            "a revoked grant is soft: a repointed section may declare again");
+        assertEquals(java.util.Set.of("workers", "reviewers"),
+            SupervisorMain.hardSuspendedSections(Map.of(
+                "runtimes", List.of(
+                    Map.of("name", "workers-1", "status", "stopped"),
+                    Map.of("name", "reviewers-1", "status", "draining")),
+                "grants", List.of()),
+                Map.of("workers", 1L, "reviewers", 2L)),
+            "admin stops are hard-suspended");
 
         java.util.Set<String> missingRuntime = SupervisorMain.suspendedSections(Map.of(
             "runtimes", List.of(),

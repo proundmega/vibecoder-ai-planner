@@ -65,6 +65,7 @@ public final class Supervisor implements AutoCloseable {
     private final ChildLauncher launcher;
     private volatile Map<String, Long> runtimeIds;
     private volatile java.util.Set<String> suspendedSections = java.util.Set.of();
+    private volatile java.util.Set<String> hardSuspendedSections = java.util.Set.of();
     private final Duration stopTimeout;
     private final Duration pollInterval;
     private final Object lock = new Object();
@@ -234,6 +235,22 @@ public final class Supervisor implements AutoCloseable {
         synchronized (lock) {
             this.suspendedSections = sections == null ? java.util.Set.of() : java.util.Set.copyOf(sections);
         }
+    }
+
+    /**
+     * Sections that are skipped on re-declaration (admin stop/drain or a
+     * removed runtime row), as opposed to soft grant-denied sections.
+     */
+    public void updateHardSuspendedSections(java.util.Set<String> sections) {
+        synchronized (lock) {
+            this.hardSuspendedSections = sections == null
+                ? java.util.Set.of() : java.util.Set.copyOf(sections);
+        }
+    }
+
+    /** Snapshot of the sections skipped on re-declaration. */
+    public java.util.Set<String> hardSuspendedSectionsSnapshot() {
+        return hardSuspendedSections;
     }
 
     private List<RuntimeConfig.RuntimeSlot> activeSlots(RuntimeConfig desired) {
