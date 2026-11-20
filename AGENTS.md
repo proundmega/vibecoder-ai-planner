@@ -9,12 +9,13 @@ Read highest-value sources first: `README*`, root manifests, workspace config, l
 ## Quick Start
 
 ```bash
-docker compose up --build                        # dev: frontend :3000, API :3001, PG :5432
-docker compose -f docker-compose.yml up --build  # prod-style: frontend :3002, API :3001
+cp .env.example .env.local   # root env is gitignored; never commit secrets
+docker compose --env-file .env.local up --build                        # dev: frontend :3000, API :3001, PG :5432
+docker compose --env-file .env.local -f docker-compose.yml up --build  # prod-style: frontend :3002, API :3001
 
 # Fresh checkout: install Node 24 (via nvm), deps and the Cypress binary
 bash scripts/bootstrap-local.sh
-# PR-equivalent checks: lint, typecheck, unit tests, coverage, build, agent tests
+# Local PR checks (not Docker integration, Cypress, agent image or sandbox)
 bash scripts/verify-local.sh
 
 # Manual dev (requires Node 24 LTS):
@@ -23,7 +24,7 @@ cd backend && npm run dev          # API :3001, uses `node --watch`
 cd ../frontend && npm run dev      # Vite :3000, proxies /api → :3001
 ```
 
-`.env` (root) requires: `POSTGRES_PASSWORD`, `JWT_SECRET`, `PGADMIN_PASSWORD`, `ENCRYPTION_KEY`.
+`.env.local` (root, copied from `.env.example`) requires: `POSTGRES_PASSWORD`, `JWT_SECRET`, `PGADMIN_PASSWORD`, `ENCRYPTION_KEY`. `.env` and `.env.local` are gitignored.
 
 ## Structure
 
@@ -100,7 +101,7 @@ docker compose down -v           # stop and remove volumes
 - **File upload tests** (`file_upload.test.sh`) are skipped in CI (`CI=1` env var). Run locally with `CI=` (unset).
 
 ### Frontend (Vitest + Cypress)
-- 60 unit test files in `src/__tests__/`. `setupFiles: src/__tests__/setup.ts` loads design-tokens.css variables into DOM for tests.
+- 74 unit test files in `src/__tests__/`. `setupFiles: src/__tests__/setup.ts` loads design-tokens.css variables into DOM for tests.
 - 7 Cypress e2e specs + 7 component specs in `cypress/`. Seed data is created through `cy.seed()` in `cypress/support/commands.ts`.
 - Contract test: `src/__tests__/api-contract.test.ts` — verified in CI.
 - Coverage excludes many views/components intentionally listed in `vitest.config.ts`.

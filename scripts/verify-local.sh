@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Run the same Node/Java checks that gate a pull request in Jenkins.
+# Run the local Node/Java checks used before a pull request.
 #
-# Usage: bash scripts/verify-local.sh [--quick] [--coverage]
+# This is not the full Jenkins pipeline: it does not run Docker integration,
+# Cypress e2e/component tests, agent packaging/image builds or sandbox checks.
+#
+# Usage: bash scripts/verify-local.sh [--quick | --coverage]
 #   --quick     skip coverage and the Java agent tests
-#   --coverage  also enforce the 60% coverage thresholds (implied unless --quick)
+#   --coverage  enforce the 60% coverage thresholds (implied unless --quick)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,12 +14,15 @@ cd "$ROOT"
 
 QUICK=0
 COVERAGE=1
+COVERAGE_SET=0
 for arg in "$@"; do
   case "$arg" in
     --quick) QUICK=1; COVERAGE=0 ;;
-    --coverage) COVERAGE=1 ;;
+    --coverage) COVERAGE=1; COVERAGE_SET=1 ;;
     -h|--help)
-      echo "Usage: $0 [--quick] [--coverage]"
+      echo "Usage: $0 [--quick | --coverage]"
+      echo "  --quick     skip coverage and the Java agent tests"
+      echo "  --coverage  enforce coverage (implied unless --quick)"
       exit 0
       ;;
     *)
@@ -25,6 +31,11 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [ "$QUICK" -eq 1 ] && [ "$COVERAGE_SET" -eq 1 ]; then
+  echo "error: --quick and --coverage are mutually exclusive" >&2
+  exit 2
+fi
 
 NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 if [ -s "$NVM_DIR/nvm.sh" ]; then
@@ -49,14 +60,18 @@ fi
 
 EXPECTED_NODE="$(tr -d '[:space:]' < .nvmrc)"
 ACTUAL_NODE="$(node -p 'process.versions.node')"
-case "$ACTUAL_NODE" in
-  "$EXPECTED_NODE".*) ;;
-  *)
-    echo "Node $ACTUAL_NODE is active; .nvmrc requires $EXPECTED_NODE.x" >&2
-    echo "Run 'nvm use' (or scripts/bootstrap-local.sh) first." >&2
-    exit 1
-    ;;
-esac
+if [[ "$EXPECTED_NODE" == *.*.* ]]; then
+  NODE_MATCH=0
+  [ "$ACTUAL_NODE" = "$EXPECTED_NODE" ] && NODE_MATCH=1
+else
+  NODE_MATCH=0
+  [[ "$ACTUAL_NODE" == "$EXPECTED_NODE".* ]] && NODE_MATCH=1
+fi
+if [ "$NODE_MATCH" -eq 0 ]; then
+  echo "Node $ACTUAL_NODE is active; .nvmrc requires $EXPECTED_NODE" >&2
+  echo "Run 'nvm use' (or scripts/bootstrap-local.sh) first." >&2
+  exit 1
+fi
 
 step() {
   echo
@@ -114,4 +129,5 @@ if [ "$QUICK" -eq 0 ]; then
 fi
 
 echo
-echo "Local verification passed."
+echo "Local verification passed (Node/Java checks only)."
+echo "Not covered: Docker integration, Cypress e2e/component, agent packaging/image, sandbox checks."

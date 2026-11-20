@@ -11,6 +11,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+NVM_VERSION="v0.40.3"
+NVM_INSTALL_SHA256="2d8359a64a3cb07c02389ad88ceecd43f2fa469c06104f92f98df5b6f315275f"
 NODE_VERSION="$(tr -d '[:space:]' < .nvmrc)"
 SKIP_CYPRESS=0
 for arg in "$@"; do
@@ -28,12 +30,26 @@ for arg in "$@"; do
 done
 
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-  echo "==> Installing nvm into $NVM_DIR"
+  for tool in curl git sha256sum; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      echo "error: $tool is required to install nvm" >&2
+      echo "Install it with your package manager, then re-run this script." >&2
+      exit 1
+    fi
+  done
+
+  echo "==> Installing nvm $NVM_VERSION into $NVM_DIR"
   mkdir -p "$NVM_DIR"
   curl -sSL --fail --max-time 120 \
-    https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh \
+    "https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh" \
     -o "$NVM_DIR/install.sh"
-  bash "$NVM_DIR/install.sh"
+  if ! echo "$NVM_INSTALL_SHA256  $NVM_DIR/install.sh" | sha256sum -c - >/dev/null 2>&1; then
+    echo "error: nvm install.sh checksum did not match" >&2
+    rm -f "$NVM_DIR/install.sh"
+    exit 1
+  fi
+  NVM_INSTALL_VERSION="$NVM_VERSION" bash "$NVM_DIR/install.sh"
+  rm -f "$NVM_DIR/install.sh"
 fi
 
 # shellcheck disable=SC1091
@@ -94,6 +110,22 @@ fi
 
 if ! command -v Xvfb >/dev/null 2>&1; then
   echo "xvfb:    not installed; run Cypress locally via Docker or install xvfb"
+fi
+
+CHROME_BIN_FOUND="${CHROME_BIN:-}"
+if [ -z "$CHROME_BIN_FOUND" ]; then
+  for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      CHROME_BIN_FOUND="$(command -v "$candidate")"
+      break
+    fi
+  done
+fi
+if [ -n "$CHROME_BIN_FOUND" ]; then
+  echo "chrome:  $CHROME_BIN_FOUND"
+else
+  echo "chrome:  not installed; Cypress needs Chrome/Chromium and Xvfb locally"
+  echo "         (or run Cypress in the Docker image)"
 fi
 
 echo
