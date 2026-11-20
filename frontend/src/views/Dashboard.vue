@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { fetchProjects } from '@/api/projects'
 import { getUserUsage, getModelPricing, getProjectUsage } from '@/api/usage'
-import { fetchAgentStatusList } from '@/api/agents'
+import { listAgentNodes } from '@/api/agentNodes'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -28,13 +28,13 @@ let agentPollInterval = null
 
 async function loadAgentSummary() {
   try {
-    const agents = await fetchAgentStatusList()
-    if (Array.isArray(agents)) {
+    const nodes = await listAgentNodes()
+    if (Array.isArray(nodes)) {
       agentSummary.value = {
-        online: agents.filter((a) => a.status === 'online').length,
-        idle: agents.filter((a) => a.status === 'idle').length,
-        offline: agents.filter((a) => a.status === 'offline').length,
-        total: agents.length,
+        online: nodes.filter((n) => n.status === 'active').length,
+        idle: nodes.filter((n) => n.status === 'draining').length,
+        offline: nodes.filter((n) => n.status === 'revoked').length,
+        total: nodes.length,
       }
     }
   } catch {

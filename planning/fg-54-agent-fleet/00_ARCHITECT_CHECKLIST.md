@@ -1,14 +1,14 @@
 ---
 id: "fg-54"
 title: "Agent Fleet: Nodes, Model Registry and Enforced Roles"
-status: planned
+status: in_review
 priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-11-19"
-updated: "2026-11-19"
-pr: null
-branch: null
+updated: "2026-11-20"
+pr: 179
+branch: feat/fg-54b-runtime-ui
 depends_on: ["fg-53"]
 ---
 
@@ -71,9 +71,11 @@ long-running agent role.
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Plan merged | PR #177 (open — not merged yet) | ☐ |
+| Plan merged | PR #177 (merged) | ☑ |
+| Control plane merged | PR #178 merged; registry #180, visibility #181, claim/release #182 and runtime-owned harness runs/leases/usage #183 merged | ☑ |
+| Runtime/UI implementation | PR #179 (draft; rebased on master; joint gate pending) | ☐ |
 | Implementation merged | pending | ☐ |
-| Verification results | n/a — not started | ☐ |
+| Verification results | Partial Track B evidence in `03` → Results; joint gate pending | ☐ |
 
 A merged planning PR is **plan merged**, not `done`. Set `status: done` only
 after the implementation PR is merged and `03` has a dated Results row.
@@ -97,6 +99,7 @@ after the implementation PR is merged and `03` has a dated Results row.
 | D13 | Fleet dashboards and alerts (node down, runtime crash-loop, model verification failures) | fg-41 | Observability | fg-41 | open |
 | D14 | Organization/tenant-scoped credentials and grants above the project level | self | Authorization | none | open |
 | D15 | Planner runtimes with their own planning-template authoring loop (fg-40 handoffs) | fg-40 | Product | fg-40 | open |
+| D16 | Let an in-flight run finish, publish and log usage while its runtime is `draining`; #183 currently requires `running` on those routes | #183 review | Operations | Track A follow-up | open |
 
 ## Decisions needed from the user
 

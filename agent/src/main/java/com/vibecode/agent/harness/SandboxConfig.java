@@ -118,7 +118,7 @@ public record SandboxConfig(
         String sandboxImage = value(env, "SANDBOX_IMAGE", DEFAULT_IMAGE);
         String owner = firstNonBlank(
             value(env, "SANDBOX_OWNER", ""),
-            value(env, "AGENT_ID", ""));
+            value(env, "AGENT_RUNTIME_ID", ""));
         boolean poolAgent = booleanValue(env, "SANDBOX_POOL_AGENT", false);
         String daemonId = value(env, "SANDBOX_DAEMON_ID", "");
         List<String> originCaHosts = parseOriginCaHosts(
@@ -246,12 +246,12 @@ public record SandboxConfig(
         if (artifactMaxBytes <= 0) {
             throw new IllegalStateException("SANDBOX_ARTIFACT_MAX_BYTES must be positive");
         }
-        // SANDBOX_OWNER (or AGENT_ID when unset) is only used for Docker
+        // SANDBOX_OWNER (or AGENT_RUNTIME_ID when unset) is only used for Docker
         // owner labels/reaping. Host mode keeps accepting legacy values.
         if (mode == SandboxMode.DOCKER && owner != null && !owner.isBlank()
             && !owner.matches("[A-Za-z0-9_.-]{1,128}")) {
             throw new IllegalStateException(
-                "SANDBOX_OWNER/AGENT_ID must be a safe Docker label value "
+                "SANDBOX_OWNER/AGENT_RUNTIME_ID must be a safe Docker label value "
                     + "(letters, digits, _ . -)");
         }
         if (poolAgent) {

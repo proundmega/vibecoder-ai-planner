@@ -181,7 +181,7 @@ class VerificationRunnerTest {
         environment.put("PATH", "/usr/bin");
         environment.put("HOME", "/home/agent");
         environment.put("GITHUB_TOKEN", "ghp_secret");
-        environment.put("AGENT_API_KEY", "agent_secret");
+        environment.put("ENROLLMENT_TOKEN", "agent_secret");
         environment.put("DATABASE_URL", "postgres://user:pw@db/app");
         environment.put("HTTPS_PROXY", "http://proxy-user:proxy-pass@proxy:8080");
         environment.put("HTTP_PROXY", "no-scheme-user:no-scheme-pass@proxy:8080");
@@ -194,7 +194,7 @@ class VerificationRunnerTest {
         assertEquals("/usr/bin", environment.get("PATH"));
         assertEquals("/home/agent", environment.get("HOME"));
         assertFalse(environment.containsKey("GITHUB_TOKEN"));
-        assertFalse(environment.containsKey("AGENT_API_KEY"));
+        assertFalse(environment.containsKey("ENROLLMENT_TOKEN"));
         assertFalse(environment.containsKey("DATABASE_URL"));
         assertFalse(environment.containsKey("MAVEN_OPTS"));
         assertFalse(environment.get("HTTPS_PROXY").contains("proxy-user"));
@@ -209,8 +209,8 @@ class VerificationRunnerTest {
     @Test
     void verificationChildCannotReadSupervisorSecrets() {
         String command = windows()
-            ? "echo %GITHUB_TOKEN% %AGENT_API_KEY%"
-            : "printf '%s %s' \"$GITHUB_TOKEN\" \"$AGENT_API_KEY\"";
+            ? "echo %GITHUB_TOKEN% %ENROLLMENT_TOKEN%"
+            : "printf '%s %s' \"$GITHUB_TOKEN\" \"$ENROLLMENT_TOKEN\"";
 
         List<VerificationResult> results = new VerificationRunner()
             .run(tempDir, List.of(command), Duration.ofSeconds(20));

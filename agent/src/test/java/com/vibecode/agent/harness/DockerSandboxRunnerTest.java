@@ -261,7 +261,7 @@ class DockerSandboxRunnerTest {
             "SANDBOX_MODE", "docker",
             "SANDBOX_IMAGE", "test:img",
             "SANDBOX_USER", "1000:1000",
-            "AGENT_ID", "agent-42",
+            "AGENT_RUNTIME_ID", "agent-42",
             "SANDBOX_NETWORK", "allowlist",
             "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org"
         )::get);
@@ -297,7 +297,7 @@ class DockerSandboxRunnerTest {
             "SANDBOX_IMAGE", "test:img",
             "SANDBOX_DOCKER_BIN", script.toString(),
             "SANDBOX_USER", "1000:1000",
-            "AGENT_ID", "agent-42"
+            "AGENT_RUNTIME_ID", "agent-42"
         )::get);
 
         try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
@@ -346,7 +346,7 @@ class DockerSandboxRunnerTest {
             "SANDBOX_IMAGE", "test:img",
             "SANDBOX_DOCKER_BIN", script.toString(),
             "SANDBOX_USER", "1000:1000",
-            "AGENT_ID", "2",
+            "AGENT_RUNTIME_ID", "2",
             "SANDBOX_OWNER", "pool-2",
             "SANDBOX_POOL_AGENT", "true",
             "SANDBOX_DAEMON_ID", "daemon-1"
@@ -491,7 +491,7 @@ class DockerSandboxRunnerTest {
             "SANDBOX_IMAGE", "test:img",
             "SANDBOX_DOCKER_BIN", script.toString(),
             "SANDBOX_USER", "1000:1000",
-            "AGENT_ID", "2",
+            "AGENT_RUNTIME_ID", "2",
             "SANDBOX_OWNER", "pool-2",
             "SANDBOX_POOL_AGENT", "true",
             "SANDBOX_DAEMON_ID", "daemon-1"
@@ -611,7 +611,7 @@ class DockerSandboxRunnerTest {
             "SANDBOX_USER", "1000:1000",
             "SANDBOX_NETWORK", "allowlist",
             "SANDBOX_ALLOWED_HOSTS", "registry.npmjs.org",
-            "AGENT_ID", "agent-42"
+            "AGENT_RUNTIME_ID", "agent-42"
         )::get);
 
         try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {

@@ -8,8 +8,18 @@ public record ProviderSettings(
     String apiKey,
     String baseUrl,
     String model,
-    int maxTokens
+    int maxTokens,
+    String effort,
+    boolean effortExplicit
 ) {
+    public ProviderSettings(String type, String apiKey, String baseUrl, String model, int maxTokens) {
+        this(type, apiKey, baseUrl, model, maxTokens, null, false);
+    }
+
+    public ProviderSettings(String type, String apiKey, String baseUrl, String model, int maxTokens,
+                            String effort) {
+        this(type, apiKey, baseUrl, model, maxTokens, effort, false);
+    }
     public String normalizedType() {
         return type == null ? "generic" : type.trim().toLowerCase().replace('_', '-');
     }
@@ -30,6 +40,8 @@ public record ProviderSettings(
             + ", baseUrl=" + redactUrl(baseUrl)
             + ", model=" + model
             + ", maxTokens=" + maxTokens
+            + ", effort=" + effort
+            + ", effortExplicit=" + effortExplicit
             + ']';
     }
 

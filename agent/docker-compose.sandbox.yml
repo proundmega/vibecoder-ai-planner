@@ -6,7 +6,7 @@
 # restricted socket-proxy network and enables Docker sandboxing. Set
 # SANDBOX_HOST_WORKSPACE_ROOT to the absolute host path mounted at /repos.
 services:
-  agent:
+  supervisor:
     environment:
       - SANDBOX_MODE=docker
       - DOCKER_HOST=${DOCKER_HOST:-tcp://docker-proxy:2375}

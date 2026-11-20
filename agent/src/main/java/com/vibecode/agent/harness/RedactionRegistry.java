@@ -20,7 +20,7 @@ public final class RedactionRegistry {
     private static volatile SecretRedactor redactor = SecretRedactor.patternsOnly();
 
     static {
-        register(System.getenv("AGENT_API_KEY"), System.getenv("AI_API_KEY"),
+        register(System.getenv("ENROLLMENT_TOKEN"), System.getenv("AI_API_KEY"),
             System.getenv("GITHUB_TOKEN"));
     }
 

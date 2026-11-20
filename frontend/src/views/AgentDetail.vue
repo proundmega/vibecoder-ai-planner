@@ -1,341 +1,339 @@
-<script setup>
-import { ref, onMounted, computed, unref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { fetchAgentDetail, getAgentKeyInfo, rotateAgentKey } from '@/api/agents'
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
+import {
+  drainAgentNode,
+  getAgentNodeGrants,
+  listAgentNodes,
+  revokeAgentNode,
+  updateAgentRuntime,
+  type AgentGrant,
+  type AgentNode,
+  type AgentRuntime,
+  type AgentRuntimeStatus,
+} from '@/api/agentNodes'
 import { useAuthStore } from '@/stores/auth'
-import { deleteAgent, revokeAgentKey } from '@/api/agents'
-import AgentKeyRevealModal from '@/components/AgentKeyRevealModal.vue'
+import VButton from '@/components/VButton.vue'
 
 const route = useRoute()
-const agent = ref(null)
-const keyInfo = ref(null)
-const loading = ref(true)
-const error = ref(null)
 const authStore = useAuthStore()
-const router = useRouter()
-const showRevokeConfirm = ref(false)
-const showDeleteConfirm = ref(false)
-const showRotateConfirm = ref(false)
-const rotatedKey = ref(null)
-const actionLoading = ref(false)
-const rotating = ref(false)
-const actionError = ref(null)
 
-const currentUser = computed(() => unref(authStore.user) || null)
-const isSuperAdmin = computed(() => currentUser.value?.role === 'super_admin')
-const isOwner = computed(() => {
-  const ownerId = agent.value?.owner_id
-  const userId = currentUser.value?.id
-  return ownerId !== undefined && ownerId !== null
-    && userId !== undefined && userId !== null
-    && String(ownerId) === String(userId)
+const nodes = ref<AgentNode[]>([])
+const loading = ref(true)
+const error = ref('')
+const actionError = ref('')
+const busy = ref(false)
+const grants = ref<AgentGrant[]>([])
+const grantsByNode = ref<Record<string, AgentGrant[]>>({})
+
+const routeId = computed(() => String(route.params.id))
+
+function isNodeOwner(node: AgentNode): boolean {
+  if (authStore.isSuperAdmin()) return true
+  const userId = authStore.user.value?.id
+  return userId != null && String(node.owner_id) === String(userId)
+}
+
+// The API already filters shared-node runtimes (#181). Keep the same filter
+// here as defense in depth so a cached response cannot expose another
+// project's runtime detail.
+function visibleRuntimes(node: AgentNode): AgentRuntime[] {
+  const all = node.runtimes ?? []
+  if (isNodeOwner(node)) return all
+  const projects = new Set(
+    (grantsByNode.value[String(node.id)] ?? []).map(grant => String(grant.project_id)))
+  return all.filter(runtime =>
+    runtime.current_project_id != null
+      && projects.has(String(runtime.current_project_id)))
+}
+
+const runtimeMatch = computed<{ node: AgentNode; runtime: AgentRuntime } | null>(() => {
+  for (const node of nodes.value) {
+    for (const runtime of visibleRuntimes(node)) {
+      if (String(runtime.id) === routeId.value) return { node, runtime }
+    }
+  }
+  return null
 })
-const canManageAgent = computed(() => isSuperAdmin.value || isOwner.value)
-const canRevoke = computed(() => authStore.canRevokeAgent() && canManageAgent.value)
-const canDelete = computed(() => authStore.canDeleteAgent() && canManageAgent.value)
-const agentId = computed(() => agent.value?.agent_id || agent.value?.id || route.params.id)
-const displayName = computed(() =>
-  agent.value?.agent_name || agent.value?.name || `Agent ${agentId.value}`
+
+const nodeMatch = computed<AgentNode | null>(
+  () => nodes.value.find(node => String(node.id) === routeId.value) ?? null
 )
 
-onMounted(async () => {
+const displayTitle = computed(
+  () => runtimeMatch.value?.runtime.name || nodeMatch.value?.name || `Runtime ${routeId.value}`
+)
+
+const status = computed(() => {
+  if (runtimeMatch.value) return runtimeMatch.value.runtime.status
+  if (nodeMatch.value) return nodeMatch.value.status
+  return 'unknown'
+})
+
+const canManageRuntimesBase = computed(() => authStore.hasAnyPermission(['AGENT_CREATE']))
+const canManageNodesBase = computed(() => authStore.hasAnyPermission(['AGENT_REVOKE']))
+
+function canManageNode(node: AgentNode | null | undefined): boolean {
+  return node ? isNodeOwner(node) : false
+}
+
+const targetNode = computed(() => runtimeMatch.value?.node ?? nodeMatch.value)
+const canManageRuntimes = computed(() => canManageRuntimesBase.value && canManageNode(targetNode.value))
+const canManageNodes = computed(() => canManageNodesBase.value && canManageNode(targetNode.value))
+
+function formatDateTime(value: string | null | undefined): string {
+  return value ? new Date(value).toLocaleString() : 'Never'
+}
+
+async function loadFleet(): Promise<void> {
   try {
-    const [data, info] = await Promise.all([
-      fetchAgentDetail(route.params.id),
-      getAgentKeyInfo(String(route.params.id)).catch(() => null),
-    ])
-    agent.value = data
-    keyInfo.value = info
+    nodes.value = (await listAgentNodes()) || []
+    const grantRows = await Promise.all(nodes.value.map(async (node) => [
+      String(node.id),
+      await getAgentNodeGrants(node.id).catch(() => []),
+    ]))
+    grantsByNode.value = Object.fromEntries(grantRows) as Record<string, AgentGrant[]>
+    const node = runtimeMatch.value?.node ?? nodeMatch.value
+    grants.value = node ? (grantsByNode.value[String(node.id)] ?? []) : []
+    error.value = ''
   } catch (err) {
-    console.error('Failed to load agent detail:', err)
-    error.value = 'Failed to load agent detail'
+    error.value = (err as Error).message || 'Failed to load the runtime record'
   } finally {
     loading.value = false
   }
-})
+}
 
-async function refreshKeyInfo() {
+async function setRuntimeStatus(nextStatus: AgentRuntimeStatus): Promise<void> {
+  const target = runtimeMatch.value?.runtime
+  if (!target) return
+  busy.value = true
+  actionError.value = ''
   try {
-    keyInfo.value = await getAgentKeyInfo(String(agentId.value))
-  } catch {
-    keyInfo.value = null
-  }
-}
-
-function formatCost(cost) {
-  return `$${Number(cost || 0).toFixed(2)}`
-}
-
-function formatDate(dateStr) {
-  return dateStr ? new Date(dateStr).toLocaleString() : '—'
-}
-
-const isEnrolled = computed(() => keyInfo.value?.authMode === 'enrollment')
-
-const keyStatusLabel = computed(() => {
-  if (!keyInfo.value) return 'Unavailable'
-  if (isEnrolled.value) {
-    return {
-      active: 'Enrollment credentials active',
-      expired: 'Enrollment credentials expired — rotate is not available',
-      revoked: 'Enrollment credentials revoked',
-    }[keyInfo.value.keyStatus] || keyInfo.value.keyStatus
-  }
-  if (keyInfo.value.keyStatus === 'revoked') {
-    return canRevoke.value ? 'Revoked — rotate to issue a new key' : 'Revoked'
-  }
-  if (keyInfo.value.keyStatus === 'expired') {
-    return canRevoke.value ? 'Expired — rotate to issue a new key' : 'Expired'
-  }
-  return 'Hidden — shown only at creation or rotation'
-})
-
-function openRevokeConfirm() {
-  actionError.value = null
-  showRevokeConfirm.value = true
-}
-
-function openDeleteConfirm() {
-  actionError.value = null
-  showDeleteConfirm.value = true
-}
-
-function openRotateConfirm() {
-  actionError.value = null
-  showRotateConfirm.value = true
-}
-
-function closeRotateConfirm() {
-  if (!rotating.value) showRotateConfirm.value = false
-}
-
-function closeRevokeConfirm() {
-  if (!actionLoading.value) showRevokeConfirm.value = false
-}
-
-function closeDeleteConfirm() {
-  if (!actionLoading.value) showDeleteConfirm.value = false
-}
-
-async function handleRevoke() {
-  actionLoading.value = true
-  actionError.value = null
-  try {
-    await revokeAgentKey(String(agentId.value))
-    showRevokeConfirm.value = false
-    const data = await fetchAgentDetail(route.params.id)
-    agent.value = data
-    await refreshKeyInfo()
+    await updateAgentRuntime(target.id, { status: nextStatus })
+    await loadFleet()
   } catch (err) {
-    actionError.value = err.message || (isEnrolled.value ? 'Failed to revoke credentials' : 'Failed to revoke API key')
+    actionError.value = (err as Error).message || 'Failed to update the runtime'
   } finally {
-    actionLoading.value = false
+    busy.value = false
   }
 }
 
-async function handleRotate() {
-  rotating.value = true
-  actionError.value = null
+async function onDrainNode(): Promise<void> {
+  const node = nodeMatch.value
+  if (!node) return
+  busy.value = true
+  actionError.value = ''
   try {
-    const result = await rotateAgentKey(agentId.value)
-    showRotateConfirm.value = false
-    rotatedKey.value = {
-      id: result.agentId || agentId.value,
-      name: result.agentName || displayName.value,
-      apiKey: result.newApiKey,
-      expiresAt: result.expiresAt,
-      providerName: keyInfo.value?.providerName || null,
-    }
-    await refreshKeyInfo()
+    await drainAgentNode(node.id)
+    await loadFleet()
   } catch (err) {
-    actionError.value = err.message || 'Failed to rotate API key'
+    actionError.value = (err as Error).message || 'Failed to drain the node'
   } finally {
-    rotating.value = false
+    busy.value = false
   }
 }
 
-async function handleDelete() {
-  actionLoading.value = true
-  actionError.value = null
+async function onRevokeNode(): Promise<void> {
+  const node = nodeMatch.value
+  if (!node) return
+  busy.value = true
+  actionError.value = ''
   try {
-    await deleteAgent(String(agentId.value))
-    router.push('/agents')
+    await revokeAgentNode(node.id)
+    await loadFleet()
   } catch (err) {
-    actionError.value = err.message || 'Failed to delete agent'
+    actionError.value = (err as Error).message || 'Failed to revoke the node'
   } finally {
-    actionLoading.value = false
+    busy.value = false
   }
 }
+
+onMounted(loadFleet)
 </script>
 
 <template>
   <div class="agent-detail">
-    <div v-if="loading" class="loading">Loading...</div>
+    <div v-if="loading" class="loading">Loading runtime record...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
-    <div v-else-if="agent" class="detail-content">
+    <div v-else class="detail-content">
       <div class="detail-header">
-        <h1>{{ displayName }}</h1>
-        <span :class="['status-badge', 'status-' + agent.status]">
-          {{ agent.status }}
-        </span>
+        <div>
+          <h1>{{ displayTitle }}</h1>
+          <p class="page-subtitle">
+            Runtime and node state comes from the agent fleet. There is no retrievable agent key.
+          </p>
+        </div>
+        <span :class="['status-badge', `status-${status}`]">{{ status }}</span>
       </div>
 
-      <div class="stats-row">
-        <div class="stat">
-          <label>Total Actions</label>
-          <span>{{ agent.totalActions || 0 }}</span>
-        </div>
-        <div class="stat">
-          <label>Total Cost</label>
-          <span>{{ formatCost(agent.totalCost) }}</span>
-        </div>
-        <div class="stat">
-          <label>Current Step</label>
-          <span>{{ agent.current_step || '—' }}</span>
-        </div>
-        <div class="stat">
-          <label>Last Seen</label>
-          <span>{{ formatDate(agent.last_seen) }}</span>
-        </div>
-      </div>
+      <div v-if="actionError" class="error action-error">{{ actionError }}</div>
 
-      <div class="details-section">
-        <h2>Details</h2>
+      <div v-if="runtimeMatch" class="details-section">
+        <h2>Runtime</h2>
         <dl class="details-grid">
           <div>
+            <dt>Runtime ID</dt>
+            <dd>{{ runtimeMatch.runtime.id }}</dd>
+          </div>
+          <div>
             <dt>Name</dt>
-            <dd>{{ displayName }}</dd>
+            <dd>{{ runtimeMatch.runtime.name }}</dd>
           </div>
           <div>
-            <dt>Agent ID</dt>
-            <dd>{{ agentId }}</dd>
+            <dt>Role</dt>
+            <dd><span class="role-tag">{{ runtimeMatch.runtime.role }}</span></dd>
           </div>
           <div>
-            <dt>Provider</dt>
-            <dd>{{ keyInfo?.providerName || agent.provider_name || '—' }}</dd>
+            <dt>Model</dt>
+            <dd>
+              <code>
+                {{ runtimeMatch.runtime.model_ref
+                  || (runtimeMatch.runtime.credential_name
+                    ? `${runtimeMatch.runtime.credential_name}/${runtimeMatch.runtime.model}`
+                    : runtimeMatch.runtime.model || runtimeMatch.runtime.model_id) }}
+              </code>
+            </dd>
           </div>
           <div>
-            <dt>Rate limit</dt>
-            <dd>{{ keyInfo?.rateLimit ?? agent.rate_limit ?? 100 }} req/min</dd>
+            <dt>Effort</dt>
+            <dd>
+              <span class="effort-tag">{{ runtimeMatch.runtime.effort || 'model default' }}</span>
+            </dd>
           </div>
           <div>
-            <dt>Max actions/day</dt>
-            <dd>{{ keyInfo?.maxActionsPerDay ?? agent.max_actions_per_day ?? 1000 }}</dd>
+            <dt>Status</dt>
+            <dd>{{ runtimeMatch.runtime.status }}</dd>
           </div>
           <div>
-            <dt>API key</dt>
-            <dd>{{ keyStatusLabel }}</dd>
+            <dt>Concurrency</dt>
+            <dd>{{ runtimeMatch.runtime.concurrency }}</dd>
           </div>
           <div>
-            <dt>Key expires</dt>
-            <dd>{{ formatDate(keyInfo?.expiresAt) }}</dd>
+            <dt>Node</dt>
+            <dd>{{ runtimeMatch.node.name }} ({{ runtimeMatch.node.id }})</dd>
+          </div>
+          <div>
+            <dt>Current project</dt>
+            <dd>{{ runtimeMatch.runtime.current_project_id || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Last seen</dt>
+            <dd>{{ formatDateTime(runtimeMatch.runtime.last_seen_at) }}</dd>
           </div>
           <div>
             <dt>Created</dt>
-            <dd>{{ formatDate(keyInfo?.createdAt || agent.created_at) }}</dd>
+            <dd>{{ formatDateTime(runtimeMatch.runtime.created_at) }}</dd>
+          </div>
+          <div>
+            <dt>Updated</dt>
+            <dd>{{ formatDateTime(runtimeMatch.runtime.updated_at) }}</dd>
+          </div>
+        </dl>
+
+        <div v-if="canManageRuntimes" class="runtime-actions">
+          <VButton
+            v-if="runtimeMatch.runtime.status === 'running'"
+            variant="secondary"
+            :loading="busy"
+            @click="setRuntimeStatus('draining')"
+          >
+            Drain runtime
+          </VButton>
+          <VButton
+            v-if="runtimeMatch.runtime.status === 'running' || runtimeMatch.runtime.status === 'pending'"
+            variant="ghost"
+            :loading="busy"
+            @click="setRuntimeStatus('stopped')"
+          >
+            Stop runtime
+          </VButton>
+          <VButton
+            v-if="runtimeMatch.runtime.status !== 'running'"
+            variant="secondary"
+            :loading="busy"
+            @click="setRuntimeStatus('running')"
+          >
+            Start runtime
+          </VButton>
+        </div>
+      </div>
+
+      <div v-else-if="nodeMatch" class="details-section">
+        <h2>Node</h2>
+        <dl class="details-grid">
+          <div>
+            <dt>Node ID</dt>
+            <dd>{{ nodeMatch.id }}</dd>
+          </div>
+          <div>
+            <dt>Name</dt>
+            <dd>{{ nodeMatch.name }}</dd>
+          </div>
+          <div>
+            <dt>Owner</dt>
+            <dd>{{ nodeMatch.owner_name || nodeMatch.owner_id }}</dd>
+          </div>
+          <div>
+            <dt>Hostname</dt>
+            <dd>{{ nodeMatch.hostname || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>{{ nodeMatch.status }}</dd>
+          </div>
+          <div>
+            <dt>Last seen</dt>
+            <dd>{{ formatDateTime(nodeMatch.last_seen_at) }}</dd>
+          </div>
+          <div>
+            <dt>Runtimes</dt>
+            <dd>{{ nodeMatch.runtimes?.length ?? 0 }}</dd>
+          </div>
+          <div>
+            <dt>Grants</dt>
+            <dd>{{ grants.length }}</dd>
+          </div>
+        </dl>
+
+        <div v-if="canManageNodes" class="runtime-actions">
+          <VButton
+            v-if="nodeMatch.status === 'active'"
+            variant="secondary"
+            :loading="busy"
+            @click="onDrainNode"
+          >
+            Drain node
+          </VButton>
+          <VButton
+            v-if="nodeMatch.status !== 'revoked'"
+            variant="danger"
+            :loading="busy"
+            @click="onRevokeNode"
+          >
+            Revoke node
+          </VButton>
+        </div>
+      </div>
+
+      <div v-else class="details-section">
+        <h2>Runtime record</h2>
+        <p class="unresolved">
+          Runtime {{ routeId }} is not visible in the fleet for this account. It may have been
+          removed, revoked, or it may belong to another owner.
+        </p>
+        <dl class="details-grid">
+          <div>
+            <dt>Runtime ID</dt>
+            <dd>{{ routeId }}</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>Unknown</dd>
           </div>
         </dl>
       </div>
 
-      <div v-if="agent.current_ticket_id" class="current-ticket">
-        <h3>Current Ticket</h3>
-        <p>{{ agent.current_ticket_title || agent.current_ticket_id }}</p>
-      </div>
-
-      <div v-if="agent.history && agent.history.length > 0" class="history-section">
-        <h2>Action History</h2>
-        <table class="history-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Type</th>
-              <th>Cost</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="action in agent.history" :key="action.id">
-              <td>{{ formatDate(action.created_at) }}</td>
-              <td>{{ action.action_type }}</td>
-              <td>{{ formatCost(action.cost_incurred) }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div v-if="canRevoke || canDelete" class="actions-section">
-        <h2>Actions</h2>
-        <div class="actions-buttons">
-          <button v-if="canRevoke && !isEnrolled" class="btn-secondary" @click="openRotateConfirm" :disabled="actionLoading || rotating">
-            Rotate API Key
-          </button>
-          <button v-if="canRevoke" class="btn-danger-outline" @click="openRevokeConfirm" :disabled="actionLoading">
-            {{ isEnrolled ? 'Revoke Credentials' : 'Revoke API Key' }}
-          </button>
-          <button v-if="canDelete" class="btn-danger" @click="openDeleteConfirm" :disabled="actionLoading">
-            Delete Agent
-          </button>
-        </div>
-      </div>
-
-      <div v-if="showRevokeConfirm" class="modal-overlay" @click.self="closeRevokeConfirm">
-        <div class="modal modal-sm">
-          <h3>{{ isEnrolled ? 'Revoke Credentials' : 'Revoke API Key' }}</h3>
-          <p v-if="isEnrolled">
-            Revoke all credentials for <strong>{{ agent.agent_name || agent.name }}</strong>?
-            The node must be enrolled again with a new join token.
-          </p>
-          <p v-else>
-            Are you sure you want to revoke the API key for
-            <strong>{{ agent.agent_name || agent.name }}</strong>? The agent will no longer be able to make API calls.
-          </p>
-          <p v-if="actionError" class="error modal-error">{{ actionError }}</p>
-          <div class="modal-actions">
-            <button class="btn-danger" @click="handleRevoke" :disabled="actionLoading">
-              {{ actionLoading ? 'Revoking...' : 'Revoke' }}
-            </button>
-            <button class="btn-cancel" @click="closeRevokeConfirm" :disabled="actionLoading">Cancel</button>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="showRotateConfirm" class="modal-overlay" @click.self="closeRotateConfirm">
-        <div class="modal modal-sm">
-          <h3>Rotate API Key</h3>
-          <p>Rotate the key for <strong>{{ displayName }}</strong>? The current key stops working immediately, and the new key is shown only once.</p>
-          <p v-if="actionError" class="error modal-error">{{ actionError }}</p>
-          <div class="modal-actions">
-            <button class="btn-danger" @click="handleRotate" :disabled="rotating">
-              {{ rotating ? 'Rotating...' : 'Rotate key' }}
-            </button>
-            <button class="btn-cancel" @click="closeRotateConfirm" :disabled="rotating">Cancel</button>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="closeDeleteConfirm">
-        <div class="modal modal-sm">
-          <h3>Delete Agent</h3>
-          <p>Are you sure you want to delete <strong>{{ agent.agent_name || agent.name }}</strong>? This action cannot be undone.</p>
-          <p v-if="actionError" class="error modal-error">{{ actionError }}</p>
-          <div class="modal-actions">
-            <button class="btn-danger" @click="handleDelete" :disabled="actionLoading">
-              {{ actionLoading ? 'Deleting...' : 'Delete' }}
-            </button>
-            <button class="btn-cancel" @click="closeDeleteConfirm" :disabled="actionLoading">Cancel</button>
-          </div>
-        </div>
-      </div>
-
-      <AgentKeyRevealModal
-        v-if="rotatedKey"
-        :agent="rotatedKey"
-        title="New API key"
-        intro="The new key is active. Save it before closing this dialog."
-        warning="The previous key is now invalid. Store this key now — it will not be shown again."
-        @close="rotatedKey = null"
-      />
-
-      <router-link to="/agents" class="back-link">← Back to Agents</router-link>
+      <router-link to="/agents" class="back-link">← Back to fleet</router-link>
     </div>
   </div>
 </template>
@@ -347,7 +345,8 @@ async function handleDelete() {
   margin: 0 auto;
 }
 
-.loading, .error {
+.loading,
+.error {
   padding: 40px 20px;
   text-align: center;
 }
@@ -356,17 +355,33 @@ async function handleDelete() {
   color: #ef4444;
 }
 
+.action-error {
+  padding: 12px 16px;
+  margin-bottom: 1rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+}
+
 .detail-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1.5rem;
+  flex-wrap: wrap;
 }
 
 .detail-header h1 {
-  margin: 0;
+  margin: 0 0 4px;
   font-size: 24px;
   color: #1f2937;
+}
+
+.page-subtitle {
+  margin: 0;
+  color: #6b7280;
+  font-size: 14px;
 }
 
 .status-badge {
@@ -376,46 +391,27 @@ async function handleDelete() {
   font-weight: 500;
 }
 
-.status-online {
-  background: #d4edda;
-  color: #155724;
+.status-active,
+.status-running {
+  background: #d1fae5;
+  color: #065f46;
 }
 
-.status-idle {
-  background: #fff3cd;
-  color: #856404;
+.status-draining,
+.status-pending {
+  background: #fef3c7;
+  color: #92400e;
 }
 
-.status-offline {
-  background: #f8d7da;
-  color: #721c24;
+.status-revoked,
+.status-stopped {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
-.stats-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 16px;
-  margin-bottom: 1.5rem;
-}
-
-.stat {
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-}
-
-.stat label {
-  display: block;
-  font-size: 0.85em;
-  color: #6b7280;
-  margin-bottom: 4px;
-}
-
-.stat span {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1f2937;
+.status-unknown {
+  background: #e5e7eb;
+  color: #374151;
 }
 
 .details-section {
@@ -434,7 +430,7 @@ async function handleDelete() {
 
 .details-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 12px 20px;
   margin: 0;
 }
@@ -456,56 +452,42 @@ async function handleDelete() {
   word-break: break-word;
 }
 
-.current-ticket {
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 1.5rem;
+.details-grid code {
+  font-size: 12px;
 }
 
-.current-ticket h3 {
-  margin: 0 0 8px 0;
-  font-size: 14px;
+.role-tag,
+.effort-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.82em;
+  font-weight: 500;
+}
+
+.role-tag {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.effort-tag {
+  background: #f3e8ff;
+  color: #6b21a8;
+}
+
+.runtime-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.unresolved {
+  margin: 0 0 16px;
   color: #6b7280;
-}
-
-.current-ticket p {
-  margin: 0;
-  color: #1f2937;
-}
-
-.history-section {
-  margin-bottom: 1.5rem;
-}
-
-.history-section h2 {
-  font-size: 18px;
-  color: #1f2937;
-  margin: 0 0 1rem 0;
-}
-
-.history-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.history-table th,
-.history-table td {
-  padding: 10px 16px;
-  text-align: left;
-  border-bottom: 1px solid #f3f4f6;
-}
-
-.history-table th {
-  background: #f9fafb;
-  font-weight: 600;
-  color: #374151;
-  font-size: 13px;
+  line-height: 1.5;
 }
 
 .back-link {
@@ -517,149 +499,5 @@ async function handleDelete() {
 
 .back-link:hover {
   text-decoration: underline;
-}
-
-.actions-section {
-  margin-bottom: 1.5rem;
-}
-
-.actions-section h2 {
-  font-size: 18px;
-  color: #1f2937;
-  margin: 0 0 1rem 0;
-}
-
-.actions-buttons {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.btn-secondary {
-  padding: 8px 16px;
-  background: white;
-  color: #374151;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: #f9fafb;
-}
-
-.btn-secondary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-danger {
-  padding: 8px 16px;
-  background: #ef4444;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: #dc2626;
-}
-
-.btn-danger:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-danger-outline {
-  padding: 8px 16px;
-  background: white;
-  color: #ef4444;
-  border: 1px solid #ef4444;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.btn-danger-outline:hover:not(:disabled) {
-  background: #fef2f2;
-}
-
-.btn-danger-outline:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.modal {
-  background: white;
-  border-radius: 8px;
-  padding: 24px;
-  width: 100%;
-  max-width: 400px;
-}
-
-.modal-sm {
-  max-width: 400px;
-}
-
-.modal h3 {
-  margin: 0 0 12px;
-  font-size: 18px;
-  color: #1f2937;
-}
-
-.modal p {
-  margin: 0 0 20px;
-  color: #374151;
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.modal-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.modal p.modal-error {
-  padding: 0;
-  margin: -8px 0 16px;
-  text-align: left;
-  color: #ef4444;
-}
-
-.btn-cancel {
-  padding: 8px 16px;
-  background: white;
-  color: #374151;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.btn-cancel:hover:not(:disabled) {
-  background: #f9fafb;
-}
-
-.btn-cancel:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 </style>

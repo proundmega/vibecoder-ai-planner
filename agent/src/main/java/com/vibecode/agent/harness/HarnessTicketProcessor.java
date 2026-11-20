@@ -314,7 +314,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         List<String> secrets = new ArrayList<>(knownSecrets(provider, githubToken));
         secrets.add(System.getenv("AI_API_KEY"));
         secrets.add(System.getenv("GITHUB_TOKEN"));
-        secrets.add(System.getenv("AGENT_API_KEY"));
+        secrets.add(System.getenv("ENROLLMENT_TOKEN"));
         return secrets;
     }
 
@@ -336,9 +336,9 @@ public final class HarnessTicketProcessor implements TicketWorker {
         if (config.isDryRun() || workspaceRetentionHours <= 0) {
             return 0;
         }
-        Long agentId = longValue(config.getAgentId());
+        Long agentId = longValue(config.getRuntimeId());
         if (agentId == null) {
-            log.warn("Skipping workspace prune: AGENT_ID is not numeric");
+            log.warn("Skipping workspace prune: AGENT_RUNTIME_ID is not numeric");
             return 0;
         }
 
@@ -384,9 +384,9 @@ public final class HarnessTicketProcessor implements TicketWorker {
         if (config.isDryRun()) {
             return 0;
         }
-        Long agentId = longValue(config.getAgentId());
+        Long agentId = longValue(config.getRuntimeId());
         if (agentId == null) {
-            log.warn("Cannot recover harness runs: AGENT_ID is not numeric");
+            log.warn("Cannot recover harness runs: AGENT_RUNTIME_ID is not numeric");
             return 0;
         }
 
@@ -724,6 +724,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             log.warn("Could not pick up ticket {}, skipping", ticket.getId());
             return;
         }
+        pickedUp.fillMissingFrom(ticket);
 
         currentTicketId = String.valueOf(pickedUp.getId());
         currentStep = "processing";
@@ -1955,7 +1956,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         if (projectId == null && ticket != null) {
             projectId = ticket.getProjectId();
         }
-        Long agentId = longValue(config.getAgentId());
+        Long agentId = longValue(config.getRuntimeId());
         eventContext = new HarnessEventContext(
             UUID.randomUUID(),
             uuidValue(currentRunId),

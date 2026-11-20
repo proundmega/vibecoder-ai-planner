@@ -18,8 +18,8 @@ public class Ticket {
     private String priority;
     private Long projectId;
     private Long ownerId;
-    @JsonProperty("assigned_agent_id")
-    private Long assignedAgentId;
+    @JsonProperty("assigned_runtime_id")
+    private Long assignedRuntimeId;
     @JsonProperty("locked_at")
     private String lockedAt;
     @JsonProperty("pr_url")
@@ -50,8 +50,8 @@ public class Ticket {
     public Long getOwnerId() { return ownerId; }
     public void setOwnerId(Long ownerId) { this.ownerId = ownerId; }
 
-    public Long getAssignedAgentId() { return assignedAgentId; }
-    public void setAssignedAgentId(Long assignedAgentId) { this.assignedAgentId = assignedAgentId; }
+    public Long getAssignedRuntimeId() { return assignedRuntimeId; }
+    public void setAssignedRuntimeId(Long assignedRuntimeId) { this.assignedRuntimeId = assignedRuntimeId; }
 
     public String getLockedAt() { return lockedAt; }
     public void setLockedAt(String lockedAt) { this.lockedAt = lockedAt; }
@@ -71,15 +71,31 @@ public class Ticket {
     public String getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(String updatedAt) { this.updatedAt = updatedAt; }
 
+    /**
+     * Fill fields the pickup response does not echo (Track A returns only the
+     * assignment fields) from the backlog listing the processor already has.
+     * Pickup-owned fields are authoritative and are never overwritten.
+     */
+    public void fillMissingFrom(Ticket listed) {
+        if (listed == null) return;
+        if (description == null) description = listed.description;
+        if (projectId == null) projectId = listed.projectId;
+        if (priority == null) priority = listed.priority;
+        if (ownerId == null) ownerId = listed.ownerId;
+        if (ready == null) ready = listed.ready;
+        if (createdAt == null) createdAt = listed.createdAt;
+        if (updatedAt == null) updatedAt = listed.updatedAt;
+    }
+
     public boolean isAvailable() {
         return "backlog".equals(status)
-            && assignedAgentId == null
+            && assignedRuntimeId == null
             && (prUrl == null || prUrl.isBlank())
             && !Boolean.FALSE.equals(ready);
     }
 
     public boolean isLocked() {
-        return assignedAgentId != null;
+        return assignedRuntimeId != null;
     }
 
     public boolean isInProgress() {
@@ -89,6 +105,6 @@ public class Ticket {
     @Override
     public String toString() {
         return "Ticket{id=" + id + ", title='" + title + "', status='" + status + 
-            "', assignedAgentId=" + assignedAgentId + '}';
+            "', assignedRuntimeId=" + assignedRuntimeId + '}';
     }
 }

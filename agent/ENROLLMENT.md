@@ -1,186 +1,138 @@
-# Self-enrolling an agent node
+# Enrolling a fleet node
 
-This walks through joining a worker host to a project without copying a
-long-lived API key. The node enrolls once with a short-lived join token, stores
-its own credentials, and refreshes them automatically.
+A **node** is one host. Enroll it once with an owner-scoped join token; the
+node then serves any number of projects and roles through explicit
+`(node, project, role)` grants. Enrollment never takes a project, role or
+provider — those are server-side concepts.
 
-For the deployment map (which Compose file, auth/repo modes, build commands),
-see [README.md](README.md).
+> **Clean cut (fg-54).** The previous project-bound agent identity, static key
+> pair and client-asserted mode were removed. A token minted for the old model
+> cannot be used here, and old credential files are rejected. Provider secrets
+> are re-entered through the model registry; nothing is backfilled.
 
 ## 1. Prerequisites
 
-- Backend enrollment is enabled: `AGENT_ENROLLMENT_ENABLED=true` (`1` works).
-  Dev Compose enables it; production-style Compose defaults to `false`.
-- For a build node, the project has a repository connected under
-  **Manage GitHub**. The agent reads that repository from the server; you no
-  longer need `REPO_OWNER`/`REPO_NAME`.
-- Enrollment needs HTTPS unless the backend is on loopback or you explicitly set
-  `ALLOW_INSECURE_AGENT_ENROLLMENT=1` for local testing. Behind a reverse proxy,
-  set `TRUST_PROXY=1` on the API.
+- Backend `AGENT_ENROLLMENT_ENABLED=1` (or the fleet routes mounted).
+- A HTTPS `BACKEND_URL` (plain HTTP is allowed only for loopback or with
+  `ALLOW_INSECURE_AGENT_ENROLLMENT=1` for local/LAN testing).
+- A host with Docker and a writable `repos` directory (`chown 100:101`).
+- A model in the registry marked **verified** and tagged with the role you
+  intend to run.
 
 ## 2. Mint a join token
 
-In the UI: **Agents → Enrollment**
-
-1. Select the project.
-2. Name the token (e.g. `worker-1`).
-3. Choose TTL, max uses, and optionally a provider.
-4. **Mint join token** and copy the `enr_…` value. It is shown once.
-
-The token expires (default 15 minutes) and is single-use by default.
+**Fleet → Mint token**. The token is single-use by default, expires in 15
+minutes by default, and is bound to your user (the node owner). Copy it once;
+it is not shown again.
 
 ## 3. Configure the node
 
-```env
-BACKEND_URL=https://planner.example.com
-AGENT_AUTH_MODE=enroll
-AGENT_MODE=build
-ENROLLMENT_TOKEN=enr_...
-AGENT_CREDENTIALS_FILE=/credentials/agent.json
+```bash
+cp agent/agent.ini.example agent.ini
 ```
 
-- `AGENT_MODE=build` means the node must resolve a project repository. The
-  server repository wins; `REPO_OWNER`/`REPO_NAME` are only a fallback.
-  **Server-repo-only build nodes must set `AGENT_MODE=build`**: `auto` stays
-  review unless the legacy env pair is present. The remote template defaults to
-  `build`; the standalone `agent/docker-compose.yml` defaults to `auto`.
-- `AGENT_MODE=review` runs review/validation work only and never clones or
-  pushes.
-- `AGENT_MODE=auto` is the legacy default: a `REPO_OWNER`/`REPO_NAME` pair means
-  build, otherwise review. Use `build` for a server-repo-only build node.
-- Do **not** set `AGENT_ID` or `AGENT_API_KEY` in enrollment mode.
-- `PROJECT_ID` is optional; the server supplies the project from the token.
-- The credential file must be on a persistent volume.
-- The token is only needed for the **first** boot. With neither
-  `ENROLLMENT_TOKEN` nor a credential file the agent exits with
-  `No credential file and no ENROLLMENT_TOKEN; mount AGENT_CREDENTIALS_FILE or
-  mint a join token` and restart-loops; the Compose token is optional so reboots
-  and image updates need nothing.
+Edit the declared runtimes. The file must not contain keys or tokens:
 
-Provider settings come from the backend (`/agents/:id/provider-config`); choose
-the provider on the join token. `AI_PROVIDER`/`AI_MODEL`/`AI_API_KEY` are
-fallbacks only.
+```ini
+[runtime "workers"]
+role = worker
+model = acme/claude-sonnet
+count = 3
+effort = high
+project = 1
 
-## 4. Run it
+[runtime "reviewers"]
+role = reviewer
+model = acme/claude-opus
+count = 1
+effort = max
+```
 
-Using the remote template:
+The model ref is `<credential-name>/<model>` resolved inside the node owner
+and project scope. A worker section requires `project`; a reviewer/planner
+section may omit it. An ambiguous or missing ref is rejected by the server; it
+is never guessed. `effort` is optional and canonical
+(`minimal|low|medium|high|max`); provider-specific values are mapped or
+clamped by the adapter.
+
+## 4. Run the supervisor
+
+### Host on a separate machine
 
 ```bash
 cp agent/docker-compose.remote.yml.example docker-compose.remote.yml
-# edit it, then:
-docker compose -f docker-compose.remote.yml up -d
+
+ENROLLMENT_TOKEN='enr_...' \
+BACKEND_URL='https://planner.example.com' \
+AGENT_NODE_NAME='build-host-1' \
+AGENT_INI_PATH=./agent.ini \
+docker compose -p build-host-1 -f docker-compose.remote.yml up -d
 ```
 
-Minimal Compose service:
+### Host on the planner's Docker network (dev)
 
-```yaml
-services:
-  agent:
-    image: vibecode-agent:latest
-    environment:
-      - BACKEND_URL=https://planner.example.com
-      - AGENT_AUTH_MODE=enroll
-      - AGENT_MODE=build
-      - ENROLLMENT_TOKEN=enr_...
-      - AGENT_CREDENTIALS_FILE=/credentials/agent.json
-    volumes:
-      - agent_credentials:/credentials
-volumes:
-  agent_credentials:
+```bash
+cd agent
+ENROLLMENT_TOKEN='enr_...' \
+BACKEND_URL='http://api:3001' \
+ALLOW_INSECURE_AGENT_ENROLLMENT=1 \
+VIBECODE_NETWORK=vibecoder-ai-planner_default \
+docker compose -p fleet-dev up supervisor
 ```
 
-### Worker on a separate host
+The supervisor:
 
-`agent/docker-compose.remote.yml.example` is self-contained: it needs no Docker
-network from the planner stack, so the worker can run anywhere that can reach
-`BACKEND_URL`.
+1. exchanges the join token for a node credential pair (or loads the existing
+   `/credentials/node.json`);
+2. fetches the node config and declares the `agent.ini` runtimes;
+3. spawns one child JVM per runtime with `AGENT_RUNTIME_ID`, `AGENT_ROLE`,
+   `AGENT_LLM_MODEL` and optional `AGENT_EFFORT`;
+4. reconciles on boot, re-run and `SIGHUP` (spawn missing, drain removed,
+   leave matching untouched).
 
-1. Get the image onto the worker — build it there:
-
-   ```bash
-   docker build -t vibecode-agent:latest agent/
-   ```
-
-   or copy it from a machine that already has it:
-
-   ```bash
-   docker save vibecode-agent:latest | gzip | ssh worker 'gunzip | docker load'
-   ```
-
-2. Point `BACKEND_URL` at an address the worker can reach (LAN or public URL),
-   not the Compose-internal `http://api:3001`.
-
-3. For `AGENT_MODE=build`, make the clone directory writable (the agent runs as
-   uid 100, gid 101):
-
-   ```bash
-   mkdir -p repos && sudo chown 100:101 repos
-   ```
-
-4. Run it:
-
-   ```bash
-   ENROLLMENT_TOKEN='enr_...' \
-   BACKEND_URL='https://planner.example.com' \
-   docker compose -f docker-compose.remote.yml up -d
-   ```
-
-   For plain HTTP on a LAN address, add `ALLOW_INSECURE_AGENT_ENROLLMENT=1`
-   (the backend needs it too):
-
-   ```bash
-   ENROLLMENT_TOKEN='enr_...' BACKEND_URL='http://192.168.3.51:3001' \
-   ALLOW_INSECURE_AGENT_ENROLLMENT=1 \
-   docker compose -f docker-compose.remote.yml up -d
-   ```
-
-Each worker needs its own single-use token, its own credential volume and a
-distinct `AGENT_NAME` so they are easy to tell apart in the UI. With Compose,
-`-p worker-a` / `-p worker-b` keeps the volumes separate.
+The child fetches its provider config per run from
+`GET /api/v1/agent-nodes/:id/runtimes/:runtimeId/provider-config`; that is the
+only plaintext secret path, it is `no-store` and it is audited.
 
 ## 5. Verify
 
 ```bash
-docker logs -f <agent-container>
+docker logs -f <supervisor-container>
+# Node authenticated via enrollment (nodeId=…)
+# Supervisor reconciled: desired=2 running=4
+# Runtime workers-1 heartbeat accepted
+
+docker exec <supervisor-container> ls -l /credentials/node.json
+# -rw------- … /credentials/node.json
 ```
 
-Expected:
-
-```text
-Agent authenticated via enrollment (agentId=…)
-Using project repository <owner>/<repo> from the backend
-```
-
-Check the credential file:
-
-```bash
-docker exec <agent-container> ls -l /credentials/agent.json
-# -rw------- ... /credentials/agent.json
-```
-
-In the UI, the agent appears under **Agents**, and the join token shows one use.
+In **Fleet** the node shows `active`, the owner, the hostname and the last
+heartbeat; each runtime shows its role, model, effort and status.
 
 ## 6. Restart and revoke
 
-- Restarting with the same volume reuses the credential file; no new token is
-  needed. `ENROLLMENT_TOKEN` is optional in the remote template, so
-  `docker compose up -d` works after a reboot or image update without it
-  (keeping it in `.env` is harmless — the file wins).
-- Deleting the volume requires a new join token.
-- **Revoke** from the agent’s detail page (**Revoke Credentials**). The node
-  must be enrolled again with a new token.
+- **Restart** keeps the credential volume; no new token is needed.
+- **SIGHUP** (`docker kill -s HUP <container>`) reloads `agent.ini` and drains
+  only the removed/changed runtimes.
+- **Drain** stops accepting new leases and stops runtimes after their current
+  run.
+- **Revoke** marks the node and its runtimes revoked; the next heartbeat is
+  rejected and the runtime releases its claim and lease. Re-enroll with a new
+  token.
+- Deleting the credential volume loses the identity; mint a new token.
 
 ## Troubleshooting
 
-| Symptom | Meaning / fix |
+| Symptom | Cause / fix |
 |---|---|
-| Enrollment tab missing or 404 | `AGENT_ENROLLMENT_ENABLED` is off, or you lack `AGENT_READ`. |
-| `TLS_REQUIRED` | Use HTTPS, or set `ALLOW_INSECURE_AGENT_ENROLLMENT=1` for local testing. |
-| `AGENT_CREDENTIALS_FILE is required` | Mount a persistent volume and set the path. |
-| `Permission denied` writing `/credentials/agent.json` | The image predates the `/credentials` ownership fix (rebuild it), or the volume was created by an older/root-owned container. Remove it with `docker volume rm <project>_agent_credentials`; that loses the identity, so mint a new token. |
-| `network … declared as external, but could not be found` | You used `agent/docker-compose.yml` on a host without the planner stack. Use the remote template, or set `VIBECODE_NETWORK` to the planner’s network. |
-| `AGENT_MODE=build but the project has no usable repository` | The node has already consumed its one-time join token. Connect a repo under **Manage GitHub**, then mint a new token (or configure `REPO_OWNER`/`REPO_NAME` before starting). |
-| Agent says review mode on a build worker | Set `AGENT_MODE=build`. |
-| Join token rejected | It is expired, revoked, or already used; mint a new one. |
-| Agent cannot refresh | The refresh token family was revoked or expired; re-enroll. |
-| Project repo changed in the UI | Restart the agent so it reloads the coordinates. |
+| `Supervisor config rejected: unknown key "api_key"` | Secrets are not allowed in `agent.ini`. Put the key in the model registry; the supervisor fetches it per runtime. |
+| `Supervisor config rejected: unknown section` | Only `[runtime "<name>"]` sections are supported. Check spelling/case. |
+| `No credential file and no ENROLLMENT_TOKEN` | Mount `AGENT_CREDENTIALS_FILE` or supply a fresh join token. |
+| `Node enrollment request failed with HTTP 409` | The token was already used or exhausted. Mint a new one. |
+| `Node enrollment request failed with HTTP 401` | Token expired, revoked, or minted for a different owner. |
+| `Token is not valid for this node` / 403 heartbeat | The node was revoked/drained, or the runtime grant was removed. Re-grant or re-enroll. |
+| Runtime stays `pending` | The model is unverified/disabled or not tagged with the runtime role. Verify it and add the role tag. |
+| `409` when deleting a credential/model | It is still referenced by a runtime or model. Detach it first; deactivate or rotate instead. |
+| `modelRef` rejected (400/409) | The `<credential>/<model>` ref is missing or ambiguous in the node owner/project scope. Use the registry name exactly. |
+| Child keeps restarting | Check the child log for a provider-config 403/404 or a missing grant; the supervisor backs off, it does not spin. |
+| Old credential file is rejected | Credential files are node-scoped; re-enroll the host with a new token. |

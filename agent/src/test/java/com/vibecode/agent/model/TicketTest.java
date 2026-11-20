@@ -10,10 +10,42 @@ import static org.junit.jupiter.api.Assertions.*;
 class TicketTest {
 
     @Test
+    void fillMissingFromKeepsPickupFieldsAndRestoresDescription() {
+        Ticket pickup = new Ticket();
+        pickup.setId(7L);
+        pickup.setTitle("Picked title");
+        pickup.setStatus("in_progress");
+
+        Ticket listed = new Ticket();
+        listed.setId(7L);
+        listed.setTitle("Listed title");
+        listed.setDescription("Full description");
+        listed.setProjectId(3L);
+        listed.setStatus("backlog");
+
+        pickup.fillMissingFrom(listed);
+
+        assertEquals("in_progress", pickup.getStatus());
+        assertEquals("Picked title", pickup.getTitle());
+        assertEquals("Full description", pickup.getDescription());
+        assertEquals(3L, pickup.getProjectId());
+    }
+
+    @Test
+    void fillMissingFromIgnoresAListedTicketThatIsMissing() {
+        Ticket pickup = new Ticket();
+        pickup.setId(7L);
+
+        pickup.fillMissingFrom(null);
+
+        assertNull(pickup.getDescription());
+    }
+
+    @Test
     void testIsAvailableBacklog() {
         Ticket ticket = new Ticket();
         ticket.setStatus("backlog");
-        ticket.setAssignedAgentId(null);
+        ticket.setAssignedRuntimeId(null);
         assertTrue(ticket.isAvailable());
     }
 
@@ -21,7 +53,7 @@ class TicketTest {
     void testIsNotAvailableWhenPublishedPrExists() {
         Ticket ticket = new Ticket();
         ticket.setStatus("backlog");
-        ticket.setAssignedAgentId(null);
+        ticket.setAssignedRuntimeId(null);
         ticket.setPrUrl("https://github.com/owner/repo/pull/9");
 
         assertFalse(ticket.isAvailable());
@@ -31,7 +63,7 @@ class TicketTest {
     void testIsAvailableInProgress() {
         Ticket ticket = new Ticket();
         ticket.setStatus("in_progress");
-        ticket.setAssignedAgentId(null);
+        ticket.setAssignedRuntimeId(null);
         assertFalse(ticket.isAvailable());
     }
 
@@ -39,7 +71,7 @@ class TicketTest {
     void testIsAvailableAssigned() {
         Ticket ticket = new Ticket();
         ticket.setStatus("backlog");
-        ticket.setAssignedAgentId(123L);
+        ticket.setAssignedRuntimeId(123L);
         assertFalse(ticket.isAvailable());
     }
 
@@ -47,7 +79,7 @@ class TicketTest {
     void testIsNotAvailableWhenDependenciesBlockIt() {
         Ticket ticket = new Ticket();
         ticket.setStatus("backlog");
-        ticket.setAssignedAgentId(null);
+        ticket.setAssignedRuntimeId(null);
         ticket.setReady(false);
 
         assertFalse(ticket.isAvailable());
@@ -56,10 +88,10 @@ class TicketTest {
     @Test
     void testIsLocked() {
         Ticket ticket = new Ticket();
-        ticket.setAssignedAgentId(123L);
+        ticket.setAssignedRuntimeId(123L);
         assertTrue(ticket.isLocked());
 
-        ticket.setAssignedAgentId(null);
+        ticket.setAssignedRuntimeId(null);
         assertFalse(ticket.isLocked());
     }
 

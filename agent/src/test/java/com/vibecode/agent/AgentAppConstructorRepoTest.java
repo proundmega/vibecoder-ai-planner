@@ -35,6 +35,7 @@ class AgentAppConstructorRepoTest {
     static class StubApi extends ApiService {
         final AtomicBoolean repoRequested = new AtomicBoolean(false);
         final boolean failRepo;
+        final java.util.List<String> startupCalls = new java.util.ArrayList<>();
 
         StubApi(AgentConfig config, boolean failRepo) {
             super(config);
@@ -42,14 +43,20 @@ class AgentAppConstructorRepoTest {
         }
 
         @Override
+        public void sendHeartbeat(String runtimeId, String status, Object currentProjectId) {
+            startupCalls.add("heartbeat:" + status);
+        }
+
+        @Override
         public Map<String, Object> getRepoConfig(String projectId) throws IOException {
+            startupCalls.add("repo");
             repoRequested.set(true);
             if (failRepo) throw new IOException("backend unavailable");
             return Map.of("repoUrl", "https://github.com/server-org/server-repo.git");
         }
 
         @Override
-        public Map<String, Object> getProviderConfig(String agentId) {
+        public Map<String, Object> getProviderConfig() {
             return null;
         }
 
@@ -63,6 +70,7 @@ class AgentAppConstructorRepoTest {
     void constructorFetchesAndAppliesTheProjectRepoBeforeWiring() {
         ModeConfig config = new ModeConfig();
         config.build = true;
+        config.setRuntimeId("77");
         StubApi api = new StubApi(config, false);
 
         new AgentApp(config, null, api);
@@ -70,6 +78,8 @@ class AgentAppConstructorRepoTest {
         assertTrue(api.repoRequested.get());
         assertEquals("server-org", config.owner);
         assertEquals("server-repo", config.name);
+        assertEquals(java.util.List.of("heartbeat:running", "repo"), api.startupCalls,
+            "the runtime must be running before the #182 repo read");
     }
 
     @Test

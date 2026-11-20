@@ -1,0 +1,51 @@
+; ---------------------------------------------------------------------------
+; Vibecode agent supervisor — declared runtime slots
+; ---------------------------------------------------------------------------
+;
+; This file declares WHAT runs on the host. It must never contain credentials.
+; Provider/model secrets are fetched by each child over the authenticated node
+; channel and are rejected here by the parser (secret-looking keys *and*
+; secret-looking values fail the boot).
+;
+;   role   = worker | reviewer | planner   (required)
+;   model  = <credential-name>/<model>     (required)
+;   count  = 1..64                         (required)
+;   effort = minimal | low | medium | high | max   (optional; model default)
+;   project= <project id>                  (required for workers; Track A)
+;
+; Section names are used in child names (<name>-1, <name>-2, …) and PID files.
+; Changing role/model/effort/project replaces only the affected children;
+; changing count adds or drains only the difference.
+;
+; Start the supervisor with:
+;   SUPERVISOR_CONFIG=/etc/vibecode/agent.ini java -jar agent.jar
+;
+; ---------------------------------------------------------------------------
+
+; Build workers: one ticket at a time, higher reasoning effort.
+[runtime "workers"]
+role = worker
+model = acme/claude-sonnet
+count = 3
+effort = high
+project = 1
+
+; Reviewers: comment-only in this phase; read-only project access.
+[runtime "reviewers"]
+role = reviewer
+model = acme/claude-opus
+count = 2
+effort = max
+
+; Planners: draft planning documents through the guarded API.
+[runtime "planners"]
+role = planner
+model = acme/claude-sonnet
+count = 1
+; effort is optional and falls back to the model default.
+
+; Secrets are not configuration. Do NOT add lines like:
+;   api_key = ...        (secret-looking key)
+;   token = ...          (secret-looking key)
+;   project = sk-live-…  (secret-looking value)
+; The supervisor refuses to start instead of leaking them to child argv/logs.

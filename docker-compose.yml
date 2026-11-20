@@ -163,6 +163,51 @@ services:
           memory: 512M
           cpus: '1.0'
 
+  # fg-54 manager: housekeeping jobs (stale claims, token cleanup,
+  # heartbeat expiry, legacy pool drain). Replicas coordinate with Postgres
+  # advisory locks; scale with MANAGER_REPLICAS. Internal network only.
+  manager:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      labels: *ci-labels
+    restart: unless-stopped
+    command: node src/manager/index.js
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-changeme}@postgres:5432/vibecode
+      - MANAGER_PORT=3002
+      - MANAGER_JOB_INTERVAL_MS=${MANAGER_JOB_INTERVAL_MS:-30000}
+      - MANAGER_STALE_CLAIM_MINUTES=${MANAGER_STALE_CLAIM_MINUTES:-60}
+      - MANAGER_HEARTBEAT_STALE_SECONDS=${MANAGER_HEARTBEAT_STALE_SECONDS:-120}
+      - MANAGER_TOKEN_RETENTION_DAYS=${MANAGER_TOKEN_RETENTION_DAYS:-30}
+      - MANAGER_BATCH_SIZE=${MANAGER_BATCH_SIZE:-100}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    networks:
+      - default
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      replicas: ${MANAGER_REPLICAS:-1}
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+
   frontend:
     build:
       context: ./frontend

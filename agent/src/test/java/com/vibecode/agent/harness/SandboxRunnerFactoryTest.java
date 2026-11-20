@@ -117,7 +117,7 @@ class SandboxRunnerFactoryTest {
         env.put("SANDBOX_USER", "1000:1000");
         env.put("SANDBOX_DOCKER_BIN", docker.toString());
         if (owner != null) {
-            env.put("AGENT_ID", owner);
+            env.put("AGENT_RUNTIME_ID", owner);
         }
         return SandboxConfig.from(env::get);
     }

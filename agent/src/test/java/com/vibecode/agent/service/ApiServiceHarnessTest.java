@@ -2,6 +2,7 @@ package com.vibecode.agent.service;
 
 import com.sun.net.httpserver.HttpServer;
 import com.vibecode.agent.config.AgentConfig;
+import com.vibecode.agent.service.AgentAuthManager;
 import com.vibecode.agent.harness.EgressMtlsMaterial;
 import com.vibecode.agent.harness.RedactionRegistry;
 import org.junit.jupiter.api.AfterEach;
@@ -69,8 +70,9 @@ class ApiServiceHarnessTest {
         AgentConfig config = mock(AgentConfig.class);
         when(config.getApiUrl())
             .thenReturn("http://127.0.0.1:" + server.getAddress().getPort() + "/api/v1");
-        when(config.getAgentApiKey()).thenReturn("test-agent-key");
-        api = new ApiService(config);
+        AgentAuthManager authManager = mock(AgentAuthManager.class);
+        when(authManager.ensureValidAccessToken()).thenReturn("test-agent-key");
+        api = new ApiService(config, authManager);
     }
 
     @AfterEach
@@ -96,6 +98,26 @@ class ApiServiceHarnessTest {
     private static String error(String code) {
         return "{\"success\":false,\"error\":{\"code\":\"" + code
             + "\",\"message\":\"" + code + "\"}}";
+    }
+
+    @Test
+    void heartbeatOmitsStatusWhenNullSoAdminDrainIsPreserved() throws Exception {
+        respond("/api/v1/agent-runtimes/3/heartbeat", 200, ok("{}"));
+
+        api.sendHeartbeat("3", null, 1);
+
+        RecordedRequest request = lastRequest();
+        assertEquals("POST", request.method());
+        assertFalse(request.body().contains("\"status\""), request.body());
+        assertTrue(request.body().contains("\"currentProjectId\":1"));
+    }
+
+    @Test
+    void heartbeatTreatsA403AsARevokedRuntime() {
+        respond("/api/v1/agent-runtimes/3/heartbeat", 403, error("TOKEN_REVOKED"));
+
+        assertThrows(ApiService.RuntimeRevokedException.class,
+            () -> api.sendHeartbeat("3", "running", 1));
     }
 
     @Test

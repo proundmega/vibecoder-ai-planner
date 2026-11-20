@@ -54,11 +54,11 @@ class AgentEnrollmentClientTest {
 
     private String credentialJson() {
         return "{\"success\":true,\"data\":{"
-            + "\"agent_id\":42,"
-            + "\"access_token\":\"at_new\","
-            + "\"refresh_token\":\"ar_new\","
-            + "\"access_expires_at\":\"" + Instant.parse("2026-12-01T00:00:00Z") + "\","
-            + "\"refresh_expires_at\":\"" + Instant.parse("2026-12-31T00:00:00Z") + "\"}}";
+            + "\"node\":{\"id\":42,\"name\":\"node-1\"},"
+            + "\"accessToken\":\"at_new\","
+            + "\"refreshToken\":\"ar_new\","
+            + "\"accessExpiresAt\":\"" + Instant.parse("2026-12-01T00:00:00Z") + "\","
+            + "\"refreshExpiresAt\":\"" + Instant.parse("2026-12-31T00:00:00Z") + "\"}}";
     }
 
     @Test
@@ -70,10 +70,33 @@ class AgentEnrollmentClientTest {
         AgentCredentialStore.Credentials credentials =
             new AgentEnrollmentClient(config).enroll("worker", Map.of("hostname", "node-1"));
 
-        assertEquals("42", credentials.agentId());
+        assertEquals("42", credentials.nodeId());
         assertEquals("at_new", credentials.accessToken());
         assertEquals("ar_new", credentials.refreshToken());
         assertEquals(Instant.parse("2026-12-01T00:00:00Z"), credentials.accessExpiresAt());
+    }
+
+    private String refreshJson() {
+        // Track A's refresh payload deliberately has no node id.
+        return "{\"success\":true,\"data\":{"
+            + "\"access_token\":\"at_refreshed\","
+            + "\"refresh_token\":\"ar_refreshed\","
+            + "\"access_expires_at\":\"" + Instant.parse("2026-12-02T00:00:00Z") + "\","
+            + "\"refresh_expires_at\":\"" + Instant.parse("2027-01-01T00:00:00Z") + "\"}}";
+    }
+
+    @Test
+    void refreshAcceptsTheBackendsNodeLessPayloadAndPreservesTheNodeId() throws IOException {
+        HttpServer running = start(refreshJson());
+        UrlConfig config = new UrlConfig();
+        config.refreshUrl = "http://127.0.0.1:" + running.getAddress().getPort() + "/refresh";
+
+        AgentCredentialStore.Credentials credentials =
+            new AgentEnrollmentClient(config).refresh("ar_old", "idem-key-1234567890", "42");
+
+        assertEquals("42", credentials.nodeId());
+        assertEquals("at_refreshed", credentials.accessToken());
+        assertEquals("ar_refreshed", credentials.refreshToken());
     }
 
     @Test

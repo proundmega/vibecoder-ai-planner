@@ -1,31 +1,38 @@
 #!/bin/bash
-# Agent runtime configuration template
-# Copy to run-agent.sh and fill in your values
-# NEVER commit run-agent.sh with real secrets
+# Agent runtime configuration template (fg-54)
+# Copy to run-agent.sh and fill in your values.
+# NEVER commit run-agent.sh with real secrets.
+#
+# This runs one child runtime directly. Production runs the supervisor
+# (SUPERVISOR_CONFIG=agent.ini); it sets the runtime fields below per child.
+# Provider keys are fetched from the backend; AI_* values are dev fallbacks.
 
-export AGENT_API_KEY="your-agent-api-key-here"
-export AGENT_ID="2"
+export ENROLLMENT_TOKEN="enr_replace_with_a_one_time_join_token"
+export AGENT_CREDENTIALS_FILE="/tmp/vibecode-node.json"
 export BACKEND_URL="http://192.168.3.50:3001/"
-export PROJECT_ID="1"
-export REPO_OWNER="your-github-username"
-export REPO_NAME="your-repo-name"
-export AI_PROVIDER="openai"
-export AI_ENDPOINT_URL="http://your-llm-server:5000/v1"
-export AI_MODEL="/path/to/your/model.gguf"
-export AI_API_KEY="your-ai-provider-api-key"
-export GITHUB_TOKEN="github_pat_your_token_here"
+export AGENT_NODE_NAME="build-host-1"
+
+# Runtime identity (normally set by the supervisor from the server config).
+export AGENT_RUNTIME_ID="1"
+export AGENT_ROLE="worker"            # worker | reviewer | planner
+export AGENT_LLM_MODEL="acme/claude-sonnet"
+# export AGENT_EFFORT="high"          # minimal | low | medium | high | max
+export PROJECT_ID="1"                  # hint only; grants are enforced server-side
+
+export REPO_CLONE_DIR="/tmp/repos"
+export GITHUB_AUTH_MODE="app"
 export DRY_RUN="false"
 export MAX_TICKETS="1"
 
-# Optional OpenCode harness (requires OpenCode 1.x on PATH)
+# Optional dev-only provider fallback (the registry is authoritative):
+# export AI_PROVIDER="openai"
+# export AI_ENDPOINT_URL="http://localhost:11434/v1"
+# export AI_MODEL="llama3"
+# export AI_API_KEY="..."
+
+# Optional OpenCode harness
 # export HARNESS_MODE="opencode"
 # export HARNESS_BIN="opencode"
 # export HARNESS_MAX_DURATION_MINUTES="45"
-# export HARNESS_VERIFY_COMMANDS=""
-# export HARNESS_MODEL="opencode-go/beam-free"
-# export HARNESS_MAX_FILES="50"
-# export HARNESS_MAX_LINES="2000"
-# export HARNESS_MAX_BYTES="5242880"
-# export HARNESS_MAX_ATTEMPTS="3"
 
-java -jar agent/target/agent-1.0.0.jar
+java -jar agent/target/agent-*.jar

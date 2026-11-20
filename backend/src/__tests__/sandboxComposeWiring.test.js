@@ -157,7 +157,7 @@ describe('sandbox compose wiring', () => {
 
   rendered('gives pool agents a resolvable backend URL', (rootConfig, agentConfig) => {
     expect(rootConfig.services.api.environment.BACKEND_URL).toBe('http://api:3001');
-    expect(agentConfig.services.agent.environment.BACKEND_URL).toBe('http://api:3001');
+    expect(agentConfig.services.supervisor.environment.BACKEND_URL).toBe('http://api:3001');
   });
 
   rendered('keeps the Docker API proxy off the default network', (rootConfig) => {
@@ -188,7 +188,7 @@ describe('sandbox compose wiring', () => {
   });
 
   rendered('keeps standalone host mode off the proxy network', (rootConfig, hostConfig) => {
-    const service = hostConfig.services.agent;
+    const service = hostConfig.services.supervisor;
     expect(service.environment.SANDBOX_MODE).toBe('host');
     expect(service.environment.DOCKER_HOST).toBeUndefined();
     expect(service.networks).toHaveProperty('vibecode');
@@ -198,7 +198,7 @@ describe('sandbox compose wiring', () => {
   rendered('adds the proxy network only through the Docker-mode overlay', (
     rootConfig, hostConfig, sandboxConfig
   ) => {
-    const service = sandboxConfig.services.agent;
+    const service = sandboxConfig.services.supervisor;
     expect(service.environment.SANDBOX_MODE).toBe('docker');
     expect(service.environment.DOCKER_HOST).toBe('tcp://docker-proxy:2375');
     expect(service.networks).toHaveProperty('vibecode');

@@ -68,7 +68,7 @@ Ordered slices. Each slice should be independently verifiable.
 | `backend/src/middleware/agentNodeAuth.js` | CREATE | Bind `:id` to the presented node credential; list scope |
 | `backend/src/middleware/agentNodeAccess.js` | CREATE | JWT node ownership and project-admin scope for grants |
 | `backend/src/middleware/agentRole.js` | CREATE | Role/grant checks and denial audit |
-| `backend/src/middleware/auth.js` | MODIFY | Remove static `ak_…`/`X-API-Key` agent path; node tokens only |
+| `backend/src/middleware/auth.js` | MODIFY | Remove the static `ak_…` agent path; node credentials use `X-API-Key` |
 | `backend/src/middleware/agentProjectScope.js` | MODIFY | Runtime→grant→project scope assertions |
 | `backend/src/validators/agentFleet.js` | CREATE | Node/grant/runtime Joi schemas |
 | `backend/src/validators/providerRegistry.js` | CREATE | Credential/model/effort Joi schemas |
@@ -198,7 +198,7 @@ cd backend && npm test
 cd backend && npm run test:integration
 cd frontend && npm test -- --run && npm run typecheck && npm run lint
 cd agent && mvn -B test
-grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_hash\|X-API-Key" backend/src agent/src | grep -v __tests__
+grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_hash" backend/src agent/src | grep -v __tests__
 ```
 
 ## Review checklist
@@ -226,4 +226,30 @@ grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_h
 
 ## Results
 
-No implementation has started; there are no verification results yet.
+| Date | Slice | Evidence |
+|---|---|---|
+| 2026-11-20 | Track B runtime/UI (PR #179) | Supervisor/runtime/manager/Fleet+Registry implemented; `mvn -B test` 910 pass (10 skipped), backend 2140 pass (173 suites), frontend 574 pass + typecheck. #180, #181, #182 and #183 are merged. 057 is available through the joint opt-in below and was validated on a fresh pgvector database; manager integration passed 3/3 with `REQUIRE_FLEET_SCHEMA=1`. The default chain is unchanged. Blocked only on the joint clean-cut run and the CI/human gate; #183 completes runtime-owned harness runs, leases and usage. |
+
+### Joint clean cut (057)
+
+`057_agent_fleet_clean_cut.sql` stays out of the default `db:migrate` chain
+because it drops the legacy `agents`, `providers`, `project_providers` and
+agent-token tables, while the legacy API surface and its backfill migration
+still exist. The joint job applies it explicitly on a **fresh** database:
+
+```bash
+AGENT_FLEET_CLEAN_CUT=1 npm run db:migrate
+REQUIRE_FLEET_SCHEMA=1 npm run test:integration
+```
+
+The switch appends 057 after 059 and skips `backfill_agent_key_hashes.js`.
+Jenkins runs the same step in its **Fleet Clean Cut** stage: it creates a fresh
+`vibecode_fg54_cut` database, runs
+`backend/integration-test/fleet-clean-cut.sh` (which sets both variables and
+runs the manager suite), and fails if the schema is missing instead of
+skipping.
+
+Do not replay `db:migrate` after the cut on a persistent database: earlier
+`providers`/`agents` migrations are not ledgered and will fail against the
+dropped tables. A migration ledger (or removing the legacy routes and their
+migrations) is the follow-up that allows 057 to become the default.

@@ -74,24 +74,36 @@ public class ApiService {
     private final class AgentAuthInterceptor implements Interceptor {
         @Override
         public Response intercept(Chain chain) throws IOException {
-            String token = authManager != null
-                ? authManager.ensureValidAccessToken()
-                : config.getAgentApiKey();
-            Request request = chain.request().newBuilder()
-                .header("X-API-Key", token == null ? "" : token)
-                .build();
+            String token = authManager != null ? authManager.ensureValidAccessToken() : null;
+            if (token == null || token.isBlank()) {
+                throw new IOException("Node credential is not initialized");
+            }
+            Request request = withRuntime(chain.request().newBuilder()
+                .header("X-API-Key", token));
             Response response = chain.proceed(request);
             if (response.code() == 401 && authManager != null) {
                 response.close();
                 authManager.refreshAfterUnauthorized(token);
                 String refreshed = authManager.ensureValidAccessToken();
-                Response retry = chain.proceed(chain.request().newBuilder()
-                    .header("X-API-Key", refreshed == null ? "" : refreshed)
-                    .build());
+                Response retry = chain.proceed(withRuntime(chain.request().newBuilder()
+                    .header("X-API-Key", refreshed)));
                 return retry;
             }
             return response;
         }
+
+        private Request withRuntime(Request.Builder builder) {
+            String runtimeId = config.getRuntimeId();
+            if (runtimeId != null && !runtimeId.isBlank()) {
+                builder.header("X-Agent-Runtime", runtimeId);
+            }
+            return builder.build();
+        }
+    }
+
+    /** Current node access token, for callers that build their own requests. */
+    public String currentAccessToken() throws IOException {
+        return authManager != null ? authManager.ensureValidAccessToken() : null;
     }
 
     /**
@@ -600,20 +612,6 @@ public class ApiService {
         return response.getData() != null ? response.getData() : Collections.emptyList();
     }
 
-    /**
-     * Get decrypted API key for a provider type.
-     */
-    public String getDecryptedKey(String credentialType) throws IOException {
-        String url = baseUrl + "/credentials/" + config.getProjectId() + "/credentials/decrypt?type=" + credentialType;
-        ApiResponse<Map<String, String>> response = executeGet(url, new TypeReference<ApiResponse<Map<String, String>>>() {});
-        
-        if (response.hasError()) {
-            throw new IOException("Failed to get " + credentialType + " key: " + response.getError());
-        }
-        
-        return response.getData() != null ? response.getData().get("key") : null;
-    }
-
     private <T> ApiResponse<T> executeGet(String url, TypeReference<ApiResponse<T>> typeRef) throws IOException {
         Request request = new Request.Builder()
             .url(url)
@@ -683,24 +681,54 @@ public class ApiService {
     }
 
     /**
-     * Send a heartbeat to the backend to indicate the agent is alive.
+     * Send a runtime heartbeat. The backend binds the runtime header to a
+     * runtime owned by the presented node credential.
      */
-    public void sendHeartbeat(String agentId, String currentTicketId, String currentStep,
-                               Map<String, Object> memoryUsage, Map<String, Object> cpuUsage) throws IOException {
-        String url = baseUrl + "/agents-status/" + agentId + "/heartbeat";
+    public void sendHeartbeat(String runtimeId, String status, Object currentProjectId) throws IOException {
+        String url = baseUrl + "/agent-runtimes/" + runtimeId + "/heartbeat";
         Map<String, Object> body = new java.util.HashMap<>();
-        if (currentTicketId != null) body.put("current_ticket_id", currentTicketId);
-        if (currentStep != null) body.put("current_step", currentStep);
-        if (memoryUsage != null) body.put("memory_usage", memoryUsage);
-        if (cpuUsage != null) body.put("cpu_usage", cpuUsage);
-        executePost(url, body, new TypeReference<ApiResponse<Object>>() {});
+        if (status != null) body.put("status", status);
+        if (currentProjectId != null) body.put("currentProjectId", currentProjectId);
+        String json = objectMapper.writeValueAsString(body);
+        Request request = new Request.Builder()
+            .url(url)
+            .header("Content-Type", "application/json")
+            .post(RequestBody.create(json, MediaType.get("application/json")))
+            .build();
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (response.code() == 401 || response.code() == 403 || response.code() == 404) {
+                throw new RuntimeRevokedException(
+                    "Runtime or node is no longer authorized (HTTP " + response.code() + ")");
+            }
+            if (!response.isSuccessful()) {
+                throw new IOException("Heartbeat failed with HTTP " + response.code());
+            }
+            String responseBody = response.body() != null ? response.body().string() : "";
+            ApiResponse<Object> parsed = objectMapper.readValue(
+                responseBody, new TypeReference<ApiResponse<Object>>() {});
+            if (parsed.hasError()) {
+                throw new IOException("Heartbeat failed: " + parsed.getError());
+            }
+        }
+    }
+
+    /** The node/runtime credential was revoked, drained or removed. */
+    public static class RuntimeRevokedException extends IOException {
+        public RuntimeRevokedException(String message) {
+            super(message);
+        }
     }
 
     /**
-     * Get decrypted provider config for this agent from the backend.
+     * Get the decrypted provider config for this runtime. The node credential
+     * and runtime header bind the request; the response is no-store.
      */
-    public Map<String, Object> getProviderConfig(String agentId) throws IOException {
-        String url = baseUrl + "/agents/" + agentId + "/provider-config";
+    public Map<String, Object> getProviderConfig() throws IOException {
+        if (authManager == null || authManager.getNodeId() == null || config.getRuntimeId() == null) {
+            throw new IOException("Node/runtime credential is not initialized");
+        }
+        String url = baseUrl + "/agent-nodes/" + authManager.getNodeId()
+            + "/runtimes/" + config.getRuntimeId() + "/provider-config";
         ApiResponse<Map<String, Object>> response = executeGet(url, new TypeReference<ApiResponse<Map<String, Object>>>() {});
         
         if (response.hasError()) {

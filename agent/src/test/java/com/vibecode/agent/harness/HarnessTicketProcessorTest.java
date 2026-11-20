@@ -235,7 +235,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void startupRecoverySkipsARunWithAFreshHeartbeatOrLease() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
             "id", "run-live",
             "ticket_id", "1",
@@ -256,7 +256,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void startupRecoverySkipsFreshHeartbeatWithAnExpiredLease() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
             "id", "run-fresh-heartbeat",
             "ticket_id", "1",
@@ -272,7 +272,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void startupRecoverySkipsAnUnexpiredLeaseWithAStaleHeartbeat() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
             "id", "run-fresh-lease",
             "ticket_id", "1",
@@ -288,7 +288,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void startupRecoveryProceedsAfterTheHeartbeatAndLeaseAreStale() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
             "id", "run-stale",
             "ticket_id", "1",
@@ -312,7 +312,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void startupRecoveryFailsInterruptedRunsAndReleasesThroughTheGuard() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
             "id", "run-old",
             "ticket_id", "1",
@@ -337,7 +337,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void startupRecoveryAdoptsAPublishedRunAndKeepsTheTicketInReview() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
             "id", "run-old",
             "ticket_id", "1",
@@ -366,7 +366,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void startupRecoveryKeepsANewerTicketPrInsteadOfOverwritingIt() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
             "id", "run-old",
             "ticket_id", "1",
@@ -390,7 +390,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void startupRecoveryLeavesABacklogStatusForBackendReconciliation() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
             "id", "run-old",
             "ticket_id", "1",
@@ -418,7 +418,7 @@ class HarnessTicketProcessorTest {
     @Test
     void resumeModeFindsTheExistingPrForAPublishingRun() throws Exception {
         HarnessTicketProcessor resumeProcessor = processorWithResumeMode();
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
             "id", "run-old",
             "ticket_id", "1",
@@ -446,7 +446,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void startupRecoveryNeverRegressesADoneTicket() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
             "id", "run-old",
             "ticket_id", "1",
@@ -469,7 +469,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void startupRecoveryDoesNotAdoptAStaleTicketPrWithoutRunEvidence() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
             "id", "run-old",
             "ticket_id", "1",
@@ -493,7 +493,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void startupRecoveryDoesNotReleaseWhenAFinishReturnsTheWrongTerminalStatus() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
             "id", "run-old",
             "ticket_id", "1",
@@ -513,7 +513,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void startupRecoveryReportsListFailureSoTheAppCanRetry() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L))
             .thenThrow(new IOException("backend down"));
 
@@ -522,7 +522,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void startupRecoveryLeavesTheRunWhenFinishCannotBeConfirmed() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
             "id", "run-old",
             "ticket_id", "1",
@@ -1576,7 +1576,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void workspacePruneSkipsWhenProtectedPathsAreUnavailable() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveWorkspacePaths(7L))
             .thenThrow(new IOException("backend down"));
 
@@ -1586,7 +1586,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void workspacePruneUsesProtectedPathsFromTheBackend() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveWorkspacePaths(7L))
             .thenReturn(List.of("/tmp/protected-workspace"));
         when(workspace.pruneStaleWorkspaces(any(), anyCollection())).thenReturn(2);
@@ -1743,7 +1743,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void stopsAtAHardBudgetLimitWithoutPublishingAndReturnsTheTicket() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.startHarnessRun(any(), anyString(), any(), any(), any(), anyInt()))
             .thenReturn(Map.of("id", "run-1", "project_id", 7L));
         when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
@@ -1784,7 +1784,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void emitsACompleteCorrelatedTimelineForASuccessfulRun() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.startHarnessRun(any(), anyString(), any(), any(), any(), anyInt()))
             .thenReturn(Map.of("id", "run-1", "project_id", 7L));
         when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
@@ -1825,7 +1825,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void retriesOnceWithTheFallbackModelOnATransientProviderFailure() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.startHarnessRun(any(), anyString(), any(), any(), any(), anyInt()))
             .thenReturn(Map.of("id", "run-1", "project_id", 7L));
         when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
@@ -1875,7 +1875,7 @@ class HarnessTicketProcessorTest {
 
     @Test
     void stopsMidRunWhenTheProjectDailyBudgetIsExhausted() throws Exception {
-        when(config.getAgentId()).thenReturn("7");
+        when(config.getRuntimeId()).thenReturn("7");
         when(apiService.startHarnessRun(any(), anyString(), any(), any(), any(), anyInt()))
             .thenReturn(Map.of("id", "run-1", "project_id", 7L));
         when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);

@@ -1,29 +1,32 @@
 services:
-  agent:
+  # fg-54: one supervisor per host. It enrolls the node, declares the runtimes
+  # in agent.ini, and reconciles one child JVM per runtime. No secrets live in
+  # agent.ini; provider keys are fetched per runtime over the node channel.
+  supervisor:
     build:
       context: .
       dockerfile: Dockerfile
     environment:
-      - AGENT_ID=${AGENT_ID:-}
-      - AGENT_API_KEY=${AGENT_API_KEY:-}
-      # fg-53 enrollment: set ENROLLMENT_TOKEN instead of AGENT_ID/AGENT_API_KEY.
-      # The credential file is the durable node identity; mount it on a volume.
-      - AGENT_AUTH_MODE=${AGENT_AUTH_MODE:-auto}
-      - AGENT_MODE=${AGENT_MODE:-auto}
+      - SUPERVISOR_CONFIG=/config/agent.ini
+      - AGENT_JAR=/app/agent.jar
       - ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN:-}
       - ENROLLMENT_URL=${ENROLLMENT_URL:-}
-      - AGENT_CREDENTIALS_FILE=${AGENT_CREDENTIALS_FILE:-/credentials/agent.json}
+      - AGENT_CREDENTIALS_FILE=${AGENT_CREDENTIALS_FILE:-/credentials/node.json}
+      - AGENT_NODE_NAME=${AGENT_NODE_NAME:-}
       # Local Compose uses http://api; enrollment refuses non-loopback HTTP
       # unless this is explicitly enabled. Use HTTPS in production.
       - ALLOW_INSECURE_AGENT_ENROLLMENT=${ALLOW_INSECURE_AGENT_ENROLLMENT:-0}
       - BACKEND_URL=${BACKEND_URL:-http://api:3001}
-      - PROJECT_ID=${PROJECT_ID:-1}
+      # Per-child heap and the host budget; the supervisor divides the budget
+      # across the declared runtime count.
+      - AGENT_RUNTIME_HEAP_MB=${AGENT_RUNTIME_HEAP_MB:-768}
+      - SUPERVISOR_MEMORY_BUDGET_MB=${SUPERVISOR_MEMORY_BUDGET_MB:-0}
+      - SUPERVISOR_STOP_TIMEOUT_SECONDS=${SUPERVISOR_STOP_TIMEOUT_SECONDS:-10}
       - REPO_OWNER=${REPO_OWNER}
       - REPO_NAME=${REPO_NAME}
       - REPO_CLONE_DIR=${REPO_CLONE_DIR:-/repos}
       - AI_PROVIDER=${AI_PROVIDER:-claude}
       - AI_MODEL=${AI_MODEL:-claude-sonnet-4-20250514}
-      - AI_API_KEY=${AI_API_KEY}
       - POLL_INTERVAL_MS=${POLL_INTERVAL_MS:-30000}
       - DRY_RUN=${DRY_RUN:-false}
       - MAX_TICKETS=${MAX_TICKETS:-1}
@@ -85,6 +88,9 @@ services:
       - SANDBOX_CONTAINER_WORKSPACE_ROOT=${SANDBOX_CONTAINER_WORKSPACE_ROOT:-/repos}
       - SANDBOX_HOST_WORKSPACE_ROOT=${SANDBOX_HOST_WORKSPACE_ROOT:-}
     volumes:
+      # Declared runtimes only: roles, model refs, counts, optional effort.
+      # Never put API keys or tokens here.
+      - ${AGENT_INI_PATH:-./agent.ini}:/config/agent.ini:ro
       # Host-visible workspace: the daemon resolves this bind, not the agent
       # container. SANDBOX_HOST_WORKSPACE_ROOT must match its absolute path.
       # The bind is host-owned; make it writable by the agent user (uid 100,
@@ -104,8 +110,8 @@ services:
           cpus: '2.0'
 
 volumes:
-  # Persisted enrollment credentials (0600). Recreating the container keeps the
-  # node identity; removing the volume requires a new join token.
+  # Persisted node credentials (0600). Recreating the container keeps the node
+  # identity; removing the volume requires a new join token.
   agent_credentials:
 
 networks:

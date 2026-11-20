@@ -388,7 +388,7 @@ class SandboxConfigTest {
     void parsesTheAgentOwnerForOrphanReaping() {
         SandboxConfig config = SandboxConfig.from(env(
             "SANDBOX_MODE", "docker",
-            "AGENT_ID", "agent-42"
+            "AGENT_RUNTIME_ID", "agent-42"
         )::get);
 
         assertEquals("agent-42", config.owner());
@@ -398,7 +398,7 @@ class SandboxConfigTest {
     void prefersTheStableSandboxOwnerOverAgentId() {
         SandboxConfig config = SandboxConfig.from(env(
             "SANDBOX_MODE", "docker",
-            "AGENT_ID", "42",
+            "AGENT_RUNTIME_ID", "42",
             "SANDBOX_OWNER", "pool-7",
             "SANDBOX_POOL_AGENT", "true",
             "SANDBOX_DAEMON_ID", "daemon-1"
@@ -414,9 +414,9 @@ class SandboxConfigTest {
         IllegalStateException error = assertThrows(IllegalStateException.class,
             () -> SandboxConfig.from(env(
                 "SANDBOX_MODE", "docker",
-                "AGENT_ID", "agent with spaces"
+                "AGENT_RUNTIME_ID", "agent with spaces"
             )::get));
-        assertTrue(error.getMessage().contains("SANDBOX_OWNER/AGENT_ID"));
+        assertTrue(error.getMessage().contains("SANDBOX_OWNER/AGENT_RUNTIME_ID"));
     }
 
     @Test
@@ -459,7 +459,7 @@ class SandboxConfigTest {
                 "SANDBOX_MODE", "docker",
                 "SANDBOX_OWNER", "pool/bad"
             )::get));
-        assertTrue(error.getMessage().contains("SANDBOX_OWNER/AGENT_ID"));
+        assertTrue(error.getMessage().contains("SANDBOX_OWNER/AGENT_RUNTIME_ID"));
     }
 
     @Test
