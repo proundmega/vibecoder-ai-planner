@@ -47,11 +47,12 @@ public class AgentApp {
     private final ApiService apiService;
     private final com.vibecode.agent.service.AgentAuthManager authManager;
     private final com.vibecode.agent.service.RuntimeApi runtimeApi;
-    private final ProviderSettings providerSettings;
-    private final GitHubService gitHubService;
+    private volatile ProviderSettings providerSettings;
+    private volatile GitHubService gitHubService;
     private final GitHubTokenProvider githubTokenProvider;
-    private final TicketWorker ticketWorker;
-    private final ReviewProcessor reviewProcessor;
+    private volatile TicketWorker ticketWorker;
+    private volatile ReviewProcessor reviewProcessor;
+    private volatile long lastProviderRefreshAt = 0;
     private final ProfileValidationProcessor profileValidationProcessor;
     private ScheduledExecutorService heartbeatScheduler;
     private String githubAccessToken;
@@ -289,43 +290,9 @@ public class AgentApp {
      * the same credentials, model and endpoint.
      */
     private ProviderSettings resolveProviderSettings() {
-        Map<String, Object> providerConfig = null;
-        try {
-            Map<String, Object> rawConfig = apiService.getProviderConfig();
-            providerConfig = unwrapProviderConfig(rawConfig);
-            log.info("Fetched provider config from backend: type={}, model={}",
-                providerConfig != null ? first(providerConfig, "provider_type", "providerType") : "null",
-                providerConfig != null ? providerConfig.get("model") : "null");
-        } catch (Exception e) {
-            log.warn("Failed to fetch provider config from backend, falling back to env vars: {}", e.getMessage());
-        }
-
-        if (providerConfig != null && first(providerConfig, "api_key", "apiKey") != null) {
-            String apiKey = first(providerConfig, "api_key", "apiKey");
-            String baseUrl = first(providerConfig, "base_url", "baseUrl");
-            String model = providerConfig.get("model") != null
-                ? String.valueOf(providerConfig.get("model"))
-                : config.getAiModel();
-            String providerType = first(providerConfig, "provider_type", "providerType");
-            Object maxTokensRaw = providerConfig.get("max_tokens") != null
-                ? providerConfig.get("max_tokens")
-                : providerConfig.get("maxTokens");
-            int maxTokens = maxTokensRaw instanceof Number number
-                ? number.intValue()
-                : config.getAiMaxTokens();
-            Object effortRaw = providerConfig.get("effort");
-            String effort = com.vibecode.agent.service.ProviderEffort.resolve(
-                effortRaw != null ? String.valueOf(effortRaw) : null,
-                config.getEffort());
-
-            String type = providerType == null ? "claude" : providerType;
-            String normalized = type.toLowerCase().replace('_', '-');
-            boolean openCode = normalized.equals("opencode") || normalized.equals("opencode-go");
-            if (baseUrl != null && !baseUrl.isBlank() && !openCode) {
-                normalized = "generic";
-            }
-            return new ProviderSettings(normalized, apiKey, baseUrl, model, maxTokens, effort,
-                config.getEffort() != null);
+        ProviderSettings fromBackend = fetchProviderSettings();
+        if (fromBackend != null) {
+            return fromBackend;
         }
 
         // Fall back to env vars
@@ -343,6 +310,101 @@ public class AgentApp {
         String effort = com.vibecode.agent.service.ProviderEffort.canonical(config.getEffort());
         return new ProviderSettings(type, apiKey, endpointUrl, model, config.getAiMaxTokens(), effort,
             config.getEffort() != null);
+    }
+
+    /**
+     * Fetch the runtime provider config. Returns null on failure so a refresh
+     * never replaces a working provider with an env fallback.
+     */
+    private ProviderSettings fetchProviderSettings() {
+        Map<String, Object> providerConfig = null;
+        try {
+            providerConfig = unwrapProviderConfig(apiService.getProviderConfig());
+            log.info("Fetched provider config from backend: type={}, model={}",
+                providerConfig != null ? first(providerConfig, "provider_type", "providerType") : "null",
+                providerConfig != null ? providerConfig.get("model") : "null");
+        } catch (Exception e) {
+            log.warn("Failed to fetch provider config from backend: {}", e.getMessage());
+            return null;
+        }
+
+        if (providerConfig == null || first(providerConfig, "api_key", "apiKey") == null) {
+            return null;
+        }
+        String apiKey = first(providerConfig, "api_key", "apiKey");
+        String baseUrl = first(providerConfig, "base_url", "baseUrl");
+        String model = providerConfig.get("model") != null
+            ? String.valueOf(providerConfig.get("model"))
+            : config.getAiModel();
+        String providerType = first(providerConfig, "provider_type", "providerType");
+        Object maxTokensRaw = providerConfig.get("max_tokens") != null
+            ? providerConfig.get("max_tokens")
+            : providerConfig.get("maxTokens");
+        int maxTokens = maxTokensRaw instanceof Number number
+            ? number.intValue()
+            : config.getAiMaxTokens();
+        Object effortRaw = providerConfig.get("effort");
+        String effort = com.vibecode.agent.service.ProviderEffort.resolve(
+            effortRaw != null ? String.valueOf(effortRaw) : null,
+            config.getEffort());
+
+        String type = providerType == null ? "claude" : providerType;
+        String normalized = type.toLowerCase().replace('_', '-');
+        boolean openCode = normalized.equals("opencode") || normalized.equals("opencode-go");
+        if (baseUrl != null && !baseUrl.isBlank() && !openCode) {
+            normalized = "generic";
+        }
+        return new ProviderSettings(normalized, apiKey, baseUrl, model, maxTokens, effort,
+            config.getEffort() != null);
+    }
+
+    /**
+     * Re-resolve the provider config at a bounded interval so a rotated key or
+     * effort change is picked up without restarting the runtime. Runs between
+     * tickets, where no harness client is active.
+     */
+    private void refreshProviderSettingsIfDue() {
+        long now = System.currentTimeMillis();
+        if (now - lastProviderRefreshAt < 60_000L) {
+            return;
+        }
+        lastProviderRefreshAt = now;
+        ProviderSettings next;
+        try {
+            next = fetchProviderSettings();
+        } catch (RuntimeException e) {
+            log.warn("Provider refresh failed: {}", e.getMessage());
+            return;
+        }
+        if (next == null || sameProviderSettings(providerSettings, next)) {
+            return;
+        }
+        log.info("Provider config changed; rebuilding runtime providers (type={}, model={})",
+            next.normalizedType(), next.model());
+        this.providerSettings = next;
+        RedactionRegistry.register(next.apiKey());
+        AiProvider aiProvider = createAiProvider(next);
+        GitHubWiring wiring = createGitHubWiring(
+            config, apiService, next, aiProvider,
+            githubTokenProvider, githubAccessToken, config.getHarnessConfig());
+        this.gitHubService = wiring.gitHubService();
+        this.ticketWorker = wiring.ticketWorker();
+        if (supportsLegacyProvider(next)) {
+            this.reviewProcessor = new ReviewProcessor(apiService, aiProvider, config.getRuntimeId());
+        } else {
+            this.reviewProcessor = null;
+        }
+        startupRecoveryComplete = false;
+    }
+
+    private static boolean sameProviderSettings(ProviderSettings a, ProviderSettings b) {
+        if (a == null || b == null) return a == b;
+        return java.util.Objects.equals(a.normalizedType(), b.normalizedType())
+            && java.util.Objects.equals(a.apiKey(), b.apiKey())
+            && java.util.Objects.equals(a.baseUrl(), b.baseUrl())
+            && java.util.Objects.equals(a.model(), b.model())
+            && a.maxTokens() == b.maxTokens()
+            && java.util.Objects.equals(a.effort(), b.effort());
     }
 
     private AiProvider createAiProvider(ProviderSettings settings) {
@@ -563,6 +625,7 @@ public class AgentApp {
     }
 
     private void processCycle() throws IOException {
+        refreshProviderSettingsIfDue();
         recoverStartupOnce();
 
         if (config.isPlanner()) {

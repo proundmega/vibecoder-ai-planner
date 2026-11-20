@@ -104,6 +104,29 @@ class SupervisorMainTest {
     }
 
     @Test
+    void aTransientSectionFailureIsReportedAsUnresolved() throws Exception {
+        com.vibecode.agent.service.RuntimeApi api = mock(com.vibecode.agent.service.RuntimeApi.class);
+        when(api.declareRuntimes(anyList())).thenAnswer(invocation -> {
+            List<Map<String, Object>> rows = invocation.getArgument(0);
+            String name = String.valueOf(rows.get(0).get("name"));
+            if ("reviewers".equals(name)) {
+                throw new java.io.IOException("timeout");
+            }
+            return List.of(Map.of("id", 10, "name", "workers-1"));
+        });
+
+        SupervisorMain.DeclarationResult result =
+            SupervisorMain.declareWithRetry(api, config(), 1);
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+            Map.of("workers", 10L), result.runtimeIds());
+        org.junit.jupiter.api.Assertions.assertEquals(
+            java.util.Set.of("reviewers"), result.unresolvedSections());
+        org.junit.jupiter.api.Assertions.assertTrue(result.suspendedSections().isEmpty());
+        org.junit.jupiter.api.Assertions.assertFalse(result.terminal());
+    }
+
+    @Test
     void nodeAuthFailureDuringDeclarationIsTerminal() throws Exception {
         com.vibecode.agent.service.RuntimeApi api = mock(com.vibecode.agent.service.RuntimeApi.class);
         when(api.declareRuntimes(anyList())).thenThrow(

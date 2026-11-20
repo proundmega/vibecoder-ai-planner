@@ -69,7 +69,9 @@ public final class SupervisorMain {
             runtimeIds,
             stopTimeout,
             POLL_INTERVAL);
-        supervisor.updateSuspendedSections(declared.suspendedSections());
+        java.util.Set<String> initiallySuspended = new java.util.LinkedHashSet<>(declared.suspendedSections());
+        initiallySuspended.addAll(declared.unresolvedSections());
+        supervisor.updateSuspendedSections(initiallySuspended);
         supervisor.reconcile();
         log.info("Supervisor reconciled: desired={} running={}",
             desired.runtimes().size(),
@@ -105,6 +107,11 @@ public final class SupervisorMain {
                         supervisor.updateRuntimeIds(merged);
                     }
                     suspended.addAll(declaration.suspendedSections());
+                    for (String section : declaration.unresolvedSections()) {
+                        if (!merged.containsKey(section)) {
+                            suspended.add(section);
+                        }
+                    }
                 }
                 supervisor.updateSuspendedSections(suspended);
                 for (String section : ids.keySet()) {
@@ -174,6 +181,7 @@ public final class SupervisorMain {
     record DeclarationResult(
         Map<String, Long> runtimeIds,
         java.util.Set<String> suspendedSections,
+        java.util.Set<String> unresolvedSections,
         boolean terminal,
         int terminalStatus,
         String message
@@ -189,9 +197,10 @@ public final class SupervisorMain {
         Map<String, Long> ids = new LinkedHashMap<>();
         java.util.Set<String> suspended = new java.util.LinkedHashSet<>();
         RuntimeException last = null;
+        java.util.Set<String> transientFailures = new java.util.LinkedHashSet<>();
 
         for (int attempt = 1; attempt <= Math.max(1, attempts); attempt++) {
-            java.util.Set<String> transientFailures = new java.util.LinkedHashSet<>();
+            transientFailures = new java.util.LinkedHashSet<>();
             for (RuntimeConfig.DeclaredRuntime runtime : config.runtimes()) {
                 Map<String, Object> row = declarationRow(runtime);
                 try {
@@ -208,7 +217,7 @@ public final class SupervisorMain {
                     }
                 } catch (RuntimeApi.RuntimeApiException e) {
                     if (e.status() == 401 || e.status() == 404) {
-                        return new DeclarationResult(ids, suspended, true, e.status(), e.getMessage());
+                        return new DeclarationResult(ids, suspended, java.util.Set.of(), true, e.status(), e.getMessage());
                     }
                     if (e.status() == 403) {
                         // Section-level GRANT_REQUIRED / ROLE_NOT_ALLOWED: retire
@@ -228,7 +237,7 @@ public final class SupervisorMain {
             }
 
             if (transientFailures.isEmpty()) {
-                return new DeclarationResult(ids, suspended, false, 0, null);
+                return new DeclarationResult(ids, suspended, java.util.Set.of(), false, 0, null);
             }
             log.warn("Runtime declaration failed for {} section(s) (attempt {}/{}): {}",
                 transientFailures.size(), attempt, attempts,
@@ -237,7 +246,7 @@ public final class SupervisorMain {
                 sleep(Math.min(30, attempt * 2));
             }
         }
-        return new DeclarationResult(ids, suspended, false, 0,
+        return new DeclarationResult(ids, suspended, transientFailures, false, 0,
             last != null ? last.getMessage() : "runtime declaration returned no ids");
     }
 
@@ -319,7 +328,9 @@ public final class SupervisorMain {
                 return null;
             }
             supervisor.updateRuntimeIds(declared.runtimeIds());
-            supervisor.updateSuspendedSections(declared.suspendedSections());
+            java.util.Set<String> reloadSuspended = new java.util.LinkedHashSet<>(declared.suspendedSections());
+            reloadSuspended.addAll(declared.unresolvedSections());
+            supervisor.updateSuspendedSections(reloadSuspended);
             desiredRef.set(reloaded);
             log.info("SIGHUP: reloading {} runtime declaration(s)", reloaded.runtimes().size());
             supervisor.reconcile(reloaded);
