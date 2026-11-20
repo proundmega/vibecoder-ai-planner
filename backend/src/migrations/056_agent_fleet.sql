@@ -1,14 +1,11 @@
 -- Migration: 056_agent_fleet.sql
--- fg-54: node/grant/runtime identity, provider credential/model registry.
+-- fg-54 phase 1 (ADDITIVE): node/grant/runtime identity and the provider
+-- registry. Legacy agents/providers/token tables stay in place so the current
+-- control plane keeps working until the joint clean-cut migration.
 --
--- Clean cut (approved): new identities are created, legacy agent identities are
--- dropped. No row is carried across. The only schema-only exception is the
--- append-only harness_events store, which keeps historical agent_id values and
--- gains a nullable runtime_id for new events.
-
--- ---------------------------------------------------------------------------
--- 1. New tables
--- ---------------------------------------------------------------------------
+-- The destructive cut (drop agents/providers/fg-53 tables, rename legacy
+-- columns) lives in 057_agent_fleet_clean_cut.sql and is NOT registered until
+-- Track A slices 3-4 and Track B are ready to land together.
 
 CREATE TABLE IF NOT EXISTS agent_nodes (
   id BIGSERIAL PRIMARY KEY,
@@ -29,10 +26,10 @@ CREATE TABLE IF NOT EXISTS agent_node_grants (
   project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   role VARCHAR(20) NOT NULL CHECK (role IN ('worker','reviewer','planner')),
   created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
-  revoked_at TIMESTAMPTZ
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- One active grant per tuple; revoked rows stay as history.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_node_grants_active
   ON agent_node_grants(node_id, project_id, role)
   WHERE revoked_at IS NULL;
@@ -195,102 +192,31 @@ CREATE INDEX IF NOT EXISTS idx_agent_node_auth_events_node
 CREATE INDEX IF NOT EXISTS idx_agent_node_auth_events_created
   ON agent_node_auth_events(created_at);
 
+-- New runtime columns beside the legacy agent columns (dual-read/write until
+-- the joint cut). No legacy value is renamed, reset or dropped here.
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assigned_runtime_id BIGINT
+  REFERENCES agent_runtimes(id) ON DELETE SET NULL;
+ALTER TABLE agent_actions ADD COLUMN IF NOT EXISTS runtime_id BIGINT
+  REFERENCES agent_runtimes(id) ON DELETE SET NULL;
+ALTER TABLE agent_heartbeats ADD COLUMN IF NOT EXISTS runtime_id BIGINT
+  REFERENCES agent_runtimes(id) ON DELETE CASCADE;
+ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS runtime_id BIGINT
+  REFERENCES agent_runtimes(id) ON DELETE SET NULL;
+ALTER TABLE telemetry_events ADD COLUMN IF NOT EXISTS runtime_id BIGINT
+  REFERENCES agent_runtimes(id) ON DELETE SET NULL;
+ALTER TABLE harness_runs ADD COLUMN IF NOT EXISTS runtime_id BIGINT
+  REFERENCES agent_runtimes(id) ON DELETE CASCADE;
+ALTER TABLE harness_leases ADD COLUMN IF NOT EXISTS runtime_id BIGINT
+  REFERENCES agent_runtimes(id) ON DELETE CASCADE;
+ALTER TABLE harness_usage ADD COLUMN IF NOT EXISTS runtime_id BIGINT
+  REFERENCES agent_runtimes(id) ON DELETE SET NULL;
+ALTER TABLE repo_profile_validations ADD COLUMN IF NOT EXISTS runtime_id BIGINT
+  REFERENCES agent_runtimes(id) ON DELETE SET NULL;
+
 -- Append-only: new events carry runtime_id; historical agent_id is untouched.
 ALTER TABLE harness_events ADD COLUMN IF NOT EXISTS runtime_id BIGINT;
 
--- ---------------------------------------------------------------------------
--- 2. Detach legacy FKs, reset values and rename columns
--- ---------------------------------------------------------------------------
-
-ALTER TABLE agent_actions DROP CONSTRAINT IF EXISTS agent_actions_agent_id_fkey;
-ALTER TABLE agent_heartbeats DROP CONSTRAINT IF EXISTS agent_heartbeats_agent_id_fkey;
-ALTER TABLE usage_logs DROP CONSTRAINT IF EXISTS usage_logs_agent_id_fkey;
-ALTER TABLE telemetry_events DROP CONSTRAINT IF EXISTS telemetry_events_agent_id_fkey;
-ALTER TABLE harness_runs DROP CONSTRAINT IF EXISTS harness_runs_agent_id_fkey;
-ALTER TABLE harness_leases DROP CONSTRAINT IF EXISTS harness_leases_agent_id_fkey;
-ALTER TABLE harness_usage DROP CONSTRAINT IF EXISTS harness_usage_agent_id_fkey;
-ALTER TABLE repo_profile_validations DROP CONSTRAINT IF EXISTS repo_profile_validations_agent_id_fkey;
-ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_assigned_agent_id_agent_fkey;
-ALTER TABLE agents DROP CONSTRAINT IF EXISTS agents_enrollment_token_id_fkey;
-
-UPDATE agent_actions SET agent_id = NULL;
-ALTER TABLE agent_actions RENAME COLUMN agent_id TO runtime_id;
-
--- Heartbeats are ephemeral: drop legacy rows, keep the column as the PK.
-DELETE FROM agent_heartbeats;
-ALTER TABLE agent_heartbeats RENAME COLUMN agent_id TO runtime_id;
-
-UPDATE usage_logs SET agent_id = NULL;
-ALTER TABLE usage_logs RENAME COLUMN agent_id TO runtime_id;
-
-UPDATE telemetry_events SET agent_id = NULL;
-ALTER TABLE telemetry_events RENAME COLUMN agent_id TO runtime_id;
-
-DELETE FROM harness_leases;
-DELETE FROM harness_runs;
-ALTER TABLE harness_runs RENAME COLUMN agent_id TO runtime_id;
-ALTER TABLE harness_leases RENAME COLUMN agent_id TO runtime_id;
-
-UPDATE harness_usage SET agent_id = NULL;
-ALTER TABLE harness_usage RENAME COLUMN agent_id TO runtime_id;
-
-UPDATE repo_profile_validations SET agent_id = NULL;
-ALTER TABLE repo_profile_validations RENAME COLUMN agent_id TO runtime_id;
-
-ALTER TABLE tickets RENAME COLUMN assigned_agent_id TO assigned_runtime_id;
-UPDATE tickets SET assigned_runtime_id = NULL;
-
--- ---------------------------------------------------------------------------
--- 3. New FKs on the renamed columns
--- ---------------------------------------------------------------------------
-
-ALTER TABLE agent_actions
-  ADD CONSTRAINT agent_actions_runtime_id_fkey
-  FOREIGN KEY (runtime_id) REFERENCES agent_runtimes(id) ON DELETE SET NULL;
-
-ALTER TABLE agent_heartbeats
-  ADD CONSTRAINT agent_heartbeats_runtime_id_fkey
-  FOREIGN KEY (runtime_id) REFERENCES agent_runtimes(id) ON DELETE CASCADE;
-
-ALTER TABLE usage_logs
-  ADD CONSTRAINT usage_logs_runtime_id_fkey
-  FOREIGN KEY (runtime_id) REFERENCES agent_runtimes(id) ON DELETE SET NULL;
-
-ALTER TABLE telemetry_events
-  ADD CONSTRAINT telemetry_events_runtime_id_fkey
-  FOREIGN KEY (runtime_id) REFERENCES agent_runtimes(id) ON DELETE SET NULL;
-
-ALTER TABLE harness_runs
-  ADD CONSTRAINT harness_runs_runtime_id_fkey
-  FOREIGN KEY (runtime_id) REFERENCES agent_runtimes(id) ON DELETE CASCADE;
-
-ALTER TABLE harness_leases
-  ADD CONSTRAINT harness_leases_runtime_id_fkey
-  FOREIGN KEY (runtime_id) REFERENCES agent_runtimes(id) ON DELETE CASCADE;
-
-ALTER TABLE harness_usage
-  ADD CONSTRAINT harness_usage_runtime_id_fkey
-  FOREIGN KEY (runtime_id) REFERENCES agent_runtimes(id) ON DELETE SET NULL;
-
-ALTER TABLE repo_profile_validations
-  ADD CONSTRAINT repo_profile_validations_runtime_id_fkey
-  FOREIGN KEY (runtime_id) REFERENCES agent_runtimes(id) ON DELETE SET NULL;
-
-ALTER TABLE tickets
-  ADD CONSTRAINT tickets_assigned_runtime_id_runtime_fkey
-  FOREIGN KEY (assigned_runtime_id) REFERENCES agent_runtimes(id) ON DELETE SET NULL;
-
--- ---------------------------------------------------------------------------
--- 4. Drop legacy identity and provider tables (clean cut)
--- ---------------------------------------------------------------------------
-
-DROP TABLE IF EXISTS agent_refresh_replays;
-DROP TABLE IF EXISTS agent_auth_events;
-DROP TABLE IF EXISTS agent_refresh_tokens;
-DROP TABLE IF EXISTS agent_access_tokens;
-DROP TABLE IF EXISTS agent_enrollment_tokens;
-
-DROP TABLE IF EXISTS agents;
-
-DROP TABLE IF EXISTS project_providers;
-DROP TABLE IF EXISTS providers;
+CREATE INDEX IF NOT EXISTS idx_tickets_assigned_runtime
+  ON tickets(assigned_runtime_id) WHERE assigned_runtime_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_harness_runs_runtime_status
+  ON harness_runs(runtime_id, status) WHERE runtime_id IS NOT NULL;

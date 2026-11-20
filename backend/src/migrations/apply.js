@@ -380,14 +380,24 @@ async function runMigration(file, dryRun = false, pool = null) {
     throw new Error(`A database pool is required to run ${path.basename(file)}`);
   }
 
-  for (let i = 0; i < statements.length; i++) {
-    const stmt = statements[i];
-    try {
-      await pool.query(stmt);
-      console.log(`  ✓ Statement ${i + 1} executed`);
-    } catch (err) {
-      console.log(`  ! Statement ${i + 1} (may already exist): ${err.message}`);
+  // Strict and atomic: a failed statement rolls the file back and aborts the
+  // run. Silently continuing after a destructive statement failure can leave
+  // the schema half-migrated.
+  const client = await pool.connect();
+  let index = 0;
+  try {
+    await client.query('BEGIN');
+    for (index = 0; index < statements.length; index += 1) {
+      await client.query(statements[index]);
+      console.log(`  ✓ Statement ${index + 1} executed`);
     }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error(`  ✗ ${path.basename(file)} statement ${index + 1} failed: ${err.message}`);
+    throw err;
+  } finally {
+    client.release();
   }
   return true;
 }

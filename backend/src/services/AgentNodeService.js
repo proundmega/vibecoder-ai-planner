@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const net = require('net');
 const { pool } = require('../db');
 const AgentTokenService = require('./AgentTokenService');
+const { encrypt, decrypt } = require('../utils/crypto');
 
 const ROLES = ['worker', 'reviewer', 'planner'];
 const EFFORTS = ['minimal', 'low', 'medium', 'high', 'max'];
@@ -118,10 +119,10 @@ class AgentNodeService {
          FROM projects p
          WHERE p.id = $1
            AND (p.owner_id = $2
-                OR EXISTS (SELECT 1 FROM project_memberships m
-                           WHERE m.project_id = p.id AND m.user_id = $2
-                             AND m.role IN ('project_admin','admin')))`,
-        [projectId, user.userId]
+                OR ($3 IN ('project_admin','super_admin')
+                    AND EXISTS (SELECT 1 FROM project_memberships m
+                                WHERE m.project_id = p.id AND m.user_id = $2)))`,
+        [projectId, user.userId, user.role]
       )
       .then((result) => result.rows.length > 0);
   }
@@ -248,7 +249,7 @@ class AgentNodeService {
     return { status: 'ok', node };
   }
 
-  async refresh({ token, ip = null }) {
+  async refresh({ token, idempotencyKey = null, ip = null }) {
     if (AgentTokenService.kindOf(token) !== 'refresh') {
       throw fail(401, 'REFRESH_TOKEN_INVALID', 'Invalid refresh token');
     }
@@ -281,6 +282,19 @@ class AgentNodeService {
         throw fail(401, 'REFRESH_TOKEN_INVALID', 'Invalid refresh token');
       }
 
+      if (row.rotated_at && idempotencyKey) {
+        const replay = await db.query(
+          `SELECT response_ciphertext, expires_at FROM agent_node_refresh_replays
+           WHERE refresh_token_id = $1 AND idempotency_key = $2`,
+          [row.id, idempotencyKey]
+        );
+        const cached = replay.rows[0];
+        if (cached && new Date(cached.expires_at) > new Date()) {
+          await db.query('COMMIT');
+          return JSON.parse(decrypt(cached.response_ciphertext));
+        }
+      }
+
       if (row.revoked_at || row.rotated_at) {
         await revokeFamily(db, row.node_id);
         await audit(db, {
@@ -301,6 +315,26 @@ class AgentNodeService {
         'UPDATE agent_node_refresh_tokens SET rotated_at = NOW(), replaced_by_id = $1 WHERE id = $2',
         [pair.refreshTokenId, row.id]
       );
+      const payload = {
+        access_token: pair.accessToken,
+        refresh_token: pair.refreshToken,
+        access_expires_at: pair.accessExpiresAt,
+        refresh_expires_at: pair.refreshExpiresAt,
+      };
+      if (idempotencyKey) {
+        const replayExpiresAt = new Date(
+          Date.now() + intEnv('AGENT_REFRESH_REPLAY_CACHE_SECONDS', 60) * 1000
+        );
+        await db.query(
+          `INSERT INTO agent_node_refresh_replays
+             (refresh_token_id, idempotency_key, response_ciphertext, expires_at)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (refresh_token_id, idempotency_key)
+           DO UPDATE SET response_ciphertext = EXCLUDED.response_ciphertext,
+                         expires_at = EXCLUDED.expires_at`,
+          [row.id, idempotencyKey, encrypt(JSON.stringify(payload)), replayExpiresAt]
+        );
+      }
       await audit(db, {
         nodeId: row.node_id,
         eventType: 'node.refresh_rotated',
@@ -308,12 +342,7 @@ class AgentNodeService {
         metadata: { refresh_token_id: row.id },
       });
       await db.query('COMMIT');
-      return {
-        access_token: pair.accessToken,
-        refresh_token: pair.refreshToken,
-        access_expires_at: pair.accessExpiresAt,
-        refresh_expires_at: pair.refreshExpiresAt,
-      };
+      return payload;
     } catch (error) {
       await db.query('ROLLBACK').catch(() => {});
       throw error;
@@ -524,7 +553,7 @@ class AgentNodeService {
     return { node: node.rows[0], grants: grants.rows, runtimes: runtimes.rows };
   }
 
-  async resolveModel(nodeOwnerId, ref, projectId) {
+  async resolveModel(db, nodeOwnerId, ref, projectId) {
     if (!ref) throw fail(400, 'MODEL_REQUIRED', 'modelRef is required');
     let credentialName;
     let model;
@@ -547,7 +576,7 @@ class AgentNodeService {
     } else {
       scope += ' AND pc.project_id IS NULL';
     }
-    const result = await pool.query(
+    const result = await db.query(
       `SELECT pm.*, pc.owner_id, pc.name AS credential_name
        FROM provider_models pm
        JOIN provider_credentials pc ON pc.id = pm.credential_id
@@ -566,41 +595,79 @@ class AgentNodeService {
 
   async declareRuntimes(node, items) {
     if (!Array.isArray(items)) throw fail(400, 'INVALID_RUNTIMES', 'runtimes must be an array');
-    const results = [];
-    for (const item of items) {
-      const role = item.role;
-      if (!ROLES.includes(role)) throw fail(400, 'INVALID_ROLE', 'Invalid role');
-      const effort = item.effort == null ? null : String(item.effort);
-      if (effort != null && !EFFORTS.includes(effort)) {
-        throw fail(400, 'INVALID_EFFORT', 'Invalid effort');
+    const db = await pool.connect();
+    try {
+      await db.query('BEGIN');
+      const results = [];
+      for (const item of items) {
+        const role = item.role;
+        if (!ROLES.includes(role)) throw fail(400, 'INVALID_ROLE', 'Invalid role');
+        const effort = item.effort == null ? null : String(item.effort);
+        if (effort != null && !EFFORTS.includes(effort)) {
+          throw fail(400, 'INVALID_EFFORT', 'Invalid effort');
+        }
+        if (item.projectId != null) {
+          const grant = await db.query(
+            `SELECT 1 FROM agent_node_grants
+             WHERE node_id = $1 AND project_id = $2 AND role = $3 AND revoked_at IS NULL`,
+            [node.id, item.projectId, role]
+          );
+          if (grant.rows.length === 0) {
+            throw fail(403, 'GRANT_REQUIRED', 'No active grant for this project/role');
+          }
+        } else if (role === 'worker') {
+          throw fail(400, 'PROJECT_REQUIRED', 'worker runtimes require projectId');
+        }
+        const model = await this.resolveModel(db, node.owner_id, item.modelRef, item.projectId);
+        if (!model.roles.includes(role)) {
+          throw fail(400, 'ROLE_NOT_ALLOWED', 'Model is not tagged for this role');
+        }
+        const concurrency = item.concurrency == null ? 1 : parseInt(item.concurrency, 10);
+        if (!Number.isFinite(concurrency) || concurrency < 1) {
+          throw fail(400, 'INVALID_CONCURRENCY', 'concurrency must be >= 1');
+        }
+        const name = item.name || `${role}-${model.model}-${results.length + 1}`;
+        const upsert = await db.query(
+          `INSERT INTO agent_runtimes
+             (node_id, name, role, model_id, concurrency, effort, status, current_project_id)
+           VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
+           ON CONFLICT (node_id, name)
+           DO UPDATE SET role = EXCLUDED.role, model_id = EXCLUDED.model_id,
+                         concurrency = EXCLUDED.concurrency, effort = EXCLUDED.effort,
+                         current_project_id = EXCLUDED.current_project_id,
+                         updated_at = NOW()
+           RETURNING *`,
+          [node.id, name, role, model.id, concurrency, effort, item.projectId || null]
+        );
+        results.push(upsert.rows[0]);
       }
-      const model = await this.resolveModel(node.owner_id, item.modelRef, item.projectId);
-      if (!model.roles.includes(role)) {
-        throw fail(400, 'ROLE_NOT_ALLOWED', 'Model is not tagged for this role');
-      }
-      const concurrency = item.concurrency == null ? 1 : parseInt(item.concurrency, 10);
-      if (!Number.isFinite(concurrency) || concurrency < 1) {
-        throw fail(400, 'INVALID_CONCURRENCY', 'concurrency must be >= 1');
-      }
-      const name = item.name || `${role}-${model.model}-${results.length + 1}`;
-      const upsert = await pool.query(
-        `INSERT INTO agent_runtimes
-           (node_id, name, role, model_id, concurrency, effort, status, current_project_id)
-         VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
-         ON CONFLICT (node_id, name)
-         DO UPDATE SET role = EXCLUDED.role, model_id = EXCLUDED.model_id,
-                       concurrency = EXCLUDED.concurrency, effort = EXCLUDED.effort,
-                       current_project_id = EXCLUDED.current_project_id,
-                       updated_at = NOW()
-         RETURNING *`,
-        [node.id, name, role, model.id, concurrency, effort, item.projectId || null]
-      );
-      results.push(upsert.rows[0]);
+      await audit(db, {
+        nodeId: node.id,
+        eventType: 'runtimes.declared',
+        metadata: { count: results.length },
+      });
+      await db.query('COMMIT');
+      return results;
+    } catch (error) {
+      await db.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      db.release();
     }
-    return results;
   }
 
   async heartbeat(node, runtimeId, { status = null, currentProjectId = null } = {}) {
+    const runtime = await this.getRuntimeForNode(node.id, runtimeId);
+    if (currentProjectId != null) {
+      const grant = await pool.query(
+        `SELECT 1 FROM agent_node_grants
+         WHERE node_id = $1 AND project_id = $2 AND role = $3 AND revoked_at IS NULL`,
+        [node.id, currentProjectId, runtime.role]
+      );
+      if (grant.rows.length === 0) {
+        throw fail(403, 'GRANT_REQUIRED', 'No active grant for this project/role');
+      }
+    }
     const updated = await pool.query(
       `UPDATE agent_runtimes
        SET last_seen_at = NOW(),
@@ -613,6 +680,13 @@ class AgentNodeService {
     );
     if (updated.rows.length === 0) throw fail(404, 'RUNTIME_NOT_FOUND', 'Runtime not found');
     await pool.query('UPDATE agent_nodes SET last_seen_at = NOW() WHERE id = $1', [node.id]);
+    if (status && status !== runtime.status) {
+      await audit(pool, {
+        nodeId: node.id,
+        eventType: 'runtime.status_changed',
+        metadata: { runtime_id: runtime.id, from: runtime.status, to: status },
+      });
+    }
     return updated.rows[0];
   }
 

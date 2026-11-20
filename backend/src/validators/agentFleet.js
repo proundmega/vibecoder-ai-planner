@@ -12,6 +12,7 @@ const enrollSchema = Joi.object({
 
 const refreshSchema = Joi.object({
   refresh_token: Joi.string().min(20).max(128).required(),
+  idempotency_key: Joi.string().min(16).max(128).optional(),
 });
 
 const mintSchema = Joi.object({

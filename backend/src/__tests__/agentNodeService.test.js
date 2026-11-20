@@ -1,3 +1,4 @@
+jest.mock('../utils/crypto', () => ({ encrypt: (v) => v, decrypt: (v) => v }));
 const { pool } = require('../db');
 const AgentNodeService = require('../services/AgentNodeService');
 const AgentTokenService = require('../services/AgentTokenService');
@@ -134,6 +135,10 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
   });
 
   it('rejects a runtime whose model is not tagged for its role', async () => {
+    const client = mockClient([
+      ['FROM agent_node_grants', { rows: [{ id: 1 }] }],
+    ]);
+    pool.connect.mockResolvedValue(client);
     jest.spyOn(AgentNodeService, 'resolveModel').mockResolvedValue({
       id: 8,
       model: 'm',
@@ -143,9 +148,59 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
     await expect(
       AgentNodeService.declareRuntimes(
         { id: 12, owner_id: 7 },
-        [{ role: 'worker', modelRef: 'cred/m' }]
+        [{ role: 'worker', modelRef: 'cred/m', projectId: 5 }]
       )
     ).rejects.toMatchObject({ code: 'ROLE_NOT_ALLOWED' });
+    expect(client.query.mock.calls.some(([sql]) => sql === 'ROLLBACK')).toBe(true);
+  });
+
+  it('requires a grant before declaring a runtime project', async () => {
+    const client = mockClient([]);
+    pool.connect.mockResolvedValue(client);
+
+    await expect(
+      AgentNodeService.declareRuntimes(
+        { id: 12, owner_id: 7 },
+        [{ role: 'worker', modelRef: 'cred/m', projectId: 5 }]
+      )
+    ).rejects.toMatchObject({ code: 'GRANT_REQUIRED' });
+  });
+
+  it('returns a cached refresh response for the same idempotency key', async () => {
+    const rawToken = AgentTokenService.generate('refresh');
+    const payload = { access_token: 'at_cached', refresh_token: 'ar_cached' };
+    const row = {
+      id: 9,
+      node_id: 12,
+      token_hash: AgentTokenService.hash(rawToken),
+      family_id: '11111111-1111-1111-1111-111111111111',
+      expires_at: new Date(Date.now() + 60_000),
+      revoked_at: null,
+      rotated_at: new Date(),
+    };
+    const client = mockClient([
+      ['FROM agent_node_refresh_tokens WHERE token_prefix', { rows: [row] }],
+      ['FROM agent_nodes WHERE id = $1 FOR UPDATE', { rows: [{ id: 12 }] }],
+      ['FROM agent_node_refresh_tokens WHERE id = $1 FOR UPDATE', { rows: [row] }],
+      ['FROM agent_node_refresh_replays', {
+        rows: [{ response_ciphertext: JSON.stringify(payload), expires_at: new Date(Date.now() + 60_000) }],
+      }],
+    ]);
+    pool.connect.mockResolvedValue(client);
+
+    const result = await AgentNodeService.refresh({
+      token: rawToken,
+      idempotencyKey: 'idem-key-1234567890',
+    });
+    expect(result).toEqual(payload);
+  });
+
+  it('lists grants using the persisted created_at column', async () => {
+    pool.query.mockResolvedValue({ rows: [{ id: 1, node_id: 12 }] });
+    const grants = await AgentNodeService.listGrants(12);
+    expect(grants).toHaveLength(1);
+    const [sql] = pool.query.mock.calls.find(([text]) => text.includes('FROM agent_node_grants'));
+    expect(sql).toContain('ORDER BY created_at DESC');
   });
 
   it('config never selects provider secrets', async () => {

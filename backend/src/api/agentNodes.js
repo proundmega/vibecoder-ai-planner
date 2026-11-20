@@ -23,6 +23,7 @@ const {
   runtimePatchSchema,
 } = require('../validators/agentFleet');
 const { enrollmentEnabled, requireSecureTransport } = require('./agentEnrollment');
+const agentEnrollmentRateLimit = require('../middleware/agentEnrollmentRateLimit');
 
 const router = express.Router();
 
@@ -46,7 +47,11 @@ router.use((req, res, next) => {
 // Enrollment and credentials (bearer secrets; TLS required outside tests)
 // ---------------------------------------------------------------------------
 
-router.post('/agent-nodes/enroll', requireSecureTransport, validate(enrollSchema), async (req, res, next) => {
+router.post(
+  '/agent-nodes/enroll',
+  agentEnrollmentRateLimit({ max: 10, windowMs: 60 * 1000, scope: 'node-enroll' }),
+  requireSecureTransport,
+  validate(enrollSchema), async (req, res, next) => {
   try {
     const data = await AgentNodeService.enroll({
       token: req.body.token,
@@ -62,10 +67,15 @@ router.post('/agent-nodes/enroll', requireSecureTransport, validate(enrollSchema
   }
 });
 
-router.post('/agent-nodes/refresh', requireSecureTransport, validate(refreshSchema), async (req, res, next) => {
+router.post(
+  '/agent-nodes/refresh',
+  agentEnrollmentRateLimit({ max: 30, windowMs: 60 * 1000, scope: 'node-refresh' }),
+  requireSecureTransport,
+  validate(refreshSchema), async (req, res, next) => {
   try {
     const data = await AgentNodeService.refresh({
       token: req.body.refresh_token,
+      idempotencyKey: req.body.idempotency_key || null,
       ip: req.ip,
     });
     res.json({ success: true, data });
@@ -266,9 +276,10 @@ router.get(
   async (req, res, next) => {
     try {
       const result = await pool.query(
-        `SELECT r.id, r.name, r.role, r.effort, r.node_id,
-                pc.id AS credential_id, pm.model, pm.max_tokens, pm.effort AS model_effort,
-                pc.api_key_encrypted, pc.provider_type, pc.base_url, pc.status
+        `SELECT r.id, r.name, r.role, r.effort, r.node_id, r.status AS runtime_status,
+                pc.id AS credential_id, pc.status AS credential_status,
+                pm.model, pm.max_tokens, pm.effort AS model_effort, pm.status AS model_status,
+                pc.api_key_encrypted, pc.provider_type, pc.base_url
          FROM agent_runtimes r
          JOIN provider_models pm ON pm.id = r.model_id
          JOIN provider_credentials pc ON pc.id = pm.credential_id
@@ -276,7 +287,13 @@ router.get(
         [req.params.runtimeId, req.node.id]
       );
       const row = result.rows[0];
-      if (!row || row.status !== 'active') {
+      if (
+        !row ||
+        row.runtime_status === 'stopped' ||
+        row.runtime_status === 'draining' ||
+        row.model_status !== 'verified' ||
+        row.credential_status !== 'active'
+      ) {
         return res.status(404).json(errorBody('RUNTIME_NOT_FOUND', 'Runtime not found'));
       }
       await pool.query(
@@ -356,15 +373,26 @@ router.patch(
       ) {
         return res.status(404).json(errorBody('RUNTIME_NOT_FOUND', 'Runtime not found'));
       }
+      const hasEffort = Object.prototype.hasOwnProperty.call(req.body, 'effort');
       const updated = await pool.query(
         `UPDATE agent_runtimes
-         SET effort = COALESCE($2, effort),
+         SET effort = CASE WHEN $5 THEN $2 ELSE effort END,
              concurrency = COALESCE($3, concurrency),
              status = COALESCE($4, status),
              updated_at = NOW()
          WHERE id = $1
          RETURNING *`,
-        [req.params.id, req.body.effort, req.body.concurrency, req.body.status]
+        [req.params.id, req.body.effort, req.body.concurrency, req.body.status, hasEffort]
+      );
+      await pool.query(
+        `INSERT INTO agent_node_auth_events
+           (node_id, event_type, actor_type, actor_id, metadata)
+         VALUES ($1, 'runtime.updated', 'user', $2, $3::jsonb)`,
+        [
+          runtime.rows[0].node_id,
+          String(req.user.userId),
+          JSON.stringify({ runtime_id: updated.rows[0].id, effort: req.body.effort ?? null }),
+        ]
       );
       res.json({ success: true, data: updated.rows[0] });
     } catch (error) {

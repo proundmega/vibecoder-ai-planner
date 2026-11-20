@@ -65,10 +65,10 @@ function requireProjectAdmin(param = 'projectId') {
         `SELECT 1 FROM projects p
          WHERE p.id = $1
            AND (p.owner_id = $2
-                OR EXISTS (SELECT 1 FROM project_memberships m
-                           WHERE m.project_id = p.id AND m.user_id = $2
-                             AND m.role IN ('project_admin','admin')))`,
-        [projectId, req.user.userId]
+                OR ($3 IN ('project_admin','super_admin')
+                    AND EXISTS (SELECT 1 FROM project_memberships m
+                                WHERE m.project_id = p.id AND m.user_id = $2)))`,
+        [projectId, req.user.userId, req.user.role]
       );
       if (result.rows.length === 0) {
         return res.status(403).json({
@@ -99,10 +99,10 @@ async function requireGrantProjectAdmin(req, res, next) {
       `SELECT 1 FROM projects p
        WHERE p.id = $1
          AND (p.owner_id = $2
-              OR EXISTS (SELECT 1 FROM project_memberships m
-                         WHERE m.project_id = p.id AND m.user_id = $2
-                           AND m.role IN ('project_admin','admin')))`,
-      [req.grantProjectId, req.user.userId]
+              OR ($3 IN ('project_admin','super_admin')
+                  AND EXISTS (SELECT 1 FROM project_memberships m
+                              WHERE m.project_id = p.id AND m.user_id = $2)))`,
+      [req.grantProjectId, req.user.userId, req.user.role]
     );
     if (admin.rows.length === 0) {
       return res.status(403).json({
