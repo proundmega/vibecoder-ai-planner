@@ -45,6 +45,8 @@ public class AgentApp {
 
     private final AgentConfig config;
     private final ApiService apiService;
+    private final com.vibecode.agent.service.AgentAuthManager authManager;
+    private final com.vibecode.agent.service.RuntimeApi runtimeApi;
     private final ProviderSettings providerSettings;
     private final GitHubService gitHubService;
     private final GitHubTokenProvider githubTokenProvider;
@@ -67,6 +69,10 @@ public class AgentApp {
     AgentApp(AgentConfig config, AgentAuthManager authManager, ApiService apiService) {
         this.config = config;
         this.apiService = apiService;
+        this.authManager = authManager;
+        this.runtimeApi = authManager != null
+            ? new com.vibecode.agent.service.RuntimeApi(config, authManager)
+            : null;
         applyServerRepoConfig();
         this.providerSettings = resolveProviderSettings();
         RedactionRegistry.register(config.getEnrollmentToken(), config.getAiApiKey(),
@@ -443,6 +449,17 @@ public class AgentApp {
                 Map<String, Object> cpu = new HashMap<>();
                 cpu.put("availableProcessors", Runtime.getRuntime().availableProcessors());
 
+                if ((config.getRuntimeId() == null || config.getRuntimeId().isBlank())
+                        && runtimeApi != null) {
+                    // A child may start before the supervisor's declaration
+                    // succeeds. Retry on the heartbeat tick rather than
+                    // exiting into a restart loop.
+                    resolveRuntimeIdentity(config, runtimeApi);
+                }
+                if (config.getRuntimeId() == null || config.getRuntimeId().isBlank()) {
+                    log.debug("Skipping heartbeat: runtime id is not resolved yet");
+                    return;
+                }
                 apiService.sendHeartbeat(
                     config.getRuntimeId(),
                     "running",
