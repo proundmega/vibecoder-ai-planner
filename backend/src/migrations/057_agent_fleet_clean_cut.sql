@@ -52,3 +52,4 @@ DROP TABLE IF EXISTS agent_enrollment_tokens;
 DROP TABLE IF EXISTS agents;
 DROP TABLE IF EXISTS project_providers;
 DROP TABLE IF EXISTS providers;
+DROP FUNCTION IF EXISTS release_agent_tickets_on_delete();

@@ -142,6 +142,12 @@ ALTER TABLE harness_runs ADD COLUMN IF NOT EXISTS agent_id BIGINT
   REFERENCES agents(id) ON DELETE CASCADE;
 ALTER TABLE harness_leases ADD COLUMN IF NOT EXISTS agent_id BIGINT
   REFERENCES agents(id) ON DELETE CASCADE;
+-- Legacy schema required these; rows that only ever carried a runtime id are
+-- dropped by the clean-cut rollback (data loss is accepted).
+DELETE FROM harness_runs WHERE agent_id IS NULL;
+DELETE FROM harness_leases WHERE agent_id IS NULL;
+ALTER TABLE harness_runs ALTER COLUMN agent_id SET NOT NULL;
+ALTER TABLE harness_leases ALTER COLUMN agent_id SET NOT NULL;
 ALTER TABLE harness_usage ADD COLUMN IF NOT EXISTS agent_id BIGINT
   REFERENCES agents(id) ON DELETE SET NULL;
 ALTER TABLE repo_profile_validations ADD COLUMN IF NOT EXISTS agent_id BIGINT
@@ -152,7 +158,20 @@ ALTER TABLE harness_events ADD COLUMN IF NOT EXISTS agent_id BIGINT;
 ALTER TABLE agent_heartbeats DROP CONSTRAINT IF EXISTS agent_heartbeats_pkey;
 ALTER TABLE agent_heartbeats
   ADD COLUMN IF NOT EXISTS agent_id BIGINT REFERENCES agents(id) ON DELETE CASCADE;
+DELETE FROM agent_heartbeats WHERE agent_id IS NULL;
 ALTER TABLE agent_heartbeats ADD CONSTRAINT agent_heartbeats_pkey PRIMARY KEY (agent_id);
+
+-- Legacy token-table indexes and checks.
+CREATE INDEX IF NOT EXISTS idx_agent_access_tokens_prefix ON agent_access_tokens(token_prefix);
+CREATE INDEX IF NOT EXISTS idx_agent_access_tokens_agent ON agent_access_tokens(agent_id, expires_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_access_tokens_expiry ON agent_access_tokens(expires_at);
+CREATE INDEX IF NOT EXISTS idx_agent_refresh_tokens_prefix ON agent_refresh_tokens(token_prefix);
+CREATE INDEX IF NOT EXISTS idx_agent_refresh_tokens_agent ON agent_refresh_tokens(agent_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_refresh_tokens_family ON agent_refresh_tokens(family_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_refresh_tokens_expiry ON agent_refresh_tokens(expires_at);
+CREATE INDEX IF NOT EXISTS idx_agent_enrollment_tokens_prefix ON agent_enrollment_tokens(token_prefix);
+CREATE INDEX IF NOT EXISTS idx_agent_enrollment_tokens_project ON agent_enrollment_tokens(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_enrollment_tokens_expiry ON agent_enrollment_tokens(expires_at) WHERE revoked_at IS NULL;
 
 CREATE OR REPLACE FUNCTION release_agent_tickets_on_delete() RETURNS TRIGGER AS $$
 BEGIN

@@ -203,6 +203,22 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
     expect(sql).toContain('ORDER BY created_at DESC');
   });
 
+  it('filters grants to accessible projects for a non-owner', async () => {
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('SELECT owner_id FROM agent_nodes')) {
+        return Promise.resolve({ rows: [{ owner_id: 99 }] });
+      }
+      return Promise.resolve({ rows: [{ id: 1 }] });
+    });
+
+    await AgentNodeService.listGrants(12, { userId: 7, role: 'member' });
+    const [sql, params] = pool.query.mock.calls.find(([text]) =>
+      text.includes('FROM agent_node_grants g')
+    );
+    expect(sql).toContain('project_memberships');
+    expect(params).toEqual([12, 7]);
+  });
+
   it('config never selects provider secrets', async () => {
     pool.query.mockImplementation((sql) => {
       if (sql.includes('FROM agent_nodes')) return Promise.resolve({ rows: [{ id: 12 }] });
