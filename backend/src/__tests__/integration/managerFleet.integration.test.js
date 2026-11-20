@@ -28,17 +28,30 @@ async function detectSchema() {
        to_regclass('public.agent_runtimes') IS NOT NULL AS runtimes,
        to_regclass('public.provider_credentials') IS NOT NULL AS credentials,
        to_regclass('public.provider_models') IS NOT NULL AS models,
+       to_regclass('public.agents') IS NULL AS agents_dropped,
        EXISTS (
          SELECT 1 FROM information_schema.columns
           WHERE table_name = 'tickets' AND column_name = 'assigned_runtime_id'
-       ) AS claim_column`
+       ) AS claim_column,
+       EXISTS (
+         SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'harness_runs' AND column_name = 'runtime_id'
+       ) AS runtime_column,
+       NOT EXISTS (
+         SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'harness_runs' AND column_name = 'agent_id'
+       ) AS legacy_runtime_column_dropped`
   );
   const row = result.rows[0] || {};
-  return Boolean(row.nodes && row.runtimes && row.credentials && row.models && row.claim_column);
+  return Boolean(
+    row.nodes && row.runtimes && row.credentials && row.models &&
+    row.agents_dropped && row.claim_column &&
+    row.runtime_column && row.legacy_runtime_column_dropped
+  );
 }
 
 async function seedRun() {
-  const suffix = Date.now();
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   const user = await pool.query(
     "INSERT INTO users (email, name, password_hash) VALUES ($1, $2, 'x') RETURNING id",
     [`fg54-manager-${suffix}@example.test`, 'fg54 manager']
@@ -80,19 +93,14 @@ async function seedRun() {
   );
   ids.ticket = ticket.rows[0].id;
 
-  const leaseColumn = await pool.query(
-    `SELECT column_name FROM information_schema.columns
-      WHERE table_name = 'harness_leases' AND column_name IN ('runtime_id', 'agent_id')`
-  );
-  const runtimeColumn = leaseColumn.rows[0] ? leaseColumn.rows[0].column_name : 'agent_id';
   const run = await pool.query(
-    `INSERT INTO harness_runs (ticket_id, ${runtimeColumn}, branch, status)
+    `INSERT INTO harness_runs (ticket_id, runtime_id, branch, status)
      VALUES ($1, $2, 'fg54/manager-test', 'running') RETURNING id`,
     [ids.ticket, ids.runtime]
   );
   ids.run = run.rows[0].id;
   await pool.query(
-    `INSERT INTO harness_leases (ticket_id, run_id, ${runtimeColumn}, expires_at)
+    `INSERT INTO harness_leases (ticket_id, run_id, runtime_id, expires_at)
      VALUES ($1, $2, $3, NOW() + INTERVAL '1 hour')`,
     [ids.ticket, ids.run, ids.runtime]
   );
@@ -101,7 +109,10 @@ async function seedRun() {
 async function cleanup() {
   if (ids.ticket) await pool.query('DELETE FROM tickets WHERE id = $1', [ids.ticket]);
   if (ids.node) await pool.query('DELETE FROM agent_nodes WHERE id = $1', [ids.node]);
-  if (ids.credential) await pool.query('DELETE FROM provider_credentials WHERE id = $1', [ids.credential]);
+  if (ids.credential) {
+    await pool.query('DELETE FROM provider_models WHERE credential_id = $1', [ids.credential]);
+    await pool.query('DELETE FROM provider_credentials WHERE id = $1', [ids.credential]);
+  }
   if (ids.project) await pool.query('DELETE FROM projects WHERE id = $1', [ids.project]);
   if (ids.user) await pool.query('DELETE FROM users WHERE id = $1', [ids.user]);
   for (const key of Object.keys(ids)) delete ids[key];
@@ -115,20 +126,24 @@ describe('fg-54 manager integration', () => {
       schemaReady = false;
     }
     if (!schemaReady && requireSchema) {
-      throw new Error('fg-54 fleet schema is missing; run 056_agent_fleet.sql first');
+      throw new Error('fg-54 fleet schema is missing; apply 056 and 057 first');
     }
     if (!schemaReady) {
       console.warn('fg-54 fleet schema is not present yet; integration tests are skipped');
     }
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     await cleanup().catch(() => {});
+  });
+
+  afterAll(async () => {
     await pool.end();
   });
 
   test('FR14 stale sweep never releases a ticket with an unexpired run lease', async () => {
     if (!schemaReady) return;
+    await cleanup();
     await seedRun();
 
     const first = await staleClaimSweep(pool, { staleMinutes: 60 });
@@ -177,6 +192,7 @@ describe('fg-54 manager integration', () => {
 
   test('FR14 cleanup and heartbeat jobs are idempotent on the real schema', async () => {
     if (!schemaReady) return;
+    await cleanup();
     await seedRun();
 
     const cleanupFirst = await enrollmentTokenCleanup(pool, { retentionDays: 30 });

@@ -16,8 +16,11 @@ async function legacyPoolDrain(pool) {
   const result = await pool.query(
     `UPDATE agents
         SET api_key = NULL,
+            api_key_hash = NULL,
+            api_key_hash_prefix = NULL,
+            api_key_expires_at = NOW(),
             updated_at = NOW()
-      WHERE api_key IS NOT NULL
+      WHERE (api_key IS NOT NULL OR api_key_hash IS NOT NULL)
         AND name LIKE 'agent-%'
         AND NOT EXISTS (
           SELECT 1 FROM agent_nodes n WHERE n.name = agents.name
