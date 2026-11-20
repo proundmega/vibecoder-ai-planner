@@ -58,6 +58,7 @@ const SQL_FILES = [
   path.join(__dirname, './053_harness_privacy.sql'),
   path.join(__dirname, './054_agent_revoke_project_admin.sql'),
   path.join(__dirname, './055_agent_enrollment.sql'),
+  path.join(__dirname, './056_agent_fleet.sql'),
 ];
 
 const DATA_MIGRATIONS = [
@@ -469,6 +470,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+  SQL_FILES,
+  DATA_MIGRATIONS,
   classifyStatement,
   splitSQLStatements,
   validateStatementStructure,
