@@ -49,7 +49,7 @@ class AgentAppConstructorRepoTest {
         }
 
         @Override
-        public Map<String, Object> getProviderConfig(String agentId) {
+        public Map<String, Object> getProviderConfig() {
             return null;
         }
 

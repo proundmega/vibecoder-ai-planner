@@ -33,14 +33,10 @@ import java.util.concurrent.TimeUnit;
  *   java -jar agent.jar
  * 
  * Or with env vars:
- *   # enrolled build node (repo comes from the project)
- *   ENROLLMENT_TOKEN=enr_xxx AGENT_MODE=build \
- *   BACKEND_URL=http://localhost:3001 AGENT_CREDENTIALS_FILE=/credentials/agent.json \
- *   java -jar agent.jar
- *
- *   # legacy static build node
- *   AGENT_ID=1 AGENT_API_KEY=xxx AGENT_MODE=build \
- *   BACKEND_URL=http://localhost:3001 PROJECT_ID=1 \
+ *   # enrolled node runtime (the supervisor also sets the runtime fields)
+ *   ENROLLMENT_TOKEN=enr_xxx \
+ *   BACKEND_URL=http://localhost:3001 AGENT_CREDENTIALS_FILE=/credentials/node.json \
+ *   AGENT_ROLE=worker AGENT_LLM_MODEL=acme/claude-sonnet \
  *   java -jar agent.jar
  */
 public class AgentApp {
@@ -73,7 +69,7 @@ public class AgentApp {
         this.apiService = apiService;
         applyServerRepoConfig();
         this.providerSettings = resolveProviderSettings();
-        RedactionRegistry.register(config.getAgentApiKey(), config.getAiApiKey(),
+        RedactionRegistry.register(config.getEnrollmentToken(), config.getAiApiKey(),
             providerSettings.apiKey(), System.getenv("GITHUB_TOKEN"));
         AiProvider aiProvider = createAiProvider(providerSettings);
         this.githubTokenProvider = createGitHubTokenProvider();
@@ -105,7 +101,7 @@ public class AgentApp {
         }
 
         if (supportsLegacyProvider(providerSettings)) {
-            this.reviewProcessor = new ReviewProcessor(apiService, aiProvider, config.getAgentId());
+            this.reviewProcessor = new ReviewProcessor(apiService, aiProvider, config.getRuntimeId());
         } else {
             this.reviewProcessor = null;
             log.warn("Review processing disabled: provider '{}' is only supported by the OpenCode harness",
@@ -130,7 +126,7 @@ public class AgentApp {
         String githubToken,
         HarnessConfig harnessConfig
     ) {
-        RedactionRegistry.register(config.getAgentApiKey(), config.getAiApiKey(),
+        RedactionRegistry.register(config.getEnrollmentToken(), config.getAiApiKey(),
             System.getenv("GITHUB_TOKEN"), githubToken);
         if (providerSettings != null) {
             RedactionRegistry.register(providerSettings.apiKey());
@@ -215,14 +211,14 @@ public class AgentApp {
      */
     private void applyServerRepoConfig() {
         if (config.isReviewMode()) {
-            log.info("Agent mode {}: ticket processing disabled, repository not loaded", config.getAgentMode());
+            log.info("Runtime role {}: build ticket processing disabled, repository not loaded", config.getRole());
             return;
         }
 
         if (config.getProjectId() == null || config.getProjectId().isBlank()) {
             if (config.isBuildMode()) {
                 throw new IllegalStateException(
-                    "AGENT_MODE=build requires a project id and a configured repository");
+                    "A worker runtime requires a project id and a configured repository");
             }
             return;
         }
@@ -250,7 +246,7 @@ public class AgentApp {
         } catch (Exception e) {
             if (buildMode && !config.hasRepoCoordinates()) {
                 throw new IllegalStateException(
-                    "AGENT_MODE=build could not load the project repository: " + e.getMessage(), e);
+                    "The worker runtime could not load the project repository: " + e.getMessage(), e);
             }
             log.warn("Could not load the project repository from the backend; using REPO_OWNER/REPO_NAME if set");
             return;
@@ -260,7 +256,7 @@ public class AgentApp {
         if (!applied) {
             if (buildMode && !config.hasRepoCoordinates()) {
                 throw new IllegalStateException(
-                    "AGENT_MODE=build but the project has no usable repository configured");
+                    "The worker runtime has no usable project repository configured");
             }
             log.info("No usable project repository from the backend; using REPO_OWNER/REPO_NAME if set");
         }
@@ -287,24 +283,32 @@ public class AgentApp {
     private ProviderSettings resolveProviderSettings() {
         Map<String, Object> providerConfig = null;
         try {
-            Map<String, Object> rawConfig = apiService.getProviderConfig(config.getAgentId());
+            Map<String, Object> rawConfig = apiService.getProviderConfig();
             providerConfig = unwrapProviderConfig(rawConfig);
             log.info("Fetched provider config from backend: type={}, model={}",
-                providerConfig != null ? providerConfig.get("provider_type") : "null",
+                providerConfig != null ? first(providerConfig, "provider_type", "providerType") : "null",
                 providerConfig != null ? providerConfig.get("model") : "null");
         } catch (Exception e) {
             log.warn("Failed to fetch provider config from backend, falling back to env vars: {}", e.getMessage());
         }
 
-        if (providerConfig != null && providerConfig.get("api_key") != null) {
-            String apiKey = (String) providerConfig.get("api_key");
-            String baseUrl = (String) providerConfig.get("base_url");
-            String model = (String) providerConfig.get("model");
-            String providerType = (String) providerConfig.get("provider_type");
-            Object maxTokensRaw = providerConfig.get("max_tokens");
+        if (providerConfig != null && first(providerConfig, "api_key", "apiKey") != null) {
+            String apiKey = first(providerConfig, "api_key", "apiKey");
+            String baseUrl = first(providerConfig, "base_url", "baseUrl");
+            String model = providerConfig.get("model") != null
+                ? String.valueOf(providerConfig.get("model"))
+                : config.getAiModel();
+            String providerType = first(providerConfig, "provider_type", "providerType");
+            Object maxTokensRaw = providerConfig.get("max_tokens") != null
+                ? providerConfig.get("max_tokens")
+                : providerConfig.get("maxTokens");
             int maxTokens = maxTokensRaw instanceof Number number
                 ? number.intValue()
                 : config.getAiMaxTokens();
+            Object effortRaw = providerConfig.get("effort");
+            String effort = com.vibecode.agent.service.ProviderEffort.resolve(
+                effortRaw != null ? String.valueOf(effortRaw) : null,
+                config.getEffort());
 
             String type = providerType == null ? "claude" : providerType;
             String normalized = type.toLowerCase().replace('_', '-');
@@ -312,7 +316,7 @@ public class AgentApp {
             if (baseUrl != null && !baseUrl.isBlank() && !openCode) {
                 normalized = "generic";
             }
-            return new ProviderSettings(normalized, apiKey, baseUrl, model, maxTokens);
+            return new ProviderSettings(normalized, apiKey, baseUrl, model, maxTokens, effort);
         }
 
         // Fall back to env vars
@@ -327,7 +331,8 @@ public class AgentApp {
         String type = endpointUrl != null && !endpointUrl.isBlank()
             ? "generic"
             : config.getAiProvider().toLowerCase();
-        return new ProviderSettings(type, apiKey, endpointUrl, model, config.getAiMaxTokens());
+        String effort = com.vibecode.agent.service.ProviderEffort.canonical(config.getEffort());
+        return new ProviderSettings(type, apiKey, endpointUrl, model, config.getAiMaxTokens(), effort);
     }
 
     private AiProvider createAiProvider(ProviderSettings settings) {
@@ -337,28 +342,28 @@ public class AgentApp {
         switch (type) {
             case "openai":
                 log.info("Using OpenAI provider, model: {}", settings.model());
-                return new OpenAiProvider(settings.apiKey(), settings.model());
+                return new OpenAiProvider(settings.apiKey(), settings.model(), settings.effort());
             case "generic":
                 log.info("Using OpenAI-compatible provider: {}, model: {}",
                     settings.baseUrl(), settings.model());
                 return new OpenAiCompatibleProvider(
-                    settings.baseUrl(), settings.model(), settings.apiKey(), maxTokens);
+                    settings.baseUrl(), settings.model(), settings.apiKey(), maxTokens, settings.effort());
             case "opencode":
             case "opencode-go":
                 if (settings.baseUrl() != null && !settings.baseUrl().isBlank()) {
                     log.info("Using OpenAI-compatible OpenCode endpoint: {}, model: {}",
                         settings.baseUrl(), settings.model());
                     return new OpenAiCompatibleProvider(
-                        settings.baseUrl(), settings.model(), settings.apiKey(), maxTokens);
+                        settings.baseUrl(), settings.model(), settings.apiKey(), maxTokens, settings.effort());
                 }
                 log.warn("Provider '{}' is supported by the OpenCode harness; legacy provider disabled",
                     type);
-                return new ClaudeProvider(settings.apiKey(), settings.model());
+                return new ClaudeProvider(settings.apiKey(), settings.model(), settings.effort());
             case "claude":
             case "anthropic":
             default:
                 log.info("Using Claude provider, model: {}", settings.model());
-                return new ClaudeProvider(settings.apiKey(), settings.model());
+                return new ClaudeProvider(settings.apiKey(), settings.model(), settings.effort());
         }
     }
 
@@ -366,8 +371,21 @@ public class AgentApp {
      * Defensive unwrap for provider config responses.
      * Handles both flat (fixed backend) and double-wrapped (buggy backend) response formats.
      */
+    private static String first(Map<String, Object> map, String... keys) {
+        for (String key : keys) {
+            Object value = map.get(key);
+            if (value != null && !String.valueOf(value).isBlank()) {
+                return String.valueOf(value);
+            }
+        }
+        return null;
+    }
+
     private static Map<String, Object> unwrapProviderConfig(Map<String, Object> raw) {
         if (raw == null) return null;
+        if (raw.get("provider") instanceof Map) {
+            return (Map<String, Object>) raw.get("provider");
+        }
         if (raw.containsKey("success") && raw.containsKey("data") && raw.get("data") instanceof Map) {
             Map<String, Object> inner = (Map<String, Object>) raw.get("data");
             if (inner.containsKey("success") && inner.containsKey("data") && inner.get("data") instanceof Map) {
@@ -426,11 +444,9 @@ public class AgentApp {
                 cpu.put("availableProcessors", Runtime.getRuntime().availableProcessors());
 
                 apiService.sendHeartbeat(
-                    config.getAgentId(),
-                    ticketWorker.getCurrentTicketId(),
-                    ticketWorker.getCurrentStep(),
-                    mem,
-                    cpu
+                    config.getRuntimeId(),
+                    "running",
+                    config.getProjectId()
                 );
             } catch (AgentAuthFatalException e) {
                 exitOnFatalAuth(e);
@@ -500,10 +516,16 @@ public class AgentApp {
     private void processCycle() throws IOException {
         recoverStartupOnce();
 
-        // Explicit review mode, or auto mode without a legacy env repo pair.
-        if (config.isReviewMode()) {
-            log.warn("Agent mode {} — running in review mode only. Ticket processing is disabled. Set AGENT_MODE=build for a build node.",
-                config.getAgentMode());
+        if (config.isPlanner()) {
+            // Planning runtimes use the guarded planning API; the build loop
+            // never runs here. The planner claim path is exposed in the joint
+            // fg-40/fg-54 integration.
+            log.info("Planner runtime is idle: build and review cycles are disabled");
+            pollProfileValidation();
+            return;
+        }
+        if (config.isReviewer()) {
+            log.info("Reviewer runtime {}: build ticket processing is disabled", config.getRuntimeId());
             if (reviewProcessor == null) {
                 log.warn("Review cycle skipped: the configured provider is not usable by the legacy review path");
                 pollProfileValidation();
@@ -555,6 +577,69 @@ public class AgentApp {
 
     static volatile java.util.function.IntConsumer exitHook = System::exit;
 
+    /**
+     * A child started before the supervisor declared its runtimes resolves its
+     * own id/role/model from the node config. The server is authoritative; the
+     * child still cannot assert a role.
+     */
+    static void resolveRuntimeIdentity(AgentConfig config, com.vibecode.agent.service.RuntimeApi api) {
+        String wanted = System.getenv("AGENT_RUNTIME_NAME");
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            try {
+                Map<String, Object> nodeConfig = api.fetchConfig();
+                Map<String, Object> match = findRuntime(nodeConfig, wanted);
+                if (match != null && match.get("id") != null) {
+                    config.setRuntimeIdentity(
+                        String.valueOf(match.get("id")),
+                        string(match.get("role")),
+                        string(match.get("modelRef") != null ? match.get("modelRef") : match.get("model_ref")),
+                        string(match.get("effort")));
+                    log.info("Resolved runtime identity from node config (runtimeId={}, role={})",
+                        config.getRuntimeId(), config.getRole());
+                    if (config.isBuildMode()
+                        && (config.getProjectId() == null || config.getProjectId().isBlank())) {
+                        log.warn("Worker runtime has no project hint; set project in agent.ini "
+                            + "or AGENT_PROJECT_ID until the runtime claim API lands");
+                    }
+                    return;
+                }
+            } catch (Exception e) {
+                log.warn("Could not resolve runtime identity (attempt {}/5): {}", attempt, e.getMessage());
+            }
+            if (attempt < 5) {
+                try {
+                    Thread.sleep(2000L * attempt);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
+        log.error("Runtime identity is unresolved; the supervisor must declare this runtime");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> findRuntime(Map<String, Object> nodeConfig, String wanted) {
+        if (nodeConfig == null || wanted == null) return null;
+        Object runtimes = nodeConfig.get("runtimes");
+        if (runtimes == null) runtimes = nodeConfig.get("data");
+        if (runtimes instanceof Map<?, ?> map) runtimes = map.get("runtimes");
+        if (!(runtimes instanceof List<?> list)) return null;
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> row) {
+                Map<String, Object> runtime = (Map<String, Object>) row;
+                if (wanted.equals(string(runtime.get("name")))) {
+                    return runtime;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String string(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
     static void exitOnFatalAuth(AgentAuthFatalException error) {
         log.error("Agent authentication failed: {}", error.getMessage());
         System.err.println("Error: " + RedactionRegistry.redact(error.getMessage()));
@@ -581,24 +666,27 @@ public class AgentApp {
         try {
             AgentConfig config = new AgentConfig();
             AgentAuthManager authManager = null;
-            if (config.usesEnrollment()) {
-                AgentCredentialStore store = null;
-                if (config.getCredentialsFile() != null && !config.getCredentialsFile().isBlank()) {
-                    store = new AgentCredentialStore(java.nio.file.Path.of(config.getCredentialsFile()));
-                }
-                authManager = new AgentAuthManager(config, store, new AgentEnrollmentClient(config));
-                authManager.initialize();
-                log.info("Agent authenticated via enrollment (agentId={})", config.getAgentId());
+            String supervisorConfig = System.getenv("SUPERVISOR_CONFIG");
+            if (supervisorConfig != null && !supervisorConfig.isBlank()) {
+                com.vibecode.agent.supervisor.SupervisorMain.run(supervisorConfig);
+                return;
+            }
+            AgentCredentialStore store = new AgentCredentialStore(
+                java.nio.file.Path.of(config.getCredentialsFile()));
+            authManager = new AgentAuthManager(config, store, new AgentEnrollmentClient(config));
+            authManager.initialize();
+            log.info("Node authenticated via enrollment (nodeId={})", config.getNodeId());
+            if (config.getRuntimeId() == null || config.getRuntimeId().isBlank()) {
+                resolveRuntimeIdentity(config, new com.vibecode.agent.service.RuntimeApi(config, authManager));
             }
             AgentApp app = new AgentApp(config, authManager);
             app.start();
         } catch (IllegalStateException e) {
             log.error("Configuration error: {}", e.getMessage());
             System.err.println("Error: " + RedactionRegistry.redact(e.getMessage()));
-            System.err.println("Required env vars: BACKEND_URL and either "
-                + "AGENT_ID + AGENT_API_KEY or ENROLLMENT_TOKEN (+ AGENT_CREDENTIALS_FILE)");
-            System.err.println("For build mode: AGENT_MODE=build (repo from the project) or REPO_OWNER/REPO_NAME");
-            System.err.println("For review mode: AGENT_MODE=review");
+            System.err.println("Required env vars: BACKEND_URL, AGENT_CREDENTIALS_FILE "
+                + "and ENROLLMENT_TOKEN (first boot only)");
+            System.err.println("The supervisor sets AGENT_ROLE, AGENT_RUNTIME_ID and AGENT_LLM_MODEL");
             System.exit(1);
         } catch (Exception e) {
             log.error("Fatal error", e);

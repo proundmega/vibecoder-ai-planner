@@ -14,20 +14,24 @@ import java.time.Duration;
  * 
  * Required env vars:
  *   BACKEND_URL         - Base URL of the backend API (e.g., http://localhost:3001)
- *   PROJECT_ID          - Project ID (optional with enrollment; supplied by the server)
- *   AGENT_ID + AGENT_API_KEY, or ENROLLMENT_TOKEN + AGENT_CREDENTIALS_FILE
+ *   AGENT_CREDENTIALS_FILE - Persistent node credential file (0600)
+ *   ENROLLMENT_TOKEN    - One-time node join token (first boot only)
+ *
+ * Runtime env vars (set by the supervisor from the server config):
+ *   AGENT_RUNTIME_ID    - Runtime id owned by this node
+ *   AGENT_ROLE          - worker, reviewer or planner (closed enum)
+ *   AGENT_LLM_MODEL     - `<credential-name>/<model>` resolved by the server
+ *   AGENT_EFFORT        - optional override: minimal, low, medium, high or max
+ *   AGENT_PROJECT_ID    - optional project hint; the backend enforces grants
  *
  * Optional env vars:
- *   AGENT_MODE          - auto (default; env repo pair = build), build or review
  *   REPO_OWNER/REPO_NAME - Optional build fallback; the project's configured
- *                         repository is authoritative when AGENT_MODE=build
+ *                         repository is authoritative for a worker runtime
  *   POLL_INTERVAL_MS    - Polling interval in ms (default: 30000)
  *   STALE_TIMEOUT_MS    - Stale ticket timeout in ms (default: 3600000 = 1 hour)
- *   AI_PROVIDER         - AI provider to use: claude, anthropic, openai, opencode,
- *                         opencode-go, generic, custom, ollama, vllm or llamacpp
- *                         (default: claude)
- *   AI_MODEL            - AI model name (default: claude-sonnet-4-20250514)
- *   AI_API_KEY          - AI provider API key (falls back to env if not in DB)
+ *   AI_PROVIDER         - AI provider fallback when the node config is unavailable
+ *   AI_MODEL            - AI model fallback (default: claude-sonnet-4-20250514)
+ *   AI_API_KEY          - Dev-only provider fallback; production uses the registry
  *   AI_ENDPOINT_URL     - OpenAI-compatible endpoint URL (e.g., http://localhost:11434/v1)
  *   AI_MAX_TOKENS       - Max tokens for AI responses (default: 4096)
  *   GITHUB_AUTH_MODE    - GitHub credential mode: app (default) or pat
@@ -39,17 +43,18 @@ import java.time.Duration;
  */
 public class AgentConfig {
 
-    private final String agentApiKey;
-    private String agentId;
+    private String nodeId;
+    private String runtimeId;
     private final String backendUrl;
     private final String enrollmentToken;
     private final String enrollmentUrl;
     private final String credentialsFile;
-    private final String agentAuthMode;
     private String projectId;
     private String repoOwner;
     private String repoName;
-    private final String agentMode;
+    private String role;
+    private String modelRef;
+    private String effort;
     private final Duration pollInterval;
     private final Duration staleTimeout;
     private final String aiProvider;
@@ -67,45 +72,28 @@ public class AgentConfig {
     private final SandboxConfig sandboxConfig;
 
     public AgentConfig() {
-        this.agentApiKey = getEnv("AGENT_API_KEY", null);
-        this.agentId = getEnv("AGENT_ID", null);
         this.backendUrl = requireEnv("BACKEND_URL");
         this.enrollmentToken = getEnv("ENROLLMENT_TOKEN", null);
         this.enrollmentUrl = getEnv("ENROLLMENT_URL", null);
         this.credentialsFile = getEnv("AGENT_CREDENTIALS_FILE", null);
-        this.agentAuthMode = getEnv("AGENT_AUTH_MODE", "auto").toLowerCase();
-        if (!"auto".equals(this.agentAuthMode)
-                && !"enroll".equals(this.agentAuthMode)
-                && !"legacy".equals(this.agentAuthMode)) {
+        if (!hasEnrollmentSource()) {
             throw new IllegalStateException(
-                "AGENT_AUTH_MODE must be 'auto', 'enroll' or 'legacy' (got '" + this.agentAuthMode + "')");
+                "No node credentials: set ENROLLMENT_TOKEN on first boot and mount "
+                    + "AGENT_CREDENTIALS_FILE on a persistent volume");
         }
-        if (!staticCredentialsConfigured() && !hasEnrollmentSource()) {
+        if (this.credentialsFile == null || this.credentialsFile.isBlank()) {
             throw new IllegalStateException(
-                "No agent credentials: set AGENT_ID + AGENT_API_KEY, or ENROLLMENT_TOKEN "
-                    + "(with optional AGENT_CREDENTIALS_FILE)");
+                "AGENT_CREDENTIALS_FILE is required; mount a persistent volume so the "
+                    + "node does not need a new join token after restart");
         }
-        if ("legacy".equals(this.agentAuthMode) && !staticCredentialsConfigured()) {
-            throw new IllegalStateException(
-                "AGENT_AUTH_MODE=legacy requires AGENT_ID and AGENT_API_KEY");
-        }
-        this.projectId = getEnv("PROJECT_ID", null);
-        // Compute from the just-read fields (not the overridable method) so a
-        // test/subclass cannot change validation mid-construction.
-        boolean enrollmentMode = shouldEnroll(
-            this.agentAuthMode, staticCredentialsConfigured(), hasEnrollmentSource());
-        if (!enrollmentMode && (this.projectId == null || this.projectId.isBlank())) {
-            throw new IllegalStateException(
-                "PROJECT_ID is required for static credentials (enrollment reads the project from the server)");
-        }
-        if (enrollmentMode && (this.credentialsFile == null || this.credentialsFile.isBlank())) {
-            throw new IllegalStateException(
-                "AGENT_CREDENTIALS_FILE is required in enrollment mode; mount a persistent volume "
-                    + "so the node does not need a new join token after restart");
-        }
+        this.projectId = getEnv("PROJECT_ID", getEnv("AGENT_PROJECT_ID", null));
         this.repoOwner = getEnv("REPO_OWNER", null);
         this.repoName = getEnv("REPO_NAME", null);
-        this.agentMode = parseAgentMode(getEnv("AGENT_MODE", null));
+        this.role = parseRole(getEnv("AGENT_ROLE", "worker"));
+        this.runtimeId = getEnv("AGENT_RUNTIME_ID", null);
+        this.modelRef = getEnv("AGENT_LLM_MODEL", null);
+        this.effort = parseEffort(getEnv("AGENT_EFFORT", null));
+        this.nodeId = getEnv("AGENT_NODE_ID", null);
         this.pollInterval = Duration.ofMillis(getLongEnv("POLL_INTERVAL_MS", 30000));
         this.staleTimeout = Duration.ofMillis(getLongEnv("STALE_TIMEOUT_MS", 3600000));
         this.aiProvider = getEnv("AI_PROVIDER", "claude");
@@ -151,62 +139,80 @@ public class AgentConfig {
         }
     }
 
-    public String getAgentApiKey() { return agentApiKey; }
-    public String getAgentId() { return agentId; }
     public String getBackendUrl() { return backendUrl; }
     public String getEnrollmentToken() { return enrollmentToken; }
     public String getCredentialsFile() { return credentialsFile; }
-    public String getAgentAuthMode() { return agentAuthMode; }
 
-    /** Set after first-boot enrollment resolves the server-assigned id. */
-    public void setAgentId(String agentId) { this.agentId = agentId; }
+    /** Node id assigned by enrollment (server-authenticated, never trusted from env). */
+    public String getNodeId() { return nodeId; }
 
-    /** Set from the server during enrollment; client PROJECT_ID is only a hint. */
-    public void setProjectId(String projectId) { this.projectId = projectId; }
+    public void setNodeId(String nodeId) { this.nodeId = nodeId; }
 
-    public boolean staticCredentialsConfigured() {
-        return agentApiKey != null && !agentApiKey.isBlank()
-            && agentId != null && !agentId.isBlank();
+    /** Runtime id assigned by the supervisor/server config for this child. */
+    public String getRuntimeId() { return runtimeId; }
+
+    public void setRuntimeId(String runtimeId) { this.runtimeId = runtimeId; }
+
+    /** Closed runtime role from the server: worker, reviewer or planner. */
+    public String getRole() { return role; }
+
+    /** Model reference declared by the supervisor/server: `<credential>/<model>`. */
+    public String getModelRef() { return modelRef; }
+
+    /** Runtime effort override; null means the model default applies. */
+    public String getEffort() { return effort; }
+
+    /**
+     * Fill in the runtime identity resolved from the node config when the
+     * supervisor could not pass it (for example during a backend retry).
+     */
+    public void setRuntimeIdentity(String runtimeId, String role, String modelRef, String effort) {
+        if (runtimeId != null && !runtimeId.isBlank()) {
+            this.runtimeId = runtimeId;
+        }
+        if (role != null && !role.isBlank()) {
+            this.role = parseRole(role);
+        }
+        if (modelRef != null && !modelRef.isBlank()) {
+            this.modelRef = modelRef;
+        }
+        if (effort != null && !effort.isBlank()) {
+            this.effort = parseEffort(effort);
+        }
     }
+
+    /** Current project hint; the backend enforces the grant, not this value. */
+    public String getProjectId() { return projectId; }
+
+    /** Set from a lease/config response; client PROJECT_ID is only a hint. */
+    public void setProjectId(String projectId) { this.projectId = projectId; }
 
     public boolean hasEnrollmentSource() {
         return (enrollmentToken != null && !enrollmentToken.isBlank())
             || (credentialsFile != null && !credentialsFile.isBlank());
     }
 
-    /**
-     * Enrollment mode applies when explicitly requested, or when the legacy
-     * static pair is absent. A static pair always wins in `auto` so existing
-     * deployments are unchanged.
-     */
+    /** Node enrollment is the only credential source after the fg-54 clean cut. */
     public boolean usesEnrollment() {
-        return shouldEnroll(agentAuthMode, staticCredentialsConfigured(), hasEnrollmentSource());
-    }
-
-    static boolean shouldEnroll(String mode, boolean hasStaticCredentials, boolean hasEnrollmentSource) {
-        if ("enroll".equals(mode)) return true;
-        if ("legacy".equals(mode)) return false;
-        return !hasStaticCredentials && hasEnrollmentSource;
+        return true;
     }
 
     public String getEnrollmentUrl() {
         if (enrollmentUrl != null && !enrollmentUrl.isBlank()) return enrollmentUrl;
-        return getApiUrl() + "/agent-enrollment/enroll";
+        return getApiUrl() + "/agent-nodes/enroll";
     }
 
     public String getRefreshUrl() {
-        String explicit = getEnv("AGENT_ENROLLMENT_REFRESH_URL", null);
+        String explicit = getEnv("AGENT_NODE_REFRESH_URL", null);
         if (explicit != null && !explicit.isBlank()) return explicit;
         String enroll = getEnrollmentUrl();
         return enroll.endsWith("/enroll")
             ? enroll.substring(0, enroll.length() - "/enroll".length()) + "/refresh"
-            : getApiUrl() + "/agent-enrollment/refresh";
+            : getApiUrl() + "/agent-nodes/refresh";
     }
-    public String getProjectId() { return projectId; }
+
     public String getRepoOwner() { return repoOwner; }
     public String getRepoName() { return repoName; }
-
-    public String getAgentMode() { return agentMode; }
 
     /** Set from the project's configured repository (server wins over env). */
     public void setRepoCoordinates(String owner, String name) {
@@ -223,30 +229,44 @@ public class AgentConfig {
             && repoName != null && !repoName.isBlank();
     }
 
+    /** A worker may claim/build; reviewers and planners may not. */
     public boolean isBuildMode() {
-        return "build".equals(agentMode);
+        return "worker".equals(getRole());
     }
 
+    /**
+     * Review/planning runtimes do not run the build loop. The role decides
+     * this; the old client-asserted mode is gone.
+     */
     public boolean isReviewMode() {
-        return shouldReview(agentMode, repoOwner, repoName);
+        return "reviewer".equals(getRole()) || "planner".equals(getRole());
     }
 
-    static String parseAgentMode(String raw) {
+    public boolean isReviewer() {
+        return "reviewer".equals(getRole());
+    }
+
+    public boolean isPlanner() {
+        return "planner".equals(getRole());
+    }
+
+    static String parseRole(String raw) {
         String value = raw == null ? "" : raw.trim().toLowerCase();
-        if (value.isBlank()) return "auto";
-        if ("auto".equals(value) || "build".equals(value) || "review".equals(value)) {
+        if (value.isBlank()) return "worker";
+        if ("worker".equals(value) || "reviewer".equals(value) || "planner".equals(value)) {
             return value;
         }
         throw new IllegalStateException(
-            "AGENT_MODE must be 'auto', 'build' or 'review' (got '" + raw + "')");
+            "AGENT_ROLE must be worker, reviewer or planner (got '" + raw + "')");
     }
 
-    static boolean shouldReview(String mode, String repoOwner, String repoName) {
-        if ("review".equals(mode)) return true;
-        if ("build".equals(mode)) return false;
-        // auto preserves the legacy signal: a complete env repo pair means build.
-        return repoOwner == null || repoOwner.isBlank()
-            || repoName == null || repoName.isBlank();
+    static String parseEffort(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return com.vibecode.agent.service.ProviderEffort.canonical(raw);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException(e.getMessage(), e);
+        }
     }
     public Duration getPollInterval() { return pollInterval; }
     public Duration getStaleTimeout() { return staleTimeout; }
@@ -330,7 +350,10 @@ public class AgentConfig {
             ", aiMaxTokens=" + aiMaxTokens +
             ", dryRun=" + dryRun +
             ", maxTicketsPerCycle=" + maxTicketsPerCycle +
-            ", agentMode='" + agentMode + '\'' +
+            ", role='" + role + '\'' +
+            ", runtimeId='" + runtimeId + '\'' +
+            ", modelRef='" + modelRef + '\'' +
+            ", effort='" + effort + '\'' +
             ", repoCloneDir='" + repoCloneDir + '\'' +
             ", harnessMode='" + harnessConfig.mode() + '\'' +
             ", sandboxMode='" + sandboxConfig.mode() + '\'' +

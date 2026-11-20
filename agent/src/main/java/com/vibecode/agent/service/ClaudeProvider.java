@@ -23,14 +23,20 @@ public class ClaudeProvider implements AiProvider {
 
     private final String apiKey;
     private final String model;
+    private final String effort;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private int tokensIn = 0;
     private int tokensOut = 0;
 
     public ClaudeProvider(String apiKey, String model) {
+        this(apiKey, model, null);
+    }
+
+    public ClaudeProvider(String apiKey, String model, String effort) {
         this.apiKey = apiKey;
         this.model = model != null ? model : DEFAULT_MODEL;
+        this.effort = ProviderEffort.canonical(effort);
         this.httpClient = new OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
@@ -47,10 +53,15 @@ public class ClaudeProvider implements AiProvider {
         messages.add(msg);
 
         Map<String, Object> requestBody = new HashMap<>();
+        int thinkingBudget = ProviderEffort.thinkingBudgetTokens(effort);
         requestBody.put("model", model);
-        requestBody.put("max_tokens", 4096);
+        // Anthropic requires max_tokens to exceed the thinking budget.
+        requestBody.put("max_tokens", Math.max(4096, thinkingBudget + 1024));
         requestBody.put("system", systemPrompt);
         requestBody.put("messages", messages);
+        requestBody.put("thinking", Map.of(
+            "type", "enabled",
+            "budget_tokens", thinkingBudget));
 
         String bodyJson = objectMapper.writeValueAsString(requestBody);
         RequestBody body = RequestBody.create(bodyJson, MediaType.get("application/json"));

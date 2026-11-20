@@ -54,11 +54,11 @@ class AgentEnrollmentClientTest {
 
     private String credentialJson() {
         return "{\"success\":true,\"data\":{"
-            + "\"agent_id\":42,"
-            + "\"access_token\":\"at_new\","
-            + "\"refresh_token\":\"ar_new\","
-            + "\"access_expires_at\":\"" + Instant.parse("2026-12-01T00:00:00Z") + "\","
-            + "\"refresh_expires_at\":\"" + Instant.parse("2026-12-31T00:00:00Z") + "\"}}";
+            + "\"node\":{\"id\":42,\"name\":\"node-1\"},"
+            + "\"accessToken\":\"at_new\","
+            + "\"refreshToken\":\"ar_new\","
+            + "\"accessExpiresAt\":\"" + Instant.parse("2026-12-01T00:00:00Z") + "\","
+            + "\"refreshExpiresAt\":\"" + Instant.parse("2026-12-31T00:00:00Z") + "\"}}";
     }
 
     @Test
@@ -70,7 +70,7 @@ class AgentEnrollmentClientTest {
         AgentCredentialStore.Credentials credentials =
             new AgentEnrollmentClient(config).enroll("worker", Map.of("hostname", "node-1"));
 
-        assertEquals("42", credentials.agentId());
+        assertEquals("42", credentials.nodeId());
         assertEquals("at_new", credentials.accessToken());
         assertEquals("ar_new", credentials.refreshToken());
         assertEquals(Instant.parse("2026-12-01T00:00:00Z"), credentials.accessExpiresAt());

@@ -254,7 +254,7 @@ public class TicketProcessor implements TicketWorker {
         
         try {
             apiService.reportUsage(
-                config.getAgentId(),
+                config.getRuntimeId(),
                 aiProvider.getType(),
                 config.getAiModel(),
                 aiProvider.getTokensIn(),

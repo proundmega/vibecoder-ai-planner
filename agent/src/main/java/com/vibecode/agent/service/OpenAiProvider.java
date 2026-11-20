@@ -22,14 +22,20 @@ public class OpenAiProvider implements AiProvider {
 
     private final String apiKey;
     private final String model;
+    private final String effort;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private int tokensIn = 0;
     private int tokensOut = 0;
 
     public OpenAiProvider(String apiKey, String model) {
+        this(apiKey, model, null);
+    }
+
+    public OpenAiProvider(String apiKey, String model, String effort) {
         this.apiKey = apiKey;
         this.model = model != null ? model : DEFAULT_MODEL;
+        this.effort = ProviderEffort.canonical(effort);
         this.httpClient = new OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
@@ -55,6 +61,10 @@ public class OpenAiProvider implements AiProvider {
         requestBody.put("model", model);
         requestBody.put("messages", messages);
         requestBody.put("max_tokens", 4096);
+        String reasoningEffort = ProviderEffort.reasoningEffort("openai", effort);
+        if (reasoningEffort != null) {
+            requestBody.put("reasoning_effort", reasoningEffort);
+        }
 
         String bodyJson = objectMapper.writeValueAsString(requestBody);
         RequestBody body = RequestBody.create(bodyJson, MediaType.get("application/json"));

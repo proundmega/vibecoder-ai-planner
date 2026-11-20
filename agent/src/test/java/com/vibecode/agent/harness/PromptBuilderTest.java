@@ -117,7 +117,7 @@ class PromptBuilderTest {
     void promptDoesNotInjectSupervisorEnvironment() {
         String prompt = new PromptBuilder().build(ticket(), List.of("doc"), List.of("npm test"));
 
-        for (String name : List.of("GITHUB_TOKEN", "AI_API_KEY", "AGENT_API_KEY")) {
+        for (String name : List.of("GITHUB_TOKEN", "AI_API_KEY", "ENROLLMENT_TOKEN")) {
             String value = System.getenv(name);
             if (value != null && !value.isBlank()) {
                 assertFalse(prompt.contains(value), "prompt leaked " + name);

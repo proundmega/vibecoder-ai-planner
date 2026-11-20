@@ -17,8 +17,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Exchanges a one-time join token for node credentials and rotates refresh
- * tokens. Mirrors the backend contract in fg-53 `02` → API contract.
+ * Exchanges a one-time node join token for node credentials and rotates the
+ * refresh token. Mirrors the fg-54 API contract
+ * ({@code POST /agent-nodes/enroll} and {@code POST /agent-nodes/refresh}).
  */
 public class AgentEnrollmentClient {
 
@@ -41,12 +42,23 @@ public class AgentEnrollmentClient {
         this.httpClient = httpClient;
     }
 
+    /**
+     * Enrolls the host. The request has no project, role or provider field;
+     * those are server-side concepts after fg-54.
+     */
     public AgentCredentialStore.Credentials enroll(String name, Map<String, Object> nodeMetadata)
             throws IOException {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("token", config.getEnrollmentToken());
         body.put("name", name);
-        body.put("node_metadata", nodeMetadata != null ? nodeMetadata : Map.of());
+        if (nodeMetadata != null) {
+            if (nodeMetadata.get("hostname") != null) {
+                body.put("hostname", nodeMetadata.get("hostname"));
+            }
+            if (nodeMetadata.get("fingerprint") != null) {
+                body.put("fingerprint", nodeMetadata.get("fingerprint"));
+            }
+        }
         return post(config.getEnrollmentUrl(), body);
     }
 
@@ -96,27 +108,53 @@ public class AgentEnrollmentClient {
         try (Response response = httpClient.newCall(request).execute()) {
             String text = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
-                throw new IOException("Enrollment request failed with HTTP " + response.code());
+                throw new IOException("Node enrollment request failed with HTTP " + response.code());
             }
             JsonNode root = objectMapper.readTree(text);
             JsonNode data = root.path("data");
             if (!root.path("success").asBoolean(false) || data.isMissingNode()) {
-                throw new IOException("Enrollment request was rejected");
+                throw new IOException("Node enrollment request was rejected");
             }
+            String nodeId = firstText(data, "nodeId", "node_id");
+            if (nodeId == null) {
+                JsonNode node = data.path("node");
+                nodeId = firstText(node, "id", "nodeId", "node_id");
+            }
+            if (nodeId == null) {
+                throw new IOException("Node enrollment response did not include a node id");
+            }
+            String accessToken = firstText(data, "accessToken", "access_token");
+            String refreshToken = firstText(data, "refreshToken", "refresh_token");
+            if (accessToken == null || refreshToken == null) {
+                throw new IOException("Node enrollment response did not include both tokens");
+            }
+            Instant accessExpiresAt = firstInstant(data, "accessExpiresAt", "access_expires_at");
+            Instant refreshExpiresAt = firstInstant(data, "refreshExpiresAt", "refresh_expires_at");
             return new AgentCredentialStore.Credentials(
-                data.path("agent_id").asText(),
-                data.path("access_token").asText(),
-                data.path("refresh_token").asText(),
-                parseInstant(data.path("access_expires_at")),
-                parseInstant(data.path("refresh_expires_at")),
-                data.path("project_id").isMissingNode() ? null : data.path("project_id").asText());
+                nodeId,
+                accessToken,
+                refreshToken,
+                accessExpiresAt != null ? accessExpiresAt : Instant.now().plus(Duration.ofHours(1)),
+                refreshExpiresAt != null ? refreshExpiresAt : Instant.now().plus(Duration.ofDays(30)));
         }
     }
 
-    private static Instant parseInstant(JsonNode node) {
-        if (node == null || node.isMissingNode() || node.isNull()) return null;
+    private static String firstText(JsonNode node, String... fields) {
+        if (node == null || node.isMissingNode()) return null;
+        for (String field : fields) {
+            JsonNode value = node.get(field);
+            if (value != null && !value.isNull() && !value.asText().isBlank()) {
+                return value.asText();
+            }
+        }
+        return null;
+    }
+
+    private static Instant firstInstant(JsonNode node, String... fields) {
+        String text = firstText(node, fields);
+        if (text == null) return null;
         try {
-            return Instant.parse(node.asText());
+            return Instant.parse(text);
         } catch (RuntimeException e) {
             return null;
         }

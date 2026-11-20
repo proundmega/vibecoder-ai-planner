@@ -26,16 +26,23 @@ public class OpenAiCompatibleProvider implements AiProvider {
     private final String model;
     private final String apiKey;
     private final int maxTokens;
+    private final String effort;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private int tokensIn = 0;
     private int tokensOut = 0;
 
     public OpenAiCompatibleProvider(String endpointUrl, String model, String apiKey, int maxTokens) {
+        this(endpointUrl, model, apiKey, maxTokens, null);
+    }
+
+    public OpenAiCompatibleProvider(String endpointUrl, String model, String apiKey, int maxTokens,
+                                    String effort) {
         this.endpointUrl = endpointUrl;
         this.model = model != null ? model : "default";
         this.apiKey = apiKey;
         this.maxTokens = maxTokens;
+        this.effort = ProviderEffort.canonical(effort);
         this.httpClient = new OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(300, TimeUnit.SECONDS)
@@ -62,6 +69,10 @@ public class OpenAiCompatibleProvider implements AiProvider {
         requestBody.put("messages", messages);
         requestBody.put("max_tokens", maxTokens);
         requestBody.put("temperature", 0.2);
+        String reasoningEffort = ProviderEffort.reasoningEffort("generic", effort);
+        if (reasoningEffort != null) {
+            requestBody.put("reasoning_effort", reasoningEffort);
+        }
 
         String bodyJson = objectMapper.writeValueAsString(requestBody);
         RequestBody body = RequestBody.create(bodyJson, MediaType.get("application/json"));

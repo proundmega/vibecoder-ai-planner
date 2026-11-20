@@ -2,6 +2,7 @@ package com.vibecode.agent.service;
 
 import com.sun.net.httpserver.HttpServer;
 import com.vibecode.agent.config.AgentConfig;
+import com.vibecode.agent.service.AgentAuthManager;
 import com.vibecode.agent.harness.EgressMtlsMaterial;
 import com.vibecode.agent.harness.RedactionRegistry;
 import org.junit.jupiter.api.AfterEach;
@@ -69,8 +70,9 @@ class ApiServiceHarnessTest {
         AgentConfig config = mock(AgentConfig.class);
         when(config.getApiUrl())
             .thenReturn("http://127.0.0.1:" + server.getAddress().getPort() + "/api/v1");
-        when(config.getAgentApiKey()).thenReturn("test-agent-key");
-        api = new ApiService(config);
+        AgentAuthManager authManager = mock(AgentAuthManager.class);
+        when(authManager.ensureValidAccessToken()).thenReturn("test-agent-key");
+        api = new ApiService(config, authManager);
     }
 
     @AfterEach

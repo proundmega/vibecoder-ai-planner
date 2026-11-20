@@ -83,7 +83,7 @@ class AgentAuthManagerTest {
 
     private AgentCredentialStore.Credentials pair(String access, Instant accessExpiry) {
         return new AgentCredentialStore.Credentials(
-            "42", access, "ar_refresh", accessExpiry, Instant.parse("2026-12-01T00:00:00Z"), "3");
+            "42", access, "ar_refresh", accessExpiry, Instant.parse("2026-12-01T00:00:00Z"));
     }
 
     @Test
@@ -99,7 +99,7 @@ class AgentAuthManagerTest {
         manager.initialize();
 
         assertEquals(1, client.enrolls.get());
-        assertEquals("42", config.getAgentId());
+        assertEquals("42", config.getNodeId());
         assertEquals("at_first", manager.ensureValidAccessToken());
         assertTrue(new AgentCredentialStore(file).exists());
     }
@@ -121,7 +121,7 @@ class AgentAuthManagerTest {
         new AgentAuthManager(restarted, new AgentCredentialStore(file), second).initialize();
 
         assertEquals(0, second.enrolls.get());
-        assertEquals("42", restarted.getAgentId());
+        assertEquals("42", restarted.getNodeId());
     }
 
     @Test

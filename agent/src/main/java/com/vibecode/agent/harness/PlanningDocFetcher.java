@@ -33,12 +33,14 @@ public final class PlanningDocFetcher {
         List<String> docs = new ArrayList<>();
         try {
             String url = config.getApiUrl() + "/tickets/" + ticketId + "/planning";
-            Request request = new Request.Builder()
+            Request.Builder builder = new Request.Builder()
                 .url(url)
-                .header("X-API-Key", config.getAgentApiKey())
-                .header("Accept", "application/json")
-                .get()
-                .build();
+                .header("X-API-Key", apiService.currentAccessToken())
+                .header("Accept", "application/json");
+            if (config.getRuntimeId() != null && !config.getRuntimeId().isBlank()) {
+                builder.header("X-Agent-Runtime", config.getRuntimeId());
+            }
+            Request request = builder.get().build();
 
             try (Response response = apiService.getHttpClient().newCall(request).execute()) {
                 if (!response.isSuccessful() || response.body() == null) {

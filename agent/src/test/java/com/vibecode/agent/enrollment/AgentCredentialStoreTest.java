@@ -25,8 +25,7 @@ class AgentCredentialStoreTest {
             "at_access",
             "ar_refresh",
             Instant.parse("2026-01-01T00:00:00Z"),
-            Instant.parse("2026-02-01T00:00:00Z"),
-            "3");
+            Instant.parse("2026-02-01T00:00:00Z"));
     }
 
     @Test
@@ -38,7 +37,7 @@ class AgentCredentialStoreTest {
 
         assertTrue(store.exists());
         AgentCredentialStore.Credentials loaded = store.load();
-        assertEquals("42", loaded.agentId());
+        assertEquals("42", loaded.nodeId());
         assertEquals("at_access", loaded.accessToken());
         assertEquals("ar_refresh", loaded.refreshToken());
         assertEquals(Instant.parse("2026-01-01T00:00:00Z"), loaded.accessExpiresAt());

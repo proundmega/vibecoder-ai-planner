@@ -1,43 +1,42 @@
-# Remote worker template (fg-53): runs an agent against a backend that is NOT
-# on this Compose network. Copy this file, fill the values, and run:
+# Remote host template (fg-54): runs the supervisor against a backend that is
+# NOT on this Compose network. Copy this file, fill the values, and run:
 #   docker compose -f docker-compose.remote.yml up -d
 #
 # Do not commit a filled copy: it contains a one-time join token.
 services:
-  agent:
+  supervisor:
     image: ${AGENT_IMAGE:-vibecode-agent:latest}
     environment:
+      - SUPERVISOR_CONFIG=/config/agent.ini
+      - AGENT_JAR=/app/agent.jar
       - BACKEND_URL=${BACKEND_URL:?set BACKEND_URL, e.g. https://planner.example.com}
-      # Optional with enrollment: the join token supplies the project.
-      - PROJECT_ID=${PROJECT_ID:-}
-      - AGENT_AUTH_MODE=enroll
-      - AGENT_MODE=${AGENT_MODE:-build}
       # First boot only: the credential volume is the node identity after that.
       # Leave this set in .env (harmless once a credential file exists) or
       # remove it; an image update or reboot works without a token.
-      # With neither a token nor a credential file the agent exits with
-      # "No credential file and no ENROLLMENT_TOKEN" and restart-loops until
-      # one is provided.
       - ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN:-}
       - ENROLLMENT_URL=${ENROLLMENT_URL:-}
-      - AGENT_CREDENTIALS_FILE=/credentials/agent.json
+      - AGENT_CREDENTIALS_FILE=/credentials/node.json
+      - AGENT_NODE_NAME=${AGENT_NODE_NAME:-}
       # Only for plain-HTTP backends on a non-loopback host (dev/LAN testing).
       - ALLOW_INSECURE_AGENT_ENROLLMENT=${ALLOW_INSECURE_AGENT_ENROLLMENT:-0}
+      - AGENT_RUNTIME_HEAP_MB=${AGENT_RUNTIME_HEAP_MB:-768}
+      - SUPERVISOR_MEMORY_BUDGET_MB=${SUPERVISOR_MEMORY_BUDGET_MB:-0}
+      - SUPERVISOR_STOP_TIMEOUT_SECONDS=${SUPERVISOR_STOP_TIMEOUT_SECONDS:-10}
       # Optional fallback only; the project's configured repo wins.
       - REPO_OWNER=${REPO_OWNER:-}
       - REPO_NAME=${REPO_NAME:-}
       - REPO_CLONE_DIR=/repos
       - AI_PROVIDER=${AI_PROVIDER:-claude}
       - AI_MODEL=${AI_MODEL:-claude-sonnet-4-20250514}
-      - AI_API_KEY=${AI_API_KEY:-}
-      - HARNESS_MODE=${HARNESS_MODE:-legacy}
-      - AGENT_NAME=${AGENT_NAME:-}
+      - HARNESS_MODE=${HARNESS_MODE:-opencode}
     volumes:
+      # Declared runtimes only: no keys or tokens.
+      - ${AGENT_INI_PATH:-./agent.ini}:/config/agent.ini:ro
       # Credentials are written as the agent user (uid 100); the image owns
       # /credentials so a fresh named volume inherits that ownership.
       - agent_credentials:/credentials
-      # Build mode clones here. The host directory must be writable by uid 100,
-      # gid 101: mkdir -p repos && sudo chown 100:101 repos
+      # Worker clones land here. The host directory must be writable by uid
+      # 100, gid 101: mkdir -p repos && sudo chown 100:101 repos
       - ${REPO_HOST_PATH:-./repos}:/repos
     restart: unless-stopped
 

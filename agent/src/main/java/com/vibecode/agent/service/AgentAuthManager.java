@@ -13,6 +13,13 @@ import java.util.Map;
 /**
  * Owns the node access-token lifecycle: first-boot enrollment, credential
  * persistence, refresh before expiry and one refresh retry after a 401.
+ *
+ * <p>Refresh is single-flight: every caller is synchronized on this instance,
+ * so a timer refresh and a 401-triggered refresh coalesce into one in-flight
+ * request with one {@code idempotency_key}. The backend replay cache returns
+ * the same pair for a retry with that key; presenting a rotated token with a
+ * different key would revoke the family, so the key is retained until the new
+ * pair is durable.</p>
  */
 public class AgentAuthManager {
 
@@ -32,10 +39,6 @@ public class AgentAuthManager {
     }
 
     public synchronized void initialize() throws IOException {
-        if (!config.usesEnrollment()) {
-            return;
-        }
-
         if (store != null && store.exists()) {
             adopt(store.load());
             return;
@@ -48,19 +51,16 @@ public class AgentAuthManager {
         enroll();
     }
 
-    public String getAgentId() {
+    public String getNodeId() {
         AgentCredentialStore.Credentials current = credentials;
-        return current != null ? current.agentId() : config.getAgentId();
+        return current != null ? current.nodeId() : config.getNodeId();
     }
 
-    /**
-     * Token for the next API call. In legacy mode this is the static key; in
-     * enrollment mode it refreshes shortly before expiry.
-     */
+    /** Token for the next API call; refreshes shortly before expiry. */
     public synchronized String ensureValidAccessToken() throws IOException {
         AgentCredentialStore.Credentials current = credentials;
         if (current == null) {
-            return config.getAgentApiKey();
+            throw new IOException("Node credential is not initialized; enroll this node first");
         }
         if (current.accessToken() == null
                 || current.accessExpiresAt() == null
@@ -78,7 +78,7 @@ public class AgentAuthManager {
      */
     public synchronized void refreshAfterUnauthorized(String failedAccessToken) throws IOException {
         if (credentials == null) {
-            throw new IOException("Agent is authenticated with a static key; cannot refresh");
+            throw new IOException("Node credential is not initialized; cannot refresh");
         }
         if (failedAccessToken != null && !failedAccessToken.equals(credentials.accessToken())) {
             return;
@@ -87,7 +87,7 @@ public class AgentAuthManager {
     }
 
     private void enroll() throws IOException {
-        AgentCredentialStore.Credentials enrolled = client.enroll(agentName(), nodeMetadata());
+        AgentCredentialStore.Credentials enrolled = client.enroll(nodeName(), nodeMetadata());
         // Persist first: if the volume is read-only/full, fail without
         // pretending the node has usable durable credentials.
         if (store != null) store.save(enrolled);
@@ -111,7 +111,7 @@ public class AgentAuthManager {
             // Keep pendingRefreshKey so a retry of this same attempt can hit the
             // backend replay cache, then fail the process rather than looping.
             throw new AgentAuthFatalException(
-                "Agent credentials could not be refreshed; re-enroll this node", error);
+                "Node credentials could not be refreshed; re-enroll this node", error);
         }
         // Persist before adopting so a failed write cannot leave memory ahead
         // of disk (a restart would replay a rotated token and revoke the family).
@@ -124,20 +124,20 @@ public class AgentAuthManager {
 
     private void adopt(AgentCredentialStore.Credentials next) {
         this.credentials = next;
-        if (next.agentId() != null && !next.agentId().isBlank()) {
-            config.setAgentId(next.agentId());
-        }
-        if (next.projectId() != null && !next.projectId().isBlank()) {
-            config.setProjectId(next.projectId());
+        if (next.nodeId() != null && !next.nodeId().isBlank()) {
+            config.setNodeId(next.nodeId());
         }
         RedactionRegistry.register(next.accessToken(), next.refreshToken());
     }
 
-    private static String agentName() {
-        String explicit = System.getenv("AGENT_NAME");
+    private static String nodeName() {
+        String explicit = System.getenv("AGENT_NODE_NAME");
+        if (explicit == null || explicit.isBlank()) {
+            explicit = System.getenv("AGENT_NAME");
+        }
         if (explicit != null && !explicit.isBlank()) return explicit;
         String host = hostname();
-        return "agent-" + (host.isBlank() ? "node" : host);
+        return host.isBlank() ? "node" : host;
     }
 
     private static Map<String, Object> nodeMetadata() {
@@ -145,6 +145,10 @@ public class AgentAuthManager {
         metadata.put("hostname", hostname());
         metadata.put("os", System.getProperty("os.name", "unknown"));
         metadata.put("java", System.getProperty("java.version", "unknown"));
+        String fingerprint = System.getenv("AGENT_FINGERPRINT");
+        if (fingerprint != null && !fingerprint.isBlank()) {
+            metadata.put("fingerprint", fingerprint);
+        }
         return metadata;
     }
 

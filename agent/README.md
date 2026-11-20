@@ -1,27 +1,38 @@
 # Vibecode AI Agent
 
-Worker node that polls a project for backlog tickets, runs an AI coding agent
-against the project's repository, and reports results to the backend.
+Host supervisor and worker runtime for the fg-54 agent fleet.
 
-- Java 17 / Maven, packaged as a shaded JAR and a Docker image.
-- Two auth modes: static `AGENT_ID` + `AGENT_API_KEY`, or **self-enrollment**
-  with a one-time `enr_…` join token.
-- Three repo modes: `auto`, `build`, `review` (see [Repo modes](#repo-modes)).
-- New here? [ENROLLMENT.md](ENROLLMENT.md) is the step-by-step enrollment
-  walkthrough; this file is the deployment map.
+- **One container per host.** The container runs a **supervisor**, which enrolls
+  the host as a **node**, declares the runtimes in `agent.ini`, and reconciles
+  one child JVM per runtime.
+- **Node credentials only.** A node is enrolled once with an `enr_…` join
+  token. The credential file (`0600`) is the durable identity; provider keys
+  are fetched per runtime over the authenticated node channel.
+- **Server-enforced roles.** Worker, reviewer and planner are closed runtime
+  roles. The client cannot assert or change its role; the backend checks the
+  `(node, project, role)` grant on claim, review and planning paths.
+- **No secrets in supervisor config.** `agent.ini` carries roles, model refs,
+  counts and optional effort only. Unknown keys and secret-looking values are
+  rejected at startup.
 
-## Topology: pick the right Compose file
+> **Clean cut (fg-54).** The previous model — one project-bound agent per
+> container, a static key pair, a client-asserted mode and fused
+> provider/model/role rows — has been removed. Existing agent containers must
+> be replaced by a supervisor; provider credentials are re-entered through the
+> model registry. There is no backfill or compatibility shim.
+
+## Topology
 
 | File | Use when | Notes |
 |---|---|---|
-| `docker-compose.remote.yml.example` | Agent runs on **another machine** | Self-contained, no external network. Needs a reachable `BACKEND_URL` and a prebuilt `${AGENT_IMAGE}`. |
-| `docker-compose.yml` | Agent runs on the **same Docker host** as the planner | Joins the planner's Compose network as `external`. Needs `VIBECODE_NETWORK` (or `ROOT_COMPOSE_PROJECT`). |
-| `docker-compose.sandbox.yml` | Overlay for Docker sandboxing | Adds the restricted socket-proxy network; use only with a `docker-proxy` and a host-visible `/repos`. |
+| `docker-compose.remote.yml.example` | Host runs on **another machine** | Self-contained; needs a reachable `BACKEND_URL` and a prebuilt `${AGENT_IMAGE}`. |
+| `docker-compose.yml` | Host runs on the **same Docker host** as the planner | Joins the planner's Compose network as `external`; set `VIBECODE_NETWORK` or `ROOT_COMPOSE_PROJECT`. |
+| `docker-compose.sandbox.yml` | Overlay for Docker sandboxing | Adds the restricted socket-proxy network; requires a `docker-proxy` and a host-visible `/repos`. |
 
-If you are off-host and see `network … declared as external, but could not be
-found`, you used the second file by mistake — use the remote template.
+If an off-host deployment reports `network … declared as external, but could
+not be found`, it used the second file; use the remote template.
 
-## Quickstart: worker on a separate machine
+## Quickstart: host on a separate machine
 
 ```bash
 git clone https://github.com/proundmega/vibecoder-ai-planner.git
@@ -29,147 +40,164 @@ cd vibecoder-ai-planner
 
 docker build -t vibecode-agent:latest agent/
 
-mkdir -p repos && sudo chown 100:101 repos   # build mode only
+mkdir -p repos && sudo chown 100:101 repos
 cp agent/docker-compose.remote.yml.example docker-compose.remote.yml
+cp agent/agent.ini.example agent.ini
+# edit agent.ini: role, model ref, count and optional effort per runtime
 ```
 
-Mint a token in **Agents → Enrollment**, then:
+Mint a join token in **Agents → Fleet → Mint token**, then:
 
 ```bash
 ENROLLMENT_TOKEN='enr_...' \
-BACKEND_URL='http://192.168.3.51:3001' \
-AGENT_NAME='worker-1' \
-AGENT_MODE=review \
-ALLOW_INSECURE_AGENT_ENROLLMENT=1 \
-docker compose -p worker-1 -f docker-compose.remote.yml up -d
+BACKEND_URL='https://planner.example.com' \
+AGENT_NODE_NAME='build-host-1' \
+AGENT_INI_PATH=./agent.ini \
+docker compose -p build-host-1 -f docker-compose.remote.yml up -d
 ```
 
-- Backend must have `AGENT_ENROLLMENT_ENABLED=1`. For plain HTTP it also needs
-  `ALLOW_INSECURE_AGENT_ENROLLMENT=1`; HTTPS is required otherwise.
-- Start with `AGENT_MODE=review` to prove enrollment without a repo, then switch
-  to `build`.
-- The token is single-use and expires (default 15 min). Mint a new one per
-  worker; use `-p worker-N` so credential volumes stay separate.
+- The token is single-use and expires (default 15 minutes). Mint one per host,
+  not per runtime.
+- The first boot writes `/credentials/node.json` (`0600`). Restarts reuse it;
+  deleting the volume requires a new token and a fresh enrollment.
+- Plain HTTP is accepted only for loopback or when
+  `ALLOW_INSECURE_AGENT_ENROLLMENT=1` is set. Use HTTPS in production.
 
 Verify:
 
 ```bash
-docker logs -f worker-1-agent-1   # "Agent authenticated via enrollment (agentId=…)"
-docker exec worker-1-agent-1 ls -l /credentials/agent.json   # -rw------- 0600
+docker logs -f build-host-1-supervisor-1
+# "Node authenticated via enrollment (nodeId=…)"
+# "Supervisor reconciled: desired=3 running=3 spawned=3 drained=0"
+docker exec build-host-1-supervisor-1 ls -l /credentials/node.json
+# -rw------- … /credentials/node.json
 ```
 
 ## Quickstart: same host as the planner (dev)
 
 ```bash
 cd agent
+cp agent.ini.example agent.ini
 ENROLLMENT_TOKEN='enr_...' \
 BACKEND_URL='http://api:3001' \
-AGENT_MODE=review \
 ALLOW_INSECURE_AGENT_ENROLLMENT=1 \
 VIBECODE_NETWORK=vibecoder-ai-planner_default \
-docker compose -p enroll-test up agent
+docker compose -p fleet-dev up supervisor
 ```
 
-Or with a static key pair, as the local dev stack does:
+The example file starts one supervisor; the declared runtimes in `agent.ini`
+determine how many children it launches.
 
-```bash
-AGENT_ID=1 AGENT_API_KEY=... PROJECT_ID=1 AGENT_MODE=review \
-docker compose up -d agent
+## Runtime configuration (`agent.ini`)
+
+```ini
+[runtime "workers"]
+role = worker
+model = acme/claude-sonnet
+count = 3
+effort = high
+
+[runtime "reviewers"]
+role = reviewer
+model = acme/claude-opus
+count = 2
+effort = max
+
+[runtime "planners"]
+role = planner
+model = acme/claude-opus
+count = 1
 ```
 
-## Auth modes (`AGENT_AUTH_MODE`)
+- `role` is `worker`, `reviewer` or `planner`.
+- `model` is `<credential-name>/<model>` in the owner/project scope. Ambiguous
+  refs are rejected by the server (400/409), never guessed.
+- `count` spawns `<name>-1` … `<name>-N`; names are deterministic.
+- `effort` is `minimal`, `low`, `medium`, `high` or `max`; omitted means the
+  model default (`medium`).
+- `project` is an optional worker hint. Grants decide authorization.
+- Unknown keys, duplicate sections, invalid enums and any secret-looking key
+  or value stop the supervisor at startup. Provider keys are fetched per
+  runtime from the backend, never stored here.
 
-| Value | Behavior |
+## Supervisor lifecycle
+
+| Event | Behavior |
 |---|---|
-| `auto` (default) | Use `AGENT_ID` + `AGENT_API_KEY` when present, otherwise enroll. |
-| `legacy` | Require the static pair; never enroll. |
-| `enroll` | Require `ENROLLMENT_TOKEN` or an existing `AGENT_CREDENTIALS_FILE`. |
+| Boot | Enroll if needed, read the node config, spawn missing runtimes, adopt matching children from the previous supervisor. |
+| Re-run / apply twice | No-op: matching children are left untouched. |
+| `agent.ini` change + `SIGHUP` | Spawn additions; drain and stop removed or changed children only. |
+| Child crash | Restart the child with backoff; the rest of the fleet is unaffected. |
+| Supervisor crash (`kill -9`) | Children keep running; the restart adopts them and converges to the declared set. |
+| Node revoked/drained | The next heartbeat is rejected; the runtime releases its claim and lease and stops. |
 
-Enrolled nodes write access/refresh credentials to `AGENT_CREDENTIALS_FILE`
-(`0600`). The file wins over `ENROLLMENT_TOKEN` on restart, so restarts do not
-need a new token; deleting the volume does. `PROJECT_ID` is optional with
-enrollment (the token supplies the project) and required for static credentials.
-
-## Repo modes (`AGENT_MODE`)
-
-| Value | Behavior |
-|---|---|
-| `auto` (default) | Legacy: a complete `REPO_OWNER`/`REPO_NAME` pair means build; otherwise review. |
-| `build` | Always build. The project's connected repo wins; env pair is a fallback. Startup **fails** if neither resolves. |
-| `review` | Never load a repo, clone or push. |
-
-Build nodes read the project's connected repository from the backend at startup
-(`GET /api/v1/github/:projectId/repo/agent`), so `REPO_OWNER`/`REPO_NAME` are
-optional. A build node that fails with “no usable repository” has already
-consumed its join token
-— connect the repo, then mint a new token. Restart after changing the repo in
-the UI.
-
-Mode defaults differ: the remote template defaults to `build`; the standalone
-`docker-compose.yml` and `.env.example` default to `auto`.
+The supervisor tracks deterministic PID files under
+`SUPERVISOR_PID_DIR` (default `/tmp/vibecode-runtimes`), so a crash does not
+orphan children. Each child gets `AGENT_RUNTIME_HEAP_MB` (default 768 MB);
+`SUPERVISOR_MEMORY_BUDGET_MB` divides a host budget across the declared count.
 
 ## Running without Docker
 
 ```bash
 cd agent
 ./build.sh                 # mvn clean package + tests
-mvn -B test                # tests only (844 tests, 10 skipped)
+mvn -B test                # tests only
 mvn -B package -DskipTests # JAR only → target/agent-*.jar
 ```
 
-`run-agent.sh.example` is a template for a local run; copy it, fill it in, and
-never commit real secrets.
+`run-agent.sh.example` is a local-run template. Never commit real secrets.
 
 ## Operations
 
 | Task | Command |
 |---|---|
-| Logs | `docker logs -f <container>` |
-| Restart (keep identity) | `docker compose -p <name> restart agent` |
+| Logs | `docker logs -f <supervisor-container>` |
+| Restart (keep identity) | `docker compose -p <name> restart supervisor` |
 | Update | rebuild/pull the image, then `docker compose -p <name> up -d` |
 | Stop | `docker compose -p <name> down` (add `-v` to drop credentials) |
-| Revoke a node | Agent detail page → **Revoke Credentials**; re-enroll with a new token |
+| Reload declared runtimes | edit `agent.ini`, then `docker kill -s HUP <supervisor-container>` |
+| Drain a node | **Fleet → node → Drain**; runtimes stop after their current lease |
+| Revoke a node | **Fleet → node → Revoke**; re-enroll with a new token |
 | Enrollment smoke test | `BACKEND_URL=… ENROLLMENT_TOKEN=… bash scripts/agent-enrollment-smoke.sh` |
 
 The container runs as uid 100 / gid 101. `/credentials` is owned by that user,
 so fresh named volumes are writable; a host bind for `/repos` must be chowned
-(`sudo chown 100:101 repos`) for build mode.
+(`sudo chown 100:101 repos`).
 
 ## Configuration
-
-Full variable reference: root [README.md](../README.md#agent-env-java). The
-common ones:
 
 | Variable | Description | Default |
 |---|---|---|
 | `BACKEND_URL` | Backend API base URL | _(required)_ |
-| `AGENT_AUTH_MODE` | `auto`, `legacy`, `enroll` | `auto` |
-| `AGENT_ID` / `AGENT_API_KEY` | Static credentials | _(legacy)_ |
-| `ENROLLMENT_TOKEN` | One-time join token | _(enroll)_ |
-| `AGENT_CREDENTIALS_FILE` | Persistent credential file | _(none)_ |
-| `AGENT_MODE` | `auto`, `build`, `review` | `auto` |
-| `PROJECT_ID` | Project scope | _(server-supplied when enrolled)_ |
-| `REPO_OWNER` / `REPO_NAME` | Build fallback; server repo wins | _(none)_ |
+| `ENROLLMENT_TOKEN` | One-time node join token (first boot only) | _(none)_ |
+| `AGENT_CREDENTIALS_FILE` | Persistent node credential file | `/credentials/node.json` |
+| `SUPERVISOR_CONFIG` | Runtime declaration | `/config/agent.ini` |
+| `AGENT_RUNTIME_ID` | Runtime id set by the supervisor | _(supervisor)_ |
+| `AGENT_ROLE` | Runtime role set by the supervisor | `worker` |
+| `AGENT_LLM_MODEL` | Model ref set by the supervisor | _(server config)_ |
+| `AGENT_EFFORT` | Optional runtime effort override | model default |
+| `AGENT_RUNTIME_HEAP_MB` | Heap per child JVM | `768` |
+| `SUPERVISOR_MEMORY_BUDGET_MB` | Host budget shared across children (`0` = off) | `0` |
+| `SUPERVISOR_STOP_TIMEOUT_SECONDS` | Graceful drain budget | `10` |
 | `REPO_CLONE_DIR` | Clone workspace | `/tmp/repos` (image: `/repos`) |
-| `AI_PROVIDER` / `AI_MODEL` | Provider fallback; backend config wins | `claude` / `claude-sonnet-4-20250514` |
 | `POLL_INTERVAL_MS` | Poll interval | `30000` |
 | `MAX_TICKETS` | Tickets per cycle | `1` |
 | `DRY_RUN` | Do not publish | `false` |
 | `HARNESS_MODE` | `legacy` or `opencode` | `legacy` |
 | `SANDBOX_MODE` | `host` or `docker` | `host` |
 
-Provider settings (`AI_PROVIDER`, model, endpoint, key) are fetched from the
-backend per agent; env values are fallbacks only, so new providers do not need
-agent changes.
+Provider settings (type, key, model, endpoint, effort) are fetched per runtime
+from the backend. `AI_PROVIDER`, `AI_MODEL`, `AI_ENDPOINT_URL` and
+`AI_API_KEY` remain development fallbacks only; they are not the fleet path.
 
 ## Files
 
 | Path | Purpose |
 |---|---|
-| `ENROLLMENT.md` | Self-enrollment walkthrough and troubleshooting |
+| `ENROLLMENT.md` | Node enrollment walkthrough and troubleshooting |
+| `agent.ini.example` | Supervisor runtime template (no secrets) |
 | `Dockerfile` | Agent image (non-root, includes git/Node/OpenCode) |
 | `docker-compose*.yml` | Deployment topologies (see above) |
-| `.env.example` | Annotated environment template |
 | `scripts/agent-enrollment-smoke.sh` | Enroll → verify credential file → restart |
 | `scripts/sandbox-image-security.sh` | Pin/SBOM/vulnerability checks for sandbox images |
 | `build.sh`, `run-agent.sh.example` | Local build and run helpers |
@@ -179,10 +207,11 @@ agent changes.
 See [ENROLLMENT.md § Troubleshooting](ENROLLMENT.md#troubleshooting) for the
 full table. Fast checks:
 
-- `TLS_REQUIRED` → use HTTPS, or set `ALLOW_INSECURE_AGENT_ENROLLMENT=1` on both
-  agent and API for local testing.
-- `Agent says review mode on a build worker` → set `AGENT_MODE=build`.
-- `Permission denied` on `/credentials/agent.json` → image predates the
-  `/credentials` ownership fix (rebuild), or the volume is root-owned (remove it
-  and re-enroll).
-- Agent cannot refresh → refresh family revoked/expired; re-enroll.
+- `Supervisor config rejected: unknown key "api_key"` — remove the secret from
+  `agent.ini`; provider keys belong in the registry.
+- `No credential file and no ENROLLMENT_TOKEN` — mount
+  `AGENT_CREDENTIALS_FILE` or supply a fresh token.
+- `Node authenticated` followed by 403 on heartbeat — the node or runtime was
+  drained/revoked, or the grant was removed. Re-grant or re-enroll.
+- `401` on the first call — the node credential expired; the agent refreshes
+  automatically once. If refresh fails, re-enroll.

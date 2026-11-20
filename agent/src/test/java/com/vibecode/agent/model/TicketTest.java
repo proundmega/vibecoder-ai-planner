@@ -13,7 +13,7 @@ class TicketTest {
     void testIsAvailableBacklog() {
         Ticket ticket = new Ticket();
         ticket.setStatus("backlog");
-        ticket.setAssignedAgentId(null);
+        ticket.setAssignedRuntimeId(null);
         assertTrue(ticket.isAvailable());
     }
 
@@ -21,7 +21,7 @@ class TicketTest {
     void testIsNotAvailableWhenPublishedPrExists() {
         Ticket ticket = new Ticket();
         ticket.setStatus("backlog");
-        ticket.setAssignedAgentId(null);
+        ticket.setAssignedRuntimeId(null);
         ticket.setPrUrl("https://github.com/owner/repo/pull/9");
 
         assertFalse(ticket.isAvailable());
@@ -31,7 +31,7 @@ class TicketTest {
     void testIsAvailableInProgress() {
         Ticket ticket = new Ticket();
         ticket.setStatus("in_progress");
-        ticket.setAssignedAgentId(null);
+        ticket.setAssignedRuntimeId(null);
         assertFalse(ticket.isAvailable());
     }
 
@@ -39,7 +39,7 @@ class TicketTest {
     void testIsAvailableAssigned() {
         Ticket ticket = new Ticket();
         ticket.setStatus("backlog");
-        ticket.setAssignedAgentId(123L);
+        ticket.setAssignedRuntimeId(123L);
         assertFalse(ticket.isAvailable());
     }
 
@@ -47,7 +47,7 @@ class TicketTest {
     void testIsNotAvailableWhenDependenciesBlockIt() {
         Ticket ticket = new Ticket();
         ticket.setStatus("backlog");
-        ticket.setAssignedAgentId(null);
+        ticket.setAssignedRuntimeId(null);
         ticket.setReady(false);
 
         assertFalse(ticket.isAvailable());
@@ -56,10 +56,10 @@ class TicketTest {
     @Test
     void testIsLocked() {
         Ticket ticket = new Ticket();
-        ticket.setAssignedAgentId(123L);
+        ticket.setAssignedRuntimeId(123L);
         assertTrue(ticket.isLocked());
 
-        ticket.setAssignedAgentId(null);
+        ticket.setAssignedRuntimeId(null);
         assertFalse(ticket.isLocked());
     }
 

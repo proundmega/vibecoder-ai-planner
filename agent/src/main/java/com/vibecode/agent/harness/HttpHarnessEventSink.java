@@ -47,7 +47,12 @@ public final class HttpHarnessEventSink implements HarnessEventSink {
         body.put("runId", context.runId().toString());
         if (context.ticketId() != null) body.put("ticketId", context.ticketId());
         if (context.projectId() != null) body.put("projectId", context.projectId());
-        if (context.agentId() != null) body.put("agentId", context.agentId());
+        if (context.agentId() != null) {
+            // fg-54: the run identity is a runtime id; keep agentId for the
+            // append-only historical schema (fg-41).
+            body.put("agentId", context.agentId());
+            body.put("runtimeId", context.agentId());
+        }
         if (context.sessionId() != null) body.put("sessionId", context.sessionId());
         body.put("type", type);
         body.put("version", 1);

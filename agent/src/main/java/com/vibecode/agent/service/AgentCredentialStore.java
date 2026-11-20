@@ -43,12 +43,11 @@ public class AgentCredentialStore {
     public Credentials load() throws IOException {
         JsonNode node = MAPPER.readTree(Files.readString(path, StandardCharsets.UTF_8));
         return new Credentials(
-            text(node, "agentId"),
+            text(node, "nodeId"),
             text(node, "accessToken"),
             text(node, "refreshToken"),
             instant(node, "accessExpiresAt"),
-            instant(node, "refreshExpiresAt"),
-            textOrNull(node, "projectId"));
+            instant(node, "refreshExpiresAt"));
     }
 
     public void save(Credentials credentials) throws IOException {
@@ -110,21 +109,19 @@ public class AgentCredentialStore {
     }
 
     public record Credentials(
-            String agentId,
+            String nodeId,
             String accessToken,
             String refreshToken,
             Instant accessExpiresAt,
-            Instant refreshExpiresAt,
-            String projectId) {
+            Instant refreshExpiresAt) {
 
         Object toJson() {
             java.util.Map<String, Object> map = new java.util.LinkedHashMap<>();
-            map.put("agentId", agentId);
+            map.put("nodeId", nodeId);
             map.put("accessToken", accessToken);
             map.put("refreshToken", refreshToken);
             map.put("accessExpiresAt", accessExpiresAt != null ? accessExpiresAt.toString() : null);
             map.put("refreshExpiresAt", refreshExpiresAt != null ? refreshExpiresAt.toString() : null);
-            map.put("projectId", projectId);
             return map;
         }
     }
