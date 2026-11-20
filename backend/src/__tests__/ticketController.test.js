@@ -234,9 +234,9 @@ describe('Ticket Controller', () => {
       });
     });
 
-    it('should create approval for AI agents submitting to review', async () => {
+    it('should create approval for agent credentials submitting to review', async () => {
       const ticket = { id: '1', status: 'review' };
-      const user = { role: 'user' };
+      const user = { role: 'project_admin' };
       const approval = { id: '1' };
       TicketService.getOne.mockResolvedValue(ticket);
       User.find.mockResolvedValue(user);
@@ -244,7 +244,8 @@ describe('Ticket Controller', () => {
       ApprovalService.create.mockResolvedValue(approval);
       
       mockReq.params.ticketId = '1';
-      mockReq.user.role = 'user';
+      mockReq.user.role = 'project_admin';
+      mockReq.agent = { id: 7, owner_id: 'test-user-id', _node: true };
       mockReq.body = { status: 'done' };
       await ticketController.changeStatus(mockReq, mockRes, nextFn);
       
@@ -255,15 +256,16 @@ describe('Ticket Controller', () => {
       });
     });
 
-    it('should reject AI agents marking as done from non-review', async () => {
+    it('should reject agent credentials marking as done from non-review', async () => {
       const ticket = { id: '1', status: 'in_progress' };
-      const user = { role: 'user' };
+      const user = { role: 'project_admin' };
       TicketService.getOne.mockResolvedValue(ticket);
       User.find.mockResolvedValue(user);
       PermissionService.hasPermission.mockResolvedValue(true);
       
       mockReq.params.ticketId = '1';
-      mockReq.user.role = 'user';
+      mockReq.user.role = 'project_admin';
+      mockReq.agent = { id: 7, owner_id: 'test-user-id', _node: true };
       mockReq.body = { status: 'done' };
       await ticketController.changeStatus(mockReq, mockRes, nextFn);
       

@@ -51,6 +51,18 @@ async function updateTicket(req, res, next) {
         filteredUpdates[field] = req.body[field];
       }
     }
+
+    // Agent credentials may submit a review ticket for approval through the
+    // status route, but never mark it done directly through a generic update.
+    if (req.agent && filteredUpdates.status === 'done') {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_STATUS',
+          message: 'AI agents must submit a review ticket for approval, not mark it done',
+        },
+      });
+    }
     
     const updatedTicket = await TicketService.update(
       req.params.ticketId, filteredUpdates, req.user.userId, userRole
@@ -116,11 +128,11 @@ async function changeStatus(req, res, next) {
   try {
     const { status } = req.body;
     const ticket = await TicketService.getOne(req.params.ticketId, req.user.userId);
-    const user = await User.find(req.user.userId);
-    
-    const userRole = user?.role || req.user.role || 'member';
-    const canChangeStatus = await PermissionService.hasPermission(userRole, 'TICKET_STATUS_CHANGE');
-    if (userRole === 'user' && status === 'done' && canChangeStatus) {
+
+    // Every agent credential goes through approval for done, regardless of the
+    // node owner's database role. Otherwise a project_admin owner would bypass
+    // the approval branch and move review -> done directly (fg-54 D10).
+    if (req.agent && status === 'done') {
       if (ticket.status !== 'review') {
         return res.status(400).json({
           success: false,
@@ -130,9 +142,9 @@ async function changeStatus(req, res, next) {
           },
         });
       }
-      
+
       const approval = await ApprovalService.create(req.params.ticketId, req.user.userId);
-      return res.json({ 
+      return res.json({
         success: true,
         data: { message: 'Approval request submitted. Awaiting review.', approval },
       });

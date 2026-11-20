@@ -24,6 +24,7 @@ function format(row, options = {}) {
     status: row.status,
     requested_by: row.requested_by,
     agent_id: row.agent_id,
+    runtime_id: row.runtime_id,
     result: options.includeResult === false
       ? null
       : (options.redact === false ? row.result : redactResult(row.result)),
@@ -137,8 +138,9 @@ class RepoProfileValidationService {
     return format(result.rows[0], { includeResult });
   }
 
-  async claimNext(projectId, agent) {
+  async claimNext(projectId, agent, runtimeId = null) {
     await RepoProfileService.assertAgentProjectAccess(projectId, agent);
+    const ownerAgentId = runtimeId ? null : agent.id;
 
     const now = Date.now();
     const stale = await pool.query(
@@ -170,16 +172,16 @@ class RepoProfileValidationService {
          LIMIT 1
        )
        UPDATE repo_profile_validations v
-       SET status = 'running', agent_id = $2, started_at = NOW()
+       SET status = 'running', agent_id = $2, runtime_id = $3, started_at = NOW()
        FROM candidate c
        WHERE v.id = c.id
        RETURNING v.*`,
-      [projectId, agent.id]
+      [projectId, ownerAgentId, runtimeId]
     );
     return claimed.rows.length > 0 ? format(claimed.rows[0], { redact: false }) : null;
   }
 
-  async finish(projectId, validationId, agent, payload = {}) {
+  async finish(projectId, validationId, agent, payload = {}, runtimeId = null) {
     await RepoProfileService.assertAgentProjectAccess(projectId, agent);
     const status = payload.status;
     if (status !== 'succeeded' && status !== 'failed') {
@@ -206,16 +208,21 @@ class RepoProfileValidationService {
     if (row.status !== 'running') {
       throw new ConflictError('Validation has not been claimed');
     }
-    if (String(row.agent_id) !== String(agent.id)) {
+    const ownsValidation = runtimeId
+      ? row.runtime_id != null && String(row.runtime_id) === String(runtimeId)
+      : String(row.agent_id) === String(agent.id);
+    if (!ownsValidation) {
       throw new ForbiddenError('Validation belongs to another agent');
     }
 
+    const ownerColumn = runtimeId ? 'runtime_id' : 'agent_id';
+    const ownerId = runtimeId || agent.id;
     const updated = await pool.query(
       `UPDATE repo_profile_validations
        SET status = $1, result = $2, error = $3, finished_at = NOW()
-       WHERE id = $4 AND project_id = $5 AND status = 'running' AND agent_id = $6
+       WHERE id = $4 AND project_id = $5 AND status = 'running' AND ${ownerColumn} = $6
        RETURNING *`,
-      [status, JSON.stringify(result), error, validationId, projectId, agent.id]
+      [status, JSON.stringify(result), error, validationId, projectId, ownerId]
     );
     if (updated.rows.length === 0) {
       const raced = await pool.query(

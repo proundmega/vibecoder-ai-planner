@@ -3,6 +3,7 @@ const TicketService = require('../services/TicketService');
 const MessageService = require('../services/MessageService');
 const PermissionService = require('../services/PermissionService');
 const User = require('../models/user');
+const ApprovalService = require('../services/ApprovalService');
 
 jest.mock('../services/TicketService', () => {
   const actual = jest.requireActual('../services/TicketService');
@@ -12,6 +13,9 @@ jest.mock('../services/TicketService', () => {
     releaseTicket: jest.fn(),
     enforceOwnership: jest.fn(),
     recoverOrphanedTickets: jest.fn(),
+    getOne: jest.fn(),
+    update: jest.fn(),
+    updateStatus: jest.fn(),
   };
 });
 
@@ -419,6 +423,76 @@ describe('TicketController - Agent Orchestration', () => {
       await ticketController.postMessage(req, res, next);
 
       expect(next).toHaveBeenCalledWith(mockError);
+    });
+  });
+  describe('agent workflow mutations', () => {
+    test('forces an agent done transition through approval', async () => {
+      TicketService.getOne.mockResolvedValue({
+        id: 100, status: 'review',
+      });
+      TicketService.updateStatus.mockResolvedValue(undefined);
+      ApprovalService.create.mockResolvedValue({ id: 5, status: 'pending' });
+
+      req.params.ticketId = '100';
+      req.agent = { id: 3, owner_id: 7, _node: true };
+      req.user = { userId: 7, role: 'project_admin' };
+      req.body = { status: 'done' };
+
+      await ticketController.changeStatus(req, res);
+
+      expect(ApprovalService.create).toHaveBeenCalledWith('100', 7);
+      expect(TicketService.updateStatus).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: {
+          message: 'Approval request submitted. Awaiting review.',
+          approval: { id: 5, status: 'pending' },
+        },
+      });
+    });
+
+    test('rejects an agent done transition from a non-review status', async () => {
+      TicketService.getOne.mockResolvedValue({
+        id: 100, status: 'in_progress',
+      });
+      TicketService.updateStatus.mockResolvedValue(undefined);
+
+      req.params.ticketId = '100';
+      req.agent = { id: 3, owner_id: 7, _node: true };
+      req.user = { userId: 7, role: 'project_admin' };
+      req.body = { status: 'done' };
+
+      await ticketController.changeStatus(req, res);
+
+      expect(ApprovalService.create).not.toHaveBeenCalled();
+      expect(TicketService.updateStatus).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    test('blocks a direct done status in a generic ticket update', async () => {
+      TicketService.getOne.mockResolvedValue({
+        id: 100, status: 'review',
+      });
+      TicketService.update.mockResolvedValue({});
+      User.find.mockResolvedValue({ role: 'project_admin' });
+      PermissionService.hasPermission.mockResolvedValue(true);
+
+      req.params.ticketId = '100';
+      req.agent = { id: 3, owner_id: 7, _node: true };
+      req.user = { userId: 7, role: 'project_admin' };
+      req.body = { status: 'done', title: 'new title' };
+
+      await ticketController.updateTicket(req, res);
+
+      expect(TicketService.update).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: {
+          code: 'INVALID_STATUS',
+          message: 'AI agents must submit a review ticket for approval, not mark it done',
+        },
+      });
     });
   });
 });
