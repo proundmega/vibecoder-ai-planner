@@ -1,7 +1,7 @@
 <script setup>
 import { ref, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { getAgentHistory, listAgents } from '@/api/agents'
+import { listAgentNodes } from '@/api/agentNodes'
 
 const route = useRoute()
 
@@ -18,11 +18,15 @@ const quickActionsList = ['Find Bugs', 'Review Code', 'Generate Docs', 'Test Sce
 
 onMounted(async () => {
   try {
-    const { agents: allAgents } = await listAgents()
-    agents.value = allAgents || []
+    const nodes = await listAgentNodes()
+    agents.value = (nodes || []).map((node) => ({
+      id: node.id,
+      name: node.name,
+      status: node.status,
+    }))
   } catch (error) {
-    console.error('Failed to load agents:', error)
-    addMessage('error', 'Failed to load agents. Please refresh the page.')
+    console.error('Failed to load nodes:', error)
+    addMessage('error', 'Failed to load fleet nodes. Please refresh the page.')
   }
 })
 
@@ -37,11 +41,9 @@ watch(selectedAgentId, async (newId) => {
 
 async function loadAgentInfo() {
   if (!selectedAgentId.value) return
-  try {
-    dailyUsage.value = await getRecentDailyUsage()
-  } catch (error) {
-    console.error('Failed to load agent info:', error)
-  }
+  // Usage limits are owned by the billing/usage surfaces, not the runtime
+  // record. Keep the local display until a node-scoped usage endpoint lands.
+
 }
 
 async function handleAgentSelect() {
@@ -130,26 +132,7 @@ async function handleScan() {
   return 'Scan complete\nFound 0 critical issues\n4 medium priority items\nSee tickets view'
 }
 
-async function getRecentDailyUsage() {
-  try {
-    if (!selectedAgentId.value) return { used: 0, limit: 100 }
-    const { daily } = await getAgentHistory(selectedAgentId.value)
-    if (daily && daily.length > 0) {
-      const today = new Date().toISOString().split('T')[0]
-      const todayEntry = daily.find(d => d.date === today)
-      if (todayEntry) {
-        return {
-          used: todayEntry.count,
-          limit: 100,
-        }
-      }
-    }
-    return { used: 0, limit: 100 }
-  } catch (error) {
-    console.error('Failed to get daily usage:', error)
-    return { used: 0, limit: 100 }
-  }
-}
+
 </script>
 
 <template>

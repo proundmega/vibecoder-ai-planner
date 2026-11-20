@@ -585,7 +585,7 @@ const editModel = ref<EditableModel>({
 })
 
 function maskedCredential(credential: ProviderCredential): string {
-  return credential.api_key_masked || credential.apiKey || '••••••••'
+  return credential.api_key_masked || '••••••••'
 }
 
 function modelsFor(credential: ProviderCredential): ProviderModel[] {

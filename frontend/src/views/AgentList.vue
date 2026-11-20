@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   createAgentGrant,
   drainAgentNode,
+  mintAgentNodeToken,
   getAgentNodeGrants,
   listAgentNodes,
   revokeAgentGrant,
@@ -32,6 +33,11 @@ const error = ref('')
 const actionError = ref('')
 const projectError = ref('')
 const busy = ref('')
+const showMint = ref(false)
+const minting = ref(false)
+const mintError = ref('')
+const mintedToken = ref<{ name: string; token: string; expires_at: string } | null>(null)
+const mintForm = ref({ name: '', ttlMinutes: 15, maxUses: 1 })
 const grantForm = ref<{ projectId: string; role: AgentRuntimeRole }>({
   projectId: '',
   role: 'worker',
@@ -43,6 +49,12 @@ let pollInterval: ReturnType<typeof setInterval> | null = null
 const canView = computed(() => authStore.hasAnyPermission(['AGENT_READ']))
 const canCreateGrant = computed(() => authStore.hasAnyPermission(['AGENT_CREATE']))
 const canRevokeNode = computed(() => authStore.hasAnyPermission(['AGENT_REVOKE']))
+
+function canManageNode(node: AgentNode): boolean {
+  if (authStore.isSuperAdmin()) return true
+  const userId = authStore.user.value?.id
+  return userId != null && String(node.owner_id) === String(userId)
+}
 
 const selectedNode = computed<AgentNode | null>(
   () => nodes.value.find(node => nodeKey(node) === selectedKey.value) ?? null
@@ -220,6 +232,33 @@ function isBusy(prefix: string, id: ResourceId): boolean {
   return busy.value === `${prefix}-${String(id)}`
 }
 
+async function mintToken(): Promise<void> {
+  mintError.value = ''
+  mintedToken.value = null
+  if (!mintForm.value.name.trim()) {
+    mintError.value = 'A node name is required'
+    return
+  }
+  minting.value = true
+  try {
+    const created = await mintAgentNodeToken({
+      name: mintForm.value.name.trim(),
+      ttl_seconds: Math.max(60, mintForm.value.ttlMinutes * 60),
+      max_uses: Math.max(1, mintForm.value.maxUses),
+    })
+    mintedToken.value = {
+      name: created.name,
+      token: created.token,
+      expires_at: created.expires_at,
+    }
+    mintForm.value.name = ''
+  } catch (err) {
+    mintError.value = (err as Error).message || 'Could not mint a join token'
+  } finally {
+    minting.value = false
+  }
+}
+
 onMounted(async () => {
   if (!canView.value) {
     loading.value = false
@@ -243,15 +282,50 @@ onUnmounted(() => {
           Nodes, project grants and the runtime slots declared on each host.
         </p>
       </div>
-      <VButton
-        v-if="canView"
-        variant="secondary"
-        size="small"
-        :loading="loading"
-        @click="loadNodes"
-      >
-        Refresh
-      </VButton>
+      <div class="header-actions">
+        <VButton
+          v-if="canCreateGrant"
+          variant="primary"
+          size="small"
+          @click="showMint = !showMint"
+        >
+          Mint join token
+        </VButton>
+        <VButton
+          v-if="canView"
+          variant="secondary"
+          size="small"
+          :loading="loading"
+          @click="loadNodes"
+        >
+          Refresh
+        </VButton>
+      </div>
+    </div>
+
+    <div v-if="showMint && canCreateGrant" class="mint-panel">
+      <h3>Mint a node join token</h3>
+      <p class="hint">
+        The token is shown once and enrolls one host. It carries no project or
+        role; grants are added after enrollment.
+      </p>
+      <div class="form-row">
+        <label for="mint-node-name">Node name</label>
+        <input id="mint-node-name" v-model="mintForm.name" maxlength="100" placeholder="build-host-1" />
+        <label for="mint-node-ttl">TTL (minutes)</label>
+        <input id="mint-node-ttl" v-model.number="mintForm.ttlMinutes" type="number" min="1" max="1440" />
+        <label for="mint-node-uses">Max uses</label>
+        <input id="mint-node-uses" v-model.number="mintForm.maxUses" type="number" min="1" max="100" />
+        <VButton variant="primary" size="small" :loading="minting" @click="mintToken">
+          Mint
+        </VButton>
+      </div>
+      <div v-if="mintError" class="error">{{ mintError }}</div>
+      <div v-if="mintedToken" class="minted-token" role="status">
+        <p>Token for <strong>{{ mintedToken.name }}</strong> (expires {{ formatDateTime(mintedToken.expires_at) }}):</p>
+        <code>{{ mintedToken.token }}</code>
+        <p class="hint">Copy it now; it is not shown again.</p>
+      </div>
     </div>
 
     <div v-if="!canView" class="empty-state" role="status">
@@ -293,7 +367,7 @@ onUnmounted(() => {
 
             <div class="node-actions">
               <VButton
-                v-if="canRevokeNode && node.status === 'active'"
+                v-if="canRevokeNode && canManageNode(node) && node.status === 'active'"
                 variant="secondary"
                 size="small"
                 :loading="isBusy('drain', node.id)"
@@ -302,7 +376,7 @@ onUnmounted(() => {
                 Drain
               </VButton>
               <VButton
-                v-if="canRevokeNode && node.status !== 'revoked'"
+                v-if="canRevokeNode && canManageNode(node) && node.status !== 'revoked'"
                 variant="danger"
                 size="small"
                 :loading="isBusy('revoke', node.id)"
@@ -330,7 +404,7 @@ onUnmounted(() => {
                     <th>Project</th>
                     <th>Role</th>
                     <th>Created</th>
-                    <th v-if="canCreateGrant">Actions</th>
+                    <th v-if="canCreateGrant && canManageNode(node)">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -338,7 +412,7 @@ onUnmounted(() => {
                     <td>{{ grant.project_name || grant.project_id }}</td>
                     <td><span class="role-tag">{{ grant.role }}</span></td>
                     <td>{{ formatDate(grant.created_at) }}</td>
-                    <td v-if="canCreateGrant">
+                    <td v-if="canCreateGrant && canManageNode(node)">
                       <VButton
                         variant="danger"
                         size="small"
@@ -353,7 +427,7 @@ onUnmounted(() => {
               </table>
               <p v-else class="empty-inline">No active grants.</p>
 
-              <div v-if="canCreateGrant" class="grant-form">
+              <div v-if="canCreateGrant && canManageNode(node)" class="grant-form">
                 <div class="form-group">
                   <label :for="`grant-project-${nodeKey(node)}`">Project</label>
                   <select
@@ -402,7 +476,7 @@ onUnmounted(() => {
                     <th>Effort</th>
                     <th>Status</th>
                     <th>Last seen</th>
-                    <th v-if="canCreateGrant">Actions</th>
+                    <th v-if="canCreateGrant && canManageNode(node)">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -419,7 +493,7 @@ onUnmounted(() => {
                       </span>
                     </td>
                     <td>{{ formatDateTime(runtime.last_seen_at) }}</td>
-                    <td v-if="canCreateGrant" class="runtime-actions">
+                    <td v-if="canCreateGrant && canManageNode(node)" class="runtime-actions">
                       <VButton
                         v-if="runtime.status === 'running'"
                         variant="secondary"
@@ -775,5 +849,45 @@ onUnmounted(() => {
   .node-actions {
     justify-content: flex-start;
   }
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.mint-panel {
+  border: 1px solid var(--color-border, #d0d7de);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background: var(--color-surface, #fff);
+}
+
+.mint-panel .form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+}
+
+.mint-panel label {
+  display: block;
+  font-size: 0.85rem;
+}
+
+.mint-panel input {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--color-border, #d0d7de);
+  border-radius: 4px;
+}
+
+.minted-token code {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: 0.5rem;
+  background: #f6f8fa;
+  border-radius: 4px;
 }
 </style>

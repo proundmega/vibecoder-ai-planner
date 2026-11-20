@@ -19,8 +19,8 @@ vi.mock('@/api/usage', () => ({
   getProjectUsage: vi.fn(),
 }))
 
-vi.mock('@/api/agents', () => ({
-  fetchAgentStatusList: vi.fn(),
+vi.mock('@/api/agentNodes', () => ({
+  listAgentNodes: vi.fn(),
 }))
 
 vi.mock('@/api/tickets', () => ({
@@ -40,7 +40,7 @@ import { useAuthStore } from '@/stores/auth'
 import * as usersApi from '@/api/users'
 import * as projectsApi from '@/api/projects'
 import * as usageApi from '@/api/usage'
-import * as agentsApi from '@/api/agents'
+import * as agentNodesApi from '@/api/agentNodes'
 import * as ticketsApi from '@/api/tickets'
 
 function signIn(role = 'project_admin', permissions: string[] = []) {
@@ -85,7 +85,7 @@ describe('template ref access regressions', () => {
     ;(usageApi.getUserUsage as ReturnType<typeof vi.fn>).mockResolvedValue(null)
     ;(usageApi.getModelPricing as ReturnType<typeof vi.fn>).mockResolvedValue([])
     ;(usageApi.getProjectUsage as ReturnType<typeof vi.fn>).mockResolvedValue(null)
-    ;(agentsApi.fetchAgentStatusList as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(agentNodesApi.listAgentNodes as ReturnType<typeof vi.fn>).mockResolvedValue([])
 
     wrapper = mount(Dashboard)
     await flushPromises()

@@ -9,6 +9,8 @@ const { authState } = vi.hoisted(() => ({
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
+    user: { value: { id: 7 } },
+    isSuperAdmin: () => false,
     hasAnyPermission: (permissions: string[]) => {
       if (permissions.includes('AGENT_READ')) return authState.read
       if (permissions.includes('AGENT_CREATE')) return authState.create
@@ -26,6 +28,7 @@ vi.mock('@/api/agentNodes', () => ({
   drainAgentNode: vi.fn(),
   revokeAgentNode: vi.fn(),
   updateAgentRuntime: vi.fn(),
+  mintAgentNodeToken: vi.fn(),
 }))
 
 vi.mock('@/api/projects', () => ({

@@ -47,6 +47,21 @@ export interface AgentNode {
   owner_name?: string | null
 }
 
+export interface MintNodeTokenInput {
+  name: string
+  ttl_seconds?: number
+  max_uses?: number
+}
+
+export interface MintedNodeToken {
+  id: ResourceId
+  name: string
+  token: string
+  expires_at: string
+  max_uses: number
+  used_count?: number
+}
+
 export interface AgentGrantInput {
   projectId: ResourceId
   role: AgentRuntimeRole
@@ -60,6 +75,10 @@ export interface AgentRuntimeUpdate {
 
 export function listAgentNodes(): Promise<AgentNode[]> {
   return get<AgentNode[]>('/api/v1/agent-nodes')
+}
+
+export function mintAgentNodeToken(input: MintNodeTokenInput): Promise<MintedNodeToken> {
+  return post<MintedNodeToken>('/api/v1/agent-nodes', input)
 }
 
 export function getAgentNodeGrants(nodeId: ResourceId): Promise<AgentGrant[]> {
