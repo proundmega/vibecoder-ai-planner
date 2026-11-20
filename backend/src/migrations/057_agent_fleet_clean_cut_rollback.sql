@@ -184,6 +184,10 @@ CREATE INDEX IF NOT EXISTS idx_agent_refresh_tokens_expiry ON agent_refresh_toke
 CREATE INDEX IF NOT EXISTS idx_agent_enrollment_tokens_prefix ON agent_enrollment_tokens(token_prefix);
 CREATE INDEX IF NOT EXISTS idx_agent_enrollment_tokens_project ON agent_enrollment_tokens(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_enrollment_tokens_expiry ON agent_enrollment_tokens(expires_at) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_agent_refresh_replays_expiry ON agent_refresh_replays(expires_at);
+CREATE INDEX IF NOT EXISTS idx_agent_auth_events_project ON agent_auth_events(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_auth_events_agent ON agent_auth_events(agent_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_auth_events_created ON agent_auth_events(created_at);
 
 CREATE OR REPLACE FUNCTION release_agent_tickets_on_delete() RETURNS TRIGGER AS $$
 BEGIN

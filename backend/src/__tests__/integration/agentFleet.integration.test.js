@@ -152,7 +152,9 @@ describe('agent fleet additive migration on a seeded database (FR16, NFR5, NFR8)
           WHERE table_name = 'harness_leases' AND column_name = 'agent_id') AS leases_nullable,
          to_regclass('public.idx_agents_api_key') IS NOT NULL AS agents_index,
          to_regclass('public.idx_providers_type') IS NOT NULL AS providers_index,
-         to_regprocedure('public.release_agent_tickets_on_delete()') IS NOT NULL AS release_fn`
+         to_regprocedure('public.release_agent_tickets_on_delete()') IS NOT NULL AS release_fn,
+         to_regclass('public.idx_agent_refresh_replays_expiry') IS NOT NULL AS replays_index,
+         to_regclass('public.idx_agent_auth_events_created') IS NOT NULL AS auth_events_index`
     );
     expect(restored.rows[0]).toEqual({
       runs_nullable: 'NO',
@@ -160,6 +162,8 @@ describe('agent fleet additive migration on a seeded database (FR16, NFR5, NFR8)
       agents_index: true,
       providers_index: true,
       release_fn: true,
+      replays_index: true,
+      auth_events_index: true,
     });
     const ticketColumn = await client.query(
       `SELECT column_name FROM information_schema.columns

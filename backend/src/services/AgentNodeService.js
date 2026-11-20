@@ -390,6 +390,9 @@ class AgentNodeService {
       [ids]
     );
 
+    // Null-project runtimes (typically reviewers/planners that span grants)
+    // are only shown to the node owner/super_admin; shared project members see
+    // runtimes pinned to a project they can access.
     const byNode = new Map(nodes.map((node) => [String(node.id), []]));
     for (const runtime of runtimes.rows) {
       const visible = fullAccess
@@ -697,6 +700,15 @@ class AgentNodeService {
           );
           results.push(upsert.rows[0]);
         }
+      }
+      // Node-wide cap: a single declaration and repeated declarations must
+      // both leave the node at or below AGENT_MAX_RUNTIMES_PER_NODE.
+      const total = await db.query(
+        'SELECT count(*)::int AS n FROM agent_runtimes WHERE node_id = $1',
+        [node.id]
+      );
+      if (total.rows[0] && total.rows[0].n > maxRuntimes) {
+        throw fail(400, 'TOO_MANY_RUNTIMES', `Node may host at most ${maxRuntimes} runtimes`);
       }
       await audit(db, {
         nodeId: node.id,

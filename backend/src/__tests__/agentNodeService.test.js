@@ -212,6 +212,25 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
     delete process.env.AGENT_MAX_RUNTIMES_PER_NODE;
   });
 
+  it('enforces the node-wide runtime cap across declarations', async () => {
+    const client = mockClient([
+      ['INSERT INTO agent_runtimes', { rows: [{ id: 21, name: 'r-1' }] }],
+      ['SELECT count(*)::int AS n FROM agent_runtimes', { rows: [{ n: 101 }] }],
+    ]);
+    pool.connect.mockResolvedValue(client);
+    jest.spyOn(AgentNodeService, 'resolveModel').mockResolvedValue({
+      id: 8, model: 'm', roles: ['reviewer'],
+    });
+
+    await expect(
+      AgentNodeService.declareRuntimes(
+        { id: 12, owner_id: 7 },
+        [{ role: 'reviewer', modelRef: 'c/m', name: 'r' }]
+      )
+    ).rejects.toMatchObject({ code: 'TOO_MANY_RUNTIMES' });
+    expect(client.query.mock.calls.some(([sql]) => sql === 'ROLLBACK')).toBe(true);
+  });
+
   it('requires a grant before declaring a runtime project', async () => {
     const client = mockClient([]);
     pool.connect.mockResolvedValue(client);
