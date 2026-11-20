@@ -92,6 +92,7 @@ public class TicketProcessor implements TicketWorker {
             log.warn("Could not pick up ticket {}, skipping", ticket.getId());
             return;
         }
+        pickedUp.fillMissingFrom(ticket);
         log.info("Ticket {} picked up, status: {}", ticket.getId(), pickedUp.getStatus());
 
         // Post "started working" message BEFORE processing

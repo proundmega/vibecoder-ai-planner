@@ -71,6 +71,22 @@ public class Ticket {
     public String getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(String updatedAt) { this.updatedAt = updatedAt; }
 
+    /**
+     * Fill fields the pickup response does not echo (Track A returns only the
+     * assignment fields) from the backlog listing the processor already has.
+     * Pickup-owned fields are authoritative and are never overwritten.
+     */
+    public void fillMissingFrom(Ticket listed) {
+        if (listed == null) return;
+        if (description == null) description = listed.description;
+        if (projectId == null) projectId = listed.projectId;
+        if (priority == null) priority = listed.priority;
+        if (ownerId == null) ownerId = listed.ownerId;
+        if (ready == null) ready = listed.ready;
+        if (createdAt == null) createdAt = listed.createdAt;
+        if (updatedAt == null) updatedAt = listed.updatedAt;
+    }
+
     public boolean isAvailable() {
         return "backlog".equals(status)
             && assignedRuntimeId == null

@@ -724,6 +724,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             log.warn("Could not pick up ticket {}, skipping", ticket.getId());
             return;
         }
+        pickedUp.fillMissingFrom(ticket);
 
         currentTicketId = String.valueOf(pickedUp.getId());
         currentStep = "processing";

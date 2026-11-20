@@ -542,7 +542,11 @@ public class AgentApp {
             thread.setDaemon(true);
             return thread;
         });
-        heartbeatScheduler.scheduleAtFixedRate(this::heartbeatTick, 0, 30, TimeUnit.SECONDS);
+        heartbeatScheduler.scheduleAtFixedRate(this::heartbeatTick, 30, 30, TimeUnit.SECONDS);
+        // Report `running` before the first claim. The node-token bridge
+        // requires a running runtime for pickup, so starting the poll loop
+        // first would race the heartbeat and waste a poll interval.
+        heartbeatTick();
 
         log.info("Polling for tickets every {} ms", config.getPollInterval().toMillis());
 
