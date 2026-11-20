@@ -8,15 +8,27 @@ AI-powered Kanban SaaS for managing development tasks with integrated AI agents.
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 24 LTS (`nvm use` reads `.nvmrc`; Node 18 is no longer supported)
 - Docker & Docker Compose (v2, `docker compose` subcommand)
 - Java 17+ (optional, for agent compute nodes)
+
+### Bootstrap and verification
+
+On a fresh checkout:
+
+```bash
+bash scripts/bootstrap-local.sh   # Node from .nvmrc, npm ci, Cypress binary
+bash scripts/verify-local.sh      # same Node/Java checks as the Jenkins PR pipeline
+```
+
+`verify-local.sh --quick` skips coverage and the Java agent tests.
 
 ### Docker Setup (Recommended)
 
 ```bash
-# Copy and configure environment variables
-cp .env .env.local   # edit .env.local with your values
+# The repo ships a working root .env for local development. Edit it (or pass
+# `--env-file`) if you need different values for POSTGRES_PASSWORD, JWT_SECRET,
+# PGADMIN_PASSWORD or ENCRYPTION_KEY.
 
 # Dev mode — frontend :3000, API :3001, PG :5432
 docker compose up --build
@@ -44,17 +56,20 @@ docker compose --profile dev up --build
 # Start infrastructure
 docker compose --profile dev up postgres redis
 
+# Activate the Node version from .nvmrc
+nvm use
+
 # Backend
 cd backend
 cp .env.example .env        # configure .env
-npm install
+npm ci
 npm run db:migrate           # run database migrations
 npm run dev                  # API :3001, uses `node --watch`
 
 # Frontend (new terminal)
 cd ../frontend
 cp .env.example .env.local   # configure .env.local
-npm install
+npm ci
 npm run dev                  # Vite :3000, proxies /api → :3001
 
 # Agent (new terminal, Java 17 required)

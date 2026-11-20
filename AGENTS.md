@@ -12,6 +12,11 @@ Read highest-value sources first: `README*`, root manifests, workspace config, l
 docker compose up --build                        # dev: frontend :3000, API :3001, PG :5432
 docker compose -f docker-compose.yml up --build  # prod-style: frontend :3002, API :3001
 
+# Fresh checkout: install Node 24 (via nvm), deps and the Cypress binary
+bash scripts/bootstrap-local.sh
+# PR-equivalent checks: lint, typecheck, unit tests, coverage, build, agent tests
+bash scripts/verify-local.sh
+
 # Manual dev (requires Node 24 LTS):
 nvm use 24                          # or use `.nvmrc`
 cd backend && npm run dev          # API :3001, uses `node --watch`
@@ -397,6 +402,7 @@ Definition-of-Ready enforcement is scoped to `planning/fg-45-ticket-quality-gate
 - Docker compose has two modes: `docker compose up` uses `docker-compose.override.yml` (dev ports 3000/3001); `docker compose -f docker-compose.yml up` uses production ports (frontend 3002).
 - Backend `npm run dev` uses `node --watch` (Node 24 LTS required).
 - Frontend `npm test` runs Vitest in watch mode; CI uses `npm test -- --run`.
+- npm 11 blocks dependency install scripts by default, so `npm ci` does not download the Cypress binary; `scripts/bootstrap-local.sh` runs `npx cypress install` explicitly.
 - Jest mocks pg, winston, bcryptjs, uuid, jsonwebtoken, **and provides a full Redis mock** — no real DB needed.
 - Integration tests (`npm run test:integration`) use a real PG at `postgresql://postgres:changeme@localhost:5432/vibecode` with `maxWorkers:1`.
 - Migration order in `apply.js` is **array order**, not numeric — 011/012 appear after 014.
