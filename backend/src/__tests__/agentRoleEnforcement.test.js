@@ -111,6 +111,45 @@ describe('agent role enforcement (FR4, NFR1)', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+
+  it('audits an inactive-runtime denial', async () => {
+    const req = nodeRequest({ status: 'stopped' });
+    const { res } = await run(requireRuntime('running'), req);
+
+    expect(res.statusCode).toBe(403);
+    expect(pool.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO agent_node_auth_events'),
+      expect.arrayContaining([12, null, 'auth.runtime_inactive'])
+    );
+  });
+
+  it('audits a role denial', async () => {
+    const req = nodeRequest({ role: 'reviewer' });
+    const { res } = await run(requireRole('worker'), req);
+
+    expect(res.statusCode).toBe(403);
+    expect(pool.query.mock.calls.some(([sql, params]) =>
+      sql.includes('agent_node_auth_events') && params[2] === 'auth.role_denied'
+    )).toBe(true);
+  });
+
+  it('audits a grant denial with the project', async () => {
+    const req = nodeRequest({ role: 'reviewer' });
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ project_id: 5 }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const { res } = await run(requireTicketGrant('reviewer'), req);
+
+    expect(res.statusCode).toBe(403);
+    expect(pool.query.mock.calls.some(([sql, params]) =>
+      sql.includes('agent_node_auth_events')
+        && params[1] === 5
+        && params[2] === 'auth.grant_denied'
+    )).toBe(true);
+  });
+
   it('checks body-grant roles for review events', async () => {
     const req = nodeRequest({ role: 'worker' });
     req.body = { type: 'review.result', projectId: 5 };

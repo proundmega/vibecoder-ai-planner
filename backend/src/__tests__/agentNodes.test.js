@@ -87,6 +87,9 @@ describe('Agent node routes (FR1, FR3, FR20, FR21, NFR1)', () => {
       .get('/api/v1/agent-nodes/99/config')
       .set('X-API-Key', 'at_valid');
     expect(foreign.statusCode).toBe(404);
+    expect(pool.query.mock.calls.some(([sql, params]) =>
+      sql.includes('agent_node_auth_events') && params[2] === 'auth.node_binding_denied'
+    )).toBe(true);
   });
 
   it('returns nodes with their embedded runtimes', async () => {
@@ -116,6 +119,9 @@ describe('Agent node routes (FR1, FR3, FR20, FR21, NFR1)', () => {
 
     expect(res.statusCode).toBe(404);
     expect(revoke).not.toHaveBeenCalled();
+    expect(pool.query.mock.calls.some(([sql, params]) =>
+      sql.includes('agent_node_auth_events') && params[2] === 'auth.node_visibility_denied'
+    )).toBe(true);
   });
 
   it('returns the resolved provider config and denies unsafe states', async () => {
@@ -184,6 +190,9 @@ describe('Agent node routes (FR1, FR3, FR20, FR21, NFR1)', () => {
       .set('Authorization', 'Bearer mock-token')
       .send({ projectId: 5, role: 'worker' });
     expect(denied.statusCode).toBe(403);
+    expect(pool.query.mock.calls.some(([sql, params]) =>
+      sql.includes('agent_node_auth_events') && params[2] === 'auth.project_admin_denied'
+    )).toBe(true);
 
     // Owner + member -> 201.
     pool.query.mockImplementation((sql) => {
