@@ -41,6 +41,52 @@ describe('ProviderRegistryService (FR5-FR9, FR18, FR19)', () => {
     expect(rows[0].api_key_encrypted).toBeUndefined();
   });
 
+  it('accepts a project owner even without the global project_admin role', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [{ id: 3 }] });
+    pool.query.mockResolvedValueOnce({
+      rows: [{ id: 1, owner_id: 7, project_id: 3, api_key_encrypted: 'enc:sk' }],
+    });
+    const owner = { userId: 7, role: 'member' };
+    const result = await ProviderRegistryService.create(owner, {
+      projectId: 3, name: 'c', providerType: 'openai', apiKey: 'sk',
+    });
+    expect(result.id).toBe(1);
+  });
+
+  it('rejects a private base URL (SSRF guard)', async () => {
+    await expect(
+      ProviderRegistryService.create(user, {
+        name: 'c', providerType: 'openai', apiKey: 'sk', baseUrl: 'http://127.0.0.1:9000',
+      })
+    ).rejects.toMatchObject({ code: 'UNSAFE_BASE_URL' });
+  });
+
+  it('rejects an unsupported provider type', async () => {
+    await expect(
+      ProviderRegistryService.create(user, {
+        name: 'c', providerType: 'super-agent', apiKey: 'sk',
+      })
+    ).rejects.toMatchObject({ code: 'INVALID_PROVIDER_TYPE' });
+  });
+
+  it('lists all models for a credential', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ id: 1, owner_id: 7, project_id: null }] })
+      .mockResolvedValueOnce({ rows: [{ id: 9, model: 'm' }, { id: 10, model: 'n' }] });
+    const rows = await ProviderRegistryService.listModels(user, 1);
+    expect(rows).toHaveLength(2);
+  });
+
+  it('returns the in-use references in a 409', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ id: 1, owner_id: 7, project_id: null }] })
+      .mockResolvedValueOnce({ rows: [{ id: 9, model: 'm' }] });
+    await expect(ProviderRegistryService.remove(user, 1)).rejects.toMatchObject({
+      code: 'CREDENTIAL_IN_USE',
+      details: { models: [{ id: 9, model: 'm' }] },
+    });
+  });
+
   it('refuses to delete a credential that still has models', async () => {
     pool.query
       .mockResolvedValueOnce({ rows: [{ id: 1, owner_id: 7, project_id: null }] })
@@ -80,6 +126,20 @@ describe('ProviderRegistryService (FR5-FR9, FR18, FR19)', () => {
       expect.stringContaining('/v1/chat/completions'),
       expect.objectContaining({ method: 'POST' })
     );
+  });
+
+  it('maps discovery transport failures to 502', async () => {
+    pool.query.mockResolvedValueOnce({
+      rows: [{
+        id: 1, owner_id: 7, provider_type: 'openai',
+        api_key_encrypted: 'enc:sk', base_url: null,
+      }],
+    });
+    global.fetch.mockRejectedValue(new Error('boom'));
+    await expect(ProviderRegistryService.discover(user, 1)).rejects.toMatchObject({
+      code: 'DISCOVERY_FAILED',
+      status: 502,
+    });
   });
 
   it('stores discovered models as unverified', async () => {

@@ -1,6 +1,7 @@
 const express = require('express');
 const { verifyToken } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
+const agentEnrollmentRateLimit = require('../middleware/agentEnrollmentRateLimit');
 const ProviderRegistryService = require('../services/ProviderRegistryService');
 const {
   credentialCreateSchema,
@@ -17,7 +18,9 @@ function errorBody(code, message) {
 
 function fail(res, error) {
   if (error.status) {
-    return res.status(error.status).json(errorBody(error.code, error.message));
+    const body = errorBody(error.code, error.message);
+    if (error.details) body.error.details = error.details;
+    return res.status(error.status).json(body);
   }
   return res.status(500).json(errorBody('INTERNAL_SERVER_ERROR', 'Request failed'));
 }
@@ -78,7 +81,21 @@ router.delete('/provider-credentials/:id', verifyToken, async (req, res, next) =
   }
 });
 
-router.post('/provider-credentials/:id/discover', verifyToken, async (req, res, next) => {
+router.get('/provider-credentials/:id/models', verifyToken, async (req, res, next) => {
+  try {
+    const data = await ProviderRegistryService.listModels(req.user, req.params.id);
+    res.json({ success: true, data });
+  } catch (error) {
+    if (error.status) return fail(res, error);
+    next(error);
+  }
+});
+
+router.post(
+  '/provider-credentials/:id/discover',
+  verifyToken,
+  agentEnrollmentRateLimit({ max: 10, windowMs: 60 * 1000, scope: 'provider-discover' }),
+  async (req, res, next) => {
   try {
     const data = await ProviderRegistryService.discover(req.user, req.params.id);
     res.json({ success: true, data });
@@ -86,7 +103,8 @@ router.post('/provider-credentials/:id/discover', verifyToken, async (req, res, 
     if (error.status) return fail(res, error);
     next(error);
   }
-});
+  }
+);
 
 router.post(
   '/provider-credentials/:id/models',
@@ -128,7 +146,11 @@ router.delete('/provider-models/:id', verifyToken, async (req, res, next) => {
   }
 });
 
-router.post('/provider-models/:id/test', verifyToken, async (req, res, next) => {
+router.post(
+  '/provider-models/:id/test',
+  verifyToken,
+  agentEnrollmentRateLimit({ max: 20, windowMs: 60 * 1000, scope: 'provider-test' }),
+  async (req, res, next) => {
   try {
     const data = await ProviderRegistryService.testModel(req.user, req.params.id);
     res.json({ success: true, data });
@@ -136,6 +158,7 @@ router.post('/provider-models/:id/test', verifyToken, async (req, res, next) => 
     if (error.status) return fail(res, error);
     next(error);
   }
-});
+  }
+);
 
 module.exports = router;
