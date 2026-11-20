@@ -163,7 +163,9 @@ async function pickUpTicket(req, res, next) {
     }
 
     const operatorId = req.user && req.user.userId;
-    const result = await TicketService.pickUpTicket(ticketId, { agentId, operatorId });
+    const actor = { agentId, operatorId };
+    if (req.runtime) actor.runtimeId = req.runtime.id;
+    const result = await TicketService.pickUpTicket(ticketId, actor);
     res.json({
       success: true,
       data: {
@@ -184,7 +186,9 @@ async function releaseTicket(req, res, next) {
     const { ticketId } = req.params;
 
     if (req.agent) {
-      const result = await TicketService.releaseTicket(ticketId, { agentId: req.agent.id });
+      const releaseActor = { agentId: req.agent.id };
+      if (req.runtime) releaseActor.runtimeId = req.runtime.id;
+      const result = await TicketService.releaseTicket(ticketId, releaseActor);
       return res.json({
         success: true,
         data: {

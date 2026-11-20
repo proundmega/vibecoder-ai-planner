@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { pool } = require('../db');
 const AgentService = require('../services/AgentService');
+const AgentNodeService = require('../services/AgentNodeService');
 const AgentEnrollmentService = require('../services/AgentEnrollmentService');
 const { authFailureCounter } = require('../services/AgentEnrollmentMetrics');
 const { getSecret } = require('../utils/jwt');
@@ -221,7 +222,7 @@ function agentAuthFailure(agent) {
   };
 }
 
-async function authenticateAgentByApiKey(apiKey, { mock = true } = {}) {
+async function authenticateAgentByApiKey(apiKey, { mock = true, runtimeId = null } = {}) {
   // Mock validation for test keys (unit tests only; never in a deployment).
   if (mock
       && process.env.NODE_ENV === 'test'
@@ -238,9 +239,36 @@ async function authenticateAgentByApiKey(apiKey, { mock = true } = {}) {
   // Enrollment-issued access tokens use the same X-API-Key header but a
   // different table and lifecycle. Legacy ak_ keys keep the old path.
   if (apiKey.startsWith('at_')) {
-    const result = await AgentEnrollmentService.authenticateAccessToken(apiKey);
+    let result = await AgentNodeService.authenticateAccessToken(apiKey);
+    if (result.status === 'invalid') {
+      // Compatibility for fg-53 agent access tokens during the additive phase.
+      result = await AgentEnrollmentService.authenticateAccessToken(apiKey).catch(() => result);
+      if (result.status === 'ok') {
+        return { ...result.agent, _tokenKind: 'access' };
+      }
+    }
     if (result.status === 'ok') {
-      return { ...result.agent, _tokenKind: 'access' };
+      const node = result.node;
+      let runtime = null;
+      if (runtimeId) {
+        try {
+          runtime = await AgentNodeService.getRuntimeForNode(node.id, runtimeId);
+        } catch {
+          authFailureCounter.inc({ reason: 'invalid' });
+          return null;
+        }
+      }
+      return {
+        ...node,
+        id: runtime ? runtime.id : node.id,
+        node_id: node.id,
+        runtime_id: runtime ? runtime.id : null,
+        project_id: runtime ? runtime.current_project_id : null,
+        _node: true,
+        _nodeRecord: node,
+        _runtime: runtime,
+        _tokenKind: 'access',
+      };
     }
     if (result.status === 'expired') {
       authFailureCounter.inc({ reason: 'expired' });
@@ -287,7 +315,9 @@ exports.agentAuth = async (req, res, next) => {
       return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing API key' } });
     }
 
-    const agent = await authenticateAgentByApiKey(apiKey);
+    const agent = await authenticateAgentByApiKey(apiKey, {
+      runtimeId: req.headers['x-agent-runtime'] || null,
+    });
     if (!agent) {
       return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid API key' } });
     }
@@ -297,6 +327,10 @@ exports.agentAuth = async (req, res, next) => {
     }
 
     req.agent = agent;
+    if (agent._node) {
+      req.node = agent._nodeRecord;
+      req.runtime = agent._runtime;
+    }
     req.rateLimitCount = req.rateLimitCount || 0;
     next();
   } catch (error) {
@@ -319,7 +353,9 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
   }
 
   try {
-    const agent = await authenticateAgentByApiKey(apiKey);
+    const agent = await authenticateAgentByApiKey(apiKey, {
+      runtimeId: req.headers['x-agent-runtime'] || null,
+    });
     if (!agent) {
       return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid API key' } });
     }
@@ -329,6 +365,10 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
     }
 
     req.agent = agent;
+    if (agent._node) {
+      req.node = agent._nodeRecord;
+      req.runtime = agent._runtime;
+    }
     req.user = {
       userId: agent.owner_id,
       id: agent.id,
