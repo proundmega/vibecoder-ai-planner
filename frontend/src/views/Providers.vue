@@ -336,6 +336,16 @@
                         {{ testResults[String(model.id)].error || 'Verification failed' }}
                       </template>
                     </div>
+                    <div
+                      v-if="modelDeleteConflict && modelDeleteConflict.modelId === String(model.id)"
+                      class="verify-error"
+                      role="alert"
+                    >
+                      {{ modelDeleteConflict.message }}
+                      <span v-if="modelDeleteConflict.runtimes.length">
+                        (used by {{ modelDeleteConflict.runtimes.join(', ') }})
+                      </span>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -557,6 +567,7 @@ const showAddForm = ref(false)
 const savingCredential = ref(false)
 const deletingId = ref('')
 const deletingModelId = ref('')
+const modelDeleteConflict = ref<{ modelId: string; message: string; runtimes: string[] } | null>(null)
 const discoveringId = ref('')
 const testingId = ref('')
 const savingModel = ref(false)
@@ -856,12 +867,18 @@ async function handleDeleteModel(model: ProviderModel): Promise<void> {
   deletingModelId.value = String(model.id)
   error.value = ''
   notice.value = ''
+  modelDeleteConflict.value = null
   try {
     await deleteModel(model.id)
     notice.value = `Model ${model.model} deleted.`
     await loadCredentials()
   } catch (err) {
-    error.value = (err as Error).message || 'Failed to delete the model'
+    const refs = conflictReferences(err)
+    modelDeleteConflict.value = {
+      modelId: String(model.id),
+      message: (err as Error).message || 'Failed to delete the model',
+      runtimes: refs.runtimes,
+    }
   } finally {
     deletingModelId.value = ''
   }

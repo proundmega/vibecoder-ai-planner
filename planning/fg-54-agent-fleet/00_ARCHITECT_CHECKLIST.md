@@ -75,7 +75,7 @@ long-running agent role.
 | Control plane merged | PR #178 (merged; node-auth bridge remains a joint gate) | ☑ |
 | Runtime/UI implementation | PR #179 (draft; rebased on master) | ☐ |
 | Implementation merged | pending | ☐ |
-| Verification results | n/a — not started | ☐ |
+| Verification results | Partial Track B evidence in `03` → Results; joint gate pending | ☐ |
 
 A merged planning PR is **plan merged**, not `done`. Set `status: done` only
 after the implementation PR is merged and `03` has a dated Results row.

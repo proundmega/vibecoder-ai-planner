@@ -81,14 +81,37 @@ class SupervisorMainTest {
     }
 
     @Test
-    void declaration403IsTerminalInsteadOfRetriedForever() throws Exception {
+    void oneRevokedGrantSuspendsOnlyThatSection() throws Exception {
+        com.vibecode.agent.service.RuntimeApi api = mock(com.vibecode.agent.service.RuntimeApi.class);
+        when(api.declareRuntimes(anyList())).thenAnswer(invocation -> {
+            List<Map<String, Object>> rows = invocation.getArgument(0);
+            String name = String.valueOf(rows.get(0).get("name"));
+            if ("reviewers".equals(name)) {
+                throw new com.vibecode.agent.service.RuntimeApi.RuntimeApiException(
+                    403, "GRANT_REQUIRED");
+            }
+            return List.of(Map.of("id", 10, "name", "workers-1"));
+        });
+
+        SupervisorMain.DeclarationResult result =
+            SupervisorMain.declareWithRetry(api, config(), 2);
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+            Map.of("workers", 10L), result.runtimeIds());
+        org.junit.jupiter.api.Assertions.assertEquals(
+            java.util.Set.of("reviewers"), result.suspendedSections());
+        org.junit.jupiter.api.Assertions.assertFalse(result.terminal());
+    }
+
+    @Test
+    void nodeAuthFailureDuringDeclarationIsTerminal() throws Exception {
         com.vibecode.agent.service.RuntimeApi api = mock(com.vibecode.agent.service.RuntimeApi.class);
         when(api.declareRuntimes(anyList())).thenThrow(
-            new com.vibecode.agent.service.RuntimeApi.RuntimeApiException(403, "GRANT_REQUIRED"));
+            new com.vibecode.agent.service.RuntimeApi.RuntimeApiException(401, "TOKEN_REVOKED"));
 
         org.junit.jupiter.api.Assertions.assertThrows(
             SupervisorMain.TerminalDeclarationException.class,
-            () -> SupervisorMain.declareWithRetry(api, config(), 3));
+            () -> SupervisorMain.declareRequired(api, config(), 3));
     }
 
     @Test

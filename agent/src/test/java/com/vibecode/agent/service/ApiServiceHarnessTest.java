@@ -101,6 +101,18 @@ class ApiServiceHarnessTest {
     }
 
     @Test
+    void heartbeatOmitsStatusWhenNullSoAdminDrainIsPreserved() throws Exception {
+        respond("/api/v1/agent-runtimes/3/heartbeat", 200, ok("{}"));
+
+        api.sendHeartbeat("3", null, 1);
+
+        RecordedRequest request = lastRequest();
+        assertEquals("POST", request.method());
+        assertFalse(request.body().contains("\"status\""), request.body());
+        assertTrue(request.body().contains("\"currentProjectId\":1"));
+    }
+
+    @Test
     void heartbeatTreatsA403AsARevokedRuntime() {
         respond("/api/v1/agent-runtimes/3/heartbeat", 403, error("TOKEN_REVOKED"));
 

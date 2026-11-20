@@ -114,6 +114,7 @@ describe('Provider registry view', () => {
       latencyMs: 42,
     })
     ;(registryApi.updateModel as ReturnType<typeof vi.fn>).mockResolvedValue(credential.models[0])
+    ;(registryApi.deleteModel as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -236,6 +237,18 @@ describe('Provider registry view', () => {
 
     expect(registryApi.testModel).toHaveBeenCalledWith(10)
     expect(wrapper.text()).toContain('Verified in 42 ms')
+  })
+
+  it('deletes a model through the model endpoint', async () => {
+    wrapper = await mountView()
+
+    const firstRow = wrapper.findAll('.model-table tbody tr')[0]
+    const remove = firstRow.findAll('button').find(button => button.text() === 'Delete')
+    expect(remove).toBeTruthy()
+    await remove!.trigger('click')
+    await flushPromises()
+
+    expect(registryApi.deleteModel).toHaveBeenCalledWith(10)
   })
 
   it('shows a stored verification error when a test fails', async () => {

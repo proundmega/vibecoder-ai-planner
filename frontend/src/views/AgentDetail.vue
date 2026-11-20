@@ -24,6 +24,7 @@ const error = ref('')
 const actionError = ref('')
 const busy = ref(false)
 const grants = ref<AgentGrant[]>([])
+const grantsByNode = ref<Record<string, AgentGrant[]>>({})
 
 const routeId = computed(() => String(route.params.id))
 
@@ -33,12 +34,19 @@ function isNodeOwner(node: AgentNode): boolean {
   return userId != null && String(node.owner_id) === String(userId)
 }
 
+function visibleRuntimes(node: AgentNode): AgentRuntime[] {
+  const all = node.runtimes ?? []
+  if (isNodeOwner(node)) return all
+  const projects = new Set(
+    (grantsByNode.value[String(node.id)] ?? []).map(grant => String(grant.project_id)))
+  return all.filter(runtime =>
+    runtime.current_project_id != null
+      && projects.has(String(runtime.current_project_id)))
+}
+
 const runtimeMatch = computed<{ node: AgentNode; runtime: AgentRuntime } | null>(() => {
   for (const node of nodes.value) {
-    // A shared member sees the node record but not runtimes for projects they
-    // do not belong to (fg-54 #181 filtering).
-    if (!isNodeOwner(node)) continue
-    for (const runtime of node.runtimes ?? []) {
+    for (const runtime of visibleRuntimes(node)) {
       if (String(runtime.id) === routeId.value) return { node, runtime }
     }
   }
@@ -77,8 +85,13 @@ function formatDateTime(value: string | null | undefined): string {
 async function loadFleet(): Promise<void> {
   try {
     nodes.value = (await listAgentNodes()) || []
+    const grantRows = await Promise.all(nodes.value.map(async (node) => [
+      String(node.id),
+      await getAgentNodeGrants(node.id).catch(() => []),
+    ]))
+    grantsByNode.value = Object.fromEntries(grantRows) as Record<string, AgentGrant[]>
     const node = runtimeMatch.value?.node ?? nodeMatch.value
-    grants.value = node ? await getAgentNodeGrants(node.id).catch(() => []) : []
+    grants.value = node ? (grantsByNode.value[String(node.id)] ?? []) : []
     error.value = ''
   } catch (err) {
     error.value = (err as Error).message || 'Failed to load the runtime record'
