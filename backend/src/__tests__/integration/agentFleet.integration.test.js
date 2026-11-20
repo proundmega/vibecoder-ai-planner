@@ -154,7 +154,12 @@ describe('agent fleet additive migration on a seeded database (FR16, NFR5, NFR8)
          to_regclass('public.idx_providers_type') IS NOT NULL AS providers_index,
          to_regprocedure('public.release_agent_tickets_on_delete()') IS NOT NULL AS release_fn,
          to_regclass('public.idx_agent_refresh_replays_expiry') IS NOT NULL AS replays_index,
-         to_regclass('public.idx_agent_auth_events_created') IS NOT NULL AS auth_events_index`
+         to_regclass('public.idx_agent_auth_events_created') IS NOT NULL AS auth_events_index,
+         to_regclass('public.idx_agent_access_tokens_prefix') IS NOT NULL AS access_index,
+         to_regclass('public.idx_agent_refresh_tokens_family') IS NOT NULL AS refresh_index,
+         to_regclass('public.idx_agent_enrollment_tokens_prefix') IS NOT NULL AS enrollment_index,
+         (SELECT count(*)::int FROM pg_constraint
+          WHERE conname = 'agent_enrollment_tokens_uses_check') AS uses_check`
     );
     expect(restored.rows[0]).toEqual({
       runs_nullable: 'NO',
@@ -164,6 +169,10 @@ describe('agent fleet additive migration on a seeded database (FR16, NFR5, NFR8)
       release_fn: true,
       replays_index: true,
       auth_events_index: true,
+      access_index: true,
+      refresh_index: true,
+      enrollment_index: true,
+      uses_check: 1,
     });
     const ticketColumn = await client.query(
       `SELECT column_name FROM information_schema.columns

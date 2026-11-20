@@ -704,7 +704,7 @@ class AgentNodeService {
       // Node-wide cap: a single declaration and repeated declarations must
       // both leave the node at or below AGENT_MAX_RUNTIMES_PER_NODE.
       const total = await db.query(
-        'SELECT count(*)::int AS n FROM agent_runtimes WHERE node_id = $1',
+        'SELECT count(*)::int AS n FROM agent_runtimes WHERE node_id = $1 AND status <> \'stopped\'',
         [node.id]
       );
       if (total.rows[0] && total.rows[0].n > maxRuntimes) {
