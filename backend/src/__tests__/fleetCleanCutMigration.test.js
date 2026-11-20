@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 
 const APPLY = require.resolve('../migrations/apply');
@@ -44,5 +45,16 @@ describe('fg-54 fleet clean-cut migration gate', () => {
   test('a value other than 1 leaves the clean cut disabled', () => {
     const names = loadRegistry('true').SQL_FILES.map((file) => path.basename(file));
     expect(names).not.toContain(CLEAN_CUT);
+  });
+
+  test('ships the joint runner used by the Fleet Clean Cut CI stage', () => {
+    const script = fs.readFileSync(
+      path.join(__dirname, '../../integration-test/fleet-clean-cut.sh'),
+      'utf8'
+    );
+
+    expect(script).toContain('AGENT_FLEET_CLEAN_CUT=1');
+    expect(script).toContain('REQUIRE_FLEET_SCHEMA=1');
+    expect(script).toContain('managerFleet.integration.test.js');
   });
 });

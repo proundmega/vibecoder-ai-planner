@@ -228,7 +228,7 @@ grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_h
 
 | Date | Slice | Evidence |
 |---|---|---|
-| 2026-11-20 | Track B runtime/UI (PR #179) | Supervisor/runtime/manager/Fleet+Registry implemented; `mvn -B test` 910 pass (10 skipped), backend 2139 pass (173 suites), frontend 574 pass + typecheck. #180, #181, #182 and #183 are merged. 057 is available through the joint opt-in below and was validated on a fresh pgvector database; manager integration passed 3/3 with `REQUIRE_FLEET_SCHEMA=1`. The default chain is unchanged. Blocked only on the joint clean-cut run and the CI/human gate; #183 completes runtime-owned harness runs, leases and usage. |
+| 2026-11-20 | Track B runtime/UI (PR #179) | Supervisor/runtime/manager/Fleet+Registry implemented; `mvn -B test` 910 pass (10 skipped), backend 2140 pass (173 suites), frontend 574 pass + typecheck. #180, #181, #182 and #183 are merged. 057 is available through the joint opt-in below and was validated on a fresh pgvector database; manager integration passed 3/3 with `REQUIRE_FLEET_SCHEMA=1`. The default chain is unchanged. Blocked only on the joint clean-cut run and the CI/human gate; #183 completes runtime-owned harness runs, leases and usage. |
 
 ### Joint clean cut (057)
 
@@ -243,6 +243,12 @@ REQUIRE_FLEET_SCHEMA=1 npm run test:integration
 ```
 
 The switch appends 057 after 059 and skips `backfill_agent_key_hashes.js`.
+Jenkins runs the same step in its **Fleet Clean Cut** stage: it creates a fresh
+`vibecode_fg54_cut` database, runs
+`backend/integration-test/fleet-clean-cut.sh` (which sets both variables and
+runs the manager suite), and fails if the schema is missing instead of
+skipping.
+
 Do not replay `db:migrate` after the cut on a persistent database: earlier
 `providers`/`agents` migrations are not ledgered and will fail against the
 dropped tables. A migration ledger (or removing the legacy routes and their

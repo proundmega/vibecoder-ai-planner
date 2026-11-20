@@ -558,6 +558,30 @@ EOF
             }
         }
 
+        stage('Fleet Clean Cut') {
+            steps {
+                sh '''
+                    set -euo pipefail
+                    DB=vibecode_fg54_cut
+                    PASS="${POSTGRES_PASSWORD:-changeme}"
+                    COMPOSE="docker compose -f ${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml"
+                    export DOCKER_HOST="${DOCKER_HOST:-}"
+
+                    # 057 drops the legacy tables, so it only runs on a fresh
+                    # database and never in the default migration chain.
+                    $COMPOSE exec -T postgres psql -U postgres -d postgres \
+                        -c "DROP DATABASE IF EXISTS $DB WITH (FORCE)" \
+                        -c "CREATE DATABASE $DB"
+
+                    # Apply the opt-in cut and require the manager/lease
+                    # integration suite; a missing fleet schema fails rather
+                    # than skips.
+                    $COMPOSE exec -T test bash -lc \
+                        "cd /app && DATABASE_URL=postgresql://postgres:${PASS}@postgres:5432/$DB bash integration-test/fleet-clean-cut.sh"
+                '''
+            }
+        }
+
         stage('CI Smoke Failure') {
             when {
                 expression { params.CI_SMOKE_FAIL }
