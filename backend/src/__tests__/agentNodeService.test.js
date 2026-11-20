@@ -154,6 +154,23 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
     expect(client.query.mock.calls.some(([sql]) => sql === 'ROLLBACK')).toBe(true);
   });
 
+  it('creates one runtime per declared slot with stable names', async () => {
+    const client = mockClient([
+      ['FROM agent_node_grants', { rows: [{ id: 1 }] }],
+      ['INSERT INTO agent_runtimes', (params) => ({ rows: [{ id: params[1].endsWith('-2') ? 22 : 21, name: params[1] }] })],
+    ]);
+    pool.connect.mockResolvedValue(client);
+    jest.spyOn(AgentNodeService, 'resolveModel').mockResolvedValue({
+      id: 8, model: 'm', roles: ['worker'],
+    });
+
+    const rows = await AgentNodeService.declareRuntimes(
+      { id: 12, owner_id: 7 },
+      [{ role: 'worker', modelRef: 'cred/m', projectId: 5, count: 2, name: 'workers' }]
+    );
+    expect(rows.map((row) => row.name)).toEqual(['workers-1', 'workers-2']);
+  });
+
   it('requires a grant before declaring a runtime project', async () => {
     const client = mockClient([]);
     pool.connect.mockResolvedValue(client);
@@ -164,6 +181,30 @@ describe('AgentNodeService (FR1, FR2, FR3, FR19, FR20, NFR1)', () => {
         [{ role: 'worker', modelRef: 'cred/m', projectId: 5 }]
       )
     ).rejects.toMatchObject({ code: 'GRANT_REQUIRED' });
+  });
+
+  it('includes node_id in a rotated refresh response', async () => {
+    const rawToken = AgentTokenService.generate('refresh');
+    const row = {
+      id: 9,
+      node_id: 12,
+      token_hash: AgentTokenService.hash(rawToken),
+      family_id: '11111111-1111-1111-1111-111111111111',
+      expires_at: new Date(Date.now() + 60_000),
+      revoked_at: null,
+      rotated_at: null,
+    };
+    const client = mockClient([
+      ['FROM agent_node_refresh_tokens WHERE token_prefix', { rows: [row] }],
+      ['FROM agent_nodes WHERE id = $1 FOR UPDATE', { rows: [{ id: 12 }] }],
+      ['FROM agent_node_refresh_tokens WHERE id = $1 FOR UPDATE', { rows: [row] }],
+      ['INSERT INTO agent_node_refresh_tokens', { rows: [{ id: 31 }] }],
+    ]);
+    pool.connect.mockResolvedValue(client);
+
+    const result = await AgentNodeService.refresh({ token: rawToken, idempotencyKey: 'idem-key-1234567890' });
+    expect(result.node_id).toBe(12);
+    expect(result.access_token).toMatch(/^at_/);
   });
 
   it('returns a cached refresh response for the same idempotency key', async () => {

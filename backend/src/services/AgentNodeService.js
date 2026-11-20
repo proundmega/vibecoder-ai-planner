@@ -299,6 +299,7 @@ class AgentNodeService {
         [pair.refreshTokenId, row.id]
       );
       const payload = {
+        node_id: row.node_id,
         access_token: pair.accessToken,
         refresh_token: pair.refreshToken,
         access_expires_at: pair.accessExpiresAt,
@@ -338,7 +339,7 @@ class AgentNodeService {
     if (!user) throw fail(401, 'UNAUTHORIZED', 'Authentication required');
     if (user.role === 'super_admin') {
       const all = await pool.query('SELECT * FROM agent_nodes ORDER BY created_at DESC');
-      return all.rows;
+      return this.withRuntimes(all.rows);
     }
     const result = await pool.query(
       `SELECT DISTINCT n.*
@@ -355,7 +356,27 @@ class AgentNodeService {
        ORDER BY n.created_at DESC`,
       [user.userId]
     );
-    return result.rows;
+    return this.withRuntimes(result.rows);
+  }
+
+  async withRuntimes(nodes) {
+    if (nodes.length === 0) return nodes;
+    const ids = nodes.map((node) => node.id);
+    const runtimes = await pool.query(
+      `SELECT r.*, pm.model, pm.effort AS model_effort, pc.name AS credential_name
+       FROM agent_runtimes r
+       JOIN provider_models pm ON pm.id = r.model_id
+       JOIN provider_credentials pc ON pc.id = pm.credential_id
+       WHERE r.node_id = ANY($1::bigint[])
+       ORDER BY r.name`,
+      [ids]
+    );
+    const byNode = new Map(nodes.map((node) => [String(node.id), []]));
+    for (const runtime of runtimes.rows) {
+      const list = byNode.get(String(runtime.node_id));
+      if (list) list.push(runtime);
+    }
+    return nodes.map((node) => ({ ...node, runtimes: byNode.get(String(node.id)) || [] }));
   }
 
   async getNodeForUser(nodeId, user) {
@@ -601,24 +622,23 @@ class AgentNodeService {
       const results = [];
       for (const item of items) {
         const role = item.role;
+        const projectId = item.projectId != null ? item.projectId : item.project;
         if (!ROLES.includes(role)) throw fail(400, 'INVALID_ROLE', 'Invalid role');
         const effort = item.effort == null ? null : String(item.effort);
         if (effort != null && !EFFORTS.includes(effort)) {
           throw fail(400, 'INVALID_EFFORT', 'Invalid effort');
         }
-        if (item.projectId != null) {
+        if (projectId != null) {
           const grant = await db.query(
             `SELECT 1 FROM agent_node_grants
              WHERE node_id = $1 AND project_id = $2 AND role = $3 AND revoked_at IS NULL`,
-            [node.id, item.projectId, role]
+            [node.id, projectId, role]
           );
           if (grant.rows.length === 0) {
             throw fail(403, 'GRANT_REQUIRED', 'No active grant for this project/role');
           }
-        } else if (role === 'worker') {
-          throw fail(400, 'PROJECT_REQUIRED', 'worker runtimes require projectId');
         }
-        const model = await this.resolveModel(db, node.owner_id, item.modelRef, item.projectId);
+        const model = await this.resolveModel(db, node.owner_id, item.modelRef, projectId);
         if (!model.roles.includes(role)) {
           throw fail(400, 'ROLE_NOT_ALLOWED', 'Model is not tagged for this role');
         }
@@ -626,20 +646,27 @@ class AgentNodeService {
         if (!Number.isFinite(concurrency) || concurrency < 1) {
           throw fail(400, 'INVALID_CONCURRENCY', 'concurrency must be >= 1');
         }
-        const name = item.name || `${role}-${model.model}-${results.length + 1}`;
-        const upsert = await db.query(
-          `INSERT INTO agent_runtimes
-             (node_id, name, role, model_id, concurrency, effort, status, current_project_id)
-           VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
-           ON CONFLICT (node_id, name)
-           DO UPDATE SET role = EXCLUDED.role, model_id = EXCLUDED.model_id,
-                         concurrency = EXCLUDED.concurrency, effort = EXCLUDED.effort,
-                         current_project_id = EXCLUDED.current_project_id,
-                         updated_at = NOW()
-           RETURNING *`,
-          [node.id, name, role, model.id, concurrency, effort, item.projectId || null]
-        );
-        results.push(upsert.rows[0]);
+        const count = item.count == null ? 1 : parseInt(item.count, 10);
+        if (!Number.isFinite(count) || count < 1 || count > 100) {
+          throw fail(400, 'INVALID_COUNT', 'count must be between 1 and 100');
+        }
+        const baseName = item.name || `${role}-${model.model}`;
+        for (let index = 1; index <= count; index += 1) {
+          const name = `${baseName}-${index}`;
+          const upsert = await db.query(
+            `INSERT INTO agent_runtimes
+               (node_id, name, role, model_id, concurrency, effort, status, current_project_id)
+             VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
+             ON CONFLICT (node_id, name)
+             DO UPDATE SET role = EXCLUDED.role, model_id = EXCLUDED.model_id,
+                           concurrency = EXCLUDED.concurrency, effort = EXCLUDED.effort,
+                           current_project_id = EXCLUDED.current_project_id,
+                           updated_at = NOW()
+             RETURNING *`,
+            [node.id, name, role, model.id, concurrency, effort, projectId || null]
+          );
+          results.push(upsert.rows[0]);
+        }
       }
       await audit(db, {
         nodeId: node.id,

@@ -262,7 +262,8 @@ router.post(
   validate(declareRuntimesSchema),
   async (req, res, next) => {
     try {
-      const data = await AgentNodeService.declareRuntimes(req.node, req.body.runtimes);
+      const items = Array.isArray(req.body) ? req.body : req.body.runtimes;
+      const data = await AgentNodeService.declareRuntimes(req.node, items);
       res.status(201).json({ success: true, data });
     } catch (error) {
       if (error.status) return fail(res, error);

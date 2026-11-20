@@ -38,11 +38,17 @@ const runtimeItemSchema = Joi.object({
     .try(Joi.number().integer().positive(), Joi.string().pattern(/^\d+$/))
     .optional()
     .allow(null),
+  project: Joi.alternatives()
+    .try(Joi.number().integer().positive(), Joi.string().pattern(/^\d+$/))
+    .optional()
+    .allow(null),
+  count: Joi.number().integer().min(1).max(100).optional(),
 });
 
-const declareRuntimesSchema = Joi.object({
-  runtimes: Joi.array().items(runtimeItemSchema).min(1).max(100).required(),
-});
+const declareRuntimesSchema = Joi.alternatives().try(
+  Joi.object({ runtimes: Joi.array().items(runtimeItemSchema).min(1).max(100).required() }),
+  Joi.array().items(runtimeItemSchema).min(1).max(100)
+);
 
 const heartbeatSchema = Joi.object({
   status: Joi.string().valid('pending', 'running', 'draining', 'stopped').optional(),
