@@ -99,6 +99,7 @@ after the implementation PR is merged and `03` has a dated Results row.
 | D13 | Fleet dashboards and alerts (node down, runtime crash-loop, model verification failures) | fg-41 | Observability | fg-41 | open |
 | D14 | Organization/tenant-scoped credentials and grants above the project level | self | Authorization | none | open |
 | D15 | Planner runtimes with their own planning-template authoring loop (fg-40 handoffs) | fg-40 | Product | fg-40 | open |
+| D16 | Let an in-flight run finish, publish and log usage while its runtime is `draining`; #183 currently requires `running` on those routes | #183 review | Operations | Track A follow-up | open |
 
 ## Decisions needed from the user
 
