@@ -81,6 +81,10 @@ public class AgentApp {
         this.runtimeApi = authManager != null
             ? new com.vibecode.agent.service.RuntimeApi(config, authManager)
             : null;
+        // #182 gates repository/token reads on a running runtime. Report
+        // running before the constructor reads the project repository; the
+        // supervisor declares the runtime as pending before spawning us.
+        reportRuntimeRunningBeforeStartup();
         applyServerRepoConfig();
         this.providerSettings = resolveProviderSettings();
         this.providerRefreshIntervalMs = providerRefreshIntervalMs();
@@ -543,10 +547,11 @@ public class AgentApp {
             return thread;
         });
         heartbeatScheduler.scheduleAtFixedRate(this::heartbeatTick, 30, 30, TimeUnit.SECONDS);
-        // Report `running` before the first claim. The node-token bridge
-        // requires a running runtime for pickup, so starting the poll loop
-        // first would race the heartbeat and waste a poll interval.
-        heartbeatTick();
+        // A child without a runtime id resolved at construction reports
+        // `running` here, after the supervisor's declaration succeeds.
+        if (!runtimeStatusReported.get()) {
+            heartbeatTick();
+        }
 
         log.info("Polling for tickets every {} ms", config.getPollInterval().toMillis());
 
@@ -619,6 +624,23 @@ public class AgentApp {
             System.exit(0);
         } catch (Exception e) {
             log.warn("Heartbeat send failed", e);
+        }
+    }
+
+    /**
+     * Report {@code running} before constructor wiring. #182 requires a live
+     * runtime for the project repository/token reads, and the supervisor
+     * creates the row as {@code pending}.
+     */
+    private void reportRuntimeRunningBeforeStartup() {
+        if (config.getRuntimeId() == null || config.getRuntimeId().isBlank()) {
+            return;
+        }
+        try {
+            apiService.sendHeartbeat(config.getRuntimeId(), "running", config.getProjectId());
+            runtimeStatusReported.set(true);
+        } catch (Exception e) {
+            log.warn("Could not report the runtime running before startup: {}", e.getMessage());
         }
     }
 

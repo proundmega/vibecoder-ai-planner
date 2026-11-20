@@ -136,10 +136,12 @@ class AgentAppRuntimeLifecycleTest {
 
     @Test
     void firstHeartbeatIsRetriedUntilItReportsRunning() throws Exception {
+        // No runtime id during construction, so startup reporting is deferred.
         ModeConfig config = new ModeConfig();
-        config.setRuntimeId("9");
+        config.setRuntimeId(null);
         StubApi api = new StubApi(config);
         AgentApp app = new AgentApp(config, null, api);
+        config.setRuntimeId("9");
 
         api.failHeartbeats = true;
         app.heartbeatTick();
