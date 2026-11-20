@@ -74,12 +74,22 @@ async function assertProjectAccess(run, userId) {
   }
 }
 
+function agentOwnsRun(req, run) {
+  const expected = req.runtime ? run.runtime_id : run.agent_id;
+  return String(expected) === String(actorIdOf(req));
+}
+
 async function assertCanReadRun(req, run) {
   if (req.agent) {
-    const expected = req.runtime ? run.runtime_id : run.agent_id;
-    if (String(expected) !== String(actorIdOf(req))) {
-      throw new ForbiddenError('Harness run belongs to another agent');
+    if (!req.runtime) {
+      if (!agentOwnsRun(req, run)) {
+        throw new ForbiddenError('Harness run belongs to another agent');
+      }
+      return;
     }
+    // Node reads are project-scoped: requireRunGrant/requireTicketGrant has
+    // already checked the runtime's active grant for this run's project, so a
+    // reviewer may inspect another runtime's run in its granted project.
     return;
   }
 
@@ -98,6 +108,16 @@ async function assertCanReadRun(req, run) {
   }
 
   await assertProjectAccess(run, userId);
+}
+
+async function assertCanWriteRun(req, run) {
+  if (req.agent) {
+    if (!agentOwnsRun(req, run)) {
+      throw new ForbiddenError('Harness run belongs to another agent');
+    }
+    return;
+  }
+  return assertCanReadRun(req, run);
 }
 
 /**
@@ -268,7 +288,7 @@ router.get('/agents/:agentId/workspaces', verifyTokenOrAgent, requireRuntime('ru
 router.post('/runs/:runId/publish', verifyTokenOrAgent, requireRuntime('running'), forRunParam(), requireRunGrant('worker'), async (req, res, next) => {
   try {
     const run = await HarnessRunService.getRun(req.params.runId);
-    await assertCanReadRun(req, run);
+    await assertCanWriteRun(req, run);
 
     const updated = await HarnessRunService.recordPublish(
       req.params.runId,
@@ -282,6 +302,7 @@ router.post('/runs/:runId/publish', verifyTokenOrAgent, requireRuntime('running'
         projectId: updated.project_id,
         ticketId: updated.ticket_id,
         agentId: updated.agent_id,
+        runtimeId: updated.runtime_id ?? null,
         headSha: updated.head_sha,
         prUrl: updated.pr_url,
         actorType: 'agent',
@@ -304,7 +325,7 @@ router.post('/runs/:runId/reconcile', verifyTokenOrAgent, requireRuntime('runnin
   try {
     actorOf(req);
     const run = await HarnessRunService.getRun(req.params.runId);
-    await assertCanReadRun(req, run);
+    await assertCanWriteRun(req, run);
 
     const reconciled = await HarnessRunService.reconcileRun(req.params.runId);
     if (!reconciled) {
@@ -411,7 +432,7 @@ router.post('/runs/:runId/checkpoints', verifyTokenOrAgent, requireRuntime('runn
   try {
     actorOf(req);
     const run = await HarnessRunService.getRun(req.params.runId);
-    await assertCanReadRun(req, run);
+    await assertCanWriteRun(req, run);
 
     const checkpoint = await HarnessRunService.recordCheckpoint(
       req.params.runId,
@@ -444,7 +465,7 @@ router.post('/runs/:runId/finish', verifyTokenOrAgent, requireRuntime('running')
   try {
     actorOf(req);
     const run = await HarnessRunService.getRun(req.params.runId);
-    await assertCanReadRun(req, run);
+    await assertCanWriteRun(req, run);
 
     const finished = await HarnessRunService.finishRun(req.params.runId, {
       status: req.body?.status,
@@ -460,6 +481,7 @@ router.post('/runs/:runId/finish', verifyTokenOrAgent, requireRuntime('running')
           projectId: finished.project_id,
           ticketId: finished.ticket_id,
           agentId: finished.agent_id,
+          runtimeId: finished.runtime_id ?? null,
           headSha: finished.head_sha,
           prUrl: finished.pr_url,
           actorType: 'agent',
@@ -575,7 +597,7 @@ router.delete('/leases/:ticketId', verifyTokenOrAgent, requireRuntime('running')
     actorOf(req);
     const runId = req.body?.runId || req.query.runId;
     const run = await HarnessRunService.getRun(runId);
-    await assertCanReadRun(req, run);
+    await assertCanWriteRun(req, run);
 
     const released = await HarnessRunService.releaseLease(req.params.ticketId, runId);
     if (!released) {

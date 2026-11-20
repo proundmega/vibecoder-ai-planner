@@ -158,6 +158,35 @@ describe('HarnessRunService', () => {
       expect(client.release).toHaveBeenCalled();
     });
 
+
+    it('keeps the runtime identity in a privacy start-block audit', async () => {
+      const client = clientWith(
+        [{ status: 'in_progress', assigned_runtime_id: '3', project_id: 5 }],
+        { rows: [] }
+      );
+      HarnessPrivacyService.assertProviderAllowed.mockRejectedValueOnce(
+        new Error('Provider is not allowed by the project privacy policy')
+      );
+
+      await expect(HarnessRunService.startRun({
+        ticketId: 42,
+        runtimeId: 3,
+        branch: 'feat/fg-54',
+        provider: 'anthropic',
+      })).rejects.toThrow('privacy policy');
+
+      expect(HarnessAuditService.recordPrivacy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: 5,
+          runtimeId: 3,
+          actorId: 3,
+          agentId: null,
+          action: 'start_blocked',
+        })
+      );
+      expect(client.release).toHaveBeenCalled();
+    });
+
     it('persists a project-scoped repo profile revision when provided', async () => {
       const row = { id: RUN_ID, ticket_id: 42, agent_id: 7, status: 'running' };
       const client = {

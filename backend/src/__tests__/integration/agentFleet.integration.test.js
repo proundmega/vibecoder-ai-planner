@@ -259,5 +259,13 @@ describe('agent fleet additive migration on a seeded database (FR16, NFR5, NFR8)
        WHERE table_name = 'harness_runs' AND column_name = 'agent_id'`
     );
     expect(restored.rows[0].is_nullable).toBe('NO');
+
+    // Leave the shared test schema in the forward state for later tests.
+    await applyFile(client, MIGRATION_059);
+    const forward = await client.query(
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_name = 'harness_runs' AND column_name = 'agent_id'`
+    );
+    expect(forward.rows[0].is_nullable).toBe('YES');
   }, 180000);
 });

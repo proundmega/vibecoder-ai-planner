@@ -15,6 +15,7 @@ const { forRunParam, forHarnessEventBody } = require('../middleware/agentProject
 const {
   requireRuntime,
   requireRunGrant,
+  requireBodyGrant,
   requireReviewEventGrant,
 } = require('../middleware/agentRole');
 const {
@@ -85,14 +86,20 @@ async function assertProjectAccess(projectId, req, permission = 'DASHBOARD_READ'
   }
 }
 
-async function assertRunAccess(runId, req, permission = 'TICKET_READ') {
+async function assertRunAccess(runId, req, permission = 'TICKET_READ', { write = false } = {}) {
   const run = await HarnessRunService.getRun(runId);
   if (req.agent) {
-    const expected = req.runtime ? run.runtime_id : run.agent_id;
-    const actual = req.runtime ? req.runtime.id : req.agent.id;
-    if (String(expected) !== String(actual)) {
+    if (!req.runtime) {
+      if (String(run.agent_id) !== String(req.agent.id)) {
+        throw new ForbiddenError('Harness run belongs to another agent');
+      }
+      return run;
+    }
+    if (write && String(run.runtime_id) !== String(req.runtime.id)) {
       throw new ForbiddenError('Harness run belongs to another agent');
     }
+    // Node reads are project-scoped; requireRunGrant has already checked the
+    // runtime's active grant for this run's project.
     return run;
   }
   const { role } = operatorIdentity(req);
@@ -151,7 +158,7 @@ function projectIdParam(value) {
  *       201:
  *         description: Event stored (or an existing idempotent duplicate)
  */
-router.post('/events', verifyTokenOrAgent, requireRuntime('running'), forHarnessEventBody(), requireReviewEventGrant(), async (req, res, next) => {
+router.post('/events', verifyTokenOrAgent, requireRuntime('running'), forHarnessEventBody(), requireBodyGrant('worker', 'reviewer', 'planner'), requireReviewEventGrant(), async (req, res, next) => {
   try {
     const agentId = requireAgent(req);
     const body = req.body || {};
@@ -230,6 +237,7 @@ router.post('/events', verifyTokenOrAgent, requireRuntime('running'), forHarness
 router.post('/runs/:runId/usage', verifyTokenOrAgent, requireRuntime('running'), forRunParam(), requireRunGrant('worker'), async (req, res, next) => {
   try {
     const body = req.body || {};
+    await assertRunAccess(req.params.runId, req, 'TICKET_READ', { write: true });
     const row = await HarnessUsageService.recordUsage({
       runId: req.params.runId,
       ...(req.runtime ? { runtimeId: req.runtime.id } : { agentId: requireAgent(req) }),

@@ -8,6 +8,8 @@ const {
   requireRole,
   requireTicketGrant,
   requireBodyGrant,
+  requireProjectGrant,
+  requireRunGrant,
   requireReviewEventGrant,
 } = require('../middleware/agentRole');
 
@@ -144,6 +146,51 @@ describe('agent role enforcement (FR4, NFR1)', () => {
       [9]
     );
     expect(res.statusCode).toBe(200);
+  });
+
+
+  it('rejects malformed ticket ids before querying the database', async () => {
+    const req = nodeRequest();
+    req.params.ticketId = 'not-a-number';
+    const { res, next } = await run(requireTicketGrant('worker'), req);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(next).not.toHaveBeenCalled();
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed run ids before querying the database', async () => {
+    const req = nodeRequest();
+    req.params.runId = 'not-a-uuid';
+    const { res, next } = await run(requireRunGrant('worker'), req);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(next).not.toHaveBeenCalled();
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed project ids before querying the database', async () => {
+    const req = nodeRequest();
+    req.params.projectId = 'not-a-number';
+    const { res, next } = await run(requireProjectGrant('worker'), req);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(next).not.toHaveBeenCalled();
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed body ids before querying the database', async () => {
+    const req = nodeRequest();
+    req.body = { projectId: 'nope' };
+    const { res, next } = await run(requireBodyGrant('worker'), req);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(next).not.toHaveBeenCalled();
+    expect(pool.query).not.toHaveBeenCalled();
   });
 
   it('rejects a body-grant request with no project', async () => {

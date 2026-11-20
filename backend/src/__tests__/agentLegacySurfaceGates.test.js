@@ -204,7 +204,7 @@ describe('legacy surface gates for node credentials (B5-B9)', () => {
       return Promise.resolve({ rows: [] });
     });
     HarnessRunService.getRun.mockResolvedValue({
-      id: RUN_ID, ticket_id: 1, project_id: 5, agent_id: null, runtime_id: 3,
+      id: RUN_ID, ticket_id: 1, project_id: 5, agent_id: null, runtime_id: 99,
     });
 
     const res = await request(app)
@@ -213,7 +213,67 @@ describe('legacy surface gates for node credentials (B5-B9)', () => {
       .set('X-Agent-Runtime', '3');
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.data.runtime_id).toBe(3);
+    expect(res.body.data.runtime_id).toBe(99);
+  });
+
+  it('denies a worker publishing another runtime-owned run', async () => {
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('SELECT project_id FROM harness_runs')) return Promise.resolve({ rows: [{ project_id: 5 }] });
+      if (sql.includes('FROM agent_node_grants')) return Promise.resolve({ rows: [{ id: 1 }] });
+      return Promise.resolve({ rows: [] });
+    });
+    HarnessRunService.getRun.mockResolvedValue({
+      id: RUN_ID, ticket_id: 1, project_id: 5, agent_id: null, runtime_id: 99,
+    });
+
+    const res = await request(app)
+      .post(`/api/v1/harness/runs/${RUN_ID}/publish`)
+      .set('X-API-Key', 'at_valid')
+      .set('X-Agent-Runtime', '3')
+      .send({ headSha: 'abc123' });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error.message).toMatch(/another agent/);
+  });
+
+  it('requires an active grant for non-review harness events', async () => {
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('SELECT project_id FROM harness_runs')) return Promise.resolve({ rows: [{ project_id: 5 }] });
+      return Promise.resolve({ rows: [] });
+    });
+
+    const res = await request(app)
+      .post('/api/v1/harness/events')
+      .set('X-API-Key', 'at_valid')
+      .set('X-Agent-Runtime', '3')
+      .send({ type: 'run.started', runId: RUN_ID });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.error.code).toBe('GRANT_REQUIRED');
+    expect(HarnessEventService.emit).not.toHaveBeenCalled();
+  });
+
+  it('accepts a granted non-review harness event', async () => {
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('SELECT project_id FROM harness_runs')) return Promise.resolve({ rows: [{ project_id: 5 }] });
+      if (sql.includes('FROM agent_node_grants')) return Promise.resolve({ rows: [{ id: 1 }] });
+      return Promise.resolve({ rows: [] });
+    });
+    HarnessEventService.emit.mockResolvedValue({
+      duplicate: false,
+      event: { type: 'run.started', event_id: 'eeeeeeee-1111-4111-8111-111111111111' },
+    });
+
+    const res = await request(app)
+      .post('/api/v1/harness/events')
+      .set('X-API-Key', 'at_valid')
+      .set('X-Agent-Runtime', '3')
+      .send({ type: 'run.started', runId: RUN_ID });
+
+    expect(res.statusCode).toBe(201);
+    expect(HarnessEventService.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: RUN_ID, runtimeId: 3 })
+    );
   });
 
   it('denies a reviewer runtime a write-capable GitHub token', async () => {
