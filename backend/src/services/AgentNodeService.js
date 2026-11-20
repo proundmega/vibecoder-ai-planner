@@ -728,48 +728,70 @@ class AgentNodeService {
   }
 
   async heartbeat(node, runtimeId, { status = null, currentProjectId = null } = {}) {
-    const runtime = await this.getRuntimeForNode(node.id, runtimeId);
-    if (status && status !== 'stopped' && runtime.status === 'stopped') {
-      const maxRuntimes = intEnv('AGENT_MAX_RUNTIMES_PER_NODE', 100);
-      const active = await pool.query(
-        `SELECT count(*)::int AS n FROM agent_runtimes
-         WHERE node_id = $1 AND status <> 'stopped'`,
-        [node.id]
+    const db = await pool.connect();
+    try {
+      await db.query('BEGIN');
+      // Serialize revivals on the node row so concurrent heartbeats cannot
+      // both pass the cap check.
+      const locked = await db.query('SELECT id FROM agent_nodes WHERE id = $1 FOR UPDATE', [node.id]);
+      if (locked.rows.length === 0) throw fail(404, 'NODE_NOT_FOUND', 'Node not found');
+
+      const runtimeResult = await db.query(
+        'SELECT * FROM agent_runtimes WHERE id = $1 AND node_id = $2',
+        [runtimeId, node.id]
       );
-      if (active.rows[0] && active.rows[0].n >= maxRuntimes) {
-        throw fail(409, 'CAP_EXCEEDED', `Node may host at most ${maxRuntimes} runtimes`);
+      const runtime = runtimeResult.rows[0];
+      if (!runtime) throw fail(404, 'RUNTIME_NOT_FOUND', 'Runtime not found');
+
+      if (status && status !== 'stopped' && runtime.status === 'stopped') {
+        const maxRuntimes = intEnv('AGENT_MAX_RUNTIMES_PER_NODE', 100);
+        const active = await db.query(
+          `SELECT count(*)::int AS n FROM agent_runtimes
+           WHERE node_id = $1 AND status <> 'stopped'`,
+          [node.id]
+        );
+        if (active.rows[0] && active.rows[0].n >= maxRuntimes) {
+          throw fail(409, 'CAP_EXCEEDED', `Node may host at most ${maxRuntimes} runtimes`);
+        }
       }
-    }
-    if (currentProjectId != null) {
-      const grant = await pool.query(
-        `SELECT 1 FROM agent_node_grants
-         WHERE node_id = $1 AND project_id = $2 AND role = $3 AND revoked_at IS NULL`,
-        [node.id, currentProjectId, runtime.role]
+
+      if (currentProjectId != null) {
+        const grant = await db.query(
+          `SELECT 1 FROM agent_node_grants
+           WHERE node_id = $1 AND project_id = $2 AND role = $3 AND revoked_at IS NULL`,
+          [node.id, currentProjectId, runtime.role]
+        );
+        if (grant.rows.length === 0) {
+          throw fail(403, 'GRANT_REQUIRED', 'No active grant for this project/role');
+        }
+      }
+
+      const updated = await db.query(
+        `UPDATE agent_runtimes
+         SET last_seen_at = NOW(),
+             status = COALESCE($3, status),
+             current_project_id = $4,
+             updated_at = NOW()
+         WHERE id = $1 AND node_id = $2
+         RETURNING *`,
+        [runtimeId, node.id, status, currentProjectId]
       );
-      if (grant.rows.length === 0) {
-        throw fail(403, 'GRANT_REQUIRED', 'No active grant for this project/role');
+      await db.query('UPDATE agent_nodes SET last_seen_at = NOW() WHERE id = $1', [node.id]);
+      if (status && status !== runtime.status) {
+        await audit(db, {
+          nodeId: node.id,
+          eventType: 'runtime.status_changed',
+          metadata: { runtime_id: runtime.id, from: runtime.status, to: status },
+        });
       }
+      await db.query('COMMIT');
+      return updated.rows[0];
+    } catch (error) {
+      await db.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      db.release();
     }
-    const updated = await pool.query(
-      `UPDATE agent_runtimes
-       SET last_seen_at = NOW(),
-           status = COALESCE($3, status),
-           current_project_id = $4,
-           updated_at = NOW()
-       WHERE id = $1 AND node_id = $2
-       RETURNING *`,
-      [runtimeId, node.id, status, currentProjectId]
-    );
-    if (updated.rows.length === 0) throw fail(404, 'RUNTIME_NOT_FOUND', 'Runtime not found');
-    await pool.query('UPDATE agent_nodes SET last_seen_at = NOW() WHERE id = $1', [node.id]);
-    if (status && status !== runtime.status) {
-      await audit(pool, {
-        nodeId: node.id,
-        eventType: 'runtime.status_changed',
-        metadata: { runtime_id: runtime.id, from: runtime.status, to: status },
-      });
-    }
-    return updated.rows[0];
   }
 
   async getRuntimeForNode(nodeId, runtimeId) {
