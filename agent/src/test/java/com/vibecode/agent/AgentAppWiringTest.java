@@ -7,7 +7,6 @@ import com.vibecode.agent.harness.RedactionRegistry;
 import com.vibecode.agent.service.ApiService;
 import com.vibecode.agent.service.GitHubService;
 import com.vibecode.agent.service.GitHubTokenProvider;
-import com.vibecode.agent.service.TicketProcessor;
 import com.vibecode.agent.service.TicketWorker;
 import com.vibecode.agent.service.WorkspaceManager;
 import org.junit.jupiter.api.Test;
@@ -34,9 +33,6 @@ class AgentAppWiringTest {
 
     @SuppressWarnings("unchecked")
     private static WorkspaceManager workspaceFor(TicketWorker worker) throws Exception {
-        if (worker instanceof TicketProcessor) {
-            return (WorkspaceManager) field(worker, "workspaceManager");
-        }
         assertTrue(worker instanceof HarnessTicketProcessor,
             "unexpected ticket worker: " + worker.getClass());
         Function<String, WorkspaceManager> factory =
@@ -56,7 +52,7 @@ class AgentAppWiringTest {
                 config, apiService,
                 new ProviderSettings("generic", "custom-provider-key-123456",
                     null, "model", 1024),
-                null, provider, "custom-github-token-123456", config.getHarnessConfig());
+                provider, "custom-github-token-123456", config.getHarnessConfig());
 
             assertEquals("[REDACTED]",
                 RedactionRegistry.redact("custom-provider-key-123456"));
@@ -75,7 +71,7 @@ class AgentAppWiringTest {
             force -> Map.of("token", "ghs_wiring", "mode", "app"));
 
         AgentApp.GitHubWiring wiring = AgentApp.createGitHubWiring(
-            config, apiService, null, null, provider, "ghs_wiring",
+            config, apiService, null, provider, "ghs_wiring",
             config.getHarnessConfig());
 
         assertSame(provider, field(wiring.gitHubService(), "tokenSource"),

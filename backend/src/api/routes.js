@@ -25,7 +25,6 @@ const loginUserBound = loginUser.bind(auth);
 
 const v1Routes = require('./v1');
 const cspReportRouter = require('./csp-report');
-const poolRouter = require('./pool');
 
 /**
  * @openapi
@@ -126,7 +125,7 @@ router.get('/docs', (req, res) => {
     success: true,
     data: {
       title: 'API Documentation',
-      endpoints: ['/api/auth/*', '/api/users/*', '/api/projects/*', '/api/tickets/*', '/api/pricing/*', '/api/agents/*']
+      endpoints: ['/api/auth/*', '/api/users/*', '/api/projects/*', '/api/tickets/*', '/api/pricing/*', '/api/agent-nodes/*', '/api/provider-credentials/*']
     },
     requestId: req.requestId,
   });
@@ -326,7 +325,6 @@ router.use('/v1',
 router.use(cspReportRouter);
 
 // Pool management (unversioned)
-router.use(poolRouter);
 
 // Catch-all for unversioned requests
 router.use((req, res) => {

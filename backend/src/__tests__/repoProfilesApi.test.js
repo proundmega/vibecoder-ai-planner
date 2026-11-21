@@ -9,15 +9,52 @@ jest.mock('../db', () => {
   return { pool };
 });
 
+jest.mock('../middleware/auth', () => {
+  const actual = jest.requireActual('../middleware/auth');
+  return {
+    ...actual,
+    verifyTokenOrAgent: (req, res, next) => {
+      if (req.headers.authorization) {
+        return actual.verifyToken(req, res, next);
+      }
+      if (!req.headers['x-api-key']) {
+        return res.status(401).json({
+          success: false,
+          error: { code: 'UNAUTHORIZED', message: 'Missing authentication token' },
+        });
+      }
+      req.agent = {
+        id: 3, owner_id: 7, project_id: 1, _node: true, _nodeRecord: { id: 12 },
+      };
+      req.node = { id: 12 };
+      req.runtime = {
+        id: 3, role: 'worker', status: 'running', current_project_id: 1,
+      };
+      req.user = { userId: 'user-1', id: 3, role: 'member' };
+      return next();
+    },
+  };
+});
+
+jest.mock('../middleware/agentRole', () => {
+  const actual = jest.requireActual('../middleware/agentRole');
+  const pass = () => (req, res, next) => next();
+  return {
+    ...actual,
+    requireRuntime: pass,
+    requireRole: pass,
+    requireBodyGrant: pass,
+    requireRunGrant: pass,
+    requireTicketGrant: pass,
+    requireProjectGrant: pass,
+  };
+});
+
 jest.mock('jsonwebtoken', () => ({
   verify: jest.fn().mockReturnValue({
     userId: 'user-1', id: 'user-1', email: 'user@test.com', role: 'project_admin',
   }),
   sign: jest.fn().mockReturnValue('mock-token'),
-}));
-
-jest.mock('../services/AgentService', () => ({
-  getAgentByApiKey: jest.fn().mockResolvedValue({ id: 7, owner_id: 1 }),
 }));
 
 jest.mock('../services/PermissionService', () => ({
@@ -164,7 +201,7 @@ describe('Repo profile API', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.data.id).toBe(PROFILE_ID);
     expect(RepoProfileService.getActiveForAgent).toHaveBeenCalledWith(
-      '1', expect.objectContaining({ id: 7, owner_id: 1 })
+      '1', expect.objectContaining({ id: 3, owner_id: 7 })
     );
   });
 
@@ -188,8 +225,8 @@ describe('Repo profile API', () => {
       .send({ status: 'succeeded', result: { ok: true } });
     expect(finish.statusCode).toBe(200);
     expect(RepoProfileValidationService.finish).toHaveBeenCalledWith(
-      '1', VALIDATION_ID, expect.objectContaining({ id: 7 }),
-      { status: 'succeeded', result: { ok: true } }, null
+      '1', VALIDATION_ID, expect.objectContaining({ id: 3 }),
+      { status: 'succeeded', result: { ok: true } }, 3
     );
   });
 
@@ -245,7 +282,7 @@ describe('Repo profile API', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.data.hosts).toEqual(['registry.example.com']);
     expect(RepoProfileService.getMtlsMaterialForAgent).toHaveBeenCalledWith(
-      '1', expect.objectContaining({ id: 7, owner_id: 1 }),
+      '1', expect.objectContaining({ id: 3, owner_id: 7 }),
       '11111111-1111-4111-8111-111111111111', 3);
 
     const jwtOnly = await request(app)

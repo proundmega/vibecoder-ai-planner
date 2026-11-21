@@ -42,7 +42,7 @@ describe('bp-134 dependency gates', () => {
     project_id: '1',
     owner_id: '100',
     status: 'backlog',
-    assigned_agent_id: null,
+    assigned_runtime_id: null,
   };
 
   beforeEach(() => {
@@ -60,7 +60,7 @@ describe('bp-134 dependency gates', () => {
     );
 
     await expect(
-      TicketService.pickUpTicket('10', { agentId: '7', operatorId: '100' })
+      TicketService.pickUpTicket('10', { runtimeId: '7', operatorId: '100' })
     ).rejects.toBeInstanceOf(DependencyConflictError);
 
     expect(DependencyService.assertReady).toHaveBeenCalledWith('10', {

@@ -8,11 +8,9 @@ import java.util.function.Function;
 /**
  * Harness configuration derived from environment variables.
  *
- * <p>Defaults are intentionally conservative; the legacy one-shot path stays the
- * default until {@code HARNESS_MODE=opencode} is set explicitly.</p>
+ * <p>The OpenCode harness is the only build path; there is no legacy mode.</p>
  */
 public record HarnessConfig(
-    String mode,
     String binary,
     Duration startupTimeout,
     Duration maxDuration,
@@ -22,7 +20,6 @@ public record HarnessConfig(
     String resumeMode
 ) {
 
-    public static final String DEFAULT_MODE = "legacy";
     public static final String DEFAULT_BINARY = "opencode";
     public static final String RESUME_MODE_RESTART = "restart";
     public static final String RESUME_MODE_RESUME = "resume";
@@ -35,7 +32,7 @@ public record HarnessConfig(
         if (budget == null || budget.isNegative() || budget.isZero()) {
             return this;
         }
-        return new HarnessConfig(mode, binary, startupTimeout, budget,
+        return new HarnessConfig(binary, startupTimeout, budget,
             verificationCommands, protectedPaths, modelOverride, resumeMode);
     }
 
@@ -48,7 +45,6 @@ public record HarnessConfig(
      * tests do not need to mutate process environment variables.
      */
     public static HarnessConfig from(Function<String, String> env) {
-        String mode = value(env, "HARNESS_MODE", DEFAULT_MODE);
         String binary = value(env, "HARNESS_BIN", DEFAULT_BINARY);
         long startupMs = longValue(env, "HARNESS_STARTUP_TIMEOUT_MS", 30_000L);
         long maxMinutes = longValue(env, "HARNESS_MAX_DURATION_MINUTES", 45L);
@@ -58,7 +54,6 @@ public record HarnessConfig(
             .toLowerCase();
 
         return new HarnessConfig(
-            mode,
             binary,
             Duration.ofMillis(startupMs),
             Duration.ofMinutes(maxMinutes),
@@ -69,14 +64,10 @@ public record HarnessConfig(
         );
     }
 
-    public boolean isEnabled() {
-        return "opencode".equalsIgnoreCase(mode);
-    }
-
     /** Apply a routed model without mutating the configured default. */
     public HarnessConfig withModel(String model) {
         return new HarnessConfig(
-            mode, binary, startupTimeout, maxDuration, verificationCommands,
+            binary, startupTimeout, maxDuration, verificationCommands,
             protectedPaths, model == null || model.isBlank() ? modelOverride : model.trim(),
             resumeMode);
     }

@@ -9,10 +9,37 @@ const suffix = `${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 describe('HarnessRunService — PostgreSQL integration', () => {
   let ownerId;
   let otherOwnerId;
-  let agentId;
-  let otherAgentId;
+  let projectId;
+  let otherProjectId;
+  let runtimeId;
+  let otherRuntimeId;
   let ticketId;
   let otherTicketId;
+
+  async function createRuntime(owner, project, label) {
+    const credential = await pool.query(
+      `INSERT INTO provider_credentials
+         (owner_id, name, provider_type, api_key_encrypted)
+       VALUES ($1, $2, 'openai', 'x') RETURNING id`,
+      [owner, `harness-cred-${label}-${suffix}`]
+    );
+    const model = await pool.query(
+      `INSERT INTO provider_models (credential_id, model, source, roles)
+       VALUES ($1, $2, 'manual', ARRAY['worker']) RETURNING id`,
+      [credential.rows[0].id, `model-${label}-${suffix}`]
+    );
+    const node = await pool.query(
+      `INSERT INTO agent_nodes (owner_id, name) VALUES ($1, $2) RETURNING id`,
+      [owner, `harness-node-${label}-${suffix}`]
+    );
+    const runtime = await pool.query(
+      `INSERT INTO agent_runtimes
+         (node_id, name, role, model_id, status, current_project_id)
+       VALUES ($1, 'worker-1', 'worker', $2, 'running', $3) RETURNING id`,
+      [node.rows[0].id, model.rows[0].id, project]
+    );
+    return runtime.rows[0].id;
+  }
 
   beforeAll(async () => {
     const owner = await pool.query(
@@ -33,43 +60,50 @@ describe('HarnessRunService — PostgreSQL integration', () => {
       `INSERT INTO projects (name, owner_id) VALUES ($1, $2) RETURNING id`,
       [`Harness Project ${suffix}`, ownerId]
     );
+    projectId = project.rows[0].id;
 
     const otherProject = await pool.query(
       `INSERT INTO projects (name, owner_id) VALUES ($1, $2) RETURNING id`,
       [`Harness Other Project ${suffix}`, otherOwnerId]
     );
+    otherProjectId = otherProject.rows[0].id;
 
-    const agent = await pool.query(
-      `INSERT INTO agents (name, api_key, owner_id)
-       VALUES ($1, $2, $3) RETURNING id`,
-      [`harness-agent-${suffix}`, `key_${suffix}`, ownerId]
-    );
-    agentId = agent.rows[0].id;
-
-    const otherAgent = await pool.query(
-      `INSERT INTO agents (name, api_key, owner_id)
-       VALUES ($1, $2, $3) RETURNING id`,
-      [`harness-other-agent-${suffix}`, `other_key_${suffix}`, otherOwnerId]
-    );
-    otherAgentId = otherAgent.rows[0].id;
+    runtimeId = await createRuntime(ownerId, projectId, 'owner');
+    otherRuntimeId = await createRuntime(otherOwnerId, otherProjectId, 'other');
 
     const ticket = await pool.query(
-      `INSERT INTO tickets (project_id, title, status, owner_id, assigned_agent_id)
+      `INSERT INTO tickets (project_id, title, status, owner_id, assigned_runtime_id)
        VALUES ($1, 'Harness ticket', 'in_progress', $2, $3) RETURNING id`,
-      [project.rows[0].id, ownerId, agentId]
+      [projectId, ownerId, runtimeId]
     );
     ticketId = ticket.rows[0].id;
 
     const otherTicket = await pool.query(
-      `INSERT INTO tickets (project_id, title, status, owner_id, assigned_agent_id)
+      `INSERT INTO tickets (project_id, title, status, owner_id, assigned_runtime_id)
        VALUES ($1, 'Other harness ticket', 'in_progress', $2, $3) RETURNING id`,
-      [otherProject.rows[0].id, otherOwnerId, otherAgentId]
+      [otherProjectId, otherOwnerId, otherRuntimeId]
     );
     otherTicketId = otherTicket.rows[0].id;
   });
 
   afterAll(async () => {
-    await pool.query('DELETE FROM users WHERE id = ANY($1)', [[ownerId, otherOwnerId]]);
+    const owners = [ownerId, otherOwnerId];
+    await pool.query('DELETE FROM harness_runs WHERE ticket_id = ANY($1)', [
+      [ticketId, otherTicketId],
+    ]);
+    await pool.query(
+      `DELETE FROM agent_runtimes
+       WHERE node_id IN (SELECT id FROM agent_nodes WHERE owner_id = ANY($1))`,
+      [owners]
+    );
+    await pool.query('DELETE FROM agent_nodes WHERE owner_id = ANY($1)', [owners]);
+    await pool.query(
+      `DELETE FROM provider_models
+       WHERE credential_id IN (SELECT id FROM provider_credentials WHERE owner_id = ANY($1))`,
+      [owners]
+    );
+    await pool.query('DELETE FROM provider_credentials WHERE owner_id = ANY($1)', [owners]);
+    await pool.query('DELETE FROM users WHERE id = ANY($1)', [owners]);
     await pool.end();
   });
 
@@ -79,23 +113,23 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     ]);
     await pool.query(
       `UPDATE tickets
-       SET status = 'in_progress', assigned_agent_id = $2, pr_url = NULL
+       SET status = 'in_progress', assigned_runtime_id = $2, pr_url = NULL
        WHERE id = $1`,
-      [ticketId, agentId]
+      [ticketId, runtimeId]
     );
   });
 
   const start = (overrides = {}) => HarnessRunService.startRun({
     ticketId,
-    agentId,
+    runtimeId,
     branch: overrides.branch || `harness/test-${Math.random()}`,
     ...overrides,
   });
 
   test('rejects a run for a ticket assigned to another owner', async () => {
     await expect(
-      HarnessRunService.startRun({ ticketId, agentId: otherAgentId, branch: 'cross/ticket' })
-    ).rejects.toThrow('Ticket is not assigned to this agent');
+      HarnessRunService.startRun({ ticketId, runtimeId: otherRuntimeId, branch: 'cross/ticket' })
+    ).rejects.toThrow('Ticket is not assigned to this runtime');
   });
 
   test('refuses a new run for a ticket that already has a PR', async () => {
@@ -111,16 +145,16 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
   test('refuses a new run when an earlier run recorded publish evidence', async () => {
     const run = await start({ branch: 'harness/earlier-published' });
-    await HarnessRunService.recordPublish(run.id, agentId, {
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, {
       headSha: 'abc123',
     });
     await HarnessRunService.finishRun(run.id, { status: 'failed' });
 
     await pool.query(
       `UPDATE tickets
-       SET status = 'in_progress', assigned_agent_id = $2, pr_url = NULL
+       SET status = 'in_progress', assigned_runtime_id = $2, pr_url = NULL
        WHERE id = $1`,
-      [ticketId, agentId]
+      [ticketId, runtimeId]
     );
 
     await expect(
@@ -152,7 +186,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
   test('an unexpired lease blocks a different run', async () => {
     const first = await start({ branch: 'harness/first' });
     const lease = await HarnessRunService.claimLease({
-      ticketId, runId: first.id, agentId, ttlSeconds: 60,
+      ticketId, runId: first.id, runtimeId, ttlSeconds: 60,
     });
     expect(lease).not.toBeNull();
 
@@ -161,21 +195,21 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     // Recreate a lease that outlives the finished run, as if another live
     // process still owned it.
     await pool.query(
-      `INSERT INTO harness_leases (ticket_id, run_id, agent_id, expires_at)
+      `INSERT INTO harness_leases (ticket_id, run_id, runtime_id, expires_at)
        VALUES ($1, $2, $3, NOW() + INTERVAL '1 minute')`,
-      [ticketId, first.id, agentId]
+      [ticketId, first.id, runtimeId]
     );
     const second = await start({ branch: 'harness/second' });
 
     await expect(
-      HarnessRunService.claimLease({ ticketId, runId: second.id, agentId, ttlSeconds: 60 })
+      HarnessRunService.claimLease({ ticketId, runId: second.id, runtimeId, ttlSeconds: 60 })
     ).resolves.toBeNull();
   });
 
   test('expired leases are reaped and their runs failed', async () => {
     const run = await start({ branch: 'harness/expired' });
     await HarnessRunService.claimLease({
-      ticketId, runId: run.id, agentId, ttlSeconds: 1,
+      ticketId, runId: run.id, runtimeId, ttlSeconds: 1,
     });
 
     await pool.query(
@@ -218,7 +252,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
   test('finish is idempotent and releases the lease', async () => {
     const run = await start({ branch: 'harness/finish' });
     await HarnessRunService.claimLease({
-      ticketId, runId: run.id, agentId, ttlSeconds: 60,
+      ticketId, runId: run.id, runtimeId, ttlSeconds: 60,
     });
 
     const finished = await HarnessRunService.finishRun(run.id, {
@@ -270,12 +304,12 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     expect(stored.step).toBe('session_ready');
   });
 
-  test('a different agent cannot claim the run lease', async () => {
+  test('a different runtime cannot claim the run lease', async () => {
     const run = await start({ branch: 'harness/wrong-agent' });
 
     await expect(
       HarnessRunService.claimLease({
-        ticketId, runId: run.id, agentId: otherAgentId, ttlSeconds: 60,
+        ticketId, runId: run.id, runtimeId: otherRuntimeId, ttlSeconds: 60,
       })
     ).resolves.toBeNull();
   });
@@ -283,12 +317,12 @@ describe('HarnessRunService — PostgreSQL integration', () => {
   test('publish evidence is stored while a run is active', async () => {
     const run = await start({ branch: 'harness/publish-evidence' });
 
-    const updated = await HarnessRunService.recordPublish(run.id, agentId, {
+    const updated = await HarnessRunService.recordPublish(run.id, { runtimeId }, {
       headSha: 'abc123',
     });
     expect(updated.head_sha).toBe('abc123');
 
-    await HarnessRunService.recordPublish(run.id, agentId, {
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, {
       prUrl: 'https://github.com/o/r/pull/9',
     });
     const stored = await HarnessRunService.getRun(run.id);
@@ -297,7 +331,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
     await HarnessRunService.finishRun(run.id, { status: 'succeeded' });
     await expect(
-      HarnessRunService.recordPublish(run.id, agentId, { headSha: 'later' })
+      HarnessRunService.recordPublish(run.id, { runtimeId }, { headSha: 'later' })
     ).rejects.toThrow('Active harness run not found');
   });
 
@@ -307,7 +341,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
       headSha: 'abc123',
     });
 
-    const runs = await HarnessRunService.listActiveRunsForAgent(agentId);
+    const runs = await HarnessRunService.listActiveRunsForActor({ runtimeId });
     const active = runs.find((item) => item.id === run.id);
     expect(active.last_checkpoint_step).toBe('publishing');
     expect(active.last_checkpoint_payload).toEqual({ headSha: 'abc123' });
@@ -318,7 +352,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
   test('a reaped run releases an in-progress ticket with no PR', async () => {
     const run = await start({ branch: 'harness/reap-release' });
     await HarnessRunService.claimLease({
-      ticketId, runId: run.id, agentId, ttlSeconds: 1,
+      ticketId, runId: run.id, runtimeId, ttlSeconds: 1,
     });
     await pool.query(
       "UPDATE harness_leases SET expires_at = NOW() - INTERVAL '1 second' WHERE ticket_id = $1",
@@ -329,7 +363,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     const released = await HarnessRunService.releaseTicketForRun(run.id);
     expect(released).not.toBeNull();
     expect(released.status).toBe('backlog');
-    expect(released.assigned_agent_id).toBeNull();
+    expect(released.assigned_runtime_id).toBeNull();
   });
 
   test('a reaped run never resets a reviewed ticket with a PR', async () => {
@@ -354,9 +388,9 @@ describe('HarnessRunService — PostgreSQL integration', () => {
   test('a reaped run with a stored PR is succeeded and adopted, never released', async () => {
     const run = await start({ branch: 'harness/reap-published' });
     await HarnessRunService.claimLease({
-      ticketId, runId: run.id, agentId, ttlSeconds: 1,
+      ticketId, runId: run.id, runtimeId, ttlSeconds: 1,
     });
-    await HarnessRunService.recordPublish(run.id, agentId, {
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, {
       headSha: 'abc123',
       prUrl: 'https://github.com/o/r/pull/9',
     });
@@ -390,7 +424,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
   test('release refuses a failed run that recorded a PR', async () => {
     const run = await start({ branch: 'harness/failed-with-pr' });
-    await HarnessRunService.recordPublish(run.id, agentId, {
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, {
       prUrl: 'https://github.com/o/r/pull/9',
     });
     await HarnessRunService.finishRun(run.id, { status: 'failed' });
@@ -417,11 +451,11 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     expect(reconciled.marked).toBe(true);
 
     const ticket = await pool.query(
-      'SELECT status, assigned_agent_id FROM tickets WHERE id = $1',
+      'SELECT status, assigned_runtime_id FROM tickets WHERE id = $1',
       [ticketId]
     );
     expect(ticket.rows[0].status).toBe('backlog');
-    expect(ticket.rows[0].assigned_agent_id).toBeNull();
+    expect(ticket.rows[0].assigned_runtime_id).toBeNull();
 
     await HarnessRunService.markArtifactsFinalized(run.id);
     const after = await HarnessRunService.listTerminalRunsForReconcile(50);
@@ -430,7 +464,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
   test('terminal-run reconciliation adopts a published run into review', async () => {
     const run = await start({ branch: 'harness/stranded-published' });
-    await HarnessRunService.recordPublish(run.id, agentId, {
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, {
       headSha: 'abc123',
       prUrl: 'https://github.com/o/r/pull/9',
     });
@@ -453,7 +487,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
   test('terminal-run reconciliation never moves a done ticket back to review', async () => {
     const run = await start({ branch: 'harness/done-ticket' });
-    await HarnessRunService.recordPublish(run.id, agentId, {
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, {
       prUrl: 'https://github.com/o/r/pull/9',
     });
     await HarnessRunService.finishRun(run.id, {
@@ -482,7 +516,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     await HarnessRunService.finishRun(oldRun.id, { status: 'failed' });
 
     const newRun = await start({ branch: 'harness/new-published' });
-    await HarnessRunService.recordPublish(newRun.id, agentId, {
+    await HarnessRunService.recordPublish(newRun.id, { runtimeId }, {
       prUrl: 'https://github.com/o/r/pull/new',
     });
     await HarnessRunService.finishRun(newRun.id, {
@@ -520,7 +554,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
   test('an old published run does not overwrite a newer ticket PR', async () => {
     const run = await start({ branch: 'harness/old-published' });
-    await HarnessRunService.recordPublish(run.id, agentId, {
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, {
       prUrl: 'https://github.com/o/r/pull/old',
     });
     await HarnessRunService.finishRun(run.id, {
@@ -614,7 +648,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
   test('reconciliation is a one-time ticket update', async () => {
     const run = await start({ branch: 'harness/reconcile-once' });
-    await HarnessRunService.recordPublish(run.id, agentId, {
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, {
       prUrl: 'https://github.com/o/r/pull/first',
     });
     await HarnessRunService.finishRun(run.id, {
@@ -641,7 +675,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
   test('adopting published work moves a backlog ticket to review', async () => {
     const run = await start({ branch: 'harness/backlog-published' });
-    await HarnessRunService.recordPublish(run.id, agentId, {
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, {
       prUrl: 'https://github.com/o/r/pull/9',
     });
     await HarnessRunService.finishRun(run.id, {
@@ -678,7 +712,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
   test('release refuses a failed run that recorded a head sha without a PR', async () => {
     const run = await start({ branch: 'harness/head-only' });
-    await HarnessRunService.recordPublish(run.id, agentId, { headSha: 'abc123' });
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, { headSha: 'abc123' });
     await HarnessRunService.finishRun(run.id, { status: 'failed' });
 
     await expect(
@@ -692,7 +726,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
   test('dead-lettering a running run leaves its ticket for operator recovery', async () => {
     const run = await start({ branch: 'harness/dead-letter' });
     await HarnessRunService.claimLease({
-      ticketId, runId: run.id, agentId, ttlSeconds: 60,
+      ticketId, runId: run.id, runtimeId, ttlSeconds: 60,
     });
 
     const dead = await HarnessRunService.deadLetterRun(run.id, { error: 'stuck' });
@@ -789,7 +823,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
   test('operator adoption accepts a verified PR URL for a head-only run', async () => {
     const run = await start({ branch: 'harness/head-only-adopt' });
-    await HarnessRunService.recordPublish(run.id, agentId, { headSha: 'abc123' });
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, { headSha: 'abc123' });
     await HarnessRunService.finishRun(run.id, { status: 'failed' });
 
     const adopted = await HarnessRunService.adoptPublishedRun(run.id, {
@@ -812,18 +846,18 @@ describe('HarnessRunService — PostgreSQL integration', () => {
   test('workspace cleanup fails closed without a recorded active path', async () => {
     const run = await start({ branch: 'harness/no-workspace-yet' });
     await HarnessRunService.claimLease({
-      ticketId, runId: run.id, agentId, ttlSeconds: 60,
+      ticketId, runId: run.id, runtimeId, ttlSeconds: 60,
     });
 
     await expect(
-      HarnessRunService.listActiveWorkspacePaths(agentId)
+      HarnessRunService.listActiveWorkspacePathsForActor({ runtimeId })
     ).rejects.toThrow('no recorded workspace path');
 
     await HarnessRunService.recordCheckpoint(run.id, 'cloned', {
       workspacePath: '/tmp/now-recorded',
     });
     await expect(
-      HarnessRunService.listActiveWorkspacePaths(agentId)
+      HarnessRunService.listActiveWorkspacePathsForActor({ runtimeId })
     ).resolves.toContain('/tmp/now-recorded');
   });
 
@@ -849,18 +883,18 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     });
 
     await expect(
-      HarnessRunService.listActiveWorkspacePaths(agentId)
+      HarnessRunService.listActiveWorkspacePathsForActor({ runtimeId })
     ).resolves.toContain('/tmp/harness-workspace');
 
     await HarnessRunService.finishRun(run.id, { status: 'failed' });
     await expect(
-      HarnessRunService.listActiveWorkspacePaths(agentId)
+      HarnessRunService.listActiveWorkspacePathsForActor({ runtimeId })
     ).resolves.not.toContain('/tmp/harness-workspace');
   });
 
   test('operator adoption can re-adopt a run a sweep marked reconciled', async () => {
     const run = await start({ branch: 'harness/re-adopt' });
-    await HarnessRunService.recordPublish(run.id, agentId, {
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, {
       prUrl: 'https://github.com/o/r/pull/9',
     });
     await HarnessRunService.finishRun(run.id, { status: 'succeeded' });
@@ -884,7 +918,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
   test('operator adoption moves a published failed run into review', async () => {
     const run = await start({ branch: 'harness/operator-adopt' });
-    await HarnessRunService.recordPublish(run.id, agentId, {
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, {
       prUrl: 'https://github.com/o/r/pull/9',
     });
     await HarnessRunService.finishRun(run.id, { status: 'failed' });
@@ -903,7 +937,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
   test('dead-letter refuses a succeeded run with publish evidence', async () => {
     const run = await start({ branch: 'harness/dead-letter-succeeded' });
-    await HarnessRunService.recordPublish(run.id, agentId, {
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, {
       prUrl: 'https://github.com/o/r/pull/9',
     });
     await HarnessRunService.finishRun(run.id, { status: 'succeeded' });
@@ -947,7 +981,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     await HarnessRunService.finishRun(oldRun.id, { status: 'failed' });
 
     const newRun = await start({ branch: 'harness/reaper-new' });
-    await HarnessRunService.recordPublish(newRun.id, agentId, {
+    await HarnessRunService.recordPublish(newRun.id, { runtimeId }, {
       prUrl: 'https://github.com/o/r/pull/new',
     });
     await HarnessRunService.finishRun(newRun.id, {
@@ -970,7 +1004,7 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
   test('reaper adopts a published terminal run into review', async () => {
     const run = await start({ branch: 'harness/reaper-published' });
-    await HarnessRunService.recordPublish(run.id, agentId, {
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, {
       prUrl: 'https://github.com/o/r/pull/9',
     });
     await HarnessRunService.finishRun(run.id, {
@@ -1002,13 +1036,13 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     expect(stored.rows[0].status).toBe('in_progress');
   });
 
-  test('a failed run cannot release a ticket another agent has picked up', async () => {
+  test('a failed run cannot release a ticket another runtime has picked up', async () => {
     const run = await start({ branch: 'harness/reassigned' });
     await HarnessRunService.finishRun(run.id, { status: 'failed' });
 
     await pool.query(
-      "UPDATE tickets SET status = 'in_progress', assigned_agent_id = $2 WHERE id = $1",
-      [ticketId, otherAgentId]
+      "UPDATE tickets SET status = 'in_progress', assigned_runtime_id = $2 WHERE id = $1",
+      [ticketId, otherRuntimeId]
     );
 
     await expect(
@@ -1016,34 +1050,34 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     ).resolves.toBeNull();
 
     const stored = await pool.query(
-      'SELECT status, assigned_agent_id FROM tickets WHERE id = $1',
+      'SELECT status, assigned_runtime_id FROM tickets WHERE id = $1',
       [ticketId]
     );
     expect(stored.rows[0].status).toBe('in_progress');
-    expect(String(stored.rows[0].assigned_agent_id)).toBe(String(otherAgentId));
+    expect(String(stored.rows[0].assigned_runtime_id)).toBe(String(otherRuntimeId));
   });
 
   test('renewal fails after the ticket is released or the run becomes terminal', async () => {
     const run = await start({ branch: 'harness/renew' });
     await HarnessRunService.claimLease({
-      ticketId, runId: run.id, agentId, ttlSeconds: 60,
+      ticketId, runId: run.id, runtimeId, ttlSeconds: 60,
     });
 
     await pool.query(
-      "UPDATE tickets SET status = 'backlog', assigned_agent_id = NULL WHERE id = $1",
+      "UPDATE tickets SET status = 'backlog', assigned_runtime_id = NULL WHERE id = $1",
       [ticketId]
     );
     await expect(
-      HarnessRunService.renewLease({ ticketId, runId: run.id, agentId, ttlSeconds: 60 })
+      HarnessRunService.renewLease({ ticketId, runId: run.id, runtimeId, ttlSeconds: 60 })
     ).resolves.toBeNull();
 
     await pool.query(
-      "UPDATE tickets SET status = 'in_progress', assigned_agent_id = $2 WHERE id = $1",
-      [ticketId, agentId]
+      "UPDATE tickets SET status = 'in_progress', assigned_runtime_id = $2 WHERE id = $1",
+      [ticketId, runtimeId]
     );
     await pool.query("UPDATE harness_runs SET status = 'failed' WHERE id = $1", [run.id]);
     await expect(
-      HarnessRunService.renewLease({ ticketId, runId: run.id, agentId, ttlSeconds: 60 })
+      HarnessRunService.renewLease({ ticketId, runId: run.id, runtimeId, ttlSeconds: 60 })
     ).resolves.toBeNull();
   });
 });

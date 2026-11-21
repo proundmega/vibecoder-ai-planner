@@ -22,7 +22,7 @@ const {
   heartbeatSchema,
   runtimePatchSchema,
 } = require('../validators/agentFleet');
-const { enrollmentEnabled, requireSecureTransport } = require('./agentEnrollment');
+const { enrollmentEnabled, requireSecureTransport } = require('./agentEnrollmentGate');
 const agentEnrollmentRateLimit = require('../middleware/agentEnrollmentRateLimit');
 
 const router = express.Router();

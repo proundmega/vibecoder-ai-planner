@@ -10,12 +10,11 @@ const rollback = fs.readFileSync(
 );
 
 describe('agent fleet migration (FR1, FR2, FR16, NFR5)', () => {
-  it('registers additive 056 after 055 and gates the clean cut behind the joint switch', () => {
+  it('registers additive 056 after 055 and the clean cut after 059', () => {
     const enrollment = applySource.indexOf('055_agent_enrollment.sql');
     const fleet = applySource.indexOf('056_agent_fleet.sql');
     expect(enrollment).toBeGreaterThan(-1);
     expect(fleet).toBeGreaterThan(enrollment);
-    expect(applySource).toContain("process.env.AGENT_FLEET_CLEAN_CUT === '1'");
     expect(applySource.indexOf('057_agent_fleet_clean_cut.sql')).toBeGreaterThan(
       applySource.indexOf('059_harness_runtime_ownership.sql'));
     const cut = fs.readFileSync(

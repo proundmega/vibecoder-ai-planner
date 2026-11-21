@@ -25,7 +25,6 @@ describe('GenericProvider usage logging', () => {
       providerType: 'opencode',
       projectId: 1,
       userId: 2,
-      agentId: 3,
       ticketId: 4,
     });
 
@@ -34,7 +33,6 @@ describe('GenericProvider usage logging', () => {
     expect(UsageLogger.log).toHaveBeenCalledWith(
       1,
       2,
-      3,
       'opencode',
       'kimi-k2.6',
       expect.objectContaining({ prompt_tokens: 12, completion_tokens: 8 }),
@@ -54,7 +52,6 @@ describe('GenericProvider usage logging', () => {
     await provider.chat([{ role: 'user', content: 'hi' }]);
 
     expect(UsageLogger.log).toHaveBeenCalledWith(
-      undefined,
       undefined,
       undefined,
       'generic',

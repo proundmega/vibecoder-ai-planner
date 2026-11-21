@@ -109,18 +109,6 @@ const options = {
             updatedAt: { type: 'string', format: 'date-time' },
           },
         },
-        Agent: {
-          type: 'object',
-          properties: {
-            id: { $ref: '#/components/schemas/NumericId' },
-            name: { type: 'string' },
-            owner_id: { $ref: '#/components/schemas/NumericId' },
-            rate_limit: { type: 'integer' },
-            max_actions_per_day: { type: 'integer' },
-            created_at: { type: 'string', format: 'date-time' },
-            updated_at: { type: 'string', format: 'date-time' },
-          },
-        },
         ErrorDetailsObject: {
           type: 'object',
           additionalProperties: true,

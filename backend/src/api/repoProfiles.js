@@ -14,6 +14,13 @@ function requireAgent(req) {
   return req.agent;
 }
 
+function requireAgentRuntime(req) {
+  if (!req.runtime || !req.runtime.id) {
+    throw new ForbiddenError('Agent runtime required');
+  }
+  return req.runtime.id;
+}
+
 function operator(req) {
   return req.user || {};
 }
@@ -451,7 +458,7 @@ router.post('/:projectId/repo-profile/validations/claim', verifyTokenOrAgent, re
     const data = await RepoProfileValidationService.claimNext(
       req.params.projectId,
       agent,
-      req.runtime ? req.runtime.id : null
+      requireAgentRuntime(req)
     );
     res.json({ success: true, data });
   } catch (error) {
@@ -488,7 +495,7 @@ router.post('/:projectId/repo-profile/validations/:validationId/finish', verifyT
       req.params.validationId,
       agent,
       req.body || {},
-      req.runtime ? req.runtime.id : null
+      requireAgentRuntime(req)
     );
     res.json({ success: true, data });
   } catch (error) {

@@ -18,28 +18,28 @@ describe('UsageLogger', () => {
     it('should log usage with correct values', async () => {
       pool.query.mockResolvedValueOnce({ rows: [{}] });
 
-      await UsageLogger.log(1, 2, 3, 'claude', 'claude-sonnet-4-20250514', {
+      await UsageLogger.log(1, 2, 'claude', 'claude-sonnet-4-20250514', {
         input_tokens: 1000,
         output_tokens: 500,
       }, 150, 10);
 
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO usage_logs'),
-        [1, 2, 3, 'claude', 'claude-sonnet-4-20250514', 1000, 500, expect.any(Number), 150, 10, null, null]
+        [1, 2, 'claude', 'claude-sonnet-4-20250514', 1000, 500, expect.any(Number), 150, 10, null, null]
       );
 
       const cost = calculateCost('claude-sonnet-4-20250514', 1000, 500);
-      expect(pool.query.mock.calls[0][1][7]).toBeCloseTo(cost);
+      expect(pool.query.mock.calls[0][1][6]).toBeCloseTo(cost);
     });
 
     it('should handle missing usage fields', async () => {
       pool.query.mockResolvedValueOnce({ rows: [{}] });
 
-      await UsageLogger.log(1, 2, 3, 'openai', 'gpt-4o', {}, 100, null);
+      await UsageLogger.log(1, 2, 'openai', 'gpt-4o', {}, 100, null);
 
       expect(pool.query).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO usage_logs'),
-        [1, 2, 3, 'openai', 'gpt-4o', 0, 0, 0, 100, null, null, null]
+        [1, 2, 'openai', 'gpt-4o', 0, 0, 0, 100, null, null, null]
       );
     });
   });
@@ -127,54 +127,4 @@ describe('UsageLogger', () => {
     });
   });
 
-  describe('reportUsage', () => {
-    it('should insert usage report with calculated cost', async () => {
-      pool.query.mockResolvedValueOnce({ rows: [{}] });
-
-      await UsageLogger.reportUsage(5, {
-        provider_type: 'claude',
-        model: 'claude-sonnet-4-20250514',
-        tokens_in: 2000,
-        tokens_out: 800,
-        duration_ms: 3500,
-        ticket_id: 42,
-        project_id: 1,
-      });
-
-      expect(pool.query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO usage_logs'),
-        [5, 'claude', 'claude-sonnet-4-20250514', 2000, 800, expect.any(Number), 3500, 42, 1, null, null]
-      );
-
-      const cost = calculateCost('claude-sonnet-4-20250514', 2000, 800);
-      expect(pool.query.mock.calls[0][1][5]).toBeCloseTo(cost);
-    });
-
-    it('should throw error for missing required fields', async () => {
-      await expect(
-        UsageLogger.reportUsage(5, {
-          provider_type: 'claude',
-          model: 'claude-sonnet-4-20250514',
-          tokens_in: 2000,
-          // tokens_out missing
-        })
-      ).rejects.toThrow('Missing required fields');
-    });
-
-    it('should handle optional fields', async () => {
-      pool.query.mockResolvedValueOnce({ rows: [{}] });
-
-      await UsageLogger.reportUsage(5, {
-        provider_type: 'openai',
-        model: 'gpt-4o',
-        tokens_in: 500,
-        tokens_out: 200,
-      });
-
-      expect(pool.query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO usage_logs'),
-        [5, 'openai', 'gpt-4o', 500, 200, expect.any(Number), 0, null, null, null, null]
-      );
-    });
-  });
 });

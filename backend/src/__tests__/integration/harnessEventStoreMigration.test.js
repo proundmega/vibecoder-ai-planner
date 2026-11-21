@@ -32,20 +32,18 @@ describe('Migration 051 harness event store (real DB, transactional)', () => {
       await client.query(`SET LOCAL search_path TO ${schema}, public`);
       await client.query('CREATE TABLE projects (id BIGINT PRIMARY KEY)');
       await client.query('CREATE TABLE tickets (id BIGINT PRIMARY KEY, project_id BIGINT)');
-      await client.query('CREATE TABLE agents (id BIGINT PRIMARY KEY)');
       await client.query(
         `CREATE TABLE harness_runs (
            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
            ticket_id BIGINT,
-           agent_id BIGINT,
+           runtime_id BIGINT,
            started_at TIMESTAMPTZ DEFAULT NOW()
          )`
       );
       await client.query('INSERT INTO projects (id) VALUES (7)');
       await client.query('INSERT INTO tickets (id, project_id) VALUES (42, 7)');
-      await client.query('INSERT INTO agents (id) VALUES (9)');
       await client.query(
-        'INSERT INTO harness_runs (ticket_id, agent_id) VALUES (42, 9)'
+        'INSERT INTO harness_runs (ticket_id, runtime_id) VALUES (42, 9)'
       );
 
       await client.query(fs.readFileSync(FORWARD_SQL, 'utf8'));

@@ -96,8 +96,8 @@ function roundCost(value) {
 
 class HarnessBudgetService {
   /**
-   * Resolve the effective policy. A project row is the base; a ticket/agent
-   * row overrides only the fields it sets. Missing rows fall back to env
+   * Resolve the effective policy. A project row is the base; a ticket/runtime
+   * row (stored with the legacy `agent` scope name) overrides only the fields it sets. Missing rows fall back to env
    * defaults, so enforcement is never disabled by missing configuration.
    */
   async getPolicy(projectId, { ticketId = null, agentId = null, client = pool, extraModels = [] } = {}) {
@@ -283,7 +283,6 @@ class HarnessBudgetService {
   async assertCanStart({
     projectId,
     ticketId,
-    agentId = null,
     runtimeId = null,
     attempt = 1,
     client = pool,
@@ -291,13 +290,11 @@ class HarnessBudgetService {
   } = {}) {
     const project = positiveInteger(projectId, 'projectId');
     positiveInteger(ticketId, 'ticketId');
-    const hasAgent = agentId !== null && agentId !== undefined;
     const hasRuntime = runtimeId !== null && runtimeId !== undefined;
-    if (hasAgent === hasRuntime) {
-      throw new ValidationError('exactly one of agentId or runtimeId is required');
+    if (!hasRuntime) {
+      throw new ValidationError('runtimeId is required');
     }
-    const normalisedAgentId = hasAgent ? positiveInteger(agentId, 'agentId') : null;
-    const normalisedRuntimeId = hasRuntime ? positiveInteger(runtimeId, 'runtimeId') : null;
+    const normalisedRuntimeId = positiveInteger(runtimeId, 'runtimeId');
     const normalisedAttempt = positiveInteger(attempt, 'attempt');
 
     if (lock) {
@@ -316,7 +313,7 @@ class HarnessBudgetService {
 
     const policy = await this.getPolicy(project, {
       ticketId,
-      agentId: normalisedAgentId,
+      agentId: normalisedRuntimeId,
       client,
     });
     if (normalisedAttempt > Number(policy.limits.maxRetries) + 1) {
@@ -380,19 +377,12 @@ class HarnessBudgetService {
       );
     }
 
-    const agentRuns = normalisedRuntimeId !== null
-      ? await client.query(
-        `SELECT COUNT(*)::int AS count
-         FROM harness_runs
-         WHERE runtime_id = $1 AND status = 'running'`,
-        [normalisedRuntimeId]
-      )
-      : await client.query(
-        `SELECT COUNT(*)::int AS count
-         FROM harness_runs
-         WHERE agent_id = $1 AND status = 'running'`,
-        [normalisedAgentId]
-      );
+    const agentRuns = await client.query(
+      `SELECT COUNT(*)::int AS count
+       FROM harness_runs
+       WHERE runtime_id = $1 AND status = 'running'`,
+      [normalisedRuntimeId]
+    );
     if (Number(agentRuns.rows?.[0]?.count || 0) >= Number(policy.quotas.agentMaxConcurrentRuns)) {
       throw new ConflictError(
         `Harness agent concurrency limit reached (${policy.quotas.agentMaxConcurrentRuns})`

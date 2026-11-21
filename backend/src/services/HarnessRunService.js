@@ -57,22 +57,18 @@ function positiveInteger(value, field) {
 }
 
 /**
- * A harness actor is either a legacy agent or a node runtime. Exactly one
- * identity is written; never both, so ownership checks stay unambiguous.
+ * A harness actor is a node runtime. The clean cut removed the legacy agent
+ * identity, so an actor without a runtime is rejected instead of falling back.
  */
-function normaliseActor({ agentId = null, runtimeId = null } = {}) {
-  const hasAgent = agentId !== null && agentId !== undefined;
-  const hasRuntime = runtimeId !== null && runtimeId !== undefined;
-  if (hasAgent === hasRuntime) {
-    throw new ValidationError('exactly one of agentId or runtimeId is required');
+function normaliseActor({ runtimeId = null } = {}) {
+  if (runtimeId === null || runtimeId === undefined) {
+    throw new ValidationError('runtimeId is required');
   }
-  return hasRuntime
-    ? { agentId: null, runtimeId: positiveInteger(runtimeId, 'runtimeId') }
-    : { agentId: positiveInteger(agentId, 'agentId'), runtimeId: null };
+  return { runtimeId: positiveInteger(runtimeId, 'runtimeId') };
 }
 
 function actorOwnerId(actor) {
-  return actor.runtimeId !== null ? actor.runtimeId : actor.agentId;
+  return actor.runtimeId;
 }
 
 function requiredUuid(value, field) {
@@ -119,7 +115,6 @@ class HarnessRunService {
    */
   async startRun({
     ticketId,
-    agentId = null,
     runtimeId = null,
     branch,
     baseSha = null,
@@ -134,7 +129,7 @@ class HarnessRunService {
     repoProfileVersion = null,
   } = {}) {
     const normalisedTicketId = positiveInteger(ticketId, 'ticketId');
-    const actor = normaliseActor({ agentId, runtimeId });
+    const actor = normaliseActor({ runtimeId });
     const normalisedBranch = requiredString(branch, 'branch');
     const normalisedAttempt = positiveInteger(attempt, 'attempt');
     if ((repoProfileId == null) !== (repoProfileVersion == null)) {
@@ -158,7 +153,7 @@ class HarnessRunService {
       await client.query('BEGIN');
 
       const ownership = await client.query(
-        `SELECT status, assigned_agent_id, assigned_runtime_id, project_id
+        `SELECT status, assigned_runtime_id, project_id
          FROM tickets
          WHERE id = $1 AND deleted_at IS NULL
          FOR UPDATE`,
@@ -168,15 +163,10 @@ class HarnessRunService {
       let reservedCostUsd = 0;
       let startPolicy = null;
       let privacyPolicy = null;
-      const ownedAssignment = ownedTicket
-        ? (actor.runtimeId !== null
-          ? ownedTicket.assigned_runtime_id
-          : ownedTicket.assigned_agent_id)
-        : null;
       if (
         ownedTicket
         && ownedTicket.status === 'in_progress'
-        && String(ownedAssignment) === String(actorOwnerId(actor))
+        && String(ownedTicket.assigned_runtime_id) === String(actor.runtimeId)
       ) {
         await DependencyService.assertReady(normalisedTicketId, {
           client,
@@ -189,7 +179,6 @@ class HarnessRunService {
         const budget = await HarnessBudgetService.assertCanStart({
           projectId: ownedTicket.project_id,
           ticketId: normalisedTicketId,
-          agentId: actor.agentId,
           runtimeId: actor.runtimeId,
           attempt: normalisedAttempt,
           client,
@@ -208,7 +197,6 @@ class HarnessRunService {
             provider,
             providerBaseUrl,
             providerRegion,
-            agentId: actor.agentId,
             client,
           });
         } catch (error) {
@@ -217,12 +205,11 @@ class HarnessRunService {
             await HarnessAuditService.recordPrivacy({
               projectId: ownedTicket.project_id,
               ticketId: normalisedTicketId,
-              agentId: actor.agentId,
               runtimeId: actor.runtimeId,
               actorId: actorOwnerId(actor),
               action: 'start_blocked',
               reason: redactText(String(error.message || error)),
-              actorType: 'agent',
+              actorType: 'runtime',
               dedupeKey: `privacy:start_blocked:${normalisedTicketId}:${provider || 'none'}`,
               payload: { provider: provider || null },
             });
@@ -257,17 +244,16 @@ class HarnessRunService {
 
       const result = await client.query(
         `INSERT INTO harness_runs
-           (ticket_id, agent_id, runtime_id, project_id, branch, base_sha,
+           (ticket_id, runtime_id, project_id, branch, base_sha,
             workspace_path, session_id, provider, model, attempt,
             repo_profile_id, repo_profile_version, budget_reserved_usd,
             provider_base_url, provider_region)
-         SELECT $1, $2, $3, t.project_id, $4, $5, $6, $7, $8, $9, $10,
-                $11, $12, $13, $14, $15
+         SELECT $1, $2, t.project_id, $3, $4, $5, $6, $7, $8, $9,
+                $10, $11, $12, $13, $14
          FROM tickets t
          WHERE t.id = $1
            AND t.status = 'in_progress'
-           AND (($2::bigint IS NOT NULL AND t.assigned_agent_id = $2)
-                OR ($3::bigint IS NOT NULL AND t.assigned_runtime_id = $3))
+           AND t.assigned_runtime_id = $2
            AND NULLIF(BTRIM(t.pr_url), '') IS NULL
            AND NOT EXISTS (
              SELECT 1 FROM harness_runs existing
@@ -280,7 +266,6 @@ class HarnessRunService {
          RETURNING *`,
         [
           normalisedTicketId,
-          actor.agentId,
           actor.runtimeId,
           normalisedBranch,
           baseSha,
@@ -304,7 +289,6 @@ class HarnessRunService {
         const context = await client.query(
           `SELECT t.status,
                   NULLIF(BTRIM(t.pr_url), '') AS pr_url,
-                  t.assigned_agent_id,
                   t.assigned_runtime_id,
                   EXISTS (
                     SELECT 1 FROM harness_runs existing
@@ -320,23 +304,20 @@ class HarnessRunService {
         );
         const ticket = context.rows[0];
         if (!ticket) {
-          throw new ForbiddenError('Ticket is not assigned to this agent');
+          throw new ForbiddenError('Ticket is not assigned to this runtime');
         }
         if (ticket.pr_url || ticket.has_publish_evidence) {
           throw new ConflictError(
             'Ticket already has published work; an operator must reset the PR before a new run'
           );
         }
-        const assignment = actor.runtimeId !== null
-          ? ticket.assigned_runtime_id
-          : ticket.assigned_agent_id;
         if (
           ticket.status !== 'in_progress' ||
-          String(assignment) !== String(actorOwnerId(actor))
+          String(ticket.assigned_runtime_id) !== String(actorOwnerId(actor))
         ) {
-          throw new ForbiddenError('Ticket is not assigned to this agent or is not in progress');
+          throw new ForbiddenError('Ticket is not assigned to this runtime or is not in progress');
         }
-        throw new ForbiddenError('Ticket is not assigned to this agent');
+        throw new ForbiddenError('Ticket is not assigned to this runtime');
       }
 
       await client.query('COMMIT');
@@ -444,17 +425,12 @@ class HarnessRunService {
          ORDER BY created_at DESC, id DESC
          LIMIT 1
        ) c ON TRUE
-       WHERE (($1::bigint IS NOT NULL AND r.agent_id = $1)
-              OR ($2::bigint IS NOT NULL AND r.runtime_id = $2))
+       WHERE r.runtime_id = $1
          AND r.status = 'running'
        ORDER BY r.started_at ASC`,
-      [actor.agentId, actor.runtimeId]
+      [actor.runtimeId]
     );
     return result.rows;
-  }
-
-  async listActiveRunsForAgent(agentId) {
-    return this.listActiveRunsForActor({ agentId });
   }
 
   async getCheckpoints(runId) {
@@ -518,22 +494,19 @@ class HarnessRunService {
 
   async heartbeat(runId, actorInput, agentStep = null) {
     const id = requiredUuid(runId, 'runId');
-    const actor = typeof actorInput === 'object'
-      ? normaliseActor(actorInput)
-      : normaliseActor({ agentId: actorInput });
+    const actor = normaliseActor(actorInput);
     const normalisedAgentStep = agentStep === null || agentStep === undefined
       ? null
       : requiredString(agentStep, 'agentStep');
 
     const result = await pool.query(
       `UPDATE harness_runs
-       SET heartbeat_at = NOW(), agent_step = COALESCE($4, agent_step)
+       SET heartbeat_at = NOW(), agent_step = COALESCE($3, agent_step)
        WHERE id = $1
-         AND (($2::bigint IS NOT NULL AND agent_id = $2)
-              OR ($3::bigint IS NOT NULL AND runtime_id = $3))
+         AND runtime_id = $2
          AND status = 'running'
        RETURNING *`,
-      [id, actor.agentId, actor.runtimeId, normalisedAgentStep]
+      [id, actor.runtimeId, normalisedAgentStep]
     );
 
     if (result.rows.length === 0) {
@@ -604,12 +577,11 @@ class HarnessRunService {
         projectId: run.project_id,
         runId: run.id,
         ticketId: run.ticket_id,
-        agentId: run.agent_id,
-        runtimeId: run.runtime_id ?? null,
-        actorId: run.runtime_id ?? run.agent_id,
+        runtimeId: run.runtime_id,
+        actorId: run.runtime_id,
         action: 'run_blocked',
         reason: redactText(String(run.error)),
-        actorType: 'agent',
+        actorType: 'runtime',
         dedupeKey: `privacy:run_blocked:${run.id}`,
       });
     } catch (error) {
@@ -667,9 +639,7 @@ class HarnessRunService {
    */
   async recordPublish(runId, actorInput, { headSha = null, prUrl = null } = {}) {
     const id = requiredUuid(runId, 'runId');
-    const actor = typeof actorInput === 'object'
-      ? normaliseActor(actorInput)
-      : normaliseActor({ agentId: actorInput });
+    const actor = normaliseActor(actorInput);
     const normalisedHeadSha = headSha === null || headSha === undefined
       ? null
       : requiredString(headSha, 'headSha');
@@ -683,15 +653,14 @@ class HarnessRunService {
 
     const result = await pool.query(
       `UPDATE harness_runs
-       SET head_sha = COALESCE($4, head_sha),
-           pr_url = COALESCE($5, pr_url),
+       SET head_sha = COALESCE($3, head_sha),
+           pr_url = COALESCE($4, pr_url),
            heartbeat_at = NOW()
        WHERE id = $1
-         AND (($2::bigint IS NOT NULL AND agent_id = $2)
-              OR ($3::bigint IS NOT NULL AND runtime_id = $3))
+         AND runtime_id = $2
          AND status = 'running'
        RETURNING *`,
-      [id, actor.agentId, actor.runtimeId, normalisedHeadSha, normalisedPrUrl]
+      [id, actor.runtimeId, normalisedHeadSha, normalisedPrUrl]
     );
 
     if (result.rows.length === 0) {
@@ -711,26 +680,22 @@ class HarnessRunService {
    * manual hold and require the operator route, which sets
    * {@code allowDeadLetter}.</p>
    */
-  async releaseTicketForRun(runId, { agentId = null, runtimeId = null, allowDeadLetter = false } = {}) {
+  async releaseTicketForRun(runId, { runtimeId = null, allowDeadLetter = false } = {}) {
     const id = requiredUuid(runId, 'runId');
-    const actor = agentId === null && runtimeId === null
-      ? null
-      : normaliseActor({ agentId, runtimeId });
+    const actor = runtimeId === null ? null : normaliseActor({ runtimeId });
     const statusPredicate = allowDeadLetter
       ? "r.status IN ('failed', 'dead_letter', 'budget_exceeded')"
       : "r.status IN ('failed', 'budget_exceeded')";
 
     const result = await pool.query(
       `WITH run AS (
-         SELECT r.id, r.ticket_id, r.agent_id, r.runtime_id
+         SELECT r.id, r.ticket_id, r.runtime_id
          FROM harness_runs r
          WHERE r.id = $1
            AND ${statusPredicate}
            AND NULLIF(BTRIM(r.pr_url), '') IS NULL
            AND NULLIF(BTRIM(r.head_sha), '') IS NULL
-           AND (($2::bigint IS NULL AND $3::bigint IS NULL)
-                OR ($2::bigint IS NOT NULL AND r.agent_id = $2)
-                OR ($3::bigint IS NOT NULL AND r.runtime_id = $3))
+           AND ($2::bigint IS NULL OR r.runtime_id = $2)
            AND NOT EXISTS (
              SELECT 1 FROM harness_runs other
              WHERE other.ticket_id = r.ticket_id
@@ -742,22 +707,20 @@ class HarnessRunService {
            )
        )
        UPDATE tickets t
-       SET assigned_agent_id = NULL,
-           assigned_runtime_id = NULL,
+       SET assigned_runtime_id = NULL,
            locked_at = NULL,
            status = 'backlog'
        FROM run
        WHERE t.id = run.ticket_id
          AND t.status = 'in_progress'
-         AND (t.assigned_agent_id = run.agent_id
-              OR t.assigned_runtime_id = run.runtime_id)
+         AND t.assigned_runtime_id = run.runtime_id
          AND NULLIF(BTRIM(t.pr_url), '') IS NULL
          AND NOT EXISTS (
            SELECT 1 FROM harness_runs other
            WHERE other.ticket_id = run.ticket_id AND other.status = 'running'
          )
        RETURNING t.*`,
-      [id, actor ? actor.agentId : null, actor ? actor.runtimeId : null]
+      [id, actor ? actor.runtimeId : null]
     );
 
     return result.rows[0] || null;
@@ -792,7 +755,6 @@ class HarnessRunService {
       `WITH run AS (
          SELECT r.id,
                 r.ticket_id,
-                r.agent_id,
                 r.runtime_id,
                 r.started_at,
                 r.status,
@@ -879,8 +841,7 @@ class HarnessRunService {
        ),
        released AS (
          UPDATE tickets t
-         SET assigned_agent_id = NULL,
-             assigned_runtime_id = NULL,
+         SET assigned_runtime_id = NULL,
              locked_at = NULL,
              status = 'backlog'
          FROM run, marked
@@ -890,8 +851,7 @@ class HarnessRunService {
            AND run.pr_url IS NULL
            AND run.head_sha IS NULL
            AND t.id = run.ticket_id
-           AND (t.assigned_agent_id = run.agent_id
-                OR t.assigned_runtime_id = run.runtime_id)
+           AND t.assigned_runtime_id = run.runtime_id
            AND t.status = 'in_progress'
            AND NULLIF(BTRIM(t.pr_url), '') IS NULL
            AND NOT EXISTS (
@@ -943,8 +903,7 @@ class HarnessRunService {
    */
   async listActiveWorkspacePathsForActor(actorInput) {
     const actor = normaliseActor(actorInput);
-    const ownerClause = `( ($1::bigint IS NOT NULL AND r.agent_id = $1)
-                           OR ($2::bigint IS NOT NULL AND r.runtime_id = $2) )`;
+    const ownerClause = 'r.runtime_id = $1';
 
     // Fail closed: a running/leased run without a recorded path may have a
     // workspace we cannot protect, so cleanup must skip entirely.
@@ -957,7 +916,7 @@ class HarnessRunService {
          AND (r.status = 'running' OR l.run_id IS NOT NULL)
          AND NULLIF(BTRIM(r.workspace_path), '') IS NULL
        LIMIT 1`,
-      [actor.agentId, actor.runtimeId]
+      [actor.runtimeId]
     );
     if (incomplete.rows.length > 0) {
       throw new ConflictError(
@@ -973,13 +932,9 @@ class HarnessRunService {
          AND NULLIF(BTRIM(r.workspace_path), '') IS NOT NULL
          AND (r.status = 'running' OR l.run_id IS NOT NULL)
        ORDER BY r.workspace_path`,
-      [actor.agentId, actor.runtimeId]
+      [actor.runtimeId]
     );
     return result.rows.map((row) => row.workspace_path);
-  }
-
-  async listActiveWorkspacePaths(agentId) {
-    return this.listActiveWorkspacePathsForActor({ agentId });
   }
 
   /**
@@ -1103,28 +1058,26 @@ class HarnessRunService {
    * Claim or renew a ticket lease. Returns null when another run holds an
    * unexpired lease. A run may always re-claim its own lease.
    */
-  async claimLease({ ticketId, runId, agentId = null, runtimeId = null, ttlSeconds } = {}) {
+  async claimLease({ ticketId, runId, runtimeId = null, ttlSeconds } = {}) {
     const normalisedTicketId = positiveInteger(ticketId, 'ticketId');
     const normalisedRunId = requiredUuid(runId, 'runId');
-    const actor = normaliseActor({ agentId, runtimeId });
+    const actor = normaliseActor({ runtimeId });
     const ttl = leaseSeconds(ttlSeconds);
 
     const result = await pool.query(
       `INSERT INTO harness_leases
-         (ticket_id, run_id, agent_id, runtime_id, expires_at, updated_at)
-       SELECT $1, $2, $3, $4, NOW() + ($5::int * INTERVAL '1 second'), NOW()
+         (ticket_id, run_id, runtime_id, expires_at, updated_at)
+       SELECT $1, $2, $3, NOW() + ($4::int * INTERVAL '1 second'), NOW()
        WHERE EXISTS (
          SELECT 1
          FROM harness_runs r
          JOIN tickets t ON t.id = r.ticket_id
          WHERE r.id = $2
            AND r.ticket_id = $1
-           AND (($3::bigint IS NOT NULL AND r.agent_id = $3)
-                OR ($4::bigint IS NOT NULL AND r.runtime_id = $4))
+           AND r.runtime_id = $3
            AND r.status = 'running'
            AND t.status = 'in_progress'
-           AND (($3::bigint IS NOT NULL AND t.assigned_agent_id = $3)
-                OR ($4::bigint IS NOT NULL AND t.assigned_runtime_id = $4))
+           AND t.assigned_runtime_id = $3
            AND NOT EXISTS (
              SELECT 1 FROM harness_kill_switches k
              WHERE k.enabled = TRUE
@@ -1134,44 +1087,40 @@ class HarnessRunService {
        )
        ON CONFLICT (ticket_id) DO UPDATE
        SET run_id = EXCLUDED.run_id,
-           agent_id = EXCLUDED.agent_id,
            runtime_id = EXCLUDED.runtime_id,
            expires_at = EXCLUDED.expires_at,
            updated_at = NOW()
        WHERE harness_leases.expires_at < NOW()
           OR harness_leases.run_id = EXCLUDED.run_id
        RETURNING *`,
-      [normalisedTicketId, normalisedRunId, actor.agentId, actor.runtimeId, ttl]
+      [normalisedTicketId, normalisedRunId, actor.runtimeId, ttl]
     );
 
     return result.rows[0] || null;
   }
 
-  async renewLease({ ticketId, runId, agentId = null, runtimeId = null, ttlSeconds } = {}) {
+  async renewLease({ ticketId, runId, runtimeId = null, ttlSeconds } = {}) {
     const normalisedTicketId = positiveInteger(ticketId, 'ticketId');
     const normalisedRunId = requiredUuid(runId, 'runId');
-    const actor = normaliseActor({ agentId, runtimeId });
+    const actor = normaliseActor({ runtimeId });
     const ttl = leaseSeconds(ttlSeconds);
 
     const result = await pool.query(
       `UPDATE harness_leases l
-       SET expires_at = NOW() + ($5::int * INTERVAL '1 second'),
+       SET expires_at = NOW() + ($4::int * INTERVAL '1 second'),
            updated_at = NOW()
        FROM harness_runs r
        JOIN tickets t ON t.id = r.ticket_id
        WHERE l.ticket_id = $1
          AND l.run_id = $2
-         AND (($3::bigint IS NOT NULL AND l.agent_id = $3)
-              OR ($4::bigint IS NOT NULL AND l.runtime_id = $4))
-         AND (($3::bigint IS NOT NULL AND l.agent_id = r.agent_id)
-              OR ($4::bigint IS NOT NULL AND l.runtime_id = r.runtime_id))
+         AND l.runtime_id = $3
+         AND l.runtime_id = r.runtime_id
          AND l.expires_at > NOW()
          AND l.ticket_id = r.ticket_id
          AND r.id = l.run_id
          AND r.status = 'running'
          AND t.status = 'in_progress'
-         AND (($3::bigint IS NOT NULL AND t.assigned_agent_id = $3)
-              OR ($4::bigint IS NOT NULL AND t.assigned_runtime_id = $4))
+         AND t.assigned_runtime_id = $3
          AND NOT EXISTS (
            SELECT 1 FROM harness_kill_switches k
            WHERE k.enabled = TRUE
@@ -1179,7 +1128,7 @@ class HarnessRunService {
                   OR (k.scope = 'project' AND k.project_id = t.project_id))
          )
        RETURNING l.*`,
-      [normalisedTicketId, normalisedRunId, actor.agentId, actor.runtimeId, ttl]
+      [normalisedTicketId, normalisedRunId, actor.runtimeId, ttl]
     );
 
     return result.rows[0] || null;
@@ -1241,7 +1190,7 @@ class HarnessRunService {
          DELETE FROM harness_leases l
          USING expired e
          WHERE l.ticket_id = e.ticket_id
-         RETURNING l.ticket_id, l.run_id, l.agent_id, l.runtime_id
+         RETURNING l.ticket_id, l.run_id, l.runtime_id
        ),
        failed AS (
          UPDATE harness_runs r
@@ -1257,10 +1206,10 @@ class HarnessRunService {
              END
          FROM deleted d
          WHERE r.id = d.run_id AND r.status = 'running'
-         RETURNING r.id, r.ticket_id, r.agent_id, r.runtime_id, r.status
+         RETURNING r.id, r.ticket_id, r.runtime_id, r.status
        ),
        orphaned AS (
-         SELECT r.id, r.ticket_id, r.agent_id, r.runtime_id
+         SELECT r.id, r.ticket_id, r.runtime_id
          FROM harness_runs r
          LEFT JOIN harness_leases l ON l.run_id = r.id
          WHERE r.status = 'running'
@@ -1284,11 +1233,10 @@ class HarnessRunService {
              END
          FROM orphaned o
          WHERE r.id = o.id
-         RETURNING r.id, r.ticket_id, r.agent_id, r.runtime_id, r.status
+         RETURNING r.id, r.ticket_id, r.runtime_id, r.status
        )
        SELECT d.ticket_id,
               d.run_id,
-              d.agent_id,
               d.runtime_id,
               COALESCE(f.status = 'failed', FALSE) AS run_failed
        FROM deleted d
@@ -1296,7 +1244,6 @@ class HarnessRunService {
        UNION ALL
        SELECT o.ticket_id,
               o.id AS run_id,
-              o.agent_id,
               o.runtime_id,
               (o.status = 'failed') AS run_failed
        FROM orphan_failed o`,

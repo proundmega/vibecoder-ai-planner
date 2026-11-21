@@ -1,6 +1,5 @@
 -- 057_agent_fleet_clean_cut.sql
--- NOT REGISTERED IN apply.js. Joint clean-cut step only, after A slices 3-4
--- and Track B remove every legacy code path.
+-- Registered after 059. Removes the legacy agent/provider/auth schema.
 --
 -- 056 already added runtime_id/assigned_runtime_id beside the legacy columns.
 -- This migration drops the legacy columns and tables; it never renames a

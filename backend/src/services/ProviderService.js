@@ -79,33 +79,6 @@ class ProviderService {
     }
   }
 
-  async getProviderConfigChange(agentId, sinceTimestamp) {
-    const AgentService = require('./AgentService');
-    const agent = await AgentService.findById(agentId);
-    
-    if (!agent || !agent.provider_id) {
-      return { changed: false, lastUpdated: null };
-    }
-
-    const result = await pool.query(
-      `SELECT updated_at FROM providers WHERE id = $1`,
-      [agent.provider_id]
-    );
-
-    if (!result.rows[0] || !result.rows[0].updated_at) {
-      return { changed: false, lastUpdated: null };
-    }
-
-    const updatedAt = new Date(result.rows[0].updated_at);
-    const since = sinceTimestamp ? new Date(sinceTimestamp) : new Date(0);
-    const changed = updatedAt > since;
-
-    return {
-      changed,
-      lastUpdated: updatedAt.toISOString(),
-    };
-  }
-
   async resolveProvider(ticketInfo = {}, projectId = null, userId = null) {
     const role = this.roleForTicket(ticketInfo);
     const providers = await this.getProjectProviders(projectId, userId, role);

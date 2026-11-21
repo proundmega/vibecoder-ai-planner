@@ -183,6 +183,7 @@ One row per requirement. This table is the contract between `01` and the code.
 | NFR6 | agent unit | `agent/src/test/java/com/vibecode/agent/supervisor/SupervisorReconcileTest.java` | `NFR6 50 runtimes reconcile under 30s` | `mvn test` |
 | NFR7 | backend route | `backend/src/__tests__/agentNodes.test.js` | `NFR7 heartbeat updates status and timestamps` | `npm test` |
 | NFR8 | backend integration | `backend/src/__tests__/integration/agentFleet.integration.test.js` | `NFR8 apply.js ordering and rollback` | `npm run test:integration` |
+| NFR8 | backend integration | `backend/src/__tests__/integration/migrationLedger.integration.test.js` | `NFR8 apply.js re-runs on the post-cut schema` | `npm run test:integration` |
 
 A requirement with no row is not done. Name each test with its ID (`FR1` in the
 test name) so traceability can map requirement → code → test → verification.
@@ -229,27 +230,33 @@ grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_h
 | Date | Slice | Evidence |
 |---|---|---|
 | 2026-11-20 | Track B runtime/UI (PR #179) | Supervisor/runtime/manager/Fleet+Registry implemented; `mvn -B test` 910 pass (10 skipped), backend 2140 pass (173 suites), frontend 574 pass + typecheck. #180, #181, #182 and #183 are merged. 057 is available through the joint opt-in below and was validated on a fresh pgvector database; manager integration passed 3/3 with `REQUIRE_FLEET_SCHEMA=1`. The default chain is unchanged. Blocked only on the joint clean-cut run and the CI/human gate; #183 completes runtime-owned harness runs, leases and usage. |
+| 2026-11-21 | Clean cut default | 057 is registered after 059 by default; legacy agent/provider/auth routes, services, validators, tables and legacy `agent_id` columns are removed; the legacy backfill migration and data path are gone. Backend unit 147 suites / 1746 tests and integration 16 suites / 136 tests pass on pg17. OpenAPI regenerated without legacy paths; only `/providers/resolve` remains under the old provider prefix. |
+| 2026-11-21 | Migration ledger re-run | `apply.js` records applied files in `schema_migrations` and baselines the registered chain when a post-cut schema has no ledger. Unit planning tests pass; `migrationLedger.integration.test.js` runs `apply.js` twice and asserts both runs succeed. |
 
-### Joint clean cut (057)
+### Clean cut is the default (057)
 
-`057_agent_fleet_clean_cut.sql` stays out of the default `db:migrate` chain
-because it drops the legacy `agents`, `providers`, `project_providers` and
-agent-token tables, while the legacy API surface and its backfill migration
-still exist. The joint job applies it explicitly on a **fresh** database:
+`057_agent_fleet_clean_cut.sql` is registered in the default `db:migrate`
+chain after 059. It drops the legacy `agents`, `providers`,
+`project_providers` and agent-token tables, the legacy agent/provider/auth
+routes and services, the legacy `agent_id` columns, and the
+`backfill_agent_key_hashes.js` migration. Node/runtime credentials and the
+provider registry are the only supported paths.
+
+`apply.js` keeps a `schema_migrations` ledger. On the first run against a
+database that already has the runtime schema but no `agents` table (the cut was
+applied by an older runner), it marks every registered file as applied instead
+of executing the legacy chain again; 002, 013, 036, 040, 052, 055 and 059
+reference columns or tables that 057 dropped. Later runs execute only files that are not
+recorded, and each SQL file is recorded in the same transaction as its
+statements. `migrationLedger.integration.test.js` covers the two-pass run.
 
 ```bash
-AGENT_FLEET_CLEAN_CUT=1 npm run db:migrate
+npm run db:migrate
 REQUIRE_FLEET_SCHEMA=1 npm run test:integration
 ```
 
-The switch appends 057 after 059 and skips `backfill_agent_key_hashes.js`.
-Jenkins runs the same step in its **Fleet Clean Cut** stage: it creates a fresh
+Jenkins keeps its **Fleet Clean Cut** stage: it creates a fresh
 `vibecode_fg54_cut` database, runs
-`backend/integration-test/fleet-clean-cut.sh` (which sets both variables and
-runs the manager suite), and fails if the schema is missing instead of
+`backend/integration-test/fleet-clean-cut.sh` (which requires the fleet schema
+and runs the manager suite), and fails if the schema is missing instead of
 skipping.
-
-Do not replay `db:migrate` after the cut on a persistent database: earlier
-`providers`/`agents` migrations are not ledgered and will fail against the
-dropped tables. A migration ledger (or removing the legacy routes and their
-migrations) is the follow-up that allows 057 to become the default.

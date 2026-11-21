@@ -12,13 +12,11 @@
 const staleClaimSweep = require('./staleClaimSweep');
 const enrollmentTokenCleanup = require('./enrollmentTokenCleanup');
 const heartbeatExpiry = require('./heartbeatExpiry');
-const legacyPoolDrain = require('./legacyPoolDrain');
 
 const JOBS = [
   { name: 'stale_claim_sweep', run: staleClaimSweep },
   { name: 'enrollment_token_cleanup', run: enrollmentTokenCleanup },
   { name: 'heartbeat_expiry', run: heartbeatExpiry },
-  { name: 'legacy_pool_drain', run: legacyPoolDrain },
 ];
 
 module.exports = {
@@ -26,5 +24,4 @@ module.exports = {
   staleClaimSweep,
   enrollmentTokenCleanup,
   heartbeatExpiry,
-  legacyPoolDrain,
 };

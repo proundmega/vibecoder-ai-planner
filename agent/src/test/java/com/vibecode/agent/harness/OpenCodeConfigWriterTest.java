@@ -25,7 +25,7 @@ class OpenCodeConfigWriterTest {
 
     private HarnessConfig config(String modelOverride) {
         return new HarnessConfig(
-            "opencode",
+            
             "opencode",
             Duration.ofSeconds(30),
             Duration.ofMinutes(45),

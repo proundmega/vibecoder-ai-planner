@@ -21,7 +21,6 @@ const {
   staleClaimSweep,
   enrollmentTokenCleanup,
   heartbeatExpiry,
-  legacyPoolDrain,
   JOBS,
 } = require('../manager/jobs');
 const { runTick, runWithLock } = require('../manager');
@@ -113,19 +112,11 @@ describe('fg-54 manager jobs (FR14)', () => {
     expect(params).toEqual([120]);
   });
 
-  test('FR14 legacy pool drain is a no-op after the clean cut', async () => {
-    const client = fakeClient(() => ({ rows: [{ table_name: null }] }));
-    const result = await legacyPoolDrain(client);
-    expect(result.processed).toBe(0);
-    expect(result.skipped).toContain('not present');
-  });
-
   test('FR14 every registered job is idempotent at the unit boundary', async () => {
     expect(JOBS.map((job) => job.name)).toEqual([
       'stale_claim_sweep',
       'enrollment_token_cleanup',
       'heartbeat_expiry',
-      'legacy_pool_drain',
     ]);
     for (const job of JOBS) {
       const client = fakeClient((sql) => {

@@ -30,8 +30,6 @@ services:
       - POLL_INTERVAL_MS=${POLL_INTERVAL_MS:-30000}
       - DRY_RUN=${DRY_RUN:-false}
       - MAX_TICKETS=${MAX_TICKETS:-1}
-      # OpenCode harness (legacy remains the safe default)
-      - HARNESS_MODE=${HARNESS_MODE:-legacy}
       - HARNESS_BIN=${HARNESS_BIN:-opencode}
       - HARNESS_STARTUP_TIMEOUT_MS=${HARNESS_STARTUP_TIMEOUT_MS:-30000}
       - HARNESS_MAX_DURATION_MINUTES=${HARNESS_MAX_DURATION_MINUTES:-45}

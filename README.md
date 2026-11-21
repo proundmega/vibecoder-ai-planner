@@ -166,7 +166,7 @@ local testing only. Deleting the credential volume requires a new join token.
 | `AGENT_API_KEY` | Static API key for backend auth | _(required for legacy)_ |
 | `AGENT_AUTH_MODE` | `auto`, `legacy` or `enroll`; `auto` prefers a static pair and enrolls when it is absent | `auto` |
 | `ENROLLMENT_TOKEN` | One-time `enr_…` join token minted in Agents → Enrollment | _(none)_ |
-| `ENROLLMENT_URL` | Override the enrollment endpoint (defaults to `BACKEND_URL` + `/api/v1/agent-enrollment/enroll`) | _(derived)_ |
+| `ENROLLMENT_URL` | Override the enrollment endpoint (defaults to `BACKEND_URL` + `/api/v1/agent-nodes/enroll`) | _(derived)_ |
 | `AGENT_CREDENTIALS_FILE` | Persistent credential file for enrolled nodes; the file wins over `ENROLLMENT_TOKEN` on restart | _(none)_ |
 | `BACKEND_URL` | Backend API URL | `http://localhost:3001` |
 | `PROJECT_ID` | Project to work on | `1` |
@@ -181,7 +181,6 @@ local testing only. Deleting the credential volume requires a new join token.
 | `STALE_TIMEOUT_MS` | Agent stale timeout | `3600000` |
 | `DRY_RUN` | Dry run mode | `false` |
 | `MAX_TICKETS` | Max tickets per cycle | `1` |
-| `HARNESS_MODE` | Execution harness: `legacy` or `opencode` | `legacy` |
 | `HARNESS_BIN` | OpenCode executable | `opencode` |
 | `HARNESS_STARTUP_TIMEOUT_MS` | OpenCode server health timeout | `30000` |
 | `HARNESS_MAX_DURATION_MINUTES` | Per-ticket wall-clock budget, enforced per install/verify command and before publish | `45` |
@@ -202,16 +201,13 @@ local testing only. Deleting the credential volume requires a new join token.
 | `HARNESS_RETRY_BASE_DELAY_MS` | Base exponential retry delay | `60000` |
 | `HARNESS_RETRY_MAX_DELAY_MS` | Maximum retry delay | `3600000` |
 
-With `HARNESS_MODE=opencode`, the agent starts an isolated OpenCode server session
-(`opencode serve`), lets it read/edit/test the cloned workspace, then verifies and
-publishes the diff itself. The harness is *denied* commit/push/merge by policy
+The agent starts an isolated OpenCode server session (`opencode serve`), lets it
+read/edit/test the cloned workspace, then verifies and publishes the diff itself. The harness is *denied* commit/push/merge by policy
 and the supervisor owns publishing, but bash rules are defense-in-depth rather
 than a security boundary: the supervisor also sanitizes child environments,
 disables project config (`OPENCODE_DISABLE_PROJECT_CONFIG`), restores a trusted
 `.git/config` before publishing, disables hooks, and parses `git status -uall -z`
-so untracked directories cannot hide protected files. The legacy one-shot path
-remains the default, but now shares the pinned base/tree, `git fsck` and
-protected-path write checks; it still does not run `PublishingGuard`.
+so untracked directories cannot hide protected files.
 
 The harness requires OpenCode 1.x (the Docker image pins `1.19.5`). A local
 `opencode` from `PATH` must speak the v1 server API.
@@ -332,12 +328,12 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 | GET | `/api/auth/me` | JWT | Current user info |
 | GET/POST | `/api/v1/projects/*` | JWT | Project CRUD |
 | GET/POST/PUT/DELETE | `/api/v1/tickets/*` | JWT | Ticket CRUD + status transitions |
-| GET/POST | `/api/v1/agents/*` | JWT/API Key | Agent management |
-| GET | `/api/v1/agents/:id/heartbeat` | JWT/API Key | Agent heartbeat |
+| GET/POST/PATCH | `/api/v1/agent-nodes/*` | JWT / node token | Node fleet management, enrollment and runtime heartbeat |
+| POST | `/api/v1/providers/resolve` | JWT | Resolve a verified registry model by role or phase |
 
 **Auth:**
 - User auth: JWT via `Authorization: Bearer <token>` header
-- Agent auth: `X-API-Key` header (mock keys: starts with `test-` or equals `mock-agent-key`)
+- Node/runtime auth: `X-API-Key` with a node access token plus `X-Agent-Runtime`; legacy static agent API keys are removed
 
 **Rate limiting:**
 - `/api/auth/register`: 3 requests per 60 seconds

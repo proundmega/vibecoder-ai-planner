@@ -11,7 +11,7 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
   let ownerId;
   let projectId;
   let noRepoProjectId;
-  let agentId;
+  let runtimeId;
   let agent;
 
   beforeAll(async () => {
@@ -41,17 +41,45 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
       [projectId, `https://github.com/acme/repo-${suffix}.git`]
     );
 
-    const agentRow = await pool.query(
-      `INSERT INTO agents (name, api_key_hash, owner_id)
-       VALUES ($1, 'hash', $2) RETURNING id, owner_id`,
-      [`repo-profile-agent-${suffix}`, ownerId]
+    const credential = await pool.query(
+      `INSERT INTO provider_credentials
+         (owner_id, name, provider_type, api_key_encrypted)
+       VALUES ($1, $2, 'openai', 'x') RETURNING id`,
+      [ownerId, `repo-profile-cred-${suffix}`]
     );
-    agentId = agentRow.rows[0].id;
-    agent = { id: agentId, owner_id: ownerId };
+    const model = await pool.query(
+      `INSERT INTO provider_models (credential_id, model, source, roles)
+       VALUES ($1, $2, 'manual', ARRAY['worker']) RETURNING id`,
+      [credential.rows[0].id, `repo-profile-model-${suffix}`]
+    );
+    const node = await pool.query(
+      `INSERT INTO agent_nodes (owner_id, name) VALUES ($1, $2) RETURNING id`,
+      [ownerId, `repo-profile-node-${suffix}`]
+    );
+    const runtime = await pool.query(
+      `INSERT INTO agent_runtimes
+         (node_id, name, role, model_id, status, current_project_id)
+       VALUES ($1, 'worker-1', 'worker', $2, 'running', $3) RETURNING id`,
+      [node.rows[0].id, model.rows[0].id, projectId]
+    );
+    runtimeId = runtime.rows[0].id;
+    agent = { id: runtimeId, owner_id: ownerId, _node: true };
   });
 
   afterAll(async () => {
     await pool.query('DELETE FROM project_credentials WHERE project_id = $1', [projectId]);
+    await pool.query(
+      `DELETE FROM agent_runtimes
+       WHERE node_id IN (SELECT id FROM agent_nodes WHERE owner_id = $1)`,
+      [ownerId]
+    );
+    await pool.query('DELETE FROM agent_nodes WHERE owner_id = $1', [ownerId]);
+    await pool.query(
+      `DELETE FROM provider_models
+       WHERE credential_id IN (SELECT id FROM provider_credentials WHERE owner_id = $1)`,
+      [ownerId]
+    );
+    await pool.query('DELETE FROM provider_credentials WHERE owner_id = $1', [ownerId]);
     await pool.query('DELETE FROM users WHERE id = $1', [ownerId]);
     await pool.end();
   });
@@ -76,12 +104,12 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
     const queued = await RepoProfileValidationService.request(projectId, profileId, {
       userId: ownerId, role: 'project_admin',
     });
-    const claimed = await RepoProfileValidationService.claimNext(projectId, agent);
+    const claimed = await RepoProfileValidationService.claimNext(projectId, agent, runtimeId);
     expect(claimed.id).toBe(queued.id);
     await RepoProfileValidationService.finish(projectId, claimed.id, agent, {
       status: 'succeeded',
       result: { commands: [] },
-    });
+    }, runtimeId);
     return RepoProfileService.activate(projectId, profileId, {
       userId: ownerId, role: 'project_admin',
     });
@@ -100,11 +128,11 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
     expect(queued.status).toBe('queued');
     expect(queued.profile_hash).toBe(draft.profile_hash);
 
-    const claimed = await RepoProfileValidationService.claimNext(projectId, agent);
-    expect(claimed).toMatchObject({ id: queued.id, status: 'running', agent_id: agentId });
+    const claimed = await RepoProfileValidationService.claimNext(projectId, agent, runtimeId);
+    expect(claimed).toMatchObject({ id: queued.id, status: 'running', runtime_id: runtimeId });
 
     const finished = await RepoProfileValidationService.finish(
-      projectId, claimed.id, agent, { status: 'succeeded', result: { commands: [] } }
+      projectId, claimed.id, agent, { status: 'succeeded', result: { commands: [] } }, runtimeId
     );
     expect(finished.status).toBe('succeeded');
 
@@ -157,11 +185,11 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
     );
     expect(persisted.rows[0].profile_hash).toBe(queued.profile_hash);
 
-    const claimed = await RepoProfileValidationService.claimNext(projectId, agent);
+    const claimed = await RepoProfileValidationService.claimNext(projectId, agent, runtimeId);
     await RepoProfileValidationService.finish(projectId, claimed.id, agent, {
       status: 'succeeded',
       result: { commands: [] },
-    });
+    }, runtimeId);
 
     const active = await RepoProfileService.activate(projectId, draft.id, {
       userId: ownerId, role: 'project_admin',

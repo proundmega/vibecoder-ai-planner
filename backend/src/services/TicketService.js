@@ -65,43 +65,21 @@ class TicketService {
   }
 
   /**
-   * Normalize a legacy scalar actor (an agent id) into the explicit actor shape.
+   * Resolve the owning user and role for a runtime. Node credentials carry the
+   * runtime id; the owner role is used for the admin bypass.
    */
-  normalizeActor(actor) {
-    if (actor && typeof actor === 'object') return actor;
-    return { agentId: actor };
-  }
-
-  /**
-   * Resolve the owning user and role for an API-key agent. The agent's own
-   * request carries role='member' from the auth middleware, so the service
-   * looks up the owner's real role for the admin bypass.
-   */
-  async resolveAgentActor({ agentId, runtimeId, operatorId, role }) {
-    if (runtimeId) {
-      if (role !== undefined) return { agentId, runtimeId, operatorId, role };
-      const result = await pool.query(
-        `SELECT n.owner_id, u.role
-           FROM agent_runtimes r
-           JOIN agent_nodes n ON n.id = r.node_id
-           LEFT JOIN users u ON u.id = n.owner_id
-          WHERE r.id = $1`,
-        [runtimeId]
-      );
-      const row = result.rows[0] || {};
-      return { agentId, runtimeId, operatorId: operatorId || row.owner_id, role: row.role };
-    }
-    if (!agentId || role !== undefined) return { agentId, runtimeId, operatorId, role };
-
+  async resolveRuntimeActor({ runtimeId, operatorId, role }) {
+    if (role !== undefined) return { runtimeId, operatorId, role };
     const result = await pool.query(
-      `SELECT a.owner_id, u.role
-         FROM agents a
-         LEFT JOIN users u ON u.id = a.owner_id
-        WHERE a.id = $1`,
-      [agentId]
+      `SELECT n.owner_id, u.role
+         FROM agent_runtimes r
+         JOIN agent_nodes n ON n.id = r.node_id
+         LEFT JOIN users u ON u.id = n.owner_id
+        WHERE r.id = $1`,
+      [runtimeId]
     );
     const row = result.rows[0] || {};
-    return { agentId, operatorId: operatorId || row.owner_id, role: row.role };
+    return { runtimeId, operatorId: operatorId || row.owner_id, role: row.role };
   }
 
   /**
@@ -312,9 +290,10 @@ class TicketService {
     return await Ticket.addComment(ticketId, content.trim(), userId);
   }
 
-  async pickUpTicket(ticketId, actor) {
-    const normalizedActor = await this.resolveAgentActor(this.normalizeActor(actor));
-    const { agentId, runtimeId } = normalizedActor;
+  async pickUpTicket(ticketId, actor = {}) {
+    const normalizedActor = await this.resolveRuntimeActor(actor);
+    const { runtimeId } = normalizedActor;
+    if (!runtimeId) throw new ValidationError('runtimeId is required');
 
     // Keep permission checks outside the write transaction so a slow
     // membership/project lookup cannot hold a pool client while the
@@ -348,7 +327,7 @@ class TicketService {
         throw new ValidationError('Only backlog tickets can be picked up');
       }
 
-      if (ticket.assigned_agent_id || ticket.assigned_runtime_id) {
+      if (ticket.assigned_runtime_id) {
         throw new ValidationError('Ticket already assigned to another agent');
       }
 
@@ -358,24 +337,13 @@ class TicketService {
         action: 'pickup',
       });
 
-      const result = runtimeId
-        ? await client.query(
-          `UPDATE tickets
-           SET assigned_runtime_id = $1, assigned_agent_id = NULL,
-               locked_at = CURRENT_TIMESTAMP, status = 'in_progress'
-           WHERE id = $2 AND status = 'backlog'
-             AND assigned_agent_id IS NULL AND assigned_runtime_id IS NULL
-           RETURNING *`,
-          [runtimeId, ticketId]
-        )
-        : await client.query(
-          `UPDATE tickets
-           SET assigned_agent_id = $1, locked_at = CURRENT_TIMESTAMP, status = 'in_progress'
-           WHERE id = $2 AND status = 'backlog'
-             AND assigned_agent_id IS NULL AND assigned_runtime_id IS NULL
-           RETURNING *`,
-          [agentId, ticketId]
-        );
+      const result = await client.query(
+        `UPDATE tickets
+         SET assigned_runtime_id = $1, locked_at = CURRENT_TIMESTAMP, status = 'in_progress'
+         WHERE id = $2 AND status = 'backlog' AND assigned_runtime_id IS NULL
+         RETURNING *`,
+        [runtimeId, ticketId]
+      );
 
       if (result.rows.length === 0) {
         throw new ValidationError('Ticket was already picked up by another agent');
@@ -391,7 +359,7 @@ class TicketService {
     }
   }
 
-  async releaseTicket(ticketId, { agentId = null, runtimeId = null, operatorId = null, role = null } = {}) {
+  async releaseTicket(ticketId, { runtimeId = null, operatorId = null, role = null } = {}) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -406,18 +374,12 @@ class TicketService {
 
       const ticket = ticketResult.rows[0];
 
-      if (!ticket.assigned_agent_id && !ticket.assigned_runtime_id) {
+      if (!ticket.assigned_runtime_id) {
         throw new ValidationError('Ticket is not assigned to any agent');
       }
 
       if (runtimeId !== null) {
         if (String(ticket.assigned_runtime_id) !== String(runtimeId)) {
-          throw new ForbiddenError('Ticket is assigned to another agent');
-        }
-      } else if (agentId !== null) {
-        // The assigned agent may always release its own ticket, even if its
-        // owner's membership changed after pickup.
-        if (String(ticket.assigned_agent_id) !== String(agentId)) {
           throw new ForbiddenError('Ticket is assigned to another agent');
         }
       } else {
@@ -434,14 +396,12 @@ class TicketService {
       // racing release/pickup cannot clear a newer claim.
       const result = await client.query(
         `UPDATE tickets
-         SET assigned_agent_id = NULL, assigned_runtime_id = NULL,
-             locked_at = NULL, status = 'backlog'
+         SET assigned_runtime_id = NULL, locked_at = NULL, status = 'backlog'
          WHERE id = $1
            AND (($2::bigint IS NOT NULL AND assigned_runtime_id = $2)
-                OR ($3::bigint IS NOT NULL AND assigned_agent_id = $3)
-                OR ($2::bigint IS NULL AND $3::bigint IS NULL))
+                OR $2::bigint IS NULL)
          RETURNING *`,
-        [ticketId, runtimeId, agentId]
+        [ticketId, runtimeId]
       );
 
       if (result.rows.length === 0) {
@@ -456,27 +416,6 @@ class TicketService {
     } finally {
       client.release();
     }
-  }
-
-  async enforceOwnership(ticketId, agentId) {
-    
-
-    const result = await pool.query(
-      'SELECT assigned_agent_id FROM tickets WHERE id = $1',
-      [ticketId]
-    );
-
-    if (result.rows.length === 0) {
-      throw new NotFoundError('Ticket not found');
-    }
-
-    const ticket = result.rows[0];
-
-    if (ticket.assigned_agent_id && String(ticket.assigned_agent_id) !== String(agentId)) {
-      throw new ForbiddenError(`Ticket is being worked on by agent ${ticket.assigned_agent_id}`);
-    }
-
-    return ticket;
   }
 
   async validateDependencies(ticketId) {
@@ -511,25 +450,6 @@ class TicketService {
     }
   }
 
-  async recoverOrphanedTickets(staleMinutes = 60) {
-    
-
-    if (typeof staleMinutes !== 'number' || staleMinutes <= 0) {
-      throw new ValidationError('staleMinutes must be a positive number');
-    }
-
-    const result = await pool.query(
-      `UPDATE tickets 
-        SET assigned_agent_id = NULL, locked_at = NULL, status = 'backlog'
-        WHERE status = 'in_progress' 
-        AND locked_at < NOW() - make_interval(mins => $1)
-        AND assigned_agent_id IS NOT NULL
-        RETURNING id, title, assigned_agent_id, locked_at`,
-      [staleMinutes]
-    );
-
-    return result.rows;
-  }
 }
 
 module.exports = new TicketService();

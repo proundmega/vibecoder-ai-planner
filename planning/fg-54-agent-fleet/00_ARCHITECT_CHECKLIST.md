@@ -74,8 +74,9 @@ long-running agent role.
 | Plan merged | PR #177 (merged) | ☑ |
 | Control plane merged | PR #178 merged; registry #180, visibility #181, claim/release #182 and runtime-owned harness runs/leases/usage #183 merged | ☑ |
 | Runtime/UI implementation | PR #179 (draft; rebased on master; joint gate pending) | ☐ |
+| Clean cut is the default | 057 registered after 059; legacy agent/provider/auth routes, services, tables and `agent_id` columns removed; unit 147 suites / 1746 tests and integration 16 suites / 136 tests green | ☑ |
 | Implementation merged | pending | ☐ |
-| Verification results | Partial Track B evidence in `03` → Results; joint gate pending | ☐ |
+| Verification results | Clean-cut evidence in `03` → Results; merge gate pending | ☐ |
 
 A merged planning PR is **plan merged**, not `done`. Set `status: done` only
 after the implementation PR is merged and `03` has a dated Results row.

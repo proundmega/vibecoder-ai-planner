@@ -3,7 +3,6 @@ const { pool } = require('../db');
 const CredentialService = require('./CredentialService');
 const logger = require('../utils/logger');
 const { UtilityError } = require('../errors/HttpError');
-const PoolManager = require('./PoolManager');
 
 function shellEscape(str) {
   return str
@@ -56,69 +55,6 @@ class ProvisioningService {
     });
   }
 
-  async spawnAgent(nodeId, env) {
-    // Resolve provider config if provider_id is provided
-    if (env.provider_id) {
-      try {
-        const providerConfig = await PoolManager.resolveProviderConfig(env.provider_id);
-        env.AI_PROVIDER = providerConfig.provider_type;
-        env.AI_MAX_TOKENS = providerConfig.max_tokens || 4096;
-        if (providerConfig.model) {
-          env.AI_MODEL = providerConfig.model;
-        }
-        if (providerConfig.api_key) {
-          env.AI_API_KEY = providerConfig.api_key;
-        }
-        if (providerConfig.base_url) {
-          env.AI_ENDPOINT_URL = providerConfig.base_url;
-        }
-      } catch (err) {
-        throw new Error(`Provider resolution failed for remote spawn: ${err.message}`);
-      }
-      delete env.provider_id;
-    }
-
-    const node = await this.getNode(nodeId);
-    const key = await this.getKey(node);
-    const ssh = await this.connect(node, key);
-
-    const envFlags = Object.entries(env)
-      .map(([k, v]) => `-e ${k}="${shellEscape(String(v))}"`)
-      .join(' ');
-
-    const cmd = `docker run -d --name agent-${env.id} ` +
-      `--restart unless-stopped ` +
-      `${envFlags} ` +
-      `vibecode-agent:latest`;
-
-    const { stdout, stderr, exitCode } = await this.exec(ssh, cmd);
-
-    await pool.query(
-      'UPDATE compute_nodes SET last_seen = NOW(), failure_count = 0 WHERE id = $1',
-      [nodeId]
-    );
-
-    if (exitCode !== 0) {
-      if (stderr.includes('pull access denied') || stderr.includes('not found')) {
-        logger.info('Pulling image on %s...', node.hostname);
-        await this.exec(ssh, 'docker pull vibecode-agent:latest');
-        const retry = await this.exec(ssh, cmd);
-        if (retry.exitCode !== 0) throw new Error(`docker run failed on ${node.hostname}: ${retry.stderr}`);
-        return retry.stdout.trim();
-      }
-      throw new Error(`docker run failed on ${node.hostname}: ${stderr}`);
-    }
-
-    return stdout.trim();
-  }
-
-  async destroyAgent(nodeId, containerId) {
-    const node = await this.getNode(nodeId);
-    const key = await this.getKey(node);
-    const ssh = await this.connect(node, key);
-    await this.exec(ssh, `docker stop ${containerId} && docker rm ${containerId}`);
-  }
-
   async testConnection(nodeId) {
     const node = await this.getNode(nodeId);
     const key = await this.getKey(node);
@@ -144,16 +80,6 @@ class ProvisioningService {
     }
   }
 
-  async getRunningContainers(nodeId) {
-    const node = await this.getNode(nodeId);
-    const key = await this.getKey(node);
-    const ssh = await this.connect(node, key);
-    const { stdout } = await this.exec(ssh, `docker ps --filter "name=agent-" --format "{{.ID}} {{.Names}}"`);
-    return stdout.trim().split('\n').filter(Boolean).map(line => {
-      const [id, ...nameParts] = line.split(' ');
-      return { id, name: nameParts.join(' ') };
-    });
-  }
 }
 
 module.exports = new ProvisioningService();

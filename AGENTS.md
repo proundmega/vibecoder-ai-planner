@@ -148,12 +148,9 @@ This prevents agents from skipping tests. The test stubs are listed as the first
 
 ## Agent harness (fg-30)
 
-The Java agent has two ticket-execution modes, selected by `HARNESS_MODE`:
-
-- `legacy` (default) — one-shot provider call that returns JSON file operations.
-- `opencode` — supervisor starts `opencode serve` in an isolated temp HOME and
-  cloned workspace, sends a prompt, then verifies, commits, pushes and opens the
-  PR. Commit/push/merge are denied by policy (config + denied bash rules), but
+The Java agent runs the OpenCode harness: the supervisor starts `opencode serve`
+in an isolated temp HOME and cloned workspace, sends a prompt, then verifies,
+commits, pushes and opens the PR. Commit/push/merge are denied by policy (config + denied bash rules), but
   that is defense-in-depth, not a hard security boundary: the workspace is
   hostile. The supervisor owns publishing, runs git with hooks/fsmonitor
   disabled, restores a trusted `.git/config`, sanitizes child environments,

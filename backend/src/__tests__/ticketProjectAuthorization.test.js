@@ -101,9 +101,9 @@ describe('TicketService project-membership authorization (bp-133 FR4)', () => {
       id: '1',
       project_id: '10',
       status: 'backlog',
-      assigned_agent_id: null,
+      assigned_runtime_id: null,
     };
-    const pickedUp = { ...backlogTicket, status: 'in_progress', assigned_agent_id: '7' };
+    const pickedUp = { ...backlogTicket, status: 'in_progress', assigned_runtime_id: '7' };
 
     function connectWith(rows) {
       const client = {
@@ -119,50 +119,66 @@ describe('TicketService project-membership authorization (bp-133 FR4)', () => {
       return client;
     }
 
-    test('allows an agent whose owner is a project member', async () => {
+    test('allows a runtime whose owner is a project member', async () => {
+      pool.query
+        .mockResolvedValueOnce({ rows: [backlogTicket] })
+        .mockResolvedValueOnce({ rows: [{ ok: 1 }] });
+      connectWith([pickedUp]);
+
+      const result = await TicketService.pickUpTicket('1', {
+        runtimeId: '7',
+        operatorId: '300',
+        role: 'member',
+      });
+
+      expect(result.assigned_runtime_id).toBe('7');
+    });
+
+    test('allows a runtime owned by the project owner', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [backlogTicket] });
+      connectWith([pickedUp]);
+
+      const result = await TicketService.pickUpTicket('1', {
+        runtimeId: '7',
+        operatorId: '900',
+        role: 'member',
+      });
+
+      expect(result.assigned_runtime_id).toBe('7');
+    });
+
+    test('resolves the owner and role from the runtime when only runtimeId is given', async () => {
       pool.query
         .mockResolvedValueOnce({ rows: [{ owner_id: '300', role: 'member' }] })
         .mockResolvedValueOnce({ rows: [backlogTicket] })
         .mockResolvedValueOnce({ rows: [{ ok: 1 }] });
       connectWith([pickedUp]);
 
-      const result = await TicketService.pickUpTicket('1', { agentId: '7', operatorId: '300' });
+      const result = await TicketService.pickUpTicket('1', { runtimeId: '7' });
 
-      expect(result.assigned_agent_id).toBe('7');
+      expect(pool.query.mock.calls[0][0]).toContain('agent_runtimes');
+      expect(result.assigned_runtime_id).toBe('7');
     });
 
-    test('allows an agent owned by the project owner', async () => {
+    test('rejects a runtime whose owner is not a member', async () => {
       pool.query
-        .mockResolvedValueOnce({ rows: [{ owner_id: '900', role: 'member' }] })
-        .mockResolvedValueOnce({ rows: [backlogTicket] });
-      connectWith([pickedUp]);
-
-      const result = await TicketService.pickUpTicket('1', { agentId: '7', operatorId: '900' });
-
-      expect(result.assigned_agent_id).toBe('7');
-    });
-
-    test('rejects an agent whose owner is not a member', async () => {
-      pool.query
-        .mockResolvedValueOnce({ rows: [{ owner_id: '400', role: 'member' }] })
         .mockResolvedValueOnce({ rows: [backlogTicket] })
         .mockResolvedValueOnce({ rows: [] });
 
       await expect(
-        TicketService.pickUpTicket('1', { agentId: '7', operatorId: '400' })
+        TicketService.pickUpTicket('1', {
+          runtimeId: '7',
+          operatorId: '400',
+          role: 'member',
+        })
       ).rejects.toBeInstanceOf(ForbiddenError);
     });
 
-    test('supports the legacy scalar agent id and resolves the owner role', async () => {
-      pool.query
-        .mockResolvedValueOnce({ rows: [{ owner_id: '400', role: 'project_admin' }] })
-        .mockResolvedValueOnce({ rows: [backlogTicket] });
-      connectWith([pickedUp]);
-
-      const result = await TicketService.pickUpTicket('1', '7');
-
-      expect(result.assigned_agent_id).toBe('7');
+    test('requires a runtime id', async () => {
+      await expect(
+        TicketService.pickUpTicket('1', { operatorId: '300', role: 'member' })
+      ).rejects.toThrow(/runtimeId is required/);
     });
-
   });
+
 });

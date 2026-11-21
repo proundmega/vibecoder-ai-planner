@@ -6,9 +6,10 @@ function daysEnv(name, fallback) {
 }
 
 /**
- * Bounded retention for fg-53 credential tables. Expired/revoked enrollment,
- * access and refresh rows are deleted after AGENT_TOKEN_RETENTION_DAYS; auth
- * events keep a longer window (AGENT_AUTH_EVENT_RETENTION_DAYS).
+ * Bounded retention for fg-54 node credential tables. Expired/revoked
+ * enrollment, access and refresh rows are deleted after
+ * AGENT_TOKEN_RETENTION_DAYS; node auth events keep a longer window
+ * (AGENT_AUTH_EVENT_RETENTION_DAYS).
  */
 class AgentTokenCleanupService {
   async purgeExpired({ now = new Date() } = {}) {
@@ -18,37 +19,37 @@ class AgentTokenCleanupService {
     const eventCutoff = new Date(now.getTime() - eventRetentionDays * 24 * 60 * 60 * 1000);
 
     const enrollment = await pool.query(
-      `DELETE FROM agent_enrollment_tokens
+      `DELETE FROM agent_node_enrollment_tokens
        WHERE expires_at < $1
           OR (revoked_at IS NOT NULL AND revoked_at < $1)`,
       [tokenCutoff]
     );
     const access = await pool.query(
-      `DELETE FROM agent_access_tokens
+      `DELETE FROM agent_node_access_tokens
        WHERE expires_at < $1
           OR (revoked_at IS NOT NULL AND revoked_at < $1)`,
       [tokenCutoff]
     );
     const refresh = await pool.query(
-      `DELETE FROM agent_refresh_tokens
+      `DELETE FROM agent_node_refresh_tokens
        WHERE expires_at < $1
           OR (revoked_at IS NOT NULL AND revoked_at < $1)`,
       [tokenCutoff]
     );
     // Replay rows are short-lived (default 60 s) and independent of the token
     // retention window.
-    const replays = await pool.query('DELETE FROM agent_refresh_replays WHERE expires_at < $1', [now]);
+    const replays = await pool.query('DELETE FROM agent_node_refresh_replays WHERE expires_at < $1', [now]);
     const events = await pool.query(
-      'DELETE FROM agent_auth_events WHERE created_at < $1',
+      'DELETE FROM agent_node_auth_events WHERE created_at < $1',
       [eventCutoff]
     );
 
     return {
-      enrollmentTokens: enrollment.rowCount || 0,
-      accessTokens: access.rowCount || 0,
-      refreshTokens: refresh.rowCount || 0,
-      refreshReplays: replays.rowCount || 0,
-      authEvents: events.rowCount || 0,
+      nodeEnrollmentTokens: enrollment.rowCount || 0,
+      nodeAccessTokens: access.rowCount || 0,
+      nodeRefreshTokens: refresh.rowCount || 0,
+      nodeRefreshReplays: replays.rowCount || 0,
+      nodeAuthEvents: events.rowCount || 0,
       tokenRetentionDays,
       eventRetentionDays,
     };
