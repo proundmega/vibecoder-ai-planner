@@ -149,11 +149,14 @@ starts; this table is the expected shape, not a frozen diff.
 - Backfill: none — the clean cut is approved in `00`; the seeded-DB test
   asserts the migration succeeds and legacy references are cleared.
 - Rollback risk: 057's rollback recreates **empty** legacy tables and columns
-  and discards node/runtime/registry data by design; it is manual and not
-  tracked by `schema_migrations`. 059's rollback refuses when runtime-owned
-  harness rows still exist instead of inventing agent ids. 056's rollback
-  removes only its additive objects. Roll back in reverse apply order
-  (057 → 059 → 056).
+  and deletes runtime-owned `harness_runs`, `harness_leases` and
+  `agent_heartbeats` rows that have no legacy agent identity; it is manual and
+  not tracked by `schema_migrations`. 056's rollback then drops the additive
+  runtime/registry tables (`agent_runtimes`, `agent_node*`,
+  `provider_credentials`, `provider_models`), so node/runtime/registry data is
+  lost across both rollbacks. 059's rollback refuses when runtime-owned harness
+  rows still exist instead of inventing agent ids. Roll back in reverse apply
+  order (057 → 059 → 056).
 
 ## Verification matrix (canonical)
 
