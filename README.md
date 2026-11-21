@@ -146,17 +146,21 @@ Required for `docker compose --env-file .env.local up`:
 ### Agent `.env` (Java)
 
 The agent is configured through node enrollment plus the supervisor's runtime
-declaration; it no longer reads static `AGENT_ID`, `AGENT_API_KEY`,
-`AGENT_AUTH_MODE` or `AGENT_MODE` variables and does not take a project or role
-from the environment. A remote node needs `BACKEND_URL`, a one-time
-`ENROLLMENT_TOKEN` (or an existing `AGENT_CREDENTIALS_FILE`) and a
-`SUPERVISOR_CONFIG`; the supervisor injects `AGENT_RUNTIME_ID`, `AGENT_ROLE`,
-`AGENT_LLM_MODEL` and `AGENT_EFFORT` per runtime. Provider credentials and
-models come from the backend registry, not from `AI_*` variables.
+declaration. A node needs `BACKEND_URL`, a persistent `AGENT_CREDENTIALS_FILE`
+(required; enrollment fails without it) and a one-time `ENROLLMENT_TOKEN` on
+first boot. The operator no longer configures a static project or role: the
+supervisor injects `AGENT_RUNTIME_ID`, `AGENT_ROLE`, `AGENT_LLM_MODEL`,
+`AGENT_EFFORT` and the project from the runtime declaration, and the backend
+authorizes the project. `PROJECT_ID` / `AGENT_PROJECT_ID` remain an optional
+project hint, and `REPO_OWNER` / `REPO_NAME` an optional build fallback.
+Provider credentials and models come from the backend registry; `AI_*`
+variables are development fallbacks only.
 
 See [`agent/ENROLLMENT.md`](agent/ENROLLMENT.md) for the enrollment walkthrough
-and [`agent/README.md`](agent/README.md) for the complete variable table,
-deployment topologies, the runtime declaration and the build/run commands.
+and [`agent/README.md`](agent/README.md) for the full node, supervisor and
+fallback variable reference, deployment topologies, the runtime declaration and
+the build/run commands. Harness (`HARNESS_*`) variables are listed in the
+`Agent harness (fg-30)` section of [`AGENTS.md`](AGENTS.md).
 
 The agent starts an isolated OpenCode server session (`opencode serve`), lets it
 read/edit/test the cloned workspace, then verifies and publishes the diff itself. The harness is *denied* commit/push/merge by policy
@@ -196,7 +200,7 @@ vibecode/
 │   ├── index.js            → Express app (exports for testing)
 │   ├── api/
 │   │   ├── routes.js       → /health, /version, /docs, /metrics, /auth/*, /v1/*
-│   │   ├── v1/index.js     → 23 route modules (27 router.use mounts) + inlined template/attachment/planning routes
+│   │   ├── v1/index.js     → 23 route modules (27 router.use mounts) + inlined template/attachment/planning/ip-whitelist routes
 │   │   └── terminal.js     → WebSocket terminal proxy
 │   ├── middleware/         → auth, permissions, validate (Joi), cors, rate limiter, CSP, requestId, error handler, timeout, slow request logger
 │   ├── services/           → 42 business logic services

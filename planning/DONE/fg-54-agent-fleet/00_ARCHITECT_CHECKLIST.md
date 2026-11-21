@@ -76,7 +76,7 @@ long-running agent role.
 | Runtime/UI implementation | PR #179 merged as `bfd1d8a` | ☑ |
 | Clean cut is the default | PR #191: 057 registered after 059, legacy agent/provider/auth routes, services, tables and `agent_id` columns removed, migration ledger added; PR #190 (`9126e26`) regenerated the frontend API client from the post-cut spec | ☑ |
 | Implementation merged | PR #179 (`bfd1d8a`), Track A follow-up #184 (`809789f`), generated-client follow-up #190 (`9126e26`) and clean cut #191 (`2a34db5`) merged | ☑ |
-| Verification results | `03` → Results; backend 148 suites / 1750 tests, integration 18 suites / 138 tests, agent 900 tests (10 skipped), frontend 66 files / 575 tests | ☑ |
+| Verification results | `03` → Results; backend 149 suites / 1753 tests, integration 18 suites / 138 tests, agent 900 tests (10 skipped), frontend 66 files / 575 tests | ☑ |
 
 A merged planning PR is **plan merged**, not `done`. Set `status: done` only
 after the implementation PR is merged and `03` has a dated Results row.
@@ -114,6 +114,7 @@ after the implementation PR is merged and `03` has a dated Results row.
 | 6 | Reviewer authority | comment only / full close | comment only | **Comment only for now.** Reviewers will later approve a small subset of small tickets; that bounded capability is `D10`, not part of this suite. |
 | 7 | Planner publish path | direct push / guarded API | guarded API | **Confirmed:** planners draft and publish through the same guarded API path as workers; no direct repo pushes. |
 | 8 | Reasoning effort | free-form / canonical enum + override | canonical enum | **Canonical `minimal|low|medium|high|max` default per model, optional per-runtime override.** Adapters map or clamp provider-specific values; reviewers may run at `max`. |
+| 9 | FR10 active project assignment: reject a second assignment or replace the single value | Reject / replace | replace | **Replace (approved 2026-11-21).** `agent_runtimes.current_project_id` is a single column, so a runtime cannot hold two active assignments; a declaration or heartbeat replaces the value. Rejecting a project change would block workers moving between projects. `01` FR10/A4 amended and `agentRuntime.test.js` added. |
 
 ## Completion gate
 

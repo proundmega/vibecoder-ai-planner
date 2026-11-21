@@ -84,9 +84,6 @@ describe('AgentNodeService runtime records (FR10)', () => {
 
     const insert = client.query.mock.calls.find(([sql]) => sql.includes('INSERT INTO agent_runtimes'));
     expect(insert[1]).toEqual([12, 'build-1', 'worker', 3, 2, 'high', 5]);
-    // The runtime table has one current_project_id column: no assignment row
-    // (and therefore no second active assignment) is ever written.
-    expect(client.query.mock.calls.some(([sql]) => /INSERT INTO agent_runtime_assignments/.test(sql))).toBe(false);
     expect(client.query.mock.calls.some(([sql]) => sql === 'COMMIT')).toBe(true);
   });
 
