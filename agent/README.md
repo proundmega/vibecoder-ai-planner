@@ -174,25 +174,37 @@ so fresh named volumes are writable; a host bind for `/repos` must be chowned
 |---|---|---|
 | `BACKEND_URL` | Backend API base URL | _(required)_ |
 | `ENROLLMENT_TOKEN` | One-time node join token (first boot only) | _(none)_ |
-| `AGENT_CREDENTIALS_FILE` | Persistent node credential file | `/credentials/node.json` |
+| `ENROLLMENT_URL` | Override the enrollment endpoint (defaults to `BACKEND_URL` + `/api/v1/agent-nodes/enroll`) | _(derived)_ |
+| `AGENT_CREDENTIALS_FILE` | Persistent node credential file (0600); required — enrollment fails without it | `/credentials/node.json` (image) |
 | `SUPERVISOR_CONFIG` | Runtime declaration | `/config/agent.ini` |
 | `AGENT_RUNTIME_ID` | Runtime id set by the supervisor | _(supervisor)_ |
+| `AGENT_RUNTIME_NAME` | Runtime name set by the supervisor | _(supervisor)_ |
 | `AGENT_ROLE` | Runtime role set by the supervisor | `worker` |
 | `AGENT_LLM_MODEL` | Model ref set by the supervisor | _(server config)_ |
 | `AGENT_EFFORT` | Optional runtime effort override | model default |
+| `AGENT_PROJECT_ID` / `PROJECT_ID` | Optional project hint; backend grants are authoritative (`AGENT_PROJECT_ID` is supervisor-set from the runtime declaration) | _(none)_ |
+| `AGENT_RUNTIME_CONCURRENCY` | Runtime concurrency set by the supervisor | `1` |
+| `AGENT_RUNTIME_STOP_FILE` | Drain marker path set by the supervisor | _(supervisor)_ |
+| `AGENT_NODE_ID` | Optional node-id override; normally derived from the node credential | _(none)_ |
 | `AGENT_RUNTIME_HEAP_MB` | Heap per child JVM | `768` |
 | `SUPERVISOR_MEMORY_BUDGET_MB` | Host budget shared across children (`0` = off) | `0` |
 | `SUPERVISOR_STOP_TIMEOUT_SECONDS` | Graceful drain budget | `10` |
 | `PROVIDER_CONFIG_REFRESH_SECONDS` | Re-read a rotated provider config between tickets (min 60) | `300` |
 | `REPO_CLONE_DIR` | Clone workspace | `/tmp/repos` (image: `/repos`) |
+| `REPO_OWNER` / `REPO_NAME` | Optional build fallback; the project's configured repository wins | _(none)_ |
 | `POLL_INTERVAL_MS` | Poll interval | `30000` |
+| `STALE_TIMEOUT_MS` | Stale ticket timeout | `3600000` |
 | `MAX_TICKETS` | Tickets per cycle | `1` |
 | `DRY_RUN` | Do not publish | `false` |
+| `GITHUB_AUTH_MODE` | `app` (installation token) or `pat` (local development only) | `app` |
+| `ALLOW_PAT` | Must be `true` to use the PAT fallback | `false` |
+| `GITHUB_TOKEN` | Dev-only PAT fallback; never used in app mode | _(none)_ |
 | `SANDBOX_MODE` | `host` or `docker` | `host` |
 
 Provider settings (type, key, model, endpoint, effort) are fetched per runtime
-from the backend. `AI_PROVIDER`, `AI_MODEL`, `AI_ENDPOINT_URL` and
-`AI_API_KEY` remain development fallbacks only; they are not the fleet path.
+from the backend. `AI_PROVIDER`, `AI_MODEL`, `AI_ENDPOINT_URL`, `AI_API_KEY`
+and `AI_MAX_TOKENS` remain development fallbacks only; they are not the fleet
+path.
 
 ## Files
 

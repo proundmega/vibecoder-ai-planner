@@ -145,61 +145,22 @@ Required for `docker compose --env-file .env.local up`:
 
 ### Agent `.env` (Java)
 
-See [`agent/ENROLLMENT.md`](agent/ENROLLMENT.md) for the full self-enrollment walkthrough, and [`agent/README.md`](agent/README.md) for deployment topologies, auth/repo modes and the build/run commands. The agent reads the project's connected repository from the backend at startup
-when `AGENT_MODE=build`; `REPO_OWNER`/`REPO_NAME` are then only a fallback.
-Review-only nodes use `AGENT_MODE=review`. `AGENT_MODE=auto` keeps the legacy
-behavior: an env repo pair means build, otherwise review, so a build node that
-relies only on the server repo must set `AGENT_MODE=build`. The remote template
-defaults to `build`; the standalone Compose file defaults to `auto`. Restart
-the agent after changing the project's repo in the UI.
+The agent is configured through node enrollment plus the supervisor's runtime
+declaration. A node needs `BACKEND_URL`, a persistent `AGENT_CREDENTIALS_FILE`
+(required; enrollment fails without it) and a one-time `ENROLLMENT_TOKEN` on
+first boot. The operator no longer configures a static project or role: the
+supervisor injects `AGENT_RUNTIME_ID`, `AGENT_ROLE`, `AGENT_LLM_MODEL`,
+`AGENT_EFFORT` and the project from the runtime declaration, and the backend
+authorizes the project. `PROJECT_ID` / `AGENT_PROJECT_ID` remain an optional
+project hint, and `REPO_OWNER` / `REPO_NAME` an optional build fallback.
+Provider credentials and models come from the backend registry; `AI_*`
+variables are development fallbacks only.
 
-For a remote node, mint a one-time join token in **Agents → Enrollment**, set
-`ENROLLMENT_TOKEN` and a persistent `AGENT_CREDENTIALS_FILE` volume, and leave
-`AGENT_ID`/`AGENT_API_KEY` unset. The node enrolls on first boot, stores its own
-access/refresh credentials (`0600`) and refreshes automatically. Enrollment
-requires HTTPS outside loopback; `ALLOW_INSECURE_AGENT_ENROLLMENT=1` is for
-local testing only. Deleting the credential volume requires a new join token.
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `AGENT_ID` | Static agent id (legacy pair with `AGENT_API_KEY`) | _(required for legacy)_ |
-| `AGENT_API_KEY` | Static API key for backend auth | _(required for legacy)_ |
-| `AGENT_AUTH_MODE` | `auto`, `legacy` or `enroll`; `auto` prefers a static pair and enrolls when it is absent | `auto` |
-| `ENROLLMENT_TOKEN` | One-time `enr_…` join token minted in Agents → Enrollment | _(none)_ |
-| `ENROLLMENT_URL` | Override the enrollment endpoint (defaults to `BACKEND_URL` + `/api/v1/agent-nodes/enroll`) | _(derived)_ |
-| `AGENT_CREDENTIALS_FILE` | Persistent credential file for enrolled nodes; the file wins over `ENROLLMENT_TOKEN` on restart | _(none)_ |
-| `BACKEND_URL` | Backend API URL | `http://localhost:3001` |
-| `PROJECT_ID` | Project to work on | `1` |
-| `AGENT_MODE` | `auto` (env repo pair = build), `build` (project repo; fail if none), `review` | `auto` |
-| `REPO_OWNER` | Build fallback; the project's configured repository takes precedence with `AGENT_MODE=build` | _(optional)_ |
-| `REPO_NAME` | Build fallback; the project's configured repository takes precedence with `AGENT_MODE=build` | _(optional)_ |
-| `AI_PROVIDER` | AI provider (`claude`, `openai`, `opencode`, `opencode-go`, `generic`, `custom`, `ollama`, `vllm`, `llamacpp`) | `claude` |
-| `AI_MODEL` | AI model | `claude-sonnet-4-20250514` |
-| `AI_API_KEY` | AI provider API key | _(required)_ |
-| `AI_ENDPOINT_URL` | OpenAI-compatible endpoint; required for `generic`/`custom`/`ollama`/`vllm`/`llamacpp` and for an OpenCode agent when no backend provider config is available | _(provider default)_ |
-| `POLL_INTERVAL_MS` | Polling interval | `30000` |
-| `STALE_TIMEOUT_MS` | Agent stale timeout | `3600000` |
-| `DRY_RUN` | Dry run mode | `false` |
-| `MAX_TICKETS` | Max tickets per cycle | `1` |
-| `HARNESS_BIN` | OpenCode executable | `opencode` |
-| `HARNESS_STARTUP_TIMEOUT_MS` | OpenCode server health timeout | `30000` |
-| `HARNESS_MAX_DURATION_MINUTES` | Per-ticket wall-clock budget, enforced per install/verify command and before publish | `45` |
-| `HARNESS_VERIFY_COMMANDS` | Semicolon-separated verification commands (empty = autodetect, then fail closed) | _(autodetect)_ |
-| `HARNESS_PROTECTED_PATHS` | Semicolon-separated globs that must never be published | `.env*;**/.env*;Jenkinsfile;**/Jenkinsfile;.github/**;**/.github/**;**/secrets/**` |
-| `HARNESS_MODEL` | Optional harness model override (must match the configured provider) | _(provider default)_ |
-| `HARNESS_MAX_FILES` | Maximum changed files the guard will publish | `50` |
-| `HARNESS_MAX_LINES` | Maximum changed lines the guard will publish | `2000` |
-| `HARNESS_MAX_BYTES` | Maximum total added + removed content bytes the guard will publish | `5242880` |
-| `HARNESS_FSCK` | Run `git fsck --strict` before staging (`false` skips it for very large repos) | `true` |
-| `HARNESS_LEASE_SECONDS` | Ticket lease TTL for durable runs (clamped 60–86400) | `600` |
-| `HARNESS_HEARTBEAT_SECONDS` | Lease renewal and heartbeat interval (clamped to ≤ lease/2) | `30` |
-| `HARNESS_DURABILITY_REQUIRED` | Fail closed if the initial harness run cannot be persisted | `false` |
-| `HARNESS_RESUME_MODE` | Startup recovery policy: `restart` or `resume` (adopt published evidence) | `restart` |
-| `HARNESS_REAPER_INTERVAL_SECONDS` | Sweep interval for expired leases / orphaned runs; `0` disables | `60` |
-| `HARNESS_WORKSPACE_RETENTION_HOURS` | Agent-side stale clone cleanup at startup; `0` disables | `24` |
-| `HARNESS_RETRY_PIN_ATTEMPTS` | Failures before the run is marked `dead_letter` for manual recovery (the ticket stays in_progress; `HARNESS_MAX_ATTEMPTS` is accepted as a legacy alias) | `3` |
-| `HARNESS_RETRY_BASE_DELAY_MS` | Base exponential retry delay | `60000` |
-| `HARNESS_RETRY_MAX_DELAY_MS` | Maximum retry delay | `3600000` |
+See [`agent/ENROLLMENT.md`](agent/ENROLLMENT.md) for the enrollment walkthrough
+and [`agent/README.md`](agent/README.md) for the full node, supervisor and
+fallback variable reference, deployment topologies, the runtime declaration and
+the build/run commands. Harness (`HARNESS_*`) variables are listed in the
+`Agent harness (fg-30)` section of [`AGENTS.md`](AGENTS.md).
 
 The agent starts an isolated OpenCode server session (`opencode serve`), lets it
 read/edit/test the cloned workspace, then verifies and publishes the diff itself. The harness is *denied* commit/push/merge by policy
@@ -239,13 +200,13 @@ vibecode/
 │   ├── index.js            → Express app (exports for testing)
 │   ├── api/
 │   │   ├── routes.js       → /health, /version, /docs, /metrics, /auth/*, /v1/*
-│   │   ├── v1/index.js     → 16 routers + inlined templates/attachments/planning
+│   │   ├── v1/index.js     → 23 route modules (27 router.use mounts) + inlined template/attachment/planning/ip-whitelist routes
 │   │   └── terminal.js     → WebSocket terminal proxy
 │   ├── middleware/         → auth, permissions, validate (Joi), cors, rate limiter, CSP, requestId, error handler, timeout, slow request logger
-│   ├── services/           → ~25 business logic services
-│   ├── controllers/        → ~12 request handlers
+│   ├── services/           → 42 business logic services
+│   ├── controllers/        → 11 request handlers
 │   ├── models/             → approval, project, ticket, user
-│   ├── migrations/         → 47 SQL files + 2 data migrations
+│   ├── migrations/         → 58 registered SQL files + 1 data migration (schema_migrations ledger)
 │   ├── validators/         → Joi schemas
 │   ├── db.js               → pg Pool (DATABASE_URL)
 │   └── utils/logger.js     → Winston logger
@@ -253,7 +214,7 @@ vibecode/
 │   ├── App.vue             → Root component with RateLimitBanner
 │   ├── stores/             → Pinia stores (auth, rateLimit)
 │   ├── api/
-│   │   ├── client.js       → Native fetch (NOT axios)
+│   │   ├── client.ts       → Native fetch (NOT axios)
 │   │   └── generated/      → TS types via openapi-typescript-codegen
 │   ├── router/             → Vue Router with auth guards
 │   ├── views/              → Pages (Dashboard, ProjectDetail, TicketBoard, etc.)
@@ -382,14 +343,16 @@ Every fix **must** include a regression test:
 Jenkins (`Jenkinsfile`):
 
 ```
-backend job:   npm ci → lint → syntax check → unit test → coverage
-frontend job:  npm ci → lint → typecheck → unit test → coverage → build
-contract test: vitest run api-contract.test.ts (after backend + frontend)
-cypress:       docker compose (e2e overlay) → cypress/included runs e2e + component
-integration:   docker compose up → Jest integration tests → bash integration tests
-agent job:     mvn test → package → agent image build
-sandbox job:   build sandbox/proxy images → real-Docker integration suite
-cleanup job:   Jenkinsfile.cleanup → label/age-scoped orphan GC (dedicated host)
+checks (parallel):
+  backend:       npm ci → lint → syntax check → helper unit tests → coverage (runs the unit tests)
+  frontend:      npm ci → lint → typecheck → coverage (runs the unit tests) → build
+  contract test: vitest run api-contract.test.ts (reuses the frontend node_modules)
+  agent:         mvn package (runs the tests) → agent image build
+cypress:         docker compose (e2e overlay) → cypress/included runs e2e + component
+integration:     docker compose up → Jest integration tests → bash integration tests
+fleet clean cut: fresh vibecode_fg54_cut DB → fleet-clean-cut.sh (REQUIRE_FLEET_SCHEMA=1)
+sandbox job:     build sandbox/proxy images → real-Docker integration suite
+cleanup job:     Jenkinsfile.cleanup → label/age-scoped orphan GC (dedicated host)
 ```
 
 The full pipeline runs on every build; no stages are skipped by change
@@ -441,12 +404,14 @@ The review policy defines the target formal gates before merge: deterministic ch
 
 ## Migration System
 
-Migrations are SQL files in `backend/src/migrations/`, applied by `src/migrations/apply.js` in **array order** (not numeric). Notable ordering:
+Migrations are SQL files in `backend/src/migrations/`, applied by `src/migrations/apply.js` in **array order** (not numeric). 58 SQL files are registered plus one data migration (`migrate_provider_api_keys.js`). Applied files are recorded in the `schema_migrations` ledger, so a re-run executes only files that are not recorded and each SQL file is recorded in the same transaction as its statements. Notable ordering:
+- 057 (the agent-fleet clean cut) is registered after 059 despite its number
 - 011/012 appear after 014
 - 020 appears after 018 (no 019)
-- 029 and 031 each have two files
+- 031 has two registered files
+- `029_data_migrate_provider_api_keys.sql` (and its rollback) exists on disk but is **not** in the apply array; the registered file is `029_provider_config_api_key.sql`
 
-Each migration has a `_rollback.sql` counterpart.
+Each registered SQL has a `_rollback.sql` counterpart.
 
 ## Contributing
 
