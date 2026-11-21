@@ -85,6 +85,15 @@ protection. Image removal fails safely if Docker still reports the image in
 use. Genuine Docker listing/removal errors make `--orphans` exit non-zero,
 while resource-level in-use/not-found races are logged and tolerated.
 
+### Cypress image cache (decision 8)
+
+The Cypress e2e image is intentionally retained after the stage teardown. The
+per-build `--build-images` cleanup keeps its `:latest` alias, and the scheduled
+`--orphans` GC removes old Compose project images after `CI_IMAGE_GRACE_HOURS`
+(default 24h). Keep the scheduled job destructive-enabled and on the build
+daemon; monitor disk. Revert the trial by restoring `--rmi local` in the
+Cypress `post { always }` teardown and the static `fr5` test.
+
 The cleanup daemon is captured by the Integration Tests stage with
 `sh(returnStdout: true)` into the Jenkins pipeline variables `CI_DOCKER_HOST`
 and `CI_DOCKER_DAEMON_ID`. Post cleanup uses those variables and verifies the

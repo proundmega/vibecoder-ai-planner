@@ -658,6 +658,41 @@ class JenkinsDockerCleanupScriptTest {
     }
 
     @Test
+    void fr2BuildImageCleanupKeepsCypressImageForCache() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--build-images", "7", "--job", "job-a"), Map.of(
+            "FAKE_IMAGES", "1",
+            "FAKE_IMAGE_TAGS", "vibecode-pr-7-job-a-7-cypress:latest",
+            "FAKE_BUILD_LABEL", "7",
+            "FAKE_JOB_LABEL", "job-a"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        String log = Files.readString(fixture.log);
+        assertFalse(log.contains("docker image rm"), log);
+        assertTrue(result.output.contains(
+            "keeping unrelated alias vibecode-pr-7-job-a-7-cypress:latest"), result.output);
+    }
+
+    @Test
+    void fr3OrphanCiImagesRemoveOldCypressImage() throws Exception {
+        Fixture fixture = fixture();
+
+        Result result = fixture.run(List.of("--orphans", "--dry-run"), Map.of(
+            "FAKE_IMAGES", "1",
+            "FAKE_IMAGE_TAGS", "vibecode-pr-7-job-a-12-cypress:latest",
+            "FAKE_BUILD_LABEL", "12"
+        ));
+
+        assertEquals(0, result.exitCode, result.output);
+        assertTrue(result.output.contains(
+            "DRY-RUN: docker image rm vibecode-pr-7-job-a-12-cypress:latest"), result.output);
+        assertTrue(result.output.contains("docker image rm img1 (old CI image with no :ci alias)"),
+            result.output);
+    }
+
+    @Test
     void nfr1OrphanGcFailsOnDockerListingErrors() throws Exception {
         Fixture fixture = fixture();
 
