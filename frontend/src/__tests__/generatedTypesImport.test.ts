@@ -15,22 +15,30 @@ describe('Generated types import', () => {
 
   it('can import all generated services from index', async () => {
     const gen = await import('@/api/generated/index')
-    expect(gen.AgentsService).toBeDefined()
     expect(gen.ApprovalsService).toBeDefined()
     expect(gen.AttachmentsService).toBeDefined()
     expect(gen.AuthService).toBeDefined()
     expect(gen.BillingService).toBeDefined()
     expect(gen.CredentialsService).toBeDefined()
+    expect(gen.CspService).toBeDefined()
     expect(gen.GitHubService).toBeDefined()
+    expect(gen.HarnessService).toBeDefined()
     expect(gen.MemoryService).toBeDefined()
     expect(gen.PermissionsService).toBeDefined()
     expect(gen.PlanningService).toBeDefined()
     expect(gen.ProjectsService).toBeDefined()
     expect(gen.ProvidersService).toBeDefined()
+    expect(gen.RepoProfilesService).toBeDefined()
     expect(gen.SystemService).toBeDefined()
     expect(gen.TicketsService).toBeDefined()
     expect(gen.UsageService).toBeDefined()
     expect(gen.UsersService).toBeDefined()
+  })
+
+  it('does not export legacy agent/provider CRUD services', async () => {
+    const gen = await import('@/api/generated/index')
+    expect((gen as unknown as Record<string, unknown>).AgentsService).toBeUndefined()
+    expect(gen.ProvidersService.postProvidersResolve).toBeDefined()
   })
 
   it('can import generated types from individual modules', async () => {
@@ -38,7 +46,7 @@ describe('Generated types import', () => {
     await expect(import('@/api/generated/models/User')).resolves.toBeDefined()
     await expect(import('@/api/generated/models/Ticket')).resolves.toBeDefined()
     await expect(import('@/api/generated/models/Project')).resolves.toBeDefined()
-    await expect(import('@/api/generated/models/Agent')).resolves.toBeDefined()
+    await expect(import('@/api/generated/models/NumericId')).resolves.toBeDefined()
     await expect(import('@/api/generated/models/ApiResponse')).resolves.toBeDefined()
     await expect(import('@/api/generated/models/Error')).resolves.toBeDefined()
   })

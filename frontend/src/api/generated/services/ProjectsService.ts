@@ -249,6 +249,9 @@ export class ProjectsService {
             path: {
                 'ticketId': ticketId,
             },
+            errors: {
+                409: `Ticket is in progress and must be moved to backlog before deletion`,
+            },
         });
     }
     /**

@@ -7,7 +7,6 @@ export { CancelablePromise, CancelError } from './core/CancelablePromise';
 export { OpenAPI } from './core/OpenAPI';
 export type { OpenAPIConfig } from './core/OpenAPI';
 
-export type { Agent } from './models/Agent';
 export type { ApiResponse } from './models/ApiResponse';
 export type { Error } from './models/Error';
 export type { ErrorDetailsArray } from './models/ErrorDetailsArray';
@@ -17,7 +16,6 @@ export type { Project } from './models/Project';
 export { Ticket } from './models/Ticket';
 export { User } from './models/User';
 
-export { AgentsService } from './services/AgentsService';
 export { ApprovalsService } from './services/ApprovalsService';
 export { AttachmentsService } from './services/AttachmentsService';
 export { AuthService } from './services/AuthService';
@@ -31,6 +29,7 @@ export { PermissionsService } from './services/PermissionsService';
 export { PlanningService } from './services/PlanningService';
 export { ProjectsService } from './services/ProjectsService';
 export { ProvidersService } from './services/ProvidersService';
+export { RepoProfilesService } from './services/RepoProfilesService';
 export { SystemService } from './services/SystemService';
 export { TicketsService } from './services/TicketsService';
 export { UsageService } from './services/UsageService';

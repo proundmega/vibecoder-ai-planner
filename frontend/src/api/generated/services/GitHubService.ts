@@ -42,9 +42,9 @@ export class GitHubService {
         });
     }
     /**
-     * Get repository connection for agent (with decrypted PAT)
+     * Get repository connection for the agent (App mode returns no token)
      * @param projectId
-     * @returns any Repository config with decrypted access token
+     * @returns any Repository config; `accessToken` is present only in explicit PAT mode
      * @throws ApiError
      */
     public static getGithubRepoAgent(
@@ -53,6 +53,77 @@ export class GitHubService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/github/{projectId}/repo/agent',
+            path: {
+                'projectId': projectId,
+            },
+        });
+    }
+    /**
+     * Mint a short-lived, repo-scoped GitHub token for the agent
+     * @param projectId
+     * @returns any GitHub token and expiry
+     * @throws ApiError
+     */
+    public static postGithubToken(
+        projectId: NumericId,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/github/{projectId}/token',
+            path: {
+                'projectId': projectId,
+            },
+            errors: {
+                403: `GitHub access is disabled or not configured`,
+            },
+        });
+    }
+    /**
+     * Get the GitHub App installation mapping for a project
+     * @param projectId
+     * @returns any Installation mapping or null
+     * @throws ApiError
+     */
+    public static getGithubInstallation(
+        projectId: NumericId,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/github/{projectId}/installation',
+            path: {
+                'projectId': projectId,
+            },
+        });
+    }
+    /**
+     * Map a project to a GitHub App installation and repo allowlist
+     * @param projectId
+     * @returns any Updated installation mapping
+     * @throws ApiError
+     */
+    public static putGithubInstallation(
+        projectId: NumericId,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/github/{projectId}/installation',
+            path: {
+                'projectId': projectId,
+            },
+        });
+    }
+    /**
+     * Disable GitHub App access and revoke cached tokens for a project
+     * @param projectId
+     * @returns any Access disabled
+     * @throws ApiError
+     */
+    public static deleteGithubInstallation(
+        projectId: NumericId,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/github/{projectId}/installation',
             path: {
                 'projectId': projectId,
             },
