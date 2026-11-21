@@ -90,23 +90,6 @@ main() {
   clean_db
   wait_for_api
 
-  # Seed admin user AFTER API is ready
-  ADMIN_TOKEN=$(seed_user "admin@vibecode.dev" "password123" "super_admin" "Admin")
-  if [ -z "$ADMIN_TOKEN" ]; then
-    echo "FATAL: Failed to seed admin user. API may be unreachable."
-    exit 1
-  fi
-  echo "Admin token seeded: ${ADMIN_TOKEN:0:10}..."
-  if $verbose; then
-    # Verify user exists in database
-    echo "DEBUG: Checking if admin user exists in DB..."
-    if docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c "SELECT id FROM users WHERE email='admin@vibecode.dev';" >/dev/null 2>&1; then
-      echo "DEBUG: Admin user EXISTS in database"
-    else
-      echo "DEBUG: Admin user NOT FOUND in database"
-    fi
-  fi
-
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "  Jest Integration Tests (PostgreSQL)"
@@ -124,6 +107,24 @@ main() {
       echo ""
       echo "FAILED: Jest integration tests exited with code $JEST_EXIT"
       exit 1
+    fi
+  fi
+
+  # The Jest integration bootstrap may drop and recreate the schema when the
+  # fg-54 clean-cut migration is present. Seed the admin only after Jest so
+  # the curl suites use a token for a live user (ip_whitelist.created_by FK).
+  ADMIN_TOKEN=$(seed_user "admin@vibecode.dev" "password123" "super_admin" "Admin")
+  if [ -z "$ADMIN_TOKEN" ]; then
+    echo "FATAL: Failed to seed admin user after Jest. API may be unreachable."
+    exit 1
+  fi
+  echo "Admin token seeded after Jest: ${ADMIN_TOKEN:0:10}..."
+  if $verbose; then
+    echo "DEBUG: Checking if admin user exists in DB..."
+    if docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c "SELECT id FROM users WHERE email='admin@vibecode.dev';" >/dev/null 2>&1; then
+      echo "DEBUG: Admin user EXISTS in database"
+    else
+      echo "DEBUG: Admin user NOT FOUND in database"
     fi
   fi
 
