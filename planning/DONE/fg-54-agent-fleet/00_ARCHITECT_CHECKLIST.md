@@ -76,7 +76,7 @@ long-running agent role.
 | Runtime/UI implementation | PR #179 merged as `bfd1d8a` | ☑ |
 | Clean cut is the default | PR #191: 057 registered after 059, legacy agent/provider/auth routes, services, tables and `agent_id` columns removed, migration ledger added | ☑ |
 | Implementation merged | PR #179 (`bfd1d8a`), Track A follow-up #184 (`809789f`) and clean cut #191 merged as `2a34db5` | ☑ |
-| Verification results | `03` → Results; backend 148 suites / 1750 tests, integration 18 suites / 138 tests, agent 900 tests (10 skipped), frontend 66 files / 574 tests (recheck after #190) | ☑ |
+| Verification results | `03` → Results; backend 148 suites / 1750 tests, integration 18 suites / 138 tests, agent 900 tests (10 skipped), frontend 66 files / 575 tests | ☑ |
 
 A merged planning PR is **plan merged**, not `done`. Set `status: done` only
 after the implementation PR is merged and `03` has a dated Results row.
