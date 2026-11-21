@@ -1,12 +1,12 @@
 ---
 id: "fg-54"
 title: "Agent Fleet: Nodes, Model Registry and Enforced Roles"
-status: in_review
+status: done
 priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-11-19"
-updated: "2026-11-20"
+updated: "2026-11-21"
 pr: 179
 branch: feat/fg-54b-runtime-ui
 depends_on: ["fg-53"]
@@ -54,29 +54,29 @@ long-running agent role.
 
 ## Readiness gate (before implementation)
 
-- [ ] `01` has numbered `FR*`/`NFR*`, each with a testable acceptance statement
-- [ ] `01` has assumptions and change impact; `02` has failure modes and
+- [x] `01` has numbered `FR*`/`NFR*`, each with a testable acceptance statement
+- [x] `01` has assumptions and change impact; `02` has failure modes and
       security considerations
-- [ ] `02` records the current-state audit and the chosen design
-- [ ] `03` has a verification-matrix row for every `FR*`/`NFR*`
-- [ ] Tests are named with their requirement ID
-- [ ] Deferred register below is complete; out-of-scope items are recorded here
-- [ ] Open decisions are answered or explicitly accepted as assumptions
-- [ ] No fact is duplicated across documents (see `planning/README.md`)
-- [ ] Review policy is applied: independent reviewer, evidence-backed findings,
+- [x] `02` records the current-state audit and the chosen design
+- [x] `03` has a verification-matrix row for every `FR*`/`NFR*`
+- [x] Tests are named with their requirement ID
+- [x] Deferred register below is complete; out-of-scope items are recorded here
+- [x] Open decisions are answered or explicitly accepted as assumptions
+- [x] No fact is duplicated across documents (see `planning/README.md`)
+- [x] Review policy is applied: independent reviewer, evidence-backed findings,
       blocking-only fix rounds (`planning/README.md` §Review policy)
-- [ ] Status evidence below matches the intended status
+- [x] Status evidence below matches the intended status
 
 ## Status evidence
 
 | Claim | Evidence | Checked |
 |---|---|---|
 | Plan merged | PR #177 (merged) | ☑ |
-| Control plane merged | PR #178 merged; registry #180, visibility #181, claim/release #182 and runtime-owned harness runs/leases/usage #183 merged | ☑ |
-| Runtime/UI implementation | PR #179 (draft; rebased on master; joint gate pending) | ☐ |
-| Clean cut is the default | 057 registered after 059; legacy agent/provider/auth routes, services, tables and `agent_id` columns removed; unit 147 suites / 1746 tests and integration 16 suites / 136 tests green | ☑ |
-| Implementation merged | pending | ☐ |
-| Verification results | Clean-cut evidence in `03` → Results; merge gate pending | ☐ |
+| Control plane merged | PR #178 merged; registry #180, visibility #181, claim/release #182, runtime-owned harness runs/leases/usage #183 and denial/registry routing #184 merged | ☑ |
+| Runtime/UI implementation | PR #179 merged as `bfd1d8a` | ☑ |
+| Clean cut is the default | PR #191: 057 registered after 059, legacy agent/provider/auth routes, services, tables and `agent_id` columns removed, migration ledger added | ☑ |
+| Implementation merged | PR #179 (`bfd1d8a`), Track A follow-up #184 (`809789f`) and clean cut #191 merged as `2a34db5` | ☑ |
+| Verification results | `03` → Results; backend 148 suites / 1750 tests, integration 18 suites / 138 tests, agent 900 tests (10 skipped), frontend 66 files / 574 tests (recheck after #190) | ☑ |
 
 A merged planning PR is **plan merged**, not `done`. Set `status: done` only
 after the implementation PR is merged and `03` has a dated Results row.
@@ -93,7 +93,7 @@ after the implementation PR is merged and `03` has a dated Results row.
 | D6 | GPU and hardware profiles per node | fg-43 | Infrastructure | fg-43 | open |
 | D7 | Discovery adapters beyond OpenAI-compatible, Anthropic and Ollama (vLLM/LM Studio variants) | self | Integration | none | open |
 | D8 | Migration of legacy `ak_…` keys and project-bound agents | self | Migration | none — dropped by the approved clean cut | dropped |
-| D9 | `PoolManager` container-per-agent mode; replaced by supervisor runtimes on enrolled nodes | self | Infrastructure | fg-54 phase 3 | open |
+| D9 | `PoolManager` container-per-agent mode; replaced by supervisor runtimes on enrolled nodes | self | Infrastructure | none — PoolManager removed by #191 | dropped |
 | D10 | Reviewer authority beyond comment-only: bounded approval/close for **small tickets** (risk threshold, evidence, audit); explicitly not in this suite | self | Product | new ticket | open |
 | D11 | Bulk fleet operations (import/export, clone a node config) in the UI | self | UX | none | open |
 | D12 | Credential version-history UI and rollback to a previous secret version | self | Security / UX | none | open |
@@ -117,13 +117,13 @@ after the implementation PR is merged and `03` has a dated Results row.
 
 ## Completion gate
 
-- [ ] Every `FR*`/`NFR*` acceptance statement in `01` is met
-- [ ] Verification matrix in `03` is green and has a row for every requirement
-- [ ] `03` Results has a dated, non-placeholder row
-- [ ] `status` is `done` only after the implementation PR merged, and `pr` is set
-- [ ] `PENDING.txt` / `HARNESS_ROADMAP.md` labels match `00`
-- [ ] Review record in `03` shows all blocking findings resolved
-- [ ] Deferred register reflects what was actually left out
+- [x] Every `FR*`/`NFR*` acceptance statement in `01` is met
+- [x] Verification matrix in `03` is green and has a row for every requirement
+- [x] `03` Results has a dated, non-placeholder row
+- [x] `status` is `done` only after the implementation PR merged, and `pr` is set
+- [x] `PENDING.txt` / `HARNESS_ROADMAP.md` labels match `00`
+- [x] Review record in `03` shows all blocking findings resolved
+- [x] Deferred register reflects what was actually left out
 
 ## Notes
 

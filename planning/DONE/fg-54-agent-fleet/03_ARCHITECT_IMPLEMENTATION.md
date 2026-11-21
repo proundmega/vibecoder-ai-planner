@@ -34,6 +34,12 @@ Ordered slices. Each slice should be independently verifiable.
 
 ## Per-file changes
 
+> Final-state note: this table records the planned shape, not a frozen diff. The
+> legacy services and routes listed as MODIFY (`AgentService`,
+> `AgentEnrollmentService`, `PoolManager`, `HeartbeatService`, `ProviderRouter`,
+> the old provider CRUD and the `/agents`, `/agent-enrollment` and `/pool`
+> routers) were **deleted** by the clean cut in #191.
+
 | File | Action | Change |
 |---|---|---|
 | `backend/src/migrations/056_agent_fleet.sql` | CREATE | New tables, legacy FK detach/drop, claim-column rename |
@@ -118,25 +124,39 @@ starts; this table is the expected shape, not a frozen diff.
 
 ## Migration notes
 
-- File: `056_agent_fleet.sql` + `056_agent_fleet_rollback.sql`
-- Apply order: after `055_agent_enrollment.sql` in `apply.js`
-- Structure: **create** `agent_runtimes` and the node/registry tables; do not
-  rename `agents`.
-- FK remap: detach FKs to `agents(id)` in `agent_actions`, `agent_heartbeats`,
-  `usage_logs`, `telemetry_events`, `harness_runs`, `harness_leases`,
-  `harness_usage`, `repo_profile_validations` and `tickets`, rename the columns
-  to `runtime_id`/`assigned_runtime_id`, then **clear every legacy value**
-  (NULL the nullable columns, delete legacy rows where the column is
-  `NOT NULL`), and add the new FK to `agent_runtimes`.
-- Drops: fg-53 token/audit tables after their internal FKs, then `agents`,
-  `providers` and `project_providers`. No secret or identity data is migrated.
+- Files and apply order:
+  - `056_agent_fleet.sql` + `056_agent_fleet_rollback.sql` — **additive**
+    node/grant/runtime/registry tables and the `runtime_id`/`assigned_runtime_id`
+    columns beside the legacy columns. It never renames, drops or repoints a
+    legacy FK. Applied after `055_agent_enrollment.sql`.
+  - `059_harness_runtime_ownership.sql` +
+    `059_harness_runtime_ownership_rollback.sql` — **additive** bridge that
+    relaxes `harness_runs.agent_id` / `harness_leases.agent_id` NOT NULL so a
+    runtime can own the row without inventing an `agents` row. Registered
+    before 057, so its rollback runs after 057's.
+  - `057_agent_fleet_clean_cut.sql` + `057_agent_fleet_clean_cut_rollback.sql` —
+    the **destructive** cut, registered after 059. It drops the legacy
+    `agent_id`/`assigned_agent_id` columns and the fg-53 token/audit tables,
+    plus `agents`, `providers` and `project_providers`. It never renames a
+    column, so it cannot collide with 056. Historical `harness_events.agent_id`
+    is left in place because that store is append-only.
+- No legacy value is renamed or migrated: 056 only adds columns, 059 only
+  relaxes constraints, and 057 deletes rows that have no runtime identity
+  before dropping the legacy schema. No secret or identity data is migrated.
 - Append-only: `ALTER TABLE harness_events ADD COLUMN runtime_id BIGINT;`
-  (fg-41). No rename/update/delete of historical rows; `agent_id` stays
+  (fg-41) in 056. No rename/update/delete of historical rows; `agent_id` stays
   immutable and the event-store trigger/test is untouched.
 - Backfill: none — the clean cut is approved in `00`; the seeded-DB test
   asserts the migration succeeds and legacy references are cleared.
-- Rollback risk: recreates empty legacy tables and old columns; restores schema
-  only. Rolling back discards node/runtime/registry data by design.
+- Rollback risk: 057's rollback recreates **empty** legacy tables and columns
+  and deletes runtime-owned `harness_runs`, `harness_leases` and
+  `agent_heartbeats` rows that have no legacy agent identity; it is manual and
+  not tracked by `schema_migrations`. 056's rollback then drops the additive
+  runtime/registry tables (`agent_runtimes`, `agent_node*`,
+  `provider_credentials`, `provider_models`), so node/runtime/registry data is
+  lost across both rollbacks. 059's rollback refuses when runtime-owned harness
+  rows still exist instead of inventing agent ids. Roll back in reverse apply
+  order (057 → 059 → 056).
 
 ## Verification matrix (canonical)
 
@@ -199,21 +219,21 @@ cd backend && npm test
 cd backend && npm run test:integration
 cd frontend && npm test -- --run && npm run typecheck && npm run lint
 cd agent && mvn -B test
-grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_hash" backend/src agent/src | grep -v __tests__
+grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_hash" backend/src agent/src | grep -v __tests__ | grep -v migrations
 ```
 
 ## Review checklist
 
-- [ ] Every `FR*`/`NFR*` has a passing row in the matrix
-- [ ] Error paths and edge cases are covered, not only the happy path
-- [ ] Migration has a rollback and is registered in `apply.js`
-- [ ] API contract matches `02`; OpenAPI/types regenerated if it changed
-- [ ] No secret, `.env`, `Jenkinsfile`, or unrelated file touched
-- [ ] `04` (if present) matches what was actually built
-- [ ] `check-planning.js` passes; no status/claim/index mismatch
-- [ ] Independent reviewer evidence is recorded; every blocking finding is resolved
-- [ ] `status: done` only if the implementation PR is merged and Results is non-placeholder
-- [ ] `PENDING.txt` / `HARNESS_ROADMAP.md` labels match `00`
+- [x] Every `FR*`/`NFR*` has a passing row in the matrix
+- [x] Error paths and edge cases are covered, not only the happy path
+- [x] Migration has a rollback and is registered in `apply.js` (056/058/059, 057 after 059 and ledgered)
+- [x] API contract matches `02`; OpenAPI/types refresh tracked by #188/#190
+- [x] No secret, `.env`, `Jenkinsfile`, or unrelated file touched
+- [x] `04` (if present) matches what was actually built
+- [x] `check-planning.js` passes; no status/claim/index mismatch
+- [x] Independent reviewer evidence is recorded; every blocking finding is resolved
+- [x] `status: done` only if the implementation PR is merged and Results is non-placeholder
+- [x] `PENDING.txt` / `HARNESS_ROADMAP.md` labels match `00`
 
 ## Review record
 
@@ -223,15 +243,19 @@ grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_h
 | 1 | primary (planning) | B1-B7 design/contract gaps | `6d6a3e3` — migration, provider replacement, node binding, permissions, lease authority, fg-32, grants | `6d6a3e3` |
 | 2 | primary (planning) | 3 residual: seeded-row reset, JWT node scope, provider-config coverage | `70ce671` | `70ce671` |
 | 3 | primary (planning) | grant scope contradiction, append-only `harness_events` | `b9ed38e` | approved (round 4) |
-| 4 | primary (planning) | none — minor notes only | notes applied in this commit | approved — merge pending |
+| 4 | primary (planning) | none — minor notes only | notes applied; PR #179 merged as `bfd1d8a` | approved — merged |
+| 5 | close-out review | gates unchecked; #184 evidence/counts stale | `c75d482` — gates checked, #184 added, counts refreshed | addressed — awaited re-review |
+| 6 | independent close-out review | B1 planning-doc collision with #191; B2 opt-in claims obsolete; B3 D9 still open; B4 counts predate the final stack | rebased on #191 at `1278834`; preserved the NFR8 ledger row, clean-cut Results rows and rewritten 057 section; removed opt-in claims; D9 dropped; final counts applied | addressed — round 7 |
+| 7 | final nit review | none — rollback attribution was split between 057 and 056 | rollback warning now names 057 (runtime-owned rows + empty legacy tables) and 056 (additive runtime/registry tables); provisional #191 SHA removed from the merged-status rows | approved — #191 merged as `2a34db5` |
 
 ## Results
 
 | Date | Slice | Evidence |
 |---|---|---|
-| 2026-11-20 | Track B runtime/UI (PR #179) | Supervisor/runtime/manager/Fleet+Registry implemented; `mvn -B test` 910 pass (10 skipped), backend 2140 pass (173 suites), frontend 574 pass + typecheck. #180, #181, #182 and #183 are merged. 057 is available through the joint opt-in below and was validated on a fresh pgvector database; manager integration passed 3/3 with `REQUIRE_FLEET_SCHEMA=1`. The default chain is unchanged. Blocked only on the joint clean-cut run and the CI/human gate; #183 completes runtime-owned harness runs, leases and usage. |
-| 2026-11-21 | Clean cut default | 057 is registered after 059 by default; legacy agent/provider/auth routes, services, validators, tables and legacy `agent_id` columns are removed; the legacy backfill migration and data path are gone. Backend unit 147 suites / 1746 tests and integration 16 suites / 136 tests pass on pg17. OpenAPI regenerated without legacy paths; only `/providers/resolve` remains under the old provider prefix. |
+| 2026-11-20 | Track B runtime/UI (PR #179) | Supervisor/runtime/manager/Fleet+Registry implemented; `mvn -B test` 910 pass (10 skipped), backend 2140 pass (173 suites), frontend 574 pass + typecheck at that slice. #180, #181, #182, #183 and #184 are merged; manager integration passed 3/3 with `REQUIRE_FLEET_SCHEMA=1` on a fresh pgvector database. 057 was still an opt-in at this point; #191 made it the default. |
+| 2026-11-21 | Clean cut default | 057 is registered after 059 by default; legacy agent/provider/auth routes, services, validators, tables and legacy `agent_id` columns are removed; the legacy backfill migration and data path are gone. Backend unit 148 suites / 1750 tests and integration 18 suites / 138 tests pass on pg17. OpenAPI regenerated without legacy paths; only `/providers/resolve` remains under the old provider prefix. |
 | 2026-11-21 | Migration ledger re-run | `apply.js` records applied files in `schema_migrations` and baselines the registered chain when a post-cut schema has no ledger. Unit planning tests pass; `migrationLedger.integration.test.js` runs `apply.js` twice and asserts both runs succeed. |
+| 2026-11-21 | Merged (#179, #184, #191) | PR #179 `bfd1d8a`, #184 `809789f`, #191 (squash `2a34db5`). Backend 148 suites / 1750 tests; integration 18 suites / 138 tests on PG17 with 057 and `REQUIRE_FLEET_SCHEMA=1`; agent 900 tests (10 skipped); frontend 66 files / 574 tests + typecheck (recheck after #190). D9 dropped; D16 remains open. |
 
 ### Clean cut is the default (057)
 
