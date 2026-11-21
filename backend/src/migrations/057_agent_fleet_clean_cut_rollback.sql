@@ -2,6 +2,10 @@
 -- Restores the empty legacy schema (columns + tables). Data is intentionally
 -- lost by the clean cut. Run 056_agent_fleet_rollback.sql afterwards to remove
 -- the additive runtime columns.
+--
+-- The rollback is manual and is not tracked by schema_migrations. Delete the
+-- 057 row (and any rows for later files) before the next db:migrate if the
+-- clean cut must be applied again.
 
 CREATE TABLE IF NOT EXISTS providers (
   id BIGSERIAL PRIMARY KEY,

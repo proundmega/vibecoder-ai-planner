@@ -63,12 +63,17 @@ const SQL_FILES = [
   path.join(__dirname, './059_harness_runtime_ownership.sql'),
 ];
 
-// 057 is the destructive clean cut and runs after 059.
+// 057 is the destructive clean cut and runs after 059. The migration ledger
+// (see migrate()) makes sure the legacy chain is never executed again once the
+// cut is in place.
 SQL_FILES.push(path.join(__dirname, './057_agent_fleet_clean_cut.sql'));
 
 const DATA_MIGRATIONS = [
   path.join(__dirname, './migrate_provider_api_keys.js'),
 ];
+
+const MIGRATIONS_TABLE = 'schema_migrations';
+const CLEAN_CUT_MIGRATION = '057_agent_fleet_clean_cut.sql';
 
 const { spawn } = require('child_process');
 
@@ -340,7 +345,81 @@ function validateStatementStructure(statement) {
   return null;
 }
 
-async function runMigration(file, dryRun = false, pool = null) {
+function migrationName(file) {
+  return path.basename(file);
+}
+
+/**
+ * A post-cut schema has the runtime tables but no legacy `agents` table. On
+ * such a database the legacy migrations cannot be re-executed (002, 013, 036,
+ * 040, 052, 055 and 059 reference columns or tables that 057 removed), so the
+ * ledger baselines them as already applied instead.
+ */
+function isCleanCutBaselineRow(row) {
+  return Boolean(row && row.has_runtimes && !row.has_agents);
+}
+
+/**
+ * Pure planning helper: decide which files to execute. A baseline marks every
+ * registered file as applied without running it.
+ */
+function planMigrationRun({ files, applied = [], baseline = false }) {
+  const appliedSet = applied instanceof Set ? applied : new Set(applied);
+  const names = files.map(migrationName);
+  if (baseline) {
+    return { baseline: true, toRun: [], skipped: names };
+  }
+  return {
+    baseline: false,
+    toRun: files.filter((file) => !appliedSet.has(migrationName(file))),
+    skipped: names.filter((name) => appliedSet.has(name)),
+  };
+}
+
+async function ensureMigrationsTable(pool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
+       filename TEXT PRIMARY KEY,
+       applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )`
+  );
+}
+
+async function loadAppliedMigrations(pool) {
+  const result = await pool.query(`SELECT filename FROM ${MIGRATIONS_TABLE}`);
+  return new Set(result.rows.map((row) => row.filename));
+}
+
+async function detectCleanCutSchema(pool) {
+  const result = await pool.query(
+    `SELECT
+       to_regclass('public.agent_runtimes') IS NOT NULL AS has_runtimes,
+       to_regclass('public.agents') IS NOT NULL AS has_agents`
+  );
+  return isCleanCutBaselineRow(result.rows[0]);
+}
+
+async function markMigrationsApplied(pool, files) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const file of files) {
+      await client.query(
+        `INSERT INTO ${MIGRATIONS_TABLE} (filename) VALUES ($1)
+         ON CONFLICT (filename) DO NOTHING`,
+        [migrationName(file)]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function runMigration(file, dryRun = false, pool = null, { record = false } = {}) {
   // Read and classify before any database connection. Dry-run must work with
   // no DATABASE_URL at all.
   const sql = fs.readFileSync(file, 'utf8');
@@ -395,6 +474,13 @@ async function runMigration(file, dryRun = false, pool = null) {
       await client.query(statements[index]);
       console.log(`  ✓ Statement ${index + 1} executed`);
     }
+    if (record) {
+      await client.query(
+        `INSERT INTO ${MIGRATIONS_TABLE} (filename) VALUES ($1)
+         ON CONFLICT (filename) DO NOTHING`,
+        [migrationName(file)]
+      );
+    }
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -414,11 +500,15 @@ function runDataMigration(file) {
       env: { ...process.env },
       stdio: 'inherit',
     });
+    child.on('error', (error) => {
+      console.error(`Data migration ${path.basename(file)} failed to start: ${error.message}`);
+      resolve(1);
+    });
     child.on('close', (code) => {
       if (code !== 0) {
         console.error(`Data migration ${path.basename(file)} exited with code ${code}`);
       }
-      resolve();
+      resolve(code === null ? 1 : code);
     });
   });
 }
@@ -452,12 +542,47 @@ async function migrate(dryRun = false) {
     // here is fatal; do not print one connection error per file and exit 0.
     await pool.query('SELECT NOW()');
 
-    for (const sqlFile of SQL_FILES) {
-      await runMigration(sqlFile, false, pool);
+    await ensureMigrationsTable(pool);
+    const applied = await loadAppliedMigrations(pool);
+
+    // A database that already carries 057 but has no ledger row for it was
+    // migrated by an older runner. Baseline the whole chain instead of
+    // re-executing migrations that reference the removed legacy schema.
+    const baseline = !applied.has(CLEAN_CUT_MIGRATION)
+      && await detectCleanCutSchema(pool);
+    const plan = planMigrationRun({ files: SQL_FILES, applied, baseline });
+
+    if (baseline) {
+      console.log(
+        `\nClean-cut schema detected without a migration ledger; `
+        + `marking ${SQL_FILES.length} SQL and ${DATA_MIGRATIONS.length} data migration(s) as applied.`
+      );
+      await markMigrationsApplied(pool, [...SQL_FILES, ...DATA_MIGRATIONS]);
+    }
+
+    for (const sqlFile of plan.toRun) {
+      await runMigration(sqlFile, false, pool, { record: true });
+    }
+
+    for (const skipped of plan.skipped) {
+      console.log(`\n--- ${skipped} (already applied) ---`);
     }
 
     for (const dataMigration of DATA_MIGRATIONS) {
-      await runDataMigration(dataMigration);
+      const name = migrationName(dataMigration);
+      if (baseline || applied.has(name)) {
+        console.log(`\n[SKIP] Data migration already applied: ${name}`);
+        continue;
+      }
+      const code = await runDataMigration(dataMigration);
+      if (code !== 0) {
+        throw new Error(`Data migration ${name} exited with code ${code}`);
+      }
+      await pool.query(
+        `INSERT INTO ${MIGRATIONS_TABLE} (filename) VALUES ($1)
+         ON CONFLICT (filename) DO NOTHING`,
+        [name]
+      );
     }
 
     console.log('\n\n✓ Migrations completed successfully!');
@@ -486,9 +611,14 @@ if (require.main === module) {
 module.exports = {
   SQL_FILES,
   DATA_MIGRATIONS,
+  MIGRATIONS_TABLE,
+  CLEAN_CUT_MIGRATION,
   classifyStatement,
   splitSQLStatements,
   validateStatementStructure,
+  isCleanCutBaselineRow,
+  planMigrationRun,
   runMigration,
+  runDataMigration,
   migrate,
 };
