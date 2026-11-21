@@ -190,7 +190,8 @@ if (process.env.NODE_ENV !== 'test') {
   eventRetentionInterval.unref();
   purgeTick();
 
-  // Daily retention for fg-53 enrollment/access/refresh tokens and auth events.
+  // Daily retention for fg-54 node enrollment/access/refresh tokens and node
+  // auth events.
   const AgentTokenCleanupService = require('./services/AgentTokenCleanupService');
   const agentTokenPurgeTick = () => {
     AgentTokenCleanupService.purgeExpired().catch(err => {
