@@ -110,8 +110,8 @@ docker compose --env-file .env.local down -v             # stop and remove volum
 These commands run inside Jenkins, which writes the root `.env` before Compose.
 Local commands above use `--env-file .env.local` instead.
 ```
-backend job:  npm ci → lint → syntax check → unit test → coverage
-frontend job: npm ci → lint → typecheck → unit test → coverage → build
+backend job:  npm ci → lint → syntax check → coverage (runs the unit tests)
+frontend job: npm ci → lint → typecheck → coverage (runs the unit tests) → build
 contract test: vitest run api-contract.test.ts (runs after backend+frontend)
 cypress: Jenkins writes .env → docker compose (e2e overlay) → cypress/included runs e2e + component
 integration job: Jenkins writes .env → docker compose up → Jest integration tests → bash integration tests
