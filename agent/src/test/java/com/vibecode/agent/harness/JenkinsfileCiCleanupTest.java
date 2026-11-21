@@ -143,11 +143,22 @@ class JenkinsfileCiCleanupTest {
     }
 
     @Test
-    void fr5CypressTeardownRemovesImages() throws IOException {
+    void fr5CypressTeardownRetainsImageForCache() throws IOException {
         String text = Files.readString(JENKINSFILE, StandardCharsets.UTF_8);
-        assertTrue(text.contains(
-            "docker compose -f \\${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml "
-                + "down -v --rmi local --remove-orphans"), text);
+        int cypress = text.indexOf("stage('Cypress')");
+        int sandbox = text.indexOf("stage('Sandbox Integration')", cypress);
+        assertTrue(cypress > 0 && sandbox > cypress, "Cypress stage block not found");
+        String block = text.substring(cypress, sandbox);
+        assertTrue(block.contains("down -v --remove-orphans"), block);
+        assertFalse(block.contains("--rmi local"), block);
+
+        String cleanup = Files.readString(CLEANUP_PIPELINE, StandardCharsets.UTF_8);
+        assertTrue(cleanup.contains("--orphans"), cleanup);
+        assertTrue(cleanup.contains("CI_IMAGE_GRACE_HOURS"), cleanup);
+
+        String script = Files.readString(
+            Path.of("scripts", "jenkins-docker-cleanup.sh"), StandardCharsets.UTF_8);
+        assertTrue(script.contains("old Compose project image for build"), script);
     }
 
     @Test

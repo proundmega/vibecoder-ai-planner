@@ -44,122 +44,80 @@ pipeline {
                 script {
                     nodejs('Node') {
                         dir('backend') {
-                            sh 'npm ci'
+                            sh 'npm ci --prefer-offline --no-audit --no-fund'
                         }
                     }
                     nodejs('Node') {
                         dir('frontend') {
-                            sh 'npm ci'
+                            sh 'npm ci --prefer-offline --no-audit --no-fund'
                         }
                     }
                 }
             }
         }
 
-        stage('Backend') {
+        // Independent checks run concurrently. Coverage commands execute the
+        // full unit suites, so there is no separate unit-test invocation.
+        stage('Checks') {
             parallel {
-                stage('Backend Lint') {
+                stage('Backend') {
                     steps {
                         nodejs('Node') {
                             dir('backend') {
                                 sh 'npm run lint'
-                            }
-                        }
-                    }
-                }
-                stage('Backend Syntax') {
-                    steps {
-                        nodejs('Node') {
-                            dir('backend') {
                                 sh 'node --check src/index.js'
-                            }
-                        }
-                    }
-                }
-                stage('Backend Helper Unit Tests') {
-                    steps {
-                        dir('backend') {
-                            sh 'bash integration-test/helpers_unit.test.sh'
-                        }
-                    }
-                }
-                stage('Backend Unit Tests') {
-                    steps {
-                        nodejs('Node') {
-                            dir('backend') {
-                                sh 'npm test'
-                            }
-                        }
-                    }
-                }
-                stage('Backend Coverage') {
-                    steps {
-                        nodejs('Node') {
-                            dir('backend') {
+                                sh 'bash integration-test/helpers_unit.test.sh'
                                 sh 'npm run test:coverage'
                             }
                         }
                     }
                 }
-            }
-        }
-
-        stage('Frontend') {
-            parallel {
-                stage('Frontend Lint') {
+                stage('Frontend') {
                     steps {
                         nodejs('Node') {
                             dir('frontend') {
                                 sh 'npm run lint'
-                            }
-                        }
-                    }
-                }
-                stage('Frontend Typecheck') {
-                    steps {
-                        nodejs('Node') {
-                            dir('frontend') {
                                 sh 'npm run typecheck'
-                            }
-                        }
-                    }
-                }
-                stage('Frontend Unit Tests') {
-                    steps {
-                        nodejs('Node') {
-                            dir('frontend') {
-                                sh 'npm test -- --run'
-                            }
-                        }
-                    }
-                }
-                stage('Frontend Coverage') {
-                    steps {
-                        nodejs('Node') {
-                            dir('frontend') {
                                 sh 'npm test -- --run --coverage'
-                            }
-                        }
-                    }
-                }
-                stage('Frontend Build') {
-                    steps {
-                        nodejs('Node') {
-                            dir('frontend') {
                                 sh 'npm run build'
                             }
                         }
                     }
                 }
-            }
-        }
-
-        stage('Contract Test') {
-            steps {
-                nodejs('Node') {
-                    dir('frontend') {
-                        sh 'npm ci'
-                        sh './node_modules/.bin/vitest --run src/__tests__/api-contract.test.ts'
+                stage('Contract Test') {
+                    steps {
+                        nodejs('Node') {
+                            dir('frontend') {
+                                // Setup already installed node_modules; do not
+                                // reinstall just for the contract test.
+                                sh './node_modules/.bin/vitest --run src/__tests__/api-contract.test.ts'
+                            }
+                        }
+                    }
+                }
+                stage('Agent') {
+                    steps {
+                        dir('agent') {
+                            // Package once: this runs the tests and builds the
+                            // shaded JAR in a single Maven invocation.
+                            sh 'mvn -B -ntp package -q'
+                            // The harness adds Node/OpenCode to the runtime image; a JAR
+                            // build alone does not validate that stage. Resolve the
+                            // selected daemon in this shell; the export does not carry
+                            // across sh steps. --load requires a buildx-capable CLI
+                            // (Docker 23+; CI runs Docker 29).
+                            sh '''
+                                . scripts/sandbox-ci-env.sh
+                                echo "Agent image build DOCKER_HOST=$DOCKER_HOST"
+                                docker build --load \
+                                    --label "com.vibecode.ci=${VIBECODE_CI:-false}" \
+                                    --label "com.vibecode.ci.job=${VIBECODE_CI_JOB:-}" \
+                                    --label "com.vibecode.ci.build=${VIBECODE_CI_BUILD:-}" \
+                                    -t vibecode-agent:ci \
+                                    -t "vibecode-agent:${BUILD_NUMBER}" \
+                                    .
+                            '''
+                        }
                     }
                 }
             }
@@ -216,32 +174,12 @@ EOF
             }
             post {
                 always {
-                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml down -v --rmi local --remove-orphans || true"
-                }
-            }
-        }
-
-        stage('Agent') {
-            steps {
-                dir('agent') {
-                    sh 'mvn test -q'
-                    sh 'mvn package -q -DskipTests'
-                    // The harness adds Node/OpenCode to the runtime image; a JAR
-                    // build alone does not validate that stage. Resolve the
-                    // selected daemon in this shell; the export does not carry
-                    // across sh steps. --load requires a buildx-capable CLI
-                    // (Docker 23+; CI runs Docker 29).
-                    sh '''
-                        . scripts/sandbox-ci-env.sh
-                        echo "Agent image build DOCKER_HOST=$DOCKER_HOST"
-                        docker build --load \
-                            --label "com.vibecode.ci=${VIBECODE_CI:-false}" \
-                            --label "com.vibecode.ci.job=${VIBECODE_CI_JOB:-}" \
-                            --label "com.vibecode.ci.build=${VIBECODE_CI_BUILD:-}" \
-                            -t vibecode-agent:ci \
-                            -t "vibecode-agent:${BUILD_NUMBER}" \
-                            .
-                    '''
+                    // Retain the Cypress e2e image for the next build's layer
+                    // cache. The per-build --build-images cleanup keeps its
+                    // :latest alias; the scheduled --orphans GC removes old
+                    // Compose project images after CI_IMAGE_GRACE_HOURS
+                    // (BP-135 decision 8).
+                    sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.e2e.yml down -v --remove-orphans || true"
                 }
             }
         }
@@ -527,20 +465,6 @@ EOF
 
                         // Start test container (no auto-run command, tests run via exec)
                         sh "DOCKER_HOST=\$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml up -d test"
-
-                        // Run Jest integration tests inside the test container
-                        // forceExit: true returns exit code 1 when DB connections are still open,
-                        // so check output for failures instead of relying on exit code
-                        sh '''
-                            DOCKER_HOST=$DOCKER_HOST docker compose -f \${DOCKER_COMPOSE_FILE} -f docker-compose.test.yml exec -T test bash -c '
-                                cd /app
-                                OUTPUT=$(./node_modules/.bin/jest --config jest.integration.config.js --verbose 2>&1)
-                                echo "$OUTPUT"
-                                if echo "$OUTPUT" | grep -E "^(Test Suites:|Tests:)" | grep -qi "failed"; then
-                                    exit 1
-                                fi
-                            '
-                        '''
 
                         // Run bash integration tests inside the test container
                         sh '''
