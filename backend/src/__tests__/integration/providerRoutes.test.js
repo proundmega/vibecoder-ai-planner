@@ -1,6 +1,7 @@
 const { Pool } = require('pg');
 const app = require('../../index');
 const request = require('supertest');
+const { encrypt } = require('../../utils/crypto');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -311,41 +312,80 @@ describe('Provider Routes Integration (PostgreSQL)', () => {
   });
 
   describe('POST /api/v1/providers/resolve', () => {
-    it('resolves provider with routing rules', async () => {
-      const createRes = await request(app)
-        .post('/api/v1/providers')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'Resolver Provider',
-          providerType: 'openai',
-          apiKey: 'sk-test',
-          model: 'gpt-4o',
-          is_project_director: true,
-          routing_rules: JSON.stringify({
-            rules: [
-              { match: { labels: ['frontend'] }, model: 'gpt-4o' },
-              { match: { labels: ['backend'] }, model: 'gpt-4' },
-            ],
-          }),
-        });
-      providerId = createRes.body.data.id;
+    it('resolves a verified registry model for the project', async () => {
+      const user = await pool.query('SELECT id FROM users WHERE email = $1', [testEmail]);
+      const userId = user.rows[0].id;
+      const project = await pool.query(
+        'INSERT INTO projects (name, owner_id) VALUES ($1, $2) RETURNING id',
+        [`resolve-project-${Date.now()}`, userId]
+      );
+      const projectId = project.rows[0].id;
+      const credential = await pool.query(
+        `INSERT INTO provider_credentials
+           (owner_id, project_id, name, provider_type, api_key_encrypted)
+         VALUES ($1, $2, $3, 'openai', $4) RETURNING id`,
+        [userId, projectId, `resolve-cred-${Date.now()}`, encrypt('sk-test')]
+      );
+      await pool.query(
+        `INSERT INTO provider_models
+           (credential_id, model, source, status, roles)
+         VALUES ($1, 'gpt-4o', 'manual', 'verified', ARRAY['worker']),
+                ($1, 'plan-model', 'manual', 'verified', ARRAY['planner'])`,
+        [credential.rows[0].id]
+      );
 
-      const res = await request(app)
-        .post('/api/v1/providers/resolve')
-        .set('Authorization', `Bearer ${token}`)
-        .send({ labels: ['frontend'], priority: 'high' });
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data).toHaveProperty('provider');
-      expect(res.body.data).toHaveProperty('model');
+      try {
+        const res = await request(app)
+          .post('/api/v1/providers/resolve')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ project_id: projectId, role: 'worker' });
+        expect(res.status).toBe(200);
+        expect(res.body.success).toBe(true);
+        expect(res.body.data.provider).toBe('openai');
+        expect(res.body.data.model).toBe('gpt-4o');
+
+        const planning = await request(app)
+          .post('/api/v1/providers/resolve')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ project_id: projectId, phase: 'planning' });
+        expect(planning.status).toBe(200);
+        expect(planning.body.data.model).toBe('plan-model');
+      } finally {
+        await pool.query('DELETE FROM provider_models WHERE credential_id = $1', [credential.rows[0].id]);
+        await pool.query('DELETE FROM provider_credentials WHERE project_id = $1', [projectId]);
+        await pool.query('DELETE FROM projects WHERE id = $1', [projectId]);
+      }
     });
 
-    it('returns error when no director provider exists', async () => {
+
+    it('denies resolving another user\'s project', async () => {
+      const other = await pool.query(
+        `INSERT INTO users (email, name, password_hash)
+         VALUES ($1, 'Other Resolve User', 'x') RETURNING id`,
+        [`resolve_other_${Date.now()}@test.com`]
+      );
+      const project = await pool.query(
+        'INSERT INTO projects (name, owner_id) VALUES ($1, $2) RETURNING id',
+        [`other-project-${Date.now()}`, other.rows[0].id]
+      );
+
+      try {
+        const res = await request(app)
+          .post('/api/v1/providers/resolve')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ project_id: project.rows[0].id });
+        expect(res.status).toBe(403);
+      } finally {
+        await pool.query('DELETE FROM projects WHERE id = $1', [project.rows[0].id]);
+        await pool.query('DELETE FROM users WHERE id = $1', [other.rows[0].id]);
+      }
+    });
+
+    it('returns an error when no registry provider exists', async () => {
       const res = await request(app)
         .post('/api/v1/providers/resolve')
         .set('Authorization', `Bearer ${token}`)
-        .send({ labels: ['test'], priority: 'low' });
-      // Should fail because no director provider is set
+        .send({});
       expect(res.status).toBe(500);
     });
   });

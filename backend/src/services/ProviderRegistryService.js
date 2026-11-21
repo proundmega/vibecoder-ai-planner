@@ -19,6 +19,15 @@ class RegistryError extends Error {
   }
 }
 
+function invalidateRoutingCache(projectId) {
+  const ProviderService = require('./ProviderService');
+  if (projectId == null) {
+    ProviderService.invalidateProviderCache();
+  } else {
+    ProviderService.invalidateProviderCache(projectId);
+  }
+}
+
 function fail(status, code, message, details = null) {
   return new RegistryError(status, code, message, details);
 }
@@ -210,6 +219,7 @@ class ProviderRegistryService {
         projectId, credentialId: result.rows[0].id, actorId: user.userId,
         eventType: 'provider.credential_created',
       });
+      invalidateRoutingCache(projectId);
       return publicCredential(result.rows[0]);
     } catch (error) {
       if (error.code === '23505') throw fail(409, 'CREDENTIAL_EXISTS', 'Credential name already exists');
@@ -241,6 +251,7 @@ class ProviderRegistryService {
       eventType: rotating ? 'provider.credential_rotated' : 'provider.credential_updated',
       metadata: { status: nextStatus, version: result.rows[0].version },
     });
+    invalidateRoutingCache(credential.project_id);
     return publicCredential(result.rows[0]);
   }
 
@@ -261,6 +272,7 @@ class ProviderRegistryService {
       projectId: credential.project_id, credentialId: id, actorId: user.userId,
       eventType: 'provider.credential_deleted',
     });
+    invalidateRoutingCache(credential.project_id);
     return { id };
   }
 
@@ -291,6 +303,7 @@ class ProviderRegistryService {
         projectId: credential.project_id, credentialId, modelId: result.rows[0].id,
         actorId: user.userId, eventType: 'provider.model_added',
       });
+      invalidateRoutingCache(credential.project_id);
       return result.rows[0];
     } catch (error) {
       if (error.code === '23505') throw fail(409, 'MODEL_EXISTS', 'Model already exists');
@@ -330,6 +343,7 @@ class ProviderRegistryService {
       actorId: user.userId, eventType: 'provider.model_updated',
       metadata: { status: status ?? null, effort: effort ?? null },
     });
+    invalidateRoutingCache(model.project_id);
     return result.rows[0];
   }
 
@@ -350,6 +364,7 @@ class ProviderRegistryService {
       projectId: model.project_id, credentialId: model.credential_id, modelId: id,
       actorId: user.userId, eventType: 'provider.model_deleted',
     });
+    invalidateRoutingCache(model.project_id);
     return { id };
   }
 
@@ -415,6 +430,7 @@ class ProviderRegistryService {
       eventType: 'provider.models_discovered',
       metadata: { added: inserted.length },
     });
+    invalidateRoutingCache(credential.project_id);
     const all = await pool.query(
       'SELECT * FROM provider_models WHERE credential_id = $1 ORDER BY created_at DESC',
       [credentialId]
@@ -473,6 +489,7 @@ class ProviderRegistryService {
         projectId: model.project_id, credentialId: model.credential_id, modelId: id,
         actorId: user.userId, eventType: 'provider.model_verified',
       });
+      invalidateRoutingCache(model.project_id);
       return { verified: true, model: updated.rows[0] };
     } catch (error) {
       if (error instanceof RegistryError) throw error;

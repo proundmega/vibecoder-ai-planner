@@ -87,6 +87,12 @@ describe('Agent node routes (FR1, FR3, FR20, FR21, NFR1)', () => {
       .get('/api/v1/agent-nodes/99/config')
       .set('X-API-Key', 'at_valid');
     expect(foreign.statusCode).toBe(404);
+    const bindingAudit = pool.query.mock.calls.find(([sql, params]) =>
+      sql.includes('agent_node_auth_events') && params[2] === 'auth.node_binding_denied'
+    );
+    expect(bindingAudit[1][0]).toBe(12);
+    expect(bindingAudit[1][3]).toBe('node');
+    expect(bindingAudit[1][4]).toBe('12');
   });
 
   it('returns nodes with their embedded runtimes', async () => {
@@ -116,6 +122,84 @@ describe('Agent node routes (FR1, FR3, FR20, FR21, NFR1)', () => {
 
     expect(res.statusCode).toBe(404);
     expect(revoke).not.toHaveBeenCalled();
+    const visibilityAudit = pool.query.mock.calls.find(([sql, params]) =>
+      sql.includes('agent_node_auth_events') && params[2] === 'auth.node_visibility_denied'
+    );
+    expect(visibilityAudit[1][0]).toBe(12);
+    expect(visibilityAudit[1][3]).toBe('user');
+    expect(visibilityAudit[1][4]).toBe('7');
+  });
+
+
+  it('audits a shared-node owner denial with the node id', async () => {
+    const revoke = jest.spyOn(AgentNodeService, 'revoke');
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('FROM agent_nodes')) {
+        return Promise.resolve({ rows: [{ id: 12, owner_id: 99 }] });
+      }
+      if (sql.includes('FROM agent_node_grants g')) {
+        return Promise.resolve({ rows: [{ id: 1 }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    const res = await request(app)
+      .post('/api/v1/agent-nodes/12/revoke')
+      .set('Authorization', 'Bearer mock-token');
+
+    expect(res.statusCode).toBe(404);
+    expect(revoke).not.toHaveBeenCalled();
+    const audit = pool.query.mock.calls.find(([sql, params]) =>
+      sql.includes('agent_node_auth_events') && params[2] === 'auth.node_owner_denied'
+    );
+    expect(audit[1][0]).toBe(12);
+    expect(audit[1][3]).toBe('user');
+    expect(audit[1][4]).toBe('7');
+  });
+
+  it('audits a grant binding denial with the node id', async () => {
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('FROM agent_nodes')) {
+        return Promise.resolve({ rows: [{ id: 12, owner_id: 7 }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    const res = await request(app)
+      .delete('/api/v1/agent-nodes/12/grants/999')
+      .set('Authorization', 'Bearer mock-token');
+
+    expect(res.statusCode).toBe(404);
+    const audit = pool.query.mock.calls.find(([sql, params]) =>
+      sql.includes('agent_node_auth_events') && params[2] === 'auth.grant_binding_denied'
+    );
+    expect(audit[1][0]).toBe(12);
+    expect(audit[1][3]).toBe('user');
+    expect(audit[1][4]).toBe('7');
+  });
+
+  it('audits a grant project-admin denial with node and project', async () => {
+    pool.query.mockImplementation((sql) => {
+      if (sql.includes('FROM agent_nodes')) {
+        return Promise.resolve({ rows: [{ id: 12, owner_id: 7 }] });
+      }
+      if (sql.includes('FROM agent_node_grants g')) {
+        return Promise.resolve({ rows: [{ project_id: 5 }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+
+    const res = await request(app)
+      .delete('/api/v1/agent-nodes/12/grants/2')
+      .set('Authorization', 'Bearer mock-token');
+
+    expect(res.statusCode).toBe(403);
+    const audit = pool.query.mock.calls.find(([sql, params]) =>
+      sql.includes('agent_node_auth_events') && params[2] === 'auth.grant_admin_denied'
+    );
+    expect(audit[1][0]).toBe(12);
+    expect(audit[1][1]).toBe(5);
+    expect(audit[1][4]).toBe('7');
   });
 
   it('returns the resolved provider config and denies unsafe states', async () => {
@@ -184,6 +268,13 @@ describe('Agent node routes (FR1, FR3, FR20, FR21, NFR1)', () => {
       .set('Authorization', 'Bearer mock-token')
       .send({ projectId: 5, role: 'worker' });
     expect(denied.statusCode).toBe(403);
+    const adminAudit = pool.query.mock.calls.find(([sql, params]) =>
+      sql.includes('agent_node_auth_events') && params[2] === 'auth.project_admin_denied'
+    );
+    expect(adminAudit[1][0]).toBe(12);
+    expect(adminAudit[1][1]).toBe(5);
+    expect(adminAudit[1][3]).toBe('user');
+    expect(adminAudit[1][4]).toBe('7');
 
     // Owner + member -> 201.
     pool.query.mockImplementation((sql) => {

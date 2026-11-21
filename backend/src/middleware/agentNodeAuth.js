@@ -1,4 +1,5 @@
 const AgentNodeService = require('../services/AgentNodeService');
+const { auditDenial } = require('./agentRole');
 
 function unauthorized(res, result) {
   const code = result.status === 'expired'
@@ -36,8 +37,14 @@ async function agentNodeAuth(req, res, next) {
 
 /** Bind a node-scoped route parameter to the presented credential. */
 function bindNode(param = 'id') {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (!req.node || String(req.node.id) !== String(req.params[param])) {
+      await auditDenial(req, 'auth.node_binding_denied', {
+        metadata: {
+          presentedNodeId: req.node ? req.node.id : null,
+          requestedNodeId: req.params[param],
+        },
+      });
       return res.status(404).json({
         success: false,
         error: { code: 'NODE_NOT_FOUND', message: 'Node not found' },

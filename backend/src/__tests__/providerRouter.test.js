@@ -19,6 +19,7 @@ const GenericProvider = require('../providers/generic');
 describe('ProviderRouter', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.PROVIDER_DEFAULT_TEMPERATURE;
     decrypt.mockImplementation((text) => text.replace('encrypted-', ''));
     ClaudeProvider.mockImplementation(() => ({
       chat: jest.fn().mockResolvedValue({ content: 'test', usage: {}, stop_reason: 'end_turn' }),
@@ -39,28 +40,24 @@ describe('ProviderRouter', () => {
       pool.query.mockResolvedValueOnce({
         rows: [
           {
-            id: 1,
-            project_id: 1,
-            name: 'claude-pro',
+            credential_id: 1,
             provider_type: 'claude',
             api_key_encrypted: 'encrypted-my-key',
+            base_url: null,
+            model_id: 11,
             model: 'claude-sonnet-4-20250514',
             roles: ['planner'],
             max_tokens: 4096,
-            temperature: 0.1,
-            is_active: true,
           },
           {
-            id: 2,
-            project_id: 1,
-            name: 'openai-worker',
+            credential_id: 2,
             provider_type: 'openai',
             api_key_encrypted: 'encrypted-openai-key',
+            base_url: null,
+            model_id: 12,
             model: 'gpt-4o',
             roles: ['worker', 'reviewer'],
             max_tokens: 8192,
-            temperature: 0.2,
-            is_active: true,
           },
         ],
       });
@@ -68,10 +65,11 @@ describe('ProviderRouter', () => {
       const router = new ProviderRouter(1);
       await router.loadProviders();
 
-      expect(pool.query).toHaveBeenCalledWith(
-        `SELECT * FROM project_providers WHERE project_id = $1 AND is_active = true`,
-        [1]
-      );
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain('FROM provider_credentials pc');
+      expect(sql).toContain("pc.status = 'active'");
+      expect(sql).toContain("pm.status = 'verified'");
+      expect(params).toEqual([1]);
       expect(ClaudeProvider).toHaveBeenCalledWith({
         apiKey: 'my-key',
         model: 'claude-sonnet-4-20250514',
@@ -87,13 +85,46 @@ describe('ProviderRouter', () => {
         apiKey: 'openai-key',
         model: 'gpt-4o',
         maxTokens: 8192,
-        temperature: 0.2,
+        temperature: 0.1,
         baseUrl: undefined,
         projectId: 1,
         userId: null,
         agentId: null,
         ticketId: null,
       });
+    });
+
+
+    it('keeps project-scoped credentials ahead of global credentials for a role', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          {
+            credential_id: 1,
+            provider_type: 'claude',
+            api_key_encrypted: 'encrypted-project-key',
+            base_url: null,
+            model_id: 11,
+            model: 'project-model',
+            roles: ['worker'],
+            max_tokens: 4096,
+          },
+          {
+            credential_id: 2,
+            provider_type: 'openai',
+            api_key_encrypted: 'encrypted-global-key',
+            base_url: null,
+            model_id: 12,
+            model: 'global-model',
+            roles: ['worker'],
+            max_tokens: 4096,
+          },
+        ],
+      });
+
+      const router = new ProviderRouter(1);
+      await router.loadProviders();
+
+      expect(router.getForRole('worker')).toBe(ClaudeProvider.mock.results[0].value);
     });
 
     it('should not reload providers if already loaded', async () => {
@@ -112,16 +143,14 @@ describe('ProviderRouter', () => {
       pool.query.mockResolvedValueOnce({
         rows: [
           {
-            id: 1,
-            project_id: 1,
-            name: 'claude-pro',
+            credential_id: 1,
             provider_type: 'claude',
             api_key_encrypted: 'encrypted-my-key',
+            base_url: null,
+            model_id: 11,
             model: 'claude-sonnet-4-20250514',
             roles: ['planner'],
             max_tokens: 4096,
-            temperature: 0.1,
-            is_active: true,
           },
         ],
       });

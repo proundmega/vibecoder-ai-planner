@@ -3,6 +3,7 @@ const { pool } = require('../db');
 const AgentService = require('../services/AgentService');
 const AgentNodeService = require('../services/AgentNodeService');
 const AgentEnrollmentService = require('../services/AgentEnrollmentService');
+const { recordAuthEvent } = require('./agentRole');
 const { authFailureCounter } = require('../services/AgentEnrollmentMetrics');
 const { getSecret } = require('../utils/jwt');
 const bcrypt = require('bcryptjs');
@@ -210,8 +211,16 @@ exports.requireActiveUser = async (req, res, next) => {
  * child runtime it acts for. Rejecting runtime-less node tokens here keeps a
  * host token from falling back to the legacy unscoped agent path.
  */
-function requireNodeRuntime(agent, res) {
+async function requireNodeRuntime(agent, req, res) {
   if (!agent._node || agent._runtime) return true;
+  await recordAuthEvent({
+    nodeId: agent._nodeRecord ? agent._nodeRecord.id : null,
+    eventType: 'auth.runtime_missing',
+    actorType: 'node',
+    actorId: agent._nodeRecord ? agent._nodeRecord.id : null,
+    ip: req.ip || null,
+    metadata: { path: req.originalUrl || req.path || null },
+  });
   res.status(400).json({
     success: false,
     error: {
@@ -365,7 +374,7 @@ exports.agentAuth = async (req, res, next) => {
       return res.status(401).json({ success: false, error: agentAuthFailure(agent) });
     }
 
-    if (!requireNodeRuntime(agent, res)) return;
+    if (!(await requireNodeRuntime(agent, req, res))) return;
 
     req.agent = agent;
     if (agent._node) {
@@ -405,7 +414,7 @@ exports.verifyTokenOrAgent = async (req, res, next) => {
       return res.status(401).json({ success: false, error: agentAuthFailure(agent) });
     }
 
-    if (!requireNodeRuntime(agent, res)) return;
+    if (!(await requireNodeRuntime(agent, req, res))) return;
 
     req.agent = agent;
     if (agent._node) {

@@ -112,32 +112,73 @@ test_providers() {
     -H "Authorization: Bearer $token"
   assert_status "Get provider agents" "200" "$HTTP_CODE"
 
-  # --- Resolve Provider ---
+  # --- Registry-backed resolve ---
+  local project_body project_id
+  project_body=$(curl_sf -X POST "${BASE}/api/v1/projects" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"name":"Provider Resolve Project"}')
+  project_id=$(echo "$project_body" | jq -r '.data.id // .id')
+  assert_has_field "Resolve project created" "id" "$project_body"
+
+  local cred_body cred_id
+  cred_body=$(curl_sf -X POST "${BASE}/api/v1/provider-credentials" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d "{\"name\":\"Resolve Credential\",\"providerType\":\"openai\",\"apiKey\":\"sk-resolve\",\"projectId\":$project_id}")
+  cred_id=$(echo "$cred_body" | jq -r '.data.id // .id')
+  assert_has_field "Resolve credential created" "id" "$cred_body"
+
+  local worker_model_body worker_model_id
+  worker_model_body=$(curl_sf -X POST "${BASE}/api/v1/provider-credentials/$cred_id/models" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"model":"gpt-4o","roles":["worker"]}')
+  worker_model_id=$(echo "$worker_model_body" | jq -r '.data.id // .id')
+  curl_sf -X PATCH "${BASE}/api/v1/provider-models/$worker_model_id" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"status":"verified"}' >/dev/null
+
+  local planner_model_body planner_model_id
+  planner_model_body=$(curl_sf -X POST "${BASE}/api/v1/provider-credentials/$cred_id/models" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"model":"planner-model","roles":["planner"]}')
+  planner_model_id=$(echo "$planner_model_body" | jq -r '.data.id // .id')
+  curl_sf -X PATCH "${BASE}/api/v1/provider-models/$planner_model_id" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" \
+    -d '{"status":"verified"}' >/dev/null
+
   http_post "${BASE}/api/v1/providers/resolve" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
-    -d '{"labels":["test"],"priority":"high"}'
+    -d "{\"project_id\":$project_id,\"role\":\"worker\"}"
   assert_status "Resolve provider" "200" "$HTTP_CODE"
   assert_has_field "Resolve provider (has provider)" "provider" "$RESPONSE_BODY"
 
-  # --- Create another provider with routing rules ---
-  http_post "${BASE}/api/v1/providers" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $token" \
-    -d '{"name":"Routing Provider","providerType":"claude","apiKey":"sk-claude","model":"claude-3","is_project_director":true,"routing_rules":{"rules":[{"match":{"labels":["frontend"]},"model":"claude-3"}]}}' >/dev/null
-
   http_post "${BASE}/api/v1/providers/resolve" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $token" \
-    -d '{"labels":["frontend"],"priority":"high"}'
-  assert_status "Resolve with routing rules" "200" "$HTTP_CODE"
+    -d "{\"project_id\":$project_id,\"phase\":\"planning\"}"
+  assert_status "Resolve by planning phase" "200" "$HTTP_CODE"
   local resolved_model
   resolved_model=$(echo "$RESPONSE_BODY" | jq -r '.data.model')
-  if [ "$resolved_model" = "claude-3" ]; then
-    pass "Resolve routing rules (model=claude-3)"
+  if [ "$resolved_model" = "planner-model" ]; then
+    pass "Resolve by phase (model=planner-model)"
   else
-    fail "Resolve routing rules" "expected model=claude-3, got model=$resolved_model"
+    fail "Resolve by phase" "expected model=planner-model, got model=$resolved_model"
   fi
+
+  curl -s -X DELETE "${BASE}/api/v1/provider-models/$worker_model_id" \
+    -H "Authorization: Bearer $token" >/dev/null || true
+  curl -s -X DELETE "${BASE}/api/v1/provider-models/$planner_model_id" \
+    -H "Authorization: Bearer $token" >/dev/null || true
+  curl -s -X DELETE "${BASE}/api/v1/provider-credentials/$cred_id" \
+    -H "Authorization: Bearer $token" >/dev/null || true
+  curl -s -X DELETE "${BASE}/api/v1/projects/$project_id" \
+    -H "Authorization: Bearer $token" >/dev/null || true
 
   # --- Delete Provider ---
   http_delete "${BASE}/api/v1/providers/$provider_id" \

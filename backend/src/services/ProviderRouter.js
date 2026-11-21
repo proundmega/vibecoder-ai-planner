@@ -1,5 +1,6 @@
 const { pool } = require('../db');
 const { decrypt } = require('../utils/crypto');
+const { resolveProviderEndpoint, defaultTemperature } = require('../utils/providerDefaults');
 const ClaudeProvider = require('../providers/claude');
 const OpenAIProvider = require('../providers/openai');
 const GenericProvider = require('../providers/generic');
@@ -15,8 +16,30 @@ class ProviderRouter {
   async loadProviders() {
     if (this.loaded) return;
 
+    if (this.projectId == null) {
+      this.loaded = true;
+      return;
+    }
+
+    // The registry is authoritative: active credentials plus verified models.
+    // Project-scoped credentials win; owner-global credentials are the fallback.
     const rows = await pool.query(
-      `SELECT * FROM project_providers WHERE project_id = $1 AND is_active = true`,
+      `SELECT pc.id AS credential_id,
+              pc.provider_type,
+              pc.api_key_encrypted,
+              pc.base_url,
+              pm.id AS model_id,
+              pm.model,
+              pm.max_tokens,
+              pm.roles
+       FROM provider_credentials pc
+       JOIN provider_models pm ON pm.credential_id = pc.id
+       JOIN projects p ON p.id = $1
+       WHERE pc.status = 'active'
+         AND pm.status = 'verified'
+         AND (pc.project_id = $1
+              OR (pc.project_id IS NULL AND pc.owner_id = p.owner_id))
+       ORDER BY (pc.project_id IS NULL) ASC, pc.id ASC, pm.id ASC`,
       [this.projectId]
     );
 
@@ -25,9 +48,12 @@ class ProviderRouter {
       const config = {
         apiKey: decryptedKey,
         model: row.model,
-        maxTokens: row.max_tokens,
-        temperature: row.temperature,
-        baseUrl: row.base_url || row.endpoint_url,
+        maxTokens: row.max_tokens || 4096,
+        temperature: defaultTemperature(),
+        baseUrl: resolveProviderEndpoint({
+          providerType: row.provider_type,
+          baseUrl: row.base_url,
+        }) || undefined,
         projectId: this.projectId,
         userId: this.context.userId || null,
         agentId: this.context.agentId || null,
@@ -35,8 +61,13 @@ class ProviderRouter {
       };
 
       const provider = this.createProvider(row.provider_type, config);
-      for (const role of row.roles) {
-        this.providers.set(`${this.projectId}:${role}`, provider);
+      for (const role of row.roles || []) {
+        const key = `${this.projectId}:${role}`;
+        // Rows are project-scoped first, so the first provider for a role is
+        // the highest-priority one.
+        if (!this.providers.has(key)) {
+          this.providers.set(key, provider);
+        }
       }
     }
 

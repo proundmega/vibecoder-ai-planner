@@ -1,4 +1,5 @@
 const { pool } = require('../db');
+const logger = require('../utils/logger');
 
 /**
  * Runtime role/grant enforcement for node-authenticated requests.
@@ -19,6 +20,58 @@ function isNodeRequest(req) {
   return Boolean(req.agent && req.agent._node);
 }
 
+/**
+ * Record an authorization denial without letting an audit failure change the
+ * response. Node/runtime identity is retained when available.
+ */
+async function recordAuthEvent({
+  nodeId = null,
+  projectId = null,
+  eventType,
+  actorType = 'system',
+  actorId = null,
+  ip = null,
+  metadata = {},
+}) {
+  try {
+    await pool.query(
+      `INSERT INTO agent_node_auth_events
+         (node_id, project_id, event_type, actor_type, actor_id, ip_address, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+      [
+        nodeId == null ? null : nodeId,
+        projectId == null ? null : projectId,
+        eventType,
+        actorType,
+        actorId == null ? null : String(actorId),
+        ip || null,
+        JSON.stringify(metadata),
+      ]
+    );
+  } catch (error) {
+    // Authorization already failed closed; auditing is best effort.
+    logger.warn(`Authorization audit failed: ${error.message}`);
+  }
+}
+
+async function auditDenial(req, eventType, { projectId = null, metadata = {} } = {}) {
+  const nodeId = (req.node && req.node.id) || (req.nodeRecord && req.nodeRecord.id) || null;
+  const actorId = (req.runtime && req.runtime.id)
+    ?? (req.agent && req.agent.id)
+    ?? (req.user && req.user.userId)
+    ?? nodeId
+    ?? null;
+  return recordAuthEvent({
+    nodeId,
+    projectId,
+    eventType,
+    actorType: req.runtime ? 'runtime' : (req.user ? 'user' : (nodeId ? 'node' : 'agent')),
+    actorId,
+    ip: req.ip || null,
+    metadata,
+  });
+}
+
 function deny(res, status, code, message) {
   return res.status(status).json({ success: false, error: { code, message } });
 }
@@ -27,18 +80,32 @@ function deny(res, status, code, message) {
  * Validate a node request's runtime, optional status allowlist and optional
  * role allowlist. Returns true when the caller may continue.
  */
-function checkRuntime(req, res, { roles = null, statuses = null } = {}) {
+async function checkRuntime(req, res, { roles = null, statuses = null } = {}) {
   if (!isNodeRequest(req)) return true;
 
   if (!req.runtime) {
+    // auth.js rejects runtime-less node tokens earlier and audits them.
     deny(res, 400, 'RUNTIME_REQUIRED', 'Missing X-Agent-Runtime header');
     return false;
   }
   if (statuses && !statuses.includes(req.runtime.status)) {
+    await auditDenial(req, 'auth.runtime_inactive', {
+      metadata: {
+        status: req.runtime.status,
+        path: req.originalUrl || req.path || null,
+      },
+    });
     deny(res, 403, 'RUNTIME_INACTIVE', 'Runtime is not running');
     return false;
   }
   if (roles && !roles.includes(req.runtime.role)) {
+    await auditDenial(req, 'auth.role_denied', {
+      metadata: {
+        role: req.runtime.role,
+        allowed: roles,
+        path: req.originalUrl || req.path || null,
+      },
+    });
     deny(res, 403, 'FORBIDDEN', 'Runtime role cannot perform this action');
     return false;
   }
@@ -71,16 +138,18 @@ function projectIdFromBody(body = {}) {
  * Called without arguments it only enforces that a runtime was presented.
  */
 function requireRuntime(...statuses) {
-  return (req, res, next) => {
-    if (!checkRuntime(req, res, { statuses: statuses.length ? statuses : null })) return;
+  return async (req, res, next) => {
+    if (!(await checkRuntime(req, res, {
+      statuses: statuses.length ? statuses : null,
+    }))) return;
     return next();
   };
 }
 
 /** Require one of `roles` for node requests; legacy agent keys pass. */
 function requireRole(...roles) {
-  return (req, res, next) => {
-    if (!checkRuntime(req, res, { roles })) return;
+  return async (req, res, next) => {
+    if (!(await checkRuntime(req, res, { roles }))) return;
     return next();
   };
 }
@@ -91,7 +160,7 @@ function requireRole(...roles) {
  */
 function requireTicketGrant(...roles) {
   return async (req, res, next) => {
-    if (!checkRuntime(req, res, { roles })) return;
+    if (!(await checkRuntime(req, res, { roles }))) return;
     if (!isNodeRequest(req)) return next();
     if (!validId(res, req.params.ticketId, 'ticketId', NUMERIC_ID)) return;
 
@@ -105,6 +174,14 @@ function requireTicketGrant(...roles) {
       }
       const projectId = ticket.rows[0].project_id;
       if (!(await hasGrant(req.node.id, projectId, req.runtime.role))) {
+        await auditDenial(req, 'auth.grant_denied', {
+          projectId,
+          metadata: {
+            role: req.runtime.role,
+            resource: 'ticket',
+            ticketId: req.params.ticketId,
+          },
+        });
         return deny(res, 403, 'GRANT_REQUIRED', 'No active grant for this project/role');
       }
       return next();
@@ -120,7 +197,7 @@ function requireTicketGrant(...roles) {
  */
 function requireBodyGrant(...roles) {
   return async (req, res, next) => {
-    if (!checkRuntime(req, res, { roles })) return;
+    if (!(await checkRuntime(req, res, { roles }))) return;
     if (!isNodeRequest(req)) return next();
 
     try {
@@ -151,9 +228,16 @@ function requireBodyGrant(...roles) {
       }
 
       if (projectId == null) {
+        await auditDenial(req, 'auth.grant_denied', {
+          metadata: { role: req.runtime.role, resource: 'body', reason: 'project_required' },
+        });
         return deny(res, 403, 'GRANT_REQUIRED', 'Project is required for this action');
       }
       if (!(await hasGrant(req.node.id, projectId, req.runtime.role))) {
+        await auditDenial(req, 'auth.grant_denied', {
+          projectId,
+          metadata: { role: req.runtime.role, resource: 'body' },
+        });
         return deny(res, 403, 'GRANT_REQUIRED', 'No active grant for this project/role');
       }
       return next();
@@ -169,7 +253,7 @@ function requireBodyGrant(...roles) {
  */
 function requireRunGrant(...roles) {
   return async (req, res, next) => {
-    if (!checkRuntime(req, res, { roles })) return;
+    if (!(await checkRuntime(req, res, { roles }))) return;
     if (!isNodeRequest(req)) return next();
     if (!validId(res, req.params.runId, 'runId', UUIDISH)) return;
 
@@ -183,9 +267,16 @@ function requireRunGrant(...roles) {
       }
       const projectId = run.rows[0].project_id;
       if (projectId == null) {
+        await auditDenial(req, 'auth.grant_denied', {
+          metadata: { role: req.runtime.role, resource: 'run', reason: 'project_missing' },
+        });
         return deny(res, 403, 'GRANT_REQUIRED', 'Run project is not available');
       }
       if (!(await hasGrant(req.node.id, projectId, req.runtime.role))) {
+        await auditDenial(req, 'auth.grant_denied', {
+          projectId,
+          metadata: { role: req.runtime.role, resource: 'run', runId: req.params.runId },
+        });
         return deny(res, 403, 'GRANT_REQUIRED', 'No active grant for this project/role');
       }
       return next();
@@ -200,16 +291,23 @@ function requireRunGrant(...roles) {
  */
 function requireProjectGrant(...roles) {
   return async (req, res, next) => {
-    if (!checkRuntime(req, res, { roles })) return;
+    if (!(await checkRuntime(req, res, { roles }))) return;
     if (!isNodeRequest(req)) return next();
 
     try {
       const projectId = req.params.projectId ?? req.params.id;
       if (projectId == null) {
+        await auditDenial(req, 'auth.grant_denied', {
+          metadata: { role: req.runtime.role, resource: 'project', reason: 'project_required' },
+        });
         return deny(res, 403, 'GRANT_REQUIRED', 'Project is required for this action');
       }
       if (!validId(res, projectId, 'projectId', NUMERIC_ID)) return;
       if (!(await hasGrant(req.node.id, projectId, req.runtime.role))) {
+        await auditDenial(req, 'auth.grant_denied', {
+          projectId,
+          metadata: { role: req.runtime.role, resource: 'project' },
+        });
         return deny(res, 403, 'GRANT_REQUIRED', 'No active grant for this project/role');
       }
       return next();
@@ -233,6 +331,7 @@ function requireReviewEventGrant() {
 }
 
 module.exports = {
+  auditDenial,
   requireRuntime,
   requireRole,
   requireTicketGrant,
@@ -240,4 +339,5 @@ module.exports = {
   requireProjectGrant,
   requireRunGrant,
   requireReviewEventGrant,
+  recordAuthEvent,
 };

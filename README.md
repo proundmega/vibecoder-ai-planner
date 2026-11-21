@@ -95,6 +95,7 @@ Required for `docker compose up`:
 | `ALLOWED_ORIGINS` | CORS origins (comma-separated) | `http://localhost:3000,http://localhost:3002` |
 | `DOCKER_API_URL` | Docker socket URL | `http://docker-proxy:2375` |
 | `ENCRYPTION_KEY` | 64 hex chars for AES-256 | _(required)_ |
+| `PROVIDER_DEFAULT_TEMPERATURE` | Sampling temperature for registry-resolved providers (empty/invalid → 0.1) | `0.1` |
 | `GITHUB_AUTH_MODE` | `app` (GitHub App installation tokens) or `pat` | `app` |
 | `GITHUB_APP_ID` | GitHub App id | _(app mode)_ |
 | `GITHUB_APP_PRIVATE_KEY` | PEM value, `\n`-escaped PEM, or `file:/path/to/key.pem` | _(app mode)_ |
@@ -320,6 +321,8 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 - `/api/auth/register`: 3 requests per 60 seconds
 - `/api/auth/login`: 5 requests per 60 seconds, lockout after 10 failures (15 min)
 - `/api/auth/me`: 30 requests per 60 seconds
+
+**Provider resolution:** `POST /api/v1/providers/resolve` selects a verified registry model by `role` (`worker`/`reviewer`/`planner`) or `phase` (`planning`→planner, `review`→reviewer, otherwise worker). Legacy `labels`/`priority` fields are ignored; fg-38 owns routing policy.
 
 **Ticket status transitions:** `backlog → in_progress → review → done` (review can go back to backlog, in_progress can go back to backlog). `done` is terminal.
 
