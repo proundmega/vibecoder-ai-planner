@@ -188,7 +188,7 @@ so fresh named volumes are writable; a host bind for `/repos` must be chowned
 | `POLL_INTERVAL_MS` | Poll interval | `30000` |
 | `MAX_TICKETS` | Tickets per cycle | `1` |
 | `DRY_RUN` | Do not publish | `false` |
-| `HARNESS_MODE` | `legacy` or `opencode` | `legacy` |
+| `HARNESS_MODE` | `legacy` or `opencode`; Compose defaults to the fleet harness | `opencode` (Compose); `legacy` (bare JVM) |
 | `SANDBOX_MODE` | `host` or `docker` | `host` |
 
 Provider settings (type, key, model, endpoint, effort) are fetched per runtime
