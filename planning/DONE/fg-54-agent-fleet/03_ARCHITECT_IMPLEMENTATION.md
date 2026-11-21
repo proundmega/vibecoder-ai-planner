@@ -245,7 +245,8 @@ grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_h
 | 3 | primary (planning) | grant scope contradiction, append-only `harness_events` | `b9ed38e` | approved (round 4) |
 | 4 | primary (planning) | none — minor notes only | notes applied; PR #179 merged as `bfd1d8a` | approved — merged |
 | 5 | close-out review | gates unchecked; #184 evidence/counts stale | `c75d482` — gates checked, #184 added, counts refreshed | addressed — awaited re-review |
-| 6 | independent close-out review | B1 planning-doc collision with #191; B2 opt-in claims obsolete; B3 D9 still open; B4 counts predate the final stack | rebased on #191 at `1278834`; preserved the NFR8 ledger row, clean-cut Results rows and rewritten 057 section; removed opt-in claims; D9 dropped; final counts applied | this commit — re-review requested |
+| 6 | independent close-out review | B1 planning-doc collision with #191; B2 opt-in claims obsolete; B3 D9 still open; B4 counts predate the final stack | rebased on #191 at `1278834`; preserved the NFR8 ledger row, clean-cut Results rows and rewritten 057 section; removed opt-in claims; D9 dropped; final counts applied | addressed — round 7 |
+| 7 | final nit review | none — rollback attribution was split between 057 and 056 | rollback warning now names 057 (runtime-owned rows + empty legacy tables) and 056 (additive runtime/registry tables); provisional #191 SHA removed from the merged-status rows | approved — merge after #191 |
 
 ## Results
 
