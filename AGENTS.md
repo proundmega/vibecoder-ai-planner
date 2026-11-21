@@ -32,13 +32,13 @@ cd ../frontend && npm run dev      # Vite :3000, proxies /api → :3001
 backend/src/
   index.js          → exports app (NODE_ENV=test skips listen; supertest uses app directly)
   api/routes.js     → /health, /version, /docs, /metrics, /auth/*, /v1/*
-  api/v1/index.js   → 18 mounted routers (users, projects, tickets, agents, approvals, providers, credentials, usage, billing, memory, review, ...) + inlined template/attachment/planning/ip-whitelist routes
-  services/         → ~28 services
-  controllers/      → ~12 controllers
+  api/v1/index.js   → 23 route modules via 27 router.use mounts (users, projects, tickets, agent-nodes, provider-registry, approvals, harness, ...) + inlined template/attachment/planning/ip-whitelist routes
+  services/         → 42 services
+  controllers/      → 11 controllers
   models/           → approval, project, ticket, user
-  migrations/       → 51 .sql files + 2 data migrations; apply.js runs in array order (not numeric)
-  middleware/       → ~15 files (auth, permissions, validate (Joi), cors, rate limiter, CSP, requestId, error handler, timeout, apiVersion, multer)
-  validators/       → 15 Joi schemas
+  migrations/       → 58 registered .sql files + 1 data migration; apply.js runs in array order (not numeric) and records schema_migrations
+  middleware/       → 18 files (auth, permissions, validate (Joi), cors, rate limiter, CSP, requestId, error handler, timeout, apiVersion, multer)
+  validators/       → 18 Joi schemas
   db.js             → pg Pool (DATABASE_URL env)
 
 frontend/src/
@@ -110,12 +110,14 @@ docker compose --env-file .env.local down -v             # stop and remove volum
 These commands run inside Jenkins, which writes the root `.env` before Compose.
 Local commands above use `--env-file .env.local` instead.
 ```
-backend job:  npm ci → lint → syntax check → coverage (runs the unit tests)
-frontend job: npm ci → lint → typecheck → coverage (runs the unit tests) → build
-contract test: vitest run api-contract.test.ts (runs after backend+frontend)
+checks (parallel):
+  backend:       npm ci → lint → syntax check → helper unit tests → coverage (runs the unit tests)
+  frontend:      npm ci → lint → typecheck → coverage (runs the unit tests) → build
+  contract test: vitest run api-contract.test.ts (reuses the frontend node_modules)
+  agent:         mvn package (runs the tests) → agent image build
 cypress: Jenkins writes .env → docker compose (e2e overlay) → cypress/included runs e2e + component
 integration job: Jenkins writes .env → docker compose up → Jest integration tests → bash integration tests
-agent job: mvn test → package → agent image build
+fleet clean cut: fresh vibecode_fg54_cut DB → fleet-clean-cut.sh (REQUIRE_FLEET_SCHEMA=1)
 sandbox job: build sandbox/proxy images → Docker integration suite
 cleanup job: Jenkinsfile.cleanup → label/age-scoped orphan GC (dedicated host)
 ```
@@ -321,7 +323,7 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 `GET|PUT /harness/kill-switch` (global, super_admin). Agent events are run-scoped
 and cannot write `audit.*`.
 
-**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 51 SQL files + 2 data migrations (`migrate_provider_api_keys.js`, `backfill_agent_key_hashes.js`). Notable non-numeric entries: 011/012 after 014; 020 after 018 (no 019); 031 has two files. The `029_data_migrate_provider_api_keys.sql` and `030` rollback files exist on disk but are **not** in the apply array. Each SQL has a `_rollback.sql` counterpart.
+**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 58 registered SQL files + 1 data migration (`migrate_provider_api_keys.js`); applied files are recorded in the `schema_migrations` ledger. Notable entries: 057 (the agent-fleet clean cut) is registered after 059 despite its number; 011/012 after 014; 020 after 018 (no 019); 031 has two registered files. `029_data_migrate_provider_api_keys.sql` (and its rollback) is on disk but **not** in the apply array; the registered file is `029_provider_config_api_key.sql`. Each registered SQL has a `_rollback.sql` counterpart.
 
 **Frontend auth**: 3 localStorage keys — `vibecode_token`, `vibecode_user`, `vibecode_permissions`. Route guards read localStorage directly (no Pinia dependency).
 
