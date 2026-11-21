@@ -61,9 +61,7 @@ test_ticket_project_membership() {
   assert_status "Project admin bypasses the membership check" "200" "$http_code"
 
   # An active project member can update and delete.
-  local member_id member2_id
-  member_id=$(docker_exec_out vibecode-postgres psql -U postgres -d vibecode -t -c \
-    "SELECT id FROM users WHERE email='fr4-member@integration.test';" | tr -d ' ')
+  local member2_id
   member2_id=$(docker_exec_out vibecode-postgres psql -U postgres -d vibecode -t -c \
     "SELECT id FROM users WHERE email='fr4-member2@integration.test';" | tr -d ' ')
 
@@ -94,34 +92,62 @@ test_ticket_project_membership() {
     -d '{"title":"user updated own ticket"}')
   assert_status "Ticket owner can update their own ticket" "200" "$http_code"
 
-  # Agent pickup is scoped to the agent owner's project access.
-  local agent_body agent_key agent_id
-  agent_body=$(curl_sf -X POST "${BASE}/api/v1/agents/create" \
+  # Runtime pickup is grant-scoped after the clean cut: the node credential
+  # authenticates the host, X-Agent-Runtime selects the worker, and an active
+  # (node, project, role) grant authorizes the ticket.
+  local node_body enrollment_token enroll_body node_id access_token
+  local owner_id credential_id model_id runtime_id
+  local run_id node_name credential_name model_name
+  run_id="$$"
+  node_name="FR4 membership node $run_id"
+  credential_name="FR4 membership credential $run_id"
+  model_name="fr4-membership-model-$run_id"
+  owner_id=$(docker_exec_out vibecode-postgres psql -U postgres -d vibecode -t -c \
+    "SELECT id FROM users WHERE email='fr4-owner@integration.test';" | tr -d ' ')
+
+  node_body=$(curl_sf -X POST "${BASE}/api/v1/agent-nodes" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $owner_token" \
-    -d '{"name":"FR4 membership agent"}')
-  agent_key=$(echo "$agent_body" | jq -r '.generatedApiKey // .api_key // empty')
-  agent_id=$(docker_exec_out vibecode-postgres psql -U postgres -d vibecode -t -c \
-    "SELECT id FROM agents WHERE name='FR4 membership agent' ORDER BY id DESC LIMIT 1;" | tr -d ' ')
+    -d "{\"name\":\"$node_name\",\"max_uses\":1}")
+  enrollment_token=$(echo "$node_body" | jq -r '.data.token // empty')
 
-  if [ -z "$agent_key" ] || [ -z "$agent_id" ]; then
-    fail "Created FR4 agent" "no api key or id"
+  enroll_body=$(curl_sf -X POST "${BASE}/api/v1/agent-nodes/enroll" \
+    -H "Content-Type: application/json" \
+    -d "{\"token\":\"$enrollment_token\",\"name\":\"$node_name\",\"hostname\":\"fr4-node\"}")
+  node_id=$(echo "$enroll_body" | jq -r '.data.node.id // empty')
+  access_token=$(echo "$enroll_body" | jq -r '.data.access_token // empty')
+
+  if [ -z "$enrollment_token" ] || [ -z "$node_id" ] || [ -z "$access_token" ]; then
+    fail "Enrolled FR4 runtime node" "no node id or access token"
     return
   fi
-  pass "Created FR4 agent"
+  pass "Enrolled FR4 runtime node"
 
-  docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c \
-    "UPDATE agents SET owner_id = $member_id WHERE id = $agent_id;" >/dev/null 2>&1 || true
+  credential_id=$(docker_exec_out vibecode-postgres psql -U postgres -d vibecode -t -q -c \
+    "INSERT INTO provider_credentials (owner_id, name, provider_type, api_key_encrypted) VALUES ($owner_id, '$credential_name', 'openai', 'x') RETURNING id;" | tr -d ' ')
+  model_id=$(docker_exec_out vibecode-postgres psql -U postgres -d vibecode -t -q -c \
+    "INSERT INTO provider_models (credential_id, model, source, roles) VALUES ($credential_id, '$model_name', 'manual', ARRAY['worker']) RETURNING id;" | tr -d ' ')
+  runtime_id=$(docker_exec_out vibecode-postgres psql -U postgres -d vibecode -t -q -c \
+    "INSERT INTO agent_runtimes (node_id, name, role, model_id, status, current_project_id) VALUES ($node_id, 'fr4-worker-$run_id', 'worker', $model_id, 'running', $project_id) RETURNING id;" | tr -d ' ')
+
+  if [ -z "$credential_id" ] || [ -z "$model_id" ] || [ -z "$runtime_id" ]; then
+    fail "Created FR4 runtime" "no credential, model or runtime id"
+    return
+  fi
+  pass "Created FR4 runtime"
 
   http_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE}/api/v1/tickets/$t_pickup_denied/pickup" \
-    -H "X-API-Key: $agent_key")
-  assert_status "Agent owned by a non-member cannot pick up a ticket" "403" "$http_code"
+    -H "X-API-Key: $access_token" \
+    -H "X-Agent-Runtime: $runtime_id")
+  assert_status "Runtime without a project grant cannot pick up a ticket" "403" "$http_code"
 
   docker_exec vibecode-postgres psql -U postgres -d vibecode -t -c \
-    "UPDATE agents SET owner_id = $member2_id WHERE id = $agent_id;" >/dev/null 2>&1 || true
+    "INSERT INTO agent_node_grants (node_id, project_id, role) VALUES ($node_id, $project_id, 'worker');" \
+    >/dev/null 2>&1 || true
 
   http_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${BASE}/api/v1/tickets/$t_pickup_allowed/pickup" \
-    -H "X-API-Key: $agent_key")
-  assert_status "Agent owned by a project member can pick up a ticket" "200" "$http_code"
+    -H "X-API-Key: $access_token" \
+    -H "X-Agent-Runtime: $runtime_id")
+  assert_status "Runtime with an active project grant can pick up a ticket" "200" "$http_code"
 }
 test_ticket_project_membership
