@@ -31,7 +31,6 @@ export MAX_TICKETS="1"
 # export AI_API_KEY="..."
 
 # Optional OpenCode harness
-# export HARNESS_MODE="opencode"
 # export HARNESS_BIN="opencode"
 # export HARNESS_MAX_DURATION_MINUTES="45"
 

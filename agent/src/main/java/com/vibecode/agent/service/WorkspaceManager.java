@@ -508,8 +508,8 @@ public class WorkspaceManager {
     }
 
     /**
-     * Write multiple files to the workspace. Used by the legacy one-shot path
-     * only; the harness edits the workspace directly.
+     * Write multiple files to the workspace for in-process helpers; the harness
+     * edits the workspace directly.
      */
     public void writeFiles(List<FileOperation> files) throws IOException {
         if (files == null || files.isEmpty()) {

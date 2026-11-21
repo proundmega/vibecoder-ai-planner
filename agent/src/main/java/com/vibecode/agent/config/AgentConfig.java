@@ -294,7 +294,6 @@ public class AgentConfig {
 
     public HarnessConfig getHarnessConfig() { return harnessConfig; }
     public SandboxConfig getSandboxConfig() { return sandboxConfig; }
-    public String getHarnessMode() { return harnessConfig.mode(); }
     public String getHarnessBin() { return harnessConfig.binary(); }
     public long getHarnessStartupTimeoutMs() { return harnessConfig.startupTimeout().toMillis(); }
     public long getHarnessMaxDurationMinutes() { return harnessConfig.maxDuration().toMinutes(); }
@@ -365,7 +364,6 @@ public class AgentConfig {
             ", modelRef='" + modelRef + '\'' +
             ", effort='" + effort + '\'' +
             ", repoCloneDir='" + repoCloneDir + '\'' +
-            ", harnessMode='" + harnessConfig.mode() + '\'' +
             ", sandboxMode='" + sandboxConfig.mode() + '\'' +
             '}';
     }

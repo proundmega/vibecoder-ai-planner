@@ -28,7 +28,6 @@ services:
       - REPO_CLONE_DIR=/repos
       - AI_PROVIDER=${AI_PROVIDER:-claude}
       - AI_MODEL=${AI_MODEL:-claude-sonnet-4-20250514}
-      - HARNESS_MODE=${HARNESS_MODE:-opencode}
     volumes:
       # Declared runtimes only: no keys or tokens.
       - ${AGENT_INI_PATH:-./agent.ini}:/config/agent.ini:ro

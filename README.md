@@ -181,7 +181,6 @@ local testing only. Deleting the credential volume requires a new join token.
 | `STALE_TIMEOUT_MS` | Agent stale timeout | `3600000` |
 | `DRY_RUN` | Dry run mode | `false` |
 | `MAX_TICKETS` | Max tickets per cycle | `1` |
-| `HARNESS_MODE` | Execution harness: `legacy` or `opencode` | `legacy` |
 | `HARNESS_BIN` | OpenCode executable | `opencode` |
 | `HARNESS_STARTUP_TIMEOUT_MS` | OpenCode server health timeout | `30000` |
 | `HARNESS_MAX_DURATION_MINUTES` | Per-ticket wall-clock budget, enforced per install/verify command and before publish | `45` |
@@ -202,16 +201,13 @@ local testing only. Deleting the credential volume requires a new join token.
 | `HARNESS_RETRY_BASE_DELAY_MS` | Base exponential retry delay | `60000` |
 | `HARNESS_RETRY_MAX_DELAY_MS` | Maximum retry delay | `3600000` |
 
-With `HARNESS_MODE=opencode`, the agent starts an isolated OpenCode server session
-(`opencode serve`), lets it read/edit/test the cloned workspace, then verifies and
-publishes the diff itself. The harness is *denied* commit/push/merge by policy
+The agent starts an isolated OpenCode server session (`opencode serve`), lets it
+read/edit/test the cloned workspace, then verifies and publishes the diff itself. The harness is *denied* commit/push/merge by policy
 and the supervisor owns publishing, but bash rules are defense-in-depth rather
 than a security boundary: the supervisor also sanitizes child environments,
 disables project config (`OPENCODE_DISABLE_PROJECT_CONFIG`), restores a trusted
 `.git/config` before publishing, disables hooks, and parses `git status -uall -z`
-so untracked directories cannot hide protected files. The legacy one-shot path
-remains the default, but now shares the pinned base/tree, `git fsck` and
-protected-path write checks; it still does not run `PublishingGuard`.
+so untracked directories cannot hide protected files.
 
 The harness requires OpenCode 1.x (the Docker image pins `1.19.5`). A local
 `opencode` from `PATH` must speak the v1 server API.

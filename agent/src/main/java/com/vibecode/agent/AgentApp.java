@@ -100,7 +100,7 @@ public class AgentApp {
         RedactionRegistry.register(githubAccessToken);
         RedactionRegistry.register(githubTokenProvider.knownTokens());
         GitHubWiring wiring = createGitHubWiring(
-            config, apiService, providerSettings, aiProvider,
+            config, apiService, providerSettings,
             githubTokenProvider, githubAccessToken, config.getHarnessConfig());
         this.gitHubService = wiring.gitHubService();
         this.ticketWorker = wiring.ticketWorker();
@@ -113,15 +113,11 @@ public class AgentApp {
         }
 
         HarnessConfig harnessConfig = config.getHarnessConfig();
-        if (harnessConfig.isEnabled()) {
-            log.info("Harness mode: opencode (binary={}, model={})",
-                harnessConfig.binary(),
-                harnessConfig.modelOverride() != null
-                    ? harnessConfig.modelOverride()
-                    : providerSettings.model());
-        } else {
-            log.info("Harness mode: legacy");
-        }
+        log.info("Harness mode: opencode (binary={}, model={})",
+            harnessConfig.binary(),
+            harnessConfig.modelOverride() != null
+                ? harnessConfig.modelOverride()
+                : providerSettings.model());
 
         if (supportsLegacyProvider(providerSettings)) {
             this.reviewProcessor = new ReviewProcessor(apiService, aiProvider, config.getRuntimeId());
@@ -144,7 +140,6 @@ public class AgentApp {
         AgentConfig config,
         ApiService apiService,
         ProviderSettings providerSettings,
-        AiProvider aiProvider,
         GitHubTokenProvider tokenProvider,
         String githubToken,
         HarnessConfig harnessConfig
@@ -159,16 +154,10 @@ public class AgentApp {
         }
         GitHubService gitHubService = new GitHubService(
             tokenProvider, config.getRepoOwner(), config.getRepoName());
-        TicketWorker ticketWorker;
-        if (harnessConfig.isEnabled()) {
-            harnessConfig.validate();
-            ticketWorker = new HarnessTicketProcessor(
-                config, apiService, providerSettings, gitHubService,
-                tokenProvider, githubToken, harnessConfig);
-        } else {
-            ticketWorker = new TicketProcessor(
-                config, apiService, aiProvider, gitHubService, tokenProvider);
-        }
+        harnessConfig.validate();
+        TicketWorker ticketWorker = new HarnessTicketProcessor(
+            config, apiService, providerSettings, gitHubService,
+            tokenProvider, githubToken, harnessConfig);
         return new GitHubWiring(gitHubService, ticketWorker);
     }
 
@@ -399,7 +388,7 @@ public class AgentApp {
         RedactionRegistry.register(next.apiKey());
         AiProvider aiProvider = createAiProvider(next);
         GitHubWiring wiring = createGitHubWiring(
-            config, apiService, next, aiProvider,
+            config, apiService, next,
             githubTokenProvider, githubAccessToken, config.getHarnessConfig());
         this.gitHubService = wiring.gitHubService();
         this.ticketWorker = wiring.ticketWorker();

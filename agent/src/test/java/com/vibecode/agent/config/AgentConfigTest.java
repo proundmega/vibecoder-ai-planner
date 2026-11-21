@@ -47,7 +47,6 @@ class AgentConfigTest {
         AgentConfig config = new AgentConfig();
         HarnessConfig expected = HarnessConfig.fromEnvironment();
 
-        assertEquals(expected.mode(), config.getHarnessMode());
         assertEquals(expected.binary(), config.getHarnessBin());
         assertEquals(expected.startupTimeout().toMillis(), config.getHarnessStartupTimeoutMs());
         assertEquals(expected.maxDuration().toMinutes(), config.getHarnessMaxDurationMinutes());

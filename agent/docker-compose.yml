@@ -30,9 +30,6 @@ services:
       - POLL_INTERVAL_MS=${POLL_INTERVAL_MS:-30000}
       - DRY_RUN=${DRY_RUN:-false}
       - MAX_TICKETS=${MAX_TICKETS:-1}
-      # Fleet path: supervisor children run the OpenCode harness.
-      # Set HARNESS_MODE=legacy only for explicit local compatibility.
-      - HARNESS_MODE=${HARNESS_MODE:-opencode}
       - HARNESS_BIN=${HARNESS_BIN:-opencode}
       - HARNESS_STARTUP_TIMEOUT_MS=${HARNESS_STARTUP_TIMEOUT_MS:-30000}
       - HARNESS_MAX_DURATION_MINUTES=${HARNESS_MAX_DURATION_MINUTES:-45}

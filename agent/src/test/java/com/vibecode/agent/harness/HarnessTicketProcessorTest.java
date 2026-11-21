@@ -73,7 +73,8 @@ class HarnessTicketProcessorTest {
         "opencode-go", "secret-key", null, "beam-free", 4096);
 
     private final HarnessConfig harnessConfig = new HarnessConfig(
-        "opencode", "opencode", Duration.ofSeconds(30),
+        
+            "opencode", Duration.ofSeconds(30),
         Duration.ofMinutes(45), List.of("npm test"),
         List.of(".env*", ".github/workflows/**", "**/secrets/**"), null, "restart");
 
@@ -219,7 +220,8 @@ class HarnessTicketProcessorTest {
 
     private HarnessTicketProcessor processorWithResumeMode() {
         HarnessConfig resumeConfig = new HarnessConfig(
-            "opencode", "opencode", Duration.ofSeconds(30),
+            
+            "opencode", Duration.ofSeconds(30),
             Duration.ofMinutes(45), List.of("npm test"),
             List.of(".env*", ".github/workflows/**", "**/secrets/**"), null, "resume");
         return new HarnessTicketProcessor(
